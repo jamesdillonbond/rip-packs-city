@@ -1,0 +1,28 @@
+[
+  {
+    "editionKey": "185:6514",
+    "setName": "Rookie Revelation",
+    "playerName": "Quinten Post",
+    "parallel": "Base",
+    "lowAsk": 98,
+    "bestOffer": null,
+    "lastSale": null,
+    "source": "manual-seed",
+    "notes": ["Seeded from observed row market"],
+    "aliases": ["185:6514::Base"],
+    "tags": ["seeded", "topshot"]
+  },
+  {
+    "editionKey": "48:1652",
+    "setName": "Base Set",
+    "playerName": "Damian Lillard",
+    "parallel": "Base",
+    "lowAsk": null,
+    "bestOffer": null,
+    "lastSale": null,
+    "source": "manual-seed",
+    "notes": ["Placeholder scope row for future enrichment"],
+    "aliases": ["48:1652::Base"],
+    "tags": ["placeholder", "topshot"]
+  }
+]
