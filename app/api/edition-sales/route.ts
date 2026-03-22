@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const editionKeys: string[] = Array.isArray(body.editionKeys)
-      ? [...new Set(body.editionKeys.filter((x: unknown): x is string => typeof x === "string" && x.length > 0))]
+      ? ([...new Set(body.editionKeys.filter((x: unknown): x is string => typeof x === "string" && x.length > 0))] as string[])
       : []
 
     const results: EditionSalesResult[] = editionKeys.map((editionKey) => {
