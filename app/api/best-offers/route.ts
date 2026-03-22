@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
 
     const editionKeys = Array.isArray(body.editionKeys) ? body.editionKeys : []
 
-    const results: BestOfferResult[] = momentIds.map((momentId, index) => {
+    const results: BestOfferResult[] = momentIds.map((momentId: string, index: number) => {
       const editionKey = editionKeys[index] ?? null
       const seed = hashString(`${momentId}:${editionKey ?? "none"}`)
 
