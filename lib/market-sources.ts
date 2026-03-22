@@ -154,6 +154,61 @@ async function getFutureDbMarketMap(
   for (const key of scopeKeys) {
     out.set(key, {})
   }
+
+  // Only run if Supabase is configured
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !supabaseKey) return out
+
+  try {
+    const { createClient } = await import("@supabase/supabase-js")
+    const db = createClient(supabaseUrl, supabaseKey)
+
+    // fmv_current is a view that returns the latest snapshot per edition
+    const { data, error } = await db
+      .from("fmv_current")
+      .select("edition_id, fmv_usd, floor_price_usd, cross_market_ask, computed_at")
+
+    if (error || !data) return out
+
+    // We need to map edition_id → scopeKey
+    // For now we store the raw FMV data keyed by edition_id
+    // and do a second query to get edition keys
+    const editionIds = data.map((r: any) => r.edition_id)
+    if (!editionIds.length) return out
+
+    const { data: editions } = await db
+      .from("editions")
+      .select("id, external_id")
+      .in("id", editionIds)
+
+    if (!editions) return out
+
+    const editionIdToKey = new Map<string, string>()
+    for (const ed of editions) {
+      editionIdToKey.set(ed.id, ed.external_id)
+    }
+
+    for (const row of data) {
+      const externalId = editionIdToKey.get(row.edition_id)
+      if (!externalId) continue
+
+      // external_id matches editionKey format (setID:playID)
+      // Build scope keys for Base parallel and check against requested keys
+      const scopeKey = `${externalId}::Base`
+
+      if (out.has(scopeKey)) {
+        out.set(scopeKey, {
+          lowAsk: row.floor_price_usd ?? row.cross_market_ask ?? null,
+          lastSale: row.fmv_usd ?? null,
+          source: "supabase-fmv",
+        })
+      }
+    }
+  } catch {
+    // Supabase unavailable — silently fall back to empty
+  }
+
   return out
 }
 
