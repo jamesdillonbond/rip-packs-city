@@ -30,25 +30,21 @@ function round2(value: number) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-
-    const editionKeys = Array.isArray(body.editionKeys)
+    const editionKeys: string[] = Array.isArray(body.editionKeys)
       ? [...new Set(body.editionKeys.filter((x: unknown): x is string => typeof x === "string" && x.length > 0))]
       : []
 
-    const results: EditionSalesResult[] = editionKeys.map((editionKey: string) => {
+    const results: EditionSalesResult[] = editionKeys.map((editionKey) => {
       const seed = hashString(editionKey)
       const base = toRange(seed, 2, 180)
-
       const lastPurchase = round2(base)
       const asp5 = round2(base * toRange(seed + 11, 0.94, 1.08))
       const asp10 = round2(base * toRange(seed + 29, 0.92, 1.06))
       const asp30d = round2(base * toRange(seed + 47, 0.88, 1.04))
       const fmvBase = round2((lastPurchase * 0.45) + (asp5 * 0.35) + (asp30d * 0.20))
-
       const confidenceBucket = seed % 3
       const confidence: "low" | "medium" | "high" =
         confidenceBucket === 0 ? "low" : confidenceBucket === 1 ? "medium" : "high"
-
       return {
         editionKey,
         lastPurchase,
