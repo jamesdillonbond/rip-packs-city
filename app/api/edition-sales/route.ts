@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
       ? [...new Set(body.editionKeys.filter((x: unknown): x is string => typeof x === "string" && x.length > 0))]
       : []
 
-    const results: EditionSalesResult[] = editionKeys.map((editionKey) => {
+    const results: EditionSalesResult[] = editionKeys.map((editionKey: string) => {
       const seed = hashString(editionKey)
       const base = toRange(seed, 2, 180)
 
