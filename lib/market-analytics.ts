@@ -446,7 +446,7 @@ export function buildMarketSnapshot(input: SnapshotInput): MarketSnapshot {
       baseFmv = round2(bandBased)
 
       if (salesAnchor !== null) {
-        baseFmv = round2(baseFmv * 0.78 + salesAnchor * 0.22)
+        baseFmv = round2(baseFmv! * 0.78 + salesAnchor * 0.22)
       }
 
       if (baseFmv !== null && effectiveAsk !== null) {
