@@ -71,6 +71,9 @@ type MomentRow = {
   locked?: boolean
   bestAsk?: number | null
   lowAsk?: number | null
+  topshotAsk?: number | null
+  flowtyAsk?: number | null
+  bestMarket?: "Top Shot" | "Flowty" | null
   bestOffer?: number | null
   lastPurchasePrice?: number | null
   editionKey?: string | null
@@ -79,6 +82,8 @@ type MomentRow = {
   editionsOwned?: number
   editionsLocked?: number
   thumbnailUrl?: string | null
+  flowId?: string | null
+  flowtyListingUrl?: string | null
   fmv?: number | null
   valuationScope?: "Parallel" | "Edition" | "Modeled"
   marketDebugReason?: string
@@ -135,7 +140,7 @@ function getMint(row: MomentRow) {
 }
 
 function getBestAsk(row: MomentRow) {
-  const values = [row.lowAsk, row.bestAsk].filter(
+  const values = [row.lowAsk, row.bestAsk, row.topshotAsk, row.flowtyAsk].filter(
     (v): v is number => typeof v === "number" && Number.isFinite(v)
   )
   if (!values.length) return null
@@ -152,7 +157,6 @@ function getLocked(row: MomentRow) {
 
 function getPrimarySerialBadge(row: MomentRow) {
   const traits = getTraits(row)
-
   if (traits.includes("#1")) return "#1"
   if (traits.includes("Perfect Mint")) return "Perfect Mint"
   if (traits.includes("Jersey Match")) return "Jersey Match"
@@ -170,18 +174,12 @@ function badgeClass(name: string) {
 function debugReasonLabel(reason?: string | null) {
   if (!reason) return "-"
   switch (reason) {
-    case "OK":
-      return "OK"
-    case "NO_LOW_ASK":
-      return "No low ask"
-    case "NO_BEST_OFFER":
-      return "No best offer"
-    case "NO_MARKET_INPUTS":
-      return "No market inputs"
-    case "SPECIAL_SERIAL_NO_BASE":
-      return "No serial base"
-    default:
-      return reason
+    case "OK": return "OK"
+    case "NO_LOW_ASK": return "No low ask"
+    case "NO_BEST_OFFER": return "No best offer"
+    case "NO_MARKET_INPUTS": return "No market inputs"
+    case "SPECIAL_SERIAL_NO_BASE": return "No serial base"
+    default: return reason
   }
 }
 
@@ -216,14 +214,20 @@ export default function WalletPage() {
   const [sortKey, setSortKey] = useState<SortKey>("fmv")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
 
+  // Step 1: Flowty enrichment placeholder
+  // Top Shot GraphQL blocks server-side requests without a browser session.
+  // This is a no-op passthrough until we implement client-side Flowty enrichment.
+  async function enrichWithMarket(rowsIn: MomentRow[]) {
+    return rowsIn
+  }
+
+  // Step 2: Hydrate with FMV + edition-level market data
   async function hydrateMarket(rowsIn: MomentRow[]) {
     if (!rowsIn.length) return rowsIn
 
     const response = await fetch("/api/market-truth", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         rows: rowsIn.map((row) => ({
           momentId: row.momentId,
@@ -281,14 +285,8 @@ export default function WalletPage() {
   async function fetchWalletPage(nextOffset: number, append: boolean) {
     const response = await fetch("/api/wallet-search", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        input,
-        offset: nextOffset,
-        limit: 50,
-      }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input, offset: nextOffset, limit: 50 }),
     })
 
     const json = (await response.json()) as WalletSearchResponse
@@ -298,7 +296,10 @@ export default function WalletPage() {
     }
 
     const nextRows = Array.isArray(json.rows) ? json.rows : []
-    const hydrated = await hydrateMarket(nextRows)
+
+    // Enrich with Flowty data first, then compute FMV
+    const enriched = await enrichWithMarket(nextRows)
+    const hydrated = await hydrateMarket(enriched)
 
     setRows((prev) => (append ? [...prev, ...hydrated] : hydrated))
     setSummary(json.summary)
@@ -345,10 +346,7 @@ export default function WalletPage() {
   }
 
   function toggleExpanded(momentId: string) {
-    setExpandedRows((prev) => ({
-      ...prev,
-      [momentId]: !prev[momentId],
-    }))
+    setExpandedRows((prev) => ({ ...prev, [momentId]: !prev[momentId] }))
   }
 
   async function copySeedCandidates() {
@@ -569,6 +567,7 @@ export default function WalletPage() {
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !loading && input.trim() && handleSearch()}
               placeholder="Enter Top Shot username or wallet"
               className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white outline-none placeholder:text-zinc-500 focus:border-red-600"
             />
@@ -626,31 +625,26 @@ export default function WalletPage() {
               <option key={team} value={team}>{team === "all" ? "All Teams" : team}</option>
             ))}
           </select>
-
           <select value={leagueFilter} onChange={(e) => setLeagueFilter(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white">
             {availableLeagues.map((league) => (
               <option key={league} value={league}>{league === "all" ? "All Leagues" : league}</option>
             ))}
           </select>
-
           <select value={rarityFilter} onChange={(e) => setRarityFilter(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white">
             {availableRarities.map((tier) => (
               <option key={tier} value={tier}>{tier === "all" ? "All Rarities" : tier}</option>
             ))}
           </select>
-
           <select value={parallelFilter} onChange={(e) => setParallelFilter(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white">
             {availableParallels.map((parallel) => (
               <option key={parallel} value={parallel}>{parallel === "all" ? "All Parallels" : parallel}</option>
             ))}
           </select>
-
           <select value={lockedFilter} onChange={(e) => setLockedFilter(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white">
             <option value="all">All Lock States</option>
             <option value="locked">Locked</option>
             <option value="unlocked">Unlocked</option>
           </select>
-
           <input
             value={searchWithin}
             onChange={(e) => setSearchWithin(e.target.value)}
@@ -691,7 +685,7 @@ export default function WalletPage() {
 
         {showDebug ? (
           <div className="mb-4 overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950">
-            <table className="w-full min-w-[1750px] border-collapse text-xs">
+            <table className="w-full min-w-[1900px] border-collapse text-xs">
               <thead className="bg-zinc-900">
                 <tr className="border-b border-zinc-800 text-left">
                   <th className="p-2">Player</th>
@@ -700,6 +694,9 @@ export default function WalletPage() {
                   <th className="p-2">Scope Key</th>
                   <th className="p-2">Held</th>
                   <th className="p-2">Locked</th>
+                  <th className="p-2">TS Ask</th>
+                  <th className="p-2">Flowty Ask</th>
+                  <th className="p-2">Best Market</th>
                   <th className="p-2">Row Low Ask</th>
                   <th className="p-2">Row Offer</th>
                   <th className="p-2">Edition Low Ask</th>
@@ -727,14 +724,8 @@ export default function WalletPage() {
                   })
 
                   const counts = {
-                    owned:
-                      row.editionsOwned ??
-                      batchEditionStats.get(scopeKey)?.owned ??
-                      0,
-                    locked:
-                      row.editionsLocked ??
-                      batchEditionStats.get(scopeKey)?.locked ??
-                      0,
+                    owned: row.editionsOwned ?? batchEditionStats.get(scopeKey)?.owned ?? 0,
+                    locked: row.editionsLocked ?? batchEditionStats.get(scopeKey)?.locked ?? 0,
                   }
 
                   return (
@@ -745,6 +736,9 @@ export default function WalletPage() {
                       <td className="p-2">{scopeKey}</td>
                       <td className="p-2">{counts.owned}</td>
                       <td className="p-2">{counts.locked}</td>
+                      <td className="p-2">{formatCurrency(row.topshotAsk)}</td>
+                      <td className="p-2">{formatCurrency(row.flowtyAsk)}</td>
+                      <td className="p-2">{row.bestMarket ?? "-"}</td>
                       <td className="p-2">{formatCurrency(row.rowLowAsk ?? getBestAsk(row))}</td>
                       <td className="p-2">{formatCurrency(row.rowBestOffer ?? row.bestOffer)}</td>
                       <td className="p-2">{formatCurrency(row.editionLowAsk)}</td>
@@ -795,14 +789,8 @@ export default function WalletPage() {
                 })
 
                 const editionCounts = {
-                  owned:
-                    row.editionsOwned ??
-                    batchEditionStats.get(scopeKey)?.owned ??
-                    0,
-                  locked:
-                    row.editionsLocked ??
-                    batchEditionStats.get(scopeKey)?.locked ??
-                    0,
+                  owned: row.editionsOwned ?? batchEditionStats.get(scopeKey)?.owned ?? 0,
+                  locked: row.editionsLocked ?? batchEditionStats.get(scopeKey)?.locked ?? 0,
                 }
 
                 const expanded = !!expandedRows[row.momentId]
@@ -822,7 +810,6 @@ export default function WalletPage() {
                               />
                             ) : null}
                           </div>
-
                           <div>
                             <div className="font-semibold text-white">{row.playerName}</div>
                             <div className="mt-1 flex flex-wrap gap-1">
@@ -862,9 +849,7 @@ export default function WalletPage() {
                         </div>
                       </td>
 
-                      <td className="p-3">
-                        {editionCounts.owned} / {editionCounts.locked}
-                      </td>
+                      <td className="p-3">{editionCounts.owned} / {editionCounts.locked}</td>
 
                       <td className="p-3 font-semibold text-white">
                         {formatCurrency(row.fmv)}
@@ -893,13 +878,49 @@ export default function WalletPage() {
                                 Market
                               </div>
                               <div className="space-y-1 text-sm">
-                                <div>Low Ask: {formatCurrency(getBestAsk(row))}</div>
+                                <div>Top Shot Ask: {formatCurrency(row.topshotAsk)}</div>
+                                <div>Flowty Ask: {formatCurrency(row.flowtyAsk)}</div>
+                                <div>Best Ask: {formatCurrency(getBestAsk(row))}</div>
+                                <div>Best Market: {row.bestMarket ?? "-"}</div>
                                 <div>Best Offer: {formatCurrency(row.bestOffer)}</div>
                                 <div>FMV: {formatCurrency(row.fmv)}</div>
-                                <div>Valuation Scope: {row.valuationScope ?? "-"}</div>
-                                <div>Market Source: {row.marketSource ?? "-"}</div>
                                 <div>FMV Method: {row.fmvMethod ?? "-"}</div>
                                 <div>Confidence: {row.marketConfidence ?? "-"}</div>
+                              </div>
+                            </div>
+
+                            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                                Links
+                              </div>
+                              <div className="space-y-2 text-sm">
+                                <a
+                                  href={`https://nbatopshot.com/moment/${row.momentId}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-white hover:bg-zinc-900"
+                                >
+                                  View on Top Shot
+                                </a>
+                                {row.flowtyListingUrl ? (
+                                  <a
+                                    href={`/out/flowty/${row.momentId}?source=wallet-expand&priceAtClick=${row.flowtyAsk ?? ""}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-white hover:bg-zinc-900"
+                                  >
+                                    View on Flowty {row.flowtyAsk ? `(${formatCurrency(row.flowtyAsk)})` : ""}
+                                  </a>
+                                ) : (
+                                  <a
+                                    href={`https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/NFT/${row.momentId}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-500 hover:bg-zinc-900"
+                                  >
+                                    Check Flowty
+                                  </a>
+                                )}
                               </div>
                             </div>
 
@@ -912,26 +933,16 @@ export default function WalletPage() {
                                 <div>League: {row.league ?? "-"}</div>
                                 <div>Parallel: {getParallel(row)}</div>
                                 <div>Locked: {getLocked(row) ? "Yes" : "No"}</div>
-                              </div>
-                            </div>
-
-                            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                                Traits
-                              </div>
-                              <div className="flex flex-wrap gap-2">
-                                {getTraits(row).length > 0 ? (
-                                  getTraits(row).map((trait) => (
+                                <div className="flex flex-wrap gap-1 pt-1">
+                                  {getTraits(row).map((trait) => (
                                     <span
                                       key={trait}
-                                      className="rounded bg-red-950 px-2 py-1 text-xs text-red-300"
+                                      className="rounded bg-red-950 px-2 py-0.5 text-[10px] text-red-300"
                                     >
                                       {trait}
                                     </span>
-                                  ))
-                                ) : (
-                                  <span className="text-sm text-zinc-500">None</span>
-                                )}
+                                  ))}
+                                </div>
                               </div>
                             </div>
 
@@ -942,14 +953,10 @@ export default function WalletPage() {
                               <div className="space-y-1 text-sm">
                                 <div>Edition Key: {row.editionKey ?? "-"}</div>
                                 <div>Scope Key: {scopeKey}</div>
+                                <div>Valuation: {row.valuationScope ?? "-"}</div>
+                                <div>Market Source: {row.marketSource ?? "-"}</div>
                                 <div>Reason: {debugReasonLabel(row.marketDebugReason)}</div>
                                 <div>Edition Source: {row.editionMarketSource ?? "-"}</div>
-                                <div>
-                                  Source Chain:{" "}
-                                  {row.editionMarketSourceChain?.length
-                                    ? row.editionMarketSourceChain.join(" → ")
-                                    : "-"}
-                                </div>
                               </div>
                             </div>
                           </div>

@@ -145,7 +145,8 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({ results });
-  } catch (error) {
+ } catch (error) {
+    console.error("[MOMENT_MARKET_500]", error)
     return NextResponse.json(
       {
         error:
