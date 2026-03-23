@@ -11,16 +11,15 @@ export type TopShotMarketTruth = {
   editionKey: string | null
   setId: string | null
   playId: string | null
-
+  jerseyNumber: number | null
   marketBackedAsk: number | null
   marketBackedLastSale: number | null
   marketBackedBestOffer: number | null
-
   editionListingFloor: number | null
   editionLatestSale: number | null
-  editionOfferMin: number | null
+  editionAverageSale: number | null
   editionOfferMax: number | null
-
+  editionListingCount: number | null
   observedSourceCount: number
   probeStatus: TopShotTruthProbeStatus
   sourceSummary: string
@@ -42,213 +41,178 @@ function toNum(v: unknown): number | null {
 }
 
 function parseEditionKey(editionKey: string | null) {
-  if (!editionKey) {
-    return {
-      setId: null,
-      playId: null,
-    }
-  }
-
+  if (!editionKey) return { setId: null, playId: null }
   const [setId, playId] = editionKey.split(":")
-  return {
-    setId: setId ?? null,
-    playId: playId ?? null,
-  }
+  return { setId: setId ?? null, playId: playId ?? null }
 }
 
-function firstNumberFromUnknown(value: unknown): number | null {
-  if (typeof value === "number") return Number.isFinite(value) ? value : null
-  if (typeof value === "string") return toNum(value)
-
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const n = firstNumberFromUnknown(item)
-      if (n !== null) return n
-    }
-  }
-
-  if (value && typeof value === "object") {
-    for (const v of Object.values(value as Record<string, unknown>)) {
-      const n = firstNumberFromUnknown(v)
-      if (n !== null) return n
-    }
-  }
-
-  return null
-}
-
-function extractCandidateNumber(
-  obj: Record<string, unknown> | null | undefined,
-  candidateKeys: string[]
-) {
-  if (!obj) return null
-
-  for (const key of candidateKeys) {
-    if (key in obj) {
-      const n = firstNumberFromUnknown(obj[key])
-      if (n !== null) return n
-    }
-  }
-
-  return null
-}
-
-async function probeEditionListings(setId: string, playId: string) {
+async function probeMarketplaceEdition(setId: string, playId: string) {
   const query = `
-    query SearchEditionListingsTruth($input: SearchEditionListingsInput!) {
-      searchEditionListings(input: $input) {
-        summary
-        data
+    query SearchMarketplaceEditions(
+      $byEditions: [EditionsFilterInput] = []
+      $searchInput: BaseSearchInput = {pagination: {direction: RIGHT, limit: 1, cursor: ""}}
+    ) {
+      searchMarketplaceEditions(input: {
+        filters: { byEditions: $byEditions }
+        sortBy: EDITION_CREATED_AT_DESC
+        searchInput: $searchInput
+      }) {
+        data {
+          searchSummary {
+            data {
+              size
+              data {
+                ... on MarketplaceEdition {
+                  lowAsk
+                  highestOffer
+                  priceRange { min max __typename }
+                  editionListingCount
+                  averageSaleData { averagePrice numDays numSales __typename }
+                  marketplaceStats {
+                    averageSalePrice
+                    highestOffer
+                    __typename
+                  }
+                  play {
+                    stats {
+                      jerseyNumber
+                      playerName
+                      __typename
+                    }
+                    __typename
+                  }
+                  __typename
+                }
+                __typename
+              }
+              __typename
+            }
+            __typename
+          }
+          __typename
+        }
+        __typename
       }
     }
   `
 
-  const input = {
-    searchInput: {},
-    filters: {
-      editions: [{ setID: setId, playID: playId }],
-    },
-  }
+  const data = await topshotGraphql<Record<string, unknown>>(query, {
+    byEditions: [{ setID: setId, playID: playId }],
+    searchInput: { pagination: { direction: "RIGHT", limit: 1, cursor: "" } },
+  })
 
-  const data = await topshotGraphql<Record<string, unknown>>(query, { input })
-  const root = data?.searchEditionListings as Record<string, unknown> | undefined
+  const editions =
+    (data as any)
+      ?.searchMarketplaceEditions
+      ?.data
+      ?.searchSummary
+      ?.data
+      ?.data ?? []
 
-  const floorFromSummary = extractCandidateNumber(
-    (root?.summary as Record<string, unknown>) ?? undefined,
-    ["floorPrice", "minPrice", "lowestPrice"]
-  )
-
-  let floorFromData: number | null = null
-  const listingData = Array.isArray(root?.data) ? root?.data : []
-
-  for (const item of listingData) {
-    const n = firstNumberFromUnknown(item)
-    if (n !== null) {
-      floorFromData = floorFromData === null ? n : Math.min(floorFromData, n)
-    }
-  }
+  const edition = editions[0] ?? null
 
   return {
-    editionListingFloor: floorFromSummary ?? floorFromData,
+    editionListingFloor: toNum(edition?.lowAsk ?? edition?.priceRange?.min),
+    editionListingCount: toNum(edition?.editionListingCount),
+    editionAverageSale: toNum(
+      edition?.averageSaleData?.averagePrice ??
+      edition?.marketplaceStats?.averageSalePrice
+    ),
+    editionOfferMax: toNum(
+      edition?.highestOffer ??
+      edition?.marketplaceStats?.highestOffer
+    ),
+    jerseyNumber: toNum(edition?.play?.stats?.jerseyNumber),
   }
 }
 
-async function probeOffersAggregation(setId: string, playId: string) {
+async function probeRecentSales(setId: string, playId: string) {
   const query = `
-    query SearchOffersAggregationTruth($input: SearchOffersAggregationInput!) {
-      searchOffersAggregation(input: $input) {
-        total
-        summary
-        data
-      }
-    }
-  `
-
-  const input = {
-    searchInput: {},
-    filters: {
-      editions: [{ setID: setId, playID: playId }],
-    },
-  }
-
-  const data = await topshotGraphql<Record<string, unknown>>(query, { input })
-  const root = data?.searchOffersAggregation as Record<string, unknown> | undefined
-
-  const minFromSummary = extractCandidateNumber(
-    (root?.summary as Record<string, unknown>) ?? undefined,
-    ["minOffer", "minOfferAmount", "minimumOffer", "floorOffer"]
-  )
-
-  const maxFromSummary = extractCandidateNumber(
-    (root?.summary as Record<string, unknown>) ?? undefined,
-    ["maxOffer", "maxOfferAmount", "highestOffer", "ceilingOffer"]
-  )
-
-  const dataField = Array.isArray(root?.data) ? root?.data : []
-  let minFromData: number | null = null
-  let maxFromData: number | null = null
-
-  for (const item of dataField) {
-    const n = firstNumberFromUnknown(item)
-    if (n !== null) {
-      minFromData = minFromData === null ? n : Math.min(minFromData, n)
-      maxFromData = maxFromData === null ? n : Math.max(maxFromData, n)
-    }
-  }
-
-  return {
-    editionOfferMin: minFromSummary ?? minFromData,
-    editionOfferMax: maxFromSummary ?? maxFromData,
-  }
-}
-
-async function probeMarketplaceTransactions(setId: string, playId: string) {
-  const query = `
-    query SearchMarketplaceTransactionsTruth($input: SearchMarketplaceTransactionsInput!) {
+    query SearchMarketplaceTransactions($input: SearchMarketplaceTransactionsInput!) {
       searchMarketplaceTransactions(input: $input) {
-        summary
-        data
+        data {
+          searchSummary {
+            data {
+              ... on MarketplaceTransactions {
+                data {
+                  ... on MarketplaceTransaction {
+                    price
+                    updatedAt
+                    __typename
+                  }
+                  __typename
+                }
+                __typename
+              }
+              __typename
+            }
+            __typename
+          }
+          __typename
+        }
+        __typename
       }
     }
   `
 
-  const input = {
-    searchInput: {},
-    filters: {
-      editions: [{ setID: setId, playID: playId }],
+  const data = await topshotGraphql<Record<string, unknown>>(query, {
+    input: {
+      sortBy: "UPDATED_AT_DESC",
+      filters: { byEditions: [{ setID: setId, playID: playId }] },
+      searchInput: { pagination: { cursor: "", direction: "RIGHT", limit: 5 } },
     },
-  }
+  })
 
-  const data = await topshotGraphql<Record<string, unknown>>(query, { input })
-  const root = data?.searchMarketplaceTransactions as Record<string, unknown> | undefined
+  const transactions =
+    (data as any)
+      ?.searchMarketplaceTransactions
+      ?.data
+      ?.searchSummary
+      ?.data
+      ?.[0]
+      ?.data ?? []
 
-  const latestFromSummary = extractCandidateNumber(
-    (root?.summary as Record<string, unknown>) ?? undefined,
-    ["latestSalePrice", "lastSalePrice", "recentSalePrice"]
-  )
+  const prices = transactions
+    .map((tx: any) => toNum(tx?.price))
+    .filter((p: number | null): p is number => p !== null)
 
-  const txData = Array.isArray(root?.data) ? root?.data : []
-  const firstTx = txData[0]
-  const latestFromData = firstNumberFromUnknown(firstTx)
-
-  return {
-    editionLatestSale: latestFromSummary ?? latestFromData,
-  }
+  return { editionLatestSale: prices[0] ?? null }
 }
 
-async function probeEditionStats(setId: string, playId: string) {
+async function probeTopOffers(setId: string, playId: string) {
   const query = `
-    query GetMarketplaceTransactionEditionStatsTruth($input: GetMarketplaceTransactionEditionStatsInput!) {
-      getMarketplaceTransactionEditionStats(input: $input) {
-        data
-        summary
+    query GetTopOffers(
+      $byEdition: EditionsFilterInput
+      $byOfferTypes: [OfferType!]
+      $limit: Int!
+    ) {
+      getTopOffers(input: {
+        filters: { byEdition: $byEdition, byOfferTypes: $byOfferTypes }
+        limit: $limit
+      }) {
+        offers {
+          price
+          offerType
+          __typename
+        }
+        __typename
       }
     }
   `
 
-  const input = {
-    setID: setId,
-    playID: playId,
-  }
+  const data = await topshotGraphql<Record<string, unknown>>(query, {
+    byEdition: { setID: setId, playID: playId },
+    byOfferTypes: ["Edition"],
+    limit: 5,
+  })
 
-  const data = await topshotGraphql<Record<string, unknown>>(query, { input })
-  const root = data?.getMarketplaceTransactionEditionStats as
-    | Record<string, unknown>
-    | undefined
-
-  const latestFromSummary = extractCandidateNumber(
-    (root?.summary as Record<string, unknown>) ?? undefined,
-    ["latestSalePrice", "lastSalePrice", "recentSalePrice"]
-  )
-
-  const avgFromSummary = extractCandidateNumber(
-    (root?.summary as Record<string, unknown>) ?? undefined,
-    ["averageSalePrice", "avgSalePrice"]
-  )
+  const offers = (data as any)?.getTopOffers?.offers ?? []
+  const prices = offers
+    .map((o: any) => toNum(o?.price))
+    .filter((p: number | null): p is number => p !== null)
 
   return {
-    editionLatestSale: latestFromSummary ?? null,
-    averageSalePrice: avgFromSummary,
+    editionOfferMax: prices.length > 0 ? Math.max(...prices) : null,
   }
 }
 
@@ -256,10 +220,8 @@ export async function getTopShotMarketTruth(
   input: TruthInput
 ): Promise<TopShotMarketTruth> {
   const cacheKey = [
-    "topshot-truth",
+    "topshot-truth-v3",
     input.editionKey ?? "none",
-    input.bestAsk ?? "na",
-    input.lastPurchasePrice ?? "na",
     process.env.ENABLE_TOPSHOT_DOCS_PROBES ?? "false",
   ].join(":")
 
@@ -269,68 +231,45 @@ export async function getTopShotMarketTruth(
     const notes: string[] = []
     let editionListingFloor: number | null = null
     let editionLatestSale: number | null = null
-    let editionOfferMin: number | null = null
+    let editionAverageSale: number | null = null
     let editionOfferMax: number | null = null
-
+    let editionListingCount: number | null = null
+    let jerseyNumber: number | null = null
     let probeStatus: TopShotTruthProbeStatus = "observed-only"
 
-    if (
-      setId &&
-      playId &&
-      process.env.ENABLE_TOPSHOT_DOCS_PROBES === "true"
-    ) {
+    if (setId && playId && process.env.ENABLE_TOPSHOT_DOCS_PROBES === "true") {
       let successCount = 0
       let failCount = 0
 
       try {
-        const result = await probeEditionListings(setId, playId)
+        const result = await probeMarketplaceEdition(setId, playId)
         editionListingFloor = result.editionListingFloor
-        successCount += 1
-      } catch (e) {
-        failCount += 1
-        notes.push(
-          `editionListings: ${
-            e instanceof Error ? e.message : "probe failed"
-          }`
-        )
-      }
-
-      try {
-        const result = await probeOffersAggregation(setId, playId)
-        editionOfferMin = result.editionOfferMin
+        editionListingCount = result.editionListingCount
+        editionAverageSale = result.editionAverageSale
         editionOfferMax = result.editionOfferMax
-        successCount += 1
+        jerseyNumber = result.jerseyNumber
+        successCount++
       } catch (e) {
-        failCount += 1
-        notes.push(
-          `offersAggregation: ${
-            e instanceof Error ? e.message : "probe failed"
-          }`
-        )
+        failCount++
+        notes.push(`marketplaceEdition: ${e instanceof Error ? e.message : "failed"}`)
       }
 
       try {
-        const result = await probeMarketplaceTransactions(setId, playId)
+        const result = await probeRecentSales(setId, playId)
         editionLatestSale = result.editionLatestSale
-        successCount += 1
+        successCount++
       } catch (e) {
-        failCount += 1
-        notes.push(
-          `marketplaceTransactions: ${
-            e instanceof Error ? e.message : "probe failed"
-          }`
-        )
+        failCount++
+        notes.push(`recentSales: ${e instanceof Error ? e.message : "failed"}`)
       }
 
       try {
-        const result = await probeEditionStats(setId, playId)
-        editionLatestSale = editionLatestSale ?? result.editionLatestSale ?? null
-        successCount += 1
+        const result = await probeTopOffers(setId, playId)
+        editionOfferMax = editionOfferMax ?? result.editionOfferMax
+        successCount++
       } catch (e) {
-        failCount += 1
-        notes.push(
-          `editionStats: ${e instanceof Error ? e.message : "probe failed"}`
-        )
+        failCount++
+        notes.push(`topOffers: ${e instanceof Error ? e.message : "failed"}`)
       }
 
       if (successCount > 0 && failCount === 0) probeStatus = "docs-probe-success"
@@ -339,7 +278,8 @@ export async function getTopShotMarketTruth(
     }
 
     const marketBackedAsk = editionListingFloor ?? input.bestAsk ?? null
-    const marketBackedLastSale = editionLatestSale ?? input.lastPurchasePrice ?? null
+    const marketBackedLastSale =
+      editionLatestSale ?? editionAverageSale ?? input.lastPurchasePrice ?? null
     const marketBackedBestOffer = editionOfferMax ?? null
 
     const observedSourceCount =
@@ -347,29 +287,29 @@ export async function getTopShotMarketTruth(
       (marketBackedLastSale !== null ? 1 : 0) +
       (marketBackedBestOffer !== null ? 1 : 0)
 
-    const sourceSummary =
-      probeStatus === "observed-only"
-        ? "Observed minted-moment ask/sale only"
-        : probeStatus === "docs-probe-success"
-          ? "Observed values plus Top Shot docs-backed market probes"
-          : probeStatus === "docs-probe-partial"
-            ? "Observed values plus partial Top Shot docs-backed probes"
-            : "Observed values; docs-backed probes attempted but failed"
-
     return {
       editionKey: input.editionKey,
       setId,
       playId,
+      jerseyNumber,
       marketBackedAsk,
       marketBackedLastSale,
       marketBackedBestOffer,
       editionListingFloor,
       editionLatestSale,
-      editionOfferMin,
+      editionAverageSale,
       editionOfferMax,
+      editionListingCount,
       observedSourceCount,
       probeStatus,
-      sourceSummary,
+      sourceSummary:
+        probeStatus === "docs-probe-success"
+          ? "Top Shot live market data"
+          : probeStatus === "docs-probe-partial"
+            ? "Top Shot partial market data"
+            : probeStatus === "docs-probe-failed"
+              ? "Top Shot probes failed"
+              : "Observed values only",
       probeNotes: notes,
     }
   })

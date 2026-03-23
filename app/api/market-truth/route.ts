@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import {
-  computeFmv,
-  type MarketTruthInput,
-} from "@/lib/market-compute"
+import { computeFmv, type MarketTruthInput } from "@/lib/market-compute"
 import { buildUnifiedEditionMarketMap } from "@/lib/market-sources"
 import {
   buildEditionScopeKey,
@@ -27,7 +24,9 @@ export async function POST(req: NextRequest) {
         bestAsk: typeof row.bestAsk === "number" ? row.bestAsk : null,
         bestOffer: typeof row.bestOffer === "number" ? row.bestOffer : null,
         lastPurchasePrice:
-          typeof row.lastPurchasePrice === "number" ? row.lastPurchasePrice : null,
+          typeof row.lastPurchasePrice === "number"
+            ? row.lastPurchasePrice
+            : null,
       }))
     )
 
@@ -52,7 +51,9 @@ export async function POST(req: NextRequest) {
         lowAsk: typeof row.lowAsk === "number" ? row.lowAsk : null,
         bestOffer: typeof row.bestOffer === "number" ? row.bestOffer : null,
         lastPurchasePrice:
-          typeof row.lastPurchasePrice === "number" ? row.lastPurchasePrice : null,
+          typeof row.lastPurchasePrice === "number"
+            ? row.lastPurchasePrice
+            : null,
         editionLowAsk: editionMarket?.lowAsk ?? null,
         editionBestOffer: editionMarket?.bestOffer ?? null,
         editionLastSale: editionMarket?.lastSale ?? null,
