@@ -3,6 +3,7 @@ import fcl from "@/lib/flow"
 import * as t from "@onflow/types"
 import { topshotGraphql } from "@/lib/topshot"
 import { getOrSetCache } from "@/lib/cache"
+import { supabaseAdmin } from "@/lib/supabase"
 import {
   normalizeParallel,
   normalizeSetName,
@@ -312,6 +313,104 @@ async function mapWithConcurrency<T, R>(
   return results
 }
 
+// ── Supabase seeding ──────────────────────────────────────────────────────────
+// Seeds edition + lastPurchasePrice into Supabase using integer editionKeys
+// from the Flow blockchain. Runs fire-and-forget so it never delays the response.
+
+async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
+  for (const row of rows) {
+    try {
+      if (!row.editionKey || !row.lastPurchasePrice) continue
+
+      const tier = row.tier?.toUpperCase() ?? "COMMON"
+      const normalizedTier =
+        tier.includes("LEGENDARY") ? "LEGENDARY" :
+        tier.includes("RARE") ? "RARE" :
+        tier.includes("ULTIMATE") ? "ULTIMATE" :
+        tier.includes("FANDOM") ? "FANDOM" : "COMMON"
+
+      // Upsert player
+      let playerId: string | null = null
+      if (row.playerName && row.playerName !== "Unknown Player") {
+        const { data: player } = await supabaseAdmin
+          .from("players")
+          .upsert(
+            {
+              external_id: `flow:${row.editionKey.split(":")[1] ?? row.playerName}`,
+              collection_id: collectionId,
+              name: row.playerName,
+              team: row.team ?? null,
+            },
+            { onConflict: "external_id", ignoreDuplicates: false }
+          )
+          .select("id")
+          .single()
+        playerId = player?.id ?? null
+      }
+
+      // Upsert edition using integer editionKey
+      const { data: edition } = await supabaseAdmin
+        .from("editions")
+        .upsert(
+          {
+            external_id: row.editionKey,
+            collection_id: collectionId,
+            player_id: playerId,
+            name: `${row.playerName} — ${row.setName}`,
+            tier: normalizedTier as any,
+            series: toNum(row.series),
+            circulation_count: row.mintSize ?? null,
+          },
+          { onConflict: "external_id", ignoreDuplicates: false }
+        )
+        .select("id")
+        .single()
+
+      if (!edition?.id) continue
+
+      // Insert lastPurchasePrice as a sale record
+      if (row.lastPurchasePrice && row.lastPurchasePrice > 0) {
+        await supabaseAdmin.from("sales").insert({
+          edition_id: edition.id,
+          collection_id: collectionId,
+          serial_number: row.serial ?? 0,
+          price_usd: row.lastPurchasePrice,
+          currency: "USD",
+          marketplace: "top_shot",
+          transaction_hash: `wallet-seed:${row.momentId}`,
+          sold_at: new Date().toISOString(),
+        })
+      }
+
+      // Upsert FMV snapshot from lastPurchasePrice
+      await supabaseAdmin.from("fmv_snapshots").insert({
+        edition_id: edition.id,
+        collection_id: collectionId,
+        fmv_usd: row.lastPurchasePrice,
+        floor_price_usd: row.lastPurchasePrice,
+        confidence: "LOW" as any,
+        sales_count_7d: 1,
+        algo_version: "wallet-seed-1.0",
+      })
+    } catch {
+      // Never let seeding errors bubble up to the user
+    }
+  }
+}
+
+async function getCollectionId(): Promise<string | null> {
+  try {
+    const { data } = await supabaseAdmin
+      .from("collections")
+      .select("id")
+      .eq("slug", "nba_top_shot")
+      .single()
+    return data?.id ?? null
+  } catch {
+    return null
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
@@ -417,6 +516,14 @@ export async function POST(req: NextRequest) {
         ...row,
         editionsOwned: counts.owned,
         editionsLocked: counts.locked,
+      }
+    })
+
+    // Seed edition + sale data to Supabase fire-and-forget
+    // Uses integer editionKeys from Flow blockchain so FMV lookup works
+    getCollectionId().then((collectionId) => {
+      if (collectionId) {
+        seedEditionsToSupabase(rows, collectionId).catch(() => {})
       }
     })
 

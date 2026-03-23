@@ -143,10 +143,6 @@ function mergeResolvedMarkets(input: {
   }
 }
 
-// Placeholder DB adapter.
-// This remains intentionally empty today, but the slot is preserved so a
-// future RPC DB or indexed Flowscan sales layer can be merged without
-// changing the wallet page contract again.
 async function getFutureDbMarketMap(
   scopeKeys: string[]
 ): Promise<Map<string, Partial<UnifiedEditionMarket>>> {
@@ -155,7 +151,6 @@ async function getFutureDbMarketMap(
     out.set(key, {})
   }
 
-  // Only run if Supabase is configured
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!supabaseUrl || !supabaseKey) return out
@@ -169,11 +164,13 @@ async function getFutureDbMarketMap(
       .from("fmv_current")
       .select("edition_id, fmv_usd, floor_price_usd, cross_market_ask, computed_at")
 
-    if (error || !data) return out
+    if (error || !data) {
+      console.log("[MARKET-SOURCES] fmv_current error:", error?.message)
+      return out
+    }
 
-    // We need to map edition_id → scopeKey
-    // For now we store the raw FMV data keyed by edition_id
-    // and do a second query to get edition keys
+    console.log("[MARKET-SOURCES] fmv_current rows:", data.length)
+
     const editionIds = data.map((r: any) => r.edition_id)
     if (!editionIds.length) return out
 
@@ -184,6 +181,9 @@ async function getFutureDbMarketMap(
 
     if (!editions) return out
 
+    console.log("[MARKET-SOURCES] editions fetched:", editions.length)
+    console.log("[MARKET-SOURCES] requested scopeKeys:", scopeKeys.slice(0, 5))
+
     const editionIdToKey = new Map<string, string>()
     for (const ed of editions) {
       editionIdToKey.set(ed.id, ed.external_id)
@@ -193,9 +193,9 @@ async function getFutureDbMarketMap(
       const externalId = editionIdToKey.get(row.edition_id)
       if (!externalId) continue
 
-      // external_id matches editionKey format (setID:playID)
-      // Build scope keys for Base parallel and check against requested keys
       const scopeKey = `${externalId}::Base`
+
+      console.log("[MARKET-SOURCES] DB hit:", scopeKey, "has:", out.has(scopeKey), "fmv:", row.fmv_usd)
 
       if (out.has(scopeKey)) {
         out.set(scopeKey, {
@@ -205,8 +205,8 @@ async function getFutureDbMarketMap(
         })
       }
     }
-  } catch {
-    // Supabase unavailable — silently fall back to empty
+  } catch (e) {
+    console.log("[MARKET-SOURCES] exception:", e instanceof Error ? e.message : e)
   }
 
   return out
