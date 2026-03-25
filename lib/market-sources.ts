@@ -40,7 +40,12 @@ export type UnifiedEditionMarket = {
 
 function dedupeStrings(values: Array<string | null | undefined>) {
   return Array.from(
-    new Set(values.filter((value): value is string => typeof value === "string" && value.trim().length > 0))
+    new Set(
+      values.filter(
+        (value): value is string =>
+          typeof value === "string" && value.trim().length > 0
+      )
+    )
   )
 }
 
@@ -63,68 +68,50 @@ function mergeResolvedMarkets(input: {
   scopeKey: string
   live?: LiveEditionMarketResolved | null
   external?: ExternalEditionMarketResolved | null
+  graphql?: null  // reserved for future Flowty/OTM feed via RPC_EXTERNAL_MARKET_URL
   seeded?: EditionMarketResolved | null
-  futureDb?: Partial<UnifiedEditionMarket> | null
 }): UnifiedEditionMarket {
-  const { scopeKey, live, external, seeded, futureDb } = input
+  const { scopeKey, live, external, seeded } = input
 
+  // Priority: external (Flowty/OTM feed) > live row aggregate > seeded file
   const lowAsk =
     external?.lowAsk ??
     live?.lowAsk ??
-    futureDb?.lowAsk ??
     seeded?.lowAsk ??
     null
 
   const bestOffer =
     external?.bestOffer ??
     live?.bestOffer ??
-    futureDb?.bestOffer ??
     seeded?.bestOffer ??
     null
 
+  // Last sale: live aggregate uses lastPurchasePrice from wallet rows
   const lastSale =
-    futureDb?.lastSale ??
     external?.lastSale ??
     seeded?.lastSale ??
     live?.lastSale ??
     null
 
-  const askCount =
-    external?.askCount ??
-    live?.askCount ??
-    futureDb?.askCount ??
-    0
-
-  const offerCount =
-    external?.offerCount ??
-    live?.offerCount ??
-    futureDb?.offerCount ??
-    0
-
-  const saleCount =
-    external?.saleCount ??
-    live?.saleCount ??
-    futureDb?.saleCount ??
-    0
+  const askCount = external?.askCount ?? live?.askCount ?? 0
+  const offerCount = external?.offerCount ?? live?.offerCount ?? 0
+  const saleCount = external?.saleCount ?? live?.saleCount ?? 0
 
   const sourceChain = dedupeStrings([
     external?.source ?? null,
     live?.source ?? null,
-    futureDb?.source ?? null,
     seeded?.source ?? null,
   ])
 
   const notes = dedupeStrings([
     ...(external?.notes ?? []),
     ...(live?.notes ?? []),
-    ...(futureDb?.notes ?? []),
     ...(seeded?.notes ?? []),
   ])
 
   const tags = dedupeStrings([
     ...(external?.tags ?? []),
     ...(live?.tags ?? []),
-    ...(futureDb?.tags ?? []),
     ...(seeded?.tags ?? []),
   ])
 
@@ -143,7 +130,12 @@ function mergeResolvedMarkets(input: {
   }
 }
 
-async function getFutureDbMarketMap(
+/**
+ * Fetch market data from Supabase for edition keys that already exist in the DB.
+ * This is a supplementary layer — it enriches editions that have been
+ * previously indexed, but the primary market data now comes from GraphQL.
+ */
+async function getSupabaseMarketMap(
   scopeKeys: string[]
 ): Promise<Map<string, Partial<UnifiedEditionMarket>>> {
   const out = new Map<string, Partial<UnifiedEditionMarket>>()
@@ -159,43 +151,48 @@ async function getFutureDbMarketMap(
     const { createClient } = await import("@supabase/supabase-js")
     const db = createClient(supabaseUrl, supabaseKey)
 
-    // fmv_current is a view that returns the latest snapshot per edition
-    const { data, error } = await db
+    const { data: fmvRows, error } = await db
       .from("fmv_current")
       .select("edition_id, fmv_usd, floor_price_usd, cross_market_ask, computed_at")
 
-    if (error || !data) {
-      console.log("[MARKET-SOURCES] fmv_current error:", error?.message)
+    if (error || !fmvRows?.length) {
+      if (error) console.warn("[market-sources] fmv_current error:", error.message)
       return out
     }
 
-    console.log("[MARKET-SOURCES] fmv_current rows:", data.length)
-
-    const editionIds = data.map((r: any) => r.edition_id)
-    if (!editionIds.length) return out
+    const editionIds = fmvRows.map((r: { edition_id: string }) => r.edition_id)
 
     const { data: editions } = await db
       .from("editions")
-      .select("id, external_id")
+      .select("id, external_id, parallel_tier")
       .in("id", editionIds)
 
-    if (!editions) return out
+    if (!editions?.length) return out
 
-    console.log("[MARKET-SOURCES] editions fetched:", editions.length)
-    console.log("[MARKET-SOURCES] requested scopeKeys:", scopeKeys.slice(0, 5))
-
-    const editionIdToKey = new Map<string, string>()
-    for (const ed of editions) {
-      editionIdToKey.set(ed.id, ed.external_id)
+    // Build a map from edition_id → { external_id, parallel_tier }
+    // parallel_tier should be the normalized parallel string ("Base", "/99", etc.)
+    // If your schema doesn't have parallel_tier yet, all rows default to "Base"
+    const editionMeta = new Map<string, { externalId: string; parallelTier: string }>()
+    for (const ed of editions as Array<{ id: string; external_id: string; parallel_tier?: string }>) {
+      editionMeta.set(ed.id, {
+        externalId: ed.external_id,
+        // Fall back to "Base" if parallel_tier column doesn't exist yet
+        parallelTier: ed.parallel_tier ?? "Base",
+      })
     }
 
-    for (const row of data) {
-      const externalId = editionIdToKey.get(row.edition_id)
-      if (!externalId) continue
+    for (const row of fmvRows as Array<{
+      edition_id: string
+      fmv_usd: number | null
+      floor_price_usd: number | null
+      cross_market_ask: number | null
+    }>) {
+      const meta = editionMeta.get(row.edition_id)
+      if (!meta) continue
 
-      const scopeKey = `${externalId}::Base`
-
-      console.log("[MARKET-SOURCES] DB hit:", scopeKey, "has:", out.has(scopeKey), "fmv:", row.fmv_usd)
+      // Build the scope key using the actual parallel tier from DB
+      // This fixes the previous bug where it was always hardcoded to ::Base
+      const scopeKey = `${meta.externalId}::${meta.parallelTier}`
 
       if (out.has(scopeKey)) {
         out.set(scopeKey, {
@@ -206,17 +203,21 @@ async function getFutureDbMarketMap(
       }
     }
   } catch (e) {
-    console.log("[MARKET-SOURCES] exception:", e instanceof Error ? e.message : e)
+    console.warn(
+      "[market-sources] Supabase exception:",
+      e instanceof Error ? e.message : e
+    )
   }
 
   return out
 }
 
 export async function buildUnifiedEditionMarketMap(rows: UnifiedMarketInputRow[]) {
+  // 1. Build live aggregate from the wallet rows themselves (free, synchronous)
+  //    This aggregates lowAsk, bestOffer, lastSale per edition from the loaded moments
   const liveMap = buildLiveEditionMarketMap(toLiveRows(rows))
-  const externalMap = await getExternalEditionMarketMap()
-  const seededMap = await getEditionMarketMap()
 
+  // 2. Build scope keys for all rows
   const scopeKeys = Array.from(
     new Set(
       rows.map((row) =>
@@ -231,21 +232,44 @@ export async function buildUnifiedEditionMarketMap(rows: UnifiedMarketInputRow[]
     )
   )
 
-  const futureDbMap = await getFutureDbMarketMap(scopeKeys)
+  // 3. Fetch static/external sources in parallel (no rate-limited API calls)
+  //    GraphQL market data is available via RPC_EXTERNAL_MARKET_URL env var
+  //    when a Flowty/OTM partnership feed is configured.
+  const [externalMap, seededMap, supabaseMap] = await Promise.all([
+    getExternalEditionMarketMap(),
+    getEditionMarketMap(),
+    getSupabaseMarketMap(scopeKeys),
+  ])
 
+  // 4. Merge all sources for each scope key
   const out = new Map<string, UnifiedEditionMarket>()
 
   for (const scopeKey of scopeKeys) {
-    out.set(
+    const supabaseData = supabaseMap.get(scopeKey)
+    const hasSupabaseData =
+      supabaseData && (supabaseData.lowAsk != null || supabaseData.lastSale != null)
+
+    const merged = mergeResolvedMarkets({
       scopeKey,
-      mergeResolvedMarkets({
-        scopeKey,
-        live: liveMap.get(scopeKey) ?? null,
-        external: externalMap.get(scopeKey) ?? null,
-        seeded: seededMap.get(scopeKey) ?? null,
-        futureDb: futureDbMap.get(scopeKey) ?? null,
-      })
-    )
+      live: liveMap.get(scopeKey) ?? null,
+      external: externalMap.get(scopeKey) ?? null,
+      graphql: null,
+      seeded: seededMap.get(scopeKey) ?? null,
+    })
+
+    // Layer in Supabase data where live/external have no signal
+    if (hasSupabaseData) {
+      if (merged.lowAsk === null && supabaseData.lowAsk != null) {
+        merged.lowAsk = supabaseData.lowAsk
+        merged.source = "supabase-fmv"
+        merged.sourceChain = ["supabase-fmv", ...merged.sourceChain]
+      }
+      if (merged.lastSale === null && supabaseData.lastSale != null) {
+        merged.lastSale = supabaseData.lastSale
+      }
+    }
+
+    out.set(scopeKey, merged)
   }
 
   return out
