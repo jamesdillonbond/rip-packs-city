@@ -48,7 +48,7 @@ const PACK_DYNAMIC_QUERY = `
 `
 
 const PACK_EDITIONS_QUERY = `
-  query GetPackEditions($input: GetPackListingInput!, $after: String) {
+  query GetPackEditions($input: GetPackListingInput!, $after: ID) {
     getPackListing(input: $input) {
       data {
         packEditionsV3(after: $after) {
@@ -226,7 +226,6 @@ function serialPremiumLabel(node: EditionNode): string | null {
 
 // ─── Fetch all editions with pagination ─────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fetchAllEditions(packListingId: string): Promise<EditionNode[]> {
   const allEditions: EditionNode[] = []
   let cursor: string | null = null
