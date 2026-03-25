@@ -1,60 +1,69 @@
 import { NextRequest, NextResponse } from "next/server"
+import { fetchEditionStats, parseEditionKey } from "@/lib/topshot-graphql"
 
 type EditionSalesResult = {
   editionKey: string
-  lastPurchase: number | null
-  asp5: number | null
-  asp10: number | null
-  asp30d: number | null
-  fmvBase: number | null
-  confidence: "low" | "medium" | "high"
-}
-
-function hashString(input: string) {
-  let hash = 0
-  for (let i = 0; i < input.length; i += 1) {
-    hash = (hash * 31 + input.charCodeAt(i)) >>> 0
-  }
-  return hash
-}
-
-function toRange(seed: number, min: number, max: number) {
-  const normalized = (seed % 10000) / 10000
-  return min + (max - min) * normalized
-}
-
-function round2(value: number) {
-  return Number(value.toFixed(2))
+  lowestAsk: number | null
+  averagePrice: number | null
+  salesCount: number
+  listingCount: number
+  /** True if the edition key could be parsed into setID/playID */
+  parsed: boolean
+  source: "topshot-graphql" | "unparseable"
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const editionKeys: string[] = Array.isArray(body.editionKeys)
-      ? ([...new Set(body.editionKeys.filter((x: unknown): x is string => typeof x === "string" && x.length > 0))] as string[])
+      ? ([
+          ...new Set(
+            body.editionKeys.filter(
+              (x: unknown): x is string =>
+                typeof x === "string" && x.length > 0
+            )
+          ),
+        ] as string[])
       : []
 
-    const results: EditionSalesResult[] = editionKeys.map((editionKey) => {
-      const seed = hashString(editionKey)
-      const base = toRange(seed, 2, 180)
-      const lastPurchase = round2(base)
-      const asp5 = round2(base * toRange(seed + 11, 0.94, 1.08))
-      const asp10 = round2(base * toRange(seed + 29, 0.92, 1.06))
-      const asp30d = round2(base * toRange(seed + 47, 0.88, 1.04))
-      const fmvBase = round2((lastPurchase * 0.45) + (asp5 * 0.35) + (asp30d * 0.20))
-      const confidenceBucket = seed % 3
-      const confidence: "low" | "medium" | "high" =
-        confidenceBucket === 0 ? "low" : confidenceBucket === 1 ? "medium" : "high"
-      return {
-        editionKey,
-        lastPurchase,
-        asp5,
-        asp10,
-        asp30d,
-        fmvBase,
-        confidence,
-      }
-    })
+    if (!editionKeys.length) {
+      return NextResponse.json({ results: [] })
+    }
+
+    // Separate parseable from unparseable keys
+    const parseable = editionKeys.filter((k) => parseEditionKey(k) !== null)
+    const unparseable = editionKeys.filter((k) => parseEditionKey(k) === null)
+
+    // Fetch real data from Top Shot GraphQL
+    const statsMap = await fetchEditionStats(parseable)
+
+    const results: EditionSalesResult[] = [
+      // Real data for parseable keys
+      ...editionKeys
+        .filter((k) => parseEditionKey(k) !== null)
+        .map((key) => {
+          const stats = statsMap.get(key)
+          return {
+            editionKey: key,
+            lowestAsk: stats?.lowestAsk ?? null,
+            averagePrice: stats?.averagePrice ?? null,
+            salesCount: stats?.salesCount ?? 0,
+            listingCount: stats?.listingCount ?? 0,
+            parsed: true,
+            source: "topshot-graphql" as const,
+          }
+        }),
+      // Null results for unparseable keys (can't query GraphQL without setID/playID)
+      ...unparseable.map((key) => ({
+        editionKey: key,
+        lowestAsk: null,
+        averagePrice: null,
+        salesCount: 0,
+        listingCount: 0,
+        parsed: false,
+        source: "unparseable" as const,
+      })),
+    ]
 
     return NextResponse.json({ results })
   } catch (e) {

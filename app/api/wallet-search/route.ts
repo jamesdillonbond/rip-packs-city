@@ -25,6 +25,9 @@ type WalletRow = {
   tier?: string
   serial?: number
   mintSize?: number
+  // Explicit fields for market-compute serial premium
+  serialNumber?: number | null
+  circulationCount?: number | null
   officialBadges?: string[]
   specialSerialTraits?: string[]
   isLocked?: boolean
@@ -102,23 +105,56 @@ function toNum(v: unknown): number | null {
 
 function formatTier(value: string | null): string | null {
   if (!value) return null
-
   const normalized = value.replace(/_/g, " ").toLowerCase()
-
   if (normalized.includes("common")) return "Common"
   if (normalized.includes("fandom")) return "Fandom"
   if (normalized.includes("rare")) return "Rare"
   if (normalized.includes("legendary")) return "Legendary"
   if (normalized.includes("ultimate")) return "Ultimate"
-
   return normalized.charAt(0).toUpperCase() + normalized.slice(1)
 }
 
-function specialSerialTraits(serial: number | null, mint: number | null) {
+/**
+ * Derive special serial trait badges.
+ *
+ * Uses canonical strings matching market-compute.ts SPECIAL_SERIAL_BADGES:
+ *   "#1 Serial", "Jersey", "Original Perfect Mint Serial"
+ *
+ * Sources:
+ *   1. Math-derived from on-chain serial + mint count
+ *   2. GraphQL badge type strings from getMintedMoment badges[].type
+ */
+function specialSerialTraits(
+  serial: number | null,
+  mint: number | null,
+  graphqlBadgeTypes: string[]
+): string[] {
   const out: string[] = []
 
-  if (serial === 1) out.push("#1")
-  if (serial !== null && mint !== null && serial === mint) out.push("Perfect Mint")
+  // Math-derived from on-chain data
+  if (serial === 1) out.push("#1 Serial")
+  if (serial !== null && mint !== null && mint > 0 && serial === mint) {
+    out.push("Original Perfect Mint Serial")
+  }
+
+  // Map GraphQL badge type strings to canonical market-compute values.
+  // Top Shot GraphQL returns badges[].type as uppercase e.g. "JERSEY_MATCH", "#1"
+  for (const badgeType of graphqlBadgeTypes) {
+    const upper = (badgeType ?? "").toUpperCase().trim()
+
+    if (upper.includes("JERSEY") && !out.includes("Jersey")) {
+      out.push("Jersey")
+    }
+    if (
+      (upper === "#1" || upper === "#1_SERIAL" || upper.includes("FIRST_SERIAL")) &&
+      !out.includes("#1 Serial")
+    ) {
+      out.push("#1 Serial")
+    }
+    if (upper.includes("PERFECT") && !out.includes("Original Perfect Mint Serial")) {
+      out.push("Original Perfect Mint Serial")
+    }
+  }
 
   return out
 }
@@ -452,7 +488,12 @@ export async function POST(req: NextRequest) {
         setId !== null && playId !== null ? `${setId}:${playId}` : null
 
       const normalizedSet = normalizeSetName(meta.setName ?? "Unknown Set")
-      const normalizedParallel = normalizeParallel("")
+      const normalizedParallelVal = normalizeParallel("")
+
+      // Extract raw badge type strings from GraphQL for trait derivation
+      const graphqlBadgeTypes = gql.badges
+        .map((b) => b.type)
+        .filter((t): t is string => typeof t === "string" && t.length > 0)
 
       const row: WalletRow = {
         momentId: String(id),
@@ -464,16 +505,20 @@ export async function POST(req: NextRequest) {
         tier: gql.tier ?? undefined,
         serial: serial ?? undefined,
         mintSize: mint ?? undefined,
-        officialBadges: gql.badges.map((b) => b.type).filter(Boolean),
-        specialSerialTraits: specialSerialTraits(serial, mint),
+        // Explicit fields for market-compute serial premium
+        serialNumber: serial ?? null,
+        circulationCount: mint ?? null,
+        officialBadges: graphqlBadgeTypes,
+        // Fixed: uses canonical badge strings + GraphQL badge mapping
+        specialSerialTraits: specialSerialTraits(serial, mint, graphqlBadgeTypes),
         isLocked: gql.isLocked,
         bestAsk: gql.bestAsk,
         lowAsk: gql.lowAsk,
         bestOffer: gql.bestOffer,
         lastPurchasePrice: gql.lastPurchasePrice,
         editionKey,
-        parallel: normalizedParallel,
-        subedition: normalizedParallel,
+        parallel: normalizedParallelVal,
+        subedition: normalizedParallelVal,
         flowId: gql.flowId,
         thumbnailUrl: buildThumbnailUrl(gql.flowId),
       }
@@ -520,7 +565,6 @@ export async function POST(req: NextRequest) {
     })
 
     // Seed edition + sale data to Supabase fire-and-forget
-    // Uses integer editionKeys from Flow blockchain so FMV lookup works
     getCollectionId().then((collectionId) => {
       if (collectionId) {
         seedEditionsToSupabase(rows, collectionId).catch(() => {})
