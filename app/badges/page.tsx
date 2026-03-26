@@ -110,9 +110,9 @@ function formatPct(v: number | null | undefined) {
   return `${v.toFixed(1)}%`
 }
 
-function getAssetUrl(prefix: string | null) {
+function getVideoUrl(prefix: string | null) {
   if (!prefix) return null
-  return `${prefix}Hero_Black_2880_2880.jpg?format=webp&quality=80&width=400`
+  return `${prefix}Animated_1080_1080_Black.mp4`
 }
 
 function parallelColor(parallelId: number) {
@@ -128,11 +128,11 @@ function parallelColor(parallelId: number) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function BadgesPage() {
-  const [editions, setEditions]         = useState<BadgeEdition[]>([])
-  const [meta, setMeta]                 = useState<ApiResponse["meta"] | null>(null)
-  const [loading, setLoading]           = useState(false)
-  const [loadingMore, setLoadingMore]   = useState(false)
-  const [error, setError]               = useState("")
+  const [editions, setEditions]       = useState<BadgeEdition[]>([])
+  const [meta, setMeta]               = useState<ApiResponse["meta"] | null>(null)
+  const [loading, setLoading]         = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [error, setError]             = useState("")
 
   const [mode, setMode]         = useState("threestar")
   const [season, setSeason]     = useState("")
@@ -198,9 +198,9 @@ export default function BadgesPage() {
   }, [editions, search])
 
   const stats = useMemo(() => ({
-    total:        meta?.total ?? 0,
-    avgBurnRate:  filtered.length ? filtered.reduce((s, e) => s + e.burn_rate_pct, 0) / filtered.length : 0,
-    avgLockRate:  filtered.length ? filtered.reduce((s, e) => s + e.lock_rate_pct, 0) / filtered.length : 0,
+    total:       meta?.total ?? 0,
+    avgBurnRate: filtered.length ? filtered.reduce((s, e) => s + e.burn_rate_pct, 0) / filtered.length : 0,
+    avgLockRate: filtered.length ? filtered.reduce((s, e) => s + e.lock_rate_pct, 0) / filtered.length : 0,
   }), [filtered, meta])
 
   return (
@@ -345,7 +345,7 @@ export default function BadgesPage() {
         {!loading && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filtered.map(e => {
-              const imgUrl = getAssetUrl(e.asset_path_prefix)
+              const videoUrl = getVideoUrl(e.asset_path_prefix)
               const visibleBadges = [
                 ...e.play_tags.filter(t =>
                   ["Rookie Year", "Rookie Premiere", "Top Shot Debut", "Rookie of the Year", "Championship Year"].includes(t.title)
@@ -358,12 +358,15 @@ export default function BadgesPage() {
                   key={e.id}
                   className="group relative overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 transition hover:border-zinc-600"
                 >
-                  {/* Moment image */}
+                  {/* Moment video */}
                   <div className="relative aspect-square overflow-hidden bg-zinc-900">
-                    {imgUrl ? (
-                      <img
-                        src={imgUrl}
-                        alt={e.player_name}
+                    {videoUrl ? (
+                      <video
+                        src={videoUrl}
+                        autoPlay
+                        loop
+                        muted
+                        playsInline
                         className="h-full w-full object-cover transition group-hover:scale-105"
                         onError={ev => {
                           ev.currentTarget.style.display = "none"
@@ -371,7 +374,7 @@ export default function BadgesPage() {
                       />
                     ) : (
                       <div className="flex h-full items-center justify-center text-zinc-700 text-xs">
-                        No image
+                        No media
                       </div>
                     )}
 
