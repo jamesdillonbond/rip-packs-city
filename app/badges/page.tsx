@@ -2,8 +2,6 @@
 
 import { useEffect, useState, useMemo } from "react"
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
 type Tag = { id: string; title: string }
 
 type BadgeEdition = {
@@ -55,8 +53,6 @@ type ApiResponse = {
     lastSync: string | null
   }
 }
-
-// ── Constants ─────────────────────────────────────────────────────────────────
 
 const MODES = [
   { value: "threestar",  label: "⭐ Three-Star" },
@@ -134,10 +130,8 @@ function parallelColor(parallelId: number) {
   }
 }
 
-// ── Moment media component — static image, plays video on hover ───────────────
-
 function MomentMedia({ prefix, playerName }: { prefix: string | null; playerName: string }) {
-  const [hovered, setHovered]   = useState(false)
+  const [hovered, setHovered]     = useState(false)
   const [imgFailed, setImgFailed] = useState(false)
   const imgUrl   = getImageUrl(prefix)
   const videoUrl = getVideoUrl(prefix)
@@ -175,8 +169,6 @@ function MomentMedia({ prefix, playerName }: { prefix: string | null; playerName
     </div>
   )
 }
-
-// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function BadgesPage() {
   const [editions, setEditions]       = useState<BadgeEdition[]>([])
@@ -258,7 +250,7 @@ export default function BadgesPage() {
     <div className="min-h-screen bg-black text-zinc-100">
       <div className="mx-auto max-w-[1600px] px-3 py-4 md:px-6">
 
-        {/* ── Header ── */}
+        {/* Header */}
         <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-4">
           <img
             src="/rip-packs-city-logo.png"
@@ -273,15 +265,13 @@ export default function BadgesPage() {
               Badge Tracker — Rookie edition intelligence
             </p>
           </div>
-          <a
-            href="/wallet"
-            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900"
-          >
-            ← Wallet
-          </a>
+          <div className="flex gap-2">
+            <a href="/packs" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Packs</a>
+            <a href="/wallet" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">← Wallet</a>
+          </div>
         </div>
 
-        {/* ── Summary stats ── */}
+        {/* Summary stats */}
         <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[
             { label: "Total Editions", value: stats.total.toLocaleString() },
@@ -296,7 +286,7 @@ export default function BadgesPage() {
           ))}
         </div>
 
-        {/* ── Mode tabs ── */}
+        {/* Mode tabs */}
         <div className="mb-4 flex flex-wrap gap-2">
           {MODES.map(m => (
             <button
@@ -313,7 +303,7 @@ export default function BadgesPage() {
           ))}
         </div>
 
-        {/* ── Filters ── */}
+        {/* Filters */}
         <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <select
             value={season}
@@ -361,7 +351,7 @@ export default function BadgesPage() {
           />
         </div>
 
-        {/* ── Sync info ── */}
+        {/* Sync info */}
         {meta?.lastSync && (
           <div className="mb-4 text-xs text-zinc-500">
             Last synced: {new Date(meta.lastSync).toLocaleString()}
@@ -372,14 +362,14 @@ export default function BadgesPage() {
           </div>
         )}
 
-        {/* ── Error ── */}
+        {/* Error */}
         {error && (
           <div className="mb-4 rounded-lg border border-red-800 bg-red-950 p-3 text-red-300">
             {error}
           </div>
         )}
 
-        {/* ── Loading skeleton ── */}
+        {/* Loading skeleton */}
         {loading && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {Array.from({ length: 12 }).map((_, i) => (
@@ -392,10 +382,11 @@ export default function BadgesPage() {
           </div>
         )}
 
-        {/* ── Card grid ── */}
+        {/* Card grid */}
         {!loading && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filtered.map(e => {
+              const playId = e.id.split("+")[1]
               const visibleBadges = [
                 ...e.play_tags.filter(t =>
                   ["Rookie Year", "Rookie Premiere", "Top Shot Debut", "Rookie of the Year", "Championship Year"].includes(t.title)
@@ -429,7 +420,7 @@ export default function BadgesPage() {
                       </div>
                     )}
 
-                    {/* Three-star indicator bottom-left */}
+                    {/* Three-star indicator */}
                     {e.is_three_star_rookie && e.has_rookie_mint && (
                       <div className="absolute bottom-2 left-2 rounded-full bg-black/80 px-2 py-0.5 text-[10px] font-bold text-yellow-400">
                         ⭐ 3-Star
@@ -495,9 +486,9 @@ export default function BadgesPage() {
                       </div>
                     </div>
 
-                    {/* Marketplace link */}
+                    {/* Marketplace link — direct to edition */}
                     <a
-                      href={`https://nbatopshot.com/marketplace?filters=badges&playID=${e.id.split("+")[1]}`}
+                      href={`https://nbatopshot.com/listings/moment/${playId}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="mt-3 block rounded-lg border border-zinc-700 py-1.5 text-center text-xs text-zinc-300 transition hover:border-red-600 hover:text-white"
@@ -511,7 +502,7 @@ export default function BadgesPage() {
           </div>
         )}
 
-        {/* ── Load more ── */}
+        {/* Load more */}
         {!loading && meta && offset < meta.total && (
           <div className="mt-8 flex justify-center">
             <button
@@ -524,7 +515,7 @@ export default function BadgesPage() {
           </div>
         )}
 
-        {/* ── Empty state ── */}
+        {/* Empty state */}
         {!loading && filtered.length === 0 && !error && (
           <div className="py-20 text-center text-zinc-500">
             No badge editions found for this filter combination.
