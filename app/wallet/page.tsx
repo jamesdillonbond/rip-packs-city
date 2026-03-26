@@ -560,6 +560,10 @@ export default function WalletPage() {
               Wallet intelligence for digital collectibles
             </p>
           </div>
+          <div className="ml-auto flex gap-2">
+            <a href="/packs" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Packs</a>
+            <a href="/badges" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Badges</a>
+          </div>
         </div>
 
         <div className="mb-5 grid gap-3 md:grid-cols-[minmax(260px,420px)_auto]">

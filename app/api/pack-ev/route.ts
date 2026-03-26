@@ -9,6 +9,28 @@ const GRAPHQL_HEADERS = {
   "Referer": "https://nbatopshot.com/",
 }
 
+// ─── Cache ───────────────────────────────────────────────────────────────────
+
+type CachedPackData = {
+  grossEV: number
+  topPulls: EditionEV[]
+  serialPremiumAlerts: string[]
+  tierBreakdown: Record<string, TierEVSummary>
+  supplySnapshot: {
+    totalUnopened: number
+    totalPackCount: number
+    depletionPct: number
+    remainingByTier: TierCounts
+    originalByTier: TierCounts
+    forSale: boolean
+    isSoldOut: boolean
+  }
+  editionCount: number
+}
+
+const packCache = new Map<string, { data: CachedPackData; expiresAt: number }>()
+const CACHE_TTL_MS = 5 * 60 * 1000
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function topshotFetch<T = any>(query: string, variables: Record<string, unknown>): Promise<T> {
   const res = await fetch(TOPSHOT_GRAPHQL, {
@@ -220,7 +242,7 @@ function serialPremiumLabel(node: EditionNode): string | null {
   const labels: string[] = []
   if (node.serialOne) labels.push("#1 Serial")
   if (node.lastMint) labels.push("Last Mint")
-  if (node.jerseyNumber) labels.push(`Jersey #${node.edition.play.stats.jerseyNumber} Match`)
+  if (node.jerseyNumber) labels.push("Jersey #" + node.edition.play.stats.jerseyNumber + " Match")
   return labels.length > 0 ? labels.join(" + ") : null
 }
 
@@ -240,7 +262,6 @@ async function fetchAllEditions(packListingId: string): Promise<EditionNode[]> {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const connection: any = data?.getPackListing?.data?.packEditionsV3
-
     const edges: { node: EditionNode }[] = connection?.edges ?? []
 
     for (const edge of edges) {
@@ -266,6 +287,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "packListingId is required" }, { status: 400 })
     }
 
+    // ── Check cache ─────────────────────────────────────────────────────────
+    const cached = packCache.get(packListingId)
+    if (cached && cached.expiresAt > Date.now()) {
+      const d = cached.data
+      const packEV = Math.round((d.grossEV - packPrice) * 100) / 100
+      return NextResponse.json({
+        packListingId,
+        packPrice,
+        packEV,
+        grossEV: d.grossEV,
+        isPositiveEV: packEV > 0,
+        evVerdict: packPrice === 0
+          ? "Set pack price to calculate verdict"
+          : packEV > 0
+          ? "+EV by $" + Math.abs(packEV).toFixed(2) + " — opening beats buying on marketplace"
+          : "-EV by $" + Math.abs(packEV).toFixed(2) + " — cheaper to buy moments directly",
+        topPulls: d.topPulls,
+        serialPremiumAlerts: d.serialPremiumAlerts,
+        tierBreakdown: d.tierBreakdown,
+        supplySnapshot: d.supplySnapshot,
+        editionCount: d.editionCount,
+        cached: true,
+        methodology: "EV = Σ(remaining_i / total_unopened × avg_sale_price_i × 0.95) − pack_price",
+      })
+    }
+
+    // ── Fetch fresh data ─────────────────────────────────────────────────────
     const [dynamicData, editions] = await Promise.all([
       topshotFetch(PACK_DYNAMIC_QUERY, { input: { packListingId } }),
       fetchAllEditions(packListingId),
@@ -324,6 +372,7 @@ export async function POST(req: NextRequest) {
 
     // ── Total pack EV ───────────────────────────────────────────────────────
     const totalEV = editionEVs.reduce((sum, e) => sum + e.editionEV, 0)
+    const grossEV = Math.round(totalEV * 100) / 100
     const packEV = Math.round((totalEV - packPrice) * 100) / 100
     const isPositiveEV = packEV > 0
 
@@ -335,7 +384,7 @@ export async function POST(req: NextRequest) {
     // ── Serial premium alerts ───────────────────────────────────────────────
     const serialPremiumAlerts = editionEVs
       .filter((e) => e.serialPremiumLabel !== null && e.remaining > 0)
-      .map((e) => `${e.playerName} — ${e.serialPremiumLabel} (${e.setName})`)
+      .map((e) => e.playerName + " — " + e.serialPremiumLabel + " (" + e.setName + ")")
 
     // ── Tier breakdown ──────────────────────────────────────────────────────
     const tierBreakdown: Record<string, TierEVSummary> = {}
@@ -360,30 +409,39 @@ export async function POST(req: NextRequest) {
       ? Math.round(((totalPackCount - totalUnopened) / totalPackCount) * 100)
       : 0
 
+    const supplySnapshot = {
+      totalUnopened,
+      totalPackCount,
+      depletionPct,
+      remainingByTier,
+      originalByTier,
+      forSale: listing?.forSale,
+      isSoldOut: listing?.isSoldOut,
+    }
+
+    // ── Store in cache ──────────────────────────────────────────────────────
+    packCache.set(packListingId, {
+      data: { grossEV, topPulls, serialPremiumAlerts, tierBreakdown, supplySnapshot, editionCount: editionEVs.length },
+      expiresAt: Date.now() + CACHE_TTL_MS,
+    })
+
     return NextResponse.json({
       packListingId,
       packPrice,
       packEV,
-      grossEV: Math.round(totalEV * 100) / 100,
+      grossEV,
       isPositiveEV,
-      evVerdict: isPositiveEV
-        ? `+EV by $${Math.abs(packEV).toFixed(2)} — opening beats buying on marketplace`
-        : packPrice === 0
+      evVerdict: packPrice === 0
         ? "Set pack price to calculate verdict"
-        : `-EV by $${Math.abs(packEV).toFixed(2)} — cheaper to buy moments directly`,
+        : isPositiveEV
+        ? "+EV by $" + Math.abs(packEV).toFixed(2) + " — opening beats buying on marketplace"
+        : "-EV by $" + Math.abs(packEV).toFixed(2) + " — cheaper to buy moments directly",
       topPulls,
       serialPremiumAlerts,
       tierBreakdown,
-      supplySnapshot: {
-        totalUnopened,
-        totalPackCount,
-        depletionPct,
-        remainingByTier,
-        originalByTier,
-        forSale: listing?.forSale,
-        isSoldOut: listing?.isSoldOut,
-      },
+      supplySnapshot,
       editionCount: editionEVs.length,
+      cached: false,
       methodology: "EV = Σ(remaining_i / total_unopened × avg_sale_price_i × 0.95) − pack_price",
     })
   } catch (e) {
