@@ -59,13 +59,13 @@ type ApiResponse = {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const MODES = [
-  { value: "threestar", label: "⭐ Three-Star" },
+  { value: "threestar",  label: "⭐ Three-Star" },
   { value: "rookieyear", label: "Rookie Year" },
-  { value: "debut",     label: "TS Debut" },
-  { value: "rookiemint",label: "Rookie Mint" },
-  { value: "roty",      label: "ROTY" },
-  { value: "blazers",   label: "🌹 Blazers" },
-  { value: "all",       label: "All" },
+  { value: "debut",      label: "TS Debut" },
+  { value: "rookiemint", label: "Rookie Mint" },
+  { value: "roty",       label: "ROTY" },
+  { value: "blazers",    label: "🌹 Blazers" },
+  { value: "all",        label: "All" },
 ]
 
 const PARALLELS = [
@@ -78,22 +78,22 @@ const PARALLELS = [
 ]
 
 const SORTS = [
-  { value: "badge_score",    label: "Badge Score" },
-  { value: "burn_rate_pct",  label: "Burn Rate" },
-  { value: "lock_rate_pct",  label: "Lock Rate" },
-  { value: "low_ask",        label: "Low Ask" },
-  { value: "avg_sale_price", label: "Avg Sale" },
-  { value: "player_name",    label: "Player" },
+  { value: "badge_score",       label: "Badge Score" },
+  { value: "burn_rate_pct",     label: "Burn Rate" },
+  { value: "lock_rate_pct",     label: "Lock Rate" },
+  { value: "low_ask",           label: "Low Ask" },
+  { value: "avg_sale_price",    label: "Avg Sale" },
+  { value: "player_name",       label: "Player" },
   { value: "circulation_count", label: "Circulation" },
 ]
 
 const BADGE_COLORS: Record<string, string> = {
-  "Rookie Year":       "bg-red-950 text-red-300 border border-red-800",
-  "Rookie Premiere":   "bg-orange-950 text-orange-300 border border-orange-800",
-  "Top Shot Debut":    "bg-zinc-100 text-black border border-zinc-300",
-  "Rookie of the Year":"bg-yellow-950 text-yellow-300 border border-yellow-700",
-  "Rookie Mint":       "bg-blue-950 text-blue-300 border border-blue-800",
-  "Championship Year": "bg-zinc-800 text-white border border-zinc-600",
+  "Rookie Year":        "bg-red-950 text-red-300 border border-red-800",
+  "Rookie Premiere":    "bg-orange-950 text-orange-300 border border-orange-800",
+  "Top Shot Debut":     "bg-zinc-100 text-black border border-zinc-300",
+  "Rookie of the Year": "bg-yellow-950 text-yellow-300 border border-yellow-700",
+  "Rookie Mint":        "bg-blue-950 text-blue-300 border border-blue-800",
+  "Championship Year":  "bg-zinc-800 text-white border border-zinc-600",
 }
 
 function badgeStyle(title: string) {
@@ -110,9 +110,9 @@ function formatPct(v: number | null | undefined) {
   return `${v.toFixed(1)}%`
 }
 
-function getAssetUrl(prefix: string | null, suffix = "Hero_Black_2880_2880.jpg") {
+function getAssetUrl(prefix: string | null) {
   if (!prefix) return null
-  return `${prefix}${suffix}`
+  return `${prefix}Hero_Black_2880_2880.jpg?format=webp&quality=80&width=400`
 }
 
 function parallelColor(parallelId: number) {
@@ -128,41 +128,39 @@ function parallelColor(parallelId: number) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function BadgesPage() {
-  const [editions, setEditions]     = useState<BadgeEdition[]>([])
-  const [meta, setMeta]             = useState<ApiResponse["meta"] | null>(null)
-  const [loading, setLoading]       = useState(false)
-  const [error, setError]           = useState("")
+  const [editions, setEditions]         = useState<BadgeEdition[]>([])
+  const [meta, setMeta]                 = useState<ApiResponse["meta"] | null>(null)
+  const [loading, setLoading]           = useState(false)
+  const [loadingMore, setLoadingMore]   = useState(false)
+  const [error, setError]               = useState("")
 
-  // Filters
-  const [mode, setMode]             = useState("threestar")
-  const [season, setSeason]         = useState("")
-  const [parallel, setParallel]     = useState("")
-  const [sortBy, setSortBy]         = useState("badge_score")
-  const [sortDir, setSortDir]       = useState<"asc" | "desc">("desc")
-  const [search, setSearch]         = useState("")
-  const [offset, setOffset]         = useState(0)
-  const [loadingMore, setLoadingMore] = useState(false)
+  const [mode, setMode]         = useState("threestar")
+  const [season, setSeason]     = useState("")
+  const [parallel, setParallel] = useState("")
+  const [sortBy, setSortBy]     = useState("badge_score")
+  const [sortDir, setSortDir]   = useState<"asc" | "desc">("desc")
+  const [search, setSearch]     = useState("")
+  const [offset, setOffset]     = useState(0)
 
-  // Available seasons derived from data
   const availableSeasons = useMemo(() => {
     const set = new Set<string>()
     editions.forEach(e => e.season && set.add(e.season))
-    return ["", ...Array.from(set).sort().reverse()]
+    return Array.from(set).sort().reverse()
   }, [editions])
 
   async function fetchEditions(append = false, nextOffset = 0) {
     const params = new URLSearchParams({
       mode,
-      sort: sortBy,
-      dir: sortDir,
-      limit: "48",
+      sort:   sortBy,
+      dir:    sortDir,
+      limit:  "48",
       offset: String(nextOffset),
       league: "NBA",
     })
     if (season)   params.set("season", season)
     if (parallel) params.set("parallel", parallel)
 
-    const res = await fetch(`/api/badges?${params}`)
+    const res  = await fetch(`/api/badges?${params}`)
     const json: ApiResponse = await res.json()
 
     if (!res.ok) throw new Error((json as any).error || "Failed to fetch")
@@ -183,20 +181,16 @@ export default function BadgesPage() {
 
   async function handleLoadMore() {
     setLoadingMore(true)
-    try {
-      await fetchEditions(true, offset)
-    } catch (e: any) {
-      setError(e.message)
-    } finally {
-      setLoadingMore(false)
-    }
+    try { await fetchEditions(true, offset) }
+    catch (e: any) { setError(e.message) }
+    finally { setLoadingMore(false) }
   }
 
   const filtered = useMemo(() => {
     if (!search.trim()) return editions
     const q = search.toLowerCase()
     return editions.filter(e =>
-      e.player_name.toLowerCase().includes(q) ||
+      e.player_name?.toLowerCase().includes(q) ||
       e.team?.toLowerCase().includes(q) ||
       e.set_name?.toLowerCase().includes(q) ||
       e.season?.toLowerCase().includes(q)
@@ -204,14 +198,9 @@ export default function BadgesPage() {
   }, [editions, search])
 
   const stats = useMemo(() => ({
-    total: meta?.total ?? 0,
-    threeStars: filtered.filter(e => e.is_three_star_rookie && e.has_rookie_mint).length,
-    avgBurnRate: filtered.length
-      ? filtered.reduce((s, e) => s + e.burn_rate_pct, 0) / filtered.length
-      : 0,
-    avgLockRate: filtered.length
-      ? filtered.reduce((s, e) => s + e.lock_rate_pct, 0) / filtered.length
-      : 0,
+    total:        meta?.total ?? 0,
+    avgBurnRate:  filtered.length ? filtered.reduce((s, e) => s + e.burn_rate_pct, 0) / filtered.length : 0,
+    avgLockRate:  filtered.length ? filtered.reduce((s, e) => s + e.lock_rate_pct, 0) / filtered.length : 0,
   }), [filtered, meta])
 
   return (
@@ -281,7 +270,7 @@ export default function BadgesPage() {
             className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
           >
             <option value="">All Seasons</option>
-            {availableSeasons.filter(s => s).map(s => (
+            {availableSeasons.map(s => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
@@ -370,13 +359,15 @@ export default function BadgesPage() {
                   className="group relative overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 transition hover:border-zinc-600"
                 >
                   {/* Moment image */}
-                  <div className="relative aspect-square overflow-hidden bg-black">
+                  <div className="relative aspect-square overflow-hidden bg-zinc-900">
                     {imgUrl ? (
                       <img
                         src={imgUrl}
                         alt={e.player_name}
                         className="h-full w-full object-cover transition group-hover:scale-105"
-                        onError={ev => (ev.currentTarget.style.display = "none")}
+                        onError={ev => {
+                          ev.currentTarget.style.display = "none"
+                        }}
                       />
                     ) : (
                       <div className="flex h-full items-center justify-center text-zinc-700 text-xs">
@@ -450,7 +441,7 @@ export default function BadgesPage() {
                       </div>
                     </div>
 
-                    {/* Supply bar */}
+                    {/* Supply burn bar */}
                     <div className="mt-3">
                       <div className="mb-1 flex justify-between text-[10px] text-zinc-500">
                         <span>Circ {e.effective_supply.toLocaleString()}</span>
