@@ -8,6 +8,8 @@ import {
 } from "@/lib/wallet-normalize"
 import { buildEditionSeedCandidate } from "@/lib/edition-market-seed"
 
+// ── Types ─────────────────────────────────────────────────────────────────────
+
 type MarketResult = {
   momentId: string
   fmv: number | null
@@ -50,6 +52,17 @@ type MarketResult = {
   editionMarketSource: string | null
   editionMarketSourceChain: string[]
   editionMarketTags: string[]
+}
+
+type BadgeInfo = {
+  badge_score: number
+  badge_titles: string[]
+  is_three_star_rookie: boolean
+  has_rookie_mint: boolean
+  burn_rate_pct: number
+  lock_rate_pct: number
+  low_ask: number | null
+  circulation_count: number
 }
 
 type MomentRow = {
@@ -102,6 +115,8 @@ type MomentRow = {
   editionMarketSource?: string | null
   editionMarketSourceChain?: string[]
   editionMarketTags?: string[]
+  // Badge enrichment from Supabase
+  badgeInfo?: BadgeInfo | null
 }
 
 type WalletSearchResponse = {
@@ -113,6 +128,28 @@ type WalletSearchResponse = {
   }
   error?: string
 }
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const BADGE_COLORS: Record<string, string> = {
+  "Rookie Year":        "bg-red-950 text-red-300 border border-red-800",
+  "Rookie Premiere":    "bg-orange-950 text-orange-300 border border-orange-800",
+  "Top Shot Debut":     "bg-zinc-100 text-zinc-900 border border-zinc-300",
+  "Rookie of the Year": "bg-yellow-950 text-yellow-300 border border-yellow-700",
+  "Rookie Mint":        "bg-blue-950 text-blue-300 border border-blue-800",
+  "Championship Year":  "bg-zinc-800 text-white border border-zinc-600",
+}
+
+const BADGE_PILL_TITLES = new Set([
+  "Rookie Year",
+  "Rookie Premiere",
+  "Top Shot Debut",
+  "Rookie of the Year",
+  "Rookie Mint",
+  "Championship Year",
+])
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatCurrency(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return "-"
@@ -171,6 +208,10 @@ function badgeClass(name: string) {
   return "bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
 }
 
+function supadgePillClass(title: string) {
+  return BADGE_COLORS[title] ?? "bg-zinc-800 text-zinc-300 border border-zinc-700"
+}
+
 function debugReasonLabel(reason?: string | null) {
   if (!reason) return "-"
   switch (reason) {
@@ -183,6 +224,23 @@ function debugReasonLabel(reason?: string | null) {
   }
 }
 
+// Normalize season string from wallet row (e.g. "2024-25" or "2024")
+function normalizeSeason(raw?: string | null): string {
+  if (!raw) return ""
+  // Top Shot season format from wallet: "2024-25" or series name
+  // Try to extract a 4-digit year and build "YYYY-YY"
+  const match = raw.match(/(\d{4})-(\d{2})/)
+  if (match) return `${match[1]}-${match[2]}`
+  const yearMatch = raw.match(/(\d{4})/)
+  if (yearMatch) return yearMatch[1]
+  return raw
+}
+
+// Build a lookup key from player name + season for badge matching
+function badgeLookupKey(playerName: string, season: string): string {
+  return `${playerName.toLowerCase().trim()}::${season.trim()}`
+}
+
 type SortKey =
   | "player"
   | "series"
@@ -193,6 +251,9 @@ type SortKey =
   | "fmv"
   | "bestOffer"
   | "held"
+  | "badge"
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function WalletPage() {
   const [rows, setRows] = useState<MomentRow[]>([])
@@ -204,6 +265,7 @@ export default function WalletPage() {
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
   const [offset, setOffset] = useState(0)
   const [showDebug, setShowDebug] = useState(false)
+  const [badgeFilter, setBadgeFilter] = useState(false)
 
   const [teamFilter, setTeamFilter] = useState("all")
   const [leagueFilter, setLeagueFilter] = useState("all")
@@ -214,14 +276,78 @@ export default function WalletPage() {
   const [sortKey, setSortKey] = useState<SortKey>("fmv")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
 
-  // Step 1: Flowty enrichment placeholder
-  // Top Shot GraphQL blocks server-side requests without a browser session.
-  // This is a no-op passthrough until we implement client-side Flowty enrichment.
+  // ── Badge enrichment ────────────────────────────────────────────────────────
+  // After wallet rows load, fetch badge data from Supabase for matching players
+  async function enrichWithBadges(rowsIn: MomentRow[]): Promise<MomentRow[]> {
+    if (!rowsIn.length) return rowsIn
+
+    // Collect unique player names
+    const playerNames = Array.from(new Set(
+      rowsIn.map(r => r.playerName).filter(Boolean)
+    ))
+
+    if (!playerNames.length) return rowsIn
+
+    try {
+      // Fetch badge data for all players in this wallet batch
+      // Use mode=all with no league filter to get everything, limit high
+      const params = new URLSearchParams({
+        mode: "all",
+        sort: "badge_score",
+        dir: "desc",
+        limit: "200",
+        offset: "0",
+      })
+
+      const res = await fetch(`/api/badges?${params}`)
+      if (!res.ok) return rowsIn
+
+      const json = await res.json()
+      const badgeEditions: any[] = json.editions ?? []
+
+      // Build lookup: playerName::season -> best badge info for that edition
+      // We keep only the highest badge_score entry per player+season combo
+      const badgeMap = new Map<string, BadgeInfo>()
+
+      for (const edition of badgeEditions) {
+        if (!edition.player_name || !edition.season) continue
+        const key = badgeLookupKey(edition.player_name, edition.season)
+        const existing = badgeMap.get(key)
+        if (!existing || edition.badge_score > existing.badge_score) {
+          badgeMap.set(key, {
+            badge_score: edition.badge_score,
+            badge_titles: (edition.badge_titles ?? []).filter((t: string) =>
+              BADGE_PILL_TITLES.has(t)
+            ),
+            is_three_star_rookie: edition.is_three_star_rookie,
+            has_rookie_mint: edition.has_rookie_mint,
+            burn_rate_pct: edition.burn_rate_pct,
+            lock_rate_pct: edition.lock_rate_pct,
+            low_ask: edition.low_ask,
+            circulation_count: edition.circulation_count,
+          })
+        }
+      }
+
+      // Merge badge info into wallet rows
+      return rowsIn.map(row => {
+        const season = normalizeSeason(row.series ?? "")
+        const key = badgeLookupKey(row.playerName, season)
+        const badgeInfo = badgeMap.get(key) ?? null
+        return { ...row, badgeInfo }
+      })
+    } catch {
+      // Badge enrichment is non-critical — don't break wallet on failure
+      return rowsIn
+    }
+  }
+
+  // ── Market enrichment ───────────────────────────────────────────────────────
+
   async function enrichWithMarket(rowsIn: MomentRow[]) {
     return rowsIn
   }
 
-  // Step 2: Hydrate with FMV + edition-level market data
   async function hydrateMarket(rowsIn: MomentRow[]) {
     if (!rowsIn.length) return rowsIn
 
@@ -245,9 +371,7 @@ export default function WalletPage() {
     })
 
     const json = await response.json()
-    if (!response.ok) {
-      throw new Error(json.error || "market-truth failed")
-    }
+    if (!response.ok) throw new Error(json.error || "market-truth failed")
 
     const marketRows = Array.isArray(json.rows) ? (json.rows as MarketResult[]) : []
     const marketMap = new Map<string, MarketResult>()
@@ -290,18 +414,15 @@ export default function WalletPage() {
     })
 
     const json = (await response.json()) as WalletSearchResponse
-
-    if (!response.ok) {
-      throw new Error(json.error || "Wallet search failed")
-    }
+    if (!response.ok) throw new Error(json.error || "Wallet search failed")
 
     const nextRows = Array.isArray(json.rows) ? json.rows : []
 
-    // Enrich with Flowty data first, then compute FMV
     const enriched = await enrichWithMarket(nextRows)
     const hydrated = await hydrateMarket(enriched)
+    const withBadges = await enrichWithBadges(hydrated)
 
-    setRows((prev) => (append ? [...prev, ...hydrated] : hydrated))
+    setRows((prev) => (append ? [...prev, ...withBadges] : withBadges))
     setSummary(json.summary)
     setOffset(nextOffset + nextRows.length)
   }
@@ -313,7 +434,6 @@ export default function WalletPage() {
     setSummary(undefined)
     setOffset(0)
     setExpandedRows({})
-
     try {
       await fetchWalletPage(0, false)
     } catch (err) {
@@ -326,7 +446,6 @@ export default function WalletPage() {
   async function handleLoadMore() {
     setLoadingMore(true)
     setError("")
-
     try {
       await fetchWalletPage(offset, true)
     } catch (err) {
@@ -351,7 +470,6 @@ export default function WalletPage() {
 
   async function copySeedCandidates() {
     const unique = new Map<string, ReturnType<typeof buildEditionSeedCandidate>>()
-
     for (const row of filteredRows) {
       const candidate = buildEditionSeedCandidate({
         editionKey: row.editionKey ?? null,
@@ -360,18 +478,17 @@ export default function WalletPage() {
         parallel: row.parallel ?? row.subedition ?? null,
         subedition: row.subedition ?? row.parallel ?? null,
       })
-
       const key = `${candidate.editionKey ?? "none"}::${candidate.parallel ?? "Base"}`
       if (!unique.has(key)) unique.set(key, candidate)
     }
-
     const text = JSON.stringify(Array.from(unique.values()), null, 2)
     await navigator.clipboard.writeText(text)
   }
 
+  // ── Derived state ─────────────────────────────────────────────────────────
+
   const batchEditionStats = useMemo(() => {
     const map = new Map<string, { owned: number; locked: number }>()
-
     for (const row of rows) {
       const key = buildEditionScopeKey({
         editionKey: row.editionKey,
@@ -380,13 +497,11 @@ export default function WalletPage() {
         parallel: row.parallel,
         subedition: row.subedition,
       })
-
       const current = map.get(key) ?? { owned: 0, locked: 0 }
       current.owned += 1
       if (getLocked(row)) current.locked += 1
       map.set(key, current)
     }
-
     return map
   }, [rows])
 
@@ -422,13 +537,13 @@ export default function WalletPage() {
 
     const filtered = rows.filter((r) => {
       const parallel = getParallel(r)
-
       if (teamFilter !== "all" && r.team !== teamFilter) return false
       if (leagueFilter !== "all" && r.league !== leagueFilter) return false
       if (rarityFilter !== "all" && r.tier !== rarityFilter) return false
       if (parallelFilter !== "all" && parallel !== parallelFilter) return false
       if (lockedFilter === "locked" && !getLocked(r)) return false
       if (lockedFilter === "unlocked" && getLocked(r)) return false
+      if (badgeFilter && !r.badgeInfo?.badge_score) return false
 
       if (q) {
         const haystack = [
@@ -440,11 +555,11 @@ export default function WalletPage() {
           parallel,
           r.tier ?? "",
           ...(r.officialBadges ?? []),
+          ...(r.badgeInfo?.badge_titles ?? []),
           ...getTraits(r),
         ]
           .join(" ")
           .toLowerCase()
-
         if (!haystack.includes(q)) return false
       }
 
@@ -453,99 +568,70 @@ export default function WalletPage() {
 
     filtered.sort((a, b) => {
       let result = 0
-
       switch (sortKey) {
         case "player":
-          result = compareText(a.playerName, b.playerName)
-          break
+          result = compareText(a.playerName, b.playerName); break
         case "series":
-          result = compareText(a.series, b.series)
-          break
+          result = compareText(a.series, b.series); break
         case "set":
-          result = compareText(a.setName, b.setName)
-          break
+          result = compareText(a.setName, b.setName); break
         case "parallel":
-          result = compareText(getParallel(a), getParallel(b))
-          break
+          result = compareText(getParallel(a), getParallel(b)); break
         case "rarity":
-          result = compareText(a.tier, b.tier)
-          break
+          result = compareText(a.tier, b.tier); break
         case "serial":
-          result = compareNumber(getSerial(a), getSerial(b))
-          break
+          result = compareNumber(getSerial(a), getSerial(b)); break
         case "fmv":
-          result = compareNumber(a.fmv, b.fmv)
-          break
+          result = compareNumber(a.fmv, b.fmv); break
         case "bestOffer":
-          result = compareNumber(a.bestOffer, b.bestOffer)
-          break
+          result = compareNumber(a.bestOffer, b.bestOffer); break
+        case "badge":
+          result = compareNumber(a.badgeInfo?.badge_score, b.badgeInfo?.badge_score); break
         case "held":
           result = compareNumber(
             a.editionsOwned ?? batchEditionStats.get(buildEditionScopeKey(a))?.owned,
             b.editionsOwned ?? batchEditionStats.get(buildEditionScopeKey(b))?.owned
-          )
-          break
+          ); break
       }
-
       return sortDirection === "asc" ? result : -result
     })
 
     return filtered
   }, [
-    rows,
-    searchWithin,
-    teamFilter,
-    leagueFilter,
-    rarityFilter,
-    parallelFilter,
-    lockedFilter,
-    sortKey,
-    sortDirection,
-    batchEditionStats,
+    rows, searchWithin, teamFilter, leagueFilter, rarityFilter,
+    parallelFilter, lockedFilter, badgeFilter, sortKey, sortDirection, batchEditionStats,
   ])
 
   const totals = useMemo(() => {
-    let totalFmv = 0
-    let totalBestOffer = 0
-    let lockedFmv = 0
-    let unlockedFmv = 0
-    let lockedCount = 0
-    let unlockedCount = 0
+    let totalFmv = 0, totalBestOffer = 0, lockedFmv = 0, unlockedFmv = 0
+    let lockedCount = 0, unlockedCount = 0, badgeCount = 0
 
     for (const row of filteredRows) {
       const fmv = row.fmv ?? null
       const offer = row.bestOffer ?? null
       const locked = getLocked(row)
-
       if (typeof fmv === "number") totalFmv += fmv
       if (typeof offer === "number") totalBestOffer += offer
-
       const value = fmv ?? offer ?? getBestAsk(row) ?? 0
-
-      if (locked) {
-        lockedFmv += value
-        lockedCount += 1
-      } else {
-        unlockedFmv += value
-        unlockedCount += 1
-      }
+      if (locked) { lockedFmv += value; lockedCount++ }
+      else { unlockedFmv += value; unlockedCount++ }
+      if (row.badgeInfo?.badge_score) badgeCount++
     }
 
     return {
-      totalFmv,
-      totalBestOffer,
-      lockedFmv,
-      unlockedFmv,
-      totalCount: filteredRows.length,
-      lockedCount,
-      unlockedCount,
-      spreadGap: totalFmv - totalBestOffer,
+      totalFmv, totalBestOffer, lockedFmv, unlockedFmv,
+      totalCount: filteredRows.length, lockedCount, unlockedCount,
+      spreadGap: totalFmv - totalBestOffer, badgeCount,
     }
   }, [filteredRows])
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-black text-zinc-100">
       <div className="mx-auto max-w-[1600px] px-3 py-4 md:px-6">
+
+        {/* Header */}
         <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-4">
           <img
             src="/rip-packs-city-logo.png"
@@ -566,6 +652,7 @@ export default function WalletPage() {
           </div>
         </div>
 
+        {/* Search + stat cards */}
         <div className="mb-5 grid gap-3 md:grid-cols-[minmax(260px,420px)_auto]">
           <div className="flex gap-2">
             <input
@@ -617,12 +704,24 @@ export default function WalletPage() {
             <div className="text-[11px] uppercase tracking-wide text-zinc-500">Locked Count</div>
             <div className="text-lg font-bold text-white">{totals.lockedCount}</div>
           </div>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-            <div className="text-[11px] uppercase tracking-wide text-zinc-500">Unlocked Count</div>
-            <div className="text-lg font-bold text-white">{totals.unlockedCount}</div>
+          <div
+            className={`cursor-pointer rounded-xl border p-3 transition ${
+              badgeFilter
+                ? "border-red-600 bg-red-950/30"
+                : "border-zinc-800 bg-zinc-950 hover:border-zinc-600"
+            }`}
+            onClick={() => setBadgeFilter(f => !f)}
+            title="Click to filter to badge-carrying moments only"
+          >
+            <div className="text-[11px] uppercase tracking-wide text-zinc-500">Badge Moments</div>
+            <div className="text-lg font-bold text-white">{totals.badgeCount}</div>
+            {badgeFilter && (
+              <div className="mt-0.5 text-[10px] text-red-400">Filtered ✕</div>
+            )}
           </div>
         </div>
 
+        {/* Filters */}
         <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
           <select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white">
             {availableTeams.map((team) => (
@@ -657,16 +756,18 @@ export default function WalletPage() {
           />
         </div>
 
+        {/* Sort buttons */}
         <div className="mb-4 flex flex-wrap gap-2">
-          <button onClick={() => toggleSort("player")} className="rounded-lg border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-900">Player</button>
-          <button onClick={() => toggleSort("series")} className="rounded-lg border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-900">Series</button>
-          <button onClick={() => toggleSort("set")} className="rounded-lg border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-900">Set</button>
-          <button onClick={() => toggleSort("parallel")} className="rounded-lg border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-900">Parallel</button>
-          <button onClick={() => toggleSort("rarity")} className="rounded-lg border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-900">Rarity</button>
-          <button onClick={() => toggleSort("serial")} className="rounded-lg border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-900">Serial</button>
-          <button onClick={() => toggleSort("held")} className="rounded-lg border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-900">Held</button>
-          <button onClick={() => toggleSort("fmv")} className="rounded-lg border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-900">FMV</button>
-          <button onClick={() => toggleSort("bestOffer")} className="rounded-lg border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-900">Best Offer</button>
+          <button onClick={() => toggleSort("player")} className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === "player" ? "border-red-600 text-white" : "border-zinc-700"}`}>Player</button>
+          <button onClick={() => toggleSort("series")} className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === "series" ? "border-red-600 text-white" : "border-zinc-700"}`}>Series</button>
+          <button onClick={() => toggleSort("set")} className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === "set" ? "border-red-600 text-white" : "border-zinc-700"}`}>Set</button>
+          <button onClick={() => toggleSort("parallel")} className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === "parallel" ? "border-red-600 text-white" : "border-zinc-700"}`}>Parallel</button>
+          <button onClick={() => toggleSort("rarity")} className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === "rarity" ? "border-red-600 text-white" : "border-zinc-700"}`}>Rarity</button>
+          <button onClick={() => toggleSort("serial")} className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === "serial" ? "border-red-600 text-white" : "border-zinc-700"}`}>Serial</button>
+          <button onClick={() => toggleSort("held")} className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === "held" ? "border-red-600 text-white" : "border-zinc-700"}`}>Held</button>
+          <button onClick={() => toggleSort("fmv")} className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === "fmv" ? "border-red-600 text-white" : "border-zinc-700"}`}>FMV</button>
+          <button onClick={() => toggleSort("bestOffer")} className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === "bestOffer" ? "border-red-600 text-white" : "border-zinc-700"}`}>Best Offer</button>
+          <button onClick={() => toggleSort("badge")} className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === "badge" ? "border-red-600 text-white" : "border-zinc-700"}`}>Badge Score</button>
           <button
             onClick={() => setShowDebug((prev) => !prev)}
             className="rounded-lg border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-900"
@@ -687,6 +788,7 @@ export default function WalletPage() {
           </div>
         ) : null}
 
+        {/* Debug table */}
         {showDebug ? (
           <div className="mb-4 overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950">
             <table className="w-full min-w-[1900px] border-collapse text-xs">
@@ -698,6 +800,8 @@ export default function WalletPage() {
                   <th className="p-2">Scope Key</th>
                   <th className="p-2">Held</th>
                   <th className="p-2">Locked</th>
+                  <th className="p-2">Badge Score</th>
+                  <th className="p-2">Badges</th>
                   <th className="p-2">TS Ask</th>
                   <th className="p-2">Flowty Ask</th>
                   <th className="p-2">Best Market</th>
@@ -706,14 +810,9 @@ export default function WalletPage() {
                   <th className="p-2">Edition Low Ask</th>
                   <th className="p-2">Edition Offer</th>
                   <th className="p-2">Last Sale</th>
-                  <th className="p-2">Ask Count</th>
-                  <th className="p-2">Offer Count</th>
-                  <th className="p-2">Sale Count</th>
-                  <th className="p-2">Edition Source</th>
                   <th className="p-2">FMV</th>
                   <th className="p-2">FMV Method</th>
                   <th className="p-2">Confidence</th>
-                  <th className="p-2">Market Source</th>
                   <th className="p-2">Reason</th>
                 </tr>
               </thead>
@@ -726,12 +825,10 @@ export default function WalletPage() {
                     parallel: row.parallel,
                     subedition: row.subedition,
                   })
-
                   const counts = {
                     owned: row.editionsOwned ?? batchEditionStats.get(scopeKey)?.owned ?? 0,
                     locked: row.editionsLocked ?? batchEditionStats.get(scopeKey)?.locked ?? 0,
                   }
-
                   return (
                     <tr key={`debug-${row.momentId}`} className="border-b border-zinc-800">
                       <td className="p-2">{row.playerName}</td>
@@ -740,6 +837,8 @@ export default function WalletPage() {
                       <td className="p-2">{scopeKey}</td>
                       <td className="p-2">{counts.owned}</td>
                       <td className="p-2">{counts.locked}</td>
+                      <td className="p-2">{row.badgeInfo?.badge_score ?? "-"}</td>
+                      <td className="p-2">{row.badgeInfo?.badge_titles?.join(", ") ?? "-"}</td>
                       <td className="p-2">{formatCurrency(row.topshotAsk)}</td>
                       <td className="p-2">{formatCurrency(row.flowtyAsk)}</td>
                       <td className="p-2">{row.bestMarket ?? "-"}</td>
@@ -748,14 +847,9 @@ export default function WalletPage() {
                       <td className="p-2">{formatCurrency(row.editionLowAsk)}</td>
                       <td className="p-2">{formatCurrency(row.editionBestOffer)}</td>
                       <td className="p-2">{formatCurrency(row.editionLastSale)}</td>
-                      <td className="p-2">{row.editionAskCount ?? 0}</td>
-                      <td className="p-2">{row.editionOfferCount ?? 0}</td>
-                      <td className="p-2">{row.editionSaleCount ?? 0}</td>
-                      <td className="p-2">{row.editionMarketSource ?? "-"}</td>
                       <td className="p-2">{formatCurrency(row.fmv)}</td>
                       <td className="p-2">{row.fmvMethod ?? "-"}</td>
                       <td className="p-2">{row.marketConfidence ?? "-"}</td>
-                      <td className="p-2">{row.marketSource ?? "-"}</td>
                       <td className="p-2">{debugReasonLabel(row.marketDebugReason)}</td>
                     </tr>
                   )
@@ -765,6 +859,7 @@ export default function WalletPage() {
           </div>
         ) : null}
 
+        {/* Main table */}
         <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950">
           <table className="w-full min-w-[1200px] border-collapse text-sm">
             <thead className="bg-zinc-900">
@@ -799,6 +894,8 @@ export default function WalletPage() {
 
                 const expanded = !!expandedRows[row.momentId]
                 const primaryBadge = getPrimarySerialBadge(row)
+                const supaBadges = (row.badgeInfo?.badge_titles ?? []).filter(t => BADGE_PILL_TITLES.has(t))
+                const officialBadges = row.officialBadges ?? []
 
                 return (
                   <Fragment key={row.momentId}>
@@ -817,14 +914,30 @@ export default function WalletPage() {
                           <div>
                             <div className="font-semibold text-white">{row.playerName}</div>
                             <div className="mt-1 flex flex-wrap gap-1">
-                              {(row.officialBadges ?? []).map((badge) => (
+                              {/* Official badges from Flow blockchain */}
+                              {officialBadges.map((badge) => (
                                 <span
-                                  key={badge}
+                                  key={`official-${badge}`}
                                   className={`rounded px-2 py-0.5 text-[10px] font-semibold ${badgeClass(badge)}`}
                                 >
                                   {badge}
                                 </span>
                               ))}
+                              {/* Supabase badge enrichment */}
+                              {supaBadges.map((title) => (
+                                <span
+                                  key={`supa-${title}`}
+                                  className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${supadgePillClass(title)}`}
+                                >
+                                  {title}
+                                </span>
+                              ))}
+                              {/* Three-star super-badge */}
+                              {row.badgeInfo?.is_three_star_rookie && row.badgeInfo?.has_rookie_mint && (
+                                <span className="rounded bg-yellow-950 px-1.5 py-0.5 text-[10px] font-bold text-yellow-300 border border-yellow-700">
+                                  ⭐ 3-Star
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -854,14 +967,8 @@ export default function WalletPage() {
                       </td>
 
                       <td className="p-3">{editionCounts.owned} / {editionCounts.locked}</td>
-
-                      <td className="p-3 font-semibold text-white">
-                        {formatCurrency(row.fmv)}
-                      </td>
-
-                      <td className="p-3">
-                        {formatCurrency(row.bestOffer)}
-                      </td>
+                      <td className="p-3 font-semibold text-white">{formatCurrency(row.fmv)}</td>
+                      <td className="p-3">{formatCurrency(row.bestOffer)}</td>
 
                       <td className="p-3">
                         <button
@@ -878,9 +985,7 @@ export default function WalletPage() {
                         <td colSpan={10} className="p-4">
                           <div className="grid gap-4 md:grid-cols-4">
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                                Market
-                              </div>
+                              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Market</div>
                               <div className="space-y-1 text-sm">
                                 <div>Top Shot Ask: {formatCurrency(row.topshotAsk)}</div>
                                 <div>Flowty Ask: {formatCurrency(row.flowtyAsk)}</div>
@@ -894,9 +999,7 @@ export default function WalletPage() {
                             </div>
 
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                                Links
-                              </div>
+                              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Links</div>
                               <div className="space-y-2 text-sm">
                                 <a
                                   href={`https://nbatopshot.com/moment/${row.momentId}`}
@@ -929,9 +1032,7 @@ export default function WalletPage() {
                             </div>
 
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                                Metadata
-                              </div>
+                              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Metadata</div>
                               <div className="space-y-1 text-sm">
                                 <div>Team: {row.team ?? "-"}</div>
                                 <div>League: {row.league ?? "-"}</div>
@@ -939,10 +1040,7 @@ export default function WalletPage() {
                                 <div>Locked: {getLocked(row) ? "Yes" : "No"}</div>
                                 <div className="flex flex-wrap gap-1 pt-1">
                                   {getTraits(row).map((trait) => (
-                                    <span
-                                      key={trait}
-                                      className="rounded bg-red-950 px-2 py-0.5 text-[10px] text-red-300"
-                                    >
+                                    <span key={trait} className="rounded bg-red-950 px-2 py-0.5 text-[10px] text-red-300">
                                       {trait}
                                     </span>
                                   ))}
@@ -950,19 +1048,47 @@ export default function WalletPage() {
                               </div>
                             </div>
 
-                            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                                Debug
+                            {/* Badge panel — only shown if badge data exists */}
+                            {row.badgeInfo?.badge_score ? (
+                              <div className="rounded-xl border border-zinc-700 bg-zinc-950 p-3">
+                                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Badges</div>
+                                <div className="space-y-1 text-sm">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-zinc-400">Score</span>
+                                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-red-600 text-[11px] font-black text-white">
+                                      {row.badgeInfo.badge_score}
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1 pt-1">
+                                    {(row.badgeInfo.badge_titles ?? []).filter(t => BADGE_PILL_TITLES.has(t)).map(title => (
+                                      <span key={title} className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${supadgePillClass(title)}`}>
+                                        {title}
+                                      </span>
+                                    ))}
+                                  </div>
+                                  <div className="pt-1 text-xs text-zinc-500">
+                                    <div>Burn rate: {row.badgeInfo.burn_rate_pct.toFixed(1)}%</div>
+                                    <div>Lock rate: {row.badgeInfo.lock_rate_pct.toFixed(1)}%</div>
+                                    <div>Circ: {row.badgeInfo.circulation_count.toLocaleString()}</div>
+                                    {row.badgeInfo.low_ask != null && (
+                                      <div>Edition ask: {formatCurrency(row.badgeInfo.low_ask)}</div>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
-                              <div className="space-y-1 text-sm">
-                                <div>Edition Key: {row.editionKey ?? "-"}</div>
-                                <div>Scope Key: {scopeKey}</div>
-                                <div>Valuation: {row.valuationScope ?? "-"}</div>
-                                <div>Market Source: {row.marketSource ?? "-"}</div>
-                                <div>Reason: {debugReasonLabel(row.marketDebugReason)}</div>
-                                <div>Edition Source: {row.editionMarketSource ?? "-"}</div>
+                            ) : (
+                              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Debug</div>
+                                <div className="space-y-1 text-sm">
+                                  <div>Edition Key: {row.editionKey ?? "-"}</div>
+                                  <div>Scope Key: {scopeKey}</div>
+                                  <div>Valuation: {row.valuationScope ?? "-"}</div>
+                                  <div>Market Source: {row.marketSource ?? "-"}</div>
+                                  <div>Reason: {debugReasonLabel(row.marketDebugReason)}</div>
+                                  <div>Edition Source: {row.editionMarketSource ?? "-"}</div>
+                                </div>
                               </div>
-                            </div>
+                            )}
                           </div>
                         </td>
                       </tr>
