@@ -110,7 +110,16 @@ function formatPct(v: number | null | undefined) {
   return `${v.toFixed(1)}%`
 }
 
-function getVideoUrl(prefix: string | null) {
+function getImageUrl(prefix: string | null): string | null {
+  if (!prefix) return null
+  const resizePrefix = prefix.replace(
+    "https://assets.nbatopshot.com/editions/",
+    "https://assets.nbatopshot.com/resize/editions/"
+  )
+  return `${resizePrefix}Hero_2880_2880_Transparent.png?format=webp&quality=80&width=300`
+}
+
+function getVideoUrl(prefix: string | null): string | null {
   if (!prefix) return null
   return `${prefix}Animated_1080_1080_Black.mp4`
 }
@@ -125,7 +134,49 @@ function parallelColor(parallelId: number) {
   }
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// ── Moment media component — static image, plays video on hover ───────────────
+
+function MomentMedia({ prefix, playerName }: { prefix: string | null; playerName: string }) {
+  const [hovered, setHovered]   = useState(false)
+  const [imgFailed, setImgFailed] = useState(false)
+  const imgUrl   = getImageUrl(prefix)
+  const videoUrl = getVideoUrl(prefix)
+  const showVideo = hovered || imgFailed
+
+  return (
+    <div
+      className="relative h-full w-full"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {imgUrl && !imgFailed && !hovered && (
+        <img
+          src={imgUrl}
+          alt={playerName}
+          className="h-full w-full object-cover"
+          onError={() => setImgFailed(true)}
+        />
+      )}
+      {videoUrl && showVideo && (
+        <video
+          src={videoUrl}
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="h-full w-full object-cover"
+        />
+      )}
+      {!imgUrl && !videoUrl && (
+        <div className="flex h-full items-center justify-center text-zinc-700 text-xs">
+          No media
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function BadgesPage() {
   const [editions, setEditions]       = useState<BadgeEdition[]>([])
@@ -345,7 +396,6 @@ export default function BadgesPage() {
         {!loading && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filtered.map(e => {
-              const videoUrl = getVideoUrl(e.asset_path_prefix)
               const visibleBadges = [
                 ...e.play_tags.filter(t =>
                   ["Rookie Year", "Rookie Premiere", "Top Shot Debut", "Rookie of the Year", "Championship Year"].includes(t.title)
@@ -358,25 +408,12 @@ export default function BadgesPage() {
                   key={e.id}
                   className="group relative overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 transition hover:border-zinc-600"
                 >
-                  {/* Moment video */}
+                  {/* Moment media */}
                   <div className="relative aspect-square overflow-hidden bg-zinc-900">
-                    {videoUrl ? (
-                      <video
-                        src={videoUrl}
-                        autoPlay
-                        loop
-                        muted
-                        playsInline
-                        className="h-full w-full object-cover transition group-hover:scale-105"
-                        onError={ev => {
-                          ev.currentTarget.style.display = "none"
-                        }}
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-zinc-700 text-xs">
-                        No media
-                      </div>
-                    )}
+                    <MomentMedia
+                      prefix={e.asset_path_prefix}
+                      playerName={e.player_name}
+                    />
 
                     {/* Parallel badge top-right */}
                     {e.parallel_id !== 0 && (
@@ -392,7 +429,7 @@ export default function BadgesPage() {
                       </div>
                     )}
 
-                    {/* Three-star indicator */}
+                    {/* Three-star indicator bottom-left */}
                     {e.is_three_star_rookie && e.has_rookie_mint && (
                       <div className="absolute bottom-2 left-2 rounded-full bg-black/80 px-2 py-0.5 text-[10px] font-bold text-yellow-400">
                         ⭐ 3-Star
