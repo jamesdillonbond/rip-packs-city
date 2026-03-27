@@ -62,6 +62,8 @@ async function loadEditionKeysFromSupabase(): Promise<string[]> {
       .from("editions")
       .select("external_id")
       .not("external_id", "is", null)
+      .filter("external_id", "ilike", "%:%")
+      .not("external_id", "ilike", "%-%")
       .limit(MAX_EDITIONS)
 
     if (error || !data) {
