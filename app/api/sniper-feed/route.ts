@@ -72,6 +72,7 @@ interface RawTransaction {
     tier?: string;
     parallelID?: number;
     assetPathPrefix?: string;
+    isLocked?: boolean;
     set?: { id: string; flowName?: string; flowSeriesNumber?: number };
     setPlay?: {
       ID?: string;
@@ -88,16 +89,38 @@ interface RawTransaction {
 }
 
 export interface SniperDeal {
-  flowId: string; momentId: string; playerName: string; teamName: string;
-  setName: string; seriesName: string; tier: string; parallel: string;
-  serial: number; circulationCount: number; askPrice: number;
-  baseFmv: number; adjustedFmv: number; discount: number; confidence: string;
-  hasBadge: boolean; badgeSlugs: string[]; badgeLabels: string[];
-  badgePremiumPct: number; serialMult: number; isSpecialSerial: boolean;
-  isJersey: boolean; serialSignal: string | null;
+  flowId: string;
+  momentId: string;
+  editionKey: string;           // "setUUID:playUUID" — used for owned matching
+  playerName: string;
+  teamName: string;
+  setName: string;
+  seriesName: string;
+  tier: string;
+  parallel: string;
+  serial: number;
+  circulationCount: number;
+  askPrice: number;
+  baseFmv: number;
+  adjustedFmv: number;
+  discount: number;
+  confidence: string;
+  hasBadge: boolean;
+  badgeSlugs: string[];
+  badgeLabels: string[];
+  badgePremiumPct: number;
+  serialMult: number;
+  isSpecialSerial: boolean;
+  isJersey: boolean;
+  serialSignal: string | null;
   thumbnailUrl: string | null;
-  packListingId: string | null; packName: string | null;
-  packEv: number | null; packEvRatio: number | null; buyUrl: string;
+  isLocked: boolean;            // from moment.isLocked
+  updatedAt: string | null;     // ISO timestamp of listing activity
+  packListingId: string | null;
+  packName: string | null;
+  packEv: number | null;
+  packEvRatio: number | null;
+  buyUrl: string;
 }
 
 const SEARCH_TX_QUERY = `
@@ -121,6 +144,7 @@ const SEARCH_TX_QUERY = `
                     tier
                     parallelID
                     assetPathPrefix
+                    isLocked
                     set { id flowName flowSeriesNumber }
                     setPlay {
                       ID
@@ -236,8 +260,6 @@ function computeEditionFloors(
   return floors;
 }
 
-// ─── Supabase FMV lookup ──────────────────────────────────────────────────────
-// Joins via editions.external_id ("setUUID:playUUID") → fmv_snapshots.edition_id
 interface FmvRow {
   edition_key: string;
   fmv: number;
@@ -339,6 +361,8 @@ export async function GET(req: Request) {
   const supabaseFmv = await fetchSupabaseFmv(supabase, editionKeys);
   console.log(`[sniper-feed] Supabase hits: ${supabaseFmv.size}/${editionKeys.length}`);
 
+  const now = Date.now();
+
   const enriched: SniperDeal[] = txns.map((tx): SniperDeal | null => {
     if (!tx.moment) return null;
     const askPrice = parsePrice(tx.price);
@@ -359,8 +383,6 @@ export async function GET(req: Request) {
     let packName: string | null = null;
 
     if (sbRow) {
-      // Cap Supabase historical FMV at the live batch floor to prevent stale-data
-      // false positives (e.g. $3 historical FMV vs $0.01 current market = fake -99%)
       baseFmv = floorData.count >= 2
         ? Math.min(sbRow.fmv, floorData.floor)
         : sbRow.fmv;
@@ -393,9 +415,15 @@ export async function GET(req: Request) {
     const teamName = NBA_TEAMS[teamId] ?? teamId;
     const thumbnailUrl = buildThumbnailUrl(m.assetPathPrefix, m.flowId, m.setPlay?.ID);
 
+    // Stale detection: if updatedAt is more than 10 minutes old, listing may be inactive
+    const updatedAt = tx.updatedAt ?? null;
+    const listingAgeMs = updatedAt ? now - new Date(updatedAt).getTime() : 0;
+    const isStale = listingAgeMs > 10 * 60 * 1000; // 10 minutes
+
     return {
       flowId: m.flowId,
       momentId: m.id,
+      editionKey,
       playerName: m.play?.stats?.playerName ?? "Unknown",
       teamName,
       setName: m.set?.flowName ?? "",
@@ -423,12 +451,15 @@ export async function GET(req: Request) {
         : isSpecialSerial ? `Low #${serial}`
         : null,
       thumbnailUrl,
+      isLocked: m.isLocked ?? false,
+      updatedAt,
+      isStale,
       packListingId,
       packName,
       packEv: null,
       packEvRatio: null,
       buyUrl: `https://nbatopshot.com/moment/${m.flowId}`,
-    };
+    } as SniperDeal & { isStale: boolean };
   }).filter((m): m is SniperDeal => m !== null);
 
   const deals = enriched

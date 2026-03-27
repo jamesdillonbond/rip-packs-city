@@ -3,19 +3,55 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 
 interface SniperDeal {
-  flowId: string; momentId: string; playerName: string; teamName: string;
-  setName: string; seriesName: string; tier: string; parallel: string;
-  serial: number; circulationCount: number; askPrice: number;
-  baseFmv: number; adjustedFmv: number; discount: number; confidence: string;
-  hasBadge: boolean; badgeSlugs: string[]; badgeLabels: string[];
-  badgePremiumPct: number; serialMult: number; isSpecialSerial: boolean;
-  isJersey: boolean; serialSignal: string | null;
+  flowId: string;
+  momentId: string;
+  editionKey: string;
+  playerName: string;
+  teamName: string;
+  setName: string;
+  seriesName: string;
+  tier: string;
+  parallel: string;
+  serial: number;
+  circulationCount: number;
+  askPrice: number;
+  baseFmv: number;
+  adjustedFmv: number;
+  discount: number;
+  confidence: string;
+  hasBadge: boolean;
+  badgeSlugs: string[];
+  badgeLabels: string[];
+  badgePremiumPct: number;
+  serialMult: number;
+  isSpecialSerial: boolean;
+  isJersey: boolean;
+  serialSignal: string | null;
   thumbnailUrl: string | null;
-  packListingId: string | null; packName: string | null;
-  packEv: number | null; packEvRatio: number | null; buyUrl: string;
+  isLocked: boolean;
+  updatedAt: string | null;
+  isStale: boolean;
+  packListingId: string | null;
+  packName: string | null;
+  packEv: number | null;
+  packEvRatio: number | null;
+  buyUrl: string;
 }
 
-interface FeedResponse { count: number; lastRefreshed: string; deals: SniperDeal[]; }
+interface FeedResponse {
+  count: number;
+  lastRefreshed: string;
+  deals: SniperDeal[];
+}
+
+// Wallet search response shape (subset we need)
+interface WalletMoment {
+  setId?: string;
+  playId?: string;
+  isLocked?: boolean;
+  parallelId?: number;
+  editionKey?: string;
+}
 
 const TIER_COLOR: Record<string, string> = {
   COMMON: "text-zinc-400", RARE: "text-blue-400",
@@ -47,6 +83,15 @@ function fmt(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function listingAge(updatedAt: string | null): string {
+  if (!updatedAt) return "";
+  const ms = Date.now() - new Date(updatedAt).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  return `${Math.floor(mins / 60)}h ago`;
+}
+
 export default function SniperPage() {
   const [deals, setDeals] = useState<SniperDeal[]>([]);
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
@@ -56,6 +101,14 @@ export default function SniperPage() {
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
+  // Wallet state
+  const [walletInput, setWalletInput] = useState("");
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [walletError, setWalletError] = useState<string | null>(null);
+  const [loadedWallet, setLoadedWallet] = useState<string | null>(null);
+  // editionKey set for owned moments, value = true if locked
+  const [ownedEditions, setOwnedEditions] = useState<Map<string, boolean>>(new Map());
+
   // Filters
   const [minDiscount, setMinDiscount] = useState(10);
   const [rarity, setRarity] = useState("all");
@@ -63,6 +116,8 @@ export default function SniperPage() {
   const [serialFilter, setSerialFilter] = useState("all");
   const [maxPrice, setMaxPrice] = useState(0);
   const [searchText, setSearchText] = useState("");
+  const [ownedFilter, setOwnedFilter] = useState("all"); // all | owned | not_owned
+  const [hideInactive, setHideInactive] = useState(false);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -79,7 +134,6 @@ export default function SniperPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: FeedResponse = await res.json();
 
-      // Detect new deals for flash animation
       const incoming = new Set(data.deals.map(d => d.momentId));
       const isNew = new Set<string>();
       for (const id of incoming) {
@@ -115,11 +169,56 @@ export default function SniperPage() {
     };
   }, [autoRefresh, fetchDeals]);
 
+  // Load wallet owned moments
+  const loadWallet = useCallback(async () => {
+    const w = walletInput.trim();
+    if (!w) return;
+    setWalletLoading(true);
+    setWalletError(null);
+    try {
+      const res = await fetch("/api/wallet-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet: w }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      // Build editionKey → isLocked map from wallet moments
+      // wallet-search returns moments with setId, playId, isLocked fields
+      const map = new Map<string, boolean>();
+      const moments: WalletMoment[] = data.moments ?? data ?? [];
+      for (const m of moments) {
+        const key = m.editionKey ?? (m.setId && m.playId ? `${m.setId}:${m.playId}` : null);
+        if (key) map.set(key, m.isLocked ?? false);
+      }
+      setOwnedEditions(map);
+      setLoadedWallet(w);
+    } catch (err) {
+      setWalletError(err instanceof Error ? err.message : "Failed to load wallet");
+    } finally {
+      setWalletLoading(false);
+    }
+  }, [walletInput]);
+
+  const clearWallet = () => {
+    setOwnedEditions(new Map());
+    setLoadedWallet(null);
+    setWalletInput("");
+    setOwnedFilter("all");
+  };
+
+  // Client-side filtering
   const visible = deals.filter(d => {
+    if (hideInactive && d.isStale) return false;
+    if (ownedFilter === "owned" && !ownedEditions.has(d.editionKey)) return false;
+    if (ownedFilter === "not_owned" && ownedEditions.has(d.editionKey)) return false;
     if (!searchText) return true;
     const q = searchText.toLowerCase();
-    return d.playerName.toLowerCase().includes(q) || d.setName.toLowerCase().includes(q)
-      || d.teamName.toLowerCase().includes(q) || d.parallel.toLowerCase().includes(q);
+    return d.playerName.toLowerCase().includes(q)
+      || d.setName.toLowerCase().includes(q)
+      || d.teamName.toLowerCase().includes(q)
+      || d.parallel.toLowerCase().includes(q);
   });
 
   const stats = {
@@ -191,7 +290,7 @@ export default function SniperPage() {
         {/* Filters */}
         <div className="mb-5 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
           <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">Filters</div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 mb-3">
             <div>
               <label className="mb-1 block text-[11px] uppercase tracking-wide text-zinc-500">Min Discount %</label>
               <select value={minDiscount} onChange={e => setMinDiscount(Number(e.target.value))}
@@ -205,7 +304,8 @@ export default function SniperPage() {
               <select value={rarity} onChange={e => setRarity(e.target.value)}
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white">
                 <option value="all">All Rarities</option><option value="common">Common</option>
-                <option value="rare">Rare</option><option value="legendary">Legendary</option><option value="ultimate">Ultimate</option>
+                <option value="rare">Rare</option><option value="legendary">Legendary</option>
+                <option value="ultimate">Ultimate</option>
               </select>
             </div>
             <div>
@@ -234,11 +334,62 @@ export default function SniperPage() {
               </button>
             </div>
             <div>
+              <label className="mb-1 block text-[11px] uppercase tracking-wide text-zinc-500">
+                Ownership {loadedWallet && <span className="text-zinc-600 normal-case font-normal">({ownedEditions.size} editions)</span>}
+              </label>
+              <select value={ownedFilter} onChange={e => setOwnedFilter(e.target.value)}
+                disabled={!loadedWallet}
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white disabled:opacity-40">
+                <option value="all">All</option>
+                <option value="owned">Owned Only</option>
+                <option value="not_owned">Not Owned</option>
+              </select>
+            </div>
+            <div className="flex flex-col justify-between">
+              <label className="mb-1 block text-[11px] uppercase tracking-wide text-zinc-500">Inactive Listings</label>
+              <button onClick={() => setHideInactive(v => !v)}
+                className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${hideInactive ? "border-red-700 bg-red-950/40 text-red-400" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900"}`}>
+                {hideInactive ? "Hiding Stale" : "Show All"}
+              </button>
+            </div>
+            <div>
               <label className="mb-1 block text-[11px] uppercase tracking-wide text-zinc-500">Search</label>
               <input value={searchText} onChange={e => setSearchText(e.target.value)}
                 placeholder="Player, set, team…"
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-red-600" />
             </div>
+          </div>
+
+          {/* Wallet section */}
+          <div className="border-t border-zinc-800 pt-3">
+            <label className="mb-1.5 block text-[11px] uppercase tracking-wide text-zinc-500">
+              Wallet — load to see owned/locked status
+            </label>
+            {loadedWallet ? (
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-green-400">✓ {loadedWallet}</span>
+                <span className="text-xs text-zinc-600">{ownedEditions.size} editions tracked</span>
+                <button onClick={clearWallet}
+                  className="rounded-lg border border-zinc-700 px-3 py-1 text-xs text-zinc-400 hover:bg-zinc-900">
+                  Clear
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  value={walletInput}
+                  onChange={e => setWalletInput(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && loadWallet()}
+                  placeholder="Top Shot username or wallet address"
+                  className="flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-red-600 max-w-sm"
+                />
+                <button onClick={loadWallet} disabled={walletLoading || !walletInput.trim()}
+                  className="rounded-lg bg-zinc-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-600 disabled:opacity-50">
+                  {walletLoading ? "Loading…" : "Load"}
+                </button>
+              </div>
+            )}
+            {walletError && <p className="mt-1 text-xs text-red-400">{walletError}</p>}
           </div>
         </div>
 
@@ -250,11 +401,11 @@ export default function SniperPage() {
 
         {/* Table */}
         <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950">
-          <table className="w-full min-w-[1100px] border-collapse text-sm">
+          <table className="w-full min-w-[1200px] border-collapse text-sm">
             <thead className="bg-zinc-900">
               <tr className="border-b border-zinc-800 text-left text-[11px] uppercase tracking-wide text-zinc-500">
                 <th className="p-3 w-5">#</th>
-                <th className="p-3 w-14"></th>{/* thumbnail */}
+                <th className="p-3 w-14"></th>
                 <th className="p-3">Player</th>
                 <th className="p-3">Set</th>
                 <th className="p-3">Rarity</th>
@@ -262,13 +413,15 @@ export default function SniperPage() {
                 <th className="p-3">Ask</th>
                 <th className="p-3">Adj. FMV</th>
                 <th className="p-3">Discount</th>
+                <th className="p-3">Owned</th>
                 <th className="p-3">Signals</th>
+                <th className="p-3">Listed</th>
                 <th className="p-3">Action</th>
               </tr>
             </thead>
             <tbody>
               {loading && visible.length === 0 && (
-                <tr><td colSpan={11} className="py-16 text-center text-zinc-600">
+                <tr><td colSpan={13} className="py-16 text-center text-zinc-600">
                   <div className="flex flex-col items-center gap-2">
                     <div className="h-6 w-6 animate-spin rounded-full border-2 border-red-600 border-t-transparent" />
                     <span>Scanning live listings…</span>
@@ -276,7 +429,7 @@ export default function SniperPage() {
                 </td></tr>
               )}
               {!loading && visible.length === 0 && (
-                <tr><td colSpan={11} className="py-16 text-center text-zinc-600">
+                <tr><td colSpan={13} className="py-16 text-center text-zinc-600">
                   No deals found. Try lowering the discount threshold.
                 </td></tr>
               )}
@@ -284,31 +437,29 @@ export default function SniperPage() {
                 const badge = discountBadge(deal.discount);
                 const isNew = newIds.has(deal.momentId);
                 const tierColor = TIER_COLOR[deal.tier] ?? "text-zinc-400";
+                const isOwned = ownedEditions.has(deal.editionKey);
+                const isOwnedLocked = isOwned && ownedEditions.get(deal.editionKey) === true;
+                const listingLocked = deal.isLocked;
 
                 return (
                   <tr key={deal.momentId}
                     className={`border-b border-zinc-800/60 transition-all duration-500 hover:bg-zinc-900/50
                       ${deal.discount >= 40 ? "bg-green-950/10" : ""}
-                      ${isNew ? "animate-pulse bg-yellow-950/20" : ""}`}>
+                      ${isNew ? "animate-pulse bg-yellow-950/20" : ""}
+                      ${deal.isStale ? "opacity-50" : ""}`}>
 
-                    {/* Rank */}
                     <td className="px-3 py-2 text-xs text-zinc-600">{i + 1}</td>
 
                     {/* Thumbnail */}
                     <td className="px-2 py-2">
                       {deal.thumbnailUrl ? (
                         <a href={deal.buyUrl} target="_blank" rel="noopener noreferrer">
-                          <img
-                            src={deal.thumbnailUrl}
-                            alt={deal.playerName}
+                          <img src={deal.thumbnailUrl} alt={deal.playerName}
                             className="w-12 h-12 rounded-lg object-cover border border-zinc-700 hover:border-zinc-500 transition"
-                            onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
-                          />
+                            onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
                         </a>
                       ) : (
-                        <div className="w-12 h-12 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-600 text-xs">
-                          —
-                        </div>
+                        <div className="w-12 h-12 rounded-lg bg-zinc-800 border border-zinc-700" />
                       )}
                     </td>
 
@@ -377,6 +528,29 @@ export default function SniperPage() {
                       )}
                     </td>
 
+                    {/* Owned column */}
+                    <td className="px-3 py-3">
+                      {isOwned ? (
+                        <div className="flex flex-col gap-0.5">
+                          {isOwnedLocked ? (
+                            <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-orange-950/50 border border-orange-800 text-orange-400">
+                              🔒 Locked
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-green-950/50 border border-green-800 text-green-400">
+                              ✓ Owned
+                            </span>
+                          )}
+                        </div>
+                      ) : listingLocked ? (
+                        <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-zinc-800 border border-zinc-700 text-zinc-500">
+                          🔒 Listing Locked
+                        </span>
+                      ) : (
+                        <span className="text-zinc-700 text-xs">—</span>
+                      )}
+                    </td>
+
                     {/* Signals */}
                     <td className="px-3 py-3">
                       <div className="flex flex-col gap-1">
@@ -391,6 +565,16 @@ export default function SniperPage() {
                           </span>
                         )}
                       </div>
+                    </td>
+
+                    {/* Listed age */}
+                    <td className="px-3 py-3">
+                      <div className={`text-[11px] ${deal.isStale ? "text-red-500" : "text-zinc-500"}`}>
+                        {listingAge(deal.updatedAt)}
+                      </div>
+                      {deal.isStale && (
+                        <div className="text-[10px] text-red-600 mt-0.5">stale</div>
+                      )}
                     </td>
 
                     {/* Action */}
