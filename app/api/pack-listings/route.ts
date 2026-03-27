@@ -156,29 +156,32 @@ export async function GET() {
       cursor = connection?.pageInfo?.endCursor ?? undefined
     }
 
+    // Deduplicate by dist_id (pack type) — aggregate listing count and lowest ask
     const packMap = new Map<string, { node: PackNode; count: number; lowestAsk: number }>()
 
     for (const node of allNodes) {
-      const uuid = node.distribution?.uuid?.value
-      if (!uuid) continue
+      const distId = node.dist_id?.value
+      if (!distId) continue
 
       const askRaw = parseInt(node.listing?.price?.min ?? "0", 10)
       const ask = askRaw / 100000000
 
-      const existing = packMap.get(uuid)
+      const existing = packMap.get(distId)
       if (existing) {
         existing.count += 1
-        if (ask > 0 && ask < existing.lowestAsk) existing.lowestAsk = ask
+        if (ask > 0 && (existing.lowestAsk === 0 || ask < existing.lowestAsk)) {
+          existing.lowestAsk = ask
+        }
       } else {
-        packMap.set(uuid, { node, count: 1, lowestAsk: ask > 0 ? ask : 0 })
+        packMap.set(distId, { node, count: 1, lowestAsk: ask > 0 ? ask : 0 })
       }
     }
 
-    const listings: PackListing[] = Array.from(packMap.entries()).map(([uuid, { node, count, lowestAsk }]) => {
+    const listings: PackListing[] = Array.from(packMap.entries()).map(([distId, { node, count, lowestAsk }]) => {
       const d = node.distribution
       return {
-        packListingId: uuid,
-        distId: d.id.value,
+        packListingId: d.uuid.value,
+        distId,
         title: d.title.value,
         tier: d.tier.value ?? "common",
         imageUrl: d.image_urls?.value?.[0] ?? "",
