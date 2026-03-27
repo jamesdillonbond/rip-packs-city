@@ -115,7 +115,6 @@ type MomentRow = {
   editionMarketSource?: string | null
   editionMarketSourceChain?: string[]
   editionMarketTags?: string[]
-  // Badge enrichment from Supabase
   badgeInfo?: BadgeInfo | null
 }
 
@@ -149,11 +148,45 @@ const BADGE_PILL_TITLES = new Set([
   "Championship Year",
 ])
 
+// ── Series → Season mapping ───────────────────────────────────────────────────
+// On-chain series is stored as integer 0–8.
+// badge_editions.season uses NBA season year strings.
+// This mapping bridges the two systems for badge enrichment matching.
+
+const SERIES_INT_TO_SEASON: Record<number, string> = {
+  0: "2019-20", // Beta / S0
+  1: "2019-20",
+  2: "2020-21",
+  3: "2021",    // Summer 2021
+  4: "2021-22",
+  5: "2022-23",
+  6: "2023-24",
+  7: "2024-25",
+  8: "2025-26",
+}
+
+function seriesIntToSeason(seriesRaw: string | undefined | null): string {
+  if (!seriesRaw) return ""
+  const n = parseInt(seriesRaw, 10)
+  if (!Number.isNaN(n) && SERIES_INT_TO_SEASON[n] !== undefined) {
+    return SERIES_INT_TO_SEASON[n]
+  }
+  // Fall back: if it already looks like a season string (e.g. "2024-25"), return as-is
+  if (/^\d{4}-\d{2}$/.test(seriesRaw.trim())) return seriesRaw.trim()
+  if (/^\d{4}$/.test(seriesRaw.trim())) return seriesRaw.trim()
+  return seriesRaw
+}
+
+// Build a lookup key from player name + season for badge matching
+function badgeLookupKey(playerName: string, season: string): string {
+  return `${playerName.toLowerCase().trim()}::${season.trim()}`
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatCurrency(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return "-"
-  return `$${value.toFixed(2)}`
+  return "$" + value.toFixed(2)
 }
 
 function compareText(a?: string | null, b?: string | null) {
@@ -224,21 +257,34 @@ function debugReasonLabel(reason?: string | null) {
   }
 }
 
-// Normalize season string from wallet row (e.g. "2024-25" or "2024")
-function normalizeSeason(raw?: string | null): string {
-  if (!raw) return ""
-  // Top Shot season format from wallet: "2024-25" or series name
-  // Try to extract a 4-digit year and build "YYYY-YY"
-  const match = raw.match(/(\d{4})-(\d{2})/)
-  if (match) return `${match[1]}-${match[2]}`
-  const yearMatch = raw.match(/(\d{4})/)
-  if (yearMatch) return yearMatch[1]
-  return raw
+// FMV confidence display label + color
+function confidenceLabel(conf?: string | null): { label: string; color: string } {
+  switch (conf) {
+    case "high":   return { label: "Liquid",   color: "text-emerald-400" }
+    case "medium": return { label: "Trading",  color: "text-yellow-400" }
+    case "low":    return { label: "Thin",     color: "text-orange-400" }
+    case "none":   return { label: "Illiquid", color: "text-zinc-500" }
+    default:       return { label: "—",        color: "text-zinc-600" }
+  }
 }
 
-// Build a lookup key from player name + season for badge matching
-function badgeLookupKey(playerName: string, season: string): string {
-  return `${playerName.toLowerCase().trim()}::${season.trim()}`
+// FMV display text varies by confidence tier
+function fmvDisplay(row: MomentRow): { text: string; muted: boolean } {
+  const fmv = row.fmv
+  const conf = row.marketConfidence
+  if (fmv === null || fmv === undefined) return { text: "—", muted: true }
+
+  const ask = getBestAsk(row)
+  switch (conf) {
+    case "high":   return { text: "$" + fmv.toFixed(2), muted: false }
+    case "medium": return { text: "~$" + fmv.toFixed(2), muted: false }
+    case "low":    return { text: "$" + Math.floor(fmv) + "–$" + Math.ceil(fmv * 1.15), muted: false }
+    case "none":
+      return ask
+        ? { text: "Floor $" + ask.toFixed(2), muted: true }
+        : { text: "No data", muted: true }
+    default:       return { text: "$" + fmv.toFixed(2), muted: false }
+  }
 }
 
 type SortKey =
@@ -266,6 +312,7 @@ export default function WalletPage() {
   const [offset, setOffset] = useState(0)
   const [showDebug, setShowDebug] = useState(false)
   const [badgeFilter, setBadgeFilter] = useState(false)
+  const [hasSearched, setHasSearched] = useState(false)
 
   const [teamFilter, setTeamFilter] = useState("all")
   const [leagueFilter, setLeagueFilter] = useState("all")
@@ -277,20 +324,19 @@ export default function WalletPage() {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
 
   // ── Badge enrichment ────────────────────────────────────────────────────────
-  // After wallet rows load, fetch badge data from Supabase for matching players
+  // FIX: series on wallet rows is the on-chain integer (0–8).
+  // badge_editions.season stores season strings like "2024-25".
+  // We use seriesIntToSeason() to map the integer before building the lookup key.
+
   async function enrichWithBadges(rowsIn: MomentRow[]): Promise<MomentRow[]> {
     if (!rowsIn.length) return rowsIn
 
-    // Collect unique player names
     const playerNames = Array.from(new Set(
       rowsIn.map(r => r.playerName).filter(Boolean)
     ))
-
     if (!playerNames.length) return rowsIn
 
     try {
-      // Fetch badge data for all players in this wallet batch
-      // Use mode=all with no league filter to get everything, limit high
       const params = new URLSearchParams({
         mode: "all",
         sort: "badge_score",
@@ -299,14 +345,13 @@ export default function WalletPage() {
         offset: "0",
       })
 
-      const res = await fetch(`/api/badges?${params}`)
+      const res = await fetch("/api/badges?" + params.toString())
       if (!res.ok) return rowsIn
 
       const json = await res.json()
       const badgeEditions: any[] = json.editions ?? []
 
-      // Build lookup: playerName::season -> best badge info for that edition
-      // We keep only the highest badge_score entry per player+season combo
+      // Build lookup: "playerName::season" → best BadgeInfo for that combination
       const badgeMap = new Map<string, BadgeInfo>()
 
       for (const edition of badgeEditions) {
@@ -329,20 +374,19 @@ export default function WalletPage() {
         }
       }
 
-      // Merge badge info into wallet rows
+      // Merge: map on-chain series integer → NBA season string, then look up badges
       return rowsIn.map(row => {
-        const season = normalizeSeason(row.series ?? "")
+        const season = seriesIntToSeason(row.series ?? "")
         const key = badgeLookupKey(row.playerName, season)
         const badgeInfo = badgeMap.get(key) ?? null
         return { ...row, badgeInfo }
       })
     } catch {
-      // Badge enrichment is non-critical — don't break wallet on failure
       return rowsIn
     }
   }
 
-  // ── Market enrichment ───────────────────────────────────────────────────────
+  // ── Market enrichment (passthrough — Flowty API pending) ────────────────────
 
   async function enrichWithMarket(rowsIn: MomentRow[]) {
     return rowsIn
@@ -434,8 +478,10 @@ export default function WalletPage() {
     setSummary(undefined)
     setOffset(0)
     setExpandedRows({})
+    setHasSearched(false)
     try {
       await fetchWalletPage(0, false)
+      setHasSearched(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
     } finally {
@@ -478,7 +524,7 @@ export default function WalletPage() {
         parallel: row.parallel ?? row.subedition ?? null,
         subedition: row.subedition ?? row.parallel ?? null,
       })
-      const key = `${candidate.editionKey ?? "none"}::${candidate.parallel ?? "Base"}`
+      const key = (candidate.editionKey ?? "none") + "::" + (candidate.parallel ?? "Base")
       if (!unique.has(key)) unique.set(key, candidate)
     }
     const text = JSON.stringify(Array.from(unique.values()), null, 2)
@@ -569,29 +615,21 @@ export default function WalletPage() {
     filtered.sort((a, b) => {
       let result = 0
       switch (sortKey) {
-        case "player":
-          result = compareText(a.playerName, b.playerName); break
-        case "series":
-          result = compareText(a.series, b.series); break
-        case "set":
-          result = compareText(a.setName, b.setName); break
-        case "parallel":
-          result = compareText(getParallel(a), getParallel(b)); break
-        case "rarity":
-          result = compareText(a.tier, b.tier); break
-        case "serial":
-          result = compareNumber(getSerial(a), getSerial(b)); break
-        case "fmv":
-          result = compareNumber(a.fmv, b.fmv); break
-        case "bestOffer":
-          result = compareNumber(a.bestOffer, b.bestOffer); break
-        case "badge":
-          result = compareNumber(a.badgeInfo?.badge_score, b.badgeInfo?.badge_score); break
+        case "player":    result = compareText(a.playerName, b.playerName); break
+        case "series":    result = compareText(a.series, b.series); break
+        case "set":       result = compareText(a.setName, b.setName); break
+        case "parallel":  result = compareText(getParallel(a), getParallel(b)); break
+        case "rarity":    result = compareText(a.tier, b.tier); break
+        case "serial":    result = compareNumber(getSerial(a), getSerial(b)); break
+        case "fmv":       result = compareNumber(a.fmv, b.fmv); break
+        case "bestOffer": result = compareNumber(a.bestOffer, b.bestOffer); break
+        case "badge":     result = compareNumber(a.badgeInfo?.badge_score, b.badgeInfo?.badge_score); break
         case "held":
           result = compareNumber(
             a.editionsOwned ?? batchEditionStats.get(buildEditionScopeKey(a))?.owned,
             b.editionsOwned ?? batchEditionStats.get(buildEditionScopeKey(b))?.owned
-          ); break
+          )
+          break
       }
       return sortDirection === "asc" ? result : -result
     })
@@ -605,6 +643,7 @@ export default function WalletPage() {
   const totals = useMemo(() => {
     let totalFmv = 0, totalBestOffer = 0, lockedFmv = 0, unlockedFmv = 0
     let lockedCount = 0, unlockedCount = 0, badgeCount = 0
+    let confHigh = 0, confMedium = 0, confLow = 0, confNone = 0
 
     for (const row of filteredRows) {
       const fmv = row.fmv ?? null
@@ -616,12 +655,20 @@ export default function WalletPage() {
       if (locked) { lockedFmv += value; lockedCount++ }
       else { unlockedFmv += value; unlockedCount++ }
       if (row.badgeInfo?.badge_score) badgeCount++
+
+      switch (row.marketConfidence) {
+        case "high":   confHigh++;   break
+        case "medium": confMedium++; break
+        case "low":    confLow++;    break
+        default:       confNone++;   break
+      }
     }
 
     return {
       totalFmv, totalBestOffer, lockedFmv, unlockedFmv,
       totalCount: filteredRows.length, lockedCount, unlockedCount,
       spreadGap: totalFmv - totalBestOffer, badgeCount,
+      confHigh, confMedium, confLow, confNone,
     }
   }, [filteredRows])
 
@@ -647,79 +694,98 @@ export default function WalletPage() {
             </p>
           </div>
           <div className="ml-auto flex gap-2">
-            <a href="/packs" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Packs</a>
-            <a href="/badges" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Badges</a>
+            <a href="/packs"   className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Packs</a>
+            <a href="/badges"  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Badges</a>
+            <a href="/sniper"  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Sniper</a>
+            <a href="/sets"    className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Sets</a>
           </div>
         </div>
 
-        {/* Search + stat cards */}
-        <div className="mb-5 grid gap-3 md:grid-cols-[minmax(260px,420px)_auto]">
-          <div className="flex gap-2">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && !loading && input.trim() && handleSearch()}
-              placeholder="Enter Top Shot username or wallet"
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white outline-none placeholder:text-zinc-500 focus:border-red-600"
-            />
-            <button
-              onClick={handleSearch}
-              disabled={loading || !input.trim()}
-              className="rounded-lg bg-red-600 px-4 py-2 font-semibold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loading ? "Loading..." : "Search"}
-            </button>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-              <div className="text-[11px] uppercase tracking-wide text-zinc-500">Wallet FMV</div>
-              <div className="text-lg font-bold text-white">{formatCurrency(totals.totalFmv)}</div>
-            </div>
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-              <div className="text-[11px] uppercase tracking-wide text-zinc-500">Locked FMV</div>
-              <div className="text-lg font-bold text-white">{formatCurrency(totals.lockedFmv)}</div>
-            </div>
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-              <div className="text-[11px] uppercase tracking-wide text-zinc-500">Unlocked FMV</div>
-              <div className="text-lg font-bold text-white">{formatCurrency(totals.unlockedFmv)}</div>
-            </div>
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-              <div className="text-[11px] uppercase tracking-wide text-zinc-500">Best Offer Total</div>
-              <div className="text-lg font-bold text-white">{formatCurrency(totals.totalBestOffer)}</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-            <div className="text-[11px] uppercase tracking-wide text-zinc-500">Spread Gap</div>
-            <div className="text-lg font-bold text-white">{formatCurrency(totals.spreadGap)}</div>
-          </div>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-            <div className="text-[11px] uppercase tracking-wide text-zinc-500">Shown Moments</div>
-            <div className="text-lg font-bold text-white">{totals.totalCount}</div>
-          </div>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-            <div className="text-[11px] uppercase tracking-wide text-zinc-500">Locked Count</div>
-            <div className="text-lg font-bold text-white">{totals.lockedCount}</div>
-          </div>
-          <div
-            className={`cursor-pointer rounded-xl border p-3 transition ${
-              badgeFilter
-                ? "border-red-600 bg-red-950/30"
-                : "border-zinc-800 bg-zinc-950 hover:border-zinc-600"
-            }`}
-            onClick={() => setBadgeFilter(f => !f)}
-            title="Click to filter to badge-carrying moments only"
+        {/* Search bar */}
+        <div className="mb-5 flex gap-2">
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && !loading && input.trim() && handleSearch()}
+            placeholder="Enter Top Shot username or wallet address"
+            className="w-full max-w-lg rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white outline-none placeholder:text-zinc-500 focus:border-red-600"
+          />
+          <button
+            onClick={handleSearch}
+            disabled={loading || !input.trim()}
+            className="rounded-lg bg-red-600 px-5 py-2 font-semibold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <div className="text-[11px] uppercase tracking-wide text-zinc-500">Badge Moments</div>
-            <div className="text-lg font-bold text-white">{totals.badgeCount}</div>
-            {badgeFilter && (
-              <div className="mt-0.5 text-[10px] text-red-400">Filtered ✕</div>
-            )}
-          </div>
+            {loading ? "Loading..." : "Search"}
+          </button>
         </div>
+
+        {/* Portfolio summary — only shown after a successful search */}
+        {hasSearched && rows.length > 0 && (
+          <div className="mb-5 space-y-3">
+            {/* Row 1: Core FMV stats */}
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Wallet FMV</div>
+                <div className="text-xl font-black text-white">{formatCurrency(totals.totalFmv)}</div>
+                <div className="mt-1 text-[11px] text-zinc-500">{totals.totalCount} moments shown</div>
+              </div>
+              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Unlocked FMV</div>
+                <div className="text-xl font-black text-white">{formatCurrency(totals.unlockedFmv)}</div>
+                <div className="mt-1 text-[11px] text-zinc-500">{totals.unlockedCount} unlocked</div>
+              </div>
+              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Locked FMV</div>
+                <div className="text-xl font-black text-white">{formatCurrency(totals.lockedFmv)}</div>
+                <div className="mt-1 text-[11px] text-zinc-500">{totals.lockedCount} locked</div>
+              </div>
+              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Best Offer Total</div>
+                <div className="text-xl font-black text-white">{formatCurrency(totals.totalBestOffer)}</div>
+                <div className="mt-1 text-[11px] text-zinc-500">Spread gap: {formatCurrency(totals.spreadGap)}</div>
+              </div>
+            </div>
+
+            {/* Row 2: FMV confidence breakdown + badge count */}
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="rounded-xl border border-emerald-900/50 bg-emerald-950/20 p-3">
+                <div className="text-[10px] uppercase tracking-widest text-emerald-600">Liquid</div>
+                <div className="text-lg font-black text-emerald-400">{totals.confHigh}</div>
+                <div className="mt-0.5 text-[10px] text-zinc-500">High confidence FMV</div>
+              </div>
+              <div className="rounded-xl border border-yellow-900/50 bg-yellow-950/20 p-3">
+                <div className="text-[10px] uppercase tracking-widest text-yellow-600">Trading</div>
+                <div className="text-lg font-black text-yellow-400">{totals.confMedium}</div>
+                <div className="mt-0.5 text-[10px] text-zinc-500">Medium confidence FMV</div>
+              </div>
+              <div className="rounded-xl border border-orange-900/50 bg-orange-950/20 p-3">
+                <div className="text-[10px] uppercase tracking-widest text-orange-600">Thin</div>
+                <div className="text-lg font-black text-orange-400">{totals.confLow}</div>
+                <div className="mt-0.5 text-[10px] text-zinc-500">Low confidence FMV</div>
+              </div>
+              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Illiquid</div>
+                <div className="text-lg font-black text-zinc-500">{totals.confNone}</div>
+                <div className="mt-0.5 text-[10px] text-zinc-600">Floor ask only</div>
+              </div>
+              <div
+                className={"cursor-pointer rounded-xl border p-3 transition " + (
+                  badgeFilter
+                    ? "border-red-600 bg-red-950/30"
+                    : "border-zinc-800 bg-zinc-950 hover:border-zinc-600"
+                )}
+                onClick={() => setBadgeFilter(f => !f)}
+                title="Click to filter to badge-carrying moments only"
+              >
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Badge Moments</div>
+                <div className="text-lg font-black text-white">{totals.badgeCount}</div>
+                <div className="mt-0.5 text-[10px] text-zinc-500">
+                  {badgeFilter ? <span className="text-red-400">Filtered ✕</span> : "Click to filter"}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Filters */}
         <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
@@ -758,25 +824,42 @@ export default function WalletPage() {
 
         {/* Sort buttons */}
         <div className="mb-4 flex flex-wrap gap-2">
-          <button onClick={() => toggleSort("player")} className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === "player" ? "border-red-600 text-white" : "border-zinc-700"}`}>Player</button>
-          <button onClick={() => toggleSort("series")} className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === "series" ? "border-red-600 text-white" : "border-zinc-700"}`}>Series</button>
-          <button onClick={() => toggleSort("set")} className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === "set" ? "border-red-600 text-white" : "border-zinc-700"}`}>Set</button>
-          <button onClick={() => toggleSort("parallel")} className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === "parallel" ? "border-red-600 text-white" : "border-zinc-700"}`}>Parallel</button>
-          <button onClick={() => toggleSort("rarity")} className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === "rarity" ? "border-red-600 text-white" : "border-zinc-700"}`}>Rarity</button>
-          <button onClick={() => toggleSort("serial")} className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === "serial" ? "border-red-600 text-white" : "border-zinc-700"}`}>Serial</button>
-          <button onClick={() => toggleSort("held")} className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === "held" ? "border-red-600 text-white" : "border-zinc-700"}`}>Held</button>
-          <button onClick={() => toggleSort("fmv")} className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === "fmv" ? "border-red-600 text-white" : "border-zinc-700"}`}>FMV</button>
-          <button onClick={() => toggleSort("bestOffer")} className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === "bestOffer" ? "border-red-600 text-white" : "border-zinc-700"}`}>Best Offer</button>
-          <button onClick={() => toggleSort("badge")} className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === "badge" ? "border-red-600 text-white" : "border-zinc-700"}`}>Badge Score</button>
+          {(
+            [
+              ["player", "Player"],
+              ["series", "Series"],
+              ["set", "Set"],
+              ["parallel", "Parallel"],
+              ["rarity", "Rarity"],
+              ["serial", "Serial"],
+              ["held", "Held"],
+              ["fmv", "FMV"],
+              ["bestOffer", "Best Offer"],
+              ["badge", "Badge Score"],
+            ] as [SortKey, string][]
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => toggleSort(key)}
+              className={"rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 " + (
+                sortKey === key ? "border-red-600 text-white" : "border-zinc-700 text-zinc-400"
+              )}
+            >
+              {label}
+              {sortKey === key && (
+                <span className="ml-1 text-zinc-500">{sortDirection === "asc" ? "↑" : "↓"}</span>
+              )}
+            </button>
+          ))}
           <button
             onClick={() => setShowDebug((prev) => !prev)}
-            className="rounded-lg border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-900"
+            className="rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900"
           >
             {showDebug ? "Hide Debug" : "Show Debug"}
           </button>
           <button
             onClick={copySeedCandidates}
-            className="rounded-lg border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-900"
+            className="rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900"
           >
             Copy Seed Candidates
           </button>
@@ -795,6 +878,8 @@ export default function WalletPage() {
               <thead className="bg-zinc-900">
                 <tr className="border-b border-zinc-800 text-left">
                   <th className="p-2">Player</th>
+                  <th className="p-2">Series (raw)</th>
+                  <th className="p-2">Season (mapped)</th>
                   <th className="p-2">Edition Key</th>
                   <th className="p-2">Parallel</th>
                   <th className="p-2">Scope Key</th>
@@ -830,8 +915,10 @@ export default function WalletPage() {
                     locked: row.editionsLocked ?? batchEditionStats.get(scopeKey)?.locked ?? 0,
                   }
                   return (
-                    <tr key={`debug-${row.momentId}`} className="border-b border-zinc-800">
+                    <tr key={"debug-" + row.momentId} className="border-b border-zinc-800">
                       <td className="p-2">{row.playerName}</td>
+                      <td className="p-2">{row.series ?? "-"}</td>
+                      <td className="p-2">{seriesIntToSeason(row.series)}</td>
                       <td className="p-2">{row.editionKey ?? "-"}</td>
                       <td className="p-2">{getParallel(row)}</td>
                       <td className="p-2">{scopeKey}</td>
@@ -896,13 +983,16 @@ export default function WalletPage() {
                 const primaryBadge = getPrimarySerialBadge(row)
                 const supaBadges = (row.badgeInfo?.badge_titles ?? []).filter(t => BADGE_PILL_TITLES.has(t))
                 const officialBadges = row.officialBadges ?? []
+                const fmv = fmvDisplay(row)
+                const conf = confidenceLabel(row.marketConfidence)
+                const isLocked = getLocked(row)
 
                 return (
                   <Fragment key={row.momentId}>
-                    <tr className="border-b border-zinc-800 align-top">
+                    <tr className={"border-b border-zinc-800 align-top " + (isLocked ? "opacity-60" : "")}>
                       <td className="p-3">
                         <div className="flex items-start gap-3">
-                          <div className="h-14 w-14 overflow-hidden rounded-lg border border-zinc-800 bg-black">
+                          <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-zinc-800 bg-black">
                             {row.thumbnailUrl ? (
                               <img
                                 src={row.thumbnailUrl}
@@ -914,25 +1004,22 @@ export default function WalletPage() {
                           <div>
                             <div className="font-semibold text-white">{row.playerName}</div>
                             <div className="mt-1 flex flex-wrap gap-1">
-                              {/* Official badges from Flow blockchain */}
                               {officialBadges.map((badge) => (
                                 <span
-                                  key={`official-${badge}`}
-                                  className={`rounded px-2 py-0.5 text-[10px] font-semibold ${badgeClass(badge)}`}
+                                  key={"official-" + badge}
+                                  className={"rounded px-2 py-0.5 text-[10px] font-semibold " + badgeClass(badge)}
                                 >
                                   {badge}
                                 </span>
                               ))}
-                              {/* Supabase badge enrichment */}
                               {supaBadges.map((title) => (
                                 <span
-                                  key={`supa-${title}`}
-                                  className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${supadgePillClass(title)}`}
+                                  key={"supa-" + title}
+                                  className={"rounded px-1.5 py-0.5 text-[10px] font-semibold " + supadgePillClass(title)}
                                 >
                                   {title}
                                 </span>
                               ))}
-                              {/* Three-star super-badge */}
                               {row.badgeInfo?.is_three_star_rookie && row.badgeInfo?.has_rookie_mint && (
                                 <span className="rounded bg-yellow-950 px-1.5 py-0.5 text-[10px] font-bold text-yellow-300 border border-yellow-700">
                                   ⭐ 3-Star
@@ -943,21 +1030,21 @@ export default function WalletPage() {
                         </div>
                       </td>
 
-                      <td className="p-3">{row.series ?? "—"}</td>
+                      <td className="p-3 text-zinc-400">{row.series ?? "—"}</td>
                       <td className="p-3">{normalizeSetName(row.setName)}</td>
-                      <td className="p-3">{getParallel(row)}</td>
-                      <td className="p-3">{row.tier ?? "—"}</td>
+                      <td className="p-3 text-zinc-400">{getParallel(row)}</td>
+                      <td className="p-3 text-zinc-400">{row.tier ?? "—"}</td>
 
                       <td className="p-3">
                         <div
-                          className={`inline-flex min-w-[90px] flex-col rounded-lg border px-2 py-1 ${
+                          className={"inline-flex min-w-[90px] flex-col rounded-lg border px-2 py-1 " + (
                             primaryBadge ? "border-red-700 bg-red-950/50" : "border-zinc-800 bg-black"
-                          }`}
+                          )}
                         >
-                          <div className={`text-base font-black ${primaryBadge ? "text-red-300" : "text-white"}`}>
-                            #{getSerial(row) ?? "-"}
+                          <div className={"text-base font-black " + (primaryBadge ? "text-red-300" : "text-white")}>
+                            {"#" + (getSerial(row) ?? "-")}
                           </div>
-                          <div className="text-xs text-zinc-400">/ {getMint(row) ?? "-"}</div>
+                          <div className="text-xs text-zinc-400">{"/ " + (getMint(row) ?? "-")}</div>
                           {primaryBadge ? (
                             <div className="mt-1 rounded bg-white px-1.5 py-0.5 text-[10px] font-bold text-black">
                               {primaryBadge}
@@ -966,9 +1053,23 @@ export default function WalletPage() {
                         </div>
                       </td>
 
-                      <td className="p-3">{editionCounts.owned} / {editionCounts.locked}</td>
-                      <td className="p-3 font-semibold text-white">{formatCurrency(row.fmv)}</td>
-                      <td className="p-3">{formatCurrency(row.bestOffer)}</td>
+                      <td className="p-3">
+                        {editionCounts.owned} / {editionCounts.locked}
+                        {isLocked && (
+                          <span className="ml-1.5 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
+                            Locked
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="p-3">
+                        <div className={"font-semibold " + (fmv.muted ? "text-zinc-500" : "text-white")}>
+                          {fmv.text}
+                        </div>
+                        <div className={"text-[10px] " + conf.color}>{conf.label}</div>
+                      </td>
+
+                      <td className="p-3 text-zinc-300">{formatCurrency(row.bestOffer)}</td>
 
                       <td className="p-3">
                         <button
@@ -992,9 +1093,9 @@ export default function WalletPage() {
                                 <div>Best Ask: {formatCurrency(getBestAsk(row))}</div>
                                 <div>Best Market: {row.bestMarket ?? "-"}</div>
                                 <div>Best Offer: {formatCurrency(row.bestOffer)}</div>
-                                <div>FMV: {formatCurrency(row.fmv)}</div>
+                                <div>FMV: {fmv.text}</div>
                                 <div>FMV Method: {row.fmvMethod ?? "-"}</div>
-                                <div>Confidence: {row.marketConfidence ?? "-"}</div>
+                                <div className={"font-medium " + conf.color}>Confidence: {conf.label}</div>
                               </div>
                             </div>
 
@@ -1002,7 +1103,7 @@ export default function WalletPage() {
                               <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Links</div>
                               <div className="space-y-2 text-sm">
                                 <a
-                                  href={`https://nbatopshot.com/moment/${row.momentId}`}
+                                  href={"https://nbatopshot.com/moment/" + row.momentId}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-white hover:bg-zinc-900"
@@ -1011,21 +1112,29 @@ export default function WalletPage() {
                                 </a>
                                 {row.flowtyListingUrl ? (
                                   <a
-                                    href={`/out/flowty/${row.momentId}?source=wallet-expand&priceAtClick=${row.flowtyAsk ?? ""}`}
+                                    href={"/out/flowty/" + row.momentId + "?source=wallet-expand&priceAtClick=" + (row.flowtyAsk ?? "")}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-white hover:bg-zinc-900"
                                   >
-                                    View on Flowty {row.flowtyAsk ? `(${formatCurrency(row.flowtyAsk)})` : ""}
+                                    {"View on Flowty" + (row.flowtyAsk ? " (" + formatCurrency(row.flowtyAsk) + ")" : "")}
                                   </a>
                                 ) : (
                                   <a
-                                    href={`https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/NFT/${row.momentId}`}
+                                    href={"https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/NFT/" + row.momentId}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-500 hover:bg-zinc-900"
                                   >
                                     Check Flowty
+                                  </a>
+                                )}
+                                {summary && (
+                                  <a
+                                    href={"/sets?wallet=" + encodeURIComponent(input.trim())}
+                                    className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-400 hover:bg-zinc-900"
+                                  >
+                                    View Set Progress →
                                   </a>
                                 )}
                               </div>
@@ -1037,7 +1146,8 @@ export default function WalletPage() {
                                 <div>Team: {row.team ?? "-"}</div>
                                 <div>League: {row.league ?? "-"}</div>
                                 <div>Parallel: {getParallel(row)}</div>
-                                <div>Locked: {getLocked(row) ? "Yes" : "No"}</div>
+                                <div>Series: {row.series ?? "-"} ({seriesIntToSeason(row.series) || "—"})</div>
+                                <div>Locked: {isLocked ? "Yes" : "No"}</div>
                                 <div className="flex flex-wrap gap-1 pt-1">
                                   {getTraits(row).map((trait) => (
                                     <span key={trait} className="rounded bg-red-950 px-2 py-0.5 text-[10px] text-red-300">
@@ -1048,7 +1158,6 @@ export default function WalletPage() {
                               </div>
                             </div>
 
-                            {/* Badge panel — only shown if badge data exists */}
                             {row.badgeInfo?.badge_score ? (
                               <div className="rounded-xl border border-zinc-700 bg-zinc-950 p-3">
                                 <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Badges</div>
@@ -1061,7 +1170,7 @@ export default function WalletPage() {
                                   </div>
                                   <div className="flex flex-wrap gap-1 pt-1">
                                     {(row.badgeInfo.badge_titles ?? []).filter(t => BADGE_PILL_TITLES.has(t)).map(title => (
-                                      <span key={title} className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${supadgePillClass(title)}`}>
+                                      <span key={title} className={"rounded px-1.5 py-0.5 text-[10px] font-semibold " + supadgePillClass(title)}>
                                         {title}
                                       </span>
                                     ))}
@@ -1107,7 +1216,7 @@ export default function WalletPage() {
               disabled={loadingMore}
               className="rounded-lg bg-red-600 px-4 py-2 font-semibold text-white disabled:opacity-50 hover:bg-red-500"
             >
-              {loadingMore ? "Loading..." : `Load More (${summary.remainingMoments} left)`}
+              {loadingMore ? "Loading..." : "Load More (" + summary.remainingMoments + " left)"}
             </button>
           </div>
         ) : null}
