@@ -98,9 +98,20 @@ function evColor(isPositive: boolean): string {
   return isPositive ? "text-green-400" : "text-red-400"
 }
 
+type SortKey = "lowestAsk" | "retailPrice" | "momentsPerPack" | "title"
+
 export default function PacksPage() {
-  const [packListingId, setPackListingId] = useState("")
-  const [packPrice, setPackPrice] = useState("")
+  // Pack browser state
+  const [listings, setListings] = useState<PackListing[]>([])
+  const [listingsLoading, setListingsLoading] = useState(true)
+  const [listingsError, setListingsError] = useState("")
+  const [tierFilter, setTierFilter] = useState("all")
+  const [searchFilter, setSearchFilter] = useState("")
+  const [sortKey, setSortKey] = useState<SortKey>("lowestAsk")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
+
+  // EV analyzer state
+  const [selectedPack, setSelectedPack] = useState<PackListing | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [result, setResult] = useState<PackEVResponse | null>(null)
@@ -112,12 +123,13 @@ export default function PacksPage() {
   const [ttCount, setTtCount] = useState("")
   const [ttFloor, setTtFloor] = useState("")
 
-  // Pack browser
-  const [listings, setListings] = useState<PackListing[]>([])
-  const [listingsLoading, setListingsLoading] = useState(true)
-  const [listingsError, setListingsError] = useState("")
-  const [tierFilter, setTierFilter] = useState("all")
-  const [searchFilter, setSearchFilter] = useState("")
+  const ttCost = ttMode && ttCount && ttFloor
+    ? parseFloat(ttCount) * parseFloat(ttFloor)
+    : null
+  const ttPackEV = result !== null && ttCost !== null
+    ? Math.round((result.grossEV - ttCost) * 100) / 100
+    : null
+  const ttIsPositive = ttPackEV !== null && ttPackEV > 0
 
   useEffect(() => {
     async function fetchListings() {
@@ -135,23 +147,64 @@ export default function PacksPage() {
     fetchListings()
   }, [])
 
-  const filteredListings = listings.filter((l) => {
-    if (tierFilter !== "all" && l.tier !== tierFilter) return false
-    if (searchFilter) {
-      const q = searchFilter.toLowerCase()
-      if (!l.title.toLowerCase().includes(q)) return false
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => d === "asc" ? "desc" : "asc")
+    } else {
+      setSortKey(key)
+      setSortDir("asc")
     }
-    return true
-  })
+  }
 
-  // Derived TT cost and EV
-  const ttCost = ttMode && ttCount && ttFloor
-    ? parseFloat(ttCount) * parseFloat(ttFloor)
-    : null
-  const ttPackEV = result !== null && ttCost !== null
-    ? Math.round((result.grossEV - ttCost) * 100) / 100
-    : null
-  const ttIsPositive = ttPackEV !== null && ttPackEV > 0
+  function sortIndicator(key: SortKey) {
+    if (sortKey !== key) return " ↕"
+    return sortDir === "asc" ? " ↑" : " ↓"
+  }
+
+  const filteredListings = listings
+    .filter((l) => {
+      if (tierFilter !== "all" && l.tier !== tierFilter) return false
+      if (searchFilter) {
+        if (!l.title.toLowerCase().includes(searchFilter.toLowerCase())) return false
+      }
+      return true
+    })
+    .sort((a, b) => {
+      let diff = 0
+      if (sortKey === "lowestAsk") diff = (a.lowestAsk || 99999) - (b.lowestAsk || 99999)
+      else if (sortKey === "retailPrice") diff = (a.retailPrice || 0) - (b.retailPrice || 0)
+      else if (sortKey === "momentsPerPack") diff = a.momentsPerPack - b.momentsPerPack
+      else if (sortKey === "title") diff = a.title.localeCompare(b.title)
+      return sortDir === "asc" ? diff : -diff
+    })
+
+  async function handleAnalyze(pack: PackListing) {
+    setSelectedPack(pack)
+    setLoading(true)
+    setError("")
+    setResult(null)
+    setShowAllPulls(false)
+    setShowAllAlerts(false)
+    window.scrollTo({ top: 0, behavior: "smooth" })
+
+    try {
+      const response = await fetch("/api/pack-ev", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          packListingId: pack.packListingId,
+          packPrice: !ttMode ? pack.lowestAsk : 0,
+        }),
+      })
+      const json = await response.json()
+      if (!response.ok) throw new Error(json.error || "Pack EV analysis failed")
+      setResult(json)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong")
+    } finally {
+      setLoading(false)
+    }
+  }
 
   function buildVerdict(): string {
     if (ttMode) {
@@ -161,7 +214,7 @@ export default function PacksPage() {
       return "-EV by $" + abs + " — cheaper to buy moments directly"
     }
     if (!result) return ""
-    if (result.packPrice === 0) return "Enter a pack price to get the EV verdict"
+    if (result.packPrice === 0) return "No price available"
     const abs = Math.abs(result.packEV).toFixed(2)
     if (result.isPositiveEV) return "+EV by $" + abs + " — opening beats buying direct"
     return "-EV by $" + abs + " — cheaper to buy moments directly"
@@ -179,60 +232,6 @@ export default function PacksPage() {
     return false
   }
 
-  function displayPackCost(): string {
-    if (ttMode) {
-      if (ttCost !== null) return fmt(ttCost)
-      return "—"
-    }
-    if (result !== null && result.packPrice > 0) return fmt(result.packPrice)
-    return "—"
-  }
-
-  function displayPackCostLabel(): string {
-    if (ttMode && ttCost !== null && ttCount && ttFloor) {
-      return ttCount + " TTs x " + fmt(parseFloat(ttFloor)) + " floor"
-    }
-    if (result !== null && result.packPrice > 0) return result.editionCount + " editions analyzed"
-    return "Enter price to get EV verdict"
-  }
-
-  function selectPack(listing: PackListing) {
-    setPackListingId(listing.packListingId)
-    if (!ttMode) setPackPrice(listing.lowestAsk > 0 ? listing.lowestAsk.toFixed(2) : "")
-    window.scrollTo({ top: 0, behavior: "smooth" })
-  }
-
-  async function handleAnalyze() {
-    const id = packListingId.trim()
-    if (!id) return
-    const uuidMatch = id.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)
-    const resolvedId = uuidMatch ? uuidMatch[0] : id
-
-    setLoading(true)
-    setError("")
-    setResult(null)
-    setShowAllPulls(false)
-    setShowAllAlerts(false)
-
-    try {
-      const response = await fetch("/api/pack-ev", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          packListingId: resolvedId,
-          packPrice: !ttMode && packPrice ? parseFloat(packPrice) : 0,
-        }),
-      })
-      const json = await response.json()
-      if (!response.ok) throw new Error(json.error || "Pack EV analysis failed")
-      setResult(json)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong")
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const displayedPulls = result
     ? showAllPulls ? result.topPulls : result.topPulls.slice(0, 5)
     : []
@@ -245,6 +244,7 @@ export default function PacksPage() {
     <div className="min-h-screen bg-black text-zinc-100">
       <div className="mx-auto max-w-[1400px] px-3 py-4 md:px-6">
 
+        {/* Header */}
         <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-4">
           <img
             src="/rip-packs-city-logo.png"
@@ -261,288 +261,261 @@ export default function PacksPage() {
           </div>
         </div>
 
-        {/* Analyzer */}
-        <div className="mb-6 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="text-sm font-semibold text-zinc-300">Analyze a Pack</div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setTtMode(false)}
-                className={"rounded-lg px-3 py-1 text-xs font-semibold transition " + (!ttMode ? "bg-red-600 text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}
-              >
-                Cash Price
-              </button>
-              <button
-                onClick={() => setTtMode(true)}
-                className={"rounded-lg px-3 py-1 text-xs font-semibold transition " + (ttMode ? "bg-red-600 text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}
-              >
-                Trade Tickets
-              </button>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            <input
-              value={packListingId}
-              onChange={(e) => setPackListingId(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !loading && packListingId.trim()) handleAnalyze() }}
-              placeholder="Pack listing ID or full URL"
-              className="min-w-[320px] flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white outline-none placeholder:text-zinc-500 focus:border-red-600"
-            />
-            {!ttMode && (
-              <input
-                value={packPrice}
-                onChange={(e) => setPackPrice(e.target.value)}
-                placeholder="Pack price ($)"
-                type="number"
-                min="0"
-                step="any"
-                className="w-32 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white outline-none placeholder:text-zinc-500 focus:border-red-600"
-              />
-            )}
-            {ttMode && (
-              <>
-                <input
-                  value={ttCount}
-                  onChange={(e) => setTtCount(e.target.value)}
-                  placeholder="# of TTs"
-                  type="number"
-                  min="1"
-                  step="1"
-                  className="w-24 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white outline-none placeholder:text-zinc-500 focus:border-red-600"
-                />
-                <input
-                  value={ttFloor}
-                  onChange={(e) => setTtFloor(e.target.value)}
-                  placeholder="TT floor ($)"
-                  type="number"
-                  min="0"
-                  step="any"
-                  className="w-32 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white outline-none placeholder:text-zinc-500 focus:border-red-600"
-                />
-              </>
-            )}
-            <button
-              onClick={handleAnalyze}
-              disabled={loading || !packListingId.trim()}
-              className="rounded-lg bg-red-600 px-5 py-2 font-semibold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loading ? "Analyzing..." : "Analyze"}
-            </button>
-          </div>
-          <p className="mt-2 text-xs text-zinc-500">
-            {ttMode
-              ? "Trade Ticket cost = # of TTs x cheapest burnable moment floor (across all marketplaces)."
-              : "Paste the full pack URL or just the UUID, or click Analyze on any pack below."}
-          </p>
-          {ttMode && ttCost !== null && (
-            <div className="mt-3 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm">
-              <span className="text-zinc-400">Effective pack cost: </span>
-              <span className="font-bold text-white">{fmt(ttCost)}</span>
-              <span className="ml-2 text-zinc-500">{"(" + ttCount + " TTs x " + fmt(parseFloat(ttFloor)) + " floor)"}</span>
-            </div>
-          )}
-        </div>
-
-        {error && (
-          <div className="mb-4 rounded-lg border border-red-800 bg-red-950 p-3 text-red-300">{error}</div>
-        )}
-
-        {/* EV Results */}
-        {result !== null && (
-          <div>
-            <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                <div className="text-[11px] uppercase tracking-wide text-zinc-500">{ttMode ? "TT Pack EV" : "Pack EV"}</div>
-                <div className={"text-2xl font-black " + evColor(displayIsPositive())}>{fmt(displayPackEV())}</div>
-                <div className={"mt-1 text-xs " + evColor(displayIsPositive())}>{buildVerdict()}</div>
-              </div>
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                <div className="text-[11px] uppercase tracking-wide text-zinc-500">Gross EV</div>
-                <div className="text-2xl font-black text-white">{fmt(result.grossEV)}</div>
-                <div className="mt-1 text-xs text-zinc-500">Before subtracting pack cost</div>
-              </div>
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                <div className="text-[11px] uppercase tracking-wide text-zinc-500">{ttMode ? "TT Cost" : "Pack Price"}</div>
-                <div className="text-2xl font-black text-white">{displayPackCost()}</div>
-                <div className="mt-1 text-xs text-zinc-500">{displayPackCostLabel()}</div>
-              </div>
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                <div className="text-[11px] uppercase tracking-wide text-zinc-500">Supply</div>
-                <div className="text-2xl font-black text-white">{result.supplySnapshot.totalUnopened.toLocaleString()}</div>
-                <div className="mt-1 text-xs text-zinc-500">
-                  {result.supplySnapshot.depletionPct}{"% depleted of "}{result.supplySnapshot.totalPackCount.toLocaleString()}
+        {/* EV Results — only shown after Analyze clicked */}
+        {(loading || result !== null || error) && selectedPack !== null && (
+          <div className="mb-6">
+            {/* Selected pack header */}
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3">
+              {selectedPack.imageUrl && (
+                <img src={selectedPack.imageUrl} alt={selectedPack.title} className="h-10 w-10 rounded object-cover" />
+              )}
+              <div>
+                <div className="font-bold text-white">{selectedPack.title}</div>
+                <div className="text-xs text-zinc-400">
+                  <span className={"rounded border px-1.5 py-0.5 text-[10px] font-semibold capitalize mr-2 " + tierBadge(selectedPack.tier)}>{selectedPack.tier}</span>
+                  {selectedPack.momentsPerPack} moments · Lowest Ask {fmt(selectedPack.lowestAsk)}
                 </div>
               </div>
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  onClick={() => setTtMode(false)}
+                  className={"rounded-lg px-3 py-1 text-xs font-semibold transition " + (!ttMode ? "bg-red-600 text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}
+                >
+                  Cash Price
+                </button>
+                <button
+                  onClick={() => setTtMode(true)}
+                  className={"rounded-lg px-3 py-1 text-xs font-semibold transition " + (ttMode ? "bg-red-600 text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}
+                >
+                  Trade Tickets
+                </button>
+                {ttMode && (
+                  <>
+                    <input
+                      value={ttCount}
+                      onChange={(e) => setTtCount(e.target.value)}
+                      placeholder="# TTs"
+                      type="number"
+                      min="1"
+                      className="w-20 rounded-lg border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-white outline-none"
+                    />
+                    <input
+                      value={ttFloor}
+                      onChange={(e) => setTtFloor(e.target.value)}
+                      placeholder="Floor $"
+                      type="number"
+                      min="0"
+                      step="any"
+                      className="w-24 rounded-lg border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-white outline-none"
+                    />
+                  </>
+                )}
+                <button
+                  onClick={() => { setResult(null); setSelectedPack(null); setError("") }}
+                  className="rounded-lg border border-zinc-700 px-3 py-1 text-xs text-zinc-400 hover:bg-zinc-900"
+                >
+                  Close
+                </button>
+              </div>
             </div>
 
-            {ttMode && ttCost !== null && (
-              <div className="mb-5 rounded-xl border border-zinc-700 bg-zinc-900 p-4">
-                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Trade Ticket Breakdown</div>
-                <div className="grid gap-3 sm:grid-cols-3 text-sm">
-                  <div>
-                    <div className="text-zinc-500 text-xs">TTs Required</div>
-                    <div className="text-white font-bold text-lg">{ttCount}</div>
+            {loading && (
+              <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-950 p-8 text-center text-zinc-500">
+                Analyzing pack contents... this takes ~30 seconds on first load.
+              </div>
+            )}
+
+            {error && (
+              <div className="mb-4 rounded-lg border border-red-800 bg-red-950 p-3 text-red-300">{error}</div>
+            )}
+
+            {result !== null && (
+              <div>
+                <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+                    <div className="text-[11px] uppercase tracking-wide text-zinc-500">{ttMode ? "TT Pack EV" : "Pack EV"}</div>
+                    <div className={"text-2xl font-black " + evColor(displayIsPositive())}>{fmt(displayPackEV())}</div>
+                    <div className={"mt-1 text-xs " + evColor(displayIsPositive())}>{buildVerdict()}</div>
                   </div>
-                  <div>
-                    <div className="text-zinc-500 text-xs">Floor Price per TT</div>
-                    <div className="text-white font-bold text-lg">{fmt(parseFloat(ttFloor))}</div>
-                    <div className="text-zinc-500 text-xs mt-0.5">Cheapest burnable across all markets</div>
+                  <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+                    <div className="text-[11px] uppercase tracking-wide text-zinc-500">Gross EV</div>
+                    <div className="text-2xl font-black text-white">{fmt(result.grossEV)}</div>
+                    <div className="mt-1 text-xs text-zinc-500">Before subtracting pack cost</div>
                   </div>
-                  <div>
-                    <div className="text-zinc-500 text-xs">Total Opportunity Cost</div>
-                    <div className="text-white font-bold text-lg">{fmt(ttCost)}</div>
-                    <div className={"text-xs mt-0.5 " + evColor(ttIsPositive)}>
-                      {ttPackEV !== null
-                        ? (ttIsPositive ? "You gain " : "You lose ") + fmt(Math.abs(ttPackEV)) + " vs buying direct"
-                        : ""}
+                  <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+                    <div className="text-[11px] uppercase tracking-wide text-zinc-500">{ttMode ? "TT Cost" : "Pack Price"}</div>
+                    <div className="text-2xl font-black text-white">
+                      {ttMode ? (ttCost !== null ? fmt(ttCost) : "—") : fmt(result.packPrice)}
+                    </div>
+                    <div className="mt-1 text-xs text-zinc-500">
+                      {ttMode && ttCost !== null && ttCount && ttFloor
+                        ? ttCount + " TTs x " + fmt(parseFloat(ttFloor))
+                        : result.editionCount + " editions analyzed"}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+                    <div className="text-[11px] uppercase tracking-wide text-zinc-500">Supply</div>
+                    <div className="text-2xl font-black text-white">{result.supplySnapshot.totalUnopened.toLocaleString()}</div>
+                    <div className="mt-1 text-xs text-zinc-500">
+                      {result.supplySnapshot.depletionPct}{"% depleted of "}{result.supplySnapshot.totalPackCount.toLocaleString()}
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
 
-            <div className="mb-5 grid gap-4 md:grid-cols-2">
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">EV by Tier</div>
-                <div className="space-y-2">
-                  {Object.entries(result.tierBreakdown)
-                    .sort((a, b) => b[1].totalEV - a[1].totalEV)
-                    .map(([tier, data]) => (
-                      <div key={tier} className="flex items-center gap-3">
-                        <span className={"w-20 rounded border px-2 py-0.5 text-center text-[11px] font-semibold capitalize " + tierBadge(tier)}>
-                          {tier}
-                        </span>
-                        <div className="flex-1">
-                          <div className="flex justify-between text-xs">
-                            <span className="text-zinc-400">{data.editionCount} editions · {data.remainingMoments.toLocaleString()} remaining</span>
-                            <span className={"font-semibold " + tierText(tier)}>{fmt(data.totalEV)}</span>
-                          </div>
-                          <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
-                            <div
-                              className="h-full rounded-full bg-red-600"
-                              style={{ width: (result.grossEV > 0 ? Math.min(100, (data.totalEV / result.grossEV) * 100) : 0) + "%" }}
-                            />
-                          </div>
+                {ttMode && ttCost !== null && (
+                  <div className="mb-5 rounded-xl border border-zinc-700 bg-zinc-900 p-4">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Trade Ticket Breakdown</div>
+                    <div className="grid gap-3 sm:grid-cols-3 text-sm">
+                      <div>
+                        <div className="text-zinc-500 text-xs">TTs Required</div>
+                        <div className="text-white font-bold text-lg">{ttCount}</div>
+                      </div>
+                      <div>
+                        <div className="text-zinc-500 text-xs">Floor Price per TT</div>
+                        <div className="text-white font-bold text-lg">{fmt(parseFloat(ttFloor))}</div>
+                        <div className="text-zinc-500 text-xs mt-0.5">Cheapest burnable across all markets</div>
+                      </div>
+                      <div>
+                        <div className="text-zinc-500 text-xs">Total Opportunity Cost</div>
+                        <div className="text-white font-bold text-lg">{fmt(ttCost)}</div>
+                        <div className={"text-xs mt-0.5 " + evColor(ttIsPositive)}>
+                          {ttPackEV !== null
+                            ? (ttIsPositive ? "You gain " : "You lose ") + fmt(Math.abs(ttPackEV)) + " vs buying direct"
+                            : ""}
                         </div>
                       </div>
-                    ))}
-                </div>
-                <div className="mt-3 border-t border-zinc-800 pt-3 text-[10px] text-zinc-500">{result.methodology}</div>
-              </div>
+                    </div>
+                  </div>
+                )}
 
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">Supply Snapshot</div>
-                <div className="space-y-2">
-                  {Object.entries(result.supplySnapshot.remainingByTier)
-                    .filter(([, v]) => v > 0)
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([tier, remaining]) => {
-                      const original = result.supplySnapshot.originalByTier[tier] ?? 0
-                      const pct = original > 0 ? Math.round((remaining / original) * 100) : 0
-                      return (
-                        <div key={tier} className="flex items-center gap-3">
-                          <span className={"w-20 rounded border px-2 py-0.5 text-center text-[11px] font-semibold capitalize " + tierBadge(tier)}>
-                            {tier}
-                          </span>
-                          <div className="flex-1">
-                            <div className="flex justify-between text-xs">
-                              <span className="text-zinc-400">{remaining.toLocaleString()} of {original.toLocaleString()}</span>
-                              <span className="text-zinc-300">{pct}% left</span>
-                            </div>
-                            <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
-                              <div className="h-full rounded-full bg-zinc-600" style={{ width: pct + "%" }} />
+                <div className="mb-5 grid gap-4 md:grid-cols-2">
+                  <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+                    <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">EV by Tier</div>
+                    <div className="space-y-2">
+                      {Object.entries(result.tierBreakdown)
+                        .sort((a, b) => b[1].totalEV - a[1].totalEV)
+                        .map(([tier, data]) => (
+                          <div key={tier} className="flex items-center gap-3">
+                            <span className={"w-20 rounded border px-2 py-0.5 text-center text-[11px] font-semibold capitalize " + tierBadge(tier)}>{tier}</span>
+                            <div className="flex-1">
+                              <div className="flex justify-between text-xs">
+                                <span className="text-zinc-400">{data.editionCount} editions · {data.remainingMoments.toLocaleString()} remaining</span>
+                                <span className={"font-semibold " + tierText(tier)}>{fmt(data.totalEV)}</span>
+                              </div>
+                              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+                                <div className="h-full rounded-full bg-red-600" style={{ width: (result.grossEV > 0 ? Math.min(100, (data.totalEV / result.grossEV) * 100) : 0) + "%" }} />
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      )
-                    })}
-                </div>
-                <div className="mt-3 flex gap-4 border-t border-zinc-800 pt-3 text-xs text-zinc-500">
-                  <span>Status: <span className={result.supplySnapshot.forSale ? "text-green-400" : "text-red-400"}>{result.supplySnapshot.forSale ? "For Sale" : "Not For Sale"}</span></span>
-                  <span>Sold Out: <span className={result.supplySnapshot.isSoldOut ? "text-red-400" : "text-green-400"}>{result.supplySnapshot.isSoldOut ? "Yes" : "No"}</span></span>
-                </div>
-              </div>
-            </div>
-
-            <div className="mb-5 rounded-xl border border-zinc-800 bg-zinc-950">
-              <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
-                <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Top Pulls by EV</div>
-                <div className="text-xs text-zinc-500">{result.topPulls.length} editions</div>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[700px] border-collapse text-sm">
-                  <thead className="bg-zinc-900">
-                    <tr className="border-b border-zinc-800 text-left text-[11px] uppercase tracking-wide text-zinc-500">
-                      <th className="p-3">Player</th>
-                      <th className="p-3">Set</th>
-                      <th className="p-3">Tier</th>
-                      <th className="p-3">Pull Chance</th>
-                      <th className="p-3">Avg Sale</th>
-                      <th className="p-3">Low Ask</th>
-                      <th className="p-3">Edition EV</th>
-                      <th className="p-3">Remaining</th>
-                      <th className="p-3">Locked %</th>
-                      <th className="p-3">Flags</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {displayedPulls.map((edition) => (
-                      <tr key={edition.editionId} className="border-b border-zinc-800 hover:bg-zinc-900/50">
-                        <td className="p-3 font-medium text-white">{edition.playerName}</td>
-                        <td className="p-3 text-zinc-400">{edition.setName}{edition.parallelName ? " · " + edition.parallelName : ""}</td>
-                        <td className="p-3">
-                          <span className={"rounded border px-2 py-0.5 text-[11px] font-semibold capitalize " + tierBadge(edition.tier)}>
-                            {edition.tier}
-                          </span>
-                        </td>
-                        <td className="p-3 text-zinc-300">{edition.probability}%</td>
-                        <td className="p-3 text-zinc-300">{fmt(edition.averageSalePrice)}</td>
-                        <td className="p-3 text-zinc-400">{edition.lowAsk > 0 ? fmt(edition.lowAsk) : "—"}</td>
-                        <td className="p-3 font-semibold text-white">{fmt(edition.editionEV)}</td>
-                        <td className="p-3 text-zinc-400">{edition.remaining} / {edition.count}</td>
-                        <td className="p-3 text-zinc-400">{edition.lockedPct}%</td>
-                        <td className="p-3">
-                          {edition.serialPremiumLabel && (
-                            <span className="rounded bg-red-950 px-2 py-0.5 text-[10px] font-semibold text-red-300">
-                              {edition.serialPremiumLabel}
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {result.topPulls.length > 5 && (
-                <div className="border-t border-zinc-800 px-4 py-3">
-                  <button onClick={() => setShowAllPulls((p) => !p)} className="text-xs text-zinc-400 hover:text-white">
-                    {showAllPulls ? "Show fewer" : "Show all " + result.topPulls.length + " pulls"}
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {result.serialPremiumAlerts.length > 0 && (
-              <div className="mb-5 rounded-xl border border-zinc-800 bg-zinc-950">
-                <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Premium Serials Still in Packs</div>
-                  <div className="text-xs text-zinc-500">{result.serialPremiumAlerts.length} found</div>
-                </div>
-                <div className="p-4">
-                  <div className="flex flex-wrap gap-2">
-                    {displayedAlerts.map((alert, i) => (
-                      <span key={i} className="rounded-lg border border-red-900 bg-red-950/50 px-3 py-1.5 text-xs text-red-300">
-                        {alert}
-                      </span>
-                    ))}
+                        ))}
+                    </div>
+                    <div className="mt-3 border-t border-zinc-800 pt-3 text-[10px] text-zinc-500">{result.methodology}</div>
                   </div>
-                  {result.serialPremiumAlerts.length > 8 && (
-                    <button onClick={() => setShowAllAlerts((p) => !p)} className="mt-3 text-xs text-zinc-400 hover:text-white">
-                      {showAllAlerts ? "Show fewer" : "Show all " + result.serialPremiumAlerts.length + " alerts"}
-                    </button>
+
+                  <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+                    <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">Supply Snapshot</div>
+                    <div className="space-y-2">
+                      {Object.entries(result.supplySnapshot.remainingByTier)
+                        .filter(([, v]) => v > 0)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([tier, remaining]) => {
+                          const original = result.supplySnapshot.originalByTier[tier] ?? 0
+                          const pct = original > 0 ? Math.round((remaining / original) * 100) : 0
+                          return (
+                            <div key={tier} className="flex items-center gap-3">
+                              <span className={"w-20 rounded border px-2 py-0.5 text-center text-[11px] font-semibold capitalize " + tierBadge(tier)}>{tier}</span>
+                              <div className="flex-1">
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-zinc-400">{remaining.toLocaleString()} of {original.toLocaleString()}</span>
+                                  <span className="text-zinc-300">{pct}% left</span>
+                                </div>
+                                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+                                  <div className="h-full rounded-full bg-zinc-600" style={{ width: pct + "%" }} />
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                    </div>
+                    <div className="mt-3 flex gap-4 border-t border-zinc-800 pt-3 text-xs text-zinc-500">
+                      <span>Status: <span className={result.supplySnapshot.forSale ? "text-green-400" : "text-red-400"}>{result.supplySnapshot.forSale ? "For Sale" : "Not For Sale"}</span></span>
+                      <span>Sold Out: <span className={result.supplySnapshot.isSoldOut ? "text-red-400" : "text-green-400"}>{result.supplySnapshot.isSoldOut ? "Yes" : "No"}</span></span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mb-5 rounded-xl border border-zinc-800 bg-zinc-950">
+                  <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Top Pulls by EV</div>
+                    <div className="text-xs text-zinc-500">{result.topPulls.length} editions</div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[700px] border-collapse text-sm">
+                      <thead className="bg-zinc-900">
+                        <tr className="border-b border-zinc-800 text-left text-[11px] uppercase tracking-wide text-zinc-500">
+                          <th className="p-3">Player</th>
+                          <th className="p-3">Set</th>
+                          <th className="p-3">Tier</th>
+                          <th className="p-3">Pull Chance</th>
+                          <th className="p-3">Avg Sale</th>
+                          <th className="p-3">Low Ask</th>
+                          <th className="p-3">Edition EV</th>
+                          <th className="p-3">Remaining</th>
+                          <th className="p-3">Locked %</th>
+                          <th className="p-3">Flags</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayedPulls.map((edition) => (
+                          <tr key={edition.editionId} className="border-b border-zinc-800 hover:bg-zinc-900/50">
+                            <td className="p-3 font-medium text-white">{edition.playerName}</td>
+                            <td className="p-3 text-zinc-400">{edition.setName}{edition.parallelName ? " · " + edition.parallelName : ""}</td>
+                            <td className="p-3"><span className={"rounded border px-2 py-0.5 text-[11px] font-semibold capitalize " + tierBadge(edition.tier)}>{edition.tier}</span></td>
+                            <td className="p-3 text-zinc-300">{edition.probability}%</td>
+                            <td className="p-3 text-zinc-300">{fmt(edition.averageSalePrice)}</td>
+                            <td className="p-3 text-zinc-400">{edition.lowAsk > 0 ? fmt(edition.lowAsk) : "—"}</td>
+                            <td className="p-3 font-semibold text-white">{fmt(edition.editionEV)}</td>
+                            <td className="p-3 text-zinc-400">{edition.remaining} / {edition.count}</td>
+                            <td className="p-3 text-zinc-400">{edition.lockedPct}%</td>
+                            <td className="p-3">
+                              {edition.serialPremiumLabel && (
+                                <span className="rounded bg-red-950 px-2 py-0.5 text-[10px] font-semibold text-red-300">{edition.serialPremiumLabel}</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {result.topPulls.length > 5 && (
+                    <div className="border-t border-zinc-800 px-4 py-3">
+                      <button onClick={() => setShowAllPulls((p) => !p)} className="text-xs text-zinc-400 hover:text-white">
+                        {showAllPulls ? "Show fewer" : "Show all " + result.topPulls.length + " pulls"}
+                      </button>
+                    </div>
                   )}
                 </div>
+
+                {result.serialPremiumAlerts.length > 0 && (
+                  <div className="mb-5 rounded-xl border border-zinc-800 bg-zinc-950">
+                    <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Premium Serials Still in Packs</div>
+                      <div className="text-xs text-zinc-500">{result.serialPremiumAlerts.length} found</div>
+                    </div>
+                    <div className="p-4">
+                      <div className="flex flex-wrap gap-2">
+                        {displayedAlerts.map((alert, i) => (
+                          <span key={i} className="rounded-lg border border-red-900 bg-red-950/50 px-3 py-1.5 text-xs text-red-300">{alert}</span>
+                        ))}
+                      </div>
+                      {result.serialPremiumAlerts.length > 8 && (
+                        <button onClick={() => setShowAllAlerts((p) => !p)} className="mt-3 text-xs text-zinc-400 hover:text-white">
+                          {showAllAlerts ? "Show fewer" : "Show all " + result.serialPremiumAlerts.length + " alerts"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -550,26 +523,28 @@ export default function PacksPage() {
 
         {/* Pack Browser */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-950">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 px-4 py-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              {"Packs on Secondary Market" + (listings.length > 0 ? " — " + listings.length + " unique drops" : "")}
-            </div>
-            <div className="flex gap-2">
+          <div className="border-b border-zinc-800 px-4 py-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                {"Secondary Market — " + (listings.length > 0 ? listings.length + " drops" : "loading...")}
+              </div>
               <input
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
                 placeholder="Search packs..."
-                className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-red-600"
+                className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-red-600 w-48"
               />
-              {["all", "ultimate", "legendary", "rare", "fandom", "common"].map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTierFilter(t)}
-                  className={"rounded-lg px-3 py-1 text-xs font-semibold capitalize transition " + (tierFilter === t ? "bg-red-600 text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}
-                >
-                  {t === "all" ? "All" : t}
-                </button>
-              ))}
+              <div className="flex gap-1">
+                {["all", "ultimate", "legendary", "rare", "fandom", "common"].map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setTierFilter(t)}
+                    className={"rounded-lg px-2.5 py-1 text-xs font-semibold capitalize transition " + (tierFilter === t ? "bg-red-600 text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}
+                  >
+                    {t === "all" ? "All" : t}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -579,7 +554,7 @@ export default function PacksPage() {
           {listingsError && (
             <div className="p-4 text-red-400 text-sm">{listingsError}</div>
           )}
-          {!listingsLoading && !listingsError && filteredListings.length === 0 && (
+          {!listingsLoading && filteredListings.length === 0 && (
             <div className="p-8 text-center text-zinc-500 text-sm">No packs found.</div>
           )}
           {!listingsLoading && filteredListings.length > 0 && (
@@ -587,45 +562,57 @@ export default function PacksPage() {
               <table className="w-full min-w-[600px] border-collapse text-sm">
                 <thead className="bg-zinc-900">
                   <tr className="border-b border-zinc-800 text-left text-[11px] uppercase tracking-wide text-zinc-500">
-                    <th className="p-3">Pack</th>
+                    <th className="p-3">
+                      <button onClick={() => toggleSort("title")} className="hover:text-white">
+                        {"Pack" + sortIndicator("title")}
+                      </button>
+                    </th>
                     <th className="p-3">Tier</th>
-                    <th className="p-3">Moments</th>
-                    <th className="p-3">Retail</th>
-                    <th className="p-3">Lowest Ask</th>
-                    <th className="p-3">Listings</th>
+                    <th className="p-3">
+                      <button onClick={() => toggleSort("momentsPerPack")} className="hover:text-white">
+                        {"Moments" + sortIndicator("momentsPerPack")}
+                      </button>
+                    </th>
+                    <th className="p-3">
+                      <button onClick={() => toggleSort("retailPrice")} className="hover:text-white">
+                        {"Retail" + sortIndicator("retailPrice")}
+                      </button>
+                    </th>
+                    <th className="p-3">
+                      <button onClick={() => toggleSort("lowestAsk")} className="hover:text-white">
+                        {"Lowest Ask" + sortIndicator("lowestAsk")}
+                      </button>
+                    </th>
                     <th className="p-3"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredListings.map((listing) => (
-                    <tr key={listing.packListingId} className="border-b border-zinc-800 hover:bg-zinc-900/50">
+                    <tr
+                      key={listing.packListingId}
+                      className={"border-b border-zinc-800 hover:bg-zinc-900/50 cursor-pointer " + (selectedPack?.packListingId === listing.packListingId ? "bg-zinc-900/70" : "")}
+                      onClick={() => handleAnalyze(listing)}
+                    >
                       <td className="p-3">
                         <div className="flex items-center gap-3">
                           {listing.imageUrl && (
-                            <img
-                              src={listing.imageUrl}
-                              alt={listing.title}
-                              className="h-10 w-10 rounded object-cover"
-                            />
+                            <img src={listing.imageUrl} alt={listing.title} className="h-10 w-10 rounded object-cover flex-shrink-0" />
                           )}
                           <span className="font-medium text-white">{listing.title}</span>
                         </div>
                       </td>
                       <td className="p-3">
-                        <span className={"rounded border px-2 py-0.5 text-[11px] font-semibold capitalize " + tierBadge(listing.tier)}>
-                          {listing.tier}
-                        </span>
+                        <span className={"rounded border px-2 py-0.5 text-[11px] font-semibold capitalize " + tierBadge(listing.tier)}>{listing.tier}</span>
                       </td>
                       <td className="p-3 text-zinc-400">{listing.momentsPerPack}</td>
                       <td className="p-3 text-zinc-400">{listing.retailPrice > 0 ? fmt(listing.retailPrice) : "—"}</td>
                       <td className="p-3 font-semibold text-white">{listing.lowestAsk > 0 ? fmt(listing.lowestAsk) : "—"}</td>
-                      <td className="p-3 text-zinc-400">{listing.listingCount.toLocaleString()}</td>
                       <td className="p-3">
                         <button
-                          onClick={() => selectPack(listing)}
-                          className="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-500"
+                          onClick={(e) => { e.stopPropagation(); handleAnalyze(listing) }}
+                          className={"rounded-lg px-3 py-1 text-xs font-semibold text-white transition " + (selectedPack?.packListingId === listing.packListingId ? "bg-zinc-600" : "bg-red-600 hover:bg-red-500")}
                         >
-                          Analyze
+                          {selectedPack?.packListingId === listing.packListingId && loading ? "..." : "Analyze"}
                         </button>
                       </td>
                     </tr>
