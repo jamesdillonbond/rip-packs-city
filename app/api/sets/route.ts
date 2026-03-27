@@ -1,8 +1,6 @@
 // app/api/sets/route.ts
 // Sets completion tracker.
-// v11: Eliminates getPlayMetadata FCL calls (was the main 3min bottleneck).
-// Missing plays show player name as "Unknown" unless it can be inferred
-// from the set's existing owned moments data. The lowest ask is what matters.
+// v12: bottleneck detection, correct marketplace URLs, three-tier set classification
 
 import { NextRequest, NextResponse } from "next/server";
 import fcl from "@/lib/flow";
@@ -13,6 +11,73 @@ import { topshotGraphql } from "@/lib/topshot";
 
 const resolveCache = new Map<string, { addr: string; expiresAt: number }>();
 const RESOLVE_TTL_MS = 5 * 60 * 1000;
+
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+type SetTier =
+  | "complete"
+  | "almost_there"
+  | "bottleneck"
+  | "completable"
+  | "incomplete"
+  | "unpriced";
+
+interface MomentMeta {
+  momentId: string;
+  playerName: string;
+  setName: string;
+  setId: string;
+  playId: string;
+  serial: number | null;
+  tier: string;
+  flowId: string | null;
+  thumbnailUrl: string | null;
+  lowestAsk: number | null;
+}
+
+interface OwnedPiece {
+  playId: string;
+  playerName: string;
+  tier: string;
+  serialNumber: number | null;
+  thumbnailUrl: string | null;
+  topshotUrl: string;
+}
+
+interface MissingPiece {
+  playId: string;
+  playerName: string;
+  tier: string;
+  lowestAsk: number | null;
+  thumbnailUrl: string | null;
+  topshotUrl: string;
+}
+
+interface SetProgress {
+  setId: string;
+  setName: string;
+  totalEditions: number;
+  ownedCount: number;
+  missingCount: number;
+  completionPct: number;
+  totalMissingCost: number | null;
+  lowestSingleAsk: number | null;
+  bottleneckPrice: number | null;
+  bottleneckPlayerName: string | null;
+  tier: SetTier;
+  owned: OwnedPiece[];
+  missing: MissingPiece[];
+  asksEnriched: boolean;
+}
+
+interface SetsResponse {
+  wallet: string;
+  resolvedAddress: string;
+  totalSets: number;
+  completeSets: number;
+  sets: SetProgress[];
+  generatedAt: string;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -45,6 +110,67 @@ function buildThumbnailUrl(flowId: string | null) {
   return "https://assets.nbatopshot.com/media/" + flowId + "/image?width=180";
 }
 
+function buildMarketplaceUrl(setId: string, playId: string): string {
+  return (
+    "https://nbatopshot.com/search?edition_ids=" +
+    setId +
+    "_" +
+    playId +
+    "&search_input=&listing_types=FOR_SALE&sort_by=PRICE_ASC"
+  );
+}
+
+// Detect the single most expensive missing piece when it's a clear outlier:
+// ≥3x the median of the rest AND costs $10+ more
+function detectBottleneck(missing: MissingPiece[]): MissingPiece | null {
+  const priced = missing.filter((m) => m.lowestAsk !== null && m.lowestAsk > 0);
+  if (priced.length < 2) return null;
+
+  const sorted = [...priced].sort(
+    (a, b) => (b.lowestAsk ?? 0) - (a.lowestAsk ?? 0)
+  );
+  const mostExpensive = sorted[0];
+  const rest = sorted.slice(1);
+  const medianRest =
+    rest[Math.floor(rest.length / 2)].lowestAsk ?? 0;
+
+  const price = mostExpensive.lowestAsk ?? 0;
+  if (price >= 3 * medianRest && price - medianRest >= 10) {
+    return mostExpensive;
+  }
+  return null;
+}
+
+// Classify a set — takes the full computed data, returns tier + bottleneck
+function classifySet(
+  missing: MissingPiece[],
+  missingCount: number,
+  completionPct: number,
+  totalMissingCost: number | null,
+  asksEnriched: boolean
+): { tier: SetTier; bottleneck: MissingPiece | null } {
+  if (completionPct === 100) return { tier: "complete", bottleneck: null };
+  if (!asksEnriched) return { tier: "unpriced", bottleneck: null };
+
+  const pricedCount = missing.filter((m) => m.lowestAsk !== null).length;
+  const allPriced = pricedCount === missing.length && missing.length > 0;
+
+  if (missingCount <= 3 && allPriced) {
+    return { tier: "almost_there", bottleneck: detectBottleneck(missing) };
+  }
+
+  const bottleneck = detectBottleneck(missing);
+  if (bottleneck) {
+    return { tier: "bottleneck", bottleneck };
+  }
+
+  if (allPriced && totalMissingCost !== null) {
+    return { tier: "completable", bottleneck: null };
+  }
+
+  return { tier: "incomplete", bottleneck: null };
+}
+
 async function mapWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
@@ -59,7 +185,9 @@ async function mapWithConcurrency<T, R>(
       results[i] = await worker(items[i]);
     }
   }
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, run));
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, run)
+  );
   return results;
 }
 
@@ -67,7 +195,7 @@ function sleep(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms));
 }
 
-// ── Step 1: Resolve username → Flow address (cached) ─────────────────────────
+// ── Step 1: Resolve ────────────────────────────────────────────────────────────
 
 type TopShotUserProfileResponse = {
   getUserProfileByUsername?: {
@@ -100,11 +228,17 @@ async function resolveToFlowAddress(input: string): Promise<string> {
 
   const tryResolve = async (username: string): Promise<string | null> => {
     try {
-      const data = await topshotGraphql<TopShotUserProfileResponse>(query, { username });
-      const raw = data?.getUserProfileByUsername?.publicInfo?.flowAddress ?? null;
+      const data = await topshotGraphql<TopShotUserProfileResponse>(query, {
+        username,
+      });
+      const raw =
+        data?.getUserProfileByUsername?.publicInfo?.flowAddress ?? null;
       return raw ? ensureFlowPrefix(raw) : null;
     } catch (e) {
-      console.log("[sets] resolve failed:", (e as Error).message?.slice(0, 100));
+      console.log(
+        "[sets] resolve failed:",
+        (e as Error).message?.slice(0, 100)
+      );
       return null;
     }
   };
@@ -115,7 +249,11 @@ async function resolveToFlowAddress(input: string): Promise<string> {
   }
 
   if (!addr) {
-    throw new Error('Could not resolve "' + trimmed + '" to a Flow address. Check the username and try again.');
+    throw new Error(
+      'Could not resolve "' +
+        trimmed +
+        '" to a Flow address. Check the username and try again.'
+    );
   }
 
   resolveCache.set(cacheKey, { addr, expiresAt: Date.now() + RESOLVE_TTL_MS });
@@ -137,13 +275,19 @@ async function getOwnedMomentIds(wallet: string): Promise<number[]> {
     }
   `;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = await fcl.query({ cadence, args: (arg: any) => [arg(wallet, t.Address)] });
+  const result = await fcl.query({
+    cadence,
+    args: (arg: any) => [arg(wallet, t.Address)],
+  });
   return Array.isArray(result) ? (result as number[]) : [];
 }
 
 // ── Step 3: FCL — moment metadata ────────────────────────────────────────────
 
-async function getMomentMetadata(wallet: string, id: number): Promise<Record<string, string>> {
+async function getMomentMetadata(
+  wallet: string,
+  id: number
+): Promise<Record<string, string>> {
   const cadence = `
     import TopShot from 0x0b2a3299cc857e29
     import MetadataViews from 0x1d7e57aa55817448
@@ -167,7 +311,6 @@ async function getMomentMetadata(wallet: string, id: number): Promise<Record<str
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const result = await fcl.query({
     cadence,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     args: (arg: any) => [arg(wallet, t.Address), arg(String(id), t.UInt64)],
   });
   return result as Record<string, string>;
@@ -220,7 +363,6 @@ async function getSetPlayIds(setId: number): Promise<number[]> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await fcl.query({
       cadence,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       args: (arg: any) => [arg(String(setId), t.UInt32)],
     });
     return Array.isArray(result) ? (result as number[]) : [];
@@ -229,9 +371,12 @@ async function getSetPlayIds(setId: number): Promise<number[]> {
   }
 }
 
-// ── Step 6: lowest ask ────────────────────────────────────────────────────────
+// ── Step 6: Lowest ask ────────────────────────────────────────────────────────
 
-async function fetchLowestAskForPlay(setIntId: string, playIntId: string): Promise<number | null> {
+async function fetchLowestAskForPlay(
+  setIntId: string,
+  playIntId: string
+): Promise<number | null> {
   const query = `
     query GetLowestAsk($setId: ID!, $playId: ID!) {
       searchMomentListings(input: {
@@ -251,7 +396,9 @@ async function fetchLowestAskForPlay(setIntId: string, playIntId: string): Promi
     const data = await topshotGraphql<{
       searchMomentListings?: {
         data?: {
-          searchEdge?: Array<{ node?: { moment?: { listing?: { price?: number } } } }> | null;
+          searchEdge?: Array<{
+            node?: { moment?: { listing?: { price?: number } } };
+          }> | null;
         } | null;
       } | null;
     }>(query, { setId: setIntId, playId: playIntId });
@@ -261,62 +408,6 @@ async function fetchLowestAskForPlay(setIntId: string, playIntId: string): Promi
   } catch {
     return null;
   }
-}
-
-// ── Types ──────────────────────────────────────────────────────────────────────
-
-interface MomentMeta {
-  momentId: string;
-  playerName: string;
-  setName: string;
-  setId: string;
-  playId: string;
-  serial: number | null;
-  tier: string;
-  flowId: string | null;
-  thumbnailUrl: string | null;
-  lowestAsk: number | null;
-}
-
-interface OwnedPiece {
-  playId: string;
-  playerName: string;
-  tier: string;
-  serialNumber: number | null;
-  thumbnailUrl: string | null;
-  topshotUrl: string;
-}
-
-interface MissingPiece {
-  playId: string;
-  playerName: string;
-  tier: string;
-  lowestAsk: number | null;
-  thumbnailUrl: string | null;
-  topshotUrl: string;
-}
-
-interface SetProgress {
-  setId: string;
-  setName: string;
-  totalEditions: number;
-  ownedCount: number;
-  missingCount: number;
-  completionPct: number;
-  totalMissingCost: number | null;
-  lowestSingleAsk: number | null;
-  owned: OwnedPiece[];
-  missing: MissingPiece[];
-  asksEnriched: boolean;
-}
-
-interface SetsResponse {
-  wallet: string;
-  resolvedAddress: string;
-  totalSets: number;
-  completeSets: number;
-  sets: SetProgress[];
-  generatedAt: string;
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -329,7 +420,10 @@ export async function GET(req: NextRequest) {
   const MAX_SETS_FULL = 30;
 
   if (!wallet) {
-    return NextResponse.json({ error: "wallet param required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "wallet param required" },
+      { status: 400 }
+    );
   }
 
   try {
@@ -343,13 +437,16 @@ export async function GET(req: NextRequest) {
 
     if (!ids.length) {
       return NextResponse.json({
-        wallet, resolvedAddress: flowAddress,
-        totalSets: 0, completeSets: 0, sets: [],
+        wallet,
+        resolvedAddress: flowAddress,
+        totalSets: 0,
+        completeSets: 0,
+        sets: [],
         generatedAt: new Date().toISOString(),
       } satisfies SetsResponse);
     }
 
-    // 3. Fetch metadata (capped at 500, concurrency 8)
+    // 3. Fetch metadata (capped at 500)
     const slicedIds = ids.slice(0, 500);
     const moments = await mapWithConcurrency(slicedIds, 8, async (id) => {
       const [meta, gql] = await Promise.all([
@@ -372,22 +469,23 @@ export async function GET(req: NextRequest) {
 
     console.log("[/api/sets] metadata fetched for", moments.length);
 
-    // 4. Group by setId + build a global playId→playerName lookup from owned moments
-    // This lets us show player names for missing plays without extra FCL calls
-    const setMap = new Map<string, { setName: string; moments: MomentMeta[] }>();
-    const globalPlayNames = new Map<string, string>(); // playId → playerName
+    // 4. Group by setId + build global playId→playerName lookup
+    const setMap = new Map<
+      string,
+      { setName: string; moments: MomentMeta[] }
+    >();
+    const globalPlayNames = new Map<string, string>();
 
     for (const m of moments) {
       if (!m.setId) continue;
-      if (!setMap.has(m.setId)) setMap.set(m.setId, { setName: m.setName, moments: [] });
+      if (!setMap.has(m.setId))
+        setMap.set(m.setId, { setName: m.setName, moments: [] });
       setMap.get(m.setId)!.moments.push(m);
-      // Cache player name by playId for cross-set lookup
       if (m.playId && m.playerName && m.playerName !== "Unknown") {
         globalPlayNames.set(m.playId, m.playerName);
       }
     }
 
-    // Sort sets by owned count desc
     const setIds = (
       setFilter
         ? [setFilter].filter((id) => setMap.has(id))
@@ -399,9 +497,15 @@ export async function GET(req: NextRequest) {
     });
 
     const setsToProcess = setFilter ? setIds : setIds.slice(0, MAX_SETS_FULL);
-    console.log("[/api/sets] processing", setsToProcess.length, "of", setIds.length, "sets");
+    console.log(
+      "[/api/sets] processing",
+      setsToProcess.length,
+      "of",
+      setIds.length,
+      "sets"
+    );
 
-    // 5. First pass — FCL play roster per set (sequential, no player name lookups)
+    // 5. First pass — FCL play roster per set (sequential)
     const rawProgress: Array<{
       setId: string;
       setName: string;
@@ -433,47 +537,58 @@ export async function GET(req: NextRequest) {
         const key = String(pid);
         if (ownedByPlayId.has(key)) {
           const copies = ownedByPlayId.get(key)!;
-          const best = [...copies].sort((a, b) => (a.serial ?? 99999) - (b.serial ?? 99999))[0];
+          const best = [...copies].sort(
+            (a, b) => (a.serial ?? 99999) - (b.serial ?? 99999)
+          )[0];
           owned.push({
             playId: key,
             playerName: best.playerName,
             tier: best.tier,
             serialNumber: best.serial,
             thumbnailUrl: best.thumbnailUrl,
-            topshotUrl: "https://nbatopshot.com/listings/moment/" + (best.flowId ?? best.momentId),
+            topshotUrl: best.flowId
+              ? "https://nbatopshot.com/listings/moment/" + best.flowId
+              : "https://nbatopshot.com/search?query=" +
+                encodeURIComponent(best.playerName),
           });
         } else {
           missingPlayIds.push(pid);
         }
       }
 
-      rawProgress.push({ setId, setName: entry.setName, allPlayIds, owned, missingPlayIds });
+      rawProgress.push({
+        setId,
+        setName: entry.setName,
+        allPlayIds,
+        owned,
+        missingPlayIds,
+      });
     }
 
     // Sort by completion % desc
     rawProgress.sort((a, b) => {
-      const pctA = a.allPlayIds.length > 0 ? a.owned.length / a.allPlayIds.length : 0;
-      const pctB = b.allPlayIds.length > 0 ? b.owned.length / b.allPlayIds.length : 0;
+      const pctA =
+        a.allPlayIds.length > 0 ? a.owned.length / a.allPlayIds.length : 0;
+      const pctB =
+        b.allPlayIds.length > 0 ? b.owned.length / b.allPlayIds.length : 0;
       return pctB - pctA;
     });
 
-    // 6. Second pass — asks only (NO getPlayMetadata calls)
-    // Player names for missing plays come from globalPlayNames cache or show as "—"
+    // 6. Second pass — asks + classification
     const setProgressList: SetProgress[] = [];
 
     for (let idx = 0; idx < rawProgress.length; idx++) {
-      const { setId, setName, allPlayIds, owned, missingPlayIds } = rawProgress[idx];
+      const { setId, setName, allPlayIds, owned, missingPlayIds } =
+        rawProgress[idx];
 
       const shouldFetchAsks: boolean =
         !skipAsks && (setFilter !== null || idx < MAX_ASK_SETS);
 
-      // Fetch asks with concurrency 4 — no FCL calls here, just GQL
       const missingPieces: MissingPiece[] = await mapWithConcurrency(
         missingPlayIds,
         4,
         async (pid) => {
           const pidStr = String(pid);
-          // Use cached player name if we've seen this play in another set
           const playerName = globalPlayNames.get(pidStr) ?? "—";
           const lowestAsk = shouldFetchAsks
             ? await fetchLowestAskForPlay(setId, pidStr)
@@ -484,14 +599,14 @@ export async function GET(req: NextRequest) {
             tier: "COMMON",
             lowestAsk,
             thumbnailUrl: null,
-            topshotUrl:
-              "https://nbatopshot.com/marketplace?setID=" + setId + "&playID=" + pidStr,
+            topshotUrl: buildMarketplaceUrl(setId, pidStr),
           };
         }
       );
 
       missingPieces.sort((a, b) => {
-        if (a.lowestAsk !== null && b.lowestAsk !== null) return a.lowestAsk - b.lowestAsk;
+        if (a.lowestAsk !== null && b.lowestAsk !== null)
+          return a.lowestAsk - b.lowestAsk;
         if (a.lowestAsk !== null) return -1;
         if (b.lowestAsk !== null) return 1;
         return a.playerName.localeCompare(b.playerName);
@@ -502,16 +617,30 @@ export async function GET(req: NextRequest) {
         .filter((v): v is number => v !== null);
 
       const totalMissingCost =
-        asksWithValues.length === missingPieces.length && missingPieces.length > 0
+        asksWithValues.length === missingPieces.length &&
+        missingPieces.length > 0
           ? asksWithValues.reduce((a, b) => a + b, 0)
           : null;
 
-      const lowestSingleAsk = asksWithValues.length > 0 ? Math.min(...asksWithValues) : null;
+      const lowestSingleAsk =
+        asksWithValues.length > 0 ? Math.min(...asksWithValues) : null;
 
       const completionPct =
-        allPlayIds.length > 0 ? Math.round((owned.length / allPlayIds.length) * 100) : 0;
+        allPlayIds.length > 0
+          ? Math.round((owned.length / allPlayIds.length) * 100)
+          : 0;
 
-      setProgressList.push({
+      // Classify — pass computed values directly, no intermediate object
+      const { tier, bottleneck } = classifySet(
+        missingPieces,
+        missingPieces.length,
+        completionPct,
+        totalMissingCost,
+        shouldFetchAsks
+      );
+
+      // Build the full SetProgress object directly — no spread from partial type
+      const entry: SetProgress = {
         setId,
         setName,
         totalEditions: allPlayIds.length,
@@ -520,24 +649,44 @@ export async function GET(req: NextRequest) {
         completionPct,
         totalMissingCost,
         lowestSingleAsk,
+        bottleneckPrice: bottleneck?.lowestAsk ?? null,
+        bottleneckPlayerName: bottleneck?.playerName ?? null,
+        tier,
         owned,
         missing: missingPieces,
         asksEnriched: shouldFetchAsks,
-      });
+      };
+
+      setProgressList.push(entry);
     }
 
+    // Final sort by tier then completion %
+    const tierOrder: Record<SetTier, number> = {
+      complete: 0,
+      almost_there: 1,
+      bottleneck: 2,
+      completable: 3,
+      incomplete: 4,
+      unpriced: 5,
+    };
+
     setProgressList.sort((a, b) => {
-      if (a.completionPct === 100 && b.completionPct < 100) return -1;
-      if (b.completionPct === 100 && a.completionPct < 100) return 1;
+      const tA = tierOrder[a.tier];
+      const tB = tierOrder[b.tier];
+      if (tA !== tB) return tA - tB;
       return b.completionPct - a.completionPct;
     });
 
     console.log(
       "[/api/sets] done:",
       setProgressList.length,
-      "sets,",
-      setProgressList.filter((s) => s.completionPct === 100).length,
-      "complete"
+      "sets |",
+      setProgressList.filter((s) => s.tier === "complete").length,
+      "complete |",
+      setProgressList.filter((s) => s.tier === "almost_there").length,
+      "almost there |",
+      setProgressList.filter((s) => s.tier === "bottleneck").length,
+      "with bottleneck"
     );
 
     return NextResponse.json(
@@ -545,11 +694,16 @@ export async function GET(req: NextRequest) {
         wallet,
         resolvedAddress: flowAddress,
         totalSets: setProgressList.length,
-        completeSets: setProgressList.filter((s) => s.completionPct === 100).length,
+        completeSets: setProgressList.filter((s) => s.tier === "complete")
+          .length,
         sets: setProgressList,
         generatedAt: new Date().toISOString(),
       } satisfies SetsResponse,
-      { headers: { "Cache-Control": "public, s-maxage=120, stale-while-revalidate=300" } }
+      {
+        headers: {
+          "Cache-Control": "public, s-maxage=120, stale-while-revalidate=300",
+        },
+      }
     );
   } catch (err) {
     console.error("[/api/sets] error:", err);
