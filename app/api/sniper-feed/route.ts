@@ -237,9 +237,7 @@ function computeEditionFloors(
 }
 
 // ─── Supabase FMV lookup ──────────────────────────────────────────────────────
-// The ingest route stores fmv_snapshots keyed by Supabase edition UUID (edition_id).
-// We bridge via editions.external_id which stores "setUUID:playUUID" strings.
-// Two-step join: external_id → editions.id → fmv_snapshots.edition_id
+// Joins via editions.external_id ("setUUID:playUUID") → fmv_snapshots.edition_id
 interface FmvRow {
   edition_key: string;
   fmv: number;
@@ -255,7 +253,6 @@ async function fetchSupabaseFmv(
 ): Promise<Map<string, FmvRow>> {
   if (!externalIds.length) return new Map();
 
-  // Step 1: resolve external_ids → Supabase edition UUIDs
   const { data: editionRows } = await supabase
     .from("editions")
     .select("id, external_id")
@@ -270,7 +267,6 @@ async function fetchSupabaseFmv(
     supToExt.set(row.id, row.external_id);
   }
 
-  // Step 2: fetch latest FMV snapshot per Supabase edition UUID
   const { data: fmvRows } = await supabase
     .from("fmv_snapshots")
     .select("edition_id, fmv_usd, floor_price_usd, confidence, computed_at")
@@ -279,7 +275,6 @@ async function fetchSupabaseFmv(
 
   if (!fmvRows?.length) return new Map();
 
-  // Step 3: deduplicate to latest per edition, map back to external_id key
   const seen = new Set<string>();
   const map = new Map<string, FmvRow>();
 
@@ -291,10 +286,8 @@ async function fetchSupabaseFmv(
   }[]) {
     if (seen.has(row.edition_id)) continue;
     seen.add(row.edition_id);
-
     const externalId = supToExt.get(row.edition_id);
     if (!externalId) continue;
-
     map.set(externalId, {
       edition_key: externalId,
       fmv: row.fmv_usd,
@@ -366,7 +359,11 @@ export async function GET(req: Request) {
     let packName: string | null = null;
 
     if (sbRow) {
-      baseFmv = sbRow.fmv;
+      // Cap Supabase historical FMV at the live batch floor to prevent stale-data
+      // false positives (e.g. $3 historical FMV vs $0.01 current market = fake -99%)
+      baseFmv = floorData.count >= 2
+        ? Math.min(sbRow.fmv, floorData.floor)
+        : sbRow.fmv;
       confidence = sbRow.confidence;
       packListingId = sbRow.pack_listing_id;
       packName = sbRow.pack_name;
