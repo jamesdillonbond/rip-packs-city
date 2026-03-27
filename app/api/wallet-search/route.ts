@@ -10,11 +10,6 @@ import {
   buildEditionScopeKey,
 } from "@/lib/wallet-normalize"
 
-type Badge = {
-  type: string
-  iconSvg: string
-}
-
 type WalletRow = {
   momentId: string
   playerName: string
@@ -25,7 +20,6 @@ type WalletRow = {
   tier?: string
   serial?: number
   mintSize?: number
-  // Explicit fields for market-compute serial premium
   serialNumber?: number | null
   circulationCount?: number | null
   officialBadges?: string[]
@@ -114,48 +108,22 @@ function formatTier(value: string | null): string | null {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1)
 }
 
-/**
- * Derive special serial trait badges.
- *
- * Uses canonical strings matching market-compute.ts SPECIAL_SERIAL_BADGES:
- *   "#1 Serial", "Jersey", "Original Perfect Mint Serial"
- *
- * Sources:
- *   1. Math-derived from on-chain serial + mint count
- *   2. GraphQL badge type strings from getMintedMoment badges[].type
- */
 function specialSerialTraits(
   serial: number | null,
   mint: number | null,
   graphqlBadgeTypes: string[]
 ): string[] {
   const out: string[] = []
-
-  // Math-derived from on-chain data
   if (serial === 1) out.push("#1 Serial")
   if (serial !== null && mint !== null && mint > 0 && serial === mint) {
     out.push("Original Perfect Mint Serial")
   }
-
-  // Map GraphQL badge type strings to canonical market-compute values.
-  // Top Shot GraphQL returns badges[].type as uppercase e.g. "JERSEY_MATCH", "#1"
   for (const badgeType of graphqlBadgeTypes) {
-    const upper = (badgeType ?? "").toUpperCase().trim()
-
-    if (upper.includes("JERSEY") && !out.includes("Jersey")) {
-      out.push("Jersey")
-    }
-    if (
-      (upper === "#1" || upper === "#1_SERIAL" || upper.includes("FIRST_SERIAL")) &&
-      !out.includes("#1 Serial")
-    ) {
-      out.push("#1 Serial")
-    }
-    if (upper.includes("PERFECT") && !out.includes("Original Perfect Mint Serial")) {
-      out.push("Original Perfect Mint Serial")
-    }
+    const upper = (badgeType ?? "").toUpperCase()
+    if (upper.includes("JERSEY") && !out.includes("Jersey")) out.push("Jersey")
+    if ((upper === "#1" || upper === "#1_SERIAL" || upper.includes("FIRST_SERIAL")) && !out.includes("#1 Serial")) out.push("#1 Serial")
+    if ((upper.includes("PERFECT_MINT") || upper.includes("PERFECT MINT")) && !out.includes("Original Perfect Mint Serial")) out.push("Original Perfect Mint Serial")
   }
-
   return out
 }
 
@@ -166,36 +134,20 @@ function buildThumbnailUrl(flowId: string | null) {
 
 async function resolveWalletFromInput(input: string): Promise<string> {
   const trimmed = input.trim()
-
-  if (isWalletAddress(trimmed)) {
-    return ensureFlowPrefix(trimmed)
-  }
-
+  if (isWalletAddress(trimmed)) return ensureFlowPrefix(trimmed)
   return getOrSetCache(`username:${trimmed.toLowerCase()}`, USERNAME_TTL, async () => {
     const cleanedUsername = trimmed.replace(/^@+/, "")
-
     const query = `
       query GetUserProfileByUsername($username: String!) {
         getUserProfileByUsername(input: { username: $username }) {
-          publicInfo {
-            flowAddress
-            username
-          }
+          publicInfo { flowAddress username }
         }
       }
     `
-
-    const data = await topshotGraphql<UsernameProfileResponse>(query, {
-      username: cleanedUsername,
-    })
-
+    const data = await topshotGraphql<UsernameProfileResponse>(query, { username: cleanedUsername })
     const rawWallet = data?.getUserProfileByUsername?.publicInfo?.flowAddress ?? null
     const wallet = rawWallet ? ensureFlowPrefix(rawWallet) : null
-
-    if (!wallet) {
-      throw new Error("Could not resolve username to wallet address.")
-    }
-
+    if (!wallet) throw new Error("Could not resolve username to wallet address.")
     return wallet
   })
 }
@@ -204,28 +156,18 @@ async function getOwnedMomentIds(wallet: string): Promise<number[]> {
   return getOrSetCache(`owned:${wallet}`, OWNED_IDS_TTL, async () => {
     const cadence = `
       import TopShot from 0x0b2a3299cc857e29
-
       access(all)
       fun main(address: Address): [UInt64] {
         let acct = getAccount(address)
-
-        let col = acct
-          .capabilities
-          .borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
-
-        if col == nil {
-          return []
-        }
-
+        let col = acct.capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
+        if col == nil { return [] }
         return col!.getIDs()
       }
     `
-
     const result = await fcl.query({
       cadence,
       args: (arg: any) => [arg(wallet, t.Address)],
     })
-
     return Array.isArray(result) ? (result as number[]) : []
   })
 }
@@ -235,22 +177,14 @@ async function getMomentMetadata(wallet: string, id: number) {
     const cadence = `
       import TopShot from 0x0b2a3299cc857e29
       import MetadataViews from 0x1d7e57aa55817448
-
       access(all)
       fun main(address: Address, id: UInt64): {String:String} {
         let acct = getAccount(address)
-
         let col = acct.capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
           ?? panic("no collection")
-
-        let nft = col.borrowMoment(id:id)
-          ?? panic("no nft")
-
-        let view = nft.resolveView(Type<TopShot.TopShotMomentMetadataView>())
-          ?? panic("no metadata")
-
+        let nft = col.borrowMoment(id:id) ?? panic("no nft")
+        let view = nft.resolveView(Type<TopShot.TopShotMomentMetadataView>()) ?? panic("no metadata")
         let data = view as! TopShot.TopShotMomentMetadataView
-
         return {
           "player": data.fullName ?? "",
           "team": data.teamAtMoment ?? "",
@@ -263,12 +197,10 @@ async function getMomentMetadata(wallet: string, id: number) {
         }
       }
     `
-
     const result = await fcl.query({
       cadence,
       args: (arg: any) => [arg(wallet, t.Address), arg(String(id), t.UInt64)],
     })
-
     return result as Record<string, string>
   })
 }
@@ -279,28 +211,15 @@ async function fetchMomentGraphQL(id: string) {
       query GetMoment($id: ID!) {
         getMintedMoment(momentId: $id) {
           data {
-            flowId
-            flowSerialNumber
-            tier
-            forSale
-            price
-            lastPurchasePrice
-            isLocked
-            badges {
-              type
-              iconSvg
-            }
-            set {
-              leagues
-            }
+            flowId flowSerialNumber tier forSale price lastPurchasePrice isLocked
+            badges { type iconSvg }
+            set { leagues }
           }
         }
       }
     `
-
     const d = await topshotGraphql<MintedMomentGraphqlData>(q, { id })
     const m = d?.getMintedMoment?.data
-
     return {
       flowId: m?.flowId ?? null,
       serial: toNum(m?.flowSerialNumber),
@@ -312,10 +231,7 @@ async function fetchMomentGraphQL(id: string) {
       isLocked: !!m?.isLocked,
       league: m?.set?.leagues?.find(Boolean) ?? null,
       badges: Array.isArray(m?.badges)
-        ? m.badges.map((b) => ({
-            type: b?.type ?? "UNKNOWN",
-            iconSvg: b?.iconSvg ?? "",
-          }))
+        ? m.badges.map((b) => ({ type: b?.type ?? "UNKNOWN", iconSvg: b?.iconSvg ?? "" }))
         : [],
     }
   })
@@ -328,35 +244,29 @@ async function mapWithConcurrency<T, R>(
 ): Promise<R[]> {
   const results: R[] = new Array(items.length)
   let nextIndex = 0
-
   async function runWorker() {
     while (true) {
-      const currentIndex = nextIndex
-      nextIndex += 1
-
+      const currentIndex = nextIndex++
       if (currentIndex >= items.length) return
-
       results[currentIndex] = await worker(items[currentIndex], currentIndex)
     }
   }
-
-  const workers = Array.from(
-    { length: Math.max(1, Math.min(concurrency, items.length)) },
-    () => runWorker()
+  await Promise.all(
+    Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, () => runWorker())
   )
-
-  await Promise.all(workers)
   return results
 }
 
 // ── Supabase seeding ──────────────────────────────────────────────────────────
-// Seeds edition + lastPurchasePrice into Supabase using integer editionKeys
-// from the Flow blockchain. Runs fire-and-forget so it never delays the response.
+// Seeds ALL editions regardless of whether lastPurchasePrice exists.
+// Edition metadata is valuable for the market feed even without a price —
+// the feed fetches live stats from Top Shot GraphQL independently.
+// Sale + FMV snapshot records are only inserted when a real price exists.
 
 async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
   for (const row of rows) {
     try {
-      if (!row.editionKey || !row.lastPurchasePrice) continue
+      if (!row.editionKey) continue
 
       const tier = row.tier?.toUpperCase() ?? "COMMON"
       const normalizedTier =
@@ -384,7 +294,7 @@ async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
         playerId = player?.id ?? null
       }
 
-      // Upsert edition using integer editionKey
+      // Upsert edition — always, price not required
       const { data: edition } = await supabaseAdmin
         .from("editions")
         .upsert(
@@ -404,7 +314,7 @@ async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
 
       if (!edition?.id) continue
 
-      // Insert lastPurchasePrice as a sale record
+      // Only insert sale + FMV snapshot when a real price exists
       if (row.lastPurchasePrice && row.lastPurchasePrice > 0) {
         await supabaseAdmin.from("sales").insert({
           edition_id: edition.id,
@@ -416,18 +326,17 @@ async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
           transaction_hash: `wallet-seed:${row.momentId}`,
           sold_at: new Date().toISOString(),
         })
-      }
 
-      // Upsert FMV snapshot from lastPurchasePrice
-      await supabaseAdmin.from("fmv_snapshots").insert({
-        edition_id: edition.id,
-        collection_id: collectionId,
-        fmv_usd: row.lastPurchasePrice,
-        floor_price_usd: row.lastPurchasePrice,
-        confidence: "LOW" as any,
-        sales_count_7d: 1,
-        algo_version: "wallet-seed-1.0",
-      })
+        await supabaseAdmin.from("fmv_snapshots").insert({
+          edition_id: edition.id,
+          collection_id: collectionId,
+          fmv_usd: row.lastPurchasePrice,
+          floor_price_usd: row.lastPurchasePrice,
+          confidence: "LOW" as any,
+          sales_count_7d: 1,
+          algo_version: "wallet-seed-1.0",
+        })
+      }
     } catch {
       // Never let seeding errors bubble up to the user
     }
@@ -459,11 +368,7 @@ export async function POST(req: NextRequest) {
         {
           error: "Please enter a wallet address or username.",
           rows: [],
-          summary: {
-            totalMoments: 0,
-            returnedMoments: 0,
-            remainingMoments: 0,
-          },
+          summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
         } satisfies WalletSearchResponse,
         { status: 400 }
       )
@@ -483,19 +388,12 @@ export async function POST(req: NextRequest) {
       const mint = toNum(meta.mint)
       const setId = toNum(meta.setID)
       const playId = toNum(meta.playID)
-
-      const editionKey =
-        setId !== null && playId !== null ? `${setId}:${playId}` : null
-
+      const editionKey = setId !== null && playId !== null ? `${setId}:${playId}` : null
       const normalizedSet = normalizeSetName(meta.setName ?? "Unknown Set")
-      const normalizedParallelVal = normalizeParallel("")
+      const normalizedParallel = normalizeParallel("")
+      const graphqlBadgeTypes = gql.badges.map((b) => b.type).filter(Boolean)
 
-      // Extract raw badge type strings from GraphQL for trait derivation
-      const graphqlBadgeTypes = gql.badges
-        .map((b) => b.type)
-        .filter((t): t is string => typeof t === "string" && t.length > 0)
-
-      const row: WalletRow = {
+      return {
         momentId: String(id),
         playerName: meta.player ?? "Unknown Player",
         team: meta.team ?? undefined,
@@ -505,11 +403,9 @@ export async function POST(req: NextRequest) {
         tier: gql.tier ?? undefined,
         serial: serial ?? undefined,
         mintSize: mint ?? undefined,
-        // Explicit fields for market-compute serial premium
         serialNumber: serial ?? null,
         circulationCount: mint ?? null,
         officialBadges: graphqlBadgeTypes,
-        // Fixed: uses canonical badge strings + GraphQL badge mapping
         specialSerialTraits: specialSerialTraits(serial, mint, graphqlBadgeTypes),
         isLocked: gql.isLocked,
         bestAsk: gql.bestAsk,
@@ -517,17 +413,14 @@ export async function POST(req: NextRequest) {
         bestOffer: gql.bestOffer,
         lastPurchasePrice: gql.lastPurchasePrice,
         editionKey,
-        parallel: normalizedParallelVal,
-        subedition: normalizedParallelVal,
+        parallel: normalizedParallel,
+        subedition: normalizedParallel,
         flowId: gql.flowId,
         thumbnailUrl: buildThumbnailUrl(gql.flowId),
-      }
-
-      return row
+      } as WalletRow
     })
 
     const editionCounts = new Map<string, { owned: number; locked: number }>()
-
     for (const row of baseRows) {
       const key = buildEditionScopeKey({
         editionKey: row.editionKey,
@@ -536,7 +429,6 @@ export async function POST(req: NextRequest) {
         parallel: row.parallel,
         subedition: row.subedition,
       })
-
       const current = editionCounts.get(key) ?? { owned: 0, locked: 0 }
       current.owned += 1
       if (row.isLocked) current.locked += 1
@@ -551,24 +443,13 @@ export async function POST(req: NextRequest) {
         parallel: row.parallel,
         subedition: row.subedition,
       })
-
-      const counts = editionCounts.get(key) ?? {
-        owned: 1,
-        locked: row.isLocked ? 1 : 0,
-      }
-
-      return {
-        ...row,
-        editionsOwned: counts.owned,
-        editionsLocked: counts.locked,
-      }
+      const counts = editionCounts.get(key) ?? { owned: 1, locked: row.isLocked ? 1 : 0 }
+      return { ...row, editionsOwned: counts.owned, editionsLocked: counts.locked }
     })
 
-    // Seed edition + sale data to Supabase fire-and-forget
+    // Fire-and-forget — seeds all editions regardless of price
     getCollectionId().then((collectionId) => {
-      if (collectionId) {
-        seedEditionsToSupabase(rows, collectionId).catch(() => {})
-      }
+      if (collectionId) seedEditionsToSupabase(rows, collectionId).catch(() => {})
     })
 
     return NextResponse.json({
@@ -583,11 +464,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         rows: [],
-        summary: {
-          totalMoments: 0,
-          returnedMoments: 0,
-          remainingMoments: 0,
-        },
+        summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
         error: e instanceof Error ? e.message : "wallet failed",
       } satisfies WalletSearchResponse,
       { status: 500 }
