@@ -46,16 +46,13 @@ function serialPremium(serial: number, circ: number): number {
   return Math.max(1.0, Math.pow(circ / 2 / serial, 0.4));
 }
 
-function buildThumbnailUrl(
-  assetPathPrefix: string | undefined,
-  flowId: string,
-  setPlayId: string | undefined
-): string | null {
+// assetPathPrefix already contains the full CDN path up to the filename.
+// Correct suffix is just "Hero_Black_2880_2880.jpg" — the prefix handles everything else.
+// Example prefix: "https://assets.nbatopshot.com/editions/7_throwdowns_rare/6c6e32e0-.../play_6c6e32e0-..._7_throwdowns_rare_capture_play_48762121_capture_"
+// Resulting URL:   "https://assets.nbatopshot.com/editions/.../..._capture_Hero_Black_2880_2880.jpg"
+function buildThumbnailUrl(assetPathPrefix: string | undefined): string | null {
   if (assetPathPrefix) {
-    return `${assetPathPrefix}play_${flowId}_capture_Hero_Black_2880_2880.jpg`;
-  }
-  if (setPlayId) {
-    return `https://assets.nbatopshot.com/editions/${setPlayId}/play_${flowId}_capture_Hero_Black_2880_2880.jpg`;
+    return `${assetPathPrefix}Hero_Black_2880_2880.jpg`;
   }
   return null;
 }
@@ -91,7 +88,7 @@ interface RawTransaction {
 export interface SniperDeal {
   flowId: string;
   momentId: string;
-  editionKey: string;           // "setUUID:playUUID" — used for owned matching
+  editionKey: string;
   playerName: string;
   teamName: string;
   setName: string;
@@ -114,8 +111,9 @@ export interface SniperDeal {
   isJersey: boolean;
   serialSignal: string | null;
   thumbnailUrl: string | null;
-  isLocked: boolean;            // from moment.isLocked
-  updatedAt: string | null;     // ISO timestamp of listing activity
+  isLocked: boolean;
+  isStale: boolean;
+  updatedAt: string | null;
   packListingId: string | null;
   packName: string | null;
   packEv: number | null;
@@ -413,9 +411,10 @@ export async function GET(req: Request) {
     const parallelId = psp?.parallelID ?? m.parallelID ?? 0;
     const teamId = m.play?.stats?.teamAtMomentNbaId ?? "";
     const teamName = NBA_TEAMS[teamId] ?? teamId;
-    const thumbnailUrl = buildThumbnailUrl(m.assetPathPrefix, m.flowId, m.setPlay?.ID);
 
-    // Stale detection: if updatedAt is more than 10 minutes old, listing may be inactive
+    // Fixed thumbnail: assetPathPrefix already encodes full path, just append resolution suffix
+    const thumbnailUrl = buildThumbnailUrl(m.assetPathPrefix);
+
     const updatedAt = tx.updatedAt ?? null;
     const listingAgeMs = updatedAt ? now - new Date(updatedAt).getTime() : 0;
     const isStale = listingAgeMs > 10 * 60 * 1000; // 10 minutes
@@ -452,14 +451,14 @@ export async function GET(req: Request) {
         : null,
       thumbnailUrl,
       isLocked: m.isLocked ?? false,
-      updatedAt,
       isStale,
+      updatedAt,
       packListingId,
       packName,
       packEv: null,
       packEvRatio: null,
       buyUrl: `https://nbatopshot.com/moment/${m.flowId}`,
-    } as SniperDeal & { isStale: boolean };
+    };
   }).filter((m): m is SniperDeal => m !== null);
 
   const deals = enriched

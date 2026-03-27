@@ -29,8 +29,8 @@ interface SniperDeal {
   serialSignal: string | null;
   thumbnailUrl: string | null;
   isLocked: boolean;
-  updatedAt: string | null;
   isStale: boolean;
+  updatedAt: string | null;
   packListingId: string | null;
   packName: string | null;
   packEv: number | null;
@@ -44,12 +44,10 @@ interface FeedResponse {
   deals: SniperDeal[];
 }
 
-// wallet-search returns rows[] with editionKey (integer "setId:playId" format)
 interface WalletRow {
-  editionKey?: string | null;
-  isLocked?: boolean;
-  momentId?: string;
   flowId?: string;
+  momentId?: string;
+  isLocked?: boolean;
 }
 
 const TIER_COLOR: Record<string, string> = {
@@ -100,15 +98,14 @@ export default function SniperPage() {
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
-  // Wallet state — keyed by flowId (integer string) → isLocked
+  // Wallet — map flowId → isLocked
   const [walletInput, setWalletInput] = useState("");
   const [walletLoading, setWalletLoading] = useState(false);
   const [walletError, setWalletError] = useState<string | null>(null);
   const [loadedWallet, setLoadedWallet] = useState<string | null>(null);
-  // Map: flowId (string) → isLocked (bool)
   const [ownedFlowIds, setOwnedFlowIds] = useState<Map<string, boolean>>(new Map());
 
-  // Filters
+  // Filters — hideInactive defaults to true to hide stale ancient listings
   const [minDiscount, setMinDiscount] = useState(10);
   const [rarity, setRarity] = useState("all");
   const [badgeOnly, setBadgeOnly] = useState(false);
@@ -116,7 +113,7 @@ export default function SniperPage() {
   const [maxPrice, setMaxPrice] = useState(0);
   const [searchText, setSearchText] = useState("");
   const [ownedFilter, setOwnedFilter] = useState("all");
-  const [hideInactive, setHideInactive] = useState(false);
+  const [hideInactive, setHideInactive] = useState(true); // default ON
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -168,7 +165,6 @@ export default function SniperPage() {
     };
   }, [autoRefresh, fetchDeals]);
 
-  // Load wallet — wallet-search accepts { input: "username or address" }
   const loadWallet = useCallback(async () => {
     const w = walletInput.trim();
     if (!w) return;
@@ -178,14 +174,10 @@ export default function SniperPage() {
       const res = await fetch("/api/wallet-search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: w }),  // NOTE: field is "input" not "wallet"
+        body: JSON.stringify({ input: w }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-
-      // wallet-search returns { rows: WalletRow[] }
-      // rows have flowId (on-chain integer as string) and isLocked
-      // The sniper's deal.flowId is also the on-chain flowId — match on this
       const rows: WalletRow[] = data.rows ?? [];
       const map = new Map<string, boolean>();
       for (const row of rows) {
@@ -208,7 +200,6 @@ export default function SniperPage() {
     setOwnedFilter("all");
   };
 
-  // Client-side filtering — match owned by flowId
   const visible = deals.filter(d => {
     if (hideInactive && d.isStale) return false;
     if (ownedFilter === "owned" && !ownedFlowIds.has(d.flowId)) return false;
@@ -519,7 +510,6 @@ export default function SniperPage() {
                       )}
                     </td>
 
-                    {/* Owned column */}
                     <td className="px-3 py-3">
                       {isOwned ? (
                         isOwnedLocked ? (
@@ -578,7 +568,7 @@ export default function SniperPage() {
         </div>
 
         <div className="mt-4 text-center text-xs text-zinc-700">
-          FMV adjusted for badge premiums and serial multipliers · Discount = (Adj. FMV − Ask) / Adj. FMV · Auto-refreshes every 30s
+          FMV adjusted for badge premiums and serial multipliers · Discount = (Adj. FMV − Ask) / Adj. FMV · Auto-refreshes every 30s · Stale listings hidden by default
         </div>
       </div>
     </div>
