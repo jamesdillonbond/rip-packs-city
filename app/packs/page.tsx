@@ -85,13 +85,6 @@ function evColor(isPositive: boolean): string {
   return isPositive ? "text-green-400" : "text-red-400"
 }
 
-function buildVerdict(result: PackEVResponse): string {
-  if (result.packPrice === 0) return "Enter a pack price to get the EV verdict"
-  const abs = Math.abs(result.packEV).toFixed(2)
-  if (result.isPositiveEV) return "+EV by $" + abs + " — opening beats buying direct"
-  return "-EV by $" + abs + " — cheaper to buy moments directly"
-}
-
 export default function PacksPage() {
   const [packListingId, setPackListingId] = useState("")
   const [packPrice, setPackPrice] = useState("")
@@ -100,6 +93,63 @@ export default function PacksPage() {
   const [result, setResult] = useState<PackEVResponse | null>(null)
   const [showAllPulls, setShowAllPulls] = useState(false)
   const [showAllAlerts, setShowAllAlerts] = useState(false)
+
+  // Trade Ticket mode
+  const [ttMode, setTtMode] = useState(false)
+  const [ttCount, setTtCount] = useState("")
+  const [ttFloor, setTtFloor] = useState("")
+
+  // Derived TT cost and EV
+  const ttCost = ttMode && ttCount && ttFloor
+    ? parseFloat(ttCount) * parseFloat(ttFloor)
+    : null
+  const ttPackEV = result !== null && ttCost !== null
+    ? Math.round((result.grossEV - ttCost) * 100) / 100
+    : null
+  const ttIsPositive = ttPackEV !== null && ttPackEV > 0
+
+  function buildVerdict(): string {
+    if (ttMode) {
+      if (ttPackEV === null) return "Enter TT count and floor price to get verdict"
+      const abs = Math.abs(ttPackEV).toFixed(2)
+      if (ttIsPositive) return "+EV by $" + abs + " — burning TTs beats buying direct"
+      return "-EV by $" + abs + " — cheaper to buy moments directly"
+    }
+    if (!result) return ""
+    if (result.packPrice === 0) return "Enter a pack price to get the EV verdict"
+    const abs = Math.abs(result.packEV).toFixed(2)
+    if (result.isPositiveEV) return "+EV by $" + abs + " — opening beats buying direct"
+    return "-EV by $" + abs + " — cheaper to buy moments directly"
+  }
+
+  function displayPackEV(): number | null {
+    if (ttMode && ttPackEV !== null) return ttPackEV
+    if (result !== null) return result.packEV
+    return null
+  }
+
+  function displayIsPositive(): boolean {
+    if (ttMode && ttPackEV !== null) return ttIsPositive
+    if (result !== null) return result.isPositiveEV
+    return false
+  }
+
+  function displayPackCost(): string {
+    if (ttMode) {
+      if (ttCost !== null) return fmt(ttCost)
+      return "—"
+    }
+    if (result !== null && result.packPrice > 0) return fmt(result.packPrice)
+    return "—"
+  }
+
+  function displayPackCostLabel(): string {
+    if (ttMode && ttCost !== null && ttCount && ttFloor) {
+      return ttCount + " TTs x " + fmt(parseFloat(ttFloor)) + " floor"
+    }
+    if (result !== null && result.packPrice > 0) return (result.editionCount) + " editions analyzed"
+    return "Enter price to get EV verdict"
+  }
 
   async function handleAnalyze() {
     const id = packListingId.trim()
@@ -119,7 +169,7 @@ export default function PacksPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           packListingId: resolvedId,
-          packPrice: packPrice ? parseFloat(packPrice) : 0,
+          packPrice: !ttMode && packPrice ? parseFloat(packPrice) : 0,
         }),
       })
       const json = await response.json()
@@ -161,7 +211,24 @@ export default function PacksPage() {
         </div>
 
         <div className="mb-6 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-          <div className="mb-3 text-sm font-semibold text-zinc-300">Analyze a Pack Drop</div>
+          <div className="mb-3 flex items-center justify-between">
+            <div className="text-sm font-semibold text-zinc-300">Analyze a Pack Drop</div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setTtMode(false)}
+                className={"rounded-lg px-3 py-1 text-xs font-semibold transition " + (!ttMode ? "bg-red-600 text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}
+              >
+                Cash Price
+              </button>
+              <button
+                onClick={() => setTtMode(true)}
+                className={"rounded-lg px-3 py-1 text-xs font-semibold transition " + (ttMode ? "bg-red-600 text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}
+              >
+                Trade Tickets
+              </button>
+            </div>
+          </div>
+
           <div className="flex flex-wrap gap-3">
             <input
               value={packListingId}
@@ -170,15 +237,39 @@ export default function PacksPage() {
               placeholder="Pack listing ID or full URL"
               className="min-w-[320px] flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white outline-none placeholder:text-zinc-500 focus:border-red-600"
             />
-            <input
-              value={packPrice}
-              onChange={(e) => setPackPrice(e.target.value)}
-              placeholder="Pack price ($)"
-              type="number"
-              min="0"
-              step="any"
-              className="w-32 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white outline-none placeholder:text-zinc-500 focus:border-red-600"
-            />
+            {!ttMode && (
+              <input
+                value={packPrice}
+                onChange={(e) => setPackPrice(e.target.value)}
+                placeholder="Pack price ($)"
+                type="number"
+                min="0"
+                step="any"
+                className="w-32 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white outline-none placeholder:text-zinc-500 focus:border-red-600"
+              />
+            )}
+            {ttMode && (
+              <>
+                <input
+                  value={ttCount}
+                  onChange={(e) => setTtCount(e.target.value)}
+                  placeholder="# of TTs"
+                  type="number"
+                  min="1"
+                  step="1"
+                  className="w-24 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white outline-none placeholder:text-zinc-500 focus:border-red-600"
+                />
+                <input
+                  value={ttFloor}
+                  onChange={(e) => setTtFloor(e.target.value)}
+                  placeholder="TT floor ($)"
+                  type="number"
+                  min="0"
+                  step="any"
+                  className="w-32 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white outline-none placeholder:text-zinc-500 focus:border-red-600"
+                />
+              </>
+            )}
             <button
               onClick={handleAnalyze}
               disabled={loading || !packListingId.trim()}
@@ -187,9 +278,20 @@ export default function PacksPage() {
               {loading ? "Analyzing..." : "Analyze"}
             </button>
           </div>
+
           <p className="mt-2 text-xs text-zinc-500">
-            Paste the full pack URL or just the UUID. Pack price is optional.
+            {ttMode
+              ? "Trade Ticket cost = # of TTs x cheapest burnable moment floor (across all marketplaces)."
+              : "Paste the full pack URL or just the UUID. Pack price is optional."}
           </p>
+
+          {ttMode && ttCost !== null && (
+            <div className="mt-3 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm">
+              <span className="text-zinc-400">Effective pack cost: </span>
+              <span className="font-bold text-white">{fmt(ttCost)}</span>
+              <span className="ml-2 text-zinc-500">{"(" + ttCount + " TTs x " + fmt(parseFloat(ttFloor)) + " floor)"}</span>
+            </div>
+          )}
         </div>
 
         {error && (
@@ -200,21 +302,23 @@ export default function PacksPage() {
           <div>
             <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                <div className="text-[11px] uppercase tracking-wide text-zinc-500">Pack EV</div>
-                <div className={"text-2xl font-black " + evColor(result.isPositiveEV)}>{fmt(result.packEV)}</div>
-                <div className={"mt-1 text-xs " + evColor(result.isPositiveEV)}>{buildVerdict(result)}</div>
+                <div className="text-[11px] uppercase tracking-wide text-zinc-500">
+                  {ttMode ? "TT Pack EV" : "Pack EV"}
+                </div>
+                <div className={"text-2xl font-black " + evColor(displayIsPositive())}>{fmt(displayPackEV())}</div>
+                <div className={"mt-1 text-xs " + evColor(displayIsPositive())}>{buildVerdict()}</div>
               </div>
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
                 <div className="text-[11px] uppercase tracking-wide text-zinc-500">Gross EV</div>
                 <div className="text-2xl font-black text-white">{fmt(result.grossEV)}</div>
-                <div className="mt-1 text-xs text-zinc-500">Before subtracting pack price</div>
+                <div className="mt-1 text-xs text-zinc-500">Before subtracting pack cost</div>
               </div>
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                <div className="text-[11px] uppercase tracking-wide text-zinc-500">Pack Price</div>
-                <div className="text-2xl font-black text-white">{result.packPrice > 0 ? fmt(result.packPrice) : "—"}</div>
-                <div className="mt-1 text-xs text-zinc-500">
-                  {result.packPrice > 0 ? result.editionCount + " editions analyzed" : "Enter price to get EV verdict"}
+                <div className="text-[11px] uppercase tracking-wide text-zinc-500">
+                  {ttMode ? "TT Cost" : "Pack Price"}
                 </div>
+                <div className="text-2xl font-black text-white">{displayPackCost()}</div>
+                <div className="mt-1 text-xs text-zinc-500">{displayPackCostLabel()}</div>
               </div>
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
                 <div className="text-[11px] uppercase tracking-wide text-zinc-500">Supply</div>
@@ -224,6 +328,32 @@ export default function PacksPage() {
                 </div>
               </div>
             </div>
+
+            {ttMode && ttCost !== null && (
+              <div className="mb-5 rounded-xl border border-zinc-700 bg-zinc-900 p-4">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Trade Ticket Breakdown</div>
+                <div className="grid gap-3 sm:grid-cols-3 text-sm">
+                  <div>
+                    <div className="text-zinc-500 text-xs">TTs Required</div>
+                    <div className="text-white font-bold text-lg">{ttCount}</div>
+                  </div>
+                  <div>
+                    <div className="text-zinc-500 text-xs">Floor Price per TT</div>
+                    <div className="text-white font-bold text-lg">{fmt(parseFloat(ttFloor))}</div>
+                    <div className="text-zinc-500 text-xs mt-0.5">Cheapest burnable across all markets</div>
+                  </div>
+                  <div>
+                    <div className="text-zinc-500 text-xs">Total Opportunity Cost</div>
+                    <div className="text-white font-bold text-lg">{fmt(ttCost)}</div>
+                    <div className={"text-xs mt-0.5 " + evColor(ttIsPositive)}>
+                      {ttPackEV !== null
+                        ? (ttIsPositive ? "You gain " : "You lose ") + fmt(Math.abs(ttPackEV)) + " vs buying direct"
+                        : ""}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="mb-5 grid gap-4 md:grid-cols-2">
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
