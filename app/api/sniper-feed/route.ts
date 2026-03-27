@@ -1,0 +1,388 @@
+// app/api/sniper-feed/route.ts
+import { NextResponse } from "next/server";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
+
+const TOPSHOT_GQL = "https://public-api.nbatopshot.com/graphql";
+const GQL_HEADERS = {
+  "Content-Type": "application/json",
+  Origin: "https://nbatopshot.com",
+  Referer: "https://nbatopshot.com/",
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
+};
+
+const BADGE_PREMIUMS: Record<string, number> = {
+  rookie_year: 0.45, rookie_mint: 0.35, rookie_premiere: 0.30,
+  top_shot_debut: 0.25, three_star_rookie: 0.20, mvp: 0.20,
+  championship_year: 0.18, rookie_of_the_year: 0.18, fresh: 0.10, autograph: 0.60,
+  "Rookie Year": 0.45, "Rookie Mint": 0.35, "Rookie Premiere": 0.30,
+  "Top Shot Debut": 0.25, "Three-Star Rookie": 0.20, "MVP Year": 0.20,
+  "Championship Year": 0.18, "Rookie of the Year": 0.18, "Fresh": 0.10,
+};
+const BADGE_LABELS: Record<string, string> = {
+  rookie_year: "Rookie Year", rookie_mint: "Rookie Mint", rookie_premiere: "Rookie Premiere",
+  top_shot_debut: "TS Debut", three_star_rookie: "3★ Rookie", mvp: "MVP",
+  championship_year: "Champ Year", rookie_of_the_year: "ROTY", fresh: "Fresh", autograph: "Auto",
+  "Rookie Year": "Rookie Year", "Rookie Mint": "Rookie Mint", "Rookie Premiere": "Rookie Premiere",
+  "Top Shot Debut": "TS Debut", "Three-Star Rookie": "3★ Rookie", "MVP Year": "MVP",
+  "Championship Year": "Champ Year", "Rookie of the Year": "ROTY", "Fresh": "Fresh",
+};
+
+function serialPremium(serial: number, circ: number): number {
+  if (serial === 1) return 12.0;
+  if (serial <= 10) return 4.5;
+  if (serial <= 23) return 2.8;
+  if (serial === circ) return 3.0;
+  return Math.max(1.0, Math.pow(circ / 2 / serial, 0.4));
+}
+
+interface RawTag { id: string; title: string; }
+interface RawTransaction {
+  id: string;
+  price: string | number;
+  updatedAt?: string;
+  moment?: {
+    id: string;
+    flowId: string;
+    flowSerialNumber: string;
+    tier?: string;
+    parallelID?: number;
+    set?: { id: string; flowName?: string; flowSeriesNumber?: number };
+    setPlay?: {
+      ID?: string;
+      flowRetired?: boolean;
+      circulations?: { circulationCount: number; forSaleByCollectors: number };
+    };
+    parallelSetPlay?: { setID?: string; playID?: string; parallelID?: number };
+    play?: {
+      id: string;
+      stats: { playerName: string; jerseyNumber?: string; teamAtMomentNbaId?: string };
+      tags?: RawTag[];
+    };
+  };
+}
+
+export interface SniperDeal {
+  flowId: string; momentId: string; playerName: string; teamName: string;
+  setName: string; seriesName: string; tier: string; parallel: string;
+  serial: number; circulationCount: number; askPrice: number;
+  baseFmv: number; adjustedFmv: number; discount: number; confidence: string;
+  hasBadge: boolean; badgeSlugs: string[]; badgeLabels: string[];
+  badgePremiumPct: number; serialMult: number; isSpecialSerial: boolean;
+  isJersey: boolean; serialSignal: string | null;
+  packListingId: string | null; packName: string | null;
+  packEv: number | null; packEvRatio: number | null; buyUrl: string;
+}
+
+// rightCursor is inside searchSummary.pagination (confirmed from browser capture)
+const SEARCH_TX_QUERY = `
+  query SearchMarketplaceTransactions($input: SearchMarketplaceTransactionsInput!) {
+    searchMarketplaceTransactions(input: $input) {
+      data {
+        searchSummary {
+          pagination {
+            rightCursor
+          }
+          data {
+            ... on MarketplaceTransactions {
+              size
+              data {
+                ... on MarketplaceTransaction {
+                  id
+                  price
+                  updatedAt
+                  moment {
+                    id
+                    flowId
+                    flowSerialNumber
+                    tier
+                    parallelID
+                    set { id flowName flowSeriesNumber }
+                    setPlay {
+                      ID
+                      flowRetired
+                      circulations { circulationCount forSaleByCollectors }
+                    }
+                    parallelSetPlay { setID playID parallelID }
+                    play {
+                      id
+                      stats { playerName jerseyNumber teamAtMomentNbaId }
+                      tags { id title }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+function parsePrice(p: string | number): number {
+  return typeof p === "string" ? parseFloat(p) : (p ?? 0);
+}
+
+interface GqlTxResponse {
+  errors?: { message: string }[];
+  data?: {
+    searchMarketplaceTransactions?: {
+      data?: {
+        searchSummary?: {
+          pagination?: { rightCursor?: string };
+          data?: { data?: RawTransaction[]; size?: number };
+        };
+      };
+    };
+  };
+}
+
+async function fetchPage(
+  cursor: string,
+  sortBy: string
+): Promise<{ txns: RawTransaction[]; nextCursor: string | null }> {
+  const res = await fetch(TOPSHOT_GQL, {
+    method: "POST",
+    headers: GQL_HEADERS,
+    body: JSON.stringify({
+      operationName: "SearchMarketplaceTransactions",
+      query: SEARCH_TX_QUERY,
+      variables: {
+        input: {
+          sortBy,
+          filters: {},
+          searchInput: { pagination: { cursor, direction: "RIGHT", limit: 100 } },
+        },
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`GQL ${res.status}: ${text.slice(0, 200)}`);
+  }
+
+  const json = await res.json() as GqlTxResponse;
+  if (json.errors?.length) throw new Error(json.errors.map(e => e.message).join("; "));
+
+  const summary = json?.data?.searchMarketplaceTransactions?.data?.searchSummary;
+  const txns = (summary?.data?.data ?? []) as RawTransaction[];
+  const nextCursor = summary?.pagination?.rightCursor ?? null;
+
+  return { txns, nextCursor };
+}
+
+async function fetchTransactionPool(): Promise<RawTransaction[]> {
+  const seen = new Set<string>();
+  const all: RawTransaction[] = [];
+
+  function addTxns(txns: RawTransaction[]) {
+    for (const tx of txns) {
+      const key = tx.moment?.id ?? tx.id;
+      if (!seen.has(key)) { seen.add(key); all.push(tx); }
+    }
+  }
+
+  // Fetch pages 1 + 2 of recent activity
+  const { txns: p1, nextCursor: c1 } = await fetchPage("", "UPDATED_AT_DESC");
+  addTxns(p1);
+
+  if (c1) {
+    try {
+      const { txns: p2 } = await fetchPage(c1, "UPDATED_AT_DESC");
+      addTxns(p2);
+    } catch (e) {
+      console.warn("[sniper-feed] page 2 failed:", e);
+    }
+  }
+
+  // Fetch cheapest listings for floor price context
+  try {
+    const { txns: cheap } = await fetchPage("", "PRICE_ASC");
+    addTxns(cheap);
+  } catch (e) {
+    console.warn("[sniper-feed] PRICE_ASC page failed:", e);
+  }
+
+  return all;
+}
+
+function computeEditionFloors(
+  txns: RawTransaction[]
+): Map<string, { floor: number; count: number }> {
+  const byEdition = new Map<string, number[]>();
+
+  for (const tx of txns) {
+    const psp = tx.moment?.parallelSetPlay;
+    if (!psp?.setID || !psp?.playID) continue;
+    const key = `${psp.setID}:${psp.playID}`;
+    const price = parsePrice(tx.price);
+    if (!price || price <= 0) continue;
+    const arr = byEdition.get(key) ?? [];
+    arr.push(price);
+    byEdition.set(key, arr);
+  }
+
+  const floors = new Map<string, { floor: number; count: number }>();
+  for (const [key, prices] of byEdition.entries()) {
+    prices.sort((a, b) => a - b);
+    floors.set(key, { floor: prices[0], count: prices.length });
+  }
+  return floors;
+}
+
+interface FmvRow {
+  edition_key: string; fmv: number; low_ask: number | null;
+  confidence: string; pack_listing_id: string | null; pack_name: string | null;
+}
+
+async function fetchSupabaseFmv(
+  supabase: SupabaseClient,
+  keys: string[]
+): Promise<Map<string, FmvRow>> {
+  if (!keys.length) return new Map();
+  const { data } = await supabase
+    .from("fmv_snapshots")
+    .select("edition_key, fmv, low_ask, confidence, pack_listing_id, pack_name")
+    .in("edition_key", keys)
+    .order("computed_at", { ascending: false });
+  const map = new Map<string, FmvRow>();
+  for (const row of (data ?? []) as FmvRow[]) {
+    if (!map.has(row.edition_key)) map.set(row.edition_key, row);
+  }
+  return map;
+}
+
+function extractBadges(tx: RawTransaction): string[] {
+  return (tx.moment?.play?.tags ?? [])
+    .map(t => t.id in BADGE_PREMIUMS ? t.id : t.title in BADGE_PREMIUMS ? t.title : null)
+    .filter((s): s is string => s !== null);
+}
+
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const minDiscount = parseFloat(url.searchParams.get("minDiscount") ?? "0");
+  const rarity = url.searchParams.get("rarity") ?? "all";
+  const badgeOnly = url.searchParams.get("badgeOnly") === "true";
+  const serialFilter = url.searchParams.get("serial") ?? "all";
+  const maxPrice = parseFloat(url.searchParams.get("maxPrice") ?? "0");
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  let allTxns: RawTransaction[] = [];
+  try {
+    allTxns = await fetchTransactionPool();
+  } catch (err) {
+    console.error("[sniper-feed] fetch error:", err);
+    return NextResponse.json({ error: String(err) }, { status: 502 });
+  }
+
+  console.log(`[sniper-feed] pool: ${allTxns.length}`);
+
+  const txns = rarity !== "all"
+    ? allTxns.filter(tx => (tx.moment?.tier ?? "").toUpperCase().includes(rarity.toUpperCase()))
+    : allTxns;
+
+  const editionFloors = computeEditionFloors(allTxns);
+  console.log(`[sniper-feed] editions: ${editionFloors.size}, enrichable txns: ${txns.length}`);
+
+  const editionKeys = Array.from(editionFloors.keys());
+  const supabaseFmv = await fetchSupabaseFmv(supabase, editionKeys);
+
+  const enriched: SniperDeal[] = txns.map((tx): SniperDeal | null => {
+    if (!tx.moment) return null;
+    const askPrice = parsePrice(tx.price);
+    if (!askPrice || askPrice <= 0) return null;
+
+    const m = tx.moment;
+    const psp = m.parallelSetPlay;
+    const editionKey = psp?.setID && psp?.playID ? `${psp.setID}:${psp.playID}` : null;
+    if (!editionKey) return null;
+
+    const floorData = editionFloors.get(editionKey);
+    if (!floorData) return null;
+
+    const sbRow = supabaseFmv.get(editionKey);
+    let baseFmv: number;
+    let confidence: string;
+    let packListingId: string | null = null;
+    let packName: string | null = null;
+
+    if (sbRow) {
+      baseFmv = sbRow.fmv;
+      confidence = sbRow.confidence;
+      packListingId = sbRow.pack_listing_id;
+      packName = sbRow.pack_name;
+    } else if (floorData.count >= 2) {
+      baseFmv = floorData.floor;
+      confidence = floorData.count >= 5 ? "medium" : "low";
+    } else {
+      return null; // single data point — no meaningful comparison
+    }
+
+    const circ = m.setPlay?.circulations?.circulationCount ?? 1000;
+    const serial = parseInt(m.flowSerialNumber ?? "0", 10);
+    if (!serial) return null;
+
+    const jerseyNumber = m.play?.stats?.jerseyNumber ?? null;
+    const badgeSlugs = extractBadges(tx);
+    const hasBadge = badgeSlugs.length > 0;
+    const totalBadgePremium = badgeSlugs.reduce((s, slug) => s + (BADGE_PREMIUMS[slug] ?? 0), 0);
+    const serialMult = serialPremium(serial, circ);
+    const isSpecialSerial = serialMult > 1.5;
+    const jerseyMatch = jerseyNumber != null && parseInt(jerseyNumber) === serial;
+    const isJersey = jerseyMatch || (serial >= 2 && serial <= 99);
+    const adjustedFmv = baseFmv * serialMult * (1 + totalBadgePremium);
+    const discount = ((adjustedFmv - askPrice) / adjustedFmv) * 100;
+    const parallelId = psp?.parallelID ?? m.parallelID ?? 0;
+
+    return {
+      flowId: m.flowId,
+      momentId: m.id,
+      playerName: m.play?.stats?.playerName ?? "Unknown",
+      teamName: m.play?.stats?.teamAtMomentNbaId ?? "",
+      setName: m.set?.flowName ?? "",
+      seriesName: m.set?.flowSeriesNumber ? `Series ${m.set.flowSeriesNumber}` : "",
+      tier: (m.tier ?? "COMMON").replace("MOMENT_TIER_", ""),
+      parallel: parallelId > 0 ? `Parallel #${parallelId}` : "Base",
+      serial, circulationCount: circ, askPrice, baseFmv, adjustedFmv,
+      discount: Math.round(discount * 10) / 10,
+      confidence, hasBadge, badgeSlugs,
+      badgeLabels: badgeSlugs.map(s => BADGE_LABELS[s] ?? s),
+      badgePremiumPct: Math.round(totalBadgePremium * 100),
+      serialMult: Math.round(serialMult * 100) / 100,
+      isSpecialSerial, isJersey,
+      serialSignal:
+        serial === 1 ? "Serial #1"
+        : serial === circ ? "Last Mint"
+        : jerseyMatch ? `Jersey #${serial}`
+        : isSpecialSerial ? `Low #${serial}`
+        : null,
+      packListingId, packName, packEv: null, packEvRatio: null,
+      buyUrl: `https://nbatopshot.com/moment/${m.flowId}`,
+    };
+  }).filter((m): m is SniperDeal => m !== null);
+
+  const deals = enriched
+    .filter(m => {
+      if (m.discount < minDiscount) return false;
+      if (badgeOnly && !m.hasBadge) return false;
+      if (maxPrice > 0 && m.askPrice > maxPrice) return false;
+      if (serialFilter === "special" && !m.isSpecialSerial) return false;
+      if (serialFilter === "jersey" && !m.isJersey) return false;
+      return true;
+    })
+    .sort((a, b) => b.discount - a.discount)
+    .slice(0, 200);
+
+  console.log(`[sniper-feed] enriched: ${enriched.length}, deals: ${deals.length}`);
+
+  return NextResponse.json({
+    count: deals.length,
+    lastRefreshed: new Date().toISOString(),
+    deals,
+  });
+}
