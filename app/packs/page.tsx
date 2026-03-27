@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 
 type EditionEV = {
   editionId: string
@@ -106,7 +106,7 @@ function evColor(isPositive: boolean): string {
   return isPositive ? "text-green-400" : "text-red-400"
 }
 
-type SortKey = "tier" | "lowestAsk" | "retailPrice" | "momentsPerPack" | "title"
+type SortKey = "tier" | "lowestAsk" | "retailPrice" | "momentsPerPack" | "title" | "owned"
 
 export default function PacksPage() {
   const [listings, setListings] = useState<PackListing[]>([])
@@ -116,6 +116,14 @@ export default function PacksPage() {
   const [searchFilter, setSearchFilter] = useState("")
   const [sortKey, setSortKey] = useState<SortKey>("tier")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
+
+  // Wallet ownership
+  const [walletInput, setWalletInput] = useState("")
+  const [walletQuery, setWalletQuery] = useState("")
+  const [ownedPacks, setOwnedPacks] = useState<Record<string, number>>({})
+  const [walletLoading, setWalletLoading] = useState(false)
+  const [walletError, setWalletError] = useState("")
+  const [walletAddress, setWalletAddress] = useState("")
 
   const [selectedPack, setSelectedPack] = useState<PackListing | null>(null)
   const [loading, setLoading] = useState(false)
@@ -127,6 +135,8 @@ export default function PacksPage() {
   const [ttMode, setTtMode] = useState(false)
   const [ttCount, setTtCount] = useState("")
   const [ttFloor, setTtFloor] = useState("")
+
+  const prewarmFiredRef = useRef(false)
 
   const ttCost = ttMode && ttCount && ttFloor
     ? parseFloat(ttCount) * parseFloat(ttFloor)
@@ -142,7 +152,21 @@ export default function PacksPage() {
         const res = await fetch("/api/pack-listings")
         const json = await res.json()
         if (!res.ok) throw new Error(json.error || "Failed to load pack listings")
-        setListings(json.listings ?? [])
+        const data: PackListing[] = json.listings ?? []
+        setListings(data)
+
+        // Pre-warm top 5 packs (Ultimate first, then Legendary by lowest ask)
+        if (!prewarmFiredRef.current && data.length > 0) {
+          prewarmFiredRef.current = true
+          const top5 = data.slice(0, 5)
+          for (const pack of top5) {
+            fetch("/api/pack-ev", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ packListingId: pack.packListingId, packPrice: 0 }),
+            }).catch(() => {})
+          }
+        }
       } catch (err) {
         setListingsError(err instanceof Error ? err.message : "Failed to load listings")
       } finally {
@@ -152,12 +176,34 @@ export default function PacksPage() {
     fetchListings()
   }, [])
 
+  async function handleWalletSearch() {
+    const q = walletInput.trim()
+    if (!q) return
+    setWalletQuery(q)
+    setWalletLoading(true)
+    setWalletError("")
+    setOwnedPacks({})
+    setWalletAddress("")
+    try {
+      const res = await fetch("/api/wallet-packs?wallet=" + encodeURIComponent(q))
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || "Failed to load wallet packs")
+      setOwnedPacks(json.owned ?? {})
+      setWalletAddress(json.walletAddress ?? "")
+      if (json.totalSealedPacks === 0) setWalletError("No sealed packs found for this wallet.")
+    } catch (err) {
+      setWalletError(err instanceof Error ? err.message : "Something went wrong")
+    } finally {
+      setWalletLoading(false)
+    }
+  }
+
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
       setSortDir((d) => d === "asc" ? "desc" : "asc")
     } else {
       setSortKey(key)
-      setSortDir("asc")
+      setSortDir(key === "owned" ? "desc" : "asc")
     }
   }
 
@@ -165,6 +211,8 @@ export default function PacksPage() {
     if (sortKey !== key) return " ↕"
     return sortDir === "asc" ? " ↑" : " ↓"
   }
+
+  const hasWalletData = Object.keys(ownedPacks).length > 0
 
   const filteredListings = listings
     .filter((l) => {
@@ -185,6 +233,8 @@ export default function PacksPage() {
         diff = a.momentsPerPack - b.momentsPerPack
       } else if (sortKey === "title") {
         diff = a.title.localeCompare(b.title)
+      } else if (sortKey === "owned") {
+        diff = (ownedPacks[b.distId] ?? 0) - (ownedPacks[a.distId] ?? 0)
       }
       return sortDir === "asc" ? diff : -diff
     })
@@ -284,6 +334,11 @@ export default function PacksPage() {
                 <div className="text-xs text-zinc-400">
                   <span className={"rounded border px-1.5 py-0.5 text-[10px] font-semibold capitalize mr-2 " + tierBadge(selectedPack.tier)}>{selectedPack.tier}</span>
                   {selectedPack.momentsPerPack} moments · Lowest Ask {fmt(selectedPack.lowestAsk)}
+                  {hasWalletData && (ownedPacks[selectedPack.distId] ?? 0) > 0 && (
+                    <span className="ml-2 rounded bg-green-950 px-2 py-0.5 text-[10px] font-semibold text-green-400">
+                      {"You own " + (ownedPacks[selectedPack.distId] ?? 0)}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -541,7 +596,7 @@ export default function PacksPage() {
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
                 placeholder="Search packs..."
-                className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-red-600 w-48"
+                className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-red-600 w-40"
               />
               <div className="flex flex-wrap gap-1">
                 {["all", "ultimate", "legendary", "rare", "fandom", "common"].map((t) => (
@@ -554,7 +609,29 @@ export default function PacksPage() {
                   </button>
                 ))}
               </div>
+              <div className="ml-auto flex items-center gap-2">
+                <input
+                  value={walletInput}
+                  onChange={(e) => setWalletInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && walletInput.trim()) handleWalletSearch() }}
+                  placeholder="Username or wallet to show owned"
+                  className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-red-600 w-56"
+                />
+                <button
+                  onClick={handleWalletSearch}
+                  disabled={walletLoading || !walletInput.trim()}
+                  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:bg-zinc-900 disabled:opacity-50"
+                >
+                  {walletLoading ? "Loading..." : "Show Owned"}
+                </button>
+                {walletAddress && (
+                  <span className="text-xs text-green-400">{walletQuery}</span>
+                )}
+              </div>
             </div>
+            {walletError && (
+              <div className="mt-2 text-xs text-red-400">{walletError}</div>
+            )}
           </div>
 
           {listingsLoading && (
@@ -586,40 +663,55 @@ export default function PacksPage() {
                     <th className="p-3">
                       <button onClick={() => toggleSort("lowestAsk")} className="hover:text-white">{"Lowest Ask" + sortIndicator("lowestAsk")}</button>
                     </th>
+                    {hasWalletData && (
+                      <th className="p-3">
+                        <button onClick={() => toggleSort("owned")} className="hover:text-white">{"Owned" + sortIndicator("owned")}</button>
+                      </th>
+                    )}
                     <th className="p-3"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredListings.map((listing) => (
-                    <tr
-                      key={listing.packListingId}
-                      className={"border-b border-zinc-800 hover:bg-zinc-900/50 cursor-pointer " + (selectedPack?.packListingId === listing.packListingId ? "bg-zinc-900/70" : "")}
-                      onClick={() => handleAnalyze(listing)}
-                    >
-                      <td className="p-3">
-                        <div className="flex items-center gap-3">
-                          {listing.imageUrl && (
-                            <img src={listing.imageUrl} alt={listing.title} className="h-10 w-10 rounded object-cover flex-shrink-0" />
-                          )}
-                          <span className="font-medium text-white">{listing.title}</span>
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <span className={"rounded border px-2 py-0.5 text-[11px] font-semibold capitalize " + tierBadge(listing.tier)}>{listing.tier}</span>
-                      </td>
-                      <td className="p-3 text-zinc-400">{listing.momentsPerPack}</td>
-                      <td className="p-3 text-zinc-400">{listing.retailPrice > 0 ? fmt(listing.retailPrice) : "—"}</td>
-                      <td className="p-3 font-semibold text-white">{listing.lowestAsk > 0 ? fmt(listing.lowestAsk) : "—"}</td>
-                      <td className="p-3">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleAnalyze(listing) }}
-                          className={"rounded-lg px-3 py-1 text-xs font-semibold text-white transition " + (selectedPack?.packListingId === listing.packListingId ? "bg-zinc-600" : "bg-red-600 hover:bg-red-500")}
-                        >
-                          {selectedPack?.packListingId === listing.packListingId && loading ? "..." : "Analyze"}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredListings.map((listing) => {
+                    const ownedCount = ownedPacks[listing.distId] ?? 0
+                    return (
+                      <tr
+                        key={listing.packListingId}
+                        className={"border-b border-zinc-800 hover:bg-zinc-900/50 cursor-pointer " + (selectedPack?.packListingId === listing.packListingId ? "bg-zinc-900/70" : "")}
+                        onClick={() => handleAnalyze(listing)}
+                      >
+                        <td className="p-3">
+                          <div className="flex items-center gap-3">
+                            {listing.imageUrl && (
+                              <img src={listing.imageUrl} alt={listing.title} className="h-10 w-10 rounded object-cover flex-shrink-0" />
+                            )}
+                            <span className="font-medium text-white">{listing.title}</span>
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          <span className={"rounded border px-2 py-0.5 text-[11px] font-semibold capitalize " + tierBadge(listing.tier)}>{listing.tier}</span>
+                        </td>
+                        <td className="p-3 text-zinc-400">{listing.momentsPerPack}</td>
+                        <td className="p-3 text-zinc-400">{listing.retailPrice > 0 ? fmt(listing.retailPrice) : "—"}</td>
+                        <td className="p-3 font-semibold text-white">{listing.lowestAsk > 0 ? fmt(listing.lowestAsk) : "—"}</td>
+                        {hasWalletData && (
+                          <td className="p-3">
+                            {ownedCount > 0
+                              ? <span className="rounded bg-green-950 px-2 py-0.5 text-xs font-semibold text-green-400">{ownedCount}</span>
+                              : <span className="text-zinc-600">—</span>}
+                          </td>
+                        )}
+                        <td className="p-3">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleAnalyze(listing) }}
+                            className={"rounded-lg px-3 py-1 text-xs font-semibold text-white transition " + (selectedPack?.packListingId === listing.packListingId ? "bg-zinc-600" : "bg-red-600 hover:bg-red-500")}
+                          >
+                            {selectedPack?.packListingId === listing.packListingId && loading ? "..." : "Analyze"}
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
