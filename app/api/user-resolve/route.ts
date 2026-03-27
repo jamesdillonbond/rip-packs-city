@@ -1,3 +1,4 @@
+// app/api/user-resolve/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { topshotGraphql } from "@/lib/topshot";
 
@@ -24,9 +25,10 @@ type TopShotUserProfileResponse = {
 };
 
 async function tryResolveUsername(username: string) {
+  // FIXED: schema requires `input: { username }` wrapper, not bare `username` arg
   const query = `
     query ResolveUserByUsername($username: String!) {
-      getUserProfileByUsername(username: $username) {
+      getUserProfileByUsername(input: { username: $username }) {
         publicInfo {
           flowAddress
           username
