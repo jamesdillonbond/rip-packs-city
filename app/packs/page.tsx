@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 type EditionEV = {
   editionId: string
@@ -60,6 +60,19 @@ type PackEVResponse = {
   error?: string
 }
 
+type PackListing = {
+  packListingId: string
+  distId: string
+  title: string
+  tier: string
+  imageUrl: string
+  momentsPerPack: number
+  retailPrice: number
+  lowestAsk: number
+  startTime: string
+  listingCount: number
+}
+
 function fmt(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return "-"
   return "$" + value.toFixed(2)
@@ -98,6 +111,38 @@ export default function PacksPage() {
   const [ttMode, setTtMode] = useState(false)
   const [ttCount, setTtCount] = useState("")
   const [ttFloor, setTtFloor] = useState("")
+
+  // Pack browser
+  const [listings, setListings] = useState<PackListing[]>([])
+  const [listingsLoading, setListingsLoading] = useState(true)
+  const [listingsError, setListingsError] = useState("")
+  const [tierFilter, setTierFilter] = useState("all")
+  const [searchFilter, setSearchFilter] = useState("")
+
+  useEffect(() => {
+    async function fetchListings() {
+      try {
+        const res = await fetch("/api/pack-listings")
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || "Failed to load pack listings")
+        setListings(json.listings ?? [])
+      } catch (err) {
+        setListingsError(err instanceof Error ? err.message : "Failed to load listings")
+      } finally {
+        setListingsLoading(false)
+      }
+    }
+    fetchListings()
+  }, [])
+
+  const filteredListings = listings.filter((l) => {
+    if (tierFilter !== "all" && l.tier !== tierFilter) return false
+    if (searchFilter) {
+      const q = searchFilter.toLowerCase()
+      if (!l.title.toLowerCase().includes(q)) return false
+    }
+    return true
+  })
 
   // Derived TT cost and EV
   const ttCost = ttMode && ttCount && ttFloor
@@ -147,8 +192,14 @@ export default function PacksPage() {
     if (ttMode && ttCost !== null && ttCount && ttFloor) {
       return ttCount + " TTs x " + fmt(parseFloat(ttFloor)) + " floor"
     }
-    if (result !== null && result.packPrice > 0) return (result.editionCount) + " editions analyzed"
+    if (result !== null && result.packPrice > 0) return result.editionCount + " editions analyzed"
     return "Enter price to get EV verdict"
+  }
+
+  function selectPack(listing: PackListing) {
+    setPackListingId(listing.packListingId)
+    if (!ttMode) setPackPrice(listing.lowestAsk > 0 ? listing.lowestAsk.toFixed(2) : "")
+    window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
   async function handleAnalyze() {
@@ -210,9 +261,10 @@ export default function PacksPage() {
           </div>
         </div>
 
+        {/* Analyzer */}
         <div className="mb-6 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
           <div className="mb-3 flex items-center justify-between">
-            <div className="text-sm font-semibold text-zinc-300">Analyze a Pack Drop</div>
+            <div className="text-sm font-semibold text-zinc-300">Analyze a Pack</div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setTtMode(false)}
@@ -278,13 +330,11 @@ export default function PacksPage() {
               {loading ? "Analyzing..." : "Analyze"}
             </button>
           </div>
-
           <p className="mt-2 text-xs text-zinc-500">
             {ttMode
               ? "Trade Ticket cost = # of TTs x cheapest burnable moment floor (across all marketplaces)."
-              : "Paste the full pack URL or just the UUID. Pack price is optional."}
+              : "Paste the full pack URL or just the UUID, or click Analyze on any pack below."}
           </p>
-
           {ttMode && ttCost !== null && (
             <div className="mt-3 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm">
               <span className="text-zinc-400">Effective pack cost: </span>
@@ -298,13 +348,12 @@ export default function PacksPage() {
           <div className="mb-4 rounded-lg border border-red-800 bg-red-950 p-3 text-red-300">{error}</div>
         )}
 
+        {/* EV Results */}
         {result !== null && (
           <div>
             <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                <div className="text-[11px] uppercase tracking-wide text-zinc-500">
-                  {ttMode ? "TT Pack EV" : "Pack EV"}
-                </div>
+                <div className="text-[11px] uppercase tracking-wide text-zinc-500">{ttMode ? "TT Pack EV" : "Pack EV"}</div>
                 <div className={"text-2xl font-black " + evColor(displayIsPositive())}>{fmt(displayPackEV())}</div>
                 <div className={"mt-1 text-xs " + evColor(displayIsPositive())}>{buildVerdict()}</div>
               </div>
@@ -314,9 +363,7 @@ export default function PacksPage() {
                 <div className="mt-1 text-xs text-zinc-500">Before subtracting pack cost</div>
               </div>
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                <div className="text-[11px] uppercase tracking-wide text-zinc-500">
-                  {ttMode ? "TT Cost" : "Pack Price"}
-                </div>
+                <div className="text-[11px] uppercase tracking-wide text-zinc-500">{ttMode ? "TT Cost" : "Pack Price"}</div>
                 <div className="text-2xl font-black text-white">{displayPackCost()}</div>
                 <div className="mt-1 text-xs text-zinc-500">{displayPackCostLabel()}</div>
               </div>
@@ -500,6 +547,94 @@ export default function PacksPage() {
             )}
           </div>
         )}
+
+        {/* Pack Browser */}
+        <div className="rounded-xl border border-zinc-800 bg-zinc-950">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 px-4 py-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              {"Packs on Secondary Market" + (listings.length > 0 ? " — " + listings.length + " unique drops" : "")}
+            </div>
+            <div className="flex gap-2">
+              <input
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                placeholder="Search packs..."
+                className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-red-600"
+              />
+              {["all", "ultimate", "legendary", "rare", "fandom", "common"].map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTierFilter(t)}
+                  className={"rounded-lg px-3 py-1 text-xs font-semibold capitalize transition " + (tierFilter === t ? "bg-red-600 text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}
+                >
+                  {t === "all" ? "All" : t}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {listingsLoading && (
+            <div className="p-8 text-center text-zinc-500 text-sm">Loading pack listings...</div>
+          )}
+          {listingsError && (
+            <div className="p-4 text-red-400 text-sm">{listingsError}</div>
+          )}
+          {!listingsLoading && !listingsError && filteredListings.length === 0 && (
+            <div className="p-8 text-center text-zinc-500 text-sm">No packs found.</div>
+          )}
+          {!listingsLoading && filteredListings.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[600px] border-collapse text-sm">
+                <thead className="bg-zinc-900">
+                  <tr className="border-b border-zinc-800 text-left text-[11px] uppercase tracking-wide text-zinc-500">
+                    <th className="p-3">Pack</th>
+                    <th className="p-3">Tier</th>
+                    <th className="p-3">Moments</th>
+                    <th className="p-3">Retail</th>
+                    <th className="p-3">Lowest Ask</th>
+                    <th className="p-3">Listings</th>
+                    <th className="p-3"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredListings.map((listing) => (
+                    <tr key={listing.packListingId} className="border-b border-zinc-800 hover:bg-zinc-900/50">
+                      <td className="p-3">
+                        <div className="flex items-center gap-3">
+                          {listing.imageUrl && (
+                            <img
+                              src={listing.imageUrl}
+                              alt={listing.title}
+                              className="h-10 w-10 rounded object-cover"
+                            />
+                          )}
+                          <span className="font-medium text-white">{listing.title}</span>
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <span className={"rounded border px-2 py-0.5 text-[11px] font-semibold capitalize " + tierBadge(listing.tier)}>
+                          {listing.tier}
+                        </span>
+                      </td>
+                      <td className="p-3 text-zinc-400">{listing.momentsPerPack}</td>
+                      <td className="p-3 text-zinc-400">{listing.retailPrice > 0 ? fmt(listing.retailPrice) : "—"}</td>
+                      <td className="p-3 font-semibold text-white">{listing.lowestAsk > 0 ? fmt(listing.lowestAsk) : "—"}</td>
+                      <td className="p-3 text-zinc-400">{listing.listingCount.toLocaleString()}</td>
+                      <td className="p-3">
+                        <button
+                          onClick={() => selectPack(listing)}
+                          className="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-500"
+                        >
+                          Analyze
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
