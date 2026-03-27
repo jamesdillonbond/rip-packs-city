@@ -156,7 +156,6 @@ export async function GET() {
       cursor = connection?.pageInfo?.endCursor ?? undefined
     }
 
-    // Deduplicate by dist_id (pack type) — aggregate listing count and lowest ask
     const packMap = new Map<string, { node: PackNode; count: number; lowestAsk: number }>()
 
     for (const node of allNodes) {
@@ -179,6 +178,10 @@ export async function GET() {
 
     const listings: PackListing[] = Array.from(packMap.entries()).map(([distId, { node, count, lowestAsk }]) => {
       const d = node.distribution
+      // Retail price is USD from distribution.price.value
+      // Cap at 10000 to filter out packs where price field stores something else
+      const rawRetail = d.price.value ?? 0
+      const retailPrice = rawRetail > 0 && rawRetail <= 10000 ? rawRetail : 0
       return {
         packListingId: d.uuid.value,
         distId,
@@ -186,17 +189,18 @@ export async function GET() {
         tier: d.tier.value ?? "common",
         imageUrl: d.image_urls?.value?.[0] ?? "",
         momentsPerPack: parseInt(d.number_of_pack_slots.value, 10) || 1,
-        retailPrice: d.price.value ?? 0,
+        retailPrice,
         lowestAsk,
         startTime: d.start_time.value,
         listingCount: count,
       }
     })
 
+    // Default sort: tier order, then lowest ask
     listings.sort((a, b) => {
       const tierDiff = tierOrder(a.tier) - tierOrder(b.tier)
       if (tierDiff !== 0) return tierDiff
-      return a.lowestAsk - b.lowestAsk
+      return (a.lowestAsk || 99999) - (b.lowestAsk || 99999)
     })
 
     listingsCache.set("listings", { data: listings, expiresAt: Date.now() + CACHE_TTL_MS })

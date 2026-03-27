@@ -78,6 +78,14 @@ function fmt(value: number | null | undefined): string {
   return "$" + value.toFixed(2)
 }
 
+function tierOrder(tier: string): number {
+  if (tier === "ultimate") return 0
+  if (tier === "legendary") return 1
+  if (tier === "rare") return 2
+  if (tier === "fandom") return 3
+  return 4
+}
+
 function tierBadge(tier: string): string {
   if (tier === "ultimate") return "bg-yellow-950 text-yellow-300 border-yellow-800"
   if (tier === "legendary") return "bg-purple-950 text-purple-300 border-purple-800"
@@ -98,19 +106,17 @@ function evColor(isPositive: boolean): string {
   return isPositive ? "text-green-400" : "text-red-400"
 }
 
-type SortKey = "lowestAsk" | "retailPrice" | "momentsPerPack" | "title"
+type SortKey = "tier" | "lowestAsk" | "retailPrice" | "momentsPerPack" | "title"
 
 export default function PacksPage() {
-  // Pack browser state
   const [listings, setListings] = useState<PackListing[]>([])
   const [listingsLoading, setListingsLoading] = useState(true)
   const [listingsError, setListingsError] = useState("")
   const [tierFilter, setTierFilter] = useState("all")
   const [searchFilter, setSearchFilter] = useState("")
-  const [sortKey, setSortKey] = useState<SortKey>("lowestAsk")
+  const [sortKey, setSortKey] = useState<SortKey>("tier")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
 
-  // EV analyzer state
   const [selectedPack, setSelectedPack] = useState<PackListing | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -118,7 +124,6 @@ export default function PacksPage() {
   const [showAllPulls, setShowAllPulls] = useState(false)
   const [showAllAlerts, setShowAllAlerts] = useState(false)
 
-  // Trade Ticket mode
   const [ttMode, setTtMode] = useState(false)
   const [ttCount, setTtCount] = useState("")
   const [ttFloor, setTtFloor] = useState("")
@@ -164,17 +169,23 @@ export default function PacksPage() {
   const filteredListings = listings
     .filter((l) => {
       if (tierFilter !== "all" && l.tier !== tierFilter) return false
-      if (searchFilter) {
-        if (!l.title.toLowerCase().includes(searchFilter.toLowerCase())) return false
-      }
+      if (searchFilter && !l.title.toLowerCase().includes(searchFilter.toLowerCase())) return false
       return true
     })
     .sort((a, b) => {
       let diff = 0
-      if (sortKey === "lowestAsk") diff = (a.lowestAsk || 99999) - (b.lowestAsk || 99999)
-      else if (sortKey === "retailPrice") diff = (a.retailPrice || 0) - (b.retailPrice || 0)
-      else if (sortKey === "momentsPerPack") diff = a.momentsPerPack - b.momentsPerPack
-      else if (sortKey === "title") diff = a.title.localeCompare(b.title)
+      if (sortKey === "tier") {
+        diff = tierOrder(a.tier) - tierOrder(b.tier)
+        if (diff === 0) diff = (a.lowestAsk || 99999) - (b.lowestAsk || 99999)
+      } else if (sortKey === "lowestAsk") {
+        diff = (a.lowestAsk || 99999) - (b.lowestAsk || 99999)
+      } else if (sortKey === "retailPrice") {
+        diff = (a.retailPrice || 0) - (b.retailPrice || 0)
+      } else if (sortKey === "momentsPerPack") {
+        diff = a.momentsPerPack - b.momentsPerPack
+      } else if (sortKey === "title") {
+        diff = a.title.localeCompare(b.title)
+      }
       return sortDir === "asc" ? diff : -diff
     })
 
@@ -244,7 +255,6 @@ export default function PacksPage() {
     <div className="min-h-screen bg-black text-zinc-100">
       <div className="mx-auto max-w-[1400px] px-3 py-4 md:px-6">
 
-        {/* Header */}
         <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-4">
           <img
             src="/rip-packs-city-logo.png"
@@ -257,14 +267,14 @@ export default function PacksPage() {
           </div>
           <div className="ml-auto flex gap-2">
             <a href="/wallet" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Wallet</a>
+            <a href="/sniper" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Sniper</a>
+            <a href="/sets" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Sets</a>
             <a href="/badges" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Badges</a>
           </div>
         </div>
 
-        {/* EV Results — only shown after Analyze clicked */}
         {(loading || result !== null || error) && selectedPack !== null && (
           <div className="mb-6">
-            {/* Selected pack header */}
             <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3">
               {selectedPack.imageUrl && (
                 <img src={selectedPack.imageUrl} alt={selectedPack.title} className="h-10 w-10 rounded object-cover" />
@@ -276,7 +286,7 @@ export default function PacksPage() {
                   {selectedPack.momentsPerPack} moments · Lowest Ask {fmt(selectedPack.lowestAsk)}
                 </div>
               </div>
-              <div className="ml-auto flex items-center gap-2">
+              <div className="ml-auto flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => setTtMode(false)}
                   className={"rounded-lg px-3 py-1 text-xs font-semibold transition " + (!ttMode ? "bg-red-600 text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}
@@ -320,13 +330,13 @@ export default function PacksPage() {
             </div>
 
             {loading && (
-              <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-950 p-8 text-center text-zinc-500">
+              <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-950 p-8 text-center text-zinc-500 text-sm">
                 Analyzing pack contents... this takes ~30 seconds on first load.
               </div>
             )}
 
             {error && (
-              <div className="mb-4 rounded-lg border border-red-800 bg-red-950 p-3 text-red-300">{error}</div>
+              <div className="mb-4 rounded-lg border border-red-800 bg-red-950 p-3 text-red-300 text-sm">{error}</div>
             )}
 
             {result !== null && (
@@ -521,7 +531,6 @@ export default function PacksPage() {
           </div>
         )}
 
-        {/* Pack Browser */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-950">
           <div className="border-b border-zinc-800 px-4 py-3">
             <div className="flex flex-wrap items-center gap-3">
@@ -534,7 +543,7 @@ export default function PacksPage() {
                 placeholder="Search packs..."
                 className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-red-600 w-48"
               />
-              <div className="flex gap-1">
+              <div className="flex flex-wrap gap-1">
                 {["all", "ultimate", "legendary", "rare", "fandom", "common"].map((t) => (
                   <button
                     key={t}
@@ -563,25 +572,19 @@ export default function PacksPage() {
                 <thead className="bg-zinc-900">
                   <tr className="border-b border-zinc-800 text-left text-[11px] uppercase tracking-wide text-zinc-500">
                     <th className="p-3">
-                      <button onClick={() => toggleSort("title")} className="hover:text-white">
-                        {"Pack" + sortIndicator("title")}
-                      </button>
-                    </th>
-                    <th className="p-3">Tier</th>
-                    <th className="p-3">
-                      <button onClick={() => toggleSort("momentsPerPack")} className="hover:text-white">
-                        {"Moments" + sortIndicator("momentsPerPack")}
-                      </button>
+                      <button onClick={() => toggleSort("title")} className="hover:text-white">{"Pack" + sortIndicator("title")}</button>
                     </th>
                     <th className="p-3">
-                      <button onClick={() => toggleSort("retailPrice")} className="hover:text-white">
-                        {"Retail" + sortIndicator("retailPrice")}
-                      </button>
+                      <button onClick={() => toggleSort("tier")} className="hover:text-white">{"Tier" + sortIndicator("tier")}</button>
                     </th>
                     <th className="p-3">
-                      <button onClick={() => toggleSort("lowestAsk")} className="hover:text-white">
-                        {"Lowest Ask" + sortIndicator("lowestAsk")}
-                      </button>
+                      <button onClick={() => toggleSort("momentsPerPack")} className="hover:text-white">{"Moments" + sortIndicator("momentsPerPack")}</button>
+                    </th>
+                    <th className="p-3">
+                      <button onClick={() => toggleSort("retailPrice")} className="hover:text-white">{"Retail" + sortIndicator("retailPrice")}</button>
+                    </th>
+                    <th className="p-3">
+                      <button onClick={() => toggleSort("lowestAsk")} className="hover:text-white">{"Lowest Ask" + sortIndicator("lowestAsk")}</button>
                     </th>
                     <th className="p-3"></th>
                   </tr>
