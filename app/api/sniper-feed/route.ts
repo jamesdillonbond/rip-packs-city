@@ -27,7 +27,6 @@ const BADGE_LABELS: Record<string, string> = {
   "Championship Year": "Champ Year", "Rookie of the Year": "ROTY", "Fresh": "Fresh",
 };
 
-// NBA team ID → abbreviation map (30 teams)
 const NBA_TEAMS: Record<string, string> = {
   "1610612737": "ATL", "1610612738": "BOS", "1610612739": "CLE", "1610612740": "NOP",
   "1610612741": "CHI", "1610612742": "DAL", "1610612743": "DEN", "1610612744": "GSW",
@@ -47,10 +46,11 @@ function serialPremium(serial: number, circ: number): number {
   return Math.max(1.0, Math.pow(circ / 2 / serial, 0.4));
 }
 
-// Build thumbnail URL from assetPathPrefix + flowId
-// Pattern: {assetPathPrefix}play_{flowId}_capture_Hero_Black_2880_2880.jpg
-// Fallback pattern using setPlay.ID if assetPathPrefix missing
-function buildThumbnailUrl(assetPathPrefix: string | undefined, flowId: string, setPlayId: string | undefined): string | null {
+function buildThumbnailUrl(
+  assetPathPrefix: string | undefined,
+  flowId: string,
+  setPlayId: string | undefined
+): string | null {
   if (assetPathPrefix) {
     return `${assetPathPrefix}play_${flowId}_capture_Hero_Black_2880_2880.jpg`;
   }
@@ -100,7 +100,6 @@ export interface SniperDeal {
   packEv: number | null; packEvRatio: number | null; buyUrl: string;
 }
 
-// assetPathPrefix added to moment fields
 const SEARCH_TX_QUERY = `
   query SearchMarketplaceTransactions($input: SearchMarketplaceTransactionsInput!) {
     searchMarketplaceTransactions(input: $input) {
@@ -163,21 +162,29 @@ interface GqlTxResponse {
   };
 }
 
-async function fetchPage(cursor: string, sortBy: string): Promise<{ txns: RawTransaction[]; nextCursor: string | null }> {
+async function fetchPage(
+  cursor: string,
+  sortBy: string
+): Promise<{ txns: RawTransaction[]; nextCursor: string | null }> {
   const res = await fetch(TOPSHOT_GQL, {
-    method: "POST", headers: GQL_HEADERS,
+    method: "POST",
+    headers: GQL_HEADERS,
     body: JSON.stringify({
       operationName: "SearchMarketplaceTransactions",
       query: SEARCH_TX_QUERY,
       variables: {
         input: {
-          sortBy, filters: {},
+          sortBy,
+          filters: {},
           searchInput: { pagination: { cursor, direction: "RIGHT", limit: 100 } },
         },
       },
     }),
   });
-  if (!res.ok) { const t = await res.text().catch(() => ""); throw new Error(`GQL ${res.status}: ${t.slice(0, 200)}`); }
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`GQL ${res.status}: ${t.slice(0, 200)}`);
+  }
   const json = await res.json() as GqlTxResponse;
   if (json.errors?.length) throw new Error(json.errors.map(e => e.message).join("; "));
   const summary = json?.data?.searchMarketplaceTransactions?.data?.searchSummary;
@@ -207,7 +214,9 @@ async function fetchTransactionPool(): Promise<RawTransaction[]> {
   return all;
 }
 
-function computeEditionFloors(txns: RawTransaction[]): Map<string, { floor: number; count: number }> {
+function computeEditionFloors(
+  txns: RawTransaction[]
+): Map<string, { floor: number; count: number }> {
   const byEdition = new Map<string, number[]>();
   for (const tx of txns) {
     const psp = tx.moment?.parallelSetPlay;
@@ -227,19 +236,75 @@ function computeEditionFloors(txns: RawTransaction[]): Map<string, { floor: numb
   return floors;
 }
 
+// ─── Supabase FMV lookup ──────────────────────────────────────────────────────
+// The ingest route stores fmv_snapshots keyed by Supabase edition UUID (edition_id).
+// We bridge via editions.external_id which stores "setUUID:playUUID" strings.
+// Two-step join: external_id → editions.id → fmv_snapshots.edition_id
 interface FmvRow {
-  edition_key: string; fmv: number; low_ask: number | null;
-  confidence: string; pack_listing_id: string | null; pack_name: string | null;
+  edition_key: string;
+  fmv: number;
+  low_ask: number | null;
+  confidence: string;
+  pack_listing_id: string | null;
+  pack_name: string | null;
 }
-async function fetchSupabaseFmv(supabase: SupabaseClient, keys: string[]): Promise<Map<string, FmvRow>> {
-  if (!keys.length) return new Map();
-  const { data } = await supabase.from("fmv_snapshots")
-    .select("edition_key, fmv, low_ask, confidence, pack_listing_id, pack_name")
-    .in("edition_key", keys).order("computed_at", { ascending: false });
-  const map = new Map<string, FmvRow>();
-  for (const row of (data ?? []) as FmvRow[]) {
-    if (!map.has(row.edition_key)) map.set(row.edition_key, row);
+
+async function fetchSupabaseFmv(
+  supabase: SupabaseClient,
+  externalIds: string[]
+): Promise<Map<string, FmvRow>> {
+  if (!externalIds.length) return new Map();
+
+  // Step 1: resolve external_ids → Supabase edition UUIDs
+  const { data: editionRows } = await supabase
+    .from("editions")
+    .select("id, external_id")
+    .in("external_id", externalIds);
+
+  if (!editionRows?.length) return new Map();
+
+  const extToSup = new Map<string, string>();
+  const supToExt = new Map<string, string>();
+  for (const row of editionRows as { id: string; external_id: string }[]) {
+    extToSup.set(row.external_id, row.id);
+    supToExt.set(row.id, row.external_id);
   }
+
+  // Step 2: fetch latest FMV snapshot per Supabase edition UUID
+  const { data: fmvRows } = await supabase
+    .from("fmv_snapshots")
+    .select("edition_id, fmv_usd, floor_price_usd, confidence, computed_at")
+    .in("edition_id", Array.from(extToSup.values()))
+    .order("computed_at", { ascending: false });
+
+  if (!fmvRows?.length) return new Map();
+
+  // Step 3: deduplicate to latest per edition, map back to external_id key
+  const seen = new Set<string>();
+  const map = new Map<string, FmvRow>();
+
+  for (const row of fmvRows as {
+    edition_id: string;
+    fmv_usd: number;
+    floor_price_usd: number | null;
+    confidence: string;
+  }[]) {
+    if (seen.has(row.edition_id)) continue;
+    seen.add(row.edition_id);
+
+    const externalId = supToExt.get(row.edition_id);
+    if (!externalId) continue;
+
+    map.set(externalId, {
+      edition_key: externalId,
+      fmv: row.fmv_usd,
+      low_ask: row.floor_price_usd,
+      confidence: (row.confidence ?? "low").toLowerCase(),
+      pack_listing_id: null,
+      pack_name: null,
+    });
+  }
+
   return map;
 }
 
@@ -257,11 +322,18 @@ export async function GET(req: Request) {
   const serialFilter = url.searchParams.get("serial") ?? "all";
   const maxPrice = parseFloat(url.searchParams.get("maxPrice") ?? "0");
 
-  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
 
   let allTxns: RawTransaction[] = [];
-  try { allTxns = await fetchTransactionPool(); }
-  catch (err) { console.error("[sniper-feed] fetch error:", err); return NextResponse.json({ error: String(err) }, { status: 502 }); }
+  try {
+    allTxns = await fetchTransactionPool();
+  } catch (err) {
+    console.error("[sniper-feed] fetch error:", err);
+    return NextResponse.json({ error: String(err) }, { status: 502 });
+  }
 
   console.log(`[sniper-feed] pool: ${allTxns.length}`);
 
@@ -272,6 +344,7 @@ export async function GET(req: Request) {
   const editionFloors = computeEditionFloors(allTxns);
   const editionKeys = Array.from(editionFloors.keys());
   const supabaseFmv = await fetchSupabaseFmv(supabase, editionKeys);
+  console.log(`[sniper-feed] Supabase hits: ${supabaseFmv.size}/${editionKeys.length}`);
 
   const enriched: SniperDeal[] = txns.map((tx): SniperDeal | null => {
     if (!tx.moment) return null;
@@ -293,12 +366,16 @@ export async function GET(req: Request) {
     let packName: string | null = null;
 
     if (sbRow) {
-      baseFmv = sbRow.fmv; confidence = sbRow.confidence;
-      packListingId = sbRow.pack_listing_id; packName = sbRow.pack_name;
+      baseFmv = sbRow.fmv;
+      confidence = sbRow.confidence;
+      packListingId = sbRow.pack_listing_id;
+      packName = sbRow.pack_name;
     } else if (floorData.count >= 2) {
       baseFmv = floorData.floor;
       confidence = floorData.count >= 5 ? "medium" : "low";
-    } else return null;
+    } else {
+      return null;
+    }
 
     const circ = m.setPlay?.circulations?.circulationCount ?? 1000;
     const serial = parseInt(m.flowSerialNumber ?? "0", 10);
@@ -320,20 +397,28 @@ export async function GET(req: Request) {
     const thumbnailUrl = buildThumbnailUrl(m.assetPathPrefix, m.flowId, m.setPlay?.ID);
 
     return {
-      flowId: m.flowId, momentId: m.id,
+      flowId: m.flowId,
+      momentId: m.id,
       playerName: m.play?.stats?.playerName ?? "Unknown",
       teamName,
       setName: m.set?.flowName ?? "",
       seriesName: m.set?.flowSeriesNumber ? `S${m.set.flowSeriesNumber}` : "",
       tier: (m.tier ?? "COMMON").replace("MOMENT_TIER_", ""),
       parallel: parallelId > 0 ? `Parallel #${parallelId}` : "Base",
-      serial, circulationCount: circ, askPrice, baseFmv, adjustedFmv,
+      serial,
+      circulationCount: circ,
+      askPrice,
+      baseFmv,
+      adjustedFmv,
       discount: Math.round(discount * 10) / 10,
-      confidence, hasBadge, badgeSlugs,
+      confidence,
+      hasBadge,
+      badgeSlugs,
       badgeLabels: badgeSlugs.map(s => BADGE_LABELS[s] ?? s),
       badgePremiumPct: Math.round(totalBadgePremium * 100),
       serialMult: Math.round(serialMult * 100) / 100,
-      isSpecialSerial, isJersey,
+      isSpecialSerial,
+      isJersey,
       serialSignal:
         serial === 1 ? "Serial #1"
         : serial === circ ? "Last Mint"
@@ -341,7 +426,10 @@ export async function GET(req: Request) {
         : isSpecialSerial ? `Low #${serial}`
         : null,
       thumbnailUrl,
-      packListingId, packName, packEv: null, packEvRatio: null,
+      packListingId,
+      packName,
+      packEv: null,
+      packEvRatio: null,
       buyUrl: `https://nbatopshot.com/moment/${m.flowId}`,
     };
   }).filter((m): m is SniperDeal => m !== null);
@@ -359,5 +447,9 @@ export async function GET(req: Request) {
     .slice(0, 200);
 
   console.log(`[sniper-feed] enriched: ${enriched.length}, deals: ${deals.length}`);
-  return NextResponse.json({ count: deals.length, lastRefreshed: new Date().toISOString(), deals });
+  return NextResponse.json({
+    count: deals.length,
+    lastRefreshed: new Date().toISOString(),
+    deals,
+  });
 }
