@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 
-const TOPSHOT_GRAPHQL = "https://public-api.nbatopshot.com/graphql"
+const TOPSHOT_GRAPHQL = "https://api.production.studio-platform.dapperlabs.com/graphql"
 
 const GRAPHQL_HEADERS = {
   "Content-Type": "application/json",
