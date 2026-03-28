@@ -201,6 +201,57 @@ function PinParamReader(props: {
   return null;
 }
 
+// ─── SIGN IN BANNER ───────────────────────────────────────────
+// Shown prominently at the top when no ownerKey is set.
+// Large, hard to miss, explains the value prop and lets you sign in inline.
+function SignInBanner(props: { onSetKey: (key: string) => void }) {
+  const [val, setVal] = useState("");
+  const [focused, setFocused] = useState(false);
+
+  return (
+    <div style={{ background: "linear-gradient(135deg, rgba(224,58,47,0.14) 0%, rgba(224,58,47,0.04) 100%)", border: "1px solid rgba(224,58,47,0.35)", borderRadius: 12, padding: "22px 28px", marginBottom: 16, animation: "fadeIn 0.4s ease both" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
+        {/* Icon */}
+        <div style={{ width: 52, height: 52, borderRadius: "50%", background: "rgba(224,58,47,0.15)", border: "1px solid rgba(224,58,47,0.4)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>
+          👤
+        </div>
+
+        {/* Copy */}
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 18, color: "#fff", letterSpacing: "0.04em", marginBottom: 4 }}>
+            Set your Profile Key to unlock everything
+          </div>
+          <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", lineHeight: 1.7 }}>
+            Save wallets · track searches · pin trophy moments · build your FMV sparkline over time.
+            <br />Just your Top Shot username — no account, no password.
+          </div>
+        </div>
+
+        {/* Input + button */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+          <input
+            value={val}
+            onChange={function(e) { setVal(e.target.value); }}
+            onKeyDown={function(e) { if (e.key === "Enter" && val.trim()) props.onSetKey(val.trim()); }}
+            onFocus={function() { setFocused(true); }}
+            onBlur={function() { setFocused(false); }}
+            placeholder="your Top Shot username…"
+            style={{ background: "rgba(255,255,255,0.07)", border: "1px solid " + (focused ? "rgba(224,58,47,0.7)" : "rgba(224,58,47,0.35)"), borderRadius: 7, padding: "9px 16px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none", width: 230, transition: "border-color 0.15s" }}
+          />
+          <button
+            onClick={function() { if (val.trim()) props.onSetKey(val.trim()); }}
+            style={{ background: "#E03A2F", border: "none", borderRadius: 7, padding: "9px 20px", color: "#fff", fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer", flexShrink: 0, transition: "background 0.15s" }}
+            onMouseEnter={function(e) { e.currentTarget.style.background = "#c42e24"; }}
+            onMouseLeave={function(e) { e.currentTarget.style.background = "#E03A2F"; }}
+          >
+            Sign In
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── TICKER ───────────────────────────────────────────────────
 function Ticker() {
   const items = [
@@ -260,31 +311,22 @@ function PortfolioSparkline(props: { ownerKey: string; currentFmv: number }) {
       .finally(function() { setLoading(false); });
   }, [props.ownerKey]);
 
-  // Always include today's live value so the chart is never stale
   const points = useMemo(function() {
     const today = new Date().toISOString().split("T")[0];
     const historical = snapshots.filter(function(s) { return s.snapshot_date !== today; });
-    const liveToday: PortfolioSnapshot = {
-      snapshot_date: today,
-      total_fmv: props.currentFmv,
-      moment_count: 0,
-      wallet_count: 0,
-    };
+    const liveToday: PortfolioSnapshot = { snapshot_date: today, total_fmv: props.currentFmv, moment_count: 0, wallet_count: 0 };
     return [...historical, liveToday].filter(function(s) { return s.total_fmv > 0; });
   }, [snapshots, props.currentFmv]);
 
   const isEmpty = !loading && points.length < 2;
-
-  const minVal = useMemo(function() { return Math.min(...points.map(function(p) { return p.total_fmv; })); }, [points]);
-  const maxVal = useMemo(function() { return Math.max(...points.map(function(p) { return p.total_fmv; })); }, [points]);
+  const minVal = useMemo(function() { return points.length ? Math.min(...points.map(function(p) { return p.total_fmv; })) : 0; }, [points]);
+  const maxVal = useMemo(function() { return points.length ? Math.max(...points.map(function(p) { return p.total_fmv; })) : 0; }, [points]);
   const range = maxVal - minVal || 1;
-
   const change = points.length >= 2 ? points[points.length - 1].total_fmv - points[0].total_fmv : 0;
   const changePct = points.length >= 2 && points[0].total_fmv > 0 ? (change / points[0].total_fmv) * 100 : 0;
   const changeColor = change >= 0 ? "#34D399" : "#F87171";
   const changeSign = change >= 0 ? "+" : "";
 
-  // Build SVG path from points
   const W = 360;
   const H = 56;
   const PAD = 4;
@@ -304,15 +346,11 @@ function PortfolioSparkline(props: { ownerKey: string; currentFmv: number }) {
   return (
     <section style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "14px 18px", marginBottom: 14 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={labelStyle}>◈ Portfolio Value · 30d</span>
-        </div>
+        <span style={labelStyle}>◈ Portfolio Value · 30d</span>
         {points.length >= 2 && (
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.1em" }}>30D CHANGE</div>
-              <div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 800, color: changeColor }}>{changeSign + fmtDollars(Math.abs(change)) + " (" + changeSign + changePct.toFixed(1) + "%)"}</div>
-            </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.1em" }}>30D CHANGE</div>
+            <div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 800, color: changeColor }}>{changeSign + fmtDollars(Math.abs(change)) + " (" + changeSign + changePct.toFixed(1) + "%)"}</div>
           </div>
         )}
       </div>
@@ -329,19 +367,16 @@ function PortfolioSparkline(props: { ownerKey: string; currentFmv: number }) {
               <br />Load any saved wallet to record today's data point.
             </div>
           </div>
-          {/* Show a placeholder flat line */}
           <svg width={W} height={H} viewBox={"0 0 " + W + " " + H} style={{ opacity: 0.15, flexShrink: 0 }}>
             <line x1={PAD} y1={H / 2} x2={W - PAD} y2={H / 2} stroke="#E03A2F" strokeWidth="1.5" strokeDasharray="4 4" />
           </svg>
         </div>
       ) : (
         <div style={{ display: "flex", alignItems: "flex-end", gap: 16 }}>
-          {/* Y-axis labels */}
           <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", height: H, flexShrink: 0, paddingTop: PAD, paddingBottom: PAD }}>
             <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", textAlign: "right" }}>{fmtDollars(maxVal)}</div>
             <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", textAlign: "right" }}>{fmtDollars(minVal)}</div>
           </div>
-          {/* SVG chart */}
           <div style={{ flex: 1, position: "relative" }}>
             <svg width="100%" viewBox={"0 0 " + W + " " + H} style={{ display: "block", overflow: "visible" }} preserveAspectRatio="none">
               <defs>
@@ -350,11 +385,8 @@ function PortfolioSparkline(props: { ownerKey: string; currentFmv: number }) {
                   <stop offset="100%" stopColor={changeColor} stopOpacity="0.02" />
                 </linearGradient>
               </defs>
-              {/* Area fill */}
               <path d={areaPath} fill="url(#sparkGrad)" />
-              {/* Line */}
               <path d={svgPath} fill="none" stroke={changeColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              {/* Endpoint dot */}
               {points.length > 0 && (function() {
                 const last = points[points.length - 1];
                 const x = PAD + ((points.length - 1) / (points.length - 1)) * (W - PAD * 2);
@@ -362,7 +394,6 @@ function PortfolioSparkline(props: { ownerKey: string; currentFmv: number }) {
                 return <circle cx={x} cy={y} r="3" fill={changeColor} />;
               })()}
             </svg>
-            {/* X-axis date labels */}
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
               <span style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.2)" }}>{fmtDate(points[0].snapshot_date)}</span>
               {points.length > 2 && <span style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.2)" }}>{fmtDate(points[Math.floor(points.length / 2)].snapshot_date)}</span>}
@@ -430,7 +461,7 @@ function BioWidget(props: { ownerKey: string; bio: ProfileBio | null; onSave: (b
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 16, color: "#fff", letterSpacing: "0.04em" }}>{props.bio?.display_name || props.ownerKey || "Your Profile"}</div>
-          <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", marginTop: 2 }}>{props.bio?.tagline || (props.ownerKey ? "NBA Top Shot Collector" : "Set your profile key below to personalize")}</div>
+          <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", marginTop: 2 }}>{props.bio?.tagline || "NBA Top Shot Collector"}</div>
           {(props.bio?.twitter || props.bio?.favorite_team) && (
             <div style={{ display: "flex", gap: 10, marginTop: 5 }}>
               {props.bio?.favorite_team && <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)" }}>{"🏀 " + props.bio.favorite_team}</span>}
@@ -439,7 +470,7 @@ function BioWidget(props: { ownerKey: string; bio: ProfileBio | null; onSave: (b
             </div>
           )}
         </div>
-        {props.ownerKey && <button onClick={function() { setEditing(true); }} style={Object.assign({}, btnBase, { fontSize: 9, flexShrink: 0 })}>{props.bio?.display_name ? "Edit" : "Set Bio"}</button>}
+        <button onClick={function() { setEditing(true); }} style={Object.assign({}, btnBase, { fontSize: 9, flexShrink: 0 })}>{props.bio?.display_name ? "Edit" : "Set Bio"}</button>
       </div>
     );
   }
@@ -574,7 +605,6 @@ function PinModal(props: { slot: number; ownerKey: string; prefilled: PinPreview
           <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 17, color: "#fff", letterSpacing: "0.05em", textTransform: "uppercase" }}>{"Pin to Slot " + props.slot}</div>
           <button onClick={props.onClose} style={Object.assign({}, btnBase, { padding: "3px 8px" })}>✕</button>
         </div>
-
         {props.prefilled && preview ? (
           <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: 14, marginBottom: 14 }}>
             <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -610,7 +640,6 @@ function PinModal(props: { slot: number; ownerKey: string; prefilled: PinPreview
             )}
           </>
         )}
-
         {error && <div style={{ fontSize: 10, fontFamily: monoFont, color: "#F87171", marginBottom: 10 }}>{error}</div>}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button onClick={props.onClose} style={Object.assign({}, btnBase, { padding: "7px 14px" })}>Cancel</button>
@@ -1049,6 +1078,11 @@ export default function ProfilePage() {
           </div>
         </section>
 
+        {/* ─── SIGN IN BANNER — only shown when no profile key set ─── */}
+        {!ownerKey && (
+          <SignInBanner onSetKey={function(key) { setOwnerKey(key); loadProfile(key); }} />
+        )}
+
         <MarketPulseWidget pulse={pulse} loading={pulseLoading} />
         {ownerKey && <BioWidget ownerKey={ownerKey} bio={bio} onSave={setBio} />}
 
@@ -1059,7 +1093,6 @@ export default function ProfilePage() {
           </div>
         </section>
 
-        {/* PORTFOLIO SPARKLINE — only shown when ownerKey is set */}
         {ownerKey && <PortfolioSparkline ownerKey={ownerKey} currentFmv={totalFmv} />}
 
         {/* TROPHY CASE */}
@@ -1084,7 +1117,6 @@ export default function ProfilePage() {
           </div>
         </section>
 
-        {/* SETS + ACTIVITY */}
         {savedWallets.length > 0 && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
             <SetsProgressWidget savedWallets={savedWallets} />
@@ -1092,7 +1124,6 @@ export default function ProfilePage() {
           </div>
         )}
 
-        {/* SAVED WALLETS + SNIPER */}
         <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 14, marginBottom: 14 }}>
           <section>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
@@ -1106,7 +1137,7 @@ export default function ProfilePage() {
             </div>
             {showAddWallet && <AddWalletForm onAdd={handleAddWallet} onCancel={function() { setShowAddWallet(false); }} />}
             {!ownerKey ? (
-              <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", textAlign: "center", padding: "28px 16px", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 8, lineHeight: 1.7 }}>Set your Profile Key below<br />to save wallets across sessions.</div>
+              <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", textAlign: "center", padding: "28px 16px", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 8, lineHeight: 1.7 }}>Set your Profile Key above<br />to save wallets across sessions.</div>
             ) : profileLoading ? (
               <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", textAlign: "center", padding: "24px 0" }}>Loading…</div>
             ) : savedWallets.length === 0 ? (
@@ -1158,7 +1189,7 @@ export default function ProfilePage() {
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
                 {recentSearches.length === 0 ? (
-                  <span style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)" }}>{ownerKey ? "No searches yet" : "Set your Profile Key to track searches"}</span>
+                  <span style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)" }}>{ownerKey ? "No searches yet" : "Sign in above to track searches"}</span>
                 ) : recentSearches.map(function(s, i) {
                   const tc = typeColor(s.query_type);
                   return (
@@ -1190,7 +1221,7 @@ export default function ProfilePage() {
           </div>
         </section>
 
-        {/* PROFILE KEY */}
+        {/* PROFILE KEY — secondary, below the fold */}
         <section style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "16px 20px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
             <div>
