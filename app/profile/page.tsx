@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 // ─── TYPES ────────────────────────────────────────────────────
@@ -168,6 +168,28 @@ const btnBase: React.CSSProperties = {
   textTransform: "uppercase",
   transition: "all 0.15s",
 };
+
+// ─── PIN PARAM READER (must be inside Suspense) ───────────────
+// Reads the ?pin=MOMENTID query param and fires a callback when found.
+// Isolated so useSearchParams doesn't block the static prerender.
+function PinParamReader(props: {
+  trophies: (TrophyMoment | null)[];
+  onPinRequest: (slot: number, momentId: string) => void;
+}) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(function() {
+    const momentId = searchParams.get("pin");
+    if (!momentId) return;
+    router.replace("/profile");
+    const firstEmpty = props.trophies.findIndex(function(t) { return t === null; });
+    const slot = firstEmpty >= 0 ? firstEmpty + 1 : 1;
+    props.onPinRequest(slot, momentId);
+  }, [searchParams, props.trophies, props.onPinRequest, router]);
+
+  return null;
+}
 
 // ─── TICKER ───────────────────────────────────────────────────
 function Ticker() {
@@ -376,10 +398,7 @@ function PinModal(props: { slot: number; ownerKey: string; prefilled: PinPreview
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<PinPreview | null>(props.prefilled);
 
-  // If prefilled from URL param, kick off auto-lookup
-  useEffect(function() {
-    if (props.prefilled) setPreview(props.prefilled);
-  }, [props.prefilled]);
+  useEffect(function() { if (props.prefilled) setPreview(props.prefilled); }, [props.prefilled]);
 
   async function handleLookup() {
     if (!input.trim()) return;
@@ -416,13 +435,10 @@ function PinModal(props: { slot: number; ownerKey: string; prefilled: PinPreview
           <button onClick={props.onClose} style={Object.assign({}, btnBase, { padding: "3px 8px" })}>✕</button>
         </div>
 
-        {/* Show thumbnail preview when prefilled from wallet */}
-        {preview && props.prefilled && (
+        {props.prefilled && preview ? (
           <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: 14, marginBottom: 14 }}>
             <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-              {preview.thumbnailUrl && (
-                <img src={preview.thumbnailUrl} alt={preview.playerName} style={{ width: 56, height: 56, borderRadius: 6, objectFit: "cover", border: "1px solid " + tc + "44" }} onError={function(e) { e.currentTarget.style.display = "none"; }} />
-              )}
+              {preview.thumbnailUrl && <img src={preview.thumbnailUrl} alt={preview.playerName} style={{ width: 56, height: 56, borderRadius: 6, objectFit: "cover", border: "1px solid " + tc + "44" }} onError={function(e) { e.currentTarget.style.display = "none"; }} />}
               <div style={{ flex: 1 }}>
                 <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 16, color: "#fff", marginBottom: 2 }}>{preview.playerName}</div>
                 <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", marginBottom: 8 }}>{preview.setName}</div>
@@ -434,14 +450,9 @@ function PinModal(props: { slot: number; ownerKey: string; prefilled: PinPreview
               </div>
             </div>
           </div>
-        )}
-
-        {/* Manual lookup when not prefilled */}
-        {!props.prefilled && (
+        ) : (
           <>
-            <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", marginBottom: 12, lineHeight: 1.6 }}>
-              Enter a moment ID from the Top Shot URL: nbatopshot.com/moment/XXXXXXXX
-            </div>
+            <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", marginBottom: 12, lineHeight: 1.6 }}>Enter a moment ID from the Top Shot URL: nbatopshot.com/moment/XXXXXXXX</div>
             <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
               <input value={input} onChange={function(e) { setInput(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter") handleLookup(); }} placeholder="Moment ID (e.g. 12345678)…" style={{ flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, padding: "8px 12px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none" }} />
               <button onClick={handleLookup} disabled={loading} style={Object.assign({}, btnBase, { background: "#E03A2F", color: "#fff", borderColor: "#E03A2F", padding: "8px 14px", opacity: loading ? 0.6 : 1 })}>{loading ? "…" : "Look Up"}</button>
@@ -461,7 +472,6 @@ function PinModal(props: { slot: number; ownerKey: string; prefilled: PinPreview
         )}
 
         {error && <div style={{ fontSize: 10, fontFamily: monoFont, color: "#F87171", marginBottom: 10 }}>{error}</div>}
-
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button onClick={props.onClose} style={Object.assign({}, btnBase, { padding: "7px 14px" })}>Cancel</button>
           <button onClick={handlePin} disabled={!preview || loading} style={Object.assign({}, btnBase, { background: preview ? "#E03A2F" : "rgba(255,255,255,0.05)", color: preview ? "#fff" : "rgba(255,255,255,0.3)", borderColor: preview ? "#E03A2F" : "rgba(255,255,255,0.1)", padding: "7px 14px", opacity: loading ? 0.6 : 1 })}>
@@ -473,7 +483,7 @@ function PinModal(props: { slot: number; ownerKey: string; prefilled: PinPreview
   );
 }
 
-// ─── SETS PROGRESS WIDGET ─────────────────────────────────────
+// ─── SETS PROGRESS ────────────────────────────────────────────
 function SetsProgressWidget(props: { savedWallets: SavedWallet[] }) {
   const [sets, setSets] = useState<SetProgress[]>([]);
   const [loading, setLoading] = useState(false);
@@ -506,17 +516,11 @@ function SetsProgressWidget(props: { savedWallets: SavedWallet[] }) {
           {props.savedWallets[0]?.username && <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.25)" }}>{"— " + props.savedWallets[0].username}</span>}
         </div>
         <div style={{ display: "flex", gap: 6 }}>
-          {loaded && (
-            <button onClick={function() { router.push("/sets?wallet=" + encodeURIComponent(props.savedWallets[0].username ?? props.savedWallets[0].wallet_addr)); }} style={Object.assign({}, btnBase, { fontSize: 9, color: "#F472B6", borderColor: "rgba(244,114,182,0.3)", background: "rgba(244,114,182,0.1)" })}>{"Full Sets →"}</button>
-          )}
-          {!loaded && (
-            <button onClick={loadSets} disabled={loading} style={Object.assign({}, btnBase, { fontSize: 9, opacity: loading ? 0.6 : 1 })}>{loading ? "Loading…" : "Load Sets"}</button>
-          )}
+          {loaded && <button onClick={function() { router.push("/sets?wallet=" + encodeURIComponent(props.savedWallets[0].username ?? props.savedWallets[0].wallet_addr)); }} style={Object.assign({}, btnBase, { fontSize: 9, color: "#F472B6", borderColor: "rgba(244,114,182,0.3)", background: "rgba(244,114,182,0.1)" })}>{"Full Sets →"}</button>}
+          {!loaded && <button onClick={loadSets} disabled={loading} style={Object.assign({}, btnBase, { fontSize: 9, opacity: loading ? 0.6 : 1 })}>{loading ? "Loading…" : "Load Sets"}</button>}
         </div>
       </div>
-
       {loaded && sets.length === 0 && <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", padding: "8px 0" }}>No sets in progress found.</div>}
-
       {sets.map(function(s) {
         const pct = Math.round(s.completionPct);
         const isClose = s.missingCount <= 3;
@@ -674,7 +678,6 @@ function AddWalletForm(props: { onAdd: (val: string) => void; onCancel: () => vo
 // ─── MAIN PAGE ────────────────────────────────────────────────
 export default function ProfilePage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const [ownerKey, setOwnerKeyState] = useState("");
   const [ownerInput, setOwnerInput] = useState("");
@@ -691,7 +694,6 @@ export default function ProfilePage() {
   const [showAddWallet, setShowAddWallet] = useState(false);
   const [pinModal, setPinModal] = useState<{ slot: number; prefilled: PinPreview | null } | null>(null);
 
-  // ── Load ownerKey ─────────────────────────────────────────
   useEffect(function() {
     try { const s = localStorage.getItem(STORAGE_KEY); if (s) setOwnerKeyState(s); } catch {}
   }, []);
@@ -701,32 +703,17 @@ export default function ProfilePage() {
     try { localStorage.setItem(STORAGE_KEY, key); } catch {}
   }
 
-  // ── Handle ?pin=momentId from wallet page ─────────────────
-  // Wallet page links to /profile?pin=MOMENTID to trigger trophy pin
-  useEffect(function() {
-    const momentId = searchParams.get("pin");
-    if (!momentId) return;
-    // Clear the param from URL without reload
-    router.replace("/profile");
-    // Find first empty slot
-    const firstEmpty = trophies.findIndex(function(t) { return t === null; });
-    const slot = firstEmpty >= 0 ? firstEmpty + 1 : 1;
-    // Lookup moment data then open modal
-    fetch("/api/market-snapshot?momentId=" + encodeURIComponent(momentId))
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(d) {
-        if (!d) {
-          // Can't lookup — open manual modal
-          setPinModal({ slot, prefilled: null });
-          return;
-        }
-        const pre: PinPreview = { momentId, playerName: d.playerName ?? "Unknown", setName: d.setName ?? "", serialNumber: d.serialNumber ?? null, circulationCount: d.circulationCount ?? null, tier: d.tier ?? "Common", thumbnailUrl: d.thumbnailUrl ?? null, videoUrl: d.videoUrl ?? null, fmv: d.fmv ?? null, badges: d.badges ?? null };
-        setPinModal({ slot, prefilled: pre });
-      })
-      .catch(function() { setPinModal({ slot, prefilled: null }); });
-  }, [searchParams, trophies, router]);
+  // Called by PinParamReader when ?pin=MOMENTID is detected
+  const handlePinRequest = useCallback(async function(slot: number, momentId: string) {
+    try {
+      const res = await fetch("/api/market-snapshot?momentId=" + encodeURIComponent(momentId));
+      if (!res.ok) { setPinModal({ slot, prefilled: null }); return; }
+      const d = await res.json();
+      const pre: PinPreview = { momentId, playerName: d.playerName ?? "Unknown", setName: d.setName ?? "", serialNumber: d.serialNumber ?? null, circulationCount: d.circulationCount ?? null, tier: d.tier ?? "Common", thumbnailUrl: d.thumbnailUrl ?? null, videoUrl: d.videoUrl ?? null, fmv: d.fmv ?? null, badges: d.badges ?? null };
+      setPinModal({ slot, prefilled: pre });
+    } catch { setPinModal({ slot, prefilled: null }); }
+  }, []);
 
-  // ── Load profile ──────────────────────────────────────────
   const loadProfile = useCallback(async function(key: string) {
     if (!key) return;
     setProfileLoading(true);
@@ -753,13 +740,11 @@ export default function ProfilePage() {
 
   useEffect(function() { if (ownerKey) loadProfile(ownerKey); }, [ownerKey, loadProfile]);
 
-  // ── Market pulse ──────────────────────────────────────────
   useEffect(function() {
     setPulseLoading(true);
     fetch("/api/profile/market-pulse").then(function(r) { return r.ok ? r.json() : null; }).then(function(d) { if (d) setPulse(d); }).catch(function() {}).finally(function() { setPulseLoading(false); });
   }, []);
 
-  // ── Sniper preview ────────────────────────────────────────
   useEffect(function() {
     setSniperLoading(true);
     fetch("/api/sniper-feed?limit=5")
@@ -868,6 +853,11 @@ export default function ProfilePage() {
         ::-webkit-scrollbar-thumb{background:rgba(224,58,47,0.3);border-radius:2px}
       `}</style>
 
+      {/* PinParamReader isolated in Suspense to satisfy Next.js useSearchParams requirement */}
+      <Suspense fallback={null}>
+        <PinParamReader trophies={trophies} onPinRequest={handlePinRequest} />
+      </Suspense>
+
       {pinModal !== null && (
         <PinModal slot={pinModal.slot} ownerKey={ownerKey} prefilled={pinModal.prefilled} onClose={function() { setPinModal(null); }} onPinned={handleTrophyPinned} />
       )}
@@ -921,10 +911,7 @@ export default function ProfilePage() {
           </div>
         </section>
 
-        {/* MARKET PULSE */}
         <MarketPulseWidget pulse={pulse} loading={pulseLoading} />
-
-        {/* BIO */}
         {ownerKey && <BioWidget ownerKey={ownerKey} bio={bio} onSave={setBio} />}
 
         {/* STAT TILES */}
@@ -946,7 +933,7 @@ export default function ProfilePage() {
               )}
             </div>
             <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.25)" }}>
-              {trophies.filter(Boolean).length + " / " + MAX_SLOTS + " · pin from Wallet page via /profile?pin=MOMENTID"}
+              {trophies.filter(Boolean).length + " / " + MAX_SLOTS + " · link from Wallet: /profile?pin=MOMENTID"}
             </span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14 }}>
@@ -956,7 +943,7 @@ export default function ProfilePage() {
           </div>
         </section>
 
-        {/* SETS + ACTIVITY GRID */}
+        {/* SETS + ACTIVITY */}
         {savedWallets.length > 0 && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
             <SetsProgressWidget savedWallets={savedWallets} />
@@ -964,10 +951,8 @@ export default function ProfilePage() {
           </div>
         )}
 
-        {/* SAVED WALLETS + SNIPER/SEARCHES */}
+        {/* SAVED WALLETS + SNIPER */}
         <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 14, marginBottom: 14 }}>
-
-          {/* SAVED WALLETS */}
           <section>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -992,7 +977,6 @@ export default function ProfilePage() {
             )}
           </section>
 
-          {/* RIGHT: SNIPER + SEARCHES */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <section style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, overflow: "hidden" }}>
               <div style={{ padding: "12px 14px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
