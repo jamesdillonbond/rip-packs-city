@@ -149,15 +149,12 @@ const BADGE_PILL_TITLES = new Set([
 ])
 
 // ── Series → Season mapping ───────────────────────────────────────────────────
-// On-chain series is stored as integer 0–8.
-// badge_editions.season uses NBA season year strings.
-// This mapping bridges the two systems for badge enrichment matching.
 
 const SERIES_INT_TO_SEASON: Record<number, string> = {
-  0: "2019-20", // Beta / S0
+  0: "2019-20",
   1: "2019-20",
   2: "2020-21",
-  3: "2021",    // Summer 2021
+  3: "2021",
   4: "2021-22",
   5: "2022-23",
   6: "2023-24",
@@ -171,13 +168,11 @@ function seriesIntToSeason(seriesRaw: string | undefined | null): string {
   if (!Number.isNaN(n) && SERIES_INT_TO_SEASON[n] !== undefined) {
     return SERIES_INT_TO_SEASON[n]
   }
-  // Fall back: if it already looks like a season string (e.g. "2024-25"), return as-is
   if (/^\d{4}-\d{2}$/.test(seriesRaw.trim())) return seriesRaw.trim()
   if (/^\d{4}$/.test(seriesRaw.trim())) return seriesRaw.trim()
   return seriesRaw
 }
 
-// Build a lookup key from player name + season for badge matching
 function badgeLookupKey(playerName: string, season: string): string {
   return `${playerName.toLowerCase().trim()}::${season.trim()}`
 }
@@ -257,7 +252,6 @@ function debugReasonLabel(reason?: string | null) {
   }
 }
 
-// FMV confidence display label + color
 function confidenceLabel(conf?: string | null): { label: string; color: string } {
   switch (conf) {
     case "high":   return { label: "Liquid",   color: "text-emerald-400" }
@@ -268,7 +262,6 @@ function confidenceLabel(conf?: string | null): { label: string; color: string }
   }
 }
 
-// FMV display text varies by confidence tier
 function fmvDisplay(row: MomentRow): { text: string; muted: boolean } {
   const fmv = row.fmv
   const conf = row.marketConfidence
@@ -324,9 +317,6 @@ export default function WalletPage() {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
 
   // ── Badge enrichment ────────────────────────────────────────────────────────
-  // FIX: series on wallet rows is the on-chain integer (0–8).
-  // badge_editions.season stores season strings like "2024-25".
-  // We use seriesIntToSeason() to map the integer before building the lookup key.
 
   async function enrichWithBadges(rowsIn: MomentRow[]): Promise<MomentRow[]> {
     if (!rowsIn.length) return rowsIn
@@ -351,7 +341,6 @@ export default function WalletPage() {
       const json = await res.json()
       const badgeEditions: any[] = json.editions ?? []
 
-      // Build lookup: "playerName::season" → best BadgeInfo for that combination
       const badgeMap = new Map<string, BadgeInfo>()
 
       for (const edition of badgeEditions) {
@@ -374,7 +363,6 @@ export default function WalletPage() {
         }
       }
 
-      // Merge: map on-chain series integer → NBA season string, then look up badges
       return rowsIn.map(row => {
         const season = seriesIntToSeason(row.series ?? "")
         const key = badgeLookupKey(row.playerName, season)
@@ -385,8 +373,6 @@ export default function WalletPage() {
       return rowsIn
     }
   }
-
-  // ── Market enrichment (passthrough — Flowty API pending) ────────────────────
 
   async function enrichWithMarket(rowsIn: MomentRow[]) {
     return rowsIn
@@ -694,6 +680,7 @@ export default function WalletPage() {
             </p>
           </div>
           <div className="ml-auto flex gap-2">
+            <a href="/profile" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Profile</a>
             <a href="/packs"   className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Packs</a>
             <a href="/badges"  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Badges</a>
             <a href="/sniper"  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Sniper</a>
@@ -719,10 +706,9 @@ export default function WalletPage() {
           </button>
         </div>
 
-        {/* Portfolio summary — only shown after a successful search */}
+        {/* Portfolio summary */}
         {hasSearched && rows.length > 0 && (
           <div className="mb-5 space-y-3">
-            {/* Row 1: Core FMV stats */}
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                 <div className="text-[10px] uppercase tracking-widest text-zinc-500">Wallet FMV</div>
@@ -746,7 +732,6 @@ export default function WalletPage() {
               </div>
             </div>
 
-            {/* Row 2: FMV confidence breakdown + badge count */}
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
               <div className="rounded-xl border border-emerald-900/50 bg-emerald-950/20 p-3">
                 <div className="text-[10px] uppercase tracking-widest text-emerald-600">Liquid</div>
@@ -1099,6 +1084,7 @@ export default function WalletPage() {
                               </div>
                             </div>
 
+                            {/* ── Links panel — includes ⭐ Pin to Trophy Case ── */}
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                               <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Links</div>
                               <div className="space-y-2 text-sm">
@@ -1137,6 +1123,13 @@ export default function WalletPage() {
                                     View Set Progress →
                                   </a>
                                 )}
+                                {/* ⭐ Pin to Trophy Case — passes momentId to profile page */}
+                                <a
+                                  href={"/profile?pin=" + row.momentId}
+                                  className="block rounded-lg border border-yellow-800 bg-yellow-950/30 px-3 py-1.5 text-center text-xs font-semibold text-yellow-400 hover:bg-yellow-950/60"
+                                >
+                                  ⭐ Pin to Trophy Case
+                                </a>
                               </div>
                             </div>
 
