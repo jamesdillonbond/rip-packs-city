@@ -3,13 +3,12 @@ import Link from "next/link"
 import { getPublishedCollection, type Collection } from "@/lib/collections"
 import { CollectionTabBar } from "@/components/collection-tab-bar"
 
-export default async function CollectionLayout(props: {
-  children: React.ReactNode
-  params: Promise<{ collection: string }>
-}) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export default async function CollectionLayout(props: any) {
   const params = await props.params
   const collection = getPublishedCollection(params.collection)
   if (!collection) notFound()
+  const children = props.children
 
   return (
     <div style={{ minHeight: "100vh", background: "#080808", color: "#fff" }}>
@@ -33,7 +32,7 @@ export default async function CollectionLayout(props: {
       <CollectionTicker collection={collection} />
       <CollectionHeader collection={collection} />
       <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
-        {props.children}
+        {children}
       </main>
     </div>
   )
