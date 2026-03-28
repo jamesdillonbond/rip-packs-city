@@ -102,6 +102,13 @@ interface PinPreview {
   badges: string[] | null;
 }
 
+interface PortfolioSnapshot {
+  snapshot_date: string;
+  total_fmv: number;
+  moment_count: number;
+  wallet_count: number;
+}
+
 // ─── CONSTANTS ────────────────────────────────────────────────
 const ACCENT_CYCLE = ["#E03A2F", "#3B82F6", "#10B981", "#F59E0B", "#818CF8", "#F472B6"];
 const STORAGE_KEY = "rpc_owner_key";
@@ -142,6 +149,11 @@ function pickAccent(index: number): string {
   return ACCENT_CYCLE[index % ACCENT_CYCLE.length];
 }
 
+function fmtDate(iso: string): string {
+  const d = new Date(iso);
+  return (d.getMonth() + 1) + "/" + d.getDate();
+}
+
 // ─── STYLE TOKENS ─────────────────────────────────────────────
 const monoFont = "'Share Tech Mono', monospace";
 const condensedFont = "'Barlow Condensed', sans-serif";
@@ -170,8 +182,6 @@ const btnBase: React.CSSProperties = {
 };
 
 // ─── PIN PARAM READER (must be inside Suspense) ───────────────
-// Reads the ?pin=MOMENTID query param and fires a callback when found.
-// Isolated so useSearchParams doesn't block the static prerender.
 function PinParamReader(props: {
   trophies: (TrophyMoment | null)[];
   onPinRequest: (slot: number, momentId: string) => void;
@@ -198,7 +208,7 @@ function Ticker() {
     "PACK EV CALCULATOR — expected value vs price",
     "SNIPER — real-time deals below FMV",
     "BADGE TRACKER — Top Shot Debut · Fresh · Rookie Year",
-    "PROFILE — trophy case · sets tracker · activity feed",
+    "PROFILE — trophy case · sets tracker · activity feed · sparkline",
   ];
   const doubled = [...items, ...items];
   return (
@@ -232,6 +242,136 @@ function StatTile(props: { label: string; value: string; sub: string; change: st
         <span style={{ fontSize: 10, fontFamily: monoFont, color: props.up ? "#34D399" : "#F87171", fontWeight: 700 }}>{props.change}</span>
       </div>
     </div>
+  );
+}
+
+// ─── PORTFOLIO SPARKLINE ──────────────────────────────────────
+function PortfolioSparkline(props: { ownerKey: string; currentFmv: number }) {
+  const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(function() {
+    if (!props.ownerKey) return;
+    setLoading(true);
+    fetch("/api/profile/portfolio-history?ownerKey=" + encodeURIComponent(props.ownerKey) + "&days=30")
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) { if (d?.snapshots) setSnapshots(d.snapshots); })
+      .catch(function() {})
+      .finally(function() { setLoading(false); });
+  }, [props.ownerKey]);
+
+  // Always include today's live value so the chart is never stale
+  const points = useMemo(function() {
+    const today = new Date().toISOString().split("T")[0];
+    const historical = snapshots.filter(function(s) { return s.snapshot_date !== today; });
+    const liveToday: PortfolioSnapshot = {
+      snapshot_date: today,
+      total_fmv: props.currentFmv,
+      moment_count: 0,
+      wallet_count: 0,
+    };
+    return [...historical, liveToday].filter(function(s) { return s.total_fmv > 0; });
+  }, [snapshots, props.currentFmv]);
+
+  const isEmpty = !loading && points.length < 2;
+
+  const minVal = useMemo(function() { return Math.min(...points.map(function(p) { return p.total_fmv; })); }, [points]);
+  const maxVal = useMemo(function() { return Math.max(...points.map(function(p) { return p.total_fmv; })); }, [points]);
+  const range = maxVal - minVal || 1;
+
+  const change = points.length >= 2 ? points[points.length - 1].total_fmv - points[0].total_fmv : 0;
+  const changePct = points.length >= 2 && points[0].total_fmv > 0 ? (change / points[0].total_fmv) * 100 : 0;
+  const changeColor = change >= 0 ? "#34D399" : "#F87171";
+  const changeSign = change >= 0 ? "+" : "";
+
+  // Build SVG path from points
+  const W = 360;
+  const H = 56;
+  const PAD = 4;
+
+  const svgPath = useMemo(function() {
+    if (points.length < 2) return "";
+    const coords = points.map(function(p, i) {
+      const x = PAD + (i / (points.length - 1)) * (W - PAD * 2);
+      const y = PAD + ((maxVal - p.total_fmv) / range) * (H - PAD * 2);
+      return x.toFixed(1) + "," + y.toFixed(1);
+    });
+    return "M " + coords.join(" L ");
+  }, [points, maxVal, range]);
+
+  const areaPath = svgPath ? svgPath + " L " + (W - PAD).toFixed(1) + "," + (H - PAD).toFixed(1) + " L " + PAD.toFixed(1) + "," + (H - PAD).toFixed(1) + " Z" : "";
+
+  return (
+    <section style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "14px 18px", marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={labelStyle}>◈ Portfolio Value · 30d</span>
+        </div>
+        {points.length >= 2 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.1em" }}>30D CHANGE</div>
+              <div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 800, color: changeColor }}>{changeSign + fmtDollars(Math.abs(change)) + " (" + changeSign + changePct.toFixed(1) + "%)"}</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <div style={{ height: 60, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.2)" }}>Loading…</span>
+        </div>
+      ) : isEmpty ? (
+        <div style={{ height: 60, display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", lineHeight: 1.7 }}>
+              Sparkline builds automatically as you load wallets.
+              <br />Load any saved wallet to record today's data point.
+            </div>
+          </div>
+          {/* Show a placeholder flat line */}
+          <svg width={W} height={H} viewBox={"0 0 " + W + " " + H} style={{ opacity: 0.15, flexShrink: 0 }}>
+            <line x1={PAD} y1={H / 2} x2={W - PAD} y2={H / 2} stroke="#E03A2F" strokeWidth="1.5" strokeDasharray="4 4" />
+          </svg>
+        </div>
+      ) : (
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 16 }}>
+          {/* Y-axis labels */}
+          <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", height: H, flexShrink: 0, paddingTop: PAD, paddingBottom: PAD }}>
+            <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", textAlign: "right" }}>{fmtDollars(maxVal)}</div>
+            <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", textAlign: "right" }}>{fmtDollars(minVal)}</div>
+          </div>
+          {/* SVG chart */}
+          <div style={{ flex: 1, position: "relative" }}>
+            <svg width="100%" viewBox={"0 0 " + W + " " + H} style={{ display: "block", overflow: "visible" }} preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={changeColor} stopOpacity="0.25" />
+                  <stop offset="100%" stopColor={changeColor} stopOpacity="0.02" />
+                </linearGradient>
+              </defs>
+              {/* Area fill */}
+              <path d={areaPath} fill="url(#sparkGrad)" />
+              {/* Line */}
+              <path d={svgPath} fill="none" stroke={changeColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              {/* Endpoint dot */}
+              {points.length > 0 && (function() {
+                const last = points[points.length - 1];
+                const x = PAD + ((points.length - 1) / (points.length - 1)) * (W - PAD * 2);
+                const y = PAD + ((maxVal - last.total_fmv) / range) * (H - PAD * 2);
+                return <circle cx={x} cy={y} r="3" fill={changeColor} />;
+              })()}
+            </svg>
+            {/* X-axis date labels */}
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+              <span style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.2)" }}>{fmtDate(points[0].snapshot_date)}</span>
+              {points.length > 2 && <span style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.2)" }}>{fmtDate(points[Math.floor(points.length / 2)].snapshot_date)}</span>}
+              <span style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.2)" }}>Today</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -454,7 +594,7 @@ function PinModal(props: { slot: number; ownerKey: string; prefilled: PinPreview
           <>
             <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", marginBottom: 12, lineHeight: 1.6 }}>Enter a moment ID from the Top Shot URL: nbatopshot.com/moment/XXXXXXXX</div>
             <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-              <input value={input} onChange={function(e) { setInput(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter") handleLookup(); }} placeholder="Moment ID (e.g. 12345678)…" style={{ flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, padding: "8px 12px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none" }} />
+              <input value={input} onChange={function(e) { setInput(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter") handleLookup(); }} placeholder="Moment ID…" style={{ flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, padding: "8px 12px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none" }} />
               <button onClick={handleLookup} disabled={loading} style={Object.assign({}, btnBase, { background: "#E03A2F", color: "#fff", borderColor: "#E03A2F", padding: "8px 14px", opacity: loading ? 0.6 : 1 })}>{loading ? "…" : "Look Up"}</button>
             </div>
             {preview && (
@@ -703,7 +843,6 @@ export default function ProfilePage() {
     try { localStorage.setItem(STORAGE_KEY, key); } catch {}
   }
 
-  // Called by PinParamReader when ?pin=MOMENTID is detected
   const handlePinRequest = useCallback(async function(slot: number, momentId: string) {
     try {
       const res = await fetch("/api/market-snapshot?momentId=" + encodeURIComponent(momentId));
@@ -853,7 +992,6 @@ export default function ProfilePage() {
         ::-webkit-scrollbar-thumb{background:rgba(224,58,47,0.3);border-radius:2px}
       `}</style>
 
-      {/* PinParamReader isolated in Suspense to satisfy Next.js useSearchParams requirement */}
       <Suspense fallback={null}>
         <PinParamReader trophies={trophies} onPinRequest={handlePinRequest} />
       </Suspense>
@@ -915,11 +1053,14 @@ export default function ProfilePage() {
         {ownerKey && <BioWidget ownerKey={ownerKey} bio={bio} onSave={setBio} />}
 
         {/* STAT TILES */}
-        <section style={{ marginBottom: 18 }}>
+        <section style={{ marginBottom: 14 }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
             {tiles.map(function(t, i) { return <StatTile key={t.label} label={t.label} value={t.value} sub={t.sub} change={t.change} up={t.up} icon={t.icon} color={t.color} delay={i * 70} />; })}
           </div>
         </section>
+
+        {/* PORTFOLIO SPARKLINE — only shown when ownerKey is set */}
+        {ownerKey && <PortfolioSparkline ownerKey={ownerKey} currentFmv={totalFmv} />}
 
         {/* TROPHY CASE */}
         <section style={{ marginBottom: 18 }}>
@@ -933,7 +1074,7 @@ export default function ProfilePage() {
               )}
             </div>
             <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.25)" }}>
-              {trophies.filter(Boolean).length + " / " + MAX_SLOTS + " · link from Wallet: /profile?pin=MOMENTID"}
+              {trophies.filter(Boolean).length + " / " + MAX_SLOTS + " · pin from Wallet: /profile?pin=MOMENTID"}
             </span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14 }}>
