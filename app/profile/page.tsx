@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { getOwnerKey, setOwnerKey as saveOwnerKey, onOwnerKeyChange } from "@/lib/owner-key";
 
 // ─── TYPES ────────────────────────────────────────────────────
 interface SavedWallet {
@@ -65,6 +66,7 @@ interface ProfileBio {
   favorite_team: string | null;
   twitter: string | null;
   discord: string | null;
+  avatar_url: string | null;
 }
 
 interface SetProgress {
@@ -111,7 +113,6 @@ interface PortfolioSnapshot {
 
 // ─── CONSTANTS ────────────────────────────────────────────────
 const ACCENT_CYCLE = ["#E03A2F", "#3B82F6", "#10B981", "#F59E0B", "#818CF8", "#F472B6"];
-const STORAGE_KEY = "rpc_owner_key";
 const MAX_SLOTS = 3;
 
 // ─── HELPERS ──────────────────────────────────────────────────
@@ -181,7 +182,49 @@ const btnBase: React.CSSProperties = {
   transition: "all 0.15s",
 };
 
-// ─── PIN PARAM READER (must be inside Suspense) ───────────────
+// ─── AVATAR COMPONENT ─────────────────────────────────────────
+function Avatar(props: { ownerKey: string; bio: ProfileBio | null; size?: number; fontSize?: number }) {
+  const size = props.size ?? 44;
+  const fontSize = props.fontSize ?? 16;
+  const initials = props.ownerKey ? props.ownerKey.slice(0, 2).toUpperCase() : "?";
+
+  if (props.bio?.avatar_url) {
+    return (
+      <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", border: "2px solid rgba(224,58,47,0.4)", flexShrink: 0 }}>
+        <img
+          src={props.bio.avatar_url}
+          alt={props.ownerKey}
+          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          onError={function(e) {
+            // Fall back to initials on image error
+            e.currentTarget.style.display = "none";
+            if (e.currentTarget.parentElement) {
+              e.currentTarget.parentElement.innerHTML = initials;
+              Object.assign(e.currentTarget.parentElement.style, {
+                background: "rgba(224,58,47,0.15)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontFamily: condensedFont,
+                fontWeight: 800,
+                fontSize: fontSize + "px",
+                color: "#E03A2F",
+              });
+            }
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ width: size, height: size, borderRadius: "50%", background: "rgba(224,58,47,0.15)", border: "1px solid rgba(224,58,47,0.35)", display: "flex", alignItems: "center", justifyContent: "center", fontSize, fontWeight: 800, color: "#E03A2F", fontFamily: condensedFont, flexShrink: 0 }}>
+      {initials}
+    </div>
+  );
+}
+
+// ─── PIN PARAM READER ─────────────────────────────────────────
 function PinParamReader(props: {
   trophies: (TrophyMoment | null)[];
   onPinRequest: (slot: number, momentId: string) => void;
@@ -202,33 +245,26 @@ function PinParamReader(props: {
 }
 
 // ─── SIGN IN BANNER ───────────────────────────────────────────
-// Shown prominently at the top when no ownerKey is set.
-// Large, hard to miss, explains the value prop and lets you sign in inline.
 function SignInBanner(props: { onSetKey: (key: string) => void }) {
   const [val, setVal] = useState("");
   const [focused, setFocused] = useState(false);
 
   return (
     <div style={{ background: "linear-gradient(135deg, rgba(224,58,47,0.14) 0%, rgba(224,58,47,0.04) 100%)", border: "1px solid rgba(224,58,47,0.35)", borderRadius: 12, padding: "22px 28px", marginBottom: 16, animation: "fadeIn 0.4s ease both" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
-        {/* Icon */}
-        <div style={{ width: 52, height: 52, borderRadius: "50%", background: "rgba(224,58,47,0.15)", border: "1px solid rgba(224,58,47,0.4)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+        <div style={{ width: 52, height: 52, borderRadius: "50%", background: "rgba(224,58,47,0.15)", border: "1px solid rgba(224,58,47,0.4)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>
           👤
         </div>
-
-        {/* Copy */}
         <div style={{ flex: 1, minWidth: 200 }}>
           <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 18, color: "#fff", letterSpacing: "0.04em", marginBottom: 4 }}>
-            Set your Profile Key to unlock everything
+            Set Up Your Rip Packs City Profile
           </div>
           <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", lineHeight: 1.7 }}>
-            Save wallets · track searches · pin trophy moments · build your FMV sparkline over time.
-            <br />Just your Top Shot username — no account, no password.
+            Save wallets · track searches · pin trophy moments · build your FMV sparkline.
+            <br />Just your Top Shot username — no account, no password. Stays signed in everywhere.
           </div>
         </div>
-
-        {/* Input + button */}
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0, flexWrap: "wrap" }}>
           <input
             value={val}
             onChange={function(e) { setVal(e.target.value); }}
@@ -236,11 +272,11 @@ function SignInBanner(props: { onSetKey: (key: string) => void }) {
             onFocus={function() { setFocused(true); }}
             onBlur={function() { setFocused(false); }}
             placeholder="your Top Shot username…"
-            style={{ background: "rgba(255,255,255,0.07)", border: "1px solid " + (focused ? "rgba(224,58,47,0.7)" : "rgba(224,58,47,0.35)"), borderRadius: 7, padding: "9px 16px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none", width: 230, transition: "border-color 0.15s" }}
+            style={{ background: "rgba(255,255,255,0.07)", border: "1px solid " + (focused ? "rgba(224,58,47,0.7)" : "rgba(224,58,47,0.35)"), borderRadius: 7, padding: "9px 16px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none", width: 220, transition: "border-color 0.15s" }}
           />
           <button
             onClick={function() { if (val.trim()) props.onSetKey(val.trim()); }}
-            style={{ background: "#E03A2F", border: "none", borderRadius: 7, padding: "9px 20px", color: "#fff", fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer", flexShrink: 0, transition: "background 0.15s" }}
+            style={{ background: "#E03A2F", border: "none", borderRadius: 7, padding: "9px 20px", color: "#fff", fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer", flexShrink: 0 }}
             onMouseEnter={function(e) { e.currentTarget.style.background = "#c42e24"; }}
             onMouseLeave={function(e) { e.currentTarget.style.background = "#E03A2F"; }}
           >
@@ -267,9 +303,7 @@ function Ticker() {
       <div style={{ background: "#E03A2F", padding: "0 12px", fontSize: 9, fontFamily: monoFont, letterSpacing: "0.15em", color: "#fff", height: "100%", display: "flex", alignItems: "center", flexShrink: 0, fontWeight: 700 }}>LIVE</div>
       <div style={{ overflow: "hidden", flex: 1 }}>
         <div style={{ display: "flex", gap: 64, animation: "ticker 38s linear infinite", whiteSpace: "nowrap", paddingLeft: 24 }}>
-          {doubled.map(function(item, i) {
-            return <span key={i} style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.45)", letterSpacing: "0.07em" }}>{"⚡ " + item}</span>;
-          })}
+          {doubled.map(function(item, i) { return <span key={i} style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.45)", letterSpacing: "0.07em" }}>{"⚡ " + item}</span>; })}
         </div>
       </div>
     </div>
@@ -319,26 +353,22 @@ function PortfolioSparkline(props: { ownerKey: string; currentFmv: number }) {
   }, [snapshots, props.currentFmv]);
 
   const isEmpty = !loading && points.length < 2;
-  const minVal = useMemo(function() { return points.length ? Math.min(...points.map(function(p) { return p.total_fmv; })) : 0; }, [points]);
-  const maxVal = useMemo(function() { return points.length ? Math.max(...points.map(function(p) { return p.total_fmv; })) : 0; }, [points]);
+  const minVal = points.length ? Math.min(...points.map(function(p) { return p.total_fmv; })) : 0;
+  const maxVal = points.length ? Math.max(...points.map(function(p) { return p.total_fmv; })) : 0;
   const range = maxVal - minVal || 1;
   const change = points.length >= 2 ? points[points.length - 1].total_fmv - points[0].total_fmv : 0;
   const changePct = points.length >= 2 && points[0].total_fmv > 0 ? (change / points[0].total_fmv) * 100 : 0;
   const changeColor = change >= 0 ? "#34D399" : "#F87171";
   const changeSign = change >= 0 ? "+" : "";
-
-  const W = 360;
-  const H = 56;
-  const PAD = 4;
+  const W = 360; const H = 56; const PAD = 4;
 
   const svgPath = useMemo(function() {
     if (points.length < 2) return "";
-    const coords = points.map(function(p, i) {
+    return "M " + points.map(function(p, i) {
       const x = PAD + (i / (points.length - 1)) * (W - PAD * 2);
       const y = PAD + ((maxVal - p.total_fmv) / range) * (H - PAD * 2);
       return x.toFixed(1) + "," + y.toFixed(1);
-    });
-    return "M " + coords.join(" L ");
+    }).join(" L ");
   }, [points, maxVal, range]);
 
   const areaPath = svgPath ? svgPath + " L " + (W - PAD).toFixed(1) + "," + (H - PAD).toFixed(1) + " L " + PAD.toFixed(1) + "," + (H - PAD).toFixed(1) + " Z" : "";
@@ -354,18 +384,14 @@ function PortfolioSparkline(props: { ownerKey: string; currentFmv: number }) {
           </div>
         )}
       </div>
-
       {loading ? (
         <div style={{ height: 60, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.2)" }}>Loading…</span>
         </div>
       ) : isEmpty ? (
         <div style={{ height: 60, display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", lineHeight: 1.7 }}>
-              Sparkline builds automatically as you load wallets.
-              <br />Load any saved wallet to record today's data point.
-            </div>
+          <div style={{ flex: 1, fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", lineHeight: 1.7 }}>
+            Sparkline builds as you load wallets. Load any saved wallet to record today's data point.
           </div>
           <svg width={W} height={H} viewBox={"0 0 " + W + " " + H} style={{ opacity: 0.15, flexShrink: 0 }}>
             <line x1={PAD} y1={H / 2} x2={W - PAD} y2={H / 2} stroke="#E03A2F" strokeWidth="1.5" strokeDasharray="4 4" />
@@ -421,7 +447,7 @@ function MarketPulseWidget(props: { pulse: MarketPulse | null; loading: boolean 
         <span style={labelStyle}>Market Pulse</span>
         <span style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.2)", letterSpacing: "0.1em", marginLeft: "auto" }}>60s cache · from RPC index</span>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12 }}>
         {stats.map(function(s) {
           return (
             <div key={s.label}>
@@ -438,17 +464,36 @@ function MarketPulseWidget(props: { pulse: MarketPulse | null; loading: boolean 
 // ─── BIO WIDGET ───────────────────────────────────────────────
 function BioWidget(props: { ownerKey: string; bio: ProfileBio | null; onSave: (bio: ProfileBio) => void }) {
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState<ProfileBio>({ display_name: "", tagline: "", favorite_team: "", twitter: "", discord: "" });
+  const [form, setForm] = useState<ProfileBio>({ display_name: "", tagline: "", favorite_team: "", twitter: "", discord: "", avatar_url: "" });
   const [saving, setSaving] = useState(false);
 
   useEffect(function() {
-    setForm({ display_name: props.bio?.display_name ?? "", tagline: props.bio?.tagline ?? "", favorite_team: props.bio?.favorite_team ?? "", twitter: props.bio?.twitter ?? "", discord: props.bio?.discord ?? "" });
+    setForm({
+      display_name: props.bio?.display_name ?? "",
+      tagline: props.bio?.tagline ?? "",
+      favorite_team: props.bio?.favorite_team ?? "",
+      twitter: props.bio?.twitter ?? "",
+      discord: props.bio?.discord ?? "",
+      avatar_url: props.bio?.avatar_url ?? "",
+    });
   }, [props.bio]);
 
   async function handleSave() {
     setSaving(true);
     try {
-      const res = await fetch("/api/profile/bio", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ownerKey: props.ownerKey, displayName: form.display_name, tagline: form.tagline, favoriteTeam: form.favorite_team, twitter: form.twitter, discord: form.discord }) });
+      const res = await fetch("/api/profile/bio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ownerKey: props.ownerKey,
+          displayName: form.display_name,
+          tagline: form.tagline,
+          favoriteTeam: form.favorite_team,
+          twitter: form.twitter,
+          discord: form.discord,
+          avatarUrl: form.avatar_url,
+        }),
+      });
       if (res.ok) { const d = await res.json(); props.onSave(d.bio); setEditing(false); }
     } finally { setSaving(false); }
   }
@@ -456,14 +501,12 @@ function BioWidget(props: { ownerKey: string; bio: ProfileBio | null; onSave: (b
   if (!editing) {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 18px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, marginBottom: 14 }}>
-        <div style={{ width: 44, height: 44, borderRadius: "50%", background: "rgba(224,58,47,0.15)", border: "1px solid rgba(224,58,47,0.35)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#E03A2F", fontFamily: condensedFont, flexShrink: 0 }}>
-          {props.ownerKey ? props.ownerKey.slice(0, 2).toUpperCase() : "?"}
-        </div>
+        <Avatar ownerKey={props.ownerKey} bio={props.bio} size={48} fontSize={17} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 16, color: "#fff", letterSpacing: "0.04em" }}>{props.bio?.display_name || props.ownerKey || "Your Profile"}</div>
+          <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 17, color: "#fff", letterSpacing: "0.04em" }}>{props.bio?.display_name || props.ownerKey}</div>
           <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", marginTop: 2 }}>{props.bio?.tagline || "NBA Top Shot Collector"}</div>
-          {(props.bio?.twitter || props.bio?.favorite_team) && (
-            <div style={{ display: "flex", gap: 10, marginTop: 5 }}>
+          {(props.bio?.twitter || props.bio?.favorite_team || props.bio?.discord) && (
+            <div style={{ display: "flex", gap: 10, marginTop: 5, flexWrap: "wrap" }}>
               {props.bio?.favorite_team && <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)" }}>{"🏀 " + props.bio.favorite_team}</span>}
               {props.bio?.twitter && <span style={{ fontSize: 9, fontFamily: monoFont, color: "#1DA1F2" }}>{"𝕏 @" + props.bio.twitter}</span>}
               {props.bio?.discord && <span style={{ fontSize: 9, fontFamily: monoFont, color: "#7289DA" }}>{"⌘ " + props.bio.discord}</span>}
@@ -477,7 +520,8 @@ function BioWidget(props: { ownerKey: string; bio: ProfileBio | null; onSave: (b
 
   const fields = [
     { key: "display_name", label: "Display Name", placeholder: "e.g. Trevor D." },
-    { key: "tagline", label: "Tagline", placeholder: "e.g. Chasing Legendaries since 2020" },
+    { key: "tagline", label: "Tagline", placeholder: "e.g. Chasing Legendaries since 2020", wide: true },
+    { key: "avatar_url", label: "Profile Picture URL", placeholder: "https://… (any image URL)", wide: true },
     { key: "favorite_team", label: "Favorite Team", placeholder: "e.g. Los Angeles Lakers" },
     { key: "twitter", label: "𝕏 / Twitter", placeholder: "username (no @)" },
     { key: "discord", label: "Discord", placeholder: "username" },
@@ -488,7 +532,7 @@ function BioWidget(props: { ownerKey: string; bio: ProfileBio | null; onSave: (b
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
         {fields.map(function(f) {
           return (
-            <div key={f.key} style={f.key === "tagline" ? { gridColumn: "1 / -1" } : {}}>
+            <div key={f.key} style={(f as any).wide ? { gridColumn: "1 / -1" } : {}}>
               <div style={Object.assign({}, labelStyle, { marginBottom: 4 })}>{f.label}</div>
               <input value={(form as any)[f.key] ?? ""} onChange={function(e) { setForm(function(prev) { return Object.assign({}, prev, { [f.key]: e.target.value }); }); }} placeholder={f.placeholder} style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 5, padding: "6px 10px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none", letterSpacing: "0.04em" }} />
             </div>
@@ -497,7 +541,7 @@ function BioWidget(props: { ownerKey: string; bio: ProfileBio | null; onSave: (b
       </div>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <button onClick={function() { setEditing(false); }} style={Object.assign({}, btnBase, { padding: "6px 14px" })}>Cancel</button>
-        <button onClick={handleSave} disabled={saving} style={Object.assign({}, btnBase, { background: "#E03A2F", color: "#fff", borderColor: "#E03A2F", padding: "6px 14px", opacity: saving ? 0.6 : 1 })}>{saving ? "Saving…" : "Save Bio"}</button>
+        <button onClick={handleSave} disabled={saving} style={Object.assign({}, btnBase, { background: "#E03A2F", color: "#fff", borderColor: "#E03A2F", padding: "6px 14px", opacity: saving ? 0.6 : 1 })}>{saving ? "Saving…" : "Save Profile"}</button>
       </div>
     </div>
   );
@@ -539,11 +583,8 @@ function TrophySlot(props: { slot: number; trophy: TrophyMoment | null; ownerKey
       <div style={{ position: "absolute", top: 10, left: 10 }}>
         <span style={{ fontSize: 8, fontFamily: monoFont, color: tc, background: tc + "22", border: "1px solid " + tc + "44", padding: "2px 6px", borderRadius: 3, letterSpacing: "0.1em" }}>{(t.tier ?? "COMMON").toUpperCase()}</span>
       </div>
-      <div style={{ position: "absolute", top: 10, right: 10 }}>
-        <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.5)" }}>{slotLabels[props.slot]}</span>
-      </div>
       {props.ownerKey && hovered && (
-        <button onClick={function(e) { e.stopPropagation(); props.onRemove(props.slot); }} style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.7)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "50%", width: 22, height: 22, color: "rgba(255,255,255,0.6)", fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+        <button onClick={function(e) { e.stopPropagation(); props.onRemove(props.slot); }} style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.7)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "50%", width: 24, height: 24, color: "rgba(255,255,255,0.6)", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
       )}
       <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "12px 12px 14px" }}>
         <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 15, color: "#fff", letterSpacing: "0.04em", lineHeight: 1.1, marginBottom: 4 }}>{t.player_name ?? "Unknown"}</div>
@@ -730,15 +771,12 @@ function ActivityFeed(props: { savedWallets: SavedWallet[] }) {
     setLoading(true);
     try {
       const results: ActivityItem[] = [];
-      const toFetch = props.savedWallets.slice(0, 2);
-      for (const w of toFetch) {
-        const q = w.username ?? w.wallet_addr;
+      for (const w of props.savedWallets.slice(0, 2)) {
         try {
-          const res = await fetch("/api/edition-sales?wallet=" + encodeURIComponent(q) + "&limit=5");
+          const res = await fetch("/api/edition-sales?wallet=" + encodeURIComponent(w.username ?? w.wallet_addr) + "&limit=5");
           if (!res.ok) continue;
           const d = await res.json();
-          const sales: any[] = d.sales ?? d.rows ?? d.data ?? [];
-          sales.slice(0, 5).forEach(function(sale: any) {
+          (d.sales ?? d.rows ?? d.data ?? []).slice(0, 5).forEach(function(sale: any) {
             results.push({ walletUsername: w.username ?? w.wallet_addr.slice(0, 10) + "…", walletAccent: w.accent_color, playerName: sale.playerName ?? sale.player ?? "Unknown", setName: sale.setName ?? sale.set ?? "", serialNumber: sale.serialNumber ?? null, tier: sale.tier ?? "Common", price: sale.price ?? sale.salePrice ?? 0, soldAt: sale.soldAt ?? sale.timestamp ?? new Date().toISOString() });
           });
         } catch {}
@@ -762,18 +800,18 @@ function ActivityFeed(props: { savedWallets: SavedWallet[] }) {
           <div key={i} style={{ display: "grid", gridTemplateColumns: "auto 1fr auto auto", alignItems: "center", gap: 10, padding: "9px 16px", borderBottom: "1px solid rgba(255,255,255,0.04)", transition: "background 0.15s" }}
             onMouseEnter={function(e) { e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
             onMouseLeave={function(e) { e.currentTarget.style.background = "transparent"; }}>
-            <div style={{ width: 24, height: 24, borderRadius: "50%", background: item.walletAccent + "22", border: "1px solid " + item.walletAccent + "44", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 800, color: item.walletAccent, fontFamily: condensedFont, flexShrink: 0 }}>
+            <div style={{ width: 24, height: 24, borderRadius: "50%", background: item.walletAccent + "22", border: "1px solid " + item.walletAccent + "44", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 800, color: item.walletAccent, fontFamily: condensedFont }}>
               {item.walletUsername.slice(0, 2).toUpperCase()}
             </div>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, color: "#fff", letterSpacing: "0.03em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.playerName}</div>
+              <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.playerName}</div>
               <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)" }}>{item.setName + (item.serialNumber ? " · #" + item.serialNumber : "")}</div>
             </div>
-            <div style={{ textAlign: "right", flexShrink: 0 }}>
-              <span style={{ fontSize: 8, fontFamily: monoFont, color: tc, background: tc + "18", border: "1px solid " + tc + "33", padding: "1px 5px", borderRadius: 3, letterSpacing: "0.05em", display: "block", marginBottom: 3 }}>{item.tier.toUpperCase()}</span>
+            <div style={{ textAlign: "right" }}>
+              <span style={{ fontSize: 8, fontFamily: monoFont, color: tc, background: tc + "18", border: "1px solid " + tc + "33", padding: "1px 5px", borderRadius: 3, display: "block", marginBottom: 3 }}>{item.tier.toUpperCase()}</span>
               <span style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: "#fff" }}>{fmtDollars(item.price)}</span>
             </div>
-            <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", flexShrink: 0, textAlign: "right" }}>{relTime(item.soldAt)}</div>
+            <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", textAlign: "right" }}>{relTime(item.soldAt)}</div>
           </div>
         );
       })}
@@ -806,16 +844,16 @@ function WalletCard(props: { wallet: SavedWallet; onLoad: (addr: string, user?: 
       </div>
       {w.cached_fmv != null ? (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 10 }}>
-          <div><div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.12em", marginBottom: 2 }}>FMV</div><div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 700, color: "#fff" }}>{fmtDollars(w.cached_fmv ?? 0)}</div></div>
-          <div><div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.12em", marginBottom: 2 }}>MOMENTS</div><div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 700, color: "#fff" }}>{w.cached_moment_count ?? "—"}</div></div>
-          <div><div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.12em", marginBottom: 2 }}>24H</div><div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 700, color: changeColor }}>{changeStr}</div></div>
+          <div><div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", marginBottom: 2 }}>FMV</div><div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 700, color: "#fff" }}>{fmtDollars(w.cached_fmv ?? 0)}</div></div>
+          <div><div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", marginBottom: 2 }}>MOMENTS</div><div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 700, color: "#fff" }}>{w.cached_moment_count ?? "—"}</div></div>
+          <div><div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", marginBottom: 2 }}>24H</div><div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 700, color: changeColor }}>{changeStr}</div></div>
         </div>
       ) : (
         <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", marginBottom: 10 }}>Load wallet to populate stats</div>
       )}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
         <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.25)" }}>{w.last_viewed ? "Viewed " + relTime(w.last_viewed) : "Never loaded"}</span>
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 6 }}>
           {confirm ? (
             <>
               <button onClick={function(e) { e.stopPropagation(); setConfirm(false); }} style={Object.assign({}, btnBase, { fontSize: 9 })}>Cancel</button>
@@ -824,7 +862,7 @@ function WalletCard(props: { wallet: SavedWallet; onLoad: (addr: string, user?: 
           ) : (
             <>
               <button onClick={function(e) { e.stopPropagation(); setConfirm(true); }} style={Object.assign({}, btnBase, { background: "transparent", border: "none", opacity: hovered ? 0.5 : 0, transition: "opacity 0.15s", fontSize: 9 })}>✕</button>
-              <button onClick={function(e) { e.stopPropagation(); props.onLoad(w.wallet_addr, w.username ?? undefined); }} style={Object.assign({}, btnBase, { background: w.accent_color + "22", color: w.accent_color, borderColor: w.accent_color + "44", opacity: hovered ? 1 : 0.6, fontSize: 9 })}>{"Load Wallet →"}</button>
+              <button onClick={function(e) { e.stopPropagation(); props.onLoad(w.wallet_addr, w.username ?? undefined); }} style={Object.assign({}, btnBase, { background: w.accent_color + "22", color: w.accent_color, borderColor: w.accent_color + "44", opacity: hovered ? 1 : 0.6, fontSize: 9 })}>{"Load →"}</button>
             </>
           )}
         </div>
@@ -836,8 +874,8 @@ function WalletCard(props: { wallet: SavedWallet; onLoad: (addr: string, user?: 
 function AddWalletForm(props: { onAdd: (val: string) => void; onCancel: () => void }) {
   const [val, setVal] = useState("");
   return (
-    <div style={{ display: "flex", gap: 8, marginBottom: 12, animation: "fadeIn 0.2s ease both" }}>
-      <input autoFocus value={val} onChange={function(e) { setVal(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && val.trim()) props.onAdd(val.trim()); }} placeholder="Username or 0x address…" style={{ flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(224,58,47,0.35)", borderRadius: 6, padding: "7px 12px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none", letterSpacing: "0.04em" }} />
+    <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+      <input autoFocus value={val} onChange={function(e) { setVal(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && val.trim()) props.onAdd(val.trim()); }} placeholder="Username or 0x address…" style={{ flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(224,58,47,0.35)", borderRadius: 6, padding: "7px 12px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none" }} />
       <button onClick={function() { if (val.trim()) props.onAdd(val.trim()); }} style={Object.assign({}, btnBase, { background: "#E03A2F", color: "#fff", borderColor: "#E03A2F", fontSize: 11 })}>Save</button>
       <button onClick={props.onCancel} style={Object.assign({}, btnBase, { fontSize: 11 })}>✕</button>
     </div>
@@ -863,13 +901,18 @@ export default function ProfilePage() {
   const [showAddWallet, setShowAddWallet] = useState(false);
   const [pinModal, setPinModal] = useState<{ slot: number; prefilled: PinPreview | null } | null>(null);
 
+  // Read from localStorage + listen for cross-tab changes
   useEffect(function() {
-    try { const s = localStorage.getItem(STORAGE_KEY); if (s) setOwnerKeyState(s); } catch {}
+    setOwnerKeyState(getOwnerKey());
+    return onOwnerKeyChange(function(key) {
+      setOwnerKeyState(key);
+      if (key) loadProfile(key);
+    });
   }, []);
 
   function setOwnerKey(key: string) {
     setOwnerKeyState(key);
-    try { localStorage.setItem(STORAGE_KEY, key); } catch {}
+    saveOwnerKey(key);
   }
 
   const handlePinRequest = useCallback(async function(slot: number, momentId: string) {
@@ -877,8 +920,7 @@ export default function ProfilePage() {
       const res = await fetch("/api/market-snapshot?momentId=" + encodeURIComponent(momentId));
       if (!res.ok) { setPinModal({ slot, prefilled: null }); return; }
       const d = await res.json();
-      const pre: PinPreview = { momentId, playerName: d.playerName ?? "Unknown", setName: d.setName ?? "", serialNumber: d.serialNumber ?? null, circulationCount: d.circulationCount ?? null, tier: d.tier ?? "Common", thumbnailUrl: d.thumbnailUrl ?? null, videoUrl: d.videoUrl ?? null, fmv: d.fmv ?? null, badges: d.badges ?? null };
-      setPinModal({ slot, prefilled: pre });
+      setPinModal({ slot, prefilled: { momentId, playerName: d.playerName ?? "Unknown", setName: d.setName ?? "", serialNumber: d.serialNumber ?? null, circulationCount: d.circulationCount ?? null, tier: d.tier ?? "Common", thumbnailUrl: d.thumbnailUrl ?? null, videoUrl: d.videoUrl ?? null, fmv: d.fmv ?? null, badges: d.badges ?? null } });
     } catch { setPinModal({ slot, prefilled: null }); }
   }, []);
 
@@ -920,13 +962,12 @@ export default function ProfilePage() {
       .then(function(data) {
         if (!data) return;
         const raw: any[] = data.deals ?? data.rows ?? [];
-        const rows: SniperRow[] = raw.slice(0, 5).map(function(r: any) {
+        setSniperRows(raw.slice(0, 5).map(function(r: any) {
           const price = r.lowAsk ?? r.price ?? 0;
           const fmv = r.adjustedFmv ?? r.fmv ?? 0;
           const pct = fmv > 0 && price > 0 ? Math.round(((price - fmv) / fmv) * 100) : 0;
           return { player: r.playerName ?? r.player ?? "Unknown", set: r.setName ?? r.set ?? "", serial: r.serialNumber ? "#" + r.serialNumber : "", price, fmv, pct, tier: r.tier ?? "Common" };
-        });
-        setSniperRows(rows);
+        }));
       })
       .catch(function() {}).finally(function() { setSniperLoading(false); });
   }, []);
@@ -984,7 +1025,7 @@ export default function ProfilePage() {
   const totalFmv = useMemo(function() { return savedWallets.reduce(function(sum, w) { return sum + (w.cached_fmv ?? 0); }, 0); }, [savedWallets]);
 
   const tiles = [
-    { label: "Portfolio FMV", value: totalFmv > 0 ? fmtDollars(totalFmv) : "—", sub: savedWallets.length + " saved wallet" + (savedWallets.length !== 1 ? "s" : ""), change: "Updated", up: true, icon: "◈", color: "#E03A2F" },
+    { label: "Portfolio FMV", value: totalFmv > 0 ? fmtDollars(totalFmv) : "—", sub: savedWallets.length + " wallet" + (savedWallets.length !== 1 ? "s" : ""), change: "Updated", up: true, icon: "◈", color: "#E03A2F" },
     { label: "Trophy Case", value: trophies.filter(Boolean).length + " / " + MAX_SLOTS, sub: "pinned moments", change: "Your best", up: true, icon: "🏆", color: "#F59E0B" },
     { label: "Live Deals", value: sniperLoading ? "…" : (sniperRows.length + " below FMV"), sub: "sniper preview", change: "Live", up: true, icon: "⚡", color: "#34D399" },
     { label: "Searches", value: String(recentSearches.length), sub: "saved queries", change: "Synced", up: true, icon: "⌕", color: "#3B82F6" },
@@ -1019,6 +1060,17 @@ export default function ProfilePage() {
         ::-webkit-scrollbar{width:4px}
         ::-webkit-scrollbar-track{background:#111}
         ::-webkit-scrollbar-thumb{background:rgba(224,58,47,0.3);border-radius:2px}
+        @media(max-width:768px){
+          .rpc-main{padding:16px 16px 60px!important;}
+          .rpc-nav-links{display:none!important;}
+          .rpc-hero h1{font-size:26px!important;}
+          .rpc-grid-4{grid-template-columns:1fr 1fr!important;}
+          .rpc-grid-5{grid-template-columns:1fr 1fr!important;}
+          .rpc-layout{grid-template-columns:1fr!important;}
+          .rpc-trophy-grid{grid-template-columns:1fr 1fr 1fr!important;}
+          .rpc-sets-activity{grid-template-columns:1fr!important;}
+          .rpc-quick-links{grid-template-columns:1fr 1fr!important;}
+        }
       `}</style>
 
       <Suspense fallback={null}>
@@ -1033,9 +1085,9 @@ export default function ProfilePage() {
 
       {/* NAV */}
       <header style={{ background: "rgba(8,8,8,0.97)", borderBottom: "1px solid rgba(255,255,255,0.06)", position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(20px)" }}>
-        <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 24px", height: 56, display: "flex", alignItems: "center", gap: 20 }}>
+        <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 20px", height: 56, display: "flex", alignItems: "center", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, cursor: "pointer" }} onClick={function() { router.push("/"); }}>
-            <svg width="30" height="30" viewBox="0 0 100 100">
+            <svg width="28" height="28" viewBox="0 0 100 100">
               <circle cx="50" cy="50" r="46" fill="none" stroke="#E03A2F" strokeWidth="4" />
               <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(0 50 50)" />
               <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(72 50 50)" />
@@ -1045,15 +1097,22 @@ export default function ProfilePage() {
               <circle cx="50" cy="50" r="7" fill="#080808" />
             </svg>
             <div>
-              <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 18, letterSpacing: "0.06em", color: "#F1F1F1", lineHeight: 1, textTransform: "uppercase" }}>{"Rip Packs "}<span style={{ color: "#E03A2F" }}>City</span></div>
+              <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 17, letterSpacing: "0.06em", color: "#F1F1F1", lineHeight: 1, textTransform: "uppercase" }}>{"Rip Packs "}<span style={{ color: "#E03A2F" }}>City</span></div>
               <div style={{ fontSize: 7, fontFamily: monoFont, letterSpacing: "0.2em", color: "rgba(224,58,47,0.5)" }}>@RIPPACKSCITY</div>
             </div>
           </div>
-          <div style={{ flex: 1, position: "relative", maxWidth: 480 }}>
-            <input value={heroSearch} onChange={function(e) { setHeroSearch(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && heroSearch.trim()) handleSearch(heroSearch); }} placeholder="Search wallet, player, edition…" style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "7px 34px 7px 14px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none", letterSpacing: "0.04em" }} onFocus={function(e) { e.target.style.borderColor = "rgba(224,58,47,0.5)"; }} onBlur={function(e) { e.target.style.borderColor = "rgba(255,255,255,0.1)"; }} />
+          <div style={{ flex: 1, position: "relative", maxWidth: 440 }}>
+            <input value={heroSearch} onChange={function(e) { setHeroSearch(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && heroSearch.trim()) handleSearch(heroSearch); }} placeholder="Search wallet, player, edition…" style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "7px 34px 7px 14px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none" }} onFocus={function(e) { e.target.style.borderColor = "rgba(224,58,47,0.5)"; }} onBlur={function(e) { e.target.style.borderColor = "rgba(255,255,255,0.1)"; }} />
             <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.3)", fontSize: 14, pointerEvents: "none" }}>⌕</span>
           </div>
-          <nav style={{ display: "flex", gap: 3, flexShrink: 0 }}>
+          {/* Avatar in nav when signed in */}
+          {ownerKey && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+              <Avatar ownerKey={ownerKey} bio={bio} size={30} fontSize={11} />
+              <span style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", display: "none" }}>{ownerKey}</span>
+            </div>
+          )}
+          <nav className="rpc-nav-links" style={{ display: "flex", gap: 3, flexShrink: 0 }}>
             {navItems.map(function(item) {
               const active = item.active ?? false;
               return <button key={item.label} onClick={function() { router.push(item.href); }} style={{ background: active ? "rgba(224,58,47,0.15)" : "transparent", border: active ? "1px solid rgba(224,58,47,0.4)" : "1px solid transparent", color: active ? "#E03A2F" : "rgba(255,255,255,0.5)", padding: "4px 10px", borderRadius: 4, fontSize: 10, fontFamily: condensedFont, fontWeight: 700, letterSpacing: "0.08em", cursor: "pointer", textTransform: "uppercase", transition: "all 0.15s" }}>{item.label}</button>;
@@ -1062,23 +1121,23 @@ export default function ProfilePage() {
         </div>
       </header>
 
-      <main style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
+      <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
 
         {/* HERO */}
-        <section style={{ marginBottom: 22, animation: "fadeIn 0.4s ease both", textAlign: "center" }}>
-          <div style={{ maxWidth: 580, margin: "0 auto" }}>
+        <section className="rpc-hero" style={{ marginBottom: 20, textAlign: "center" }}>
+          <div style={{ maxWidth: 560, margin: "0 auto" }}>
             <div style={Object.assign({}, labelStyle, { marginBottom: 8 })}>◈ COLLECTOR INTELLIGENCE PLATFORM ◈</div>
-            <h1 style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 34, letterSpacing: "0.04em", color: "#fff", textTransform: "uppercase", lineHeight: 1, marginBottom: 16 }}>
+            <h1 style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 32, letterSpacing: "0.04em", color: "#fff", textTransform: "uppercase", lineHeight: 1, marginBottom: 16 }}>
               {"Rip Packs "}<span style={{ color: "#E03A2F" }}>City</span>
             </h1>
             <div style={{ display: "flex", gap: 8, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 10, padding: "8px 8px 8px 16px", alignItems: "center" }}>
-              <input value={heroSearch} onChange={function(e) { setHeroSearch(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && heroSearch.trim()) handleSearch(heroSearch); }} placeholder="Enter any Top Shot username or wallet address…" style={{ flex: 1, background: "transparent", border: "none", color: "#fff", fontFamily: monoFont, fontSize: 12, outline: "none", letterSpacing: "0.04em" }} />
+              <input value={heroSearch} onChange={function(e) { setHeroSearch(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && heroSearch.trim()) handleSearch(heroSearch); }} placeholder="Enter any Top Shot username or wallet address…" style={{ flex: 1, background: "transparent", border: "none", color: "#fff", fontFamily: monoFont, fontSize: 12, outline: "none" }} />
               <button onClick={function() { if (heroSearch.trim()) handleSearch(heroSearch); }} style={{ background: "#E03A2F", border: "none", borderRadius: 7, padding: "8px 20px", color: "#fff", fontFamily: condensedFont, fontWeight: 800, fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer", flexShrink: 0 }} onMouseEnter={function(e) { e.currentTarget.style.background = "#c42e24"; }} onMouseLeave={function(e) { e.currentTarget.style.background = "#E03A2F"; }}>Search</button>
             </div>
           </div>
         </section>
 
-        {/* ─── SIGN IN BANNER — only shown when no profile key set ─── */}
+        {/* SIGN IN BANNER */}
         {!ownerKey && (
           <SignInBanner onSetKey={function(key) { setOwnerKey(key); loadProfile(key); }} />
         )}
@@ -1088,7 +1147,7 @@ export default function ProfilePage() {
 
         {/* STAT TILES */}
         <section style={{ marginBottom: 14 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+          <div className="rpc-grid-4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
             {tiles.map(function(t, i) { return <StatTile key={t.label} label={t.label} value={t.value} sub={t.sub} change={t.change} up={t.up} icon={t.icon} color={t.color} delay={i * 70} />; })}
           </div>
         </section>
@@ -1097,7 +1156,7 @@ export default function ProfilePage() {
 
         {/* TROPHY CASE */}
         <section style={{ marginBottom: 18 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={labelStyle}>🏆 Trophy Case</span>
               {ownerKey && (
@@ -1107,24 +1166,26 @@ export default function ProfilePage() {
               )}
             </div>
             <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.25)" }}>
-              {trophies.filter(Boolean).length + " / " + MAX_SLOTS + " · pin from Wallet: /profile?pin=MOMENTID"}
+              {trophies.filter(Boolean).length + " / " + MAX_SLOTS}
             </span>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14 }}>
+          <div className="rpc-trophy-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14 }}>
             {trophies.map(function(trophy, i) {
               return <TrophySlot key={i} slot={i + 1} trophy={trophy} ownerKey={ownerKey} onPin={function(slot) { setPinModal({ slot, prefilled: null }); }} onRemove={handleRemoveTrophy} />;
             })}
           </div>
         </section>
 
+        {/* SETS + ACTIVITY */}
         {savedWallets.length > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+          <div className="rpc-sets-activity" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
             <SetsProgressWidget savedWallets={savedWallets} />
             <ActivityFeed savedWallets={savedWallets} />
           </div>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 14, marginBottom: 14 }}>
+        {/* SAVED WALLETS + SNIPER */}
+        <div className="rpc-layout" style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 14, marginBottom: 14 }}>
           <section>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1137,7 +1198,7 @@ export default function ProfilePage() {
             </div>
             {showAddWallet && <AddWalletForm onAdd={handleAddWallet} onCancel={function() { setShowAddWallet(false); }} />}
             {!ownerKey ? (
-              <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", textAlign: "center", padding: "28px 16px", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 8, lineHeight: 1.7 }}>Set your Profile Key above<br />to save wallets across sessions.</div>
+              <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", textAlign: "center", padding: "28px 16px", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 8, lineHeight: 1.7 }}>Sign in above to save wallets across sessions.</div>
             ) : profileLoading ? (
               <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", textAlign: "center", padding: "24px 0" }}>Loading…</div>
             ) : savedWallets.length === 0 ? (
@@ -1150,11 +1211,12 @@ export default function ProfilePage() {
           </section>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {/* Sniper */}
             <section style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, overflow: "hidden" }}>
               <div style={{ padding: "12px 14px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#34D399", animation: "pulse 2s infinite" }} />
-                  <span style={labelStyle}>Live Sniper Feed — Below FMV</span>
+                  <span style={labelStyle}>Live Sniper — Below FMV</span>
                 </div>
                 <button onClick={function() { router.push("/sniper"); }} style={Object.assign({}, btnBase, { background: "rgba(52,211,153,0.1)", color: "#34D399", borderColor: "rgba(52,211,153,0.25)", fontSize: 9 })}>{"Full Sniper →"}</button>
               </div>
@@ -1170,10 +1232,10 @@ export default function ProfilePage() {
                 return (
                   <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px 60px 62px", alignItems: "center", padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)", cursor: "pointer", transition: "background 0.15s" }} onMouseEnter={function(e) { e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }} onMouseLeave={function(e) { e.currentTarget.style.background = "transparent"; }} onClick={function() { router.push("/sniper"); }}>
                     <div>
-                      <div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: "#fff", letterSpacing: "0.03em" }}>{row.player}</div>
+                      <div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: "#fff" }}>{row.player}</div>
                       <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)" }}>{row.set + " · " + row.serial}</div>
                     </div>
-                    <span style={{ fontSize: 8, fontFamily: monoFont, color: tc, background: tc + "18", border: "1px solid " + tc + "33", padding: "2px 5px", borderRadius: 3, textAlign: "center", letterSpacing: "0.05em" }}>{row.tier.toUpperCase()}</span>
+                    <span style={{ fontSize: 8, fontFamily: monoFont, color: tc, background: tc + "18", border: "1px solid " + tc + "33", padding: "2px 5px", borderRadius: 3, textAlign: "center" }}>{row.tier.toUpperCase()}</span>
                     <span style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: "#fff", textAlign: "right" }}>{fmtDollars(row.price)}</span>
                     <span style={{ fontSize: 11, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", textAlign: "right" }}>{fmtDollars(row.fmv)}</span>
                     <span style={{ fontSize: 11, fontFamily: monoFont, fontWeight: 700, color: "#34D399", textAlign: "right" }}>{row.pct + "%"}</span>
@@ -1182,6 +1244,7 @@ export default function ProfilePage() {
               })}
             </section>
 
+            {/* Recent Searches */}
             <section style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "14px 16px" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                 <span style={labelStyle}>Recent Searches</span>
@@ -1193,8 +1256,8 @@ export default function ProfilePage() {
                 ) : recentSearches.map(function(s, i) {
                   const tc = typeColor(s.query_type);
                   return (
-                    <button key={i} onClick={function() { handleSearch(s.query); }} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 5, padding: "5px 10px", color: "rgba(255,255,255,0.65)", fontFamily: monoFont, fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 7, letterSpacing: "0.04em", transition: "all 0.15s" }} onMouseEnter={function(e) { e.currentTarget.style.background = "rgba(224,58,47,0.1)"; e.currentTarget.style.borderColor = "rgba(224,58,47,0.3)"; e.currentTarget.style.color = "#fff"; }} onMouseLeave={function(e) { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "rgba(255,255,255,0.65)"; }}>
-                      <span style={{ fontSize: 8, color: tc, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" }}>{s.query_type}</span>
+                    <button key={i} onClick={function() { handleSearch(s.query); }} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 5, padding: "5px 10px", color: "rgba(255,255,255,0.65)", fontFamily: monoFont, fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 7, transition: "all 0.15s" }} onMouseEnter={function(e) { e.currentTarget.style.background = "rgba(224,58,47,0.1)"; e.currentTarget.style.borderColor = "rgba(224,58,47,0.3)"; e.currentTarget.style.color = "#fff"; }} onMouseLeave={function(e) { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "rgba(255,255,255,0.65)"; }}>
+                      <span style={{ fontSize: 8, color: tc, fontWeight: 700, textTransform: "uppercase" }}>{s.query_type}</span>
                       {s.query}
                       <span style={{ color: "rgba(255,255,255,0.25)", fontSize: 9 }}>{relTime(s.searched_at)}</span>
                     </button>
@@ -1207,34 +1270,37 @@ export default function ProfilePage() {
 
         {/* QUICK LINKS */}
         <section style={{ marginBottom: 20 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
+          <div className="rpc-quick-links" style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
             {quickLinks.map(function(link) {
               return (
                 <button key={link.label} onClick={function() { router.push(link.href); }} style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, padding: "14px 16px", textAlign: "left", cursor: "pointer", transition: "all 0.2s", position: "relative", overflow: "hidden" }} onMouseEnter={function(e) { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; e.currentTarget.style.borderColor = link.color + "44"; e.currentTarget.style.transform = "translateY(-2px)"; }} onMouseLeave={function(e) { e.currentTarget.style.background = "rgba(255,255,255,0.025)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)"; e.currentTarget.style.transform = "translateY(0)"; }}>
                   <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 2, background: link.color, opacity: 0.5 }} />
                   <div style={{ fontSize: 18, marginBottom: 7, color: link.color }}>{link.icon}</div>
                   <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 13, color: "#fff", letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 3 }}>{link.label}</div>
-                  <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", letterSpacing: "0.04em" }}>{link.desc}</div>
+                  <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)" }}>{link.desc}</div>
                 </button>
               );
             })}
           </div>
         </section>
 
-        {/* PROFILE KEY — secondary, below the fold */}
+        {/* PROFILE KEY — secondary */}
         <section style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "16px 20px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
             <div>
-              <span style={labelStyle}>Profile Key</span>
+              <span style={labelStyle}>Set Up Your Rip Packs City Profile</span>
               <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", marginTop: 4 }}>
-                {ownerKey ? ("Active: " + ownerKey + "  ·  Public: rip-packs-city.vercel.app/profile/" + ownerKey) : "Set your Top Shot username to personalize your homepage and save data across sessions."}
+                {ownerKey ? ("Signed in as: " + ownerKey + "  ·  Public: rip-packs-city.vercel.app/profile/" + ownerKey) : "Enter your Top Shot username to unlock the full profile experience."}
               </div>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input value={ownerInput} onChange={function(e) { setOwnerInput(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && ownerInput.trim()) { setOwnerKey(ownerInput.trim()); loadProfile(ownerInput.trim()); } }} placeholder="your username…" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, padding: "6px 12px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none", width: 200 }} />
+              <input value={ownerInput} onChange={function(e) { setOwnerInput(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && ownerInput.trim()) { setOwnerKey(ownerInput.trim()); loadProfile(ownerInput.trim()); } }} placeholder={ownerKey ? ownerKey : "your username…"} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, padding: "6px 12px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none", width: 200 }} />
               <button onClick={function() { if (ownerInput.trim()) { setOwnerKey(ownerInput.trim()); loadProfile(ownerInput.trim()); } }} style={Object.assign({}, btnBase, { background: "#E03A2F", color: "#fff", borderColor: "#E03A2F" })}>
-                {ownerKey ? "Update" : "Set Key"}
+                {ownerKey ? "Update" : "Sign In"}
               </button>
+              {ownerKey && (
+                <button onClick={function() { setOwnerKey(""); setOwnerKeyState(""); setSavedWallets([]); setRecentSearches([]); setTrophies([null, null, null]); setBio(null); }} style={Object.assign({}, btnBase, { fontSize: 9 })}>Sign Out</button>
+              )}
             </div>
           </div>
         </section>
