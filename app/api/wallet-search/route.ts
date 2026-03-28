@@ -132,6 +132,65 @@ function buildThumbnailUrl(flowId: string | null) {
   return `https://assets.nbatopshot.com/media/${flowId}/image?width=180`
 }
 
+// ── Clean error message extraction ────────────────────────────────────────────
+// Top Shot / Cloudflare returns HTML on rate limit errors.
+// We detect and normalize these into user-friendly messages.
+
+function cleanErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err)
+
+  // Detect HTML responses (Cloudflare rate limit pages)
+  if (raw.includes("<html") || raw.includes("<title>") || raw.includes("<!DOCTYPE")) {
+    if (raw.toLowerCase().includes("slow down") || raw.includes("429") || raw.toLowerCase().includes("too many request")) {
+      return "Top Shot is rate limiting requests right now. Wait 30–60 seconds and try again."
+    }
+    if (raw.toLowerCase().includes("error") || raw.toLowerCase().includes("unavailable")) {
+      return "Top Shot is temporarily unavailable. Try again in a moment."
+    }
+    return "Top Shot returned an unexpected response. Try again in a moment."
+  }
+
+  // Detect explicit 429 mentions
+  if (raw.includes("429") || raw.toLowerCase().includes("too many request") || raw.toLowerCase().includes("rate limit")) {
+    return "Top Shot is rate limiting requests right now. Wait 30–60 seconds and try again."
+  }
+
+  // Detect username not found
+  if (raw.toLowerCase().includes("could not resolve username")) {
+    return "Username not found. Check the spelling and try again."
+  }
+
+  // Detect empty collection
+  if (raw.toLowerCase().includes("no collection") || raw.toLowerCase().includes("no nft")) {
+    return "This wallet has no Top Shot moments."
+  }
+
+  return raw
+}
+
+// ── Retry wrapper ─────────────────────────────────────────────────────────────
+// Wraps any async fn with a single retry after a delay if it throws.
+// Used for Top Shot GraphQL calls which occasionally 429 transiently.
+
+async function withRetry<T>(fn: () => Promise<T>, delayMs = 2000): Promise<T> {
+  try {
+    return await fn()
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    // Only retry on rate limit / transient errors
+    if (
+      msg.includes("429") ||
+      msg.toLowerCase().includes("too many request") ||
+      msg.toLowerCase().includes("slow down") ||
+      (msg.includes("<html") && msg.toLowerCase().includes("slow down"))
+    ) {
+      await new Promise<void>(function(resolve) { setTimeout(resolve, delayMs) })
+      return await fn()
+    }
+    throw err
+  }
+}
+
 async function resolveWalletFromInput(input: string): Promise<string> {
   const trimmed = input.trim()
   if (isWalletAddress(trimmed)) return ensureFlowPrefix(trimmed)
@@ -144,7 +203,9 @@ async function resolveWalletFromInput(input: string): Promise<string> {
         }
       }
     `
-    const data = await topshotGraphql<UsernameProfileResponse>(query, { username: cleanedUsername })
+    const data = await withRetry(function() {
+      return topshotGraphql<UsernameProfileResponse>(query, { username: cleanedUsername })
+    })
     const rawWallet = data?.getUserProfileByUsername?.publicInfo?.flowAddress ?? null
     const wallet = rawWallet ? ensureFlowPrefix(rawWallet) : null
     if (!wallet) throw new Error("Could not resolve username to wallet address.")
@@ -218,7 +279,9 @@ async function fetchMomentGraphQL(id: string) {
         }
       }
     `
-    const d = await topshotGraphql<MintedMomentGraphqlData>(q, { id })
+    const d = await withRetry(function() {
+      return topshotGraphql<MintedMomentGraphqlData>(q, { id })
+    })
     const m = d?.getMintedMoment?.data
     return {
       flowId: m?.flowId ?? null,
@@ -258,10 +321,6 @@ async function mapWithConcurrency<T, R>(
 }
 
 // ── Supabase seeding ──────────────────────────────────────────────────────────
-// Seeds ALL editions regardless of whether lastPurchasePrice exists.
-// Edition metadata is valuable for the market feed even without a price —
-// the feed fetches live stats from Top Shot GraphQL independently.
-// Sale + FMV snapshot records are only inserted when a real price exists.
 
 async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
   for (const row of rows) {
@@ -275,7 +334,6 @@ async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
         tier.includes("ULTIMATE") ? "ULTIMATE" :
         tier.includes("FANDOM") ? "FANDOM" : "COMMON"
 
-      // Upsert player
       let playerId: string | null = null
       if (row.playerName && row.playerName !== "Unknown Player") {
         const { data: player } = await supabaseAdmin
@@ -294,7 +352,6 @@ async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
         playerId = player?.id ?? null
       }
 
-      // Upsert edition — always, price not required
       const { data: edition } = await supabaseAdmin
         .from("editions")
         .upsert(
@@ -314,7 +371,6 @@ async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
 
       if (!edition?.id) continue
 
-      // Only insert sale + FMV snapshot when a real price exists
       if (row.lastPurchasePrice && row.lastPurchasePrice > 0) {
         await supabaseAdmin.from("sales").insert({
           edition_id: edition.id,
@@ -461,11 +517,12 @@ export async function POST(req: NextRequest) {
       },
     } satisfies WalletSearchResponse)
   } catch (e) {
+    const message = cleanErrorMessage(e)
     return NextResponse.json(
       {
         rows: [],
         summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
-        error: e instanceof Error ? e.message : "wallet failed",
+        error: message,
       } satisfies WalletSearchResponse,
       { status: 500 }
     )
