@@ -3,14 +3,14 @@ import Link from "next/link"
 import { getPublishedCollection, type Collection } from "@/lib/collections"
 import { CollectionTabBar } from "@/components/collection-tab-bar"
 
-interface Props {
+export default async function CollectionLayout({
+  children,
+  params,
+}: {
   children: React.ReactNode
-  params: Promise<{ collection: string }>
-}
-
-export default async function CollectionLayout({ children, params }: Props) {
-  const { collection: collectionId } = await params
-  const collection = getPublishedCollection(collectionId)
+  params: { collection: string }
+}) {
+  const collection = getPublishedCollection(params.collection)
   if (!collection) notFound()
 
   return (
