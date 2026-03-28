@@ -184,6 +184,14 @@ function badgeClass(name: string) {
 function supadgePillClass(title: string) {
   return BADGE_COLORS[title] ?? "bg-zinc-800 text-zinc-300 border border-zinc-700"
 }
+const BADGE_ICONS: Record<string, string> = {
+  "Rookie Year":        "https://nbatopshot.com/img/momentTags/static/rookieYear.svg",
+  "Rookie Premiere":    "https://nbatopshot.com/img/momentTags/static/rookiePremiere.svg",
+  "Top Shot Debut":     "https://nbatopshot.com/img/momentTags/static/topShotDebut.svg",
+  "Rookie of the Year": "https://nbatopshot.com/img/momentTags/static/rookieOfTheYear.svg",
+  "Rookie Mint":        "https://nbatopshot.com/img/momentTags/static/rookieMint.svg",
+  "Championship Year":  "https://nbatopshot.com/img/momentTags/static/championshipYear.svg",
+}
 function BadgeIcon({ title, size = 20 }: { title: string; size?: number }) {
   const src = BADGE_ICONS[title]
   if (src) return (
@@ -944,7 +952,7 @@ export default function WalletPage() {
                                   </div>
                                   <div className="flex flex-wrap gap-1 pt-1">
                                     {(row.badgeInfo.badge_titles ?? []).filter(function(t) { return BADGE_PILL_TITLES.has(t) }).map(function(title) {
-                                      return <span key={title} className={"rounded px-1.5 py-0.5 text-[10px] font-semibold " + supadgePillClass(title)}>{title}</span>
+                                      return <BadgeIcon key={title} title={title} size={24} />
                                     })}
                                   </div>
                                   <div className="pt-1 text-xs text-zinc-500">
