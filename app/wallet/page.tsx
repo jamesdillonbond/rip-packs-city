@@ -71,7 +71,7 @@ type MomentRow = {
   team?: string
   league?: string
   setName: string
-  series?: string
+  series?: string | number
   tier?: string
   serialNumber?: number
   serial?: number
@@ -128,6 +128,34 @@ type WalletSearchResponse = {
   error?: string
 }
 
+// ── Series display label mapping ───────────────────────────────────────────────
+// on-chain series_number → human-readable label + NBA season for badge matching
+const SERIES_MAP: Record<number, { label: string; season: string }> = {
+  0: { label: "Beta",          season: "2019-20" },
+  1: { label: "Series 1",      season: "2019-20" },
+  2: { label: "Series 2",      season: "2020-21" },
+  3: { label: "Summer 2021",   season: "2021"    },
+  4: { label: "Series 3",      season: "2021-22" },
+  5: { label: "Series 4",      season: "2022-23" },
+  6: { label: "Series 2023-24",season: "2023-24" },
+  7: { label: "Series 2024-25",season: "2024-25" },
+  8: { label: "Series 2025-26",season: "2025-26" },
+}
+
+function seriesLabel(series: string | number | undefined): string {
+  if (series === undefined || series === null) return "—"
+  const n = typeof series === "string" ? parseInt(series, 10) : series
+  if (isNaN(n)) return String(series)
+  return SERIES_MAP[n]?.label ?? `Series ${n}`
+}
+
+function seriesSeason(series: string | number | undefined): string | null {
+  if (series === undefined || series === null) return null
+  const n = typeof series === "string" ? parseInt(series, 10) : series
+  if (isNaN(n)) return null
+  return SERIES_MAP[n]?.season ?? null
+}
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const BADGE_COLORS: Record<string, string> = {
@@ -148,40 +176,11 @@ const BADGE_PILL_TITLES = new Set([
   "Championship Year",
 ])
 
-// ── Series → Season mapping ───────────────────────────────────────────────────
-
-const SERIES_INT_TO_SEASON: Record<number, string> = {
-  0: "2019-20",
-  1: "2019-20",
-  2: "2020-21",
-  3: "2021",
-  4: "2021-22",
-  5: "2022-23",
-  6: "2023-24",
-  7: "2024-25",
-  8: "2025-26",
-}
-
-function seriesIntToSeason(seriesRaw: string | undefined | null): string {
-  if (!seriesRaw) return ""
-  const n = parseInt(seriesRaw, 10)
-  if (!Number.isNaN(n) && SERIES_INT_TO_SEASON[n] !== undefined) {
-    return SERIES_INT_TO_SEASON[n]
-  }
-  if (/^\d{4}-\d{2}$/.test(seriesRaw.trim())) return seriesRaw.trim()
-  if (/^\d{4}$/.test(seriesRaw.trim())) return seriesRaw.trim()
-  return seriesRaw
-}
-
-function badgeLookupKey(playerName: string, season: string): string {
-  return `${playerName.toLowerCase().trim()}::${season.trim()}`
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatCurrency(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return "-"
-  return "$" + value.toFixed(2)
+  return `$${value.toFixed(2)}`
 }
 
 function compareText(a?: string | null, b?: string | null) {
@@ -236,7 +235,7 @@ function badgeClass(name: string) {
   return "bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
 }
 
-function supadgePillClass(title: string) {
+function supaBadgePillClass(title: string) {
   return BADGE_COLORS[title] ?? "bg-zinc-800 text-zinc-300 border border-zinc-700"
 }
 
@@ -252,34 +251,6 @@ function debugReasonLabel(reason?: string | null) {
   }
 }
 
-function confidenceLabel(conf?: string | null): { label: string; color: string } {
-  switch (conf) {
-    case "high":   return { label: "Liquid",   color: "text-emerald-400" }
-    case "medium": return { label: "Trading",  color: "text-yellow-400" }
-    case "low":    return { label: "Thin",     color: "text-orange-400" }
-    case "none":   return { label: "Illiquid", color: "text-zinc-500" }
-    default:       return { label: "—",        color: "text-zinc-600" }
-  }
-}
-
-function fmvDisplay(row: MomentRow): { text: string; muted: boolean } {
-  const fmv = row.fmv
-  const conf = row.marketConfidence
-  if (fmv === null || fmv === undefined) return { text: "—", muted: true }
-
-  const ask = getBestAsk(row)
-  switch (conf) {
-    case "high":   return { text: "$" + fmv.toFixed(2), muted: false }
-    case "medium": return { text: "~$" + fmv.toFixed(2), muted: false }
-    case "low":    return { text: "$" + Math.floor(fmv) + "–$" + Math.ceil(fmv * 1.15), muted: false }
-    case "none":
-      return ask
-        ? { text: "Floor $" + ask.toFixed(2), muted: true }
-        : { text: "No data", muted: true }
-    default:       return { text: "$" + fmv.toFixed(2), muted: false }
-  }
-}
-
 type SortKey =
   | "player"
   | "series"
@@ -291,6 +262,75 @@ type SortKey =
   | "bestOffer"
   | "held"
   | "badge"
+
+// ── Badge enrichment ───────────────────────────────────────────────────────────
+// Matches wallet rows to badge_editions using:
+//   playerName (normalized) + series_number (direct on-chain int join)
+//
+// Badge specificity by type:
+//   - Top Shot Debut   → edition-specific (player's first ever TS moment)
+//   - Rookie Year      → season-wide (any moment from rookie season)
+//   - Rookie Premiere  → season-wide (first subset of rookie moments)
+//   - Rookie Mint      → set-play specific (first minted moment in a set)
+//   - ROY / MVP / Champ→ season-wide (awarded after season)
+//
+// We join on playerName + series_number which naturally scopes to the right
+// season. A player with Rookie Year in series 2 will only match wallet moments
+// that are also series 2 — no cross-season bleed.
+
+async function enrichWithBadges(rowsIn: MomentRow[]): Promise<MomentRow[]> {
+  if (!rowsIn.length) return rowsIn
+
+  try {
+    const res = await fetch(`/api/badges?mode=all&sort=badge_score&dir=desc&limit=500&offset=0`)
+    if (!res.ok) return rowsIn
+
+    const json = await res.json()
+    const badgeEditions: any[] = json.editions ?? []
+
+    // Build lookup: "playerNameNormalized::seriesNumber" → best BadgeInfo
+    // series_number in badge_editions matches the on-chain series int in wallet rows
+    const badgeMap = new Map<string, BadgeInfo>()
+
+    for (const edition of badgeEditions) {
+      if (!edition.player_name || edition.series_number == null) continue
+
+      const key = `${edition.player_name.toLowerCase().trim()}::${edition.series_number}`
+      const existing = badgeMap.get(key)
+
+      // Keep highest badge_score entry per player+series combo
+      if (!existing || edition.badge_score > existing.badge_score) {
+        badgeMap.set(key, {
+          badge_score:        edition.badge_score,
+          badge_titles:       (edition.badge_titles ?? []).filter((t: string) => BADGE_PILL_TITLES.has(t)),
+          is_three_star_rookie: edition.is_three_star_rookie,
+          has_rookie_mint:    edition.has_rookie_mint,
+          burn_rate_pct:      edition.burn_rate_pct,
+          lock_rate_pct:      edition.lock_rate_pct,
+          low_ask:            edition.low_ask,
+          circulation_count:  edition.circulation_count,
+        })
+      }
+    }
+
+    // Merge: match each wallet row by playerName + series (on-chain int)
+    return rowsIn.map(row => {
+      const seriesNum = typeof row.series === "string"
+        ? parseInt(row.series, 10)
+        : row.series
+
+      if (seriesNum == null || isNaN(seriesNum as number)) {
+        return { ...row, badgeInfo: null }
+      }
+
+      const key = `${row.playerName?.toLowerCase().trim()}::${seriesNum}`
+      const badgeInfo = badgeMap.get(key) ?? null
+      return { ...row, badgeInfo }
+    })
+  } catch {
+    return rowsIn
+  }
+}
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -305,7 +345,6 @@ export default function WalletPage() {
   const [offset, setOffset] = useState(0)
   const [showDebug, setShowDebug] = useState(false)
   const [badgeFilter, setBadgeFilter] = useState(false)
-  const [hasSearched, setHasSearched] = useState(false)
 
   const [teamFilter, setTeamFilter] = useState("all")
   const [leagueFilter, setLeagueFilter] = useState("all")
@@ -315,64 +354,6 @@ export default function WalletPage() {
   const [searchWithin, setSearchWithin] = useState("")
   const [sortKey, setSortKey] = useState<SortKey>("fmv")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
-
-  // ── Badge enrichment ────────────────────────────────────────────────────────
-
-  async function enrichWithBadges(rowsIn: MomentRow[]): Promise<MomentRow[]> {
-    if (!rowsIn.length) return rowsIn
-
-    const playerNames = Array.from(new Set(
-      rowsIn.map(r => r.playerName).filter(Boolean)
-    ))
-    if (!playerNames.length) return rowsIn
-
-    try {
-      const params = new URLSearchParams({
-        mode: "all",
-        sort: "badge_score",
-        dir: "desc",
-        limit: "200",
-        offset: "0",
-      })
-
-      const res = await fetch("/api/badges?" + params.toString())
-      if (!res.ok) return rowsIn
-
-      const json = await res.json()
-      const badgeEditions: any[] = json.editions ?? []
-
-      const badgeMap = new Map<string, BadgeInfo>()
-
-      for (const edition of badgeEditions) {
-        if (!edition.player_name || !edition.season) continue
-        const key = badgeLookupKey(edition.player_name, edition.season)
-        const existing = badgeMap.get(key)
-        if (!existing || edition.badge_score > existing.badge_score) {
-          badgeMap.set(key, {
-            badge_score: edition.badge_score,
-            badge_titles: (edition.badge_titles ?? []).filter((t: string) =>
-              BADGE_PILL_TITLES.has(t)
-            ),
-            is_three_star_rookie: edition.is_three_star_rookie,
-            has_rookie_mint: edition.has_rookie_mint,
-            burn_rate_pct: edition.burn_rate_pct,
-            lock_rate_pct: edition.lock_rate_pct,
-            low_ask: edition.low_ask,
-            circulation_count: edition.circulation_count,
-          })
-        }
-      }
-
-      return rowsIn.map(row => {
-        const season = seriesIntToSeason(row.series ?? "")
-        const key = badgeLookupKey(row.playerName, season)
-        const badgeInfo = badgeMap.get(key) ?? null
-        return { ...row, badgeInfo }
-      })
-    } catch {
-      return rowsIn
-    }
-  }
 
   async function enrichWithMarket(rowsIn: MomentRow[]) {
     return rowsIn
@@ -448,8 +429,8 @@ export default function WalletPage() {
 
     const nextRows = Array.isArray(json.rows) ? json.rows : []
 
-    const enriched = await enrichWithMarket(nextRows)
-    const hydrated = await hydrateMarket(enriched)
+    const enriched  = await enrichWithMarket(nextRows)
+    const hydrated  = await hydrateMarket(enriched)
     const withBadges = await enrichWithBadges(hydrated)
 
     setRows((prev) => (append ? [...prev, ...withBadges] : withBadges))
@@ -464,10 +445,8 @@ export default function WalletPage() {
     setSummary(undefined)
     setOffset(0)
     setExpandedRows({})
-    setHasSearched(false)
     try {
       await fetchWalletPage(0, false)
-      setHasSearched(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
     } finally {
@@ -510,7 +489,7 @@ export default function WalletPage() {
         parallel: row.parallel ?? row.subedition ?? null,
         subedition: row.subedition ?? row.parallel ?? null,
       })
-      const key = (candidate.editionKey ?? "none") + "::" + (candidate.parallel ?? "Base")
+      const key = `${candidate.editionKey ?? "none"}::${candidate.parallel ?? "Base"}`
       if (!unique.has(key)) unique.set(key, candidate)
     }
     const text = JSON.stringify(Array.from(unique.values()), null, 2)
@@ -582,7 +561,7 @@ export default function WalletPage() {
           r.playerName,
           r.team ?? "",
           r.league ?? "",
-          r.series ?? "",
+          seriesLabel(r.series),
           r.setName,
           parallel,
           r.tier ?? "",
@@ -601,21 +580,24 @@ export default function WalletPage() {
     filtered.sort((a, b) => {
       let result = 0
       switch (sortKey) {
-        case "player":    result = compareText(a.playerName, b.playerName); break
-        case "series":    result = compareText(a.series, b.series); break
-        case "set":       result = compareText(a.setName, b.setName); break
-        case "parallel":  result = compareText(getParallel(a), getParallel(b)); break
-        case "rarity":    result = compareText(a.tier, b.tier); break
-        case "serial":    result = compareNumber(getSerial(a), getSerial(b)); break
-        case "fmv":       result = compareNumber(a.fmv, b.fmv); break
-        case "bestOffer": result = compareNumber(a.bestOffer, b.bestOffer); break
-        case "badge":     result = compareNumber(a.badgeInfo?.badge_score, b.badgeInfo?.badge_score); break
+        case "player":  result = compareText(a.playerName, b.playerName); break
+        case "series":
+          result = compareNumber(
+            typeof a.series === "string" ? parseInt(a.series) : a.series,
+            typeof b.series === "string" ? parseInt(b.series) : b.series
+          ); break
+        case "set":     result = compareText(a.setName, b.setName); break
+        case "parallel":result = compareText(getParallel(a), getParallel(b)); break
+        case "rarity":  result = compareText(a.tier, b.tier); break
+        case "serial":  result = compareNumber(getSerial(a), getSerial(b)); break
+        case "fmv":     result = compareNumber(a.fmv, b.fmv); break
+        case "bestOffer":result = compareNumber(a.bestOffer, b.bestOffer); break
+        case "badge":   result = compareNumber(a.badgeInfo?.badge_score, b.badgeInfo?.badge_score); break
         case "held":
           result = compareNumber(
             a.editionsOwned ?? batchEditionStats.get(buildEditionScopeKey(a))?.owned,
             b.editionsOwned ?? batchEditionStats.get(buildEditionScopeKey(b))?.owned
-          )
-          break
+          ); break
       }
       return sortDirection === "asc" ? result : -result
     })
@@ -629,7 +611,6 @@ export default function WalletPage() {
   const totals = useMemo(() => {
     let totalFmv = 0, totalBestOffer = 0, lockedFmv = 0, unlockedFmv = 0
     let lockedCount = 0, unlockedCount = 0, badgeCount = 0
-    let confHigh = 0, confMedium = 0, confLow = 0, confNone = 0
 
     for (const row of filteredRows) {
       const fmv = row.fmv ?? null
@@ -641,20 +622,12 @@ export default function WalletPage() {
       if (locked) { lockedFmv += value; lockedCount++ }
       else { unlockedFmv += value; unlockedCount++ }
       if (row.badgeInfo?.badge_score) badgeCount++
-
-      switch (row.marketConfidence) {
-        case "high":   confHigh++;   break
-        case "medium": confMedium++; break
-        case "low":    confLow++;    break
-        default:       confNone++;   break
-      }
     }
 
     return {
       totalFmv, totalBestOffer, lockedFmv, unlockedFmv,
       totalCount: filteredRows.length, lockedCount, unlockedCount,
       spreadGap: totalFmv - totalBestOffer, badgeCount,
-      confHigh, confMedium, confLow, confNone,
     }
   }, [filteredRows])
 
@@ -680,121 +653,96 @@ export default function WalletPage() {
             </p>
           </div>
           <div className="ml-auto flex gap-2">
-            <a href="/profile" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Profile</a>
             <a href="/packs"   className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Packs</a>
-            <a href="/badges"  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Badges</a>
             <a href="/sniper"  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Sniper</a>
             <a href="/sets"    className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Sets</a>
+            <a href="/badges"  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Badges</a>
           </div>
         </div>
 
-        {/* Search bar */}
-        <div className="mb-5 flex gap-2">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && !loading && input.trim() && handleSearch()}
-            placeholder="Enter Top Shot username or wallet address"
-            className="w-full max-w-lg rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white outline-none placeholder:text-zinc-500 focus:border-red-600"
-          />
-          <button
-            onClick={handleSearch}
-            disabled={loading || !input.trim()}
-            className="rounded-lg bg-red-600 px-5 py-2 font-semibold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+        {/* Search + top stat cards */}
+        <div className="mb-5 grid gap-3 md:grid-cols-[minmax(260px,420px)_auto]">
+          <div className="flex gap-2">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !loading && input.trim() && handleSearch()}
+              placeholder="Enter Top Shot username or wallet"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white outline-none placeholder:text-zinc-500 focus:border-red-600"
+            />
+            <button
+              onClick={handleSearch}
+              disabled={loading || !input.trim()}
+              className="rounded-lg bg-red-600 px-4 py-2 font-semibold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loading ? "Loading..." : "Search"}
+            </button>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+              <div className="text-[11px] uppercase tracking-wide text-zinc-500">Wallet FMV</div>
+              <div className="text-lg font-bold text-white">{formatCurrency(totals.totalFmv)}</div>
+            </div>
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+              <div className="text-[11px] uppercase tracking-wide text-zinc-500">Locked FMV</div>
+              <div className="text-lg font-bold text-white">{formatCurrency(totals.lockedFmv)}</div>
+            </div>
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+              <div className="text-[11px] uppercase tracking-wide text-zinc-500">Unlocked FMV</div>
+              <div className="text-lg font-bold text-white">{formatCurrency(totals.unlockedFmv)}</div>
+            </div>
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+              <div className="text-[11px] uppercase tracking-wide text-zinc-500">Best Offer Total</div>
+              <div className="text-lg font-bold text-white">{formatCurrency(totals.totalBestOffer)}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Second stat row */}
+        <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+            <div className="text-[11px] uppercase tracking-wide text-zinc-500">Spread Gap</div>
+            <div className="text-lg font-bold text-white">{formatCurrency(totals.spreadGap)}</div>
+          </div>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+            <div className="text-[11px] uppercase tracking-wide text-zinc-500">Shown Moments</div>
+            <div className="text-lg font-bold text-white">{totals.totalCount}</div>
+          </div>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+            <div className="text-[11px] uppercase tracking-wide text-zinc-500">Locked Count</div>
+            <div className="text-lg font-bold text-white">{totals.lockedCount}</div>
+          </div>
+          <div
+            className={`cursor-pointer rounded-xl border p-3 transition ${
+              badgeFilter
+                ? "border-red-600 bg-red-950/30"
+                : "border-zinc-800 bg-zinc-950 hover:border-zinc-600"
+            }`}
+            onClick={() => setBadgeFilter(f => !f)}
+            title="Click to show only badge-carrying moments"
           >
-            {loading ? "Loading..." : "Search"}
-          </button>
-        </div>
-
-        {/* Portfolio summary */}
-        {hasSearched && rows.length > 0 && (
-          <div className="mb-5 space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Wallet FMV</div>
-                <div className="text-xl font-black text-white">{formatCurrency(totals.totalFmv)}</div>
-                <div className="mt-1 text-[11px] text-zinc-500">{totals.totalCount} moments shown</div>
-              </div>
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Unlocked FMV</div>
-                <div className="text-xl font-black text-white">{formatCurrency(totals.unlockedFmv)}</div>
-                <div className="mt-1 text-[11px] text-zinc-500">{totals.unlockedCount} unlocked</div>
-              </div>
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Locked FMV</div>
-                <div className="text-xl font-black text-white">{formatCurrency(totals.lockedFmv)}</div>
-                <div className="mt-1 text-[11px] text-zinc-500">{totals.lockedCount} locked</div>
-              </div>
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Best Offer Total</div>
-                <div className="text-xl font-black text-white">{formatCurrency(totals.totalBestOffer)}</div>
-                <div className="mt-1 text-[11px] text-zinc-500">Spread gap: {formatCurrency(totals.spreadGap)}</div>
-              </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              <div className="rounded-xl border border-emerald-900/50 bg-emerald-950/20 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-emerald-600">Liquid</div>
-                <div className="text-lg font-black text-emerald-400">{totals.confHigh}</div>
-                <div className="mt-0.5 text-[10px] text-zinc-500">High confidence FMV</div>
-              </div>
-              <div className="rounded-xl border border-yellow-900/50 bg-yellow-950/20 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-yellow-600">Trading</div>
-                <div className="text-lg font-black text-yellow-400">{totals.confMedium}</div>
-                <div className="mt-0.5 text-[10px] text-zinc-500">Medium confidence FMV</div>
-              </div>
-              <div className="rounded-xl border border-orange-900/50 bg-orange-950/20 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-orange-600">Thin</div>
-                <div className="text-lg font-black text-orange-400">{totals.confLow}</div>
-                <div className="mt-0.5 text-[10px] text-zinc-500">Low confidence FMV</div>
-              </div>
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Illiquid</div>
-                <div className="text-lg font-black text-zinc-500">{totals.confNone}</div>
-                <div className="mt-0.5 text-[10px] text-zinc-600">Floor ask only</div>
-              </div>
-              <div
-                className={"cursor-pointer rounded-xl border p-3 transition " + (
-                  badgeFilter
-                    ? "border-red-600 bg-red-950/30"
-                    : "border-zinc-800 bg-zinc-950 hover:border-zinc-600"
-                )}
-                onClick={() => setBadgeFilter(f => !f)}
-                title="Click to filter to badge-carrying moments only"
-              >
-                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Badge Moments</div>
-                <div className="text-lg font-black text-white">{totals.badgeCount}</div>
-                <div className="mt-0.5 text-[10px] text-zinc-500">
-                  {badgeFilter ? <span className="text-red-400">Filtered ✕</span> : "Click to filter"}
-                </div>
-              </div>
-            </div>
+            <div className="text-[11px] uppercase tracking-wide text-zinc-500">Badge Moments</div>
+            <div className="text-lg font-bold text-white">{totals.badgeCount}</div>
+            {badgeFilter && <div className="mt-0.5 text-[10px] text-red-400">Filtered ✕</div>}
           </div>
-        )}
+        </div>
 
         {/* Filters */}
         <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-          <select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white">
-            {availableTeams.map((team) => (
-              <option key={team} value={team}>{team === "all" ? "All Teams" : team}</option>
-            ))}
+          <select value={teamFilter}    onChange={(e) => setTeamFilter(e.target.value)}    className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white">
+            {availableTeams.map((t) => <option key={t} value={t}>{t === "all" ? "All Teams" : t}</option>)}
           </select>
-          <select value={leagueFilter} onChange={(e) => setLeagueFilter(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white">
-            {availableLeagues.map((league) => (
-              <option key={league} value={league}>{league === "all" ? "All Leagues" : league}</option>
-            ))}
+          <select value={leagueFilter}  onChange={(e) => setLeagueFilter(e.target.value)}  className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white">
+            {availableLeagues.map((l) => <option key={l} value={l}>{l === "all" ? "All Leagues" : l}</option>)}
           </select>
-          <select value={rarityFilter} onChange={(e) => setRarityFilter(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white">
-            {availableRarities.map((tier) => (
-              <option key={tier} value={tier}>{tier === "all" ? "All Rarities" : tier}</option>
-            ))}
+          <select value={rarityFilter}  onChange={(e) => setRarityFilter(e.target.value)}  className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white">
+            {availableRarities.map((r) => <option key={r} value={r}>{r === "all" ? "All Rarities" : r}</option>)}
           </select>
           <select value={parallelFilter} onChange={(e) => setParallelFilter(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white">
-            {availableParallels.map((parallel) => (
-              <option key={parallel} value={parallel}>{parallel === "all" ? "All Parallels" : parallel}</option>
-            ))}
+            {availableParallels.map((p) => <option key={p} value={p}>{p === "all" ? "All Parallels" : p}</option>)}
           </select>
-          <select value={lockedFilter} onChange={(e) => setLockedFilter(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white">
+          <select value={lockedFilter}  onChange={(e) => setLockedFilter(e.target.value)}  className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white">
             <option value="all">All Lock States</option>
             <option value="locked">Locked</option>
             <option value="unlocked">Unlocked</option>
@@ -809,63 +757,36 @@ export default function WalletPage() {
 
         {/* Sort buttons */}
         <div className="mb-4 flex flex-wrap gap-2">
-          {(
-            [
-              ["player", "Player"],
-              ["series", "Series"],
-              ["set", "Set"],
-              ["parallel", "Parallel"],
-              ["rarity", "Rarity"],
-              ["serial", "Serial"],
-              ["held", "Held"],
-              ["fmv", "FMV"],
-              ["bestOffer", "Best Offer"],
-              ["badge", "Badge Score"],
-            ] as [SortKey, string][]
-          ).map(([key, label]) => (
+          {(["player","series","set","parallel","rarity","serial","held","fmv","bestOffer","badge"] as SortKey[]).map(key => (
             <button
               key={key}
               onClick={() => toggleSort(key)}
-              className={"rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 " + (
-                sortKey === key ? "border-red-600 text-white" : "border-zinc-700 text-zinc-400"
-              )}
+              className={`rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 ${sortKey === key ? "border-red-600 text-white" : "border-zinc-700"}`}
             >
-              {label}
-              {sortKey === key && (
-                <span className="ml-1 text-zinc-500">{sortDirection === "asc" ? "↑" : "↓"}</span>
-              )}
+              {key === "bestOffer" ? "Best Offer" : key === "badge" ? "Badge Score" : key.charAt(0).toUpperCase() + key.slice(1)}
             </button>
           ))}
-          <button
-            onClick={() => setShowDebug((prev) => !prev)}
-            className="rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900"
-          >
+          <button onClick={() => setShowDebug(p => !p)} className="rounded-lg border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-900">
             {showDebug ? "Hide Debug" : "Show Debug"}
           </button>
-          <button
-            onClick={copySeedCandidates}
-            className="rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900"
-          >
+          <button onClick={copySeedCandidates} className="rounded-lg border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-900">
             Copy Seed Candidates
           </button>
         </div>
 
-        {error ? (
-          <div className="mb-4 rounded-lg border border-red-800 bg-red-950 p-3 text-red-300">
-            {error}
-          </div>
-        ) : null}
+        {error && (
+          <div className="mb-4 rounded-lg border border-red-800 bg-red-950 p-3 text-red-300">{error}</div>
+        )}
 
         {/* Debug table */}
-        {showDebug ? (
+        {showDebug && (
           <div className="mb-4 overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950">
             <table className="w-full min-w-[1900px] border-collapse text-xs">
               <thead className="bg-zinc-900">
                 <tr className="border-b border-zinc-800 text-left">
                   <th className="p-2">Player</th>
-                  <th className="p-2">Series (raw)</th>
-                  <th className="p-2">Season (mapped)</th>
                   <th className="p-2">Edition Key</th>
+                  <th className="p-2">Series</th>
                   <th className="p-2">Parallel</th>
                   <th className="p-2">Scope Key</th>
                   <th className="p-2">Held</th>
@@ -874,7 +795,6 @@ export default function WalletPage() {
                   <th className="p-2">Badges</th>
                   <th className="p-2">TS Ask</th>
                   <th className="p-2">Flowty Ask</th>
-                  <th className="p-2">Best Market</th>
                   <th className="p-2">Row Low Ask</th>
                   <th className="p-2">Row Offer</th>
                   <th className="p-2">Edition Low Ask</th>
@@ -896,15 +816,14 @@ export default function WalletPage() {
                     subedition: row.subedition,
                   })
                   const counts = {
-                    owned: row.editionsOwned ?? batchEditionStats.get(scopeKey)?.owned ?? 0,
+                    owned:  row.editionsOwned  ?? batchEditionStats.get(scopeKey)?.owned  ?? 0,
                     locked: row.editionsLocked ?? batchEditionStats.get(scopeKey)?.locked ?? 0,
                   }
                   return (
-                    <tr key={"debug-" + row.momentId} className="border-b border-zinc-800">
+                    <tr key={`debug-${row.momentId}`} className="border-b border-zinc-800">
                       <td className="p-2">{row.playerName}</td>
-                      <td className="p-2">{row.series ?? "-"}</td>
-                      <td className="p-2">{seriesIntToSeason(row.series)}</td>
                       <td className="p-2">{row.editionKey ?? "-"}</td>
+                      <td className="p-2">{seriesLabel(row.series)}</td>
                       <td className="p-2">{getParallel(row)}</td>
                       <td className="p-2">{scopeKey}</td>
                       <td className="p-2">{counts.owned}</td>
@@ -913,7 +832,6 @@ export default function WalletPage() {
                       <td className="p-2">{row.badgeInfo?.badge_titles?.join(", ") ?? "-"}</td>
                       <td className="p-2">{formatCurrency(row.topshotAsk)}</td>
                       <td className="p-2">{formatCurrency(row.flowtyAsk)}</td>
-                      <td className="p-2">{row.bestMarket ?? "-"}</td>
                       <td className="p-2">{formatCurrency(row.rowLowAsk ?? getBestAsk(row))}</td>
                       <td className="p-2">{formatCurrency(row.rowBestOffer ?? row.bestOffer)}</td>
                       <td className="p-2">{formatCurrency(row.editionLowAsk)}</td>
@@ -929,7 +847,7 @@ export default function WalletPage() {
               </tbody>
             </table>
           </div>
-        ) : null}
+        )}
 
         {/* Main table */}
         <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950">
@@ -960,48 +878,36 @@ export default function WalletPage() {
                 })
 
                 const editionCounts = {
-                  owned: row.editionsOwned ?? batchEditionStats.get(scopeKey)?.owned ?? 0,
+                  owned:  row.editionsOwned  ?? batchEditionStats.get(scopeKey)?.owned  ?? 0,
                   locked: row.editionsLocked ?? batchEditionStats.get(scopeKey)?.locked ?? 0,
                 }
 
-                const expanded = !!expandedRows[row.momentId]
-                const primaryBadge = getPrimarySerialBadge(row)
-                const supaBadges = (row.badgeInfo?.badge_titles ?? []).filter(t => BADGE_PILL_TITLES.has(t))
+                const expanded      = !!expandedRows[row.momentId]
+                const primaryBadge  = getPrimarySerialBadge(row)
+                const supaBadges    = (row.badgeInfo?.badge_titles ?? []).filter(t => BADGE_PILL_TITLES.has(t))
                 const officialBadges = row.officialBadges ?? []
-                const fmv = fmvDisplay(row)
-                const conf = confidenceLabel(row.marketConfidence)
-                const isLocked = getLocked(row)
 
                 return (
                   <Fragment key={row.momentId}>
-                    <tr className={"border-b border-zinc-800 align-top " + (isLocked ? "opacity-60" : "")}>
+                    <tr className="border-b border-zinc-800 align-top">
+                      {/* Player + badge pills */}
                       <td className="p-3">
                         <div className="flex items-start gap-3">
-                          <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-zinc-800 bg-black">
-                            {row.thumbnailUrl ? (
-                              <img
-                                src={row.thumbnailUrl}
-                                alt={row.playerName}
-                                className="h-full w-full object-cover"
-                              />
-                            ) : null}
+                          <div className="h-14 w-14 overflow-hidden rounded-lg border border-zinc-800 bg-black shrink-0">
+                            {row.thumbnailUrl && (
+                              <img src={row.thumbnailUrl} alt={row.playerName} className="h-full w-full object-cover" />
+                            )}
                           </div>
                           <div>
                             <div className="font-semibold text-white">{row.playerName}</div>
                             <div className="mt-1 flex flex-wrap gap-1">
                               {officialBadges.map((badge) => (
-                                <span
-                                  key={"official-" + badge}
-                                  className={"rounded px-2 py-0.5 text-[10px] font-semibold " + badgeClass(badge)}
-                                >
+                                <span key={`official-${badge}`} className={`rounded px-2 py-0.5 text-[10px] font-semibold ${badgeClass(badge)}`}>
                                   {badge}
                                 </span>
                               ))}
                               {supaBadges.map((title) => (
-                                <span
-                                  key={"supa-" + title}
-                                  className={"rounded px-1.5 py-0.5 text-[10px] font-semibold " + supadgePillClass(title)}
-                                >
+                                <span key={`supa-${title}`} className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${supaBadgePillClass(title)}`}>
                                   {title}
                                 </span>
                               ))}
@@ -1015,46 +921,33 @@ export default function WalletPage() {
                         </div>
                       </td>
 
-                      <td className="p-3 text-zinc-400">{row.series ?? "—"}</td>
-                      <td className="p-3">{normalizeSetName(row.setName)}</td>
-                      <td className="p-3 text-zinc-400">{getParallel(row)}</td>
-                      <td className="p-3 text-zinc-400">{row.tier ?? "—"}</td>
+                      {/* Series — proper label */}
+                      <td className="p-3 text-zinc-300">{seriesLabel(row.series)}</td>
 
+                      <td className="p-3">{normalizeSetName(row.setName)}</td>
+                      <td className="p-3">{getParallel(row)}</td>
+                      <td className="p-3">{row.tier ?? "—"}</td>
+
+                      {/* Serial */}
                       <td className="p-3">
-                        <div
-                          className={"inline-flex min-w-[90px] flex-col rounded-lg border px-2 py-1 " + (
-                            primaryBadge ? "border-red-700 bg-red-950/50" : "border-zinc-800 bg-black"
-                          )}
-                        >
-                          <div className={"text-base font-black " + (primaryBadge ? "text-red-300" : "text-white")}>
-                            {"#" + (getSerial(row) ?? "-")}
+                        <div className={`inline-flex min-w-[90px] flex-col rounded-lg border px-2 py-1 ${
+                          primaryBadge ? "border-red-700 bg-red-950/50" : "border-zinc-800 bg-black"
+                        }`}>
+                          <div className={`text-base font-black ${primaryBadge ? "text-red-300" : "text-white"}`}>
+                            #{getSerial(row) ?? "-"}
                           </div>
-                          <div className="text-xs text-zinc-400">{"/ " + (getMint(row) ?? "-")}</div>
-                          {primaryBadge ? (
+                          <div className="text-xs text-zinc-400">/ {getMint(row) ?? "-"}</div>
+                          {primaryBadge && (
                             <div className="mt-1 rounded bg-white px-1.5 py-0.5 text-[10px] font-bold text-black">
                               {primaryBadge}
                             </div>
-                          ) : null}
+                          )}
                         </div>
                       </td>
 
-                      <td className="p-3">
-                        {editionCounts.owned} / {editionCounts.locked}
-                        {isLocked && (
-                          <span className="ml-1.5 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
-                            Locked
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="p-3">
-                        <div className={"font-semibold " + (fmv.muted ? "text-zinc-500" : "text-white")}>
-                          {fmv.text}
-                        </div>
-                        <div className={"text-[10px] " + conf.color}>{conf.label}</div>
-                      </td>
-
-                      <td className="p-3 text-zinc-300">{formatCurrency(row.bestOffer)}</td>
+                      <td className="p-3">{editionCounts.owned} / {editionCounts.locked}</td>
+                      <td className="p-3 font-semibold text-white">{formatCurrency(row.fmv)}</td>
+                      <td className="p-3">{formatCurrency(row.bestOffer)}</td>
 
                       <td className="p-3">
                         <button
@@ -1066,10 +959,12 @@ export default function WalletPage() {
                       </td>
                     </tr>
 
-                    {expanded ? (
+                    {expanded && (
                       <tr className="border-b border-zinc-800 bg-black/60">
                         <td colSpan={10} className="p-4">
                           <div className="grid gap-4 md:grid-cols-4">
+
+                            {/* Market */}
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                               <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Market</div>
                               <div className="space-y-1 text-sm">
@@ -1078,79 +973,55 @@ export default function WalletPage() {
                                 <div>Best Ask: {formatCurrency(getBestAsk(row))}</div>
                                 <div>Best Market: {row.bestMarket ?? "-"}</div>
                                 <div>Best Offer: {formatCurrency(row.bestOffer)}</div>
-                                <div>FMV: {fmv.text}</div>
+                                <div>FMV: {formatCurrency(row.fmv)}</div>
                                 <div>FMV Method: {row.fmvMethod ?? "-"}</div>
-                                <div className={"font-medium " + conf.color}>Confidence: {conf.label}</div>
+                                <div>Confidence: {row.marketConfidence ?? "-"}</div>
                               </div>
                             </div>
 
-                            {/* ── Links panel — includes ⭐ Pin to Trophy Case ── */}
+                            {/* Links */}
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                               <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Links</div>
-                              <div className="space-y-2 text-sm">
-                                <a
-                                  href={"https://nbatopshot.com/moment/" + row.momentId}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-white hover:bg-zinc-900"
-                                >
+                              <div className="space-y-2">
+                                <a href={`https://nbatopshot.com/moment/${row.momentId}`} target="_blank" rel="noopener noreferrer"
+                                  className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-white hover:bg-zinc-900">
                                   View on Top Shot
                                 </a>
                                 {row.flowtyListingUrl ? (
-                                  <a
-                                    href={"/out/flowty/" + row.momentId + "?source=wallet-expand&priceAtClick=" + (row.flowtyAsk ?? "")}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-white hover:bg-zinc-900"
-                                  >
-                                    {"View on Flowty" + (row.flowtyAsk ? " (" + formatCurrency(row.flowtyAsk) + ")" : "")}
+                                  <a href={`/out/flowty/${row.momentId}?source=wallet-expand&priceAtClick=${row.flowtyAsk ?? ""}`}
+                                    target="_blank" rel="noopener noreferrer"
+                                    className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-white hover:bg-zinc-900">
+                                    View on Flowty {row.flowtyAsk ? `(${formatCurrency(row.flowtyAsk)})` : ""}
                                   </a>
                                 ) : (
-                                  <a
-                                    href={"https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/NFT/" + row.momentId}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-500 hover:bg-zinc-900"
-                                  >
+                                  <a href={`https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/NFT/${row.momentId}`}
+                                    target="_blank" rel="noopener noreferrer"
+                                    className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-500 hover:bg-zinc-900">
                                     Check Flowty
                                   </a>
                                 )}
-                                {summary && (
-                                  <a
-                                    href={"/sets?wallet=" + encodeURIComponent(input.trim())}
-                                    className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-400 hover:bg-zinc-900"
-                                  >
-                                    View Set Progress →
-                                  </a>
-                                )}
-                                {/* ⭐ Pin to Trophy Case — passes momentId to profile page */}
-                                <a
-                                  href={"/profile?pin=" + row.momentId}
-                                  className="block rounded-lg border border-yellow-800 bg-yellow-950/30 px-3 py-1.5 text-center text-xs font-semibold text-yellow-400 hover:bg-yellow-950/60"
-                                >
-                                  ⭐ Pin to Trophy Case
-                                </a>
                               </div>
                             </div>
 
+                            {/* Metadata */}
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                               <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Metadata</div>
                               <div className="space-y-1 text-sm">
                                 <div>Team: {row.team ?? "-"}</div>
                                 <div>League: {row.league ?? "-"}</div>
+                                <div>Series: {seriesLabel(row.series)}</div>
+                                <div>Season: {seriesSeason(row.series) ?? "-"}</div>
                                 <div>Parallel: {getParallel(row)}</div>
-                                <div>Series: {row.series ?? "-"} ({seriesIntToSeason(row.series) || "—"})</div>
-                                <div>Locked: {isLocked ? "Yes" : "No"}</div>
+                                <div>Locked: {getLocked(row) ? "Yes" : "No"}</div>
                                 <div className="flex flex-wrap gap-1 pt-1">
                                   {getTraits(row).map((trait) => (
-                                    <span key={trait} className="rounded bg-red-950 px-2 py-0.5 text-[10px] text-red-300">
-                                      {trait}
-                                    </span>
+                                    <span key={trait} className="rounded bg-red-950 px-2 py-0.5 text-[10px] text-red-300">{trait}</span>
                                   ))}
                                 </div>
                               </div>
                             </div>
 
+                            {/* Badge panel OR debug */}
                             {row.badgeInfo?.badge_score ? (
                               <div className="rounded-xl border border-zinc-700 bg-zinc-950 p-3">
                                 <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Badges</div>
@@ -1163,7 +1034,7 @@ export default function WalletPage() {
                                   </div>
                                   <div className="flex flex-wrap gap-1 pt-1">
                                     {(row.badgeInfo.badge_titles ?? []).filter(t => BADGE_PILL_TITLES.has(t)).map(title => (
-                                      <span key={title} className={"rounded px-1.5 py-0.5 text-[10px] font-semibold " + supadgePillClass(title)}>
+                                      <span key={title} className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${supaBadgePillClass(title)}`}>
                                         {title}
                                       </span>
                                     ))}
@@ -1194,7 +1065,7 @@ export default function WalletPage() {
                           </div>
                         </td>
                       </tr>
-                    ) : null}
+                    )}
                   </Fragment>
                 )
               })}
@@ -1202,17 +1073,17 @@ export default function WalletPage() {
           </table>
         </div>
 
-        {summary && summary.remainingMoments > 0 ? (
+        {summary && summary.remainingMoments > 0 && (
           <div className="mt-6 flex justify-center">
             <button
               onClick={handleLoadMore}
               disabled={loadingMore}
               className="rounded-lg bg-red-600 px-4 py-2 font-semibold text-white disabled:opacity-50 hover:bg-red-500"
             >
-              {loadingMore ? "Loading..." : "Load More (" + summary.remainingMoments + " left)"}
+              {loadingMore ? "Loading..." : `Load More (${summary.remainingMoments} left)`}
             </button>
           </div>
-        ) : null}
+        )}
       </div>
     </div>
   )
