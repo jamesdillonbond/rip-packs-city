@@ -3,13 +3,11 @@ import Link from "next/link"
 import { getPublishedCollection, type Collection } from "@/lib/collections"
 import { CollectionTabBar } from "@/components/collection-tab-bar"
 
-export default async function CollectionLayout({
-  children,
-  params,
-}: {
+export default async function CollectionLayout(props: {
   children: React.ReactNode
-  params: { collection: string }
+  params: Promise<{ collection: string }>
 }) {
+  const params = await props.params
   const collection = getPublishedCollection(params.collection)
   if (!collection) notFound()
 
@@ -35,7 +33,7 @@ export default async function CollectionLayout({
       <CollectionTicker collection={collection} />
       <CollectionHeader collection={collection} />
       <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
-        {children}
+        {props.children}
       </main>
     </div>
   )
