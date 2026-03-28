@@ -266,8 +266,8 @@ export default function BadgesPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <a href="/packs" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Packs</a>
-            <a href="/wallet" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">← Wallet</a>
+            <a href="/nba-top-shot/packs" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Packs</a>
+            <a href="/nba-top-shot/collection" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">← Wallet</a>
           </div>
         </div>
 

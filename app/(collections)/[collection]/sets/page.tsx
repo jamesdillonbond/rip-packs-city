@@ -692,11 +692,11 @@ export default function SetsPage() {
         </a>
         <span style={{ color: "rgba(255,255,255,0.12)" }}>|</span>
         {[
-          { label: "Wallet", href: "/wallet" },
-          { label: "Packs", href: "/packs" },
-          { label: "Sets", href: "/sets" },
-          { label: "Sniper", href: "/sniper" },
-          { label: "Badges", href: "/badges" },
+          { label: "Wallet", href: "/nba-top-shot/collection" },
+          { label: "Packs", href: "/nba-top-shot/packs" },
+          { label: "Sets", href: "/nba-top-shot/sets" },
+          { label: "Sniper", href: "/nba-top-shot/sniper" },
+          { label: "Badges", href: "/nba-top-shot/badges" },
           { label: "Profile", href: "/profile" },
         ].map((link) => (
           <a key={link.href} href={link.href} style={{
