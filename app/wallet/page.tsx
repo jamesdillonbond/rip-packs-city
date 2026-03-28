@@ -184,6 +184,15 @@ function badgeClass(name: string) {
 function supadgePillClass(title: string) {
   return BADGE_COLORS[title] ?? "bg-zinc-800 text-zinc-300 border border-zinc-700"
 }
+function BadgeIcon({ title, size = 20 }: { title: string; size?: number }) {
+  const src = BADGE_ICONS[title]
+  if (src) return (
+    <img src={src} alt={title} title={title} width={size} height={size}
+      style={{ display: "inline-block", verticalAlign: "middle" }}
+      onError={function(e) { (e.target as HTMLImageElement).style.display = "none" }} />
+  )
+  return <span className={"rounded px-1.5 py-0.5 text-[10px] font-semibold " + supadgePillClass(title)}>{title}</span>
+}
 
 function debugReasonLabel(reason?: string | null) {
   switch (reason) {
@@ -840,9 +849,12 @@ export default function WalletPage() {
                             <div className="font-semibold text-white text-sm">{row.playerName}</div>
                             <div className="mt-1 flex flex-wrap gap-1">
                               {officialBadges.map(function(badge) { return <span key={"official-" + badge} className={"rounded px-1.5 py-0.5 text-[10px] font-semibold " + badgeClass(badge)}>{badge}</span> })}
-                              {supaBadges.map(function(title) { return <span key={"supa-" + title} className={"rounded px-1.5 py-0.5 text-[10px] font-semibold " + supadgePillClass(title)}>{title}</span> })}
+                              {supaBadges.map(function(title) { return <BadgeIcon key={"supa-" + title} title={title} size={20} /> })}
                               {row.badgeInfo?.is_three_star_rookie && row.badgeInfo?.has_rookie_mint && (
-                                <span className="rounded bg-yellow-950 px-1.5 py-0.5 text-[10px] font-bold text-yellow-300 border border-yellow-700">⭐ 3-Star</span>
+                                <img src="https://nbatopshot.com/img/momentTags/static/threeStars.svg"
+                                  alt="Three-Star Rookie" title="Three-Star Rookie"
+                                  width={20} height={20}
+                                  style={{ display: "inline-block", verticalAlign: "middle" }} />
                               )}
                             </div>
                           </div>
