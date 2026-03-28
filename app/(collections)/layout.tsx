@@ -1,14 +1,16 @@
-import { notFound } from "next/navigation"
 import Link from "next/link"
-import { getPublishedCollection, type Collection } from "@/lib/collections"
+import { getPublishedCollection, publishedCollections, type Collection } from "@/lib/collections"
 import { CollectionTabBar } from "@/components/collection-tab-bar"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export default async function CollectionLayout(props: any) {
   const params = await props.params
-  const collection = getPublishedCollection(params.collection)
-  if (!collection) notFound()
-  const children = props.children
+  const collectionId: string = params?.collection ?? ""
+  const collection = getPublishedCollection(collectionId)
+
+  // If collection not found, render children anyway — pages handle their own 404
+  const fallback = publishedCollections()[0]
+  const col: Collection = collection ?? fallback
 
   return (
     <div style={{ minHeight: "100vh", background: "#080808", color: "#fff" }}>
@@ -29,10 +31,10 @@ export default async function CollectionLayout(props: any) {
         .rpc-coll-tab:hover{background:rgba(255,255,255,0.06)!important;color:#fff!important;}
       `}</style>
 
-      <CollectionTicker collection={collection} />
-      <CollectionHeader collection={collection} />
+      <CollectionTicker collection={col} />
+      <CollectionHeader collection={col} />
       <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
-        {children}
+        {props.children}
       </main>
     </div>
   )
