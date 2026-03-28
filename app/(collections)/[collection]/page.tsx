@@ -1,10 +1,9 @@
 import { redirect } from "next/navigation"
 
-interface Props {
-  params: Promise<{ collection: string }>
-}
-
-export default async function CollectionRoot({ params }: Props) {
-  const { collection } = await params
-  redirect(`/${collection}/overview`)
+export default function CollectionRoot({
+  params,
+}: {
+  params: { collection: string }
+}) {
+  redirect(`/${params.collection}/overview`)
 }
