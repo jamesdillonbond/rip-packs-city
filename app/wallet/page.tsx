@@ -268,38 +268,55 @@ export default function WalletPage() {
   // ── Badge enrichment ────────────────────────────────────────────────────────
 
   async function enrichWithBadges(rowsIn: MomentRow[]): Promise<MomentRow[]> {
-    if (!rowsIn.length) return rowsIn
-    try {
-      const params = new URLSearchParams({ mode: "all", sort: "badge_score", dir: "desc", limit: "200", offset: "0" })
-      const res = await fetch("/api/badges?" + params.toString())
-      if (!res.ok) return rowsIn
-      const json = await res.json()
-      const badgeEditions: any[] = json.editions ?? []
-      const badgeMap = new Map<string, BadgeInfo>()
-      for (const edition of badgeEditions) {
-        if (!edition.player_name || !edition.season) continue
-        const key = badgeLookupKey(edition.player_name, edition.season)
-        const existing = badgeMap.get(key)
-        if (!existing || edition.badge_score > existing.badge_score) {
-          badgeMap.set(key, {
-            badge_score: edition.badge_score,
-            badge_titles: (edition.badge_titles ?? []).filter((t: string) => BADGE_PILL_TITLES.has(t)),
-            is_three_star_rookie: edition.is_three_star_rookie,
-            has_rookie_mint: edition.has_rookie_mint,
-            burn_rate_pct: edition.burn_rate_pct,
-            lock_rate_pct: edition.lock_rate_pct,
-            low_ask: edition.low_ask,
-            circulation_count: edition.circulation_count,
-          })
-        }
-      }
-      return rowsIn.map(function(row) {
-        const season = seriesIntToSeason(row.series ?? "")
-        const badgeInfo = badgeMap.get(badgeLookupKey(row.playerName, season)) ?? null
-        return { ...row, badgeInfo }
+  if (!rowsIn.length) return rowsIn
+  try {
+    const playerNames = Array.from(new Set(
+      rowsIn.map((r: MomentRow) => r.playerName?.trim()).filter(Boolean)
+    )) as string[]
+    if (!playerNames.length) return rowsIn
+    const CHUNK = 50
+    const allEditions: any[] = []
+    for (let i = 0; i < playerNames.length; i += CHUNK) {
+      const chunk = playerNames.slice(i, i + CHUNK)
+      const params = new URLSearchParams({
+        mode: "all", sort: "badge_score", dir: "desc",
+        limit: "500", offset: "0", players: chunk.join(","),
       })
-    } catch { return rowsIn }
+      const res = await fetch("/api/badges?" + params.toString())
+      if (!res.ok) continue
+      const json = await res.json()
+      allEditions.push(...(json.editions ?? []))
+    }
+    const badgeMap = new Map<string, BadgeInfo>()
+    for (const edition of allEditions) {
+      if (!edition.player_name || edition.series_number == null) continue
+      const key = edition.player_name.toLowerCase().trim() + "::" + edition.series_number
+      const existing = badgeMap.get(key)
+      if (!existing || edition.badge_score > existing.badge_score) {
+        badgeMap.set(key, {
+          badge_score: edition.badge_score,
+          badge_titles: (edition.badge_titles ?? []).filter((t: string) => BADGE_PILL_TITLES.has(t)),
+          is_three_star_rookie: edition.is_three_star_rookie,
+          has_rookie_mint: edition.has_rookie_mint,
+          burn_rate_pct: edition.burn_rate_pct,
+          lock_rate_pct: edition.lock_rate_pct,
+          low_ask: edition.low_ask,
+          circulation_count: edition.circulation_count,
+        })
+      }
+    }
+    return rowsIn.map((row: MomentRow) => {
+      const seriesNum = typeof row.series === "string"
+        ? parseInt(row.series, 10)
+        : (row.series as number | undefined)
+      if (seriesNum == null || isNaN(seriesNum)) return { ...row, badgeInfo: null }
+      const key = (row.playerName?.toLowerCase().trim() ?? "") + "::" + seriesNum
+      return { ...row, badgeInfo: badgeMap.get(key) ?? null }
+    })
+  } catch {
+    return rowsIn
   }
+}
 
   async function hydrateMarket(rowsIn: MomentRow[]) {
     if (!rowsIn.length) return rowsIn
