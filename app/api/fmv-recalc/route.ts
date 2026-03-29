@@ -6,14 +6,14 @@ import { supabaseAdmin } from "@/lib/supabase"
 // Recomputes FMV snapshots from the full 30-day sales history in the `sales`
 // table, rather than relying on the batch-level prices seen during ingest.
 //
-// This is the source of truth for confidence tiers — an edition with 8 total
-// sales in the DB will correctly show MEDIUM/HIGH here, even if only 1 of
-// those sales happened to be in a given ingest batch.
-//
 // Model: trimmed median (drop bottom 10% + top 10% of prices per edition)
 // Window: 30 days
 // Confidence: HIGH >= 5 sales, MEDIUM >= 2, LOW = 1
 // algo_version: "1.2.0"
+//
+// NOTE: fmv_snapshots is a partitioned table (partition key: computed_at).
+// Upsert with onConflict does not work without a unique constraint covering
+// all partition columns. We use delete-then-insert instead.
 //
 // Run via POST /api/fmv-recalc (token-gated, same as ingest)
 // Paginated — pass { offset, limit } in body to process in chunks.
@@ -21,12 +21,11 @@ import { supabaseAdmin } from "@/lib/supabase"
 
 const ALGO_VERSION = "1.2.0"
 const WINDOW_DAYS = 30
-const DEFAULT_LIMIT = 500 // editions per batch
+const DEFAULT_LIMIT = 500
 
 function trimmedMedian(prices: number[]): number {
   if (prices.length === 0) return 0
   if (prices.length <= 2) {
-    // Not enough data to trim — use plain median
     const sorted = [...prices].sort((a, b) => a - b)
     const mid = Math.floor(sorted.length / 2)
     return sorted.length % 2 === 0
@@ -53,7 +52,6 @@ function computeConfidence(salesCount: number): "HIGH" | "MEDIUM" | "LOW" {
 export async function POST(req: NextRequest) {
   const startTime = Date.now()
 
-  // Auth — same Bearer token as ingest
   const authHeader = req.headers.get("authorization")
   const expectedToken = process.env.INGEST_SECRET_TOKEN
   if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
@@ -73,21 +71,22 @@ export async function POST(req: NextRequest) {
       `[FMV-RECALC] Starting — offset=${offset} limit=${limit} window=${WINDOW_DAYS}d since=${windowStart}`
     )
 
-    // ── Step 1: Get distinct edition IDs with sales in window ────────────────
-    const { data: editionRows, error: editionError } = await supabaseAdmin
+    // ── Step 1: Get sales rows in window (paginated) ──────────────────────────
+    const { data: salesPage, error: pageError } = await supabaseAdmin
       .from("sales")
-      .select("edition_id")
+      .select("edition_id, collection_id, price_usd")
       .gte("sold_at", windowStart)
+      .gt("price_usd", 0)
       .range(offset, offset + limit - 1)
       .order("edition_id")
 
-    if (editionError) {
-      console.error("[FMV-RECALC] Edition fetch error:", editionError.message)
-      return NextResponse.json({ ok: false, error: editionError.message }, { status: 500 })
+    if (pageError) {
+      console.error("[FMV-RECALC] Sales page fetch error:", pageError.message)
+      return NextResponse.json({ ok: false, error: pageError.message }, { status: 500 })
     }
 
-    if (!editionRows || editionRows.length === 0) {
-      console.log("[FMV-RECALC] No editions found in window — done")
+    if (!salesPage || salesPage.length === 0) {
+      console.log("[FMV-RECALC] No sales found in window — done")
       return NextResponse.json({
         ok: true,
         editionsProcessed: 0,
@@ -97,28 +96,10 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // Deduplicate edition IDs
-    const editionIds = [...new Set(editionRows.map((r) => r.edition_id as string))]
-
-    console.log(`[FMV-RECALC] Processing ${editionIds.length} distinct editions`)
-
-    // ── Step 2: Fetch all sales for these editions in the window ─────────────
-    const { data: salesRows, error: salesError } = await supabaseAdmin
-      .from("sales")
-      .select("edition_id, collection_id, price_usd")
-      .in("edition_id", editionIds)
-      .gte("sold_at", windowStart)
-      .gt("price_usd", 0)
-
-    if (salesError) {
-      console.error("[FMV-RECALC] Sales fetch error:", salesError.message)
-      return NextResponse.json({ ok: false, error: salesError.message }, { status: 500 })
-    }
-
-    // ── Step 3: Group prices by edition ──────────────────────────────────────
+    // ── Step 2: Group prices by edition ──────────────────────────────────────
     const editionPriceMap = new Map<string, { prices: number[]; collectionId: string }>()
 
-    for (const row of salesRows ?? []) {
+    for (const row of salesPage) {
       const existing = editionPriceMap.get(row.edition_id)
       if (existing) {
         existing.prices.push(Number(row.price_usd))
@@ -130,16 +111,31 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── Step 4: Compute and upsert FMV snapshots ─────────────────────────────
-    let snapshotsUpdated = 0
-    const upsertRows = []
+    const editionIds = [...editionPriceMap.keys()]
+    console.log(`[FMV-RECALC] Processing ${editionIds.length} distinct editions`)
+
+    // ── Step 3: Delete existing snapshots for these editions ─────────────────
+    // fmv_snapshots is partitioned by computed_at — no unique constraint on
+    // edition_id alone is possible, so upsert fails. Delete-then-insert instead.
+    const { error: deleteError } = await supabaseAdmin
+      .from("fmv_snapshots")
+      .delete()
+      .in("edition_id", editionIds)
+
+    if (deleteError) {
+      console.error("[FMV-RECALC] Delete error:", deleteError.message)
+      return NextResponse.json({ ok: false, error: deleteError.message }, { status: 500 })
+    }
+
+    // ── Step 4: Build and insert fresh snapshots ──────────────────────────────
+    const insertRows = []
 
     for (const [editionId, { prices, collectionId }] of editionPriceMap.entries()) {
       const fmv = trimmedMedian(prices)
       const floor = Math.min(...prices)
       const confidence = computeConfidence(prices.length)
 
-      upsertRows.push({
+      insertRows.push({
         edition_id: editionId,
         collection_id: collectionId,
         fmv_usd: Number(fmv.toFixed(2)),
@@ -150,22 +146,23 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // Batch upsert in chunks of 100 to stay within Supabase limits
     const CHUNK_SIZE = 100
-    for (let i = 0; i < upsertRows.length; i += CHUNK_SIZE) {
-      const chunk = upsertRows.slice(i, i + CHUNK_SIZE)
-      const { error: upsertError } = await supabaseAdmin
-        .from("fmv_snapshots")
-        .upsert(chunk, { onConflict: "edition_id", ignoreDuplicates: false })
+    let snapshotsUpdated = 0
 
-      if (upsertError) {
-        console.error("[FMV-RECALC] Upsert error:", upsertError.message)
+    for (let i = 0; i < insertRows.length; i += CHUNK_SIZE) {
+      const chunk = insertRows.slice(i, i + CHUNK_SIZE)
+      const { error: insertError } = await supabaseAdmin
+        .from("fmv_snapshots")
+        .insert(chunk)
+
+      if (insertError) {
+        console.error("[FMV-RECALC] Insert error:", insertError.message)
       } else {
         snapshotsUpdated += chunk.length
       }
     }
 
-    const hasMore = editionRows.length === limit
+    const hasMore = salesPage.length === limit
     const duration = Date.now() - startTime
 
     console.log(
