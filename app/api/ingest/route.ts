@@ -319,6 +319,15 @@ async function upsertFmvSnapshot(
 ): Promise<void> {
   if (!recentSales.length) return
 
+  // ── FMV Model v1.1 ────────────────────────────────────────────────────────
+  // Window: 30-day (sales_count_7d column retained for schema compatibility,
+  //   value now reflects 30-day count — rename pending future migration)
+  // Confidence thresholds recalibrated for Top Shot's thin market reality:
+  //   HIGH   = 5+ sales  (was 10)
+  //   MEDIUM = 2–4 sales (was 3–9)
+  //   LOW    = 1 sale
+  // ─────────────────────────────────────────────────────────────────────────
+
   const sorted = [...recentSales].sort((a, b) => a - b)
   const mid = Math.floor(sorted.length / 2)
   const median =
@@ -328,9 +337,9 @@ async function upsertFmvSnapshot(
 
   const floor = sorted[0]
   const confidence =
-    recentSales.length >= 10
+    recentSales.length >= 5
       ? "HIGH"
-      : recentSales.length >= 3
+      : recentSales.length >= 2
         ? "MEDIUM"
         : "LOW"
 
@@ -344,8 +353,8 @@ async function upsertFmvSnapshot(
         fmv_usd: Number(median.toFixed(2)),
         floor_price_usd: Number(floor.toFixed(2)),
         confidence: confidence as "LOW" | "MEDIUM" | "HIGH",
-        sales_count_7d: recentSales.length,
-        algo_version: "1.0.0",
+        sales_count_7d: recentSales.length, // reflects 30-day window as of v1.1
+        algo_version: "1.1.0",
       },
       { onConflict: "edition_id", ignoreDuplicates: false }
     )
@@ -408,7 +417,6 @@ async function fetchRecentSales(
     }))
   } else {
     console.warn("[INGEST] No transactions in response. Summary keys:", JSON.stringify(Object.keys(summary ?? {})))
-    // Log raw summary shape for diagnosis
     console.warn("[INGEST] Summary.data type:", typeof dataField, Array.isArray(dataField) ? "array" : "not-array")
   }
 
