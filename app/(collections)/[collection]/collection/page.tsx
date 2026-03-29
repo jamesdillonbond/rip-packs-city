@@ -62,6 +62,7 @@ type MomentRow = {
   serial?: number
   mintCount?: number
   mintSize?: number
+  jerseyNumber?: number | null
   officialBadges?: string[]
   specialSerialTraits?: string[]
   traits?: string[]
@@ -212,6 +213,27 @@ const BADGE_ICONS: Record<string, string> = {
   "Championship Year":  "https://nbatopshot.com/img/momentTags/static/championshipYear.svg",
 }
 
+
+function SerialBadge({ serial, mintSize, jerseyNumber }: { serial: number | undefined; mintSize: number | undefined; jerseyNumber: number | null | undefined }) {
+  if (!serial) return null
+  const tags: { label: string; title: string; color: string }[] = []
+  if (serial === 1)
+    tags.push({ label: "#1", title: "Serial #1", color: "bg-yellow-950 text-yellow-300 border border-yellow-700" })
+  if (jerseyNumber && serial === jerseyNumber)
+    tags.push({ label: "JM", title: "Jersey Match — #" + jerseyNumber, color: "bg-teal-950 text-teal-300 border border-teal-700" })
+  if (mintSize && serial === mintSize)
+    tags.push({ label: "PM", title: "Perfect Mint — #" + serial + "/" + mintSize, color: "bg-violet-950 text-violet-300 border border-violet-700" })
+  if (tags.length === 0) return null
+  return (
+    <span className="flex gap-1 flex-wrap">
+      {tags.map(tag => (
+        <span key={tag.label} title={tag.title} className={"rounded px-1 py-0.5 text-[10px] font-bold " + tag.color}>
+          {tag.label}
+        </span>
+      ))}
+    </span>
+  )
+}
 function BadgeIcon({ title, size = 20 }: { title: string; size?: number }) {
   const src = BADGE_ICONS[title]
   if (src) return (
@@ -952,6 +974,7 @@ export default function WalletPage() {
                       <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{row.tier ?? "—"}</td>
                       <td className="p-3">
                         <div className={"inline-flex min-w-[80px] flex-col rounded-lg border px-2 py-1 " + (primaryBadge ? "border-red-700 bg-red-950/50" : "border-zinc-800 bg-black")}>
+                          <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} />
                           <div className={"text-sm font-black " + (primaryBadge ? "text-red-300" : "text-white")}>{"#" + (getSerial(row) ?? "-")}</div>
                           <div className="text-xs text-zinc-400">{"/ " + (getMint(row) ?? "-")}</div>
                           {primaryBadge ? <div className="mt-1 rounded bg-white px-1 py-0.5 text-[9px] font-bold text-black">{primaryBadge}</div> : null}
