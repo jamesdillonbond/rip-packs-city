@@ -1,13 +1,13 @@
 // app/api/sets/route.ts
-// Sets completion tracker.
-// v12: bottleneck detection, correct marketplace URLs, three-tier set classification
+// v13: tier + thumbnail enrichment for missing plays via getMintedMoment sampling,
+// listedCount field so UI can show "X of Y pieces listed"
 
 import { NextRequest, NextResponse } from "next/server";
 import fcl from "@/lib/flow";
 import * as t from "@onflow/types";
 import { topshotGraphql } from "@/lib/topshot";
 
-// ── In-memory resolve cache (5 min TTL) ───────────────────────────────────────
+// ── Cache ─────────────────────────────────────────────────────────────────────
 
 const resolveCache = new Map<string, { addr: string; expiresAt: number }>();
 const RESOLVE_TTL_MS = 5 * 60 * 1000;
@@ -59,6 +59,7 @@ interface SetProgress {
   totalEditions: number;
   ownedCount: number;
   missingCount: number;
+  listedCount: number;
   completionPct: number;
   totalMissingCost: number | null;
   lowestSingleAsk: number | null;
@@ -120,28 +121,18 @@ function buildMarketplaceUrl(setId: string, playId: string): string {
   );
 }
 
-// Detect the single most expensive missing piece when it's a clear outlier:
-// ≥3x the median of the rest AND costs $10+ more
 function detectBottleneck(missing: MissingPiece[]): MissingPiece | null {
   const priced = missing.filter((m) => m.lowestAsk !== null && m.lowestAsk > 0);
   if (priced.length < 2) return null;
-
-  const sorted = [...priced].sort(
-    (a, b) => (b.lowestAsk ?? 0) - (a.lowestAsk ?? 0)
-  );
+  const sorted = [...priced].sort((a, b) => (b.lowestAsk ?? 0) - (a.lowestAsk ?? 0));
   const mostExpensive = sorted[0];
   const rest = sorted.slice(1);
-  const medianRest =
-    rest[Math.floor(rest.length / 2)].lowestAsk ?? 0;
-
+  const medianRest = rest[Math.floor(rest.length / 2)].lowestAsk ?? 0;
   const price = mostExpensive.lowestAsk ?? 0;
-  if (price >= 3 * medianRest && price - medianRest >= 10) {
-    return mostExpensive;
-  }
+  if (price >= 3 * medianRest && price - medianRest >= 10) return mostExpensive;
   return null;
 }
 
-// Classify a set — takes the full computed data, returns tier + bottleneck
 function classifySet(
   missing: MissingPiece[],
   missingCount: number,
@@ -151,23 +142,14 @@ function classifySet(
 ): { tier: SetTier; bottleneck: MissingPiece | null } {
   if (completionPct === 100) return { tier: "complete", bottleneck: null };
   if (!asksEnriched) return { tier: "unpriced", bottleneck: null };
-
   const pricedCount = missing.filter((m) => m.lowestAsk !== null).length;
   const allPriced = pricedCount === missing.length && missing.length > 0;
-
   if (missingCount <= 3 && allPriced) {
     return { tier: "almost_there", bottleneck: detectBottleneck(missing) };
   }
-
   const bottleneck = detectBottleneck(missing);
-  if (bottleneck) {
-    return { tier: "bottleneck", bottleneck };
-  }
-
-  if (allPriced && totalMissingCost !== null) {
-    return { tier: "completable", bottleneck: null };
-  }
-
+  if (bottleneck) return { tier: "bottleneck", bottleneck };
+  if (allPriced && totalMissingCost !== null) return { tier: "completable", bottleneck: null };
   return { tier: "incomplete", bottleneck: null };
 }
 
@@ -185,9 +167,7 @@ async function mapWithConcurrency<T, R>(
       results[i] = await worker(items[i]);
     }
   }
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, items.length) }, run)
-  );
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, run));
   return results;
 }
 
@@ -195,27 +175,20 @@ function sleep(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms));
 }
 
-// ── Step 1: Resolve ────────────────────────────────────────────────────────────
+// ── Resolve ────────────────────────────────────────────────────────────────────
 
 type TopShotUserProfileResponse = {
   getUserProfileByUsername?: {
-    publicInfo?: {
-      flowAddress?: string | null;
-      username?: string | null;
-    } | null;
+    publicInfo?: { flowAddress?: string | null; username?: string | null } | null;
   } | null;
 };
 
 async function resolveToFlowAddress(input: string): Promise<string> {
   const trimmed = input.trim();
   if (isWalletAddress(trimmed)) return ensureFlowPrefix(trimmed);
-
   const cacheKey = trimmed.toLowerCase();
   const cached = resolveCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    console.log("[sets] resolve cache hit:", trimmed, "→", cached.addr);
-    return cached.addr;
-  }
+  if (cached && cached.expiresAt > Date.now()) return cached.addr;
 
   const cleanedUsername = trimmed.replace(/^@+/, "").trim();
   const query = `
@@ -225,76 +198,49 @@ async function resolveToFlowAddress(input: string): Promise<string> {
       }
     }
   `;
-
   const tryResolve = async (username: string): Promise<string | null> => {
     try {
-      const data = await topshotGraphql<TopShotUserProfileResponse>(query, {
-        username,
-      });
-      const raw =
-        data?.getUserProfileByUsername?.publicInfo?.flowAddress ?? null;
+      const data = await topshotGraphql<TopShotUserProfileResponse>(query, { username });
+      const raw = data?.getUserProfileByUsername?.publicInfo?.flowAddress ?? null;
       return raw ? ensureFlowPrefix(raw) : null;
-    } catch (e) {
-      console.log(
-        "[sets] resolve failed:",
-        (e as Error).message?.slice(0, 100)
-      );
-      return null;
-    }
+    } catch { return null; }
   };
 
   let addr = await tryResolve(cleanedUsername);
   if (!addr && cleanedUsername.toLowerCase() !== cleanedUsername) {
     addr = await tryResolve(cleanedUsername.toLowerCase());
   }
-
-  if (!addr) {
-    throw new Error(
-      'Could not resolve "' +
-        trimmed +
-        '" to a Flow address. Check the username and try again.'
-    );
-  }
-
+  if (!addr) throw new Error('Could not resolve "' + trimmed + '" to a Flow address. Check the username and try again.');
   resolveCache.set(cacheKey, { addr, expiresAt: Date.now() + RESOLVE_TTL_MS });
-  console.log("[sets] resolved", trimmed, "→", addr);
   return addr;
 }
 
-// ── Step 2: FCL — owned moment IDs ────────────────────────────────────────────
+// ── FCL — owned moment IDs ────────────────────────────────────────────────────
 
 async function getOwnedMomentIds(wallet: string): Promise<number[]> {
   const cadence = `
     import TopShot from 0x0b2a3299cc857e29
     access(all) fun main(address: Address): [UInt64] {
       let acct = getAccount(address)
-      let col = acct.capabilities
-        .borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
+      let col = acct.capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
       if col == nil { return [] }
       return col!.getIDs()
     }
   `;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = await fcl.query({
-    cadence,
-    args: (arg: any) => [arg(wallet, t.Address)],
-  });
+  const result = await fcl.query({ cadence, args: (arg: any) => [arg(wallet, t.Address)] });
   return Array.isArray(result) ? (result as number[]) : [];
 }
 
-// ── Step 3: FCL — moment metadata ────────────────────────────────────────────
+// ── FCL — moment metadata ─────────────────────────────────────────────────────
 
-async function getMomentMetadata(
-  wallet: string,
-  id: number
-): Promise<Record<string, string>> {
+async function getMomentMetadata(wallet: string, id: number): Promise<Record<string, string>> {
   const cadence = `
     import TopShot from 0x0b2a3299cc857e29
     import MetadataViews from 0x1d7e57aa55817448
     access(all) fun main(address: Address, id: UInt64): {String:String} {
       let acct = getAccount(address)
-      let col = acct.capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
-        ?? panic("no collection")
+      let col = acct.capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection) ?? panic("no collection")
       let nft = col.borrowMoment(id:id) ?? panic("no nft")
       let view = nft.resolveView(Type<TopShot.TopShotMomentMetadataView>()) ?? panic("no metadata")
       let data = view as! TopShot.TopShotMomentMetadataView
@@ -309,14 +255,11 @@ async function getMomentMetadata(
     }
   `;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = await fcl.query({
-    cadence,
-    args: (arg: any) => [arg(wallet, t.Address), arg(String(id), t.UInt64)],
-  });
+  const result = await fcl.query({ cadence, args: (arg: any) => [arg(wallet, t.Address), arg(String(id), t.UInt64)] });
   return result as Record<string, string>;
 }
 
-// ── Step 4: GQL getMintedMoment — tier + thumbnail ────────────────────────────
+// ── GQL getMintedMoment ───────────────────────────────────────────────────────
 
 type MintedMomentGQL = {
   getMintedMoment?: {
@@ -350,7 +293,7 @@ async function fetchMomentGQL(momentId: string) {
   }
 }
 
-// ── Step 5: FCL — all play IDs in a set ──────────────────────────────────────
+// ── FCL — all play IDs in a set ───────────────────────────────────────────────
 
 async function getSetPlayIds(setId: number): Promise<number[]> {
   const cadence = `
@@ -361,22 +304,33 @@ async function getSetPlayIds(setId: number): Promise<number[]> {
   `;
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = await fcl.query({
-      cadence,
-      args: (arg: any) => [arg(String(setId), t.UInt32)],
-    });
+    const result = await fcl.query({ cadence, args: (arg: any) => [arg(String(setId), t.UInt32)] });
     return Array.isArray(result) ? (result as number[]) : [];
+  } catch { return []; }
+}
+
+// ── FCL — play metadata for missing plays (player name) ───────────────────────
+
+async function getPlayMetadata(playId: number): Promise<{ playerName: string }> {
+  const cadence = `
+    import TopShot from 0x0b2a3299cc857e29
+    access(all) fun main(playID: UInt32): {String: String} {
+      return TopShot.getPlayMetaData(playID: playID) ?? {}
+    }
+  `;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await fcl.query({ cadence, args: (arg: any) => [arg(String(playId), t.UInt32)] });
+    const meta = result as Record<string, string>;
+    return { playerName: meta?.FullName ?? meta?.PlayerName ?? "Unknown" };
   } catch {
-    return [];
+    return { playerName: "Unknown" };
   }
 }
 
-// ── Step 6: Lowest ask ────────────────────────────────────────────────────────
+// ── Lowest ask ────────────────────────────────────────────────────────────────
 
-async function fetchLowestAskForPlay(
-  setIntId: string,
-  playIntId: string
-): Promise<number | null> {
+async function fetchLowestAskForPlay(setIntId: string, playIntId: string): Promise<number | null> {
   const query = `
     query GetLowestAsk($setId: ID!, $playId: ID!) {
       searchMomentListings(input: {
@@ -385,9 +339,7 @@ async function fetchLowestAskForPlay(
         first: 1
       }) {
         data {
-          searchEdge {
-            node { moment { listing { price } } }
-          }
+          searchEdge { node { moment { listing { price } } } }
         }
       }
     }
@@ -396,18 +348,68 @@ async function fetchLowestAskForPlay(
     const data = await topshotGraphql<{
       searchMomentListings?: {
         data?: {
-          searchEdge?: Array<{
-            node?: { moment?: { listing?: { price?: number } } };
-          }> | null;
+          searchEdge?: Array<{ node?: { moment?: { listing?: { price?: number } } } }> | null;
         } | null;
       } | null;
     }>(query, { setId: setIntId, playId: playIntId });
     const edges = data?.searchMomentListings?.data?.searchEdge ?? [];
     const price = edges[0]?.node?.moment?.listing?.price;
     return typeof price === "number" ? price : null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
+}
+
+// ── Enrich missing plays with tier + thumbnail via GQL ────────────────────────
+
+async function enrichMissingPlaysWithGQL(
+  missing: MissingPiece[],
+  setIntId: string
+): Promise<MissingPiece[]> {
+  const toEnrich = missing.slice(0, 20);
+
+  const enriched = await mapWithConcurrency(toEnrich, 3, async (piece) => {
+    try {
+      const listingQuery = `
+        query GetSampleMoment($setId: ID!, $playId: ID!) {
+          searchMomentListings(input: {
+            filters: { bySetID: [$setId] byPlayID: [$playId] byListingType: FOR_SALE }
+            sortBy: PRICE_ASC
+            first: 1
+          }) {
+            data {
+              searchEdge { node { moment { id tier } } }
+            }
+          }
+        }
+      `;
+      const data = await topshotGraphql<{
+        searchMomentListings?: {
+          data?: {
+            searchEdge?: Array<{
+              node?: { moment?: { id?: string; tier?: string } };
+            }> | null;
+          } | null;
+        } | null;
+      }>(listingQuery, { setId: setIntId, playId: piece.playId });
+
+      const edge = data?.searchMomentListings?.data?.searchEdge?.[0];
+      const momentId = edge?.node?.moment?.id;
+      const tierFromListing = edge?.node?.moment?.tier;
+
+      if (!momentId) return piece;
+
+      const gql = await fetchMomentGQL(momentId);
+
+      return {
+        ...piece,
+        tier: tierFromListing ? formatTier(tierFromListing) : gql.tier,
+        thumbnailUrl: gql.flowId ? buildThumbnailUrl(gql.flowId) : null,
+      };
+    } catch {
+      return piece;
+    }
+  });
+
+  return [...enriched, ...missing.slice(20)];
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -418,35 +420,27 @@ export async function GET(req: NextRequest) {
   const skipAsks = req.nextUrl.searchParams.get("skipAsks") === "1";
   const MAX_ASK_SETS = 15;
   const MAX_SETS_FULL = 30;
+  const isSingleSet = setFilter !== null;
 
   if (!wallet) {
-    return NextResponse.json(
-      { error: "wallet param required" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "wallet param required" }, { status: 400 });
   }
 
   try {
-    // 1. Resolve
     const flowAddress = await resolveToFlowAddress(wallet);
     console.log("[/api/sets] resolved", wallet, "→", flowAddress);
 
-    // 2. Owned moment IDs
     const ids = await getOwnedMomentIds(flowAddress);
     console.log("[/api/sets] owned IDs:", ids.length);
 
     if (!ids.length) {
       return NextResponse.json({
-        wallet,
-        resolvedAddress: flowAddress,
-        totalSets: 0,
-        completeSets: 0,
-        sets: [],
+        wallet, resolvedAddress: flowAddress,
+        totalSets: 0, completeSets: 0, sets: [],
         generatedAt: new Date().toISOString(),
       } satisfies SetsResponse);
     }
 
-    // 3. Fetch metadata (capped at 500)
     const slicedIds = ids.slice(0, 500);
     const moments = await mapWithConcurrency(slicedIds, 8, async (id) => {
       const [meta, gql] = await Promise.all([
@@ -467,19 +461,12 @@ export async function GET(req: NextRequest) {
       } as MomentMeta;
     });
 
-    console.log("[/api/sets] metadata fetched for", moments.length);
-
-    // 4. Group by setId + build global playId→playerName lookup
-    const setMap = new Map<
-      string,
-      { setName: string; moments: MomentMeta[] }
-    >();
+    const setMap = new Map<string, { setName: string; moments: MomentMeta[] }>();
     const globalPlayNames = new Map<string, string>();
 
     for (const m of moments) {
       if (!m.setId) continue;
-      if (!setMap.has(m.setId))
-        setMap.set(m.setId, { setName: m.setName, moments: [] });
+      if (!setMap.has(m.setId)) setMap.set(m.setId, { setName: m.setName, moments: [] });
       setMap.get(m.setId)!.moments.push(m);
       if (m.playId && m.playerName && m.playerName !== "Unknown") {
         globalPlayNames.set(m.playId, m.playerName);
@@ -497,15 +484,7 @@ export async function GET(req: NextRequest) {
     });
 
     const setsToProcess = setFilter ? setIds : setIds.slice(0, MAX_SETS_FULL);
-    console.log(
-      "[/api/sets] processing",
-      setsToProcess.length,
-      "of",
-      setIds.length,
-      "sets"
-    );
 
-    // 5. First pass — FCL play roster per set (sequential)
     const rawProgress: Array<{
       setId: string;
       setName: string;
@@ -518,7 +497,6 @@ export async function GET(req: NextRequest) {
       const entry = setMap.get(setId)!;
       const setIntId = parseInt(setId, 10);
       if (isNaN(setIntId)) continue;
-
       if (rawProgress.length > 0) await sleep(50);
 
       const allPlayIds = await getSetPlayIds(setIntId);
@@ -537,9 +515,7 @@ export async function GET(req: NextRequest) {
         const key = String(pid);
         if (ownedByPlayId.has(key)) {
           const copies = ownedByPlayId.get(key)!;
-          const best = [...copies].sort(
-            (a, b) => (a.serial ?? 99999) - (b.serial ?? 99999)
-          )[0];
+          const best = [...copies].sort((a, b) => (a.serial ?? 99999) - (b.serial ?? 99999))[0];
           owned.push({
             playId: key,
             playerName: best.playerName,
@@ -548,48 +524,39 @@ export async function GET(req: NextRequest) {
             thumbnailUrl: best.thumbnailUrl,
             topshotUrl: best.flowId
               ? "https://nbatopshot.com/listings/moment/" + best.flowId
-              : "https://nbatopshot.com/search?query=" +
-                encodeURIComponent(best.playerName),
+              : "https://nbatopshot.com/search?query=" + encodeURIComponent(best.playerName),
           });
         } else {
           missingPlayIds.push(pid);
         }
       }
 
-      rawProgress.push({
-        setId,
-        setName: entry.setName,
-        allPlayIds,
-        owned,
-        missingPlayIds,
-      });
+      rawProgress.push({ setId, setName: entry.setName, allPlayIds, owned, missingPlayIds });
     }
 
-    // Sort by completion % desc
     rawProgress.sort((a, b) => {
-      const pctA =
-        a.allPlayIds.length > 0 ? a.owned.length / a.allPlayIds.length : 0;
-      const pctB =
-        b.allPlayIds.length > 0 ? b.owned.length / b.allPlayIds.length : 0;
+      const pctA = a.allPlayIds.length > 0 ? a.owned.length / a.allPlayIds.length : 0;
+      const pctB = b.allPlayIds.length > 0 ? b.owned.length / b.allPlayIds.length : 0;
       return pctB - pctA;
     });
 
-    // 6. Second pass — asks + classification
     const setProgressList: SetProgress[] = [];
 
     for (let idx = 0; idx < rawProgress.length; idx++) {
-      const { setId, setName, allPlayIds, owned, missingPlayIds } =
-        rawProgress[idx];
-
-      const shouldFetchAsks: boolean =
-        !skipAsks && (setFilter !== null || idx < MAX_ASK_SETS);
+      const { setId, setName, allPlayIds, owned, missingPlayIds } = rawProgress[idx];
+      const shouldFetchAsks: boolean = !skipAsks && (isSingleSet || idx < MAX_ASK_SETS);
 
       const missingPieces: MissingPiece[] = await mapWithConcurrency(
         missingPlayIds,
-        4,
+        isSingleSet ? 3 : 4,
         async (pid) => {
           const pidStr = String(pid);
-          const playerName = globalPlayNames.get(pidStr) ?? "—";
+          let playerName = globalPlayNames.get(pidStr) ?? "—";
+          if (playerName === "—" && isSingleSet) {
+            const meta = await getPlayMetadata(pid);
+            playerName = meta.playerName;
+            if (playerName !== "Unknown") globalPlayNames.set(pidStr, playerName);
+          }
           const lowestAsk = shouldFetchAsks
             ? await fetchLowestAskForPlay(setId, pidStr)
             : null;
@@ -605,47 +572,43 @@ export async function GET(req: NextRequest) {
       );
 
       missingPieces.sort((a, b) => {
-        if (a.lowestAsk !== null && b.lowestAsk !== null)
-          return a.lowestAsk - b.lowestAsk;
+        if (a.lowestAsk !== null && b.lowestAsk !== null) return a.lowestAsk - b.lowestAsk;
         if (a.lowestAsk !== null) return -1;
         if (b.lowestAsk !== null) return 1;
         return a.playerName.localeCompare(b.playerName);
       });
 
-      const asksWithValues = missingPieces
+      let enrichedMissing = missingPieces;
+      if (isSingleSet && shouldFetchAsks && missingPieces.length > 0) {
+        enrichedMissing = await enrichMissingPlaysWithGQL(missingPieces, setId);
+      }
+
+      const asksWithValues = enrichedMissing
         .map((mp) => mp.lowestAsk)
         .filter((v): v is number => v !== null);
 
+      const listedCount = asksWithValues.length;
+
       const totalMissingCost =
-        asksWithValues.length === missingPieces.length &&
-        missingPieces.length > 0
+        listedCount === enrichedMissing.length && enrichedMissing.length > 0
           ? asksWithValues.reduce((a, b) => a + b, 0)
           : null;
 
-      const lowestSingleAsk =
-        asksWithValues.length > 0 ? Math.min(...asksWithValues) : null;
+      const lowestSingleAsk = asksWithValues.length > 0 ? Math.min(...asksWithValues) : null;
+      const completionPct = allPlayIds.length > 0
+        ? Math.round((owned.length / allPlayIds.length) * 100)
+        : 0;
 
-      const completionPct =
-        allPlayIds.length > 0
-          ? Math.round((owned.length / allPlayIds.length) * 100)
-          : 0;
-
-      // Classify — pass computed values directly, no intermediate object
       const { tier, bottleneck } = classifySet(
-        missingPieces,
-        missingPieces.length,
-        completionPct,
-        totalMissingCost,
-        shouldFetchAsks
+        enrichedMissing, enrichedMissing.length, completionPct, totalMissingCost, shouldFetchAsks
       );
 
-      // Build the full SetProgress object directly — no spread from partial type
       const entry: SetProgress = {
-        setId,
-        setName,
+        setId, setName,
         totalEditions: allPlayIds.length,
         ownedCount: owned.length,
-        missingCount: missingPieces.length,
+        missingCount: enrichedMissing.length,
+        listedCount,
         completionPct,
         totalMissingCost,
         lowestSingleAsk,
@@ -653,21 +616,16 @@ export async function GET(req: NextRequest) {
         bottleneckPlayerName: bottleneck?.playerName ?? null,
         tier,
         owned,
-        missing: missingPieces,
+        missing: enrichedMissing,
         asksEnriched: shouldFetchAsks,
       };
 
       setProgressList.push(entry);
     }
 
-    // Final sort by tier then completion %
     const tierOrder: Record<SetTier, number> = {
-      complete: 0,
-      almost_there: 1,
-      bottleneck: 2,
-      completable: 3,
-      incomplete: 4,
-      unpriced: 5,
+      complete: 0, almost_there: 1, bottleneck: 2,
+      completable: 3, incomplete: 4, unpriced: 5,
     };
 
     setProgressList.sort((a, b) => {
@@ -677,33 +635,15 @@ export async function GET(req: NextRequest) {
       return b.completionPct - a.completionPct;
     });
 
-    console.log(
-      "[/api/sets] done:",
-      setProgressList.length,
-      "sets |",
-      setProgressList.filter((s) => s.tier === "complete").length,
-      "complete |",
-      setProgressList.filter((s) => s.tier === "almost_there").length,
-      "almost there |",
-      setProgressList.filter((s) => s.tier === "bottleneck").length,
-      "with bottleneck"
-    );
-
     return NextResponse.json(
       {
-        wallet,
-        resolvedAddress: flowAddress,
+        wallet, resolvedAddress: flowAddress,
         totalSets: setProgressList.length,
-        completeSets: setProgressList.filter((s) => s.tier === "complete")
-          .length,
+        completeSets: setProgressList.filter((s) => s.tier === "complete").length,
         sets: setProgressList,
         generatedAt: new Date().toISOString(),
       } satisfies SetsResponse,
-      {
-        headers: {
-          "Cache-Control": "public, s-maxage=120, stale-while-revalidate=300",
-        },
-      }
+      { headers: { "Cache-Control": "public, s-maxage=120, stale-while-revalidate=300" } }
     );
   } catch (err) {
     console.error("[/api/sets] error:", err);
