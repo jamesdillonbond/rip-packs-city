@@ -78,6 +78,7 @@ type MintedMomentGraphqlData = {
       set?: {
         leagues?: Array<string | null> | null
       } | null
+      play?: { stats?: { jerseyNumber?: string | null } | null } | null
     } | null
   } | null
 }
@@ -265,6 +266,7 @@ async function fetchMomentGraphQL(id: string) {
           data {
             flowId flowSerialNumber tier forSale price lastPurchasePrice isLocked createdAt
             badges { type iconSvg }
+            play { stats { jerseyNumber } }
             set { leagues }
           }
         }
@@ -284,12 +286,14 @@ async function fetchMomentGraphQL(id: string) {
       lastPurchasePrice: toNum(m?.lastPurchasePrice),
       isLocked: !!m?.isLocked,
       acquiredAt: m?.createdAt ?? null,
+      jerseyNumber: m?.play?.stats?.jerseyNumber ? parseInt(m.play.stats.jerseyNumber, 10) : null,
       league: m?.set?.leagues?.find(Boolean) ?? null,
       badges: Array.isArray(m?.badges)
         ? m.badges.map((b) => ({ type: b?.type ?? "UNKNOWN", iconSvg: b?.iconSvg ?? "" }))
         : [],
       // TSS points removed from GraphQL query — field does not exist on MomentTopshotScore type.
       // tssPoints will be null until a valid field name is confirmed from the schema.
+      jerseyNumber: m?.play?.stats?.jerseyNumber ? parseInt(m.play.stats.jerseyNumber, 10) : null,
       tssPoints: null as number | null,
     }
   })
