@@ -133,8 +133,8 @@ const BADGE_PILL_TITLES = new Set([
 ])
 
 const SERIES_INT_TO_SEASON: Record<number, string> = {
-  0: "2019-20", 1: "2019-20", 2: "2020-21", 3: "2021",
-  4: "2021-22", 5: "2022-23", 6: "2023-24", 7: "2024-25", 8: "2025-26",
+  0: "Beta", 1: "Series 1", 2: "Series 2", 3: "Summer 2021",
+  4: "Series 3", 5: "Series 4", 6: "Series 2023-24", 7: "Series 2024-25", 8: "Series 2025-26",
 }
 
 function seriesIntToSeason(seriesRaw: string | undefined | null): string {
@@ -958,7 +958,7 @@ export default function WalletPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="p-3 text-zinc-400 text-sm hidden sm:table-cell">{row.series ?? "—"}</td>
+                      <td className="p-3 text-zinc-400 text-sm hidden sm:table-cell">{seriesIntToSeason(row.series) || row.series || "—"}</td>
                       <td className="p-3 text-sm">{normalizeSetName(row.setName)}</td>
                       <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{getParallel(row)}</td>
                       <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{row.tier ?? "—"}</td>
@@ -1029,7 +1029,7 @@ export default function WalletPage() {
                                 <div>Team: {row.team ?? "-"}</div>
                                 <div>League: {row.league ?? "-"}</div>
                                 <div>Parallel: {getParallel(row)}</div>
-                                <div>Series: {row.series ?? "-"} ({seriesIntToSeason(row.series) || "—"})</div>
+                                <div>Series: {seriesIntToSeason(row.series) || row.series || "—"}</div>
                                 <div>Acquired: {formatAcquiredAt(row.acquiredAt)}</div>
                                 <div>Locked: {isLocked ? "Yes" : "No"}</div>
                                 <div className="flex flex-wrap gap-1 pt-1">
