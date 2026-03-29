@@ -68,7 +68,7 @@ type MintedMomentGraphqlData = {
       price?: string | number | null
       lastPurchasePrice?: string | number | null
       isLocked?: boolean | null
-      updatedAt?: string | null
+      createdAt?: string | null
       badges?: Array<{
         type?: string | null
         iconSvg?: string | null
@@ -261,7 +261,7 @@ async function fetchMomentGraphQL(id: string) {
       query GetMoment($id: ID!) {
         getMintedMoment(momentId: $id) {
           data {
-            flowId flowSerialNumber tier forSale price lastPurchasePrice isLocked updatedAt
+            flowId flowSerialNumber tier forSale price lastPurchasePrice isLocked createdAt
             badges { type iconSvg }
             set { leagues }
           }
@@ -281,7 +281,7 @@ async function fetchMomentGraphQL(id: string) {
       bestOffer: null,
       lastPurchasePrice: toNum(m?.lastPurchasePrice),
       isLocked: !!m?.isLocked,
-      acquiredAt: m?.updatedAt ?? null,
+      acquiredAt: m?.createdAt ?? null,
       league: m?.set?.leagues?.find(Boolean) ?? null,
       badges: Array.isArray(m?.badges)
         ? m.badges.map((b) => ({ type: b?.type ?? "UNKNOWN", iconSvg: b?.iconSvg ?? "" }))
