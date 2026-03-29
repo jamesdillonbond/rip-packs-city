@@ -36,7 +36,8 @@ type WalletRow = {
   editionsLocked?: number
   flowId?: string | null
   thumbnailUrl?: string | null
-  acquiredAt?: string | null
+  // ── RPC Score components ──────────────────────────────────────────────────
+  tssPoints?: number | null   // Official Top Shot Score points for this moment
 }
 
 type WalletSearchResponse = {
@@ -45,6 +46,8 @@ type WalletSearchResponse = {
     totalMoments: number
     returnedMoments: number
     remainingMoments: number
+    // Total TSS points for this page of moments (accumulates across Load More)
+    totalTssPoints?: number
   }
   error?: string
 }
@@ -68,13 +71,19 @@ type MintedMomentGraphqlData = {
       price?: string | number | null
       lastPurchasePrice?: string | number | null
       isLocked?: boolean | null
-      createdAt?: string | null
       badges?: Array<{
         type?: string | null
         iconSvg?: string | null
       }> | null
       set?: {
         leagues?: Array<string | null> | null
+      } | null
+      // ── Top Shot Score ─────────────────────────────────────────────────────
+      // topshotScore is an object — we request both known field names
+      // since the schema refers to MomentTopshotScore type
+      topshotScore?: {
+        points?: number | null
+        score?: number | null
       } | null
     } | null
   } | null
@@ -134,6 +143,8 @@ function buildThumbnailUrl(flowId: string | null) {
   return `https://assets.nbatopshot.com/media/${flowId}/image?width=180`
 }
 
+// ── Clean error message extraction ────────────────────────────────────────────
+
 function cleanErrorMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err)
 
@@ -161,6 +172,8 @@ function cleanErrorMessage(err: unknown): string {
 
   return raw
 }
+
+// ── Retry wrapper ─────────────────────────────────────────────────────────────
 
 async function withRetry<T>(fn: () => Promise<T>, delayMs = 2000): Promise<T> {
   try {
@@ -261,9 +274,10 @@ async function fetchMomentGraphQL(id: string) {
       query GetMoment($id: ID!) {
         getMintedMoment(momentId: $id) {
           data {
-            flowId flowSerialNumber tier forSale price lastPurchasePrice isLocked createdAt
+            flowId flowSerialNumber tier forSale price lastPurchasePrice isLocked
             badges { type iconSvg }
             set { leagues }
+            topshotScore { points score }
           }
         }
       }
@@ -272,6 +286,11 @@ async function fetchMomentGraphQL(id: string) {
       return topshotGraphql<MintedMomentGraphqlData>(q, { id })
     })
     const m = d?.getMintedMoment?.data
+
+    // Extract TSS points — try both field names the schema might use
+    const tssRaw = m?.topshotScore
+    const tssPoints = toNum(tssRaw?.points ?? tssRaw?.score ?? null)
+
     return {
       flowId: m?.flowId ?? null,
       serial: toNum(m?.flowSerialNumber),
@@ -281,11 +300,11 @@ async function fetchMomentGraphQL(id: string) {
       bestOffer: null,
       lastPurchasePrice: toNum(m?.lastPurchasePrice),
       isLocked: !!m?.isLocked,
-      acquiredAt: m?.createdAt ?? null,
       league: m?.set?.leagues?.find(Boolean) ?? null,
       badges: Array.isArray(m?.badges)
         ? m.badges.map((b) => ({ type: b?.type ?? "UNKNOWN", iconSvg: b?.iconSvg ?? "" }))
         : [],
+      tssPoints,
     }
   })
 }
@@ -309,6 +328,8 @@ async function mapWithConcurrency<T, R>(
   )
   return results
 }
+
+// ── Supabase seeding ──────────────────────────────────────────────────────────
 
 async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
   for (const row of rows) {
@@ -456,12 +477,12 @@ export async function POST(req: NextRequest) {
         lowAsk: gql.lowAsk,
         bestOffer: gql.bestOffer,
         lastPurchasePrice: gql.lastPurchasePrice,
-        acquiredAt: gql.acquiredAt,
         editionKey,
         parallel: normalizedParallel,
         subedition: normalizedParallel,
         flowId: gql.flowId,
         thumbnailUrl: buildThumbnailUrl(gql.flowId),
+        tssPoints: gql.tssPoints,
       } as WalletRow
     })
 
@@ -492,6 +513,11 @@ export async function POST(req: NextRequest) {
       return { ...row, editionsOwned: counts.owned, editionsLocked: counts.locked }
     })
 
+    // Sum TSS points for this page
+    const totalTssPoints = rows.reduce(function(sum, r) {
+      return sum + (r.tssPoints ?? 0)
+    }, 0)
+
     // Fire-and-forget — seeds all editions regardless of price
     getCollectionId().then((collectionId) => {
       if (collectionId) seedEditionsToSupabase(rows, collectionId).catch(() => {})
@@ -503,6 +529,7 @@ export async function POST(req: NextRequest) {
         totalMoments: ids.length,
         returnedMoments: rows.length,
         remainingMoments: Math.max(0, ids.length - (offset + rows.length)),
+        totalTssPoints,
       },
     } satisfies WalletSearchResponse)
   } catch (e) {
