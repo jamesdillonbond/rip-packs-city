@@ -293,7 +293,6 @@ async function fetchMomentGraphQL(id: string) {
         : [],
       // TSS points removed from GraphQL query — field does not exist on MomentTopshotScore type.
       // tssPoints will be null until a valid field name is confirmed from the schema.
-      jerseyNumber: m?.play?.stats?.jerseyNumber ? parseInt(m.play.stats.jerseyNumber, 10) : null,
       tssPoints: null as number | null,
     }
   })
