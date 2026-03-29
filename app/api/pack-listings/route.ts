@@ -12,22 +12,12 @@ const GRAPHQL_HEADERS = {
 const PACK_LISTINGS_QUERY = `
   query searchPackNftAggregation_searchPacks($after: String, $first: Int, $filters: [PackNftFilter!], $sortBy: PackNftSortAggregation) {
     searchPackNftAggregation(searchInput: {after: $after, first: $first, filters: $filters, sortBy: $sortBy}) {
-      pageInfo {
-        endCursor
-        hasNextPage
-      }
+      pageInfo { endCursor hasNextPage }
       totalCount
       edges {
         node {
-          dist_id {
-            key
-            value
-          }
-          listing {
-            price {
-              min
-            }
-          }
+          dist_id { key value }
+          listing { price { min } }
           distribution {
             id { value }
             uuid { value }
@@ -92,7 +82,9 @@ type GraphQLResponse = {
   errors?: { message: string }[]
 }
 
-type PackListing = {
+export type PackType = "standard" | "topper" | "chance_hit" | "reward" | "bundle"
+
+export type PackListing = {
   packListingId: string
   distId: string
   title: string
@@ -103,6 +95,7 @@ type PackListing = {
   lowestAsk: number
   startTime: string
   listingCount: number
+  packType: PackType
 }
 
 const listingsCache = new Map<string, { data: PackListing[]; expiresAt: number }>()
@@ -114,6 +107,24 @@ function tierOrder(tier: string): number {
   if (tier === "rare") return 2
   if (tier === "fandom") return 3
   return 4
+}
+
+function classifyPackType(title: string, slots: number, retailPrice: number): PackType {
+  const t = title.toLowerCase()
+  if (slots >= 10) return "bundle"
+  if (t.includes("topper")) return "topper"
+  if (t.includes("chance hit") || t.includes("chance-hit")) return "chance_hit"
+  if (slots === 1) {
+    if (retailPrice === 0) return "reward"
+    if (t.includes("reward") || t.includes("airdrop")) return "reward"
+    return "chance_hit"
+  }
+  if (slots <= 3) {
+    if (retailPrice === 0) return "reward"
+    if (t.includes("reward") || t.includes("airdrop") || t.includes("fast break")) return "reward"
+    if (t.includes("chance") || t.includes("premium")) return "chance_hit"
+  }
+  return "standard"
 }
 
 export async function GET() {
@@ -134,11 +145,7 @@ export async function GET() {
         body: JSON.stringify({
           operationName: "searchPackNftAggregation_searchPacks",
           query: PACK_LISTINGS_QUERY,
-          variables: {
-            first: 2000,
-            after: cursor,
-            filters: ACTIVE_FILTERS,
-          },
+          variables: { first: 2000, after: cursor, filters: ACTIVE_FILTERS },
         }),
       })
 
@@ -147,7 +154,6 @@ export async function GET() {
 
       const connection = json.data?.searchPackNftAggregation
       const edges = connection?.edges ?? []
-
       for (const edge of edges) {
         if (edge?.node) allNodes.push(edge.node)
       }
@@ -161,16 +167,12 @@ export async function GET() {
     for (const node of allNodes) {
       const distId = node.dist_id?.value
       if (!distId) continue
-
       const askRaw = parseInt(node.listing?.price?.min ?? "0", 10)
       const ask = askRaw / 100000000
-
       const existing = packMap.get(distId)
       if (existing) {
         existing.count += 1
-        if (ask > 0 && (existing.lowestAsk === 0 || ask < existing.lowestAsk)) {
-          existing.lowestAsk = ask
-        }
+        if (ask > 0 && (existing.lowestAsk === 0 || ask < existing.lowestAsk)) existing.lowestAsk = ask
       } else {
         packMap.set(distId, { node, count: 1, lowestAsk: ask > 0 ? ask : 0 })
       }
@@ -178,33 +180,35 @@ export async function GET() {
 
     const listings: PackListing[] = Array.from(packMap.entries()).map(([distId, { node, count, lowestAsk }]) => {
       const d = node.distribution
-      // Retail price is USD from distribution.price.value
-      // Cap at 10000 to filter out packs where price field stores something else
       const rawRetail = d.price.value ?? 0
       const retailPrice = rawRetail > 0 && rawRetail <= 10000 ? rawRetail : 0
+      const slots = parseInt(d.number_of_pack_slots.value, 10) || 1
+      const packType = classifyPackType(d.title.value, slots, retailPrice)
       return {
         packListingId: d.uuid.value,
         distId,
         title: d.title.value,
         tier: d.tier.value ?? "common",
         imageUrl: d.image_urls?.value?.[0] ?? "",
-        momentsPerPack: parseInt(d.number_of_pack_slots.value, 10) || 1,
+        momentsPerPack: slots,
         retailPrice,
         lowestAsk,
         startTime: d.start_time.value,
         listingCount: count,
+        packType,
       }
     })
 
-    // Default sort: tier order, then lowest ask
     listings.sort((a, b) => {
+      const aIsBundle = a.packType === "bundle" ? 1 : 0
+      const bIsBundle = b.packType === "bundle" ? 1 : 0
+      if (aIsBundle !== bIsBundle) return aIsBundle - bIsBundle
       const tierDiff = tierOrder(a.tier) - tierOrder(b.tier)
       if (tierDiff !== 0) return tierDiff
       return (a.lowestAsk || 99999) - (b.lowestAsk || 99999)
     })
 
     listingsCache.set("listings", { data: listings, expiresAt: Date.now() + CACHE_TTL_MS })
-
     return NextResponse.json({ listings, cached: false, totalPacks: listings.length })
   } catch (e) {
     return NextResponse.json(

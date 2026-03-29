@@ -1,6 +1,10 @@
 "use client"
 
 import { useEffect, useState, useRef, useCallback } from "react"
+import Link from "next/link"
+import { useParams } from "next/navigation"
+
+type PackType = "standard" | "topper" | "chance_hit" | "reward" | "bundle"
 
 type EditionEV = {
   editionId: string
@@ -71,14 +75,14 @@ type PackListing = {
   lowestAsk: number
   startTime: string
   listingCount: number
+  packType: PackType
 }
 
-// Lightweight EV summary stored per pack in the client cache
 type PackEVSummary = {
   grossEV: number
   packEV: number
   isPositiveEV: boolean
-  valueRatio: number // grossEV / lowestAsk
+  valueRatio: number
   loading: boolean
   error: boolean
 }
@@ -116,21 +120,41 @@ function evColor(isPositive: boolean): string {
   return isPositive ? "text-green-400" : "text-red-400"
 }
 
+function packTypeBadge(packType: PackType): { label: string; className: string } {
+  switch (packType) {
+    case "topper": return { label: "Topper", className: "bg-orange-950 text-orange-300 border-orange-800" }
+    case "chance_hit": return { label: "Chance Hit", className: "bg-sky-950 text-sky-300 border-sky-800" }
+    case "reward": return { label: "Reward", className: "bg-emerald-950 text-emerald-300 border-emerald-800" }
+    case "bundle": return { label: "Bundle", className: "bg-violet-950 text-violet-300 border-violet-800" }
+    default: return { label: "Standard", className: "bg-zinc-900 text-zinc-500 border-zinc-700" }
+  }
+}
+
+function canAnalyzeEV(packType: PackType): boolean {
+  return packType !== "bundle"
+}
+
 type SortKey = "tier" | "lowestAsk" | "retailPrice" | "momentsPerPack" | "title" | "owned" | "grossEV" | "valueRatio"
+type PackTypeFilter = "all" | PackType
 
 export default function PacksPage() {
+  const params = useParams()
+  const collection = (params?.collection as string) ?? "nba-top-shot"
+  const base = "/" + collection
+
   const [listings, setListings] = useState<PackListing[]>([])
   const [listingsLoading, setListingsLoading] = useState(true)
   const [listingsError, setListingsError] = useState("")
   const [tierFilter, setTierFilter] = useState("all")
+  const [packTypeFilter, setPackTypeFilter] = useState<PackTypeFilter>("all")
   const [searchFilter, setSearchFilter] = useState("")
   const [sortKey, setSortKey] = useState<SortKey>("tier")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
 
-  // Client-side EV cache: packListingId -> summary
   const [evCache, setEvCache] = useState<Record<string, PackEVSummary>>({})
   const prewarmQueueRef = useRef<string[]>([])
   const prewarmActiveRef = useRef(false)
+  const packMapRef = useRef<Map<string, PackListing>>(new Map())
 
   const [walletInput, setWalletInput] = useState("")
   const [walletQuery, setWalletQuery] = useState("")
@@ -150,16 +174,14 @@ export default function PacksPage() {
   const [ttCount, setTtCount] = useState("")
   const [ttFloor, setTtFloor] = useState("")
 
-  const ttCost = ttMode && ttCount && ttFloor
-    ? parseFloat(ttCount) * parseFloat(ttFloor)
-    : null
-  const ttPackEV = result !== null && ttCost !== null
-    ? Math.round((result.grossEV - ttCost) * 100) / 100
-    : null
+  const [bundleArbitrage, setBundleArbitrage] = useState<Record<string, { sumOfParts: number; premium: number } | null>>({})
+
+  const ttCost = ttMode && ttCount && ttFloor ? parseFloat(ttCount) * parseFloat(ttFloor) : null
+  const ttPackEV = result !== null && ttCost !== null ? Math.round((result.grossEV - ttCost) * 100) / 100 : null
   const ttIsPositive = ttPackEV !== null && ttPackEV > 0
 
-  // Fetch EV for a single pack and store in client cache
   const fetchEVForPack = useCallback(async (pack: PackListing) => {
+    if (!canAnalyzeEV(pack.packType)) return
     const id = pack.packListingId
     setEvCache((prev) => ({ ...prev, [id]: { grossEV: 0, packEV: 0, isPositiveEV: false, valueRatio: 0, loading: true, error: false } }))
     try {
@@ -180,19 +202,49 @@ export default function PacksPage() {
     }
   }, [])
 
-  // Process prewarm queue one at a time with a small delay between requests
-  const drainPrewarmQueue = useCallback(async (packMap: Map<string, PackListing>) => {
+  const drainPrewarmQueue = useCallback(async () => {
     if (prewarmActiveRef.current) return
     prewarmActiveRef.current = true
     while (prewarmQueueRef.current.length > 0) {
       const id = prewarmQueueRef.current.shift()!
-      const pack = packMap.get(id)
-      if (pack) await fetchEVForPack(pack)
-      // 2 second gap between prewarm requests to avoid hammering the server
+      const pack = packMapRef.current.get(id)
+      if (pack && canAnalyzeEV(pack.packType)) await fetchEVForPack(pack)
       await new Promise((r) => setTimeout(r, 2000))
     }
     prewarmActiveRef.current = false
   }, [fetchEVForPack])
+
+  const computeBundleArbitrage = useCallback((bundles: PackListing[], allListings: PackListing[]) => {
+    for (const bundle of bundles) {
+      const slots = bundle.momentsPerPack
+      let stdPackSlots = 5
+      let topperCount = 2
+      if (slots >= 13) { stdPackSlots = 10; topperCount = 3 }
+      else if (slots >= 7) { stdPackSlots = 5; topperCount = 2 }
+      else if (slots >= 4) { stdPackSlots = 3; topperCount = 1 }
+
+      const sameTierStdPacks = allListings.filter(
+        l => l.packType === "standard" && l.tier === bundle.tier && l.lowestAsk > 0
+      ).sort((a, b) => a.lowestAsk - b.lowestAsk)
+
+      const toppers = allListings.filter(
+        l => l.packType === "topper" && l.lowestAsk > 0
+      ).sort((a, b) => a.lowestAsk - b.lowestAsk)
+
+      if (sameTierStdPacks.length === 0 || toppers.length === 0) {
+        setBundleArbitrage(prev => ({ ...prev, [bundle.distId]: null }))
+        continue
+      }
+
+      const cheapestStd = sameTierStdPacks[0].lowestAsk
+      const cheapestTopper = toppers[0].lowestAsk
+      const stdPackCount = Math.max(1, Math.floor(stdPackSlots / (sameTierStdPacks[0].momentsPerPack || 5)))
+      const sumOfParts = (stdPackCount * cheapestStd) + (topperCount * cheapestTopper)
+      const premium = bundle.lowestAsk - sumOfParts
+
+      setBundleArbitrage(prev => ({ ...prev, [bundle.distId]: { sumOfParts, premium } }))
+    }
+  }, [])
 
   useEffect(() => {
     async function fetchListings() {
@@ -202,14 +254,12 @@ export default function PacksPage() {
         if (!res.ok) throw new Error(json.error || "Failed to load pack listings")
         const data: PackListing[] = json.listings ?? []
         setListings(data)
-
-        // Build a map for the prewarm queue lookup
-        const packMap = new Map(data.map((p) => [p.packListingId, p]))
-
-        // Queue top 20 packs (Ultimate + Legendary sorted by lowest ask) for background EV fetching
-        const top20 = data.slice(0, 20)
+        packMapRef.current = new Map(data.map((p) => [p.packListingId, p]))
+        const top20 = data.filter(p => canAnalyzeEV(p.packType)).slice(0, 20)
         prewarmQueueRef.current = top20.map((p) => p.packListingId)
-        drainPrewarmQueue(packMap)
+        drainPrewarmQueue()
+        const bundles = data.filter(p => p.packType === "bundle")
+        computeBundleArbitrage(bundles, data)
       } catch (err) {
         setListingsError(err instanceof Error ? err.message : "Failed to load listings")
       } finally {
@@ -217,7 +267,7 @@ export default function PacksPage() {
       }
     }
     fetchListings()
-  }, [drainPrewarmQueue])
+  }, [drainPrewarmQueue, computeBundleArbitrage])
 
   const listingsByDistId = listings.reduce<Record<string, PackListing>>((acc, l) => {
     acc[l.distId] = l
@@ -261,7 +311,6 @@ export default function PacksPage() {
       setSortDir((d) => d === "asc" ? "desc" : "asc")
     } else {
       setSortKey(key)
-      // EV columns default to descending (highest first)
       setSortDir(key === "owned" || key === "grossEV" || key === "valueRatio" ? "desc" : "asc")
     }
   }
@@ -276,6 +325,7 @@ export default function PacksPage() {
   const filteredListings = listings
     .filter((l) => {
       if (tierFilter !== "all" && l.tier !== tierFilter) return false
+      if (packTypeFilter !== "all" && l.packType !== packTypeFilter) return false
       if (searchFilter && !l.title.toLowerCase().includes(searchFilter.toLowerCase())) return false
       return true
     })
@@ -310,6 +360,7 @@ export default function PacksPage() {
     })
 
   async function handleAnalyze(pack: PackListing) {
+    if (!canAnalyzeEV(pack.packType)) return
     setSelectedPack(pack)
     setLoading(true)
     setError("")
@@ -329,7 +380,6 @@ export default function PacksPage() {
       const json: PackEVResponse = await response.json()
       if (!response.ok) throw new Error(json.error || "Pack EV analysis failed")
       setResult(json)
-      // Update EV cache with fresh data from full analysis
       const valueRatio = pack.lowestAsk > 0 ? Math.round((json.grossEV / pack.lowestAsk) * 100) / 100 : 0
       setEvCache((prev) => ({
         ...prev,
@@ -368,54 +418,51 @@ export default function PacksPage() {
     return false
   }
 
-  const displayedPulls = result
-    ? showAllPulls ? result.topPulls : result.topPulls.slice(0, 5)
-    : []
+  const displayedPulls = result ? (showAllPulls ? result.topPulls : result.topPulls.slice(0, 5)) : []
+  const displayedAlerts = result ? (showAllAlerts ? result.serialPremiumAlerts : result.serialPremiumAlerts.slice(0, 8)) : []
 
-  const displayedAlerts = result
-    ? showAllAlerts ? result.serialPremiumAlerts : result.serialPremiumAlerts.slice(0, 8)
-    : []
-
-  // EV badge renderer for table cells
   function renderEVCell(pack: PackListing) {
+    if (pack.packType === "bundle") return <span className="text-[10px] text-violet-400 font-semibold">Bundle</span>
+    if (pack.packType === "reward") return <span className="text-[10px] text-emerald-500">Reward</span>
     const ev = evCache[pack.packListingId]
     if (!ev) return <span className="text-zinc-700 text-xs">—</span>
     if (ev.loading) return <span className="text-zinc-600 text-xs animate-pulse">...</span>
-    if (ev.error) return <span className="text-zinc-700 text-xs">err</span>
-    return (
-      <span className={"text-xs font-semibold " + (ev.isPositiveEV ? "text-green-400" : "text-red-400")}>
-        {fmt(ev.grossEV)}
-      </span>
-    )
+    if (ev.error) return <span className="text-zinc-600 text-xs">—</span>
+    return <span className={"text-xs font-semibold " + (ev.isPositiveEV ? "text-green-400" : "text-red-400")}>{fmt(ev.grossEV)}</span>
   }
 
   function renderRatioCell(pack: PackListing) {
+    if (pack.packType === "bundle") {
+      const arb = bundleArbitrage[pack.distId]
+      if (arb === undefined || arb === null) return <span className="text-zinc-700 text-xs">—</span>
+      return (
+        <span className={"text-[10px] font-semibold " + (arb.premium > 0 ? "text-red-400" : "text-green-400")}>
+          {arb.premium > 0 ? "+" : ""}{fmt(arb.premium)}
+        </span>
+      )
+    }
+    if (pack.packType === "reward") return <span className="text-zinc-600 text-xs">—</span>
     const ev = evCache[pack.packListingId]
     if (!ev) return <span className="text-zinc-700 text-xs">—</span>
     if (ev.loading) return <span className="text-zinc-600 text-xs animate-pulse">...</span>
-    if (ev.error) return <span className="text-zinc-700 text-xs">err</span>
+    if (ev.error) return <span className="text-zinc-600 text-xs">—</span>
     const ratio = ev.valueRatio
     const color = ratio >= 1.2 ? "text-green-400" : ratio >= 1.0 ? "text-yellow-400" : "text-red-400"
     return <span className={"text-xs font-semibold " + color}>{ratio.toFixed(2) + "x"}</span>
   }
 
+  const packTypeFilters: { key: PackTypeFilter; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "standard", label: "Standard" },
+    { key: "topper", label: "Toppers" },
+    { key: "chance_hit", label: "Chance Hit" },
+    { key: "reward", label: "Rewards" },
+    { key: "bundle", label: "Bundles" },
+  ]
+
   return (
     <div className="min-h-screen bg-black text-zinc-100">
       <div className="mx-auto max-w-[1400px] px-3 py-4 md:px-6">
-
-        <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-4">
-          <img src="/rip-packs-city-logo.png" alt="Rip Packs City" style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 9999 }} />
-          <div>
-            <h1 className="text-xl font-black tracking-wide text-white md:text-2xl">RIP PACKS CITY</h1>
-            <p className="text-xs text-zinc-400 md:text-sm">Pack EV Calculator</p>
-          </div>
-          <div className="ml-auto flex gap-2">
-            <a href="/nba-top-shot/collection" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Wallet</a>
-            <a href="/nba-top-shot/sniper" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Sniper</a>
-            <a href="/nba-top-shot/sets" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Sets</a>
-            <a href="/nba-top-shot/badges" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Badges</a>
-          </div>
-        </div>
 
         {(loading || result !== null || error) && selectedPack !== null && (
           <div className="mb-6">
@@ -423,11 +470,12 @@ export default function PacksPage() {
               {selectedPack.imageUrl && <img src={selectedPack.imageUrl} alt={selectedPack.title} className="h-10 w-10 rounded object-cover" />}
               <div>
                 <div className="font-bold text-white">{selectedPack.title}</div>
-                <div className="text-xs text-zinc-400">
-                  <span className={"rounded border px-1.5 py-0.5 text-[10px] font-semibold capitalize mr-2 " + tierBadge(selectedPack.tier)}>{selectedPack.tier}</span>
-                  {selectedPack.momentsPerPack} moments · Lowest Ask {fmt(selectedPack.lowestAsk)}
+                <div className="flex items-center gap-2 text-xs text-zinc-400 mt-0.5">
+                  <span className={"rounded border px-1.5 py-0.5 text-[10px] font-semibold capitalize " + tierBadge(selectedPack.tier)}>{selectedPack.tier}</span>
+                  <span className={"rounded border px-1.5 py-0.5 text-[10px] font-semibold " + packTypeBadge(selectedPack.packType).className}>{packTypeBadge(selectedPack.packType).label}</span>
+                  <span>{selectedPack.momentsPerPack} moments · Lowest Ask {fmt(selectedPack.lowestAsk)}</span>
                   {hasWalletData && (ownedPacks[selectedPack.distId] ?? 0) > 0 && (
-                    <span className="ml-2 rounded bg-green-950 px-2 py-0.5 text-[10px] font-semibold text-green-400">{"You own " + (ownedPacks[selectedPack.distId] ?? 0)}</span>
+                    <span className="rounded bg-green-950 px-2 py-0.5 text-[10px] font-semibold text-green-400">{"You own " + (ownedPacks[selectedPack.distId] ?? 0)}</span>
                   )}
                 </div>
               </div>
@@ -463,7 +511,7 @@ export default function PacksPage() {
                   <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
                     <div className="text-[11px] uppercase tracking-wide text-zinc-500">{ttMode ? "TT Cost" : "Pack Price"}</div>
                     <div className="text-2xl font-black text-white">{ttMode ? (ttCost !== null ? fmt(ttCost) : "—") : fmt(result.packPrice)}</div>
-                    <div className="mt-1 text-xs text-zinc-500">{ttMode && ttCost !== null && ttCount && ttFloor ? ttCount + " TTs x " + fmt(parseFloat(ttFloor)) : result.editionCount + " editions analyzed"}</div>
+                    <div className="mt-1 text-xs text-zinc-500">{ttMode && ttCost !== null ? ttCount + " TTs x " + fmt(parseFloat(ttFloor)) : result.editionCount + " editions analyzed"}</div>
                   </div>
                   <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
                     <div className="text-[11px] uppercase tracking-wide text-zinc-500">Value Ratio</div>
@@ -611,14 +659,17 @@ export default function PacksPage() {
             <div className="flex flex-wrap gap-3 p-4">
               {myOwnedPackCards.map(({ distId, listing, count }) => {
                 if (listing) {
+                  const ptBadge = packTypeBadge(listing.packType)
                   return (
-                    <button key={distId} onClick={() => handleAnalyze(listing)}
-                      className={"flex items-center gap-2 rounded-lg border px-3 py-2 text-left transition hover:bg-zinc-800 " + (selectedPack?.distId === distId ? "border-red-600 bg-zinc-800" : "border-zinc-700 bg-zinc-900")}>
+                    <button key={distId}
+                      onClick={() => canAnalyzeEV(listing.packType) ? handleAnalyze(listing) : undefined}
+                      className={"flex items-center gap-2 rounded-lg border px-3 py-2 text-left transition " + (canAnalyzeEV(listing.packType) ? "hover:bg-zinc-800 cursor-pointer" : "cursor-default opacity-80") + " " + (selectedPack?.distId === distId ? "border-red-600 bg-zinc-800" : "border-zinc-700 bg-zinc-900")}>
                       {listing.imageUrl && <img src={listing.imageUrl} alt={listing.title} className="h-8 w-8 rounded object-cover flex-shrink-0" />}
                       <div>
                         <div className="text-xs font-semibold text-white max-w-[140px] truncate">{listing.title}</div>
                         <div className="flex items-center gap-1 mt-0.5">
                           <span className={"rounded border px-1 py-0 text-[9px] font-semibold capitalize " + tierBadge(listing.tier)}>{listing.tier}</span>
+                          <span className={"rounded border px-1 py-0 text-[9px] font-semibold " + ptBadge.className}>{ptBadge.label}</span>
                           {listing.lowestAsk > 0 && <span className="text-[10px] text-zinc-400">{fmt(listing.lowestAsk)}</span>}
                           {count > 1 && <span className="rounded bg-green-950 px-1.5 py-0 text-[10px] font-semibold text-green-400">{"x" + count}</span>}
                         </div>
@@ -643,21 +694,13 @@ export default function PacksPage() {
         )}
 
         <div className="rounded-xl border border-zinc-800 bg-zinc-950">
-          <div className="border-b border-zinc-800 px-4 py-3">
+          <div className="border-b border-zinc-800 px-4 py-3 space-y-2">
             <div className="flex flex-wrap items-center gap-3">
               <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 {"Secondary Market — " + (listings.length > 0 ? listings.length + " drops" : "loading...")}
               </div>
               <input value={searchFilter} onChange={(e) => setSearchFilter(e.target.value)} placeholder="Search packs..."
                 className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-red-600 w-40" />
-              <div className="flex flex-wrap gap-1">
-                {["all", "ultimate", "legendary", "rare", "fandom", "common"].map((t) => (
-                  <button key={t} onClick={() => setTierFilter(t)}
-                    className={"rounded-lg px-2.5 py-1 text-xs font-semibold capitalize transition " + (tierFilter === t ? "bg-red-600 text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>
-                    {t === "all" ? "All" : t}
-                  </button>
-                ))}
-              </div>
               <div className="ml-auto flex items-center gap-2">
                 <input value={walletInput} onChange={(e) => setWalletInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && walletInput.trim()) handleWalletSearch() }}
@@ -670,7 +713,23 @@ export default function PacksPage() {
                 {walletAddress && <span className="text-xs text-green-400">{walletQuery}</span>}
               </div>
             </div>
-            {walletError && <div className="mt-2 text-xs text-red-400">{walletError}</div>}
+            <div className="flex flex-wrap gap-1 items-center">
+              <span className="text-[10px] text-zinc-600 mr-1">TIER</span>
+              {["all", "ultimate", "legendary", "rare", "fandom", "common"].map((t) => (
+                <button key={t} onClick={() => setTierFilter(t)}
+                  className={"rounded-lg px-2.5 py-1 text-xs font-semibold capitalize transition " + (tierFilter === t ? "bg-red-600 text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>
+                  {t === "all" ? "All" : t}
+                </button>
+              ))}
+              <span className="text-[10px] text-zinc-600 ml-3 mr-1">TYPE</span>
+              {packTypeFilters.map(({ key, label }) => (
+                <button key={key} onClick={() => setPackTypeFilter(key)}
+                  className={"rounded-lg px-2.5 py-1 text-xs font-semibold transition " + (packTypeFilter === key ? "bg-red-600 text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {walletError && <div className="text-xs text-red-400">{walletError}</div>}
           </div>
 
           {listingsLoading && <div className="p-8 text-center text-zinc-500 text-sm">Loading pack listings...</div>}
@@ -678,16 +737,19 @@ export default function PacksPage() {
           {!listingsLoading && filteredListings.length === 0 && <div className="p-8 text-center text-zinc-500 text-sm">No packs found.</div>}
           {!listingsLoading && filteredListings.length > 0 && (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[700px] border-collapse text-sm">
+              <table className="w-full min-w-[750px] border-collapse text-sm">
                 <thead className="bg-zinc-900">
                   <tr className="border-b border-zinc-800 text-left text-[11px] uppercase tracking-wide text-zinc-500">
                     <th className="p-3"><button onClick={() => toggleSort("title")} className="hover:text-white">{"Pack" + sortIndicator("title")}</button></th>
                     <th className="p-3"><button onClick={() => toggleSort("tier")} className="hover:text-white">{"Tier" + sortIndicator("tier")}</button></th>
-                    <th className="p-3"><button onClick={() => toggleSort("momentsPerPack")} className="hover:text-white">{"Moments" + sortIndicator("momentsPerPack")}</button></th>
+                    <th className="p-3"><button onClick={() => toggleSort("momentsPerPack")} className="hover:text-white">{"Slots" + sortIndicator("momentsPerPack")}</button></th>
                     <th className="p-3"><button onClick={() => toggleSort("retailPrice")} className="hover:text-white">{"Retail" + sortIndicator("retailPrice")}</button></th>
                     <th className="p-3"><button onClick={() => toggleSort("lowestAsk")} className="hover:text-white">{"Lowest Ask" + sortIndicator("lowestAsk")}</button></th>
                     <th className="p-3"><button onClick={() => toggleSort("grossEV")} className="hover:text-white">{"Gross EV" + sortIndicator("grossEV")}</button></th>
-                    <th className="p-3"><button onClick={() => toggleSort("valueRatio")} className="hover:text-white">{"Value" + sortIndicator("valueRatio")}</button></th>
+                    <th className="p-3">
+                      <button onClick={() => toggleSort("valueRatio")} className="hover:text-white">{"Value" + sortIndicator("valueRatio")}</button>
+                      <div className="text-[9px] text-zinc-600 font-normal normal-case">ratio / bundle Δ</div>
+                    </th>
                     {hasWalletData && <th className="p-3"><button onClick={() => toggleSort("owned")} className="hover:text-white">{"Owned" + sortIndicator("owned")}</button></th>}
                     <th className="p-3"></th>
                   </tr>
@@ -696,14 +758,27 @@ export default function PacksPage() {
                   {filteredListings.map((listing) => {
                     const ownedCount = ownedPacks[listing.distId] ?? 0
                     const isSelected = selectedPack?.packListingId === listing.packListingId
+                    const ptBadge = packTypeBadge(listing.packType)
+                    const isBundle = listing.packType === "bundle"
+                    const arb = isBundle ? bundleArbitrage[listing.distId] : null
                     return (
                       <tr key={listing.packListingId}
-                        className={"border-b border-zinc-800 hover:bg-zinc-900/50 cursor-pointer " + (isSelected ? "bg-zinc-900/70" : "")}
-                        onClick={() => handleAnalyze(listing)}>
+                        className={"border-b border-zinc-800 " + (canAnalyzeEV(listing.packType) ? "hover:bg-zinc-900/50 cursor-pointer" : "opacity-75") + " " + (isSelected ? "bg-zinc-900/70" : "")}
+                        onClick={() => canAnalyzeEV(listing.packType) ? handleAnalyze(listing) : undefined}>
                         <td className="p-3">
                           <div className="flex items-center gap-3">
                             {listing.imageUrl && <img src={listing.imageUrl} alt={listing.title} className="h-10 w-10 rounded object-cover flex-shrink-0" />}
-                            <span className="font-medium text-white">{listing.title}</span>
+                            <div>
+                              <div className="font-medium text-white">{listing.title}</div>
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <span className={"rounded border px-1.5 py-0 text-[9px] font-semibold " + ptBadge.className}>{ptBadge.label}</span>
+                                {isBundle && arb !== null && arb !== undefined && (
+                                  <span className={"text-[9px] " + (arb.premium > 0 ? "text-red-400" : "text-green-400")}>
+                                    {arb.premium > 0 ? "+" + fmt(arb.premium) + " vs parts" : fmt(Math.abs(arb.premium)) + " below parts"}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </td>
                         <td className="p-3"><span className={"rounded border px-2 py-0.5 text-[11px] font-semibold capitalize " + tierBadge(listing.tier)}>{listing.tier}</span></td>
@@ -720,10 +795,14 @@ export default function PacksPage() {
                           </td>
                         )}
                         <td className="p-3">
-                          <button onClick={(e) => { e.stopPropagation(); handleAnalyze(listing) }}
-                            className={"rounded-lg px-3 py-1 text-xs font-semibold text-white transition " + (isSelected ? "bg-zinc-600" : "bg-red-600 hover:bg-red-500")}>
-                            {isSelected && loading ? "..." : "Analyze"}
-                          </button>
+                          {canAnalyzeEV(listing.packType) ? (
+                            <button onClick={(e) => { e.stopPropagation(); handleAnalyze(listing) }}
+                              className={"rounded-lg px-3 py-1 text-xs font-semibold text-white transition " + (isSelected ? "bg-zinc-600" : "bg-red-600 hover:bg-red-500")}>
+                              {isSelected && loading ? "..." : "Analyze"}
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-zinc-600">N/A</span>
+                          )}
                         </td>
                       </tr>
                     )
