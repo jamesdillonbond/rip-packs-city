@@ -286,6 +286,7 @@ export default function WalletPage() {
   const [badgeFilter, setBadgeFilter] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
   const [ownerKey, setOwnerKey] = useState("")
+  const [sealedPackCount, setSealedPackCount] = useState<number | null>(null)
 
   const [teamFilter, setTeamFilter] = useState("all")
   const [leagueFilter, setLeagueFilter] = useState("all")
@@ -451,6 +452,7 @@ export default function WalletPage() {
     setOffset(0)
     setExpandedRows({})
     setHasSearched(false)
+    setSealedPackCount(null)
     try {
       const response = await fetch("/api/wallet-search", {
         method: "POST",
@@ -467,6 +469,11 @@ export default function WalletPage() {
       setOffset(nextRows.length)
       setHasSearched(true)
       maybePatchProfileStats(query.trim(), withBadges, json.summary).catch(function() {})
+      // Fire-and-forget: load sealed pack count for this wallet
+      fetch("/api/wallet-packs?wallet=" + encodeURIComponent(query.trim()))
+        .then(function(r) { return r.ok ? r.json() : null })
+        .then(function(d) { if (d && typeof d.totalSealedPacks === "number") setSealedPackCount(d.totalSealedPacks) })
+        .catch(function() {})
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
     } finally {
@@ -746,7 +753,7 @@ export default function WalletPage() {
                 <div className="mt-1 text-[11px] text-zinc-500">Spread gap: {formatCurrency(totals.spreadGap)}</div>
               </div>
             </div>
-            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 xl:grid-cols-5">
+            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
               <div className="rounded-xl border border-emerald-900/50 bg-emerald-950/20 p-3">
                 <div className="text-[10px] uppercase tracking-widest text-emerald-600">Liquid</div>
                 <div className="text-lg font-black text-emerald-400">{totals.confHigh}</div>
@@ -777,6 +784,16 @@ export default function WalletPage() {
                   {badgeFilter ? <span className="text-red-400">Filtered ✕</span> : "Click to filter"}
                 </div>
               </div>
+              <a
+                href={"/nba-top-shot/packs?wallet=" + encodeURIComponent(input.trim())}
+                className="rounded-xl border border-zinc-800 bg-zinc-950 p-3 hover:border-zinc-600 transition col-span-2 sm:col-span-1 block"
+              >
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Sealed Packs</div>
+                <div className="text-lg font-black text-white">
+                  {sealedPackCount === null ? <span className="text-zinc-600 text-sm font-normal">Loading...</span> : sealedPackCount}
+                </div>
+                <div className="mt-0.5 text-[10px] text-zinc-500">View in Packs →</div>
+              </a>
             </div>
           </div>
         )}
