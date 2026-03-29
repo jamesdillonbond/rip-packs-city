@@ -154,11 +154,26 @@ function formatTier(tier: string | null): string {
   return "COMMON"
 }
 
+// Build the edition external_id.
+// Top Shot GraphQL only returns UUID-based IDs. We store the UUID:UUID key
+// AND the moment-level UUID (moment.id) so that the sniper-feed can look up
+// FMV by moment UUID directly.
+function buildEditionKey(tx: SaleTransaction): string | null {
+  const moment = tx.moment
+  if (!moment) return null
+  const psp = moment.parallelSetPlay
+  // Use parallelSetPlay when available; fall back to set.id:play.id
+  const setId = psp?.setID ?? moment.set?.id
+  const playId = psp?.playID ?? moment.play?.id
+  if (!setId || !playId) return null
+  return `${setId}:${playId}`
+}
+
 // ── Supabase upserts ──────────────────────────────────────────────────────────
 
 async function upsertPlayer(
   collectionId: string,
-  stats: any
+  stats: NonNullable<NonNullable<SaleTransaction["moment"]>["play"]>["stats"]
 ): Promise<string | null> {
   if (!stats?.playerID) return null
 
@@ -189,7 +204,7 @@ async function upsertPlayer(
 
 async function upsertSet(
   collectionId: string,
-  set: any,
+  set: NonNullable<NonNullable<SaleTransaction["moment"]>["set"]>,
   tier: string
 ): Promise<string | null> {
   if (!set?.id) return null
@@ -202,7 +217,7 @@ async function upsertSet(
         collection_id: collectionId,
         name: set.flowName ?? "Unknown Set",
         series: toNum(set.flowSeriesNumber),
-        tier: tier as any,
+        tier: tier as "COMMON" | "RARE" | "LEGENDARY" | "ULTIMATE" | "FANDOM",
       },
       { onConflict: "external_id", ignoreDuplicates: false }
     )
@@ -221,17 +236,11 @@ async function upsertEdition(
   collectionId: string,
   playerId: string | null,
   setId: string | null,
-  tx: SaleTransaction
+  tx: SaleTransaction,
+  editionKey: string
 ): Promise<string | null> {
   const moment = tx.moment
-  if (!moment?.set?.id || !moment?.play?.id) return null
-
-  // Edition key format: setID:playID — matches wallet-search route format
-  // Use parallelSetPlay if available (has explicit setID/playID), else fall back to set.id:play.id
-  const psPlay = moment.parallelSetPlay
-  const rawSetId = psPlay?.setID ?? moment.set.id
-  const rawPlayId = psPlay?.playID ?? moment.play.id
-  const externalId = `${rawSetId}:${rawPlayId}`
+  if (!moment?.set || !moment?.play) return null
 
   const circulations = moment.setPlay?.circulations
   const tier = formatTier(moment.tier)
@@ -241,12 +250,12 @@ async function upsertEdition(
     .from("editions")
     .upsert(
       {
-        external_id: externalId,
+        external_id: editionKey,
         collection_id: collectionId,
         player_id: playerId,
         set_id: setId,
         name: `${moment.play.stats?.playerName ?? "Unknown"} — ${moment.set.flowName ?? "Unknown Set"}`,
-        tier: tier as any,
+        tier: tier as "COMMON" | "RARE" | "LEGENDARY" | "ULTIMATE" | "FANDOM",
         series: toNum(moment.set.flowSeriesNumber),
         edition_kind: isRetired ? "LE" : "CC",
         circulation_count: toNum(circulations?.circulationCount),
@@ -280,23 +289,19 @@ async function upsertSale(
 
   const serialNumber = toNum(tx.moment?.flowSerialNumber)
 
-  // Use insert with ignoreDuplicates — upsert on partitioned tables
-  // requires the partition key (sold_at) in the conflict target
-  const { error } = await supabaseAdmin.from("sales").insert(
-    {
-      edition_id: editionId,
-      collection_id: collectionId,
-      serial_number: serialNumber ?? 0,
-      price_usd: price,
-      currency: "USD",
-      marketplace: "top_shot",
-      transaction_hash: tx.txHash,
-      sold_at: tx.updatedAt,
-    }
-  )
+  const { error } = await supabaseAdmin.from("sales").insert({
+    edition_id: editionId,
+    collection_id: collectionId,
+    serial_number: serialNumber ?? 0,
+    price_usd: price,
+    currency: "USD",
+    marketplace: "top_shot",
+    transaction_hash: tx.txHash,
+    sold_at: tx.updatedAt,
+  })
 
   if (error) {
-    // Ignore duplicate key violations (already ingested)
+    // Duplicate = already ingested, not an error
     if (error.message.includes("duplicate") || error.code === "23505") {
       return false
     }
@@ -329,15 +334,21 @@ async function upsertFmvSnapshot(
         ? "MEDIUM"
         : "LOW"
 
-  await supabaseAdmin.from("fmv_snapshots").insert({
-    edition_id: editionId,
-    collection_id: collectionId,
-    fmv_usd: Number(median.toFixed(2)),
-    floor_price_usd: Number(floor.toFixed(2)),
-    confidence: confidence as any,
-    sales_count_7d: recentSales.length,
-    algo_version: "1.0.0",
-  })
+  // Use upsert on edition_id so repeated runs update rather than append
+  await supabaseAdmin
+    .from("fmv_snapshots")
+    .upsert(
+      {
+        edition_id: editionId,
+        collection_id: collectionId,
+        fmv_usd: Number(median.toFixed(2)),
+        floor_price_usd: Number(floor.toFixed(2)),
+        confidence: confidence as "LOW" | "MEDIUM" | "HIGH",
+        sales_count_7d: recentSales.length,
+        algo_version: "1.0.0",
+      },
+      { onConflict: "edition_id", ignoreDuplicates: false }
+    )
 }
 
 // ── Main ingestion logic ──────────────────────────────────────────────────────
@@ -351,6 +362,7 @@ async function fetchRecentSales(
     {
       input: {
         sortBy: "UPDATED_AT_DESC",
+        filters: {},
         searchInput: {
           pagination: {
             cursor: cursor ?? "",
@@ -362,27 +374,42 @@ async function fetchRecentSales(
     }
   )
 
-  // Log raw structure so we can debug response shape
-  console.log("[INGEST] Raw response:", JSON.stringify(data, null, 2).slice(0, 3000))
-
-  const summary =
-    data?.searchMarketplaceTransactions?.data?.searchSummary
+  const summary = data?.searchMarketplaceTransactions?.data?.searchSummary
   const nextCursor = summary?.pagination?.rightCursor ?? null
 
   const transactions: SaleTransaction[] = []
-  const dataField = (summary as any)?.data
+  const dataField = summary?.data as unknown
 
   if (Array.isArray(dataField)) {
     for (const block of dataField) {
-      if (Array.isArray((block as any)?.data)) {
-        transactions.push(...((block as any).data as SaleTransaction[]))
+      const b = block as { data?: SaleTransaction[] }
+      if (Array.isArray(b?.data)) {
+        transactions.push(...b.data)
       }
     }
   } else if (dataField && typeof dataField === "object") {
-    const block = dataField as any
-    if (Array.isArray(block.data)) {
-      transactions.push(...(block.data as SaleTransaction[]))
+    const b = dataField as { data?: SaleTransaction[] }
+    if (Array.isArray(b.data)) {
+      transactions.push(...b.data)
     }
+  }
+
+  // Log shape of first result to aid debugging
+  if (transactions.length > 0) {
+    const sample = transactions[0]
+    console.log("[INGEST] Sample tx shape:", JSON.stringify({
+      txId: sample.id,
+      momentId: sample.moment?.id,
+      setId: sample.moment?.set?.id,
+      playId: sample.moment?.play?.id,
+      psp: sample.moment?.parallelSetPlay,
+      price: sample.price,
+      txHash: sample.txHash ? "present" : "null",
+    }))
+  } else {
+    console.warn("[INGEST] No transactions in response. Summary keys:", JSON.stringify(Object.keys(summary ?? {})))
+    // Log raw summary shape for diagnosis
+    console.warn("[INGEST] Summary.data type:", typeof dataField, Array.isArray(dataField) ? "array" : "not-array")
   }
 
   return { transactions, nextCursor }
@@ -393,7 +420,7 @@ async function fetchRecentSales(
 export async function POST(req: NextRequest) {
   const startTime = Date.now()
 
-  // Auth check — require a secret token to prevent abuse
+  // Auth — Bearer token
   const authHeader = req.headers.get("authorization")
   const expectedToken = process.env.INGEST_SECRET_TOKEN
   if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
@@ -403,9 +430,9 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}))
     const batchSize = Math.min(Number(body.batchSize ?? 50), 200)
-    const cursor = body.cursor ?? null
+    const cursor = (body.cursor as string | null) ?? null
 
-    console.log(`[INGEST] Starting — batchSize=${batchSize}`)
+    console.log(`[INGEST] Starting — batchSize=${batchSize} cursor=${cursor ?? "start"}`)
 
     // Get NBA Top Shot collection ID
     const { data: collections } = await supabaseAdmin
@@ -424,72 +451,57 @@ export async function POST(req: NextRequest) {
     const collectionId = collections.id
 
     // Fetch recent sales from Top Shot
-    const { transactions, nextCursor } = await fetchRecentSales(
-      batchSize,
-      cursor
-    )
+    const { transactions, nextCursor } = await fetchRecentSales(batchSize, cursor)
 
     console.log(`[INGEST] Fetched ${transactions.length} transactions`)
 
-    // Process each transaction
     let salesIngested = 0
     let editionsUpdated = 0
+    let duplicates = 0
     let errors = 0
 
-    // Track sales per edition for FMV computation
+    // Track sales prices per edition (by Supabase internal edition id) for FMV
     const editionSalesMap = new Map<string, number[]>()
 
     for (const tx of transactions) {
       try {
-        // Log first transaction to verify field structure
-        if (transactions.indexOf(tx) === 0) {
-          console.log("[INGEST] Sample tx:", JSON.stringify({
-            setId: tx.moment?.set?.id,
-            playId: tx.moment?.play?.id,
-            setPlayId: tx.moment?.setPlay?.ID,
-            parallelSetPlay: tx.moment?.parallelSetPlay,
-          }, null, 2))
-        }
-
         const moment = tx.moment
         if (!moment?.play?.stats || !moment?.set) continue
 
         const price = toNum(tx.price)
         if (!price || price <= 0) continue
 
-        // Upsert player
-        const playerId = await upsertPlayer(collectionId, moment.play.stats)
+        const editionKey = buildEditionKey(tx)
+        if (!editionKey) continue
 
-        // Upsert set
+        // Upsert player, set, edition
+        const playerId = await upsertPlayer(collectionId, moment.play.stats)
         const tier = formatTier(moment.tier)
         const setDbId = await upsertSet(collectionId, moment.set, tier)
-
-        // Upsert edition
-        const editionId = await upsertEdition(
-          collectionId,
-          playerId,
-          setDbId,
-          tx
-        )
+        const editionId = await upsertEdition(collectionId, playerId, setDbId, tx, editionKey)
         if (!editionId) continue
 
         editionsUpdated++
 
-        // Upsert sale
+        // Attempt to insert sale
         const inserted = await upsertSale(collectionId, editionId, tx)
-        if (inserted) salesIngested++
+        if (inserted) {
+          salesIngested++
+        } else {
+          duplicates++
+        }
 
-        // Accumulate sales for FMV
-        const existing = editionSalesMap.get(editionId) ?? []
-        existing.push(price)
-        editionSalesMap.set(editionId, existing)
+        // Accumulate prices for FMV (even duplicates count — they reflect real prices)
+        const arr = editionSalesMap.get(editionId) ?? []
+        arr.push(price)
+        editionSalesMap.set(editionId, arr)
       } catch (err) {
         console.error("[INGEST] Transaction error:", err)
         errors++
       }
     }
 
-    // Compute FMV snapshots for editions with new sales
+    // Compute and store FMV snapshots
     let fmvUpdated = 0
     for (const [editionId, sales] of editionSalesMap.entries()) {
       try {
@@ -503,12 +515,13 @@ export async function POST(req: NextRequest) {
     const duration = Date.now() - startTime
 
     console.log(
-      `[INGEST] Done — sales=${salesIngested} editions=${editionsUpdated} fmv=${fmvUpdated} errors=${errors} duration=${duration}ms`
+      `[INGEST] Done — sales=${salesIngested} dupes=${duplicates} editions=${editionsUpdated} fmv=${fmvUpdated} errors=${errors} duration=${duration}ms`
     )
 
     return NextResponse.json({
       ok: true,
       salesIngested,
+      duplicates,
       editionsUpdated,
       fmvUpdated,
       errors,
@@ -528,7 +541,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Allow GET for easy browser testing
+// Allow GET for browser testing
 export async function GET(req: NextRequest) {
   return POST(req)
 }
