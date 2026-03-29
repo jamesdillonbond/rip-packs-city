@@ -1,0 +1,372 @@
+'use client'
+
+import React, { useEffect, useRef } from 'react'
+import { useCart, PurchaseStatus } from '@/lib/cart/CartContext'
+import { usePurchaseQueue } from '@/lib/cart/usePurchaseQueue'
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function formatPrice(n: number) {
+  return `$${n.toFixed(2)}`
+}
+
+function fmvDelta(price: number, fmv: number | null): React.ReactNode {
+  if (!fmv || fmv === 0) return null
+  const pct = ((price - fmv) / fmv) * 100
+  const isDiscount = pct < 0
+  const label = isDiscount
+    ? `${Math.abs(pct).toFixed(0)}% below FMV`
+    : `${pct.toFixed(0)}% above FMV`
+  return (
+    <span
+      className={`text-xs font-medium ${
+        isDiscount ? 'text-emerald-400' : 'text-orange-400'
+      }`}
+    >
+      {label}
+    </span>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Status badge
+// ---------------------------------------------------------------------------
+
+function StatusBadge({ status }: { status: PurchaseStatus }) {
+  if (status === 'idle') return null
+
+  const config: Record<
+    Exclude<PurchaseStatus, 'idle'>,
+    { label: string; classes: string; pulse?: boolean }
+  > = {
+    pending:       { label: 'Buying…',        classes: 'bg-blue-500/20 text-blue-300 border border-blue-500/30', pulse: true },
+    success:       { label: '✓ Purchased',    classes: 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' },
+    failed:        { label: '✗ Failed',       classes: 'bg-red-500/20 text-red-300 border border-red-500/30' },
+    sniped:        { label: '⚡ Sniped',      classes: 'bg-amber-500/20 text-amber-300 border border-amber-500/30' },
+    price_changed: { label: '⚠ Price changed', classes: 'bg-orange-500/20 text-orange-300 border border-orange-500/30' },
+  }
+
+  const { label, classes, pulse } = config[status]
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${classes} ${
+        pulse ? 'animate-pulse' : ''
+      }`}
+    >
+      {label}
+    </span>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Single cart row
+// ---------------------------------------------------------------------------
+
+function CartRow({ item }: { item: ReturnType<typeof useCart>['items'][0] }) {
+  const { removeFromCart, purchaseStatus, isExecuting } = useCart()
+  const status = purchaseStatus[item.listingResourceID] ?? 'idle'
+
+  const tierColors: Record<string, string> = {
+    ULTIMATE: 'text-yellow-400',
+    LEGENDARY: 'text-orange-400',
+    RARE:      'text-purple-400',
+    FANDOM:    'text-blue-400',
+    COMMON:    'text-slate-400',
+  }
+
+  const tierColor = tierColors[item.tier?.toUpperCase()] ?? 'text-slate-400'
+
+  return (
+    <div
+      className={`flex items-start gap-3 rounded-lg p-3 transition-colors ${
+        status === 'success'
+          ? 'bg-emerald-500/10 border border-emerald-500/20'
+          : status === 'failed' || status === 'sniped' || status === 'price_changed'
+          ? 'bg-red-500/10 border border-red-500/20'
+          : 'bg-white/5 border border-white/10 hover:bg-white/[0.07]'
+      }`}
+    >
+      {/* Thumbnail */}
+      <div className="flex-shrink-0 w-12 h-12 rounded-md overflow-hidden bg-white/10">
+        {item.thumbnailUrl ? (
+          <img
+            src={item.thumbnailUrl}
+            alt={item.playerName}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs">
+            ?
+          </div>
+        )}
+      </div>
+
+      {/* Info */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white truncate leading-tight">
+              {item.playerName}
+            </p>
+            <p className="text-xs text-slate-400 truncate leading-tight mt-0.5">
+              {item.setName}
+            </p>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              <span className="text-xs text-slate-500">
+                #{item.serialNumber}/{item.totalEditions}
+              </span>
+              <span className={`text-xs font-medium ${tierColor}`}>
+                {item.tier}
+              </span>
+              {fmvDelta(item.expectedPrice, item.fmv)}
+            </div>
+          </div>
+          <div className="flex-shrink-0 text-right">
+            <p className="text-sm font-bold text-white tabular-nums">
+              {formatPrice(item.expectedPrice)}
+            </p>
+            {item.fmv && (
+              <p className="text-xs text-slate-500 tabular-nums">
+                FMV {formatPrice(item.fmv)}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Status badge */}
+        {status !== 'idle' && (
+          <div className="mt-2">
+            <StatusBadge status={status} />
+          </div>
+        )}
+      </div>
+
+      {/* Remove button — hidden during execution */}
+      {!isExecuting && status === 'idle' && (
+        <button
+          onClick={() => removeFromCart(item.listingResourceID)}
+          className="flex-shrink-0 text-slate-500 hover:text-red-400 transition-colors p-1 -m-1 mt-0.5"
+          aria-label="Remove from cart"
+        >
+          <svg className="w-4 h-4" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
+          </svg>
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Summary bar
+// ---------------------------------------------------------------------------
+
+function CartSummary() {
+  const { items, totalPrice, purchaseStatus } = useCart()
+  const { buyAll, isExecuting } = usePurchaseQueue()
+
+  const successCount = Object.values(purchaseStatus).filter((s) => s === 'success').length
+  const failedCount = Object.values(purchaseStatus).filter(
+    (s) => s === 'failed' || s === 'sniped' || s === 'price_changed'
+  ).length
+  const hasResults = successCount + failedCount > 0 && !isExecuting
+
+  // Pending items (not yet purchased or failed in this run)
+  const pendingItems = items.filter(
+    (i) =>
+      !purchaseStatus[i.listingResourceID] ||
+      purchaseStatus[i.listingResourceID] === 'idle'
+  )
+
+  return (
+    <div className="border-t border-white/10 p-4 space-y-3">
+      {/* Post-run summary */}
+      {hasResults && (
+        <div className="rounded-lg bg-white/5 px-3 py-2 text-sm text-slate-300">
+          {successCount > 0 && (
+            <span className="text-emerald-400 font-medium">
+              {successCount} purchased
+            </span>
+          )}
+          {successCount > 0 && failedCount > 0 && (
+            <span className="text-slate-500 mx-1">·</span>
+          )}
+          {failedCount > 0 && (
+            <span className="text-red-400 font-medium">
+              {failedCount} failed or sniped
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Total */}
+      {pendingItems.length > 0 && (
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-slate-400">
+            {pendingItems.length} item{pendingItems.length !== 1 ? 's' : ''}
+          </span>
+          <span className="font-bold text-white tabular-nums">
+            {formatPrice(pendingItems.reduce((s, i) => s + i.expectedPrice, 0))} DUC
+          </span>
+        </div>
+      )}
+
+      {/* Buy All button */}
+      {pendingItems.length > 0 && !isExecuting && (
+        <button
+          onClick={() => buyAll({
+            onItemComplete: (result) => {
+              // Could trigger a toast here in future
+              console.log('[RPC Cart] item complete', result.status, result.item.momentId)
+            },
+            onQueueComplete: (results) => {
+              console.log('[RPC Cart] queue complete', results)
+            },
+          })}
+          className="w-full rounded-lg bg-[#e84c4c] hover:bg-[#d94444] active:bg-[#c93c3c] text-white font-semibold py-3 px-4 transition-colors text-sm"
+        >
+          Buy {pendingItems.length > 1 ? `All ${pendingItems.length}` : ''} — {formatPrice(totalPrice)} DUC
+        </button>
+      )}
+
+      {/* Executing state */}
+      {isExecuting && (
+        <div className="w-full rounded-lg bg-white/10 text-slate-400 font-semibold py-3 px-4 text-sm text-center">
+          <span className="inline-flex items-center gap-2">
+            <span className="w-3.5 h-3.5 rounded-full border-2 border-slate-400 border-t-transparent animate-spin" />
+            Purchasing…
+          </span>
+        </div>
+      )}
+
+      {/* Warning: stale listings */}
+      {!isExecuting && items.length > 0 && (
+        <p className="text-xs text-slate-500 text-center leading-snug">
+          Listings may be purchased by others between now and checkout.
+          RPC verifies prices before each transaction.
+        </p>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Main CartDrawer
+// ---------------------------------------------------------------------------
+
+interface CartDrawerProps {
+  open: boolean
+  onClose: () => void
+}
+
+export function CartDrawer({ open, onClose }: CartDrawerProps) {
+  const { items, clearCart, removeCompleted, purchaseStatus, isExecuting } = useCart()
+  const drawerRef = useRef<HTMLDivElement>(null)
+
+  const hasCompletedItems = Object.values(purchaseStatus).some(
+    (s) => s === 'success'
+  )
+
+  // Close on Escape
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [open, onClose])
+
+  // Lock body scroll when open
+  useEffect(() => {
+    document.body.style.overflow = open ? 'hidden' : ''
+    return () => { document.body.style.overflow = '' }
+  }, [open])
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className={`fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-200 ${
+          open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={onClose}
+        aria-hidden="true"
+      />
+
+      {/* Drawer */}
+      <div
+        ref={drawerRef}
+        role="dialog"
+        aria-label="Shopping cart"
+        aria-modal="true"
+        className={`fixed top-0 right-0 z-50 h-full w-full max-w-sm flex flex-col
+          bg-[#0f1117] border-l border-white/10 shadow-2xl
+          transition-transform duration-300 ease-in-out
+          ${open ? 'translate-x-0' : 'translate-x-full'}`}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-4 border-b border-white/10">
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-bold text-white">Cart</h2>
+            {items.length > 0 && (
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#e84c4c] text-white text-xs font-bold tabular-nums">
+                {items.length}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {hasCompletedItems && !isExecuting && (
+              <button
+                onClick={removeCompleted}
+                className="text-xs text-slate-400 hover:text-white transition-colors px-2 py-1 rounded hover:bg-white/10"
+              >
+                Clear purchased
+              </button>
+            )}
+            {items.length > 0 && !isExecuting && (
+              <button
+                onClick={clearCart}
+                className="text-xs text-slate-500 hover:text-red-400 transition-colors px-2 py-1 rounded hover:bg-white/5"
+              >
+                Clear all
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="text-slate-400 hover:text-white transition-colors p-1.5 rounded hover:bg-white/10"
+              aria-label="Close cart"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Item list */}
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+          {items.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-center py-12">
+              <div className="text-4xl mb-3">🛒</div>
+              <p className="text-slate-400 text-sm font-medium">Your cart is empty</p>
+              <p className="text-slate-500 text-xs mt-1">
+                Add moments from the Sniper or your Wallet
+              </p>
+            </div>
+          ) : (
+            items.map((item) => (
+              <CartRow key={item.listingResourceID} item={item} />
+            ))
+          )}
+        </div>
+
+        {/* Summary + CTA */}
+        {items.length > 0 && <CartSummary />}
+      </div>
+    </>
+  )
+}

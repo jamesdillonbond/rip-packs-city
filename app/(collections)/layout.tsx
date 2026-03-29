@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { getPublishedCollection, publishedCollections, type Collection } from "@/lib/collections"
 import { CollectionTabBar } from "@/components/collection-tab-bar"
+import { CartButton } from "@/components/cart/CartButton"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export default async function CollectionLayout(props: any) {
@@ -95,6 +96,8 @@ function CollectionHeader({ collection }: { collection: Collection }) {
             </div>
           </Link>
           <div style={{ flex: 1 }} />
+          {/* Cart button — client component, opens slide-out drawer */}
+          <CartButton />
           <Link href="/profile" style={{ background: "rgba(224,58,47,0.15)", border: "1px solid rgba(224,58,47,0.4)", color: "#E03A2F", padding: "4px 10px", borderRadius: 4, fontSize: 10, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}>
             Profile
           </Link>
