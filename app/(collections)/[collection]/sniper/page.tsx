@@ -12,6 +12,7 @@ interface SniperDeal {
   seriesName: string;
   tier: string;
   parallel: string;
+  parallelId: number;
   serial: number;
   circulationCount: number;
   askPrice: number;
@@ -58,14 +59,19 @@ interface WalletRow {
 }
 
 const TIER_COLOR: Record<string, string> = {
-  COMMON: "text-zinc-400", RARE: "text-blue-400",
-  LEGENDARY: "text-yellow-400", ULTIMATE: "text-purple-400",
+  COMMON: "text-zinc-400",
+  RARE: "text-blue-400",
+  LEGENDARY: "text-yellow-400",
+  ULTIMATE: "text-purple-400",
+  FANDOM: "text-pink-400",
 };
+
 const CONFIDENCE_COLOR: Record<string, string> = {
   high: "text-green-400", medium: "text-yellow-400",
   live: "text-cyan-400", "live-avg": "text-cyan-600",
   low: "text-zinc-500", very_low: "text-zinc-600",
 };
+
 const REFRESH_INTERVAL = 30_000;
 
 function discountColor(d: number) {
@@ -94,6 +100,10 @@ function listingAge(updatedAt: string | null): string {
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
   return `${Math.floor(mins / 60)}h ago`;
+}
+
+function tierLabel(tier: string): string {
+  return tier.charAt(0) + tier.slice(1).toLowerCase();
 }
 
 export default function SniperPage() {
@@ -128,16 +138,17 @@ export default function SniperPage() {
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevIdsRef = useRef<Set<string>>(new Set());
 
-  // Fetch offers for all deals as a second async pass
   const fetchOffers = useCallback(async (dealList: SniperDeal[]) => {
     if (!dealList.length) return;
     setOffersLoading(true);
     try {
-      const moments = dealList.map(d => ({
-        momentId: d.momentId,
-        setID: d.editionKey.split(":")[0],
-        playID: d.editionKey.split(":")[1],
-      })).filter(m => m.setID && m.playID);
+      const moments = dealList
+        .map(d => ({
+          momentId: d.momentId,
+          setID: d.editionKey.split(":")[0],
+          playID: d.editionKey.split(":")[1],
+        }))
+        .filter(m => m.setID && m.playID);
 
       const res = await fetch("/api/moment-offers", {
         method: "POST",
@@ -176,8 +187,6 @@ export default function SniperPage() {
 
       setDeals(data.deals);
       setLastRefreshed(data.lastRefreshed);
-
-      // Fire offers fetch async — doesn't block deal display
       setOffers({});
       fetchOffers(data.deals);
     } catch (err) {
@@ -248,7 +257,6 @@ export default function SniperPage() {
       || d.parallel.toLowerCase().includes(q);
   });
 
-  // Count instant flips (offer > ask)
   const instantFlips = visible.filter(d => {
     const o = offers[d.momentId];
     return o?.bestOffer != null && o.bestOffer > d.askPrice;
@@ -283,7 +291,7 @@ export default function SniperPage() {
           </div>
         </div>
 
-        {/* Title + controls */}
+        {/* Title */}
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-2xl font-black text-white tracking-tight">🎯 Sniper</h2>
@@ -341,8 +349,8 @@ export default function SniperPage() {
               <select value={rarity} onChange={e => setRarity(e.target.value)}
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white">
                 <option value="all">All Rarities</option><option value="common">Common</option>
-                <option value="rare">Rare</option><option value="legendary">Legendary</option>
-                <option value="ultimate">Ultimate</option>
+                <option value="fandom">Fandom</option><option value="rare">Rare</option>
+                <option value="legendary">Legendary</option><option value="ultimate">Ultimate</option>
               </select>
             </div>
             <div>
@@ -392,10 +400,12 @@ export default function SniperPage() {
             <div>
               <label className="mb-1 block text-[11px] uppercase tracking-wide text-zinc-500">Search</label>
               <input value={searchText} onChange={e => setSearchText(e.target.value)}
-                placeholder="Player, set, team…"
+                placeholder="Player, set, team, parallel…"
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-red-600" />
             </div>
           </div>
+
+          {/* Wallet */}
           <div className="border-t border-zinc-800 pt-3">
             <label className="mb-1.5 block text-[11px] uppercase tracking-wide text-zinc-500">
               Wallet — load to see owned/locked status
@@ -428,7 +438,7 @@ export default function SniperPage() {
 
         {/* Table */}
         <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950">
-          <table className="w-full min-w-[1300px] border-collapse text-sm">
+          <table className="w-full min-w-[1200px] border-collapse text-sm">
             <thead className="bg-zinc-900">
               <tr className="border-b border-zinc-800 text-left text-[11px] uppercase tracking-wide text-zinc-500">
                 <th className="p-3 w-5">#</th>
@@ -442,7 +452,7 @@ export default function SniperPage() {
                 <th className="p-3">Discount</th>
                 <th className="p-3">Best Offer</th>
                 <th className="p-3">Owned</th>
-                <th className="p-3">Signals</th>
+                <th className="p-3">Badges</th>
                 <th className="p-3">Listed</th>
                 <th className="p-3">Action</th>
               </tr>
@@ -471,6 +481,7 @@ export default function SniperPage() {
                 const bestOffer = offerData?.bestOffer ?? null;
                 const isInstantFlip = bestOffer !== null && bestOffer > deal.askPrice;
                 const flipProfit = isInstantFlip ? bestOffer - deal.askPrice : 0;
+                const isNonBase = deal.parallelId > 0;
 
                 return (
                   <tr key={deal.momentId}
@@ -493,29 +504,33 @@ export default function SniperPage() {
                       )}
                     </td>
 
+                    {/* Player + team + series */}
                     <td className="px-3 py-3">
                       <div className="font-semibold text-white leading-tight">{deal.playerName}</div>
-                      <div className="text-[11px] text-zinc-500 mt-0.5 flex gap-1.5">
+                      <div className="text-[11px] text-zinc-500 mt-0.5 flex gap-1.5 flex-wrap">
                         {deal.teamName && <span>{deal.teamName}</span>}
                         {deal.seriesName && <span className="text-zinc-600">· {deal.seriesName}</span>}
                       </div>
                     </td>
 
+                    {/* Set + parallel name */}
                     <td className="px-3 py-3">
                       <div className="text-zinc-300 text-xs leading-tight">{deal.setName}</div>
-                      {deal.parallel !== "Base" && (
-                        <div className="mt-0.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-zinc-800 text-zinc-300">
+                      {isNonBase && (
+                        <div className="mt-0.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-zinc-800 text-zinc-300 border border-zinc-700">
                           {deal.parallel}
                         </div>
                       )}
                     </td>
 
+                    {/* Rarity */}
                     <td className="px-3 py-3">
                       <span className={`text-xs font-semibold ${tierColor}`}>
-                        {deal.tier.charAt(0) + deal.tier.slice(1).toLowerCase()}
+                        {tierLabel(deal.tier)}
                       </span>
                     </td>
 
+                    {/* Serial */}
                     <td className="px-3 py-3">
                       <div className={`text-sm font-mono ${deal.isSpecialSerial ? "text-yellow-400 font-bold" : "text-zinc-300"}`}>
                         #{deal.serial}
@@ -526,10 +541,12 @@ export default function SniperPage() {
                       )}
                     </td>
 
+                    {/* Ask */}
                     <td className="px-3 py-3">
                       <span className="text-white font-semibold">{fmt(deal.askPrice)}</span>
                     </td>
 
+                    {/* Adj FMV */}
                     <td className="px-3 py-3">
                       <div className="text-zinc-300">{fmt(deal.adjustedFmv)}</div>
                       {deal.adjustedFmv !== deal.baseFmv && (
@@ -540,6 +557,7 @@ export default function SniperPage() {
                       </div>
                     </td>
 
+                    {/* Discount */}
                     <td className="px-3 py-3">
                       <div className={`text-base font-bold ${discountColor(deal.discount)}`}>
                         {deal.discount > 0 ? "−" : "+"}{Math.abs(deal.discount)}%
@@ -551,7 +569,7 @@ export default function SniperPage() {
                       )}
                     </td>
 
-                    {/* Best Offer column */}
+                    {/* Best Offer */}
                     <td className="px-3 py-3">
                       {offersLoading && !offerData ? (
                         <div className="h-3 w-12 animate-pulse rounded bg-zinc-800" />
@@ -561,10 +579,10 @@ export default function SniperPage() {
                           <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold bg-yellow-900/50 border border-yellow-600 text-yellow-300">
                             ⚡ FLIP +{fmt(flipProfit)}
                           </span>
-                          {offerData?.serialOffer && offerData.serialOffer === bestOffer && (
+                          {offerData?.serialOffer === bestOffer && (
                             <span className="text-[10px] text-zinc-500">serial offer</span>
                           )}
-                          {offerData?.editionOffer && offerData.editionOffer === bestOffer && (
+                          {offerData?.editionOffer === bestOffer && offerData?.serialOffer !== bestOffer && (
                             <span className="text-[10px] text-zinc-500">edition offer</span>
                           )}
                         </div>
@@ -606,22 +624,24 @@ export default function SniperPage() {
                       )}
                     </td>
 
-                    {/* Signals */}
+                    {/* Badges only (serial signal moved to Serial cell) */}
                     <td className="px-3 py-3">
                       <div className="flex flex-col gap-1">
                         {deal.badgeLabels.map(label => (
-                          <span key={label} className="rounded bg-yellow-900/40 border border-yellow-700/50 px-1.5 py-0.5 text-[10px] text-yellow-400 font-medium">
-                            🏅 {label}{deal.badgePremiumPct > 0 && <span className="ml-1 text-yellow-600">+{deal.badgePremiumPct}%</span>}
+                          <span key={label} className="rounded bg-yellow-900/40 border border-yellow-700/50 px-1.5 py-0.5 text-[10px] text-yellow-400 font-medium whitespace-nowrap">
+                            🏅 {label}
+                            {deal.badgePremiumPct > 0 && (
+                              <span className="ml-1 text-yellow-600">+{deal.badgePremiumPct}%</span>
+                            )}
                           </span>
                         ))}
-                        {deal.serialMult > 1.1 && (
-                          <span className="rounded bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-300">
-                            🔢 {deal.serialMult}× serial
-                          </span>
+                        {deal.badgeLabels.length === 0 && (
+                          <span className="text-zinc-700 text-xs">—</span>
                         )}
                       </div>
                     </td>
 
+                    {/* Listed */}
                     <td className="px-3 py-3">
                       <div className={`text-[11px] ${deal.isStale ? "text-red-500" : "text-zinc-500"}`}>
                         {listingAge(deal.updatedAt)}
@@ -629,6 +649,7 @@ export default function SniperPage() {
                       {deal.isStale && <div className="text-[10px] text-red-600 mt-0.5">stale</div>}
                     </td>
 
+                    {/* Action */}
                     <td className="px-3 py-3">
                       <a href={deal.buyUrl} target="_blank" rel="noopener noreferrer"
                         className="inline-block rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-red-500 active:scale-95">
@@ -643,7 +664,7 @@ export default function SniperPage() {
         </div>
 
         <div className="mt-4 text-center text-xs text-zinc-700">
-          FMV adjusted for badge premiums and serial multipliers · Best Offer = highest of serial + edition offers from Top Shot · Stale listings hidden by default
+          FMV adjusted for badge premiums and serial multipliers · Best Offer = highest of serial + edition offers · Stale listings hidden by default
         </div>
       </div>
     </div>
