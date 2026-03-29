@@ -1,0 +1,37 @@
+﻿name: FMV Ingest
+
+on:
+  schedule:
+    - cron: '*/20 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Run ingest batch 1
+        run: |
+          RESPONSE=$(curl -s -X POST https://rip-packs-city.vercel.app/api/ingest \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"batchSize": 50}')
+          echo "Batch 1: $RESPONSE"
+      - name: Run ingest batch 2
+        run: |
+          BATCH1=$(curl -s -X POST https://rip-packs-city.vercel.app/api/ingest \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"batchSize": 50}')
+          CURSOR=$(echo "$BATCH1" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('nextCursor',''))")
+          if [ -n "$CURSOR" ]; then
+            RESPONSE=$(curl -s -X POST https://rip-packs-city.vercel.app/api/ingest \
+              -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"batchSize\": 50, \"cursor\": \"$CURSOR\"}")
+            echo "Batch 2: $RESPONSE"
+          else
+            echo "No cursor, skipping batch 2"
+          fi
+      - name: Log completion
+        run: echo "Ingest cron completed at $(date -u)"
