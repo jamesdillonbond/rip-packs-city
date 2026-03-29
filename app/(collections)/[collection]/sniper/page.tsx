@@ -52,12 +52,60 @@ interface OfferData {
 }
 
 interface WalletRow {
-  flowId?: string;
+  flowId?: string | number;
   momentId?: string;
   isLocked?: boolean;
 }
 
 type SortKey = "listed" | "discount";
+
+// Badge slug → Top Shot SVG filename mapping
+// Slugs come from badge_editions play_tags/set_play_tags titles
+const BADGE_SVG: Record<string, string> = {
+  "Rookie Year":        "rookieYear",
+  "Rookie Premiere":    "rookiePremiere",
+  "Rookie Mint":        "rookieMint",
+  "Top Shot Debut":     "topShotDebut",
+  "Three-Star Rookie":  "threeStars",
+  "Rookie of the Year": "rookieOfTheYear",
+  "MVP Year":           "mvp",
+  "Championship Year":  "championship",
+  "Fresh":              "fresh",
+  // snake_case fallbacks (from API tags)
+  "rookie_year":        "rookieYear",
+  "rookie_premiere":    "rookiePremiere",
+  "rookie_mint":        "rookieMint",
+  "top_shot_debut":     "topShotDebut",
+  "three_star_rookie":  "threeStars",
+  "rookie_of_the_year": "rookieOfTheYear",
+  "mvp":                "mvp",
+  "championship_year":  "championship",
+  "fresh":              "fresh",
+  "autograph":          "autograph",
+};
+
+function BadgeIcon({ slug, label }: { slug: string; label: string }) {
+  const svgName = BADGE_SVG[slug];
+  const [imgFailed, setImgFailed] = useState(false);
+
+  if (svgName && !imgFailed) {
+    return (
+      <img
+        src={"https://nbatopshot.com/img/momentTags/static/" + svgName + ".svg"}
+        alt={label}
+        title={label}
+        className="h-5 w-5 object-contain"
+        onError={() => setImgFailed(true)}
+      />
+    );
+  }
+  // Fallback text pill
+  return (
+    <span className="rounded bg-yellow-900/40 border border-yellow-700/50 px-1 py-0.5 text-[10px] text-yellow-400 font-medium whitespace-nowrap">
+      🏅 {label}
+    </span>
+  );
+}
 
 const TIER_COLOR: Record<string, string> = {
   COMMON: "text-zinc-400", RARE: "text-blue-400",
@@ -129,19 +177,17 @@ export default function SniperPage() {
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
-  // Sort state — default: newest listed first
   const [sortKey, setSortKey] = useState<SortKey>("listed");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
-  // Wallet
+  // Wallet — keyed by flowId (string) → isLocked boolean
   const [walletInput, setWalletInput] = useState("");
   const [walletLoading, setWalletLoading] = useState(false);
   const [walletError, setWalletError] = useState<string | null>(null);
   const [loadedWallet, setLoadedWallet] = useState<string | null>(null);
   const [ownedFlowIds, setOwnedFlowIds] = useState<Map<string, boolean>>(new Map());
 
-  // Filters — default minDiscount 0 since sort is by recency
   const [minDiscount, setMinDiscount] = useState(0);
   const [rarity, setRarity] = useState("all");
   const [badgeOnly, setBadgeOnly] = useState(false);
@@ -244,8 +290,9 @@ export default function SniperPage() {
       const rows: WalletRow[] = data.rows ?? [];
       const map = new Map<string, boolean>();
       for (const row of rows) {
-        const fid = row.flowId ?? row.momentId;
-        if (fid) map.set(String(fid), row.isLocked ?? false);
+        // flowId may be a number or string — normalize to string for consistent lookup
+        const fid = row.flowId != null ? String(row.flowId) : null;
+        if (fid) map.set(fid, row.isLocked ?? false);
       }
       setOwnedFlowIds(map);
       setLoadedWallet(w);
@@ -271,10 +318,9 @@ export default function SniperPage() {
     setVisibleCount(PAGE_SIZE);
   }
 
-  // Filter
   const filtered = deals.filter(d => {
-    if (ownedFilter === "owned" && !ownedFlowIds.has(d.flowId)) return false;
-    if (ownedFilter === "not_owned" && ownedFlowIds.has(d.flowId)) return false;
+    if (ownedFilter === "owned" && !ownedFlowIds.has(String(d.flowId))) return false;
+    if (ownedFilter === "not_owned" && ownedFlowIds.has(String(d.flowId))) return false;
     if (!searchText) return true;
     const q = searchText.toLowerCase();
     return d.playerName.toLowerCase().includes(q)
@@ -283,7 +329,6 @@ export default function SniperPage() {
       || d.parallel.toLowerCase().includes(q);
   });
 
-  // Sort client-side
   const sorted = [...filtered].sort((a, b) => {
     let diff = 0;
     if (sortKey === "listed") {
@@ -346,7 +391,7 @@ export default function SniperPage() {
               <span className="text-xs text-zinc-600">Updated {new Date(lastRefreshed).toLocaleTimeString()}</span>
             )}
             <button onClick={() => setAutoRefresh(v => !v)}
-              className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${autoRefresh ? "border-green-700 bg-green-950 text-green-400" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900"}`}>
+              className={"rounded-lg border px-3 py-1.5 text-xs font-medium transition " + (autoRefresh ? "border-green-700 bg-green-950 text-green-400" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>
               {autoRefresh ? `⏱ Auto ${countdown}s` : "⏸ Paused"}
             </button>
             <button onClick={fetchDeals} disabled={loading}
@@ -366,9 +411,9 @@ export default function SniperPage() {
             { label: "Avg Discount", value: `${stats.avgDiscount}%` },
             { label: "⚡ Instant Flips", value: instantFlips, hot: instantFlips > 0 },
           ].map(s => (
-            <div key={s.label} className={`rounded-xl border p-3 ${s.hot ? "border-green-800 bg-green-950/30" : "border-zinc-800 bg-zinc-950"}`}>
+            <div key={s.label} className={"rounded-xl border p-3 " + (s.hot ? "border-green-800 bg-green-950/30" : "border-zinc-800 bg-zinc-950")}>
               <div className="text-[11px] uppercase tracking-wide text-zinc-500">{s.label}</div>
-              <div className={`text-lg font-bold ${s.hot ? "text-green-400" : "text-white"}`}>{s.value}</div>
+              <div className={"text-lg font-bold " + (s.hot ? "text-green-400" : "text-white")}>{s.value}</div>
             </div>
           ))}
         </div>
@@ -415,7 +460,7 @@ export default function SniperPage() {
             <div className="flex flex-col justify-between">
               <label className="mb-1 block text-[11px] uppercase tracking-wide text-zinc-500">Badge Moments</label>
               <button onClick={() => setBadgeOnly(v => !v)}
-                className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${badgeOnly ? "border-yellow-600 bg-yellow-950/40 text-yellow-400" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900"}`}>
+                className={"rounded-lg border px-3 py-2 text-sm font-medium transition " + (badgeOnly ? "border-yellow-600 bg-yellow-950/40 text-yellow-400" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>
                 {badgeOnly ? "🏅 Badge Only" : "All Moments"}
               </button>
             </div>
@@ -439,7 +484,7 @@ export default function SniperPage() {
             </div>
           </div>
 
-          {/* Wallet */}
+          {/* Wallet loader */}
           <div className="border-t border-zinc-800 pt-3">
             <label className="mb-1.5 block text-[11px] uppercase tracking-wide text-zinc-500">
               Wallet — load to see owned/locked status
@@ -508,8 +553,10 @@ export default function SniperPage() {
                 const badge = discountBadge(deal.discount);
                 const isNew = newIds.has(deal.momentId);
                 const tierColor = TIER_COLOR[deal.tier] ?? "text-zinc-400";
-                const isOwned = ownedFlowIds.has(deal.flowId);
-                const isOwnedLocked = isOwned && ownedFlowIds.get(deal.flowId) === true;
+                // Normalize flowId to string for map lookup
+                const flowIdStr = String(deal.flowId);
+                const isOwned = ownedFlowIds.has(flowIdStr);
+                const isOwnedLocked = isOwned && ownedFlowIds.get(flowIdStr) === true;
                 const offerData = offers[deal.momentId];
                 const bestOffer = offerData?.bestOffer ?? null;
                 const isInstantFlip = bestOffer !== null && bestOffer > deal.askPrice;
@@ -519,9 +566,9 @@ export default function SniperPage() {
 
                 return (
                   <tr key={deal.momentId}
-                    className={`border-b border-zinc-800/60 transition-all duration-300 hover:bg-zinc-900/50
-                      ${isInstantFlip ? "bg-yellow-950/10 border-l-2 border-l-yellow-600" : deal.discount >= 40 ? "bg-green-950/10" : ""}
-                      ${isNew ? "animate-pulse bg-yellow-950/20" : ""}`}>
+                    className={"border-b border-zinc-800/60 transition-all duration-300 hover:bg-zinc-900/50 " +
+                      (isInstantFlip ? "bg-yellow-950/10 border-l-2 border-l-yellow-600" : deal.discount >= 40 ? "bg-green-950/10" : "") +
+                      (isNew ? " animate-pulse bg-yellow-950/20" : "")}>
 
                     <td className="px-3 py-2 text-xs text-zinc-600">{i + 1}</td>
 
@@ -537,25 +584,27 @@ export default function SniperPage() {
                       )}
                     </td>
 
-                    {/* Player + badges inline */}
+                    {/* Player + badge SVG icons */}
                     <td className="px-3 py-3">
                       <div className="font-semibold text-white leading-tight">{deal.playerName}</div>
                       <div className="text-[11px] text-zinc-500 mt-0.5 flex gap-1.5 flex-wrap">
                         {deal.teamName && <span>{deal.teamName}</span>}
                         {deal.seriesName && <span className="text-zinc-600">· {deal.seriesName}</span>}
                       </div>
-                      {deal.hasBadge && (
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {deal.badgeLabels.map(label => (
-                            <span key={label} className="rounded bg-yellow-900/40 border border-yellow-700/50 px-1 py-0.5 text-[10px] text-yellow-400 font-medium whitespace-nowrap">
-                              🏅 {label}
-                            </span>
+                      {deal.hasBadge && deal.badgeSlugs.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1 items-center">
+                          {deal.badgeSlugs.map((slug, idx) => (
+                            <BadgeIcon
+                              key={slug}
+                              slug={slug}
+                              label={deal.badgeLabels[idx] ?? slug}
+                            />
                           ))}
                         </div>
                       )}
                     </td>
 
-                    {/* Set + parallel under */}
+                    {/* Set + parallel */}
                     <td className="px-3 py-3">
                       <div className="text-zinc-300 text-xs leading-tight">{deal.setName}</div>
                       {isNonBase && (
@@ -565,14 +614,14 @@ export default function SniperPage() {
 
                     {/* Rarity */}
                     <td className="px-3 py-3">
-                      <span className={`text-xs font-semibold ${tierColor}`}>
+                      <span className={"text-xs font-semibold " + tierColor}>
                         {deal.tier.charAt(0) + deal.tier.slice(1).toLowerCase()}
                       </span>
                     </td>
 
                     {/* Serial */}
                     <td className="px-3 py-3">
-                      <div className={`text-sm font-mono ${deal.isSpecialSerial ? "text-yellow-400 font-bold" : "text-zinc-300"}`}>
+                      <div className={"text-sm font-mono " + (deal.isSpecialSerial ? "text-yellow-400 font-bold" : "text-zinc-300")}>
                         #{deal.serial}
                       </div>
                       <div className="text-[10px] text-zinc-600">/{deal.circulationCount.toLocaleString()}</div>
@@ -592,18 +641,18 @@ export default function SniperPage() {
                       {deal.adjustedFmv !== deal.baseFmv && (
                         <div className="text-[10px] text-zinc-600">base {fmt(deal.baseFmv)}</div>
                       )}
-                      <div className={`text-[10px] ${CONFIDENCE_COLOR[deal.confidence] ?? "text-zinc-600"}`}>
+                      <div className={"text-[10px] " + (CONFIDENCE_COLOR[deal.confidence] ?? "text-zinc-600")}>
                         {deal.confidence}
                       </div>
                     </td>
 
                     {/* Discount */}
                     <td className="px-3 py-3">
-                      <div className={`text-base font-bold ${discountColor(deal.discount)}`}>
+                      <div className={"text-base font-bold " + discountColor(deal.discount)}>
                         {deal.discount > 0 ? "−" : "+"}{Math.abs(deal.discount)}%
                       </div>
                       {badge && (
-                        <span className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${badge.cls}`}>
+                        <span className={"mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold " + badge.cls}>
                           {badge.label}
                         </span>
                       )}
@@ -643,7 +692,7 @@ export default function SniperPage() {
                       )}
                     </td>
 
-                    {/* Owned */}
+                    {/* Owned / Locked */}
                     <td className="px-3 py-3">
                       {isOwned ? (
                         isOwnedLocked ? (
@@ -666,7 +715,7 @@ export default function SniperPage() {
 
                     {/* Listed age */}
                     <td className="px-3 py-3">
-                      <span className={`text-[11px] ${age.fresh ? "text-green-500" : "text-zinc-500"}`}>
+                      <span className={"text-[11px] " + (age.fresh ? "text-green-500" : "text-zinc-500")}>
                         {age.label}
                       </span>
                     </td>
