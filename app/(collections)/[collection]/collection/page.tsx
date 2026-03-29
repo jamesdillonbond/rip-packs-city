@@ -83,6 +83,7 @@ type MomentRow = {
   thumbnailUrl?: string | null
   flowId?: string | null
   flowtyListingUrl?: string | null
+  tssPoints?: number | null
   fmv?: number | null
   valuationScope?: "Parallel" | "Edition" | "Modeled"
   marketDebugReason?: string
@@ -106,7 +107,12 @@ type MomentRow = {
 
 type WalletSearchResponse = {
   rows?: MomentRow[]
-  summary?: { totalMoments: number; returnedMoments: number; remainingMoments: number }
+  summary?: {
+    totalMoments: number
+    returnedMoments: number
+    remainingMoments: number
+    totalTssPoints?: number
+  }
   error?: string
 }
 
@@ -410,7 +416,11 @@ export default function WalletPage() {
     })
   }
 
-  async function maybePatchProfileStats(query: string, resultRows: MomentRow[], resultSummary: WalletSearchResponse["summary"]) {
+  async function maybePatchProfileStats(
+    query: string,
+    resultRows: MomentRow[],
+    resultSummary: WalletSearchResponse["summary"]
+  ) {
     const key = getOwnerKey()
     if (!key) return
     try {
@@ -428,6 +438,7 @@ export default function WalletPage() {
         if (typeof row.fmv === "number") totalFmv += row.fmv
       }
       const momentCount = resultSummary?.totalMoments ?? resultRows.length
+      const tssPoints = resultSummary?.totalTssPoints ?? 0
       await fetch("/api/profile/saved-wallets", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -436,6 +447,7 @@ export default function WalletPage() {
           walletAddr: matched.wallet_addr,
           cachedFmv: totalFmv,
           cachedMomentCount: momentCount,
+          cachedRpcScore: tssPoints > 0 ? tssPoints : undefined,
         }),
       })
     } catch {}
@@ -778,6 +790,22 @@ export default function WalletPage() {
                 </div>
               </div>
             </div>
+
+            {/* TSS Points summary — only shown when data is available */}
+            {(summary?.totalTssPoints ?? 0) > 0 && (
+              <div className="rounded-xl border border-zinc-700 bg-zinc-950 p-3">
+                <div className="flex items-center gap-3">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-zinc-500">Top Shot Score (this page)</div>
+                    <div className="text-xl font-black text-white">
+                      {(summary?.totalTssPoints ?? 0).toLocaleString()}
+                      <span className="ml-2 text-xs font-normal text-zinc-500">pts</span>
+                    </div>
+                  </div>
+                  <div className="ml-auto text-[10px] text-zinc-600">Saved to RPC Score</div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -836,7 +864,7 @@ export default function WalletPage() {
             <table className="w-full min-w-[2000px] border-collapse text-xs">
               <thead className="bg-zinc-900">
                 <tr className="border-b border-zinc-800 text-left">
-                  {["Player","Series (raw)","Season","Acquired","Edition Key","Parallel","Scope Key","Held","Locked","Badge Score","Badges","TS Ask","Flowty Ask","Best Market","Row Low Ask","Row Offer","Edition Low Ask","Edition Offer","Last Sale","FMV","FMV Method","Confidence","Reason"].map(function(h) { return <th key={h} className="p-2 whitespace-nowrap">{h}</th> })}
+                  {["Player","Series (raw)","Season","Acquired","Edition Key","Parallel","Scope Key","Held","Locked","Badge Score","Badges","TS Ask","Flowty Ask","Best Market","Row Low Ask","Row Offer","Edition Low Ask","Edition Offer","Last Sale","FMV","FMV Method","Confidence","Reason","TSS Pts"].map(function(h) { return <th key={h} className="p-2 whitespace-nowrap">{h}</th> })}
                 </tr>
               </thead>
               <tbody>
@@ -868,6 +896,7 @@ export default function WalletPage() {
                       <td className="p-2">{row.fmvMethod ?? "-"}</td>
                       <td className="p-2">{row.marketConfidence ?? "-"}</td>
                       <td className="p-2">{debugReasonLabel(row.marketDebugReason)}</td>
+                      <td className="p-2">{row.tssPoints ?? "-"}</td>
                     </tr>
                   )
                 })}
@@ -972,6 +1001,9 @@ export default function WalletPage() {
                                 <div>FMV: {fmv.text}</div>
                                 <div>FMV Method: {row.fmvMethod ?? "-"}</div>
                                 <div className={"font-medium " + conf.color}>Confidence: {conf.label}</div>
+                                {row.tssPoints != null && (
+                                  <div className="pt-1 text-zinc-400">TSS: {row.tssPoints.toLocaleString()} pts</div>
+                                )}
                               </div>
                             </div>
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">

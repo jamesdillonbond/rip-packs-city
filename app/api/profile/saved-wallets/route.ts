@@ -6,7 +6,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// GET ?ownerKey=xxx  → all saved wallets for this user
+// GET ?ownerKey=xxx
 export async function GET(req: NextRequest) {
   const ownerKey = req.nextUrl.searchParams.get("ownerKey");
   if (!ownerKey) return NextResponse.json({ error: "ownerKey required" }, { status: 400 });
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ wallets: data ?? [] });
 }
 
-// POST { ownerKey, walletAddr, username?, displayName?, accentColor? }  → add wallet
+// POST { ownerKey, walletAddr, username?, displayName?, accentColor? }
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const { ownerKey, walletAddr, username, displayName, accentColor } = body;
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ wallet: data });
 }
 
-// DELETE { ownerKey, walletAddr }  → remove wallet
+// DELETE { ownerKey, walletAddr }
 export async function DELETE(req: NextRequest) {
   const body = await req.json();
   const { ownerKey, walletAddr } = body;
@@ -73,8 +73,9 @@ export async function DELETE(req: NextRequest) {
   return NextResponse.json({ ok: true });
 }
 
-// PATCH { ownerKey, walletAddr, cachedFmv, cachedMomentCount, cachedTopTier, cachedChange24h, cachedBadges }
-// Called after wallet load to cache stats. Also writes a daily portfolio snapshot.
+// PATCH { ownerKey, walletAddr, cachedFmv, cachedMomentCount, cachedTopTier,
+//         cachedChange24h, cachedBadges, cachedRpcScore }
+// Updates cached stats and fires portfolio snapshot write.
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
   const {
@@ -85,24 +86,32 @@ export async function PATCH(req: NextRequest) {
     cachedTopTier,
     cachedChange24h,
     cachedBadges,
+    cachedRpcScore,  // ← new: accumulated Top Shot Score for this wallet
   } = body;
 
   if (!ownerKey || !walletAddr) {
     return NextResponse.json({ error: "ownerKey and walletAddr required" }, { status: 400 });
   }
 
-  // 1. Update the cached stats on this wallet row
+  const updatePayload: Record<string, unknown> = {
+    cached_fmv: cachedFmv ?? null,
+    cached_moment_count: cachedMomentCount ?? null,
+    cached_top_tier: cachedTopTier ?? null,
+    cached_change_24h: cachedChange24h ?? null,
+    cached_badges: cachedBadges ?? null,
+    cache_updated_at: new Date().toISOString(),
+    last_viewed: new Date().toISOString(),
+  };
+
+  // Only write rpc_score if we got a real value — don't overwrite with null
+  // if the caller doesn't have TSS data yet (e.g. partial loads)
+  if (typeof cachedRpcScore === "number" && cachedRpcScore > 0) {
+    updatePayload.cached_rpc_score = cachedRpcScore;
+  }
+
   const { data, error } = await supabase
     .from("saved_wallets")
-    .update({
-      cached_fmv: cachedFmv ?? null,
-      cached_moment_count: cachedMomentCount ?? null,
-      cached_top_tier: cachedTopTier ?? null,
-      cached_change_24h: cachedChange24h ?? null,
-      cached_badges: cachedBadges ?? null,
-      cache_updated_at: new Date().toISOString(),
-      last_viewed: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq("owner_key", ownerKey)
     .eq("wallet_addr", walletAddr)
     .select()
@@ -113,8 +122,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // 2. Fire-and-forget: aggregate all saved wallets for this owner and write a daily snapshot
-  // This builds the portfolio sparkline history without blocking the response.
+  // Fire-and-forget: aggregate all wallets and write a daily portfolio snapshot
   writePortfolioSnapshot(ownerKey).catch(function(err) {
     console.error("[portfolio-snapshot write]", err);
   });
@@ -122,11 +130,12 @@ export async function PATCH(req: NextRequest) {
   return NextResponse.json({ wallet: data });
 }
 
-// Aggregates all cached FMVs for the owner and upserts today's portfolio snapshot
+// Aggregates all saved wallets for the owner and upserts today's portfolio snapshot.
+// Now includes total RPC Score across all wallets.
 async function writePortfolioSnapshot(ownerKey: string) {
   const { data: wallets, error: walletsError } = await supabase
     .from("saved_wallets")
-    .select("cached_fmv, cached_moment_count")
+    .select("cached_fmv, cached_moment_count, cached_rpc_score")
     .eq("owner_key", ownerKey);
 
   if (walletsError || !wallets) return;
