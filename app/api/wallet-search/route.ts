@@ -36,6 +36,7 @@ type WalletRow = {
   editionsLocked?: number
   flowId?: string | null
   thumbnailUrl?: string | null
+  acquiredAt?: string | null
 }
 
 type WalletSearchResponse = {
@@ -67,6 +68,7 @@ type MintedMomentGraphqlData = {
       price?: string | number | null
       lastPurchasePrice?: string | number | null
       isLocked?: boolean | null
+      updatedAt?: string | null
       badges?: Array<{
         type?: string | null
         iconSvg?: string | null
@@ -132,14 +134,9 @@ function buildThumbnailUrl(flowId: string | null) {
   return `https://assets.nbatopshot.com/media/${flowId}/image?width=180`
 }
 
-// ── Clean error message extraction ────────────────────────────────────────────
-// Top Shot / Cloudflare returns HTML on rate limit errors.
-// We detect and normalize these into user-friendly messages.
-
 function cleanErrorMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err)
 
-  // Detect HTML responses (Cloudflare rate limit pages)
   if (raw.includes("<html") || raw.includes("<title>") || raw.includes("<!DOCTYPE")) {
     if (raw.toLowerCase().includes("slow down") || raw.includes("429") || raw.toLowerCase().includes("too many request")) {
       return "Top Shot is rate limiting requests right now. Wait 30–60 seconds and try again."
@@ -150,17 +147,14 @@ function cleanErrorMessage(err: unknown): string {
     return "Top Shot returned an unexpected response. Try again in a moment."
   }
 
-  // Detect explicit 429 mentions
   if (raw.includes("429") || raw.toLowerCase().includes("too many request") || raw.toLowerCase().includes("rate limit")) {
     return "Top Shot is rate limiting requests right now. Wait 30–60 seconds and try again."
   }
 
-  // Detect username not found
   if (raw.toLowerCase().includes("could not resolve username")) {
     return "Username not found. Check the spelling and try again."
   }
 
-  // Detect empty collection
   if (raw.toLowerCase().includes("no collection") || raw.toLowerCase().includes("no nft")) {
     return "This wallet has no Top Shot moments."
   }
@@ -168,16 +162,11 @@ function cleanErrorMessage(err: unknown): string {
   return raw
 }
 
-// ── Retry wrapper ─────────────────────────────────────────────────────────────
-// Wraps any async fn with a single retry after a delay if it throws.
-// Used for Top Shot GraphQL calls which occasionally 429 transiently.
-
 async function withRetry<T>(fn: () => Promise<T>, delayMs = 2000): Promise<T> {
   try {
     return await fn()
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    // Only retry on rate limit / transient errors
     if (
       msg.includes("429") ||
       msg.toLowerCase().includes("too many request") ||
@@ -272,7 +261,7 @@ async function fetchMomentGraphQL(id: string) {
       query GetMoment($id: ID!) {
         getMintedMoment(momentId: $id) {
           data {
-            flowId flowSerialNumber tier forSale price lastPurchasePrice isLocked
+            flowId flowSerialNumber tier forSale price lastPurchasePrice isLocked updatedAt
             badges { type iconSvg }
             set { leagues }
           }
@@ -292,6 +281,7 @@ async function fetchMomentGraphQL(id: string) {
       bestOffer: null,
       lastPurchasePrice: toNum(m?.lastPurchasePrice),
       isLocked: !!m?.isLocked,
+      acquiredAt: m?.updatedAt ?? null,
       league: m?.set?.leagues?.find(Boolean) ?? null,
       badges: Array.isArray(m?.badges)
         ? m.badges.map((b) => ({ type: b?.type ?? "UNKNOWN", iconSvg: b?.iconSvg ?? "" }))
@@ -319,8 +309,6 @@ async function mapWithConcurrency<T, R>(
   )
   return results
 }
-
-// ── Supabase seeding ──────────────────────────────────────────────────────────
 
 async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
   for (const row of rows) {
@@ -468,6 +456,7 @@ export async function POST(req: NextRequest) {
         lowAsk: gql.lowAsk,
         bestOffer: gql.bestOffer,
         lastPurchasePrice: gql.lastPurchasePrice,
+        acquiredAt: gql.acquiredAt,
         editionKey,
         parallel: normalizedParallel,
         subedition: normalizedParallel,
