@@ -29,6 +29,7 @@ type WalletRow = {
   bestOffer?: number | null
   lowAsk?: number | null
   lastPurchasePrice?: number | null
+  acquiredAt?: string | null
   editionKey?: string | null
   parallel?: string | null
   subedition?: string | null
@@ -36,8 +37,7 @@ type WalletRow = {
   editionsLocked?: number
   flowId?: string | null
   thumbnailUrl?: string | null
-  // ── RPC Score components ──────────────────────────────────────────────────
-  tssPoints?: number | null   // Official Top Shot Score points for this moment
+  tssPoints?: number | null
 }
 
 type WalletSearchResponse = {
@@ -46,7 +46,6 @@ type WalletSearchResponse = {
     totalMoments: number
     returnedMoments: number
     remainingMoments: number
-    // Total TSS points for this page of moments (accumulates across Load More)
     totalTssPoints?: number
   }
   error?: string
@@ -71,19 +70,13 @@ type MintedMomentGraphqlData = {
       price?: string | number | null
       lastPurchasePrice?: string | number | null
       isLocked?: boolean | null
+      createdAt?: string | null
       badges?: Array<{
         type?: string | null
         iconSvg?: string | null
       }> | null
       set?: {
         leagues?: Array<string | null> | null
-      } | null
-      // ── Top Shot Score ─────────────────────────────────────────────────────
-      // topshotScore is an object — we request both known field names
-      // since the schema refers to MomentTopshotScore type
-      topshotScore?: {
-        points?: number | null
-        score?: number | null
       } | null
     } | null
   } | null
@@ -143,14 +136,12 @@ function buildThumbnailUrl(flowId: string | null) {
   return `https://assets.nbatopshot.com/media/${flowId}/image?width=180`
 }
 
-// ── Clean error message extraction ────────────────────────────────────────────
-
 function cleanErrorMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err)
 
   if (raw.includes("<html") || raw.includes("<title>") || raw.includes("<!DOCTYPE")) {
     if (raw.toLowerCase().includes("slow down") || raw.includes("429") || raw.toLowerCase().includes("too many request")) {
-      return "Top Shot is rate limiting requests right now. Wait 30–60 seconds and try again."
+      return "Top Shot is rate limiting requests right now. Wait 30\u201360 seconds and try again."
     }
     if (raw.toLowerCase().includes("error") || raw.toLowerCase().includes("unavailable")) {
       return "Top Shot is temporarily unavailable. Try again in a moment."
@@ -159,7 +150,7 @@ function cleanErrorMessage(err: unknown): string {
   }
 
   if (raw.includes("429") || raw.toLowerCase().includes("too many request") || raw.toLowerCase().includes("rate limit")) {
-    return "Top Shot is rate limiting requests right now. Wait 30–60 seconds and try again."
+    return "Top Shot is rate limiting requests right now. Wait 30\u201360 seconds and try again."
   }
 
   if (raw.toLowerCase().includes("could not resolve username")) {
@@ -172,8 +163,6 @@ function cleanErrorMessage(err: unknown): string {
 
   return raw
 }
-
-// ── Retry wrapper ─────────────────────────────────────────────────────────────
 
 async function withRetry<T>(fn: () => Promise<T>, delayMs = 2000): Promise<T> {
   try {
@@ -274,10 +263,9 @@ async function fetchMomentGraphQL(id: string) {
       query GetMoment($id: ID!) {
         getMintedMoment(momentId: $id) {
           data {
-            flowId flowSerialNumber tier forSale price lastPurchasePrice isLocked
+            flowId flowSerialNumber tier forSale price lastPurchasePrice isLocked createdAt
             badges { type iconSvg }
             set { leagues }
-            topshotScore { points score }
           }
         }
       }
@@ -286,11 +274,6 @@ async function fetchMomentGraphQL(id: string) {
       return topshotGraphql<MintedMomentGraphqlData>(q, { id })
     })
     const m = d?.getMintedMoment?.data
-
-    // Extract TSS points — try both field names the schema might use
-    const tssRaw = m?.topshotScore
-    const tssPoints = toNum(tssRaw?.points ?? tssRaw?.score ?? null)
-
     return {
       flowId: m?.flowId ?? null,
       serial: toNum(m?.flowSerialNumber),
@@ -300,11 +283,14 @@ async function fetchMomentGraphQL(id: string) {
       bestOffer: null,
       lastPurchasePrice: toNum(m?.lastPurchasePrice),
       isLocked: !!m?.isLocked,
+      acquiredAt: m?.createdAt ?? null,
       league: m?.set?.leagues?.find(Boolean) ?? null,
       badges: Array.isArray(m?.badges)
         ? m.badges.map((b) => ({ type: b?.type ?? "UNKNOWN", iconSvg: b?.iconSvg ?? "" }))
         : [],
-      tssPoints,
+      // TSS points removed from GraphQL query — field does not exist on MomentTopshotScore type.
+      // tssPoints will be null until a valid field name is confirmed from the schema.
+      tssPoints: null as number | null,
     }
   })
 }
@@ -328,8 +314,6 @@ async function mapWithConcurrency<T, R>(
   )
   return results
 }
-
-// ── Supabase seeding ──────────────────────────────────────────────────────────
 
 async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
   for (const row of rows) {
@@ -368,7 +352,7 @@ async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
             external_id: row.editionKey,
             collection_id: collectionId,
             player_id: playerId,
-            name: `${row.playerName} — ${row.setName}`,
+            name: `${row.playerName} \u2014 ${row.setName}`,
             tier: normalizedTier as any,
             series: toNum(row.series),
             circulation_count: row.mintSize ?? null,
@@ -477,6 +461,7 @@ export async function POST(req: NextRequest) {
         lowAsk: gql.lowAsk,
         bestOffer: gql.bestOffer,
         lastPurchasePrice: gql.lastPurchasePrice,
+        acquiredAt: gql.acquiredAt,
         editionKey,
         parallel: normalizedParallel,
         subedition: normalizedParallel,
@@ -513,7 +498,6 @@ export async function POST(req: NextRequest) {
       return { ...row, editionsOwned: counts.owned, editionsLocked: counts.locked }
     })
 
-    // Sum TSS points for this page
     const totalTssPoints = rows.reduce(function(sum, r) {
       return sum + (r.tssPoints ?? 0)
     }, 0)
