@@ -74,6 +74,7 @@ type MomentRow = {
   bestMarket?: "Top Shot" | "Flowty" | null
   bestOffer?: number | null
   lastPurchasePrice?: number | null
+  acquiredAt?: string | null
   editionKey?: string | null
   parallel?: string | null
   subedition?: string | null
@@ -139,15 +140,32 @@ function seriesIntToSeason(seriesRaw: string | undefined | null): string {
   return seriesRaw
 }
 
-function badgeLookupKey(playerName: string, season: string): string {
-  return playerName.toLowerCase().trim() + "::" + season.trim()
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatCurrency(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return "-"
   return "$" + value.toFixed(2)
+}
+
+function formatCurrencyCompact(value: number): string {
+  if (value >= 1000000) return "$" + (value / 1000000).toFixed(1) + "M"
+  if (value >= 1000) return "$" + (value / 1000).toFixed(1) + "K"
+  return "$" + value.toFixed(2)
+}
+
+function formatAcquiredAt(iso: string | null | undefined): string {
+  if (!iso) return "—"
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return "—"
+  const now = Date.now()
+  const diff = now - d.getTime()
+  const days = Math.floor(diff / 86400000)
+  if (days === 0) return "Today"
+  if (days === 1) return "Yesterday"
+  if (days < 7) return days + "d ago"
+  if (days < 30) return Math.floor(days / 7) + "w ago"
+  if (days < 365) return Math.floor(days / 30) + "mo ago"
+  return d.toLocaleDateString("en-US", { month: "short", year: "numeric" })
 }
 
 function compareText(a?: string | null, b?: string | null) { return (a ?? "").localeCompare(b ?? "") }
@@ -184,6 +202,7 @@ function badgeClass(name: string) {
 function supadgePillClass(title: string) {
   return BADGE_COLORS[title] ?? "bg-zinc-800 text-zinc-300 border border-zinc-700"
 }
+
 const BADGE_ICONS: Record<string, string> = {
   "Rookie Year":        "https://nbatopshot.com/img/momentTags/static/rookieYear.svg",
   "Rookie Premiere":    "https://nbatopshot.com/img/momentTags/static/rookiePremiere.svg",
@@ -192,6 +211,7 @@ const BADGE_ICONS: Record<string, string> = {
   "Rookie Mint":        "https://nbatopshot.com/img/momentTags/static/rookieMint.svg",
   "Championship Year":  "https://nbatopshot.com/img/momentTags/static/championshipYear.svg",
 }
+
 function BadgeIcon({ title, size = 20 }: { title: string; size?: number }) {
   const src = BADGE_ICONS[title]
   if (src) return (
@@ -237,7 +257,7 @@ function fmvDisplay(row: MomentRow): { text: string; muted: boolean } {
   }
 }
 
-type SortKey = "player" | "series" | "set" | "parallel" | "rarity" | "serial" | "fmv" | "bestOffer" | "held" | "badge"
+type SortKey = "player" | "series" | "set" | "parallel" | "rarity" | "serial" | "fmv" | "bestOffer" | "held" | "badge" | "acquired"
 
 // ── Auto-search reader ────────────────────────────────────────────────────────
 
@@ -273,67 +293,66 @@ export default function WalletPage() {
   const [parallelFilter, setParallelFilter] = useState("all")
   const [lockedFilter, setLockedFilter] = useState("all")
   const [searchWithin, setSearchWithin] = useState("")
-  const [sortKey, setSortKey] = useState<SortKey>("fmv")
+  const [sortKey, setSortKey] = useState<SortKey>("acquired")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
 
-  // Read owner key from localStorage on mount + listen for cross-tab changes
   useEffect(function() {
     setOwnerKey(getOwnerKey())
-    return onOwnerKeyChange(function(key) { setOwnerKey(key); })
+    return onOwnerKeyChange(function(key) { setOwnerKey(key) })
   }, [])
 
   // ── Badge enrichment ────────────────────────────────────────────────────────
 
   async function enrichWithBadges(rowsIn: MomentRow[]): Promise<MomentRow[]> {
-  if (!rowsIn.length) return rowsIn
-  try {
-    const playerNames = Array.from(new Set(
-      rowsIn.map((r: MomentRow) => r.playerName?.trim()).filter(Boolean)
-    )) as string[]
-    if (!playerNames.length) return rowsIn
-    const CHUNK = 50
-    const allEditions: any[] = []
-    for (let i = 0; i < playerNames.length; i += CHUNK) {
-      const chunk = playerNames.slice(i, i + CHUNK)
-      const params = new URLSearchParams({
-        mode: "all", sort: "badge_score", dir: "desc",
-        limit: "500", offset: "0", players: chunk.join(","),
-      })
-      const res = await fetch("/api/badges?" + params.toString())
-      if (!res.ok) continue
-      const json = await res.json()
-      allEditions.push(...(json.editions ?? []))
-    }
-    const badgeMap = new Map<string, BadgeInfo>()
-    for (const edition of allEditions) {
-      if (!edition.player_name || edition.series_number == null) continue
-      const key = edition.player_name.toLowerCase().trim() + "::" + edition.series_number
-      const existing = badgeMap.get(key)
-      if (!existing || edition.badge_score > existing.badge_score) {
-        badgeMap.set(key, {
-          badge_score: edition.badge_score,
-          badge_titles: (edition.badge_titles ?? []).filter((t: string) => BADGE_PILL_TITLES.has(t)),
-          is_three_star_rookie: edition.is_three_star_rookie,
-          has_rookie_mint: edition.has_rookie_mint,
-          burn_rate_pct: edition.burn_rate_pct,
-          lock_rate_pct: edition.lock_rate_pct,
-          low_ask: edition.low_ask,
-          circulation_count: edition.circulation_count,
+    if (!rowsIn.length) return rowsIn
+    try {
+      const playerNames = Array.from(new Set(
+        rowsIn.map((r: MomentRow) => r.playerName?.trim()).filter(Boolean)
+      )) as string[]
+      if (!playerNames.length) return rowsIn
+      const CHUNK = 50
+      const allEditions: any[] = []
+      for (let i = 0; i < playerNames.length; i += CHUNK) {
+        const chunk = playerNames.slice(i, i + CHUNK)
+        const params = new URLSearchParams({
+          mode: "all", sort: "badge_score", dir: "desc",
+          limit: "500", offset: "0", players: chunk.join(","),
         })
+        const res = await fetch("/api/badges?" + params.toString())
+        if (!res.ok) continue
+        const json = await res.json()
+        allEditions.push(...(json.editions ?? []))
       }
+      const badgeMap = new Map<string, BadgeInfo>()
+      for (const edition of allEditions) {
+        if (!edition.player_name || edition.series_number == null) continue
+        const key = edition.player_name.toLowerCase().trim() + "::" + edition.series_number
+        const existing = badgeMap.get(key)
+        if (!existing || edition.badge_score > existing.badge_score) {
+          badgeMap.set(key, {
+            badge_score: edition.badge_score,
+            badge_titles: (edition.badge_titles ?? []).filter((t: string) => BADGE_PILL_TITLES.has(t)),
+            is_three_star_rookie: edition.is_three_star_rookie,
+            has_rookie_mint: edition.has_rookie_mint,
+            burn_rate_pct: edition.burn_rate_pct,
+            lock_rate_pct: edition.lock_rate_pct,
+            low_ask: edition.low_ask,
+            circulation_count: edition.circulation_count,
+          })
+        }
+      }
+      return rowsIn.map((row: MomentRow) => {
+        const seriesNum = typeof row.series === "string"
+          ? parseInt(row.series, 10)
+          : (row.series as number | undefined)
+        if (seriesNum == null || isNaN(seriesNum)) return { ...row, badgeInfo: null }
+        const key = (row.playerName?.toLowerCase().trim() ?? "") + "::" + seriesNum
+        return { ...row, badgeInfo: badgeMap.get(key) ?? null }
+      })
+    } catch {
+      return rowsIn
     }
-    return rowsIn.map((row: MomentRow) => {
-      const seriesNum = typeof row.series === "string"
-        ? parseInt(row.series, 10)
-        : (row.series as number | undefined)
-      if (seriesNum == null || isNaN(seriesNum)) return { ...row, badgeInfo: null }
-      const key = (row.playerName?.toLowerCase().trim() ?? "") + "::" + seriesNum
-      return { ...row, badgeInfo: badgeMap.get(key) ?? null }
-    })
-  } catch {
-    return rowsIn
   }
-}
 
   async function hydrateMarket(rowsIn: MomentRow[]) {
     if (!rowsIn.length) return rowsIn
@@ -391,35 +410,24 @@ export default function WalletPage() {
     })
   }
 
-  // ── Patch wallet stats back to profile after a successful search ─────────────
-  // If the searched wallet belongs to the signed-in user's saved wallets,
-  // fire a PATCH to update cached FMV/moment count so the profile page stays fresh.
-
   async function maybePatchProfileStats(query: string, resultRows: MomentRow[], resultSummary: WalletSearchResponse["summary"]) {
     const key = getOwnerKey()
     if (!key) return
-
-    // Get saved wallets to check if this query matches one
     try {
       const res = await fetch("/api/profile/saved-wallets?ownerKey=" + encodeURIComponent(key))
       if (!res.ok) return
       const d = await res.json()
       const wallets: any[] = d.wallets ?? []
-
-      // Find a matching wallet by username or address
       const q = query.toLowerCase().trim()
       const matched = wallets.find(function(w) {
         return (w.username ?? "").toLowerCase() === q || (w.wallet_addr ?? "").toLowerCase() === q
       })
       if (!matched) return
-
-      // Compute totals from current rows
       let totalFmv = 0
       for (const row of resultRows) {
         if (typeof row.fmv === "number") totalFmv += row.fmv
       }
       const momentCount = resultSummary?.totalMoments ?? resultRows.length
-
       await fetch("/api/profile/saved-wallets", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -432,8 +440,6 @@ export default function WalletPage() {
       })
     } catch {}
   }
-
-  // ── Core search ───────────────────────────────────────────────────────────────
 
   const runSearch = useCallback(async function(query: string) {
     if (!query.trim()) return
@@ -460,7 +466,6 @@ export default function WalletPage() {
       setSummary(json.summary)
       setOffset(nextRows.length)
       setHasSearched(true)
-      // Fire-and-forget: update profile cached stats if this is a saved wallet
       maybePatchProfileStats(query.trim(), withBadges, json.summary).catch(function() {})
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
@@ -520,7 +525,7 @@ export default function WalletPage() {
     await navigator.clipboard.writeText(JSON.stringify(Array.from(unique.values()), null, 2))
   }
 
-  // ── Derived state ─────────────────────────────────────────────────────────────
+  // ── Derived state ─────────────────────────────────────────────────────────
 
   const batchEditionStats = useMemo(function() {
     const map = new Map<string, { owned: number; locked: number }>()
@@ -587,6 +592,12 @@ export default function WalletPage() {
         case "fmv":       result = compareNumber(a.fmv, b.fmv); break
         case "bestOffer": result = compareNumber(a.bestOffer, b.bestOffer); break
         case "badge":     result = compareNumber(a.badgeInfo?.badge_score, b.badgeInfo?.badge_score); break
+        case "acquired": {
+          const ta = a.acquiredAt ? new Date(a.acquiredAt).getTime() : 0
+          const tb = b.acquiredAt ? new Date(b.acquiredAt).getTime() : 0
+          result = ta - tb
+          break
+        }
         case "held":
           result = compareNumber(
             a.editionsOwned ?? batchEditionStats.get(buildEditionScopeKey(a))?.owned,
@@ -621,7 +632,21 @@ export default function WalletPage() {
     return { totalFmv, totalBestOffer, lockedFmv, unlockedFmv, totalCount: filteredRows.length, lockedCount, unlockedCount, spreadGap: totalFmv - totalBestOffer, badgeCount, confHigh, confMedium, confLow, confNone }
   }, [filteredRows])
 
-  // ── Render ────────────────────────────────────────────────────────────────────
+  const projectedFmv = useMemo(function() {
+    const totalMoments = summary?.totalMoments ?? 0
+    const loadedCount = rows.length
+    if (!totalMoments || !loadedCount || loadedCount >= totalMoments) return null
+    const rowsWithFmv = rows.filter(function(r) { return typeof r.fmv === "number" })
+    if (!rowsWithFmv.length) return null
+    const sumLoaded = rowsWithFmv.reduce(function(acc, r) { return acc + (r.fmv ?? 0) }, 0)
+    return (sumLoaded / rowsWithFmv.length) * totalMoments
+  }, [rows, summary])
+
+  const loadProgress = summary
+    ? { loaded: rows.length, total: summary.totalMoments, pct: Math.min(100, Math.round((rows.length / Math.max(1, summary.totalMoments)) * 100)) }
+    : null
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-black text-zinc-100">
@@ -647,7 +672,7 @@ export default function WalletPage() {
           </div>
         </div>
 
-        {/* Profile key indicator — shown when signed in */}
+        {/* Profile key indicator */}
         {ownerKey && (
           <div className="mb-4 flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-400">
             <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
@@ -678,11 +703,33 @@ export default function WalletPage() {
         {hasSearched && rows.length > 0 && (
           <div className="mb-5 space-y-3">
             <div className="grid gap-3 grid-cols-2 xl:grid-cols-4">
+
+              {/* Wallet FMV with projected estimate + load progress */}
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                 <div className="text-[10px] uppercase tracking-widest text-zinc-500">Wallet FMV</div>
-                <div className="text-xl font-black text-white">{formatCurrency(totals.totalFmv)}</div>
-                <div className="mt-1 text-[11px] text-zinc-500">{totals.totalCount} moments shown</div>
+                <div className="text-xl font-black text-white">
+                  {formatCurrency(totals.totalFmv)}
+                  {projectedFmv !== null && (
+                    <span className="ml-2 text-sm font-normal text-zinc-500">
+                      {"~" + formatCurrencyCompact(projectedFmv) + " est."}
+                    </span>
+                  )}
+                </div>
+                {loadProgress && loadProgress.total > loadProgress.loaded ? (
+                  <div className="mt-2 space-y-1">
+                    <div className="flex justify-between text-[10px] text-zinc-600">
+                      <span>{loadProgress.loaded} / {loadProgress.total} loaded</span>
+                      <span>{loadProgress.pct}%</span>
+                    </div>
+                    <div className="h-1 w-full rounded-full bg-zinc-800">
+                      <div className="h-1 rounded-full bg-red-600 transition-all duration-300" style={{ width: loadProgress.pct + "%" }} />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-1 text-[11px] text-zinc-500">{totals.totalCount} moments shown</div>
+                )}
               </div>
+
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                 <div className="text-[10px] uppercase tracking-widest text-zinc-500">Unlocked FMV</div>
                 <div className="text-xl font-black text-white">{formatCurrency(totals.unlockedFmv)}</div>
@@ -734,7 +781,7 @@ export default function WalletPage() {
           </div>
         )}
 
-        {/* Filters — scroll horizontally on mobile */}
+        {/* Filters */}
         <div className="mb-5 grid gap-2 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
           <select value={teamFilter} onChange={function(e) { setTeamFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
             {availableTeams.map(function(team) { return <option key={team} value={team}>{team === "all" ? "All Teams" : team}</option> })}
@@ -756,9 +803,21 @@ export default function WalletPage() {
           <input value={searchWithin} onChange={function(e) { setSearchWithin(e.target.value) }} placeholder="Filter moments…" className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white placeholder:text-zinc-500 col-span-2 sm:col-span-1" />
         </div>
 
-        {/* Sort buttons — horizontally scrollable on mobile */}
+        {/* Sort buttons */}
         <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
-          {([["player","Player"],["series","Series"],["set","Set"],["parallel","Parallel"],["rarity","Rarity"],["serial","Serial"],["held","Held"],["fmv","FMV"],["bestOffer","Best Offer"],["badge","Badge"]] as [SortKey, string][]).map(function([key, label]) {
+          {([
+            ["acquired", "Recent"],
+            ["fmv", "FMV"],
+            ["player", "Player"],
+            ["series", "Series"],
+            ["set", "Set"],
+            ["parallel", "Parallel"],
+            ["rarity", "Rarity"],
+            ["serial", "Serial"],
+            ["held", "Held"],
+            ["bestOffer", "Best Offer"],
+            ["badge", "Badge"],
+          ] as [SortKey, string][]).map(function([key, label]) {
             return (
               <button key={key} onClick={function() { toggleSort(key) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 " + (sortKey === key ? "border-red-600 text-white" : "border-zinc-700 text-zinc-400")}>
                 {label}{sortKey === key && <span className="ml-1 text-zinc-500">{sortDirection === "asc" ? "↑" : "↓"}</span>}
@@ -774,10 +833,10 @@ export default function WalletPage() {
         {/* Debug table */}
         {showDebug ? (
           <div className="mb-4 overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950">
-            <table className="w-full min-w-[1900px] border-collapse text-xs">
+            <table className="w-full min-w-[2000px] border-collapse text-xs">
               <thead className="bg-zinc-900">
                 <tr className="border-b border-zinc-800 text-left">
-                  {["Player","Series (raw)","Season","Edition Key","Parallel","Scope Key","Held","Locked","Badge Score","Badges","TS Ask","Flowty Ask","Best Market","Row Low Ask","Row Offer","Edition Low Ask","Edition Offer","Last Sale","FMV","FMV Method","Confidence","Reason"].map(function(h) { return <th key={h} className="p-2 whitespace-nowrap">{h}</th> })}
+                  {["Player","Series (raw)","Season","Acquired","Edition Key","Parallel","Scope Key","Held","Locked","Badge Score","Badges","TS Ask","Flowty Ask","Best Market","Row Low Ask","Row Offer","Edition Low Ask","Edition Offer","Last Sale","FMV","FMV Method","Confidence","Reason"].map(function(h) { return <th key={h} className="p-2 whitespace-nowrap">{h}</th> })}
                 </tr>
               </thead>
               <tbody>
@@ -789,6 +848,7 @@ export default function WalletPage() {
                       <td className="p-2">{row.playerName}</td>
                       <td className="p-2">{row.series ?? "-"}</td>
                       <td className="p-2">{seriesIntToSeason(row.series)}</td>
+                      <td className="p-2">{row.acquiredAt ? new Date(row.acquiredAt).toLocaleDateString() : "-"}</td>
                       <td className="p-2">{row.editionKey ?? "-"}</td>
                       <td className="p-2">{getParallel(row)}</td>
                       <td className="p-2">{scopeKey}</td>
@@ -830,6 +890,7 @@ export default function WalletPage() {
                 <th className="p-3 hidden lg:table-cell">Held / Locked</th>
                 <th className="p-3">FMV</th>
                 <th className="p-3 hidden lg:table-cell">Best Offer</th>
+                <th className="p-3 hidden xl:table-cell">Acquired</th>
                 <th className="p-3">Details</th>
               </tr>
             </thead>
@@ -888,6 +949,7 @@ export default function WalletPage() {
                         <div className={"text-[10px] " + conf.color}>{conf.label}</div>
                       </td>
                       <td className="p-3 text-zinc-300 text-sm hidden lg:table-cell">{formatCurrency(row.bestOffer)}</td>
+                      <td className="p-3 text-zinc-500 text-xs hidden xl:table-cell">{formatAcquiredAt(row.acquiredAt)}</td>
                       <td className="p-3">
                         <button onClick={function() { toggleExpanded(row.momentId) }} className="rounded-lg border border-zinc-700 px-2 py-1 text-xs text-white hover:bg-zinc-900">
                           {expanded ? "Hide" : "Show"}
@@ -897,7 +959,7 @@ export default function WalletPage() {
 
                     {expanded ? (
                       <tr className="border-b border-zinc-800 bg-black/60">
-                        <td colSpan={10} className="p-4">
+                        <td colSpan={11} className="p-4">
                           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                               <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Market</div>
@@ -924,7 +986,7 @@ export default function WalletPage() {
                                   <a href={"https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/NFT/" + row.momentId} target="_blank" rel="noopener noreferrer" className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-500 hover:bg-zinc-900">Check Flowty</a>
                                 )}
                                 {summary && (
-                                  <a href={"/sets?wallet=" + encodeURIComponent(input.trim())} className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-400 hover:bg-zinc-900">View Set Progress →</a>
+                                  <a href={"/nba-top-shot/sets?wallet=" + encodeURIComponent(input.trim())} className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-400 hover:bg-zinc-900">View Set Progress →</a>
                                 )}
                                 <a href={"/profile?pin=" + row.momentId} className="block rounded-lg border border-yellow-800 bg-yellow-950/30 px-3 py-1.5 text-center text-xs font-semibold text-yellow-400 hover:bg-yellow-950/60">⭐ Pin to Trophy Case</a>
                               </div>
@@ -936,6 +998,7 @@ export default function WalletPage() {
                                 <div>League: {row.league ?? "-"}</div>
                                 <div>Parallel: {getParallel(row)}</div>
                                 <div>Series: {row.series ?? "-"} ({seriesIntToSeason(row.series) || "—"})</div>
+                                <div>Acquired: {formatAcquiredAt(row.acquiredAt)}</div>
                                 <div>Locked: {isLocked ? "Yes" : "No"}</div>
                                 <div className="flex flex-wrap gap-1 pt-1">
                                   {getTraits(row).map(function(trait) { return <span key={trait} className="rounded bg-red-950 px-2 py-0.5 text-[10px] text-red-300">{trait}</span> })}
