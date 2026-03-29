@@ -27,7 +27,6 @@ const BADGE_LABELS: Record<string, string> = {
   "Championship Year": "Champ Year", "Rookie of the Year": "ROTY", "Fresh": "Fresh",
 };
 
-// NBA team ID → abbreviation
 const NBA_TEAMS: Record<string, string> = {
   "1610612737": "ATL", "1610612738": "BOS", "1610612739": "CLE", "1610612740": "NOP",
   "1610612741": "CHI", "1610612742": "DAL", "1610612743": "DEN", "1610612744": "GSW",
@@ -37,47 +36,22 @@ const NBA_TEAMS: Record<string, string> = {
   "1610612757": "POR", "1610612758": "SAC", "1610612759": "SAS", "1610612760": "OKC",
   "1610612761": "TOR", "1610612762": "UTA", "1610612763": "MEM", "1610612764": "WAS",
   "1610612765": "DET", "1610612766": "CHA",
-  // WNBA teams
   "1611661313": "ATL", "1611661314": "CHI", "1611661315": "CON", "1611661316": "IND",
   "1611661317": "NYL", "1611661318": "MIN", "1611661319": "PHX", "1611661320": "SEA",
   "1611661321": "WAS", "1611661322": "LVA", "1611661323": "DAL", "1611661324": "LA",
   "1611661325": "GS",
 };
 
-// flowSeriesNumber → display name
 const SERIES_NAMES: Record<number, string> = {
-  0: "Beta",
-  1: "Series 1",
-  2: "Series 2",
-  3: "Summer 2021",
-  4: "Series 3",
-  5: "Series 4",
-  6: "2023-24",
-  7: "2024-25",
-  8: "2025-26",
+  0: "Beta", 1: "Series 1", 2: "Series 2", 3: "Summer 2021",
+  4: "Series 3", 5: "Series 4", 6: "2023-24", 7: "2024-25", 8: "2025-26",
 };
 
-// parallelID → display name (confirmed from Top Shot marketplace)
 const PARALLEL_NAMES: Record<number, string> = {
-  0: "Base",
-  1: "Holo MMXX",
-  2: "Throwbacks",
-  3: "Camo",
-  4: "Metaverse",
-  5: "Cosmic",
-  6: "Ember",
-  7: "Infinite",
-  8: "Sapphire",
-  9: "Ruby",
-  10: "Gold",
-  11: "Super Rare",
-  12: "Platinum Ice",
-  13: "Black Ice",
-  14: "Bronze",
-  15: "Silver",
-  16: "Metallic Gold",
-  17: "Legendary",
-  18: "Unique",
+  0: "Base", 1: "Holo MMXX", 2: "Throwbacks", 3: "Camo", 4: "Metaverse",
+  5: "Cosmic", 6: "Ember", 7: "Infinite", 8: "Sapphire", 9: "Ruby",
+  10: "Gold", 11: "Super Rare", 12: "Platinum Ice", 13: "Black Ice",
+  14: "Bronze", 15: "Silver", 16: "Metallic Gold", 17: "Legendary", 18: "Unique",
 };
 
 function serialPremium(serial: number, circ: number): number {
@@ -137,10 +111,10 @@ export interface SniperDeal {
   playerName: string;
   teamName: string;
   setName: string;
-  seriesName: string;    // Now "2024-25" instead of "S7"
+  seriesName: string;
   tier: string;
-  parallel: string;      // Now "Metallic Gold" instead of "Parallel #16"
-  parallelId: number;    // Raw ID for any future use
+  parallel: string;
+  parallelId: number;
   serial: number;
   circulationCount: number;
   askPrice: number;
@@ -158,7 +132,6 @@ export interface SniperDeal {
   serialSignal: string | null;
   thumbnailUrl: string | null;
   isLocked: boolean;
-  isStale: boolean;
   updatedAt: string | null;
   packListingId: string | null;
   packName: string | null;
@@ -402,8 +375,6 @@ export async function GET(req: Request) {
   const supabaseFmv = await fetchSupabaseFmv(supabase, editionKeys);
   console.log(`[sniper-feed] Supabase hits: ${supabaseFmv.size}/${editionKeys.length}`);
 
-  const now = Date.now();
-
   const enriched: SniperDeal[] = txns.map((tx): SniperDeal | null => {
     if (!tx.moment) return null;
     const askPrice = parsePrice(tx.price);
@@ -449,16 +420,12 @@ export async function GET(req: Request) {
     const isJersey = jerseyMatch || (serial >= 2 && serial <= 99);
     const adjustedFmv = baseFmv * serialMult * (1 + totalBadgePremium);
     const discount = ((adjustedFmv - askPrice) / adjustedFmv) * 100;
-
     const parallelId = psp?.parallelID ?? m.parallelID ?? 0;
     const teamId = m.play?.stats?.teamAtMomentNbaId ?? "";
     const teamName = NBA_TEAMS[teamId] ?? teamId;
-
-    const seriesNumber = m.set?.flowSeriesNumber;
     const tierRaw = (m.tier ?? "COMMON").replace("MOMENT_TIER_", "");
     const thumbnailUrl = buildThumbnailUrl(m.assetPathPrefix);
     const updatedAt = tx.updatedAt ?? null;
-    const isStale = updatedAt ? (now - new Date(updatedAt).getTime()) > 10 * 60 * 1000 : false;
 
     return {
       flowId: m.flowId,
@@ -467,7 +434,7 @@ export async function GET(req: Request) {
       playerName: m.play?.stats?.playerName ?? "Unknown",
       teamName,
       setName: m.set?.flowName ?? "",
-      seriesName: formatSeries(seriesNumber),
+      seriesName: formatSeries(m.set?.flowSeriesNumber),
       tier: tierRaw,
       parallel: formatParallel(parallelId),
       parallelId,
@@ -493,7 +460,6 @@ export async function GET(req: Request) {
         : null,
       thumbnailUrl,
       isLocked: m.isLocked ?? false,
-      isStale,
       updatedAt,
       packListingId,
       packName,
@@ -503,16 +469,24 @@ export async function GET(req: Request) {
     };
   }).filter((m): m is SniperDeal => m !== null);
 
-  const deals = enriched
-    .filter(m => {
-      if (m.discount < minDiscount) return false;
-      if (badgeOnly && !m.hasBadge) return false;
-      if (maxPrice > 0 && m.askPrice > maxPrice) return false;
-      if (serialFilter === "special" && !m.isSpecialSerial) return false;
-      if (serialFilter === "jersey" && !m.isJersey) return false;
-      return true;
+  // Apply filters
+  const filtered = enriched.filter(m => {
+    if (m.discount < minDiscount) return false;
+    if (badgeOnly && !m.hasBadge) return false;
+    if (maxPrice > 0 && m.askPrice > maxPrice) return false;
+    if (serialFilter === "special" && !m.isSpecialSerial) return false;
+    if (serialFilter === "jersey" && !m.isJersey) return false;
+    return true;
+  });
+
+  // Default sort: newest listed first (updatedAt desc)
+  // Client can re-sort by discount — we return all 200 so client sort works on full set
+  const deals = filtered
+    .sort((a, b) => {
+      const ta = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const tb = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      return tb - ta;
     })
-    .sort((a, b) => b.discount - a.discount)
     .slice(0, 200);
 
   console.log(`[sniper-feed] enriched: ${enriched.length}, deals: ${deals.length}`);
