@@ -31,15 +31,37 @@ type CachedPackData = {
 const packCache = new Map<string, { data: CachedPackData; expiresAt: number }>()
 const CACHE_TTL_MS = 5 * 60 * 1000
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function topshotFetch<T = any>(query: string, variables: Record<string, unknown>): Promise<T> {
-  const res = await fetch(TOPSHOT_GRAPHQL, {
-    method: "POST",
-    headers: GRAPHQL_HEADERS,
-    body: JSON.stringify({ query, variables }),
-  })
-  const json = await res.json()
-  if (json.errors) throw new Error(json.errors[0]?.message ?? "GraphQL error")
+// ─── Fetch helper with timeout ───────────────────────────────────────────────
+
+async function topshotFetch<T extends object>(
+  query: string,
+  variables: Record<string, unknown>,
+  timeoutMs = 12000
+): Promise<T> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  let res: Response
+  try {
+    res = await fetch(TOPSHOT_GRAPHQL, {
+      method: "POST",
+      headers: GRAPHQL_HEADERS,
+      body: JSON.stringify({ query, variables }),
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timer)
+  }
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "")
+    throw new Error(`TopShot GQL ${res.status}: ${body.slice(0, 200)}`)
+  }
+
+  const json = await res.json() as { errors?: { message: string }[]; data?: T }
+  if (json.errors && json.errors.length > 0) {
+    throw new Error(json.errors[0]?.message ?? "GraphQL error")
+  }
   return json.data as T
 }
 
@@ -248,28 +270,45 @@ function serialPremiumLabel(node: EditionNode): string | null {
 
 // ─── Fetch all editions with pagination ─────────────────────────────────────
 
+type PackEditionsResponse = {
+  getPackListing?: {
+    data?: {
+      packEditionsV3?: {
+        pageInfo: { endCursor: string; hasNextPage: boolean }
+        edges: { node: EditionNode }[]
+      }
+    }
+  }
+}
+
 async function fetchAllEditions(packListingId: string): Promise<EditionNode[]> {
   const allEditions: EditionNode[] = []
   let cursor: string | null = null
   let hasMore = true
+  let pageNum = 0
 
   while (hasMore) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data: any = await topshotFetch(PACK_EDITIONS_QUERY, {
+    pageNum++
+    if (pageNum > 20) {
+      // Safety valve — no pack has >2000 editions
+      console.warn(`[pack-ev] fetchAllEditions exceeded 20 pages for ${packListingId}`)
+      break
+    }
+
+    const result: PackEditionsResponse = await topshotFetch<PackEditionsResponse>(PACK_EDITIONS_QUERY, {
       input: { packListingId },
       after: cursor ?? undefined,
     })
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const connection: any = data?.getPackListing?.data?.packEditionsV3
-    const edges: { node: EditionNode }[] = connection?.edges ?? []
+    const packEditionsV3 = result?.getPackListing?.data?.packEditionsV3
+    const edges: { node: EditionNode }[] = packEditionsV3?.edges ?? []
 
     for (const edge of edges) {
       if (edge?.node) allEditions.push(edge.node)
     }
 
-    hasMore = connection?.pageInfo?.hasNextPage === true
-    cursor = connection?.pageInfo?.endCursor ?? null
+    hasMore = packEditionsV3?.pageInfo?.hasNextPage === true
+    cursor = packEditionsV3?.pageInfo?.endCursor ?? null
   }
 
   return allEditions
@@ -277,15 +316,37 @@ async function fetchAllEditions(packListingId: string): Promise<EditionNode[]> {
 
 // ─── Main handler ────────────────────────────────────────────────────────────
 
+type PackDynamicResponse = {
+  getPackListing?: {
+    data?: {
+      id?: string
+      forSale?: boolean
+      isSoldOut?: boolean
+      remaining?: number
+      dropType?: string
+      packListingContentRemaining?: {
+        unopened?: number
+        totalPackCount?: number
+        remainingByTier?: TierCounts
+        originalCountsByTier?: TierCounts
+      }
+    }
+  }
+}
+
 export async function POST(req: NextRequest) {
+  let packListingId = ""
+
   try {
-    const body = await req.json()
-    const packListingId: string = body.packListingId
+    const body = await req.json().catch(() => ({})) as { packListingId?: string; packPrice?: number }
+    packListingId = body.packListingId ?? ""
     const packPrice: number = body.packPrice ?? 0
 
     if (!packListingId) {
       return NextResponse.json({ error: "packListingId is required" }, { status: 400 })
     }
+
+    console.log(`[pack-ev] Request for ${packListingId} price=${packPrice}`)
 
     // ── Check cache ─────────────────────────────────────────────────────────
     const cached = packCache.get(packListingId)
@@ -313,22 +374,43 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // ── Fetch fresh data ─────────────────────────────────────────────────────
-    const [dynamicData, editions] = await Promise.all([
-      topshotFetch(PACK_DYNAMIC_QUERY, { input: { packListingId } }),
-      fetchAllEditions(packListingId),
-    ])
+    // ── Fetch fresh data — sequential to avoid memory pressure ──────────────
+    let dynamicData: PackDynamicResponse
+    let editions: EditionNode[]
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const listing: any = (dynamicData as any)?.getPackListing?.data
+    try {
+      dynamicData = await topshotFetch<PackDynamicResponse>(PACK_DYNAMIC_QUERY, { input: { packListingId } })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[pack-ev] Dynamic query failed for ${packListingId}: ${msg}`)
+      return NextResponse.json(
+        { error: "Failed to fetch pack supply data: " + msg },
+        { status: 502 }
+      )
+    }
 
-    const totalUnopened: number = listing?.packListingContentRemaining?.unopened ?? 0
-    const remainingByTier: TierCounts = listing?.packListingContentRemaining?.remainingByTier ?? {}
-    const originalByTier: TierCounts = listing?.packListingContentRemaining?.originalCountsByTier ?? {}
+    try {
+      editions = await fetchAllEditions(packListingId)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[pack-ev] Editions query failed for ${packListingId}: ${msg}`)
+      return NextResponse.json(
+        { error: "Failed to fetch pack editions: " + msg },
+        { status: 502 }
+      )
+    }
+
+    const contentRemaining = dynamicData?.getPackListing?.data?.packListingContentRemaining
+    const totalUnopened: number = contentRemaining?.unopened ?? 0
+    const remainingByTier: TierCounts = contentRemaining?.remainingByTier ?? {} as TierCounts
+    const originalByTier: TierCounts = contentRemaining?.originalCountsByTier ?? {} as TierCounts
 
     if (totalUnopened === 0 || editions.length === 0) {
+      console.warn(`[pack-ev] No data: unopened=${totalUnopened} editions=${editions.length} for ${packListingId}`)
       return NextResponse.json({ error: "No pack data available" }, { status: 404 })
     }
+
+    console.log(`[pack-ev] Computing EV: ${editions.length} editions, ${totalUnopened} unopened`)
 
     // ── Compute EV per edition ──────────────────────────────────────────────
     const editionEVs: EditionEV[] = editions.map((node) => {
@@ -336,9 +418,10 @@ export async function POST(req: NextRequest) {
       const price = bestPrice(node)
       const ev = prob * price * 0.95
 
-      const circ = node.edition.setPlay.circulations
-      const lockedPct = circ.circulationCount > 0
-        ? Math.round((circ.locked / circ.circulationCount) * 100)
+      const circ = node.edition.setPlay?.circulations
+      const circCount = circ?.circulationCount ?? 0
+      const lockedPct = circCount > 0
+        ? Math.round(((circ?.locked ?? 0) / circCount) * 100)
         : 0
       const depletionPct = node.count > 0
         ? Math.round(((node.count - node.remaining) / node.count) * 100)
@@ -346,10 +429,10 @@ export async function POST(req: NextRequest) {
 
       return {
         editionId: node.edition.id,
-        playerName: node.edition.play.stats.playerName,
-        setName: node.edition.set.flowName,
+        playerName: node.edition.play?.stats?.playerName ?? "Unknown",
+        setName: node.edition.set?.flowName ?? "Unknown",
         tier: normalizeTier(node.edition.tier),
-        parallelName: node.edition.parallelSetPlay.parallelName || null,
+        parallelName: node.edition.parallelSetPlay?.parallelName || null,
         probability: Math.round(prob * 10000) / 100,
         averageSalePrice: price,
         lowAsk: node.lowAsk,
@@ -357,10 +440,10 @@ export async function POST(req: NextRequest) {
         remaining: node.remaining,
         count: node.count,
         circulationCount: node.edition.circulationCount,
-        hiddenInPacks: circ.hiddenInPacks,
-        forSaleByCollectors: circ.forSaleByCollectors,
-        locked: circ.locked,
-        burned: circ.burned,
+        hiddenInPacks: circ?.hiddenInPacks ?? 0,
+        forSaleByCollectors: circ?.forSaleByCollectors ?? 0,
+        locked: circ?.locked ?? 0,
+        burned: circ?.burned ?? 0,
         lockedPct,
         depletionPct,
         hasSerialOne: node.serialOne,
@@ -404,26 +487,36 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Supply snapshot ─────────────────────────────────────────────────────
-    const totalPackCount: number = listing?.packListingContentRemaining?.totalPackCount ?? 0
+    const totalPackCount: number = contentRemaining?.totalPackCount ?? 0
     const depletionPct = totalPackCount > 0
       ? Math.round(((totalPackCount - totalUnopened) / totalPackCount) * 100)
       : 0
 
+    const listingData = dynamicData?.getPackListing?.data
     const supplySnapshot = {
       totalUnopened,
       totalPackCount,
       depletionPct,
       remainingByTier,
       originalByTier,
-      forSale: listing?.forSale,
-      isSoldOut: listing?.isSoldOut,
+      forSale: listingData?.forSale ?? false,
+      isSoldOut: listingData?.isSoldOut ?? false,
     }
 
     // ── Store in cache ──────────────────────────────────────────────────────
     packCache.set(packListingId, {
-      data: { grossEV, topPulls, serialPremiumAlerts, tierBreakdown, supplySnapshot, editionCount: editionEVs.length },
+      data: {
+        grossEV,
+        topPulls,
+        serialPremiumAlerts,
+        tierBreakdown,
+        supplySnapshot,
+        editionCount: editionEVs.length,
+      },
       expiresAt: Date.now() + CACHE_TTL_MS,
     })
+
+    console.log(`[pack-ev] Done: grossEV=${grossEV} packEV=${packEV} editions=${editionEVs.length}`)
 
     return NextResponse.json({
       packListingId,
@@ -445,8 +538,10 @@ export async function POST(req: NextRequest) {
       methodology: "EV = Σ(remaining_i / total_unopened × avg_sale_price_i × 0.95) − pack_price",
     })
   } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error(`[pack-ev] Unhandled error for ${packListingId}:`, msg)
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "pack-ev failed" },
+      { error: msg || "pack-ev failed" },
       { status: 500 }
     )
   }

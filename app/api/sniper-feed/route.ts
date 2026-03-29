@@ -27,6 +27,20 @@ const BADGE_LABELS: Record<string, string> = {
   "Championship Year": "Champ Year", "Rookie of the Year": "ROTY", "Fresh": "Fresh",
 };
 
+// series_number (on-chain integer) → badge_editions.series_number column
+// Used to join badge_editions against the moment's series
+const SERIES_INT_TO_SEASON: Record<number, string> = {
+  0: "Beta",
+  1: "2020-21",
+  2: "2021-22",
+  3: "Summer 2021",
+  4: "2022-23",
+  5: "2023-24",
+  6: "2024-25",
+  7: "2025-26",
+  8: "2025-26",
+};
+
 const NBA_TEAMS: Record<string, string> = {
   "1610612737": "ATL", "1610612738": "BOS", "1610612739": "CLE", "1610612740": "NOP",
   "1610612741": "CHI", "1610612742": "DAL", "1610612743": "DEN", "1610612744": "GSW",
@@ -46,10 +60,6 @@ function serialPremium(serial: number, circ: number): number {
   return Math.max(1.0, Math.pow(circ / 2 / serial, 0.4));
 }
 
-// assetPathPrefix already contains the full CDN path up to the filename.
-// Correct suffix is just "Hero_Black_2880_2880.jpg" — the prefix handles everything else.
-// Example prefix: "https://assets.nbatopshot.com/editions/7_throwdowns_rare/6c6e32e0-.../play_6c6e32e0-..._7_throwdowns_rare_capture_play_48762121_capture_"
-// Resulting URL:   "https://assets.nbatopshot.com/editions/.../..._capture_Hero_Black_2880_2880.jpg"
 function buildThumbnailUrl(assetPathPrefix: string | undefined): string | null {
   if (assetPathPrefix) {
     return `${assetPathPrefix}Hero_Black_2880_2880.jpg`;
@@ -321,7 +331,58 @@ async function fetchSupabaseFmv(
   return map;
 }
 
-function extractBadges(tx: RawTransaction): string[] {
+// ── Badge enrichment from Supabase (same pattern as wallet page) ─────────────
+// Queries badge_editions by player_name (ilike) + series_number (integer).
+// Returns a map of playerName → badge slugs.
+// series_number in badge_editions is the on-chain integer (0-8).
+
+interface BadgeEditionRow {
+  player_name: string;
+  badge_type: string;
+  series_number: number | null;
+}
+
+async function fetchBadgesByPlayers(
+  supabase: SupabaseClient,
+  playerNames: string[],
+  seriesNumbers: number[]
+): Promise<Map<string, string[]>> {
+  if (!playerNames.length) return new Map();
+
+  // Build ilike filter for player names
+  const orFilter = playerNames
+    .map(n => `player_name.ilike.${n}`)
+    .join(",");
+
+  const { data, error } = await supabase
+    .from("badge_editions")
+    .select("player_name, badge_type, series_number")
+    .or(orFilter)
+    .in("series_number", seriesNumbers.length ? seriesNumbers : [-1]);
+
+  if (error) {
+    console.warn("[sniper-feed] badge fetch error:", error.message);
+    return new Map();
+  }
+
+  const map = new Map<string, string[]>();
+  for (const row of (data ?? []) as BadgeEditionRow[]) {
+    const name = row.player_name;
+    const existing = map.get(name) ?? [];
+    // Convert badge_type to slug format if needed
+    const slug = row.badge_type;
+    if (!existing.includes(slug)) {
+      existing.push(slug);
+    }
+    map.set(name, existing);
+  }
+
+  console.log(`[sniper-feed] badge_editions hits: ${map.size} players with badges`);
+  return map;
+}
+
+// Extract badge slugs from API tags (fallback — usually empty in API response)
+function extractBadgesFromTags(tx: RawTransaction): string[] {
   return (tx.moment?.play?.tags ?? [])
     .map(t => t.id in BADGE_PREMIUMS ? t.id : t.title in BADGE_PREMIUMS ? t.title : null)
     .filter((s): s is string => s !== null);
@@ -357,7 +418,24 @@ export async function GET(req: Request) {
   const editionFloors = computeEditionFloors(allTxns);
   const editionKeys = Array.from(editionFloors.keys());
   const supabaseFmv = await fetchSupabaseFmv(supabase, editionKeys);
-  console.log(`[sniper-feed] Supabase hits: ${supabaseFmv.size}/${editionKeys.length}`);
+  console.log(`[sniper-feed] Supabase FMV hits: ${supabaseFmv.size}/${editionKeys.length}`);
+
+  // ── Badge enrichment from Supabase ──────────────────────────────────────
+  // Collect unique player names and series numbers from the transaction pool
+  const playerNameSet = new Set<string>();
+  const seriesNumberSet = new Set<number>();
+  for (const tx of allTxns) {
+    const name = tx.moment?.play?.stats?.playerName;
+    if (name) playerNameSet.add(name);
+    const seriesNum = tx.moment?.set?.flowSeriesNumber;
+    if (seriesNum != null) seriesNumberSet.add(seriesNum);
+  }
+
+  const playerBadgeMap = await fetchBadgesByPlayers(
+    supabase,
+    Array.from(playerNameSet),
+    Array.from(seriesNumberSet)
+  );
 
   const now = Date.now();
 
@@ -399,7 +477,17 @@ export async function GET(req: Request) {
     if (!serial) return null;
 
     const jerseyNumber = m.play?.stats?.jerseyNumber ?? null;
-    const badgeSlugs = extractBadges(tx);
+    const playerName = m.play?.stats?.playerName ?? "Unknown";
+
+    // Merge badge slugs: Supabase badge_editions (primary) + API tags (fallback)
+    const tagBadges = extractBadgesFromTags(tx);
+    const supabaseBadges = playerBadgeMap.get(playerName) ?? [];
+
+    // Deduplicate — prefer supabase badges, add any tag badges not already present
+    const badgeSlugSet = new Set<string>([...supabaseBadges, ...tagBadges]);
+    // Only keep slugs that have a known premium
+    const badgeSlugs = Array.from(badgeSlugSet).filter(s => s in BADGE_PREMIUMS);
+
     const hasBadge = badgeSlugs.length > 0;
     const totalBadgePremium = badgeSlugs.reduce((s, slug) => s + (BADGE_PREMIUMS[slug] ?? 0), 0);
     const serialMult = serialPremium(serial, circ);
@@ -412,18 +500,17 @@ export async function GET(req: Request) {
     const teamId = m.play?.stats?.teamAtMomentNbaId ?? "";
     const teamName = NBA_TEAMS[teamId] ?? teamId;
 
-    // Fixed thumbnail: assetPathPrefix already encodes full path, just append resolution suffix
     const thumbnailUrl = buildThumbnailUrl(m.assetPathPrefix);
 
     const updatedAt = tx.updatedAt ?? null;
     const listingAgeMs = updatedAt ? now - new Date(updatedAt).getTime() : 0;
-    const isStale = listingAgeMs > 10 * 60 * 1000; // 10 minutes
+    const isStale = listingAgeMs > 10 * 60 * 1000;
 
     return {
       flowId: m.flowId,
       momentId: m.id,
       editionKey,
-      playerName: m.play?.stats?.playerName ?? "Unknown",
+      playerName,
       teamName,
       setName: m.set?.flowName ?? "",
       seriesName: m.set?.flowSeriesNumber ? `S${m.set.flowSeriesNumber}` : "",
@@ -473,7 +560,9 @@ export async function GET(req: Request) {
     .sort((a, b) => b.discount - a.discount)
     .slice(0, 200);
 
-  console.log(`[sniper-feed] enriched: ${enriched.length}, deals: ${deals.length}`);
+  const badgeDealsCount = deals.filter(d => d.hasBadge).length;
+  console.log(`[sniper-feed] enriched: ${enriched.length}, deals: ${deals.length}, badge deals: ${badgeDealsCount}`);
+
   return NextResponse.json({
     count: deals.length,
     lastRefreshed: new Date().toISOString(),
