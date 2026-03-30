@@ -25,7 +25,7 @@ export async function GET() {
 
   const { data: fmvRows, error: fmvErr } = await supabase
     .from("fmv_snapshots")
-    .select("edition_id, fmv_usd, confidence, computed_at, source")
+    .select("edition_id, fmv_usd, confidence, computed_at")
     .eq("confidence", "high")
     .order("computed_at", { ascending: false })
     .limit(20);
@@ -61,7 +61,7 @@ export async function GET() {
       fmv: r2(base),
       confidence: ((row.confidence as string) ?? "low").toLowerCase(),
       updatedAt: row.computed_at,
-      source: (row.source as string) ?? "rpc",
+      source: "rpc",
       exampleAdjustments: {
         serial1:   { serial: 1,   serialMult: 12.0,       adjustedFmv: r2(base * 12.0) },
         serial23:  { serial: 23,  serialMult: 2.8,        adjustedFmv: r2(base * 2.8) },
