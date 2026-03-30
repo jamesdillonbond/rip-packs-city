@@ -342,7 +342,7 @@ function getTrait(traits: Array<{ name: string; value: string }> | undefined, na
 async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = setTimeout(() => controller.abort(), 12000); // 12s — Flowty can be slow
     const res = await fetch(FLOWTY_ENDPOINT, {
       method: "POST",
       headers: FLOWTY_HEADERS,
@@ -398,11 +398,11 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
 }
 
 async function fetchAllFlowtyListings(): Promise<FlowtyListing[]> {
-  const pages = await Promise.all([
-    fetchFlowtyPage(0), fetchFlowtyPage(24),
-    fetchFlowtyPage(48), fetchFlowtyPage(72),
-  ]);
-  return pages.flat();
+  // Stagger pages slightly to avoid rate limiting — Flowty can be sensitive to parallel bursts
+  const [p0, p1] = await Promise.all([fetchFlowtyPage(0), fetchFlowtyPage(24)]);
+  await new Promise(r => setTimeout(r, 200));
+  const [p2, p3] = await Promise.all([fetchFlowtyPage(48), fetchFlowtyPage(72)]);
+  return [...p0, ...p1, ...p2, ...p3];
 }
 
 // ─── Supabase FMV lookup ──────────────────────────────────────────────────────
