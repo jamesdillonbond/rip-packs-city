@@ -249,13 +249,12 @@ async function fetchTSPage(
         query: SEARCH_LISTINGS_QUERY,
         variables: {
           input: {
-            sortBy,
+            // searchMomentListings does NOT support sortBy at input level
             filters: { byListings: { listingType: { value: "FOR_SALE" } } },
             searchInput: { pagination: { cursor, direction: "RIGHT", count: 100 } },
           },
         },
       }),
-      cache: "no-store",
       signal: controller.signal,
     });
     clearTimeout(timeout);
@@ -292,8 +291,8 @@ async function fetchTopShotPool(): Promise<{ listings: RawListing[]; tsCount: nu
 
   // Fetch UPDATED_AT_DESC and PRICE_ASC in parallel — both within 5s timeout
   const [r1, r2] = await Promise.allSettled([
-    fetchTSPage("", "UPDATED_AT_DESC"),
-    fetchTSPage("", "PRICE_ASC"),
+    fetchTSPage("", ""),
+    fetchTSPage("", ""),
   ]);
 
   if (r1.status === "fulfilled") add(r1.value.listings);
