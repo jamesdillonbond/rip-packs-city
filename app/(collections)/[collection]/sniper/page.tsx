@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useCart } from "@/lib/cart/CartContext";
 
 interface SniperDeal {
   flowId: string;
@@ -36,6 +37,9 @@ interface SniperDeal {
   packEv: number | null;
   packEvRatio: number | null;
   buyUrl: string;
+  // storefrontAddress and listingResourceID come from the sniper feed
+  storefrontAddress?: string;
+  listingResourceID?: string;
 }
 
 interface FeedResponse {
@@ -51,16 +55,14 @@ interface OfferData {
   bestOffer: number | null;
 }
 
-// wallet-search row shape (fields we use)
 interface WalletRow {
   flowId?: string | null;
   momentId?: string;
   isLocked?: boolean;
-  editionsOwned?: number;   // total owned in this edition
-  editionsLocked?: number;  // total locked in this edition
+  editionsOwned?: number;
+  editionsLocked?: number;
 }
 
-// Per-flowId ownership info stored from wallet load
 interface OwnedInfo {
   isLocked: boolean;
   editionsOwned: number;
@@ -83,6 +85,9 @@ const CONFIDENCE_COLOR: Record<string, string> = {
 
 const REFRESH_INTERVAL = 30_000;
 const PAGE_SIZE = 50;
+
+// Flowty's storefront address — commission recipient for P2P listings
+const FLOWTY_STOREFRONT = "0x3cdbb3d569211ff3";
 
 function discountColor(d: number) {
   if (d >= 40) return "text-green-400 font-bold";
@@ -126,6 +131,73 @@ function SortHeader({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Action cell — Add to Cart + BUY direct link
+// ---------------------------------------------------------------------------
+
+function ActionCell({ deal }: { deal: SniperDeal }) {
+  const { addToCart, removeFromCart, isInCart } = useCart();
+
+  // We need the listingResourceID from the sniper feed to add to cart.
+  // If the feed doesn't supply it yet, fall back to direct BUY link only.
+  const canAddToCart = !!deal.listingResourceID && !!deal.storefrontAddress;
+  const inCart = canAddToCart && isInCart(deal.listingResourceID!);
+
+  function handleCartToggle() {
+    if (!canAddToCart) return;
+    if (inCart) {
+      removeFromCart(deal.listingResourceID!);
+      return;
+    }
+    addToCart({
+      listingResourceID: deal.listingResourceID!,
+      storefrontAddress: deal.storefrontAddress!,
+      expectedPrice: deal.askPrice,
+      commissionRecipient: FLOWTY_STOREFRONT,
+      momentId: Number(deal.momentId),
+      playerName: deal.playerName,
+      setName: deal.setName,
+      serialNumber: deal.serial,
+      totalEditions: deal.circulationCount,
+      tier: deal.tier,
+      thumbnailUrl: deal.thumbnailUrl,
+      fmv: deal.adjustedFmv,
+      source: "sniper",
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {/* Add to Cart — only shown when feed provides listing data */}
+      {canAddToCart && (
+        <button
+          onClick={handleCartToggle}
+          className={`inline-flex items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-xs font-bold transition active:scale-95 ${
+            inCart
+              ? "bg-zinc-700 text-zinc-300 hover:bg-red-900/60 hover:text-red-300 border border-zinc-600"
+              : "bg-zinc-800 text-zinc-200 hover:bg-zinc-700 border border-zinc-600"
+          }`}
+        >
+          {inCart ? "✓ In Cart" : "+ Cart"}
+        </button>
+      )}
+      {/* Direct buy link always shown */}
+      <a
+        href={deal.buyUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-block rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white text-center transition hover:bg-red-500 active:scale-95"
+      >
+        BUY →
+      </a>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
+
 export default function SniperPage() {
   const [deals, setDeals] = useState<SniperDeal[]>([]);
   const [offers, setOffers] = useState<Record<string, OfferData>>({});
@@ -141,14 +213,12 @@ export default function SniperPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
-  // Wallet — map flowId → OwnedInfo
   const [walletInput, setWalletInput] = useState("");
   const [walletLoading, setWalletLoading] = useState(false);
   const [walletError, setWalletError] = useState<string | null>(null);
   const [loadedWallet, setLoadedWallet] = useState<string | null>(null);
   const [ownedMap, setOwnedMap] = useState<Map<string, OwnedInfo>>(new Map());
 
-  // Filters
   const [minDiscount, setMinDiscount] = useState(0);
   const [rarity, setRarity] = useState("all");
   const [badgeOnly, setBadgeOnly] = useState(false);
@@ -231,7 +301,6 @@ export default function SniperPage() {
     };
   }, [autoRefresh, fetchDeals]);
 
-  // Load wallet — fetch up to 60 moments, build flowId → OwnedInfo map
   const loadWallet = useCallback(async () => {
     const w = walletInput.trim();
     if (!w) return;
@@ -543,7 +612,6 @@ export default function SniperPage() {
                       )}
                     </td>
 
-                    {/* Player + badges inline */}
                     <td className="px-3 py-3">
                       <div className="font-semibold text-white leading-tight">{deal.playerName}</div>
                       <div className="text-[11px] text-zinc-500 mt-0.5 flex gap-1.5 flex-wrap">
@@ -561,7 +629,6 @@ export default function SniperPage() {
                       )}
                     </td>
 
-                    {/* Set + parallel */}
                     <td className="px-3 py-3">
                       <div className="text-zinc-300 text-xs leading-tight">{deal.setName}</div>
                       {isNonBase && (
@@ -610,7 +677,6 @@ export default function SniperPage() {
                       )}
                     </td>
 
-                    {/* Best Offer */}
                     <td className="px-3 py-3">
                       {offersLoading && !offerData ? (
                         <div className="h-3 w-12 animate-pulse rounded bg-zinc-800" />
@@ -636,7 +702,6 @@ export default function SniperPage() {
                       )}
                     </td>
 
-                    {/* Owned — x/x with locked breakdown */}
                     <td className="px-3 py-3">
                       {isOwned ? (
                         <div className="flex flex-col gap-0.5">
@@ -675,10 +740,7 @@ export default function SniperPage() {
                     </td>
 
                     <td className="px-3 py-3">
-                      <a href={deal.buyUrl} target="_blank" rel="noopener noreferrer"
-                        className="inline-block rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-red-500 active:scale-95">
-                        BUY →
-                      </a>
+                      <ActionCell deal={deal} />
                     </td>
                   </tr>
                 );
