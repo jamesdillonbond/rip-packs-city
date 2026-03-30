@@ -118,7 +118,7 @@ async function lookupEditions(
   if (internalIds.length) {
     const { data: fmvRows } = await supabase
       .from("fmv_snapshots")
-      .select("edition_id, fmv_usd, confidence, computed_at, source")
+      .select("edition_id, fmv_usd, confidence, computed_at")
       .in("edition_id", internalIds)
       .order("computed_at", { ascending: false });
 
@@ -195,7 +195,7 @@ async function lookupEditions(
       adjustedFmv: round2(adjustedFmv),
       confidence: (fmv.confidence ?? "low").toLowerCase(),
       updatedAt: fmv.computed_at,
-      source: fmv.source ?? "rpc",
+      source: "rpc",
     };
   });
 }
