@@ -23,7 +23,6 @@ interface RawTransaction {
     flowSerialNumber: string;
     tier?: string;
     parallelID?: number;
-    assetPathPrefix?: string;
     isLocked?: boolean;
     set?: { id: string; flowName?: string; flowSeriesNumber?: number };
     setPlay?: {
@@ -34,11 +33,8 @@ interface RawTransaction {
     parallelSetPlay?: ParallelSetPlay;
     play?: {
       id: string;
-      stats: { playerName: string; jerseyNumber?: string; teamAtMomentNbaId?: string };
-      tags?: RawTag[];
+      stats: { playerName: string; jerseyNumber?: string; teamAtMoment?: string };
     };
-    marketplaceID?: string;
-    marketplaceListingID?: string;
   };
 }
 
@@ -203,20 +199,24 @@ const SEARCH_TX_QUERY = `
           pagination { rightCursor }
           data {
             ... on MarketplaceTransactions {
+              size
               data {
                 ... on MarketplaceTransaction {
                   id price updatedAt
                   moment {
-                    id flowId flowSerialNumber tier parallelID assetPathPrefix isLocked
+                    id flowId flowSerialNumber tier parallelID isLocked
                     set { id flowName flowSeriesNumber }
-                    setPlay { ID flowRetired circulations { circulationCount } }
+                    setPlay {
+                      ID flowRetired
+                      circulations { circulationCount forSaleByCollectors }
+                    }
                     parallelSetPlay { setID playID parallelID }
                     play {
                       id
-                      stats { playerName jerseyNumber teamAtMomentNbaId }
-                      tags { id title }
+                      stats {
+                        playerName jerseyNumber teamAtMoment
+                      }
                     }
-                    marketplaceID marketplaceListingID
                   }
                 }
               }
@@ -260,10 +260,18 @@ async function fetchTSPage(
     const json = await res.json();
     if (json.errors?.length) throw new Error(json.errors.map((e: { message: string }) => e.message).join("; "));
     const summary = json?.data?.searchMarketplaceTransactions?.data?.searchSummary;
-    return {
-      txns: (summary?.data?.data ?? []) as RawTransaction[],
-      nextCursor: summary?.pagination?.rightCursor ?? null,
-    };
+    const nextCursor = summary?.pagination?.rightCursor ?? null;
+    // data is an array of MarketplaceTransactions blocks — matches ingest parsing pattern
+    const txns: RawTransaction[] = [];
+    const dataField = summary?.data;
+    if (Array.isArray(dataField)) {
+      for (const block of dataField) {
+        if (Array.isArray(block?.data)) txns.push(...block.data);
+      }
+    } else if (dataField?.data && Array.isArray(dataField.data)) {
+      txns.push(...dataField.data);
+    }
+    return { txns, nextCursor };
   } catch (err) {
     console.warn(`[sniper-feed] TS page cursor=${cursor} sortBy=${sortBy} failed:`, err);
     return { txns: [], nextCursor: null };
@@ -559,12 +567,11 @@ export async function GET(req: Request) {
       serialMultiplier(serial, circ, jerseyNumber);
     const isJersey = jerseyNumber !== null && serial === jerseyNumber;
 
-    const teamId = m.play?.stats?.teamAtMomentNbaId ?? "";
-    const teamName = NBA_TEAMS[teamId] ?? "";
+    const teamName = TEAM_ABBREVS[m.play?.stats?.teamAtMoment ?? ""] ?? m.play?.stats?.teamAtMoment ?? "";
     if (team !== "all" && teamName !== team) continue;
 
-    const badgeSlugs = extractBadgeSlugs(m.play?.tags);
-    const hasBadge = badgeSlugs.length > 0;
+    const badgeSlugs: string[] = []; // tags not in query — badges not available from TS feed
+    const hasBadge = false;
     if (badgeOnly && !hasBadge) continue;
     if (serialFilter === "special" && !isSpecialSerial) continue;
     if (serialFilter === "jersey" && !isJersey) continue;
@@ -579,9 +586,7 @@ export async function GET(req: Request) {
       : Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10;
     if (discount < minDiscount) continue;
 
-    const thumbnailUrl = m.assetPathPrefix
-      ? `${m.assetPathPrefix}Hero_Black_2880_2880.jpg`
-      : `https://assets.nbatopshot.com/media/${m.id}?width=512`;
+    const thumbnailUrl = `https://assets.nbatopshot.com/media/${m.id}?width=512`;
 
     tsDeals.push({
       flowId: m.flowId, momentId: m.id, editionKey,
@@ -594,15 +599,15 @@ export async function GET(req: Request) {
       daysSinceSale: fmvRow?.daysSinceSale ?? null,
       salesCount30d: fmvRow?.salesCount30d ?? null,
       discount, confidence, confidenceSource,
-      hasBadge, badgeSlugs, badgeLabels: badgeSlugs.map(s => BADGE_LABELS[s] ?? s),
+      hasBadge, badgeSlugs, badgeLabels: [],
       badgePremiumPct: 0, serialMult, isSpecialSerial, isJersey, serialSignal,
       thumbnailUrl, isLocked: m.isLocked ?? false,
       updatedAt: tx.updatedAt ?? new Date().toISOString(),
       packListingId: fmvRow?.packListingId ?? null, packName: fmvRow?.packName ?? null,
       packEv: null, packEvRatio: null,
       buyUrl: `https://nbatopshot.com/moment/${m.flowId}`,
-      listingResourceID: m.marketplaceListingID ?? null,
-      storefrontAddress: m.marketplaceID ?? null,
+      listingResourceID: null,
+      storefrontAddress: null,
       source: "topshot",
     });
   }
