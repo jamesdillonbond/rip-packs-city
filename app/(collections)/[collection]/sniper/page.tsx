@@ -3,8 +3,10 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useCart } from "@/lib/cart/CartContext";
 
-// Commission recipient for NFTStorefrontV2 purchases
+// ─── Commission recipient ────────────────────────────────────────────────────
 const COMMISSION_RECIPIENT = "0xc1e4f4f4c4257510";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface SniperDeal {
   flowId: string;
@@ -24,6 +26,7 @@ interface SniperDeal {
   adjustedFmv: number;
   discount: number;
   confidence: string;
+  confidenceSource?: string;
   hasBadge: boolean;
   badgeSlugs: string[];
   badgeLabels: string[];
@@ -40,570 +43,676 @@ interface SniperDeal {
   packEv: number | null;
   packEvRatio: number | null;
   buyUrl: string;
-  listingResourceID?: string | null;
-  storefrontAddress?: string | null;
+  listingResourceID: string | null;
+  storefrontAddress: string | null;
   source?: "topshot" | "flowty";
 }
 
-interface FeedResponse { count: number; lastRefreshed: string; deals: SniperDeal[]; }
-interface OfferData { momentId: string; serialOffer: number | null; editionOffer: number | null; bestOffer: number | null; }
-interface WalletRow { flowId?: string | null; momentId?: string; isLocked?: boolean; editionsOwned?: number; editionsLocked?: number; }
-interface OwnedInfo { isLocked: boolean; editionsOwned: number; editionsLocked: number; }
-type SortKey = "listed" | "discount";
-
-const TIER_COLOR: Record<string, string> = {
-  COMMON: "text-zinc-400", RARE: "text-blue-400",
-  LEGENDARY: "text-yellow-400", ULTIMATE: "text-purple-400", FANDOM: "text-pink-400",
-};
-const CONFIDENCE_COLOR: Record<string, string> = {
-  high: "text-green-400", medium: "text-yellow-400",
-  live: "text-cyan-400", "live-avg": "text-cyan-600", low: "text-zinc-500",
-};
-const REFRESH_INTERVAL = 30_000;
-const PAGE_SIZE = 50;
-
-function discountColor(d: number) {
-  if (d >= 40) return "text-green-400 font-bold";
-  if (d >= 20) return "text-green-500";
-  if (d >= 5) return "text-zinc-300";
-  if (d >= -5) return "text-zinc-500";
-  return "text-red-500";
-}
-function discountBadge(d: number): { label: string; cls: string } | null {
-  if (d >= 50) return { label: "🔥 50%+ OFF", cls: "bg-green-900 text-green-300 border border-green-700" };
-  if (d >= 40) return { label: "🔥 40%+ OFF", cls: "bg-green-950 text-green-400 border border-green-800" };
-  if (d >= 25) return { label: "⬇ 25%+ OFF", cls: "bg-zinc-800 text-green-500 border border-zinc-700" };
-  return null;
-}
-function fmt(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-function listingAge(updatedAt: string | null): { label: string; fresh: boolean } {
-  if (!updatedAt) return { label: "—", fresh: false };
-  const ms = Date.now() - new Date(updatedAt).getTime();
-  const mins = Math.floor(ms / 60000);
-  if (mins < 1) return { label: "just now", fresh: true };
-  if (mins < 5) return { label: `${mins}m ago`, fresh: true };
-  if (mins < 60) return { label: `${mins}m ago`, fresh: false };
-  return { label: `${Math.floor(mins / 60)}h ago`, fresh: false };
+interface FeedResult {
+  count: number;
+  tsCount?: number;
+  flowtyCount?: number;
+  lastRefreshed: string;
+  deals: SniperDeal[];
 }
 
-function SortHeader({ label, sortKey, active, dir, onClick }: { label: string; sortKey: SortKey; active: boolean; dir: "asc" | "desc"; onClick: () => void }) {
+type SortOption =
+  | "discount"
+  | "price_asc"
+  | "price_desc"
+  | "fmv_desc"
+  | "serial_asc";
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function fmt(n: number, decimals = 2) {
+  return n.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+function tierColor(tier: string) {
+  switch (tier.toUpperCase()) {
+    case "COMMON":
+      return "text-slate-400";
+    case "FANDOM":
+      return "text-green-400";
+    case "RARE":
+      return "text-blue-400";
+    case "LEGENDARY":
+      return "text-yellow-400";
+    case "ULTIMATE":
+      return "text-orange-400";
+    default:
+      return "text-slate-400";
+  }
+}
+
+function discountColor(pct: number) {
+  if (pct >= 50) return "bg-red-500/20 text-red-300 border border-red-500/40";
+  if (pct >= 30) return "bg-orange-500/20 text-orange-300 border border-orange-500/40";
+  if (pct >= 15) return "bg-yellow-500/20 text-yellow-300 border border-yellow-500/40";
+  if (pct >= 5) return "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+  return "bg-slate-700/50 text-slate-400 border border-slate-600/40";
+}
+
+/** Confidence tier — visual indicator of FMV data quality */
+function ConfidenceDot({ confidence, source }: { confidence: string; source?: string }) {
+  const isFallback = source === "ask_fallback" || !source;
+  const level = isFallback ? "speculative" : confidence === "high" ? "verified" : confidence === "medium" ? "estimated" : "speculative";
+
+  const cfg = {
+    verified: { dot: "bg-emerald-400", label: "Verified", tip: "FMV backed by real sales data" },
+    estimated: { dot: "bg-yellow-400", label: "Est.", tip: "FMV estimated from limited sales" },
+    speculative: { dot: "bg-red-400/70", label: "Spec.", tip: "No sales data — FMV = ask price" },
+  }[level];
+
   return (
-    <th className="p-3 cursor-pointer select-none hover:text-zinc-300 transition-colors" onClick={onClick}>
-      <span className="flex items-center gap-1">
-        {label}
-        {active ? <span className="text-red-400">{dir === "desc" ? " ↓" : " ↑"}</span> : <span className="text-zinc-700"> ↕</span>}
-      </span>
-    </th>
+    <span
+      className="inline-flex items-center gap-1 text-xs text-slate-500 cursor-help"
+      title={cfg.tip}
+    >
+      <span className={`inline-block w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+      {cfg.label}
+    </span>
   );
 }
 
+/** Serial multiplier badge */
+function SerialBadge({ deal }: { deal: SniperDeal }) {
+  if (!deal.isSpecialSerial && deal.serialMult <= 1) return null;
+  return (
+    <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-xs bg-purple-500/20 text-purple-300 border border-purple-500/30 font-mono">
+      {deal.serialSignal ?? `×${deal.serialMult.toFixed(1)}`}
+    </span>
+  );
+}
+
+/** Source badge */
+function SourceBadge({ source }: { source?: "topshot" | "flowty" }) {
+  if (source === "flowty") {
+    return (
+      <span className="px-1 py-0.5 rounded text-xs bg-blue-500/15 text-blue-400 border border-blue-500/25 font-mono">
+        FLOWTY
+      </span>
+    );
+  }
+  return (
+    <span className="px-1 py-0.5 rounded text-xs bg-slate-700/60 text-slate-500 border border-slate-600/30 font-mono">
+      TS
+    </span>
+  );
+}
+
+/** Action cell — cart + buy */
 function ActionCell({ deal }: { deal: SniperDeal }) {
   const { addToCart, removeFromCart, isInCart } = useCart();
-  const isFlowty = deal.source === "flowty";
-  const canAddToCart = !isFlowty && !!deal.listingResourceID && !!deal.storefrontAddress;
-  const inCart = canAddToCart && isInCart(deal.listingResourceID!);
+  const inCart = deal.listingResourceID ? isInCart(deal.listingResourceID) : false;
 
-  function handleCartToggle() {
-    if (!canAddToCart) return;
+  const canCart =
+    !!deal.listingResourceID &&
+    !!deal.storefrontAddress;
+
+  function handleCart() {
+    if (!canCart) return;
     if (inCart) {
       removeFromCart(deal.listingResourceID!);
-      return;
+    } else {
+      addToCart({
+        listingResourceID: deal.listingResourceID!,
+        storefrontAddress: deal.storefrontAddress!,
+        expectedPrice: deal.askPrice,
+        commissionRecipient: COMMISSION_RECIPIENT,
+        momentId: Number(deal.momentId),
+        playerName: deal.playerName,
+        setName: deal.setName,
+        serialNumber: deal.serial,
+        totalEditions: deal.circulationCount,
+        tier: deal.tier,
+        thumbnailUrl: deal.thumbnailUrl ?? null,
+        fmv: deal.adjustedFmv,
+        source: "sniper",
+      });
     }
-    addToCart({
-      listingResourceID: deal.listingResourceID!,
-      storefrontAddress: deal.storefrontAddress!,
-      expectedPrice: deal.askPrice,
-      commissionRecipient: COMMISSION_RECIPIENT,
-      momentId: Number(deal.flowId),
-      playerName: deal.playerName,
-      setName: deal.setName,
-      serialNumber: deal.serial,
-      totalEditions: deal.circulationCount,
-      tier: deal.tier,
-      thumbnailUrl: deal.thumbnailUrl ?? null,
-      fmv: deal.adjustedFmv,
-      source: "sniper",
-    });
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
-      {canAddToCart && (
-        <button onClick={handleCartToggle}
-          className={`inline-flex items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-xs font-bold transition active:scale-95 ${
+    <div className="flex flex-col items-end gap-1.5">
+      {canCart && (
+        <button
+          onClick={handleCart}
+          className={`px-2 py-0.5 rounded text-xs font-semibold transition-all ${
             inCart
-              ? "bg-zinc-700 text-zinc-300 hover:bg-red-900/60 hover:text-red-300 border border-zinc-600"
-              : "bg-zinc-800 text-zinc-200 hover:bg-zinc-700 border border-zinc-600"
-          }`}>
+              ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-red-500/20 hover:text-red-300 hover:border-red-500/40"
+              : "bg-slate-700/60 text-slate-300 border border-slate-600/50 hover:bg-emerald-500/20 hover:text-emerald-300 hover:border-emerald-500/40"
+          }`}
+        >
           {inCart ? "✓ In Cart" : "+ Cart"}
         </button>
       )}
-      <a href={deal.buyUrl} target="_blank" rel="noopener noreferrer"
-        className={`inline-block rounded-lg px-3 py-1.5 text-xs font-bold text-white transition active:scale-95 ${
-          isFlowty ? "bg-blue-700 hover:bg-blue-600" : "bg-red-600 hover:bg-red-500"
-        }`}>
-        {isFlowty ? "FLOWTY →" : "BUY →"}
+      <a
+        href={deal.buyUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={`px-2 py-0.5 rounded text-xs font-bold transition-all ${
+          deal.source === "flowty"
+            ? "bg-blue-600/30 text-blue-300 border border-blue-500/50 hover:bg-blue-600/50"
+            : "bg-rpc-accent/20 text-rpc-accent border border-rpc-accent/40 hover:bg-rpc-accent/30"
+        }`}
+      >
+        {deal.source === "flowty" ? "FLOWTY →" : "BUY →"}
       </a>
     </div>
   );
 }
 
+// ─── Main page ────────────────────────────────────────────────────────────────
+
+const REFRESH_INTERVAL = 30;
+const TIER_TABS = ["all", "common", "fandom", "rare", "legendary", "ultimate"] as const;
+type TierTab = (typeof TIER_TABS)[number];
+
+const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+  { value: "discount", label: "Best Discount" },
+  { value: "price_asc", label: "Cheapest First" },
+  { value: "price_desc", label: "Most Expensive" },
+  { value: "fmv_desc", label: "Highest FMV" },
+  { value: "serial_asc", label: "Lowest Serial" },
+];
+
 export default function SniperPage() {
-  const [deals, setDeals] = useState<SniperDeal[]>([]);
-  const [offers, setOffers] = useState<Record<string, OfferData>>({});
-  const [offersLoading, setOffersLoading] = useState(false);
-  const [newIds, setNewIds] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(false);
-  const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
-  const [countdown, setCountdown] = useState(REFRESH_INTERVAL / 1000);
+  const [data, setData] = useState<FeedResult | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [sortKey, setSortKey] = useState<SortKey>("listed");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [countdown, setCountdown] = useState(REFRESH_INTERVAL);
+  const [paused, setPaused] = useState(false);
 
-  const [walletInput, setWalletInput] = useState("");
-  const [walletLoading, setWalletLoading] = useState(false);
-  const [walletError, setWalletError] = useState<string | null>(null);
-  const [loadedWallet, setLoadedWallet] = useState<string | null>(null);
-  const [ownedMap, setOwnedMap] = useState<Map<string, OwnedInfo>>(new Map());
-
+  // Filters
+  const [tierTab, setTierTab] = useState<TierTab>("all");
+  const [sortBy, setSortBy] = useState<SortOption>("discount");
   const [minDiscount, setMinDiscount] = useState(0);
-  const [rarity, setRarity] = useState("all");
-  const [badgeOnly, setBadgeOnly] = useState(false);
-  const [serialFilter, setSerialFilter] = useState("all");
   const [maxPrice, setMaxPrice] = useState(0);
-  const [searchText, setSearchText] = useState("");
-  const [ownedFilter, setOwnedFilter] = useState("all");
-  const [sourceFilter, setSourceFilter] = useState("all");
+  const [serialFilter, setSerialFilter] = useState("all");
+  const [badgeOnly, setBadgeOnly] = useState(false);
+  const [search, setSearch] = useState("");
+  const [showVerifiedOnly, setShowVerifiedOnly] = useState(false);
 
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const prevIdsRef = useRef<Set<string>>(new Set());
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const countdownRef = useRef<NodeJS.Timeout | null>(null);
 
-  const fetchOffers = useCallback(async (dealList: SniperDeal[]) => {
-    if (!dealList.length) return;
-    setOffersLoading(true);
+  const buildFeedUrl = useCallback(() => {
+    const params = new URLSearchParams();
+    if (tierTab !== "all") params.set("rarity", tierTab);
+    if (minDiscount > 0) params.set("minDiscount", String(minDiscount));
+    if (maxPrice > 0) params.set("maxPrice", String(maxPrice));
+    if (serialFilter !== "all") params.set("serial", serialFilter);
+    if (badgeOnly) params.set("badgeOnly", "true");
+    params.set("sortBy", sortBy);
+    return `/api/sniper-feed?${params}`;
+  }, [tierTab, minDiscount, maxPrice, serialFilter, badgeOnly, sortBy]);
+
+  const fetchFeed = useCallback(async () => {
     try {
-      const moments = dealList
-        .filter(d => (!d.source || d.source === "topshot") && d.editionKey)
-        .map(d => ({ momentId: d.momentId, setID: d.editionKey.split(":")[0], playID: d.editionKey.split(":")[1] }))
-        .filter(m => m.setID && m.playID);
-      if (!moments.length) return;
-      const res = await fetch("/api/moment-offers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ moments }) });
-      if (!res.ok) return;
-      const data = await res.json();
-      setOffers(data.offers ?? {});
-    } catch (e) { console.warn("[sniper] offers fetch failed:", e); }
-    finally { setOffersLoading(false); }
-  }, []);
-
-  const fetchDeals = useCallback(async () => {
-    setLoading(true); setError(null);
-    try {
-      const params = new URLSearchParams({ minDiscount: String(minDiscount), rarity, badgeOnly: String(badgeOnly), serial: serialFilter, maxPrice: String(maxPrice) });
-      const res = await fetch(`/api/sniper-feed?${params}`);
+      setLoading(true);
+      const res = await fetch(buildFeedUrl(), { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data: FeedResponse = await res.json();
-      const incoming = new Set(data.deals.map(d => d.momentId));
-      const isNew = new Set<string>();
-      for (const id of incoming) { if (prevIdsRef.current.size > 0 && !prevIdsRef.current.has(id)) isNew.add(id); }
-      prevIdsRef.current = incoming;
-      setNewIds(isNew);
-      if (isNew.size > 0) setTimeout(() => setNewIds(new Set()), 3000);
-      setDeals(data.deals); setLastRefreshed(data.lastRefreshed); setVisibleCount(PAGE_SIZE); setOffers({});
-      fetchOffers(data.deals);
-    } catch (err) { setError(err instanceof Error ? err.message : "Unknown error"); }
-    finally { setLoading(false); }
-  }, [minDiscount, rarity, badgeOnly, serialFilter, maxPrice, fetchOffers]);
+      const json: FeedResult = await res.json();
+      setData(json);
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [buildFeedUrl]);
 
-  useEffect(() => { fetchDeals(); }, [fetchDeals]);
-
+  // Initial fetch + filter-change refetch
   useEffect(() => {
-    if (!autoRefresh) { if (timerRef.current) clearInterval(timerRef.current); if (countdownRef.current) clearInterval(countdownRef.current); return; }
-    setCountdown(REFRESH_INTERVAL / 1000);
-    timerRef.current = setInterval(() => { fetchDeals(); setCountdown(REFRESH_INTERVAL / 1000); }, REFRESH_INTERVAL);
-    countdownRef.current = setInterval(() => setCountdown(c => Math.max(0, c - 1)), 1000);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); if (countdownRef.current) clearInterval(countdownRef.current); };
-  }, [autoRefresh, fetchDeals]);
+    fetchFeed();
+    setCountdown(REFRESH_INTERVAL);
+  }, [fetchFeed]);
 
-  const loadWallet = useCallback(async () => {
-    const w = walletInput.trim(); if (!w) return;
-    setWalletLoading(true); setWalletError(null);
-    try {
-      const res = await fetch("/api/wallet-search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ input: w, limit: 60 }) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const rows: WalletRow[] = data.rows ?? [];
-      const map = new Map<string, OwnedInfo>();
-      for (const row of rows) {
-        const fid = row.flowId ?? row.momentId; if (!fid) continue;
-        map.set(String(fid), { isLocked: row.isLocked ?? false, editionsOwned: row.editionsOwned ?? 1, editionsLocked: row.editionsLocked ?? (row.isLocked ? 1 : 0) });
-      }
-      setOwnedMap(map); setLoadedWallet(w);
-    } catch (err) { setWalletError(err instanceof Error ? err.message : "Failed to load wallet"); }
-    finally { setWalletLoading(false); }
-  }, [walletInput]);
+  // Auto-refresh timer
+  useEffect(() => {
+    if (paused) return;
+    countdownRef.current = setInterval(() => {
+      setCountdown((c) => {
+        if (c <= 1) {
+          fetchFeed();
+          return REFRESH_INTERVAL;
+        }
+        return c - 1;
+      });
+    }, 1000);
+    return () => clearInterval(countdownRef.current!);
+  }, [paused, fetchFeed]);
 
-  const clearWallet = () => { setOwnedMap(new Map()); setLoadedWallet(null); setWalletInput(""); setOwnedFilter("all"); };
-
-  function handleSort(key: SortKey) {
-    if (sortKey === key) { setSortDir(d => d === "desc" ? "asc" : "desc"); } else { setSortKey(key); setSortDir("desc"); }
-    setVisibleCount(PAGE_SIZE);
-  }
-
-  const filtered = deals.filter(d => {
-    if (sourceFilter !== "all" && (d.source ?? "topshot") !== sourceFilter) return false;
-    if (ownedFilter === "owned" && !ownedMap.has(d.flowId)) return false;
-    if (ownedFilter === "not_owned" && ownedMap.has(d.flowId)) return false;
-    if (!searchText) return true;
-    const q = searchText.toLowerCase();
-    return d.playerName.toLowerCase().includes(q) || d.setName.toLowerCase().includes(q) || d.teamName.toLowerCase().includes(q) || d.parallel.toLowerCase().includes(q);
+  // Client-side filtering: search + verified-only
+  const visibleDeals = (data?.deals ?? []).filter((d) => {
+    if (search) {
+      const q = search.toLowerCase();
+      if (
+        !d.playerName.toLowerCase().includes(q) &&
+        !d.setName.toLowerCase().includes(q) &&
+        !d.teamName.toLowerCase().includes(q)
+      )
+        return false;
+    }
+    if (showVerifiedOnly && d.confidenceSource === "ask_fallback") return false;
+    return true;
   });
 
-  const sorted = [...filtered].sort((a, b) => {
-    let diff = 0;
-    if (sortKey === "listed") { const ta = a.updatedAt ? new Date(a.updatedAt).getTime() : 0; const tb = b.updatedAt ? new Date(b.updatedAt).getTime() : 0; diff = tb - ta; }
-    else { diff = b.discount - a.discount; }
-    return sortDir === "desc" ? diff : -diff;
-  });
-
-  const visible = sorted.slice(0, visibleCount);
-  const flowtyCount = filtered.filter(d => d.source === "flowty").length;
-  const instantFlips = filtered.filter(d => { const o = offers[d.momentId]; return o?.bestOffer != null && o.bestOffer > d.askPrice; }).length;
   const stats = {
-    total: filtered.length, hot: filtered.filter(d => d.discount >= 40).length,
-    badge: filtered.filter(d => d.hasBadge).length, serial: filtered.filter(d => d.isSpecialSerial).length,
-    avgDiscount: filtered.length > 0 ? Math.round(filtered.reduce((s, d) => s + d.discount, 0) / filtered.length) : 0,
+    total: visibleDeals.length,
+    hot: visibleDeals.filter((d) => d.discount >= 40).length,
+    badge: visibleDeals.filter((d) => d.hasBadge).length,
+    special: visibleDeals.filter((d) => d.isSpecialSerial).length,
+    avgDiscount:
+      visibleDeals.length > 0
+        ? visibleDeals.reduce((s, d) => s + d.discount, 0) / visibleDeals.length
+        : 0,
+    tsLive: (data?.tsCount ?? 0) > 0,
+    flowtyLive: (data?.flowtyCount ?? 0) > 0,
   };
 
   return (
-    <div className="space-y-5">
-
-      {/* Title */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-black text-white tracking-tight">🎯 Sniper</h2>
-          <p className="text-sm text-zinc-500 mt-0.5">
-            Live listings · badge-adjusted &amp; serial-premium aware
-            {flowtyCount > 0 && <span className="ml-2 text-blue-400 font-medium">· {flowtyCount} Flowty listings with LiveToken FMV</span>}
-            {offersLoading && <span className="ml-2 text-zinc-600">· loading offers…</span>}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {lastRefreshed && <span className="text-xs text-zinc-600">Updated {new Date(lastRefreshed).toLocaleTimeString()}</span>}
-          <button onClick={() => setAutoRefresh(v => !v)}
-            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${autoRefresh ? "border-green-700 bg-green-950 text-green-400" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900"}`}>
-            {autoRefresh ? `⏱ Auto ${countdown}s` : "⏸ Paused"}
-          </button>
-          <button onClick={fetchDeals} disabled={loading}
-            className="rounded-lg bg-red-600 px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-red-500 disabled:opacity-50">
-            {loading ? "Loading…" : "↺ Refresh"}
-          </button>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
-        {[
-          { label: "Deals Found", value: stats.total },
-          { label: "🔥 Hot (40%+ off)", value: stats.hot, hot: stats.hot > 0 },
-          { label: "🏅 Badge Deals", value: stats.badge },
-          { label: "🔢 Special Serials", value: stats.serial },
-          { label: "Avg Discount", value: `${stats.avgDiscount}%` },
-          { label: "⚡ Instant Flips", value: instantFlips, hot: instantFlips > 0 },
-        ].map(s => (
-          <div key={s.label} className={`rounded-xl border p-3 ${s.hot ? "border-green-800 bg-green-950/30" : "border-zinc-800 bg-zinc-950"}`}>
-            <div className="text-[11px] uppercase tracking-wide text-zinc-500">{s.label}</div>
-            <div className={`text-lg font-bold ${s.hot ? "text-green-400" : "text-white"}`}>{s.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Filters */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-        <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">Filters</div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 mb-3">
-          <div>
-            <label className="mb-1 block text-[11px] uppercase tracking-wide text-zinc-500">Min Discount %</label>
-            <select value={minDiscount} onChange={e => setMinDiscount(Number(e.target.value))} className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white">
-              <option value={0}>Any</option><option value={5}>5%+</option><option value={10}>10%+</option>
-              <option value={20}>20%+</option><option value={30}>30%+</option><option value={40}>40%+ 🔥</option>
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] uppercase tracking-wide text-zinc-500">Rarity</label>
-            <select value={rarity} onChange={e => setRarity(e.target.value)} className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white">
-              <option value="all">All Rarities</option><option value="common">Common</option>
-              <option value="fandom">Fandom</option><option value="rare">Rare</option>
-              <option value="legendary">Legendary</option><option value="ultimate">Ultimate</option>
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] uppercase tracking-wide text-zinc-500">Max Price</label>
-            <select value={maxPrice} onChange={e => setMaxPrice(Number(e.target.value))} className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white">
-              <option value={0}>Any Price</option><option value={5}>Under $5</option>
-              <option value={25}>Under $25</option><option value={50}>Under $50</option>
-              <option value={100}>Under $100</option><option value={250}>Under $250</option>
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] uppercase tracking-wide text-zinc-500">Serial Type</label>
-            <select value={serialFilter} onChange={e => setSerialFilter(e.target.value)} className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white">
-              <option value="all">All Serials</option>
-              <option value="special">Special Only (#1, Last, Low)</option>
-              <option value="jersey">Jersey Numbers Only</option>
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] uppercase tracking-wide text-zinc-500">Marketplace</label>
-            <select value={sourceFilter} onChange={e => setSourceFilter(e.target.value)} className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white">
-              <option value="all">All Markets</option>
-              <option value="topshot">Top Shot Only</option>
-              <option value="flowty">Flowty Only</option>
-            </select>
-          </div>
-          <div className="flex flex-col justify-between">
-            <label className="mb-1 block text-[11px] uppercase tracking-wide text-zinc-500">Badge Moments</label>
-            <button onClick={() => setBadgeOnly(v => !v)}
-              className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${badgeOnly ? "border-yellow-600 bg-yellow-950/40 text-yellow-400" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900"}`}>
-              {badgeOnly ? "🏅 Badge Only" : "All Moments"}
-            </button>
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] uppercase tracking-wide text-zinc-500">
-              Ownership {loadedWallet && <span className="text-zinc-600 normal-case font-normal">({ownedMap.size} moments)</span>}
-            </label>
-            <select value={ownedFilter} onChange={e => setOwnedFilter(e.target.value)} disabled={!loadedWallet}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white disabled:opacity-40">
-              <option value="all">All</option><option value="owned">Owned Only</option><option value="not_owned">Not Owned</option>
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] uppercase tracking-wide text-zinc-500">Search</label>
-            <input value={searchText} onChange={e => setSearchText(e.target.value)} placeholder="Player, set, team, parallel…"
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-red-600" />
-          </div>
-        </div>
-
-        {/* Wallet */}
-        <div className="border-t border-zinc-800 pt-3">
-          <label className="mb-1.5 block text-[11px] uppercase tracking-wide text-zinc-500">Wallet — load to see owned/locked status</label>
-          {loadedWallet ? (
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-green-400">✓ {loadedWallet}</span>
-              <span className="text-xs text-zinc-600">{ownedMap.size} moments tracked</span>
-              <button onClick={clearWallet} className="rounded-lg border border-zinc-700 px-3 py-1 text-xs text-zinc-400 hover:bg-zinc-900">Clear</button>
+    <div className="min-h-screen bg-slate-950 text-slate-200">
+      {/* ── Header ── */}
+      <div className="border-b border-slate-800/60 bg-slate-900/40 px-4 py-4">
+        <div className="max-w-screen-xl mx-auto">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                <span className="text-2xl">🎯</span> Sniper
+              </h1>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Live deals below adjusted FMV — badge-aware, serial-adjusted
+              </p>
             </div>
-          ) : (
-            <div className="flex gap-2">
-              <input value={walletInput} onChange={e => setWalletInput(e.target.value)} onKeyDown={e => e.key === "Enter" && loadWallet()}
-                placeholder="Top Shot username or wallet address"
-                className="flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-red-600 max-w-sm" />
-              <button onClick={loadWallet} disabled={walletLoading || !walletInput.trim()}
-                className="rounded-lg bg-zinc-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-600 disabled:opacity-50">
-                {walletLoading ? "Loading…" : "Load"}
+            <div className="flex items-center gap-3">
+              {/* Source status indicators */}
+              <div className="flex items-center gap-2">
+                <span
+                  className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${
+                    stats.tsLive
+                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                      : "bg-red-500/10 text-red-400/60 border-red-500/20"
+                  }`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${stats.tsLive ? "bg-emerald-400 animate-pulse" : "bg-red-400/50"}`}
+                  />
+                  TS {stats.tsLive ? `(${data?.tsCount})` : "offline"}
+                </span>
+                <span
+                  className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${
+                    stats.flowtyLive
+                      ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
+                      : "bg-red-500/10 text-red-400/60 border-red-500/20"
+                  }`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${stats.flowtyLive ? "bg-blue-400 animate-pulse" : "bg-red-400/50"}`}
+                  />
+                  Flowty {stats.flowtyLive ? `(${data?.flowtyCount})` : "offline"}
+                </span>
+              </div>
+              {/* Refresh controls */}
+              <button
+                onClick={() => setPaused((p) => !p)}
+                className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 hover:border-slate-600 text-slate-400 hover:text-slate-200 transition-colors"
+              >
+                {paused ? "▶ Resume" : `⏸ ${countdown}s`}
+              </button>
+              <button
+                onClick={() => { fetchFeed(); setCountdown(REFRESH_INTERVAL); }}
+                disabled={loading}
+                className="text-xs px-3 py-1.5 rounded-lg bg-rpc-accent/20 border border-rpc-accent/40 text-rpc-accent hover:bg-rpc-accent/30 transition-colors disabled:opacity-50"
+              >
+                {loading ? "↻" : "↻ Refresh"}
               </button>
             </div>
+          </div>
+
+          {/* ── Tier tabs ── */}
+          <div className="flex items-center gap-1 mb-4 flex-wrap">
+            {TIER_TABS.map((t) => (
+              <button
+                key={t}
+                onClick={() => setTierTab(t)}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold capitalize transition-all ${
+                  tierTab === t
+                    ? "bg-rpc-accent/20 text-rpc-accent border border-rpc-accent/50"
+                    : "bg-slate-800/60 text-slate-400 border border-slate-700/50 hover:border-slate-600"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+
+          {/* ── Filters row ── */}
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              type="text"
+              placeholder="Search player, set, team…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="bg-slate-800/60 border border-slate-700/60 rounded-lg px-3 py-1.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-rpc-accent/60 w-52"
+            />
+            <label className="flex items-center gap-1.5 text-sm text-slate-400 cursor-pointer select-none">
+              <span>Min discount</span>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={5}
+                value={minDiscount || ""}
+                onChange={(e) => setMinDiscount(Number(e.target.value))}
+                placeholder="0"
+                className="w-16 bg-slate-800/60 border border-slate-700/60 rounded-lg px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-rpc-accent/60"
+              />
+              <span>%</span>
+            </label>
+            <label className="flex items-center gap-1.5 text-sm text-slate-400 cursor-pointer select-none">
+              <span>Max $</span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={maxPrice || ""}
+                onChange={(e) => setMaxPrice(Number(e.target.value))}
+                placeholder="any"
+                className="w-20 bg-slate-800/60 border border-slate-700/60 rounded-lg px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-rpc-accent/60"
+              />
+            </label>
+            <select
+              value={serialFilter}
+              onChange={(e) => setSerialFilter(e.target.value)}
+              className="bg-slate-800/60 border border-slate-700/60 rounded-lg px-2 py-1.5 text-sm text-slate-300 focus:outline-none focus:border-rpc-accent/60"
+            >
+              <option value="all">All serials</option>
+              <option value="special">Special only</option>
+              <option value="jersey">Jersey match</option>
+            </select>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as SortOption)}
+              className="bg-slate-800/60 border border-slate-700/60 rounded-lg px-2 py-1.5 text-sm text-slate-300 focus:outline-none focus:border-rpc-accent/60"
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <label className="flex items-center gap-1.5 text-sm text-slate-400 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={badgeOnly}
+                onChange={(e) => setBadgeOnly(e.target.checked)}
+                className="rounded border-slate-600 bg-slate-800 text-rpc-accent"
+              />
+              Badges only
+            </label>
+            <label className="flex items-center gap-1.5 text-sm text-slate-400 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showVerifiedOnly}
+                onChange={(e) => setShowVerifiedOnly(e.target.checked)}
+                className="rounded border-slate-600 bg-slate-800 text-rpc-accent"
+              />
+              <span className="inline-flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+                Verified FMV only
+              </span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Stats bar ── */}
+      <div className="border-b border-slate-800/40 bg-slate-900/20 px-4 py-2">
+        <div className="max-w-screen-xl mx-auto flex items-center gap-6 text-xs text-slate-500 flex-wrap">
+          <span>
+            <span className="text-slate-300 font-semibold">{stats.total}</span> deals
+          </span>
+          <span>
+            <span className="text-red-400 font-semibold">{stats.hot}</span> hot (40%+)
+          </span>
+          {stats.badge > 0 && (
+            <span>
+              <span className="text-yellow-400 font-semibold">{stats.badge}</span> badged
+            </span>
           )}
-          {walletError && <p className="mt-1 text-xs text-red-400">{walletError}</p>}
+          {stats.special > 0 && (
+            <span>
+              <span className="text-purple-400 font-semibold">{stats.special}</span> special serials
+            </span>
+          )}
+          <span>
+            avg{" "}
+            <span className="text-slate-300 font-semibold">{fmt(stats.avgDiscount, 1)}%</span>{" "}
+            off
+          </span>
+          {data?.lastRefreshed && (
+            <span className="ml-auto">
+              updated{" "}
+              {new Date(data.lastRefreshed).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+              })}
+            </span>
+          )}
         </div>
       </div>
 
-      {error && <div className="rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-sm text-red-400">⚠ Error: {error}</div>}
+      {/* ── Table ── */}
+      <div className="max-w-screen-xl mx-auto px-4 py-4">
+        {error && (
+          <div className="mb-4 rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-400">
+            Feed error: {error}
+          </div>
+        )}
 
-      {/* Table */}
-      <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950">
-        <table className="w-full min-w-[1100px] border-collapse text-sm">
-          <thead className="bg-zinc-900">
-            <tr className="border-b border-zinc-800 text-left text-[11px] uppercase tracking-wide text-zinc-500">
-              <th className="p-3 w-5">#</th>
-              <th className="p-3 w-14"></th>
-              <th className="p-3">Player</th>
-              <th className="p-3">Set</th>
-              <th className="p-3">Rarity</th>
-              <th className="p-3">Serial</th>
-              <th className="p-3">Ask</th>
-              <th className="p-3">Adj. FMV</th>
-              <SortHeader label="Discount" sortKey="discount" active={sortKey === "discount"} dir={sortDir} onClick={() => handleSort("discount")} />
-              <th className="p-3">Best Offer</th>
-              <th className="p-3">Owned</th>
-              <SortHeader label="Listed" sortKey="listed" active={sortKey === "listed"} dir={sortDir} onClick={() => handleSort("listed")} />
-              <th className="p-3">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && visible.length === 0 && (
-              <tr><td colSpan={13} className="py-16 text-center text-zinc-600">
-                <div className="flex flex-col items-center gap-2">
-                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-red-600 border-t-transparent" />
-                  <span>Scanning listings…</span>
-                </div>
-              </td></tr>
-            )}
-            {!loading && visible.length === 0 && (
-              <tr><td colSpan={13} className="py-16 text-center text-zinc-600">No deals found. Try adjusting your filters.</td></tr>
-            )}
-            {visible.map((deal, i) => {
-              const badge = discountBadge(deal.discount);
-              const isNew = newIds.has(deal.momentId);
-              const tierColor = TIER_COLOR[deal.tier] ?? "text-zinc-400";
-              const ownedInfo = ownedMap.get(deal.flowId);
-              const isOwned = !!ownedInfo;
-              const offerData = offers[deal.momentId];
-              const bestOffer = offerData?.bestOffer ?? null;
-              const isInstantFlip = bestOffer !== null && bestOffer > deal.askPrice;
-              const flipProfit = isInstantFlip ? bestOffer - deal.askPrice : 0;
-              const isNonBase = deal.parallelId > 0;
-              const age = listingAge(deal.updatedAt);
-              const isFlowty = deal.source === "flowty";
+        {loading && !data && (
+          <div className="flex items-center justify-center py-24 text-slate-500 text-sm gap-2">
+            <span className="animate-spin">↻</span> Loading deals…
+          </div>
+        )}
 
-              return (
-                <tr key={deal.momentId}
-                  className={`border-b border-zinc-800/60 transition-all duration-300 hover:bg-zinc-900/50
-                    ${isInstantFlip ? "bg-yellow-950/10" : deal.discount >= 40 ? "bg-green-950/10" : ""}
-                    ${isFlowty ? "border-l-2 border-l-blue-800" : ""}
-                    ${isNew ? "animate-pulse bg-yellow-950/20" : ""}`}>
+        {!loading && visibleDeals.length === 0 && data && (
+          <div className="flex flex-col items-center justify-center py-24 text-slate-500 gap-3">
+            <span className="text-3xl opacity-40">🎯</span>
+            <p className="text-sm">No deals match your filters right now.</p>
+            <button
+              onClick={() => {
+                setTierTab("all");
+                setMinDiscount(0);
+                setMaxPrice(0);
+                setSerialFilter("all");
+                setBadgeOnly(false);
+                setShowVerifiedOnly(false);
+                setSearch("");
+              }}
+              className="text-xs text-rpc-accent hover:underline"
+            >
+              Clear filters
+            </button>
+          </div>
+        )}
 
-                  <td className="px-3 py-2 text-xs text-zinc-600">{i + 1}</td>
-
-                  <td className="px-2 py-2">
-                    {deal.thumbnailUrl ? (
-                      <a href={deal.buyUrl} target="_blank" rel="noopener noreferrer">
-                        <img src={deal.thumbnailUrl} alt={deal.playerName}
-                          className="w-12 h-12 rounded-lg object-cover border border-zinc-700 hover:border-zinc-500 transition"
-                          onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                      </a>
-                    ) : (
-                      <div className="w-12 h-12 rounded-lg bg-zinc-800 border border-zinc-700" />
-                    )}
-                  </td>
-
-                  <td className="px-3 py-3">
-                    <div className="font-semibold text-white leading-tight">{deal.playerName}</div>
-                    <div className="text-[11px] text-zinc-500 mt-0.5 flex gap-1.5 flex-wrap">
-                      {deal.teamName && <span>{deal.teamName}</span>}
-                      {deal.seriesName && <span className="text-zinc-600">· {deal.seriesName}</span>}
-                    </div>
-                    {deal.hasBadge && (
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {deal.badgeLabels.map(label => (
-                          <span key={label} className="rounded bg-yellow-900/40 border border-yellow-700/50 px-1 py-0.5 text-[10px] text-yellow-400 font-medium whitespace-nowrap">
-                            🏅 {label}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </td>
-
-                  <td className="px-3 py-3">
-                    <div className="text-zinc-300 text-xs leading-tight">{deal.setName}</div>
-                    {isNonBase && <div className="mt-0.5 text-[10px] text-zinc-500">{deal.parallel}</div>}
-                  </td>
-
-                  <td className="px-3 py-3">
-                    <span className={`text-xs font-semibold ${tierColor}`}>
-                      {deal.tier.charAt(0) + deal.tier.slice(1).toLowerCase()}
-                    </span>
-                  </td>
-
-                  <td className="px-3 py-3">
-                    <div className={`text-sm font-mono ${deal.isSpecialSerial ? "text-yellow-400 font-bold" : "text-zinc-300"}`}>#{deal.serial}</div>
-                    <div className="text-[10px] text-zinc-600">/{deal.circulationCount.toLocaleString()}</div>
-                    {deal.serialSignal && <div className="text-[10px] text-yellow-500 mt-0.5">{deal.serialSignal}</div>}
-                  </td>
-
-                  <td className="px-3 py-3">
-                    <span className="text-white font-semibold">{fmt(deal.askPrice)}</span>
-                  </td>
-
-                  <td className="px-3 py-3">
-                    <div className="text-zinc-300">{fmt(deal.adjustedFmv)}</div>
-                    {deal.adjustedFmv !== deal.baseFmv && <div className="text-[10px] text-zinc-600">base {fmt(deal.baseFmv)}</div>}
-                    <div className={`text-[10px] ${CONFIDENCE_COLOR[deal.confidence] ?? "text-zinc-600"}`}>{deal.confidence}</div>
-                  </td>
-
-                  <td className="px-3 py-3">
-                    <div className={`text-base font-bold ${discountColor(deal.discount)}`}>
-                      {deal.discount > 0 ? "−" : "+"}{Math.abs(deal.discount)}%
-                    </div>
-                    {badge && <span className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${badge.cls}`}>{badge.label}</span>}
-                  </td>
-
-                  <td className="px-3 py-3">
-                    {isFlowty ? (
-                      <span className="text-zinc-700 text-xs">—</span>
-                    ) : offersLoading && !offerData ? (
-                      <div className="h-3 w-12 animate-pulse rounded bg-zinc-800" />
-                    ) : isInstantFlip ? (
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-yellow-400 font-bold text-sm">{fmt(bestOffer!)}</span>
-                        <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold bg-yellow-900/50 border border-yellow-600 text-yellow-300">⚡ FLIP +{fmt(flipProfit)}</span>
-                        {offerData?.serialOffer === bestOffer && <span className="text-[10px] text-zinc-500">serial offer</span>}
-                        {offerData?.editionOffer === bestOffer && offerData?.serialOffer !== bestOffer && <span className="text-[10px] text-zinc-500">edition offer</span>}
-                      </div>
-                    ) : bestOffer !== null ? (
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-zinc-300 text-sm">{fmt(bestOffer)}</span>
-                        {offerData?.serialOffer && <span className="text-[10px] text-zinc-600">serial: {fmt(offerData.serialOffer)}</span>}
-                        {offerData?.editionOffer && offerData.editionOffer !== offerData.serialOffer && <span className="text-[10px] text-zinc-600">edition: {fmt(offerData.editionOffer)}</span>}
-                      </div>
-                    ) : offerData ? (
-                      <span className="text-zinc-700 text-xs">no offers</span>
-                    ) : (
-                      <span className="text-zinc-700 text-xs">—</span>
-                    )}
-                  </td>
-
-                  <td className="px-3 py-3">
-                    {isOwned ? (
-                      <div className="flex flex-col gap-0.5">
-                        {ownedInfo!.editionsOwned > 1 ? (
-                          <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-green-950/50 border border-green-800 text-green-400">✓ {ownedInfo!.editionsOwned} owned</span>
-                        ) : ownedInfo!.isLocked ? (
-                          <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-orange-950/50 border border-orange-800 text-orange-400">🔒 Locked</span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-green-950/50 border border-green-800 text-green-400">✓ Owned</span>
-                        )}
-                        {ownedInfo!.editionsOwned > 1 && ownedInfo!.editionsLocked > 0 && (
-                          <span className="text-[10px] text-orange-500">🔒 {ownedInfo!.editionsLocked} locked</span>
-                        )}
-                      </div>
-                    ) : deal.isLocked ? (
-                      <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-zinc-800 border border-zinc-700 text-zinc-500">🔒 Locked</span>
-                    ) : (
-                      <span className="text-zinc-700 text-xs">—</span>
-                    )}
-                  </td>
-
-                  <td className="px-3 py-3">
-                    <span className={`text-[11px] ${age.fresh ? "text-green-500" : "text-zinc-500"}`}>{age.label}</span>
-                  </td>
-
-                  <td className="px-3 py-3">
-                    <ActionCell deal={deal} />
-                  </td>
+        {visibleDeals.length > 0 && (
+          <div className="overflow-x-auto rounded-xl border border-slate-800/60">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-800/60 bg-slate-900/60">
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider w-10" />
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Moment
+                  </th>
+                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Serial
+                  </th>
+                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Ask
+                  </th>
+                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Adj. FMV
+                  </th>
+                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Discount
+                  </th>
+                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    FMV Quality
+                  </th>
+                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Src
+                  </th>
+                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Action
+                  </th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody className="divide-y divide-slate-800/40">
+                {visibleDeals.map((deal) => (
+                  <tr
+                    key={`${deal.source}-${deal.flowId}-${deal.listingResourceID}`}
+                    className={`hover:bg-slate-800/30 transition-colors ${
+                      deal.discount >= 40 ? "bg-red-950/10" : ""
+                    }`}
+                  >
+                    {/* Thumbnail */}
+                    <td className="px-3 py-2">
+                      {deal.thumbnailUrl ? (
+                        <img
+                          src={deal.thumbnailUrl}
+                          alt={deal.playerName}
+                          className="w-8 h-8 rounded object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded bg-slate-800" />
+                      )}
+                    </td>
 
-      {sorted.length > visibleCount && (
-        <div className="mt-4 flex items-center justify-center gap-4">
-          <span className="text-xs text-zinc-600">Showing {visibleCount} of {sorted.length} listings</span>
-          <button onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
-            className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-900 transition">
-            Show {Math.min(PAGE_SIZE, sorted.length - visibleCount)} more
-          </button>
+                    {/* Moment info */}
+                    <td className="px-3 py-2">
+                      <div className="font-semibold text-slate-200 leading-tight">
+                        {deal.playerName}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <span className={`text-xs font-medium ${tierColor(deal.tier)}`}>
+                          {deal.tier.charAt(0) + deal.tier.slice(1).toLowerCase()}
+                        </span>
+                        {deal.parallel !== "Base" && (
+                          <span className="text-xs text-slate-500">
+                            {deal.parallel}
+                          </span>
+                        )}
+                        <span className="text-xs text-slate-600">·</span>
+                        <span className="text-xs text-slate-500">{deal.setName}</span>
+                        {deal.seriesName && (
+                          <>
+                            <span className="text-xs text-slate-600">·</span>
+                            <span className="text-xs text-slate-600">{deal.seriesName}</span>
+                          </>
+                        )}
+                      </div>
+                      {/* Badge labels */}
+                      {deal.hasBadge && (
+                        <div className="flex gap-1 mt-1 flex-wrap">
+                          {deal.badgeLabels.map((label) => (
+                            <span
+                              key={label}
+                              className="px-1 py-0.5 rounded text-xs bg-yellow-500/15 text-yellow-400 border border-yellow-500/25"
+                            >
+                              {label}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+
+                    {/* Serial */}
+                    <td className="px-3 py-2 text-right">
+                      <div className="font-mono text-slate-300 text-sm">
+                        #{deal.serial}
+                      </div>
+                      <div className="text-xs text-slate-600">/ {deal.circulationCount.toLocaleString()}</div>
+                      {deal.isSpecialSerial && <SerialBadge deal={deal} />}
+                    </td>
+
+                    {/* Ask */}
+                    <td className="px-3 py-2 text-right font-mono text-slate-200">
+                      ${fmt(deal.askPrice)}
+                    </td>
+
+                    {/* Adjusted FMV */}
+                    <td className="px-3 py-2 text-right">
+                      <div className="font-mono text-slate-300">
+                        ${fmt(deal.adjustedFmv)}
+                      </div>
+                      {deal.serialMult > 1 && (
+                        <div className="text-xs text-slate-600">
+                          base ${fmt(deal.baseFmv)} × {deal.serialMult.toFixed(2)}
+                        </div>
+                      )}
+                    </td>
+
+                    {/* Discount */}
+                    <td className="px-3 py-2 text-right">
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${discountColor(deal.discount)}`}
+                      >
+                        {deal.discount > 0 ? `-${fmt(deal.discount, 1)}%` : "~0%"}
+                      </span>
+                    </td>
+
+                    {/* Confidence */}
+                    <td className="px-3 py-2 text-right">
+                      <ConfidenceDot
+                        confidence={deal.confidence}
+                        source={deal.confidenceSource}
+                      />
+                    </td>
+
+                    {/* Source */}
+                    <td className="px-3 py-2 text-right">
+                      <SourceBadge source={deal.source} />
+                    </td>
+
+                    {/* Action */}
+                    <td className="px-3 py-2">
+                      <ActionCell deal={deal} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* FMV legend */}
+        <div className="mt-4 flex items-center gap-4 text-xs text-slate-600 flex-wrap">
+          <span className="flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+            Verified — backed by real sales
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 inline-block" />
+            Estimated — limited sales data
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-400/70 inline-block" />
+            Speculative — FMV = ask price fallback
+          </span>
+          <span className="ml-auto">
+            Adj. FMV = base FMV × serial multiplier
+          </span>
         </div>
-      )}
-
-      <div className="mt-4 text-center text-xs text-zinc-700">
-        FMV adjusted for badge premiums and serial multipliers · Best Offer = highest of serial + edition offers · Flowty listings use LiveToken FMV
       </div>
     </div>
   );
