@@ -270,28 +270,65 @@ async function fetchLiveListings(
 
 // ─── Flowty helpers ───────────────────────────────────────────────────────────
 
-interface FlowtyNft {
-  id: string;
-  serialNumber?: number;
-  setID?: number;
-  playID?: number;
-  subeditionID?: number;
-  editionName?: string;
-  setName?: string;
-  playerFullName?: string;
-  teamAtMoment?: string;
-  playCategory?: string;
-  momentTier?: string;
-  seriesNumber?: number;
-}
-
-interface FlowtyListing {
-  nft: FlowtyNft;
+// Confirmed Flowty response shape from DevTools capture
+// Each item in json.data has: nft.id, nft.orders[0].salePrice, nft.card.title, etc.
+interface FlowtyOrder {
   listingResourceID: string;
   storefrontAddress: string;
-  price: number; // already in USD
-  valuations?: { blended?: { usdValue?: number } };
-  blockTimestamp?: number; // milliseconds
+  salePrice: number;      // USD already
+  blockTimestamp: number; // milliseconds epoch
+  state?: string;
+  paymentTokenName?: string;
+  valuationDifference?: number;
+  valuationRatio?: number;
+}
+
+interface FlowtyCard {
+  title?: string;          // player name
+  num?: number;            // serial number
+  max?: number;            // circulation count
+}
+
+interface FlowtyNftView {
+  serial?: number;
+  traits?: Array<{ name: string; value: string }>;
+}
+
+interface FlowtyValuations {
+  blended?: { usdValue?: number };
+  livetoken?: { usdValue?: number };
+}
+
+interface FlowtyNftItem {
+  id: string;
+  orders?: FlowtyOrder[];
+  card?: FlowtyCard;
+  nftView?: FlowtyNftView;
+  valuations?: FlowtyValuations;
+}
+
+// Normalized shape after we map from the raw API response
+interface FlowtyListing {
+  momentId: string;
+  listingResourceID: string;
+  storefrontAddress: string;
+  price: number;
+  livetokenFmv: number | null;
+  blockTimestamp: number;
+  playerName: string;
+  serial: number;
+  circulationCount: number;
+  // Traits from nftView
+  setName: string;
+  teamName: string;
+  tier: string;
+  seriesNumber: number;
+  subeditionId: number;
+  isLocked: boolean;
+}
+
+function getTrait(traits: Array<{ name: string; value: string }> | undefined, name: string): string {
+  return traits?.find((t) => t.name === name)?.value ?? "";
 }
 
 async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
@@ -328,12 +365,43 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
       return [];
     }
     const json = await res.json();
-    if (from === 0) {
-      const keys = Object.keys(json ?? {}).join(", ");
-      const dLen = Array.isArray(json?.data) ? json.data.length : typeof json?.data;
-      console.log(`[sniper-feed] Flowty p0 keys=[${keys}] data=${dLen}`);
+    const rawItems: FlowtyNftItem[] = json?.data ?? [];
+
+    // Map from confirmed nested Flowty shape → normalized FlowtyListing
+    const listings: FlowtyListing[] = [];
+    for (const item of rawItems) {
+      // Pick the first active storefront order
+      const order = item.orders?.find(
+        (o) => !o.state || o.state === "LISTED" || o.state === "active"
+      ) ?? item.orders?.[0];
+      if (!order?.listingResourceID || !order?.storefrontAddress) continue;
+      if (order.salePrice <= 0) continue;
+
+      const traits = item.nftView?.traits ?? [];
+      const serial = item.card?.num ?? item.nftView?.serial ?? 0;
+      const circ = item.card?.max ?? 0;
+      const subStr = getTrait(traits, "Subedition");
+      const subId = subStr ? parseInt(subStr, 10) || 0 : 0;
+
+      listings.push({
+        momentId: String(item.id),
+        listingResourceID: order.listingResourceID,
+        storefrontAddress: order.storefrontAddress,
+        price: order.salePrice,
+        livetokenFmv: item.valuations?.blended?.usdValue ?? item.valuations?.livetoken?.usdValue ?? null,
+        blockTimestamp: order.blockTimestamp ?? 0,
+        playerName: item.card?.title ?? getTrait(traits, "FullName") ?? "",
+        serial,
+        circulationCount: circ,
+        setName: getTrait(traits, "SetName") ?? "",
+        teamName: getTrait(traits, "TeamAtMoment") ?? "",
+        tier: (getTrait(traits, "Tier") || "COMMON").toUpperCase(),
+        seriesNumber: parseInt(getTrait(traits, "SeriesNumber") || "0", 10),
+        subeditionId: subId,
+        isLocked: getTrait(traits, "Locked") === "true",
+      });
     }
-    return (json?.data ?? []) as FlowtyListing[];
+    return listings;
   } catch (err) {
     console.warn(`[sniper-feed] Flowty page from=${from} failed:`, err);
     return [];
@@ -371,17 +439,8 @@ function buildEditionKeys(m: RawTransaction): string[] {
 
 function buildFlowtyEditionKeys(item: FlowtyListing): string[] {
   const keys: string[] = [];
-  const nft = item.nft;
-  if (nft.id) keys.push(nft.id);
-  if (nft.setID && nft.playID) {
-    const subId = nft.subeditionID ?? 0;
-    if (subId > 0) {
-      keys.push(`${nft.setID}:${nft.playID}::${subId}`);
-      keys.push(`${nft.setID}:${nft.playID}::Parallel${subId}`);
-    }
-    keys.push(`${nft.setID}:${nft.playID}::Base`);
-    keys.push(`${nft.setID}:${nft.playID}`);
-  }
+  // Primary key: the moment NFT ID (matches fmv_snapshots.edition_key for Flowty items)
+  if (item.momentId) keys.push(item.momentId);
   return keys;
 }
 
@@ -564,19 +623,18 @@ export async function GET(req: Request) {
     });
   }
 
-  // 4. Enrich Flowty listings
+  // 4. Enrich Flowty listings — using normalized FlowtyListing shape
   const flowtyDeals: SniperDeal[] = [];
   for (const item of flowtyListings) {
-    const nft = item.nft;
-    const askPrice = item.price ?? 0;
+    const askPrice = item.price;
     if (askPrice <= 0) continue;
     if (maxPrice > 0 && askPrice > maxPrice) continue;
 
-    const tier = (nft.momentTier ?? "COMMON").toUpperCase();
+    const tier = item.tier ?? "COMMON";
     if (rarity !== "all" && tier.toLowerCase() !== rarity.toLowerCase()) continue;
 
-    const serial = nft.serialNumber ?? 0;
-    const circ = 0; // Flowty doesn't return circulationCount directly; 0 = no premium calc
+    const serial = item.serial;
+    const circ = item.circulationCount;
     const isJersey = false;
     const {
       mult: serialMult,
@@ -584,25 +642,21 @@ export async function GET(req: Request) {
       isSpecial: isSpecialSerial,
     } = serialMultiplier(serial, circ > 0 ? circ : 99999, isJersey);
 
-    const teamFull = nft.teamAtMoment ?? "";
-    const teamName = TEAM_ABBREV[teamFull] ?? teamFull;
-    if (team !== "all" && teamName !== team && teamFull !== team) continue;
+    const teamFull = item.teamName;
+    const teamAbbrev = TEAM_ABBREV[teamFull] ?? teamFull;
+    if (team !== "all" && teamAbbrev !== team && teamFull !== team) continue;
 
-    const seriesNum = nft.seriesNumber ?? -1;
-    const seriesName = SERIES_NAMES[seriesNum] ?? "";
-
-    // LiveToken FMV from Flowty valuation
-    const livetokenFmv = item.valuations?.blended?.usdValue ?? null;
+    const seriesName = SERIES_NAMES[item.seriesNumber] ?? "";
 
     const editionKeys = buildFlowtyEditionKeys(item);
     const fmvRow = resolveFmv(editionKeys, fmvMap);
 
-    // Priority: Supabase FMV → LiveToken FMV → ask price
-    const baseFmv = fmvRow?.fmv ?? livetokenFmv ?? askPrice;
-    const confidence = fmvRow?.confidence ?? (livetokenFmv ? "medium" : "low");
+    // Priority: Supabase FMV → LiveToken FMV from Flowty → ask price fallback
+    const baseFmv = fmvRow?.fmv ?? item.livetokenFmv ?? askPrice;
+    const confidence = fmvRow?.confidence ?? (item.livetokenFmv ? "medium" : "low");
     const confidenceSource = fmvRow
       ? "supabase"
-      : livetokenFmv
+      : item.livetokenFmv
       ? "livetoken"
       : "ask_fallback";
     const adjustedFmv = baseFmv * serialMult;
@@ -612,24 +666,21 @@ export async function GET(req: Request) {
         ? 0
         : Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10;
     if (discount < minDiscount) continue;
-    if (badgeOnly) continue; // Flowty carries no badge data
+    if (badgeOnly) continue;
     if (serialFilter === "special" && !isSpecialSerial) continue;
     if (serialFilter === "jersey") continue;
 
-    const momentId = String(nft.id ?? "");
-    const subId = nft.subeditionID ?? 0;
-
     flowtyDeals.push({
-      flowId: momentId,
-      momentId,
+      flowId: item.momentId,
+      momentId: item.momentId,
       editionKey: editionKeys[0] ?? "",
-      playerName: nft.playerFullName ?? "",
-      teamName,
-      setName: nft.setName ?? nft.editionName ?? "",
+      playerName: item.playerName,
+      teamName: teamAbbrev,
+      setName: item.setName,
       seriesName,
       tier,
-      parallel: subId > 0 ? `Parallel${subId}` : "Base",
-      parallelId: subId,
+      parallel: item.subeditionId > 0 ? `Parallel${item.subeditionId}` : "Base",
+      parallelId: item.subeditionId,
       serial,
       circulationCount: circ,
       askPrice,
@@ -646,12 +697,11 @@ export async function GET(req: Request) {
       isSpecialSerial,
       isJersey,
       serialSignal,
-      thumbnailUrl: `https://assets.nbatopshot.com/media/${momentId}?width=512`,
-      isLocked: false,
-      updatedAt:
-        item.blockTimestamp
-          ? new Date(item.blockTimestamp).toISOString()
-          : new Date().toISOString(),
+      thumbnailUrl: `https://assets.nbatopshot.com/media/${item.momentId}?width=512`,
+      isLocked: item.isLocked,
+      updatedAt: item.blockTimestamp
+        ? new Date(item.blockTimestamp).toISOString()
+        : new Date().toISOString(),
       packListingId: fmvRow?.pack_listing_id ?? null,
       packName: fmvRow?.pack_name ?? null,
       packEv: null,
