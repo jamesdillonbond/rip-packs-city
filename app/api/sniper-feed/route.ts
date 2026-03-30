@@ -323,8 +323,16 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
       signal: controller.signal,
     });
     clearTimeout(timeout);
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.warn(`[sniper-feed] Flowty HTTP ${res.status} from=${from}`);
+      return [];
+    }
     const json = await res.json();
+    if (from === 0) {
+      const keys = Object.keys(json ?? {}).join(", ");
+      const dLen = Array.isArray(json?.data) ? json.data.length : typeof json?.data;
+      console.log(`[sniper-feed] Flowty p0 keys=[${keys}] data=${dLen}`);
+    }
     return (json?.data ?? []) as FlowtyListing[];
   } catch (err) {
     console.warn(`[sniper-feed] Flowty page from=${from} failed:`, err);
