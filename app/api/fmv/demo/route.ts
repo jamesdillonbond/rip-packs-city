@@ -26,7 +26,7 @@ export async function GET() {
   const { data: fmvRows, error: fmvErr } = await supabase
     .from("fmv_snapshots")
     .select("edition_id, fmv_usd, confidence, computed_at")
-    .eq("confidence", "high")
+    
     .order("computed_at", { ascending: false })
     .limit(20);
 
