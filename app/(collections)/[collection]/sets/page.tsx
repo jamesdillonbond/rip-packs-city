@@ -119,8 +119,7 @@ function BestOpportunityBanner({ sets, onSetClick }: { sets: SetProgress[]; onSe
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
       {best && (
-        <div
-          onClick={() => onSetClick(best.set.setId)}
+        <div onClick={() => onSetClick(best.set.setId)}
           style={{ background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 8, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}
           onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(34,197,94,0.1)")}
           onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(34,197,94,0.06)")}
@@ -140,8 +139,7 @@ function BestOpportunityBanner({ sets, onSetClick }: { sets: SetProgress[]; onSe
         </div>
       )}
       {bottleneck && (
-        <div
-          onClick={() => onSetClick(bottleneck.setId)}
+        <div onClick={() => onSetClick(bottleneck.setId)}
           style={{ background: "rgba(245,158,11,0.05)", border: "1px solid rgba(245,158,11,0.18)", borderRadius: 8, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}
           onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(245,158,11,0.09)")}
           onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(245,158,11,0.05)")}
@@ -190,8 +188,7 @@ function SetCard({ set, wallet, expanded, onClick, onPricesLoaded, cardRef }: {
     : "rgba(255,255,255,0.07)";
 
   return (
-    <div
-      ref={cardRef as React.RefObject<HTMLDivElement>}
+    <div ref={cardRef as React.RefObject<HTMLDivElement>}
       style={{ background: expanded ? "rgba(255,255,255,0.055)" : "rgba(255,255,255,0.025)", border: "1px solid " + borderColor, borderRadius: 10, overflow: "hidden", transition: "all 0.15s ease", cursor: "pointer" }}
       onClick={onClick}
     >
@@ -355,8 +352,10 @@ export default function SetsPage() {
     const params = new URLSearchParams(window.location.search);
     const w = params.get("wallet");
     const s = params.get("set");
+    const f = params.get("filter"); // ← deep-link from collection page: pre-populate filter
     if (w) { setInputVal(w); setWallet(w); }
     if (s) setExpandedSet(s);
+    if (f) setFilterText(f);
   }, []);
 
   const fetchSets = useCallback(async (w: string) => {
@@ -415,12 +414,26 @@ export default function SetsPage() {
     return { almostThere: data.sets.filter((s) => s.tier === "almost_there").length, bottlenecks: data.sets.filter((s) => s.tier === "bottleneck").length };
   }, [data]);
 
+  // Derive a "filtered for specific set" banner when a filter param was passed
+  const isFilteredView = filterText.trim().length > 0 && data !== null;
+
   return (
     <div style={{ fontFamily: "'DM Mono','Fira Code','Courier New',monospace", color: "#e2e8f0" }}>
       <div style={{ maxWidth: 660, margin: "0 auto", padding: "18px 14px 60px" }}>
-        <div style={{ marginBottom: 16 }}>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.02em", margin: "0 0 3px" }}>Set Tracker</h1>
-          <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>Track completion · identify bottlenecks · find cheapest path to complete</p>
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+          <div>
+            <h1 style={{ fontSize: 20, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.02em", margin: "0 0 3px" }}>Set Tracker</h1>
+            <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>Track completion · identify bottlenecks · find cheapest path to complete</p>
+          </div>
+          {/* Clear filter banner when deep-linked from collection page */}
+          {isFilteredView && (
+            <button
+              onClick={() => setFilterText("")}
+              style={{ background: "rgba(249,115,22,0.1)", border: "1px solid rgba(249,115,22,0.25)", borderRadius: 6, padding: "5px 10px", fontSize: 10, color: "#fb923c", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", flexShrink: 0 }}
+            >
+              ✕ Clear filter
+            </button>
+          )}
         </div>
 
         <div style={{ display: "flex", gap: 7, marginBottom: 16 }}>
@@ -459,7 +472,7 @@ export default function SetsPage() {
           </div>
         )}
 
-        {enrichedSets.length > 0 && <BestOpportunityBanner sets={enrichedSets} onSetClick={handleSetClick} />}
+        {enrichedSets.length > 0 && !isFilteredView && <BestOpportunityBanner sets={enrichedSets} onSetClick={handleSetClick} />}
 
         {data && !loading && enrichedSets.length === 0 && (
           <div style={{ background: "rgba(96,165,250,0.04)", border: "1px solid rgba(96,165,250,0.1)", borderRadius: 7, padding: "7px 12px", fontSize: 10, color: "#60a5fa", marginBottom: 12 }}>
@@ -490,7 +503,11 @@ export default function SetsPage() {
         {data && !loading && (
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             {displaySets.length === 0
-              ? <div style={{ textAlign: "center", padding: "40px 0", fontSize: 11, color: "#334155" }}>No sets match your filters</div>
+              ? <div style={{ textAlign: "center", padding: "40px 0", fontSize: 11, color: "#334155" }}>
+                  {isFilteredView ? (
+                    <>No sets match "{filterText}" — <button onClick={() => setFilterText("")} style={{ background: "none", border: "none", color: "#60a5fa", cursor: "pointer", fontSize: 11, fontFamily: "inherit", textDecoration: "underline" }}>clear filter</button></>
+                  ) : "No sets match your filters"}
+                </div>
               : displaySets.map((set) => (
                 <SetCard key={set.setId} set={set} wallet={wallet} expanded={expandedSet === set.setId}
                   onClick={() => handleCardClick(set.setId)} onPricesLoaded={handlePricesLoaded} cardRef={getCardRef(set.setId)} />
