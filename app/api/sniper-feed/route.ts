@@ -282,23 +282,20 @@ async function fetchTopShotPool(): Promise<{ txns: RawTransaction[]; tsCount: nu
     }
   }
 
-  const [r1, r2, r3] = await Promise.allSettled([
-    fetchTSPage("", "UPDATED_AT_DESC"),
+  // Step 1: fetch page 1 (UPDATED_AT_DESC) to get the cursor for page 2
+  const { txns: p1, nextCursor } = await fetchTSPage("", "UPDATED_AT_DESC");
+  add(p1);
+
+  // Step 2: fetch page 2 (using real cursor) + PRICE_ASC in parallel
+  const [r2, r3] = await Promise.allSettled([
+    nextCursor ? fetchTSPage(nextCursor, "UPDATED_AT_DESC") : Promise.resolve({ txns: [], nextCursor: null }),
     fetchTSPage("", "PRICE_ASC"),
-    fetchTSPage("", "UPDATED_AT_DESC").then(async ({ txns, nextCursor }) => {
-      add(txns);
-      if (nextCursor) {
-        const { txns: p2 } = await fetchTSPage(nextCursor, "UPDATED_AT_DESC");
-        return { txns: p2, nextCursor: null };
-      }
-      return { txns: [], nextCursor: null };
-    }),
   ]);
 
-  if (r1.status === "fulfilled") add(r1.value.txns);
   if (r2.status === "fulfilled") add(r2.value.txns);
   if (r3.status === "fulfilled") add(r3.value.txns);
 
+  console.log(`[sniper-feed] TS pool: p1=${p1.length} p2=${r2.status === "fulfilled" ? r2.value.txns.length : 0} priceAsc=${r3.status === "fulfilled" ? r3.value.txns.length : 0} total=${all.length}`);
   return { txns: all, tsCount: all.length };
 }
 
@@ -362,6 +359,7 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
     if (!res.ok) { console.warn(`[sniper-feed] Flowty HTTP ${res.status} from=${from}`); return []; }
     const json = await res.json();
     const rawItems: FlowtyNftItem[] = json?.data ?? [];
+    console.log(`[sniper-feed] Flowty from=${from}: rawItems=${rawItems.length} keys=${Object.keys(json ?? {}).join(",")}`);
     const listings: FlowtyListing[] = [];
     for (const item of rawItems) {
       const order = item.orders?.find(
