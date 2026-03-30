@@ -391,7 +391,8 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
     }
     return listings;
   } catch (err) {
-    if (from === 0) console.warn(`[sniper-feed] Flowty p0 failed:`, err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[sniper-feed] Flowty from=${from} failed: ${msg}`);
     return [];
   }
 }
