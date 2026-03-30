@@ -7,8 +7,11 @@
 //   STOREFRONT_OFFER_CREATED  — new offer placed
 //   STOREFRONT_OFFER_CANCELLED — offer withdrawn
 //
-// Note: Firestore structured queries can't filter on nested mapValue fields server-side,
-// so nftType filtering happens in application code after fetching.
+// Cancellation matching: offerResourceID (NOT transactionId — they're different transactions)
+// The Firestore document id is "{offerResourceID}_{TYPE}" confirming this is the correct key.
+//
+// nftID source: data.typeAndIDOffer.nftID (more reliable than data.nftID which can be null)
+// FMV source:   data.valuations.blended.usdValue (LiveToken, included free on created events)
 //
 // GET /api/flowty-offers                          — recent offers, all TopShot
 // GET /api/flowty-offers?nftIds=123,456,789       — specific Flow NFT IDs
@@ -20,28 +23,12 @@ const FIRESTORE_BASE =
 
 const TOPSHOT_NFT_TYPE = "A.0b2a3299cc857e29.TopShot.NFT";
 
-interface OfferDataFields {
-  nftID?: { stringValue?: string; integerValue?: string };
-  nftType?: { stringValue: string };
-  // Offer amount field name varies by contract version
-  offerAmount?: { doubleValue?: number; integerValue?: string };
-  amount?: { doubleValue?: number; integerValue?: string };
-  paymentTokenName?: { stringValue: string };
-  offerer?: { stringValue: string };
-  buyer?: { stringValue: string };
-  state?: { stringValue: string };
-}
-
-interface OfferDocFields {
-  type?: { stringValue: string };
-  blockTimestamp?: { timestampValue: string };
-  transactionId?: { stringValue: string };
-  data?: { mapValue: { fields: OfferDataFields } };
-}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type FirestoreFields = Record<string, any>;
 
 interface OfferDoc {
   name: string;
-  fields: OfferDocFields;
+  fields: FirestoreFields;
   createTime: string;
 }
 
@@ -56,9 +43,13 @@ export interface BestOffer {
   buyer: string;
   timestamp: string;
   transactionId: string;
+  offerResourceId: string;
+  fmv: number | null;
 }
 
-async function fetchOfferEvents(type: "STOREFRONT_OFFER_CREATED" | "STOREFRONT_OFFER_CANCELLED"): Promise<OfferDoc[]> {
+async function fetchOfferEvents(
+  type: "STOREFRONT_OFFER_CREATED" | "STOREFRONT_OFFER_CANCELLED"
+): Promise<OfferDoc[]> {
   const res = await fetch(`${FIRESTORE_BASE}/documents:runQuery`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -84,6 +75,10 @@ async function fetchOfferEvents(type: "STOREFRONT_OFFER_CREATED" | "STOREFRONT_O
   return results.filter((r) => r.document).map((r) => r.document!);
 }
 
+function getStr(f: FirestoreFields, key: string): string {
+  return f[key]?.stringValue ?? f[key]?.integerValue ?? "";
+}
+
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const nftIdsParam = url.searchParams.get("nftIds");
@@ -91,7 +86,6 @@ export async function GET(req: NextRequest) {
     ? new Set(nftIdsParam.split(",").map((s) => s.trim()).filter(Boolean))
     : null;
 
-  // Fetch created and cancelled offers in parallel
   let createdDocs: OfferDoc[];
   let cancelledDocs: OfferDoc[];
 
@@ -107,56 +101,73 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // Build set of cancelled transaction IDs to filter stale offers
-  const cancelledTxIds = new Set(
-    cancelledDocs
-      .map((doc) => doc.fields.transactionId?.stringValue ?? "")
-      .filter(Boolean)
-  );
+  // ── Build cancelled set by offerResourceID ──────────────────────────────────
+  // Document id is "{offerResourceID}_{TYPE}" — offerResourceID is the correct
+  // join key between cancellations and their original created offer.
+  // transactionId is WRONG — created and cancelled are separate transactions.
+  const cancelledOfferIds = new Set<string>();
+  for (const doc of cancelledDocs) {
+    const dataFields = doc.fields.data?.mapValue?.fields ?? {};
+    const id = getStr(dataFields, "offerResourceID") || getStr(dataFields, "offerId");
+    if (id) cancelledOfferIds.add(id);
+  }
 
-  // Process offer events → best offer per nftID
+  // ── Process created offers → best offer per nftID ───────────────────────────
   const bestOffers = new Map<string, BestOffer>();
 
   for (const doc of createdDocs) {
-    const dataFields = doc.fields.data?.mapValue?.fields;
-    if (!dataFields) continue;
+    const dataFields = doc.fields.data?.mapValue?.fields ?? {};
 
-    // Filter to TopShot only
-    if (dataFields.nftType?.stringValue !== TOPSHOT_NFT_TYPE) continue;
+    // TopShot only
+    const nftType = getStr(dataFields, "nftType");
+    if (nftType && nftType !== TOPSHOT_NFT_TYPE) continue;
 
     // Skip cancelled offers
-    const txId = doc.fields.transactionId?.stringValue ?? "";
-    if (cancelledTxIds.has(txId)) continue;
+    const offerResourceId = getStr(dataFields, "offerResourceID") || getStr(dataFields, "offerId");
+    if (offerResourceId && cancelledOfferIds.has(offerResourceId)) continue;
 
-    // Parse nftID (can be stringValue or integerValue)
+    // nftID: typeAndIDOffer.nftID is most reliable (top-level nftID can be null)
+    const typeAndIDOffer = dataFields.typeAndIDOffer?.mapValue?.fields ?? {};
+    const offerParamsString = dataFields.offerParamsString?.mapValue?.fields ?? {};
     const nftId =
-      dataFields.nftID?.stringValue ??
-      (dataFields.nftID?.integerValue ? String(dataFields.nftID.integerValue) : "");
-    if (!nftId) continue;
+      getStr(typeAndIDOffer, "nftID") ||
+      getStr(dataFields, "nftID") ||
+      getStr(offerParamsString, "nftId");
 
-    // Filter to requested IDs if provided
+    if (!nftId) continue;
     if (requestedIds && !requestedIds.has(nftId)) continue;
 
-    // Parse amount — field name varies by offer contract version
-    const offerAmountVal =
-      (dataFields.offerAmount?.doubleValue ?? parseFloat(dataFields.offerAmount?.integerValue ?? "0")) || 0;
-    const amountVal =
-      (dataFields.amount?.doubleValue ?? parseFloat(dataFields.amount?.integerValue ?? "0")) || 0;
-    const rawAmount = offerAmountVal || amountVal;
-
+    // Amount
+    const rawAmount =
+      (dataFields.offerAmount?.doubleValue ?? parseFloat(dataFields.offerAmount?.integerValue ?? "0") ?? 0) ||
+      (dataFields.amount?.doubleValue ?? parseFloat(dataFields.amount?.integerValue ?? "0") ?? 0);
     if (rawAmount <= 0) continue;
 
-    const currency = dataFields.paymentTokenName?.stringValue ?? "DUC";
+    // FMV — free from LiveToken valuation embedded in created event
+    const blended = dataFields.valuations?.mapValue?.fields?.blended?.mapValue?.fields ?? {};
+    const fmvRaw = blended.usdValue?.doubleValue ?? blended.usdValue?.integerValue ?? null;
+    const fmv = fmvRaw !== null ? parseFloat(String(fmvRaw)) : null;
+
+    const currency = getStr(dataFields, "paymentTokenName") || "DUC";
     const buyer =
-      dataFields.offerer?.stringValue ??
-      dataFields.buyer?.stringValue ??
+      getStr(dataFields, "offerAddress") ||
+      getStr(dataFields, "payer") ||
+      getStr(dataFields, "offerer") ||
       "";
     const timestamp = doc.fields.blockTimestamp?.timestampValue ?? doc.createTime;
+    const transactionId = doc.fields.transactionId?.stringValue ?? "";
 
-    // Keep highest offer per nftID
     const existing = bestOffers.get(nftId);
     if (!existing || rawAmount > existing.amount) {
-      bestOffers.set(nftId, { amount: rawAmount, currency, buyer, timestamp, transactionId: txId });
+      bestOffers.set(nftId, {
+        amount: rawAmount,
+        currency,
+        buyer,
+        timestamp,
+        transactionId,
+        offerResourceId,
+        fmv,
+      });
     }
   }
 
@@ -167,8 +178,6 @@ export async function GET(req: NextRequest) {
     count: Object.keys(offers).length,
     fetchedCreated: createdDocs.length,
     fetchedCancelled: cancelledDocs.length,
-    cancelledFiltered: cancelledDocs.filter(
-      (d) => d.fields.transactionId?.stringValue && cancelledTxIds.has(d.fields.transactionId.stringValue)
-    ).length,
+    cancelledFiltered: cancelledOfferIds.size,
   });
 }
