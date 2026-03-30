@@ -298,6 +298,7 @@ async function fetchTopShotPool(): Promise<{ listings: RawListing[]; tsCount: nu
 interface FlowtyOrder {
   listingResourceID: string;
   storefrontAddress: string;
+  flowtyStorefrontAddress?: string;
   salePrice: number;
   blockTimestamp: number;
   state?: string;
@@ -356,10 +357,9 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
     console.warn(`[sniper-feed] Flowty from=${from}: rawItems=${rawItems.length}`);
     const listings: FlowtyListing[] = [];
     for (const item of rawItems) {
-      const order = item.orders?.find(
-        (o) => !o.state || o.state === "LISTED" || o.state === "active"
-      ) ?? item.orders?.[0];
-      if (!order?.listingResourceID || !order?.storefrontAddress) continue;
+      // Take first order with a positive price regardless of state
+      const order = item.orders?.find((o) => (o.salePrice ?? 0) > 0) ?? item.orders?.[0];
+      if (!order?.listingResourceID) continue; // storefrontAddress may be empty on some items
       if (order.salePrice <= 0) continue;
       const traits = item.nftView?.traits ?? [];
       const serial = item.card?.num ?? item.nftView?.serial ?? 0;
@@ -368,7 +368,7 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
       listings.push({
         momentId: String(item.id),
         listingResourceID: order.listingResourceID,
-        storefrontAddress: order.storefrontAddress,
+        storefrontAddress: order.storefrontAddress ?? order.flowtyStorefrontAddress ?? "",
         price: order.salePrice,
         livetokenFmv: item.valuations?.blended?.usdValue ?? item.valuations?.livetoken?.usdValue ?? null,
         blockTimestamp: order.blockTimestamp ?? 0,
