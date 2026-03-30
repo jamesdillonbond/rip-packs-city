@@ -243,7 +243,6 @@ async function fetchTSPage(
       method: "POST",
       headers: GQL_HEADERS,
       body: JSON.stringify({
-        operationName: "SearchMarketplaceTransactions",
         query: SEARCH_TX_QUERY,
         variables: {
           input: {
@@ -253,10 +252,11 @@ async function fetchTSPage(
           },
         },
       }),
+      cache: "no-store",
       signal: controller.signal,
     });
     clearTimeout(timeout);
-    if (!res.ok) throw new Error(`GQL ${res.status}`);
+    if (!res.ok) throw new Error(`GQL ${res.status}: ${await res.text().then(t => t.slice(0, 200))}`);
     const json = await res.json();
     if (json.errors?.length) throw new Error(json.errors.map((e: { message: string }) => e.message).join("; "));
     const summary = json?.data?.searchMarketplaceTransactions?.data?.searchSummary;
