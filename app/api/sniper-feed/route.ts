@@ -240,7 +240,7 @@ async function fetchTSPage(
 ): Promise<{ txns: RawTransaction[]; nextCursor: string | null }> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
+    const timeout = setTimeout(() => controller.abort(), 5000); // 5s — must fit in 10s function limit
     const res = await fetch(TS_GQL, {
       method: "POST",
       headers: GQL_HEADERS,
@@ -282,20 +282,17 @@ async function fetchTopShotPool(): Promise<{ txns: RawTransaction[]; tsCount: nu
     }
   }
 
-  // Step 1: fetch page 1 (UPDATED_AT_DESC) to get the cursor for page 2
-  const { txns: p1, nextCursor } = await fetchTSPage("", "UPDATED_AT_DESC");
-  add(p1);
-
-  // Step 2: fetch page 2 (using real cursor) + PRICE_ASC in parallel
-  const [r2, r3] = await Promise.allSettled([
-    nextCursor ? fetchTSPage(nextCursor, "UPDATED_AT_DESC") : Promise.resolve({ txns: [], nextCursor: null }),
+  // Run UPDATED_AT_DESC and PRICE_ASC in parallel — each with 7s timeout
+  // Sequential page2 fetch removed — Vercel Hobby has 10s function limit
+  const [r1, r2] = await Promise.allSettled([
+    fetchTSPage("", "UPDATED_AT_DESC"),
     fetchTSPage("", "PRICE_ASC"),
   ]);
 
+  if (r1.status === "fulfilled") add(r1.value.txns);
   if (r2.status === "fulfilled") add(r2.value.txns);
-  if (r3.status === "fulfilled") add(r3.value.txns);
 
-  console.log(`[sniper-feed] TS pool: p1=${p1.length} p2=${r2.status === "fulfilled" ? r2.value.txns.length : 0} priceAsc=${r3.status === "fulfilled" ? r3.value.txns.length : 0} total=${all.length}`);
+  console.warn(`[sniper-feed] TS pool: updated=${r1.status === "fulfilled" ? r1.value.txns.length : 0} priceAsc=${r2.status === "fulfilled" ? r2.value.txns.length : 0} total=${all.length}`);
   return { txns: all, tsCount: all.length };
 }
 
@@ -342,7 +339,7 @@ function getTrait(traits: Array<{ name: string; value: string }> | undefined, na
 async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000); // 12s — Flowty can be slow
+    const timeout = setTimeout(() => controller.abort(), 6000); // 6s — all pages run in parallel with TS
     const res = await fetch(FLOWTY_ENDPOINT, {
       method: "POST",
       headers: FLOWTY_HEADERS,
@@ -398,11 +395,14 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
 }
 
 async function fetchAllFlowtyListings(): Promise<FlowtyListing[]> {
-  // Stagger pages slightly to avoid rate limiting — Flowty can be sensitive to parallel bursts
-  const [p0, p1] = await Promise.all([fetchFlowtyPage(0), fetchFlowtyPage(24)]);
-  await new Promise(r => setTimeout(r, 200));
-  const [p2, p3] = await Promise.all([fetchFlowtyPage(48), fetchFlowtyPage(72)]);
-  return [...p0, ...p1, ...p2, ...p3];
+  // All 4 pages in parallel — each has its own 6s timeout
+  // Total Flowty time bounded at 6s, running concurrently with TS (5s)
+  // Total function budget: ~7s leaving 3s for Supabase + response
+  const pages = await Promise.all([
+    fetchFlowtyPage(0), fetchFlowtyPage(24),
+    fetchFlowtyPage(48), fetchFlowtyPage(72),
+  ]);
+  return pages.flat();
 }
 
 // ─── Supabase FMV lookup ──────────────────────────────────────────────────────
@@ -498,6 +498,7 @@ function extractBadgeSlugs(tags: RawTag[] | undefined): string[] {
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 25; // Request max — Hobby allows up to 60s on some plans
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
