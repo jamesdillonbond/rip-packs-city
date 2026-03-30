@@ -25,6 +25,9 @@ interface SniperDeal {
   askPrice: number;
   baseFmv: number;
   adjustedFmv: number;
+  wapUsd: number | null;
+  daysSinceSale: number | null;
+  salesCount30d: number | null;
   discount: number;
   confidence: string;
   confidenceSource?: string;
@@ -89,7 +92,7 @@ function trackClick(deal: SniperDeal, walletAddress: string | null) {
       walletAddress,
       buyUrl: deal.buyUrl,
     }),
-  }).catch(() => {}); // fire-and-forget, never block UI
+  }).catch(() => {});
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -123,9 +126,11 @@ function discountColor(pct: number) {
 function ConfidenceDot({
   confidence,
   source,
+  daysSinceSale,
 }: {
   confidence: string;
   source?: string;
+  daysSinceSale?: number | null;
 }) {
   const isFallback = source === "ask_fallback" || !source;
   const isLivetoken = source === "livetoken";
@@ -138,19 +143,38 @@ function ConfidenceDot({
     : "speculative";
 
   const cfg = {
-    verified:   { dot: "bg-emerald-400", label: "Verified", tip: "FMV backed by real sales data" },
-    estimated:  { dot: "bg-yellow-400",  label: "Est.",     tip: "FMV estimated from limited/LiveToken data" },
-    speculative:{ dot: "bg-red-400/70",  label: "Spec.",    tip: "No sales data — FMV = ask price fallback" },
+    verified:    { dot: "bg-emerald-400", label: "Verified",  tip: "FMV backed by real sales data" },
+    estimated:   { dot: "bg-yellow-400",  label: "Est.",      tip: "FMV estimated from limited/LiveToken data" },
+    speculative: { dot: "bg-red-400/70",  label: "Spec.",     tip: "No sales data — FMV = ask price fallback" },
   }[level];
 
+  const staleLabel =
+    daysSinceSale === null || daysSinceSale === undefined ? null
+    : daysSinceSale === 0 ? "today"
+    : daysSinceSale === 1 ? "1d ago"
+    : `${daysSinceSale}d ago`;
+
+  const staleColor =
+    daysSinceSale === null || daysSinceSale === undefined ? "text-slate-600"
+    : daysSinceSale <= 3 ? "text-emerald-500/70"
+    : daysSinceSale <= 14 ? "text-yellow-500/70"
+    : "text-red-400/50";
+
   return (
-    <span
-      className="inline-flex items-center gap-1 text-xs text-slate-500 cursor-help"
-      title={cfg.tip}
-    >
-      <span className={`inline-block w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-      {cfg.label}
-    </span>
+    <div className="flex flex-col items-end gap-0.5">
+      <span
+        className="inline-flex items-center gap-1 text-xs text-slate-500 cursor-help"
+        title={cfg.tip}
+      >
+        <span className={`inline-block w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+        {cfg.label}
+      </span>
+      {staleLabel && (
+        <span className={`text-[10px] ${staleColor}`} title={`Last sale ${staleLabel}`}>
+          {staleLabel}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -188,9 +212,7 @@ function ActionCell({
   connectedWallet: string | null;
 }) {
   const { addToCart, removeFromCart, isInCart } = useCart();
-  const inCart = deal.listingResourceID
-    ? isInCart(deal.listingResourceID)
-    : false;
+  const inCart = deal.listingResourceID ? isInCart(deal.listingResourceID) : false;
   const isOwned = ownedIds.has(deal.flowId);
   const canCart = !!deal.listingResourceID && !!deal.storefrontAddress;
   const isFlowty = (deal.source ?? "topshot") === "flowty";
@@ -275,14 +297,7 @@ function ActionCell({
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 const REFRESH_INTERVAL = 30;
-const TIER_TABS = [
-  "all",
-  "common",
-  "fandom",
-  "rare",
-  "legendary",
-  "ultimate",
-] as const;
+const TIER_TABS = ["all", "common", "fandom", "rare", "legendary", "ultimate"] as const;
 type TierTab = (typeof TIER_TABS)[number];
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
@@ -300,11 +315,9 @@ export default function SniperPage() {
   const [countdown, setCountdown] = useState(REFRESH_INTERVAL);
   const [paused, setPaused] = useState(false);
 
-  // Wallet context — read connected wallet from FCL if available
   const [connectedWallet, setConnectedWallet] = useState<string | null>(null);
   const [ownedIds, setOwnedIds] = useState<Set<string>>(new Set());
 
-  // Filters
   const [tierTab, setTierTab] = useState<TierTab>("all");
   const [sortBy, setSortBy] = useState<SortOption>("discount");
   const [minDiscount, setMinDiscount] = useState(0);
@@ -316,7 +329,6 @@ export default function SniperPage() {
 
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Try to get connected wallet from FCL
   useEffect(() => {
     let cancelled = false;
     import("@onflow/fcl")
@@ -329,10 +341,8 @@ export default function SniperPage() {
     return () => { cancelled = true; };
   }, []);
 
-  // Load owned moment IDs from wallet search cache when wallet is connected
   useEffect(() => {
     if (!connectedWallet) { setOwnedIds(new Set()); return; }
-    // Try to read from sessionStorage (set by wallet page after a successful search)
     try {
       const cached = sessionStorage.getItem(`rpc_owned_${connectedWallet}`);
       if (cached) {
@@ -384,7 +394,6 @@ export default function SniperPage() {
     return () => clearInterval(countdownRef.current!);
   }, [paused, fetchFeed]);
 
-  // Client-side filters
   const visibleDeals = (data?.deals ?? []).filter((d) => {
     if (search) {
       const q = search.toLowerCase();
@@ -392,8 +401,7 @@ export default function SniperPage() {
         !d.playerName.toLowerCase().includes(q) &&
         !d.setName.toLowerCase().includes(q) &&
         !d.teamName.toLowerCase().includes(q)
-      )
-        return false;
+      ) return false;
     }
     if (showVerifiedOnly && d.confidenceSource === "ask_fallback") return false;
     return true;
@@ -427,38 +435,21 @@ export default function SniperPage() {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              {/* Source status */}
               <div className="flex items-center gap-2">
-                <span
-                  className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${
-                    stats.tsLive
-                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                      : "bg-red-500/10 text-red-400/60 border-red-500/20"
-                  }`}
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      stats.tsLive
-                        ? "bg-emerald-400 animate-pulse"
-                        : "bg-red-400/50"
-                    }`}
-                  />
+                <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${
+                  stats.tsLive
+                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                    : "bg-red-500/10 text-red-400/60 border-red-500/20"
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${stats.tsLive ? "bg-emerald-400 animate-pulse" : "bg-red-400/50"}`} />
                   TS {stats.tsLive ? `(${data?.tsCount})` : "offline"}
                 </span>
-                <span
-                  className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${
-                    stats.flowtyLive
-                      ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
-                      : "bg-red-500/10 text-red-400/60 border-red-500/20"
-                  }`}
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      stats.flowtyLive
-                        ? "bg-blue-400 animate-pulse"
-                        : "bg-red-400/50"
-                    }`}
-                  />
+                <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${
+                  stats.flowtyLive
+                    ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
+                    : "bg-red-500/10 text-red-400/60 border-red-500/20"
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${stats.flowtyLive ? "bg-blue-400 animate-pulse" : "bg-red-400/50"}`} />
                   Flowty {stats.flowtyLive ? `(${data?.flowtyCount})` : "offline"}
                 </span>
               </div>
@@ -513,9 +504,7 @@ export default function SniperPage() {
               <span>Min discount</span>
               <input
                 type="number"
-                min={0}
-                max={100}
-                step={5}
+                min={0} max={100} step={5}
                 value={minDiscount || ""}
                 onChange={(e) => setMinDiscount(Number(e.target.value))}
                 placeholder="0"
@@ -527,8 +516,7 @@ export default function SniperPage() {
               <span>Max $</span>
               <input
                 type="number"
-                min={0}
-                step={1}
+                min={0} step={1}
                 value={maxPrice || ""}
                 onChange={(e) => setMaxPrice(Number(e.target.value))}
                 placeholder="any"
@@ -589,21 +577,14 @@ export default function SniperPage() {
           {stats.special > 0 && (
             <span><span className="text-purple-400 font-semibold">{stats.special}</span> special serials</span>
           )}
-          <span>
-            avg <span className="text-slate-300 font-semibold">{fmt(stats.avgDiscount, 1)}%</span> off
-          </span>
+          <span>avg <span className="text-slate-300 font-semibold">{fmt(stats.avgDiscount, 1)}%</span> off</span>
           {connectedWallet && ownedIds.size > 0 && (
-            <span className="text-slate-600">
-              {ownedIds.size} owned moments tracked
-            </span>
+            <span className="text-slate-600">{ownedIds.size} owned moments tracked</span>
           )}
           {data?.lastRefreshed && (
             <span className="ml-auto">
-              updated{" "}
-              {new Date(data.lastRefreshed).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
+              updated {new Date(data.lastRefreshed).toLocaleTimeString([], {
+                hour: "2-digit", minute: "2-digit", second: "2-digit",
               })}
             </span>
           )}
@@ -630,13 +611,9 @@ export default function SniperPage() {
             <p className="text-sm">No deals match your filters right now.</p>
             <button
               onClick={() => {
-                setTierTab("all");
-                setMinDiscount(0);
-                setMaxPrice(0);
-                setSerialFilter("all");
-                setBadgeOnly(false);
-                setShowVerifiedOnly(false);
-                setSearch("");
+                setTierTab("all"); setMinDiscount(0); setMaxPrice(0);
+                setSerialFilter("all"); setBadgeOnly(false);
+                setShowVerifiedOnly(false); setSearch("");
               }}
               className="text-xs hover:underline"
               style={{ color: ACCENT }}
@@ -666,9 +643,7 @@ export default function SniperPage() {
                 {visibleDeals.map((deal) => (
                   <tr
                     key={`${deal.source}-${deal.flowId}-${deal.listingResourceID}`}
-                    className={`hover:bg-slate-800/30 transition-colors ${
-                      deal.discount >= 40 ? "bg-red-950/10" : ""
-                    }`}
+                    className={`hover:bg-slate-800/30 transition-colors ${deal.discount >= 40 ? "bg-red-950/10" : ""}`}
                   >
                     {/* Thumbnail */}
                     <td className="px-3 py-2">
@@ -686,9 +661,7 @@ export default function SniperPage() {
 
                     {/* Moment info */}
                     <td className="px-3 py-2">
-                      <div className="font-semibold text-slate-200 leading-tight">
-                        {deal.playerName}
-                      </div>
+                      <div className="font-semibold text-slate-200 leading-tight">{deal.playerName}</div>
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         <span className={`text-xs font-medium ${tierColor(deal.tier)}`}>
                           {deal.tier.charAt(0) + deal.tier.slice(1).toLowerCase()}
@@ -729,9 +702,7 @@ export default function SniperPage() {
                     <td className="px-3 py-2 text-right">
                       <div className="font-mono text-slate-300 text-sm">#{deal.serial}</div>
                       {deal.circulationCount > 0 && (
-                        <div className="text-xs text-slate-600">
-                          / {deal.circulationCount.toLocaleString()}
-                        </div>
+                        <div className="text-xs text-slate-600">/ {deal.circulationCount.toLocaleString()}</div>
                       )}
                       {deal.isSpecialSerial && <SerialBadge deal={deal} />}
                     </td>
@@ -743,7 +714,16 @@ export default function SniperPage() {
 
                     {/* Adjusted FMV */}
                     <td className="px-3 py-2 text-right">
-                      <div className="font-mono text-slate-300">${fmt(deal.adjustedFmv)}</div>
+                      <div className="font-mono text-slate-300 flex items-center justify-end gap-1">
+                        ${fmt(deal.adjustedFmv)}
+                        {deal.wapUsd !== null && deal.wapUsd > 0 && (() => {
+                          const diff = (deal.wapUsd - deal.baseFmv) / deal.baseFmv;
+                          if (Math.abs(diff) < 0.1) return null;
+                          return diff > 0
+                            ? <span className="text-xs text-emerald-400" title={`WAP $${fmt(deal.wapUsd)} — trending up`}>↑</span>
+                            : <span className="text-xs text-red-400/70" title={`WAP $${fmt(deal.wapUsd)} — trending down`}>↓</span>;
+                        })()}
+                      </div>
                       {deal.serialMult > 1 && (
                         <div className="text-xs text-slate-600">
                           base ${fmt(deal.baseFmv)} × {deal.serialMult.toFixed(2)}
@@ -758,9 +738,13 @@ export default function SniperPage() {
                       </span>
                     </td>
 
-                    {/* Confidence */}
+                    {/* Confidence + staleness */}
                     <td className="px-3 py-2 text-right">
-                      <ConfidenceDot confidence={deal.confidence} source={deal.confidenceSource} />
+                      <ConfidenceDot
+                        confidence={deal.confidence}
+                        source={deal.confidenceSource}
+                        daysSinceSale={deal.daysSinceSale}
+                      />
                     </td>
 
                     {/* Source */}
@@ -797,6 +781,10 @@ export default function SniperPage() {
             <span className="w-1.5 h-1.5 rounded-full bg-red-400/70 inline-block" />
             Speculative — FMV = ask price fallback
           </span>
+          <span className="flex items-center gap-1 text-emerald-500/50">↑</span>
+          <span>WAP trending up &nbsp;</span>
+          <span className="flex items-center gap-1 text-red-400/50">↓</span>
+          <span>WAP trending down</span>
           <span className="ml-auto">Adj. FMV = base FMV × serial multiplier</span>
         </div>
       </div>
