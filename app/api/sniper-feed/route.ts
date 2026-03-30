@@ -359,7 +359,7 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
     if (!res.ok) { console.warn(`[sniper-feed] Flowty HTTP ${res.status} from=${from}`); return []; }
     const json = await res.json();
     const rawItems: FlowtyNftItem[] = json?.data ?? [];
-    console.log(`[sniper-feed] Flowty from=${from}: rawItems=${rawItems.length} keys=${Object.keys(json ?? {}).join(",")}`);
+    console.warn(`[sniper-feed] Flowty from=${from}: rawItems=${rawItems.length} keys=${Object.keys(json ?? {}).join(",")}`);
     const listings: FlowtyListing[] = [];
     for (const item of rawItems) {
       const order = item.orders?.find(
@@ -392,7 +392,7 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
     return listings;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`[sniper-feed] Flowty from=${from} failed: ${msg}`);
+    console.error(`[sniper-feed] Flowty from=${from} FAILED: ${msg}`);
     return [];
   }
 }
