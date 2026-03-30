@@ -27,18 +27,9 @@ const BADGE_LABELS: Record<string, string> = {
   "Championship Year": "Champ Year", "Rookie of the Year": "ROTY", "Fresh": "Fresh",
 };
 
-// series_number (on-chain integer) → badge_editions.series_number column
-// Used to join badge_editions against the moment's series
 const SERIES_INT_TO_SEASON: Record<number, string> = {
-  0: "Beta",
-  1: "2020-21",
-  2: "2021-22",
-  3: "Summer 2021",
-  4: "2022-23",
-  5: "2023-24",
-  6: "2024-25",
-  7: "2025-26",
-  8: "2025-26",
+  0: "Beta", 1: "2020-21", 2: "2021-22", 3: "Summer 2021",
+  4: "2022-23", 5: "2023-24", 6: "2024-25", 7: "2025-26", 8: "2025-26",
 };
 
 const NBA_TEAMS: Record<string, string> = {
@@ -61,9 +52,7 @@ function serialPremium(serial: number, circ: number): number {
 }
 
 function buildThumbnailUrl(assetPathPrefix: string | undefined): string | null {
-  if (assetPathPrefix) {
-    return `${assetPathPrefix}Hero_Black_2880_2880.jpg`;
-  }
+  if (assetPathPrefix) return `${assetPathPrefix}Hero_Black_2880_2880.jpg`;
   return null;
 }
 
@@ -72,6 +61,8 @@ interface RawTransaction {
   id: string;
   price: string | number;
   updatedAt?: string;
+  // ── NEW: seller flow address for NFTStorefrontV2 purchase ──
+  seller?: { flowAddress?: string | null };
   moment?: {
     id: string;
     flowId: string;
@@ -129,8 +120,12 @@ export interface SniperDeal {
   packEv: number | null;
   packEvRatio: number | null;
   buyUrl: string;
+  // ── NEW: required for NFTStorefrontV2 purchase transaction ──
+  listingResourceID: string | null;   // tx.id from Top Shot GQL
+  storefrontAddress: string | null;   // seller's Flow address
 }
 
+// ── GQL query — added seller.flowAddress ───────────────────────────────────
 const SEARCH_TX_QUERY = `
   query SearchMarketplaceTransactions($input: SearchMarketplaceTransactionsInput!) {
     searchMarketplaceTransactions(input: $input) {
@@ -145,6 +140,7 @@ const SEARCH_TX_QUERY = `
                   id
                   price
                   updatedAt
+                  seller { flowAddress }
                   moment {
                     id
                     flowId
@@ -331,11 +327,6 @@ async function fetchSupabaseFmv(
   return map;
 }
 
-// Badge enrichment from Supabase
-// badge_editions schema: play_tags jsonb, set_play_tags jsonb,
-// is_three_star_rookie boolean, has_rookie_mint boolean, series_number integer
-// Returns map of playerName -> badge title strings matching BADGE_PREMIUMS
-
 interface BadgeEditionRow {
   player_name: string;
   play_tags: { id: string; title: string }[] | null;
@@ -352,9 +343,7 @@ async function fetchBadgesByPlayers(
 ): Promise<Map<string, string[]>> {
   if (!playerNames.length) return new Map();
 
-  const orFilter = playerNames
-    .map(n => `player_name.ilike.${n}`)
-    .join(",");
+  const orFilter = playerNames.map(n => `player_name.ilike.${n}`).join(",");
 
   const { data, error } = await supabase
     .from("badge_editions")
@@ -367,7 +356,6 @@ async function fetchBadgesByPlayers(
     return new Map();
   }
 
-  // Union all badge titles across every edition row for each player
   const map = new Map<string, Set<string>>();
   for (const row of (data ?? []) as BadgeEditionRow[]) {
     const name = row.player_name;
@@ -392,8 +380,6 @@ async function fetchBadgesByPlayers(
   return result;
 }
 
-
-// Extract badge slugs from API tags (fallback — usually empty in API response)
 function extractBadgesFromTags(tx: RawTransaction): string[] {
   return (tx.moment?.play?.tags ?? [])
     .map(t => t.id in BADGE_PREMIUMS ? t.id : t.title in BADGE_PREMIUMS ? t.title : null)
@@ -432,8 +418,6 @@ export async function GET(req: Request) {
   const supabaseFmv = await fetchSupabaseFmv(supabase, editionKeys);
   console.log(`[sniper-feed] Supabase FMV hits: ${supabaseFmv.size}/${editionKeys.length}`);
 
-  // ── Badge enrichment from Supabase ──────────────────────────────────────
-  // Collect unique player names and series numbers from the transaction pool
   const playerNameSet = new Set<string>();
   const seriesNumberSet = new Set<number>();
   for (const tx of allTxns) {
@@ -491,13 +475,9 @@ export async function GET(req: Request) {
     const jerseyNumber = m.play?.stats?.jerseyNumber ?? null;
     const playerName = m.play?.stats?.playerName ?? "Unknown";
 
-    // Merge badge slugs: Supabase badge_editions (primary) + API tags (fallback)
     const tagBadges = extractBadgesFromTags(tx);
     const supabaseBadges = playerBadgeMap.get(playerName) ?? [];
-
-    // Deduplicate — prefer supabase badges, add any tag badges not already present
     const badgeSlugSet = new Set<string>([...supabaseBadges, ...tagBadges]);
-    // Only keep slugs that have a known premium
     const badgeSlugs = Array.from(badgeSlugSet).filter(s => s in BADGE_PREMIUMS);
 
     const hasBadge = badgeSlugs.length > 0;
@@ -511,12 +491,16 @@ export async function GET(req: Request) {
     const parallelId = psp?.parallelID ?? m.parallelID ?? 0;
     const teamId = m.play?.stats?.teamAtMomentNbaId ?? "";
     const teamName = NBA_TEAMS[teamId] ?? teamId;
-
     const thumbnailUrl = buildThumbnailUrl(m.assetPathPrefix);
-
     const updatedAt = tx.updatedAt ?? null;
     const listingAgeMs = updatedAt ? now - new Date(updatedAt).getTime() : 0;
     const isStale = listingAgeMs > 10 * 60 * 1000;
+
+    // ── Cart fields ─────────────────────────────────────────────────────────
+    // tx.id is the NFTStorefrontV2 listing resource ID
+    // seller.flowAddress is the storefront (seller) address
+    const listingResourceID = tx.id ?? null;
+    const storefrontAddress = tx.seller?.flowAddress ?? null;
 
     return {
       flowId: m.flowId,
@@ -557,6 +541,8 @@ export async function GET(req: Request) {
       packEv: null,
       packEvRatio: null,
       buyUrl: `https://nbatopshot.com/moment/${m.flowId}`,
+      listingResourceID,
+      storefrontAddress,
     };
   }).filter((m): m is SniperDeal => m !== null);
 
