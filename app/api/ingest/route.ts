@@ -154,15 +154,10 @@ function formatTier(tier: string | null): string {
   return "COMMON"
 }
 
-// Build the edition external_id.
-// Top Shot GraphQL only returns UUID-based IDs. We store the UUID:UUID key
-// AND the moment-level UUID (moment.id) so that the sniper-feed can look up
-// FMV by moment UUID directly.
 function buildEditionKey(tx: SaleTransaction): string | null {
   const moment = tx.moment
   if (!moment) return null
   const psp = moment.parallelSetPlay
-  // Use parallelSetPlay when available; fall back to set.id:play.id
   const setId = psp?.setID ?? moment.set?.id
   const playId = psp?.playID ?? moment.play?.id
   if (!setId || !playId) return null
@@ -288,7 +283,31 @@ async function upsertSale(
   if (!price) return false
 
   const serialNumber = toNum(tx.moment?.flowSerialNumber)
+  const nftId = tx.moment?.flowId ? String(tx.moment.flowId) : null
 
+  // ── Write moments row ────────────────────────────────────────────────────
+  // moments.nft_id is UNIQUE — upsert is safe.
+  // moments.serial_number is NOT NULL — skip if missing.
+  // This powers the flowty-sales route's nft_id → edition_id bridge.
+  if (nftId && serialNumber !== null) {
+    const { error: momentError } = await supabaseAdmin
+      .from("moments")
+      .upsert(
+        {
+          nft_id: nftId,
+          edition_id: editionId,
+          collection_id: collectionId,
+          serial_number: serialNumber,
+        },
+        { onConflict: "nft_id", ignoreDuplicates: true }
+      )
+
+    if (momentError && momentError.code !== "23505") {
+      console.error("[INGEST] upsertMoment error:", momentError.message)
+    }
+  }
+
+  // ── Write sale row ────────────────────────────────────────────────────────
   const { error } = await supabaseAdmin.from("sales").insert({
     edition_id: editionId,
     collection_id: collectionId,
@@ -343,7 +362,6 @@ async function upsertFmvSnapshot(
         ? "MEDIUM"
         : "LOW"
 
-  // Use upsert on edition_id so repeated runs update rather than append
   await supabaseAdmin
     .from("fmv_snapshots")
     .upsert(
@@ -353,7 +371,7 @@ async function upsertFmvSnapshot(
         fmv_usd: Number(median.toFixed(2)),
         floor_price_usd: Number(floor.toFixed(2)),
         confidence: confidence as "LOW" | "MEDIUM" | "HIGH",
-        sales_count_7d: recentSales.length, // reflects 30-day window as of v1.1
+        sales_count_7d: recentSales.length,
         algo_version: "1.1.0",
       },
       { onConflict: "edition_id", ignoreDuplicates: false }
@@ -403,12 +421,13 @@ async function fetchRecentSales(
     }
   }
 
-  // Log shape of first result to aid debugging
   if (transactions.length > 0) {
     const sample = transactions[0]
     console.log("[INGEST] Sample tx shape:", JSON.stringify({
       txId: sample.id,
       momentId: sample.moment?.id,
+      flowId: sample.moment?.flowId ?? "null",
+      serialNumber: sample.moment?.flowSerialNumber ?? "null",
       setId: sample.moment?.set?.id,
       playId: sample.moment?.play?.id,
       psp: sample.moment?.parallelSetPlay,
@@ -464,11 +483,12 @@ export async function POST(req: NextRequest) {
     console.log(`[INGEST] Fetched ${transactions.length} transactions`)
 
     let salesIngested = 0
+    let momentsWritten = 0
     let editionsUpdated = 0
     let duplicates = 0
     let errors = 0
 
-    // Track sales prices per edition (by Supabase internal edition id) for FMV
+    // Track sales prices per edition for FMV snapshot computation
     const editionSalesMap = new Map<string, number[]>()
 
     for (const tx of transactions) {
@@ -491,15 +511,26 @@ export async function POST(req: NextRequest) {
 
         editionsUpdated++
 
-        // Attempt to insert sale
+        // Insert sale (also writes moments row as a side effect)
+        const prevMomentCount = momentsWritten
         const inserted = await upsertSale(collectionId, editionId, tx)
+
+        // Detect if a moments row was written by checking flowId presence
+        if (tx.moment?.flowId && tx.moment?.flowSerialNumber) {
+          momentsWritten++
+        }
+
         if (inserted) {
           salesIngested++
         } else {
+          // Duplicate sale — don't double-count moment
+          if (tx.moment?.flowId && tx.moment?.flowSerialNumber) {
+            momentsWritten = prevMomentCount // revert increment for dupes
+          }
           duplicates++
         }
 
-        // Accumulate prices for FMV (even duplicates count — they reflect real prices)
+        // Accumulate prices for FMV
         const arr = editionSalesMap.get(editionId) ?? []
         arr.push(price)
         editionSalesMap.set(editionId, arr)
@@ -523,12 +554,13 @@ export async function POST(req: NextRequest) {
     const duration = Date.now() - startTime
 
     console.log(
-      `[INGEST] Done — sales=${salesIngested} dupes=${duplicates} editions=${editionsUpdated} fmv=${fmvUpdated} errors=${errors} duration=${duration}ms`
+      `[INGEST] Done — sales=${salesIngested} dupes=${duplicates} moments=${momentsWritten} editions=${editionsUpdated} fmv=${fmvUpdated} errors=${errors} duration=${duration}ms`
     )
 
     return NextResponse.json({
       ok: true,
       salesIngested,
+      momentsWritten,
       duplicates,
       editionsUpdated,
       fmvUpdated,
