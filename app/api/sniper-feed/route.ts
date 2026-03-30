@@ -249,7 +249,7 @@ async function fetchTSPage(
       signal: controller.signal,
     });
     clearTimeout(timeout);
-    if (!res.ok) throw new Error(`GQL ${res.status}: ${await res.text().then(t => t.slice(0, 150))}`);
+    if (!res.ok) throw new Error(`GQL ${res.status}: ${await res.text().then(t => t.slice(0, 200))}`);
     const json = await res.json();
     if (json.errors?.length) throw new Error(json.errors.map((e: { message: string }) => e.message).join("; "));
     const summary = json?.data?.searchMomentListings?.data?.searchSummary;
@@ -266,7 +266,7 @@ async function fetchTSPage(
     console.warn(`[sniper-feed] TS page sortBy=${sortBy} listings=${listings.length} cursor=${cursor.slice(0,20)||"start"}`);
     return { listings, nextCursor };
   } catch (err) {
-    console.error(`[sniper-feed] TS page FAILED sortBy=${sortBy} cursor=${cursor.slice(0,20)||"start"}:`, err instanceof Error ? err.message : String(err));
+    console.error(`[sniper-feed] TS page FAILED sortBy=${sortBy} cursor=${cursor.slice(0,20)||"start"}: ${err instanceof Error ? err.message : String(err)}`);
     return { listings: [], nextCursor: null };
   }
 }
@@ -280,7 +280,7 @@ async function fetchTopShotPool(): Promise<{ listings: RawListing[]; tsCount: nu
     }
   }
 
-  // Fetch UPDATED_AT_DESC and PRICE_ASC in parallel — both within 5s timeout
+  // Fetch two pages in parallel — both within 5s timeout
   const [r1, r2] = await Promise.allSettled([
     fetchTSPage("", ""),
     fetchTSPage("", ""),
@@ -289,7 +289,7 @@ async function fetchTopShotPool(): Promise<{ listings: RawListing[]; tsCount: nu
   if (r1.status === "fulfilled") add(r1.value.listings);
   if (r2.status === "fulfilled") add(r2.value.listings);
 
-  console.warn(`[sniper-feed] TS pool: updated=${r1.status === "fulfilled" ? r1.value.listings.length : 0} priceAsc=${r2.status === "fulfilled" ? r2.value.listings.length : 0} total=${all.length}`);
+  console.warn(`[sniper-feed] TS pool: p1=${r1.status === "fulfilled" ? r1.value.listings.length : "FAIL"} p2=${r2.status === "fulfilled" ? r2.value.listings.length : "FAIL"} total=${all.length}`);
   return { listings: all, tsCount: all.length };
 }
 
@@ -356,21 +356,24 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
     const rawItems: FlowtyNftItem[] = json?.nfts ?? json?.data ?? [];
     console.warn(`[sniper-feed] Flowty from=${from}: rawItems=${rawItems.length}`);
     const listings: FlowtyListing[] = [];
+    let nullFmvCount = 0;
     for (const item of rawItems) {
       // Take first order with a positive price regardless of state
       const order = item.orders?.find((o) => (o.salePrice ?? 0) > 0) ?? item.orders?.[0];
-      if (!order?.listingResourceID) continue; // storefrontAddress may be empty on some items
+      if (!order?.listingResourceID) continue;
       if (order.salePrice <= 0) continue;
       const traits = item.nftView?.traits ?? [];
       const serial = item.card?.num ?? item.nftView?.serial ?? 0;
       const circ = item.card?.max ?? 0;
       const subStr = getTrait(traits, "Subedition");
+      const livetokenFmv = item.valuations?.blended?.usdValue ?? item.valuations?.livetoken?.usdValue ?? null;
+      if (!livetokenFmv || livetokenFmv <= 0) { nullFmvCount++; }
       listings.push({
         momentId: String(item.id),
         listingResourceID: order.listingResourceID,
         storefrontAddress: order.storefrontAddress ?? order.flowtyStorefrontAddress ?? "",
         price: order.salePrice,
-        livetokenFmv: item.valuations?.blended?.usdValue ?? item.valuations?.livetoken?.usdValue ?? null,
+        livetokenFmv: (livetokenFmv && livetokenFmv > 0) ? livetokenFmv : null,
         blockTimestamp: order.blockTimestamp ?? 0,
         playerName: item.card?.title ?? getTrait(traits, "FullName") ?? "",
         serial,
@@ -382,6 +385,9 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
         subeditionId: subStr ? parseInt(subStr, 10) || 0 : 0,
         isLocked: getTrait(traits, "Locked") === "true",
       });
+    }
+    if (nullFmvCount > 0) {
+      console.warn(`[sniper-feed] Flowty from=${from}: ${nullFmvCount}/${rawItems.length} items have null/zero LiveToken FMV`);
     }
     return listings;
   } catch (err) {
@@ -525,10 +531,8 @@ export async function GET(req: Request) {
     const sp = l.setPlay;
     if (sp?.setID && sp?.playID) {
       const parallelId = sp.parallelID ?? 0;
-      // Include parallelID in key for parallel editions (matches wallet-search format)
       const key = parallelId > 0 ? `${sp.setID}:${sp.playID}::${parallelId}` : `${sp.setID}:${sp.playID}`;
       tsEditionKeys.add(key);
-      // Also try without parallel suffix as fallback
       tsEditionKeys.add(`${sp.setID}:${sp.playID}`);
     }
   }
@@ -548,7 +552,6 @@ export async function GET(req: Request) {
     const sp = l.setPlay;
     if (!sp?.setID || !sp?.playID) continue;
     const parallelId = sp.parallelID ?? 0;
-    // Try keyed with parallel first, then base key
     const editionKeyParallel = parallelId > 0 ? `${sp.setID}:${sp.playID}::${parallelId}` : null;
     const editionKeyBase = `${sp.setID}:${sp.playID}`;
     const editionKey = editionKeyParallel ?? editionKeyBase;
@@ -557,7 +560,6 @@ export async function GET(req: Request) {
     if (!serial) continue;
     const circ = l.circulationCount ?? 1000;
 
-    // jerseyNumber not available in searchMomentListings — skip jersey detection
     const { mult: serialMult, signal: serialSignal, isSpecial: isSpecialSerial } =
       serialMultiplier(serial, circ, null);
 
@@ -568,16 +570,19 @@ export async function GET(req: Request) {
     const hasBadge = badgeSlugs.length > 0;
     if (badgeOnly && !hasBadge) continue;
     if (serialFilter === "special" && !isSpecialSerial) continue;
-    if (serialFilter === "jersey") continue; // no jersey data in this endpoint
+    if (serialFilter === "jersey") continue;
 
     // FMV lookup: try parallel key then base key
     const fmvRow = (editionKeyParallel ? fmvMap.get(editionKeyParallel) : null)
       ?? fmvMap.get(editionKeyBase)
       ?? null;
 
-    const baseFmv = fmvRow?.fmv ?? askPrice;
-    const confidence = fmvRow?.confidence ?? "low";
-    const confidenceSource = fmvRow ? "supabase" : "ask_fallback";
+    // KEY FIX: drop TS deals with no real FMV — ask_fallback deals are noise
+    if (!fmvRow) continue;
+
+    const baseFmv = fmvRow.fmv;
+    const confidence = fmvRow.confidence;
+    const confidenceSource = "supabase";
     const adjustedFmv = baseFmv * serialMult;
     const discount = askPrice >= adjustedFmv
       ? 0
@@ -604,9 +609,9 @@ export async function GET(req: Request) {
       askPrice,
       baseFmv,
       adjustedFmv,
-      wapUsd: fmvRow?.wapUsd ?? null,
-      daysSinceSale: fmvRow?.daysSinceSale ?? null,
-      salesCount30d: fmvRow?.salesCount30d ?? null,
+      wapUsd: fmvRow.wapUsd,
+      daysSinceSale: fmvRow.daysSinceSale,
+      salesCount30d: fmvRow.salesCount30d,
       discount,
       confidence,
       confidenceSource,
@@ -616,13 +621,13 @@ export async function GET(req: Request) {
       badgePremiumPct: 0,
       serialMult,
       isSpecialSerial,
-      isJersey: false, // not available in searchMomentListings
+      isJersey: false,
       serialSignal,
       thumbnailUrl,
       isLocked: l.isLocked ?? false,
       updatedAt: new Date().toISOString(),
-      packListingId: fmvRow?.packListingId ?? null,
-      packName: fmvRow?.packName ?? null,
+      packListingId: fmvRow.packListingId,
+      packName: fmvRow.packName,
       packEv: null,
       packEvRatio: null,
       buyUrl: `https://nbatopshot.com/moment/${l.id}`,
@@ -653,10 +658,12 @@ export async function GET(req: Request) {
     if (serialFilter === "jersey") continue;
     if (badgeOnly) continue;
 
-    // Flowty deals: use LiveToken FMV from Flowty response (already USD)
-    const baseFmv = item.livetokenFmv ?? askPrice;
-    const confidence = item.livetokenFmv ? "medium" : "low";
-    const confidenceSource = item.livetokenFmv ? "livetoken" : "ask_fallback";
+    // KEY FIX: drop Flowty deals with no LiveToken FMV — they're noise
+    if (!item.livetokenFmv || item.livetokenFmv <= 0) continue;
+
+    const baseFmv = item.livetokenFmv;
+    const confidence = "medium";
+    const confidenceSource = "livetoken";
     const adjustedFmv = baseFmv * serialMult;
     const discount = askPrice >= adjustedFmv
       ? 0
@@ -707,10 +714,11 @@ export async function GET(req: Request) {
     });
   }
 
-  // 5. Merge — TS wins on dedup by flowId
+  // 5. Merge — Flowty wins on dedup by flowId (has real LiveToken FMV)
+  // then TS fills in any moments only listed on Top Shot
   const seen = new Set<string>();
   const allDeals: SniperDeal[] = [];
-  for (const d of [...tsDeals, ...flowtyDeals]) {
+  for (const d of [...flowtyDeals, ...tsDeals]) {
     if (!seen.has(d.flowId)) { seen.add(d.flowId); allDeals.push(d); }
   }
 
@@ -733,7 +741,7 @@ export async function GET(req: Request) {
     return b.discount - a.discount;
   });
 
-  console.warn(`[sniper-feed] ts=${tsDeals.length} flowty=${flowtyDeals.length} total=${sorted.length} fmv_hits=${fmvMap.size}`);
+  console.warn(`[sniper-feed] DONE ts=${tsDeals.length} flowty=${flowtyDeals.length} total=${sorted.length} fmv_hits=${fmvMap.size} flowtyRaw=${flowtyListings.length}`);
 
   return NextResponse.json(
     {
