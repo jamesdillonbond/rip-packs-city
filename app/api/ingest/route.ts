@@ -317,6 +317,7 @@ async function upsertSale(
     marketplace: "top_shot",
     transaction_hash: tx.txHash,
     sold_at: tx.updatedAt,
+    nft_id: nftId,
   })
 
   if (error) {
