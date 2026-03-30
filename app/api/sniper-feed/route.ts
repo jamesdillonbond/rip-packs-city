@@ -18,9 +18,14 @@ const FLOWTY_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146 Safari/537.36",
 };
 
-// Badge premiums removed from FMV calculation per model philosophy:
-// badge premium is already priced into market — applying it double-counts.
-// Kept here only for display labels.
+const BADGE_PREMIUMS: Record<string, number> = {
+  rookie_year: 0.45, rookie_mint: 0.35, rookie_premiere: 0.30,
+  top_shot_debut: 0.25, three_star_rookie: 0.20, mvp: 0.20,
+  championship_year: 0.18, rookie_of_the_year: 0.18, fresh: 0.10, autograph: 0.60,
+  "Rookie Year": 0.45, "Rookie Mint": 0.35, "Rookie Premiere": 0.30,
+  "Top Shot Debut": 0.25, "Three-Star Rookie": 0.20, "MVP Year": 0.20,
+  "Championship Year": 0.18, "Rookie of the Year": 0.18, "Fresh": 0.10,
+};
 const BADGE_LABELS: Record<string, string> = {
   rookie_year: "Rookie Year", rookie_mint: "Rookie Mint", rookie_premiere: "Rookie Premiere",
   top_shot_debut: "TS Debut", three_star_rookie: "3★ Rookie", mvp: "MVP",
@@ -29,14 +34,6 @@ const BADGE_LABELS: Record<string, string> = {
   "Top Shot Debut": "TS Debut", "Three-Star Rookie": "3★ Rookie", "MVP Year": "MVP",
   "Championship Year": "Champ Year", "Rookie of the Year": "ROTY", "Fresh": "Fresh",
 };
-
-// Keep for badge detection only (not FMV multiplication)
-const KNOWN_BADGES = new Set([
-  "rookie_year", "rookie_mint", "rookie_premiere", "top_shot_debut",
-  "three_star_rookie", "mvp", "championship_year", "rookie_of_the_year", "fresh", "autograph",
-  "Rookie Year", "Rookie Mint", "Rookie Premiere", "Top Shot Debut",
-  "Three-Star Rookie", "MVP Year", "Championship Year", "Rookie of the Year", "Fresh",
-]);
 
 const NBA_TEAMS: Record<string, string> = {
   "1610612737": "ATL", "1610612738": "BOS", "1610612739": "CLE", "1610612740": "NOP",
@@ -85,13 +82,12 @@ const PARALLEL_NAMES: Record<number, string> = {
   19: "Unique", 20: "Unique",
 };
 
-// Serial premium — only applied for truly special serials per model philosophy.
-// #1, jersey match, last serial only. Everything else = 1.0 (no adjustment).
-function serialPremium(serial: number, circ: number, jerseyNumber: number | null): number {
-  if (serial === 1) return 8.0;
-  if (jerseyNumber !== null && serial === jerseyNumber) return 2.5;
-  if (serial === circ) return 1.3;
-  return 1.0; // no premium for non-special serials
+function serialPremium(serial: number, circ: number): number {
+  if (serial === 1) return 12.0;
+  if (serial <= 10) return 4.5;
+  if (serial <= 23) return 2.8;
+  if (serial === circ) return 3.0;
+  return Math.max(1.0, Math.pow(circ / 2 / serial, 0.4));
 }
 
 function buildThumbnailUrl(assetPathPrefix: string | undefined): string | null {
@@ -124,13 +120,12 @@ export interface SniperDeal {
   askPrice: number;
   baseFmv: number;
   adjustedFmv: number;
-  livetokenFmv: number | null;   // LiveToken FMV signal from Flowty (for display + persistence)
   discount: number;
   confidence: string;
   hasBadge: boolean;
   badgeSlugs: string[];
   badgeLabels: string[];
-  badgePremiumPct: number;       // kept for display, no longer used in FMV calculation
+  badgePremiumPct: number;
   serialMult: number;
   isSpecialSerial: boolean;
   isJersey: boolean;
@@ -215,15 +210,33 @@ async function fetchTSPage(cursor: string, sortBy: string): Promise<{ txns: RawT
   return { txns: (summary?.data?.data ?? []) as RawTransaction[], nextCursor: summary?.pagination?.rightCursor ?? null };
 }
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`${label} timeout`)), ms))]);
+}
+
 async function fetchTopShotPool(): Promise<RawTransaction[]> {
   const seen = new Set<string>(); const all: RawTransaction[] = [];
   function add(txns: RawTransaction[]) {
     for (const tx of txns) { const k = tx.moment?.id ?? tx.id; if (!seen.has(k)) { seen.add(k); all.push(tx); } }
   }
-  const { txns: p1, nextCursor: c1 } = await fetchTSPage("", "UPDATED_AT_DESC");
-  add(p1);
-  if (c1) { try { const { txns: p2 } = await fetchTSPage(c1, "UPDATED_AT_DESC"); add(p2); } catch (e) { console.warn("[sniper] TS page 2:", e); } }
-  try { const { txns: cheap } = await fetchTSPage("", "PRICE_ASC"); add(cheap); } catch (e) { console.warn("[sniper] TS PRICE_ASC:", e); }
+
+  // Fan out all 3 TS queries in parallel with 6s timeout each
+  const [r1, r2, r3] = await Promise.allSettled([
+    withTimeout(fetchTSPage("", "UPDATED_AT_DESC"), 6000, "TS UPDATED_AT_DESC p1"),
+    withTimeout(fetchTSPage("", "PRICE_ASC"), 6000, "TS PRICE_ASC"),
+    withTimeout(fetchTSPage("", "PRICE_DESC"), 6000, "TS PRICE_DESC"),
+  ]);
+
+  const cursor1 = r1.status === "fulfilled" ? r1.value.nextCursor : null;
+  if (r1.status === "fulfilled") add(r1.value.txns); else console.warn("[sniper] TS p1 DESC:", r1.reason);
+  if (r2.status === "fulfilled") add(r2.value.txns); else console.warn("[sniper] TS PRICE_ASC:", r2.reason);
+  if (r3.status === "fulfilled") add(r3.value.txns); else console.warn("[sniper] TS PRICE_DESC:", r3.reason);
+
+  // Page 2 of UPDATED_AT_DESC if cursor available
+  if (cursor1) {
+    try { const { txns } = await withTimeout(fetchTSPage(cursor1, "UPDATED_AT_DESC"), 6000, "TS p2"); add(txns); }
+    catch (e) { console.warn("[sniper] TS p2:", e); }
+  }
   return all;
 }
 
@@ -245,58 +258,30 @@ function computeEditionFloors(txns: RawTransaction[]): Map<string, { floor: numb
   return floors;
 }
 
-async function fetchSupabaseFmv(
-  supabase: SupabaseClient,
-  externalIds: string[]
-): Promise<Map<string, { fmv: number; confidence: string; editionUuid: string }>> {
+async function fetchSupabaseFmv(supabase: SupabaseClient, externalIds: string[]): Promise<Map<string, { fmv: number; confidence: string }>> {
   if (!externalIds.length) return new Map();
-  const { data: editionRows } = await supabase
-    .from("editions")
-    .select("id, external_id")
-    .in("external_id", externalIds);
+  const { data: editionRows } = await supabase.from("editions").select("id, external_id").in("external_id", externalIds);
   if (!editionRows?.length) return new Map();
-
-  const extToSup = new Map<string, string>();
-  const supToExt = new Map<string, string>();
-  for (const row of editionRows as { id: string; external_id: string }[]) {
-    extToSup.set(row.external_id, row.id);
-    supToExt.set(row.id, row.external_id);
-  }
-
-  const { data: fmvRows } = await supabase
-    .from("fmv_snapshots")
-    .select("edition_id, fmv_usd, confidence, computed_at")
-    .in("edition_id", Array.from(extToSup.values()))
-    .order("computed_at", { ascending: false });
-
+  const extToSup = new Map<string, string>(); const supToExt = new Map<string, string>();
+  for (const row of editionRows as { id: string; external_id: string }[]) { extToSup.set(row.external_id, row.id); supToExt.set(row.id, row.external_id); }
+  const { data: fmvRows } = await supabase.from("fmv_snapshots").select("edition_id, fmv_usd, confidence, computed_at").in("edition_id", Array.from(extToSup.values())).order("computed_at", { ascending: false });
   if (!fmvRows?.length) return new Map();
-  const seen = new Set<string>();
-  const map = new Map<string, { fmv: number; confidence: string; editionUuid: string }>();
+  const seen = new Set<string>(); const map = new Map<string, { fmv: number; confidence: string }>();
   for (const row of fmvRows as { edition_id: string; fmv_usd: number; confidence: string }[]) {
-    if (seen.has(row.edition_id)) continue;
-    seen.add(row.edition_id);
-    const externalId = supToExt.get(row.edition_id);
-    if (!externalId) continue;
-    map.set(externalId, {
-      fmv: row.fmv_usd,
-      confidence: (row.confidence ?? "low").toLowerCase(),
-      editionUuid: row.edition_id,
-    });
+    if (seen.has(row.edition_id)) continue; seen.add(row.edition_id);
+    const externalId = supToExt.get(row.edition_id); if (!externalId) continue;
+    map.set(externalId, { fmv: row.fmv_usd, confidence: (row.confidence ?? "low").toLowerCase() });
   }
   return map;
 }
 
 function extractBadgeSlugs(tx: RawTransaction): string[] {
   return (tx.moment?.play?.tags ?? [])
-    .map(t => KNOWN_BADGES.has(t.id) ? t.id : KNOWN_BADGES.has(t.title) ? t.title : null)
+    .map(t => t.id in BADGE_PREMIUMS ? t.id : t.title in BADGE_PREMIUMS ? t.title : null)
     .filter((s): s is string => s !== null);
 }
 
-function buildTSDeal(
-  tx: RawTransaction,
-  editionFloors: Map<string, { floor: number; count: number }>,
-  supabaseFmv: Map<string, { fmv: number; confidence: string; editionUuid: string }>
-): SniperDeal | null {
+function buildTSDeal(tx: RawTransaction, editionFloors: Map<string, { floor: number; count: number }>, supabaseFmv: Map<string, { fmv: number; confidence: string }>): SniperDeal | null {
   if (!tx.moment) return null;
   const askPrice = parsePrice(tx.price); if (!askPrice || askPrice <= 0) return null;
   const m = tx.moment; const psp = m.parallelSetPlay;
@@ -311,21 +296,17 @@ function buildTSDeal(
   } else if (floorData.count >= 2) {
     baseFmv = floorData.floor; confidence = floorData.count >= 5 ? "medium" : "low";
   } else { return null; }
-
   const circ = m.setPlay?.circulations?.circulationCount ?? 1000;
   const serial = parseInt(m.flowSerialNumber ?? "0", 10); if (!serial) return null;
-  const jerseyNumber = m.play?.stats?.jerseyNumber ? parseInt(m.play.stats.jerseyNumber, 10) : null;
+  const jerseyNumber = m.play?.stats?.jerseyNumber ?? null;
   const badgeSlugs = extractBadgeSlugs(tx);
   const hasBadge = badgeSlugs.length > 0;
-
-  // Serial premium — special serials only, no badge multiplier
-  const serialMult = serialPremium(serial, circ, jerseyNumber);
-  const isSpecialSerial = serialMult > 1.0;
-  const jerseyMatch = jerseyNumber !== null && serial === jerseyNumber;
-  const isJersey = jerseyMatch;
-
-  // FMV = base × serial premium only (badge already priced into market)
-  const adjustedFmv = baseFmv * serialMult;
+  const totalBadgePremium = badgeSlugs.reduce((s, slug) => s + (BADGE_PREMIUMS[slug] ?? 0), 0);
+  const serialMult = serialPremium(serial, circ);
+  const isSpecialSerial = serialMult > 1.5;
+  const jerseyMatch = jerseyNumber != null && parseInt(jerseyNumber) === serial;
+  const isJersey = jerseyMatch || (serial >= 2 && serial <= 99);
+  const adjustedFmv = baseFmv * serialMult * (1 + totalBadgePremium);
   const discount = ((adjustedFmv - askPrice) / adjustedFmv) * 100;
   const parallelId = psp?.parallelID ?? m.parallelID ?? 0;
   const teamId = m.play?.stats?.teamAtMomentNbaId ?? "";
@@ -337,13 +318,11 @@ function buildTSDeal(
     playerName: m.play?.stats?.playerName ?? "Unknown", teamName,
     setName: m.set?.flowName ?? "", seriesName: formatSeries(m.set?.flowSeriesNumber),
     tier: tierRaw, parallel: formatParallel(parallelId), parallelId, serial, circulationCount: circ,
-    askPrice, baseFmv, adjustedFmv, livetokenFmv: null,
-    discount: Math.round(discount * 10) / 10, confidence,
+    askPrice, baseFmv, adjustedFmv, discount: Math.round(discount * 10) / 10, confidence,
     hasBadge, badgeSlugs, badgeLabels: badgeSlugs.map(s => BADGE_LABELS[s] ?? s),
-    badgePremiumPct: 0, // no longer used in FMV calc
-    serialMult: Math.round(serialMult * 100) / 100,
+    badgePremiumPct: Math.round(totalBadgePremium * 100), serialMult: Math.round(serialMult * 100) / 100,
     isSpecialSerial, isJersey,
-    serialSignal: serial === 1 ? "Serial #1" : serial === circ ? "Last Mint" : jerseyMatch ? `Jersey #${serial}` : null,
+    serialSignal: serial === 1 ? "Serial #1" : serial === circ ? "Last Mint" : jerseyMatch ? `Jersey #${serial}` : isSpecialSerial ? `Low #${serial}` : null,
     thumbnailUrl: buildThumbnailUrl(m.assetPathPrefix), isLocked: m.isLocked ?? false,
     updatedAt: tx.updatedAt ?? null, packListingId: null, packName: null, packEv: null, packEvRatio: null,
     buyUrl: `https://nbatopshot.com/moment/${m.flowId}`,
@@ -363,10 +342,7 @@ interface FlowtyNft {
     traits: { traits: { name: string; value: string }[] };
     editions?: { infoList: { max: number; number: number }[] };
   };
-  orders: {
-    salePrice: number; blockTimestamp: number; listingResourceID: string;
-    state: string; paymentTokenName: string; nftID: string; storefrontAddress?: string;
-  }[];
+  orders: { salePrice: number; blockTimestamp: number; listingResourceID: string; state: string; paymentTokenName: string; nftID: string; storefrontAddress?: string }[];
   valuations: { blended?: { usdValue: number }; livetoken?: { usdValue: number } };
 }
 
@@ -395,7 +371,7 @@ function buildFlowtyDeal(nft: FlowtyNft, badgeMap: Map<string, string[]>): Snipe
   if (!order) return null;
   const askPrice = order.salePrice; if (!askPrice || askPrice <= 0) return null;
   const traits = nft.nftView?.traits?.traits ?? [];
-  const playerName = nft.card?.title ?? getFlowtyTrait(traits, "FullName") ?? "Unknown";
+  const playerName = (nft.card?.title ?? getFlowtyTrait(traits, "FullName") ?? "Unknown").trim();
   const teamFull = getFlowtyTrait(traits, "TeamAtMoment") ?? "";
   const teamName = TEAM_ABBREVS[teamFull] ?? teamFull;
   const setName = getFlowtyTrait(traits, "SetName") ?? "";
@@ -413,40 +389,31 @@ function buildFlowtyDeal(nft: FlowtyNft, badgeMap: Map<string, string[]>): Snipe
   const serial = parseInt(serialStr, 10); if (!serial) return null;
   const circRaw = nft.nftView?.editions?.infoList?.[0]?.max ?? nft.card?.max;
   const circulationCount = typeof circRaw === "string" ? parseInt(circRaw, 10) : (circRaw ?? 1000);
-
-  // LiveToken FMV — use as baseFmv, also store separately for persistence
-  const livetokenFmv = nft.valuations?.livetoken?.usdValue ?? null;
   const blendedFmv = nft.valuations?.blended?.usdValue ?? 0;
-  const baseFmv = blendedFmv > 0 ? blendedFmv : (livetokenFmv ?? 0);
+  const livetokenFmv = nft.valuations?.livetoken?.usdValue ?? 0;
+  const baseFmv = blendedFmv > 0 ? blendedFmv : livetokenFmv > 0 ? livetokenFmv : 0;
   if (baseFmv <= 0) return null;
-
   const badgeKey = `${playerName}:${seriesNumber}`;
   const badgeSlugs = badgeMap.get(badgeKey) ?? [];
   const hasBadge = badgeSlugs.length > 0;
-
-  // Serial premium — special serials only, no badge multiplier
-  // jerseyNumber not available from Flowty traits directly
-  const serialMult = serialPremium(serial, circulationCount, null);
-  const isSpecialSerial = serialMult > 1.0;
-  const isJersey = false; // Flowty doesn't provide jerseyNumber
-
-  // FMV = LiveToken base × serial premium only
-  const adjustedFmv = baseFmv * serialMult;
+  const totalBadgePremium = badgeSlugs.reduce((s, slug) => s + (BADGE_PREMIUMS[slug] ?? 0), 0);
+  const serialMult = serialPremium(serial, circulationCount);
+  const isSpecialSerial = serialMult > 1.5;
+  const isJersey = serial >= 2 && serial <= 99;
+  const adjustedFmv = baseFmv * serialMult * (1 + totalBadgePremium);
   const discount = ((adjustedFmv - askPrice) / adjustedFmv) * 100;
-
   const flowtyThumb = nft.card?.images?.[0]?.url ?? null;
   const thumbnailUrl = flowtyThumb ? flowtyThumb.replace("?width=256", "?width=512") : null;
   const updatedAt = new Date(order.blockTimestamp).toISOString();
   const flowId = order.nftID ?? nft.id;
 
   return {
-    flowId, momentId: nft.id, editionKey: "",  // resolved below in persistLivetokenFmv
+    flowId, momentId: nft.id, editionKey: "",
     playerName, teamName, setName, seriesName, tier, parallel, parallelId,
-    serial, circulationCount, askPrice, baseFmv, adjustedFmv, livetokenFmv,
+    serial, circulationCount, askPrice, baseFmv, adjustedFmv,
     discount: Math.round(discount * 10) / 10, confidence: "high",
     hasBadge, badgeSlugs, badgeLabels: badgeSlugs.map(s => BADGE_LABELS[s] ?? s),
-    badgePremiumPct: 0,
-    serialMult: Math.round(serialMult * 100) / 100,
+    badgePremiumPct: Math.round(totalBadgePremium * 100), serialMult: Math.round(serialMult * 100) / 100,
     isSpecialSerial, isJersey,
     serialSignal: serial === 1 ? "Serial #1" : serial === circulationCount ? "Last Mint" : isSpecialSerial ? `Low #${serial}` : null,
     thumbnailUrl, isLocked, updatedAt,
@@ -456,127 +423,6 @@ function buildFlowtyDeal(nft: FlowtyNft, badgeMap: Map<string, string[]>): Snipe
     storefrontAddress: order.storefrontAddress ?? null,
     source: "flowty",
   };
-}
-
-// ─── LIVETOKEN FMV PERSISTENCE ───────────────────────────────────────────────
-//
-// Fire-and-forget: after the sniper response is built, persist LiveToken FMV
-// values from Flowty deals back to fmv_snapshots. This enriches the FMV model
-// with LiveToken's signal for free on every sniper page load.
-//
-// Only writes flowty_ask and cross_market_ask — does not overwrite fmv_usd
-// (our sales-based model). Uses delete-then-insert pattern for partitioned table.
-
-async function persistLivetokenFmv(
-  supabase: SupabaseClient,
-  flowtyDeals: SniperDeal[],
-  tsDeals: SniperDeal[],
-  supabaseFmv: Map<string, { fmv: number; confidence: string; editionUuid: string }>
-): Promise<void> {
-  try {
-    // Build TS ask floor map by flowId for cross-market ask calculation
-    const tsAskByFlowId = new Map<string, number>();
-    for (const d of tsDeals) {
-      const existing = tsAskByFlowId.get(d.flowId);
-      if (!existing || d.askPrice < existing) tsAskByFlowId.set(d.flowId, d.askPrice);
-    }
-
-    // Build editionKey map from TS deals by flowId.
-    // Flowty deals share the same flowId as TS deals for the same NFT,
-    // so we can resolve editionKey → Supabase UUID via the existing supabaseFmv map.
-    const editionKeyByFlowId = new Map<string, string>();
-    for (const d of tsDeals) {
-      if (d.editionKey) editionKeyByFlowId.set(d.flowId, d.editionKey);
-    }
-
-    // Filter Flowty deals that have LiveToken FMV + a resolvable Supabase edition UUID
-    const enrichable: Array<{
-      deal: SniperDeal;
-      editionUuid: string;
-    }> = [];
-
-    for (const deal of flowtyDeals) {
-      if (!deal.livetokenFmv || deal.livetokenFmv <= 0) continue;
-      const editionKey = editionKeyByFlowId.get(deal.flowId);
-      if (!editionKey) continue;
-      const sbRow = supabaseFmv.get(editionKey);
-      if (!sbRow?.editionUuid) continue;
-      enrichable.push({ deal, editionUuid: sbRow.editionUuid });
-    }
-
-    if (!enrichable.length) {
-      console.log("[sniper] LiveToken persistence: 0 Flowty deals matched TS counterparts");
-      return;
-    }
-
-    // Resolve collection_id for matched editions
-    const editionUuids = [...new Set(enrichable.map(e => e.editionUuid))];
-    const { data: editionRows } = await supabase
-      .from("editions")
-      .select("id, collection_id")
-      .in("id", editionUuids);
-
-    const collectionByEdition = new Map<string, string>();
-    for (const row of (editionRows ?? []) as { id: string; collection_id: string }[]) {
-      collectionByEdition.set(row.id, row.collection_id);
-    }
-
-    // Fetch latest snapshots for these editions
-    const { data: existing } = await supabase
-      .from("fmv_snapshots")
-      .select("*")
-      .in("edition_id", editionUuids)
-      .order("computed_at", { ascending: false });
-
-    const latestByEdition = new Map<string, Record<string, unknown>>();
-    for (const row of (existing ?? []) as Record<string, unknown>[]) {
-      const eid = row.edition_id as string;
-      if (!latestByEdition.has(eid)) latestByEdition.set(eid, row);
-    }
-
-    // Delete old snapshots
-    await supabase.from("fmv_snapshots").delete().in("edition_id", editionUuids);
-
-    // Build insert rows — one per unique edition
-    const seen = new Set<string>();
-    const insertRows = [];
-
-    for (const { deal, editionUuid } of enrichable) {
-      if (seen.has(editionUuid)) continue;
-      seen.add(editionUuid);
-
-      const collectionId = collectionByEdition.get(editionUuid);
-      if (!collectionId) continue;
-
-      const base = latestByEdition.get(editionUuid) ?? {};
-      const tsAsk = tsAskByFlowId.get(deal.flowId) ?? null;
-      const crossMarketAsk = tsAsk !== null
-        ? Math.min(deal.askPrice, tsAsk)
-        : deal.askPrice;
-
-      insertRows.push({
-        ...base,
-        id: undefined,
-        edition_id: editionUuid,
-        collection_id: collectionId,
-        flowty_ask: deal.askPrice,
-        top_shot_ask: tsAsk ?? (base.top_shot_ask as number | null) ?? null,
-        cross_market_ask: crossMarketAsk,
-        algo_version: "1.2.1",
-      });
-    }
-
-    if (!insertRows.length) return;
-
-    const CHUNK = 50;
-    for (let i = 0; i < insertRows.length; i += CHUNK) {
-      await supabase.from("fmv_snapshots").insert(insertRows.slice(i, i + CHUNK));
-    }
-
-    console.log(`[sniper] LiveToken FMV persisted for ${insertRows.length} editions`);
-  } catch (err) {
-    console.warn("[sniper] LiveToken persistence failed (non-fatal):", err);
-  }
 }
 
 // ─── MAIN HANDLER ─────────────────────────────────────────────────────────────
@@ -589,15 +435,15 @@ export async function GET(req: Request) {
   const serialFilter = url.searchParams.get("serial") ?? "all";
   const maxPrice = parseFloat(url.searchParams.get("maxPrice") ?? "0");
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
   // Fetch Top Shot + Flowty in parallel
   const [tsResult, flowtyResult] = await Promise.allSettled([
     fetchTopShotPool(),
-    Promise.all([fetchFlowtyPage(0), fetchFlowtyPage(24)]).then(([p0, p1]) => [...p0, ...p1]),
+    Promise.all([
+      fetchFlowtyPage(0), fetchFlowtyPage(24),
+      fetchFlowtyPage(48), fetchFlowtyPage(72),
+    ]).then(([p0, p1, p2, p3]) => [...p0, ...p1, ...p2, ...p3]),
   ]);
 
   const tsTxns: RawTransaction[] = tsResult.status === "fulfilled" ? tsResult.value : [];
@@ -623,15 +469,14 @@ export async function GET(req: Request) {
     .map(tx => buildTSDeal(tx, editionFloors, supabaseFmv))
     .filter((d): d is SniperDeal => d !== null);
 
-  // Deduplicate Flowty NFTs
+  // Deduplicate + badge lookup for Flowty
   const seenFlowty = new Set<string>(); const uniqueFlowtyNfts: FlowtyNft[] = [];
   for (const nft of flowtyNfts) { if (!seenFlowty.has(nft.id)) { seenFlowty.add(nft.id); uniqueFlowtyNfts.push(nft); } }
 
-  // Badge lookup for Flowty
   const flowtyPairs: { playerName: string; seriesNumber: number }[] = [];
   for (const nft of uniqueFlowtyNfts) {
     const traits = nft.nftView?.traits?.traits ?? [];
-    const playerName = nft.card?.title ?? "";
+    const playerName = (nft.card?.title ?? "").trim();
     const seriesStr = getFlowtyTrait(traits, "SeriesNumber");
     const seriesNumber = seriesStr != null ? parseInt(seriesStr, 10) : -1;
     if (playerName && seriesNumber >= 0) flowtyPairs.push({ playerName, seriesNumber });
@@ -639,18 +484,25 @@ export async function GET(req: Request) {
 
   const flowtyBadgeMap = new Map<string, string[]>();
   if (flowtyPairs.length > 0) {
-    const playerNames = [...new Set(flowtyPairs.map(p => p.playerName))];
+    // Trim trailing/leading whitespace from Flowty player names (e.g. "Goran Dragić ")
+    const normalizedPairs = flowtyPairs.map(p => ({ ...p, playerName: p.playerName.trim() }));
+    const playerNames = [...new Set(normalizedPairs.map(p => p.playerName))];
+
+    // Use ilike for case-insensitive matching across all player names
+    const orFilter = playerNames.map(n => `player_name.ilike.${n}`).join(",");
     const { data: badgeRows } = await supabase
       .from("badge_editions")
       .select("player_name, badge_type, series_number")
-      .in("player_name", playerNames);
+      .or(orFilter);
+
     if (badgeRows?.length) {
       for (const row of badgeRows as { player_name: string; badge_type: string; series_number: number }[]) {
-        const pair = flowtyPairs.find(p =>
-          p.playerName.toLowerCase() === row.player_name.toLowerCase() &&
-          p.seriesNumber === row.series_number
+        const pair = normalizedPairs.find(
+          p => p.playerName.toLowerCase() === row.player_name.toLowerCase() &&
+               p.seriesNumber === row.series_number
         );
         if (!pair) continue;
+        // Key uses the trimmed name
         const key = `${pair.playerName}:${pair.seriesNumber}`;
         const arr = flowtyBadgeMap.get(key) ?? [];
         if (!arr.includes(row.badge_type)) arr.push(row.badge_type);
@@ -674,17 +526,14 @@ export async function GET(req: Request) {
 
   console.log(`[sniper] TS deals: ${tsDeals.length}, Flowty deals: ${flowtyDeals.length}`);
 
-  // Merge — Flowty wins on conflict (has LiveToken FMV signal)
+  // Merge — Flowty wins on conflict (better FMV)
   const mergedMap = new Map<string, SniperDeal>();
   for (const deal of tsDeals) mergedMap.set(deal.flowId, deal);
   for (const deal of flowtyDeals) mergedMap.set(deal.flowId, deal);
 
   const allDeals = Array.from(mergedMap.values());
 
-  // Fire-and-forget LiveToken FMV persistence — does not block response
-  persistLivetokenFmv(supabase, flowtyDeals, tsDeals, supabaseFmv).catch(() => {});
-
-  // Apply filters
+  // Apply remaining filters
   const filtered = allDeals.filter(m => {
     if (m.discount < minDiscount) return false;
     if (badgeOnly && !m.hasBadge) return false;
