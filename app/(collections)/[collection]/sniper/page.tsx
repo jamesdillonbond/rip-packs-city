@@ -505,7 +505,7 @@ export default function SniperPage() {
               <input
                 type="number"
                 min={0} max={100} step={5}
-                value={minDiscount || ""}
+                value={minDiscount}
                 onChange={(e) => setMinDiscount(Number(e.target.value))}
                 placeholder="0"
                 className="w-16 bg-slate-800/60 border border-slate-700/60 rounded-lg px-2 py-1.5 text-sm text-slate-200 focus:outline-none"
