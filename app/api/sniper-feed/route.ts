@@ -315,9 +315,9 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
           { conditions: [], kind: "storefront", paymentTokens: [] },
         ],
         sort: {
-          direction: "asc",
+          direction: "desc",
           listingKind: "storefront",
-          path: "price",
+          path: "blockTimestamp",
         },
       }),
       signal: controller.signal,
