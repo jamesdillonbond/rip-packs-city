@@ -470,105 +470,103 @@ function buildFlowtyDeal(nft: FlowtyNft, badgeMap: Map<string, string[]>): Snipe
 async function persistLivetokenFmv(
   supabase: SupabaseClient,
   flowtyDeals: SniperDeal[],
-  tsDeals: SniperDeal[]
+  tsDeals: SniperDeal[],
+  supabaseFmv: Map<string, { fmv: number; confidence: string; editionUuid: string }>
 ): Promise<void> {
   try {
-    // Build TS ask floor map by flowId
+    // Build TS ask floor map by flowId for cross-market ask calculation
     const tsAskByFlowId = new Map<string, number>();
     for (const d of tsDeals) {
       const existing = tsAskByFlowId.get(d.flowId);
       if (!existing || d.askPrice < existing) tsAskByFlowId.set(d.flowId, d.askPrice);
     }
 
-    // Filter Flowty deals that have a real LiveToken FMV and a valid playerName
-    const enrichable = flowtyDeals.filter(d => d.livetokenFmv !== null && d.livetokenFmv > 0 && d.playerName !== "Unknown");
-    if (!enrichable.length) return;
+    // Build editionKey map from TS deals by flowId.
+    // Flowty deals share the same flowId as TS deals for the same NFT,
+    // so we can resolve editionKey → Supabase UUID via the existing supabaseFmv map.
+    const editionKeyByFlowId = new Map<string, string>();
+    for (const d of tsDeals) {
+      if (d.editionKey) editionKeyByFlowId.set(d.flowId, d.editionKey);
+    }
 
-    // Look up Supabase edition UUIDs by matching player + series in editions table
-    // We join via player name + series since Flowty doesn't give us setID:playID
-    const playerNames = [...new Set(enrichable.map(d => d.playerName))];
+    // Filter Flowty deals that have LiveToken FMV + a resolvable Supabase edition UUID
+    const enrichable: Array<{
+      deal: SniperDeal;
+      editionUuid: string;
+    }> = [];
+
+    for (const deal of flowtyDeals) {
+      if (!deal.livetokenFmv || deal.livetokenFmv <= 0) continue;
+      const editionKey = editionKeyByFlowId.get(deal.flowId);
+      if (!editionKey) continue;
+      const sbRow = supabaseFmv.get(editionKey);
+      if (!sbRow?.editionUuid) continue;
+      enrichable.push({ deal, editionUuid: sbRow.editionUuid });
+    }
+
+    if (!enrichable.length) {
+      console.log("[sniper] LiveToken persistence: 0 Flowty deals matched TS counterparts");
+      return;
+    }
+
+    // Resolve collection_id for matched editions
+    const editionUuids = [...new Set(enrichable.map(e => e.editionUuid))];
     const { data: editionRows } = await supabase
       .from("editions")
-      .select("id, collection_id, external_id, name")
-      .in("player_id",
-        (await supabase.from("players").select("id").in("name", playerNames)).data?.map((r: { id: string }) => r.id) ?? []
-      );
+      .select("id, collection_id")
+      .in("id", editionUuids);
 
-    if (!editionRows?.length) return;
-
-    // Build name-based lookup: playerName → first matching edition
-    // This is approximate — best effort without setID:playID from Flowty
-    const nameToEdition = new Map<string, { id: string; collection_id: string }>();
-    for (const row of editionRows as { id: string; collection_id: string; name: string }[]) {
-      const parts = row.name?.split(" — ");
-      if (!parts?.length) continue;
-      const player = parts[0].trim();
-      if (!nameToEdition.has(player)) {
-        nameToEdition.set(player, { id: row.id, collection_id: row.collection_id });
-      }
+    const collectionByEdition = new Map<string, string>();
+    for (const row of (editionRows ?? []) as { id: string; collection_id: string }[]) {
+      collectionByEdition.set(row.id, row.collection_id);
     }
 
-    // Build upsert rows — only for editions we can match
-    const toUpdate: { editionId: string; collectionId: string; flowtyAsk: number; livetokenFmv: number; tsAsk: number | null }[] = [];
-
-    for (const deal of enrichable) {
-      const editionMatch = nameToEdition.get(deal.playerName);
-      if (!editionMatch) continue;
-      const tsAsk = tsAskByFlowId.get(deal.flowId) ?? null;
-      toUpdate.push({
-        editionId: editionMatch.id,
-        collectionId: editionMatch.collection_id,
-        flowtyAsk: deal.askPrice,
-        livetokenFmv: deal.livetokenFmv!,
-        tsAsk,
-      });
-    }
-
-    if (!toUpdate.length) return;
-
-    // For each, fetch existing snapshot, delete, and re-insert with enriched columns
-    // Batch by edition to avoid duplicate work
-    const seen = new Set<string>();
-    const uniqueUpdates = toUpdate.filter(u => {
-      if (seen.has(u.editionId)) return false;
-      seen.add(u.editionId);
-      return true;
-    });
-
-    const editionIds = uniqueUpdates.map(u => u.editionId);
+    // Fetch latest snapshots for these editions
     const { data: existing } = await supabase
       .from("fmv_snapshots")
       .select("*")
-      .in("edition_id", editionIds)
+      .in("edition_id", editionUuids)
       .order("computed_at", { ascending: false });
 
-    // Build a map of latest snapshot per edition
     const latestByEdition = new Map<string, Record<string, unknown>>();
     for (const row of (existing ?? []) as Record<string, unknown>[]) {
       const eid = row.edition_id as string;
       if (!latestByEdition.has(eid)) latestByEdition.set(eid, row);
     }
 
-    // Delete old snapshots for these editions
-    await supabase.from("fmv_snapshots").delete().in("edition_id", editionIds);
+    // Delete old snapshots
+    await supabase.from("fmv_snapshots").delete().in("edition_id", editionUuids);
 
-    // Re-insert with enriched columns
-    const insertRows = uniqueUpdates.map(u => {
-      const base = latestByEdition.get(u.editionId) ?? {};
-      const crossMarketAsk = u.tsAsk !== null
-        ? Math.min(u.flowtyAsk, u.tsAsk)
-        : u.flowtyAsk;
-      return {
+    // Build insert rows — one per unique edition
+    const seen = new Set<string>();
+    const insertRows = [];
+
+    for (const { deal, editionUuid } of enrichable) {
+      if (seen.has(editionUuid)) continue;
+      seen.add(editionUuid);
+
+      const collectionId = collectionByEdition.get(editionUuid);
+      if (!collectionId) continue;
+
+      const base = latestByEdition.get(editionUuid) ?? {};
+      const tsAsk = tsAskByFlowId.get(deal.flowId) ?? null;
+      const crossMarketAsk = tsAsk !== null
+        ? Math.min(deal.askPrice, tsAsk)
+        : deal.askPrice;
+
+      insertRows.push({
         ...base,
-        id: undefined, // let DB generate new UUID
-        edition_id: u.editionId,
-        collection_id: u.collectionId,
-        flowty_ask: u.flowtyAsk,
-        top_shot_ask: u.tsAsk ?? (base.top_shot_ask as number | null) ?? null,
+        id: undefined,
+        edition_id: editionUuid,
+        collection_id: collectionId,
+        flowty_ask: deal.askPrice,
+        top_shot_ask: tsAsk ?? (base.top_shot_ask as number | null) ?? null,
         cross_market_ask: crossMarketAsk,
-        algo_version: "1.2.1", // bump to indicate LiveToken enrichment
-      };
-    });
+        algo_version: "1.2.1",
+      });
+    }
+
+    if (!insertRows.length) return;
 
     const CHUNK = 50;
     for (let i = 0; i < insertRows.length; i += CHUNK) {
@@ -684,7 +682,7 @@ export async function GET(req: Request) {
   const allDeals = Array.from(mergedMap.values());
 
   // Fire-and-forget LiveToken FMV persistence — does not block response
-  persistLivetokenFmv(supabase, flowtyDeals, tsDeals).catch(() => {});
+  persistLivetokenFmv(supabase, flowtyDeals, tsDeals, supabaseFmv).catch(() => {});
 
   // Apply filters
   const filtered = allDeals.filter(m => {
