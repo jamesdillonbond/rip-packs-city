@@ -1,110 +1,63 @@
-// app/api/sniper-feed/route.ts
 import { NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-const TOPSHOT_GQL = "https://public-api.nbatopshot.com/graphql";
-const GQL_HEADERS = {
-  "Content-Type": "application/json",
-  Origin: "https://nbatopshot.com",
-  Referer: "https://nbatopshot.com/",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
-};
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-const FLOWTY_ENDPOINT = "https://api2.flowty.io/collection/0x0b2a3299cc857e29/TopShot";
-const FLOWTY_HEADERS = {
-  "Content-Type": "application/json",
-  "Origin": "https://www.flowty.io",
-  "Referer": "https://www.flowty.io/",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146 Safari/537.36",
-};
-
-const BADGE_PREMIUMS: Record<string, number> = {
-  rookie_year: 0.45, rookie_mint: 0.35, rookie_premiere: 0.30,
-  top_shot_debut: 0.25, three_star_rookie: 0.20, mvp: 0.20,
-  championship_year: 0.18, rookie_of_the_year: 0.18, fresh: 0.10, autograph: 0.60,
-  "Rookie Year": 0.45, "Rookie Mint": 0.35, "Rookie Premiere": 0.30,
-  "Top Shot Debut": 0.25, "Three-Star Rookie": 0.20, "MVP Year": 0.20,
-  "Championship Year": 0.18, "Rookie of the Year": 0.18, "Fresh": 0.10,
-};
-const BADGE_LABELS: Record<string, string> = {
-  rookie_year: "Rookie Year", rookie_mint: "Rookie Mint", rookie_premiere: "Rookie Premiere",
-  top_shot_debut: "TS Debut", three_star_rookie: "3★ Rookie", mvp: "MVP",
-  championship_year: "Champ Year", rookie_of_the_year: "ROTY", fresh: "Fresh", autograph: "Auto",
-  "Rookie Year": "Rookie Year", "Rookie Mint": "Rookie Mint", "Rookie Premiere": "Rookie Premiere",
-  "Top Shot Debut": "TS Debut", "Three-Star Rookie": "3★ Rookie", "MVP Year": "MVP",
-  "Championship Year": "Champ Year", "Rookie of the Year": "ROTY", "Fresh": "Fresh",
-};
-
-const NBA_TEAMS: Record<string, string> = {
-  "1610612737": "ATL", "1610612738": "BOS", "1610612739": "CLE", "1610612740": "NOP",
-  "1610612741": "CHI", "1610612742": "DAL", "1610612743": "DEN", "1610612744": "GSW",
-  "1610612745": "HOU", "1610612746": "LAC", "1610612747": "LAL", "1610612748": "MIA",
-  "1610612749": "MIL", "1610612750": "MIN", "1610612751": "BKN", "1610612752": "NYK",
-  "1610612753": "ORL", "1610612754": "IND", "1610612755": "PHI", "1610612756": "PHX",
-  "1610612757": "POR", "1610612758": "SAC", "1610612759": "SAS", "1610612760": "OKC",
-  "1610612761": "TOR", "1610612762": "UTA", "1610612763": "MEM", "1610612764": "WAS",
-  "1610612765": "DET", "1610612766": "CHA",
-  "1611661313": "ATL", "1611661314": "CHI", "1611661315": "CON", "1611661316": "IND",
-  "1611661317": "NYL", "1611661318": "MIN", "1611661319": "PHX", "1611661320": "SEA",
-  "1611661321": "WAS", "1611661322": "LVA", "1611661323": "DAL", "1611661324": "LA",
-  "1611661325": "GS",
-};
-
-const TEAM_ABBREVS: Record<string, string> = {
-  "Atlanta Hawks": "ATL", "Boston Celtics": "BOS", "Brooklyn Nets": "BKN",
-  "Charlotte Hornets": "CHA", "Chicago Bulls": "CHI", "Cleveland Cavaliers": "CLE",
-  "Dallas Mavericks": "DAL", "Denver Nuggets": "DEN", "Detroit Pistons": "DET",
-  "Golden State Warriors": "GSW", "Houston Rockets": "HOU", "Indiana Pacers": "IND",
-  "LA Clippers": "LAC", "Los Angeles Clippers": "LAC", "Los Angeles Lakers": "LAL",
-  "Memphis Grizzlies": "MEM", "Miami Heat": "MIA", "Milwaukee Bucks": "MIL",
-  "Minnesota Timberwolves": "MIN", "New Orleans Pelicans": "NOP", "New York Knicks": "NYK",
-  "Oklahoma City Thunder": "OKC", "Orlando Magic": "ORL", "Philadelphia 76ers": "PHI",
-  "Phoenix Suns": "PHX", "Portland Trail Blazers": "POR", "Sacramento Kings": "SAC",
-  "San Antonio Spurs": "SAS", "Toronto Raptors": "TOR", "Utah Jazz": "UTA",
-  "Washington Wizards": "WAS",
-  "Atlanta Dream": "ATL", "Chicago Sky": "CHI", "Connecticut Sun": "CON",
-  "Indiana Fever": "IND", "New York Liberty": "NYL", "Minnesota Lynx": "MIN",
-  "Phoenix Mercury": "PHX", "Seattle Storm": "SEA", "Washington Mystics": "WAS",
-  "Las Vegas Aces": "LVA", "Dallas Wings": "DAL", "Los Angeles Sparks": "LA",
-  "Golden State Valkyries": "GS",
-};
-
-const SERIES_NAMES: Record<number, string> = {
-  0: "Beta", 1: "S1", 2: "S2", 3: "S3",
-  4: "S4", 5: "S5", 6: "S6", 7: "S7", 8: "S8",
-};
-
-const PARALLEL_NAMES: Record<number, string> = {
-  0: "Base", 1: "Holo MMXX", 2: "Throwbacks", 3: "Camo", 4: "Metaverse",
-  5: "Cosmic", 6: "Ember", 7: "Infinite", 8: "Sapphire", 9: "Ruby",
-  10: "Gold", 11: "Super Rare", 12: "Platinum Ice", 13: "Black Ice",
-  14: "Bronze", 15: "Silver", 16: "Metallic Gold", 17: "Legendary", 18: "Unique",
-  19: "Unique", 20: "Unique",
-};
-
-function serialPremium(serial: number, circ: number): number {
-  if (serial === 1) return 12.0;
-  if (serial <= 10) return 4.5;
-  if (serial <= 23) return 2.8;
-  if (serial === circ) return 3.0;
-  return Math.max(1.0, Math.pow(circ / 2 / serial, 0.4));
+interface SetPlay {
+  setID: number;
+  playID: number;
+  parallelID?: number;
 }
 
-function buildThumbnailUrl(assetPathPrefix: string | undefined): string | null {
-  if (assetPathPrefix) return `${assetPathPrefix}Hero_Black_2880_2880.jpg`;
-  return null;
+interface RawTransaction {
+  id: string;
+  flowRetailPrice?: { value: string };
+  marketplacePrice?: number;
+  setPlay: SetPlay;
+  serialNumber: number;
+  circulationCount: number;
+  setName?: string;
+  momentTier?: string;
+  momentTitle?: string;
+  tags?: Array<{ title?: string }>;
+  flowSerialNumber?: number;
+  storefrontListingID?: string;
+  sellerAddress?: string;
+  // Flowty-specific (when merged from flowty-listings)
+  source?: "topshot" | "flowty";
+  flowId?: string;
+  buyUrl?: string;
+  playerName?: string;
+  teamName?: string;
+  seriesName?: string;
+  parallel?: string;
+  parallelId?: number;
+  listingResourceID?: string;
+  storefrontAddress?: string;
+  thumbnailUrl?: string;
+  tier?: string;
 }
 
-function formatParallel(parallelId: number): string {
-  return PARALLEL_NAMES[parallelId] ?? `Parallel #${parallelId}`;
+interface FmvRow {
+  edition_key: string;
+  fmv: number;
+  low_ask: number | null;
+  confidence: string;
+  set_id: number | null;
+  play_id: number | null;
+  pack_listing_id: string | null;
+  pack_name: string | null;
 }
 
-function formatSeries(seriesNumber: number | undefined): string {
-  if (seriesNumber == null) return "";
-  return SERIES_NAMES[seriesNumber] ?? `Series ${seriesNumber}`;
+interface PackEvRow {
+  pack_listing_id: string;
+  pack_name: string;
+  pack_price: number;
+  ev: number;
+  ev_ratio: number;
 }
 
-export interface SniperDeal {
+interface SniperDeal {
   flowId: string;
   momentId: string;
   editionKey: string;
@@ -122,6 +75,7 @@ export interface SniperDeal {
   adjustedFmv: number;
   discount: number;
   confidence: string;
+  confidenceSource: string;
   hasBadge: boolean;
   badgeSlugs: string[];
   badgeLabels: string[];
@@ -143,415 +97,553 @@ export interface SniperDeal {
   source: "topshot" | "flowty";
 }
 
-// ─── TOP SHOT FEED ────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
-const SEARCH_TX_QUERY = `
-  query SearchMarketplaceTransactions($input: SearchMarketplaceTransactionsInput!) {
-    searchMarketplaceTransactions(input: $input) {
-      data {
-        searchSummary {
-          pagination { rightCursor }
-          data {
-            ... on MarketplaceTransactions {
-              size
-              data {
-                ... on MarketplaceTransaction {
-                  id price updatedAt
-                  moment {
-                    id flowId flowSerialNumber tier parallelID assetPathPrefix isLocked
-                    set { id flowName flowSeriesNumber }
-                    setPlay { ID flowRetired circulations { circulationCount forSaleByCollectors } }
-                    parallelSetPlay { setID playID parallelID }
-                    play { id stats { playerName jerseyNumber teamAtMomentNbaId } tags { id title } }
-                    marketplaceID marketplaceListingID
-                  }
-                }
-              }
-            }
+const TS_GQL = "https://public-api.nbatopshot.com/graphql";
+const FLOWTY_BASE = "https://api.flowty.io";
+
+const TIER_ORDER: Record<string, number> = {
+  COMMON: 1,
+  FANDOM: 2,
+  RARE: 3,
+  LEGENDARY: 4,
+  ULTIMATE: 5,
+};
+
+// Serial premium multipliers — tightened model
+function serialMultiplier(
+  serial: number,
+  circulationCount: number,
+  isJersey: boolean
+): { mult: number; signal: string | null; isSpecial: boolean } {
+  if (serial === 1) return { mult: 8, signal: "#1", isSpecial: true };
+  if (isJersey)
+    return { mult: 2.5, signal: `Jersey #${serial}`, isSpecial: true };
+  if (serial === circulationCount)
+    return { mult: 1.3, signal: `Last #${serial}`, isSpecial: true };
+
+  // Low serial tiers (relative to circulation)
+  const pct = serial / circulationCount;
+  if (pct <= 0.01) return { mult: 2.2, signal: `Low #${serial}`, isSpecial: true };
+  if (pct <= 0.05) return { mult: 1.8, signal: `Low #${serial}`, isSpecial: true };
+  if (pct <= 0.1) return { mult: 1.5, signal: `Low #${serial}`, isSpecial: true };
+  if (pct <= 0.2) return { mult: 1.3, signal: `Low #${serial}`, isSpecial: true };
+  if (pct <= 0.33) return { mult: 1.17, signal: null, isSpecial: false };
+
+  return { mult: 1, signal: null, isSpecial: false };
+}
+
+// ─── Top Shot GQL helpers ─────────────────────────────────────────────────────
+
+async function fetchTSPageWithRetry(
+  rarity: string,
+  team: string,
+  offset: number,
+  retries = 2
+): Promise<RawTransaction[]> {
+  const rarityFilter =
+    rarity !== "all" ? `momentTier: { value: "${rarity.toUpperCase()}" }` : "";
+  const teamFilter = team !== "all" ? `teamAtMoment: { value: "${team}" }` : "";
+
+  const query = `query {
+    searchMomentListings(
+      input: {
+        filters: {
+          byListings: {
+            listingType: { value: FOR_SALE }
+            ${rarityFilter}
+            ${teamFilter}
           }
+        }
+        sortBy: PRICE_ASC
+        first: 50
+        after: "${offset}"
+      }
+    ) {
+      data {
+        searchSummary { pagination { cursor size } }
+        momentListings {
+          id
+          flowRetailPrice { value }
+          serialNumber
+          circulationCount
+          setName
+          momentTier
+          momentTitle
+          tags { title }
+          storefrontListingID
+          sellerAddress
+          setPlay { setID playID parallelID }
         }
       }
     }
+  }`;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 6000);
+      const res = await fetch(TS_GQL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!res.ok) throw new Error(`TS GQL ${res.status}`);
+      const json = await res.json();
+      return (
+        json?.data?.searchMomentListings?.data?.momentListings ?? []
+      ) as RawTransaction[];
+    } catch (err) {
+      if (attempt === retries) {
+        console.warn(`[sniper-feed] TS page offset=${offset} failed after ${retries + 1} attempts:`, err);
+        return [];
+      }
+      // Exponential back-off: 200ms, 400ms
+      await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt)));
+    }
   }
-`;
-
-interface RawTag { id: string; title: string; }
-interface RawTransaction {
-  id: string; price: string | number; updatedAt?: string;
-  moment?: {
-    id: string; flowId: string; flowSerialNumber: string; tier?: string;
-    parallelID?: number; assetPathPrefix?: string; isLocked?: boolean;
-    set?: { id: string; flowName?: string; flowSeriesNumber?: number };
-    setPlay?: { ID?: string; flowRetired?: boolean; circulations?: { circulationCount: number } };
-    parallelSetPlay?: { setID?: string; playID?: string; parallelID?: number };
-    play?: { id: string; stats: { playerName: string; jerseyNumber?: string; teamAtMomentNbaId?: string }; tags?: RawTag[] };
-    marketplaceID?: string;
-    marketplaceListingID?: string;
-  };
+  return [];
 }
 
-function parsePrice(p: string | number): number {
-  return typeof p === "string" ? parseFloat(p) : (p ?? 0);
-}
-
-async function fetchTSPage(cursor: string, sortBy: string): Promise<{ txns: RawTransaction[]; nextCursor: string | null }> {
-  const res = await fetch(TOPSHOT_GQL, {
-    method: "POST", headers: GQL_HEADERS,
-    body: JSON.stringify({
-      operationName: "SearchMarketplaceTransactions",
-      query: SEARCH_TX_QUERY,
-      variables: { input: { sortBy, filters: {}, searchInput: { pagination: { cursor, direction: "RIGHT", limit: 100 } } } },
-    }),
-  });
-  if (!res.ok) throw new Error(`GQL ${res.status}`);
-  const json = await res.json();
-  if (json.errors?.length) throw new Error(json.errors.map((e: { message: string }) => e.message).join("; "));
-  const summary = json?.data?.searchMarketplaceTransactions?.data?.searchSummary;
-  return { txns: (summary?.data?.data ?? []) as RawTransaction[], nextCursor: summary?.pagination?.rightCursor ?? null };
-}
-
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`${label} timeout`)), ms))]);
-}
-
-async function fetchTopShotPool(): Promise<RawTransaction[]> {
-  const seen = new Set<string>(); const all: RawTransaction[] = [];
-  function add(txns: RawTransaction[]) {
-    for (const tx of txns) { const k = tx.moment?.id ?? tx.id; if (!seen.has(k)) { seen.add(k); all.push(tx); } }
-  }
-
-  // Fan out all 3 TS queries in parallel with 6s timeout each
-  const [r1, r2, r3] = await Promise.allSettled([
-    withTimeout(fetchTSPage("", "UPDATED_AT_DESC"), 6000, "TS UPDATED_AT_DESC p1"),
-    withTimeout(fetchTSPage("", "PRICE_ASC"), 6000, "TS PRICE_ASC"),
-    withTimeout(fetchTSPage("", "PRICE_DESC"), 6000, "TS PRICE_DESC"),
+async function fetchLiveListings(
+  rarity: string,
+  team: string
+): Promise<{ transactions: RawTransaction[]; tsCount: number }> {
+  // Fire 4 pages in parallel with retry
+  const pages = await Promise.all([
+    fetchTSPageWithRetry(rarity, team, 0),
+    fetchTSPageWithRetry(rarity, team, 50),
+    fetchTSPageWithRetry(rarity, team, 100),
+    fetchTSPageWithRetry(rarity, team, 150),
   ]);
-
-  const cursor1 = r1.status === "fulfilled" ? r1.value.nextCursor : null;
-  if (r1.status === "fulfilled") add(r1.value.txns); else console.warn("[sniper] TS p1 DESC:", r1.reason);
-  if (r2.status === "fulfilled") add(r2.value.txns); else console.warn("[sniper] TS PRICE_ASC:", r2.reason);
-  if (r3.status === "fulfilled") add(r3.value.txns); else console.warn("[sniper] TS PRICE_DESC:", r3.reason);
-
-  // Page 2 of UPDATED_AT_DESC if cursor available
-  if (cursor1) {
-    try { const { txns } = await withTimeout(fetchTSPage(cursor1, "UPDATED_AT_DESC"), 6000, "TS p2"); add(txns); }
-    catch (e) { console.warn("[sniper] TS p2:", e); }
-  }
-  return all;
+  const transactions = pages.flat();
+  return { transactions, tsCount: transactions.length };
 }
 
-function computeEditionFloors(txns: RawTransaction[]): Map<string, { floor: number; count: number }> {
-  const byEdition = new Map<string, number[]>();
-  for (const tx of txns) {
-    const psp = tx.moment?.parallelSetPlay;
-    if (!psp?.setID || !psp?.playID) continue;
-    const key = `${psp.setID}:${psp.playID}`;
-    const price = parsePrice(tx.price);
-    if (!price || price <= 0) continue;
-    const arr = byEdition.get(key) ?? []; arr.push(price); byEdition.set(key, arr);
-  }
-  const floors = new Map<string, { floor: number; count: number }>();
-  for (const [key, prices] of byEdition.entries()) {
-    prices.sort((a, b) => a - b);
-    floors.set(key, { floor: prices[0], count: prices.length });
-  }
-  return floors;
+// ─── Flowty listings helper ───────────────────────────────────────────────────
+
+interface FlowtyListing {
+  flowId: string;
+  momentId: string;
+  playerName: string;
+  teamName: string;
+  setName: string;
+  seriesName: string;
+  tier: string;
+  parallel: string;
+  parallelId: number;
+  serial: number;
+  circulationCount: number;
+  askPrice: number;
+  buyUrl: string;
+  listingResourceID: string;
+  storefrontAddress: string;
+  thumbnailUrl: string | null;
+  setId: number;
+  playId: number;
 }
 
-async function fetchSupabaseFmv(supabase: SupabaseClient, externalIds: string[]): Promise<Map<string, { fmv: number; confidence: string }>> {
-  if (!externalIds.length) return new Map();
-  const { data: editionRows } = await supabase.from("editions").select("id, external_id").in("external_id", externalIds);
-  if (!editionRows?.length) return new Map();
-  const extToSup = new Map<string, string>(); const supToExt = new Map<string, string>();
-  for (const row of editionRows as { id: string; external_id: string }[]) { extToSup.set(row.external_id, row.id); supToExt.set(row.id, row.external_id); }
-  const { data: fmvRows } = await supabase.from("fmv_snapshots").select("edition_id, fmv_usd, confidence, computed_at").in("edition_id", Array.from(extToSup.values())).order("computed_at", { ascending: false });
-  if (!fmvRows?.length) return new Map();
-  const seen = new Set<string>(); const map = new Map<string, { fmv: number; confidence: string }>();
-  for (const row of fmvRows as { edition_id: string; fmv_usd: number; confidence: string }[]) {
-    if (seen.has(row.edition_id)) continue; seen.add(row.edition_id);
-    const externalId = supToExt.get(row.edition_id); if (!externalId) continue;
-    map.set(externalId, { fmv: row.fmv_usd, confidence: (row.confidence ?? "low").toLowerCase() });
+async function fetchFlowtyListings(
+  rarity: string,
+  maxPrice: number
+): Promise<FlowtyListing[]> {
+  const tierMap: Record<string, string> = {
+    common: "COMMON",
+    fandom: "FANDOM",
+    rare: "RARE",
+    legendary: "LEGENDARY",
+    ultimate: "ULTIMATE",
+  };
+
+  try {
+    const params = new URLSearchParams({
+      collection: "nbatopshot",
+      sort: "PRICE_ASC",
+      pageSize: "200",
+    });
+    if (rarity !== "all" && tierMap[rarity.toLowerCase()]) {
+      params.set("tier", tierMap[rarity.toLowerCase()]);
+    }
+    if (maxPrice > 0) {
+      params.set("maxPrice", String(maxPrice));
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch(`${FLOWTY_BASE}/v1/listings?${params}`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return [];
+    const json = await res.json();
+    const listings: FlowtyListing[] = [];
+    for (const item of json?.data ?? []) {
+      listings.push({
+        flowId: String(item.nftId ?? item.flowId ?? ""),
+        momentId: String(item.nftId ?? ""),
+        playerName: item.playerName ?? item.player_name ?? "",
+        teamName: item.teamName ?? item.team_abbreviation ?? "",
+        setName: item.setName ?? item.set_name ?? "",
+        seriesName: item.seriesName ?? item.series_name ?? "",
+        tier: (item.tier ?? "COMMON").toUpperCase(),
+        parallel: item.parallel ?? "Base",
+        parallelId: item.parallelId ?? 0,
+        serial: item.serialNumber ?? item.serial ?? 0,
+        circulationCount: item.circulationCount ?? item.circulation_count ?? 0,
+        askPrice: item.price ?? item.askPrice ?? 0,
+        buyUrl: `https://www.flowty.io/listing/${item.listingId ?? item.listing_id ?? ""}`,
+        listingResourceID: String(item.listingId ?? item.listing_id ?? ""),
+        storefrontAddress: item.seller ?? item.sellerAddress ?? "",
+        thumbnailUrl: item.thumbnailUrl ?? item.thumbnail_url ?? null,
+        setId: item.setId ?? 0,
+        playId: item.playId ?? 0,
+      });
+    }
+    return listings;
+  } catch (err) {
+    console.warn("[sniper-feed] Flowty listings fetch failed:", err);
+    return [];
+  }
+}
+
+// ─── Edition key builders ─────────────────────────────────────────────────────
+
+function buildEditionKeys(m: RawTransaction): string[] {
+  const keys: string[] = [];
+  if (m.id) keys.push(m.id);
+  if (m.setPlay) {
+    const sp = m.setPlay;
+    const parallelId = sp.parallelID ?? 0;
+    if (parallelId > 0) {
+      keys.push(`${sp.setID}:${sp.playID}::${parallelId}`);
+      keys.push(`${sp.setID}:${sp.playID}::Parallel${parallelId}`);
+    }
+    keys.push(`${sp.setID}:${sp.playID}::Base`);
+    keys.push(`${sp.setID}:${sp.playID}`);
+  }
+  return keys;
+}
+
+function buildFlowtyEditionKeys(item: FlowtyListing): string[] {
+  const keys: string[] = [];
+  if (item.flowId) keys.push(item.flowId);
+  if (item.setId && item.playId) {
+    const parallelId = item.parallelId ?? 0;
+    if (parallelId > 0) {
+      keys.push(`${item.setId}:${item.playId}::${parallelId}`);
+      keys.push(`${item.setId}:${item.playId}::Parallel${parallelId}`);
+    }
+    keys.push(`${item.setId}:${item.playId}::Base`);
+    keys.push(`${item.setId}:${item.playId}`);
+  }
+  return keys;
+}
+
+// ─── Supabase helpers ─────────────────────────────────────────────────────────
+
+async function fetchFmvBatch(
+  supabase: SupabaseClient,
+  editionKeys: string[]
+): Promise<Map<string, FmvRow>> {
+  if (editionKeys.length === 0) return new Map();
+  const { data } = await supabase
+    .from("fmv_snapshots")
+    .select(
+      "edition_key, fmv, low_ask, confidence, set_id, play_id, pack_listing_id, pack_name"
+    )
+    .in("edition_key", editionKeys)
+    .order("computed_at", { ascending: false });
+
+  const map = new Map<string, FmvRow>();
+  for (const row of (data ?? []) as FmvRow[]) {
+    if (!map.has(row.edition_key)) map.set(row.edition_key, row);
   }
   return map;
 }
 
-function extractBadgeSlugs(tx: RawTransaction): string[] {
-  return (tx.moment?.play?.tags ?? [])
-    .map(t => t.id in BADGE_PREMIUMS ? t.id : t.title in BADGE_PREMIUMS ? t.title : null)
-    .filter((s): s is string => s !== null);
+async function fetchPackEvBatch(
+  supabase: SupabaseClient,
+  packIds: string[]
+): Promise<Map<string, PackEvRow>> {
+  if (packIds.length === 0) return new Map();
+  const { data } = await supabase
+    .from("pack_ev_cache")
+    .select("pack_listing_id, pack_name, pack_price, ev, ev_ratio")
+    .in("pack_listing_id", packIds);
+
+  const map = new Map<string, PackEvRow>();
+  for (const row of (data ?? []) as PackEvRow[]) {
+    map.set(row.pack_listing_id, row);
+  }
+  return map;
 }
 
-function buildTSDeal(tx: RawTransaction, editionFloors: Map<string, { floor: number; count: number }>, supabaseFmv: Map<string, { fmv: number; confidence: string }>): SniperDeal | null {
-  if (!tx.moment) return null;
-  const askPrice = parsePrice(tx.price); if (!askPrice || askPrice <= 0) return null;
-  const m = tx.moment; const psp = m.parallelSetPlay;
-  const editionKey = psp?.setID && psp?.playID ? `${psp.setID}:${psp.playID}` : null;
-  if (!editionKey) return null;
-  const floorData = editionFloors.get(editionKey); if (!floorData) return null;
-  const sbRow = supabaseFmv.get(editionKey);
-  let baseFmv: number; let confidence: string;
-  if (sbRow) {
-    baseFmv = floorData.count >= 2 ? Math.min(sbRow.fmv, floorData.floor) : sbRow.fmv;
-    confidence = sbRow.confidence;
-  } else if (floorData.count >= 2) {
-    baseFmv = floorData.floor; confidence = floorData.count >= 5 ? "medium" : "low";
-  } else { return null; }
-  const circ = m.setPlay?.circulations?.circulationCount ?? 1000;
-  const serial = parseInt(m.flowSerialNumber ?? "0", 10); if (!serial) return null;
-  const jerseyNumber = m.play?.stats?.jerseyNumber ?? null;
-  const badgeSlugs = extractBadgeSlugs(tx);
-  const hasBadge = badgeSlugs.length > 0;
-  const totalBadgePremium = badgeSlugs.reduce((s, slug) => s + (BADGE_PREMIUMS[slug] ?? 0), 0);
-  const serialMult = serialPremium(serial, circ);
-  const isSpecialSerial = serialMult > 1.5;
-  const jerseyMatch = jerseyNumber != null && parseInt(jerseyNumber) === serial;
-  const isJersey = jerseyMatch || (serial >= 2 && serial <= 99);
-  const adjustedFmv = baseFmv * serialMult * (1 + totalBadgePremium);
-  const discount = ((adjustedFmv - askPrice) / adjustedFmv) * 100;
-  const parallelId = psp?.parallelID ?? m.parallelID ?? 0;
-  const teamId = m.play?.stats?.teamAtMomentNbaId ?? "";
-  const teamName = NBA_TEAMS[teamId] ?? teamId;
-  const tierRaw = (m.tier ?? "COMMON").replace("MOMENT_TIER_", "");
-
-  return {
-    flowId: m.flowId, momentId: m.id, editionKey,
-    playerName: m.play?.stats?.playerName ?? "Unknown", teamName,
-    setName: m.set?.flowName ?? "", seriesName: formatSeries(m.set?.flowSeriesNumber),
-    tier: tierRaw, parallel: formatParallel(parallelId), parallelId, serial, circulationCount: circ,
-    askPrice, baseFmv, adjustedFmv, discount: Math.round(discount * 10) / 10, confidence,
-    hasBadge, badgeSlugs, badgeLabels: badgeSlugs.map(s => BADGE_LABELS[s] ?? s),
-    badgePremiumPct: Math.round(totalBadgePremium * 100), serialMult: Math.round(serialMult * 100) / 100,
-    isSpecialSerial, isJersey,
-    serialSignal: serial === 1 ? "Serial #1" : serial === circ ? "Last Mint" : jerseyMatch ? `Jersey #${serial}` : isSpecialSerial ? `Low #${serial}` : null,
-    thumbnailUrl: buildThumbnailUrl(m.assetPathPrefix), isLocked: m.isLocked ?? false,
-    updatedAt: tx.updatedAt ?? null, packListingId: null, packName: null, packEv: null, packEvRatio: null,
-    buyUrl: `https://nbatopshot.com/moment/${m.flowId}`,
-    listingResourceID: m.marketplaceListingID ?? null,
-    storefrontAddress: m.marketplaceID ?? null,
-    source: "topshot",
-  };
+function resolveFmv(keys: string[], map: Map<string, FmvRow>): FmvRow | null {
+  for (const key of keys) {
+    const row = map.get(key);
+    if (row) return row;
+  }
+  return null;
 }
 
-// ─── FLOWTY FEED ─────────────────────────────────────────────────────────────
+// ─── Badge helpers ────────────────────────────────────────────────────────────
 
-interface FlowtyNft {
-  id: string;
-  card: { title: string; num: string | number; max: string | number; images: { url: string }[] };
-  nftView: {
-    serial: string; externalURL: { url: string };
-    traits: { traits: { name: string; value: string }[] };
-    editions?: { infoList: { max: number; number: number }[] };
-  };
-  orders: { salePrice: number; blockTimestamp: number; listingResourceID: string; state: string; paymentTokenName: string; nftID: string; storefrontAddress?: string }[];
-  valuations: { blended?: { usdValue: number }; livetoken?: { usdValue: number } };
+const BADGE_LABELS: Record<string, string> = {
+  "top-shot-debut": "Top Shot Debut",
+  "rookie-year": "Rookie Year",
+  "rookie-premiere": "Rookie Premiere",
+  "rookie-mint": "Rookie Mint",
+  "championship": "Championship",
+  "mvp": "MVP",
+  "roy": "ROY",
+};
+
+function extractBadgeSlugs(tags: Array<{ title?: string }> | undefined): string[] {
+  if (!tags) return [];
+  return tags
+    .map((t) => t.title ?? "")
+    .filter((s) => s in BADGE_LABELS);
 }
 
-function getFlowtyTrait(traits: { name: string; value: string }[], name: string): string | null {
-  return traits.find(t => t.name === name)?.value ?? null;
-}
+// ─── Route handler ────────────────────────────────────────────────────────────
 
-async function fetchFlowtyPage(from: number): Promise<FlowtyNft[]> {
-  const res = await fetch(FLOWTY_ENDPOINT, {
-    method: "POST", headers: FLOWTY_HEADERS,
-    body: JSON.stringify({
-      address: null, addresses: [],
-      collectionFilters: [{ collection: "0x0b2a3299cc857e29.TopShot", traits: [] }],
-      from, includeAllListings: true, limit: 24, onlyUnlisted: false,
-      orderFilters: [{ conditions: [], kind: "storefront", paymentTokens: [] }],
-      sort: { direction: "desc", listingKind: "storefront", path: "blockTimestamp" },
-    }),
-  });
-  if (!res.ok) throw new Error(`Flowty HTTP ${res.status}`);
-  const data = await res.json();
-  return (data.nfts ?? []) as FlowtyNft[];
-}
-
-function buildFlowtyDeal(nft: FlowtyNft, badgeMap: Map<string, string[]>): SniperDeal | null {
-  const order = nft.orders?.find(o => o.state === "LISTED");
-  if (!order) return null;
-  const askPrice = order.salePrice; if (!askPrice || askPrice <= 0) return null;
-  const traits = nft.nftView?.traits?.traits ?? [];
-  const playerName = (nft.card?.title ?? getFlowtyTrait(traits, "FullName") ?? "Unknown").trim();
-  const teamFull = getFlowtyTrait(traits, "TeamAtMoment") ?? "";
-  const teamName = TEAM_ABBREVS[teamFull] ?? teamFull;
-  const setName = getFlowtyTrait(traits, "SetName") ?? "";
-  const seriesStr = getFlowtyTrait(traits, "SeriesNumber");
-  const seriesNumber = seriesStr != null ? parseInt(seriesStr, 10) : -1;
-  const seriesName = seriesNumber >= 0 ? (SERIES_NAMES[seriesNumber] ?? `Series ${seriesNumber}`) : "";
-  const tierRaw = getFlowtyTrait(traits, "Tier") ?? "Common";
-  const tier = tierRaw.toUpperCase();
-  const subeditionIdStr = getFlowtyTrait(traits, "SubeditionID");
-  const parallelId = subeditionIdStr != null ? parseInt(subeditionIdStr, 10) : 0;
-  const parallel = PARALLEL_NAMES[parallelId] ?? `Parallel #${parallelId}`;
-  const isLockedStr = getFlowtyTrait(traits, "Locked");
-  const isLocked = isLockedStr === "true";
-  const serialStr = nft.nftView?.serial ?? String(nft.card?.num ?? "0");
-  const serial = parseInt(serialStr, 10); if (!serial) return null;
-  const circRaw = nft.nftView?.editions?.infoList?.[0]?.max ?? nft.card?.max;
-  const circulationCount = typeof circRaw === "string" ? parseInt(circRaw, 10) : (circRaw ?? 1000);
-  const blendedFmv = nft.valuations?.blended?.usdValue ?? 0;
-  const livetokenFmv = nft.valuations?.livetoken?.usdValue ?? 0;
-  const baseFmv = blendedFmv > 0 ? blendedFmv : livetokenFmv > 0 ? livetokenFmv : 0;
-  if (baseFmv <= 0) return null;
-  const badgeKey = `${playerName}:${seriesNumber}`;
-  const badgeSlugs = badgeMap.get(badgeKey) ?? [];
-  const hasBadge = badgeSlugs.length > 0;
-  const totalBadgePremium = badgeSlugs.reduce((s, slug) => s + (BADGE_PREMIUMS[slug] ?? 0), 0);
-  const serialMult = serialPremium(serial, circulationCount);
-  const isSpecialSerial = serialMult > 1.5;
-  const isJersey = serial >= 2 && serial <= 99;
-  const adjustedFmv = baseFmv * serialMult * (1 + totalBadgePremium);
-  const discount = ((adjustedFmv - askPrice) / adjustedFmv) * 100;
-  const flowtyThumb = nft.card?.images?.[0]?.url ?? null;
-  const thumbnailUrl = flowtyThumb ? flowtyThumb.replace("?width=256", "?width=512") : null;
-  const updatedAt = new Date(order.blockTimestamp).toISOString();
-  const flowId = order.nftID ?? nft.id;
-
-  return {
-    flowId, momentId: nft.id, editionKey: "",
-    playerName, teamName, setName, seriesName, tier, parallel, parallelId,
-    serial, circulationCount, askPrice, baseFmv, adjustedFmv,
-    discount: Math.round(discount * 10) / 10, confidence: "high",
-    hasBadge, badgeSlugs, badgeLabels: badgeSlugs.map(s => BADGE_LABELS[s] ?? s),
-    badgePremiumPct: Math.round(totalBadgePremium * 100), serialMult: Math.round(serialMult * 100) / 100,
-    isSpecialSerial, isJersey,
-    serialSignal: serial === 1 ? "Serial #1" : serial === circulationCount ? "Last Mint" : isSpecialSerial ? `Low #${serial}` : null,
-    thumbnailUrl, isLocked, updatedAt,
-    packListingId: null, packName: null, packEv: null, packEvRatio: null,
-    buyUrl: `https://www.flowty.io/listing/${order.listingResourceID}`,
-    listingResourceID: order.listingResourceID ?? null,
-    storefrontAddress: order.storefrontAddress ?? null,
-    source: "flowty",
-  };
-}
-
-// ─── MAIN HANDLER ─────────────────────────────────────────────────────────────
+export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const minDiscount = parseFloat(url.searchParams.get("minDiscount") ?? "0");
   const rarity = url.searchParams.get("rarity") ?? "all";
+  const team = url.searchParams.get("team") ?? "all";
   const badgeOnly = url.searchParams.get("badgeOnly") === "true";
   const serialFilter = url.searchParams.get("serial") ?? "all";
   const maxPrice = parseFloat(url.searchParams.get("maxPrice") ?? "0");
+  const sortBy = url.searchParams.get("sortBy") ?? "discount";
 
-  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
 
-  // Fetch Top Shot + Flowty in parallel
-  const [tsResult, flowtyResult] = await Promise.allSettled([
-    fetchTopShotPool(),
-    Promise.all([
-      fetchFlowtyPage(0), fetchFlowtyPage(24),
-      fetchFlowtyPage(48), fetchFlowtyPage(72),
-    ]).then(([p0, p1, p2, p3]) => [...p0, ...p1, ...p2, ...p3]),
-  ]);
+  // 1. Fetch TS + Flowty in parallel
+  const [{ transactions: tsTransactions, tsCount }, flowtyListings] =
+    await Promise.all([
+      fetchLiveListings(rarity, team),
+      fetchFlowtyListings(rarity, maxPrice),
+    ]);
 
-  const tsTxns: RawTransaction[] = tsResult.status === "fulfilled" ? tsResult.value : [];
-  const flowtyNfts: FlowtyNft[] = flowtyResult.status === "fulfilled" ? flowtyResult.value : [];
+  // 2. Build all edition keys for batch FMV lookup
+  const tsKeys = Array.from(new Set(tsTransactions.flatMap(buildEditionKeys)));
+  const flowtyKeys = Array.from(
+    new Set(flowtyListings.flatMap(buildFlowtyEditionKeys))
+  );
+  const allKeys = Array.from(new Set([...tsKeys, ...flowtyKeys]));
 
-  if (tsResult.status === "rejected") console.error("[sniper] TS fetch failed:", tsResult.reason);
-  if (flowtyResult.status === "rejected") console.warn("[sniper] Flowty fetch failed:", flowtyResult.reason);
+  const fmvMap = await fetchFmvBatch(supabase, allKeys);
 
-  console.log(`[sniper] TS pool: ${tsTxns.length}, Flowty NFTs: ${flowtyNfts.length}`);
+  // 3. Enrich TS listings
+  const tsDeals: SniperDeal[] = [];
+  for (const m of tsTransactions) {
+    const askRaw = m.flowRetailPrice?.value ?? String(m.marketplacePrice ?? 0);
+    const askPrice = parseFloat(askRaw) / 100_000_000;
+    if (askPrice <= 0) continue;
+    if (maxPrice > 0 && askPrice > maxPrice) continue;
 
-  // Filter TS txns by rarity
-  const filteredTsTxns = rarity !== "all"
-    ? tsTxns.filter(tx => (tx.moment?.tier ?? "").toUpperCase().includes(rarity.toUpperCase()))
-    : tsTxns;
+    const tier = m.momentTier ?? "COMMON";
+    const parallelId = m.setPlay?.parallelID ?? 0;
+    const parallel = parallelId > 0 ? `Parallel${parallelId}` : "Base";
+    const serial = m.serialNumber ?? 0;
+    const circ = m.circulationCount ?? 0;
 
-  // Build TS deals
-  const editionFloors = computeEditionFloors(tsTxns);
-  const editionKeys = Array.from(editionFloors.keys());
-  const supabaseFmv = await fetchSupabaseFmv(supabase, editionKeys);
-  console.log(`[sniper] Supabase FMV hits: ${supabaseFmv.size}/${editionKeys.length}`);
+    const isJersey = (m.tags ?? []).some(
+      (t) => t.title === "Jersey Match" || t.title === "Jersey Number"
+    );
+    const { mult: serialMult, signal: serialSignal, isSpecial: isSpecialSerial } =
+      serialMultiplier(serial, circ, isJersey);
 
-  const tsDeals: SniperDeal[] = filteredTsTxns
-    .map(tx => buildTSDeal(tx, editionFloors, supabaseFmv))
-    .filter((d): d is SniperDeal => d !== null);
+    const badgeSlugs = extractBadgeSlugs(m.tags);
+    const badgeLabels = badgeSlugs.map((s) => BADGE_LABELS[s] ?? s);
+    const hasBadge = badgeSlugs.length > 0;
 
-  // Deduplicate + badge lookup for Flowty
-  const seenFlowty = new Set<string>(); const uniqueFlowtyNfts: FlowtyNft[] = [];
-  for (const nft of flowtyNfts) { if (!seenFlowty.has(nft.id)) { seenFlowty.add(nft.id); uniqueFlowtyNfts.push(nft); } }
+    const editionKeys = buildEditionKeys(m);
+    const fmvRow = resolveFmv(editionKeys, fmvMap);
+    const baseFmv = fmvRow?.fmv ?? askPrice;
+    const confidence = fmvRow?.confidence ?? "low";
+    const confidenceSource = fmvRow ? "supabase" : "ask_fallback";
+    const adjustedFmv = baseFmv * serialMult;
 
-  const flowtyPairs: { playerName: string; seriesNumber: number }[] = [];
-  for (const nft of uniqueFlowtyNfts) {
-    const traits = nft.nftView?.traits?.traits ?? [];
-    const playerName = (nft.card?.title ?? "").trim();
-    const seriesStr = getFlowtyTrait(traits, "SeriesNumber");
-    const seriesNumber = seriesStr != null ? parseInt(seriesStr, 10) : -1;
-    if (playerName && seriesNumber >= 0) flowtyPairs.push({ playerName, seriesNumber });
+    const discount = askPrice >= adjustedFmv
+      ? 0
+      : Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10;
+    if (discount < minDiscount) continue;
+    if (badgeOnly && !hasBadge) continue;
+    if (serialFilter === "special" && !isSpecialSerial) continue;
+    if (serialFilter === "jersey" && !isJersey) continue;
+
+    tsDeals.push({
+      flowId: m.id,
+      momentId: m.id,
+      editionKey: editionKeys[0] ?? "",
+      playerName: m.momentTitle ?? "",
+      teamName: "",
+      setName: m.setName ?? "",
+      seriesName: "",
+      tier,
+      parallel,
+      parallelId,
+      serial,
+      circulationCount: circ,
+      askPrice,
+      baseFmv,
+      adjustedFmv,
+      discount,
+      confidence,
+      confidenceSource,
+      hasBadge,
+      badgeSlugs,
+      badgeLabels,
+      badgePremiumPct: 0,
+      serialMult,
+      isSpecialSerial,
+      isJersey,
+      serialSignal,
+      thumbnailUrl: `https://assets.nbatopshot.com/media/${m.id}?width=512`,
+      isLocked: false,
+      updatedAt: new Date().toISOString(),
+      packListingId: fmvRow?.pack_listing_id ?? null,
+      packName: fmvRow?.pack_name ?? null,
+      packEv: null,
+      packEvRatio: null,
+      buyUrl: `https://nbatopshot.com/moment/${m.id}`,
+      listingResourceID: m.storefrontListingID ?? null,
+      storefrontAddress: m.sellerAddress ?? null,
+      source: "topshot",
+    });
   }
 
-  const flowtyBadgeMap = new Map<string, string[]>();
-  if (flowtyPairs.length > 0) {
-    // Trim trailing/leading whitespace from Flowty player names (e.g. "Goran Dragić ")
-    const normalizedPairs = flowtyPairs.map(p => ({ ...p, playerName: p.playerName.trim() }));
-    const playerNames = [...new Set(normalizedPairs.map(p => p.playerName))];
+  // 4. Enrich Flowty listings
+  const flowtyDeals: SniperDeal[] = [];
+  for (const item of flowtyListings) {
+    const askPrice = item.askPrice;
+    if (askPrice <= 0) continue;
 
-    // Use ilike for case-insensitive matching across all player names
-    const orFilter = playerNames.map(n => `player_name.ilike.${n}`).join(",");
-    const { data: badgeRows } = await supabase
-      .from("badge_editions")
-      .select("player_name, badge_type, series_number")
-      .or(orFilter);
+    const tier = item.tier ?? "COMMON";
+    const serial = item.serial ?? 0;
+    const circ = item.circulationCount ?? 0;
+    const isJersey = false; // Flowty doesn't return jersey tag directly
+    const { mult: serialMult, signal: serialSignal, isSpecial: isSpecialSerial } =
+      serialMultiplier(serial, circ, isJersey);
 
-    if (badgeRows?.length) {
-      for (const row of badgeRows as { player_name: string; badge_type: string; series_number: number }[]) {
-        const pair = normalizedPairs.find(
-          p => p.playerName.toLowerCase() === row.player_name.toLowerCase() &&
-               p.seriesNumber === row.series_number
-        );
-        if (!pair) continue;
-        // Key uses the trimmed name
-        const key = `${pair.playerName}:${pair.seriesNumber}`;
-        const arr = flowtyBadgeMap.get(key) ?? [];
-        if (!arr.includes(row.badge_type)) arr.push(row.badge_type);
-        flowtyBadgeMap.set(key, arr);
+    const editionKeys = buildFlowtyEditionKeys(item);
+    const fmvRow = resolveFmv(editionKeys, fmvMap);
+    const baseFmv = fmvRow?.fmv ?? askPrice;
+    const confidence = fmvRow?.confidence ?? "low";
+    const confidenceSource = fmvRow ? "supabase" : "ask_fallback";
+    const adjustedFmv = baseFmv * serialMult;
+
+    const discount = askPrice >= adjustedFmv
+      ? 0
+      : Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10;
+    if (discount < minDiscount) continue;
+    if (badgeOnly) continue; // Flowty doesn't carry badge data
+    if (serialFilter === "special" && !isSpecialSerial) continue;
+    if (serialFilter === "jersey") continue; // skip jersey filter for Flowty
+
+    // Team filter
+    if (team !== "all" && item.teamName !== team) continue;
+    if (rarity !== "all" && tier.toLowerCase() !== rarity.toLowerCase()) continue;
+
+    flowtyDeals.push({
+      flowId: item.flowId,
+      momentId: item.momentId,
+      editionKey: editionKeys[0] ?? "",
+      playerName: item.playerName,
+      teamName: item.teamName,
+      setName: item.setName,
+      seriesName: item.seriesName,
+      tier,
+      parallel: item.parallel,
+      parallelId: item.parallelId,
+      serial,
+      circulationCount: circ,
+      askPrice,
+      baseFmv,
+      adjustedFmv,
+      discount,
+      confidence,
+      confidenceSource,
+      hasBadge: false,
+      badgeSlugs: [],
+      badgeLabels: [],
+      badgePremiumPct: 0,
+      serialMult,
+      isSpecialSerial,
+      isJersey,
+      serialSignal,
+      thumbnailUrl: item.thumbnailUrl ?? `https://assets.nbatopshot.com/media/${item.momentId}?width=512`,
+      isLocked: false,
+      updatedAt: new Date().toISOString(),
+      packListingId: fmvRow?.pack_listing_id ?? null,
+      packName: fmvRow?.pack_name ?? null,
+      packEv: null,
+      packEvRatio: null,
+      buyUrl: item.buyUrl,
+      listingResourceID: item.listingResourceID,
+      storefrontAddress: item.storefrontAddress,
+      source: "flowty",
+    });
+  }
+
+  // 5. Merge, deduplicate by flowId, and sort
+  const seen = new Set<string>();
+  const allDeals: SniperDeal[] = [];
+  // TS takes priority for dedup
+  for (const d of [...tsDeals, ...flowtyDeals]) {
+    if (!seen.has(d.flowId)) {
+      seen.add(d.flowId);
+      allDeals.push(d);
+    }
+  }
+
+  // 6. Collect pack EV
+  const packIds = Array.from(
+    new Set(allDeals.map((d) => d.packListingId).filter(Boolean) as string[])
+  );
+  const packMap = await fetchPackEvBatch(supabase, packIds);
+  for (const d of allDeals) {
+    if (d.packListingId) {
+      const pev = packMap.get(d.packListingId);
+      if (pev) {
+        d.packEv = pev.ev;
+        d.packEvRatio = pev.ev_ratio;
       }
     }
   }
 
-  // Filter Flowty by rarity
-  const filteredFlowtyNfts = rarity !== "all"
-    ? uniqueFlowtyNfts.filter(nft => {
-        const traits = nft.nftView?.traits?.traits ?? [];
-        const tier = getFlowtyTrait(traits, "Tier") ?? "";
-        return tier.toLowerCase().includes(rarity.toLowerCase());
-      })
-    : uniqueFlowtyNfts;
-
-  const flowtyDeals: SniperDeal[] = filteredFlowtyNfts
-    .map(nft => buildFlowtyDeal(nft, flowtyBadgeMap))
-    .filter((d): d is SniperDeal => d !== null);
-
-  console.log(`[sniper] TS deals: ${tsDeals.length}, Flowty deals: ${flowtyDeals.length}`);
-
-  // Merge — Flowty wins on conflict (better FMV)
-  const mergedMap = new Map<string, SniperDeal>();
-  for (const deal of tsDeals) mergedMap.set(deal.flowId, deal);
-  for (const deal of flowtyDeals) mergedMap.set(deal.flowId, deal);
-
-  const allDeals = Array.from(mergedMap.values());
-
-  // Apply remaining filters
-  const filtered = allDeals.filter(m => {
-    if (m.discount < minDiscount) return false;
-    if (badgeOnly && !m.hasBadge) return false;
-    if (maxPrice > 0 && m.askPrice > maxPrice) return false;
-    if (serialFilter === "special" && !m.isSpecialSerial) return false;
-    if (serialFilter === "jersey" && !m.isJersey) return false;
-    return true;
+  // 7. Sort
+  const sorted = allDeals.sort((a, b) => {
+    if (sortBy === "price_asc") return a.askPrice - b.askPrice;
+    if (sortBy === "price_desc") return b.askPrice - a.askPrice;
+    if (sortBy === "fmv_desc") return b.adjustedFmv - a.adjustedFmv;
+    if (sortBy === "serial_asc") return a.serial - b.serial;
+    // Default: discount desc
+    return b.discount - a.discount;
   });
 
-  // Sort by updatedAt desc
-  const deals = filtered
-    .sort((a, b) => {
-      const ta = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-      const tb = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-      return tb - ta;
-    })
-    .slice(0, 200);
-
-  console.log(`[sniper] merged: ${allDeals.length}, filtered: ${filtered.length}, final: ${deals.length}`);
-  return NextResponse.json({ count: deals.length, lastRefreshed: new Date().toISOString(), deals });
+  return NextResponse.json(
+    {
+      count: sorted.length,
+      tsCount,
+      flowtyCount: flowtyListings.length,
+      lastRefreshed: new Date().toISOString(),
+      deals: sorted,
+    },
+    {
+      headers: {
+        // Stale-while-revalidate: serve cached for up to 25s, then revalidate
+        "Cache-Control": "public, max-age=0, s-maxage=25, stale-while-revalidate=60",
+      },
+    }
+  );
 }
