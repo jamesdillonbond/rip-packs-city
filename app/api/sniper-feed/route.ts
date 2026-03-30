@@ -111,9 +111,7 @@ export interface SniperDeal {
 const TS_GQL = "https://public-api.nbatopshot.com/graphql";
 const GQL_HEADERS = {
   "Content-Type": "application/json",
-  Origin: "https://nbatopshot.com",
-  Referer: "https://nbatopshot.com/",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
+  "User-Agent": "sports-collectible-tool/0.1", // Chrome UA triggers Cloudflare bot detection
 };
 
 const FLOWTY_ENDPOINT = "https://api2.flowty.io/collection/0x0b2a3299cc857e29/TopShot";
