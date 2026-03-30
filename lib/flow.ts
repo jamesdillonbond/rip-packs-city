@@ -1,19 +1,6 @@
 import * as fcl from '@onflow/fcl'
 
-// ---------------------------------------------------------------------------
-// FCL configuration for Dapper Wallet
-//
-// BEFORE GOING LIVE:
-//   1. Register your app at https://developers.dapperlabs.com
-//   2. Replace APP_IDENTIFIER below with your issued app identifier
-//   3. Dapper will use this to recognize your app in their confirmation popup
-//      and to co-sign your transactions
-//
-// Without a registered app identifier, wallet connection and read-only
-// scripts work fine. Transactions will be blocked by Dapper's co-signer.
-// ---------------------------------------------------------------------------
-
-const APP_IDENTIFIER = 'rip-packs-city' // ← replace with Dapper-issued ID
+const APP_IDENTIFIER = 'rip-packs-city'
 
 const IS_MAINNET = process.env.NEXT_PUBLIC_FLOW_NETWORK !== 'testnet'
 
@@ -50,3 +37,6 @@ export function initFcl() {
   initialized = true
   fcl.config(IS_MAINNET ? MAINNET_CONFIG : TESTNET_CONFIG)
 }
+
+// Default export for compatibility with any existing imports of this module
+export default fcl
