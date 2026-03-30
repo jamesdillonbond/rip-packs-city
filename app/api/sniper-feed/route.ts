@@ -352,7 +352,7 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
     clearTimeout(timeout);
     if (!res.ok) { console.warn(`[sniper-feed] Flowty HTTP ${res.status} from=${from}`); return []; }
     const json = await res.json();
-    const rawItems: FlowtyNftItem[] = json?.data ?? [];
+    const rawItems: FlowtyNftItem[] = json?.nfts ?? json?.data ?? [];
     console.warn(`[sniper-feed] Flowty from=${from}: rawItems=${rawItems.length}`);
     const listings: FlowtyListing[] = [];
     for (const item of rawItems) {
