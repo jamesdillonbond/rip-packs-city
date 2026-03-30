@@ -178,37 +178,40 @@ export async function GET(req: NextRequest) {
   }
 
   // ── 4. Look up nftID → edition_id + collection_id + serial_number ──────────
+  // Use sales.nft_id (new column) rather than moments table.
+  // sales has far more coverage — every ingest run writes nft_id to sales,
+  // while moments only gets rows from new ingest cycles going forward.
+  // One row per nft_id is enough since edition_id is the same for all sales
+  // of the same NFT.
   const nftIds = [...new Set(newSales.map((doc) => {
     const f = doc.fields.data?.mapValue?.fields;
     return f?.nftID?.stringValue ?? f?.nftID?.integerValue ?? "";
   }).filter(Boolean))];
 
-  const { data: momentRows } = await supabase
-    .from("moments")
-    .select("nft_id, edition_id, serial_number")
-    .in("nft_id", nftIds);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: salesRows } = await (supabase as any)
+    .from("sales")
+    .select("nft_id, edition_id, collection_id, serial_number")
+    .in("nft_id", nftIds)
+    .not("nft_id", "is", null);
 
-  // Also get collection_id via editions join
-  const editionIds = [...new Set((momentRows ?? []).map((r) => r.edition_id).filter(Boolean))];
-  const { data: editionRows } = await supabase
-    .from("editions")
-    .select("id, collection_id")
-    .in("id", editionIds);
-
-  const momentMap = new Map<string, { edition_id: string; serial_number: number | null }>();
-  for (const row of (momentRows ?? [])) {
-    if (row.nft_id) {
+  // Deduplicate — keep first occurrence per nft_id
+  const momentMap = new Map<string, { edition_id: string; collection_id: string; serial_number: number | null }>();
+  for (const row of (salesRows ?? [])) {
+    if (row.nft_id && !momentMap.has(String(row.nft_id))) {
       momentMap.set(String(row.nft_id), {
         edition_id: row.edition_id,
+        collection_id: row.collection_id,
         serial_number: row.serial_number ?? null,
       });
     }
   }
 
+  // collection_id comes directly from sales row — no editions join needed
   const editionCollectionMap = new Map<string, string>();
-  for (const row of (editionRows ?? [])) {
-    if (row.id && row.collection_id) {
-      editionCollectionMap.set(row.id, row.collection_id);
+  for (const [, info] of momentMap) {
+    if (info.edition_id && info.collection_id) {
+      editionCollectionMap.set(info.edition_id, info.collection_id);
     }
   }
 
@@ -232,14 +235,13 @@ export async function GET(req: NextRequest) {
 
     const momentInfo = momentMap.get(nftId);
     if (!momentInfo?.edition_id) {
-      // Not in moments table yet — seeded by wallet searches over time
+      // Not in sales table yet — will populate as ingest runs
       skipped++;
       continue;
     }
 
-    const collectionId = editionCollectionMap.get(momentInfo.edition_id);
+    const collectionId = momentInfo.collection_id;
     if (!collectionId) {
-      // Can't satisfy NOT NULL on collection_id without this
       skipped++;
       continue;
     }
@@ -300,7 +302,7 @@ export async function GET(req: NextRequest) {
       alreadyIngested: existingHashes.size,
       toInsert: saleRows.length,
       skipped,
-      momentMapSize: momentMap.size,
+      salesMapSize: momentMap.size,
       sample: saleRows.slice(0, 3),
     });
   }
@@ -336,6 +338,6 @@ export async function GET(req: NextRequest) {
     skipped,
     latestTimestamp,
     flowUsd: flowUsd > 0 ? flowUsd : null,
-    momentMapSize: momentMap.size,
+    salesMapSize: momentMap.size,
   });
 }
