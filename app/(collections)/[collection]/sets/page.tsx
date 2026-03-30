@@ -416,15 +416,7 @@ export default function SetsPage() {
   }, [data]);
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0a0a14", fontFamily: "'DM Mono','Fira Code','Courier New',monospace", color: "#e2e8f0" }}>
-      <nav style={{ padding: "11px 16px", borderBottom: "1px solid rgba(255,255,255,0.05)", display: "flex", alignItems: "center", gap: 14, background: "rgba(10,10,20,0.97)", position: "sticky", top: 0, zIndex: 50 }}>
-        <a href="/" style={{ fontSize: 12, fontWeight: 700, color: "#f97316", textDecoration: "none", letterSpacing: "0.05em" }}>RIP PACKS CITY</a>
-        <span style={{ color: "rgba(255,255,255,0.12)" }}>|</span>
-        {[{ label: "Wallet", href: "/wallet" }, { label: "Packs", href: "/packs" }, { label: "Sets", href: "/sets" }, { label: "Sniper", href: "/sniper" }, { label: "Badges", href: "/badges" }, { label: "Profile", href: "/profile" }].map((link) => (
-          <a key={link.href} href={link.href} style={{ fontSize: 11, textDecoration: "none", letterSpacing: "0.03em", color: link.href === "/sets" ? "#f97316" : "#94a3b8", fontWeight: link.href === "/sets" ? 600 : 400 }}>{link.label}</a>
-        ))}
-      </nav>
-
+    <div style={{ fontFamily: "'DM Mono','Fira Code','Courier New',monospace", color: "#e2e8f0" }}>
       <div style={{ maxWidth: 660, margin: "0 auto", padding: "18px 14px 60px" }}>
         <div style={{ marginBottom: 16 }}>
           <h1 style={{ fontSize: 20, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.02em", margin: "0 0 3px" }}>Set Tracker</h1>
