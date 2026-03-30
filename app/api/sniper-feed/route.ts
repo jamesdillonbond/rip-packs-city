@@ -183,8 +183,13 @@ function serialMultiplier(
 // Uses integer setPlay.setID/playID for edition keys
 
 const SEARCH_LISTINGS_QUERY = `
-  query SearchMomentListings($input: SearchMomentListingsInput!) {
-    searchMomentListings(input: $input) {
+  {
+    searchMomentListings(
+      input: {
+        filters: { byListings: { listingType: { value: FOR_SALE } } }
+        searchInput: { pagination: { cursor: "", direction: RIGHT, count: 100 } }
+      }
+    ) {
       data {
         searchSummary {
           pagination { rightCursor }
@@ -195,7 +200,6 @@ const SEARCH_LISTINGS_QUERY = `
                 ... on MomentListing {
                   id
                   flowRetailPrice { value }
-                  marketplacePrice
                   setPlay {
                     setID
                     playID
@@ -204,16 +208,12 @@ const SEARCH_LISTINGS_QUERY = `
                   serialNumber
                   circulationCount
                   setName
-                  setSeriesNumber
                   momentTier
                   momentTitle
                   playerName
-                  teamAtMomentNbaId
-                  assetPathPrefix
                   isLocked
                   storefrontListingID
                   sellerAddress
-                  tags { id title }
                 }
               }
             }
@@ -245,16 +245,7 @@ async function fetchTSPage(
     const res = await fetch(TS_GQL, {
       method: "POST",
       headers: GQL_HEADERS,
-      body: JSON.stringify({
-        query: SEARCH_LISTINGS_QUERY,
-        variables: {
-          input: {
-            // searchMomentListings does NOT support sortBy at input level
-            filters: { byListings: { listingType: { value: "FOR_SALE" } } },
-            searchInput: { pagination: { cursor, direction: "RIGHT", count: 100 } },
-          },
-        },
-      }),
+      body: JSON.stringify({ query: SEARCH_LISTINGS_QUERY }),
       signal: controller.signal,
     });
     clearTimeout(timeout);
