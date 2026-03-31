@@ -19,6 +19,7 @@ interface SavedWallet {
   cached_top_tier: string | null;
   cached_change_24h: number | null;
   cached_badges: string[] | null;
+  cached_rpc_score?: number | null;
 }
 
 interface RecentSearch {
