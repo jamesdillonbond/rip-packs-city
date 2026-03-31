@@ -6,8 +6,6 @@ import { NextRequest, NextResponse } from "next/server";
 /*          walletConnected? }                                         */
 /*  Returns: { response, escalated, escalationReason?, category,       */
 /*             momentCards?, actions? }                                 */
-/*                                                                     */
-/*  v2 — adds rate limiting + Resend escalation emails                 */
 /* ------------------------------------------------------------------ */
 
 export const maxDuration = 30;
@@ -27,105 +25,6 @@ function apiUrl(path: string) {
       ? `https://${process.env.VERCEL_URL}`
       : "https://rip-packs-city.vercel.app");
   return `${base}${path}`;
-}
-
-// ── Rate Limiting ─────────────────────────────────────────────────
-const RATE_LIMIT_MESSAGES = 25; // max messages per session per hour
-const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
-
-async function checkRateLimit(sessionId: string): Promise<{
-  allowed: boolean;
-  remaining: number;
-}> {
-  const since = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString();
-
-  const { count, error } = await supabase
-    .from("support_conversations")
-    .select("id", { count: "exact", head: true })
-    .eq("session_id", sessionId)
-    .gte("created_at", since);
-
-  if (error) {
-    // If rate limit check fails, allow the request (fail open)
-    console.error("Rate limit check error:", error.message);
-    return { allowed: true, remaining: RATE_LIMIT_MESSAGES };
-  }
-
-  const used = count || 0;
-  const remaining = Math.max(0, RATE_LIMIT_MESSAGES - used);
-  return { allowed: remaining > 0, remaining };
-}
-
-// ── Resend Escalation Email ───────────────────────────────────────
-async function sendEscalationEmail(
-  userMessage: string,
-  botResponse: string,
-  reason: string,
-  category: string,
-  sessionId: string,
-  userWallet: string | null
-) {
-  const resendKey = process.env.RESEND_API_KEY;
-
-  // Always log to Vercel runtime logs
-  console.error(
-    JSON.stringify({
-      type: "ESCALATION",
-      sessionId,
-      userWallet,
-      category,
-      reason,
-      userMessage,
-      timestamp: new Date().toISOString(),
-    })
-  );
-
-  // If Resend is configured, send email
-  if (resendKey) {
-    try {
-      const walletInfo = userWallet
-        ? `<p style="color:#888;font-size:13px;">Wallet: ${userWallet}</p>`
-        : "";
-
-      const html = `
-        <div style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:560px;margin:0 auto;padding:20px;background:#111;color:#e0e0e0;border-radius:12px;">
-          <h2 style="color:#E03A2F;font-size:18px;margin:0 0 16px;">🚨 RPC Support Escalation</h2>
-          <div style="background:#1a1a1a;border-left:3px solid #E03A2F;padding:12px;border-radius:0 8px 8px 0;margin-bottom:12px;">
-            <div style="font-size:12px;color:#888;margin-bottom:6px;">${category.toUpperCase()} · ${new Date().toLocaleString()}</div>
-            <div style="font-size:14px;color:#fff;margin-bottom:8px;"><strong>User said:</strong> ${userMessage}</div>
-            <div style="font-size:13px;color:#aaa;"><strong>Escalation reason:</strong> ${reason}</div>
-          </div>
-          <div style="background:#141414;padding:12px;border-radius:8px;margin-bottom:12px;">
-            <div style="font-size:12px;color:#666;margin-bottom:4px;">Bot response:</div>
-            <div style="font-size:13px;color:#999;">${botResponse.slice(0, 300)}${botResponse.length > 300 ? "..." : ""}</div>
-          </div>
-          ${walletInfo}
-          <p style="color:#666;font-size:11px;margin-top:16px;">Session: ${sessionId}</p>
-        </div>
-      `;
-
-      const res = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${resendKey}`,
-        },
-        body: JSON.stringify({
-          from: "RPC Support <onboarding@resend.dev>",
-          to: ["tdillonbond@gmail.com"],
-          subject: `🚨 RPC Escalation: ${category} — ${userMessage.slice(0, 50)}`,
-          html,
-        }),
-      });
-
-      if (!res.ok) {
-        const errText = await res.text();
-        console.error("Resend email error:", res.status, errText);
-      }
-    } catch (err: any) {
-      console.error("Resend email failed:", err?.message || err);
-    }
-  }
 }
 
 // ── System Prompt ─────────────────────────────────────────────────
@@ -490,6 +389,28 @@ async function executeTool(
   }
 }
 
+// ── Escalation email ──────────────────────────────────────────────
+async function sendEscalationEmail(
+  userMessage: string,
+  botResponse: string,
+  reason: string,
+  category: string,
+  sessionId: string,
+  userWallet: string | null
+) {
+  console.error(
+    JSON.stringify({
+      type: "ESCALATION",
+      sessionId,
+      userWallet,
+      category,
+      reason,
+      userMessage,
+      timestamp: new Date().toISOString(),
+    })
+  );
+}
+
 // ── Main Handler ──────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
@@ -514,19 +435,6 @@ export async function POST(req: NextRequest) {
         { error: "Message too long (max 2000 chars)" },
         { status: 400 }
       );
-    }
-
-    // ── Rate Limit Check ─────────────────────────────────────────
-    const { allowed, remaining } = await checkRateLimit(sessionId);
-
-    if (!allowed) {
-      return NextResponse.json({
-        response:
-          "You've sent a lot of messages recently — give me a few minutes to catch my breath! If you need immediate help, reach out to Trevor on Discord.",
-        escalated: false,
-        category: "general",
-        rateLimited: true,
-      });
     }
 
     // ── Conversation history ─────────────────────────────────────
@@ -628,6 +536,7 @@ export async function POST(req: NextRequest) {
         toolUseBlocks.length > 0 &&
         data.stop_reason === "tool_use"
       ) {
+        // Claude wants to use tools — execute and loop
         currentMessages.push({
           role: "assistant",
           content: data.content,
@@ -645,6 +554,7 @@ export async function POST(req: NextRequest) {
 
         currentMessages.push({ role: "user", content: toolResults });
       } else {
+        // Final text response
         finalResponse =
           data.content
             ?.filter((c: any) => c.type === "text")
@@ -723,7 +633,6 @@ export async function POST(req: NextRequest) {
       category: parsed.category || "general",
       momentCards: parsed.momentCards || [],
       actions: parsed.actions || [],
-      remaining,
     });
   } catch (err: any) {
     console.error("Support chat error:", err?.message || err);
