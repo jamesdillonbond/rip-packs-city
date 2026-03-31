@@ -553,7 +553,7 @@ export default function SniperPage() {
             </div>
           )}
 
-          {mode === 'deals' && <>
+
           {/* Tier tabs */}
           <div className="flex items-center gap-1 mb-4 flex-wrap">
             {TIER_TABS.map((t) => (
@@ -760,8 +760,6 @@ export default function SniperPage() {
                           <>
                             <span className="text-xs text-slate-600">·</span>
                             <span className="text-xs text-slate-600">{deal.seriesName}</span>
-                          </>
-                        )}
                         {deal.teamName && (
                           <>
                             <span className="text-xs text-slate-600">·</span>
@@ -852,8 +850,6 @@ export default function SniperPage() {
           </div>
         )}
 
-          </>
-          }
         {/* Legend */}
         <div className="mt-4 flex items-center gap-4 text-xs text-slate-600 flex-wrap">
           <span className="flex items-center gap-1">
