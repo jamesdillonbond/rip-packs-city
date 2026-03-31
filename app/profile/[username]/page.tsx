@@ -1,3 +1,9 @@
+import { profilePageMetadata } from "@/lib/seo"
+
+export function generateMetadata({ params }: { params: { username: string } }) {
+  return profilePageMetadata(params.username)
+}
+
 "use client";
 
 import { useState, useEffect } from "react";
