@@ -1,0 +1,32 @@
+name: Data Backfill
+
+on:
+  schedule:
+    - cron: '*/20 * * * *'
+  workflow_dispatch:
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Run backfill batch
+        run: |
+          RESPONSE=$(curl -s -X POST https://rip-packs-city.vercel.app/api/backfill \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            -H "Content-Type: application/json")
+          echo "Response: $RESPONSE"
+
+          STATUS=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('ok', False))")
+          MESSAGE=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('message', d.get('cursor', '')))" 2>/dev/null || echo "unknown")
+          TOTAL=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('totalOverall', 0))" 2>/dev/null || echo "0")
+
+          echo "Status: $STATUS | Message: $MESSAGE | Total: $TOTAL"
+
+          if [ "$MESSAGE" = "Backfill already complete" ]; then
+            echo "Backfill finished - disabling future runs is safe"
+          fi
+
+          if [ "$STATUS" != "True" ]; then
+            echo "::warning::Backfill batch returned ok=false"
+          fi
