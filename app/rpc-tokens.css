@@ -1,0 +1,328 @@
+/* ═══════════════════════════════════════════════════════════
+   RPC Design Tokens — Rip Packs City Brand System
+   Import in globals.css: @import "./rpc-tokens.css";
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Core Palette ─────────────────────────────────────── */
+  --rpc-red: #E03A2F;
+  --rpc-red-hover: #FF4D40;
+  --rpc-red-muted: rgba(224, 58, 47, 0.5);
+  --rpc-red-bg: rgba(224, 58, 47, 0.08);
+  --rpc-red-border: rgba(224, 58, 47, 0.3);
+  --rpc-red-glow: rgba(224, 58, 47, 0.25);
+
+  --rpc-black: #080808;
+  --rpc-surface: #0D0D0D;
+  --rpc-surface-raised: rgba(255, 255, 255, 0.03);
+  --rpc-surface-hover: rgba(255, 255, 255, 0.06);
+  --rpc-border: rgba(255, 255, 255, 0.07);
+  --rpc-border-hover: rgba(255, 255, 255, 0.12);
+  --rpc-silver: #BFC0BF;
+
+  /* ── Text ──────────────────────────────────────────────── */
+  --rpc-text-primary: #F1F1F1;
+  --rpc-text-secondary: rgba(255, 255, 255, 0.55);
+  --rpc-text-muted: rgba(255, 255, 255, 0.35);
+  --rpc-text-ghost: rgba(255, 255, 255, 0.2);
+
+  /* ── Tier Colors ──────────────────────────────────────── */
+  --tier-legendary: #FFD700;
+  --tier-legendary-bg: rgba(255, 215, 0, 0.10);
+  --tier-legendary-border: rgba(255, 215, 0, 0.30);
+
+  --tier-ultimate: #FF6B35;
+  --tier-ultimate-bg: rgba(255, 107, 53, 0.10);
+  --tier-ultimate-border: rgba(255, 107, 53, 0.30);
+
+  --tier-rare: #818CF8;
+  --tier-rare-bg: rgba(129, 140, 248, 0.10);
+  --tier-rare-border: rgba(129, 140, 248, 0.30);
+
+  --tier-fandom: #34D399;
+  --tier-fandom-bg: rgba(52, 211, 153, 0.10);
+  --tier-fandom-border: rgba(52, 211, 153, 0.30);
+
+  --tier-common: #94A3B8;
+  --tier-common-bg: rgba(148, 163, 184, 0.08);
+  --tier-common-border: rgba(148, 163, 184, 0.20);
+
+  /* ── Status Colors ────────────────────────────────────── */
+  --rpc-success: #34D399;
+  --rpc-warning: #F59E0B;
+  --rpc-danger: #F87171;
+  --rpc-info: #3B82F6;
+
+  /* ── Typography ───────────────────────────────────────── */
+  --font-display: 'Barlow Condensed', sans-serif;
+  --font-mono: 'Share Tech Mono', monospace;
+  --font-body: 'Barlow Condensed', sans-serif;
+
+  --text-xs: 9px;
+  --text-sm: 11px;
+  --text-base: 13px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
+  --text-3xl: 32px;
+
+  /* ── Spacing ──────────────────────────────────────────── */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 14px;
+  --space-lg: 20px;
+  --space-xl: 28px;
+  --space-2xl: 40px;
+
+  /* ── Radii ────────────────────────────────────────────── */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 50%;
+
+  /* ── Shadows ──────────────────────────────────────────── */
+  --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.3);
+  --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-glow-red: 0 0 20px rgba(224, 58, 47, 0.15);
+
+  /* ── Transitions ──────────────────────────────────────── */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.25s ease;
+  --transition-slow: 0.4s ease;
+
+  /* ── Z-Index Scale ────────────────────────────────────── */
+  --z-base: 1;
+  --z-dropdown: 50;
+  --z-sticky: 100;
+  --z-modal: 200;
+  --z-chat: 9000;
+  --z-toast: 9999;
+
+  /* ── Layout ───────────────────────────────────────────── */
+  --max-width: 1440px;
+}
+
+/* ── Holographic Card Shimmer ─────────────────────────────── */
+@keyframes holoShimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.rpc-holo-legendary {
+  position: relative;
+  overflow: hidden;
+}
+.rpc-holo-legendary::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 20%,
+    rgba(255, 215, 0, 0.08) 35%,
+    rgba(255, 215, 0, 0.15) 50%,
+    rgba(255, 215, 0, 0.08) 65%,
+    transparent 80%
+  );
+  background-size: 200% 100%;
+  animation: holoShimmer 4s ease-in-out infinite;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.rpc-holo-ultimate {
+  position: relative;
+  overflow: hidden;
+}
+.rpc-holo-ultimate::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 20%,
+    rgba(255, 107, 53, 0.08) 35%,
+    rgba(255, 107, 53, 0.15) 50%,
+    rgba(255, 107, 53, 0.08) 65%,
+    transparent 80%
+  );
+  background-size: 200% 100%;
+  animation: holoShimmer 3.5s ease-in-out infinite;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.rpc-holo-rare {
+  position: relative;
+  overflow: hidden;
+}
+.rpc-holo-rare::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 20%,
+    rgba(129, 140, 248, 0.06) 35%,
+    rgba(129, 140, 248, 0.12) 50%,
+    rgba(129, 140, 248, 0.06) 65%,
+    transparent 80%
+  );
+  background-size: 200% 100%;
+  animation: holoShimmer 5s ease-in-out infinite;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* ── CRT Scanline Overlay ─────────────────────────────────── */
+.rpc-scanlines::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ── Branded Skeleton Loading ─────────────────────────────── */
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 0.05; }
+  50% { opacity: 0.12; }
+}
+
+.rpc-skeleton {
+  background: rgba(224, 58, 47, 0.08);
+  border-radius: var(--radius-sm);
+  animation: skeletonPulse 1.8s ease-in-out infinite;
+}
+
+/* ── Utility Classes ──────────────────────────────────────── */
+.rpc-label {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  letter-spacing: 0.2em;
+  color: var(--rpc-text-muted);
+  text-transform: uppercase;
+}
+
+.rpc-heading {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--rpc-text-primary);
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.rpc-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  letter-spacing: 0.06em;
+}
+
+.rpc-card {
+  background: var(--rpc-surface-raised);
+  border: 1px solid var(--rpc-border);
+  border-radius: var(--radius-md);
+  transition: border-color var(--transition-fast);
+}
+.rpc-card:hover {
+  border-color: var(--rpc-border-hover);
+}
+
+.rpc-btn-primary {
+  background: linear-gradient(135deg, var(--rpc-red), #C42B22);
+  border: none;
+  color: #fff;
+  padding: 7px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.rpc-btn-primary:hover {
+  background: linear-gradient(135deg, var(--rpc-red-hover), var(--rpc-red));
+  transform: translateY(-1px);
+}
+
+.rpc-btn-ghost {
+  background: transparent;
+  border: 1px solid var(--rpc-red-border);
+  color: var(--rpc-red);
+  padding: 7px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.rpc-btn-ghost:hover {
+  background: var(--rpc-red-bg);
+}
+
+.rpc-chip {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: var(--rpc-text-secondary);
+  padding: 4px 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.1em;
+  transition: all var(--transition-fast);
+}
+.rpc-chip:hover {
+  border-color: var(--rpc-red-muted);
+  color: var(--rpc-red);
+}
+.rpc-chip.active {
+  background: var(--rpc-red-bg);
+  border-color: var(--rpc-red-muted);
+  color: var(--rpc-red);
+}
+
+/* ── HUD Box (game UI panel) ──────────────────────────────── */
+.rpc-hud {
+  border: 1px solid var(--rpc-red-border);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  position: relative;
+  background: var(--rpc-surface-raised);
+}
+.rpc-hud::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 16px;
+  width: 40px;
+  height: 2px;
+  background: var(--rpc-red);
+}
+
+/* ── Tier Stripe (card top border) ────────────────────────── */
+.rpc-tier-stripe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  opacity: 0.7;
+}
+.rpc-tier-stripe.legendary { background: var(--tier-legendary); }
+.rpc-tier-stripe.ultimate { background: var(--tier-ultimate); }
+.rpc-tier-stripe.rare { background: var(--tier-rare); }
+.rpc-tier-stripe.fandom { background: var(--tier-fandom); }
+.rpc-tier-stripe.common { background: var(--tier-common); }
