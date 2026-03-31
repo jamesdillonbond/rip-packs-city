@@ -430,7 +430,9 @@ export async function POST(req: NextRequest) {
     const ids = await getOwnedMomentIds(wallet)
     const slice = ids.slice(offset, offset + limit)
 
-    const baseRows = await mapWithConcurrency(slice, 8, async (id) => {
+    const baseRows = (await mapWithConcurrency(slice, 8, async (id) => {
+      // INVARIANT_SAFE: catch per-moment errors so one bad moment doesn't crash the whole wallet
+      try {
       const [gql, meta] = await Promise.all([
         fetchMomentGraphQL(String(id)),
         getMomentMetadata(wallet, id),
@@ -472,7 +474,36 @@ export async function POST(req: NextRequest) {
         thumbnailUrl: buildThumbnailUrl(gql.flowId),
         tssPoints: gql.tssPoints,
       } as WalletRow
-    })
+      } catch (momentErr: any) {
+        console.warn("[wallet-search] Moment " + id + " failed: " + (momentErr.message || "unknown").slice(0, 100));
+        const meta = await getMomentMetadata(wallet, id).catch(function() { return {} as Record<string,string>; });
+        return {
+          momentId: String(id),
+          playerName: meta.player || "Unknown (error loading)",
+          team: meta.team || undefined,
+          setName: meta.setName || "Unknown Set",
+          series: meta.series || undefined,
+          serial: toNum(meta.serial) ?? undefined,
+          mintSize: toNum(meta.mint) ?? undefined,
+          serialNumber: toNum(meta.serial) ?? null,
+          circulationCount: toNum(meta.mint) ?? null,
+          officialBadges: [],
+          specialSerialTraits: [],
+          isLocked: false,
+          bestAsk: null,
+          lowAsk: null,
+          bestOffer: null,
+          lastPurchasePrice: null,
+          acquiredAt: null,
+          editionKey: null,
+          parallel: null,
+          subedition: null,
+          flowId: null,
+          thumbnailUrl: null,
+          tssPoints: null,
+        } as WalletRow;
+      }
+    }))
 
     const editionCounts = new Map<string, { owned: number; locked: number }>()
     for (const row of baseRows) {
