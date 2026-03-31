@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 
 /* ================================================================== */
-/*  SupportChat v4 — page-aware welcome, cart wiring, feedback, memory */
+/*  SupportChat v5 — instant welcome, async deal loading, polish pass  */
 /* ================================================================== */
 
 interface MomentCard {
@@ -41,12 +41,8 @@ function tierColor(tier?: string): string {
     default: return "#6b7280";
   }
 }
-function sourceColor(source?: string): string {
-  return source === "flowty" ? "#06b6d4" : "#E03A2F";
-}
-function badgeIconUrl(name: string): string {
-  return `https://nbatopshot.com/img/momentTags/static/${name}.svg`;
-}
+function sourceColor(source?: string): string { return source === "flowty" ? "#06b6d4" : "#E03A2F"; }
+function badgeIconUrl(name: string): string { return `https://nbatopshot.com/img/momentTags/static/${name}.svg`; }
 
 /* ── Moment Card ───────────────────────────────────────────────── */
 function MomentCardUI({ card, onAddToCart }: { card: MomentCard; onAddToCart?: (c: MomentCard) => void }) {
@@ -106,6 +102,16 @@ function FeedbackButtons({ messageId, sessionId, dbId, feedback: initialFeedback
   );
 }
 
+/* ── Default quick suggestions by page ─────────────────────────── */
+const PAGE_DEFAULTS: Record<string, string[]> = {
+  sniper: ["Best deals right now", "Rare moments under $20", "Find me a LeBron deal", "What badges are hot?"],
+  badges: ["Most valuable badges?", "Rookie Year moments under $15", "Check badges for Wembanyama", "What is Top Shot Debut?"],
+  wallet: ["Analyze my portfolio", "What should I sell?", "My most undervalued moment?", "Sets I'm close to completing?"],
+  sets: ["Cheapest set to complete?", "What's in Run It Back?", "Best investment sets?", "Show me S8 sets"],
+  packs: ["Are packs worth buying?", "How does Pack EV work?", "Best value pack right now?", "What's inside the latest drop?"],
+};
+const DEFAULT_SUGGESTIONS = ["Find me deals under $10", "How does FMV work?", "What are badges?", "Show me top discounts"];
+
 /* ================================================================== */
 /*  Main Component                                                     */
 /* ================================================================== */
@@ -127,55 +133,69 @@ export default function SupportChat({ pageContext, userWallet, walletConnected, 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
   useEffect(() => { if (isOpen) { setTimeout(() => inputRef.current?.focus(), 300); setHasNewMessage(false); } }, [isOpen]);
 
-  // ── Load context on first open ─────────────────────────────────
+  // ── Instant welcome on open, then async context enrichment ─────
   useEffect(() => {
     if (!isOpen || contextLoaded || messages.length > 0) return;
     setContextLoaded(true);
 
-    (async () => {
-      let welcomeText = "";
-      let suggestions: string[] = [];
+    // Extract page name for defaults
+    const pageName = (pageContext || "").split("(")[0].trim().toLowerCase();
+    const defaultSuggestions = PAGE_DEFAULTS[pageName] || DEFAULT_SUGGESTIONS;
+    setQuickSuggestions(defaultSuggestions);
 
+    // Show instant static welcome — no waiting
+    const instantWelcome = walletConnected
+      ? "Hey! I'm your RPC concierge. I can find deals, analyze your portfolio, check FMV, or help you build your collection.\n\nWhat are you looking for today?"
+      : "Welcome to Rip Packs City! I can help you find deals on NBA Top Shot moments, explain how the platform works, or just chat about collecting.\n\nWhat can I help you with?";
+
+    setMessages([{ id: "welcome", role: "system", text: instantWelcome, timestamp: new Date() }]);
+
+    // Async: fetch context and append deal + memory if available
+    (async () => {
       try {
         const params = new URLSearchParams({ sessionId });
         if (pageContext) params.set("pageContext", pageContext);
         const res = await fetch(`/api/support-chat/context?${params}`);
+        if (!res.ok) return;
+        const ctx = await res.json();
 
-        if (res.ok) {
-          const ctx = await res.json();
-
-          // Page-aware welcome from context API
-          if (ctx.returningUser && ctx.lastTopics.length > 0) {
-            welcomeText = `Welcome back! Last time we chatted about ${ctx.lastTopics.join(", ")}.\n\n${ctx.pageWelcome || "What can I help with today?"}`;
-          } else {
-            welcomeText = ctx.pageWelcome || (walletConnected
-              ? "Hey! I'm your RPC concierge. I can find deals, analyze your portfolio, check FMV on any moment, or help you build your collection."
-              : "Welcome to Rip Packs City! I can help you find deals on NBA Top Shot moments, explain how the platform works, or just chat about collecting.");
-          }
-
-          // Page-aware suggestions
-          suggestions = ctx.pageSuggestions || [];
-
-          // Daily deal
-          if (ctx.dailyDeal) {
-            const d = ctx.dailyDeal;
-            welcomeText += `\n\n🔥 Top deal right now: ${d.playerName} (${d.tier}) — $${d.price?.toFixed(2)}, ${d.discountPct}% below FMV on ${d.source === "flowty" ? "Flowty" : "TopShot"}`;
-          }
-
-          // Market pulse
-          if (ctx.marketPulse) {
-            welcomeText += `\n📊 ${ctx.marketPulse}`;
-          }
+        // Update suggestions from server if available
+        if (ctx.pageSuggestions && ctx.pageSuggestions.length > 0) {
+          setQuickSuggestions(ctx.pageSuggestions);
         }
-      } catch {
-        welcomeText = walletConnected
-          ? "Hey! I'm your RPC concierge. What are you looking for today?"
-          : "Welcome to Rip Packs City! I can help you find deals, explain the platform, or chat about collecting.";
-        suggestions = ["Find me deals under $10", "How does FMV work?", "What are badges?", "Show me top discounts"];
-      }
 
-      setQuickSuggestions(suggestions);
-      setMessages([{ id: "welcome", role: "system", text: welcomeText, timestamp: new Date() }]);
+        // Build enrichment message parts
+        const parts: string[] = [];
+
+        if (ctx.returningUser && ctx.lastTopics?.length > 0) {
+          // Replace welcome with returning user version
+          setMessages((prev) => {
+            const updated = [...prev];
+            if (updated[0]?.id === "welcome") {
+              updated[0] = {
+                ...updated[0],
+                text: `Welcome back! Last time we chatted about ${ctx.lastTopics.join(", ")}.\n\nWhat can I help with today?`,
+              };
+            }
+            return updated;
+          });
+        }
+
+        if (ctx.dailyDeal) {
+          const d = ctx.dailyDeal;
+          parts.push(`🔥 Top deal: ${d.playerName} (${d.tier}) — $${d.price?.toFixed(2)}, ${d.discountPct}% below FMV on ${d.source === "flowty" ? "Flowty" : "TopShot"}`);
+        }
+        if (ctx.marketPulse) {
+          parts.push(`📊 ${ctx.marketPulse}`);
+        }
+
+        if (parts.length > 0) {
+          setMessages((prev) => [
+            ...prev,
+            { id: "market_pulse", role: "system", text: parts.join("\n"), timestamp: new Date() },
+          ]);
+        }
+      } catch { /* context fetch failed silently — static welcome already shown */ }
     })();
   }, [isOpen, contextLoaded, messages.length, walletConnected, sessionId, pageContext]);
 
@@ -275,8 +295,8 @@ export default function SupportChat({ pageContext, userWallet, walletConnected, 
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Quick Action Pills — page-aware from context API */}
-          {messages.length <= 1 && quickSuggestions.length > 0 && (
+          {/* Quick Action Pills */}
+          {messages.length <= 2 && quickSuggestions.length > 0 && !isLoading && (
             <div style={{ padding: "0 14px 8px", display: "flex", flexWrap: "wrap", gap: 6 }}>
               {quickSuggestions.map((suggestion) => (
                 <button key={suggestion} onClick={() => sendMessage(suggestion)} style={{ fontSize: 12, color: "#aaa", background: "#141414", border: "1px solid #222", padding: "6px 12px", borderRadius: 20, cursor: "pointer", transition: "border-color 0.15s, color 0.15s", whiteSpace: "nowrap" }}
