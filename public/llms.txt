@@ -1,0 +1,31 @@
+# Rip Packs City
+
+## Overview
+Rip Packs City (RPC) is a collector intelligence platform for NBA Top Shot and NFL All Day digital collectibles on the Flow blockchain. Founded by Trevor Dillon-Bond, an official Portland Trail Blazers Team Captain on NBA Top Shot.
+
+## What RPC Does
+- **Wallet Analytics**: Analyze any collector's wallet with real-time Fair Market Value (FMV), badge detection, serial premium calculations, and Flowty marketplace ask prices
+- **Sniper Feed**: Real-time deal finder that compares listings from both NBA Top Shot and Flowty marketplaces against FMV to surface undervalued moments
+- **Pack Tools**: Expected value calculator for NBA Top Shot pack drops with pull odds analysis
+- **Badge Tracker**: Explore badge editions including Top Shot Debut, Rookie Year, Championship, and computed serial badges
+- **Set Intelligence**: Track set completion progress, identify bottleneck moments, and find the cheapest completion path
+- **Public Profiles**: Shareable collector profiles with trophy cases and portfolio analytics
+
+## FMV Methodology
+RPC calculates Fair Market Value using a proprietary pipeline: weighted average price from recent sales, recency decay, sales volume confidence scoring, and serial/badge premium adjustments. FMV data is refreshed every 20 minutes via automated ingestion.
+
+## Technical Details
+- Built on Next.js with server-side rendering
+- Data stored in Supabase (PostgreSQL)
+- Flow blockchain integration via FCL (Flow Client Library)
+- Aggregates listings from NBA Top Shot marketplace and Flowty
+- Public FMV API available for partner integrations
+
+## URL Structure
+- Homepage: /
+- Collection pages: /nba-top-shot/collection, /nba-top-shot/packs, /nba-top-shot/sniper, /nba-top-shot/badges, /nba-top-shot/sets
+- Profiles: /profile/[username]
+
+## Contact
+- Twitter: @RipPacksCity
+- Website: https://rip-packs-city.vercel.app
