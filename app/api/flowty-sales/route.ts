@@ -233,6 +233,7 @@ export async function GET(req: NextRequest) {
   const stillMissing2 = nftIds.filter((id) => !momentMap.has(id));
   let gqlLookups = 0;
   let gqlHits = 0;
+  let gqlResolved = 0;
 
   if (stillMissing2.length > 0) {
     // Get NBA Top Shot collection_id from DB
@@ -257,9 +258,9 @@ export async function GET(req: NextRequest) {
           return { nftId, externalId, serialNumber };
         })
       );
-      resolvedKeys.push(
-        ...results.filter((r): r is typeof r & { externalId: string } => r.externalId !== null)
-      );
+      const resolved = results.filter((r): r is typeof r & { externalId: string } => r.externalId !== null);
+      resolvedKeys.push(...resolved);
+      gqlResolved += resolved.length;
     }
 
     // Batch look up edition UUIDs from external_ids
@@ -398,7 +399,8 @@ export async function GET(req: NextRequest) {
       skipped,
       momentsCached: momentMap.size,
       gqlLookups,
-      gqlHits,
+      gqlResolved: gqlResolved,  // how many GQL calls returned a valid externalId
+      gqlHits,                   // how many resolved externalIds existed in editions (0 in dry mode — stubs not inserted)
       sample: saleRows.slice(0, 3),
     });
   }
