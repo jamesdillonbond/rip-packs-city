@@ -2,75 +2,64 @@ name: RPC Data Pipeline
 
 on:
   schedule:
-    - cron: '*/20 * * * *'
+    - cron: "*/20 * * * *"
   workflow_dispatch:
 
 jobs:
   pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 18
+
     steps:
-      - name: Step 1 — Ingest recent sales
+      - name: Ingest — Fetch latest Top Shot sales
         run: |
-          echo "=== INGEST ==="
-          RESPONSE=$(curl -s -X POST https://rip-packs-city.vercel.app/api/ingest \
+          STATUS=$(curl -s -o /tmp/ingest.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d '{"batchSize": 50}')
-          echo "Batch 1: $RESPONSE"
-          CURSOR=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('nextCursor',''))" 2>/dev/null || echo "")
-          if [ -n "$CURSOR" ]; then
-            RESPONSE2=$(curl -s -X POST https://rip-packs-city.vercel.app/api/ingest \
-              -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-              -H "Content-Type: application/json" \
-              -d "{\"batchSize\": 50, \"cursor\": \"$CURSOR\"}")
-            echo "Batch 2: $RESPONSE2"
+            https://rip-packs-city.vercel.app/api/ingest)
+          echo "Ingest status: $STATUS"
+          cat /tmp/ingest.json
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::Ingest returned $STATUS"
           fi
 
-      - name: Step 2 — FMV recalc
+      - name: FMV Recalc — Recompute fair market values
         run: |
-          echo "=== FMV RECALC ==="
-          OFFSET=0
-          BATCH=0
-          TOTAL=0
-          while true; do
-            BATCH=$((BATCH + 1))
-            RESPONSE=$(curl -s -X POST https://rip-packs-city.vercel.app/api/fmv-recalc \
-              -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-              -H "Content-Type: application/json" \
-              -d "{\"limit\": 500, \"offset\": $OFFSET}")
-            echo "Recalc batch $BATCH: $RESPONSE"
-            HAS_MORE=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('hasMore', False))" 2>/dev/null || echo "False")
-            SNAPSHOTS=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('snapshotsUpdated', 0))" 2>/dev/null || echo "0")
-            TOTAL=$((TOTAL + SNAPSHOTS))
-            NEXT_OFFSET=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('nextOffset', 0) or 0)" 2>/dev/null || echo "0")
-            OFFSET=$NEXT_OFFSET
-            if [ "$HAS_MORE" != "True" ]; then
-              break
-            fi
-            sleep 1
-          done
-          echo "Recalc total: $TOTAL snapshots"
-
-      - name: Step 3 — Listing cache
-        run: |
-          echo "=== LISTING CACHE ==="
-          RESPONSE=$(curl -s -X POST https://rip-packs-city.vercel.app/api/listing-cache \
+          STATUS=$(curl -s -o /tmp/recalc.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            -H "Content-Type: application/json")
-          echo "Cache: $RESPONSE"
-
-      - name: Step 4 — Historical backfill
-        run: |
-          echo "=== BACKFILL ==="
-          RESPONSE=$(curl -s -X POST https://rip-packs-city.vercel.app/api/backfill \
-            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            -H "Content-Type: application/json")
-          echo "Backfill: $RESPONSE"
-          MESSAGE=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('message', ''))" 2>/dev/null || echo "")
-          if [ "$MESSAGE" = "Backfill already complete" ]; then
-            echo "Backfill finished — this step can be removed"
+            https://rip-packs-city.vercel.app/api/fmv-recalc)
+          echo "FMV recalc status: $STATUS"
+          cat /tmp/recalc.json
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::FMV recalc returned $STATUS"
           fi
 
-      - name: Pipeline complete
-        run: echo "Pipeline completed at $(date -u)"
+      - name: Listing Cache — Refresh Flowty listings
+        run: |
+          STATUS=$(curl -s -o /tmp/cache.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            https://rip-packs-city.vercel.app/api/listing-cache)
+          echo "Listing cache status: $STATUS"
+          cat /tmp/cache.json
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::Listing cache returned $STATUS"
+          fi
+
+      - name: Backfill — Ingest historical sales
+        run: |
+          STATUS=$(curl -s -o /tmp/backfill.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            https://rip-packs-city.vercel.app/api/backfill)
+          echo "Backfill status: $STATUS"
+          cat /tmp/backfill.json
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::Backfill returned $STATUS"
+          fi
+
+      - name: Social Bot — Post deals to Twitter
+        continue-on-error: true
+        run: |
+          STATUS=$(curl -s -o /tmp/social.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            https://rip-packs-city.vercel.app/api/social-bot)
+          echo "Social bot status: $STATUS"
+          cat /tmp/social.json

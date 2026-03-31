@@ -1,211 +1,183 @@
-/**
- * app/api/social-bot/route.ts
- *
- * RPC Daily Deal Bot — Phase 2
- *
- * Selects the top deals from the sniper feed, deduplicates against
- * posted_deals, generates OG card images, and posts to @RipPacksCity.
- *
- * Called by GitHub Actions cron (.github/workflows/social-bot.yml)
- * Auth: INGEST_SECRET_TOKEN (same as pipeline)
- *
- * GET /api/social-bot?secret=<token>&dry_run=1   — preview only, no posting
- * GET /api/social-bot?secret=<token>             — live post
- */
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
-import { NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-import { postTweetWithMedia } from "@/lib/twitter/post"
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const INGEST_TOKEN = process.env.INGEST_SECRET_TOKEN!;
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-) as any
+const MIN_DISCOUNT_PCT = 15;
+const MAX_TWEETS_PER_RUN = 2;
+const DEDUP_WINDOW_HOURS = 48;
 
-const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://rip-packs-city.vercel.app"
+function buildTweetText(listing: {
+  player_name: string;
+  set_name: string;
+  tier: string;
+  serial_number: number;
+  circulation_count: number;
+  ask_price: number;
+  fmv: number;
+  discount: number;
+  confidence: string;
+  buy_url: string;
+  badge_slugs?: string[];
+}): string {
+  const {
+    player_name,
+    set_name,
+    tier,
+    serial_number,
+    circulation_count,
+    ask_price,
+    fmv,
+    discount,
+    confidence,
+    buy_url,
+    badge_slugs,
+  } = listing;
 
-const MAX_POSTS = 3
-const MIN_DISCOUNT_PCT = 20
-const DEDUP_HOURS = 48
+  const tierEmoji: Record<string, string> = {
+    ULTIMATE: "🔱",
+    LEGENDARY: "🟡",
+    RARE: "🔵",
+    FANDOM: "🟣",
+    COMMON: "⚪",
+  };
 
-interface SniperDeal {
-  flowId: string
-  editionKey: string
-  playerName: string
-  setName: string
-  tier: string
-  serialNumber: number
-  totalEditions: number
-  askPrice: number
-  fmv: number
-  discountPct: number
-  badges: string[]
-  source: "topshot" | "flowty"
-  listingResourceID?: string
+  const confidenceLabel =
+    confidence === "HIGH" ? "🔥 High confidence" :
+    confidence === "MEDIUM" ? "📊 Medium confidence" :
+    "📉 Low confidence";
+
+  const badgeLine =
+    badge_slugs && badge_slugs.length > 0
+      ? `🏅 ${badge_slugs.slice(0, 3).join(" · ")}\n`
+      : "";
+
+  return [
+    `${tierEmoji[tier] ?? "⚪"} ${player_name} — ${discount.toFixed(0)}% below FMV`,
+    ``,
+    `📦 ${set_name}`,
+    `🔢 Serial #${serial_number} / ${circulation_count}`,
+    `${badgeLine}`,
+    `💰 Ask: $${ask_price.toFixed(2)} | FMV: $${fmv.toFixed(2)}`,
+    `${confidenceLabel}`,
+    ``,
+    `👉 ${buy_url}`,
+    ``,
+    `#NBATopsShot #RipPacksCity`,
+  ]
+    .join("\n")
+    .trim();
 }
 
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url)
-
-  if (searchParams.get("secret") !== process.env.INGEST_SECRET_TOKEN) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+export async function POST(req: Request) {
+  const auth = req.headers.get("authorization");
+  if (auth !== `Bearer ${INGEST_TOKEN}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const dryRun = searchParams.get("dry_run") === "1"
+  const svc = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY) as any;
 
   try {
-    // ── 1. Fetch sniper feed ──────────────────────────────────────────
-    const feedRes = await fetch(`${BASE_URL}/api/sniper-feed`, {
-      headers: { "x-internal": "social-bot" },
-    })
-    if (!feedRes.ok) throw new Error(`Sniper feed error: ${feedRes.status}`)
-    const feedData = await feedRes.json()
-    const allDeals: SniperDeal[] = feedData.deals ?? feedData.rows ?? []
+    // 1. Fetch top discounted listings
+    const { data: listings, error: listingsErr } = await svc
+      .from("cached_listings")
+      .select(
+        "id, flow_id, player_name, set_name, tier, serial_number, circulation_count, " +
+        "ask_price, fmv, adjusted_fmv, discount, confidence, source, buy_url, " +
+        "thumbnail_url, badge_slugs, listing_resource_id, storefront_address"
+      )
+      .not("fmv", "is", null)
+      .not("discount", "is", null)
+      .gte("discount", MIN_DISCOUNT_PCT)
+      .order("discount", { ascending: false })
+      .limit(20);
 
-    if (allDeals.length === 0) {
-      return NextResponse.json({ message: "No deals available", posted: 0 })
+    if (listingsErr) throw new Error(`cached_listings fetch: ${listingsErr.message}`);
+    if (!listings || listings.length === 0) {
+      return NextResponse.json({ posted: 0, reason: "no qualifying listings" });
     }
 
-    // ── 2. Filter to tweet-worthy deals ──────────────────────────────
-    const candidates = allDeals
-      .filter((d) => d.discountPct >= MIN_DISCOUNT_PCT && d.fmv > 0 && d.askPrice > 0)
-      .sort((a, b) => b.discountPct - a.discountPct)
-
-    if (candidates.length === 0) {
-      return NextResponse.json({
-        message: `No deals above ${MIN_DISCOUNT_PCT}% discount`,
-        posted: 0,
-      })
-    }
-
-    // ── 3. Dedup against posted_deals ────────────────────────────────
-    const cutoff = new Date(Date.now() - DEDUP_HOURS * 60 * 60 * 1000).toISOString()
-    const { data: recentPosts } = await supabase
+    // 2. Fetch recently posted flow_ids to dedup
+    const windowStart = new Date(
+      Date.now() - DEDUP_WINDOW_HOURS * 60 * 60 * 1000
+    ).toISOString();
+    const { data: recentPosts } = await svc
       .from("posted_deals")
-      .select("edition_key")
-      .gte("posted_at", cutoff)
+      .select("flow_id")
+      .gte("posted_at", windowStart);
 
-    const recentEditionKeys = new Set<string>(
-      (recentPosts ?? []).map((r: any) => r.edition_key)
-    )
+    const postedFlowIds = new Set((recentPosts ?? []).map((r: any) => r.flow_id));
 
-    const fresh = candidates.filter(
-      (d) => !recentEditionKeys.has(d.editionKey || d.flowId)
-    )
-
-    if (fresh.length === 0) {
-      return NextResponse.json({
-        message: "All top deals already posted recently",
-        posted: 0,
-        dedupedCount: candidates.length,
-      })
+    // 3. Filter to unposted listings
+    const candidates = listings.filter((l: any) => !postedFlowIds.has(l.flow_id));
+    if (candidates.length === 0) {
+      return NextResponse.json({ posted: 0, reason: "all qualifying listings already posted" });
     }
 
-    // ── 4. Pick top N and post ────────────────────────────────────────
-    const toPost = fresh.slice(0, MAX_POSTS)
-    const results: any[] = []
+    // 4. Post up to MAX_TWEETS_PER_RUN
+    const posted: string[] = [];
+    const errors: string[] = [];
 
-    for (const deal of toPost) {
+    for (const listing of candidates.slice(0, MAX_TWEETS_PER_RUN)) {
       try {
-        const ogParams = new URLSearchParams({
-          player: deal.playerName,
-          tier: deal.tier,
-          serial: String(deal.serialNumber),
-          listed: deal.askPrice.toFixed(2),
-          fmv: deal.fmv.toFixed(2),
-          pct: String(Math.round(deal.discountPct)),
-          source: deal.source,
-          ...(deal.badges?.[0] ? { badge: deal.badges[0] } : {}),
-        })
-        const ogUrl = `${BASE_URL}/api/og/deal?${ogParams.toString()}`
+        const tweetText = buildTweetText(listing);
 
-        const buyLink =
-          deal.source === "flowty" && deal.listingResourceID
-            ? `https://www.flowty.io/listing/${deal.listingResourceID}`
-            : `https://nbatopshot.com/marketplace/moment/${deal.flowId}`
+        const { postTweet } = await import("@/lib/twitter/post");
+        // postTweet signature: (mediaUrl: string | null, text: string)
+        const tweetResult = await postTweet(listing.thumbnail_url ?? null, tweetText);
+        const tweetId = tweetResult?.data?.id ?? null;
 
-        const badgeStr = deal.badges?.length ? ` ${deal.badges[0]}` : ""
-        const tweetText =
-          `🎯 SNIPER ALERT${badgeStr}\n\n` +
-          `${deal.playerName} — ${deal.tier}\n` +
-          `Serial #${deal.serialNumber} / ${deal.totalEditions}\n\n` +
-          `Listed: $${deal.askPrice.toFixed(2)}\n` +
-          `FMV: $${deal.fmv.toFixed(2)}\n` +
-          `🔥 ${Math.round(deal.discountPct)}% below market\n\n` +
-          `${buyLink}\n\n` +
-          `#NBAtopshot #RipPacksCity`
+        await svc.from("posted_deals").insert({
+          flow_id: listing.flow_id,
+          source: listing.source,
+          player_name: listing.player_name,
+          edition_key: listing.id,
+          listed_price: listing.ask_price,
+          fmv: listing.fmv,
+          pct_below: listing.discount,
+          tweet_id: tweetId,
+          brand: "rpc",
+        });
 
-        if (dryRun) {
-          results.push({
-            dryRun: true,
-            deal: deal.playerName,
-            pct: deal.discountPct,
-            tweetText,
-            ogUrl,
-          })
-          continue
-        }
+        await svc.from("posted_tweets").insert({
+          brand: "rpc",
+          bot_name: "deal-scheduler",
+          tweet_text: tweetText,
+          tweet_id: tweetId,
+          media_url: listing.thumbnail_url ?? null,
+          metadata: {
+            flow_id: listing.flow_id,
+            player_name: listing.player_name,
+            discount: listing.discount,
+            ask_price: listing.ask_price,
+            fmv: listing.fmv,
+            confidence: listing.confidence,
+          },
+        });
 
-        const tweetRes = await postTweetWithMedia("rpc", tweetText, ogUrl)
-
-        await supabase.from("posted_deals").insert({
-          edition_key: deal.editionKey || deal.flowId,
-          flow_id: deal.flowId,
-          player_name: deal.playerName,
-          tier: deal.tier,
-          ask_price: deal.askPrice,
-          fmv: deal.fmv,
-          discount_pct: Math.round(deal.discountPct),
-          source: deal.source,
-          tweet_id: tweetRes.data?.id ?? null,
-          posted_at: new Date().toISOString(),
-        })
-
-        if (tweetRes.data?.id) {
-          await supabase.from("posted_tweets").insert({
-            tweet_id: tweetRes.data.id,
-            brand: "rpc",
-            tweet_type: "sniper_deal",
-            text: tweetText,
-            metadata: {
-              player: deal.playerName,
-              tier: deal.tier,
-              discountPct: Math.round(deal.discountPct),
-            },
-            posted_at: new Date().toISOString(),
-          })
-        }
-
-        results.push({
-          success: true,
-          deal: deal.playerName,
-          pct: deal.discountPct,
-          tweetId: tweetRes.data?.id,
-        })
-
-        if (toPost.indexOf(deal) < toPost.length - 1) {
-          await new Promise((r) => setTimeout(r, 8000))
-        }
-      } catch (err: any) {
-        console.error(`[social-bot] Failed to post ${deal.playerName}:`, err.message)
-        results.push({ success: false, deal: deal.playerName, error: err.message })
+        posted.push(`${listing.player_name} (${listing.discount.toFixed(0)}% below FMV)`);
+        console.log(`[social-bot] Posted: ${listing.player_name} — ${listing.discount.toFixed(0)}% off, tweet_id: ${tweetId}`);
+      } catch (e: any) {
+        const msg = `Failed to post ${listing.player_name}: ${e.message}`;
+        errors.push(msg);
+        console.error(`[social-bot] ${msg}`);
       }
     }
 
-    const posted = results.filter((r) => r.success || r.dryRun).length
-    console.log(
-      `[social-bot] Run complete. Posted: ${posted}/${toPost.length}. DryRun: ${dryRun}`
-    )
-
     return NextResponse.json({
-      posted,
-      dryRun,
-      results,
-      candidatesFound: candidates.length,
-      freshDeals: fresh.length,
-    })
-  } catch (err: any) {
-    console.error("[social-bot] Fatal error:", err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+      posted: posted.length,
+      deals: posted,
+      errors,
+      candidates_available: candidates.length,
+    });
+  } catch (e: any) {
+    console.error("[social-bot] Fatal error:", e.message);
+    return NextResponse.json({ error: e.message }, { status: 500 });
   }
+}
+
+export async function GET() {
+  return NextResponse.json({ message: "Use POST with Authorization header to run the social bot" });
 }
