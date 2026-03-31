@@ -45,7 +45,7 @@ function cleanupRateLimitMap() {
 
 let lastCleanup = Date.now();
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (Date.now() - lastCleanup > 300_000) {
