@@ -1,9 +1,3 @@
-import { collectionPageMetadata } from "@/lib/seo"
-
-export function generateMetadata({ params }: { params: { collection: string } }) {
-  return collectionPageMetadata(params.collection, "collection")
-}
-
 "use client"
 
 import { Fragment, useMemo, useState, useEffect, useCallback, Suspense } from "react"
