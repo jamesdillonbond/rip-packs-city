@@ -3,7 +3,7 @@ import Link from "next/link"
 import { getPublishedCollection, publishedCollections, type Collection } from "@/lib/collections"
 import { CollectionTabBar } from "@/components/collection-tab-bar"
 import { CartButton } from "@/components/cart/CartButton"
-import SupportChat from "@/components/SupportChat"
+import SupportChatConnected from "@/components/SupportChatConnected"
 
 // ── Per-collection SEO metadata ────────────────────────────────────────────────
 const COLLECTION_META: Record<string, { title: string; description: string }> = {
@@ -85,7 +85,7 @@ export default async function CollectionLayout(props: any) {
       <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
         {props.children}
       </main>
-      <SupportChat />
+      <SupportChatConnected />
     </div>
   )
 }
