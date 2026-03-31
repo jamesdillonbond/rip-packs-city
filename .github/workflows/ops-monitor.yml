@@ -1,0 +1,57 @@
+name: RPC Ops Monitor
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  fmv-staleness:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check FMV staleness
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            "https://rip-packs-city.vercel.app/api/cron/stale-fmv-monitor")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+          
+          STATUS=$(echo "$BODY" | jq -r '.status' 2>/dev/null)
+          
+          if [ "$STATUS" = "stale" ]; then
+            echo "::warning::FMV data is stale! $(echo $BODY | jq -r '.fmv_staleness_minutes') minutes since last compute."
+          fi
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Health check returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+  data-integrity:
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 6 * * *' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Check data integrity
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            "https://rip-packs-city.vercel.app/api/cron/data-integrity")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+          
+          ISSUE_COUNT=$(echo "$BODY" | jq -r '.issue_count' 2>/dev/null)
+          
+          if [ "$ISSUE_COUNT" != "0" ] && [ "$ISSUE_COUNT" != "null" ]; then
+            echo "::warning::$ISSUE_COUNT data integrity issues found"
+            echo "$BODY" | jq -r '.issues[]' 2>/dev/null
+          fi
