@@ -726,7 +726,7 @@ function SetsProgressWidget(props: { savedWallets: SavedWallet[] }) {
           {props.savedWallets[0]?.username && <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.25)" }}>{"— " + props.savedWallets[0].username}</span>}
         </div>
         <div style={{ display: "flex", gap: 6 }}>
-          {loaded && <button onClick={function() { router.push("/sets?wallet=" + encodeURIComponent(props.savedWallets[0].username ?? props.savedWallets[0].wallet_addr)); }} style={Object.assign({}, btnBase, { fontSize: 9, color: "#F472B6", borderColor: "rgba(244,114,182,0.3)", background: "rgba(244,114,182,0.1)" })}>{"Full Sets →"}</button>}
+          {loaded && <button onClick={function() { router.push("/nba-top-shot/sets?wallet=" + encodeURIComponent(props.savedWallets[0].username ?? props.savedWallets[0].wallet_addr)); }} style={Object.assign({}, btnBase, { fontSize: 9, color: "#F472B6", borderColor: "rgba(244,114,182,0.3)", background: "rgba(244,114,182,0.1)" })}>{"Full Sets →"}</button>}
           {!loaded && <button onClick={loadSets} disabled={loading} style={Object.assign({}, btnBase, { fontSize: 9, opacity: loading ? 0.6 : 1 })}>{loading ? "Loading…" : "Load Sets"}</button>}
         </div>
       </div>
@@ -984,7 +984,7 @@ export default function ProfilePage() {
     const q = val.trim();
     if (!q) return;
     recordSearch(q);
-    router.push("/wallet?q=" + encodeURIComponent(q));
+    router.push("/nba-top-shot/collection?q=" + encodeURIComponent(q));
   }
 
   async function handleAddWallet(input: string) {
@@ -1009,7 +1009,7 @@ export default function ProfilePage() {
   function handleLoadWallet(addr: string, username?: string) {
     const q = username ?? addr;
     recordSearch(q, "wallet");
-    router.push("/wallet?q=" + encodeURIComponent(q));
+    router.push("/nba-top-shot/collection?q=" + encodeURIComponent(q));
   }
 
   async function handleRemoveTrophy(slot: number) {
@@ -1029,6 +1029,7 @@ export default function ProfilePage() {
     { label: "Trophy Case", value: trophies.filter(Boolean).length + " / " + MAX_SLOTS, sub: "pinned moments", change: "Your best", up: true, icon: "🏆", color: "#F59E0B" },
     { label: "Live Deals", value: sniperLoading ? "…" : (sniperRows.length + " below FMV"), sub: "sniper preview", change: "Live", up: true, icon: "⚡", color: "#34D399" },
     { label: "Searches", value: String(recentSearches.length), sub: "saved queries", change: "Synced", up: true, icon: "⌕", color: "#3B82F6" },
+    { label: "RPC Score", value: savedWallets[0]?.cached_rpc_score != null ? String(savedWallets[0].cached_rpc_score) : "—", sub: "collector rank", change: "Beta", up: true, icon: "○", color: "#E03A2F" },
   ];
 
   const navItems = [
@@ -1218,7 +1219,7 @@ export default function ProfilePage() {
                   <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#34D399", animation: "pulse 2s infinite" }} />
                   <span style={labelStyle}>Live Sniper — Below FMV</span>
                 </div>
-                <button onClick={function() { router.push("/sniper"); }} style={Object.assign({}, btnBase, { background: "rgba(52,211,153,0.1)", color: "#34D399", borderColor: "rgba(52,211,153,0.25)", fontSize: 9 })}>{"Full Sniper →"}</button>
+                <button onClick={function() { router.push("/nba-top-shot/sniper"); }} style={Object.assign({}, btnBase, { background: "rgba(52,211,153,0.1)", color: "#34D399", borderColor: "rgba(52,211,153,0.25)", fontSize: 9 })}>{"Full Sniper →"}</button>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px 60px 62px", padding: "7px 14px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                 {["Moment", "Tier", "Ask", "FMV", "Disc%"].map(function(h, i) { return <span key={h} style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", letterSpacing: "0.15em", textAlign: i === 0 ? "left" : "right" }}>{h}</span>; })}
@@ -1230,7 +1231,7 @@ export default function ProfilePage() {
               ) : sniperRows.map(function(row, i) {
                 const tc = tierColor(row.tier);
                 return (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px 60px 62px", alignItems: "center", padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)", cursor: "pointer", transition: "background 0.15s" }} onMouseEnter={function(e) { e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }} onMouseLeave={function(e) { e.currentTarget.style.background = "transparent"; }} onClick={function() { router.push("/sniper"); }}>
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px 60px 62px", alignItems: "center", padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)", cursor: "pointer", transition: "background 0.15s" }} onMouseEnter={function(e) { e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }} onMouseLeave={function(e) { e.currentTarget.style.background = "transparent"; }} onClick={function() { router.push("/nba-top-shot/sniper"); }}>
                     <div>
                       <div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: "#fff" }}>{row.player}</div>
                       <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)" }}>{row.set + " · " + row.serial}</div>
