@@ -71,6 +71,10 @@ export function proxy(request: NextRequest) {
       });
     }
 
+      // BEARER_EXEMPT: skip rate limiting for authenticated bot/pipeline requests
+      const authHeader = request.headers.get("authorization") || "";
+      const isBotRequest = authHeader === `Bearer ${process.env.INGEST_SECRET_TOKEN}`;
+      if (isBotRequest) return NextResponse.next();
     if (!pathname.startsWith("/api/cron") && !pathname.startsWith("/api/ingest")) {
       const clientKey = getRateLimitKey(request);
       if (isRateLimited(clientKey)) {
