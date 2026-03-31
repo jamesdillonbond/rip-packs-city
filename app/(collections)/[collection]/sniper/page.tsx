@@ -328,18 +328,6 @@ export default function SniperPage() {
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(false);
 
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
-  const [mode, setMode] = useState<'deals' | 'offers'>('deals');
-  const [offers, setOffers] = useState<any[]>([]);
-  const [offersLoading, setOffersLoading] = useState(false);
-  const fetchOffers = useCallback(async () => {
-    setOffersLoading(true);
-    try {
-      const res = await fetch('/api/flowty-offers');
-      if (res.ok) { const d = await res.json(); setOffers(d.offers ?? []); }
-    } catch {}
-    setOffersLoading(false);
-  }, []);
-  useEffect(() => { if (mode === 'offers' && offers.length === 0) fetchOffers(); }, [mode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -480,79 +468,6 @@ export default function SniperPage() {
               </button>
             </div>
           </div>
-
-          {/* Mode toggle */}
-          <div className="flex items-center gap-2 mb-4">
-            {(['deals', 'offers'] as const).map((m) => (
-              <button key={m} onClick={() => setMode(m)}
-                style={mode === m ? { backgroundColor: ACCENT + '22', color: ACCENT, borderColor: ACCENT + '80' } : {}}
-                className={"px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all border " + (mode === m ? "border-transparent" : "bg-slate-800/60 text-slate-400 border-slate-700/50 hover:border-slate-600")}>
-                {m === 'deals' ? '⚡ Deals' : '🤝 Offers'}
-              </button>
-            ))}
-            {mode === 'offers' && (
-              <button onClick={fetchOffers} disabled={offersLoading}
-                className="ml-auto text-xs px-3 py-1.5 rounded-lg border text-[#E03A2F] border-[#E03A2F]/40 bg-[#E03A2F]/10 hover:bg-[#E03A2F]/20 transition-colors disabled:opacity-50">
-                {offersLoading ? '↻ Loading…' : '↻ Refresh'}
-              </button>
-            )}
-          </div>
-
-          {/* Offers table */}
-          {mode === 'offers' && (
-            <div className="overflow-x-auto rounded-xl border border-slate-800/60">
-              {offersLoading && offers.length === 0 ? (
-                <div className="py-16 text-center text-slate-500 text-sm">Loading offers…</div>
-              ) : offers.length === 0 ? (
-                <div className="py-16 text-center text-slate-500 text-sm">No open offers found</div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-800/60 bg-slate-900/60">
-                      <th className="text-left px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Moment</th>
-                      <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Offer</th>
-                      <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">FMV</th>
-                      <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">vs FMV</th>
-                      <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Buyer</th>
-                      <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/40">
-                    {offers.map((o: any, i: number) => {
-                      const pctNum = o.fmv && o.fmv > 0 ? Math.round((o.amount / o.fmv) * 100) : null;
-                      const isAbove = pctNum !== null && pctNum >= 100;
-                      return (
-                        <tr key={o.offerResourceId + i} className="hover:bg-slate-800/30 transition-colors">
-                          <td className="px-3 py-2">
-                            <div className="font-semibold text-slate-200 leading-tight">{o.playerName ?? ('NFT #' + o.nftId)}</div>
-                            <div className="text-xs text-slate-500 mt-0.5">Flow ID: {o.nftId}</div>
-                          </td>
-                          <td className="px-3 py-2 text-right font-mono font-semibold text-emerald-400">{'$'}{Number(o.amount).toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right font-mono text-slate-400">{o.fmv ? ('$' + Number(o.fmv).toFixed(2)) : '—'}</td>
-                          <td className="px-3 py-2 text-right">
-                            {pctNum !== null ? (
-                              <span className={"text-xs font-bold px-2 py-0.5 rounded " + (isAbove ? "bg-emerald-500/15 text-emerald-400" : "bg-slate-700/50 text-slate-400")}>
-                                {pctNum}% of FMV
-                              </span>
-                            ) : '—'}
-                          </td>
-                          <td className="px-3 py-2 text-right font-mono text-xs text-slate-500">{o.buyer ? o.buyer.slice(0, 8) + '…' : '—'}</td>
-                          <td className="px-3 py-2 text-right">
-                            <a href={'https://www.flowty.io/offer/' + o.offerResourceId}
-                              target="_blank" rel="noopener noreferrer"
-                              className="text-xs px-3 py-1.5 rounded-lg border text-[#00D4AA] border-[#00D4AA]/40 bg-[#00D4AA]/10 hover:bg-[#00D4AA]/20 transition-colors">
-                              View →
-                            </a>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-
 
           {/* Tier tabs */}
           <div className="flex items-center gap-1 mb-4 flex-wrap">
@@ -760,6 +675,8 @@ export default function SniperPage() {
                           <>
                             <span className="text-xs text-slate-600">·</span>
                             <span className="text-xs text-slate-600">{deal.seriesName}</span>
+                          </>
+                        )}
                         {deal.teamName && (
                           <>
                             <span className="text-xs text-slate-600">·</span>
