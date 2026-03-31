@@ -1,9 +1,8 @@
-﻿name: FMV Recalc
+name: FMV Recalc
 
 on:
   schedule:
-    # Run once daily at 6am UTC
-    - cron: '0 6 * * *'
+    - cron: '*/20 * * * *'
   workflow_dispatch:
 
 jobs:
