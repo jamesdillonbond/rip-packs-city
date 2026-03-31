@@ -254,7 +254,7 @@ async function fetchTSPage(
     } else if (dataField?.data && Array.isArray(dataField.data)) {
       listings.push(...dataField.data);
     }
-    console.warn(`[sniper-feed] TS page sortBy=${sortBy} listings=${listings.length} cursor=${cursor.slice(0, 20) || "start"}`);
+    console.log(`[sniper-feed] TS page sortBy=${sortBy} listings=${listings.length}`);
     return { listings, nextCursor };
   } catch (err) {
     console.error(`[sniper-feed] TS page FAILED sortBy=${sortBy}: ${err instanceof Error ? err.message : String(err)}`);
@@ -279,7 +279,7 @@ async function fetchTopShotPool(): Promise<{ listings: RawListing[]; tsCount: nu
   if (r1.status === "fulfilled") add(r1.value.listings);
   if (r2.status === "fulfilled") add(r2.value.listings);
 
-  console.warn(`[sniper-feed] TS pool: p1=${r1.status === "fulfilled" ? r1.value.listings.length : "FAIL"} p2=${r2.status === "fulfilled" ? r2.value.listings.length : "FAIL"} total=${all.length}`);
+  console.log(`[sniper-feed] TS pool: p1=${r1.status === "fulfilled" ? r1.value.listings.length : "FAIL"} p2=${r2.status === "fulfilled" ? r2.value.listings.length : "FAIL"} total=${all.length}`);
   return { listings: all, tsCount: all.length };
 }
 
@@ -320,12 +320,7 @@ interface FlowtyListing {
   isLocked: boolean;
 }
 
-function getTrait(traits: Array<{ name: string; value: string }> | undefined, name: string): string {
-  return traits?.find((t) => t.name === name)?.value ?? "";
-}
-
-// Flowty trait names — verified from live API response inspection
-// The traits array uses these exact name strings:
+// Multi-key trait lookup: tries each key name variant in order
 const FLOWTY_TRAIT_MAP: Record<string, string[]> = {
   setName:      ["SetName", "setName", "Set Name", "set_name"],
   teamName:     ["TeamAtMoment", "teamAtMoment", "Team", "team"],
@@ -365,17 +360,21 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
       signal: controller.signal,
     });
     clearTimeout(timeout);
-    if (!res.ok) { console.warn(`[sniper-feed] Flowty HTTP ${res.status} from=${from}`); return []; }
+    if (!res.ok) { console.error(`[sniper-feed] Flowty HTTP ${res.status} from=${from}`); return []; }
     const json = await res.json();
     const rawItems: FlowtyNftItem[] = json?.nfts ?? json?.data ?? [];
 
-    // Log trait keys from first item to help debug field name mismatches
+    // Log actual trait keys from first item so we can verify field names in Vercel logs
     if (from === 0 && rawItems.length > 0) {
       const firstTraits = rawItems[0].nftView?.traits ?? [];
-      console.warn(`[sniper-feed] Flowty trait keys sample: ${firstTraits.map(t => t.name).join(", ")}`);
+      console.log(`[sniper-feed] Flowty trait keys: ${firstTraits.map(t => t.name).join(", ")}`);
+      // Also log a sample set/team value to verify enrichment
+      const sampleSetName = getTraitMulti(firstTraits, FLOWTY_TRAIT_MAP.setName);
+      const sampleTeam = getTraitMulti(firstTraits, FLOWTY_TRAIT_MAP.teamName);
+      console.log(`[sniper-feed] Flowty sample setName="${sampleSetName}" teamName="${sampleTeam}"`);
     }
 
-    console.warn(`[sniper-feed] Flowty from=${from}: rawItems=${rawItems.length}`);
+    console.log(`[sniper-feed] Flowty from=${from}: rawItems=${rawItems.length}`);
     const listings: FlowtyListing[] = [];
     let nullFmvCount = 0;
     for (const item of rawItems) {
@@ -389,14 +388,6 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
       const livetokenFmv = item.valuations?.blended?.usdValue ?? item.valuations?.livetoken?.usdValue ?? null;
       if (!livetokenFmv || livetokenFmv <= 0) { nullFmvCount++; }
 
-      // Use multi-key lookup for all trait fields to handle any naming variation
-      const rawSetName = getTraitMulti(traits, FLOWTY_TRAIT_MAP.setName);
-      const rawTeamName = getTraitMulti(traits, FLOWTY_TRAIT_MAP.teamName);
-      const rawTier = getTraitMulti(traits, FLOWTY_TRAIT_MAP.tier);
-      const rawSeriesNumber = getTraitMulti(traits, FLOWTY_TRAIT_MAP.seriesNumber);
-      const rawLocked = getTraitMulti(traits, FLOWTY_TRAIT_MAP.locked);
-      const rawFullName = getTraitMulti(traits, FLOWTY_TRAIT_MAP.fullName);
-
       listings.push({
         momentId: String(item.id),
         listingResourceID: order.listingResourceID,
@@ -404,19 +395,19 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
         price: order.salePrice,
         livetokenFmv: (livetokenFmv && livetokenFmv > 0) ? livetokenFmv : null,
         blockTimestamp: order.blockTimestamp ?? 0,
-        playerName: item.card?.title ?? rawFullName ?? "",
+        playerName: item.card?.title ?? getTraitMulti(traits, FLOWTY_TRAIT_MAP.fullName) ?? "",
         serial,
         circulationCount: circ,
-        setName: rawSetName,
-        teamName: rawTeamName,
-        tier: (rawTier || "COMMON").toUpperCase(),
-        seriesNumber: parseInt(rawSeriesNumber || "0", 10),
+        setName: getTraitMulti(traits, FLOWTY_TRAIT_MAP.setName),
+        teamName: getTraitMulti(traits, FLOWTY_TRAIT_MAP.teamName),
+        tier: (getTraitMulti(traits, FLOWTY_TRAIT_MAP.tier) || "COMMON").toUpperCase(),
+        seriesNumber: parseInt(getTraitMulti(traits, FLOWTY_TRAIT_MAP.seriesNumber) || "0", 10),
         subeditionId: subStr ? parseInt(subStr, 10) || 0 : 0,
-        isLocked: rawLocked === "true",
+        isLocked: getTraitMulti(traits, FLOWTY_TRAIT_MAP.locked) === "true",
       });
     }
     if (nullFmvCount > 0) {
-      console.warn(`[sniper-feed] Flowty from=${from}: ${nullFmvCount}/${rawItems.length} items have null/zero LiveToken FMV`);
+      console.log(`[sniper-feed] Flowty from=${from}: ${nullFmvCount}/${rawItems.length} items have null/zero LiveToken FMV`);
     }
     return listings;
   } catch (err) {
@@ -434,46 +425,55 @@ async function fetchAllFlowtyListings(): Promise<FlowtyListing[]> {
 }
 
 // ─── Badge enrichment for Flowty deals ───────────────────────────────────────
-// Since Flowty listings have no tag/badge data from the API, we enrich by
-// looking up player names in Supabase badge_editions table.
+// Fetches the entire badge_editions table and matches in JS.
+// Avoids .or() ilike filter syntax issues with apostrophes/accents in player names.
+// Safe because badge_editions is a small table (hundreds of rows).
 
 interface BadgeRow {
   player_name: string;
   badge_type: string;
-  series_number: number | null;
 }
 
 async function fetchBadgesByPlayers(
   supabase: SupabaseClient,
   playerNames: string[]
 ): Promise<Map<string, string[]>> {
-  // Returns Map<normalizedPlayerName, badgeType[]>
   if (!playerNames.length) return new Map();
-
-  // Build OR filter: ilike for case-insensitive match
-  const orFilter = playerNames
-    .map(n => `player_name.ilike.${n.trim()}`)
-    .join(",");
 
   const { data, error } = await (supabase as any)
     .from("badge_editions")
-    .select("player_name, badge_type, series_number")
-    .or(orFilter);
+    .select("player_name, badge_type");
 
   if (error) {
-    console.warn(`[sniper-feed] badge_editions lookup error: ${error.message}`);
+    console.error(`[sniper-feed] badge_editions fetch error: ${error.message}`);
     return new Map();
   }
 
-  const map = new Map<string, string[]>();
-  for (const row of (data ?? []) as BadgeRow[]) {
+  const rows = (data ?? []) as BadgeRow[];
+  console.log(`[sniper-feed] badge_editions total rows: ${rows.length}`);
+
+  // Build normalized lookup: lowercased player_name -> badge_type[]
+  const allBadges = new Map<string, string[]>();
+  for (const row of rows) {
     const key = row.player_name.toLowerCase().trim();
-    if (!map.has(key)) map.set(key, []);
-    map.get(key)!.push(row.badge_type);
+    if (!allBadges.has(key)) allBadges.set(key, []);
+    allBadges.get(key)!.push(row.badge_type);
   }
 
-  console.warn(`[sniper-feed] badge_editions: ${map.size} players with badges out of ${playerNames.length} queried`);
-  return map;
+  // Match against the player names we care about
+  const result = new Map<string, string[]>();
+  let hitCount = 0;
+  for (const name of playerNames) {
+    const key = name.toLowerCase().trim();
+    const badges = allBadges.get(key);
+    if (badges?.length) {
+      result.set(key, badges);
+      hitCount++;
+    }
+  }
+
+  console.log(`[sniper-feed] badge_editions: ${hitCount}/${playerNames.length} players matched`);
+  return result;
 }
 
 // ─── Supabase FMV lookup ──────────────────────────────────────────────────────
@@ -490,7 +490,7 @@ async function fetchFmvBatch(
     .in("external_id", integerKeys);
 
   if (!editionRows?.length) {
-    console.warn(`[sniper-feed] Supabase editions: 0 hits for ${integerKeys.length} integer keys`);
+    console.log(`[sniper-feed] Supabase editions: 0 hits for ${integerKeys.length} integer keys`);
     return new Map();
   }
 
@@ -508,7 +508,7 @@ async function fetchFmvBatch(
     .order("computed_at", { ascending: false });
 
   if (!fmvRows?.length) {
-    console.warn(`[sniper-feed] Supabase FMV: 0 snapshots for ${editionRows.length} editions`);
+    console.log(`[sniper-feed] Supabase FMV: 0 snapshots for ${editionRows.length} editions`);
     return new Map();
   }
 
@@ -536,7 +536,7 @@ async function fetchFmvBatch(
     });
   }
 
-  console.warn(`[sniper-feed] Supabase FMV hits: ${map.size}/${integerKeys.length}`);
+  console.log(`[sniper-feed] Supabase FMV hits: ${map.size}/${integerKeys.length}`);
   return map;
 }
 
@@ -590,6 +590,8 @@ export async function GET(req: Request) {
     fetchTopShotPool(),
     fetchAllFlowtyListings(),
   ]);
+
+  console.log(`[sniper-feed] fetched ts=${tsListings.length} flowty=${flowtyListings.length}`);
 
   // 2. Build integer edition keys for Supabase FMV lookup (TS only)
   const tsEditionKeys = new Set<string>();
@@ -710,7 +712,7 @@ export async function GET(req: Request) {
     });
   }
 
-  // 6. Enrich Flowty listings (with badge lookup)
+  // 6. Enrich Flowty listings (with badge lookup from badgeMap)
   const flowtyDeals: SniperDeal[] = [];
   for (const item of flowtyListings) {
     const askPrice = item.price;
@@ -739,15 +741,12 @@ export async function GET(req: Request) {
       : Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10;
     if (discount < minDiscount) continue;
 
-    // Badge lookup by player name (case-insensitive)
+    // Badge lookup by normalized player name
     const playerKey = item.playerName.toLowerCase().trim();
     const playerBadges = badgeMap.get(playerKey) ?? [];
-    // Normalize badge types to known slug format
     const badgeSlugs = playerBadges
       .map(b => {
-        // badge_type may be stored as slug or display name — normalize both
         if (KNOWN_BADGES.has(b)) return b;
-        // Try mapping display name variants
         const displayMatch = Object.keys(BADGE_LABELS).find(
           k => BADGE_LABELS[k].toLowerCase() === b.toLowerCase()
         );
@@ -802,6 +801,8 @@ export async function GET(req: Request) {
     });
   }
 
+  console.log(`[sniper-feed] built ts=${tsDeals.length} flowty=${flowtyDeals.length}`);
+
   // 7. Merge — Flowty wins on dedup by flowId
   const seen = new Set<string>();
   const allDeals: SniperDeal[] = [];
@@ -828,9 +829,10 @@ export async function GET(req: Request) {
     return b.discount - a.discount;
   });
 
-  console.warn(
+  const badgedCount = sorted.filter(d => d.hasBadge).length;
+  console.log(
     `[sniper-feed] DONE ts=${tsDeals.length} flowty=${flowtyDeals.length} total=${sorted.length} ` +
-    `fmv_hits=${fmvMap.size} badge_players=${badgeMap.size} flowtyRaw=${flowtyListings.length}`
+    `badged=${badgedCount} fmv_hits=${fmvMap.size} badge_players=${badgeMap.size}`
   );
 
   // ── CACHE FALLBACK: if live feeds returned 0, read from Supabase cached_listings ──
@@ -896,7 +898,7 @@ export async function GET(req: Request) {
         );
       }
     } catch (cacheErr) {
-      console.log("[sniper-feed] Cache fallback error: " + cacheErr);
+      console.error("[sniper-feed] Cache fallback error: " + cacheErr);
     }
   }
 
