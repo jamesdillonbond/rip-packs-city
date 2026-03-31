@@ -1,0 +1,31 @@
+name: Pipeline Sentinel
+
+on:
+  schedule:
+    - cron: '30 * * * *'
+  workflow_dispatch:
+
+jobs:
+  sentinel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Run Pipeline Sentinel
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST https://rip-packs-city.vercel.app/api/sentinel \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            -H "Content-Type: application/json")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          STATUS=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','UNKNOWN'))" 2>/dev/null || echo "PARSE_ERROR")
+          echo "Pipeline Status: $STATUS"
+
+          if [ "$STATUS" = "CRITICAL" ]; then
+            echo "::error::Pipeline Sentinel detected CRITICAL issues"
+            exit 1
+          fi
