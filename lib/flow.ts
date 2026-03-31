@@ -38,5 +38,8 @@ export function initFcl() {
   fcl.config(IS_MAINNET ? MAINNET_CONFIG : TESTNET_CONFIG)
 }
 
+// AUTO-INIT: ensure FCL is configured on first import (prevents INVARIANT errors on cold starts)
+initFcl()
+
 // Default export for compatibility with any existing imports of this module
 export default fcl
