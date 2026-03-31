@@ -8,73 +8,39 @@ const supabase = createClient(
 
 const TOPSHOT_GQL = "https://public-api.nbatopshot.com/graphql"
 
-// Query a single moment listing to get setID + playID integers from a UUID-format external_id.
-// We look up by playUuid using searchMomentListings which is known to work from the sniper feed.
-const GET_EDITION_IDS = `
-  query GetEditionIds($playID: ID!, $setID: ID!) {
-    getEditionByPlayAndSet(input: { playID: $playID, setID: $setID }) {
+const GET_SET_PLAY_IDS = `
+  query GetSetPlayIds($setID: ID!, $playID: ID!) {
+    getEditionByPlayAndSet(input: { setID: $setID, playID: $playID }) {
       id
-      play { id stats { playerID } }
-      set { id flowName flowID }
-      flowID
+      set { id flowID }
+      play { id flowID }
     }
   }
 `
 
-// Fallback: use searchMomentListings with a filter to get one moment and extract setID/playID
-const SEARCH_BY_EDITION = `
-  query SearchByEdition($setID: String!, $playID: String!) {
-    searchMomentListings(
-      input: {
-        filters: { byEditions: [{ setID: $setID, playID: $playID }] }
-        sortBy: { field: UPDATED_AT, direction: DESC }
-        pagination: { cursor: "", direction: AFTER, limit: 1 }
-      }
-    ) {
-      data {
-        moment {
-          flowRetired
-          setPlay { setID playID}
-        }
-      }
-    }
-  }
-`
-
-async function resolveFromUuids(
+async function resolveOnChainIds(
   setUuid: string,
   playUuid: string
 ): Promise<{ setIdOnchain: number; playIdOnchain: number } | null> {
   try {
-    // Try primary query first
     const res = await fetch(TOPSHOT_GQL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        operationName: "SearchByEdition",
-        query: SEARCH_BY_EDITION,
+        operationName: "GetSetPlayIds",
+        query: GET_SET_PLAY_IDS,
         variables: { setID: setUuid, playID: playUuid },
       }),
     })
     if (!res.ok) return null
     const json = await res.json()
-
-    const moments = json?.data?.searchMomentListings?.data
-    if (moments && moments.length > 0) {
-      const sp = moments[0]?.moment?.setPlay
-      if (sp) {
-        const setIdOnchain  = parseInt(sp.setID,  10)
-        const playIdOnchain = parseInt(sp.playID, 10)
-        if (!isNaN(setIdOnchain) && !isNaN(playIdOnchain)) {
-          return { setIdOnchain, playIdOnchain }
-        }
-      }
-    }
-    return null
-  } catch (e) {
-    console.error("resolveFromUuids error:", e)
-    return null
-  }
+    const edition = json?.data?.getEditionByPlayAndSet
+    if (!edition) return null
+    const setIdOnchain  = parseInt(edition.set?.flowID,  10)
+    const playIdOnchain = parseInt(edition.play?.flowID, 10)
+    if (isNaN(setIdOnchain) || isNaN(playIdOnchain)) return null
+    return { setIdOnchain, playIdOnchain }
+  } catch { return null }
 }
 
 export async function GET(req: Request) {
@@ -100,34 +66,18 @@ export async function GET(req: Request) {
 
   let updated = 0
   let failed  = 0
-  let direct  = 0
   const errors: string[] = []
 
   for (const edition of editions) {
-    const extId = edition.external_id as string
-    const parts = extId.split(":")
+    const parts = (edition.external_id as string).split(":")
     if (parts.length !== 2) { failed++; continue }
+    const [setUuid, playUuid] = parts
 
-    const [left, right] = parts
-    let ids: { setIdOnchain: number; playIdOnchain: number } | null = null
-
-    // Check if already integers (old format like "37:1199")
-    const leftInt  = parseInt(left,  10)
-    const rightInt = parseInt(right, 10)
-
-    if (!isNaN(leftInt) && !isNaN(rightInt) && String(leftInt) === left && String(rightInt) === right) {
-      // Already in setId:playId integer format — use directly
-      ids = { setIdOnchain: leftInt, playIdOnchain: rightInt }
-      direct++
-    } else {
-      // UUID format — query Top Shot GQL
-      ids = await resolveFromUuids(left, right)
-      if (!ids) {
-        failed++
-        if (errors.length < 10) errors.push(`Failed: ${extId}`)
-        continue
-      }
-      await new Promise((r) => setTimeout(r, 50)) // rate limit only for GQL calls
+    const ids = await resolveOnChainIds(setUuid, playUuid)
+    if (!ids) {
+      failed++
+      errors.push(`Failed: ${edition.external_id}`)
+      continue
     }
 
     const { error: updateErr } = await supabase
@@ -137,23 +87,25 @@ export async function GET(req: Request) {
 
     if (updateErr) {
       failed++
-      if (errors.length < 10) errors.push(`Update failed ${edition.id}: ${updateErr.message}`)
+      errors.push(`Update failed for ${edition.id}: ${updateErr.message}`)
     } else {
       updated++
-      // Denorm to sets table
-      if (edition.set_id) {
-        await supabase.from("sets")
-          .update({ set_id_onchain: ids.setIdOnchain })
-          .eq("id", edition.set_id)
-          .is("set_id_onchain", null)
-      }
     }
+
+    if (edition.set_id) {
+      await supabase.from("sets")
+        .update({ set_id_onchain: ids.setIdOnchain })
+        .eq("id", edition.set_id)
+        .is("set_id_onchain", null)
+    }
+
+    await new Promise((r) => setTimeout(r, 50))
   }
 
   return NextResponse.json({
-    processed: editions.length, updated, failed, direct,
+    processed: editions.length, updated, failed,
     errors: errors.slice(0, 10),
     nextOffset: offset + limit,
-    hint: failed > 0 ? `Some GQL lookups failed — check Top Shot API or retry` : undefined,
+    hint: failed > 0 ? `Retry with ?offset=${offset}&limit=${limit}` : undefined,
   })
 }
