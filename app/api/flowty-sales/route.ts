@@ -66,7 +66,7 @@ async function getFlowUsd(): Promise<number> {
 async function getMintedMomentEditionKey(
   flowId: string,
   debug = false
-): Promise<{ externalId: string | null; serialNumber: number | null }> {
+): Promise<{ externalId: string | null; serialNumber: number | null; rawDebug?: object }> {
   try {
     const res = await fetch(TOPSHOT_GQL, {
       method: "POST",
@@ -75,30 +75,31 @@ async function getMintedMomentEditionKey(
       signal: AbortSignal.timeout(6000),
     });
     if (!res.ok) {
-      if (debug) console.log(`[flowty-sales] getMintedMoment HTTP ${res.status} for flowId=${flowId}`);
-      return { externalId: null, serialNumber: null };
+      const rawDebug = debug ? { status: res.status, flowId } : undefined;
+      return { externalId: null, serialNumber: null, rawDebug };
     }
     const json = await res.json();
     // Try both response shapes: with .data wrapper and without
     const raw = json?.data?.getMintedMoment;
-    const data = raw?.data ?? raw; // some endpoints wrap in .data, some don't
-    if (debug) {
-      const keys = json?.data ? Object.keys(json.data) : [];
-      const errMsg = json?.errors?.[0]?.message ?? "none";
-      console.log(`[flowty-sales] getMintedMoment flowId=${flowId} keys=${JSON.stringify(keys)} err=${errMsg} hasData=${!!data} raw=${JSON.stringify(raw).slice(0, 200)}`);
-    }
-    if (!data) return { externalId: null, serialNumber: null };
+    const data = raw?.data ?? raw;
+    const rawDebug = debug ? {
+      flowId,
+      dataKeys: json?.data ? Object.keys(json.data) : [],
+      errors: json?.errors?.map((e: any) => e.message) ?? [],
+      raw: JSON.stringify(raw).slice(0, 400),
+    } : undefined;
+    if (!data) return { externalId: null, serialNumber: null, rawDebug };
 
     const psp = data.parallelSetPlay;
     const setId = psp?.setID ?? data.set?.id;
     const playId = psp?.playID ?? data.play?.id;
     const serialNumber = data.flowSerialNumber ? parseInt(data.flowSerialNumber, 10) : null;
 
-    if (!setId || !playId) return { externalId: null, serialNumber: null };
+    if (!setId || !playId) return { externalId: null, serialNumber: null, rawDebug };
     return { externalId: `${setId}:${playId}`, serialNumber };
   } catch (err) {
-    if (debug) console.log(`[flowty-sales] getMintedMoment error for ${flowId}:`, String(err));
-    return { externalId: null, serialNumber: null };
+    const rawDebug = debug ? { flowId, error: String(err) } : undefined;
+    return { externalId: null, serialNumber: null, rawDebug };
   }
 }
 
@@ -240,6 +241,8 @@ export async function GET(req: NextRequest) {
   let gqlLookups = 0;
   let gqlHits = 0;
   let gqlResolved = 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let firstRawDebug: any = null;
 
   if (stillMissing2.length > 0) {
     // Get NBA Top Shot collection_id from DB
@@ -260,7 +263,8 @@ export async function GET(req: NextRequest) {
       const results = await Promise.all(
         batch.map(async (nftId) => {
           gqlLookups++;
-          const { externalId, serialNumber } = await getMintedMomentEditionKey(nftId, debugMode && i === 0);
+          const { externalId, serialNumber, rawDebug } = await getMintedMomentEditionKey(nftId, debugMode && i === 0 && gqlLookups <= 1);
+          if (rawDebug && !firstRawDebug) firstRawDebug = rawDebug;
           return { nftId, externalId, serialNumber };
         })
       );
@@ -405,8 +409,9 @@ export async function GET(req: NextRequest) {
       skipped,
       momentsCached: momentMap.size,
       gqlLookups,
-      gqlResolved: gqlResolved,  // how many GQL calls returned a valid externalId
-      gqlHits,                   // how many resolved externalIds existed in editions (0 in dry mode — stubs not inserted)
+      gqlResolved: gqlResolved,
+      gqlHits,
+      debugGqlRaw: firstRawDebug,
       sample: saleRows.slice(0, 3),
     });
   }
