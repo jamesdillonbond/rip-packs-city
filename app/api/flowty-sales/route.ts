@@ -79,8 +79,14 @@ async function getMintedMomentEditionKey(
       return { externalId: null, serialNumber: null };
     }
     const json = await res.json();
-    if (debug) console.log(`[flowty-sales] getMintedMoment raw for ${flowId}:`, JSON.stringify(json).slice(0, 300));
-    const data = json?.data?.getMintedMoment?.data;
+    // Try both response shapes: with .data wrapper and without
+    const raw = json?.data?.getMintedMoment;
+    const data = raw?.data ?? raw; // some endpoints wrap in .data, some don't
+    if (debug) {
+      const keys = json?.data ? Object.keys(json.data) : [];
+      const errMsg = json?.errors?.[0]?.message ?? "none";
+      console.log(`[flowty-sales] getMintedMoment flowId=${flowId} keys=${JSON.stringify(keys)} err=${errMsg} hasData=${!!data} raw=${JSON.stringify(raw).slice(0, 200)}`);
+    }
     if (!data) return { externalId: null, serialNumber: null };
 
     const psp = data.parallelSetPlay;
