@@ -85,8 +85,6 @@ export async function GET(req: NextRequest) {
 
     // ── 2. Returning User: check for previous sessions ────────
     if (sessionId) {
-      // Look for any conversations NOT from this session (meaning previous visits)
-      // Use a cookie-based persistent ID prefix — sessions starting with same browser fingerprint
       const { data: prevSessions } = await supabase
         .from("support_conversations")
         .select("session_id, category, user_message")
@@ -98,10 +96,10 @@ export async function GET(req: NextRequest) {
         result.returningUser = true;
 
         // Extract topics from previous conversations
-        const categories = [
-          ...new Set(
+        const categories: string[] = [
+          ...new Set<string>(
             prevSessions
-              .map((r: any) => r.category)
+              .map((r: any) => r.category as string)
               .filter((c: string) => c && c !== "general")
           ),
         ];
@@ -110,7 +108,6 @@ export async function GET(req: NextRequest) {
     }
 
     // ── 3. Last Session Messages (for conversation memory) ────
-    // Find the most recent previous session and return its last few messages
     if (sessionId) {
       const { data: recentMsgs } = await supabase
         .from("support_conversations")
@@ -127,8 +124,8 @@ export async function GET(req: NextRequest) {
           .reverse();
 
         result.lastSessionMessages = lastMsgs.flatMap((m: any) => [
-          { role: "user", text: m.user_message },
-          { role: "assistant", text: m.bot_response },
+          { role: "user" as const, text: m.user_message as string },
+          { role: "assistant" as const, text: m.bot_response as string },
         ]);
       }
     }
