@@ -30,109 +30,165 @@ function flowtyBody(from: number) {
 }
 
 function getTrait(traits: any[], name: string): string {
-  const t = traits?.find((tr: any) => tr.name === name || tr.trait_type === name);
-  return t?.value ?? "";
+  if (!Array.isArray(traits)) return "";
+  const t = traits.find(function(tr: any) { return tr && (tr.name === name || tr.trait_type === name); });
+  return t && t.value ? String(t.value) : "";
 }
 
 async function fetchFlowtyPage(from: number): Promise<any[]> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = setTimeout(function() { controller.abort(); }, 8000);
     const res = await fetch(FLOWTY_ENDPOINT, {
       method: "POST", headers: FLOWTY_HEADERS,
       body: JSON.stringify(flowtyBody(from)), signal: controller.signal,
     });
     clearTimeout(timeout);
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.log("[listing-cache] Flowty page " + from + " HTTP " + res.status);
+      return [];
+    }
     const json = await res.json();
-    return json?.data ?? json?.nfts ?? [];
-  } catch { return []; }
+    const items = json.data || json.nfts || [];
+    return Array.isArray(items) ? items : [];
+  } catch (e: any) {
+    console.log("[listing-cache] Flowty page " + from + " error: " + (e.message || "unknown"));
+    return [];
+  }
 }
 
 function mapFlowtyListing(nft: any): any | null {
-  const order = nft?.orders?.[0];
-  if (!order || order.state !== "LISTED") return null;
-  const price = parseFloat(order.salePrice);
-  if (!price || price <= 0) return null;
+  try {
+    if (!nft) return null;
+    const orders = nft.orders;
+    if (!Array.isArray(orders) || orders.length === 0) return null;
+    const order = orders[0];
+    if (!order || order.state !== "LISTED") return null;
 
-  const fmv = nft?.valuations?.blended?.usdValue ?? null;
-  const fmvNum = fmv ? parseFloat(fmv) : null;
-  const discount = fmvNum && fmvNum > 0 ? ((fmvNum - price) / fmvNum) * 100 : null;
+    const price = parseFloat(order.salePrice);
+    if (!price || price <= 0 || isNaN(price)) return null;
 
-  const traits = nft?.nftView?.traits ?? [];
-  const seriesStr = getTrait(traits, "SeriesNumber");
-  const seriesNum = seriesStr ? parseInt(seriesStr) : null;
-  const tier = getTrait(traits, "Tier") || "COMMON";
-  const playerName = (nft?.card?.title ?? "").trim();
-  const flowId = String(nft?.id ?? "");
-  const listingResourceId = String(order?.listingResourceID ?? "");
+    const blended = nft.valuations && nft.valuations.blended;
+    const fmvRaw = blended && blended.usdValue ? blended.usdValue : null;
+    const fmvNum = fmvRaw ? parseFloat(String(fmvRaw)) : null;
+    const discount = fmvNum && fmvNum > 0 && isFinite(fmvNum) ? ((fmvNum - price) / fmvNum) * 100 : null;
 
-  if (!playerName || !flowId) return null;
+    const traits = (nft.nftView && Array.isArray(nft.nftView.traits)) ? nft.nftView.traits : [];
+    const seriesStr = getTrait(traits, "SeriesNumber");
+    const seriesNum = seriesStr ? parseInt(seriesStr, 10) : null;
+    const tier = getTrait(traits, "Tier") || "COMMON";
+    const playerName = (nft.card && nft.card.title ? String(nft.card.title) : "").trim();
+    const flowId = nft.id ? String(nft.id) : "";
+    const listingResourceId = order.listingResourceID ? String(order.listingResourceID) : "";
 
-  return {
-    id: `flowty-${flowId}-${listingResourceId}`,
-    flow_id: flowId,
-    moment_id: nft?.nftView?.uuid ?? null,
-    player_name: playerName,
-    team_name: getTrait(traits, "TeamAtMoment") || "",
-    set_name: getTrait(traits, "SetName") || "",
-    series_name: seriesNum != null ? (SERIES_NAMES[seriesNum] ?? `Series ${seriesNum}`) : "",
-    tier: tier.toUpperCase(),
-    serial_number: parseInt(nft?.card?.num ?? "0") || 0,
-    circulation_count: parseInt(nft?.card?.max ?? "0") || 0,
-    ask_price: price,
-    fmv: fmvNum,
-    adjusted_fmv: fmvNum,
-    discount: discount ? Math.round(discount * 100) / 100 : null,
-    confidence: fmvNum ? "HIGH" : null,
-    source: "flowty",
-    buy_url: `https://www.flowty.io/listing/${listingResourceId}`,
-    thumbnail_url: nft?.card?.images?.[0]?.url ?? null,
-    badge_slugs: [],
-    listing_resource_id: listingResourceId,
-    storefront_address: order?.storefrontAddress ?? "",
-    is_locked: getTrait(traits, "Locked") === "true",
-    raw_data: { subeditionId: getTrait(traits, "SubeditionID"), paymentToken: order?.paymentTokenName },
-    listed_at: order?.blockTimestamp ? new Date(Number(order.blockTimestamp)).toISOString() : null,
-    cached_at: new Date().toISOString(),
-  };
+    if (!playerName || !flowId) return null;
+
+    const serial = parseInt(String((nft.card && nft.card.num) || "0"), 10) || 0;
+    const circ = parseInt(String((nft.card && nft.card.max) || "0"), 10) || 0;
+    const imageUrl = (nft.card && Array.isArray(nft.card.images) && nft.card.images[0]) ? nft.card.images[0].url : null;
+
+    return {
+      id: "flowty-" + flowId + "-" + listingResourceId,
+      flow_id: flowId,
+      moment_id: (nft.nftView && nft.nftView.uuid) ? String(nft.nftView.uuid) : null,
+      player_name: playerName,
+      team_name: getTrait(traits, "TeamAtMoment"),
+      set_name: getTrait(traits, "SetName"),
+      series_name: (seriesNum !== null && !isNaN(seriesNum)) ? (SERIES_NAMES[seriesNum] || "Series " + seriesNum) : "",
+      tier: tier.toUpperCase(),
+      serial_number: serial,
+      circulation_count: circ,
+      ask_price: price,
+      fmv: fmvNum,
+      adjusted_fmv: fmvNum,
+      discount: (discount !== null && isFinite(discount)) ? Math.round(discount * 100) / 100 : null,
+      confidence: fmvNum ? "HIGH" : null,
+      source: "flowty",
+      buy_url: "https://www.flowty.io/listing/" + listingResourceId,
+      thumbnail_url: imageUrl,
+      badge_slugs: [],
+      listing_resource_id: listingResourceId,
+      storefront_address: order.storefrontAddress ? String(order.storefrontAddress) : "",
+      is_locked: getTrait(traits, "Locked") === "true",
+      raw_data: null,
+      listed_at: order.blockTimestamp ? new Date(Number(order.blockTimestamp)).toISOString() : null,
+      cached_at: new Date().toISOString(),
+    };
+  } catch (e: any) {
+    console.log("[listing-cache] Map error: " + (e.message || "unknown"));
+    return null;
+  }
 }
 
 export async function POST(req: NextRequest) {
-  const auth = req.headers.get("authorization");
-  if (auth !== `Bearer ${process.env.INGEST_SECRET_TOKEN}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  try {
+    const auth = req.headers.get("authorization");
+    if (auth !== ("Bearer " + process.env.INGEST_SECRET_TOKEN)) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-  const startTime = Date.now();
-  const pageOffsets = [0, 24, 48, 72, 96, 120];
-  const pageResults = await Promise.all(pageOffsets.map((off) => fetchFlowtyPage(off)));
-  const allNfts = pageResults.flat();
-  console.log(`[listing-cache] Fetched ${allNfts.length} raw NFTs from Flowty`);
+    const startTime = Date.now();
+    const pageOffsets = [0, 24, 48, 72, 96, 120];
+    const pageResults = await Promise.all(pageOffsets.map(function(off) { return fetchFlowtyPage(off); }));
+    const allNfts = pageResults.flat();
+    console.log("[listing-cache] Fetched " + allNfts.length + " raw NFTs from Flowty");
 
-  if (allNfts.length === 0) {
+    if (allNfts.length === 0) {
+      return NextResponse.json({
+        ok: true, message: "Flowty returned 0 - preserving existing cache",
+        cached: 0, elapsed: Date.now() - startTime,
+      });
+    }
+
+    const listings: any[] = [];
+    for (let i = 0; i < allNfts.length; i++) {
+      const mapped = mapFlowtyListing(allNfts[i]);
+      if (mapped) listings.push(mapped);
+    }
+    console.log("[listing-cache] Mapped " + listings.length + " valid listings");
+
+    if (listings.length === 0) {
+      return NextResponse.json({
+        ok: true, message: "All listings filtered out during mapping",
+        fetched: allNfts.length, cached: 0, elapsed: Date.now() - startTime,
+      });
+    }
+
+    const delResult = await supabase.from("cached_listings").delete().eq("source", "flowty");
+    if (delResult.error) {
+      console.log("[listing-cache] Delete error: " + delResult.error.message);
+    }
+
+    let inserted = 0;
+    let insertErrors = 0;
+    for (let i = 0; i < listings.length; i += 25) {
+      const chunk = listings.slice(i, i + 25);
+      const result = await supabase.from("cached_listings").insert(chunk);
+      if (result.error) {
+        console.log("[listing-cache] Insert chunk " + i + " error: " + result.error.message);
+        insertErrors++;
+        // Try inserting one by one to find the bad row
+        for (let j = 0; j < chunk.length; j++) {
+          const single = await supabase.from("cached_listings").insert([chunk[j]]);
+          if (single.error) {
+            console.log("[listing-cache] Bad row " + (i + j) + " id=" + chunk[j].id + ": " + single.error.message);
+          } else {
+            inserted++;
+          }
+        }
+      } else {
+        inserted += chunk.length;
+      }
+    }
+
+    console.log("[listing-cache] Done: " + inserted + " inserted, " + insertErrors + " chunk errors");
+
     return NextResponse.json({
-      ok: true, message: "Flowty returned 0 — preserving existing cache",
-      cached: 0, elapsed: Date.now() - startTime,
+      ok: true, fetched: allNfts.length, mapped: listings.length,
+      cached: inserted, errors: insertErrors, elapsed: Date.now() - startTime,
     });
+  } catch (e: any) {
+    console.error("[listing-cache] FATAL: " + (e.message || "unknown"), e.stack || "");
+    return NextResponse.json({ ok: false, error: e.message || "Unknown error" }, { status: 500 });
   }
-
-  const listings = allNfts.map(mapFlowtyListing).filter(Boolean);
-  console.log(`[listing-cache] Mapped ${listings.length} valid listings`);
-
-  const { error: deleteError } = await supabase.from("cached_listings").delete().eq("source", "flowty");
-  if (deleteError) console.error("[listing-cache] Delete error:", deleteError.message);
-
-  let inserted = 0;
-  for (let i = 0; i < listings.length; i += 50) {
-    const chunk = listings.slice(i, i + 50);
-    const { error } = await supabase.from("cached_listings").insert(chunk);
-    if (error) console.error(`[listing-cache] Insert chunk ${i}:`, error.message);
-    else inserted += chunk.length;
-  }
-
-  return NextResponse.json({
-    ok: true, fetched: allNfts.length, mapped: listings.length, cached: inserted,
-    elapsed: Date.now() - startTime,
-  });
 }
