@@ -275,6 +275,25 @@ export async function GET(req: NextRequest) {
         if (row.external_id && row.id) editionByKey.set(row.external_id, row.id);
       }
 
+      // Insert minimal edition stubs for external_ids not yet in DB.
+      // editions table has ~3k rows vs 100k+ moments in existence.
+      // Ingest pipeline enriches name/tier/series/player_id on next run.
+      const missingExternalIds = externalIds.filter((id) => !editionByKey.has(id));
+      if (missingExternalIds.length > 0) {
+        const stubRows = missingExternalIds.map((extId) => ({
+          external_id: extId,
+          collection_id: collectionId,
+        }));
+        const { data: insertedEditions } = await supabase
+          .from("editions")
+          .upsert(stubRows, { onConflict: "external_id", ignoreDuplicates: false })
+          .select("id, external_id");
+        for (const row of (insertedEditions ?? [])) {
+          if (row.external_id && row.id) editionByKey.set(row.external_id, row.id);
+        }
+        console.log(`[flowty-sales] Upserted ${insertedEditions?.length ?? 0} edition stubs for ${missingExternalIds.length} unknown editions`);
+      }
+
       // Build momentMap entries and cache to moments table
       const newMomentRows: object[] = [];
       for (const { nftId, externalId, serialNumber } of resolvedKeys) {
