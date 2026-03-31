@@ -1,7 +1,8 @@
 name: Smoke Tests
 
 on:
-  deployment_status:
+  push:
+    branches: [main]
   schedule:
     - cron: '0 12 * * *'
   workflow_dispatch:
@@ -9,12 +10,10 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    if: github.event_name != 'deployment_status' || github.event.deployment_status.state == 'success'
     timeout-minutes: 5
     steps:
-      - name: Wait for deployment to stabilize
-        if: github.event_name == 'deployment_status'
-        run: sleep 15
+      - name: Wait for deployment
+        run: sleep 45
 
       - name: Run smoke tests
         run: |
@@ -28,22 +27,25 @@ jobs:
           echo "HTTP Status: $HTTP_CODE"
           echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
 
-          PASSED=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('passed',0))")
-          FAILED=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('failed',0))")
-          TOTAL=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('total',0))")
+          PASSED=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('passed',0))" 2>/dev/null || echo "0")
+          FAILED=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('failed',0))" 2>/dev/null || echo "0")
+          TOTAL=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('total',0))" 2>/dev/null || echo "0")
 
           echo "Results: $PASSED passed, $FAILED failed out of $TOTAL tests"
 
           if [ "$FAILED" != "0" ]; then
             echo "::error::$FAILED smoke tests failed"
-
-            # Show failed tests
             echo "$BODY" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
 for r in d.get('results',[]):
   if not r['passed']:
-    print(f\"  FAIL: {r['name']} — {r['detail']}\")
-"
+    print(f\"  FAIL: {r['name']} - {r['detail']}\")
+" 2>/dev/null || true
+            exit 1
+          fi
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Smoke test endpoint returned HTTP $HTTP_CODE"
             exit 1
           fi
