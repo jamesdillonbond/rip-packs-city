@@ -35,13 +35,7 @@ jobs:
 
           if [ "$FAILED" != "0" ]; then
             echo "::error::$FAILED smoke tests failed"
-            echo "$BODY" | python3 -c "
-import sys,json
-d=json.load(sys.stdin)
-for r in d.get('results',[]):
-  if not r['passed']:
-    print(f\"  FAIL: {r['name']} - {r['detail']}\")
-" 2>/dev/null || true
+            echo "$BODY" | python3 -c "import sys,json;[print('  FAIL: '+r['name']+' - '+r['detail']) for r in json.load(sys.stdin).get('results',[]) if not r['passed']]" 2>/dev/null || true
             exit 1
           fi
 
