@@ -1,0 +1,47 @@
+name: RPC Social Bot
+
+on:
+  schedule:
+    - cron: "0 16 * * *"
+    - cron: "0 20 * * *"
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (no actual posting)"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  post-deals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Post daily deals
+        run: |
+          DRY_RUN_PARAM=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            DRY_RUN_PARAM="&dry_run=1"
+          fi
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            "https://rip-packs-city.vercel.app/api/social-bot?secret=${{ secrets.INGEST_SECRET_TOKEN }}${DRY_RUN_PARAM}")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          echo "Response: $BODY"
+          echo "HTTP Status: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Social bot returned non-200 status"
+            exit 1
+          fi
+
+          if echo "$BODY" | grep -q '"error"'; then
+            echo "Social bot reported an error"
+            exit 1
+          fi
+
+          echo "Social bot run complete"
