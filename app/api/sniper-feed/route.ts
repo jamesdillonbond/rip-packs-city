@@ -743,6 +743,73 @@ export async function GET(req: Request) {
 
   console.warn(`[sniper-feed] DONE ts=${tsDeals.length} flowty=${flowtyDeals.length} total=${sorted.length} fmv_hits=${fmvMap.size} flowtyRaw=${flowtyListings.length}`);
 
+  // ── CACHE FALLBACK: if live feeds returned 0, read from Supabase cached_listings ──
+  if (sorted.length === 0) {
+    try {
+      const { data: cachedRows } = await supabase
+        .from("cached_listings")
+        .select("*")
+        .gt("discount", 0)
+        .order("discount", { ascending: false })
+        .limit(200);
+
+      if (cachedRows && cachedRows.length > 0) {
+        console.log("[sniper-feed] Live feeds empty, serving " + cachedRows.length + " cached deals");
+        const cachedDeals = cachedRows.map(function(r) {
+          return {
+            flowId: r.flow_id || "",
+            momentId: r.moment_id || "",
+            editionKey: "",
+            playerName: r.player_name || "",
+            teamName: r.team_name || "",
+            setName: r.set_name || "",
+            seriesName: r.series_name || "",
+            tier: r.tier || "COMMON",
+            parallel: "Base",
+            parallelId: 0,
+            serial: r.serial_number || 0,
+            circulationCount: r.circulation_count || 0,
+            askPrice: Number(r.ask_price) || 0,
+            baseFmv: Number(r.fmv) || 0,
+            adjustedFmv: Number(r.adjusted_fmv) || Number(r.fmv) || 0,
+            discount: Number(r.discount) || 0,
+            confidence: r.confidence || "HIGH",
+            hasBadge: false,
+            badgeSlugs: r.badge_slugs || [],
+            badgeLabels: [],
+            badgePremiumPct: 0,
+            serialMult: 1,
+            isSpecialSerial: false,
+            isJersey: false,
+            serialSignal: null,
+            thumbnailUrl: r.thumbnail_url || null,
+            isLocked: r.is_locked || false,
+            updatedAt: r.listed_at || r.cached_at || null,
+            packListingId: null,
+            packName: null,
+            packEv: null,
+            packEvRatio: null,
+            buyUrl: r.buy_url || "",
+            source: (r.source || "flowty"),
+          };
+        });
+        return NextResponse.json(
+          {
+            count: cachedDeals.length,
+            tsCount: 0,
+            flowtyCount: cachedDeals.length,
+            lastRefreshed: new Date().toISOString(),
+            deals: cachedDeals,
+            cached: true,
+          },
+          { headers: { "Cache-Control": "public, max-age=0, s-maxage=25, stale-while-revalidate=60" } }
+        );
+      }
+    } catch (cacheErr) {
+      console.log("[sniper-feed] Cache fallback error: " + cacheErr);
+    }
+  }
+
   return NextResponse.json(
     {
       count: sorted.length,
