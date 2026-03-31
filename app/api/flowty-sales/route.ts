@@ -63,7 +63,10 @@ async function getFlowUsd(): Promise<number> {
 }
 
 // Resolve a Flow NFT ID → external_id (setUUID:playUUID) via Top Shot GraphQL
-async function getMintedMomentEditionKey(flowId: string): Promise<{ externalId: string | null; serialNumber: number | null }> {
+async function getMintedMomentEditionKey(
+  flowId: string,
+  debug = false
+): Promise<{ externalId: string | null; serialNumber: number | null }> {
   try {
     const res = await fetch(TOPSHOT_GQL, {
       method: "POST",
@@ -71,8 +74,12 @@ async function getMintedMomentEditionKey(flowId: string): Promise<{ externalId: 
       body: JSON.stringify({ query: GET_MINTED_MOMENT, variables: { flowId } }),
       signal: AbortSignal.timeout(6000),
     });
-    if (!res.ok) return { externalId: null, serialNumber: null };
+    if (!res.ok) {
+      if (debug) console.log(`[flowty-sales] getMintedMoment HTTP ${res.status} for flowId=${flowId}`);
+      return { externalId: null, serialNumber: null };
+    }
     const json = await res.json();
+    if (debug) console.log(`[flowty-sales] getMintedMoment raw for ${flowId}:`, JSON.stringify(json).slice(0, 300));
     const data = json?.data?.getMintedMoment?.data;
     if (!data) return { externalId: null, serialNumber: null };
 
@@ -83,7 +90,8 @@ async function getMintedMomentEditionKey(flowId: string): Promise<{ externalId: 
 
     if (!setId || !playId) return { externalId: null, serialNumber: null };
     return { externalId: `${setId}:${playId}`, serialNumber };
-  } catch {
+  } catch (err) {
+    if (debug) console.log(`[flowty-sales] getMintedMoment error for ${flowId}:`, String(err));
     return { externalId: null, serialNumber: null };
   }
 }
@@ -93,6 +101,7 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "100"), 500);
   const after = url.searchParams.get("after");
   const dryRun = url.searchParams.get("dry") === "1";
+  const debugMode = url.searchParams.get("debug") === "1";
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supabase = createClient(
@@ -244,7 +253,7 @@ export async function GET(req: NextRequest) {
       const results = await Promise.all(
         batch.map(async (nftId) => {
           gqlLookups++;
-          const { externalId, serialNumber } = await getMintedMomentEditionKey(nftId);
+          const { externalId, serialNumber } = await getMintedMomentEditionKey(nftId, debugMode && i === 0);
           return { nftId, externalId, serialNumber };
         })
       );
