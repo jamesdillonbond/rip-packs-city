@@ -483,7 +483,6 @@ export default function SniperPage() {
           </div>
           {mode === "offers" && <OffersTab />}
           {mode === "deals" && (
-          {/* Tier tabs */}
           <div className="flex items-center gap-1 mb-4 flex-wrap">
             {TIER_TABS.map((t) => (
               <button
