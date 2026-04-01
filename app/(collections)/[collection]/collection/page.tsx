@@ -1226,7 +1226,7 @@ export default function WalletPage() {
             </button>
           </div>
         ) : null}
-      </div>
+
         {/* Recent Sales */}
         {hasSearched && (recentSales.length > 0 || salesLoading) && (
           <div className="mb-5 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
@@ -1276,6 +1276,7 @@ export default function WalletPage() {
             )}
           </div>
         )}
+      </div>
     </div>
   )
 }
