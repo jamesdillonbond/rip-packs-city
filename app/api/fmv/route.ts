@@ -1,7 +1,8 @@
 // app/api/fmv/route.ts
 // Public FMV API - single and batch edition lookup
 // GET  /api/fmv?edition={setID:playID}[&serial=42]
-// POST /api/fmv  { editions: [...], serial?: 42 }
+// POST /api/fmv  { editions: ['key1', { edition: 'key2', serial: 7 }], serial?: 42 }
+// Returns: { count, successCount, errorCount, results[] }
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -109,8 +110,9 @@ export async function GET(req: Request) {
       error: "Missing required parameter: edition",
       usage: {
         single: "GET /api/fmv?edition={setID:playID}[&serial=42]",
-        batch:  "POST /api/fmv  { editions: ['...'], serial?: 42 }",
+        batch:  "POST /api/fmv  { editions: ['key1', { edition: 'key2', serial: 7 }], serial?: 42 }",
         demo:   "GET /api/fmv/demo",
+        notes:  "Batch accepts up to 100 editions. Each can be a string or { edition, serial? }. Global serial applies to entries without per-edition serial.",
       },
     }, { status: 400 });
   }
@@ -132,22 +134,108 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  let body: { editions?: string[]; serial?: number };
+  let body: { editions?: (string | { edition: string; serial?: number })[]; serial?: number };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 }); }
 
-  const { editions, serial } = body;
+  const { editions, serial: globalSerial } = body;
   if (!editions || !Array.isArray(editions) || editions.length === 0)
     return NextResponse.json({ error: "Body must contain non-empty editions array" }, { status: 400 });
   if (editions.length > 100)
     return NextResponse.json({ error: "Maximum 100 editions per batch request" }, { status: 400 });
 
+  // Normalize input: accept plain strings or { edition, serial? } objects
+  const editionKeys: string[] = [];
+  const serialOverrides = new Map<string, number>();
+  for (const entry of editions) {
+    if (typeof entry === "string") {
+      editionKeys.push(entry);
+    } else if (entry && typeof entry === "object" && typeof entry.edition === "string") {
+      editionKeys.push(entry.edition);
+      if (typeof entry.serial === "number") serialOverrides.set(entry.edition, entry.serial);
+    } else {
+      return NextResponse.json({ error: "Each edition must be a string or { edition: string, serial?: number }" }, { status: 400 });
+    }
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supabase: any = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
   try {
-    const results = await lookupEditions(supabase, editions, serial);
+    // Parallel DB lookups: resolve editions + fetch FMV snapshots concurrently
+    const [editionRes, fmvRes] = await Promise.all([
+      supabase.from("editions").select("id, external_id").in("external_id", editionKeys),
+      // We need internal IDs for FMV lookup — fetch all editions first, then FMV
+      // But we can still overlap badge/metadata lookups later
+      Promise.resolve(null), // placeholder — FMV fetched after ID resolution
+    ]);
+
+    if (editionRes.error) throw new Error(`editions lookup: ${editionRes.error.message}`);
+
+    const extToId = new Map<string, string>();
+    for (const row of (editionRes.data ?? [])) {
+      extToId.set(row.external_id, row.id);
+    }
+
+    const internalIds = Array.from(extToId.values());
+
+    // Fetch FMV snapshots in parallel chunks for large batches
+    const fmvMap = new Map<string, { fmv_usd: number; confidence: string; computed_at: string }>();
+    if (internalIds.length) {
+      const CHUNK = 50;
+      const fmvChunks = [];
+      for (let i = 0; i < internalIds.length; i += CHUNK) {
+        fmvChunks.push(
+          supabase
+            .from("fmv_snapshots")
+            .select("edition_id, fmv_usd, confidence, computed_at")
+            .in("edition_id", internalIds.slice(i, i + CHUNK))
+            .order("computed_at", { ascending: false })
+        );
+      }
+      const fmvResults = await Promise.all(fmvChunks);
+      for (const { data: fmvRows } of fmvResults) {
+        for (const row of (fmvRows ?? [])) {
+          if (!fmvMap.has(row.edition_id)) fmvMap.set(row.edition_id, row);
+        }
+      }
+    }
+
+    // Build results with per-edition serial support
+    let successCount = 0;
+    let errorCount = 0;
+    const results = editionKeys.map(externalId => {
+      const internalId = extToId.get(externalId);
+      if (!internalId) {
+        errorCount++;
+        return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, error: "Edition not found" };
+      }
+
+      const fmv = fmvMap.get(internalId);
+      if (!fmv) {
+        errorCount++;
+        return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, error: "No FMV data yet" };
+      }
+
+      const baseFmv = fmv.fmv_usd;
+      const serial = serialOverrides.get(externalId) ?? globalSerial;
+      const mult = serial != null ? serialMultiplier(serial, 1000) : null;
+      const adjustedFmv = mult != null ? baseFmv * mult : baseFmv;
+      const confidence = (fmv.confidence ?? "low").toLowerCase();
+
+      successCount++;
+      return {
+        edition: externalId,
+        fmv: r2(baseFmv),
+        serialMult: mult != null ? r2(mult) : null,
+        badgePremiumPct: 0,
+        adjustedFmv: r2(adjustedFmv),
+        confidence,
+        updatedAt: fmv.computed_at,
+      };
+    });
+
     return NextResponse.json(
-      { count: results.length, results },
+      { count: results.length, successCount, errorCount, results },
       { headers: { "Cache-Control": "public, max-age=300, stale-while-revalidate=60" } }
     );
   } catch (err) {
