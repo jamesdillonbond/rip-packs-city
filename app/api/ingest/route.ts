@@ -552,6 +552,72 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── Proactive FMV pass for integer-format pack editions ────────────────
+    // Ensures all editions seeded by pack-ev (format "digits:digits") get
+    // FMV snapshots computed from their existing sales data, even if they
+    // weren't in this ingest batch.
+    let proactiveFmvProcessed = 0
+    let proactiveFmvUpdated = 0
+
+    try {
+      // Find integer-format editions that don't yet have an FMV snapshot
+      const { data: intEditions } = await supabaseAdmin
+        .from("editions")
+        .select("id, external_id")
+        .like("external_id", "%:%")
+        .not("external_id", "like", "%-%")
+
+      // Filter to true integer-format (digits:digits) and exclude already-processed
+      const candidates = (intEditions ?? []).filter((e: { id: string; external_id: string }) => {
+        return /^\d+:\d+$/.test(e.external_id) && !editionSalesMap.has(e.id)
+      })
+
+      if (candidates.length > 0) {
+        console.log(`[INGEST] Proactive FMV pass: ${candidates.length} integer-format editions to process`)
+
+        const windowStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+        const BATCH_SIZE = 20
+
+        for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
+          const batch = candidates.slice(i, i + BATCH_SIZE)
+          const batchIds = batch.map((e: { id: string }) => e.id)
+
+          // Fetch 30-day sales for this batch of editions
+          const { data: salesRows } = await supabaseAdmin
+            .from("sales")
+            .select("edition_id, price_usd")
+            .in("edition_id", batchIds)
+            .gte("sold_at", windowStart)
+            .gt("price_usd", 0)
+
+          if (!salesRows || salesRows.length === 0) continue
+
+          // Group by edition_id
+          const batchSalesMap = new Map<string, number[]>()
+          for (const row of salesRows as { edition_id: string; price_usd: number }[]) {
+            const arr = batchSalesMap.get(row.edition_id) ?? []
+            arr.push(row.price_usd)
+            batchSalesMap.set(row.edition_id, arr)
+          }
+
+          // Compute and upsert FMV for each edition with sales
+          for (const [editionId, sales] of batchSalesMap.entries()) {
+            try {
+              await upsertFmvSnapshot(collectionId, editionId, sales)
+              proactiveFmvUpdated++
+            } catch {
+              // Non-critical — log and continue
+            }
+            proactiveFmvProcessed++
+          }
+        }
+
+        console.log(`[INGEST] Proactive FMV done: ${proactiveFmvProcessed} processed, ${proactiveFmvUpdated} got fresh FMV snapshots`)
+      }
+    } catch (err) {
+      console.warn("[INGEST] Proactive FMV pass error:", err instanceof Error ? err.message : String(err))
+    }
+
     const duration = Date.now() - startTime
 
     console.log(
@@ -565,6 +631,8 @@ export async function POST(req: NextRequest) {
       duplicates,
       editionsUpdated,
       fmvUpdated,
+      proactiveFmvProcessed,
+      proactiveFmvUpdated,
       errors,
       nextCursor,
       hasMore: !!nextCursor,
