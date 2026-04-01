@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { fetchOpenOffers } from "@/lib/flowty/fetchOpenOffers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -273,15 +274,13 @@ async function fetchTopShotPool(): Promise<{ listings: RawListing[]; tsCount: nu
     }
   }
 
-  const [r1, r2] = await Promise.allSettled([
-    fetchTSPage("", ""),
+  const [r1] = await Promise.allSettled([
     fetchTSPage("", ""),
   ]);
 
   if (r1.status === "fulfilled") add(r1.value.listings);
-  if (r2.status === "fulfilled") add(r2.value.listings);
 
-  console.log(`[sniper-feed] TS pool: p1=${r1.status === "fulfilled" ? r1.value.listings.length : "FAIL"} p2=${r2.status === "fulfilled" ? r2.value.listings.length : "FAIL"} total=${all.length}`);
+  console.log(`[sniper-feed] TS pool: p1=${r1.status === "fulfilled" ? r1.value.listings.length : "FAIL"} total=${all.length}`);
   return { listings: all, tsCount: all.length };
 }
 
@@ -613,17 +612,11 @@ export async function GET(req: Request) {
   );
 
   // 4. Fire all Supabase lookups in parallel
-  const [fmvMap, badgeMap, offersRes] = await Promise.all([
+  const [fmvMap, badgeMap, offerMap] = await Promise.all([
     fetchFmvBatch(supabase, Array.from(tsEditionKeys)),
     fetchBadgesByPlayers(supabase, flowtyPlayerNames),
-    fetch("https://rip-packs-city.vercel.app/api/flowty-offers")
-      .then(r => r.ok ? r.json() : { offers: {} })
-      .catch(() => ({ offers: {} })),
+    fetchOpenOffers().catch(() => new Map<string, { amount: number; fmv: number | null }>()),
   ]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const offerMap = new Map<string, { amount: number; fmv: number | null }>(
-    Object.entries((offersRes?.offers ?? {}) as Record<string, { amount: number; fmv: number | null }>)
-  );
   console.log(`[sniper-feed] offerMap size=${offerMap.size}`);
 
   // 5. Enrich TS listings
@@ -829,8 +822,7 @@ export async function GET(req: Request) {
     const offer = offerMap.get(d.flowId);
     if (offer && offer.amount > 0) {
       d.offerAmount = offer.amount;
-      const fmvBase = offer.fmv ?? d.baseFmv;
-      d.offerFmvPct = fmvBase > 0 ? Math.round((offer.amount / fmvBase) * 1000) / 10 : null;
+      d.offerFmvPct = d.adjustedFmv > 0 ? Math.round((offer.amount / d.adjustedFmv) * 1000) / 10 : null;
     }
   }
 
@@ -921,8 +913,7 @@ export async function GET(req: Request) {
               const offer = offerMap.get(d.flowId);
               if (offer && offer.amount > 0) {
                 (d as unknown as SniperDeal).offerAmount = offer.amount;
-                const fmvBase = (offer.fmv ?? d.baseFmv) || 0;
-                (d as unknown as SniperDeal).offerFmvPct = fmvBase > 0 ? Math.round((offer.amount / fmvBase) * 1000) / 10 : null;
+                (d as unknown as SniperDeal).offerFmvPct = d.adjustedFmv > 0 ? Math.round((offer.amount / d.adjustedFmv) * 1000) / 10 : null;
               }
               return d;
             }),

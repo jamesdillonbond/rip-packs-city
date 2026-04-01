@@ -61,6 +61,7 @@ interface FeedResult {
   flowtyCount?: number;
   lastRefreshed: string;
   deals: SniperDeal[];
+  cached?: boolean;
 }
 
 type SortOption =
@@ -484,7 +485,8 @@ export default function SniperPage() {
             ))}
           </div>
           {mode === "offers" && <OffersTab />}
-          <div style={mode === "deals" ? {} : {display:"none"}}>
+          {mode === "deals" && (
+          <>
           {/* Tier tabs */}
           <div className="flex items-center gap-1 mb-4 flex-wrap">
             {TIER_TABS.map((t) => (
@@ -546,7 +548,7 @@ export default function SniperPage() {
             >
               <option value="all">All serials</option>
               <option value="special">Special only</option>
-              <option value="jersey">Jersey match</option>
+              <option value="jersey" disabled title="Coming soon">Jersey match (soon)</option>
             </select>
             <select
               value={sortBy}
@@ -579,9 +581,11 @@ export default function SniperPage() {
               </span>
             </label>
           </div>
+        </>)}
         </div>
       </div>
 
+      {mode === "deals" && (<>
       {/* Stats bar */}
       <div className="border-b border-slate-800/40 bg-slate-900/20 px-4 py-2">
         <div className="max-w-screen-xl mx-auto flex items-center gap-6 text-xs text-slate-500 flex-wrap">
@@ -612,6 +616,12 @@ export default function SniperPage() {
         {error && (
           <div className="mb-4 rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-400">
             Feed error: {error}
+          </div>
+        )}
+
+        {data?.cached && (
+          <div className="mb-4 rounded-lg bg-yellow-500/10 border border-yellow-500/30 px-4 py-3 text-sm text-yellow-400">
+            Live feeds offline — showing cached deals. Prices may be stale.
           </div>
         )}
 
@@ -796,7 +806,6 @@ export default function SniperPage() {
           </div>
         )}
 
-          </div>
         {/* Legend */}
         <div className="mt-4 flex items-center gap-4 text-xs text-slate-600 flex-wrap">
           <span className="flex items-center gap-1">
@@ -818,6 +827,7 @@ export default function SniperPage() {
           <span className="ml-auto">Adj. FMV = base FMV × serial multiplier</span>
         </div>
       </div>
+      </>)}
     </div>
   );
 }
