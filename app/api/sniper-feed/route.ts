@@ -627,6 +627,7 @@ const feedParamsSchema = z.object({
   maxPrice: z.coerce.number().min(0).default(0),
   limit: z.coerce.number().min(1).max(500).default(0), // 0 = no limit
   sortBy: z.enum(["discount", "price_asc", "price_desc", "fmv_desc", "serial_asc"]).default("discount"),
+  flowWalletOnly: z.enum(["true", "false"]).default("false"),
 });
 
 // ─── Route handler ────────────────────────────────────────────────────────────
@@ -657,6 +658,14 @@ export async function GET(req: Request) {
     const playerLower = player.trim().toLowerCase();
     const filtered = (result.deals as SniperDeal[]).filter((d) =>
       d.playerName.toLowerCase().includes(playerLower)
+    );
+    result = { ...result, deals: filtered, count: filtered.length };
+  }
+
+  // Post-fetch filter: Flow wallet only (FLOW or USDC_E payment tokens)
+  if (params.flowWalletOnly === "true") {
+    const filtered = (result.deals as SniperDeal[]).filter(
+      (d) => d.paymentToken === "FLOW" || d.paymentToken === "USDC_E"
     );
     result = { ...result, deals: filtered, count: filtered.length };
   }

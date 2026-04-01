@@ -388,6 +388,7 @@ export default function SniperPage() {
   const [maxPrice, setMaxPrice] = useState(0);
   const [serialFilter, setSerialFilter] = useState("all");
   const [badgeOnly, setBadgeOnly] = useState(false);
+  const [flowWalletOnly, setFlowWalletOnly] = useState(false);
   const [search, setSearch] = useState("");
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(false);
 
@@ -437,9 +438,10 @@ export default function SniperPage() {
     if (playerFilter) params.set("player", playerFilter);
     if (serialFilter !== "all") params.set("serial", serialFilter);
     if (badgeOnly) params.set("badgeOnly", "true");
+    if (flowWalletOnly) params.set("flowWalletOnly", "true");
     params.set("sortBy", sortBy);
     return `/api/sniper-feed?${params}`;
-  }, [tierTab, minDiscount, maxPrice, playerFilter, serialFilter, badgeOnly, sortBy]);
+  }, [tierTab, minDiscount, maxPrice, playerFilter, serialFilter, badgeOnly, flowWalletOnly, sortBy]);
 
   const fetchFeed = useCallback(async () => {
     try {
@@ -670,6 +672,25 @@ export default function SniperPage() {
                 VERIFIED FMV ONLY
               </span>
             </label>
+            <button
+              onClick={() => setFlowWalletOnly((v) => !v)}
+              className={`rpc-chip ${flowWalletOnly ? "active" : ""}`}
+              title="FLOW &amp; USDC.e listings only — no Dapper Wallet needed."
+              style={flowWalletOnly ? { background: "rgba(0,232,130,0.10)", borderColor: "rgba(0,232,130,0.40)", color: "#00e882" } : {}}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                {/* Flow logo — lightning bolt */}
+                <svg width="10" height="12" viewBox="0 0 10 12" fill="none" style={{ flexShrink: 0 }}>
+                  <path d="M6 0L0 7h4l-1 5 7-7H6l1-5z" fill="currentColor" />
+                </svg>
+                FLOW WALLET
+              </span>
+            </button>
+            {flowWalletOnly && (
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", letterSpacing: "0.05em" }}>
+                FLOW &amp; USDC.e listings only — no Dapper Wallet needed.
+              </span>
+            )}
           </div>
         </>)}
         </div>
@@ -741,7 +762,7 @@ export default function SniperPage() {
               onClick={() => {
                 setTierTab("all"); setMinDiscount(0); setMaxPrice(0);
                 setSerialFilter("all"); setBadgeOnly(false);
-                setShowVerifiedOnly(false); setSearch("");
+                setFlowWalletOnly(false); setShowVerifiedOnly(false); setSearch("");
               }}
               className="rpc-btn-ghost" style={{ marginTop: 8 }}
             >
