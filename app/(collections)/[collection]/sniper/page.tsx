@@ -221,7 +221,7 @@ function ShareButton({ deal }: { deal: SniperDeal }) {
   const [copied, setCopied] = useState(false);
 
   function handleShare() {
-    const url = `https://rip-packs-city.vercel.app/nba-top-shot/sniper?deal=${deal.flowId}`;
+    const url = window.location.origin + window.location.pathname + "?highlight=" + deal.flowId;
     navigator.clipboard.writeText(url).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -232,31 +232,10 @@ function ShareButton({ deal }: { deal: SniperDeal }) {
     <button
       onClick={handleShare}
       className="rpc-chip"
-      style={{ position: "relative", padding: "3px 8px" }}
+      style={{ padding: "3px 8px" }}
       title="Copy deal link"
     >
-      {copied ? "✓ COPIED" : "🔗"}
-      {copied && (
-        <span
-          style={{
-            position: "absolute",
-            bottom: "calc(100% + 4px)",
-            left: "50%",
-            transform: "translateX(-50%)",
-            background: "var(--rpc-surface)",
-            border: "1px solid var(--rpc-border)",
-            borderRadius: "var(--radius-sm)",
-            padding: "4px 8px",
-            fontSize: "var(--text-xs)",
-            fontFamily: "var(--font-mono)",
-            color: "var(--rpc-success)",
-            whiteSpace: "nowrap",
-            zIndex: 10,
-          }}
-        >
-          Link copied!
-        </span>
-      )}
+      {copied ? "✓" : "⎘"}
     </button>
   );
 }
@@ -307,7 +286,6 @@ function ActionCell({
   if (isOwned) {
     return (
       <div className="flex flex-col items-end gap-1.5">
-        <ShareButton deal={deal} />
         <span className="rpc-chip" style={{ color: "var(--rpc-text-muted)" }}>
           ✓ OWNED
         </span>
@@ -327,7 +305,6 @@ function ActionCell({
 
   return (
     <div className="flex flex-col items-end gap-1.5">
-      <ShareButton deal={deal} />
       {canCart && (
         <button
           onClick={handleCart}
@@ -391,6 +368,13 @@ export default function SniperPage() {
   const [flowWalletOnly, setFlowWalletOnly] = useState(false);
   const [search, setSearch] = useState("");
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(false);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+
+  // Highlight detection on page load
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("highlight");
+    if (id) setHighlightedId(id);
+  }, []);
 
   // Player filter with 300ms debounce
   const [playerInput, setPlayerInput] = useState("");
@@ -497,6 +481,7 @@ export default function SniperPage() {
         ? visibleDeals.reduce((s, d) => s + d.discount, 0) / visibleDeals.length
         : 0,
     tsLive: (data?.tsCount ?? 0) > 0,
+    tsCached: !!(data?.cached) && (data?.tsCount ?? 0) === 0,
     flowtyLive: (data?.flowtyCount ?? 0) > 0,
   };
 
@@ -516,12 +501,14 @@ export default function SniperPage() {
             </div>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <span className="rpc-chip" style={stats.tsLive
+                <span className={`rpc-chip ${stats.tsCached ? "text-amber-400 border-amber-500/30 bg-amber-500/10" : ""}`} style={stats.tsLive
                   ? { background: "rgba(52,211,153,0.08)", borderColor: "rgba(52,211,153,0.3)", color: "var(--rpc-success)" }
+                  : stats.tsCached
+                  ? {}
                   : { background: "rgba(248,113,113,0.08)", borderColor: "rgba(248,113,113,0.2)", color: "var(--rpc-danger)" }
                 }>
-                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${stats.tsLive ? "bg-emerald-400 animate-pulse" : "bg-red-400/50"}`} style={{ marginRight: 4 }} />
-                  TS {stats.tsLive ? `(${data?.tsCount})` : "OFFLINE"}
+                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${stats.tsLive ? "bg-emerald-400 animate-pulse" : stats.tsCached ? "bg-amber-400 animate-pulse" : "bg-red-400/50"}`} style={{ marginRight: 4 }} />
+                  TS {stats.tsLive ? `(${data?.tsCount})` : stats.tsCached ? "CACHED" : "OFFLINE"}
                 </span>
                 <span className="rpc-chip" style={stats.flowtyLive
                   ? { background: "rgba(59,130,246,0.08)", borderColor: "rgba(59,130,246,0.3)", color: "var(--rpc-info)" }
@@ -784,6 +771,7 @@ export default function SniperPage() {
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Discount</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>FMV Quality</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Src</th>
+                  <th className="rpc-label" style={{ textAlign: "center", padding: "10px 4px", width: 36 }} />
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Action</th>
                 </tr>
               </thead>
@@ -791,8 +779,8 @@ export default function SniperPage() {
                 {visibleDeals.map((deal) => (
                   <tr
                     key={`${deal.source}-${deal.flowId}-${deal.listingResourceID}`}
-                    className={holoClass(deal.tier)}
-                    style={{ borderBottom: "1px solid var(--rpc-border)", transition: "background var(--transition-fast)", background: deal.discount >= 40 ? "rgba(224,58,47,0.04)" : "transparent" }}
+                    className={`${holoClass(deal.tier)}${deal.flowId === highlightedId ? " ring-2 ring-red-500/50 bg-red-950/20" : ""}`}
+                    style={{ borderBottom: "1px solid var(--rpc-border)", transition: "background var(--transition-fast)", background: deal.flowId === highlightedId ? undefined : deal.discount >= 40 ? "rgba(224,58,47,0.04)" : "transparent" }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--rpc-surface-hover)"; }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = deal.discount >= 40 ? "rgba(224,58,47,0.04)" : "transparent"; }}
                   >
@@ -914,6 +902,11 @@ export default function SniperPage() {
                     {/* Source */}
                     <td style={{ padding: "8px 12px", textAlign: "right" }}>
                       <SourceBadge source={deal.source} />
+                    </td>
+
+                    {/* Share */}
+                    <td style={{ padding: "8px 4px", textAlign: "center" }}>
+                      <ShareButton deal={deal} />
                     </td>
 
                     {/* Action */}
