@@ -391,6 +391,19 @@ export default function SniperPage() {
   const [search, setSearch] = useState("");
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(false);
 
+  // Player filter with 300ms debounce
+  const [playerInput, setPlayerInput] = useState("");
+  const [playerFilter, setPlayerFilter] = useState("");
+  const playerDebounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handlePlayerChange = useCallback((value: string) => {
+    setPlayerInput(value);
+    if (playerDebounceRef.current) clearTimeout(playerDebounceRef.current);
+    playerDebounceRef.current = setTimeout(() => {
+      setPlayerFilter(value.trim());
+    }, 300);
+  }, []);
+
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -418,14 +431,15 @@ export default function SniperPage() {
 
   const buildFeedUrl = useCallback(() => {
     const params = new URLSearchParams();
-    if (tierTab !== "all") params.set("rarity", tierTab);
+    if (tierTab !== "all") params.set("tier", tierTab);
     if (minDiscount > 0) params.set("minDiscount", String(minDiscount));
     if (maxPrice > 0) params.set("maxPrice", String(maxPrice));
+    if (playerFilter) params.set("player", playerFilter);
     if (serialFilter !== "all") params.set("serial", serialFilter);
     if (badgeOnly) params.set("badgeOnly", "true");
     params.set("sortBy", sortBy);
     return `/api/sniper-feed?${params}`;
-  }, [tierTab, minDiscount, maxPrice, serialFilter, badgeOnly, sortBy]);
+  }, [tierTab, minDiscount, maxPrice, playerFilter, serialFilter, badgeOnly, sortBy]);
 
   const fetchFeed = useCallback(async () => {
     try {
@@ -544,7 +558,48 @@ export default function SniperPage() {
           {mode === "offers" && <OffersTab />}
           {mode === "deals" && (
           <>
-          {/* Tier tabs */}
+          {/* ── Primary Filters (Tier dropdown, Player input, Min Discount %) ── */}
+          <div className="flex flex-wrap items-center gap-3 mb-4" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
+            <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
+              <span>TIER</span>
+              <select
+                value={tierTab}
+                onChange={(e) => setTierTab(e.target.value as TierTab)}
+                style={{ background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 10px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", outline: "none", textTransform: "uppercase" }}
+              >
+                <option value="all">All</option>
+                <option value="common">Common</option>
+                <option value="rare">Rare</option>
+                <option value="legendary">Legendary</option>
+                <option value="ultimate">Ultimate</option>
+                <option value="fandom">Fandom</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
+              <span>PLAYER</span>
+              <input
+                type="text"
+                placeholder="e.g. LeBron"
+                value={playerInput}
+                onChange={(e) => handlePlayerChange(e.target.value)}
+                style={{ width: 160, background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 12px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", outline: "none" }}
+              />
+            </label>
+            <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
+              <span>MIN DISC.</span>
+              <input
+                type="number"
+                min={0} max={100} step={5}
+                value={minDiscount}
+                onChange={(e) => setMinDiscount(Number(e.target.value))}
+                placeholder="0"
+                style={{ width: 56, background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 8px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", outline: "none" }}
+              />
+              <span>%</span>
+            </label>
+          </div>
+
+          {/* Tier quick tabs */}
           <div className="flex items-center gap-1 mb-4 flex-wrap">
             {TIER_TABS.map((t) => (
               <button
@@ -558,7 +613,7 @@ export default function SniperPage() {
             ))}
           </div>
 
-          {/* Filters */}
+          {/* Advanced Filters */}
           <div className="flex flex-wrap items-center gap-3" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
             <input
               type="text"
@@ -567,18 +622,6 @@ export default function SniperPage() {
               onChange={(e) => setSearch(e.target.value)}
               style={{ background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 12px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", width: 200, outline: "none" }}
             />
-            <label className="flex items-center gap-1.5 cursor-pointer select-none" style={{ color: "var(--rpc-text-muted)" }}>
-              <span>MIN DISC.</span>
-              <input
-                type="number"
-                min={0} max={100} step={5}
-                value={minDiscount}
-                onChange={(e) => setMinDiscount(Number(e.target.value))}
-                placeholder="0"
-                style={{ width: 56, background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 8px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", outline: "none" }}
-              />
-              <span>%</span>
-            </label>
             <label className="flex items-center gap-1.5 cursor-pointer select-none" style={{ color: "var(--rpc-text-muted)" }}>
               <span>MAX $</span>
               <input

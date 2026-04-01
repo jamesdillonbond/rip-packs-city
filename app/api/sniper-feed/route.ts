@@ -619,10 +619,13 @@ async function fetchJerseyNumbers(
 const feedParamsSchema = z.object({
   minDiscount: z.coerce.number().min(0).max(100).default(0),
   rarity: z.string().default("all"),
+  tier: z.string().default("all"), // alias for rarity — UI sends "tier"
+  player: z.string().default(""), // post-fetch filter on playerName
   team: z.string().default("all"),
   badgeOnly: z.enum(["true", "false"]).default("false"),
   serial: z.string().default("all"),
   maxPrice: z.coerce.number().min(0).default(0),
+  limit: z.coerce.number().min(1).max(500).default(0), // 0 = no limit
   sortBy: z.enum(["discount", "price_asc", "price_desc", "fmv_desc", "serial_asc"]).default("discount"),
 });
 
@@ -635,7 +638,9 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const raw = Object.fromEntries(url.searchParams);
   const params = feedParamsSchema.parse(raw);
-  const { minDiscount, rarity, team, sortBy, maxPrice } = params;
+  // "tier" is a UI-friendly alias for "rarity"
+  const effectiveRarity = params.tier !== "all" ? params.tier : params.rarity;
+  const { minDiscount, team, sortBy, maxPrice, player, limit } = params;
   const badgeOnly = params.badgeOnly === "true";
   const serialFilter = params.serial;
 
@@ -643,9 +648,23 @@ export async function GET(req: Request) {
   const cacheKey = `sniper-feed:${JSON.stringify(params)}`;
   const CACHE_TTL = 25_000;
 
-  const result = await getOrSetCache(cacheKey, CACHE_TTL, async () => {
-    return computeSniperFeed({ minDiscount, rarity, team, badgeOnly, serialFilter, maxPrice, sortBy });
+  let result = await getOrSetCache(cacheKey, CACHE_TTL, async () => {
+    return computeSniperFeed({ minDiscount, rarity: effectiveRarity, team, badgeOnly, serialFilter, maxPrice, sortBy });
   });
+
+  // Post-fetch filter: player name (case-insensitive substring match)
+  if (player && player.trim()) {
+    const playerLower = player.trim().toLowerCase();
+    const filtered = result.deals.filter((d: SniperDeal) =>
+      d.playerName.toLowerCase().includes(playerLower)
+    );
+    result = { ...result, deals: filtered, count: filtered.length };
+  }
+
+  // Post-fetch limit
+  if (limit > 0 && result.deals.length > limit) {
+    result = { ...result, deals: result.deals.slice(0, limit), count: limit };
+  }
 
   return NextResponse.json(result, {
     headers: { "Cache-Control": "public, max-age=0, s-maxage=25, stale-while-revalidate=60" },

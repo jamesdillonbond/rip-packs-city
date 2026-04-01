@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // ── 2. Daily deal ──────────────────────────────────────────────────────────
+  // ── 2. Daily deal (via get_top_deals RPC) ───────────────────────────────────
   let dailyDeal: object | null = null;
   try {
     const { data: dealRows } = await supabase.rpc("get_top_deals", {
@@ -84,29 +84,26 @@ export async function GET(req: NextRequest) {
       const scored = dealRows
         .map((row: any) => {
           const fmv = parseFloat(row.fmv_usd ?? "0");
-          const ask = parseFloat(row.low_ask);
+          const ask = parseFloat(row.low_ask ?? "0");
           if (!fmv || ask <= 0) return null;
-          const discount = ((fmv - ask) / fmv) * 100;
-          if (discount < 10) return null;
+          const discount = row.discount_pct ?? ((fmv - ask) / fmv) * 100;
           const badges: string[] = Array.isArray(row.play_tags)
-            ? row.play_tags.map((t: any) => t.title).filter(Boolean)
+            ? row.play_tags.map((t: any) => t.title ?? t).filter(Boolean)
             : [];
-          const confidence = "MEDIUM"; // RPC does not return confidence
           const score =
             discount +
-            (badges.length > 0 ? 10 : 0) +
-            (String(confidence) === "HIGH" ? 5 : String(confidence) === "MEDIUM" ? 2 : 0);
+            (badges.length > 0 ? 10 : 0);
           return {
             player_name: row.player_name,
-            team: row.team,
+            team: row.team ?? null,
             tier: tierLabel(row.tier),
             set_name: row.set_name,
             series: seriesLabel(row.series_number),
             low_ask: ask,
             fmv,
-            discount_pct: Math.round(row.discount_pct ?? discount),
+            discount_pct: Math.round(discount),
             badges,
-            confidence,
+            external_id: row.external_id,
             score,
           };
         })
@@ -119,21 +116,18 @@ export async function GET(req: NextRequest) {
     console.error("[context] dailyDeal error:", err);
   }
 
-  // ── 3. Market pulse ────────────────────────────────────────────────────────
+  // ── 3. Market pulse (via get_market_pulse RPC) ──────────────────────────────
   let marketPulse: string | null = null;
   try {
     const { data: pulse } = await supabase.rpc("get_market_pulse");
+    const { deals_below_20, deals_below_30, total_tracked } = pulse?.[0] ?? {};
 
-    if (pulse && pulse.length > 0) {
-      const { deals_below_20, deals_below_30, total_tracked } = pulse[0];
-
-      if (deals_below_30 > 0) {
-        marketPulse = `${deals_below_30} moment${deals_below_30 !== 1 ? "s" : ""} listed 30%+ below FMV right now`;
-      } else if (deals_below_20 > 0) {
-        marketPulse = `${deals_below_20} moment${deals_below_20 !== 1 ? "s" : ""} listed 20%+ below FMV right now`;
-      } else {
-        marketPulse = `${total_tracked} moments tracked — FMV data fresh`;
-      }
+    if (deals_below_30 && deals_below_30 > 0) {
+      marketPulse = `${deals_below_30} moment${deals_below_30 !== 1 ? "s" : ""} listed 30%+ below FMV right now`;
+    } else if (deals_below_20 && deals_below_20 > 0) {
+      marketPulse = `${deals_below_20} moment${deals_below_20 !== 1 ? "s" : ""} listed 20%+ below FMV right now`;
+    } else if (total_tracked) {
+      marketPulse = `${total_tracked} moments tracked — FMV data fresh`;
     }
   } catch (err) {
     console.error("[context] marketPulse error:", err);
