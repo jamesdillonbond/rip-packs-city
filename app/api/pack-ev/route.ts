@@ -412,6 +412,12 @@ export async function POST(req: NextRequest) {
 
     console.log(`[pack-ev] Computing EV: ${editions.length} editions, ${totalUnopened} unopened`)
 
+    // Diagnostic: log first 3 edition nodes' raw IDs for key-format analysis
+    for (const node of editions.slice(0, 3)) {
+      const e = node.edition
+      console.log(`[pack-ev] EDITION-DEBUG: edition.id=${e.id} set.id=${e.set?.id} play.id=${e.play?.id} parallelID=${e.parallelID} setFlowName=${e.set?.flowName} player=${e.play?.stats?.playerName}`)
+    }
+
     // ── Compute EV per edition ──────────────────────────────────────────────
     const editionEVs: EditionEV[] = editions.map((node) => {
       const prob = totalUnopened > 0 ? node.remaining / totalUnopened : 0
