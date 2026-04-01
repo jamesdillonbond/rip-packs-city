@@ -25,6 +25,7 @@ interface RawListing {
   isLocked?: boolean;
   storefrontListingID?: string;
   sellerAddress?: string;
+  listingOrderID?: string;
   setSeriesNumber?: number;
   parallelSetPlay?: { setID: number; playID: number; parallelID?: number };
 }
@@ -88,6 +89,7 @@ export interface SniperDeal {
   packEvRatio: number | null;
   buyUrl: string;
   listingResourceID: string | null;
+  listingOrderID: string | null;
   storefrontAddress: string | null;
   source: "topshot" | "flowty";
   offerAmount: number | null;
@@ -209,6 +211,7 @@ const SEARCH_LISTINGS_QUERY = `
                   momentTitle
                   playerName
                   isLocked
+                  listingOrderID
                   storefrontListingID
                   sellerAddress
                 }
@@ -709,7 +712,8 @@ export async function GET(req: Request) {
       packEv: null,
       packEvRatio: null,
       buyUrl: `https://nbatopshot.com/moment/${l.id}`,
-      listingResourceID: l.storefrontListingID ?? null,
+      listingResourceID: l.listingOrderID ?? l.storefrontListingID ?? null,
+      listingOrderID: l.listingOrderID ?? null,
       storefrontAddress: l.sellerAddress ?? null,
       source: "topshot",
       offerAmount: null,
@@ -801,6 +805,7 @@ export async function GET(req: Request) {
       packEvRatio: null,
       buyUrl: `https://www.flowty.io/listing/${item.listingResourceID}`,
       listingResourceID: item.listingResourceID,
+      listingOrderID: null,
       storefrontAddress: item.storefrontAddress,
       source: "flowty",
       offerAmount: null,
@@ -898,6 +903,9 @@ export async function GET(req: Request) {
             packEv: null,
             packEvRatio: null,
             buyUrl: r.buy_url || "",
+            listingResourceID: r.listing_resource_id || null,
+            listingOrderID: r.listing_order_id || null,
+            storefrontAddress: r.storefront_address || null,
             source: (r.source || "flowty"),
             offerAmount: null as number | null,
             offerFmvPct: null as number | null,
