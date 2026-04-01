@@ -23,7 +23,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 // Paginated — pass { offset, limit } in body to process in chunks.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ALGO_VERSION = "1.3.0"
+const ALGO_VERSION = "1.4.0"
 const WINDOW_DAYS = 30
 const DEFAULT_LIMIT = 500
 
@@ -148,6 +148,67 @@ export async function POST(req: NextRequest) {
     const editionIds = [...editionSalesMap.keys()]
     console.log(`[FMV-RECALC] Processing ${editionIds.length} distinct editions`)
 
+    // ── Step 2b: Fetch Flowty LiveToken FMVs from cached_listings ────────────
+    // cached_listings.fmv contains valuations.blended.usdValue from Flowty's
+    // LiveToken feed. We average per edition (multiple listings may exist).
+    // The editions table maps edition_id → external_id; cached_listings uses
+    // flow_id (nft-level), so we join through the moments table.
+    const flowtyFmvByEdition = new Map<string, number>()
+    let flowtyFmvCount = 0
+
+    try {
+      // Get all flow_ids that have a Flowty FMV in cached_listings
+      const { data: fmvListings } = await supabaseAdmin
+        .from("cached_listings")
+        .select("flow_id, fmv")
+        .eq("source", "flowty")
+        .not("fmv", "is", null)
+        .gt("fmv", 0)
+
+      if (fmvListings && fmvListings.length > 0) {
+        // Map flow_id → fmv values
+        const flowIdFmvs = new Map<string, number[]>()
+        for (const row of fmvListings) {
+          if (!row.flow_id || !row.fmv) continue
+          const existing = flowIdFmvs.get(String(row.flow_id))
+          if (existing) existing.push(Number(row.fmv))
+          else flowIdFmvs.set(String(row.flow_id), [Number(row.fmv)])
+        }
+
+        // Look up which editions these flow_ids belong to via moments table
+        const flowIds = [...flowIdFmvs.keys()]
+        const { data: momentRows } = await supabaseAdmin
+          .from("moments")
+          .select("nft_id, edition_id")
+          .in("nft_id", flowIds)
+
+        // Aggregate FMVs per edition_id
+        const editionFmvs = new Map<string, number[]>()
+        for (const row of momentRows ?? []) {
+          if (!row.edition_id) continue
+          const fmvValues = flowIdFmvs.get(String(row.nft_id))
+          if (!fmvValues) continue
+          const existing = editionFmvs.get(row.edition_id)
+          if (existing) existing.push(...fmvValues)
+          else editionFmvs.set(row.edition_id, [...fmvValues])
+        }
+
+        // Average per edition
+        for (const [edId, fmvValues] of editionFmvs.entries()) {
+          if (!editionSalesMap.has(edId)) continue // only blend for editions we're recalcing
+          const avg = fmvValues.reduce((a, b) => a + b, 0) / fmvValues.length
+          if (avg > 0) {
+            flowtyFmvByEdition.set(edId, avg)
+            flowtyFmvCount++
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[FMV-RECALC] Flowty FMV fetch failed (non-fatal):", err)
+    }
+
+    console.log(`[FMV-RECALC] Flowty LiveToken FMV available for ${flowtyFmvCount} editions`)
+
     // ── Step 3: Delete existing snapshots for these editions ─────────────────
     const { error: deleteError } = await supabaseAdmin
       .from("fmv_snapshots")
@@ -160,18 +221,34 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Step 4: Build and insert fresh snapshots ──────────────────────────────
+    // FMV blending: when a Flowty LiveToken FMV is available and within 3x of
+    // WAP (outlier filter), blend it as a secondary signal:
+    //   blended_fmv = (wap * 0.6) + (livetoken_fmv * 0.4)
+    // Otherwise, use trimmed median as before.
     const insertRows = []
+    let blendedCount = 0
 
     for (const [editionId, { sales, collectionId, latestSoldAt }] of editionSalesMap.entries()) {
       const prices = sales.map(s => s.price)
 
-      const fmv = trimmedMedian(prices)
+      const median = trimmedMedian(prices)
       const wap = weightedAveragePrice(sales, now)
       const floor = Math.min(...prices)
       const confidence = computeConfidence(sales.length)
       const daysSinceSale = Math.round(
         (now.getTime() - latestSoldAt.getTime()) / (1000 * 60 * 60 * 24)
       )
+
+      // Blend Flowty LiveToken FMV if available and within 3x of WAP
+      let fmv = median
+      const livetokenFmv = flowtyFmvByEdition.get(editionId)
+      if (livetokenFmv && wap > 0) {
+        const ratio = livetokenFmv / wap
+        if (ratio >= 1 / 3 && ratio <= 3) {
+          fmv = (wap * 0.6) + (livetokenFmv * 0.4)
+          blendedCount++
+        }
+      }
 
       insertRows.push({
         edition_id: editionId,
@@ -207,13 +284,14 @@ export async function POST(req: NextRequest) {
     const duration = Date.now() - startTime
 
     console.log(
-      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} hasMore=${hasMore} duration=${duration}ms`
+      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} hasMore=${hasMore} duration=${duration}ms`
     )
 
     return NextResponse.json({
       ok: true,
       editionsProcessed: editionIds.length,
       snapshotsUpdated,
+      flowtyFmvBlended: blendedCount,
       hasMore,
       nextOffset: hasMore ? offset + limit : null,
       durationMs: duration,
