@@ -37,6 +37,11 @@ type MarketResult = {
   editionMarketSource: string | null
   editionMarketSourceChain: string[]
   editionMarketTags: string[]
+  topshotAsk?: number | null
+  flowtyAsk?: number | null
+  fmvUsd?: number | null
+  fmvConfidence?: string | null
+  fmvComputedAt?: string | null
 }
 
 type BadgeInfo = {
@@ -102,6 +107,7 @@ type MomentRow = {
   editionMarketSource?: string | null
   editionMarketSourceChain?: string[]
   editionMarketTags?: string[]
+  fmvComputedAt?: string | null
   badgeInfo?: BadgeInfo | null
 }
 
@@ -130,6 +136,18 @@ const BADGE_PILL_TITLES = new Set([
 const SERIES_INT_TO_SEASON: Record<number, string> = {
   0: "2019-20", 1: "2019-20", 2: "2020-21", 3: "2021",
   4: "2021-22", 5: "2022-23", 6: "2023-24", 7: "2024-25", 8: "2025-26",
+}
+
+const SERIES_DISPLAY: Record<number, string> = {
+  0: "Beta", 1: "Series 1", 2: "Series 2", 3: "Series 3",
+  4: "Series 4", 5: "Series 5", 6: "Series 6", 7: "Series 7", 8: "2025-26",
+}
+
+function seriesDisplayLabel(seriesRaw: string | undefined | null): string {
+  if (!seriesRaw) return "—"
+  const n = parseInt(seriesRaw, 10)
+  if (!Number.isNaN(n) && SERIES_DISPLAY[n] !== undefined) return SERIES_DISPLAY[n]
+  return seriesRaw
 }
 
 function seriesIntToSeason(seriesRaw: string | undefined | null): string {
@@ -379,10 +397,10 @@ export default function WalletPage() {
   const [salesLoading, setSalesLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const [teamFilter, setTeamFilter] = useState("all")
-  const [leagueFilter, setLeagueFilter] = useState("all")
+  const [playerFilter, setPlayerFilter] = useState("all")
+  const [setFilter, setSetFilter] = useState("all")
+  const [seriesFilter, setSeriesFilter] = useState("all")
   const [rarityFilter, setRarityFilter] = useState("all")
-  const [parallelFilter, setParallelFilter] = useState("all")
   const [lockedFilter, setLockedFilter] = useState("all")
   const [searchWithin, setSearchWithin] = useState("")
   const [sortKey, setSortKey] = useState<SortKey>("acquired")
@@ -498,6 +516,8 @@ export default function WalletPage() {
         editionMarketSource: market?.editionMarketSource ?? row.editionMarketSource,
         editionMarketSourceChain: market?.editionMarketSourceChain ?? row.editionMarketSourceChain,
         editionMarketTags: market?.editionMarketTags ?? row.editionMarketTags,
+        topshotAsk: market?.topshotAsk ?? row.topshotAsk ?? null,
+        flowtyAsk: market?.flowtyAsk ?? row.flowtyAsk ?? null,
       }
     })
   }
@@ -734,43 +754,36 @@ export default function WalletPage() {
     return map
   }, [rows])
 
-  const availableTeams = useMemo(function() {
-    const set = new Set<string>()
-    rows.forEach(function(r) { if (r.team) set.add(r.team) })
-    return ["all", ...Array.from(set).sort()]
+  const availablePlayers = useMemo(function() {
+    const s = new Set<string>()
+    rows.forEach(function(r) { if (r.playerName) s.add(r.playerName) })
+    return ["all", ...Array.from(s).sort()]
   }, [rows])
 
-  const availableLeagues = useMemo(function() {
-    const set = new Set<string>()
-    rows.forEach(function(r) { if (r.league) set.add(r.league) })
-    return ["all", ...Array.from(set).sort()]
+  const availableSets = useMemo(function() {
+    const s = new Set<string>()
+    rows.forEach(function(r) { if (r.setName) s.add(normalizeSetName(r.setName)) })
+    return ["all", ...Array.from(s).sort()]
   }, [rows])
 
   const availableRarities = useMemo(function() {
-    const set = new Set<string>()
-    rows.forEach(function(r) { if (r.tier) set.add(r.tier) })
-    return ["all", ...Array.from(set).sort()]
-  }, [rows])
-
-  const availableParallels = useMemo(function() {
-    const set = new Set<string>()
-    rows.forEach(function(r) { const p = getParallel(r); if (p && p !== "Base") set.add(p) })
-    return ["all", "Base", ...Array.from(set).sort()]
+    const s = new Set<string>()
+    rows.forEach(function(r) { if (r.tier) s.add(r.tier) })
+    return ["all", ...Array.from(s).sort()]
   }, [rows])
 
   const filteredRows = useMemo(function() {
     const q = searchWithin.trim().toLowerCase()
     const filtered = rows.filter(function(r) {
-      const parallel = getParallel(r)
-      if (teamFilter !== "all" && r.team !== teamFilter) return false
-      if (leagueFilter !== "all" && r.league !== leagueFilter) return false
+      if (playerFilter !== "all" && r.playerName !== playerFilter) return false
+      if (setFilter !== "all" && normalizeSetName(r.setName) !== setFilter) return false
+      if (seriesFilter !== "all" && seriesDisplayLabel(r.series) !== seriesFilter) return false
       if (rarityFilter !== "all" && r.tier !== rarityFilter) return false
-      if (parallelFilter !== "all" && parallel !== parallelFilter) return false
       if (lockedFilter === "locked" && !getLocked(r)) return false
       if (lockedFilter === "unlocked" && getLocked(r)) return false
       if (badgeFilter && !r.badgeInfo?.badge_score) return false
       if (q) {
-        const haystack = [r.playerName, r.team ?? "", r.league ?? "", r.series ?? "", r.setName, parallel, r.tier ?? "", ...(r.officialBadges ?? []), ...(r.badgeInfo?.badge_titles ?? []), ...getTraits(r)].join(" ").toLowerCase()
+        const haystack = [r.playerName, r.team ?? "", r.league ?? "", r.series ?? "", r.setName, getParallel(r), r.tier ?? "", ...(r.officialBadges ?? []), ...(r.badgeInfo?.badge_titles ?? []), ...getTraits(r)].join(" ").toLowerCase()
         if (!haystack.includes(q)) return false
       }
       return true
@@ -802,7 +815,7 @@ export default function WalletPage() {
       return sortDirection === "asc" ? result : -result
     })
     return filtered
-  }, [rows, searchWithin, teamFilter, leagueFilter, rarityFilter, parallelFilter, lockedFilter, badgeFilter, sortKey, sortDirection, batchEditionStats])
+  }, [rows, searchWithin, playerFilter, setFilter, seriesFilter, rarityFilter, lockedFilter, badgeFilter, sortKey, sortDirection, batchEditionStats])
 
   const totals = useMemo(function() {
     let totalFmv = 0, totalBestOffer = 0, lockedFmv = 0, unlockedFmv = 0
@@ -938,64 +951,31 @@ export default function WalletPage() {
                 <div className="mt-1 text-[11px] text-zinc-500">Spread gap: {formatCurrency(totals.spreadGap)}</div>
               </div>
             </div>
-            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
-              <div className="rounded-xl border border-emerald-900/50 bg-emerald-950/20 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-emerald-600">Liquid</div>
-                <div className="text-lg font-black text-emerald-400">{totals.confHigh}</div>
-                <div className="mt-0.5 text-[10px] text-zinc-500">High confidence FMV</div>
-              </div>
-              <div className="rounded-xl border border-yellow-900/50 bg-yellow-950/20 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-yellow-600">Trading</div>
-                <div className="text-lg font-black text-yellow-400">{totals.confMedium}</div>
-                <div className="mt-0.5 text-[10px] text-zinc-500">Medium confidence FMV</div>
-              </div>
-              <div className="rounded-xl border border-orange-900/50 bg-orange-950/20 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-orange-600">Thin</div>
-                <div className="text-lg font-black text-orange-400">{totals.confLow}</div>
-                <div className="mt-0.5 text-[10px] text-zinc-500">Low confidence FMV</div>
-              </div>
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Illiquid</div>
-                <div className="text-lg font-black text-zinc-500">{totals.confNone}</div>
-                <div className="mt-0.5 text-[10px] text-zinc-600">Floor ask only</div>
-              </div>
-              <div
-                className={"cursor-pointer rounded-xl border p-3 transition col-span-2 sm:col-span-1 " + (badgeFilter ? "border-red-600 bg-red-950/30" : "border-zinc-800 bg-zinc-950 hover:border-zinc-600")}
-                onClick={function() { setBadgeFilter(function(f) { return !f }) }}
-              >
-                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Badge Moments</div>
-                <div className="text-lg font-black text-white">{totals.badgeCount}</div>
-                <div className="mt-0.5 text-[10px] text-zinc-500">
-                  {badgeFilter ? <span className="text-red-400">Filtered ✕</span> : "Click to filter"}
-                </div>
-              </div>
-              <a
-                href={"/nba-top-shot/packs?wallet=" + encodeURIComponent(input.trim())}
-                className="rounded-xl border border-zinc-800 bg-zinc-950 p-3 hover:border-zinc-600 transition col-span-2 sm:col-span-1 block"
-              >
-                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Sealed Packs</div>
-                <div className="text-lg font-black text-white">
-                  {sealedPackCount === null ? <span className="text-zinc-600 text-sm font-normal">Loading...</span> : sealedPackCount}
-                </div>
-                <div className="mt-0.5 text-[10px] text-zinc-500">View in Packs →</div>
-              </a>
-            </div>
           </div>
         )}
 
         {/* Filters */}
         <div className="mb-5 grid gap-2 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
-          <select value={teamFilter} onChange={function(e) { setTeamFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
-            {availableTeams.map(function(team) { return <option key={team} value={team}>{team === "all" ? "All Teams" : team}</option> })}
+          <select value={playerFilter} onChange={function(e) { setPlayerFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
+            {availablePlayers.map(function(p) { return <option key={p} value={p}>{p === "all" ? "All Players" : p}</option> })}
           </select>
-          <select value={leagueFilter} onChange={function(e) { setLeagueFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
-            {availableLeagues.map(function(league) { return <option key={league} value={league}>{league === "all" ? "All Leagues" : league}</option> })}
+          <select value={setFilter} onChange={function(e) { setSetFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
+            {availableSets.map(function(s) { return <option key={s} value={s}>{s === "all" ? "All Sets" : s}</option> })}
+          </select>
+          <select value={seriesFilter} onChange={function(e) { setSeriesFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
+            <option value="all">All Series</option>
+            <option value="Beta">Beta</option>
+            <option value="Series 1">Series 1</option>
+            <option value="Series 2">Series 2</option>
+            <option value="Series 3">Series 3</option>
+            <option value="Series 4">Series 4</option>
+            <option value="Series 5">Series 5</option>
+            <option value="Series 6">Series 6</option>
+            <option value="Series 7">Series 7</option>
+            <option value="2025-26">2025-26</option>
           </select>
           <select value={rarityFilter} onChange={function(e) { setRarityFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
             {availableRarities.map(function(tier) { return <option key={tier} value={tier}>{tier === "all" ? "All Rarities" : tier}</option> })}
-          </select>
-          <select value={parallelFilter} onChange={function(e) { setParallelFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
-            {availableParallels.map(function(parallel) { return <option key={parallel} value={parallel}>{parallel === "all" ? "All Parallels" : parallel}</option> })}
           </select>
           <select value={lockedFilter} onChange={function(e) { setLockedFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
             <option value="all">All Lock States</option>
@@ -1142,7 +1122,7 @@ export default function WalletPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="p-3 text-zinc-400 text-sm hidden sm:table-cell">{row.series ?? "—"}</td>
+                      <td className="p-3 text-zinc-400 text-sm hidden sm:table-cell">{seriesDisplayLabel(row.series)}</td>
                       <td className="p-3 text-sm">{normalizeSetName(row.setName)}</td>
                       <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{getParallel(row)}</td>
                       <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{row.tier ?? "—"}</td>
@@ -1181,6 +1161,11 @@ export default function WalletPage() {
                               {delta > 0 ? "↑+" : "↓"}{delta.toFixed(0)}%
                             </div>
                           )
+                        })()}
+                        {(function() {
+                          const ask = getBestAsk(row)
+                          if (ask == null || !row.fmv || Math.abs(ask - row.fmv) < 0.01) return null
+                          return <div className="text-[10px] text-zinc-500 font-mono">Ask {"$" + ask.toFixed(2)}</div>
                         })()}
                       </td>
                       <td className="p-3 text-sm hidden lg:table-cell">
