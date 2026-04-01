@@ -108,6 +108,7 @@ type MomentRow = {
   editionMarketSourceChain?: string[]
   editionMarketTags?: string[]
   fmvComputedAt?: string | null
+  tssPoints?: number | null
   badgeInfo?: BadgeInfo | null
 }
 
@@ -297,7 +298,7 @@ function fmvDisplay(row: MomentRow): { text: string; muted: boolean } {
   }
 }
 
-type SortKey = "player" | "series" | "set" | "parallel" | "rarity" | "serial" | "fmv" | "bestOffer" | "held" | "badge" | "acquired"
+type SortKey = "player" | "series" | "set" | "parallel" | "rarity" | "serial" | "fmv" | "tss" | "bestOffer" | "held" | "badge" | "acquired"
 
 // ── Edition Recent Sales (inline in expand panel) ────────────────────────────
 
@@ -804,6 +805,7 @@ export default function WalletPage() {
         case "rarity":    result = compareText(a.tier, b.tier); break
         case "serial":    result = compareNumber(getSerial(a), getSerial(b)); break
         case "fmv":       result = compareNumber(a.fmv, b.fmv); break
+        case "tss":       result = compareNumber(a.tssPoints, b.tssPoints); break
         case "bestOffer": result = compareNumber(a.bestOffer, b.bestOffer); break
         case "badge":     result = compareNumber(a.badgeInfo?.badge_score, b.badgeInfo?.badge_score); break
         case "acquired": {
@@ -1082,6 +1084,9 @@ export default function WalletPage() {
                 <th className="p-3 hidden lg:table-cell">Held / Locked</th>
                 <th className="p-3 hidden xl:table-cell">Packs</th>
                 <th className="p-3">FMV</th>
+                <th className="p-3 hidden lg:table-cell" style={{ cursor: "pointer" }} onClick={function() { if (sortKey === "tss") { setSortDirection(sortDirection === "asc" ? "desc" : "asc") } else { setSortKey("tss"); setSortDirection("desc") } }}>
+                  TSS{sortKey === "tss" ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}
+                </th>
                 <th className="p-3 hidden lg:table-cell">Low Ask</th>
                 <th className="p-3 hidden lg:table-cell">Best Offer</th>
                 <th className="p-3 hidden xl:table-cell">Acquired</th>
@@ -1178,6 +1183,13 @@ export default function WalletPage() {
                           if (ask == null || !row.fmv || Math.abs(ask - row.fmv) < 0.01) return null
                           return <div className="text-[10px] text-zinc-500 font-mono">Ask {"$" + ask.toFixed(2)}</div>
                         })()}
+                      </td>
+                      <td className="p-3 text-sm hidden lg:table-cell">
+                        {row.tssPoints != null ? (
+                          <span className="font-mono text-zinc-300">{row.tssPoints.toLocaleString()}</span>
+                        ) : (
+                          <span className="text-zinc-600">&mdash;</span>
+                        )}
                       </td>
                       <td className="p-3 text-sm hidden lg:table-cell">
                         {row.lowAsk != null ? (
