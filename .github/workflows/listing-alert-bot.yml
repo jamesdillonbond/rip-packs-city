@@ -1,0 +1,22 @@
+name: Listing Alert Bot
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+jobs:
+  listing-alert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    continue-on-error: true
+    steps:
+      - name: Trigger listing alert bot
+        run: |
+          STATUS=$(curl -s -o /tmp/listing-alert.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            https://rip-packs-city.vercel.app/api/bots/listing-alert)
+          echo "Listing alert status: $STATUS"
+          cat /tmp/listing-alert.json
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::Listing alert returned $STATUS"
+            exit 1
+          fi
