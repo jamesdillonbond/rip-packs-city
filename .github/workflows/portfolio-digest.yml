@@ -1,0 +1,39 @@
+# .github/workflows/portfolio-digest.yml
+#
+# Portfolio Digest — weekly Sunday evening recap of the Top Shot market
+# Fires every Sunday at 10:00 PM UTC (6:00 PM ET)
+#
+# Required secrets:
+#   INGEST_SECRET_TOKEN
+
+name: Portfolio Digest
+
+on:
+  schedule:
+    - cron: "0 22 * * 0"
+  workflow_dispatch:
+
+jobs:
+  portfolio-digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+
+    steps:
+      - name: Post Portfolio Digest to Twitter
+        run: |
+          HTTP_STATUS=$(curl -s -o /tmp/portfolio_digest_response.json -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            https://rip-packs-city.vercel.app/api/bots/portfolio-digest)
+
+          echo "HTTP Status: $HTTP_STATUS"
+          echo "Response:"
+          cat /tmp/portfolio_digest_response.json
+
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "Portfolio Digest bot returned non-200 status: $HTTP_STATUS"
+            exit 1
+          fi
+
+          echo "Portfolio Digest posted successfully"
