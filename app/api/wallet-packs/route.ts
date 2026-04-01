@@ -136,18 +136,22 @@ export async function GET(req: NextRequest) {
       cursor = connection?.pageInfo?.endCursor ?? undefined
     }
 
-    // Count owned packs by dist_id
+    // Count owned packs by dist_id, include title for client-side matching
     const owned: Record<string, number> = {}
+    const packsByTitle: Record<string, number> = {}
     for (const node of allNodes) {
       const distId = node.dist_id?.value
       if (!distId) continue
       owned[distId] = (owned[distId] ?? 0) + 1
+      const title = node.distribution?.title?.value ?? ""
+      if (title) packsByTitle[title] = (packsByTitle[title] ?? 0) + 1
     }
 
     return NextResponse.json({
       walletAddress,
       totalSealedPacks: allNodes.length,
       owned,
+      packsByTitle,
     })
   } catch (e) {
     return NextResponse.json(

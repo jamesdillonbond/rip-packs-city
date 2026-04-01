@@ -309,6 +309,7 @@ export default function WalletPage() {
   const [hasSearched, setHasSearched] = useState(false)
   const [ownerKey, setOwnerKey] = useState("")
   const [sealedPackCount, setSealedPackCount] = useState<number | null>(null)
+  const [packsByTitle, setPacksByTitle] = useState<Record<string, number>>({})
   const [recentSales, setRecentSales] = useState<any[]>([]);
   const [salesLoading, setSalesLoading] = useState(false);
 
@@ -477,6 +478,7 @@ export default function WalletPage() {
     setExpandedRows({})
     setHasSearched(false)
     setSealedPackCount(null)
+    setPacksByTitle({})
     setRecentSales([]);
     setSalesLoading(true);
     fetch("/api/recent-sales?limit=15")
@@ -500,10 +502,13 @@ export default function WalletPage() {
       setOffset(nextRows.length)
       setHasSearched(true)
       maybePatchProfileStats(query.trim(), withBadges, json.summary).catch(function() {})
-      // Fire-and-forget: load sealed pack count for this wallet
+      // Fire-and-forget: load sealed pack count + titles for this wallet
       fetch("/api/wallet-packs?wallet=" + encodeURIComponent(query.trim()))
         .then(function(r) { return r.ok ? r.json() : null })
-        .then(function(d) { if (d && typeof d.totalSealedPacks === "number") setSealedPackCount(d.totalSealedPacks) })
+        .then(function(d) {
+          if (d && typeof d.totalSealedPacks === "number") setSealedPackCount(d.totalSealedPacks)
+          if (d && d.packsByTitle) setPacksByTitle(d.packsByTitle)
+        })
         .catch(function() {})
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
@@ -564,6 +569,30 @@ export default function WalletPage() {
   }
 
   // ── Derived state ─────────────────────────────────────────────────────────
+
+  // Build a lookup: normalized set name → pack count
+  // Distribution titles look like "Base Set (Series 4)" or "Holo Icon"
+  // We match by checking if a distribution title contains the set name
+  const packLookup = useMemo(function() {
+    const map = new Map<string, number>()
+    if (!Object.keys(packsByTitle).length) return map
+    for (const [title, count] of Object.entries(packsByTitle)) {
+      const lowerTitle = title.toLowerCase()
+      // Store by the raw title for exact match attempts
+      map.set(lowerTitle, (map.get(lowerTitle) ?? 0) + count)
+    }
+    return map
+  }, [packsByTitle])
+
+  function getPackCount(setName: string): number {
+    if (!packLookup.size) return 0
+    const normalizedSet = normalizeSetName(setName).toLowerCase()
+    // Direct match on title
+    for (const [title, count] of packLookup.entries()) {
+      if (title.includes(normalizedSet) || normalizedSet.includes(title)) return count
+    }
+    return 0
+  }
 
   const batchEditionStats = useMemo(function() {
     const map = new Map<string, { owned: number; locked: number }>()
@@ -920,6 +949,7 @@ export default function WalletPage() {
                 <th className="p-3 hidden md:table-cell">Rarity</th>
                 <th className="p-3">Serial / Mint</th>
                 <th className="p-3 hidden lg:table-cell">Held / Locked</th>
+                <th className="p-3 hidden xl:table-cell">Packs</th>
                 <th className="p-3">FMV</th>
                 <th className="p-3 hidden lg:table-cell">Best Offer</th>
                 <th className="p-3 hidden xl:table-cell">Acquired</th>
@@ -977,6 +1007,17 @@ export default function WalletPage() {
                         {editionCounts.owned} / {editionCounts.locked}
                         {isLocked && <span className="ml-1.5 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">Locked</span>}
                       </td>
+                      <td className="p-3 text-sm hidden xl:table-cell">
+                        {(function() {
+                          const count = getPackCount(row.setName)
+                          if (!count) return <span className="text-zinc-600">—</span>
+                          return (
+                            <a href={"/nba-top-shot/packs?wallet=" + encodeURIComponent(input.trim())} className="text-red-400 hover:text-red-300">
+                              {count + (count === 1 ? " pack" : " packs")}
+                            </a>
+                          )
+                        })()}
+                      </td>
                       <td className="p-3">
                         <div className={"font-semibold text-sm " + (fmv.muted ? "text-zinc-500" : "text-white")}>{fmv.text}</div>
                         <div className={"text-[10px] " + conf.color}>{conf.label}</div>
@@ -992,7 +1033,7 @@ export default function WalletPage() {
 
                     {expanded ? (
                       <tr className="border-b border-zinc-800 bg-black/60">
-                        <td colSpan={11} className="p-4">
+                        <td colSpan={12} className="p-4">
                           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                               <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Market</div>
