@@ -31,8 +31,8 @@ const FLOW_VAULTS = new Set([
 
 // GraphQL query — resolves a Flow NFT ID to its setID:playID edition key
 const GET_MINTED_MOMENT = `
-  query GetMintedMoment($flowID: ID!) {
-    getMintedMoment(flowID: $flowID) {
+  query GetMintedMoment($momentId: ID!) {
+    getMintedMoment(momentId: $momentId) {
       data {
         play { id }
         set { id }
@@ -71,7 +71,7 @@ async function getMintedMomentEditionKey(
     const res = await fetch(TOPSHOT_GQL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: GET_MINTED_MOMENT, variables: { flowID: flowId } }),
+      body: JSON.stringify({ query: GET_MINTED_MOMENT, variables: { momentId: flowId } }),
       signal: AbortSignal.timeout(6000),
     });
     if (!res.ok) {
