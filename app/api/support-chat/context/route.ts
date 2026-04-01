@@ -95,7 +95,7 @@ export async function GET(req: NextRequest) {
           const score =
             discount +
             (badges.length > 0 ? 10 : 0) +
-            (confidence === "HIGH" ? 5 : confidence === "MEDIUM" ? 2 : 0);
+            (String(confidence) === "HIGH" ? 5 : String(confidence) === "MEDIUM" ? 2 : 0);
           return {
             player_name: row.player_name,
             team: row.team,
