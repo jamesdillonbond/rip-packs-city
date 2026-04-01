@@ -89,6 +89,8 @@ export interface SniperDeal {
   listingResourceID: string | null;
   storefrontAddress: string | null;
   source: "topshot" | "flowty";
+  offerAmount: number | null;
+  offerFmvPct: number | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -611,10 +613,18 @@ export async function GET(req: Request) {
   );
 
   // 4. Fire all Supabase lookups in parallel
-  const [fmvMap, badgeMap] = await Promise.all([
+  const [fmvMap, badgeMap, offersRes] = await Promise.all([
     fetchFmvBatch(supabase, Array.from(tsEditionKeys)),
     fetchBadgesByPlayers(supabase, flowtyPlayerNames),
+    fetch("https://rip-packs-city.vercel.app/api/flowty-offers")
+      .then(r => r.ok ? r.json() : { offers: {} })
+      .catch(() => ({ offers: {} })),
   ]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const offerMap = new Map<string, { amount: number; fmv: number | null }>(
+    Object.entries((offersRes?.offers ?? {}) as Record<string, { amount: number; fmv: number | null }>)
+  );
+  console.log(`[sniper-feed] offerMap size=${offerMap.size}`);
 
   // 5. Enrich TS listings
   const tsDeals: SniperDeal[] = [];
@@ -709,6 +719,8 @@ export async function GET(req: Request) {
       listingResourceID: l.storefrontListingID ?? null,
       storefrontAddress: l.sellerAddress ?? null,
       source: "topshot",
+      offerAmount: null,
+      offerFmvPct: null,
     });
   }
 
@@ -798,6 +810,8 @@ export async function GET(req: Request) {
       listingResourceID: item.listingResourceID,
       storefrontAddress: item.storefrontAddress,
       source: "flowty",
+      offerAmount: null,
+      offerFmvPct: null,
     });
   }
 
@@ -808,6 +822,16 @@ export async function GET(req: Request) {
   const allDeals: SniperDeal[] = [];
   for (const d of [...flowtyDeals, ...tsDeals]) {
     if (!seen.has(d.flowId)) { seen.add(d.flowId); allDeals.push(d); }
+  }
+
+  // 8b. Offer enrichment
+  for (const d of allDeals) {
+    const offer = offerMap.get(d.flowId);
+    if (offer && offer.amount > 0) {
+      d.offerAmount = offer.amount;
+      const fmvBase = offer.fmv ?? d.baseFmv;
+      d.offerFmvPct = fmvBase > 0 ? Math.round((offer.amount / fmvBase) * 1000) / 10 : null;
+    }
   }
 
   // 8. Pack EV enrichment
@@ -883,6 +907,8 @@ export async function GET(req: Request) {
             packEvRatio: null,
             buyUrl: r.buy_url || "",
             source: (r.source || "flowty"),
+            offerAmount: null,
+            offerFmvPct: null,
           };
         });
         return NextResponse.json(
