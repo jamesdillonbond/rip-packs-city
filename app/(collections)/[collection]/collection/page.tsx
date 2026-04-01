@@ -1,7 +1,7 @@
 "use client"
 
-import { Fragment, useMemo, useState, useEffect, useCallback, Suspense } from "react"
-import { useSearchParams } from "next/navigation"
+import { Fragment, useMemo, useState, useEffect, useCallback, useRef, Suspense } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
 import {
   normalizeSetName,
   normalizeParallel,
@@ -281,13 +281,74 @@ function fmvDisplay(row: MomentRow): { text: string; muted: boolean } {
 
 type SortKey = "player" | "series" | "set" | "parallel" | "rarity" | "serial" | "fmv" | "bestOffer" | "held" | "badge" | "acquired"
 
+// ── Edition Recent Sales (inline in expand panel) ────────────────────────────
+
+function EditionRecentSales({ editionKey, mintCount }: { editionKey: string | null; mintCount?: number | null }) {
+  const [sales, setSales] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(function() {
+    if (!editionKey) { setLoading(false); return }
+    fetch("/api/recent-sales?editionKey=" + encodeURIComponent(editionKey) + "&limit=5")
+      .then(function(r) { return r.ok ? r.json() : null })
+      .then(function(d) { if (d && d.sales) setSales(d.sales) })
+      .catch(function() {})
+      .finally(function() { setLoading(false) })
+  }, [editionKey])
+
+  if (!editionKey) return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Recent Sales</div>
+      <div className="text-xs text-zinc-600">—</div>
+    </div>
+  )
+
+  if (loading) return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Recent Sales</div>
+      <div className="text-xs text-zinc-600 animate-pulse">Loading sales...</div>
+    </div>
+  )
+
+  if (!sales.length) return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Recent Sales</div>
+      <div className="text-xs text-zinc-600">No recent sales</div>
+    </div>
+  )
+
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Recent Sales</div>
+      <div className="space-y-1.5">
+        {sales.map(function(s: any, i: number) {
+          const age = s.soldAt ? Math.round((Date.now() - new Date(s.soldAt).getTime()) / 60000) : null
+          const ageStr = age === null ? "—" : age < 60 ? age + "m ago" : age < 1440 ? Math.round(age / 60) + "h ago" : Math.round(age / 1440) + "d ago"
+          const serialStr = s.serialNumber ? ("#" + s.serialNumber + (mintCount ? " / " + mintCount : "")) : "—"
+          return (
+            <div key={i} className="flex items-center justify-between text-xs gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-zinc-400 shrink-0">{serialStr}</span>
+                <span className="text-zinc-600 shrink-0">{ageStr}</span>
+                {s.buyerUsername && <span className="text-zinc-500 truncate">→ {s.buyerUsername}</span>}
+              </div>
+              <span className="font-semibold text-emerald-400 shrink-0">{s.price ? "$" + Number(s.price).toFixed(2) : "—"}</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ── Auto-search reader ────────────────────────────────────────────────────────
 
 function AutoSearchReader(props: { onSearch: (q: string) => void }) {
   const searchParams = useSearchParams()
   useEffect(function() {
-    const q = searchParams.get("q")
-    if (q && q.trim()) props.onSearch(q.trim())
+    // Support both ?address= (preferred) and legacy ?q= param
+    const addr = searchParams.get("address") || searchParams.get("q")
+    if (addr && addr.trim()) props.onSearch(addr.trim())
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   return null
@@ -296,6 +357,7 @@ function AutoSearchReader(props: { onSearch: (q: string) => void }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function WalletPage() {
+  const router = useRouter()
   const [rows, setRows] = useState<MomentRow[]>([])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
@@ -309,8 +371,10 @@ export default function WalletPage() {
   const [hasSearched, setHasSearched] = useState(false)
   const [ownerKey, setOwnerKey] = useState("")
   const [sealedPackCount, setSealedPackCount] = useState<number | null>(null)
+  const [packsByTitle, setPacksByTitle] = useState<Record<string, number>>({})
   const [recentSales, setRecentSales] = useState<any[]>([]);
   const [salesLoading, setSalesLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const [teamFilter, setTeamFilter] = useState("all")
   const [leagueFilter, setLeagueFilter] = useState("all")
@@ -435,6 +499,58 @@ export default function WalletPage() {
     })
   }
 
+  // Debounced offer enrichment — accumulates rows across page loads,
+  // fires once after 2s idle, chunks into batches of 200 momentIds
+  const pendingOfferRowsRef = useRef<MomentRow[]>([])
+  const offerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function flushOfferEnrichment() {
+    const allRows = pendingOfferRowsRef.current
+    pendingOfferRowsRef.current = []
+    if (!allRows.length) return
+
+    const CHUNK_SIZE = 200
+    for (let i = 0; i < allRows.length; i += CHUNK_SIZE) {
+      const chunk = allRows.slice(i, i + CHUNK_SIZE)
+      const momentIds = chunk.map(function(r) { return r.momentId })
+      const editionKeys = chunk.map(function(r) { return r.editionKey ?? "" })
+      fetch("/api/best-offers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ momentIds, editionKeys }),
+      })
+        .then(function(r) { return r.ok ? r.json() : null })
+        .then(function(d) {
+          if (!d || !Array.isArray(d.results)) return
+          const offerMap = new Map<string, number>()
+          for (const result of d.results) {
+            if (typeof result.bestOffer === "number" && result.bestOffer > 0) {
+              offerMap.set(String(result.momentId), result.bestOffer)
+            }
+          }
+          if (!offerMap.size) return
+          setRows(function(prev) {
+            return prev.map(function(row) {
+              const fresh = offerMap.get(row.momentId)
+              if (fresh === undefined) return row
+              if (row.bestOffer && row.bestOffer >= fresh) return row
+              return { ...row, bestOffer: fresh }
+            })
+          })
+        })
+        .catch(function() {})
+    }
+  }
+
+  function enrichOffers(momentRows: MomentRow[]) {
+    if (!momentRows.length) return
+    // Accumulate rows for batch processing
+    pendingOfferRowsRef.current = pendingOfferRowsRef.current.concat(momentRows)
+    // Reset the 2-second idle timer
+    if (offerTimerRef.current) clearTimeout(offerTimerRef.current)
+    offerTimerRef.current = setTimeout(flushOfferEnrichment, 2000)
+  }
+
   async function maybePatchProfileStats(query: string, resultRows: MomentRow[], resultSummary: WalletSearchResponse["summary"]) {
     const key = getOwnerKey()
     if (!key) return
@@ -469,6 +585,8 @@ export default function WalletPage() {
   const runSearch = useCallback(async function(query: string) {
     if (!query.trim()) return
     setInput(query.trim())
+    // Persist address in URL for bookmarking and sharing
+    router.replace("?address=" + encodeURIComponent(query.trim()), { scroll: false })
     setLoading(true)
     setError("")
     setRows([])
@@ -477,7 +595,11 @@ export default function WalletPage() {
     setExpandedRows({})
     setHasSearched(false)
     setSealedPackCount(null)
+    setPacksByTitle({})
     setRecentSales([]);
+    // Clear any pending offer enrichment from previous search
+    pendingOfferRowsRef.current = []
+    if (offerTimerRef.current) { clearTimeout(offerTimerRef.current); offerTimerRef.current = null }
     setSalesLoading(true);
     fetch("/api/recent-sales?limit=15")
       .then(function(r) { return r.ok ? r.json() : null; })
@@ -500,17 +622,22 @@ export default function WalletPage() {
       setOffset(nextRows.length)
       setHasSearched(true)
       maybePatchProfileStats(query.trim(), withBadges, json.summary).catch(function() {})
-      // Fire-and-forget: load sealed pack count for this wallet
+      // Fire-and-forget: enrich best offers for loaded rows
+      enrichOffers(withBadges)
+      // Fire-and-forget: load sealed pack count + titles for this wallet
       fetch("/api/wallet-packs?wallet=" + encodeURIComponent(query.trim()))
         .then(function(r) { return r.ok ? r.json() : null })
-        .then(function(d) { if (d && typeof d.totalSealedPacks === "number") setSealedPackCount(d.totalSealedPacks) })
+        .then(function(d) {
+          if (d && typeof d.totalSealedPacks === "number") setSealedPackCount(d.totalSealedPacks)
+          if (d && d.packsByTitle) setPacksByTitle(d.packsByTitle)
+        })
         .catch(function() {})
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [router])
 
   async function fetchWalletPage(nextOffset: number, append: boolean) {
     const response = await fetch("/api/wallet-search", {
@@ -526,6 +653,7 @@ export default function WalletPage() {
     setRows(function(prev) { return append ? [...prev, ...withBadges] : withBadges })
     setSummary(json.summary)
     setOffset(nextOffset + nextRows.length)
+    enrichOffers(withBadges)
   }
 
   async function handleSearch() { await runSearch(input) }
@@ -564,6 +692,30 @@ export default function WalletPage() {
   }
 
   // ── Derived state ─────────────────────────────────────────────────────────
+
+  // Build a lookup: normalized set name → pack count
+  // Distribution titles look like "Base Set (Series 4)" or "Holo Icon"
+  // We match by checking if a distribution title contains the set name
+  const packLookup = useMemo(function() {
+    const map = new Map<string, number>()
+    if (!Object.keys(packsByTitle).length) return map
+    for (const [title, count] of Object.entries(packsByTitle)) {
+      const lowerTitle = title.toLowerCase()
+      // Store by the raw title for exact match attempts
+      map.set(lowerTitle, (map.get(lowerTitle) ?? 0) + count)
+    }
+    return map
+  }, [packsByTitle])
+
+  function getPackCount(setName: string): number {
+    if (!packLookup.size) return 0
+    const normalizedSet = normalizeSetName(setName).toLowerCase()
+    // Direct match on title
+    for (const [title, count] of packLookup.entries()) {
+      if (title.includes(normalizedSet) || normalizedSet.includes(title)) return count
+    }
+    return 0
+  }
 
   const batchEditionStats = useMemo(function() {
     const map = new Map<string, { owned: number; locked: number }>()
@@ -694,22 +846,6 @@ export default function WalletPage() {
 
       <div className="mx-auto max-w-[1600px] px-3 py-4 md:px-6">
 
-        {/* Header */}
-        <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-4">
-          <img src="/rip-packs-city-logo.png" alt="Rip Packs City" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 9999 }} />
-          <div>
-            <h1 className="text-xl font-black tracking-wide text-white md:text-2xl">RIP PACKS CITY</h1>
-            <p className="text-xs text-zinc-400 md:text-sm">Wallet intelligence for digital collectibles</p>
-          </div>
-          <div className="ml-auto flex flex-wrap gap-2">
-            <a href="/profile" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Profile</a>
-            <a href="/nba-top-shot/packs"   className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Packs</a>
-            <a href="/nba-top-shot/badges"  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Badges</a>
-            <a href="/nba-top-shot/sniper"  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Sniper</a>
-            <a href="/nba-top-shot/sets"    className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Sets</a>
-          </div>
-        </div>
-
         {/* Profile key indicator */}
         {ownerKey && (
           <div className="mb-4 flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-400">
@@ -735,6 +871,19 @@ export default function WalletPage() {
           >
             {loading ? "Loading..." : "Search"}
           </button>
+          {rows.length > 0 && (
+            <button
+              onClick={function() {
+                navigator.clipboard.writeText(window.location.href)
+                setCopied(true)
+                setTimeout(function() { setCopied(false) }, 1500)
+              }}
+              title="Copy shareable link"
+              className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-400 hover:bg-zinc-900 transition"
+            >
+              {copied ? "✓" : "🔗"}
+            </button>
+          )}
         </div>
 
         {/* Portfolio summary */}
@@ -936,6 +1085,7 @@ export default function WalletPage() {
                 <th className="p-3 hidden md:table-cell">Rarity</th>
                 <th className="p-3">Serial / Mint</th>
                 <th className="p-3 hidden lg:table-cell">Held / Locked</th>
+                <th className="p-3 hidden xl:table-cell">Packs</th>
                 <th className="p-3">FMV</th>
                 <th className="p-3 hidden lg:table-cell">Best Offer</th>
                 <th className="p-3 hidden xl:table-cell">Acquired</th>
@@ -956,12 +1106,22 @@ export default function WalletPage() {
 
                 return (
                   <Fragment key={row.momentId}>
-                    <tr className={"border-b border-zinc-800 align-top " + (isLocked ? "opacity-60" : "") + (row.tier?.toUpperCase() === "LEGENDARY" ? " rpc-holo-legendary" : row.tier?.toUpperCase() === "ULTIMATE" ? " rpc-holo-ultimate" : row.tier?.toUpperCase() === "RARE" ? " rpc-holo-rare" : "")}>
-                      <td className="p-3">
-                        <div className="flex items-start gap-2">
-                          <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-zinc-800 bg-black hidden sm:block">
-                            {row.thumbnailUrl ? <img src={row.thumbnailUrl} alt={row.playerName} className="h-full w-full object-cover" /> : null}
-                          </div>
+                    <tr className={"border-b border-zinc-800 align-top " + (isLocked ? "opacity-60" : "")}>
+                      <td className="p-3 min-w-[160px]">
+                        <div className="flex items-center gap-2">
+                          {row.thumbnailUrl ? (
+                            <img
+                              src={row.thumbnailUrl}
+                              alt={row.playerName}
+                              width={36}
+                              height={36}
+                              loading="lazy"
+                              className="shrink-0 rounded object-cover bg-zinc-900"
+                              style={{ width: 36, height: 36 }}
+                            />
+                          ) : (
+                            <div className="shrink-0 rounded bg-zinc-900" style={{ width: 36, height: 36 }} />
+                          )}
                           <div>
                             <div className="font-semibold text-white text-sm">{row.playerName}</div>
                             <div className="mt-1 flex flex-wrap gap-1">
@@ -993,11 +1153,37 @@ export default function WalletPage() {
                         {editionCounts.owned} / {editionCounts.locked}
                         {isLocked && <span className="ml-1.5 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">Locked</span>}
                       </td>
+                      <td className="p-3 text-sm hidden xl:table-cell">
+                        {(function() {
+                          const count = getPackCount(row.setName)
+                          if (!count) return <span className="text-zinc-600">—</span>
+                          return (
+                            <a href={"/nba-top-shot/packs?wallet=" + encodeURIComponent(input.trim())} className="text-red-400 hover:text-red-300">
+                              {count + (count === 1 ? " pack" : " packs")}
+                            </a>
+                          )
+                        })()}
+                      </td>
                       <td className="p-3">
                         <div className={"font-semibold text-sm " + (fmv.muted ? "text-zinc-500" : "text-white")}>{fmv.text}</div>
                         <div className={"text-[10px] " + conf.color}>{conf.label}</div>
+                        {(function() {
+                          if (row.marketConfidence === "none" || !row.fmv || row.fmv <= 0 || row.lowAsk == null) return null
+                          const delta = ((row.lowAsk - row.fmv) / row.fmv) * 100
+                          if (Math.abs(delta) < 3) return null
+                          return (
+                            <div className={"text-[10px] font-mono " + (delta < 0 ? "text-emerald-400" : "text-red-400")}>
+                              {delta > 0 ? "↑+" : "↓"}{delta.toFixed(0)}%
+                            </div>
+                          )
+                        })()}
                       </td>
-                      <td className="p-3 text-zinc-300 text-sm hidden lg:table-cell">{formatCurrency(row.bestOffer)}</td>
+                      <td className="p-3 text-sm hidden lg:table-cell">
+                        <span className="text-zinc-300">{formatCurrency(row.bestOffer)}</span>
+                        {typeof row.bestOffer === "number" && row.bestOffer > 0 && typeof getBestAsk(row) === "number" && row.bestOffer > (getBestAsk(row) ?? Infinity) && (
+                          <span className="ml-1.5 rounded bg-emerald-950 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400 border border-emerald-800">Flip</span>
+                        )}
+                      </td>
                       <td className="p-3 text-zinc-500 text-xs hidden xl:table-cell">{formatAcquiredAt(row.acquiredAt)}</td>
                       <td className="p-3">
                         <button onClick={function() { toggleExpanded(row.momentId) }} className="rounded-lg border border-zinc-700 px-2 py-1 text-xs text-white hover:bg-zinc-900">
@@ -1008,7 +1194,7 @@ export default function WalletPage() {
 
                     {expanded ? (
                       <tr className="border-b border-zinc-800 bg-black/60">
-                        <td colSpan={11} className="p-4">
+                        <td colSpan={12} className="p-4">
                           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                               <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Market</div>
@@ -1089,6 +1275,9 @@ export default function WalletPage() {
                               </div>
                             )}
                           </div>
+                          <div className="mt-4">
+                            <EditionRecentSales editionKey={row.editionKey ?? null} mintCount={getMint(row)} />
+                          </div>
                         </td>
                       </tr>
                     ) : null}
@@ -1106,7 +1295,7 @@ export default function WalletPage() {
             </button>
           </div>
         ) : null}
-      </div>
+
         {/* Recent Sales */}
         {hasSearched && (recentSales.length > 0 || salesLoading) && (
           <div className="mb-5 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
@@ -1156,6 +1345,7 @@ export default function WalletPage() {
             )}
           </div>
         )}
+      </div>
     </div>
   )
 }
