@@ -907,8 +907,8 @@ export async function GET(req: Request) {
             packEvRatio: null,
             buyUrl: r.buy_url || "",
             source: (r.source || "flowty"),
-            offerAmount: null,
-            offerFmvPct: null,
+            offerAmount: null as number | null,
+            offerFmvPct: null as number | null,
           };
         });
         return NextResponse.json(
