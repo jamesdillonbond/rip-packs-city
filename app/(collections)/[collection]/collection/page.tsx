@@ -403,7 +403,7 @@ export default function WalletPage() {
   const [rarityFilter, setRarityFilter] = useState("all")
   const [lockedFilter, setLockedFilter] = useState("all")
   const [searchWithin, setSearchWithin] = useState("")
-  const [sortKey, setSortKey] = useState<SortKey>("acquired")
+  const [sortKey, setSortKey] = useState<SortKey>("fmv")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
 
   useEffect(function() {
