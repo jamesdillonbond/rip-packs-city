@@ -283,18 +283,25 @@ type SortKey = "player" | "series" | "set" | "parallel" | "rarity" | "serial" | 
 
 // ── Edition Recent Sales (inline in expand panel) ────────────────────────────
 
-function EditionRecentSales({ editionKey }: { editionKey: string | null }) {
+function EditionRecentSales({ editionKey, mintCount }: { editionKey: string | null; mintCount?: number | null }) {
   const [sales, setSales] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(function() {
     if (!editionKey) { setLoading(false); return }
-    fetch("/api/recent-sales?editionKey=" + encodeURIComponent(editionKey) + "&limit=3")
+    fetch("/api/recent-sales?editionKey=" + encodeURIComponent(editionKey) + "&limit=5")
       .then(function(r) { return r.ok ? r.json() : null })
       .then(function(d) { if (d && d.sales) setSales(d.sales) })
       .catch(function() {})
       .finally(function() { setLoading(false) })
   }, [editionKey])
+
+  if (!editionKey) return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Recent Sales</div>
+      <div className="text-xs text-zinc-600">—</div>
+    </div>
+  )
 
   if (loading) return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
@@ -317,13 +324,15 @@ function EditionRecentSales({ editionKey }: { editionKey: string | null }) {
         {sales.map(function(s: any, i: number) {
           const age = s.soldAt ? Math.round((Date.now() - new Date(s.soldAt).getTime()) / 60000) : null
           const ageStr = age === null ? "—" : age < 60 ? age + "m ago" : age < 1440 ? Math.round(age / 60) + "h ago" : Math.round(age / 1440) + "d ago"
+          const serialStr = s.serialNumber ? ("#" + s.serialNumber + (mintCount ? " / " + mintCount : "")) : "—"
           return (
-            <div key={i} className="flex items-center justify-between text-xs">
-              <div>
-                <span className="text-zinc-400">#{s.serialNumber ?? "?"}</span>
-                <span className="ml-2 text-zinc-600">{ageStr}</span>
+            <div key={i} className="flex items-center justify-between text-xs gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-zinc-400 shrink-0">{serialStr}</span>
+                <span className="text-zinc-600 shrink-0">{ageStr}</span>
+                {s.buyerUsername && <span className="text-zinc-500 truncate">→ {s.buyerUsername}</span>}
               </div>
-              <span className="font-semibold text-emerald-400">{s.price ? "$" + Number(s.price).toFixed(2) : "—"}</span>
+              <span className="font-semibold text-emerald-400 shrink-0">{s.price ? "$" + Number(s.price).toFixed(2) : "—"}</span>
             </div>
           )
         })}
@@ -1207,7 +1216,7 @@ export default function WalletPage() {
                             )}
                           </div>
                           <div className="mt-4">
-                            <EditionRecentSales editionKey={row.editionKey ?? null} />
+                            <EditionRecentSales editionKey={row.editionKey ?? null} mintCount={getMint(row)} />
                           </div>
                         </td>
                       </tr>
