@@ -1,0 +1,38 @@
+# .github/workflows/rpc-report.yml
+#
+# RPC Report — weekly market intelligence tweet
+# Fires every Monday at 9:00 AM ET (14:00 UTC)
+#
+# Required secrets (already set for pipeline):
+#   INGEST_SECRET_TOKEN
+
+name: RPC Report
+
+on:
+  schedule:
+    - cron: "0 14 * * 1"
+  workflow_dispatch:
+
+jobs:
+  post-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Post RPC Report to Twitter
+        run: |
+          HTTP_STATUS=$(curl -s -o /tmp/rpc_report_response.json -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            https://rip-packs-city.vercel.app/api/bots/rpc-report)
+
+          echo "HTTP Status: $HTTP_STATUS"
+          echo "Response:"
+          cat /tmp/rpc_report_response.json
+
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "RPC Report bot returned non-200 status: $HTTP_STATUS"
+            exit 1
+          fi
+
+          echo "RPC Report posted successfully"
