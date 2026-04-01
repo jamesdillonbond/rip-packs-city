@@ -732,9 +732,22 @@ export default function PacksPage() {
             {walletError && <div className="text-xs text-red-400">{walletError}</div>}
           </div>
 
-          {listingsLoading && <div className="p-8 text-center text-zinc-500 text-sm">Loading pack listings...</div>}
+          {listingsLoading && (
+            <div style={{ padding: "60px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+              {[100, 85, 70, 55, 40].map((w, i) => (
+                <div key={i} className="rpc-skeleton" style={{ width: `${w}%`, maxWidth: 500, height: 14, opacity: 1 - i * 0.15 }} />
+              ))}
+              <p className="rpc-label" style={{ marginTop: 12 }}>SCANNING THE MARKETPLACE&hellip;</p>
+            </div>
+          )}
           {listingsError && <div className="p-4 text-red-400 text-sm">{listingsError}</div>}
-          {!listingsLoading && filteredListings.length === 0 && <div className="p-8 text-center text-zinc-500 text-sm">No packs found.</div>}
+          {!listingsLoading && filteredListings.length === 0 && (
+            <div style={{ padding: "80px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, textAlign: "center" }}>
+              <span style={{ fontSize: 40, opacity: 0.3 }}>▣</span>
+              <p className="rpc-heading" style={{ fontSize: "var(--text-lg)" }}>NO ACTIVE DROPS</p>
+              <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)" }}>Check back when the next pack drops.</p>
+            </div>
+          )}
           {!listingsLoading && filteredListings.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[750px] border-collapse text-sm">
