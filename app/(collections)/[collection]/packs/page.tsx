@@ -61,6 +61,7 @@ type PackEVResponse = {
   supplySnapshot: SupplySnapshot
   editionCount: number
   methodology: string
+  fmvCoverageNote?: string | null
   error?: string
 }
 
@@ -85,6 +86,7 @@ type PackEVSummary = {
   valueRatio: number
   loading: boolean
   error: boolean
+  fmvCoverageNote?: string | null
 }
 
 function fmt(value: number | null | undefined): string {
@@ -148,8 +150,8 @@ export default function PacksPage() {
   const [tierFilter, setTierFilter] = useState("all")
   const [packTypeFilter, setPackTypeFilter] = useState<PackTypeFilter>("all")
   const [searchFilter, setSearchFilter] = useState("")
-  const [sortKey, setSortKey] = useState<SortKey>("tier")
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
+  const [sortKey, setSortKey] = useState<SortKey>("valueRatio")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
 
   const [evCache, setEvCache] = useState<Record<string, PackEVSummary>>({})
   const prewarmQueueRef = useRef<string[]>([])
@@ -175,6 +177,10 @@ export default function PacksPage() {
   const [ttFloor, setTtFloor] = useState("")
 
   const [bundleArbitrage, setBundleArbitrage] = useState<Record<string, { sumOfParts: number; premium: number } | null>>({})
+  const [evDetailCache, setEvDetailCache] = useState<Record<string, PackEVResponse>>({})
+  const [modalPack, setModalPack] = useState<PackListing | null>(null)
+  const [modalResult, setModalResult] = useState<PackEVResponse | null>(null)
+  const [modalLoading, setModalLoading] = useState(false)
 
   const ttCost = ttMode && ttCount && ttFloor ? parseFloat(ttCount) * parseFloat(ttFloor) : null
   const ttPackEV = result !== null && ttCost !== null ? Math.round((result.grossEV - ttCost) * 100) / 100 : null
@@ -195,7 +201,7 @@ export default function PacksPage() {
       const valueRatio = pack.lowestAsk > 0 ? Math.round((json.grossEV / pack.lowestAsk) * 100) / 100 : 0
       setEvCache((prev) => ({
         ...prev,
-        [id]: { grossEV: json.grossEV, packEV: json.packEV, isPositiveEV: json.isPositiveEV, valueRatio, loading: false, error: false },
+        [id]: { grossEV: json.grossEV, packEV: json.packEV, isPositiveEV: json.isPositiveEV, valueRatio, loading: false, error: false, fmvCoverageNote: json.fmvCoverageNote ?? null },
       }))
     } catch {
       setEvCache((prev) => ({ ...prev, [id]: { grossEV: 0, packEV: 0, isPositiveEV: false, valueRatio: 0, loading: false, error: true } }))
@@ -348,12 +354,12 @@ export default function PacksPage() {
         diff = (ownedPacks[b.distId] ?? 0) - (ownedPacks[a.distId] ?? 0)
         if (diff === 0) diff = tierOrder(a.tier) - tierOrder(b.tier)
       } else if (sortKey === "grossEV") {
-        const gA = evA && !evA.loading && !evA.error ? evA.grossEV : -1
-        const gB = evB && !evB.loading && !evB.error ? evB.grossEV : -1
+        const gA = evA && !evA.loading && !evA.error ? evA.grossEV : -Infinity
+        const gB = evB && !evB.loading && !evB.error ? evB.grossEV : -Infinity
         diff = gA - gB
       } else if (sortKey === "valueRatio") {
-        const rA = evA && !evA.loading && !evA.error ? evA.valueRatio : -1
-        const rB = evB && !evB.loading && !evB.error ? evB.valueRatio : -1
+        const rA = evA && !evA.loading && !evA.error ? evA.valueRatio : -Infinity
+        const rB = evB && !evB.loading && !evB.error ? evB.valueRatio : -Infinity
         diff = rA - rB
       }
       return sortDir === "asc" ? diff : -diff
@@ -380,15 +386,49 @@ export default function PacksPage() {
       const json: PackEVResponse = await response.json()
       if (!response.ok) throw new Error(json.error || "Pack EV analysis failed")
       setResult(json)
+      setEvDetailCache((prev) => ({ ...prev, [pack.packListingId]: json }))
       const valueRatio = pack.lowestAsk > 0 ? Math.round((json.grossEV / pack.lowestAsk) * 100) / 100 : 0
       setEvCache((prev) => ({
         ...prev,
-        [pack.packListingId]: { grossEV: json.grossEV, packEV: json.packEV, isPositiveEV: json.isPositiveEV, valueRatio, loading: false, error: false },
+        [pack.packListingId]: { grossEV: json.grossEV, packEV: json.packEV, isPositiveEV: json.isPositiveEV, valueRatio, loading: false, error: false, fmvCoverageNote: json.fmvCoverageNote ?? null },
       }))
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function openEvModal(pack: PackListing) {
+    if (!canAnalyzeEV(pack.packType)) return
+    setModalPack(pack)
+    const cached = evDetailCache[pack.packListingId]
+    if (cached) {
+      setModalResult(cached)
+      setModalLoading(false)
+      return
+    }
+    setModalResult(null)
+    setModalLoading(true)
+    try {
+      const res = await fetch("/api/pack-ev", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ packListingId: pack.packListingId, packPrice: pack.lowestAsk }),
+      })
+      const json: PackEVResponse = await res.json()
+      if (!res.ok || json.error) throw new Error(json.error ?? "failed")
+      setModalResult(json)
+      setEvDetailCache((prev) => ({ ...prev, [pack.packListingId]: json }))
+      const valueRatio = pack.lowestAsk > 0 ? Math.round((json.grossEV / pack.lowestAsk) * 100) / 100 : 0
+      setEvCache((prev) => ({
+        ...prev,
+        [pack.packListingId]: { grossEV: json.grossEV, packEV: json.packEV, isPositiveEV: json.isPositiveEV, valueRatio, loading: false, error: false, fmvCoverageNote: json.fmvCoverageNote ?? null },
+      }))
+    } catch {
+      setModalResult(null)
+    } finally {
+      setModalLoading(false)
     }
   }
 
@@ -428,7 +468,12 @@ export default function PacksPage() {
     if (!ev) return <span className="text-zinc-700 text-xs">—</span>
     if (ev.loading) return <span className="text-zinc-600 text-xs animate-pulse">...</span>
     if (ev.error) return <span className="text-zinc-600 text-xs">—</span>
-    return <span className={"text-xs font-semibold " + (ev.isPositiveEV ? "text-green-400" : "text-red-400")}>{fmt(ev.grossEV)}</span>
+    return (
+      <span className="inline-flex items-center gap-1">
+        <span className={"text-xs font-semibold " + (ev.isPositiveEV ? "text-green-400" : "text-red-400")}>{fmt(ev.grossEV)}</span>
+        {ev.fmvCoverageNote && <span className="text-amber-500 text-xs cursor-help" title={ev.fmvCoverageNote}>⚠</span>}
+      </span>
+    )
   }
 
   function renderRatioCell(pack: PackListing) {
@@ -777,7 +822,7 @@ export default function PacksPage() {
                     return (
                       <tr key={listing.packListingId}
                         className={"border-b border-zinc-800 " + (canAnalyzeEV(listing.packType) ? "hover:bg-zinc-900/50 cursor-pointer" : "opacity-75") + " " + (isSelected ? "bg-zinc-900/70" : "")}
-                        onClick={() => canAnalyzeEV(listing.packType) ? handleAnalyze(listing) : undefined}>
+                        onClick={() => canAnalyzeEV(listing.packType) ? openEvModal(listing) : undefined}>
                         <td className="p-3">
                           <div className="flex items-center gap-3">
                             {listing.imageUrl && <img src={listing.imageUrl} alt={listing.title} className="h-10 w-10 rounded object-cover flex-shrink-0" />}
@@ -825,6 +870,102 @@ export default function PacksPage() {
             </div>
           )}
         </div>
+
+        {/* EV Modal */}
+        {modalPack && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => { setModalPack(null); setModalResult(null) }}>
+            <div className="absolute inset-0 bg-black/60" />
+            <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-950 shadow-2xl m-4" onClick={(e) => e.stopPropagation()}>
+              <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-zinc-800 bg-zinc-950 px-5 py-4">
+                {modalPack.imageUrl && <img src={modalPack.imageUrl} alt={modalPack.title} className="h-12 w-12 rounded object-cover flex-shrink-0" />}
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-white text-lg truncate">{modalPack.title}</div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className={"rounded border px-1.5 py-0.5 text-[10px] font-semibold capitalize " + tierBadge(modalPack.tier)}>{modalPack.tier}</span>
+                    <span className="text-xs text-zinc-400">{modalPack.momentsPerPack} moments</span>
+                  </div>
+                </div>
+                <button onClick={() => { setModalPack(null); setModalResult(null) }} className="rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">✕</button>
+              </div>
+
+              {modalLoading && (
+                <div className="p-8 text-center text-zinc-500 text-sm animate-pulse">Analyzing pack contents...</div>
+              )}
+
+              {modalResult && (
+                <div className="p-5 space-y-5">
+                  {/* Summary stats */}
+                  <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
+                    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
+                      <div className="text-[10px] uppercase tracking-wide text-zinc-500">Pack Price</div>
+                      <div className="text-lg font-black text-white">{fmt(modalPack.lowestAsk)}</div>
+                    </div>
+                    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
+                      <div className="text-[10px] uppercase tracking-wide text-zinc-500">Gross EV</div>
+                      <div className={"text-lg font-black " + (modalResult.isPositiveEV ? "text-green-400" : "text-red-400")}>{fmt(modalResult.grossEV)}</div>
+                    </div>
+                    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
+                      <div className="text-[10px] uppercase tracking-wide text-zinc-500">EV Ratio</div>
+                      <div className={"text-lg font-black " + (modalResult.grossEV / (modalPack.lowestAsk || 1) >= 1 ? "text-green-400" : "text-red-400")}>
+                        {modalPack.lowestAsk > 0 ? (modalResult.grossEV / modalPack.lowestAsk).toFixed(2) + "x" : "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
+                      <div className="text-[10px] uppercase tracking-wide text-zinc-500">Pack EV</div>
+                      <div className={"text-lg font-black " + (modalResult.isPositiveEV ? "text-green-400" : "text-red-400")}>{fmt(modalResult.packEV)}</div>
+                    </div>
+                  </div>
+
+                  {modalResult.fmvCoverageNote && (
+                    <div className="flex items-start gap-2 rounded-lg border border-amber-900/50 bg-amber-950/20 px-4 py-2.5">
+                      <span className="text-amber-500 text-sm mt-0.5">⚠</span>
+                      <span className="text-xs text-amber-400">{modalResult.fmvCoverageNote}</span>
+                    </div>
+                  )}
+
+                  {/* Top Pulls table */}
+                  <div>
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Top Pulls</div>
+                    <div className="overflow-x-auto rounded-lg border border-zinc-800">
+                      <table className="w-full border-collapse text-sm">
+                        <thead className="bg-zinc-900">
+                          <tr className="text-left text-[10px] uppercase tracking-wide text-zinc-500">
+                            <th className="p-2.5">Player</th>
+                            <th className="p-2.5">Tier</th>
+                            <th className="p-2.5">Prob %</th>
+                            <th className="p-2.5">Price</th>
+                            <th className="p-2.5">EV</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {modalResult.topPulls.slice(0, 15).map((pull) => (
+                            <tr key={pull.editionId} className="border-t border-zinc-800/50">
+                              <td className="p-2.5">
+                                <div className="font-medium text-white text-xs">{pull.playerName}</div>
+                                <div className="text-[10px] text-zinc-500 truncate max-w-[180px]">{pull.setName}</div>
+                              </td>
+                              <td className="p-2.5"><span className={"rounded border px-1.5 py-0.5 text-[10px] font-semibold capitalize " + tierBadge(pull.tier)}>{pull.tier}</span></td>
+                              <td className="p-2.5 text-zinc-300 text-xs">{pull.probability}%</td>
+                              <td className="p-2.5 text-zinc-300 text-xs">{pull.averageSalePrice > 0 ? fmt(pull.averageSalePrice) : pull.lowAsk > 0 ? fmt(pull.lowAsk) : "—"}</td>
+                              <td className="p-2.5 font-semibold text-white text-xs">{fmt(pull.editionEV)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {modalResult.topPulls.length > 15 && (
+                      <div className="mt-2 text-[10px] text-zinc-500">{modalResult.topPulls.length - 15} more editions not shown</div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {!modalLoading && !modalResult && (
+                <div className="p-8 text-center text-zinc-500 text-sm">Failed to load EV data.</div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
