@@ -373,10 +373,10 @@ export default function BadgesPage() {
         {loading && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {Array.from({ length: 12 }).map((_, i) => (
-              <div key={i} className="rpc-card" style={{ padding: 16 }}>
-                <div className="rpc-skeleton" style={{ height: 160, borderRadius: "var(--radius-md)", marginBottom: 12 }} />
-                <div className="rpc-skeleton" style={{ height: 16, width: "66%", marginBottom: 8 }} />
-                <div className="rpc-skeleton" style={{ height: 12, width: "50%" }} />
+              <div key={i} className="animate-pulse rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+                <div className="mb-3 h-40 rounded-lg bg-zinc-800" />
+                <div className="mb-2 h-4 w-2/3 rounded bg-zinc-800" />
+                <div className="h-3 w-1/2 rounded bg-zinc-800" />
               </div>
             ))}
           </div>
@@ -397,7 +397,7 @@ export default function BadgesPage() {
               return (
                 <div
                   key={e.id}
-                  className={`group relative overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 transition hover:border-zinc-600 ${e.tier.toUpperCase() === "LEGENDARY" ? "rpc-holo-legendary" : e.tier.toUpperCase() === "ULTIMATE" ? "rpc-holo-ultimate" : e.tier.toUpperCase() === "RARE" ? "rpc-holo-rare" : ""}`}
+                  className="group relative overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 transition hover:border-zinc-600"
                 >
                   {/* Moment media */}
                   <div className="relative aspect-square overflow-hidden bg-zinc-900">
@@ -517,10 +517,8 @@ export default function BadgesPage() {
 
         {/* Empty state */}
         {!loading && filtered.length === 0 && !error && (
-          <div style={{ padding: "80px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, textAlign: "center" }}>
-            <span style={{ fontSize: 40, opacity: 0.3 }}>⭐</span>
-            <p className="rpc-heading" style={{ fontSize: "var(--text-lg)" }}>NO BADGES FOUND</p>
-            <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)" }}>This wallet doesn&apos;t have any badge-eligible moments.</p>
+          <div className="py-20 text-center text-zinc-500">
+            No badge editions found for this filter combination.
           </div>
         )}
 

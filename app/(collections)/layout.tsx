@@ -4,8 +4,6 @@ import { getPublishedCollection, publishedCollections, type Collection } from "@
 import { CollectionTabBar } from "@/components/collection-tab-bar"
 import { CartButton } from "@/components/cart/CartButton"
 import SupportChatConnected from "@/components/SupportChatConnected"
-import SiteFooter from "@/components/SiteFooter"
-import MobileNav from "@/components/MobileNav"
 
 // ── Per-collection SEO metadata ────────────────────────────────────────────────
 const COLLECTION_META: Record<string, { title: string; description: string }> = {
@@ -76,9 +74,8 @@ export default async function CollectionLayout(props: any) {
         ::-webkit-scrollbar-track{background:#111}
         ::-webkit-scrollbar-thumb{background:rgba(224,58,47,0.3);border-radius:2px}
         @media(max-width:768px){
-          .rpc-main{padding:16px 16px 80px!important;}
+          .rpc-main{padding:16px 16px 60px!important;}
           .rpc-coll-tabs{overflow-x:auto;}
-          .rpc-chat-fab{bottom:76px!important;}
         }
         .rpc-coll-tab:hover{background:rgba(255,255,255,0.06)!important;color:#fff!important;}
       `}</style>
@@ -88,9 +85,7 @@ export default async function CollectionLayout(props: any) {
       <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
         {props.children}
       </main>
-      <SiteFooter />
       <SupportChatConnected />
-      <MobileNav />
     </div>
   )
 }
