@@ -83,6 +83,7 @@ type MintedMomentGraphqlData = {
         leagues?: Array<string | null> | null
       } | null
       play?: { stats?: { jerseyNumber?: string | null } | null } | null
+      topshotScore?: { score?: number | null } | null
     } | null
   } | null
 }
@@ -272,6 +273,7 @@ async function fetchMomentGraphQL(id: string) {
             badges { type iconSvg }
             play { stats { jerseyNumber } }
             set { leagues }
+            topshotScore { score }
           }
         }
       }
@@ -295,9 +297,7 @@ async function fetchMomentGraphQL(id: string) {
       badges: Array.isArray(m?.badges)
         ? m.badges.map((b) => ({ type: b?.type ?? "UNKNOWN", iconSvg: b?.iconSvg ?? "" }))
         : [],
-      // TSS points removed from GraphQL query — field does not exist on MomentTopshotScore type.
-      // tssPoints will be null until a valid field name is confirmed from the schema.
-      tssPoints: null as number | null,
+      tssPoints: toNum(m?.topshotScore?.score) ?? null,
     }
   })
 }

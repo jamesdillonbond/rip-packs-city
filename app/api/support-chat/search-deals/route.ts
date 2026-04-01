@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
       limit = 8,
     } = body;
 
+    // Use get_top_deals RPC instead of broken nested select
     const { data, error } = await supabase.rpc("get_top_deals", {
       p_player: player ?? null,
       p_team: team ?? null,
@@ -76,11 +77,11 @@ export async function POST(req: NextRequest) {
       p_max_price: maxPrice ?? null,
       p_min_discount: minDiscount ?? 0,
       p_has_badge: hasBadge ?? false,
-      p_limit: limit ?? 8,
+      p_limit: limit,
     });
 
     if (error) {
-      console.error("[search-deals] Supabase error:", error);
+      console.error("[search-deals] Supabase RPC error:", error);
       return NextResponse.json({ deals: [], error: error.message }, { status: 200 });
     }
 
@@ -91,30 +92,30 @@ export async function POST(req: NextRequest) {
     const deals = data
       .map((row: any) => {
         const fmv = row.fmv_usd ? parseFloat(row.fmv_usd) : null;
-        const ask = parseFloat(row.low_ask);
+        const ask = parseFloat(row.low_ask ?? "0");
         const discount = row.discount_pct ?? (fmv && ask ? Math.round(((fmv - ask) / fmv) * 100) : 0);
         const badges: string[] = Array.isArray(row.play_tags)
-          ? row.play_tags.map((t: any) => t.title).filter(Boolean)
+          ? row.play_tags.map((t: any) => t.title ?? t).filter(Boolean)
           : [];
 
         return {
           player_name: row.player_name,
-          team: row.team,
+          team: row.team ?? null,
           tier: tierLabel(row.tier),
           set_name: row.set_name,
           series: seriesLabel(row.series_number),
           low_ask: ask,
           fmv,
-          confidence: null,
+          confidence: row.confidence ?? null,
           discount_pct: Math.round(discount),
-          circulation: null,
+          circulation: row.circulation_count ?? null,
           badges,
-          edition_key: "",
+          edition_key: row.external_id ?? "",
           rpc_url: `https://rip-packs-city.vercel.app/nba-top-shot/sniper`,
           buy_url: `https://www.nbatopshot.com`,
         };
       })
-      .sort((a: any, b: any) => b.discount_pct - a.discount_pct);
+      .slice(0, limit);
 
     const totalDeals = deals.length;
     const avgDiscount =
