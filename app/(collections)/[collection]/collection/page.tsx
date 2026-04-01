@@ -1082,6 +1082,7 @@ export default function WalletPage() {
                 <th className="p-3 hidden lg:table-cell">Held / Locked</th>
                 <th className="p-3 hidden xl:table-cell">Packs</th>
                 <th className="p-3">FMV</th>
+                <th className="p-3 hidden lg:table-cell">Low Ask</th>
                 <th className="p-3 hidden lg:table-cell">Best Offer</th>
                 <th className="p-3 hidden xl:table-cell">Acquired</th>
                 <th className="p-3">Details</th>
@@ -1177,6 +1178,15 @@ export default function WalletPage() {
                           if (ask == null || !row.fmv || Math.abs(ask - row.fmv) < 0.01) return null
                           return <div className="text-[10px] text-zinc-500 font-mono">Ask {"$" + ask.toFixed(2)}</div>
                         })()}
+                      </td>
+                      <td className="p-3 text-sm hidden lg:table-cell">
+                        {row.lowAsk != null ? (
+                          <span style={{ color: row.fmv && row.lowAsk < row.fmv ? "#22c55e" : "#9ca3af" }}>
+                            ${row.lowAsk.toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="text-zinc-600">—</span>
+                        )}
                       </td>
                       <td className="p-3 text-sm hidden lg:table-cell">
                         <span className="text-zinc-300">{formatCurrency(row.bestOffer)}</span>
