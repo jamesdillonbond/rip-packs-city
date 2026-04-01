@@ -48,6 +48,16 @@ jobs:
           if [ "$STATUS" != "200" ]; then
             echo "::warning::Backfill returned $STATUS"
           fi
+      - name: Flowty Listings — Sync real-time listings to cache
+        run: |
+          STATUS=$(curl -s -o /tmp/flowty-listings.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            "https://rip-packs-city.vercel.app/api/flowty-listings?limit=200")
+          echo "Flowty listings status: $STATUS"
+          cat /tmp/flowty-listings.json
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::Flowty listings returned $STATUS"
+          fi
       - name: Flowty Sales — Ingest cross-marketplace sales via Firestore
         run: |
           STATUS=$(curl -s -o /tmp/flowty-sales.json -w "%{http_code}" \
