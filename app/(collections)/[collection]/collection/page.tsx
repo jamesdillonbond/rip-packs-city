@@ -397,6 +397,7 @@ export default function WalletPage() {
   const [recentSales, setRecentSales] = useState<any[]>([]);
   const [salesLoading, setSalesLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [connectedWallet, setConnectedWallet] = useState<string | null>(null);
 
   const [playerFilter, setPlayerFilter] = useState("all")
   const [setFilter, setSetFilter] = useState("all")
@@ -413,6 +414,19 @@ export default function WalletPage() {
   useEffect(function() {
     setOwnerKey(getOwnerKey())
     return onOwnerKeyChange(function(key) { setOwnerKey(key) })
+  }, [])
+
+  // ── FCL wallet connection (for own-collection detection) ───────────────────
+  useEffect(function() {
+    let cancelled = false
+    import("@onflow/fcl")
+      .then(function(fcl) {
+        fcl.currentUser.subscribe(function(user: { addr?: string | null }) {
+          if (!cancelled) setConnectedWallet(user?.addr ?? null)
+        })
+      })
+      .catch(function() {})
+    return function() { cancelled = true }
   }, [])
 
   // ── Badge enrichment ────────────────────────────────────────────────────────
@@ -776,6 +790,15 @@ export default function WalletPage() {
     return ["all", ...Array.from(s).sort()]
   }, [rows])
 
+  // True when the loaded collection belongs to the signed-in / connected user
+  const isOwnCollection = useMemo(function() {
+    if (!input.trim()) return false
+    const q = input.trim().toLowerCase()
+    if (ownerKey && ownerKey.toLowerCase() === q) return true
+    if (connectedWallet && connectedWallet.toLowerCase() === q) return true
+    return false
+  }, [input, ownerKey, connectedWallet])
+
   const filteredRows = useMemo(function() {
     const q = searchWithin.trim().toLowerCase()
     const filtered = rows.filter(function(r) {
@@ -1107,7 +1130,7 @@ export default function WalletPage() {
 
                 return (
                   <Fragment key={row.momentId}>
-                    <tr className={"border-b border-zinc-800 align-top " + (isLocked ? "opacity-60" : "") + (row.tier?.toUpperCase() === "LEGENDARY" ? " rpc-holo-legendary" : row.tier?.toUpperCase() === "ULTIMATE" ? " rpc-holo-ultimate" : row.tier?.toUpperCase() === "RARE" ? " rpc-holo-rare" : "")}>
+                    <tr className={"group border-b border-zinc-800 align-top " + (isLocked ? "opacity-60" : "") + (row.tier?.toUpperCase() === "LEGENDARY" ? " rpc-holo-legendary" : row.tier?.toUpperCase() === "ULTIMATE" ? " rpc-holo-ultimate" : row.tier?.toUpperCase() === "RARE" ? " rpc-holo-rare" : "")}>
                       <td className="p-3 min-w-[160px]">
                         <div className="flex items-center gap-2">
                           {row.thumbnailUrl ? (
@@ -1208,9 +1231,23 @@ export default function WalletPage() {
                       </td>
                       <td className="p-3 text-zinc-500 text-xs hidden xl:table-cell">{formatAcquiredAt(row.acquiredAt)}</td>
                       <td className="p-3">
-                        <button onClick={function() { toggleExpanded(row.momentId) }} className="rounded-lg border border-zinc-700 px-2 py-1 text-xs text-white hover:bg-zinc-900">
-                          {expanded ? "Hide" : "Show"}
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button onClick={function() { toggleExpanded(row.momentId) }} className="rounded-lg border border-zinc-700 px-2 py-1 text-xs text-white hover:bg-zinc-900">
+                            {expanded ? "Hide" : "Show"}
+                          </button>
+                          {isOwnCollection && (
+                            <a
+                              href={"https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/" + row.momentId}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hidden group-hover:inline-flex items-center gap-1 rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-400 hover:border-zinc-500 hover:text-white transition-colors"
+                              title="List on Flowty"
+                            >
+                              List
+                              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
+                            </a>
+                          )}
+                        </div>
                       </td>
                     </tr>
 
