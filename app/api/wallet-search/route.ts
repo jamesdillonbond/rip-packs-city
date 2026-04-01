@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { z } from "zod"
 import fcl from "@/lib/flow"
 import * as t from "@onflow/types"
 import { topshotGraphql } from "@/lib/topshot"
@@ -408,23 +409,29 @@ async function getCollectionId(): Promise<string | null> {
   }
 }
 
+const walletSearchSchema = z.object({
+  input: z.string().min(1, "Please enter a wallet address or username.").transform(s => s.trim()),
+  offset: z.coerce.number().int().min(0).default(0),
+  limit: z.coerce.number().int().min(1).max(60).default(24),
+})
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const input = body.input?.trim()
-    const offset = Math.max(0, Number(body.offset ?? 0) || 0)
-    const limit = Math.min(60, Math.max(1, Number(body.limit ?? 24) || 24))
+    const parsed = walletSearchSchema.safeParse(body)
 
-    if (!input) {
+    if (!parsed.success) {
       return NextResponse.json(
         {
-          error: "Please enter a wallet address or username.",
+          error: parsed.error.issues[0]?.message ?? "Invalid request.",
           rows: [],
           summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
         } satisfies WalletSearchResponse,
         { status: 400 }
       )
     }
+
+    const { input, offset, limit } = parsed.data
 
     const wallet = await resolveWalletFromInput(input)
     const ids = await getOwnedMomentIds(wallet)

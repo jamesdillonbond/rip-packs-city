@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { fetchOpenOffers } from "@/lib/flowty/fetchOpenOffers";
+import { getOrSetCache } from "@/lib/cache";
+import { z } from "zod";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -566,6 +568,40 @@ function extractBadgeSlugs(tags: Array<{ id?: string; title?: string }> | undefi
     .filter((s): s is string => s !== null);
 }
 
+// ─── Jersey number lookup ─────────────────────────────────────────────────────
+
+async function fetchJerseyNumbers(
+  supabase: SupabaseClient,
+  playerNames: string[]
+): Promise<Map<string, number>> {
+  if (!playerNames.length) return new Map();
+  const { data, error } = await (supabase as any)
+    .from("players")
+    .select("name, jersey_number")
+    .not("jersey_number", "is", null);
+
+  if (error || !data?.length) return new Map();
+
+  const map = new Map<string, number>();
+  for (const row of data as { name: string; jersey_number: number }[]) {
+    map.set(row.name.toLowerCase().trim(), row.jersey_number);
+  }
+  console.log(`[sniper-feed] jersey_numbers: ${map.size} players loaded`);
+  return map;
+}
+
+// ─── Input validation ─────────────────────────────────────────────────────────
+
+const feedParamsSchema = z.object({
+  minDiscount: z.coerce.number().min(0).max(100).default(0),
+  rarity: z.string().default("all"),
+  team: z.string().default("all"),
+  badgeOnly: z.enum(["true", "false"]).default("false"),
+  serial: z.string().default("all"),
+  maxPrice: z.coerce.number().min(0).default(0),
+  sortBy: z.enum(["discount", "price_asc", "price_desc", "fmv_desc", "serial_asc"]).default("discount"),
+});
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 export const dynamic = "force-dynamic";
@@ -573,13 +609,30 @@ export const maxDuration = 25;
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const minDiscount = parseFloat(url.searchParams.get("minDiscount") ?? "0");
-  const rarity = url.searchParams.get("rarity") ?? "all";
-  const team = url.searchParams.get("team") ?? "all";
-  const badgeOnly = url.searchParams.get("badgeOnly") === "true";
-  const serialFilter = url.searchParams.get("serial") ?? "all";
-  const maxPrice = parseFloat(url.searchParams.get("maxPrice") ?? "0");
-  const sortBy = url.searchParams.get("sortBy") ?? "discount";
+  const raw = Object.fromEntries(url.searchParams);
+  const params = feedParamsSchema.parse(raw);
+  const { minDiscount, rarity, team, sortBy, maxPrice } = params;
+  const badgeOnly = params.badgeOnly === "true";
+  const serialFilter = params.serial;
+
+  // Cache key based on all query params — same params = same response for 25s
+  const cacheKey = `sniper-feed:${JSON.stringify(params)}`;
+  const CACHE_TTL = 25_000;
+
+  const result = await getOrSetCache(cacheKey, CACHE_TTL, async () => {
+    return computeSniperFeed({ minDiscount, rarity, team, badgeOnly, serialFilter, maxPrice, sortBy });
+  });
+
+  return NextResponse.json(result, {
+    headers: { "Cache-Control": "public, max-age=0, s-maxage=25, stale-while-revalidate=60" },
+  });
+}
+
+async function computeSniperFeed(opts: {
+  minDiscount: number; rarity: string; team: string;
+  badgeOnly: boolean; serialFilter: string; maxPrice: number; sortBy: string;
+}) {
+  const { minDiscount, rarity, team, badgeOnly, serialFilter, maxPrice, sortBy } = opts;
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -606,16 +659,18 @@ export async function GET(req: Request) {
     }
   }
 
-  // 3. Collect unique player names from Flowty for badge lookup
-  const flowtyPlayerNames = Array.from(
-    new Set(flowtyListings.map(l => l.playerName).filter(Boolean))
-  );
+  // 3. Collect unique player names for badge + jersey lookups
+  const allPlayerNames = Array.from(new Set([
+    ...flowtyListings.map(l => l.playerName).filter(Boolean),
+    ...tsListings.map(l => l.playerName ?? "").filter(Boolean),
+  ]));
 
-  // 4. Fire all Supabase lookups in parallel
-  const [fmvMap, badgeMap, offerMap] = await Promise.all([
+  // 4. Fire all Supabase lookups in parallel (including jersey numbers)
+  const [fmvMap, badgeMap, offerMap, jerseyMap] = await Promise.all([
     fetchFmvBatch(supabase, Array.from(tsEditionKeys)),
-    fetchBadgesByPlayers(supabase, flowtyPlayerNames),
+    fetchBadgesByPlayers(supabase, allPlayerNames),
     fetchOpenOffers().catch(() => new Map<string, { amount: number; fmv: number | null }>()),
+    fetchJerseyNumbers(supabase, allPlayerNames),
   ]);
   console.log(`[sniper-feed] offerMap size=${offerMap.size}`);
 
@@ -640,8 +695,11 @@ export async function GET(req: Request) {
     if (!serial) continue;
     const circ = l.circulationCount ?? 1000;
 
+    const playerNameRaw = l.playerName ?? l.momentTitle ?? "Unknown";
+    const jerseyNumber = jerseyMap.get(playerNameRaw.toLowerCase().trim()) ?? null;
     const { mult: serialMult, signal: serialSignal, isSpecial: isSpecialSerial } =
-      serialMultiplier(serial, circ, null);
+      serialMultiplier(serial, circ, jerseyNumber);
+    const isJersey = jerseyNumber !== null && serial === jerseyNumber;
 
     const teamName = NBA_TEAMS[l.teamAtMomentNbaId ?? ""] ?? "";
     if (team !== "all" && teamName !== team) continue;
@@ -650,7 +708,7 @@ export async function GET(req: Request) {
     const hasBadge = badgeSlugs.length > 0;
     if (badgeOnly && !hasBadge) continue;
     if (serialFilter === "special" && !isSpecialSerial) continue;
-    if (serialFilter === "jersey") continue;
+    if (serialFilter === "jersey" && !isJersey) continue;
 
     const fmvRow = (editionKeyParallel ? fmvMap.get(editionKeyParallel) : null)
       ?? fmvMap.get(editionKeyBase)
@@ -675,7 +733,7 @@ export async function GET(req: Request) {
       flowId: String(l.id),
       momentId: String(l.id),
       editionKey,
-      playerName: l.playerName ?? l.momentTitle ?? "Unknown",
+      playerName: playerNameRaw,
       teamName,
       setName: l.setName ?? "",
       seriesName: l.setSeriesNumber != null ? (SERIES_NAMES[l.setSeriesNumber] ?? "") : "",
@@ -699,7 +757,7 @@ export async function GET(req: Request) {
       badgePremiumPct: 0,
       serialMult,
       isSpecialSerial,
-      isJersey: false,
+      isJersey,
       serialSignal,
       thumbnailUrl,
       isLocked: l.isLocked ?? false,
@@ -732,10 +790,12 @@ export async function GET(req: Request) {
 
     const serial = item.serial;
     const circ = item.circulationCount;
+    const jerseyNumber = jerseyMap.get(item.playerName.toLowerCase().trim()) ?? null;
     const { mult: serialMult, signal: serialSignal, isSpecial: isSpecialSerial } =
-      serialMultiplier(serial, circ > 0 ? circ : 99999, null);
+      serialMultiplier(serial, circ > 0 ? circ : 99999, jerseyNumber);
+    const isJersey = jerseyNumber !== null && serial === jerseyNumber;
     if (serialFilter === "special" && !isSpecialSerial) continue;
-    if (serialFilter === "jersey") continue;
+    if (serialFilter === "jersey" && !isJersey) continue;
 
     if (!item.livetokenFmv || item.livetokenFmv <= 0) continue;
 
@@ -790,7 +850,7 @@ export async function GET(req: Request) {
       badgePremiumPct: 0,
       serialMult,
       isSpecialSerial,
-      isJersey: false,
+      isJersey,
       serialSignal,
       thumbnailUrl: `https://assets.nbatopshot.com/media/${item.momentId}?width=512`,
       isLocked: item.isLocked,
@@ -903,40 +963,32 @@ export async function GET(req: Request) {
             offerFmvPct: null as number | null,
           };
         });
-        return NextResponse.json(
-          {
-            count: cachedDeals.length,
-            tsCount: 0,
-            flowtyCount: cachedDeals.length,
-            lastRefreshed: new Date().toISOString(),
-            deals: cachedDeals.map(d => {
-              const offer = offerMap.get(d.flowId);
-              if (offer && offer.amount > 0) {
-                (d as unknown as SniperDeal).offerAmount = offer.amount;
-                (d as unknown as SniperDeal).offerFmvPct = d.adjustedFmv > 0 ? Math.round((offer.amount / d.adjustedFmv) * 1000) / 10 : null;
-              }
-              return d;
-            }),
-            cached: true,
-          },
-          { headers: { "Cache-Control": "public, max-age=0, s-maxage=25, stale-while-revalidate=60" } }
-        );
+        return {
+          count: cachedDeals.length,
+          tsCount: 0,
+          flowtyCount: cachedDeals.length,
+          lastRefreshed: new Date().toISOString(),
+          deals: cachedDeals.map(d => {
+            const offer = offerMap.get(d.flowId);
+            if (offer && offer.amount > 0) {
+              (d as unknown as SniperDeal).offerAmount = offer.amount;
+              (d as unknown as SniperDeal).offerFmvPct = d.adjustedFmv > 0 ? Math.round((offer.amount / d.adjustedFmv) * 1000) / 10 : null;
+            }
+            return d;
+          }),
+          cached: true,
+        };
       }
     } catch (cacheErr) {
       console.error("[sniper-feed] Cache fallback error: " + cacheErr);
     }
   }
 
-  return NextResponse.json(
-    {
-      count: sorted.length,
-      tsCount,
-      flowtyCount: flowtyListings.length,
-      lastRefreshed: new Date().toISOString(),
-      deals: sorted,
-    },
-    {
-      headers: { "Cache-Control": "public, max-age=0, s-maxage=25, stale-while-revalidate=60" },
-    }
-  );
+  return {
+    count: sorted.length,
+    tsCount,
+    flowtyCount: flowtyListings.length,
+    lastRefreshed: new Date().toISOString(),
+    deals: sorted,
+  };
 }
