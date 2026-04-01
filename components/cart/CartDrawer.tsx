@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef } from 'react'
 import { useCart, CartItem, PurchaseStatus } from '@/lib/cart/CartContext'
-import { usePurchaseQueue } from '@/lib/cart/usePurchaseQueue'
+import { usePurchaseQueue, PurchaseResult } from '@/lib/cart/usePurchaseQueue'
 import { useFlowUser, WalletProvider } from '@/lib/hooks/useFlowUser'
 import { useFlowWalletBalances } from '@/lib/hooks/useFlowWalletBalances'
 
@@ -170,9 +170,199 @@ function CartRow({ item, walletProvider }: CartRowProps) {
   )
 }
 
+function OfferRow({ item, walletProvider }: CartRowProps) {
+  const { removeFromCart, purchaseStatus, isExecuting } = useCart()
+  const status = purchaseStatus[item.listingResourceID] ?? 'idle'
+
+  const tierColors: Record<string, string> = {
+    ULTIMATE: 'text-yellow-400',
+    LEGENDARY: 'text-orange-400',
+    RARE:      'text-purple-400',
+    FANDOM:    'text-blue-400',
+    COMMON:    'text-slate-400',
+  }
+  const tierColor = tierColors[item.tier?.toUpperCase()] ?? 'text-slate-400'
+
+  const expiryLabel = item.offerExpiry
+    ? new Date(item.offerExpiry * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : '—'
+
+  return (
+    <div
+      className={`flex items-start gap-3 rounded-lg p-3 transition-colors ${
+        status === 'success'
+          ? 'bg-emerald-500/10 border border-emerald-500/20'
+          : status === 'failed' || status === 'sniped'
+          ? 'bg-red-500/10 border border-red-500/20'
+          : 'bg-blue-500/5 border border-blue-500/15 hover:bg-blue-500/[0.07]'
+      }`}
+    >
+      <div className="flex-shrink-0 w-12 h-12 rounded-md overflow-hidden bg-white/10">
+        {item.thumbnailUrl ? (
+          <img src={item.thumbnailUrl} alt={item.playerName} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs">?</div>
+        )}
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white truncate leading-tight">{item.playerName}</p>
+            <p className="text-xs text-slate-400 truncate leading-tight mt-0.5">{item.setName}</p>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              <span className="text-xs text-slate-500">#{item.serialNumber}/{item.totalEditions}</span>
+              <span className={`text-xs font-medium ${tierColor}`}>{item.tier}</span>
+            </div>
+          </div>
+          <div className="flex-shrink-0 text-right">
+            <p className="text-sm font-bold text-blue-300 tabular-nums">
+              {item.offerAmount != null ? formatPrice(item.offerAmount) : '—'} <span className="text-xs text-slate-500">USDC.e</span>
+            </p>
+            <p className="text-xs text-slate-500 tabular-nums">Expires {expiryLabel}</p>
+          </div>
+        </div>
+
+        {status !== 'idle' && (
+          <div className="mt-2">
+            <StatusBadge status={status} />
+          </div>
+        )}
+      </div>
+
+      {!isExecuting && status === 'idle' && (
+        <button
+          onClick={() => removeFromCart(item.listingResourceID)}
+          className="flex-shrink-0 text-slate-500 hover:text-red-400 transition-colors p-1 -m-1 mt-0.5"
+          aria-label="Remove from cart"
+        >
+          <svg className="w-4 h-4" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
+          </svg>
+        </button>
+      )}
+    </div>
+  )
+}
+
+function OffersSummary() {
+  const { offerItems, purchaseStatus } = useCart()
+  const { executeOffers, isExecuting } = usePurchaseQueue()
+  const { user, logIn } = useFlowUser()
+  const { usdcBalance, isLoading: balancesLoading, refetch: refetchBalances } = useFlowWalletBalances()
+
+  const successCount = offerItems.filter(
+    (i) => purchaseStatus[i.listingResourceID] === 'success'
+  ).length
+  const failedCount = offerItems.filter(
+    (i) => {
+      const s = purchaseStatus[i.listingResourceID]
+      return s === 'failed' || s === 'sniped'
+    }
+  ).length
+  const hasResults = (successCount + failedCount > 0) && !isExecuting
+
+  const pendingOffers = offerItems.filter(
+    (i) => !purchaseStatus[i.listingResourceID] || purchaseStatus[i.listingResourceID] === 'idle'
+  )
+
+  const totalOfferAmount = pendingOffers.reduce((s, i) => s + (i.offerAmount ?? 0), 0)
+
+  const isConnected = user.loggedIn === true
+  const isNonDapper = user.walletProvider !== 'dapper' && user.walletProvider !== 'unknown'
+  const showBalance = isConnected && isNonDapper
+  const insufficientUsdc = showBalance && !balancesLoading && totalOfferAmount > usdcBalance
+
+  // Re-fetch balances after offers complete
+  const prevHasResults = React.useRef(false)
+  React.useEffect(() => {
+    if (hasResults && !prevHasResults.current && successCount > 0) {
+      refetchBalances()
+    }
+    prevHasResults.current = hasResults
+  }, [hasResults, successCount, refetchBalances])
+
+  if (offerItems.length === 0) return null
+
+  const logCallbacks = {
+    onItemComplete: (result: PurchaseResult) => {
+      console.log('[RPC Cart] offer complete', result.status, result.item.momentId)
+    },
+    onQueueComplete: (results: PurchaseResult[]) => {
+      console.log('[RPC Cart] offer queue complete', results)
+    },
+  }
+
+  return (
+    <div className="border-t border-blue-500/20 p-4 space-y-3">
+      <p className="text-xs font-bold text-blue-400 uppercase tracking-wider">Offers (USDC.e via Flowty)</p>
+
+      {/* USDC.e balance */}
+      {showBalance && (
+        <div className="rounded-lg bg-blue-500/5 border border-blue-500/15 px-3 py-2 space-y-1">
+          <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">USDC.e Balance</p>
+          <div className="flex items-center gap-1.5 text-sm">
+            <span className="flex items-center justify-center w-4 h-4 rounded-full bg-blue-500 text-white text-[10px] font-bold flex-shrink-0">$</span>
+            <span className={`font-semibold tabular-nums ${insufficientUsdc ? 'text-amber-400' : 'text-white'}`}>
+              {balancesLoading ? '...' : usdcBalance.toFixed(2)}
+            </span>
+            <span className="text-slate-500 text-xs">USDC.e</span>
+          </div>
+        </div>
+      )}
+
+      {insufficientUsdc && (
+        <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs text-amber-300">
+          Total offer amount (${totalOfferAmount.toFixed(2)}) exceeds your USDC.e balance (${usdcBalance.toFixed(2)}).
+        </div>
+      )}
+
+      {hasResults && (
+        <div className="rounded-lg bg-white/5 px-3 py-2 text-sm text-slate-300">
+          {successCount > 0 && <span className="text-emerald-400 font-medium">{successCount} submitted</span>}
+          {successCount > 0 && failedCount > 0 && <span className="text-slate-500 mx-1">·</span>}
+          {failedCount > 0 && <span className="text-red-400 font-medium">{failedCount} failed</span>}
+        </div>
+      )}
+
+      {pendingOffers.length > 0 && (
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-slate-400">{pendingOffers.length} offer{pendingOffers.length !== 1 ? 's' : ''}</span>
+          <span className="font-bold text-blue-300 tabular-nums">${totalOfferAmount.toFixed(2)} USDC.e</span>
+        </div>
+      )}
+
+      {pendingOffers.length > 0 && !isExecuting && !isConnected && (
+        <button
+          onClick={logIn}
+          className="w-full rounded-lg border border-white/20 bg-white/5 text-slate-300 font-semibold py-3 px-4 transition hover:bg-white/10 text-sm"
+        >
+          Connect Flow Wallet to Submit Offers
+        </button>
+      )}
+
+      {pendingOffers.length > 0 && !isExecuting && isConnected && isNonDapper && (
+        <button
+          onClick={() => executeOffers(pendingOffers, logCallbacks)}
+          className="w-full rounded-lg bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-semibold py-3 px-4 transition text-sm"
+        >
+          Submit All {pendingOffers.length > 1 ? `${pendingOffers.length} ` : ''}Offers — ${totalOfferAmount.toFixed(2)} USDC.e
+        </button>
+      )}
+
+      {pendingOffers.length > 0 && !isExecuting && isConnected && !isNonDapper && (
+        <div className="w-full rounded-lg bg-white/5 border border-white/10 text-slate-400 font-medium py-3 px-4 text-sm text-center">
+          Offers require a Flow Wallet (not Dapper)
+        </div>
+      )}
+    </div>
+  )
+}
+
 function CartSummary() {
-  const { items, totalPrice, purchaseStatus } = useCart()
+  const { buyItems: items, purchaseStatus } = useCart()
   const { buyAll, executePurchase, isExecuting } = usePurchaseQueue()
+  const totalPrice = items.reduce((s, i) => s + i.expectedPrice, 0)
   const { user, logIn } = useFlowUser()
   const { flowBalance, usdcBalance, isLoading: balancesLoading, refetch: refetchBalances } = useFlowWalletBalances()
 
@@ -359,7 +549,7 @@ interface CartDrawerProps {
 }
 
 export function CartDrawer({ open, onClose }: CartDrawerProps) {
-  const { items, clearCart, removeCompleted, purchaseStatus, isExecuting } = useCart()
+  const { items, buyItems, offerItems, clearCart, removeCompleted, purchaseStatus, isExecuting } = useCart()
   const { user } = useFlowUser()
   const drawerRef = useRef<HTMLDivElement>(null)
 
@@ -433,17 +623,44 @@ export function CartDrawer({ open, onClose }: CartDrawerProps) {
               <p className="text-slate-500 text-xs mt-1">Add moments from the Sniper or your Wallet</p>
             </div>
           ) : (
-            items.map((item) => (
-              <CartRow
-                key={item.listingResourceID}
-                item={item}
-                walletProvider={user.walletProvider}
-              />
-            ))
+            <>
+              {/* Buy items section */}
+              {buyItems.length > 0 && (
+                <div className="space-y-2">
+                  {offerItems.length > 0 && (
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider pt-1">Buys</p>
+                  )}
+                  {buyItems.map((item) => (
+                    <CartRow
+                      key={item.listingResourceID}
+                      item={item}
+                      walletProvider={user.walletProvider}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Offer items section */}
+              {offerItems.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-bold text-blue-400 uppercase tracking-wider pt-2 border-t border-blue-500/15 mt-2">
+                    Offers
+                  </p>
+                  {offerItems.map((item) => (
+                    <OfferRow
+                      key={item.listingResourceID}
+                      item={item}
+                      walletProvider={user.walletProvider}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
 
-        {items.length > 0 && <CartSummary />}
+        {buyItems.length > 0 && <CartSummary />}
+        <OffersSummary />
       </div>
     </>
   )

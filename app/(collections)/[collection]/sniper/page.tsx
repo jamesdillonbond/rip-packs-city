@@ -244,21 +244,57 @@ function ActionCell({
   deal,
   ownedIds,
   connectedWallet,
+  offerMode,
+  offerDurationDays,
+  offerAmountOverrides,
+  setOfferAmountOverride,
 }: {
   deal: SniperDeal;
   ownedIds: Set<string>;
   connectedWallet: string | null;
+  offerMode: boolean;
+  offerDurationDays: number;
+  offerAmountOverrides: Record<string, number>;
+  setOfferAmountOverride: (flowId: string, amount: number) => void;
 }) {
-  const { addToCart, removeFromCart, isInCart } = useCart();
+  const { addToCart, addOffer, removeFromCart, isInCart } = useCart();
   const inCart = deal.listingResourceID ? isInCart(deal.listingResourceID) : false;
   const isOwned = ownedIds.has(deal.flowId);
   const canCart = !!deal.listingResourceID && !!deal.storefrontAddress;
   const isFlowty = (deal.source ?? "topshot") === "flowty";
 
+  // Default offer amount: 80% of adjusted FMV
+  const defaultOfferAmt = Math.round(deal.adjustedFmv * 0.8 * 100) / 100;
+  const currentOfferAmt = offerAmountOverrides[deal.flowId] ?? defaultOfferAmt;
+
   function handleCart() {
     if (!canCart) return;
     if (inCart) {
       removeFromCart(deal.listingResourceID!);
+      return;
+    }
+
+    if (offerMode) {
+      // Add as offer-mode item
+      const expiryTs = Math.floor(Date.now() / 1000) + offerDurationDays * 24 * 60 * 60;
+      addOffer({
+        listingResourceID: deal.listingResourceID!,
+        storefrontAddress: deal.storefrontAddress!,
+        expectedPrice: deal.askPrice,
+        commissionRecipient: COMMISSION_RECIPIENT,
+        momentId: Number(deal.momentId),
+        playerName: deal.playerName,
+        setName: deal.setName,
+        serialNumber: deal.serial,
+        totalEditions: deal.circulationCount,
+        tier: deal.tier,
+        thumbnailUrl: deal.thumbnailUrl ?? null,
+        fmv: deal.adjustedFmv,
+        source: "sniper",
+        paymentToken: "USDC_E",
+        offerAmount: currentOfferAmt,
+        offerExpiry: expiryTs,
+      });
     } else {
       addToCart({
         listingResourceID: deal.listingResourceID!,
@@ -275,6 +311,7 @@ function ActionCell({
         fmv: deal.adjustedFmv,
         source: "sniper",
         paymentToken: deal.paymentToken ?? "DUC",
+        cartMode: "buy",
       });
     }
   }
@@ -305,16 +342,44 @@ function ActionCell({
 
   return (
     <div className="flex flex-col items-end gap-1.5">
+      {/* Offer amount input when in offer mode */}
+      {offerMode && canCart && !inCart && (
+        <div className="flex items-center gap-1">
+          <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>$</span>
+          <input
+            type="number"
+            min={0.01}
+            step={0.01}
+            value={currentOfferAmt}
+            onChange={(e) => setOfferAmountOverride(deal.flowId, Number(e.target.value))}
+            style={{
+              width: 64,
+              background: "var(--rpc-surface-raised)",
+              border: "1px solid rgba(59,130,246,0.3)",
+              borderRadius: "var(--radius-sm)",
+              padding: "3px 6px",
+              color: "var(--rpc-text-primary)",
+              fontFamily: "var(--font-mono)",
+              fontSize: "var(--text-xs)",
+              outline: "none",
+              textAlign: "right",
+            }}
+            title="Offer amount in USDC.e"
+          />
+        </div>
+      )}
       {canCart && (
         <button
           onClick={handleCart}
           className="rpc-chip"
           style={inCart
             ? { background: "rgba(52,211,153,0.15)", borderColor: "rgba(52,211,153,0.4)", color: "var(--rpc-success)" }
+            : offerMode
+            ? { background: "rgba(59,130,246,0.12)", borderColor: "rgba(59,130,246,0.3)", color: "var(--rpc-info)" }
             : { color: "var(--rpc-text-secondary)" }
           }
         >
-          {inCart ? "✓ IN CART" : "+ CART"}
+          {inCart ? "✓ IN CART" : offerMode ? "+ OFFER" : "+ CART"}
         </button>
       )}
       <a
@@ -369,6 +434,11 @@ export default function SniperPage() {
   const [search, setSearch] = useState("");
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(false);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+
+  // Offer mode state
+  const [offerMode, setOfferMode] = useState(false);
+  const [offerDurationDays, setOfferDurationDays] = useState(30);
+  const [offerAmountOverrides, setOfferAmountOverrides] = useState<Record<string, number>>({});
 
   // Highlight detection on page load
   useEffect(() => {
@@ -678,6 +748,41 @@ export default function SniperPage() {
                 FLOW &amp; USDC.e listings only — no Dapper Wallet needed.
               </span>
             )}
+            {/* Offer Mode toggle */}
+            <button
+              onClick={() => setOfferMode((v) => !v)}
+              className={`rpc-chip ${offerMode ? "active" : ""}`}
+              title="Enable offer mode — add moments to cart as USDC.e offers via FlowtyOffers"
+              style={offerMode ? { background: "rgba(59,130,246,0.12)", borderColor: "rgba(59,130,246,0.40)", color: "#60a5fa" } : {}}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" style={{ flexShrink: 0 }}>
+                  <path d="M8 1a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2H9v5a1 1 0 1 1-2 0V9H2a1 1 0 0 1 0-2h5V2a1 1 0 0 1 1-1z"/>
+                </svg>
+                OFFER MODE
+              </span>
+            </button>
+            {offerMode && (
+              <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
+                <span>DURATION</span>
+                <select
+                  value={offerDurationDays}
+                  onChange={(e) => setOfferDurationDays(Number(e.target.value))}
+                  style={{ background: "var(--rpc-surface-raised)", border: "1px solid rgba(59,130,246,0.3)", borderRadius: "var(--radius-sm)", padding: "4px 8px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", outline: "none" }}
+                >
+                  <option value={7}>7 days</option>
+                  <option value={14}>14 days</option>
+                  <option value={30}>30 days</option>
+                  <option value={60}>60 days</option>
+                  <option value={90}>90 days</option>
+                </select>
+              </label>
+            )}
+            {offerMode && (
+              <span style={{ fontSize: "var(--text-xs)", color: "rgba(96,165,250,0.7)", fontFamily: "var(--font-mono)", letterSpacing: "0.05em" }}>
+                Click + OFFER to add USDC.e offers at 80% FMV (editable per deal)
+              </span>
+            )}
           </div>
         </>)}
         </div>
@@ -915,6 +1020,12 @@ export default function SniperPage() {
                         deal={deal}
                         ownedIds={ownedIds}
                         connectedWallet={connectedWallet}
+                        offerMode={offerMode}
+                        offerDurationDays={offerDurationDays}
+                        offerAmountOverrides={offerAmountOverrides}
+                        setOfferAmountOverride={(flowId, amount) =>
+                          setOfferAmountOverrides((prev) => ({ ...prev, [flowId]: amount }))
+                        }
                       />
                     </td>
                   </tr>

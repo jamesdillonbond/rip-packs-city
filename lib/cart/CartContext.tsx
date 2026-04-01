@@ -12,6 +12,8 @@ import React, {
 // Types
 // ---------------------------------------------------------------------------
 
+export type CartMode = 'buy' | 'offer'
+
 export interface CartItem {
   // Listing identity
   listingResourceID: string   // UInt64 as string (FCL arg)
@@ -30,6 +32,13 @@ export interface CartItem {
   fmv: number | null          // FMV at time of add — informational only
   source: 'sniper' | 'wallet' | 'sets' | 'marketplace'
   paymentToken: 'DUC' | 'FUT' | 'FLOW' | 'USDC_E'
+
+  // Cart mode — "buy" (default) or "offer" (Flowty USDC.e offer)
+  cartMode: CartMode
+
+  // Offer-specific fields (only used when cartMode === 'offer')
+  offerAmount?: number        // USDC.e amount to offer
+  offerExpiry?: number        // Unix timestamp when offer expires
 
   // Cart bookkeeping
   addedAt: number             // Date.now()
@@ -58,6 +67,9 @@ type CartAction =
   | { type: 'SET_EXECUTING'; value: boolean }
   | { type: 'RESET_STATUSES' }
   | { type: 'HYDRATE'; items: CartItem[] }
+  | { type: 'SET_OFFER_MODE'; listingResourceID: string; mode: CartMode }
+  | { type: 'SET_OFFER_AMOUNT'; listingResourceID: string; amount: number }
+  | { type: 'SET_OFFER_EXPIRY'; listingResourceID: string; expiry: number }
 
 // ---------------------------------------------------------------------------
 // Reducer
@@ -107,6 +119,36 @@ function cartReducer(state: CartState, action: CartAction): CartState {
     case 'RESET_STATUSES':
       return { ...state, purchaseStatus: {}, isExecuting: false }
 
+    case 'SET_OFFER_MODE':
+      return {
+        ...state,
+        items: state.items.map((i) =>
+          i.listingResourceID === action.listingResourceID
+            ? { ...i, cartMode: action.mode }
+            : i
+        ),
+      }
+
+    case 'SET_OFFER_AMOUNT':
+      return {
+        ...state,
+        items: state.items.map((i) =>
+          i.listingResourceID === action.listingResourceID
+            ? { ...i, offerAmount: action.amount }
+            : i
+        ),
+      }
+
+    case 'SET_OFFER_EXPIRY':
+      return {
+        ...state,
+        items: state.items.map((i) =>
+          i.listingResourceID === action.listingResourceID
+            ? { ...i, offerExpiry: action.expiry }
+            : i
+        ),
+      }
+
     default:
       return state
   }
@@ -124,6 +166,7 @@ const initialState: CartState = {
 
 interface CartContextValue extends CartState {
   addToCart: (item: Omit<CartItem, 'addedAt'>) => void
+  addOffer: (item: Omit<CartItem, 'addedAt' | 'cartMode'> & { offerAmount: number; offerExpiry: number }) => void
   removeFromCart: (listingResourceID: string) => void
   clearCart: () => void
   isInCart: (listingResourceID: string) => boolean
@@ -132,8 +175,14 @@ interface CartContextValue extends CartState {
   setItemStatus: (listingResourceID: string, status: PurchaseStatus) => void
   setExecuting: (value: boolean) => void
   resetStatuses: () => void
+  setOfferMode: (listingResourceID: string, mode: CartMode) => void
+  setOfferAmount: (listingResourceID: string, amount: number) => void
+  setOfferExpiry: (listingResourceID: string, expiry: number) => void
   /** Remove successfully purchased items from cart after a run completes */
   removeCompleted: () => void
+  /** Items split by cart mode */
+  buyItems: CartItem[]
+  offerItems: CartItem[]
 }
 
 const CartContext = createContext<CartContextValue | null>(null)
@@ -178,7 +227,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   // ---------------------------------------------------------------------------
 
   const addToCart = useCallback((item: Omit<CartItem, 'addedAt'>) => {
-    dispatch({ type: 'ADD_ITEM', item: { ...item, addedAt: Date.now() } })
+    dispatch({ type: 'ADD_ITEM', item: { ...item, cartMode: item.cartMode ?? 'buy', addedAt: Date.now() } })
+  }, [])
+
+  const addOffer = useCallback((item: Omit<CartItem, 'addedAt' | 'cartMode'> & { offerAmount: number; offerExpiry: number }) => {
+    dispatch({
+      type: 'ADD_ITEM',
+      item: { ...item, cartMode: 'offer', addedAt: Date.now() },
+    })
   }, [])
 
   const removeFromCart = useCallback((listingResourceID: string) => {
@@ -211,6 +267,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'RESET_STATUSES' })
   }, [])
 
+  const setOfferMode = useCallback((listingResourceID: string, mode: CartMode) => {
+    dispatch({ type: 'SET_OFFER_MODE', listingResourceID, mode })
+  }, [])
+
+  const setOfferAmount = useCallback((listingResourceID: string, amount: number) => {
+    dispatch({ type: 'SET_OFFER_AMOUNT', listingResourceID, amount })
+  }, [])
+
+  const setOfferExpiry = useCallback((listingResourceID: string, expiry: number) => {
+    dispatch({ type: 'SET_OFFER_EXPIRY', listingResourceID, expiry })
+  }, [])
+
   const removeCompleted = useCallback(() => {
     const successIds = Object.entries(state.purchaseStatus)
       .filter(([, status]) => status === 'success')
@@ -227,12 +295,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const totalPrice = state.items.reduce((sum, i) => sum + i.expectedPrice, 0)
   const itemCount = state.items.length
+  const buyItems = state.items.filter((i) => i.cartMode !== 'offer')
+  const offerItems = state.items.filter((i) => i.cartMode === 'offer')
 
   return (
     <CartContext.Provider
       value={{
         ...state,
         addToCart,
+        addOffer,
         removeFromCart,
         clearCart,
         isInCart,
@@ -241,7 +312,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         setItemStatus,
         setExecuting,
         resetStatuses,
+        setOfferMode,
+        setOfferAmount,
+        setOfferExpiry,
         removeCompleted,
+        buyItems,
+        offerItems,
       }}
     >
       {children}

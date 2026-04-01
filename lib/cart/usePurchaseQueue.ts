@@ -5,6 +5,7 @@ import {
   PURCHASE_MOMENT_FLOW_WALLET_CADENCE,
   PAYMENT_TOKEN_TO_VAULT,
 } from '@/lib/cadence/purchase-moment-flow-wallet'
+import { MAKE_OFFER_FLOWTY_CADENCE } from '@/lib/cadence/make-offer-flowty'
 
 const DAPPER_MERCHANT_ADDRESS = '0xc1e4f4f4c4257510'
 const TX_DELAY_MS = 300
@@ -245,10 +246,92 @@ export function usePurchaseQueue() {
     [executePurchase]
   )
 
+  // Execute offers sequentially — same pattern as purchases but using FlowtyOffers
+  const executeOffers = useCallback(
+    async (
+      items: CartItem[],
+      callbacks: PurchaseQueueCallbacks = {}
+    ): Promise<PurchaseResult[]> => {
+      // Only process offer-mode items that have an offerAmount set
+      const offerItems = items.filter(
+        (i) => i.cartMode === 'offer' && i.offerAmount != null && i.offerAmount > 0
+      )
+      if (offerItems.length === 0) return []
+      if (cart.isExecuting) return []
+
+      const { onItemStart, onItemComplete, onQueueComplete } = callbacks
+      const results: PurchaseResult[] = []
+
+      cart.setExecuting(true)
+      cart.resetStatuses()
+
+      for (const item of offerItems) {
+        cart.setItemStatus(item.listingResourceID, 'pending')
+        onItemStart?.(item)
+
+        let result: PurchaseResult
+
+        try {
+          const amountFixed = item.offerAmount!.toFixed(8)
+          // Default expiry: 30 days from now if not set
+          const expiry = item.offerExpiry ?? Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const txId: string = await (fcl.mutate as any)({
+            cadence: MAKE_OFFER_FLOWTY_CADENCE,
+            args: (arg: typeof fcl.arg, t: typeof fcl.t) => [
+              arg(String(item.momentId), t.UInt64),
+              arg(amountFixed, t.UFix64),
+              arg(item.storefrontAddress, t.Address),
+              arg(String(expiry), t.UInt64),
+              arg("1", t.UInt64),
+            ],
+            proposer: fclAuthz,
+            payer: fclAuthz,
+            authorizations: [fclAuthz],
+            limit: 1000,
+          })
+
+          await fcl.tx(txId).onceExecuted()
+
+          result = { item, status: 'success', txId }
+          cart.setItemStatus(item.listingResourceID, 'success')
+        } catch (err) {
+          const status = classifyError(err)
+          const error = err instanceof Error ? err.message : String(err)
+
+          result = { item, status, error }
+          cart.setItemStatus(item.listingResourceID, status)
+
+          // Stop queue if balance is insufficient
+          const lower = error.toLowerCase()
+          if (lower.includes('insufficient') || lower.includes('not enough')) {
+            results.push(result)
+            onItemComplete?.(result)
+            break
+          }
+        }
+
+        results.push(result)
+        onItemComplete?.(result)
+
+        if (offerItems.indexOf(item) < offerItems.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, TX_DELAY_MS))
+        }
+      }
+
+      cart.setExecuting(false)
+      onQueueComplete?.(results)
+      return results
+    },
+    [cart]
+  )
+
   return {
     buyAll,
     buyOne,
     executePurchase,
+    executeOffers,
     isExecuting: cart.isExecuting,
     purchaseStatus: cart.purchaseStatus,
   }
