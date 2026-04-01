@@ -374,6 +374,7 @@ export default function WalletPage() {
   const [packsByTitle, setPacksByTitle] = useState<Record<string, number>>({})
   const [recentSales, setRecentSales] = useState<any[]>([]);
   const [salesLoading, setSalesLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const [teamFilter, setTeamFilter] = useState("all")
   const [leagueFilter, setLeagueFilter] = useState("all")
@@ -870,6 +871,19 @@ export default function WalletPage() {
           >
             {loading ? "Loading..." : "Search"}
           </button>
+          {rows.length > 0 && (
+            <button
+              onClick={function() {
+                navigator.clipboard.writeText(window.location.href)
+                setCopied(true)
+                setTimeout(function() { setCopied(false) }, 1500)
+              }}
+              title="Copy shareable link"
+              className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-400 hover:bg-zinc-900 transition"
+            >
+              {copied ? "✓" : "🔗"}
+            </button>
+          )}
         </div>
 
         {/* Portfolio summary */}
@@ -1210,15 +1224,6 @@ export default function WalletPage() {
                                   <a href={"/nba-top-shot/sets?wallet=" + encodeURIComponent(input.trim())} className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-400 hover:bg-zinc-900">View Set Progress →</a>
                                 )}
                                 <a href={"/profile?pin=" + row.momentId} className="block rounded-lg border border-yellow-800 bg-yellow-950/30 px-3 py-1.5 text-center text-xs font-semibold text-yellow-400 hover:bg-yellow-950/60">⭐ Pin to Trophy Case</a>
-                                <button
-                                  onClick={function(e) {
-                                    navigator.clipboard.writeText(window.location.href)
-                                    const btn = e.currentTarget
-                                    btn.textContent = "Copied!"
-                                    setTimeout(function() { btn.textContent = "🔗 Share Collection" }, 1500)
-                                  }}
-                                  className="block w-full rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-400 hover:bg-zinc-900"
-                                >🔗 Share Collection</button>
                               </div>
                             </div>
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
