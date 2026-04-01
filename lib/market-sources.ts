@@ -36,6 +36,11 @@ export type UnifiedEditionMarket = {
   sourceChain: string[]
   notes: string[]
   tags: string[]
+  topshotAsk: number | null
+  flowtyAsk: number | null
+  fmvUsd: number | null
+  fmvConfidence: string | null
+  fmvComputedAt: string | null
 }
 
 function dedupeStrings(values: Array<string | null | undefined>) {
@@ -127,6 +132,11 @@ function mergeResolvedMarkets(input: {
     sourceChain,
     notes,
     tags,
+    topshotAsk: null,
+    flowtyAsk: null,
+    fmvUsd: null,
+    fmvConfidence: null,
+    fmvComputedAt: null,
   }
 }
 
@@ -153,7 +163,7 @@ async function getSupabaseMarketMap(
 
     const { data: fmvRows, error } = await db
       .from("fmv_current")
-      .select("edition_id, fmv_usd, floor_price_usd, cross_market_ask, computed_at")
+      .select("edition_id, fmv_usd, floor_price_usd, cross_market_ask, top_shot_ask, flowty_ask, confidence, computed_at")
 
     if (error || !fmvRows?.length) {
       if (error) console.warn("[market-sources] fmv_current error:", error.message)
@@ -186,12 +196,15 @@ async function getSupabaseMarketMap(
       fmv_usd: number | null
       floor_price_usd: number | null
       cross_market_ask: number | null
+      top_shot_ask: number | null
+      flowty_ask: number | null
+      confidence: string | null
+      computed_at: string | null
     }>) {
       const meta = editionMeta.get(row.edition_id)
       if (!meta) continue
 
       // Build the scope key using the actual parallel tier from DB
-      // This fixes the previous bug where it was always hardcoded to ::Base
       const scopeKey = `${meta.externalId}::${meta.parallelTier}`
 
       if (out.has(scopeKey)) {
@@ -199,6 +212,11 @@ async function getSupabaseMarketMap(
           lowAsk: row.floor_price_usd ?? row.cross_market_ask ?? null,
           lastSale: row.fmv_usd ?? null,
           source: "supabase-fmv",
+          topshotAsk: row.top_shot_ask ?? null,
+          flowtyAsk: row.flowty_ask ?? null,
+          fmvUsd: row.fmv_usd ?? null,
+          fmvConfidence: row.confidence ?? null,
+          fmvComputedAt: row.computed_at ?? null,
         })
       }
     }
@@ -267,6 +285,12 @@ export async function buildUnifiedEditionMarketMap(rows: UnifiedMarketInputRow[]
       if (merged.lastSale === null && supabaseData.lastSale != null) {
         merged.lastSale = supabaseData.lastSale
       }
+      // Always carry through Supabase FMV-specific fields
+      merged.topshotAsk = supabaseData.topshotAsk ?? null
+      merged.flowtyAsk = supabaseData.flowtyAsk ?? null
+      merged.fmvUsd = supabaseData.fmvUsd ?? null
+      merged.fmvConfidence = supabaseData.fmvConfidence ?? null
+      merged.fmvComputedAt = supabaseData.fmvComputedAt ?? null
     }
 
     out.set(scopeKey, merged)

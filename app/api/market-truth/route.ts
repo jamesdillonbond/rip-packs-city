@@ -63,6 +63,11 @@ export async function POST(req: NextRequest) {
         editionMarketSource: editionMarket?.source ?? null,
         editionMarketSourceChain: editionMarket?.sourceChain ?? [],
         editionMarketTags: editionMarket?.tags ?? [],
+        topshotAsk: editionMarket?.topshotAsk ?? null,
+        flowtyAsk: editionMarket?.flowtyAsk ?? null,
+        fmvUsd: editionMarket?.fmvUsd ?? null,
+        fmvConfidence: editionMarket?.fmvConfidence ?? null,
+        fmvComputedAt: editionMarket?.fmvComputedAt ?? null,
         specialSerialTraits: Array.isArray(row.specialSerialTraits)
           ? row.specialSerialTraits
           : [],

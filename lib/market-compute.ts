@@ -35,6 +35,13 @@ export type MarketTruthInput = {
   editionMarketSourceChain?: string[] | null
   editionMarketTags?: string[] | null
 
+  // Supabase FMV snapshot fields (passed through from market-sources)
+  topshotAsk?: number | null
+  flowtyAsk?: number | null
+  fmvUsd?: number | null
+  fmvConfidence?: string | null
+  fmvComputedAt?: string | null
+
   // Badge-based serial tier flags from GraphQL badges field
   // Confirmed badge strings from Top Shot GraphQL searchMintedMoments:
   //   "#1 Serial", "Jersey", "Original Perfect Mint Serial"
@@ -88,6 +95,12 @@ export type MarketTruthRow = {
   editionMarketSource: string | null
   editionMarketSourceChain: string[]
   editionMarketTags: string[]
+
+  topshotAsk: number | null
+  flowtyAsk: number | null
+  fmvUsd: number | null
+  fmvConfidence: string | null
+  fmvComputedAt: string | null
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -407,5 +420,11 @@ export function computeFmv(input: MarketTruthInput): MarketTruthRow {
     editionMarketSource: input.editionMarketSource ?? null,
     editionMarketSourceChain,
     editionMarketTags,
+
+    topshotAsk: input.topshotAsk ?? null,
+    flowtyAsk: input.flowtyAsk ?? null,
+    fmvUsd: input.fmvUsd ?? null,
+    fmvConfidence: input.fmvConfidence ?? null,
+    fmvComputedAt: input.fmvComputedAt ?? null,
   }
 }
