@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import OffersTab from "@/components/sniper/OffersTab"
 import { useCart } from "@/lib/cart/CartContext";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -328,6 +329,7 @@ export default function SniperPage() {
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(false);
 
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
+  const [mode, setMode] = useState<"deals" | "offers">("deals");
 
   useEffect(() => {
     let cancelled = false;
@@ -469,6 +471,18 @@ export default function SniperPage() {
             </div>
           </div>
 
+          {/* Mode toggle */}
+          <div className="flex items-center gap-2 mb-4">
+            {(["deals", "offers"] as const).map((m) => (
+              <button key={m} onClick={() => setMode(m)}
+                style={mode === m ? { backgroundColor: "#E03A2F22", color: "#E03A2F", borderColor: "#E03A2F80" } : {}}
+                className={"px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all border " + (mode === m ? "border-transparent" : "bg-slate-800/60 text-slate-400 border-slate-700/50 hover:border-slate-600")}>
+                {m === "deals" ? "⚡ Deals" : "🤝 Offers"}
+              </button>
+            ))}
+          </div>
+          {mode === "offers" && <OffersTab />}
+          {mode === "deals" && (
           {/* Tier tabs */}
           <div className="flex items-center gap-1 mb-4 flex-wrap">
             {TIER_TABS.map((t) => (
@@ -767,6 +781,7 @@ export default function SniperPage() {
           </div>
         )}
 
+          )}
         {/* Legend */}
         <div className="mt-4 flex items-center gap-4 text-xs text-slate-600 flex-wrap">
           <span className="flex items-center gap-1">
