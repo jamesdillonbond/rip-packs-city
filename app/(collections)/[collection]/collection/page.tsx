@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, useMemo, useState, useEffect, useCallback, Suspense } from "react"
+import { Fragment, useMemo, useState, useEffect, useCallback, useRef, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import {
   normalizeSetName,
@@ -496,37 +496,56 @@ export default function WalletPage() {
     })
   }
 
-  // Fire-and-forget: batch-enrich best offers for a set of rows
-  function enrichOffers(momentRows: MomentRow[]) {
-    if (!momentRows.length) return
-    const momentIds = momentRows.map(function(r) { return r.momentId })
-    const editionKeys = momentRows.map(function(r) { return r.editionKey ?? "" })
-    fetch("/api/best-offers", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ momentIds, editionKeys }),
-    })
-      .then(function(r) { return r.ok ? r.json() : null })
-      .then(function(d) {
-        if (!d || !Array.isArray(d.results)) return
-        const offerMap = new Map<string, number>()
-        for (const result of d.results) {
-          if (typeof result.bestOffer === "number" && result.bestOffer > 0) {
-            offerMap.set(String(result.momentId), result.bestOffer)
+  // Debounced offer enrichment — accumulates rows across page loads,
+  // fires once after 2s idle, chunks into batches of 200 momentIds
+  const pendingOfferRowsRef = useRef<MomentRow[]>([])
+  const offerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function flushOfferEnrichment() {
+    const allRows = pendingOfferRowsRef.current
+    pendingOfferRowsRef.current = []
+    if (!allRows.length) return
+
+    const CHUNK_SIZE = 200
+    for (let i = 0; i < allRows.length; i += CHUNK_SIZE) {
+      const chunk = allRows.slice(i, i + CHUNK_SIZE)
+      const momentIds = chunk.map(function(r) { return r.momentId })
+      const editionKeys = chunk.map(function(r) { return r.editionKey ?? "" })
+      fetch("/api/best-offers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ momentIds, editionKeys }),
+      })
+        .then(function(r) { return r.ok ? r.json() : null })
+        .then(function(d) {
+          if (!d || !Array.isArray(d.results)) return
+          const offerMap = new Map<string, number>()
+          for (const result of d.results) {
+            if (typeof result.bestOffer === "number" && result.bestOffer > 0) {
+              offerMap.set(String(result.momentId), result.bestOffer)
+            }
           }
-        }
-        if (!offerMap.size) return
-        setRows(function(prev) {
-          return prev.map(function(row) {
-            const fresh = offerMap.get(row.momentId)
-            if (fresh === undefined) return row
-            // Only update if fresher offer is higher or row had no offer
-            if (row.bestOffer && row.bestOffer >= fresh) return row
-            return { ...row, bestOffer: fresh }
+          if (!offerMap.size) return
+          setRows(function(prev) {
+            return prev.map(function(row) {
+              const fresh = offerMap.get(row.momentId)
+              if (fresh === undefined) return row
+              if (row.bestOffer && row.bestOffer >= fresh) return row
+              return { ...row, bestOffer: fresh }
+            })
           })
         })
-      })
-      .catch(function() {})
+        .catch(function() {})
+    }
+  }
+
+  function enrichOffers(momentRows: MomentRow[]) {
+    if (!momentRows.length) return
+    // Accumulate rows for batch processing
+    pendingOfferRowsRef.current = pendingOfferRowsRef.current.concat(momentRows)
+    // Reset the 2-second idle timer
+    if (offerTimerRef.current) clearTimeout(offerTimerRef.current)
+    offerTimerRef.current = setTimeout(flushOfferEnrichment, 2000)
   }
 
   async function maybePatchProfileStats(query: string, resultRows: MomentRow[], resultSummary: WalletSearchResponse["summary"]) {
@@ -573,6 +592,9 @@ export default function WalletPage() {
     setSealedPackCount(null)
     setPacksByTitle({})
     setRecentSales([]);
+    // Clear any pending offer enrichment from previous search
+    pendingOfferRowsRef.current = []
+    if (offerTimerRef.current) { clearTimeout(offerTimerRef.current); offerTimerRef.current = null }
     setSalesLoading(true);
     fetch("/api/recent-sales?limit=15")
       .then(function(r) { return r.ok ? r.json() : null; })
