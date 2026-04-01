@@ -51,6 +51,8 @@ interface SniperDeal {
   listingResourceID: string | null;
   storefrontAddress: string | null;
   source?: "topshot" | "flowty";
+  offerAmount?: number | null;
+  offerFmvPct?: number | null;
 }
 
 interface FeedResult {
@@ -708,6 +710,19 @@ export default function SniperPage() {
                               {label}
                             </span>
                           ))}
+                        </div>
+                      )}
+                      {deal.offerAmount != null && deal.offerAmount > 0 && (
+                        <div className="flex gap-1 mt-1 flex-wrap">
+                          {deal.offerFmvPct != null && deal.offerFmvPct >= 100 ? (
+                            <span className="px-1 py-0.5 rounded text-xs bg-red-500/20 text-red-300 border border-red-500/40 font-bold">
+                              🔥 Offer above ask
+                            </span>
+                          ) : (
+                            <span className="px-1 py-0.5 rounded text-xs bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
+                              💰 Offer: ${deal.offerAmount.toFixed(2)}
+                            </span>
+                          )}
                         </div>
                       )}
                     </td>
