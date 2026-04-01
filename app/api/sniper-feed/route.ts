@@ -917,7 +917,15 @@ export async function GET(req: Request) {
             tsCount: 0,
             flowtyCount: cachedDeals.length,
             lastRefreshed: new Date().toISOString(),
-            deals: cachedDeals,
+            deals: cachedDeals.map(d => {
+              const offer = offerMap.get(d.flowId);
+              if (offer && offer.amount > 0) {
+                d.offerAmount = offer.amount;
+                const fmvBase = (offer.fmv ?? d.baseFmv) || 0;
+                d.offerFmvPct = fmvBase > 0 ? Math.round((offer.amount / fmvBase) * 1000) / 10 : null;
+              }
+              return d;
+            }),
             cached: true,
           },
           { headers: { "Cache-Control": "public, max-age=0, s-maxage=25, stale-while-revalidate=60" } }
