@@ -355,7 +355,7 @@ function getTraitMulti(
 async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
+    const timeout = setTimeout(() => controller.abort(), 10000);
     const res = await fetch(FLOWTY_ENDPOINT, {
       method: "POST",
       headers: FLOWTY_HEADERS,
@@ -653,8 +653,10 @@ async function computeSniperFeed(opts: {
 
   console.log(`[sniper-feed] fetched ts=${tsListings.length} flowty=${flowtyListings.length}`);
 
-  // 2. Build integer edition keys for Supabase FMV lookup (TS only)
+  // 2. Build integer edition keys for Supabase FMV lookup
+  //    Also build a flowId → editionKey map so Flowty deals can reuse TS edition keys
   const tsEditionKeys = new Set<string>();
+  const flowIdToEditionKey = new Map<string, string>();
   for (const l of tsListings) {
     const sp = l.setPlay;
     if (sp?.setID && sp?.playID) {
@@ -662,6 +664,8 @@ async function computeSniperFeed(opts: {
       const key = parallelId > 0 ? `${sp.setID}:${sp.playID}::${parallelId}` : `${sp.setID}:${sp.playID}`;
       tsEditionKeys.add(key);
       tsEditionKeys.add(`${sp.setID}:${sp.playID}`);
+      // Map this listing's flowId to its edition key for Flowty cross-reference
+      flowIdToEditionKey.set(String(l.id), `${sp.setID}:${sp.playID}`);
     }
   }
 
@@ -786,7 +790,9 @@ async function computeSniperFeed(opts: {
   }
 
   // 6. Enrich Flowty listings (with badge lookup from badgeMap)
+  //    FMV priority: LiveToken → Supabase (via TS overlap) → ask-price fallback
   const flowtyDeals: SniperDeal[] = [];
+  let flowtyLivetokenHits = 0, flowtySupabaseHits = 0, flowtyAskFallbacks = 0;
   for (const item of flowtyListings) {
     const askPrice = item.price;
     if (askPrice <= 0) continue;
@@ -807,13 +813,48 @@ async function computeSniperFeed(opts: {
     if (serialFilter === "special" && !isSpecialSerial) continue;
     if (serialFilter === "jersey" && !isJersey) continue;
 
-    if (!item.livetokenFmv || item.livetokenFmv <= 0) continue;
+    // FMV resolution: LiveToken → Supabase → ask-price fallback
+    let baseFmv: number;
+    let confidence: string;
+    let confidenceSource: string;
+    let editionKey = "";
+    let fmvRow: FmvRow | null = null;
 
-    const baseFmv = item.livetokenFmv;
+    if (item.livetokenFmv && item.livetokenFmv > 0) {
+      // LiveToken FMV available
+      baseFmv = item.livetokenFmv;
+      confidence = "medium";
+      confidenceSource = "livetoken";
+      flowtyLivetokenHits++;
+    } else {
+      // Try Supabase FMV via TS listing overlap
+      const overlappedKey = flowIdToEditionKey.get(item.momentId);
+      if (overlappedKey) {
+        fmvRow = fmvMap.get(overlappedKey) ?? null;
+      }
+
+      if (fmvRow && fmvRow.fmv > 0) {
+        baseFmv = fmvRow.fmv;
+        editionKey = fmvRow.editionKey;
+        confidence = fmvRow.confidence;
+        confidenceSource = "supabase";
+        flowtySupabaseHits++;
+      } else {
+        // Ask-price fallback — show as speculative deal
+        baseFmv = askPrice;
+        confidence = "low";
+        confidenceSource = "ask_fallback";
+        flowtyAskFallbacks++;
+      }
+    }
+
     const adjustedFmv = baseFmv * serialMult;
     const discount = askPrice >= adjustedFmv
       ? 0
       : Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10;
+
+    // For ask-price fallback deals (discount=0), only include if minDiscount is 0
+    if (confidenceSource === "ask_fallback" && minDiscount > 0) continue;
     if (discount < minDiscount) continue;
 
     // Badge lookup by normalized player name
@@ -835,7 +876,7 @@ async function computeSniperFeed(opts: {
     flowtyDeals.push({
       flowId: item.momentId,
       momentId: item.momentId,
-      editionKey: "",
+      editionKey,
       playerName: item.playerName,
       teamName: teamAbbrev,
       setName: item.setName,
@@ -848,12 +889,12 @@ async function computeSniperFeed(opts: {
       askPrice,
       baseFmv,
       adjustedFmv,
-      wapUsd: null,
-      daysSinceSale: null,
-      salesCount30d: null,
+      wapUsd: fmvRow?.wapUsd ?? null,
+      daysSinceSale: fmvRow?.daysSinceSale ?? null,
+      salesCount30d: fmvRow?.salesCount30d ?? null,
       discount,
-      confidence: "medium",
-      confidenceSource: "livetoken",
+      confidence,
+      confidenceSource,
       hasBadge,
       badgeSlugs,
       badgeLabels: badgeSlugs.map(s => BADGE_LABELS[s] ?? s),
@@ -865,8 +906,8 @@ async function computeSniperFeed(opts: {
       thumbnailUrl: `https://assets.nbatopshot.com/media/${item.momentId}?width=512`,
       isLocked: item.isLocked,
       updatedAt: item.blockTimestamp ? new Date(item.blockTimestamp).toISOString() : new Date().toISOString(),
-      packListingId: null,
-      packName: null,
+      packListingId: fmvRow?.packListingId ?? null,
+      packName: fmvRow?.packName ?? null,
       packEv: null,
       packEvRatio: null,
       buyUrl: `https://www.flowty.io/listing/${item.listingResourceID}`,
@@ -877,6 +918,8 @@ async function computeSniperFeed(opts: {
       offerFmvPct: null,
     });
   }
+
+  console.log(`[sniper-feed] Flowty FMV sources: livetoken=${flowtyLivetokenHits} supabase=${flowtySupabaseHits} ask_fallback=${flowtyAskFallbacks}`);
 
   console.log(`[sniper-feed] built ts=${tsDeals.length} flowty=${flowtyDeals.length}`);
 
