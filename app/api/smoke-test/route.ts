@@ -132,7 +132,7 @@ export async function POST() {
     const res = await fetch(`${BASE_URL}/api/wallet-search`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ address: "0xbd94cade097e50ac" }),
+      body: JSON.stringify({ input: "0xbd94cade097e50ac" }),
       cache: "no-store",
     });
     results.push({
