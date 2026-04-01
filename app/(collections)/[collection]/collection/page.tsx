@@ -347,8 +347,10 @@ function AutoSearchReader(props: { onSearch: (q: string) => void }) {
   const searchParams = useSearchParams()
   useEffect(function() {
     // Support both ?address= (preferred) and legacy ?q= param
-    const addr = searchParams.get("address") || searchParams.get("q")
-    if (addr && addr.trim()) props.onSearch(addr.trim())
+    const address = searchParams.get("address")
+    const q = searchParams.get("q")
+    const query = address || q
+    if (query && query.trim()) props.onSearch(query.trim())
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   return null
@@ -358,6 +360,7 @@ function AutoSearchReader(props: { onSearch: (q: string) => void }) {
 
 export default function WalletPage() {
   const router = useRouter()
+  const lastSearchedRef = useRef("")
   const [rows, setRows] = useState<MomentRow[]>([])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
@@ -584,9 +587,11 @@ export default function WalletPage() {
 
   const runSearch = useCallback(async function(query: string) {
     if (!query.trim()) return
-    setInput(query.trim())
+    const trimmed = query.trim()
+    setInput(trimmed)
+    lastSearchedRef.current = trimmed
     // Persist address in URL for bookmarking and sharing
-    router.replace("?address=" + encodeURIComponent(query.trim()), { scroll: false })
+    try { router.replace("?address=" + encodeURIComponent(trimmed), { scroll: false }) } catch {}
     setLoading(true)
     setError("")
     setRows([])

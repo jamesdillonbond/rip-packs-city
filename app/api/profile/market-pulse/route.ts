@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
+const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
@@ -16,40 +16,56 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Pull recent fmv_snapshots for volume proxy and floor data
+    // fmv_snapshots has: edition_id (UUID FK), fmv_usd, confidence (enum), computed_at
+    // We need to join editions to get tier info — but editions only has id + external_id.
+    // Instead, pull raw FMV data and count indexed editions.
     const { data: snapshots } = await supabase
       .from("fmv_snapshots")
-      .select("fmv, tier, updated_at")
-      .gte("updated_at", new Date(Date.now() - 86400000).toISOString())
-      .order("updated_at", { ascending: false })
+      .select("fmv_usd, computed_at")
+      .gte("computed_at", new Date(Date.now() - 86400000).toISOString())
+      .order("computed_at", { ascending: false })
       .limit(500);
 
     const rows = snapshots ?? [];
 
-    // Compute stats from snapshot data
-    const commonRows = rows.filter(function(r: any) { return r.tier === "Common"; });
-    const rareRows = rows.filter(function(r: any) { return r.tier === "Rare"; });
-    const legendaryRows = rows.filter(function(r: any) { return r.tier === "Legendary"; });
-
-    const commonFloor = commonRows.length > 0
-      ? Math.min(...commonRows.map(function(r: any) { return Number(r.fmv) || 9999; }))
-      : null;
-    const rareFloor = rareRows.length > 0
-      ? Math.min(...rareRows.map(function(r: any) { return Number(r.fmv) || 9999; }))
-      : null;
-    const legendaryFloor = legendaryRows.length > 0
-      ? Math.min(...legendaryRows.map(function(r: any) { return Number(r.fmv) || 9999; }))
-      : null;
-
-    // Count active editions indexed (proxy for market activity)
+    // Count active editions indexed
     const { count: editionCount } = await supabase
       .from("fmv_snapshots")
       .select("*", { count: "exact", head: true });
 
+    // Without tier data on fmv_snapshots, pull floor prices from cached_listings if available
+    let commonFloor: number | null = null;
+    let rareFloor: number | null = null;
+    let legendaryFloor: number | null = null;
+
+    try {
+      const { data: listings } = await supabase
+        .from("cached_listings")
+        .select("tier, ask_price")
+        .in("tier", ["COMMON", "RARE", "LEGENDARY"])
+        .gt("ask_price", 0)
+        .order("ask_price", { ascending: true })
+        .limit(500);
+
+      if (listings && listings.length > 0) {
+        const byTier: Record<string, number[]> = {};
+        for (const l of listings) {
+          const t = (l.tier ?? "").toUpperCase();
+          if (!byTier[t]) byTier[t] = [];
+          byTier[t].push(Number(l.ask_price));
+        }
+        commonFloor = byTier["COMMON"]?.[0] ?? null;
+        rareFloor = byTier["RARE"]?.[0] ?? null;
+        legendaryFloor = byTier["LEGENDARY"]?.[0] ?? null;
+      }
+    } catch {
+      // cached_listings may not exist — that's OK
+    }
+
     const result = {
-      commonFloor: commonFloor !== 9999 ? commonFloor : null,
-      rareFloor: rareFloor !== 9999 ? rareFloor : null,
-      legendaryFloor: legendaryFloor !== 9999 ? legendaryFloor : null,
+      commonFloor,
+      rareFloor,
+      legendaryFloor,
       indexedEditions: editionCount ?? 0,
       snapshotsToday: rows.length,
       updatedAt: new Date().toISOString(),
