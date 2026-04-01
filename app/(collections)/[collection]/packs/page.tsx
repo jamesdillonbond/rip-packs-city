@@ -181,6 +181,8 @@ export default function PacksPage() {
   const [modalPack, setModalPack] = useState<PackListing | null>(null)
   const [modalResult, setModalResult] = useState<PackEVResponse | null>(null)
   const [modalLoading, setModalLoading] = useState(false)
+  const [calcAllProgress, setCalcAllProgress] = useState<{ done: number; total: number } | null>(null)
+  const calcAllAbortRef = useRef(false)
 
   const ttCost = ttMode && ttCount && ttFloor ? parseFloat(ttCount) * parseFloat(ttFloor) : null
   const ttPackEV = result !== null && ttCost !== null ? Math.round((result.grossEV - ttCost) * 100) / 100 : null
@@ -430,6 +432,28 @@ export default function PacksPage() {
     } finally {
       setModalLoading(false)
     }
+  }
+
+  async function calculateAllEV() {
+    const needsCalc = filteredListings.filter(function(p) {
+      if (!canAnalyzeEV(p.packType)) return false
+      const cached = evCache[p.packListingId]
+      return !cached || (cached.error && !cached.loading)
+    })
+    if (!needsCalc.length) return
+    calcAllAbortRef.current = false
+    setCalcAllProgress({ done: 0, total: needsCalc.length })
+    const BATCH = 5
+    let done = 0
+    for (let i = 0; i < needsCalc.length; i += BATCH) {
+      if (calcAllAbortRef.current) break
+      const batch = needsCalc.slice(i, i + BATCH)
+      await Promise.all(batch.map(function(pack) { return fetchEVForPack(pack) }))
+      done += batch.length
+      setCalcAllProgress({ done: Math.min(done, needsCalc.length), total: needsCalc.length })
+      if (i + BATCH < needsCalc.length) await new Promise(function(r) { setTimeout(r, 500) })
+    }
+    setCalcAllProgress(null)
   }
 
   function buildVerdict(): string {
@@ -746,6 +770,15 @@ export default function PacksPage() {
               </div>
               <input value={searchFilter} onChange={(e) => setSearchFilter(e.target.value)} placeholder="Search packs..."
                 className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-red-600 w-40" />
+              <button
+                onClick={calculateAllEV}
+                disabled={calcAllProgress !== null || listingsLoading}
+                className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              >
+                {calcAllProgress !== null
+                  ? "Calculating… " + calcAllProgress.done + " / " + calcAllProgress.total
+                  : "Calculate All EV"}
+              </button>
               <div className="ml-auto flex items-center gap-2">
                 <input value={walletInput} onChange={(e) => setWalletInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && walletInput.trim()) handleWalletSearch() }}
