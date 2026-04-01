@@ -39,6 +39,9 @@ type WalletRow = {
   flowId?: string | null
   thumbnailUrl?: string | null
   tssPoints?: number | null
+  fmv?: number | null
+  marketConfidence?: string | null
+  fmvComputedAt?: string | null
 }
 
 type WalletSearchResponse = {
@@ -409,6 +412,117 @@ async function getCollectionId(): Promise<string | null> {
   }
 }
 
+// ── Batch FMV + Ask Enrichment ────────────────────────────────────
+// Resolves integer editionKeys → Supabase edition UUIDs → fmv_snapshots
+// Also looks up cached_listings by flowId for low ask prices
+async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
+  if (!rows.length) return rows
+
+  try {
+    // 1. Collect unique editionKeys and flowIds
+    const editionKeys = [...new Set(rows.map(r => r.editionKey).filter(Boolean))] as string[]
+    const flowIds = [...new Set(rows.map(r => r.flowId).filter(Boolean))] as string[]
+
+    // 2. Parallel: resolve editions + fetch cached_listings
+    const CHUNK = 50
+    const editionChunks: Promise<any>[] = []
+    for (let i = 0; i < editionKeys.length; i += CHUNK) {
+      editionChunks.push(
+        supabaseAdmin
+          .from("editions")
+          .select("id, external_id")
+          .in("external_id", editionKeys.slice(i, i + CHUNK))
+      )
+    }
+
+    const listingChunks: Promise<any>[] = []
+    for (let i = 0; i < flowIds.length; i += CHUNK) {
+      listingChunks.push(
+        supabaseAdmin
+          .from("cached_listings")
+          .select("flow_id, ask_price, fmv")
+          .in("flow_id", flowIds.slice(i, i + CHUNK))
+      )
+    }
+
+    const [editionResults, listingResults] = await Promise.all([
+      Promise.all(editionChunks),
+      Promise.all(listingChunks),
+    ])
+
+    // 3. Build edition external_id → internal UUID map
+    const extToId = new Map<string, string>()
+    for (const { data } of editionResults) {
+      for (const row of (data ?? [])) {
+        extToId.set(row.external_id, row.id)
+      }
+    }
+
+    // 4. Build flowId → ask_price map from cached_listings
+    const askMap = new Map<string, number>()
+    for (const { data } of listingResults) {
+      for (const row of (data ?? [])) {
+        if (row.ask_price != null) askMap.set(row.flow_id, Number(row.ask_price))
+      }
+    }
+
+    // 5. Fetch FMV snapshots for resolved edition UUIDs
+    const internalIds = [...new Set(extToId.values())]
+    const fmvMap = new Map<string, { fmv_usd: number; confidence: string; computed_at: string }>()
+
+    if (internalIds.length) {
+      const fmvChunks: Promise<any>[] = []
+      for (let i = 0; i < internalIds.length; i += CHUNK) {
+        fmvChunks.push(
+          supabaseAdmin
+            .from("fmv_snapshots")
+            .select("edition_id, fmv_usd, confidence, computed_at")
+            .in("edition_id", internalIds.slice(i, i + CHUNK))
+            .order("computed_at", { ascending: false })
+        )
+      }
+      const fmvResults = await Promise.all(fmvChunks)
+      for (const { data } of fmvResults) {
+        for (const row of (data ?? [])) {
+          // Keep only the most recent snapshot per edition
+          if (!fmvMap.has(row.edition_id)) fmvMap.set(row.edition_id, row)
+        }
+      }
+    }
+
+    // 6. Build editionKey → FMV data map
+    const editionFmvMap = new Map<string, { fmv: number; confidence: string; computedAt: string }>()
+    for (const [extId, intId] of extToId) {
+      const snap = fmvMap.get(intId)
+      if (snap) {
+        editionFmvMap.set(extId, {
+          fmv: Number(snap.fmv_usd),
+          confidence: (snap.confidence ?? "low").toLowerCase(),
+          computedAt: snap.computed_at,
+        })
+      }
+    }
+
+    // 7. Apply FMV + ask data to rows
+    return rows.map(row => {
+      const fmvData = row.editionKey ? editionFmvMap.get(row.editionKey) : null
+      const cachedAsk = row.flowId ? askMap.get(row.flowId) : null
+
+      return {
+        ...row,
+        fmv: fmvData?.fmv ?? null,
+        marketConfidence: fmvData?.confidence ?? null,
+        fmvComputedAt: fmvData?.computedAt ?? null,
+        // Use cached_listings ask if available; keep GQL ask as fallback
+        lowAsk: cachedAsk ?? row.lowAsk ?? null,
+      }
+    })
+  } catch (err) {
+    console.warn("[wallet-search] FMV/ask enrichment failed:", err instanceof Error ? err.message : String(err))
+    return rows
+  }
+}
+
 const walletSearchSchema = z.object({
   input: z.string().min(1, "Please enter a wallet address or username.").transform(s => s.trim()),
   offset: z.coerce.number().int().min(0).default(0),
@@ -527,7 +641,7 @@ export async function POST(req: NextRequest) {
       editionCounts.set(key, current)
     }
 
-    const rows = baseRows.map((row) => {
+    const rowsWithCounts = baseRows.map((row) => {
       const key = buildEditionScopeKey({
         editionKey: row.editionKey,
         setName: row.setName,
@@ -538,6 +652,9 @@ export async function POST(req: NextRequest) {
       const counts = editionCounts.get(key) ?? { owned: 1, locked: row.isLocked ? 1 : 0 }
       return { ...row, editionsOwned: counts.owned, editionsLocked: counts.locked }
     })
+
+    // Batch-enrich FMV from fmv_snapshots + low ask from cached_listings
+    const rows = await batchEnrichFmvAndAsks(rowsWithCounts)
 
     const totalTssPoints = rows.reduce(function(sum, r) {
       return sum + (r.tssPoints ?? 0)
