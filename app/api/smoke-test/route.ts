@@ -11,7 +11,7 @@ type TestResult = { name: string; passed: boolean; detail?: string };
 
 async function checkUrl(name: string, url: string, expectJson = true): Promise<TestResult> {
   try {
-    const res = await fetch(url, { cache: "no-store" });
+    const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(4000) });
     if (!res.ok) return { name, passed: false, detail: `HTTP ${res.status}` };
     if (expectJson) {
       const data = await res.json();
@@ -55,14 +55,14 @@ async function checkRlsBlocked(
   }
 }
 
-export async function POST() {
+async function runSmokeTests() {
   const results: TestResult[] = [];
 
   // ── Existing 14 tests ──────────────────────────────────────
 
   // 1. Sniper feed returns deals
   try {
-    const res = await fetch(`${BASE_URL}/api/sniper-feed`, { cache: "no-store" });
+    const res = await fetch(`${BASE_URL}/api/sniper-feed`, { cache: "no-store", signal: AbortSignal.timeout(4000) });
     const data = await res.json();
     const deals = data?.deals ?? data ?? [];
     results.push({
@@ -80,7 +80,7 @@ export async function POST() {
   // 3. Sales freshness — last sale within 60 min
   try {
     const svc = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-    const { data } = await (svc.from("sales_2026") as any)
+    const { data } = await (svc.from("sales") as any)
       .select("ingested_at")
       .order("ingested_at", { ascending: false })
       .limit(1)
@@ -98,7 +98,7 @@ export async function POST() {
   // 4. FMV freshness — last snapshot within 30 min
   try {
     const svc = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-    const { data } = await (svc.from("fmv_snapshots_2026") as any)
+    const { data } = await (svc.from("fmv_snapshots") as any)
       .select("computed_at")
       .order("computed_at", { ascending: false })
       .limit(1)
@@ -134,6 +134,7 @@ export async function POST() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ input: "0xbd94cade097e50ac" }),
       cache: "no-store",
+      signal: AbortSignal.timeout(4000),
     });
     results.push({
       name: "wallet-search responds",
@@ -161,7 +162,7 @@ export async function POST() {
   ];
   for (const page of pages) {
     try {
-      const res = await fetch(`${BASE_URL}${page}`, { cache: "no-store" });
+      const res = await fetch(`${BASE_URL}${page}`, { cache: "no-store", signal: AbortSignal.timeout(4000) });
       results.push({
         name: `page ${page} returns 200`,
         passed: res.ok,
@@ -225,6 +226,10 @@ export async function POST() {
   }
 
   return NextResponse.json({ passed, total, allPassed, results }, { status: allPassed ? 200 : 500 });
+}
+
+export async function POST() {
+  return runSmokeTests();
 }
 
 export async function GET() {
