@@ -80,7 +80,7 @@ async function runSmokeTests() {
   // 3. Sales freshness — last sale within 60 min
   try {
     const svc = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-    const { data } = await (svc.from("sales_2026") as any)
+    const { data } = await (svc.from("sales") as any)
       .select("ingested_at")
       .order("ingested_at", { ascending: false })
       .limit(1)
@@ -98,7 +98,7 @@ async function runSmokeTests() {
   // 4. FMV freshness — last snapshot within 30 min
   try {
     const svc = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-    const { data } = await (svc.from("fmv_snapshots_2026") as any)
+    const { data } = await (svc.from("fmv_snapshots") as any)
       .select("computed_at")
       .order("computed_at", { ascending: false })
       .limit(1)
