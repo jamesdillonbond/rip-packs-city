@@ -182,6 +182,7 @@ export async function POST() {
       username: "rls_test",
     })
   );
+  console.log("[smoke-test] saved_wallets RLS:", results[results.length - 1].passed, results[results.length - 1].detail);
 
   // 16. profile_bio — anon write without owner key is blocked
   results.push(
@@ -190,6 +191,7 @@ export async function POST() {
       display_name: "rls_test",
     })
   );
+  console.log("[smoke-test] profile_bio RLS:", results[results.length - 1].passed, results[results.length - 1].detail);
 
   // 17. recent_searches — anon write without owner key is blocked
   results.push(
@@ -199,6 +201,7 @@ export async function POST() {
       query_type: "wallet",
     })
   );
+  console.log("[smoke-test] recent_searches RLS:", results[results.length - 1].passed, results[results.length - 1].detail);
 
   // 18. trophy_moments — anon write without owner key is blocked
   results.push(
@@ -208,6 +211,7 @@ export async function POST() {
       moment_id: "rls_test_moment",
     })
   );
+  console.log("[smoke-test] trophy_moments RLS:", results[results.length - 1].passed, results[results.length - 1].detail);
 
   // ── Summary ────────────────────────────────────────────────
   const passed = results.filter((r) => r.passed).length;
