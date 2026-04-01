@@ -272,7 +272,7 @@ async function fetchTSPage(
     console.log(`[sniper-feed] TS page sortBy=${sortBy} listings=${listings.length}`);
     return { listings, nextCursor };
   } catch (err) {
-    console.error(`[sniper-feed] TS page FAILED endpoint=${endpoint} sortBy=${sortBy}: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`[sniper-feed] TS page FAILED (${TS_PROXY_URL ? 'proxy' : 'direct'}) sortBy=${sortBy}: ${err instanceof Error ? err.message : String(err)}`);
     return { listings: [], nextCursor: null };
   }
 }
