@@ -1,7 +1,7 @@
 "use client"
 
-import { Fragment, useMemo, useState, useEffect, useCallback, Suspense } from "react"
-import { useSearchParams } from "next/navigation"
+import { Fragment, useMemo, useState, useEffect, useCallback, useRef, Suspense } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
 import {
   normalizeSetName,
   normalizeParallel,
@@ -283,18 +283,25 @@ type SortKey = "player" | "series" | "set" | "parallel" | "rarity" | "serial" | 
 
 // ── Edition Recent Sales (inline in expand panel) ────────────────────────────
 
-function EditionRecentSales({ editionKey }: { editionKey: string | null }) {
+function EditionRecentSales({ editionKey, mintCount }: { editionKey: string | null; mintCount?: number | null }) {
   const [sales, setSales] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(function() {
     if (!editionKey) { setLoading(false); return }
-    fetch("/api/recent-sales?editionKey=" + encodeURIComponent(editionKey) + "&limit=3")
+    fetch("/api/recent-sales?editionKey=" + encodeURIComponent(editionKey) + "&limit=5")
       .then(function(r) { return r.ok ? r.json() : null })
       .then(function(d) { if (d && d.sales) setSales(d.sales) })
       .catch(function() {})
       .finally(function() { setLoading(false) })
   }, [editionKey])
+
+  if (!editionKey) return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Recent Sales</div>
+      <div className="text-xs text-zinc-600">—</div>
+    </div>
+  )
 
   if (loading) return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
@@ -317,13 +324,15 @@ function EditionRecentSales({ editionKey }: { editionKey: string | null }) {
         {sales.map(function(s: any, i: number) {
           const age = s.soldAt ? Math.round((Date.now() - new Date(s.soldAt).getTime()) / 60000) : null
           const ageStr = age === null ? "—" : age < 60 ? age + "m ago" : age < 1440 ? Math.round(age / 60) + "h ago" : Math.round(age / 1440) + "d ago"
+          const serialStr = s.serialNumber ? ("#" + s.serialNumber + (mintCount ? " / " + mintCount : "")) : "—"
           return (
-            <div key={i} className="flex items-center justify-between text-xs">
-              <div>
-                <span className="text-zinc-400">#{s.serialNumber ?? "?"}</span>
-                <span className="ml-2 text-zinc-600">{ageStr}</span>
+            <div key={i} className="flex items-center justify-between text-xs gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-zinc-400 shrink-0">{serialStr}</span>
+                <span className="text-zinc-600 shrink-0">{ageStr}</span>
+                {s.buyerUsername && <span className="text-zinc-500 truncate">→ {s.buyerUsername}</span>}
               </div>
-              <span className="font-semibold text-emerald-400">{s.price ? "$" + Number(s.price).toFixed(2) : "—"}</span>
+              <span className="font-semibold text-emerald-400 shrink-0">{s.price ? "$" + Number(s.price).toFixed(2) : "—"}</span>
             </div>
           )
         })}
@@ -337,8 +346,9 @@ function EditionRecentSales({ editionKey }: { editionKey: string | null }) {
 function AutoSearchReader(props: { onSearch: (q: string) => void }) {
   const searchParams = useSearchParams()
   useEffect(function() {
-    const q = searchParams.get("q")
-    if (q && q.trim()) props.onSearch(q.trim())
+    // Support both ?address= (preferred) and legacy ?q= param
+    const addr = searchParams.get("address") || searchParams.get("q")
+    if (addr && addr.trim()) props.onSearch(addr.trim())
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   return null
@@ -347,6 +357,7 @@ function AutoSearchReader(props: { onSearch: (q: string) => void }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function WalletPage() {
+  const router = useRouter()
   const [rows, setRows] = useState<MomentRow[]>([])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
@@ -487,37 +498,56 @@ export default function WalletPage() {
     })
   }
 
-  // Fire-and-forget: batch-enrich best offers for a set of rows
-  function enrichOffers(momentRows: MomentRow[]) {
-    if (!momentRows.length) return
-    const momentIds = momentRows.map(function(r) { return r.momentId })
-    const editionKeys = momentRows.map(function(r) { return r.editionKey ?? "" })
-    fetch("/api/best-offers", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ momentIds, editionKeys }),
-    })
-      .then(function(r) { return r.ok ? r.json() : null })
-      .then(function(d) {
-        if (!d || !Array.isArray(d.results)) return
-        const offerMap = new Map<string, number>()
-        for (const result of d.results) {
-          if (typeof result.bestOffer === "number" && result.bestOffer > 0) {
-            offerMap.set(String(result.momentId), result.bestOffer)
+  // Debounced offer enrichment — accumulates rows across page loads,
+  // fires once after 2s idle, chunks into batches of 200 momentIds
+  const pendingOfferRowsRef = useRef<MomentRow[]>([])
+  const offerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function flushOfferEnrichment() {
+    const allRows = pendingOfferRowsRef.current
+    pendingOfferRowsRef.current = []
+    if (!allRows.length) return
+
+    const CHUNK_SIZE = 200
+    for (let i = 0; i < allRows.length; i += CHUNK_SIZE) {
+      const chunk = allRows.slice(i, i + CHUNK_SIZE)
+      const momentIds = chunk.map(function(r) { return r.momentId })
+      const editionKeys = chunk.map(function(r) { return r.editionKey ?? "" })
+      fetch("/api/best-offers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ momentIds, editionKeys }),
+      })
+        .then(function(r) { return r.ok ? r.json() : null })
+        .then(function(d) {
+          if (!d || !Array.isArray(d.results)) return
+          const offerMap = new Map<string, number>()
+          for (const result of d.results) {
+            if (typeof result.bestOffer === "number" && result.bestOffer > 0) {
+              offerMap.set(String(result.momentId), result.bestOffer)
+            }
           }
-        }
-        if (!offerMap.size) return
-        setRows(function(prev) {
-          return prev.map(function(row) {
-            const fresh = offerMap.get(row.momentId)
-            if (fresh === undefined) return row
-            // Only update if fresher offer is higher or row had no offer
-            if (row.bestOffer && row.bestOffer >= fresh) return row
-            return { ...row, bestOffer: fresh }
+          if (!offerMap.size) return
+          setRows(function(prev) {
+            return prev.map(function(row) {
+              const fresh = offerMap.get(row.momentId)
+              if (fresh === undefined) return row
+              if (row.bestOffer && row.bestOffer >= fresh) return row
+              return { ...row, bestOffer: fresh }
+            })
           })
         })
-      })
-      .catch(function() {})
+        .catch(function() {})
+    }
+  }
+
+  function enrichOffers(momentRows: MomentRow[]) {
+    if (!momentRows.length) return
+    // Accumulate rows for batch processing
+    pendingOfferRowsRef.current = pendingOfferRowsRef.current.concat(momentRows)
+    // Reset the 2-second idle timer
+    if (offerTimerRef.current) clearTimeout(offerTimerRef.current)
+    offerTimerRef.current = setTimeout(flushOfferEnrichment, 2000)
   }
 
   async function maybePatchProfileStats(query: string, resultRows: MomentRow[], resultSummary: WalletSearchResponse["summary"]) {
@@ -554,6 +584,8 @@ export default function WalletPage() {
   const runSearch = useCallback(async function(query: string) {
     if (!query.trim()) return
     setInput(query.trim())
+    // Persist address in URL for bookmarking and sharing
+    router.replace("?address=" + encodeURIComponent(query.trim()), { scroll: false })
     setLoading(true)
     setError("")
     setRows([])
@@ -564,6 +596,9 @@ export default function WalletPage() {
     setSealedPackCount(null)
     setPacksByTitle({})
     setRecentSales([]);
+    // Clear any pending offer enrichment from previous search
+    pendingOfferRowsRef.current = []
+    if (offerTimerRef.current) { clearTimeout(offerTimerRef.current); offerTimerRef.current = null }
     setSalesLoading(true);
     fetch("/api/recent-sales?limit=15")
       .then(function(r) { return r.ok ? r.json() : null; })
@@ -601,7 +636,7 @@ export default function WalletPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [router])
 
   async function fetchWalletPage(nextOffset: number, append: boolean) {
     const response = await fetch("/api/wallet-search", {
@@ -1058,11 +1093,21 @@ export default function WalletPage() {
                 return (
                   <Fragment key={row.momentId}>
                     <tr className={"border-b border-zinc-800 align-top " + (isLocked ? "opacity-60" : "")}>
-                      <td className="p-3">
-                        <div className="flex items-start gap-2">
-                          <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-zinc-800 bg-black hidden sm:block">
-                            {row.thumbnailUrl ? <img src={row.thumbnailUrl} alt={row.playerName} className="h-full w-full object-cover" /> : null}
-                          </div>
+                      <td className="p-3 min-w-[160px]">
+                        <div className="flex items-center gap-2">
+                          {row.thumbnailUrl ? (
+                            <img
+                              src={row.thumbnailUrl}
+                              alt={row.playerName}
+                              width={36}
+                              height={36}
+                              loading="lazy"
+                              className="shrink-0 rounded object-cover bg-zinc-900"
+                              style={{ width: 36, height: 36 }}
+                            />
+                          ) : (
+                            <div className="shrink-0 rounded bg-zinc-900" style={{ width: 36, height: 36 }} />
+                          )}
                           <div>
                             <div className="font-semibold text-white text-sm">{row.playerName}</div>
                             <div className="mt-1 flex flex-wrap gap-1">
@@ -1108,6 +1153,16 @@ export default function WalletPage() {
                       <td className="p-3">
                         <div className={"font-semibold text-sm " + (fmv.muted ? "text-zinc-500" : "text-white")}>{fmv.text}</div>
                         <div className={"text-[10px] " + conf.color}>{conf.label}</div>
+                        {(function() {
+                          if (row.marketConfidence === "none" || !row.fmv || row.fmv <= 0 || row.lowAsk == null) return null
+                          const delta = ((row.lowAsk - row.fmv) / row.fmv) * 100
+                          if (Math.abs(delta) < 3) return null
+                          return (
+                            <div className={"text-[10px] font-mono " + (delta < 0 ? "text-emerald-400" : "text-red-400")}>
+                              {delta > 0 ? "↑+" : "↓"}{delta.toFixed(0)}%
+                            </div>
+                          )
+                        })()}
                       </td>
                       <td className="p-3 text-sm hidden lg:table-cell">
                         <span className="text-zinc-300">{formatCurrency(row.bestOffer)}</span>
@@ -1155,6 +1210,15 @@ export default function WalletPage() {
                                   <a href={"/nba-top-shot/sets?wallet=" + encodeURIComponent(input.trim())} className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-400 hover:bg-zinc-900">View Set Progress →</a>
                                 )}
                                 <a href={"/profile?pin=" + row.momentId} className="block rounded-lg border border-yellow-800 bg-yellow-950/30 px-3 py-1.5 text-center text-xs font-semibold text-yellow-400 hover:bg-yellow-950/60">⭐ Pin to Trophy Case</a>
+                                <button
+                                  onClick={function(e) {
+                                    navigator.clipboard.writeText(window.location.href)
+                                    const btn = e.currentTarget
+                                    btn.textContent = "Copied!"
+                                    setTimeout(function() { btn.textContent = "🔗 Share Collection" }, 1500)
+                                  }}
+                                  className="block w-full rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-400 hover:bg-zinc-900"
+                                >🔗 Share Collection</button>
                               </div>
                             </div>
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
@@ -1207,7 +1271,7 @@ export default function WalletPage() {
                             )}
                           </div>
                           <div className="mt-4">
-                            <EditionRecentSales editionKey={row.editionKey ?? null} />
+                            <EditionRecentSales editionKey={row.editionKey ?? null} mintCount={getMint(row)} />
                           </div>
                         </td>
                       </tr>
