@@ -68,6 +68,12 @@ jobs:
           if [ "$STATUS" != "200" ]; then
             echo "::warning::Flowty sales returned $STATUS"
           fi
+      - name: Price snapshots
+        run: |
+          RESPONSE=$(curl -s -X POST https://rip-packs-city.vercel.app/api/cron/price-snapshots \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            -H "Content-Type: application/json")
+          echo "Price snapshots: $RESPONSE"
       - name: Social Bot — Post deals to Twitter
         continue-on-error: true
         run: |
