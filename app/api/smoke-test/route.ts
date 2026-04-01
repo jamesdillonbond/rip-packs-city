@@ -56,163 +56,94 @@ async function checkRlsBlocked(
 }
 
 async function runSmokeTests() {
-  const results: TestResult[] = [];
+  const svc = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-  // ── Existing 14 tests ──────────────────────────────────────
+  // ── Run all independent tests in parallel ──────────────────
+  const settled = await Promise.allSettled([
+    // 1. Sniper feed returns deals
+    (async (): Promise<TestResult> => {
+      const res = await fetch(`${BASE_URL}/api/sniper-feed`, { cache: "no-store", signal: AbortSignal.timeout(4000) });
+      const data = await res.json();
+      const deals = data?.deals ?? data ?? [];
+      return { name: "sniper-feed returns deals", passed: Array.isArray(deals) && deals.length > 0, detail: `${deals.length} deals` };
+    })(),
 
-  // 1. Sniper feed returns deals
-  try {
-    const res = await fetch(`${BASE_URL}/api/sniper-feed`, { cache: "no-store", signal: AbortSignal.timeout(4000) });
-    const data = await res.json();
-    const deals = data?.deals ?? data ?? [];
-    results.push({
-      name: "sniper-feed returns deals",
-      passed: Array.isArray(deals) && deals.length > 0,
-      detail: `${deals.length} deals`,
-    });
-  } catch (e: any) {
-    results.push({ name: "sniper-feed returns deals", passed: false, detail: e.message });
-  }
+    // 2. FMV API responds
+    checkUrl("fmv/demo responds", `${BASE_URL}/api/fmv/demo`),
 
-  // 2. FMV API responds
-  results.push(await checkUrl("fmv/demo responds", `${BASE_URL}/api/fmv/demo`));
+    // 3. Sales freshness < 60 min
+    (async (): Promise<TestResult> => {
+      const { data } = await (svc.from("sales") as any)
+        .select("ingested_at").order("ingested_at", { ascending: false }).limit(1).single();
+      const age = data ? (Date.now() - new Date(data.ingested_at).getTime()) / 60000 : 999;
+      return { name: "sales freshness < 60 min", passed: age < 60, detail: `${age.toFixed(1)} min ago` };
+    })(),
 
-  // 3. Sales freshness — last sale within 60 min
-  try {
-    const svc = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-    const { data } = await (svc.from("sales") as any)
-      .select("ingested_at")
-      .order("ingested_at", { ascending: false })
-      .limit(1)
-      .single();
-    const age = data ? (Date.now() - new Date(data.ingested_at).getTime()) / 60000 : 999;
-    results.push({
-      name: "sales freshness < 60 min",
-      passed: age < 60,
-      detail: `${age.toFixed(1)} min ago`,
-    });
-  } catch (e: any) {
-    results.push({ name: "sales freshness < 60 min", passed: false, detail: e.message });
-  }
+    // 4. FMV freshness < 30 min
+    (async (): Promise<TestResult> => {
+      const { data } = await (svc.from("fmv_snapshots") as any)
+        .select("computed_at").order("computed_at", { ascending: false }).limit(1).single();
+      const age = data ? (Date.now() - new Date(data.computed_at).getTime()) / 60000 : 999;
+      return { name: "fmv freshness < 30 min", passed: age < 30, detail: `${age.toFixed(1)} min ago` };
+    })(),
 
-  // 4. FMV freshness — last snapshot within 30 min
-  try {
-    const svc = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-    const { data } = await (svc.from("fmv_snapshots") as any)
-      .select("computed_at")
-      .order("computed_at", { ascending: false })
-      .limit(1)
-      .single();
-    const age = data ? (Date.now() - new Date(data.computed_at).getTime()) / 60000 : 999;
-    results.push({
-      name: "fmv freshness < 30 min",
-      passed: age < 30,
-      detail: `${age.toFixed(1)} min ago`,
-    });
-  } catch (e: any) {
-    results.push({ name: "fmv freshness < 30 min", passed: false, detail: e.message });
-  }
+    // 5. Listing cache has rows
+    (async (): Promise<TestResult> => {
+      const { count } = await (svc.from("cached_listings") as any)
+        .select("*", { count: "exact", head: true });
+      return { name: "cached_listings has rows", passed: (count ?? 0) > 0, detail: `${count} rows` };
+    })(),
 
-  // 5. Listing cache has rows
-  try {
-    const svc = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-    const { count } = await (svc.from("cached_listings") as any)
-      .select("*", { count: "exact", head: true });
-    results.push({
-      name: "cached_listings has rows",
-      passed: (count ?? 0) > 0,
-      detail: `${count} rows`,
-    });
-  } catch (e: any) {
-    results.push({ name: "cached_listings has rows", passed: false, detail: e.message });
-  }
-
-  // 6. Wallet search responds
-  try {
-    const res = await fetch(`${BASE_URL}/api/wallet-search`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ input: "0xbd94cade097e50ac" }),
-      cache: "no-store",
-      signal: AbortSignal.timeout(4000),
-    });
-    results.push({
-      name: "wallet-search responds",
-      passed: res.ok,
-      detail: `HTTP ${res.status}`,
-    });
-  } catch (e: any) {
-    results.push({ name: "wallet-search responds", passed: false, detail: e.message });
-  }
-
-  // 7. Pack listings responds
-  results.push(await checkUrl("pack-listings responds", `${BASE_URL}/api/pack-listings`));
-
-  // 8. Badges API responds
-  results.push(await checkUrl("badges API responds", `${BASE_URL}/api/badges`));
-
-  // 9–14. Page HTTP status checks
-  const pages = [
-    "/nba-top-shot/sniper",
-    "/nba-top-shot/collection",
-    "/nba-top-shot/sets",
-    "/nba-top-shot/badges",
-    "/nba-top-shot/packs",
-    "/profile",
-  ];
-  for (const page of pages) {
-    try {
-      const res = await fetch(`${BASE_URL}${page}`, { cache: "no-store", signal: AbortSignal.timeout(4000) });
-      results.push({
-        name: `page ${page} returns 200`,
-        passed: res.ok,
-        detail: `HTTP ${res.status}`,
+    // 6. Wallet search responds
+    (async (): Promise<TestResult> => {
+      const res = await fetch(`${BASE_URL}/api/wallet-search`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input: "0xbd94cade097e50ac" }),
+        cache: "no-store", signal: AbortSignal.timeout(4000),
       });
-    } catch (e: any) {
-      results.push({ name: `page ${page} returns 200`, passed: false, detail: e.message });
-    }
+      return { name: "wallet-search responds", passed: res.ok, detail: `HTTP ${res.status}` };
+    })(),
+
+    // 7. Pack listings responds
+    checkUrl("pack-listings responds", `${BASE_URL}/api/pack-listings`),
+
+    // 8. Badges API responds
+    checkUrl("badges API responds", `${BASE_URL}/api/badges`),
+
+    // 9–14. Page HTTP status checks
+    ...([
+      "/nba-top-shot/sniper", "/nba-top-shot/collection", "/nba-top-shot/sets",
+      "/nba-top-shot/badges", "/nba-top-shot/packs", "/profile",
+    ].map(async (page): Promise<TestResult> => {
+      const res = await fetch(`${BASE_URL}${page}`, { cache: "no-store", signal: AbortSignal.timeout(4000) });
+      return { name: `page ${page} returns 200`, passed: res.ok, detail: `HTTP ${res.status}` };
+    })),
+
+    // 15–18. RLS Write-Block Tests
+    checkRlsBlocked("RLS blocks saved_wallets unauthorized write", "saved_wallets", {
+      owner_key: "__rls_smoke_test__", wallet_addr: "0x0000000000000000", username: "rls_test",
+    }),
+    checkRlsBlocked("RLS blocks profile_bio unauthorized write", "profile_bio", {
+      owner_key: "__rls_smoke_test__", display_name: "rls_test",
+    }),
+    checkRlsBlocked("RLS blocks recent_searches unauthorized write", "recent_searches", {
+      owner_key: "__rls_smoke_test__", query: "rls_test", query_type: "wallet",
+    }),
+    checkRlsBlocked("RLS blocks trophy_moments unauthorized write", "trophy_moments", {
+      owner_key: "__rls_smoke_test__", slot: 1, moment_id: "rls_test_moment",
+    }),
+  ]);
+
+  // ── Collect results, converting rejected promises to failures ──
+  const results: TestResult[] = settled.map((s, i) =>
+    s.status === "fulfilled"
+      ? s.value
+      : { name: `test ${i + 1}`, passed: false, detail: (s.reason as Error)?.message ?? String(s.reason) }
+  );
+
+  for (const r of results) {
+    if (r.name.startsWith("RLS")) console.log(`[smoke-test] ${r.name}: ${r.passed} ${r.detail}`);
   }
-
-  // ── NEW: RLS Write-Block Tests (15–18) ─────────────────────
-
-  // 15. saved_wallets — anon write without owner key is blocked
-  results.push(
-    await checkRlsBlocked("RLS blocks saved_wallets unauthorized write", "saved_wallets", {
-      owner_key: "__rls_smoke_test__",
-      wallet_addr: "0x0000000000000000",
-      username: "rls_test",
-    })
-  );
-  console.log("[smoke-test] saved_wallets RLS:", results[results.length - 1].passed, results[results.length - 1].detail);
-
-  // 16. profile_bio — anon write without owner key is blocked
-  results.push(
-    await checkRlsBlocked("RLS blocks profile_bio unauthorized write", "profile_bio", {
-      owner_key: "__rls_smoke_test__",
-      display_name: "rls_test",
-    })
-  );
-  console.log("[smoke-test] profile_bio RLS:", results[results.length - 1].passed, results[results.length - 1].detail);
-
-  // 17. recent_searches — anon write without owner key is blocked
-  results.push(
-    await checkRlsBlocked("RLS blocks recent_searches unauthorized write", "recent_searches", {
-      owner_key: "__rls_smoke_test__",
-      query: "rls_test",
-      query_type: "wallet",
-    })
-  );
-  console.log("[smoke-test] recent_searches RLS:", results[results.length - 1].passed, results[results.length - 1].detail);
-
-  // 18. trophy_moments — anon write without owner key is blocked
-  results.push(
-    await checkRlsBlocked("RLS blocks trophy_moments unauthorized write", "trophy_moments", {
-      owner_key: "__rls_smoke_test__",
-      slot: 1,
-      moment_id: "rls_test_moment",
-    })
-  );
-  console.log("[smoke-test] trophy_moments RLS:", results[results.length - 1].passed, results[results.length - 1].detail);
 
   // ── Summary ────────────────────────────────────────────────
   const passed = results.filter((r) => r.passed).length;

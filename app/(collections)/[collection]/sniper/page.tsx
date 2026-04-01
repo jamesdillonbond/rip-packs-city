@@ -548,7 +548,7 @@ export default function SniperPage() {
             >
               <option value="all">All serials</option>
               <option value="special">Special only</option>
-              <option value="jersey" disabled title="Coming soon">Jersey match (soon)</option>
+              <option value="jersey">Jersey match</option>
             </select>
             <select
               value={sortBy}
