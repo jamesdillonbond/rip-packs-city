@@ -67,55 +67,43 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // ── 2. Daily deal ──────────────────────────────────────────────────────────
+  // ── 2. Daily deal (via get_top_deals RPC) ───────────────────────────────────
   let dailyDeal: object | null = null;
   try {
-    const { data: dealRows } = await supabase
-      .from("badge_editions")
-      .select(
-        `
-        player_name, team, tier, set_name, series_number,
-        low_ask, circulation_count, play_tags,
-        editions!inner(
-          external_id,
-          fmv_snapshots!inner(fmv_usd, confidence)
-        )
-      `
-      )
-      .eq("parallel_id", 0)
-      .eq("flow_retired", false)
-      .not("low_ask", "is", null)
-      .gt("low_ask", 0)
-      .lte("low_ask", 50)
-      .limit(200);
+    const { data: dealRows } = await supabase.rpc("get_top_deals", {
+      p_player: null,
+      p_team: null,
+      p_tier: null,
+      p_max_price: 50,
+      p_min_discount: 10,
+      p_has_badge: false,
+      p_limit: 8,
+    });
 
     if (dealRows && dealRows.length > 0) {
       const scored = dealRows
-        .map((be: any) => {
-          const fmv = parseFloat(be.editions?.[0]?.fmv_snapshots?.[0]?.fmv_usd ?? "0");
-          const confidence = be.editions?.[0]?.fmv_snapshots?.[0]?.confidence ?? "LOW";
-          const ask = parseFloat(be.low_ask);
+        .map((row: any) => {
+          const fmv = parseFloat(row.fmv_usd ?? "0");
+          const ask = parseFloat(row.low_ask ?? "0");
           if (!fmv || ask <= 0) return null;
-          const discount = ((fmv - ask) / fmv) * 100;
-          if (discount < 10) return null;
-          const badges: string[] = Array.isArray(be.play_tags)
-            ? be.play_tags.map((t: any) => t.title).filter(Boolean)
+          const discount = row.discount_pct ?? ((fmv - ask) / fmv) * 100;
+          const badges: string[] = Array.isArray(row.play_tags)
+            ? row.play_tags.map((t: any) => t.title ?? t).filter(Boolean)
             : [];
           const score =
             discount +
-            (badges.length > 0 ? 10 : 0) +
-            (confidence === "HIGH" ? 5 : confidence === "MEDIUM" ? 2 : 0);
+            (badges.length > 0 ? 10 : 0);
           return {
-            player_name: be.player_name,
-            team: be.team,
-            tier: tierLabel(be.tier),
-            set_name: be.set_name,
-            series: seriesLabel(be.series_number),
+            player_name: row.player_name,
+            team: row.team ?? null,
+            tier: tierLabel(row.tier),
+            set_name: row.set_name,
+            series: seriesLabel(row.series_number),
             low_ask: ask,
             fmv,
             discount_pct: Math.round(discount),
             badges,
-            confidence,
+            external_id: row.external_id,
             score,
           };
         })
@@ -128,36 +116,18 @@ export async function GET(req: NextRequest) {
     console.error("[context] dailyDeal error:", err);
   }
 
-  // ── 3. Market pulse ────────────────────────────────────────────────────────
+  // ── 3. Market pulse (via get_market_pulse RPC) ──────────────────────────────
   let marketPulse: string | null = null;
   try {
-    const { data: pulseRows } = await supabase
-      .from("badge_editions")
-      .select(`low_ask, editions!inner(fmv_snapshots!inner(fmv_usd))`)
-      .eq("parallel_id", 0)
-      .eq("flow_retired", false)
-      .not("low_ask", "is", null)
-      .gt("low_ask", 0)
-      .limit(500);
+    const { data: pulse } = await supabase.rpc("get_market_pulse");
+    const { deals_below_20, deals_below_30, total_tracked } = pulse?.[0] ?? {};
 
-    if (pulseRows && pulseRows.length > 0) {
-      let dealsBelow20 = 0;
-      let dealsBelow30 = 0;
-      pulseRows.forEach((be: any) => {
-        const fmv = parseFloat(be.editions?.[0]?.fmv_snapshots?.[0]?.fmv_usd ?? "0");
-        const ask = parseFloat(be.low_ask);
-        if (!fmv || ask <= 0) return;
-        const disc = ((fmv - ask) / fmv) * 100;
-        if (disc >= 20) dealsBelow20++;
-        if (disc >= 30) dealsBelow30++;
-      });
-      if (dealsBelow30 > 0) {
-        marketPulse = `${dealsBelow30} moment${dealsBelow30 !== 1 ? "s" : ""} listed 30%+ below FMV right now`;
-      } else if (dealsBelow20 > 0) {
-        marketPulse = `${dealsBelow20} moment${dealsBelow20 !== 1 ? "s" : ""} listed 20%+ below FMV right now`;
-      } else {
-        marketPulse = `${pulseRows.length} moments tracked — FMV data fresh`;
-      }
+    if (deals_below_30 && deals_below_30 > 0) {
+      marketPulse = `${deals_below_30} moment${deals_below_30 !== 1 ? "s" : ""} listed 30%+ below FMV right now`;
+    } else if (deals_below_20 && deals_below_20 > 0) {
+      marketPulse = `${deals_below_20} moment${deals_below_20 !== 1 ? "s" : ""} listed 20%+ below FMV right now`;
+    } else if (total_tracked) {
+      marketPulse = `${total_tracked} moments tracked — FMV data fresh`;
     }
   } catch (err) {
     console.error("[context] marketPulse error:", err);
