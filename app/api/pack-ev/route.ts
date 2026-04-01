@@ -32,6 +32,8 @@ type CachedPackData = {
     isSoldOut: boolean
   }
   editionCount: number
+  fmvCoverage: number
+  fmvCoverageNote: string | null
 }
 
 const packCache = new Map<string, { data: CachedPackData; expiresAt: number }>()
@@ -431,6 +433,8 @@ export async function POST(req: NextRequest) {
         tierBreakdown: d.tierBreakdown,
         supplySnapshot: d.supplySnapshot,
         editionCount: d.editionCount,
+        fmvCoverage: d.fmvCoverage,
+        fmvCoverageNote: d.fmvCoverageNote,
         cached: true,
         methodology: "EV = Σ(remaining_i / total_unopened × avg_sale_price_i × 0.95) − pack_price",
       })
@@ -583,6 +587,17 @@ export async function POST(req: NextRequest) {
       isSoldOut: listingData?.isSoldOut ?? false,
     }
 
+    // ── FMV coverage stats ───────────────────────────────────────────────────
+    const fmvCoverage = editionEVs.length > 0
+      ? Math.round((rpcFmvUsed / editionEVs.length) * 100)
+      : 0
+    const fmvSource = rpcFmvUsed > 0 ? "rpc" : "topshot"
+    const fmvCoverageNote = fmvCoverage < 10
+      ? "FMV data is limited (" + fmvCoverage + "% coverage). EV uses Top Shot marketplace prices for most editions. As more sales are ingested, RPC FMV coverage will improve."
+      : fmvCoverage < 50
+        ? "Partial FMV coverage (" + fmvCoverage + "%). Some editions use Top Shot marketplace prices instead of RPC FMV."
+        : null
+
     // ── Store in cache ──────────────────────────────────────────────────────
     packCache.set(packListingId, {
       data: {
@@ -592,14 +607,11 @@ export async function POST(req: NextRequest) {
         tierBreakdown,
         supplySnapshot,
         editionCount: editionEVs.length,
+        fmvCoverage,
+        fmvCoverageNote,
       },
       expiresAt: Date.now() + CACHE_TTL_MS,
     })
-
-    const fmvCoverage = editionEVs.length > 0
-      ? Math.round((rpcFmvUsed / editionEVs.length) * 100)
-      : 0
-    const fmvSource = rpcFmvUsed > 0 ? "rpc" : "topshot"
 
     console.log(`[pack-ev] Done: grossEV=${grossEV} packEV=${packEV} editions=${editionEVs.length} fmvSource=${fmvSource} fmvCoverage=${fmvCoverage}%`)
 
@@ -621,6 +633,7 @@ export async function POST(req: NextRequest) {
       editionCount: editionEVs.length,
       fmvSource,
       fmvCoverage,
+      fmvCoverageNote,
       cached: false,
       methodology: "EV = Σ(remaining_i / total_unopened × best_price_i × 0.95) − pack_price. best_price prefers RPC FMV when available.",
     })
