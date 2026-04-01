@@ -428,7 +428,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
     const editionChunks: Promise<any>[] = []
     for (let i = 0; i < editionKeys.length; i += CHUNK) {
       editionChunks.push(
-        supabaseAdmin
+        (supabaseAdmin as any)
           .from("editions")
           .select("id, external_id")
           .in("external_id", editionKeys.slice(i, i + CHUNK))
@@ -438,7 +438,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
     const listingChunks: Promise<any>[] = []
     for (let i = 0; i < flowIds.length; i += CHUNK) {
       listingChunks.push(
-        supabaseAdmin
+        (supabaseAdmin as any)
           .from("cached_listings")
           .select("flow_id, ask_price, fmv")
           .in("flow_id", flowIds.slice(i, i + CHUNK))
@@ -474,7 +474,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
       const fmvChunks: Promise<any>[] = []
       for (let i = 0; i < internalIds.length; i += CHUNK) {
         fmvChunks.push(
-          supabaseAdmin
+          (supabaseAdmin as any)
             .from("fmv_snapshots")
             .select("edition_id, fmv_usd, confidence, computed_at")
             .in("edition_id", internalIds.slice(i, i + CHUNK))
