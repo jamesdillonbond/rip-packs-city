@@ -487,6 +487,39 @@ export default function WalletPage() {
     })
   }
 
+  // Fire-and-forget: batch-enrich best offers for a set of rows
+  function enrichOffers(momentRows: MomentRow[]) {
+    if (!momentRows.length) return
+    const momentIds = momentRows.map(function(r) { return r.momentId })
+    const editionKeys = momentRows.map(function(r) { return r.editionKey ?? "" })
+    fetch("/api/best-offers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ momentIds, editionKeys }),
+    })
+      .then(function(r) { return r.ok ? r.json() : null })
+      .then(function(d) {
+        if (!d || !Array.isArray(d.results)) return
+        const offerMap = new Map<string, number>()
+        for (const result of d.results) {
+          if (typeof result.bestOffer === "number" && result.bestOffer > 0) {
+            offerMap.set(String(result.momentId), result.bestOffer)
+          }
+        }
+        if (!offerMap.size) return
+        setRows(function(prev) {
+          return prev.map(function(row) {
+            const fresh = offerMap.get(row.momentId)
+            if (fresh === undefined) return row
+            // Only update if fresher offer is higher or row had no offer
+            if (row.bestOffer && row.bestOffer >= fresh) return row
+            return { ...row, bestOffer: fresh }
+          })
+        })
+      })
+      .catch(function() {})
+  }
+
   async function maybePatchProfileStats(query: string, resultRows: MomentRow[], resultSummary: WalletSearchResponse["summary"]) {
     const key = getOwnerKey()
     if (!key) return
@@ -553,6 +586,8 @@ export default function WalletPage() {
       setOffset(nextRows.length)
       setHasSearched(true)
       maybePatchProfileStats(query.trim(), withBadges, json.summary).catch(function() {})
+      // Fire-and-forget: enrich best offers for loaded rows
+      enrichOffers(withBadges)
       // Fire-and-forget: load sealed pack count + titles for this wallet
       fetch("/api/wallet-packs?wallet=" + encodeURIComponent(query.trim()))
         .then(function(r) { return r.ok ? r.json() : null })
@@ -582,6 +617,7 @@ export default function WalletPage() {
     setRows(function(prev) { return append ? [...prev, ...withBadges] : withBadges })
     setSummary(json.summary)
     setOffset(nextOffset + nextRows.length)
+    enrichOffers(withBadges)
   }
 
   async function handleSearch() { await runSearch(input) }
@@ -1073,7 +1109,12 @@ export default function WalletPage() {
                         <div className={"font-semibold text-sm " + (fmv.muted ? "text-zinc-500" : "text-white")}>{fmv.text}</div>
                         <div className={"text-[10px] " + conf.color}>{conf.label}</div>
                       </td>
-                      <td className="p-3 text-zinc-300 text-sm hidden lg:table-cell">{formatCurrency(row.bestOffer)}</td>
+                      <td className="p-3 text-sm hidden lg:table-cell">
+                        <span className="text-zinc-300">{formatCurrency(row.bestOffer)}</span>
+                        {typeof row.bestOffer === "number" && row.bestOffer > 0 && typeof getBestAsk(row) === "number" && row.bestOffer > (getBestAsk(row) ?? Infinity) && (
+                          <span className="ml-1.5 rounded bg-emerald-950 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400 border border-emerald-800">Flip</span>
+                        )}
+                      </td>
                       <td className="p-3 text-zinc-500 text-xs hidden xl:table-cell">{formatAcquiredAt(row.acquiredAt)}</td>
                       <td className="p-3">
                         <button onClick={function() { toggleExpanded(row.momentId) }} className="rounded-lg border border-zinc-700 px-2 py-1 text-xs text-white hover:bg-zinc-900">
