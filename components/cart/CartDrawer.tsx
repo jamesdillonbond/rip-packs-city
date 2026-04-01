@@ -4,6 +4,7 @@ import React, { useEffect, useRef } from 'react'
 import { useCart, CartItem, PurchaseStatus } from '@/lib/cart/CartContext'
 import { usePurchaseQueue } from '@/lib/cart/usePurchaseQueue'
 import { useFlowUser, WalletProvider } from '@/lib/hooks/useFlowUser'
+import { useFlowWalletBalances } from '@/lib/hooks/useFlowWalletBalances'
 
 function formatPrice(n: number) {
   return `$${n.toFixed(2)}`
@@ -173,6 +174,7 @@ function CartSummary() {
   const { items, totalPrice, purchaseStatus } = useCart()
   const { buyAll, executePurchase, isExecuting } = usePurchaseQueue()
   const { user, logIn } = useFlowUser()
+  const { flowBalance, usdcBalance, isLoading: balancesLoading, refetch: refetchBalances } = useFlowWalletBalances()
 
   const successCount = Object.values(purchaseStatus).filter((s) => s === 'success').length
   const failedCount = Object.values(purchaseStatus).filter(
@@ -197,8 +199,70 @@ function CartSummary() {
 
   const buyableTotal = flowCompatibleItems.reduce((s, i) => s + i.expectedPrice, 0)
 
+  // Calculate totals per token type for Flow Wallet balance checks
+  const flowItemsTotal = isNonDapper
+    ? flowCompatibleItems.filter((i) => i.paymentToken === 'FLOW').reduce((s, i) => s + i.expectedPrice, 0)
+    : 0
+  const usdcItemsTotal = isNonDapper
+    ? flowCompatibleItems.filter((i) => i.paymentToken === 'USDC_E').reduce((s, i) => s + i.expectedPrice, 0)
+    : 0
+
+  const hasFlowItems = flowItemsTotal > 0
+  const hasUsdcItems = usdcItemsTotal > 0
+  const showBalances = isConnected && isNonDapper && (hasFlowItems || hasUsdcItems)
+
+  const insufficientFlow = hasFlowItems && flowItemsTotal > flowBalance
+  const insufficientUsdc = hasUsdcItems && usdcItemsTotal > usdcBalance
+  const hasInsufficientBalance = showBalances && !balancesLoading && (insufficientFlow || insufficientUsdc)
+
+  // Re-fetch balances after purchases complete
+  const prevHasResults = React.useRef(false)
+  React.useEffect(() => {
+    if (hasResults && !prevHasResults.current && successCount > 0) {
+      refetchBalances()
+    }
+    prevHasResults.current = hasResults
+  }, [hasResults, successCount, refetchBalances])
+
   return (
     <div className="border-t border-white/10 p-4 space-y-3">
+      {/* Flow Wallet balance row */}
+      {showBalances && (
+        <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2 space-y-1">
+          <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">Wallet Balance</p>
+          <div className="flex items-center gap-4 text-sm">
+            {hasFlowItems && (
+              <div className="flex items-center gap-1.5">
+                <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="12" fill="#00EF8B" />
+                  <path d="M17.4 9.6h-3v-3a.6.6 0 0 0-.6-.6h-3a.6.6 0 0 0-.6.6v3h-3a.6.6 0 0 0-.6.6v3a.6.6 0 0 0 .6.6h3v3a.6.6 0 0 0 .6.6h3a.6.6 0 0 0 .6-.6v-3h3a.6.6 0 0 0 .6-.6v-3a.6.6 0 0 0-.6-.6z" fill="#fff" />
+                </svg>
+                <span className={`font-semibold tabular-nums ${insufficientFlow ? 'text-amber-400' : 'text-white'}`}>
+                  {balancesLoading ? '...' : flowBalance.toFixed(2)}
+                </span>
+                <span className="text-slate-500 text-xs">FLOW</span>
+              </div>
+            )}
+            {hasUsdcItems && (
+              <div className="flex items-center gap-1.5">
+                <span className="flex items-center justify-center w-4 h-4 rounded-full bg-blue-500 text-white text-[10px] font-bold flex-shrink-0">$</span>
+                <span className={`font-semibold tabular-nums ${insufficientUsdc ? 'text-amber-400' : 'text-white'}`}>
+                  {balancesLoading ? '...' : usdcBalance.toFixed(2)}
+                </span>
+                <span className="text-slate-500 text-xs">USDC.e</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Insufficient balance warning */}
+      {hasInsufficientBalance && (
+        <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs text-amber-300">
+          Insufficient balance to complete all Flow Wallet items.
+        </div>
+      )}
+
       {hasResults && (
         <div className="rounded-lg bg-white/5 px-3 py-2 text-sm text-slate-300">
           {successCount > 0 && <span className="text-emerald-400 font-medium">{successCount} purchased</span>}
