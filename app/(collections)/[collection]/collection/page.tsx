@@ -309,6 +309,8 @@ export default function WalletPage() {
   const [hasSearched, setHasSearched] = useState(false)
   const [ownerKey, setOwnerKey] = useState("")
   const [sealedPackCount, setSealedPackCount] = useState<number | null>(null)
+  const [recentSales, setRecentSales] = useState<any[]>([]);
+  const [salesLoading, setSalesLoading] = useState(false);
 
   const [teamFilter, setTeamFilter] = useState("all")
   const [leagueFilter, setLeagueFilter] = useState("all")
@@ -475,6 +477,13 @@ export default function WalletPage() {
     setExpandedRows({})
     setHasSearched(false)
     setSealedPackCount(null)
+    setRecentSales([]);
+    setSalesLoading(true);
+    fetch("/api/flowty-sales?limit=15")
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) { if (d && d.sales) setRecentSales(d.sales); })
+      .catch(function() {})
+      .finally(function() { setSalesLoading(false); });
     try {
       const response = await fetch("/api/wallet-search", {
         method: "POST",
@@ -1098,6 +1107,55 @@ export default function WalletPage() {
           </div>
         ) : null}
       </div>
+        {/* Recent Sales */}
+        {hasSearched && (recentSales.length > 0 || salesLoading) && (
+          <div className="mb-5 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-[10px] uppercase tracking-widest text-zinc-500">Recent Flowty Sales</div>
+              <div className="text-[10px] text-zinc-600">{recentSales.length} sales</div>
+            </div>
+            {salesLoading ? (
+              <div className="text-xs text-zinc-600">Loading sales history…</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-zinc-800">
+                      <th className="text-left pb-2 text-zinc-500 font-medium">Player</th>
+                      <th className="text-right pb-2 text-zinc-500 font-medium">Serial</th>
+                      <th className="text-right pb-2 text-zinc-500 font-medium">Price</th>
+                      <th className="text-right pb-2 text-zinc-500 font-medium">vs FMV</th>
+                      <th className="text-right pb-2 text-zinc-500 font-medium">When</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-900">
+                    {recentSales.map(function(s: any, i: number) {
+                      const pct = s.fmv && s.fmv > 0 ? Math.round(((s.price - s.fmv) / s.fmv) * 100) : null;
+                      const age = s.soldAt ? Math.round((Date.now() - new Date(s.soldAt).getTime()) / 60000) : null;
+                      const ageStr = age === null ? "—" : age < 60 ? age + "m ago" : age < 1440 ? Math.round(age/60) + "h ago" : Math.round(age/1440) + "d ago";
+                      return (
+                        <tr key={i} className="hover:bg-zinc-900/50">
+                          <td className="py-1.5 pr-3">
+                            <div className="font-medium text-zinc-200">{s.playerName ?? "—"}</div>
+                            <div className="text-zinc-600">{s.setName ?? ""}</div>
+                          </td>
+                          <td className="py-1.5 text-right text-zinc-400">#{s.serialNumber}</td>
+                          <td className="py-1.5 text-right font-semibold text-emerald-400">{s.price ? "$" + Number(s.price).toFixed(2) : "—"}</td>
+                          <td className="py-1.5 text-right">
+                            {pct !== null ? (
+                              <span className={"font-semibold " + (pct >= 0 ? "text-emerald-400" : "text-red-400")}>{pct >= 0 ? "+" : ""}{pct}%</span>
+                            ) : <span className="text-zinc-600">—</span>}
+                          </td>
+                          <td className="py-1.5 text-right text-zinc-500">{ageStr}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
     </div>
   )
 }
