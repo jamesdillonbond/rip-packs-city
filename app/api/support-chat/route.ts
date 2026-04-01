@@ -1,686 +1,538 @@
-import { NextRequest, NextResponse } from "next/server";
-
-/* ------------------------------------------------------------------ */
-/*  POST /api/support-chat                                             */
-/*  Body: { message, sessionId, userWallet?, pageContext?,             */
-/*          walletConnected? }                                         */
-/*  Returns: { response, escalated, escalationReason?, category,       */
-/*             momentCards?, actions? }                                 */
-/* ------------------------------------------------------------------ */
+// app/api/support-chat/route.ts
+// POST /api/support-chat
+// Body: { message, sessionId, userWallet?, pageContext?, walletConnected?, conversationHistory?, marketPulse?, dailyDeal? }
+// Returns: { response, escalated, escalationReason?, category }
 
 export const maxDuration = 30;
 
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import Anthropic from "@anthropic-ai/sdk";
+
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
-// ── Base URL for internal API calls ───────────────────────────────
-function apiUrl(path: string) {
-  if (path.startsWith("http")) return path;
-  const base =
+// ── Rate limiting (25 req/hr per session) ─────────────────────────────────────
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+function checkRateLimit(sessionId: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(sessionId);
+  if (!entry || entry.resetAt < now) {
+    rateLimitMap.set(sessionId, { count: 1, resetAt: now + 3600_000 });
+    return true;
+  }
+  if (entry.count >= 25) return false;
+  entry.count++;
+  return true;
+}
+
+function siteUrl() {
+  return (
     process.env.NEXT_PUBLIC_SITE_URL ||
-    (process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : "https://rip-packs-city.vercel.app");
-  return `${base}${path}`;
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://rip-packs-city.vercel.app")
+  );
 }
 
-// ── System Prompt ─────────────────────────────────────────────────
-const SYSTEM_PROMPT = `You are the RPC Assistant — the official AI concierge for Rip Packs City, a collector intelligence platform for NBA Top Shot and NFL All Day NFT collectors on the Flow blockchain.
-
-## Your Identity
-- You are part personal shopper, part portfolio advisor, part collector expert
-- You speak naturally in collector language — moments, serials, FMV, floor, badges, rips, mints
-- You are friendly, opinionated about good deals, and genuinely excited about helping people build great collections
-- Keep responses concise and scannable — most users are on mobile
-- You can help in English, Spanish, Portuguese, French, and other languages — respond in whatever language the user writes in
-
-## What You Can Do
-
-### 1. PERSONAL SHOPPER — Finding & Recommending Moments
-When a user wants to find, buy, or evaluate moments, USE YOUR TOOLS. Never make up prices.
-- Search the live sniper feed for deals matching their criteria (player, team, tier, price range, badge type)
-- Look up FMV for specific moments and give buy/wait/pass recommendations
-- Suggest undervalued moments based on FMV discount, badge premiums, and confidence levels
-- Help set a budget and find the best value within it
-- When you find good deals, present them enthusiastically with the data backing your recommendation
-
-### 2. PORTFOLIO ADVISOR — Wallet-Aware Intelligence
-When a user's wallet is connected, you can analyze their collection:
-- Identify their most undervalued moments (biggest gap between what they paid and current FMV)
-- Find sets they're close to completing and recommend the cheapest remaining moments
-- Suggest what to sell based on declining FMV trends or low confidence scores
-- Give a portfolio health check: total value, tier distribution, badge count, concentration risk
-
-### 3. COLLECTOR EXPERT — Platform & Ecosystem Knowledge
-Answer any question about the platform or the Top Shot/All Day ecosystem:
-
-**FMV v1.3.0 (Fair Market Value):**
-- Calculated using Weighted Average Price (WAP) from recent sales, weighted by recency and volume
-- Badge premiums are NOT added on top — already baked into market prices
-- Serial premiums only for truly special serials: #1 (gold), jersey number match (teal), last serial (purple/Perfect Mint)
-- Confidence levels: HIGH = 5+ sales in 30 days, MEDIUM = 2-4, LOW = 1, NONE = 0 (falls back to ask price)
-- FMV refreshes every 20 minutes via the RPC pipeline (ingest → recalc → cache → backfill cycle)
-- WAP trending arrows (↑/↓) show if the weighted average price is diverging from base FMV by >10%
-
-**Sniper Feed:**
-- Two live sources: NBA Top Shot marketplace + Flowty marketplace
-- Ranked by discount % vs adjusted FMV (base FMV × serial multiplier)
-- Deals/Offers tab toggle — Deals shows listings below FMV, Offers shows active buy offers
-- Tier filter tabs: All, Common, Fandom, Rare, Legendary, Ultimate
-- Additional filters: min discount %, max price, serial type, badge-only, verified FMV only
-- Source badges (TS / FLOWTY) indicate which marketplace each listing is from
-- Confidence dots: green = verified (real sales), yellow = estimated, red = speculative (ask fallback)
-- daysSinceSale labels show FMV freshness per edition
-- Auto-refreshes every 30 seconds with pause/resume controls
-- Falls back to cached listings if both live feeds are offline
-- Share button copies a deal link with OG image for Twitter/Discord sharing
-
-**Badges:**
-- Community badges: Rookie Year, Rookie Mint, Top Shot Debut, Three Stars, MVP Year, Championship Year, etc.
-- Serial badges (computed client-side): #1 Serial (gold), Jersey Match (teal), Perfect Mint (purple)
-- Badge-aware FMV: badge premiums are reflected in market prices, not added separately
-- Badge explorer shows all badge-eligible editions with filtering by badge type
-
-**Set Completion:**
-- Full set tracker with completion percentage per set
-- Identifies bottleneck moments (most expensive missing piece)
-- Shows total cost to complete each set
-- Filter by series (S1-S8), tier, and completion status
-- Price enrichment available to load current asks for missing pieces
-
-**Pack EV Calculator:**
-- Shows all active pack listings with expected value calculations
-- Gross EV, pack EV (after price), value ratio
-- Supply tracking: remaining packs, depletion percentage
-- Per-edition breakdowns showing probability and contribution to EV
-
-**Wallet/Collection Analyzer:**
-- Enter any Top Shot username or Flow address
-- Shows full collection with per-moment FMV, badges, serial info
-- Portfolio summary: total FMV, tier breakdown, sealed pack count
-- Market data enrichment from both Top Shot and Flowty
-- Recent sales history for the wallet
-
-**Profile:**
-- View any collector's profile and trophy case by username
-- Trophy case shows pinned moments with holographic effects for premium tiers
-
-**Shopping Cart (Beta):**
-- Add moments directly from sniper feed to cart
-- Supports both Top Shot and Flowty listings
-- Batch purchase in development (pending Dapper co-signer confirmation)
-
-**Known Issues:**
-- Top Shot listing feed intermittent (Cloudflare rate limiting) — Flowty provides backup coverage
-- Low-volume FMV (0-1 sales) = LOW/NONE confidence — treat valuations with caution
-- NFL All Day collection support is available but with limited data coverage
-- Cart purchase execution pending Dapper co-signer confirmation
-
-**About RPC:**
-- Built by Trevor, Portland Trail Blazers Team Captain on NBA Top Shot
-- Collector intelligence platform competing with LiveToken as primary analytics tool
-- Free to use — website: rip-packs-city.vercel.app
-- Pipeline runs every 20 minutes with hourly health monitoring (Sentinel with Telegram + email alerts)
-- 14 automated QA smoke tests run on every deploy + daily
-
-### 4. EDUCATOR — Onboarding New Collectors
-If someone seems new (no wallet, basic questions, says they're new), shift into friendly onboarding mode:
-- Explain concepts simply without being condescending
-- Use analogies to physical card collecting when helpful
-- Suggest a cheap "starter" moment from the live sniper feed to get them hooked
-- Walk them through connecting their wallet step by step
-- Explain what makes a moment valuable (player, badge, serial, tier, set completion)
-
-## Response Format
-
-ALWAYS respond with valid JSON (no markdown fences, no backticks, just raw JSON):
-
-{
-  "response": "Your conversational response here",
-  "escalated": false,
-  "escalationReason": null,
-  "category": "shopping",
-  "momentCards": [
-    {
-      "playerName": "LeBron James",
-      "setName": "Metallic Gold LE",
-      "tier": "Legendary",
-      "series": "S4",
-      "price": 149.00,
-      "fmv": 210.00,
-      "discountPct": 29,
-      "badgeNames": ["threeStars", "mvpYear"],
-      "serialNumber": 42,
-      "mintCount": 99,
-      "thumbnailUrl": "https://assets.nbatopshot.com/...",
-      "buyUrl": "https://nbatopshot.com/moment/...",
-      "source": "topshot",
-      "editionKey": "abc:def"
-    }
-  ],
-  "actions": [
-    {
-      "type": "addToCart",
-      "label": "Add to Cart",
-      "editionKey": "abc:def",
-      "price": 149.00,
-      "playerName": "LeBron James"
-    }
-  ]
-}
-
-Rules for momentCards:
-- ONLY include momentCards when presenting actual search results from tools — NEVER fabricate them
-- If a tool returns no results, say so honestly — don't invent listings
-- Include buyUrl so users can go directly to the listing
-- Include editionKey for cart integration
-- actions array is optional — include addToCart actions when recommending specific moments
-
-## Category Tags
-Use: "shopping", "portfolio", "fmv", "sniper", "wallet", "badges", "sets", "packs", "cart", "profile", "onboarding", "account", "bug", "feature_request", "general"
-
-## Escalation Rules
-Set escalated: true when you genuinely cannot help:
-- Account-specific issues (moments disappeared, purchases failed, wallet won't connect after troubleshooting)
-- Bug reports that need investigation
-- Billing, refund, or payment issues
-- Anything requiring Trevor's direct intervention
-
-Do NOT escalate for: feature questions, shopping help, FMV explanations, data availability, platform education — handle these yourself.
-
-## Personality Notes
-- Be genuinely enthusiastic about good deals: "This is a steal — 37% below FMV with a Rookie Year badge"
-- Be honest about risk: "FMV confidence is LOW here (only 1 sale in 30 days) — the price could be off"
-- Never pressure: offer recommendations, not commands
-- If someone's budget is small, don't be dismissive — find them the best $3-5 moment you can
-- Use emojis sparingly and naturally, not excessively
-- If asked about NFL All Day, note that data coverage is limited but growing`;
-
-// ── Tool Definitions for Claude API ───────────────────────────────
-const TOOLS = [
+// ── Tool definitions ──────────────────────────────────────────────────────────
+const TOOLS: Anthropic.Tool[] = [
   {
-    name: "search_sniper_feed",
-    description:
-      "Search the RPC sniper feed for current marketplace deals. Returns live listings from Top Shot and Flowty with prices, FMV, discount percentages, badges, and buy links. Use this when a user wants to find moments to buy, browse deals, or get recommendations.",
+    name: "search_live_deals",
+    description: "Search for live NBA Top Shot deals from the RPC sniper feed. Use this first for any shopping query. Returns real listings with prices, FMV discounts, and buy links.",
     input_schema: {
       type: "object" as const,
       properties: {
-        rarity: {
-          type: "string",
-          description:
-            "Filter by tier: 'all', 'common', 'rare', 'legendary', 'ultimate'. Default 'all'.",
-        },
-        minDiscount: {
-          type: "number",
-          description:
-            "Minimum discount percentage below FMV (0-100). Use 15+ for good deals, 25+ for great deals.",
-        },
-        maxPrice: {
-          type: "number",
-          description: "Maximum price in USD.",
-        },
-        search: {
-          type: "string",
-          description:
-            "Player name or set name to search for. Use full name like 'LeBron James'.",
-        },
+        player: { type: "string", description: "Player name to filter by (partial match ok)" },
+        tier: { type: "string", enum: ["common", "rare", "legendary", "ultimate", "fandom"] },
+        maxPrice: { type: "number", description: "Maximum price in USD" },
+        minDiscount: { type: "number", description: "Minimum % below FMV (0-100). Use 15 for 'good deals'." },
+        limit: { type: "number", description: "Number of results, default 5" },
       },
       required: [],
     },
   },
   {
-    name: "lookup_fmv",
-    description:
-      "Look up the Fair Market Value for a specific Top Shot edition. Returns FMV, serial multiplier, badge premium, adjusted FMV, and confidence level. Use when a user asks about a specific moment's value or wants a buy/sell recommendation.",
+    name: "search_catalog_deals",
+    description: "Search the RPC moment catalog using Supabase data — player names, tiers, prices, badges, FMV. Use as fallback when live feed is unavailable, or to find moments with specific badges, from specific teams, or under a price ceiling.",
     input_schema: {
       type: "object" as const,
       properties: {
-        edition: {
-          type: "string",
-          description:
-            "Edition key in format setID:playID (UUID format). Get this from sniper feed results.",
-        },
-        serial: {
-          type: "number",
-          description:
-            "Optional serial number for serial-specific valuation.",
-        },
-      },
-      required: ["edition"],
-    },
-  },
-  {
-    name: "search_badges",
-    description:
-      "Search the RPC badge database for moments with specific badges. Returns player names, badge types, and series info. Use when a user asks about badges or wants to find badge-holding moments.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        player: {
-          type: "string",
-          description: "Player name to search badges for.",
-        },
-        badgeType: {
-          type: "string",
-          description:
-            "Badge type: 'rookieYear', 'rookieMint', 'topShotDebut', 'threeStars', 'mvpYear', 'championshipYear'. Omit for all badges.",
-        },
-        limit: {
-          type: "number",
-          description: "Max results. Default 20.",
-        },
+        player: { type: "string", description: "Player name (partial match)" },
+        team: { type: "string", description: "Team name (partial match)" },
+        tier: { type: "string", enum: ["common", "rare", "legendary", "ultimate", "fandom"] },
+        maxPrice: { type: "number", description: "Max low_ask price in USD" },
+        minDiscount: { type: "number", description: "Min % below FMV (0 = any)" },
+        hasBadge: { type: "boolean", description: "Only return moments with badges" },
+        limit: { type: "number", description: "Results to return (default 8)" },
       },
       required: [],
     },
   },
   {
-    name: "get_wallet_portfolio",
-    description:
-      "Get a collector's wallet portfolio including all moments, total value, tier breakdown, and badge counts. Use when the user asks about their collection, portfolio value, or what they own. Requires the user's wallet address or Top Shot username.",
+    name: "get_fmv",
+    description: "Get the Fair Market Value (FMV) for a specific moment edition. Provide either a player name + set name, or an edition key in setID:playID format.",
     input_schema: {
       type: "object" as const,
       properties: {
-        username: {
-          type: "string",
-          description: "Top Shot username to look up.",
-        },
+        editionKey: { type: "string", description: "Edition key in setID:playID format (e.g. '92:3459')" },
+        playerName: { type: "string", description: "Player name to look up" },
+        setName: { type: "string", description: "Set name (optional, narrows search)" },
       },
-      required: ["username"],
+      required: [],
     },
   },
   {
-    name: "search_sets",
-    description:
-      "Search Top Shot sets and their composition. Use when a user asks about set completion, what's in a set, or wants to know about specific sets.",
+    name: "check_wallet",
+    description: "Look up a collector's wallet to see their moments, portfolio value, and collection stats. Use when user asks about their own collection or mentions a username.",
     input_schema: {
       type: "object" as const,
       properties: {
-        search: {
-          type: "string",
-          description:
-            "Set name to search for, e.g. 'Run It Back', 'Metallic Gold'.",
-        },
-        series: {
-          type: "string",
-          description: "Filter by series number: '1'-'8'.",
-        },
+        walletAddress: { type: "string", description: "Flow wallet address (0x...) or Top Shot username" },
       },
-      required: [],
+      required: ["walletAddress"],
+    },
+  },
+  {
+    name: "escalate_to_human",
+    description: "Escalate to Trevor (RPC creator) when the user has an account-specific problem, bug, or issue the bot cannot resolve. Only use after already trying to help.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        reason: { type: "string", description: "Clear description of what the user needs help with" },
+        category: { type: "string", enum: ["bug", "account", "billing", "feature_request", "other"] },
+        urgency: { type: "string", enum: ["low", "medium", "high"], description: "High = user can't use the platform at all" },
+      },
+      required: ["reason", "category"],
     },
   },
 ];
 
-// ── Tool Execution ────────────────────────────────────────────────
+// ── System prompt ─────────────────────────────────────────────────────────────
+function buildSystemPrompt(ctx: {
+  pageContext?: string;
+  userWallet?: string;
+  walletConnected?: boolean;
+  marketPulse?: string;
+  dailyDeal?: any;
+}): string {
+  const { pageContext, userWallet, walletConnected, marketPulse, dailyDeal } = ctx;
+
+  const marketSection =
+    marketPulse || dailyDeal
+      ? `\n## Live Market Context (as of right now)
+${marketPulse ? `- Market pulse: ${marketPulse}` : ""}
+${dailyDeal ? `- Today's featured deal: ${dailyDeal.player_name} ${dailyDeal.set_name} (${dailyDeal.series}), $${dailyDeal.low_ask} ask, FMV $${dailyDeal.fmv}, ${dailyDeal.discount_pct}% below FMV${dailyDeal.badges?.length ? `, badges: ${dailyDeal.badges.join(", ")}` : ""}` : ""}
+Use this context naturally in welcome messages and recommendations.`
+      : "";
+
+  const walletSection = userWallet
+    ? `\n## User Context\n- Wallet connected: ${userWallet}\n- Use check_wallet to surface personalized insights when relevant.`
+    : walletConnected
+    ? `\n## User Context\n- User has a wallet connected but address not yet provided.`
+    : "";
+
+  const pageSection = pageContext
+    ? `\n## Current Page\nUser is on: ${pageContext}\nTailor your responses to this context — e.g., on Sniper, focus on deals; on Badges, focus on badge strategy.`
+    : "";
+
+  return `You are the RPC Assistant — the official AI concierge for Rip Packs City, the sharpest collector intelligence platform for NBA Top Shot on the Flow blockchain.
+
+## Your Persona
+You are part personal shopper, part portfolio advisor, part collector expert. You speak fluent collector — moments, serials, FMV, floor, badges, rips, mints, Low Asks, parallel editions, set bottlenecks. You are direct, helpful, and genuinely excited about finding good deals. You never pad responses with corporate fluff.
+
+Keep responses concise — most users are on mobile. Use short paragraphs over bullet-heavy walls of text.
+
+## What RPC Is
+Rip Packs City (rippackscity.com) is a collector intelligence platform built by Trevor Dillon-Bond, an official Portland Trail Blazers Team Captain on NBA Top Shot. Features:
+
+- **Collection Analyzer** (/nba-top-shot/collection) — full wallet analytics: FMV per moment, best offers, series labels, badge quick-filter, FMV delta indicator, portfolio summary cards (Wallet/Unlocked/Locked/Best Offer FMV), share button
+- **Sniper** (/nba-top-shot/sniper) — real-time deal feed from NBA Top Shot + Flowty marketplaces; shows Deals (below FMV) and Offers; filter by tier, min discount, max price; Flowty covers when Top Shot feed is blocked
+- **Packs** (/nba-top-shot/packs) — secondary market pack browser with EV calculator, tier/type filters, wallet ownership lookup, best-value EV ratio sort, EV breakdown modal, FMV coverage notes
+- **Badges** (/nba-top-shot/badges) — badge tracker for all play tags (Rookie Year, Top Shot Debut, Three Stars, Championship Year, etc.)
+- **Sets** (/nba-top-shot/sets) — set browser with completion tracking and bottleneck detection
+- **Profile** (/nba-top-shot/profile/[username]) — public collector profile with trophy case
+
+## FMV Methodology (v1.3.0 — be accurate about this)
+RPC's FMV is a weighted average price (WAP) model:
+- Recalculated every 20 minutes via automated pipeline
+- Weights recent sales more heavily than older ones using days_since_sale decay
+- Adjusted for sales volume (sales_count_30d) — low-volume editions get wider confidence intervals
+- Confidence levels: HIGH (many recent sales, stable price), MEDIUM, LOW (sparse data)
+- When FMV confidence is LOW, caveat pricing suggestions
+
+## Sniper Feed Data Sources
+- Primary: NBA Top Shot marketplace GraphQL (public API)
+- Backup: Flowty.io (covers when Top Shot's Cloudflare blocks our server IPs)
+- When Top Shot feed is unavailable, Flowty listings still show — expected behavior, not a bug
+- All current Top Shot listings use DUC (Dapper Utility Coin)
+
+## What Makes Moments Valuable
+- **Player tier** (Ultimate > Legendary > Rare > Fandom > Common)
+- **Badges**: Rookie Year (first season), Top Shot Debut (first TS moment), Rookie Premiere, Rookie Mint, Three Stars (3x All-Star), Championship Year — badges add significant premium
+- **Serial numbers**: #1 is rarest; jersey serials carry premium; low serials more valuable
+- **Set completion** — moments completing a set worth more to set-chasers
+- **Circulation count** — lower = higher scarcity
+- **Burn rate** — high burn rate = shrinking effective supply
+
+## Series Reference
+Beta (S0), S1, S2, S3, S4, S5, S6, S7, S8
+
+## Shopping & Recommendations
+When a user wants to find or buy moments:
+1. ALWAYS try search_live_deals first
+2. If live feed returns nothing or errors, use search_catalog_deals as fallback
+3. Surface 3-5 concrete options with: player name, tier, price, FMV, discount%, any badges
+4. Give a clear buy/watch/pass recommendation on individual moments when asked
+5. For budget queries ("I have $50"), optimize for value: badge presence, discount %, confidence
+6. Never make up prices — always use tool results
+
+## Common Questions (no tools needed)
+- "How is FMV calculated?" \u2192 WAP model, 20-min refresh, confidence levels
+- "What are badges?" \u2192 play tags, list main ones, explain premium
+- "Why is the sniper feed empty?" \u2192 Cloudflare sometimes blocks Top Shot; Flowty backup covers it; refresh or check back
+- "What does confidence mean?" \u2192 HIGH = reliable, MEDIUM = some data, LOW = sparse/directional
+- "How do I buy a moment?" \u2192 Connect Dapper wallet on Top Shot or Flowty; RPC links directly
+- "How do I connect my wallet?" \u2192 Flow/Dapper wallet; connect at top of any collection page${marketSection}${walletSection}${pageSection}
+
+## Escalation Rules
+Escalate ONLY when you've tried to help and cannot resolve it:
+- User's moments missing after purchase
+- Transaction completed but NFT not in wallet
+- Account-specific bugs you cannot diagnose
+- Billing or Dapper account issues
+DO NOT escalate for: how-to questions, FMV questions, sniper feed timing, feature requests
+
+## Tone
+Good: "That LeBron Rare is a solid buy at $18 \u2014 FMV is $26, so you're getting it 31% below. The Rookie Premiere badge makes it stickier to hold."
+Bad: "That's a great question! I'd be happy to help you analyze that moment's value. Let me break it down for you..."
+
+Respond in whatever language the user writes in.`;
+}
+
+// ── Tool execution ────────────────────────────────────────────────────────────
 async function executeTool(
-  name: string,
-  input: Record<string, any>
+  toolName: string,
+  toolInput: any,
+  ctx: { sessionId: string; userWallet?: string }
 ): Promise<string> {
-  try {
-    switch (name) {
-      case "search_sniper_feed": {
-        const params = new URLSearchParams();
-        if (input.rarity) params.set("rarity", input.rarity);
-        if (input.minDiscount)
-          params.set("minDiscount", String(input.minDiscount));
-        if (input.maxPrice) params.set("maxPrice", String(input.maxPrice));
-        if (input.search) params.set("search", input.search);
-        const res = await fetch(apiUrl(`/api/sniper-feed?${params}`), {
-          headers: { "User-Agent": "rpc-support-bot/1.0" },
-        });
-        if (!res.ok)
-          return JSON.stringify({
-            error: `Sniper feed returned ${res.status}`,
-          });
-        const data = await res.json();
-        // The sniper-feed API returns { count, deals[], lastRefreshed, ... }
-        const deals = (data.deals ?? []).slice(0, 8);
-        return JSON.stringify({
-          count: deals.length,
-          totalAvailable: data.count ?? data.deals?.length ?? 0,
-          lastRefreshed: data.lastRefreshed ?? null,
-          cached: data.cached ?? false,
-          deals: deals.map((d: any) => ({
-            playerName: d.playerName,
-            setName: d.setName,
-            tier: d.tier,
-            series: d.seriesName ?? null,
-            price: d.askPrice,
-            fmv: d.adjustedFmv,
-            baseFmv: d.baseFmv,
-            discountPct: d.discount,
-            confidence: d.confidence,
-            confidenceSource: d.confidenceSource ?? null,
-            daysSinceSale: d.daysSinceSale ?? null,
-            serialNumber: d.serial,
-            mintCount: d.circulationCount,
-            serialMult: d.serialMult ?? 1,
-            isSpecialSerial: d.isSpecialSerial ?? false,
-            thumbnailUrl: d.thumbnailUrl ?? null,
-            buyUrl: d.buyUrl,
-            source: d.source ?? "topshot",
-            editionKey: d.editionKey,
-            hasBadge: d.hasBadge ?? false,
-            badgeNames: d.badgeLabels ?? d.badgeSlugs ?? [],
-            teamName: d.teamName ?? null,
-          })),
-        });
-      }
+  const base = siteUrl();
 
-      case "lookup_fmv": {
-        const params = new URLSearchParams({ edition: input.edition });
-        if (input.serial) params.set("serial", String(input.serial));
-        const res = await fetch(apiUrl(`/api/fmv?${params}`));
-        if (!res.ok)
-          return JSON.stringify({
-            error: `FMV lookup returned ${res.status}`,
-          });
-        return JSON.stringify(await res.json());
-      }
+  if (toolName === "search_live_deals") {
+    try {
+      const params = new URLSearchParams();
+      if (toolInput.tier) params.set("tier", toolInput.tier);
+      if (toolInput.maxPrice) params.set("maxPrice", String(toolInput.maxPrice));
+      if (toolInput.minDiscount) params.set("minDiscount", String(toolInput.minDiscount));
 
-      case "search_badges": {
-        const params = new URLSearchParams();
-        params.set("mode", "all");
-        if (input.player) params.set("players", input.player);
-        if (input.badgeType) params.set("badge_type", input.badgeType);
-        params.set("limit", String(input.limit || 20));
-        const res = await fetch(apiUrl(`/api/badges?${params}`));
-        if (!res.ok)
-          return JSON.stringify({
-            error: `Badges returned ${res.status}`,
-          });
-        return JSON.stringify(await res.json());
+      const res = await fetch(`${base}/api/sniper-feed?${params.toString()}`, {
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) throw new Error(`Sniper feed returned ${res.status}`);
+      const data = await res.json();
+      const deals = (data.deals || data || []).filter((d: any) =>
+        toolInput.player ? d.playerName?.toLowerCase().includes(toolInput.player.toLowerCase()) : true
+      );
+      if (!deals || deals.length === 0) {
+        return JSON.stringify({ status: "no_results", message: "Live feed returned no matches \u2014 falling back to catalog search recommended" });
       }
-
-      case "get_wallet_portfolio": {
-        const res = await fetch(
-          apiUrl(
-            `/api/wallet-search?username=${encodeURIComponent(
-              input.username
-            )}`
-          )
-        );
-        if (!res.ok)
-          return JSON.stringify({
-            error: `Wallet search returned ${res.status}`,
-          });
-        return JSON.stringify(await res.json());
-      }
-
-      case "search_sets": {
-        const params = new URLSearchParams();
-        if (input.search) params.set("search", input.search);
-        if (input.series) params.set("series", input.series);
-        const res = await fetch(apiUrl(`/api/sets?${params}`));
-        if (!res.ok)
-          return JSON.stringify({
-            error: `Sets returned ${res.status}`,
-          });
-        return JSON.stringify(await res.json());
-      }
-
-      default:
-        return JSON.stringify({ error: `Unknown tool: ${name}` });
+      const results = deals.slice(0, toolInput.limit || 5).map((d: any) => ({
+        player: d.playerName,
+        tier: d.tier,
+        serial: d.serialNumber,
+        price: d.askPrice,
+        fmv: d.adjustedFmv,
+        discount_pct: d.discount,
+        source: d.source,
+        buy_url: d.buyUrl || `https://www.nbatopshot.com`,
+      }));
+      return JSON.stringify({ status: "ok", results, total: deals.length });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: `Live feed unavailable: ${err.message}. Use search_catalog_deals instead.` });
     }
-  } catch (err: any) {
-    return JSON.stringify({ error: err?.message || "Tool execution failed" });
   }
+
+  if (toolName === "search_catalog_deals") {
+    try {
+      const res = await fetch(`${base}/api/support-chat/search-deals`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(toolInput),
+        signal: AbortSignal.timeout(10000),
+      });
+      const data = await res.json();
+      if (!data.deals || data.deals.length === 0) {
+        return JSON.stringify({ status: "no_results", message: "No moments found matching those criteria in the catalog." });
+      }
+      return JSON.stringify({ status: "ok", results: data.deals, total: data.deals.length });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: err.message });
+    }
+  }
+
+  if (toolName === "get_fmv") {
+    try {
+      if (toolInput.editionKey) {
+        const res = await fetch(`${base}/api/fmv?edition=${encodeURIComponent(toolInput.editionKey)}`, {
+          signal: AbortSignal.timeout(8000),
+        });
+        return JSON.stringify(await res.json());
+      }
+      if (toolInput.playerName) {
+        const { data, error } = await supabase
+          .from("badge_editions")
+          .select(`player_name, tier, set_name, series_number, low_ask, editions!inner(external_id, fmv_snapshots!inner(fmv_usd, confidence))`)
+          .eq("parallel_id", 0)
+          .ilike("player_name", `%${toolInput.playerName}%`)
+          .not("low_ask", "is", null)
+          .limit(5);
+        if (error || !data?.length) {
+          return JSON.stringify({ status: "not_found", message: "No FMV data found for that player." });
+        }
+        const results = data.map((be: any) => ({
+          player: be.player_name,
+          tier: be.tier?.replace("MOMENT_TIER_", ""),
+          set: be.set_name,
+          low_ask: be.low_ask,
+          fmv: be.editions?.[0]?.fmv_snapshots?.[0]?.fmv_usd,
+          confidence: be.editions?.[0]?.fmv_snapshots?.[0]?.confidence,
+          edition_key: be.editions?.[0]?.external_id,
+        }));
+        return JSON.stringify({ status: "ok", results });
+      }
+      return JSON.stringify({ status: "error", message: "Provide editionKey or playerName." });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: err.message });
+    }
+  }
+
+  if (toolName === "check_wallet") {
+    try {
+      const res = await fetch(`${base}/api/wallet-search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input: toolInput.walletAddress }),
+        signal: AbortSignal.timeout(12000),
+      });
+      const data = await res.json();
+      const moments = data.moments || data.rows || [];
+      const totalFmv = moments.reduce((s: number, m: any) => s + (m.fmv ?? 0), 0);
+      return JSON.stringify({
+        status: "ok",
+        wallet: toolInput.walletAddress,
+        total_moments: moments.length,
+        portfolio_fmv: totalFmv.toFixed(2),
+        top_moments: moments.slice(0, 5).map((m: any) => ({
+          player: m.playerName, set: m.setName, tier: m.tier, serial: m.serialNumber, fmv: m.fmv,
+        })),
+      });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: err.message });
+    }
+  }
+
+  if (toolName === "escalate_to_human") {
+    const { reason, category, urgency } = toolInput;
+    try {
+      if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
+        await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: process.env.TELEGRAM_CHAT_ID,
+            text: `\u{1F6A8} RPC Support Escalation\nCategory: ${category}\nUrgency: ${urgency ?? "medium"}\nSession: ${ctx.sessionId}\n\nIssue: ${reason}`,
+            parse_mode: "HTML",
+          }),
+        });
+      }
+    } catch { /* non-fatal */ }
+    try {
+      if (process.env.RESEND_API_KEY && process.env.ALERT_EMAIL) {
+        await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            from: "rpc-support@rippackscity.com",
+            to: process.env.ALERT_EMAIL,
+            subject: `[RPC Support] ${category} \u2014 ${urgency ?? "medium"} urgency`,
+            text: `Session: ${ctx.sessionId}\nCategory: ${category}\nUrgency: ${urgency ?? "medium"}\n\nIssue:\n${reason}`,
+          }),
+        });
+      }
+    } catch { /* non-fatal */ }
+    return JSON.stringify({ status: "escalated", message: "Trevor has been notified and will follow up via Discord or email." });
+  }
+
+  return JSON.stringify({ status: "error", message: `Unknown tool: ${toolName}` });
 }
 
-// ── Escalation email ──────────────────────────────────────────────
-async function sendEscalationEmail(
-  userMessage: string,
-  botResponse: string,
-  reason: string,
-  category: string,
-  sessionId: string,
-  userWallet: string | null
-) {
-  console.error(
-    JSON.stringify({
-      type: "ESCALATION",
-      sessionId,
-      userWallet,
-      category,
-      reason,
-      userMessage,
-      timestamp: new Date().toISOString(),
-    })
-  );
+// ── Classify category ─────────────────────────────────────────────────────────
+function classifyCategory(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes("buy") || m.includes("deal") || m.includes("find") || m.includes("recommend")) return "shopping";
+  if (m.includes("fmv") || m.includes("value") || m.includes("worth") || m.includes("price")) return "fmv";
+  if (m.includes("badge") || m.includes("rookie") || m.includes("debut")) return "badges";
+  if (m.includes("pack") || m.includes("rip") || m.includes("ev")) return "packs";
+  if (m.includes("wallet") || m.includes("collection") || m.includes("missing") || m.includes("disappear")) return "account";
+  if (m.includes("bug") || m.includes("broken") || m.includes("error") || m.includes("crash")) return "bug";
+  if (m.includes("new") || m.includes("start") || m.includes("beginner") || m.includes("how do i")) return "onboarding";
+  return "general";
 }
 
-// ── Main Handler ──────────────────────────────────────────────────
+// ── Update session ─────────────────────────────────────────────────────────────
+async function updateSession(sessionId: string, category: string, userMessage: string, playerSearched?: string) {
+  try {
+    const { data: existing } = await supabase
+      .from("chat_sessions")
+      .select("last_topics, conversation_count")
+      .eq("session_id", sessionId)
+      .maybeSingle();
+
+    const currentTopics: string[] = existing?.last_topics ?? [];
+    const newTopics = [...new Set([category, ...currentTopics])].slice(0, 5);
+
+    await supabase.from("chat_sessions").upsert(
+      {
+        session_id: sessionId,
+        last_topics: newTopics,
+        last_player_searched: playerSearched ?? existing?.last_topics?.[0] ?? null,
+        last_seen_at: new Date().toISOString(),
+        conversation_count: (existing?.conversation_count ?? 0) + 1,
+      },
+      { onConflict: "session_id" }
+    );
+  } catch { /* non-fatal */ }
+}
+
+// ── Main handler ──────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const {
       message,
-      sessionId,
-      userWallet = null,
-      pageContext = null,
-      walletConnected = false,
+      sessionId = `anon-${Date.now()}`,
+      userWallet,
+      pageContext,
+      walletConnected,
+      conversationHistory = [],
+      marketPulse,
+      dailyDeal,
     } = body;
 
-    if (!message || !sessionId) {
+    if (!message?.trim()) {
+      return NextResponse.json({ error: "Message required" }, { status: 400 });
+    }
+
+    if (!checkRateLimit(sessionId)) {
       return NextResponse.json(
-        { error: "message and sessionId required" },
-        { status: 400 }
+        { response: "You've sent a lot of messages! Take a breather and try again in an hour.", escalated: false, category: "rate_limit" },
+        { status: 429 }
       );
     }
 
-    if (message.length > 2000) {
-      return NextResponse.json(
-        { error: "Message too long (max 2000 chars)" },
-        { status: 400 }
-      );
-    }
+    const systemPrompt = buildSystemPrompt({ pageContext, userWallet, walletConnected, marketPulse, dailyDeal });
+    const recentHistory = conversationHistory.slice(-10);
+    const messages: Anthropic.MessageParam[] = [
+      ...recentHistory,
+      { role: "user" as const, content: message },
+    ];
 
-    // ── Conversation history ─────────────────────────────────────
-    const { data: history } = await supabase
-      .from("support_conversations")
-      .select("user_message, bot_response")
-      .eq("session_id", sessionId)
-      .order("created_at", { ascending: true })
-      .limit(6);
-
-    const messages: { role: string; content: any }[] = [];
-
-    if (history && history.length > 0) {
-      for (const h of history) {
-        messages.push({ role: "user", content: h.user_message });
-        try {
-          const parsed = JSON.parse(h.bot_response);
-          messages.push({
-            role: "assistant",
-            content: parsed.response || h.bot_response,
-          });
-        } catch {
-          messages.push({ role: "assistant", content: h.bot_response });
-        }
-      }
-    }
-
-    // ── Build user message with context ──────────────────────────
-    let contextPrefix = "";
-    if (pageContext) contextPrefix += `[User is on the ${pageContext} page] `;
-    if (walletConnected && userWallet)
-      contextPrefix += `[Wallet connected: ${userWallet}] `;
-    else if (!walletConnected)
-      contextPrefix += `[Wallet NOT connected] `;
-
-    messages.push({
-      role: "user",
-      content: contextPrefix ? `${contextPrefix}\n\n${message}` : message,
-    });
-
-    // ── Claude API with tool loop ────────────────────────────────
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      console.error("ANTHROPIC_API_KEY not set");
-      return NextResponse.json({
-        response:
-          "I'm not fully set up yet — reach out to Trevor on Discord for help.",
-        escalated: false,
-        category: "general",
-      });
-    }
-
-    let finalResponse: string | null = null;
-    let currentMessages = [...messages];
+    let finalResponse = "";
+    let escalated = false;
+    let escalationReason: string | undefined;
+    let usedTools: string[] = [];
+    let currentMessages = messages;
     let iterations = 0;
     const MAX_ITERATIONS = 5;
 
     while (iterations < MAX_ITERATIONS) {
       iterations++;
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1024,
+        system: systemPrompt,
+        tools: TOOLS,
+        messages: currentMessages,
+      });
 
-      const anthropicRes = await fetch(
-        "https://api.anthropic.com/v1/messages",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01",
-          },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 2048,
-            system: SYSTEM_PROMPT,
-            tools: TOOLS,
-            messages: currentMessages,
-          }),
-        }
-      );
-
-      if (!anthropicRes.ok) {
-        const errText = await anthropicRes.text();
-        console.error("Anthropic API error:", anthropicRes.status, errText);
-        return NextResponse.json({
-          response:
-            "I'm having trouble right now. Try again in a moment, or reach out to Trevor on Discord.",
-          escalated: false,
-          category: "general",
-        });
+      if (response.stop_reason === "end_turn") {
+        finalResponse = response.content
+          .filter((b: any) => b.type === "text")
+          .map((b: any) => b.text)
+          .join("\n")
+          .trim();
+        break;
       }
 
-      const data = await anthropicRes.json();
+      if (response.stop_reason === "tool_use") {
+        const toolUseBlocks = response.content.filter((b: any) => b.type === "tool_use");
+        const toolResults: Anthropic.MessageParam = { role: "user", content: [] };
 
-      const toolUseBlocks = data.content?.filter(
-        (c: any) => c.type === "tool_use"
-      );
-
-      if (
-        toolUseBlocks &&
-        toolUseBlocks.length > 0 &&
-        data.stop_reason === "tool_use"
-      ) {
-        // Claude wants to use tools — execute and loop
-        currentMessages.push({
-          role: "assistant",
-          content: data.content,
-        });
-
-        const toolResults: any[] = [];
-        for (const toolBlock of toolUseBlocks) {
-          const result = await executeTool(toolBlock.name, toolBlock.input);
-          toolResults.push({
+        for (const block of toolUseBlocks) {
+          const tb = block as Anthropic.ToolUseBlock;
+          usedTools.push(tb.name);
+          if (tb.name === "escalate_to_human") {
+            escalated = true;
+            escalationReason = (tb.input as any).reason;
+          }
+          const result = await executeTool(tb.name, tb.input, { sessionId, userWallet });
+          (toolResults.content as Anthropic.ToolResultBlockParam[]).push({
             type: "tool_result",
-            tool_use_id: toolBlock.id,
+            tool_use_id: tb.id,
             content: result,
           });
         }
 
-        currentMessages.push({ role: "user", content: toolResults });
-      } else {
-        // Final text response
-        finalResponse =
-          data.content
-            ?.filter((c: any) => c.type === "text")
-            .map((c: any) => c.text)
-            .join("") || "";
-        break;
+        currentMessages = [
+          ...currentMessages,
+          { role: "assistant" as const, content: response.content },
+          toolResults,
+        ];
+        continue;
       }
+
+      finalResponse = response.content
+        .filter((b: any) => b.type === "text")
+        .map((b: any) => b.text)
+        .join("\n")
+        .trim();
+      break;
     }
 
     if (!finalResponse) {
-      finalResponse = JSON.stringify({
-        response:
-          "I got a bit lost searching. Could you rephrase what you're looking for?",
-        escalated: false,
-        escalationReason: null,
-        category: "general",
-      });
+      finalResponse = "Sorry, I ran into an issue. Try again in a moment, or reach out to Trevor on Discord.";
     }
 
-    // ── Parse structured response ────────────────────────────────
-    let parsed: {
-      response: string;
-      escalated: boolean;
-      escalationReason: string | null;
-      category: string;
-      momentCards?: any[];
-      actions?: any[];
-    };
+    const playerSearched =
+      usedTools.includes("search_catalog_deals") || usedTools.includes("search_live_deals")
+        ? body.message.match(/\b([A-Z][a-z]+ [A-Z][a-z]+)\b/)?.[0] ?? undefined
+        : undefined;
+
+    const category = classifyCategory(message);
 
     try {
-      const cleaned = finalResponse.replace(/```json\s*|```/g, "").trim();
-      parsed = JSON.parse(cleaned);
-    } catch {
-      parsed = {
-        response: finalResponse,
-        escalated: false,
-        escalationReason: null,
-        category: "general",
-      };
-    }
-
-    // ── Log to Supabase ──────────────────────────────────────────
-    const { error: insertErr } = await supabase
-      .from("support_conversations")
-      .insert({
+      await supabase.from("support_conversations").insert({
         session_id: sessionId,
         user_message: message,
-        bot_response: parsed.response,
-        escalated: parsed.escalated,
-        escalation_reason: parsed.escalationReason,
-        category: parsed.category || "general",
-        resolved: !parsed.escalated,
-        user_wallet: userWallet,
-        page_context: pageContext,
+        bot_response: finalResponse,
+        escalated,
+        escalation_reason: escalationReason ?? null,
+        category,
+        resolved: !escalated,
+        user_wallet: userWallet ?? null,
+        page_context: pageContext ?? null,
       });
+    } catch { /* non-fatal */ }
 
-    if (insertErr) {
-      console.error("Support log insert error:", insertErr.message);
-    }
+    await updateSession(sessionId, category, message, playerSearched);
 
-    // ── Escalation email ─────────────────────────────────────────
-    if (parsed.escalated) {
-      await sendEscalationEmail(
-        message,
-        parsed.response,
-        parsed.escalationReason || "No reason provided",
-        parsed.category,
-        sessionId,
-        userWallet
-      );
-    }
-
-    return NextResponse.json({
-      response: parsed.response,
-      escalated: parsed.escalated || false,
-      category: parsed.category || "general",
-      momentCards: parsed.momentCards || [],
-      actions: parsed.actions || [],
-    });
+    return NextResponse.json({ response: finalResponse, escalated, escalationReason, category });
   } catch (err: any) {
-    console.error("Support chat error:", err?.message || err);
-    return NextResponse.json({
-      response:
-        "Something went wrong. Try again, or reach out to Trevor on Discord.",
-      escalated: false,
-      category: "general",
-    });
+    console.error("[support-chat] Error:", err);
+    return NextResponse.json(
+      { response: "Something went wrong on my end. Try again, or reach out to Trevor on Discord.", escalated: false, category: "error" },
+      { status: 200 }
+    );
   }
 }
