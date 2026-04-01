@@ -177,7 +177,7 @@ export async function POST(req: Request) {
         const deals = Array.isArray(feedData) ? feedData : feedData.deals ?? [];
         hotDealCount = deals.filter(
           (d: any) =>
-            (d.discountPct ?? d.discount_pct ?? d.pctBelow ?? 0) >=
+            (d.discount ?? d.discountPct ?? d.discount_pct ?? d.pctBelow ?? 0) >=
             SNIPER_THRESHOLD_PCT
         ).length;
       }
