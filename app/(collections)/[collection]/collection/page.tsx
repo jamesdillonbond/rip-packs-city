@@ -1079,15 +1079,15 @@ export default function WalletPage() {
             <thead className="bg-zinc-900">
               <tr className="border-b border-zinc-800 text-left">
                 <th className="p-3">Player</th>
-                <th className="p-3 hidden sm:table-cell">Series</th>
-                <th className="p-3">Set</th>
+                <th className="p-3 hidden sm:table-cell">Series / Set</th>
                 <th className="p-3 hidden md:table-cell">Parallel</th>
                 <th className="p-3 hidden md:table-cell">Rarity</th>
                 <th className="p-3">Serial / Mint</th>
                 <th className="p-3 hidden lg:table-cell">Held / Locked</th>
                 <th className="p-3 hidden xl:table-cell">Packs</th>
                 <th className="p-3">FMV</th>
-                <th className="p-3 hidden lg:table-cell">Best Offer</th>
+                <th className="p-3 hidden lg:table-cell">Low Ask</th>
+                <th className="p-3 hidden xl:table-cell">Best Offer</th>
                 <th className="p-3 hidden xl:table-cell">Acquired</th>
                 <th className="p-3">Details</th>
               </tr>
@@ -1137,8 +1137,10 @@ export default function WalletPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="p-3 text-zinc-400 text-sm hidden sm:table-cell">{row.series ?? "—"}</td>
-                      <td className="p-3 text-sm">{normalizeSetName(row.setName)}</td>
+                      <td className="p-3 hidden sm:table-cell">
+                        <div className="text-sm text-white">{row.series ? "Series " + seriesIntToSeason(row.series) : "—"}</div>
+                        <div className="text-xs text-zinc-500 truncate max-w-[160px]">{normalizeSetName(row.setName)}</div>
+                      </td>
                       <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{getParallel(row)}</td>
                       <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{row.tier ?? "—"}</td>
                       <td className="p-3">
@@ -1179,6 +1181,13 @@ export default function WalletPage() {
                         })()}
                       </td>
                       <td className="p-3 text-sm hidden lg:table-cell">
+                        {row.lowAsk != null ? (
+                          <span className={row.fmv && row.lowAsk < row.fmv ? "text-emerald-400 font-semibold" : row.fmv && row.lowAsk > row.fmv ? "text-zinc-500" : "text-zinc-300"}>
+                            {formatCurrency(row.lowAsk)}
+                          </span>
+                        ) : <span className="text-zinc-600">—</span>}
+                      </td>
+                      <td className="p-3 text-sm hidden xl:table-cell">
                         <span className="text-zinc-300">{formatCurrency(row.bestOffer)}</span>
                         {typeof row.bestOffer === "number" && row.bestOffer > 0 && typeof getBestAsk(row) === "number" && row.bestOffer > (getBestAsk(row) ?? Infinity) && (
                           <span className="ml-1.5 rounded bg-emerald-950 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400 border border-emerald-800">Flip</span>
