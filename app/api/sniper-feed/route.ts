@@ -99,10 +99,13 @@ export interface SniperDeal {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TS_GQL = "https://public-api.nbatopshot.com/graphql";
-const GQL_HEADERS = {
+const GQL_HEADERS: Record<string, string> = {
   "Content-Type": "application/json",
   "User-Agent": "sports-collectible-tool/0.1",
 };
+
+const TS_PROXY_URL = process.env.TS_PROXY_URL ?? "";
+const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET ?? "";
 
 const FLOWTY_ENDPOINT = "https://api2.flowty.io/collection/0x0b2a3299cc857e29/TopShot";
 const FLOWTY_HEADERS = {
@@ -235,12 +238,15 @@ async function fetchTSPage(
   cursor: string,
   sortBy: string
 ): Promise<{ listings: RawListing[]; nextCursor: string | null }> {
+  const endpoint = TS_PROXY_URL || TS_GQL;
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch(TS_GQL, {
+    const headers: Record<string, string> = { ...GQL_HEADERS };
+    if (TS_PROXY_URL) headers["X-Proxy-Secret"] = TS_PROXY_SECRET;
+    const res = await fetch(endpoint, {
       method: "POST",
-      headers: GQL_HEADERS,
+      headers,
       body: JSON.stringify({ query: SEARCH_LISTINGS_QUERY }),
       signal: controller.signal,
     });
@@ -262,7 +268,7 @@ async function fetchTSPage(
     console.log(`[sniper-feed] TS page sortBy=${sortBy} listings=${listings.length}`);
     return { listings, nextCursor };
   } catch (err) {
-    console.error(`[sniper-feed] TS page FAILED sortBy=${sortBy}: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`[sniper-feed] TS page FAILED endpoint=${endpoint} sortBy=${sortBy}: ${err instanceof Error ? err.message : String(err)}`);
     return { listings: [], nextCursor: null };
   }
 }
