@@ -69,33 +69,19 @@ export async function POST(req: NextRequest) {
       limit = 8,
     } = body;
 
-    let query = supabase
-      .from("badge_editions")
-      .select(
-        `
-        id, player_name, team, tier, set_name, series_number,
-        low_ask, avg_sale_price, circulation_count,
-        play_tags, asset_path_prefix,
-        editions!inner(
-          id, external_id,
-          fmv_snapshots!inner(fmv_usd, confidence, computed_at)
-        )
-      `
-      )
-      .eq("parallel_id", 0)
-      .eq("flow_retired", false)
-      .not("low_ask", "is", null)
-      .gt("low_ask", 0);
-
-    if (player) query = query.ilike("player_name", `%${player}%`);
-    if (team) query = query.ilike("team", `%${team}%`);
-    if (tier) query = query.eq("tier", normalizeTier(tier));
-    if (maxPrice) query = query.lte("low_ask", maxPrice);
-
-    const { data, error } = await query.limit(limit * 3);
+    // Use get_top_deals RPC instead of broken nested select
+    const { data, error } = await supabase.rpc("get_top_deals", {
+      p_player: player ?? null,
+      p_team: team ?? null,
+      p_tier: tier ? normalizeTier(tier) : null,
+      p_max_price: maxPrice ?? null,
+      p_min_discount: minDiscount ?? 0,
+      p_has_badge: hasBadge ?? false,
+      p_limit: limit,
+    });
 
     if (error) {
-      console.error("[search-deals] Supabase error:", error);
+      console.error("[search-deals] Supabase RPC error:", error);
       return NextResponse.json({ deals: [], error: error.message }, { status: 200 });
     }
 
@@ -104,39 +90,31 @@ export async function POST(req: NextRequest) {
     }
 
     const deals = data
-      .map((be: any) => {
-        const fmv = be.editions?.[0]?.fmv_snapshots?.[0]?.fmv_usd ?? null;
-        const confidence = be.editions?.[0]?.fmv_snapshots?.[0]?.confidence ?? null;
-        const externalId = be.editions?.[0]?.external_id ?? "";
-        const discount =
-          fmv && be.low_ask ? Math.round(((fmv - be.low_ask) / fmv) * 100) : 0;
-        const badges: string[] = Array.isArray(be.play_tags)
-          ? be.play_tags.map((t: any) => t.title).filter(Boolean)
+      .map((row: any) => {
+        const fmv = row.fmv_usd ? parseFloat(row.fmv_usd) : null;
+        const ask = parseFloat(row.low_ask ?? "0");
+        const discount = row.discount_pct ?? (fmv && ask ? Math.round(((fmv - ask) / fmv) * 100) : 0);
+        const badges: string[] = Array.isArray(row.play_tags)
+          ? row.play_tags.map((t: any) => t.title ?? t).filter(Boolean)
           : [];
 
         return {
-          player_name: be.player_name,
-          team: be.team,
-          tier: tierLabel(be.tier),
-          set_name: be.set_name,
-          series: seriesLabel(be.series_number),
-          low_ask: parseFloat(be.low_ask),
-          fmv: fmv ? parseFloat(fmv) : null,
-          confidence,
-          discount_pct: discount,
-          circulation: be.circulation_count,
+          player_name: row.player_name,
+          team: row.team ?? null,
+          tier: tierLabel(row.tier),
+          set_name: row.set_name,
+          series: seriesLabel(row.series_number),
+          low_ask: ask,
+          fmv,
+          confidence: row.confidence ?? null,
+          discount_pct: Math.round(discount),
+          circulation: row.circulation_count ?? null,
           badges,
-          edition_key: externalId,
+          edition_key: row.external_id ?? "",
           rpc_url: `https://rip-packs-city.vercel.app/nba-top-shot/sniper`,
-          buy_url: `https://www.nbatopshot.com/marketplace/moment/${externalId}`,
+          buy_url: `https://www.nbatopshot.com`,
         };
       })
-      .filter(
-        (d: any) =>
-          d.discount_pct >= minDiscount &&
-          (!hasBadge || d.badges.length > 0)
-      )
-      .sort((a: any, b: any) => b.discount_pct - a.discount_pct)
       .slice(0, limit);
 
     const totalDeals = deals.length;
