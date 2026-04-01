@@ -55,7 +55,7 @@ async function checkRlsBlocked(
   }
 }
 
-export async function POST() {
+async function runSmokeTests() {
   const results: TestResult[] = [];
 
   // ── Existing 14 tests ──────────────────────────────────────
@@ -228,6 +228,10 @@ export async function POST() {
   return NextResponse.json({ passed, total, allPassed, results }, { status: allPassed ? 200 : 500 });
 }
 
+export async function POST() {
+  return runSmokeTests();
+}
+
 export async function GET() {
-  return NextResponse.json({ message: "Use POST to run smoke tests" });
+  return runSmokeTests();
 }
