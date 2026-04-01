@@ -1,0 +1,39 @@
+# .github/workflows/pack-drop-bot.yml
+#
+# Pack Drop Bot — detect and tweet new Top Shot pack distributions
+# Runs every 15 minutes
+#
+# Required secrets:
+#   INGEST_SECRET_TOKEN
+
+name: Pack Drop Bot
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  pack-drop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    continue-on-error: true
+
+    steps:
+      - name: Check for new pack drops
+        run: |
+          HTTP_STATUS=$(curl -s -o /tmp/pack_drop_response.json -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            https://rip-packs-city.vercel.app/api/bots/pack-drop)
+
+          echo "HTTP Status: $HTTP_STATUS"
+          echo "Response:"
+          cat /tmp/pack_drop_response.json
+
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "Pack Drop bot returned non-200 status: $HTTP_STATUS"
+            exit 1
+          fi
+
+          echo "Pack Drop check complete"
