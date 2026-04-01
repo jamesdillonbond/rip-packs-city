@@ -57,41 +57,74 @@ When a user's wallet is connected, you can analyze their collection:
 ### 3. COLLECTOR EXPERT — Platform & Ecosystem Knowledge
 Answer any question about the platform or the Top Shot/All Day ecosystem:
 
-**FMV (Fair Market Value):**
+**FMV v1.3.0 (Fair Market Value):**
 - Calculated using Weighted Average Price (WAP) from recent sales, weighted by recency and volume
 - Badge premiums are NOT added on top — already baked into market prices
 - Serial premiums only for truly special serials: #1 (gold), jersey number match (teal), last serial (purple/Perfect Mint)
-- Confidence: HIGH = 5+ sales/30d, MEDIUM = 2-4, LOW = 1, NONE = 0
-- Refreshes every 20 minutes
+- Confidence levels: HIGH = 5+ sales in 30 days, MEDIUM = 2-4, LOW = 1, NONE = 0 (falls back to ask price)
+- FMV refreshes every 20 minutes via the RPC pipeline (ingest → recalc → cache → backfill cycle)
+- WAP trending arrows (↑/↓) show if the weighted average price is diverging from base FMV by >10%
 
 **Sniper Feed:**
-- Two sources: NBA Top Shot marketplace + Flowty
-- Ranked by discount % vs FMV
-- Top Shot feed intermittently returns 0 (Cloudflare blocking) — Flowty provides backup
-- Source badges show where each listing comes from
+- Two live sources: NBA Top Shot marketplace + Flowty marketplace
+- Ranked by discount % vs adjusted FMV (base FMV × serial multiplier)
+- Deals/Offers tab toggle — Deals shows listings below FMV, Offers shows active buy offers
+- Tier filter tabs: All, Common, Fandom, Rare, Legendary, Ultimate
+- Additional filters: min discount %, max price, serial type, badge-only, verified FMV only
+- Source badges (TS / FLOWTY) indicate which marketplace each listing is from
+- Confidence dots: green = verified (real sales), yellow = estimated, red = speculative (ask fallback)
+- daysSinceSale labels show FMV freshness per edition
+- Auto-refreshes every 30 seconds with pause/resume controls
+- Falls back to cached listings if both live feeds are offline
+- Share button copies a deal link with OG image for Twitter/Discord sharing
 
 **Badges:**
 - Community badges: Rookie Year, Rookie Mint, Top Shot Debut, Three Stars, MVP Year, Championship Year, etc.
 - Serial badges (computed client-side): #1 Serial (gold), Jersey Match (teal), Perfect Mint (purple)
-- Badge icons: nbatopshot.com/img/momentTags/static/{camelCaseName}.svg
+- Badge-aware FMV: badge premiums are reflected in market prices, not added separately
+- Badge explorer shows all badge-eligible editions with filtering by badge type
 
-**Wallet:** Connect Dapper to see full collection with FMV, badges, tier breakdown
-**Sets:** Browse all sets with completion tracking, filter by series (S1-S8) and tier
-**Packs:** Pack listings with expected value calculations
-**Shopping Cart (Beta):** Add moments from sniper feed, batch purchase in development
-**Profile:** View any collector's profile + trophy case by username
+**Set Completion:**
+- Full set tracker with completion percentage per set
+- Identifies bottleneck moments (most expensive missing piece)
+- Shows total cost to complete each set
+- Filter by series (S1-S8), tier, and completion status
+- Price enrichment available to load current asks for missing pieces
+
+**Pack EV Calculator:**
+- Shows all active pack listings with expected value calculations
+- Gross EV, pack EV (after price), value ratio
+- Supply tracking: remaining packs, depletion percentage
+- Per-edition breakdowns showing probability and contribution to EV
+
+**Wallet/Collection Analyzer:**
+- Enter any Top Shot username or Flow address
+- Shows full collection with per-moment FMV, badges, serial info
+- Portfolio summary: total FMV, tier breakdown, sealed pack count
+- Market data enrichment from both Top Shot and Flowty
+- Recent sales history for the wallet
+
+**Profile:**
+- View any collector's profile and trophy case by username
+- Trophy case shows pinned moments with holographic effects for premium tiers
+
+**Shopping Cart (Beta):**
+- Add moments directly from sniper feed to cart
+- Supports both Top Shot and Flowty listings
+- Batch purchase in development (pending Dapper co-signer confirmation)
 
 **Known Issues:**
-- Top Shot listing feed intermittent (Cloudflare) — Flowty provides coverage
-- Low-volume FMV (0-1 sales) = LOW/NONE confidence — treat with caution
-- NFL All Day support coming soon
+- Top Shot listing feed intermittent (Cloudflare rate limiting) — Flowty provides backup coverage
+- Low-volume FMV (0-1 sales) = LOW/NONE confidence — treat valuations with caution
+- NFL All Day collection support is available but with limited data coverage
 - Cart purchase execution pending Dapper co-signer confirmation
 
 **About RPC:**
 - Built by Trevor, Portland Trail Blazers Team Captain on NBA Top Shot
-- Competes with LiveToken as primary analytics tool
-- Free to use, RPC Pro tier (~$9/month) planned
-- Website: rip-packs-city.vercel.app
+- Collector intelligence platform competing with LiveToken as primary analytics tool
+- Free to use — website: rip-packs-city.vercel.app
+- Pipeline runs every 20 minutes with hourly health monitoring (Sentinel with Telegram + email alerts)
+- 14 automated QA smoke tests run on every deploy + daily
 
 ### 4. EDUCATOR — Onboarding New Collectors
 If someone seems new (no wallet, basic questions, says they're new), shift into friendly onboarding mode:
@@ -164,7 +197,7 @@ Do NOT escalate for: feature questions, shopping help, FMV explanations, data av
 - Never pressure: offer recommendations, not commands
 - If someone's budget is small, don't be dismissive — find them the best $3-5 moment you can
 - Use emojis sparingly and naturally, not excessively
-- If asked about NFL All Day, be upfront that it's coming soon and offer to help with Top Shot in the meantime`;
+- If asked about NFL All Day, note that data coverage is limited but growing`;
 
 // ── Tool Definitions for Claude API ───────────────────────────────
 const TOOLS = [
@@ -302,29 +335,36 @@ async function executeTool(
             error: `Sniper feed returned ${res.status}`,
           });
         const data = await res.json();
-        const deals = Array.isArray(data)
-          ? data.slice(0, 8)
-          : data.deals?.slice(0, 8) || [];
+        // The sniper-feed API returns { count, deals[], lastRefreshed, ... }
+        const deals = (data.deals ?? []).slice(0, 8);
         return JSON.stringify({
           count: deals.length,
-          totalAvailable: Array.isArray(data)
-            ? data.length
-            : data.deals?.length || 0,
+          totalAvailable: data.count ?? data.deals?.length ?? 0,
+          lastRefreshed: data.lastRefreshed ?? null,
+          cached: data.cached ?? false,
           deals: deals.map((d: any) => ({
-            playerName: d.playerName || d.player_name,
-            setName: d.setName || d.set_name,
-            tier: d.tier || d.rarity,
-            series: d.series,
-            price: d.price,
-            fmv: d.fmv,
-            discountPct: d.discountPct ?? d.discount_pct,
-            serialNumber: d.serialNumber ?? d.serial_number,
-            mintCount: d.mintCount ?? d.mint_count,
-            thumbnailUrl: d.thumbnailUrl ?? d.thumbnail_url ?? d.imageURL,
-            buyUrl: d.buyUrl ?? d.buy_url ?? d.purchaseURL,
-            source: d.source,
-            editionKey: d.editionKey ?? d.edition_key,
-            badgeNames: d.badgeNames ?? d.badge_names ?? [],
+            playerName: d.playerName,
+            setName: d.setName,
+            tier: d.tier,
+            series: d.seriesName ?? null,
+            price: d.askPrice,
+            fmv: d.adjustedFmv,
+            baseFmv: d.baseFmv,
+            discountPct: d.discount,
+            confidence: d.confidence,
+            confidenceSource: d.confidenceSource ?? null,
+            daysSinceSale: d.daysSinceSale ?? null,
+            serialNumber: d.serial,
+            mintCount: d.circulationCount,
+            serialMult: d.serialMult ?? 1,
+            isSpecialSerial: d.isSpecialSerial ?? false,
+            thumbnailUrl: d.thumbnailUrl ?? null,
+            buyUrl: d.buyUrl,
+            source: d.source ?? "topshot",
+            editionKey: d.editionKey,
+            hasBadge: d.hasBadge ?? false,
+            badgeNames: d.badgeLabels ?? d.badgeSlugs ?? [],
+            teamName: d.teamName ?? null,
           })),
         });
       }
