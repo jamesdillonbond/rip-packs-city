@@ -665,14 +665,18 @@ async function computeSniperFeed(opts: {
     ...tsListings.map(l => l.playerName ?? "").filter(Boolean),
   ]));
 
-  // 4. Fire all Supabase lookups in parallel (including jersey numbers)
-  const [fmvMap, badgeMap, offerMap, jerseyMap] = await Promise.all([
+  // 4. Fire all Supabase lookups in parallel (including jersey numbers + retired moments)
+  const [fmvMap, badgeMap, offerMap, jerseyMap, retiredResult] = await Promise.all([
     fetchFmvBatch(supabase, Array.from(tsEditionKeys)),
     fetchBadgesByPlayers(supabase, allPlayerNames),
     fetchOpenOffers().catch(() => new Map<string, { amount: number; fmv: number | null }>()),
     fetchJerseyNumbers(supabase, allPlayerNames),
+    (supabase as any).from("moments").select("nft_id").eq("retired", true),
   ]);
-  console.log(`[sniper-feed] offerMap size=${offerMap.size}`);
+  const retiredIds = new Set<string>(
+    (retiredResult?.data ?? []).map((r: { nft_id: string }) => String(r.nft_id))
+  );
+  console.log(`[sniper-feed] offerMap size=${offerMap.size} retiredIds size=${retiredIds.size}`);
 
   // 5. Enrich TS listings
   const tsDeals: SniperDeal[] = [];
@@ -870,11 +874,14 @@ async function computeSniperFeed(opts: {
 
   console.log(`[sniper-feed] built ts=${tsDeals.length} flowty=${flowtyDeals.length}`);
 
-  // 7. Merge — Flowty wins on dedup by flowId
+  // 7. Merge — Flowty wins on dedup by flowId, exclude retired moments
   const seen = new Set<string>();
   const allDeals: SniperDeal[] = [];
   for (const d of [...flowtyDeals, ...tsDeals]) {
-    if (!seen.has(d.flowId)) { seen.add(d.flowId); allDeals.push(d); }
+    if (!seen.has(d.flowId) && !retiredIds.has(d.flowId)) {
+      seen.add(d.flowId);
+      allDeals.push(d);
+    }
   }
 
   // 8b. Offer enrichment
@@ -922,8 +929,10 @@ async function computeSniperFeed(opts: {
         .limit(200);
 
       if (cachedRows && cachedRows.length > 0) {
-        console.log("[sniper-feed] Live feeds empty, serving " + cachedRows.length + " cached deals");
-        const cachedDeals = cachedRows.map(function (r) {
+        // Filter out retired moments from cached deals
+        const liveCachedRows = cachedRows.filter((r: any) => !retiredIds.has(String(r.flow_id)));
+        console.log("[sniper-feed] Live feeds empty, serving " + liveCachedRows.length + " cached deals (filtered " + (cachedRows.length - liveCachedRows.length) + " retired)");
+        const cachedDeals = liveCachedRows.map(function (r: any) {
           return {
             flowId: r.flow_id || "",
             momentId: r.moment_id || "",

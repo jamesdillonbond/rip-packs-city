@@ -38,6 +38,7 @@ const GET_MINTED_MOMENT = `
         set { id }
         parallelSetPlay { setID playID }
         flowSerialNumber
+        flowRetired
       }
     }
   }
@@ -65,7 +66,7 @@ async function getFlowUsd(): Promise<number> {
 // Resolve a Flow NFT ID → external_id (setUUID:playUUID) via Top Shot GraphQL
 async function getMintedMomentEditionKey(
   flowId: string,
-): Promise<{ externalId: string | null; serialNumber: number | null }> {
+): Promise<{ externalId: string | null; serialNumber: number | null; flowRetired: boolean }> {
   try {
     const res = await fetch(TOPSHOT_GQL, {
       method: "POST",
@@ -73,22 +74,23 @@ async function getMintedMomentEditionKey(
       body: JSON.stringify({ query: GET_MINTED_MOMENT, variables: { momentId: flowId } }),
       signal: AbortSignal.timeout(6000),
     });
-    if (!res.ok) return { externalId: null, serialNumber: null };
+    if (!res.ok) return { externalId: null, serialNumber: null, flowRetired: false };
     const json = await res.json();
     // Try both response shapes: with .data wrapper and without
     const raw = json?.data?.getMintedMoment;
     const data = raw?.data ?? raw;
-    if (!data) return { externalId: null, serialNumber: null };
+    if (!data) return { externalId: null, serialNumber: null, flowRetired: false };
 
     const psp = data.parallelSetPlay;
     const setId = psp?.setID ?? data.set?.id;
     const playId = psp?.playID ?? data.play?.id;
     const serialNumber = data.flowSerialNumber ? parseInt(data.flowSerialNumber, 10) : null;
+    const flowRetired = data.flowRetired === true;
 
-    if (!setId || !playId) return { externalId: null, serialNumber: null };
-    return { externalId: `${setId}:${playId}`, serialNumber };
+    if (!setId || !playId) return { externalId: null, serialNumber: null, flowRetired };
+    return { externalId: `${setId}:${playId}`, serialNumber, flowRetired };
   } catch (err) {
-    return { externalId: null, serialNumber: null };
+    return { externalId: null, serialNumber: null, flowRetired: false };
   }
 }
 
@@ -185,10 +187,11 @@ export async function GET(req: NextRequest) {
 
   // ── 5. Layer 1: check moments table (fastest — cached from prior lookups) ────
   const momentMap = new Map<string, MomentInfo>();
+  const retiredSet = new Set<string>();
 
   const { data: momentRows } = await supabase
     .from("moments")
-    .select("nft_id, edition_id, collection_id, serial_number")
+    .select("nft_id, edition_id, collection_id, serial_number, retired")
     .in("nft_id", nftIds);
 
   for (const row of (momentRows ?? [])) {
@@ -198,6 +201,7 @@ export async function GET(req: NextRequest) {
         collection_id: row.collection_id,
         serial_number: row.serial_number ?? null,
       });
+      if (row.retired) retiredSet.add(String(row.nft_id));
     }
   }
 
@@ -229,6 +233,7 @@ export async function GET(req: NextRequest) {
   let gqlLookups = 0;
   let gqlHits = 0;
   let gqlResolved = 0;
+  let retiredSkipped = 0;
 
 
   if (stillMissing2.length > 0) {
@@ -241,7 +246,7 @@ export async function GET(req: NextRequest) {
     const collectionId = col?.id ?? null;
 
     // Look up editions by external_id batch after resolving keys
-    const resolvedKeys: { nftId: string; externalId: string; serialNumber: number | null }[] = [];
+    const resolvedKeys: { nftId: string; externalId: string; serialNumber: number | null; flowRetired: boolean }[] = [];
 
     // Resolve keys in parallel (up to 10 at a time to avoid hammering)
     const BATCH = 10;
@@ -250,8 +255,8 @@ export async function GET(req: NextRequest) {
       const results = await Promise.all(
         batch.map(async (nftId) => {
           gqlLookups++;
-          const { externalId, serialNumber } = await getMintedMomentEditionKey(nftId);
-          return { nftId, externalId, serialNumber };
+          const { externalId, serialNumber, flowRetired } = await getMintedMomentEditionKey(nftId);
+          return { nftId, externalId, serialNumber, flowRetired };
         })
       );
       const resolved = results.filter((r): r is typeof r & { externalId: string } => r.externalId !== null);
@@ -291,13 +296,21 @@ export async function GET(req: NextRequest) {
         console.log(`[flowty-sales] Upserted ${insertedEditions?.length ?? 0} edition stubs for ${missingExternalIds.length} unknown editions`);
       }
 
-      // Build momentMap entries and cache to moments table
+      // Build momentMap entries and cache to moments table; track retired nft_ids
       const newMomentRows: object[] = [];
-      for (const { nftId, externalId, serialNumber } of resolvedKeys) {
+      const retiredNftIds = new Set<string>();
+      for (const { nftId, externalId, serialNumber, flowRetired } of resolvedKeys) {
         const editionId = editionByKey.get(externalId);
         if (!editionId) continue;
 
         gqlHits++;
+
+        if (flowRetired) {
+          retiredNftIds.add(nftId);
+          retiredSkipped++;
+          // Still cache the moment, but mark it retired and skip the sale
+        }
+
         momentMap.set(nftId, { edition_id: editionId, collection_id: collectionId, serial_number: serialNumber });
 
         if (serialNumber !== null) {
@@ -306,6 +319,7 @@ export async function GET(req: NextRequest) {
             edition_id: editionId,
             collection_id: collectionId,
             serial_number: serialNumber,
+            retired: flowRetired,
           });
         }
       }
@@ -314,8 +328,20 @@ export async function GET(req: NextRequest) {
       if (newMomentRows.length > 0 && !dryRun) {
         await supabase
           .from("moments")
-          .upsert(newMomentRows, { onConflict: "nft_id", ignoreDuplicates: true });
+          .upsert(newMomentRows, { onConflict: "nft_id", ignoreDuplicates: false });
       }
+
+      // Mark retired moments in DB
+      if (retiredNftIds.size > 0 && !dryRun) {
+        await supabase
+          .from("moments")
+          .update({ retired: true })
+          .in("nft_id", [...retiredNftIds]);
+        console.log(`[flowty-sales] Marked ${retiredNftIds.size} moments as retired`);
+      }
+
+      // Merge into retiredSet for sale-building filter
+      for (const id of retiredNftIds) retiredSet.add(id);
     }
   }
 
@@ -336,6 +362,9 @@ export async function GET(req: NextRequest) {
 
     const nftId = String(f.nftID?.stringValue ?? f.nftID?.integerValue ?? "");
     if (!nftId) { skipped++; continue; }
+
+    // Skip retired/burned moments
+    if (retiredSet.has(nftId)) { retiredSkipped++; continue; }
 
     const momentInfo = momentMap.get(nftId);
     if (!momentInfo?.edition_id) { skipped++; continue; }
@@ -397,6 +426,7 @@ export async function GET(req: NextRequest) {
       gqlLookups,
       gqlResolved,
       gqlHits,
+      retiredSkipped,
       sample: saleRows.slice(0, 3),
     });
   }
@@ -428,6 +458,7 @@ export async function GET(req: NextRequest) {
     momentsCached: momentMap.size,
     gqlLookups,
     gqlHits,
+    retiredSkipped,
     latestTimestamp: topShotSales[0]?.fields?.blockTimestamp?.timestampValue ?? null,
     flowUsd: flowUsd > 0 ? flowUsd : null,
   });
