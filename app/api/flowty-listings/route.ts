@@ -1,8 +1,10 @@
 // app/api/flowty-listings/route.ts
 //
-// Reads STOREFRONT_LISTING_CREATED events from Flowty's open Firestore and
-// upserts them into cached_listings so the sniper cache stays fresh between
-// the 20-min listing-cache cron cycles.
+// Reads STOREFRONT_LISTING_CREATED and STOREFRONT_LISTING_CANCELLED events
+// from Flowty's open Firestore and upserts/deletes cached_listings so the
+// sniper cache stays fresh between the 20-min listing-cache cron cycles.
+//
+// Also purges stale rows older than 6 hours as a TTL safety net.
 //
 // Edition lookup: nftID → getMintedMoment → editions.external_id → fmv_snapshots
 //
@@ -29,6 +31,7 @@ const GET_MINTED_MOMENT = `
         set { id }
         parallelSetPlay { setID playID }
         flowSerialNumber
+        flowRetired
       }
     }
   }
@@ -49,7 +52,7 @@ function getNum(f: FirestoreFields, key: string): number {
 // Resolve Flow NFT ID → setID:playID via Top Shot GraphQL
 async function getMintedMomentEditionKey(
   flowId: string
-): Promise<{ externalId: string | null; serialNumber: number | null }> {
+): Promise<{ externalId: string | null; serialNumber: number | null; flowRetired: boolean }> {
   try {
     const res = await fetch(TOPSHOT_GQL, {
       method: "POST",
@@ -57,22 +60,54 @@ async function getMintedMomentEditionKey(
       body: JSON.stringify({ query: GET_MINTED_MOMENT, variables: { momentId: flowId } }),
       signal: AbortSignal.timeout(6000),
     });
-    if (!res.ok) return { externalId: null, serialNumber: null };
+    if (!res.ok) return { externalId: null, serialNumber: null, flowRetired: false };
     const json = await res.json();
     const raw = json?.data?.getMintedMoment;
     const data = raw?.data ?? raw;
-    if (!data) return { externalId: null, serialNumber: null };
+    if (!data) return { externalId: null, serialNumber: null, flowRetired: false };
 
     const psp = data.parallelSetPlay;
     const setId = psp?.setID ?? data.set?.id;
     const playId = psp?.playID ?? data.play?.id;
     const serialNumber = data.flowSerialNumber ? parseInt(data.flowSerialNumber, 10) : null;
+    const flowRetired = data.flowRetired === true;
 
-    if (!setId || !playId) return { externalId: null, serialNumber: null };
-    return { externalId: `${setId}:${playId}`, serialNumber };
+    if (!setId || !playId) return { externalId: null, serialNumber: null, flowRetired };
+    return { externalId: `${setId}:${playId}`, serialNumber, flowRetired };
   } catch {
-    return { externalId: null, serialNumber: null };
+    return { externalId: null, serialNumber: null, flowRetired: false };
   }
+}
+
+// Fetch Firestore events by type (shared helper for created + cancelled)
+async function fetchFirestoreEvents(
+  type: string,
+  pageLimit: number
+): Promise<{ name: string; fields: FirestoreFields; createTime: string }[]> {
+  const res = await fetch(`${FIRESTORE_BASE}/documents:runQuery`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: "events" }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: "type" },
+            op: "EQUAL",
+            value: { stringValue: type },
+          },
+        },
+        orderBy: [{ field: { fieldPath: "blockTimestamp" }, direction: "DESCENDING" }],
+        limit: pageLimit,
+      },
+    }),
+    signal: AbortSignal.timeout(12000),
+  });
+  if (!res.ok) throw new Error(`Firestore ${res.status}: ${await res.text()}`);
+  const results = await res.json();
+  return results
+    .filter((r: { document?: unknown }) => r.document)
+    .map((r: { document: unknown }) => r.document);
 }
 
 interface ListingEvent {
@@ -97,39 +132,63 @@ export async function GET(req: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ) as any;
 
-  // ── 1. Fetch STOREFRONT_LISTING_CREATED from Firestore ─────────────────────
-  let docs: { name: string; fields: FirestoreFields; createTime: string }[];
+  // ── 1. Fetch CREATED + CANCELLED events from Firestore in parallel ─────────
+  let createdDocs: { name: string; fields: FirestoreFields; createTime: string }[];
+  let cancelledDocs: { name: string; fields: FirestoreFields; createTime: string }[];
   try {
-    const res = await fetch(`${FIRESTORE_BASE}/documents:runQuery`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        structuredQuery: {
-          from: [{ collectionId: "events" }],
-          where: {
-            fieldFilter: {
-              field: { fieldPath: "type" },
-              op: "EQUAL",
-              value: { stringValue: "STOREFRONT_LISTING_CREATED" },
-            },
-          },
-          orderBy: [{ field: { fieldPath: "blockTimestamp" }, direction: "DESCENDING" }],
-          limit,
-        },
-      }),
-      signal: AbortSignal.timeout(12000),
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      return NextResponse.json({ error: `Firestore ${res.status}`, detail: err }, { status: 502 });
-    }
-    const results = await res.json();
-    docs = results
-      .filter((r: { document?: unknown }) => r.document)
-      .map((r: { document: unknown }) => r.document);
+    [createdDocs, cancelledDocs] = await Promise.all([
+      fetchFirestoreEvents("STOREFRONT_LISTING_CREATED", limit),
+      fetchFirestoreEvents("STOREFRONT_LISTING_CANCELLED", 200),
+    ]);
   } catch (err) {
     return NextResponse.json({ error: "Firestore fetch failed", detail: String(err) }, { status: 502 });
   }
+
+  // ── 1b. Process cancellations — delete from cached_listings ────────────────
+  const cancelledListingIds: string[] = [];
+  for (const doc of cancelledDocs) {
+    const dataFields = doc.fields.data?.mapValue?.fields ?? {};
+    const listingResourceID = getStr(dataFields, "listingResourceID");
+    if (listingResourceID) cancelledListingIds.push(listingResourceID);
+  }
+
+  let cancelledDeleted = 0;
+  if (cancelledListingIds.length > 0 && !dryRun) {
+    const { count } = await supabase
+      .from("cached_listings")
+      .delete({ count: "exact" })
+      .in("listing_resource_id", cancelledListingIds);
+    cancelledDeleted = count ?? 0;
+    console.log(`[flowty-listings] Deleted ${cancelledDeleted} cancelled listings from cache`);
+  }
+
+  // ── 1c. TTL safety net — purge stale rows older than 6 hours ──────────────
+  const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+  let staleDeleted = 0;
+  if (!dryRun) {
+    const { count } = await supabase
+      .from("cached_listings")
+      .delete({ count: "exact" })
+      .eq("source", "flowty")
+      .lt("cached_at", sixHoursAgo);
+    staleDeleted = count ?? 0;
+    if (staleDeleted > 0) {
+      console.log(`[flowty-listings] TTL cleanup: purged ${staleDeleted} stale rows older than 6h`);
+    }
+  }
+
+  // Count stale rows in dry mode
+  let staleDryCount = 0;
+  if (dryRun) {
+    const { count } = await supabase
+      .from("cached_listings")
+      .select("id", { count: "exact", head: true })
+      .eq("source", "flowty")
+      .lt("cached_at", sixHoursAgo);
+    staleDryCount = count ?? 0;
+  }
+
+  const docs = createdDocs;
 
   // ── 2. Filter to TopShot & extract listing events ──────────────────────────
   const events: ListingEvent[] = [];
@@ -167,7 +226,14 @@ export async function GET(req: NextRequest) {
   }
 
   if (events.length === 0) {
-    return NextResponse.json({ processed: docs.length, listings: 0, upserted: 0 });
+    return NextResponse.json({
+      processed: docs.length,
+      listings: 0,
+      upserted: 0,
+      cancelledFetched: cancelledListingIds.length,
+      cancelledDeleted,
+      staleDeleted: dryRun ? staleDryCount : staleDeleted,
+    });
   }
 
   console.log(`[flowty-listings] Parsed ${events.length} listing events from ${docs.length} Firestore docs`);
@@ -194,6 +260,7 @@ export async function GET(req: NextRequest) {
   // Layer 2: GraphQL for missing nftIDs
   const missing = uniqueNftIds.filter((id) => !momentMap.has(id));
   let gqlLookups = 0;
+  let retiredSkipped = 0;
 
   if (missing.length > 0) {
     // Get collection_id
@@ -205,15 +272,15 @@ export async function GET(req: NextRequest) {
     const collectionId = col?.id ?? null;
 
     const BATCH = 10;
-    const resolvedKeys: { nftId: string; externalId: string; serialNumber: number | null }[] = [];
+    const resolvedKeys: { nftId: string; externalId: string; serialNumber: number | null; flowRetired: boolean }[] = [];
 
     for (let i = 0; i < missing.length; i += BATCH) {
       const batch = missing.slice(i, i + BATCH);
       const results = await Promise.all(
         batch.map(async (nftId) => {
           gqlLookups++;
-          const { externalId, serialNumber } = await getMintedMomentEditionKey(nftId);
-          return { nftId, externalId, serialNumber };
+          const { externalId, serialNumber, flowRetired } = await getMintedMomentEditionKey(nftId);
+          return { nftId, externalId, serialNumber, flowRetired };
         })
       );
       resolvedKeys.push(
@@ -249,11 +316,18 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Cache to moments table + build momentMap
+      // Cache to moments table + build momentMap; track retired nft_ids
       const newMomentRows: object[] = [];
-      for (const { nftId, externalId, serialNumber } of resolvedKeys) {
+      const retiredNftIds = new Set<string>();
+      for (const { nftId, externalId, serialNumber, flowRetired } of resolvedKeys) {
         const editionId = editionByKey.get(externalId);
         if (!editionId) continue;
+
+        if (flowRetired) {
+          retiredNftIds.add(nftId);
+          retiredSkipped++;
+        }
+
         momentMap.set(nftId, { edition_id: editionId, serial_number: serialNumber });
         if (serialNumber !== null) {
           newMomentRows.push({
@@ -261,13 +335,23 @@ export async function GET(req: NextRequest) {
             edition_id: editionId,
             collection_id: collectionId,
             serial_number: serialNumber,
+            retired: flowRetired,
           });
         }
       }
       if (newMomentRows.length > 0 && !dryRun) {
         await supabase
           .from("moments")
-          .upsert(newMomentRows, { onConflict: "nft_id", ignoreDuplicates: true });
+          .upsert(newMomentRows, { onConflict: "nft_id", ignoreDuplicates: false });
+      }
+
+      // Mark retired moments in DB
+      if (retiredNftIds.size > 0 && !dryRun) {
+        await supabase
+          .from("moments")
+          .update({ retired: true })
+          .in("nft_id", [...retiredNftIds]);
+        console.log(`[flowty-listings] Marked ${retiredNftIds.size} moments as retired`);
       }
     }
   }
@@ -332,6 +416,10 @@ export async function GET(req: NextRequest) {
       editionsResolved: momentMap.size,
       gqlLookups,
       fmvMatches: fmvMap.size,
+      cancelledFetched: cancelledListingIds.length,
+      cancelledDeleted: 0,
+      staleDeleted: staleDryCount,
+      retiredSkipped,
       sample: upsertRows.slice(0, 3),
       elapsed: Date.now() - startTime,
     });
@@ -377,6 +465,10 @@ export async function GET(req: NextRequest) {
     editionsResolved: momentMap.size,
     gqlLookups,
     fmvMatches: fmvMap.size,
+    cancelledFetched: cancelledListingIds.length,
+    cancelledDeleted,
+    staleDeleted,
+    retiredSkipped,
     elapsed: Date.now() - startTime,
   });
 }
