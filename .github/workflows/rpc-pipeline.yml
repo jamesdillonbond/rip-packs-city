@@ -82,3 +82,11 @@ jobs:
             https://rip-packs-city.vercel.app/api/social-bot)
           echo "Social bot status: $STATUS"
           cat /tmp/social.json
+      - name: Sales Alert Bot
+        continue-on-error: true
+        run: |
+          STATUS=$(curl -s -o /tmp/sales-alert.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            https://rip-packs-city.vercel.app/api/bots/sales-alert)
+          echo "Sales alert status: $STATUS"
+          cat /tmp/sales-alert.json
