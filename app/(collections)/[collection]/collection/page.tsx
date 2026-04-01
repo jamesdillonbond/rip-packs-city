@@ -694,22 +694,6 @@ export default function WalletPage() {
 
       <div className="mx-auto max-w-[1600px] px-3 py-4 md:px-6">
 
-        {/* Header */}
-        <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-4">
-          <img src="/rip-packs-city-logo.png" alt="Rip Packs City" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 9999 }} />
-          <div>
-            <h1 className="text-xl font-black tracking-wide text-white md:text-2xl">RIP PACKS CITY</h1>
-            <p className="text-xs text-zinc-400 md:text-sm">Wallet intelligence for digital collectibles</p>
-          </div>
-          <div className="ml-auto flex flex-wrap gap-2">
-            <a href="/profile" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Profile</a>
-            <a href="/nba-top-shot/packs"   className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Packs</a>
-            <a href="/nba-top-shot/badges"  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Badges</a>
-            <a href="/nba-top-shot/sniper"  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Sniper</a>
-            <a href="/nba-top-shot/sets"    className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">Sets</a>
-          </div>
-        </div>
-
         {/* Profile key indicator */}
         {ownerKey && (
           <div className="mb-4 flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-400">
