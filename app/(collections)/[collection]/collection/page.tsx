@@ -1,7 +1,7 @@
 "use client"
 
-import { Fragment, useMemo, useState, useEffect, useCallback, Suspense } from "react"
-import { useSearchParams } from "next/navigation"
+import { Fragment, useMemo, useState, useEffect, useCallback, useRef, Suspense } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
 import {
   normalizeSetName,
   normalizeParallel,
@@ -286,8 +286,10 @@ type SortKey = "player" | "series" | "set" | "parallel" | "rarity" | "serial" | 
 function AutoSearchReader(props: { onSearch: (q: string) => void }) {
   const searchParams = useSearchParams()
   useEffect(function() {
+    const address = searchParams.get("address")
     const q = searchParams.get("q")
-    if (q && q.trim()) props.onSearch(q.trim())
+    const query = address || q
+    if (query && query.trim()) props.onSearch(query.trim())
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   return null
@@ -296,6 +298,8 @@ function AutoSearchReader(props: { onSearch: (q: string) => void }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function WalletPage() {
+  const router = useRouter()
+  const lastSearchedRef = useRef("")
   const [rows, setRows] = useState<MomentRow[]>([])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
@@ -468,7 +472,11 @@ export default function WalletPage() {
 
   const runSearch = useCallback(async function(query: string) {
     if (!query.trim()) return
-    setInput(query.trim())
+    const trimmed = query.trim()
+    setInput(trimmed)
+    lastSearchedRef.current = trimmed
+    // Persist address in URL for bookmarkability and sharing
+    try { router.replace("?address=" + encodeURIComponent(trimmed), { scroll: false }) } catch {}
     setLoading(true)
     setError("")
     setRows([])
@@ -958,10 +966,19 @@ export default function WalletPage() {
                   <Fragment key={row.momentId}>
                     <tr className={"border-b border-zinc-800 align-top " + (isLocked ? "opacity-60" : "") + (row.tier?.toUpperCase() === "LEGENDARY" ? " rpc-holo-legendary" : row.tier?.toUpperCase() === "ULTIMATE" ? " rpc-holo-ultimate" : row.tier?.toUpperCase() === "RARE" ? " rpc-holo-rare" : "")}>
                       <td className="p-3">
-                        <div className="flex items-start gap-2">
-                          <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-zinc-800 bg-black hidden sm:block">
-                            {row.thumbnailUrl ? <img src={row.thumbnailUrl} alt={row.playerName} className="h-full w-full object-cover" /> : null}
-                          </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          {row.thumbnailUrl ? (
+                            <img
+                              src={row.thumbnailUrl}
+                              alt=""
+                              width={36}
+                              height={36}
+                              loading="lazy"
+                              style={{ borderRadius: 4, objectFit: "cover", flexShrink: 0, background: "#1a1a1a" }}
+                            />
+                          ) : (
+                            <div style={{ width: 36, height: 36, borderRadius: 4, background: "#1a1a1a", flexShrink: 0 }} />
+                          )}
                           <div>
                             <div className="font-semibold text-white text-sm">{row.playerName}</div>
                             <div className="mt-1 flex flex-wrap gap-1">
