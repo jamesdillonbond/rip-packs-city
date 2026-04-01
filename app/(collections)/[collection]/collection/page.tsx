@@ -405,6 +405,9 @@ export default function WalletPage() {
   const [searchWithin, setSearchWithin] = useState("")
   const [sortKey, setSortKey] = useState<SortKey>("fmv")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
+  const [filterBadges, setFilterBadges] = useState(false)
+  const [filterHasOffer, setFilterHasOffer] = useState(false)
+  const [filterListed, setFilterListed] = useState(false)
 
   useEffect(function() {
     setOwnerKey(getOwnerKey())
@@ -782,6 +785,9 @@ export default function WalletPage() {
       if (lockedFilter === "locked" && !getLocked(r)) return false
       if (lockedFilter === "unlocked" && getLocked(r)) return false
       if (badgeFilter && !r.badgeInfo?.badge_score) return false
+      if (filterBadges && !(r.officialBadges?.length || (r as any).badgeScore > 0)) return false
+      if (filterHasOffer && !(typeof r.bestOffer === "number" && r.bestOffer > 0)) return false
+      if (filterListed && r.lowAsk == null) return false
       if (q) {
         const haystack = [r.playerName, r.team ?? "", r.league ?? "", r.series ?? "", r.setName, getParallel(r), r.tier ?? "", ...(r.officialBadges ?? []), ...(r.badgeInfo?.badge_titles ?? []), ...getTraits(r)].join(" ").toLowerCase()
         if (!haystack.includes(q)) return false
@@ -815,7 +821,7 @@ export default function WalletPage() {
       return sortDirection === "asc" ? result : -result
     })
     return filtered
-  }, [rows, searchWithin, playerFilter, setFilter, seriesFilter, rarityFilter, lockedFilter, badgeFilter, sortKey, sortDirection, batchEditionStats])
+  }, [rows, searchWithin, playerFilter, setFilter, seriesFilter, rarityFilter, lockedFilter, badgeFilter, filterBadges, filterHasOffer, filterListed, sortKey, sortDirection, batchEditionStats])
 
   const totals = useMemo(function() {
     let totalFmv = 0, totalBestOffer = 0, lockedFmv = 0, unlockedFmv = 0
@@ -1006,6 +1012,10 @@ export default function WalletPage() {
               </button>
             )
           })}
+          <div className="border-l border-zinc-700 mx-1" />
+          <button onClick={function() { setFilterBadges(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterBadges ? "border-blue-500 text-blue-400 bg-blue-950" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>🏅 Badges</button>
+          <button onClick={function() { setFilterHasOffer(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterHasOffer ? "border-blue-500 text-blue-400 bg-blue-950" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>💰 Has Offer</button>
+          <button onClick={function() { setFilterListed(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterListed ? "border-blue-500 text-blue-400 bg-blue-950" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>🏷 Listed</button>
           <button onClick={function() { setShowDebug(function(prev) { return !prev }) }} className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">{showDebug ? "Hide Debug" : "Debug"}</button>
           <button onClick={copySeedCandidates} className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">Copy Seeds</button>
         </div>
