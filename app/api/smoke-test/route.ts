@@ -233,5 +233,5 @@ export async function POST() {
 }
 
 export async function GET() {
-  return runSmokeTests();
+  return NextResponse.json({ message: "Use POST to run smoke tests" });
 }
