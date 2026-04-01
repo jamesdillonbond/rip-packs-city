@@ -479,7 +479,7 @@ export default function WalletPage() {
     setSealedPackCount(null)
     setRecentSales([]);
     setSalesLoading(true);
-    fetch("/api/flowty-sales?limit=15")
+    fetch("/api/recent-sales?limit=15")
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(d) { if (d && d.sales) setRecentSales(d.sales); })
       .catch(function() {})
