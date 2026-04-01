@@ -65,8 +65,7 @@ async function getFlowUsd(): Promise<number> {
 // Resolve a Flow NFT ID → external_id (setUUID:playUUID) via Top Shot GraphQL
 async function getMintedMomentEditionKey(
   flowId: string,
-  debug = false
-): Promise<{ externalId: string | null; serialNumber: number | null; rawDebug?: object }> {
+): Promise<{ externalId: string | null; serialNumber: number | null }> {
   try {
     const res = await fetch(TOPSHOT_GQL, {
       method: "POST",
@@ -74,32 +73,22 @@ async function getMintedMomentEditionKey(
       body: JSON.stringify({ query: GET_MINTED_MOMENT, variables: { momentId: flowId } }),
       signal: AbortSignal.timeout(6000),
     });
-    if (!res.ok) {
-      const rawDebug = debug ? { status: res.status, flowId } : undefined;
-      return { externalId: null, serialNumber: null, rawDebug };
-    }
+    if (!res.ok) return { externalId: null, serialNumber: null };
     const json = await res.json();
     // Try both response shapes: with .data wrapper and without
     const raw = json?.data?.getMintedMoment;
     const data = raw?.data ?? raw;
-    const rawDebug = debug ? {
-      flowId,
-      dataKeys: json?.data ? Object.keys(json.data) : [],
-      errors: json?.errors?.map((e: any) => e.message) ?? [],
-      raw: JSON.stringify(raw).slice(0, 400),
-    } : undefined;
-    if (!data) return { externalId: null, serialNumber: null, rawDebug };
+    if (!data) return { externalId: null, serialNumber: null };
 
     const psp = data.parallelSetPlay;
     const setId = psp?.setID ?? data.set?.id;
     const playId = psp?.playID ?? data.play?.id;
     const serialNumber = data.flowSerialNumber ? parseInt(data.flowSerialNumber, 10) : null;
 
-    if (!setId || !playId) return { externalId: null, serialNumber: null, rawDebug };
+    if (!setId || !playId) return { externalId: null, serialNumber: null };
     return { externalId: `${setId}:${playId}`, serialNumber };
   } catch (err) {
-    const rawDebug = debug ? { flowId, error: String(err) } : undefined;
-    return { externalId: null, serialNumber: null, rawDebug };
+    return { externalId: null, serialNumber: null };
   }
 }
 
@@ -108,7 +97,6 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "100"), 500);
   const after = url.searchParams.get("after");
   const dryRun = url.searchParams.get("dry") === "1";
-  const debugMode = url.searchParams.get("debug") === "1";
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supabase = createClient(
@@ -241,8 +229,7 @@ export async function GET(req: NextRequest) {
   let gqlLookups = 0;
   let gqlHits = 0;
   let gqlResolved = 0;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let firstRawDebug: any = null;
+
 
   if (stillMissing2.length > 0) {
     // Get NBA Top Shot collection_id from DB
@@ -263,8 +250,7 @@ export async function GET(req: NextRequest) {
       const results = await Promise.all(
         batch.map(async (nftId) => {
           gqlLookups++;
-          const { externalId, serialNumber, rawDebug } = await getMintedMomentEditionKey(nftId, debugMode && i === 0 && gqlLookups <= 1);
-          if (rawDebug && !firstRawDebug) firstRawDebug = rawDebug;
+          const { externalId, serialNumber } = await getMintedMomentEditionKey(nftId);
           return { nftId, externalId, serialNumber };
         })
       );
@@ -409,9 +395,8 @@ export async function GET(req: NextRequest) {
       skipped,
       momentsCached: momentMap.size,
       gqlLookups,
-      gqlResolved: gqlResolved,
+      gqlResolved,
       gqlHits,
-      debugGqlRaw: firstRawDebug,
       sample: saleRows.slice(0, 3),
     });
   }
