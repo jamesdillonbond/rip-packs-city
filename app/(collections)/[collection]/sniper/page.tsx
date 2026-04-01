@@ -51,6 +51,7 @@ interface SniperDeal {
   listingResourceID: string | null;
   storefrontAddress: string | null;
   source?: "topshot" | "flowty";
+  paymentToken?: "DUC" | "FUT" | "FLOW" | "USDC_E";
   offerAmount?: number | null;
   offerFmvPct?: number | null;
 }
@@ -294,6 +295,7 @@ function ActionCell({
         thumbnailUrl: deal.thumbnailUrl ?? null,
         fmv: deal.adjustedFmv,
         source: "sniper",
+        paymentToken: deal.paymentToken ?? "DUC",
       });
     }
   }

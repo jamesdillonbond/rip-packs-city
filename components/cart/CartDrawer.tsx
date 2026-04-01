@@ -1,9 +1,9 @@
 'use client'
 
 import React, { useEffect, useRef } from 'react'
-import { useCart, PurchaseStatus } from '@/lib/cart/CartContext'
+import { useCart, CartItem, PurchaseStatus } from '@/lib/cart/CartContext'
 import { usePurchaseQueue } from '@/lib/cart/usePurchaseQueue'
-import { useFlowUser } from '@/lib/hooks/useFlowUser'
+import { useFlowUser, WalletProvider } from '@/lib/hooks/useFlowUser'
 
 function formatPrice(n: number) {
   return `$${n.toFixed(2)}`
@@ -21,6 +21,16 @@ function fmvDelta(price: number, fmv: number | null): React.ReactNode {
       {label}
     </span>
   )
+}
+
+// Returns true if an item requires Dapper Wallet to purchase
+function isDapperOnly(item: CartItem): boolean {
+  return item.paymentToken === 'DUC' || item.paymentToken === 'FUT'
+}
+
+// Returns true if an item can be purchased with a Flow Wallet
+function isFlowCompatible(item: CartItem): boolean {
+  return item.paymentToken === 'FLOW' || item.paymentToken === 'USDC_E'
 }
 
 function StatusBadge({ status }: { status: PurchaseStatus }) {
@@ -46,9 +56,30 @@ function StatusBadge({ status }: { status: PurchaseStatus }) {
   )
 }
 
-function CartRow({ item }: { item: ReturnType<typeof useCart>['items'][0] }) {
+function WalletIncompatibleBadge() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs bg-slate-500/20 text-slate-400 border border-slate-500/30"
+      title="This listing accepts DUC/FUT payment which requires a Dapper Wallet"
+    >
+      Requires Dapper Wallet
+    </span>
+  )
+}
+
+interface CartRowProps {
+  item: CartItem
+  walletProvider: WalletProvider
+}
+
+function CartRow({ item, walletProvider }: CartRowProps) {
   const { removeFromCart, purchaseStatus, isExecuting } = useCart()
+  const { buyOne } = usePurchaseQueue()
   const status = purchaseStatus[item.listingResourceID] ?? 'idle'
+
+  // If connected with Flow Wallet, Dapper-only items are incompatible
+  const isNonDapper = walletProvider !== 'dapper' && walletProvider !== 'unknown'
+  const incompatible = isNonDapper && isDapperOnly(item)
 
   const tierColors: Record<string, string> = {
     ULTIMATE: 'text-yellow-400',
@@ -67,6 +98,8 @@ function CartRow({ item }: { item: ReturnType<typeof useCart>['items'][0] }) {
           ? 'bg-emerald-500/10 border border-emerald-500/20'
           : status === 'failed' || status === 'sniped' || status === 'price_changed'
           ? 'bg-red-500/10 border border-red-500/20'
+          : incompatible
+          ? 'bg-white/[0.02] border border-white/5 opacity-60'
           : 'bg-white/5 border border-white/10 hover:bg-white/[0.07]'
       }`}
     >
@@ -97,10 +130,27 @@ function CartRow({ item }: { item: ReturnType<typeof useCart>['items'][0] }) {
           </div>
         </div>
 
+        {/* Wallet incompatibility badge */}
+        {incompatible && status === 'idle' && (
+          <div className="mt-2">
+            <WalletIncompatibleBadge />
+          </div>
+        )}
+
         {status !== 'idle' && (
           <div className="mt-2">
             <StatusBadge status={status} />
           </div>
+        )}
+
+        {/* Per-item Buy button for Flow Wallet compatible items */}
+        {!isExecuting && status === 'idle' && !incompatible && isNonDapper && isFlowCompatible(item) && (
+          <button
+            onClick={() => buyOne(item)}
+            className="mt-2 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1 transition"
+          >
+            Buy — {formatPrice(item.expectedPrice)}
+          </button>
         )}
       </div>
 
@@ -121,7 +171,7 @@ function CartRow({ item }: { item: ReturnType<typeof useCart>['items'][0] }) {
 
 function CartSummary() {
   const { items, totalPrice, purchaseStatus } = useCart()
-  const { buyAll, isExecuting } = usePurchaseQueue()
+  const { buyAll, executePurchase, isExecuting } = usePurchaseQueue()
   const { user, logIn } = useFlowUser()
 
   const successCount = Object.values(purchaseStatus).filter((s) => s === 'success').length
@@ -135,6 +185,17 @@ function CartSummary() {
   )
 
   const isConnected = user.loggedIn === true
+  const isNonDapper = user.walletProvider !== 'dapper' && user.walletProvider !== 'unknown'
+
+  // When connected with Flow Wallet, split items by compatibility
+  const flowCompatibleItems = isNonDapper
+    ? pendingItems.filter((i) => isFlowCompatible(i))
+    : pendingItems
+  const skippedCount = isNonDapper
+    ? pendingItems.filter((i) => isDapperOnly(i)).length
+    : 0
+
+  const buyableTotal = flowCompatibleItems.reduce((s, i) => s + i.expectedPrice, 0)
 
   return (
     <div className="border-t border-white/10 p-4 space-y-3">
@@ -150,8 +211,15 @@ function CartSummary() {
         <div className="flex items-center justify-between text-sm">
           <span className="text-slate-400">{pendingItems.length} item{pendingItems.length !== 1 ? 's' : ''}</span>
           <span className="font-bold text-white tabular-nums">
-            {formatPrice(pendingItems.reduce((s, i) => s + i.expectedPrice, 0))} DUC
+            {formatPrice(pendingItems.reduce((s, i) => s + i.expectedPrice, 0))}
           </span>
+        </div>
+      )}
+
+      {/* Skipped items notice for Flow Wallet users */}
+      {skippedCount > 0 && isConnected && !isExecuting && (
+        <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs text-amber-300">
+          {skippedCount} item{skippedCount !== 1 ? 's' : ''} require{skippedCount === 1 ? 's' : ''} Dapper Wallet and will be skipped.
         </div>
       )}
 
@@ -164,20 +232,42 @@ function CartSummary() {
         </button>
       )}
 
-      {pendingItems.length > 0 && !isExecuting && isConnected && (
+      {flowCompatibleItems.length > 0 && !isExecuting && isConnected && (
         <button
-          onClick={() => buyAll({
-            onItemComplete: (result) => {
-              console.log('[RPC Cart] item complete', result.status, result.item.momentId)
-            },
-            onQueueComplete: (results) => {
-              console.log('[RPC Cart] queue complete', results)
-            },
-          })}
+          onClick={() => {
+            if (isNonDapper) {
+              // Only execute Flow-compatible items
+              executePurchase(flowCompatibleItems, {
+                onItemComplete: (result) => {
+                  console.log('[RPC Cart] item complete', result.status, result.item.momentId)
+                },
+                onQueueComplete: (results) => {
+                  console.log('[RPC Cart] queue complete', results)
+                },
+              })
+            } else {
+              buyAll({
+                onItemComplete: (result) => {
+                  console.log('[RPC Cart] item complete', result.status, result.item.momentId)
+                },
+                onQueueComplete: (results) => {
+                  console.log('[RPC Cart] queue complete', results)
+                },
+              })
+            }
+          }}
           className="w-full rounded-lg bg-[#e84c4c] hover:bg-[#d94444] active:bg-[#c93c3c] text-white font-semibold py-3 px-4 transition text-sm"
         >
-          Buy {pendingItems.length > 1 ? `All ${pendingItems.length}` : ''} — {formatPrice(totalPrice)} DUC
+          Buy {flowCompatibleItems.length > 1 ? `All ${flowCompatibleItems.length}` : ''} — {formatPrice(buyableTotal)}
+          {skippedCount > 0 ? ` (${skippedCount} skipped)` : ''}
         </button>
+      )}
+
+      {/* All items are Dapper-only and user has Flow Wallet */}
+      {flowCompatibleItems.length === 0 && pendingItems.length > 0 && !isExecuting && isConnected && isNonDapper && (
+        <div className="w-full rounded-lg bg-white/5 border border-white/10 text-slate-400 font-medium py-3 px-4 text-sm text-center">
+          All items require Dapper Wallet
+        </div>
       )}
 
       {isExecuting && (
@@ -206,6 +296,7 @@ interface CartDrawerProps {
 
 export function CartDrawer({ open, onClose }: CartDrawerProps) {
   const { items, clearCart, removeCompleted, purchaseStatus, isExecuting } = useCart()
+  const { user } = useFlowUser()
   const drawerRef = useRef<HTMLDivElement>(null)
 
   const hasCompletedItems = Object.values(purchaseStatus).some((s) => s === 'success')
@@ -278,7 +369,13 @@ export function CartDrawer({ open, onClose }: CartDrawerProps) {
               <p className="text-slate-500 text-xs mt-1">Add moments from the Sniper or your Wallet</p>
             </div>
           ) : (
-            items.map((item) => <CartRow key={item.listingResourceID} item={item} />)
+            items.map((item) => (
+              <CartRow
+                key={item.listingResourceID}
+                item={item}
+                walletProvider={user.walletProvider}
+              />
+            ))
           )}
         </div>
 
