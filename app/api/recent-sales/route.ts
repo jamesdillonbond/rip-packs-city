@@ -11,12 +11,31 @@ export async function GET(req: NextRequest) {
     parseInt(req.nextUrl.searchParams.get("limit") ?? "15"),
     50
   );
+  const editionKeyParam = req.nextUrl.searchParams.get("editionKey");
 
-  const { data, error } = await supabase
+  // If editionKey is provided, resolve to edition_id first
+  let editionIdFilter: string | null = null;
+  if (editionKeyParam) {
+    const { data: editionRow } = await supabase
+      .from("editions")
+      .select("id")
+      .eq("external_id", editionKeyParam)
+      .limit(1)
+      .maybeSingle();
+    if (editionRow) editionIdFilter = editionRow.id;
+  }
+
+  let query = supabase
     .from("sales")
     .select("serial_number, price_usd, sold_at, marketplace, nft_id, edition_id")
     .order("sold_at", { ascending: false })
     .limit(limit);
+
+  if (editionIdFilter) {
+    query = query.eq("edition_id", editionIdFilter);
+  }
+
+  const { data, error } = await query;
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
