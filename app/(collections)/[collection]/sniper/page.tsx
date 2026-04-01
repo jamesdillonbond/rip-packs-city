@@ -1,7 +1,7 @@
 "use client";
+import OffersTab from "@/components/sniper/OffersTab"
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import OffersTab from "@/components/sniper/OffersTab"
 import { useCart } from "@/lib/cart/CartContext";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -311,6 +311,7 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 
 export default function SniperPage() {
   const [data, setData] = useState<FeedResult | null>(null);
+  const [mode, setMode] = useState<"deals" | "offers">("deals");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(REFRESH_INTERVAL);
@@ -329,7 +330,6 @@ export default function SniperPage() {
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(false);
 
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
-  const [mode, setMode] = useState<"deals" | "offers">("deals");
 
   useEffect(() => {
     let cancelled = false;
@@ -482,7 +482,8 @@ export default function SniperPage() {
             ))}
           </div>
           {mode === "offers" && <OffersTab />}
-          {mode === "deals" && (
+          <div style={mode === "deals" ? {} : {display:"none"}}>
+          {/* Tier tabs */}
           <div className="flex items-center gap-1 mb-4 flex-wrap">
             {TIER_TABS.map((t) => (
               <button
@@ -780,7 +781,7 @@ export default function SniperPage() {
           </div>
         )}
 
-          )}
+          </div>
         {/* Legend */}
         <div className="mt-4 flex items-center gap-4 text-xs text-slate-600 flex-wrap">
           <span className="flex items-center gap-1">
