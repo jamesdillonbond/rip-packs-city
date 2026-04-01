@@ -920,9 +920,9 @@ export async function GET(req: Request) {
             deals: cachedDeals.map(d => {
               const offer = offerMap.get(d.flowId);
               if (offer && offer.amount > 0) {
-                (d as SniperDeal).offerAmount = offer.amount;
+                (d as unknown as SniperDeal).offerAmount = offer.amount;
                 const fmvBase = (offer.fmv ?? d.baseFmv) || 0;
-                (d as SniperDeal).offerFmvPct = fmvBase > 0 ? Math.round((offer.amount / fmvBase) * 1000) / 10 : null;
+                (d as unknown as SniperDeal).offerFmvPct = fmvBase > 0 ? Math.round((offer.amount / fmvBase) * 1000) / 10 : null;
               }
               return d;
             }),
