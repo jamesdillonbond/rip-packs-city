@@ -650,12 +650,12 @@ export async function GET(req: Request) {
 
   let result = await getOrSetCache(cacheKey, CACHE_TTL, async () => {
     return computeSniperFeed({ minDiscount, rarity: effectiveRarity, team, badgeOnly, serialFilter, maxPrice, sortBy });
-  });
+  }) as { count: number; tsCount: number; flowtyCount: number; lastRefreshed: string; deals: SniperDeal[]; cached?: boolean };
 
   // Post-fetch filter: player name (case-insensitive substring match)
   if (player && player.trim()) {
     const playerLower = player.trim().toLowerCase();
-    const filtered = result.deals.filter((d: SniperDeal) =>
+    const filtered = (result.deals as SniperDeal[]).filter((d) =>
       d.playerName.toLowerCase().includes(playerLower)
     );
     result = { ...result, deals: filtered, count: filtered.length };
