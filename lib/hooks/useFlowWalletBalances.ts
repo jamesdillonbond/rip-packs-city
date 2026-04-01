@@ -67,6 +67,9 @@ export function useFlowWalletBalances(): FlowWalletBalances {
   const fetchBalances = useCallback(async () => {
     if (!isFlowWallet || !user.addr) return
 
+    // Capture addr as non-null for TypeScript narrowing inside closures
+    const addr: string = user.addr
+
     setIsLoading(true)
 
     try {
@@ -76,14 +79,14 @@ export function useFlowWalletBalances(): FlowWalletBalances {
         (fcl.query as any)({
           cadence: FLOW_BALANCE_SCRIPT,
           args: (arg: typeof fcl.arg, t: typeof fcl.t) => [
-            arg(user.addr, t.Address),
+            arg(addr, t.Address),
           ],
         }).catch(() => '0.0'),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (fcl.query as any)({
           cadence: USDC_BALANCE_SCRIPT,
           args: (arg: typeof fcl.arg, t: typeof fcl.t) => [
-            arg(user.addr, t.Address),
+            arg(addr, t.Address),
           ],
         }).catch(() => '0.0'),
       ])
