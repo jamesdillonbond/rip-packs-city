@@ -447,10 +447,11 @@ export default function SetsPage() {
         </div>
 
         {loading && (
-          <div style={{ textAlign: "center", padding: "48px 0", color: "#475569", fontSize: 11 }}>
-            <div style={{ width: 28, height: 28, border: "2px solid rgba(249,115,22,0.15)", borderTop: "2px solid #f97316", borderRadius: "50%", margin: "0 auto 10px", animation: "spin 0.7s linear infinite" }} />
-            Fetching wallet data...
-            <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+          <div style={{ padding: "60px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+            {[100, 85, 70, 55, 40].map((w, i) => (
+              <div key={i} className="rpc-skeleton" style={{ width: `${w}%`, maxWidth: 500, height: 14, opacity: 1 - i * 0.15 }} />
+            ))}
+            <p className="rpc-label" style={{ marginTop: 12 }}>SCANNING THE MARKETPLACE&hellip;</p>
           </div>
         )}
 
@@ -516,9 +517,10 @@ export default function SetsPage() {
         )}
 
         {!data && !loading && !error && (
-          <div style={{ textAlign: "center", padding: "60px 0", color: "#1e293b" }}>
-            <div style={{ fontSize: 28, marginBottom: 10 }}>🏀</div>
-            <div style={{ fontSize: 11 }}>Enter a wallet to track set completion</div>
+          <div style={{ padding: "80px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, textAlign: "center" }}>
+            <span style={{ fontSize: 40, opacity: 0.3 }}>◉</span>
+            <p className="rpc-heading" style={{ fontSize: "var(--text-lg)" }}>NO SETS LOADED</p>
+            <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)" }}>Search a wallet to see set completion progress.</p>
           </div>
         )}
       </div>

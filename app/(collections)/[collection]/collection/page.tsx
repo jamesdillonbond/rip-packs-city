@@ -956,7 +956,7 @@ export default function WalletPage() {
 
                 return (
                   <Fragment key={row.momentId}>
-                    <tr className={"border-b border-zinc-800 align-top " + (isLocked ? "opacity-60" : "")}>
+                    <tr className={"border-b border-zinc-800 align-top " + (isLocked ? "opacity-60" : "") + (row.tier?.toUpperCase() === "LEGENDARY" ? " rpc-holo-legendary" : row.tier?.toUpperCase() === "ULTIMATE" ? " rpc-holo-ultimate" : row.tier?.toUpperCase() === "RARE" ? " rpc-holo-rare" : "")}>
                       <td className="p-3">
                         <div className="flex items-start gap-2">
                           <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-zinc-800 bg-black hidden sm:block">

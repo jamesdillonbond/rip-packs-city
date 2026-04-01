@@ -108,14 +108,23 @@ function fmt(n: number, decimals = 2) {
   });
 }
 
-function tierColor(tier: string) {
+function tierColor(tier: string): string {
   switch (tier.toUpperCase()) {
-    case "COMMON":    return "text-slate-400";
-    case "FANDOM":    return "text-green-400";
-    case "RARE":      return "text-blue-400";
-    case "LEGENDARY": return "text-yellow-400";
-    case "ULTIMATE":  return "text-orange-400";
-    default:          return "text-slate-400";
+    case "COMMON":    return "var(--tier-common)";
+    case "FANDOM":    return "var(--tier-fandom)";
+    case "RARE":      return "var(--tier-rare)";
+    case "LEGENDARY": return "var(--tier-legendary)";
+    case "ULTIMATE":  return "var(--tier-ultimate)";
+    default:          return "var(--tier-common)";
+  }
+}
+
+function holoClass(tier: string): string {
+  switch (tier.toUpperCase()) {
+    case "LEGENDARY": return "rpc-holo-legendary";
+    case "ULTIMATE":  return "rpc-holo-ultimate";
+    case "RARE":      return "rpc-holo-rare";
+    default:          return "";
   }
 }
 
@@ -124,7 +133,7 @@ function discountColor(pct: number) {
   if (pct >= 30) return "bg-orange-500/20 text-orange-300 border border-orange-500/40";
   if (pct >= 15) return "bg-yellow-500/20 text-yellow-300 border border-yellow-500/40";
   if (pct >= 5)  return "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
-  return "bg-slate-700/50 text-slate-400 border border-slate-600/40";
+  return "border";
 }
 
 function ConfidenceDot({
@@ -159,22 +168,23 @@ function ConfidenceDot({
     : `${daysSinceSale}d ago`;
 
   const staleColor =
-    daysSinceSale === null || daysSinceSale === undefined ? "text-slate-600"
-    : daysSinceSale <= 3 ? "text-emerald-500/70"
-    : daysSinceSale <= 14 ? "text-yellow-500/70"
-    : "text-red-400/50";
+    daysSinceSale === null || daysSinceSale === undefined ? "var(--rpc-text-ghost)"
+    : daysSinceSale <= 3 ? "var(--rpc-success)"
+    : daysSinceSale <= 14 ? "var(--rpc-warning)"
+    : "var(--rpc-danger)";
 
   return (
     <div className="flex flex-col items-end gap-0.5">
       <span
-        className="inline-flex items-center gap-1 text-xs text-slate-500 cursor-help"
+        className="inline-flex items-center gap-1 cursor-help"
+        style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", letterSpacing: "0.1em", color: "var(--rpc-text-muted)" }}
         title={cfg.tip}
       >
         <span className={`inline-block w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
         {cfg.label}
       </span>
       {staleLabel && (
-        <span className={`text-[10px] ${staleColor}`} title={`Last sale ${staleLabel}`}>
+        <span style={{ fontSize: "var(--text-xs)", color: staleColor }} title={`Last sale ${staleLabel}`}>
           {staleLabel}
         </span>
       )}
@@ -185,7 +195,7 @@ function ConfidenceDot({
 function SerialBadge({ deal }: { deal: SniperDeal }) {
   if (!deal.isSpecialSerial && deal.serialMult <= 1) return null;
   return (
-    <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-xs bg-purple-500/20 text-purple-300 border border-purple-500/30 font-mono">
+    <span className="rpc-chip" style={{ background: "rgba(168,85,247,0.15)", borderColor: "rgba(168,85,247,0.3)", color: "#c084fc" }}>
       {deal.serialSignal ?? `×${deal.serialMult.toFixed(1)}`}
     </span>
   );
@@ -194,15 +204,59 @@ function SerialBadge({ deal }: { deal: SniperDeal }) {
 function SourceBadge({ source }: { source?: "topshot" | "flowty" }) {
   if (source === "flowty") {
     return (
-      <span className="px-1 py-0.5 rounded text-xs bg-blue-500/15 text-blue-400 border border-blue-500/25 font-mono">
+      <span className="rpc-chip" style={{ background: "rgba(59,130,246,0.12)", borderColor: "rgba(59,130,246,0.25)", color: "var(--rpc-info)" }}>
         FLOWTY
       </span>
     );
   }
   return (
-    <span className="px-1 py-0.5 rounded text-xs bg-slate-700/60 text-slate-500 border border-slate-600/30 font-mono">
+    <span className="rpc-chip" style={{ background: "var(--rpc-surface-raised)", color: "var(--rpc-text-muted)" }}>
       TS
     </span>
+  );
+}
+
+function ShareButton({ deal }: { deal: SniperDeal }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleShare() {
+    const url = `https://rip-packs-city.vercel.app/nba-top-shot/sniper?deal=${deal.flowId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  }
+
+  return (
+    <button
+      onClick={handleShare}
+      className="rpc-chip"
+      style={{ position: "relative", padding: "3px 8px" }}
+      title="Copy deal link"
+    >
+      {copied ? "✓ COPIED" : "🔗"}
+      {copied && (
+        <span
+          style={{
+            position: "absolute",
+            bottom: "calc(100% + 4px)",
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "var(--rpc-surface)",
+            border: "1px solid var(--rpc-border)",
+            borderRadius: "var(--radius-sm)",
+            padding: "4px 8px",
+            fontSize: "var(--text-xs)",
+            fontFamily: "var(--font-mono)",
+            color: "var(--rpc-success)",
+            whiteSpace: "nowrap",
+            zIndex: 10,
+          }}
+        >
+          Link copied!
+        </span>
+      )}
+    </button>
   );
 }
 
@@ -251,15 +305,17 @@ function ActionCell({
   if (isOwned) {
     return (
       <div className="flex flex-col items-end gap-1.5">
-        <span className="px-2 py-0.5 rounded text-xs font-semibold bg-slate-700/40 text-slate-500 border border-slate-600/30">
-          ✓ Owned
+        <ShareButton deal={deal} />
+        <span className="rpc-chip" style={{ color: "var(--rpc-text-muted)" }}>
+          ✓ OWNED
         </span>
         <a
           href={deal.buyUrl}
           target="_blank"
           rel="noopener noreferrer"
           onClick={handleBuy}
-          className="px-2 py-0.5 rounded text-xs font-bold transition-all bg-slate-700/40 text-slate-500 border border-slate-600/30 hover:text-slate-300"
+          className="rpc-chip"
+          style={{ color: "var(--rpc-text-muted)", textDecoration: "none" }}
         >
           VIEW →
         </a>
@@ -269,16 +325,17 @@ function ActionCell({
 
   return (
     <div className="flex flex-col items-end gap-1.5">
+      <ShareButton deal={deal} />
       {canCart && (
         <button
           onClick={handleCart}
-          className={`px-2 py-0.5 rounded text-xs font-semibold transition-all ${
-            inCart
-              ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-red-500/20 hover:text-red-300 hover:border-red-500/40"
-              : "bg-slate-700/60 text-slate-300 border border-slate-600/50 hover:bg-emerald-500/20 hover:text-emerald-300 hover:border-emerald-500/40"
-          }`}
+          className="rpc-chip"
+          style={inCart
+            ? { background: "rgba(52,211,153,0.15)", borderColor: "rgba(52,211,153,0.4)", color: "var(--rpc-success)" }
+            : { color: "var(--rpc-text-secondary)" }
+          }
         >
-          {inCart ? "✓ In Cart" : "+ Cart"}
+          {inCart ? "✓ IN CART" : "+ CART"}
         </button>
       )}
       <a
@@ -286,11 +343,11 @@ function ActionCell({
         target="_blank"
         rel="noopener noreferrer"
         onClick={handleBuy}
-        className={`px-2 py-0.5 rounded text-xs font-bold transition-all ${
-          isFlowty
-            ? "bg-blue-600/30 text-blue-300 border border-blue-500/50 hover:bg-blue-600/50"
-            : "border text-[#E03A2F] border-[#E03A2F]/40 bg-[#E03A2F]/10 hover:bg-[#E03A2F]/20"
-        }`}
+        className={isFlowty ? "rpc-chip" : "rpc-btn-ghost"}
+        style={isFlowty
+          ? { background: "rgba(59,130,246,0.15)", borderColor: "rgba(59,130,246,0.4)", color: "var(--rpc-info)", textDecoration: "none", padding: "4px 12px" }
+          : { padding: "4px 12px", textDecoration: "none" }
+        }
       >
         {isFlowty ? "FLOWTY →" : "BUY →"}
       </a>
@@ -426,50 +483,49 @@ export default function SniperPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200">
+    <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
       {/* ── Header ── */}
-      <div className="border-b border-slate-800/60 bg-slate-900/40 px-4 py-4">
-        <div className="max-w-screen-xl mx-auto">
+      <div style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)", padding: "16px" }}>
+        <div style={{ maxWidth: "var(--max-width)", margin: "0 auto" }}>
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                <span className="text-2xl">🎯</span> Sniper
+              <h1 className="rpc-heading flex items-center gap-2" style={{ fontSize: "var(--text-xl)" }}>
+                <span style={{ fontSize: "var(--text-2xl)" }}>⚡</span> SNIPER
               </h1>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Live deals below adjusted FMV — badge-aware, serial-adjusted
+              <p className="rpc-label" style={{ marginTop: 2 }}>
+                LIVE DEALS BELOW ADJUSTED FMV — BADGE-AWARE, SERIAL-ADJUSTED
               </p>
             </div>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${
-                  stats.tsLive
-                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                    : "bg-red-500/10 text-red-400/60 border-red-500/20"
-                }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${stats.tsLive ? "bg-emerald-400 animate-pulse" : "bg-red-400/50"}`} />
-                  TS {stats.tsLive ? `(${data?.tsCount})` : "offline"}
+                <span className="rpc-chip" style={stats.tsLive
+                  ? { background: "rgba(52,211,153,0.08)", borderColor: "rgba(52,211,153,0.3)", color: "var(--rpc-success)" }
+                  : { background: "rgba(248,113,113,0.08)", borderColor: "rgba(248,113,113,0.2)", color: "var(--rpc-danger)" }
+                }>
+                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${stats.tsLive ? "bg-emerald-400 animate-pulse" : "bg-red-400/50"}`} style={{ marginRight: 4 }} />
+                  TS {stats.tsLive ? `(${data?.tsCount})` : "OFFLINE"}
                 </span>
-                <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${
-                  stats.flowtyLive
-                    ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
-                    : "bg-red-500/10 text-red-400/60 border-red-500/20"
-                }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${stats.flowtyLive ? "bg-blue-400 animate-pulse" : "bg-red-400/50"}`} />
-                  Flowty {stats.flowtyLive ? `(${data?.flowtyCount})` : "offline"}
+                <span className="rpc-chip" style={stats.flowtyLive
+                  ? { background: "rgba(59,130,246,0.08)", borderColor: "rgba(59,130,246,0.3)", color: "var(--rpc-info)" }
+                  : { background: "rgba(248,113,113,0.08)", borderColor: "rgba(248,113,113,0.2)", color: "var(--rpc-danger)" }
+                }>
+                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${stats.flowtyLive ? "bg-blue-400 animate-pulse" : "bg-red-400/50"}`} style={{ marginRight: 4 }} />
+                  FLOWTY {stats.flowtyLive ? `(${data?.flowtyCount})` : "OFFLINE"}
                 </span>
               </div>
               <button
                 onClick={() => setPaused((p) => !p)}
-                className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 hover:border-slate-600 text-slate-400 hover:text-slate-200 transition-colors"
+                className="rpc-chip"
               >
-                {paused ? "▶ Resume" : `⏸ ${countdown}s`}
+                {paused ? "▶ RESUME" : `⏸ ${countdown}s`}
               </button>
               <button
                 onClick={() => { fetchFeed(); setCountdown(REFRESH_INTERVAL); }}
                 disabled={loading}
-                className="text-xs px-3 py-1.5 rounded-lg border text-[#E03A2F] border-[#E03A2F]/40 bg-[#E03A2F]/10 hover:bg-[#E03A2F]/20 transition-colors disabled:opacity-50"
+                className="rpc-btn-ghost"
+                style={{ opacity: loading ? 0.5 : 1 }}
               >
-                {loading ? "↻" : "↻ Refresh"}
+                {loading ? "↻" : "↻ REFRESH"}
               </button>
             </div>
           </div>
@@ -478,9 +534,8 @@ export default function SniperPage() {
           <div className="flex items-center gap-2 mb-4">
             {(["deals", "offers"] as const).map((m) => (
               <button key={m} onClick={() => setMode(m)}
-                style={mode === m ? { backgroundColor: "#E03A2F22", color: "#E03A2F", borderColor: "#E03A2F80" } : {}}
-                className={"px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all border " + (mode === m ? "border-transparent" : "bg-slate-800/60 text-slate-400 border-slate-700/50 hover:border-slate-600")}>
-                {m === "deals" ? "⚡ Deals" : "🤝 Offers"}
+                className={`rpc-chip ${mode === m ? "active" : ""}`}>
+                {m === "deals" ? "⚡ DEALS" : "🤝 OFFERS"}
               </button>
             ))}
           </div>
@@ -493,16 +548,8 @@ export default function SniperPage() {
               <button
                 key={t}
                 onClick={() => setTierTab(t)}
-                style={
-                  tierTab === t
-                    ? { backgroundColor: `${ACCENT}22`, color: ACCENT, borderColor: `${ACCENT}80` }
-                    : {}
-                }
-                className={`px-3 py-1 rounded-lg text-xs font-semibold capitalize transition-all border ${
-                  tierTab === t
-                    ? "border-transparent"
-                    : "bg-slate-800/60 text-slate-400 border-slate-700/50 hover:border-slate-600"
-                }`}
+                className={`rpc-chip ${tierTab === t ? "active" : ""}`}
+                style={{ textTransform: "uppercase" }}
               >
                 {t}
               </button>
@@ -510,41 +557,41 @@ export default function SniperPage() {
           </div>
 
           {/* Filters */}
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
             <input
               type="text"
               placeholder="Search player, set, team…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="bg-slate-800/60 border border-slate-700/60 rounded-lg px-3 py-1.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-[#E03A2F]/60 w-52"
+              style={{ background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 12px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", width: 200, outline: "none" }}
             />
-            <label className="flex items-center gap-1.5 text-sm text-slate-400 cursor-pointer select-none">
-              <span>Min discount</span>
+            <label className="flex items-center gap-1.5 cursor-pointer select-none" style={{ color: "var(--rpc-text-muted)" }}>
+              <span>MIN DISC.</span>
               <input
                 type="number"
                 min={0} max={100} step={5}
                 value={minDiscount}
                 onChange={(e) => setMinDiscount(Number(e.target.value))}
                 placeholder="0"
-                className="w-16 bg-slate-800/60 border border-slate-700/60 rounded-lg px-2 py-1.5 text-sm text-slate-200 focus:outline-none"
+                style={{ width: 56, background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 8px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", outline: "none" }}
               />
               <span>%</span>
             </label>
-            <label className="flex items-center gap-1.5 text-sm text-slate-400 cursor-pointer select-none">
-              <span>Max $</span>
+            <label className="flex items-center gap-1.5 cursor-pointer select-none" style={{ color: "var(--rpc-text-muted)" }}>
+              <span>MAX $</span>
               <input
                 type="number"
                 min={0} step={1}
                 value={maxPrice || ""}
                 onChange={(e) => setMaxPrice(Number(e.target.value))}
                 placeholder="any"
-                className="w-20 bg-slate-800/60 border border-slate-700/60 rounded-lg px-2 py-1.5 text-sm text-slate-200 focus:outline-none"
+                style={{ width: 72, background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 8px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", outline: "none" }}
               />
             </label>
             <select
               value={serialFilter}
               onChange={(e) => setSerialFilter(e.target.value)}
-              className="bg-slate-800/60 border border-slate-700/60 rounded-lg px-2 py-1.5 text-sm text-slate-300 focus:outline-none"
+              style={{ background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 8px", color: "var(--rpc-text-secondary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", outline: "none" }}
             >
               <option value="all">All serials</option>
               <option value="special">Special only</option>
@@ -553,31 +600,29 @@ export default function SniperPage() {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as SortOption)}
-              className="bg-slate-800/60 border border-slate-700/60 rounded-lg px-2 py-1.5 text-sm text-slate-300 focus:outline-none"
+              style={{ background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 8px", color: "var(--rpc-text-secondary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", outline: "none" }}
             >
               {SORT_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
-            <label className="flex items-center gap-1.5 text-sm text-slate-400 cursor-pointer select-none">
+            <label className="flex items-center gap-1.5 cursor-pointer select-none" style={{ color: "var(--rpc-text-muted)" }}>
               <input
                 type="checkbox"
                 checked={badgeOnly}
                 onChange={(e) => setBadgeOnly(e.target.checked)}
-                className="rounded border-slate-600 bg-slate-800"
               />
-              Badges only
+              BADGES ONLY
             </label>
-            <label className="flex items-center gap-1.5 text-sm text-slate-400 cursor-pointer select-none">
+            <label className="flex items-center gap-1.5 cursor-pointer select-none" style={{ color: "var(--rpc-text-muted)" }}>
               <input
                 type="checkbox"
                 checked={showVerifiedOnly}
                 onChange={(e) => setShowVerifiedOnly(e.target.checked)}
-                className="rounded border-slate-600 bg-slate-800"
               />
               <span className="inline-flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
-                Verified FMV only
+                VERIFIED FMV ONLY
               </span>
             </label>
           </div>
@@ -587,19 +632,19 @@ export default function SniperPage() {
 
       {mode === "deals" && (<>
       {/* Stats bar */}
-      <div className="border-b border-slate-800/40 bg-slate-900/20 px-4 py-2">
-        <div className="max-w-screen-xl mx-auto flex items-center gap-6 text-xs text-slate-500 flex-wrap">
-          <span><span className="text-slate-300 font-semibold">{stats.total}</span> deals</span>
-          <span><span className="text-red-400 font-semibold">{stats.hot}</span> hot (40%+)</span>
+      <div style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface-raised)", padding: "8px 16px" }}>
+        <div className="rpc-mono flex items-center gap-6 flex-wrap" style={{ maxWidth: "var(--max-width)", margin: "0 auto", color: "var(--rpc-text-muted)" }}>
+          <span><span style={{ color: "var(--rpc-text-primary)", fontWeight: 600 }}>{stats.total}</span> deals</span>
+          <span><span style={{ color: "var(--rpc-danger)", fontWeight: 600 }}>{stats.hot}</span> hot (40%+)</span>
           {stats.badge > 0 && (
-            <span><span className="text-yellow-400 font-semibold">{stats.badge}</span> badged</span>
+            <span><span style={{ color: "var(--tier-legendary)", fontWeight: 600 }}>{stats.badge}</span> badged</span>
           )}
           {stats.special > 0 && (
-            <span><span className="text-purple-400 font-semibold">{stats.special}</span> special serials</span>
+            <span><span style={{ color: "#c084fc", fontWeight: 600 }}>{stats.special}</span> special serials</span>
           )}
-          <span>avg <span className="text-slate-300 font-semibold">{fmt(stats.avgDiscount, 1)}%</span> off</span>
+          <span>avg <span style={{ color: "var(--rpc-text-primary)", fontWeight: 600 }}>{fmt(stats.avgDiscount, 1)}%</span> off</span>
           {connectedWallet && ownedIds.size > 0 && (
-            <span className="text-slate-600">{ownedIds.size} owned moments tracked</span>
+            <span style={{ color: "var(--rpc-text-ghost)" }}>{ownedIds.size} owned moments tracked</span>
           )}
           {data?.lastRefreshed && (
             <span className="ml-auto">
@@ -612,101 +657,115 @@ export default function SniperPage() {
       </div>
 
       {/* Table */}
-      <div className="max-w-screen-xl mx-auto px-4 py-4">
+      <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "16px" }}>
         {error && (
-          <div className="mb-4 rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-400">
-            Feed error: {error}
+          <div className="rpc-hud" style={{ marginBottom: 16, borderColor: "var(--rpc-danger)", color: "var(--rpc-danger)", fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)" }}>
+            FEED ERROR: {error}
           </div>
         )}
 
         {data?.cached && (
-          <div className="mb-4 rounded-lg bg-yellow-500/10 border border-yellow-500/30 px-4 py-3 text-sm text-yellow-400">
-            Live feeds offline — showing cached deals. Prices may be stale.
+          <div className="rpc-hud" style={{ marginBottom: 16, borderColor: "var(--rpc-warning)", color: "var(--rpc-warning)", fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)" }}>
+            LIVE FEEDS OFFLINE — SHOWING CACHED DEALS. PRICES MAY BE STALE.
           </div>
         )}
 
         {loading && !data && (
-          <div className="flex items-center justify-center py-24 text-slate-500 text-sm gap-2">
-            <span className="animate-spin">↻</span> Loading deals…
+          <div style={{ padding: "80px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+            {[100, 85, 70, 55, 40].map((w, i) => (
+              <div key={i} className="rpc-skeleton" style={{ width: `${w}%`, height: 14, opacity: 1 - i * 0.15 }} />
+            ))}
+            <p className="rpc-label" style={{ marginTop: 12 }}>SCANNING THE MARKETPLACE…</p>
           </div>
         )}
 
         {!loading && visibleDeals.length === 0 && data && (
-          <div className="flex flex-col items-center justify-center py-24 text-slate-500 gap-3">
-            <span className="text-3xl opacity-40">🎯</span>
-            <p className="text-sm">No deals match your filters right now.</p>
+          <div style={{ padding: "80px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, textAlign: "center" }}>
+            <svg width="40" height="40" viewBox="0 0 100 100" style={{ opacity: 0.3 }}>
+              <circle cx="50" cy="50" r="46" fill="none" stroke="#E03A2F" strokeWidth="4" />
+              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(0 50 50)" />
+              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(72 50 50)" />
+              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(144 50 50)" />
+              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(216 50 50)" />
+              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(288 50 50)" />
+              <circle cx="50" cy="50" r="7" fill="#080808" />
+            </svg>
+            <p className="rpc-heading" style={{ fontSize: "var(--text-lg)" }}>THE FLOOR IS QUIET</p>
+            <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)" }}>No deals match your filters. Try widening your search.</p>
             <button
               onClick={() => {
                 setTierTab("all"); setMinDiscount(0); setMaxPrice(0);
                 setSerialFilter("all"); setBadgeOnly(false);
                 setShowVerifiedOnly(false); setSearch("");
               }}
-              className="text-xs hover:underline"
-              style={{ color: ACCENT }}
+              className="rpc-btn-ghost" style={{ marginTop: 8 }}
             >
-              Clear filters
+              CLEAR FILTERS
             </button>
           </div>
         )}
 
         {visibleDeals.length > 0 && (
-          <div className="overflow-x-auto rounded-xl border border-slate-800/60">
-            <table className="w-full text-sm">
+          <div className="rpc-card" style={{ overflow: "auto", borderRadius: "var(--radius-md)" }}>
+            <table style={{ width: "100%", fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)", borderCollapse: "collapse" }}>
               <thead>
-                <tr className="border-b border-slate-800/60 bg-slate-900/60">
-                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider w-10" />
-                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Moment</th>
-                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Serial</th>
-                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Ask</th>
-                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Adj. FMV</th>
-                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Discount</th>
-                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">FMV Quality</th>
-                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Src</th>
-                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Action</th>
+                <tr style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)" }}>
+                  <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px", width: 40 }} />
+                  <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px" }}>Moment</th>
+                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Serial</th>
+                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Ask</th>
+                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Adj. FMV</th>
+                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Discount</th>
+                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>FMV Quality</th>
+                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Src</th>
+                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/40">
+              <tbody>
                 {visibleDeals.map((deal) => (
                   <tr
                     key={`${deal.source}-${deal.flowId}-${deal.listingResourceID}`}
-                    className={`hover:bg-slate-800/30 transition-colors ${deal.discount >= 40 ? "bg-red-950/10" : ""}`}
+                    className={holoClass(deal.tier)}
+                    style={{ borderBottom: "1px solid var(--rpc-border)", transition: "background var(--transition-fast)", background: deal.discount >= 40 ? "rgba(224,58,47,0.04)" : "transparent" }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--rpc-surface-hover)"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = deal.discount >= 40 ? "rgba(224,58,47,0.04)" : "transparent"; }}
                   >
                     {/* Thumbnail */}
-                    <td className="px-3 py-2">
+                    <td style={{ padding: "8px 12px" }}>
                       {deal.thumbnailUrl ? (
                         <img
                           src={deal.thumbnailUrl}
                           alt={deal.playerName}
-                          className="w-8 h-8 rounded object-cover"
+                          style={{ width: 32, height: 32, borderRadius: "var(--radius-sm)", objectFit: "cover" }}
                           loading="lazy"
                         />
                       ) : (
-                        <div className="w-8 h-8 rounded bg-slate-800" />
+                        <div style={{ width: 32, height: 32, borderRadius: "var(--radius-sm)", background: "var(--rpc-surface-raised)" }} />
                       )}
                     </td>
 
                     {/* Moment info */}
-                    <td className="px-3 py-2">
-                      <div className="font-semibold text-slate-200 leading-tight">{deal.playerName}</div>
-                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                        <span className={`text-xs font-medium ${tierColor(deal.tier)}`}>
+                    <td style={{ padding: "8px 12px" }}>
+                      <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, color: "var(--rpc-text-primary)", lineHeight: 1.2 }}>{deal.playerName}</div>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)" }}>
+                        <span style={{ color: tierColor(deal.tier), fontWeight: 600 }}>
                           {deal.tier.charAt(0) + deal.tier.slice(1).toLowerCase()}
                         </span>
                         {deal.parallel !== "Base" && (
-                          <span className="text-xs text-slate-500">{deal.parallel}</span>
+                          <span style={{ color: "var(--rpc-text-muted)" }}>{deal.parallel}</span>
                         )}
-                        <span className="text-xs text-slate-600">·</span>
-                        <span className="text-xs text-slate-500">{deal.setName}</span>
+                        <span style={{ color: "var(--rpc-text-ghost)" }}>·</span>
+                        <span style={{ color: "var(--rpc-text-muted)" }}>{deal.setName}</span>
                         {deal.seriesName && (
                           <>
-                            <span className="text-xs text-slate-600">·</span>
-                            <span className="text-xs text-slate-600">{deal.seriesName}</span>
+                            <span style={{ color: "var(--rpc-text-ghost)" }}>·</span>
+                            <span style={{ color: "var(--rpc-text-ghost)" }}>{deal.seriesName}</span>
                           </>
                         )}
                         {deal.teamName && (
                           <>
-                            <span className="text-xs text-slate-600">·</span>
-                            <span className="text-xs text-slate-600">{deal.teamName}</span>
+                            <span style={{ color: "var(--rpc-text-ghost)" }}>·</span>
+                            <span style={{ color: "var(--rpc-text-ghost)" }}>{deal.teamName}</span>
                           </>
                         )}
                       </div>
@@ -738,47 +797,47 @@ export default function SniperPage() {
                     </td>
 
                     {/* Serial */}
-                    <td className="px-3 py-2 text-right">
-                      <div className="font-mono text-slate-300 text-sm">#{deal.serial}</div>
+                    <td style={{ padding: "8px 12px", textAlign: "right" }}>
+                      <div style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)" }}>#{deal.serial}</div>
                       {deal.circulationCount > 0 && (
-                        <div className="text-xs text-slate-600">/ {deal.circulationCount.toLocaleString()}</div>
+                        <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>/ {deal.circulationCount.toLocaleString()}</div>
                       )}
                       {deal.isSpecialSerial && <SerialBadge deal={deal} />}
                     </td>
 
                     {/* Ask */}
-                    <td className="px-3 py-2 text-right font-mono text-slate-200">
+                    <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", color: "var(--rpc-text-primary)" }}>
                       ${fmt(deal.askPrice)}
                     </td>
 
                     {/* Adjusted FMV */}
-                    <td className="px-3 py-2 text-right">
-                      <div className="font-mono text-slate-300 flex items-center justify-end gap-1">
+                    <td style={{ padding: "8px 12px", textAlign: "right" }}>
+                      <div style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
                         ${fmt(deal.adjustedFmv)}
                         {deal.wapUsd !== null && deal.wapUsd > 0 && (() => {
                           const diff = (deal.wapUsd - deal.baseFmv) / deal.baseFmv;
                           if (Math.abs(diff) < 0.1) return null;
                           return diff > 0
-                            ? <span className="text-xs text-emerald-400" title={`WAP $${fmt(deal.wapUsd)} — trending up`}>↑</span>
-                            : <span className="text-xs text-red-400/70" title={`WAP $${fmt(deal.wapUsd)} — trending down`}>↓</span>;
+                            ? <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-success)" }} title={`WAP $${fmt(deal.wapUsd)} — trending up`}>↑</span>
+                            : <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-danger)" }} title={`WAP $${fmt(deal.wapUsd)} — trending down`}>↓</span>;
                         })()}
                       </div>
                       {deal.serialMult > 1 && (
-                        <div className="text-xs text-slate-600">
+                        <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>
                           base ${fmt(deal.baseFmv)} × {deal.serialMult.toFixed(2)}
                         </div>
                       )}
                     </td>
 
                     {/* Discount */}
-                    <td className="px-3 py-2 text-right">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${discountColor(deal.discount)}`}>
+                    <td style={{ padding: "8px 12px", textAlign: "right" }}>
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${discountColor(deal.discount)}`} style={{ fontFamily: "var(--font-mono)" }}>
                         {deal.discount > 0 ? `-${fmt(deal.discount, 1)}%` : "~0%"}
                       </span>
                     </td>
 
                     {/* Confidence + staleness */}
-                    <td className="px-3 py-2 text-right">
+                    <td style={{ padding: "8px 12px", textAlign: "right" }}>
                       <ConfidenceDot
                         confidence={deal.confidence}
                         source={deal.confidenceSource}
@@ -787,12 +846,12 @@ export default function SniperPage() {
                     </td>
 
                     {/* Source */}
-                    <td className="px-3 py-2 text-right">
+                    <td style={{ padding: "8px 12px", textAlign: "right" }}>
                       <SourceBadge source={deal.source} />
                     </td>
 
                     {/* Action */}
-                    <td className="px-3 py-2">
+                    <td style={{ padding: "8px 12px" }}>
                       <ActionCell
                         deal={deal}
                         ownedIds={ownedIds}
@@ -807,7 +866,7 @@ export default function SniperPage() {
         )}
 
         {/* Legend */}
-        <div className="mt-4 flex items-center gap-4 text-xs text-slate-600 flex-wrap">
+        <div className="rpc-mono flex items-center gap-4 flex-wrap" style={{ marginTop: 16, color: "var(--rpc-text-ghost)" }}>
           <span className="flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
             Verified — backed by real sales
@@ -820,9 +879,9 @@ export default function SniperPage() {
             <span className="w-1.5 h-1.5 rounded-full bg-red-400/70 inline-block" />
             Speculative — FMV = ask price fallback
           </span>
-          <span className="flex items-center gap-1 text-emerald-500/50">↑</span>
+          <span style={{ color: "var(--rpc-success)" }}>↑</span>
           <span>WAP trending up &nbsp;</span>
-          <span className="flex items-center gap-1 text-red-400/50">↓</span>
+          <span style={{ color: "var(--rpc-danger)" }}>↓</span>
           <span>WAP trending down</span>
           <span className="ml-auto">Adj. FMV = base FMV × serial multiplier</span>
         </div>
