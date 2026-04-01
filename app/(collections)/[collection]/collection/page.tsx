@@ -1,7 +1,7 @@
 "use client"
 
 import { Fragment, useMemo, useState, useEffect, useCallback, useRef, Suspense } from "react"
-import { useSearchParams } from "next/navigation"
+import { useSearchParams, useRouter } from "next/navigation"
 import {
   normalizeSetName,
   normalizeParallel,
@@ -346,8 +346,9 @@ function EditionRecentSales({ editionKey, mintCount }: { editionKey: string | nu
 function AutoSearchReader(props: { onSearch: (q: string) => void }) {
   const searchParams = useSearchParams()
   useEffect(function() {
-    const q = searchParams.get("q")
-    if (q && q.trim()) props.onSearch(q.trim())
+    // Support both ?address= (preferred) and legacy ?q= param
+    const addr = searchParams.get("address") || searchParams.get("q")
+    if (addr && addr.trim()) props.onSearch(addr.trim())
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   return null
@@ -356,6 +357,7 @@ function AutoSearchReader(props: { onSearch: (q: string) => void }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function WalletPage() {
+  const router = useRouter()
   const [rows, setRows] = useState<MomentRow[]>([])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
@@ -582,6 +584,8 @@ export default function WalletPage() {
   const runSearch = useCallback(async function(query: string) {
     if (!query.trim()) return
     setInput(query.trim())
+    // Persist address in URL for bookmarking and sharing
+    router.replace("?address=" + encodeURIComponent(query.trim()), { scroll: false })
     setLoading(true)
     setError("")
     setRows([])
@@ -632,7 +636,7 @@ export default function WalletPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [router])
 
   async function fetchWalletPage(nextOffset: number, append: boolean) {
     const response = await fetch("/api/wallet-search", {
@@ -1196,6 +1200,15 @@ export default function WalletPage() {
                                   <a href={"/nba-top-shot/sets?wallet=" + encodeURIComponent(input.trim())} className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-400 hover:bg-zinc-900">View Set Progress →</a>
                                 )}
                                 <a href={"/profile?pin=" + row.momentId} className="block rounded-lg border border-yellow-800 bg-yellow-950/30 px-3 py-1.5 text-center text-xs font-semibold text-yellow-400 hover:bg-yellow-950/60">⭐ Pin to Trophy Case</a>
+                                <button
+                                  onClick={function(e) {
+                                    navigator.clipboard.writeText(window.location.href)
+                                    const btn = e.currentTarget
+                                    btn.textContent = "Copied!"
+                                    setTimeout(function() { btn.textContent = "🔗 Share Collection" }, 1500)
+                                  }}
+                                  className="block w-full rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-400 hover:bg-zinc-900"
+                                >🔗 Share Collection</button>
                               </div>
                             </div>
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
