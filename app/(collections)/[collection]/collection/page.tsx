@@ -1153,6 +1153,16 @@ export default function WalletPage() {
                       <td className="p-3">
                         <div className={"font-semibold text-sm " + (fmv.muted ? "text-zinc-500" : "text-white")}>{fmv.text}</div>
                         <div className={"text-[10px] " + conf.color}>{conf.label}</div>
+                        {(function() {
+                          if (row.marketConfidence === "none" || !row.fmv || row.fmv <= 0 || row.lowAsk == null) return null
+                          const delta = ((row.lowAsk - row.fmv) / row.fmv) * 100
+                          if (Math.abs(delta) < 3) return null
+                          return (
+                            <div className={"text-[10px] font-mono " + (delta < 0 ? "text-emerald-400" : "text-red-400")}>
+                              {delta > 0 ? "↑+" : "↓"}{delta.toFixed(0)}%
+                            </div>
+                          )
+                        })()}
                       </td>
                       <td className="p-3 text-sm hidden lg:table-cell">
                         <span className="text-zinc-300">{formatCurrency(row.bestOffer)}</span>
