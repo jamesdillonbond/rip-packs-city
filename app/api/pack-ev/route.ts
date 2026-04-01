@@ -244,6 +244,7 @@ type EditionEV = {
   hasLastMint: boolean
   hasJerseyMatch: boolean
   serialPremiumLabel: string | null
+  priceSource: string
 }
 
 type TierEVSummary = {
@@ -259,14 +260,14 @@ function normalizeTier(tier: string): string {
   return tier.replace("MOMENT_TIER_", "").toLowerCase()
 }
 
-function bestPrice(node: EditionNode, rpcFmv?: number): number {
-  if (rpcFmv && rpcFmv > 0) return rpcFmv
-  if (node.averageSalePrice > 0) return node.averageSalePrice
+function bestPrice(node: EditionNode, rpcFmv?: number): { price: number; priceSource: string } {
+  if (rpcFmv && rpcFmv > 0) return { price: rpcFmv, priceSource: "rpc" }
+  if (node.averageSalePrice > 0) return { price: node.averageSalePrice, priceSource: "pack_wap" }
   const marketAvg = parseFloat(node.edition.marketplaceInfo.averageSaleData.averagePrice)
-  if (marketAvg > 0) return marketAvg
-  if (node.lowAsk > 0) return node.lowAsk * 0.95
-  if (node.lastPurchasePrice > 0) return node.lastPurchasePrice * 0.80
-  return 0
+  if (marketAvg > 0) return { price: marketAvg, priceSource: "market_wap" }
+  if (node.lowAsk > 0) return { price: node.lowAsk * 0.95, priceSource: "ask" }
+  if (node.lastPurchasePrice > 0) return { price: node.lastPurchasePrice * 0.80, priceSource: "last_sale" }
+  return { price: 0, priceSource: "none" }
 }
 
 function serialPremiumLabel(node: EditionNode): string | null {
@@ -499,7 +500,7 @@ export async function POST(req: NextRequest) {
         : null
       const rpcFmv = externalId ? rpcFmvMap.get(externalId) : undefined
       if (rpcFmv && rpcFmv > 0) rpcFmvUsed++
-      const price = bestPrice(node, rpcFmv)
+      const { price, priceSource } = bestPrice(node, rpcFmv)
       const ev = prob * price * 0.95
 
       const circ = node.edition.setPlay?.circulations
@@ -534,6 +535,7 @@ export async function POST(req: NextRequest) {
         hasLastMint: node.lastMint,
         hasJerseyMatch: node.jerseyNumber,
         serialPremiumLabel: serialPremiumLabel(node),
+        priceSource,
       }
     })
 
@@ -597,6 +599,26 @@ export async function POST(req: NextRequest) {
       : fmvCoverage < 50
         ? "Partial FMV coverage (" + fmvCoverage + "%). Some editions use Top Shot marketplace prices instead of RPC FMV."
         : null
+
+    // ── Proactive edition seeding (fire-and-forget) ──────────────────────────
+    const unseeded = editions
+      .filter((n) => {
+        const extId = n.edition.set?.id && n.edition.play?.id
+          ? `${n.edition.set.id}:${n.edition.play.id}`
+          : null
+        return extId && !rpcFmvMap.has(extId)
+      })
+      .map((n) => ({ external_id: `${n.edition.set.id}:${n.edition.play.id}` }))
+
+    if (unseeded.length > 0) {
+      supabaseAdmin
+        .from("editions")
+        .upsert(unseeded, { onConflict: "external_id", ignoreDuplicates: true })
+        .then(({ error }: { error: any }) => {
+          if (error) console.warn(`[pack-ev] Edition seed error: ${error.message}`)
+          else console.log(`[pack-ev] Seeded ${unseeded.length} new editions`)
+        })
+    }
 
     // ── Store in cache ──────────────────────────────────────────────────────
     packCache.set(packListingId, {
