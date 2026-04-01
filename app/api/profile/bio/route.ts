@@ -25,10 +25,10 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ bio: data ?? null });
 }
 
-// POST { ownerKey, displayName, tagline, favoriteTeam, twitter, discord, avatarUrl }
+// POST { ownerKey, displayName, tagline, bio, favoriteTeam, twitter, discord, avatarUrl }
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { ownerKey, displayName, tagline, favoriteTeam, twitter, discord, avatarUrl } = body;
+  const { ownerKey, displayName, tagline, bio, favoriteTeam, twitter, discord, avatarUrl } = body;
 
   if (!ownerKey) return NextResponse.json({ error: "ownerKey required" }, { status: 400 });
 
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     .upsert({
       owner_key: ownerKey,
       display_name: displayName ?? null,
-      tagline: tagline ?? null,
+      tagline: bio ?? tagline ?? null,
       favorite_team: favoriteTeam ?? null,
       twitter: twitter ?? null,
       discord: discord ?? null,
