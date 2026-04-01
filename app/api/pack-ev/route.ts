@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { createClient } from "@supabase/supabase-js"
 
 const TOPSHOT_GRAPHQL = "https://public-api.nbatopshot.com/graphql"
 
@@ -8,6 +9,11 @@ const GRAPHQL_HEADERS = {
   "Origin": "https://nbatopshot.com",
   "Referer": "https://nbatopshot.com/",
 }
+
+const supabaseAdmin: any = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 // ─── Cache ───────────────────────────────────────────────────────────────────
 
@@ -251,12 +257,13 @@ function normalizeTier(tier: string): string {
   return tier.replace("MOMENT_TIER_", "").toLowerCase()
 }
 
-function bestPrice(node: EditionNode): number {
+function bestPrice(node: EditionNode, rpcFmv?: number): number {
+  if (rpcFmv && rpcFmv > 0) return rpcFmv
   if (node.averageSalePrice > 0) return node.averageSalePrice
   const marketAvg = parseFloat(node.edition.marketplaceInfo.averageSaleData.averagePrice)
   if (marketAvg > 0) return marketAvg
-  if (node.lowAsk > 0) return node.lowAsk
-  if (node.lastPurchasePrice > 0) return node.lastPurchasePrice
+  if (node.lowAsk > 0) return node.lowAsk * 0.95
+  if (node.lastPurchasePrice > 0) return node.lastPurchasePrice * 0.80
   return 0
 }
 
@@ -312,6 +319,61 @@ async function fetchAllEditions(packListingId: string): Promise<EditionNode[]> {
   }
 
   return allEditions
+}
+
+// ─── RPC FMV lookup ─────────────────────────────────────────────────────────
+
+async function fetchRpcFmvMap(editions: EditionNode[]): Promise<Map<string, number>> {
+  const fmvMap = new Map<string, number>()
+  try {
+    // Build external IDs from edition set.id + play.id
+    const externalIds = editions
+      .map((n) => n.edition.set?.id && n.edition.play?.id ? `${n.edition.set.id}:${n.edition.play.id}` : null)
+      .filter((id): id is string => id !== null)
+
+    if (externalIds.length === 0) return fmvMap
+
+    const uniqueIds = [...new Set(externalIds)]
+
+    // Look up edition rows by external_id
+    const { data: editionRows } = await supabaseAdmin
+      .from("editions")
+      .select("id, external_id")
+      .in("external_id", uniqueIds)
+
+    if (!editionRows || editionRows.length === 0) return fmvMap
+
+    const editionIdToExternal = new Map<string, string>()
+    for (const row of editionRows) {
+      editionIdToExternal.set(row.id, row.external_id)
+    }
+
+    // Get latest fmv_snapshots for these edition_ids
+    const editionDbIds = editionRows.map((r: any) => r.id)
+    const { data: snapshots } = await supabaseAdmin
+      .from("fmv_snapshots")
+      .select("edition_id, fmv_usd, computed_at")
+      .in("edition_id", editionDbIds)
+      .order("computed_at", { ascending: false })
+
+    if (!snapshots || snapshots.length === 0) return fmvMap
+
+    // Keep only the most recent snapshot per edition_id
+    const seen = new Set<string>()
+    for (const snap of snapshots) {
+      if (seen.has(snap.edition_id)) continue
+      seen.add(snap.edition_id)
+      const extId = editionIdToExternal.get(snap.edition_id)
+      if (extId && typeof snap.fmv_usd === "number" && snap.fmv_usd > 0) {
+        fmvMap.set(extId, snap.fmv_usd)
+      }
+    }
+
+    console.log(`[pack-ev] RPC FMV: ${fmvMap.size}/${uniqueIds.length} editions matched`)
+  } catch (err) {
+    console.warn(`[pack-ev] RPC FMV lookup failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  return fmvMap
 }
 
 // ─── Main handler ────────────────────────────────────────────────────────────
@@ -400,22 +462,40 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // ── Handle bundle/case packs with 0 editions ────────────────────────────
+    if (editions.length === 0) {
+      console.warn(`[pack-ev] No editions for ${packListingId} — likely a bundle/case pack`)
+      return NextResponse.json({
+        error: "bundle_not_supported",
+        message: "Bundle and case packs are not yet supported for EV analysis.",
+      }, { status: 200 })
+    }
+
     const contentRemaining = dynamicData?.getPackListing?.data?.packListingContentRemaining
     const totalUnopened: number = contentRemaining?.unopened ?? 0
     const remainingByTier: TierCounts = contentRemaining?.remainingByTier ?? {} as TierCounts
     const originalByTier: TierCounts = contentRemaining?.originalCountsByTier ?? {} as TierCounts
 
-    if (totalUnopened === 0 || editions.length === 0) {
-      console.warn(`[pack-ev] No data: unopened=${totalUnopened} editions=${editions.length} for ${packListingId}`)
+    if (totalUnopened === 0) {
+      console.warn(`[pack-ev] No unopened packs for ${packListingId}`)
       return NextResponse.json({ error: "No pack data available" }, { status: 404 })
     }
 
-    console.log(`[pack-ev] Computing EV: ${editions.length} editions, ${totalUnopened} unopened`)
+    // ── Fetch RPC FMV data ─────────────────────────────────────────────────
+    const rpcFmvMap = await fetchRpcFmvMap(editions)
+
+    console.log(`[pack-ev] Computing EV: ${editions.length} editions, ${totalUnopened} unopened, ${rpcFmvMap.size} RPC FMVs`)
 
     // ── Compute EV per edition ──────────────────────────────────────────────
+    let rpcFmvUsed = 0
     const editionEVs: EditionEV[] = editions.map((node) => {
       const prob = totalUnopened > 0 ? node.remaining / totalUnopened : 0
-      const price = bestPrice(node)
+      const externalId = node.edition.set?.id && node.edition.play?.id
+        ? `${node.edition.set.id}:${node.edition.play.id}`
+        : null
+      const rpcFmv = externalId ? rpcFmvMap.get(externalId) : undefined
+      if (rpcFmv && rpcFmv > 0) rpcFmvUsed++
+      const price = bestPrice(node, rpcFmv)
       const ev = prob * price * 0.95
 
       const circ = node.edition.setPlay?.circulations
@@ -516,7 +596,12 @@ export async function POST(req: NextRequest) {
       expiresAt: Date.now() + CACHE_TTL_MS,
     })
 
-    console.log(`[pack-ev] Done: grossEV=${grossEV} packEV=${packEV} editions=${editionEVs.length}`)
+    const fmvCoverage = editionEVs.length > 0
+      ? Math.round((rpcFmvUsed / editionEVs.length) * 100)
+      : 0
+    const fmvSource = rpcFmvUsed > 0 ? "rpc" : "topshot"
+
+    console.log(`[pack-ev] Done: grossEV=${grossEV} packEV=${packEV} editions=${editionEVs.length} fmvSource=${fmvSource} fmvCoverage=${fmvCoverage}%`)
 
     return NextResponse.json({
       packListingId,
@@ -534,8 +619,10 @@ export async function POST(req: NextRequest) {
       tierBreakdown,
       supplySnapshot,
       editionCount: editionEVs.length,
+      fmvSource,
+      fmvCoverage,
       cached: false,
-      methodology: "EV = Σ(remaining_i / total_unopened × avg_sale_price_i × 0.95) − pack_price",
+      methodology: "EV = Σ(remaining_i / total_unopened × best_price_i × 0.95) − pack_price. best_price prefers RPC FMV when available.",
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
