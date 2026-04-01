@@ -1,6 +1,10 @@
 import { useCallback } from 'react'
 import * as fcl from '@onflow/fcl'
 import { useCart, CartItem, PurchaseStatus } from './CartContext'
+import {
+  PURCHASE_MOMENT_FLOW_WALLET_CADENCE,
+  PAYMENT_TOKEN_TO_VAULT,
+} from '@/lib/cadence/purchase-moment-flow-wallet'
 
 const DAPPER_MERCHANT_ADDRESS = '0xc1e4f4f4c4257510'
 const TX_DELAY_MS = 300
@@ -122,6 +126,11 @@ function classifyError(err: unknown): PurchaseStatus {
   return 'failed'
 }
 
+// Returns true if this cart item should use the Flow Wallet (single-signer) path
+function isFlowWalletItem(item: CartItem): boolean {
+  return item.paymentToken === 'FLOW' || item.paymentToken === 'USDC_E'
+}
+
 // FCL's published types don't always match the actual runtime shape.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const fclAuthz = fcl.authz as any
@@ -152,21 +161,45 @@ export function usePurchaseQueue() {
         try {
           const priceFixed = item.expectedPrice.toFixed(8)
 
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const txId: string = await (fcl.mutate as any)({
-            cadence: PURCHASE_MOMENT_CADENCE,
-            args: (arg: typeof fcl.arg, t: typeof fcl.t) => [
-              arg(DAPPER_MERCHANT_ADDRESS, t.Address),
-              arg(item.storefrontAddress, t.Address),
-              arg(item.listingResourceID, t.UInt64),
-              arg(priceFixed, t.UFix64),
-              arg(item.commissionRecipient, t.Optional(t.Address)),
-            ],
-            proposer: fclAuthz,
-            payer: fclAuthz,
-            authorizations: [fclAuthz],
-            limit: 1000,
-          })
+          let txId: string
+
+          if (isFlowWalletItem(item)) {
+            // Flow Wallet path — single signer, FLOW or USDCFlow payment
+            const vaultType = PAYMENT_TOKEN_TO_VAULT[item.paymentToken]
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            txId = await (fcl.mutate as any)({
+              cadence: PURCHASE_MOMENT_FLOW_WALLET_CADENCE,
+              args: (arg: typeof fcl.arg, t: typeof fcl.t) => [
+                arg(item.storefrontAddress, t.Address),
+                arg(item.listingResourceID, t.UInt64),
+                arg(priceFixed, t.UFix64),
+                arg(vaultType, t.String),
+                arg(item.commissionRecipient, t.Optional(t.Address)),
+              ],
+              proposer: fclAuthz,
+              payer: fclAuthz,
+              authorizations: [fclAuthz],
+              limit: 1000,
+            })
+          } else {
+            // Dapper Wallet path — DUC / FUT payment with merchant co-signer
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            txId = await (fcl.mutate as any)({
+              cadence: PURCHASE_MOMENT_CADENCE,
+              args: (arg: typeof fcl.arg, t: typeof fcl.t) => [
+                arg(DAPPER_MERCHANT_ADDRESS, t.Address),
+                arg(item.storefrontAddress, t.Address),
+                arg(item.listingResourceID, t.UInt64),
+                arg(priceFixed, t.UFix64),
+                arg(item.commissionRecipient, t.Optional(t.Address)),
+              ],
+              proposer: fclAuthz,
+              payer: fclAuthz,
+              authorizations: [fclAuthz],
+              limit: 1000,
+            })
+          }
 
           await fcl.tx(txId).onceExecuted()
 

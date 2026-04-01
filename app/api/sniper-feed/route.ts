@@ -94,6 +94,7 @@ export interface SniperDeal {
   listingOrderID: string | null;
   storefrontAddress: string | null;
   source: "topshot" | "flowty";
+  paymentToken: "DUC" | "FUT" | "FLOW" | "USDC_E";
   offerAmount: number | null;
   offerFmvPct: number | null;
 }
@@ -297,6 +298,14 @@ async function fetchTopShotPool(): Promise<{ listings: RawListing[]; tsCount: nu
 
 // ─── Flowty helpers ───────────────────────────────────────────────────────────
 
+// Vault type → short payment token mapping for Flowty listings
+const VAULT_TO_PAYMENT_TOKEN: Record<string, "DUC" | "FUT" | "FLOW" | "USDC_E"> = {
+  "A.ead892083b3e2c6c.DapperUtilityCoin.Vault": "DUC",
+  "A.609e10301860b683.FlowUtilityToken.Vault": "FUT",
+  "A.7e60df042a9c0868.FlowToken.Vault": "FLOW",
+  "A.f1ab99c82dee3526.USDCFlow.Vault": "USDC_E",
+};
+
 interface FlowtyOrder {
   listingResourceID: string;
   storefrontAddress: string;
@@ -304,6 +313,7 @@ interface FlowtyOrder {
   salePrice: number;
   blockTimestamp: number;
   state?: string;
+  salePaymentVaultType?: string;
 }
 
 interface FlowtyNftItem {
@@ -330,6 +340,7 @@ interface FlowtyListing {
   seriesNumber: number;
   subeditionId: number;
   isLocked: boolean;
+  paymentToken: "DUC" | "FUT" | "FLOW" | "USDC_E";
 }
 
 // Multi-key trait lookup: tries each key name variant in order
@@ -400,6 +411,9 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
       const livetokenFmv = item.valuations?.blended?.usdValue ?? item.valuations?.livetoken?.usdValue ?? null;
       if (!livetokenFmv || livetokenFmv <= 0) { nullFmvCount++; }
 
+      // Normalize vault type to short payment token enum
+      const paymentToken = VAULT_TO_PAYMENT_TOKEN[order.salePaymentVaultType ?? ""] ?? "DUC";
+
       listings.push({
         momentId: String(item.id),
         listingResourceID: order.listingResourceID,
@@ -416,6 +430,7 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
         seriesNumber: parseInt(getTraitMulti(traits, FLOWTY_TRAIT_MAP.seriesNumber) || "0", 10),
         subeditionId: subStr ? parseInt(subStr, 10) || 0 : 0,
         isLocked: getTraitMulti(traits, FLOWTY_TRAIT_MAP.locked) === "true",
+        paymentToken,
       });
     }
     if (nullFmvCount > 0) {
@@ -788,6 +803,7 @@ async function computeSniperFeed(opts: {
       listingOrderID: l.listingOrderID ?? null,
       storefrontAddress: l.sellerAddress ?? null,
       source: "topshot",
+      paymentToken: "DUC",
       offerAmount: null,
       offerFmvPct: null,
     });
@@ -919,6 +935,7 @@ async function computeSniperFeed(opts: {
       listingOrderID: null,
       storefrontAddress: item.storefrontAddress,
       source: "flowty",
+      paymentToken: item.paymentToken,
       offerAmount: null,
       offerFmvPct: null,
     });
@@ -1025,6 +1042,7 @@ async function computeSniperFeed(opts: {
             listingOrderID: r.listing_order_id || null,
             storefrontAddress: r.storefront_address || null,
             source: (r.source || "flowty"),
+            paymentToken: (r.payment_token || "DUC") as "DUC" | "FUT" | "FLOW" | "USDC_E",
             offerAmount: null as number | null,
             offerFmvPct: null as number | null,
           };

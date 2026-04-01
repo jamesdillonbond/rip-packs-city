@@ -29,6 +29,7 @@ export interface CartItem {
   thumbnailUrl: string | null
   fmv: number | null          // FMV at time of add — informational only
   source: 'sniper' | 'wallet' | 'sets' | 'marketplace'
+  paymentToken: 'DUC' | 'FUT' | 'FLOW' | 'USDC_E'
 
   // Cart bookkeeping
   addedAt: number             // Date.now()
