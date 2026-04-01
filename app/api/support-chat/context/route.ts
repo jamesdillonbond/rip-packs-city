@@ -1,155 +1,192 @@
+// app/api/support-chat/context/route.ts
+// Provides pre-load context for the chat widget on open.
+// Returns: dailyDeal, marketPulse, returningUser, lastTopics for session continuity.
+
 import { NextRequest, NextResponse } from "next/server";
-
-/* ------------------------------------------------------------------ */
-/*  GET /api/support-chat/context                                      */
-/*  Query: sessionId, pageContext                                      */
-/*  Returns: { dailyDeal?, marketPulse?, returningUser?, lastTopics?,  */
-/*             pageWelcome?, pageSuggestions? }                         */
-/* ------------------------------------------------------------------ */
-
 import { createClient } from "@supabase/supabase-js";
+
+export const maxDuration = 10;
+export const revalidate = 300; // cache 5 min
+
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-function apiUrl(path: string) {
-  if (path.startsWith("http")) return path;
-  const base =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    (process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : "https://rip-packs-city.vercel.app");
-  return `${base}${path}`;
+function tierLabel(raw: string): string {
+  return (
+    raw.replace("MOMENT_TIER_", "").charAt(0).toUpperCase() +
+    raw.replace("MOMENT_TIER_", "").slice(1).toLowerCase()
+  );
 }
 
-// ── Page-specific welcome messages and quick action suggestions ───
-const PAGE_WELCOMES: Record<string, { welcome: string; suggestions: string[] }> = {
-  sniper: {
-    welcome: "Looking for a deal? Tell me a player, budget, or tier and I'll search the live feed for you.",
-    suggestions: ["Best deals right now", "Rare moments under $20", "Find me a LeBron deal", "What badges are hot?"],
-  },
-  badges: {
-    welcome: "Want to know which badges are most valuable, or check what badges a specific player has? I can look it up.",
-    suggestions: ["Most valuable badges?", "Rookie Year moments under $15", "Check badges for Wembanyama", "What is Top Shot Debut?"],
-  },
-  wallet: {
-    welcome: "I can help analyze your collection — find undervalued moments, suggest what to sell, or check set completion.",
-    suggestions: ["Analyze my portfolio", "What should I sell?", "My most undervalued moment?", "What sets am I close to completing?"],
-  },
-  sets: {
-    welcome: "Looking to complete a set or find the cheapest missing pieces? I can help with that.",
-    suggestions: ["Cheapest set to complete?", "What's in Run It Back?", "Best investment sets?", "Show me S8 sets"],
-  },
-  packs: {
-    welcome: "Curious about pack value? I can explain expected value calculations and help you decide if a pack is worth it.",
-    suggestions: ["Are packs worth buying?", "How does Pack EV work?", "Best value pack right now?", "What's inside the latest drop?"],
-  },
-  collection: {
-    welcome: "I can help you explore your collection, find deals, or answer any questions about the platform.",
-    suggestions: ["Find me deals under $10", "How is FMV calculated?", "What are badges?", "Show me top discounts"],
-  },
-  overview: {
-    welcome: "I can help you find deals, check FMV on any moment, or answer questions about the platform.",
-    suggestions: ["Find me deals under $10", "How does the sniper work?", "What are badges?", "Best Rare moments right now"],
-  },
-};
-
-const DEFAULT_PAGE = {
-  welcome: "I can help you find deals, check FMV on any moment, or answer questions about the platform.",
-  suggestions: ["Find me deals under $10", "How is FMV calculated?", "What are badges?", "Show me top discounts"],
-};
+function seriesLabel(n: number): string {
+  const map: Record<number, string> = {
+    0: "Beta", 1: "S1", 2: "S2", 3: "S3", 4: "S4",
+    5: "S5", 6: "S6", 7: "S7", 8: "S8",
+  };
+  return map[n] ?? `S${n}`;
+}
 
 export async function GET(req: NextRequest) {
-  const sessionId = req.nextUrl.searchParams.get("sessionId") || "";
-  const pageContext = req.nextUrl.searchParams.get("pageContext") || "";
+  const sessionId = req.nextUrl.searchParams.get("sessionId");
 
-  // Extract page name from pageContext like "sniper (nba-top-shot)"
-  const pageName = pageContext.split("(")[0].trim().toLowerCase();
+  // ── 1. Returning user detection ────────────────────────────────────────────
+  let returningUser = false;
+  let lastTopics: string[] = [];
+  let lastPlayerSearched: string | null = null;
+  let conversationCount = 0;
 
-  const result: {
-    dailyDeal: any | null;
-    marketPulse: string | null;
-    returningUser: boolean;
-    lastTopics: string[];
-    pageWelcome: string;
-    pageSuggestions: string[];
-  } = {
-    dailyDeal: null,
-    marketPulse: null,
-    returningUser: false,
-    lastTopics: [],
-    pageWelcome: (PAGE_WELCOMES[pageName] || DEFAULT_PAGE).welcome,
-    pageSuggestions: (PAGE_WELCOMES[pageName] || DEFAULT_PAGE).suggestions,
-  };
+  if (sessionId) {
+    const { data: session } = await supabase
+      .from("chat_sessions")
+      .select("last_topics, last_player_searched, conversation_count, last_seen_at")
+      .eq("session_id", sessionId)
+      .maybeSingle();
 
-  try {
-    // ── 1. Daily Deal ─────────────────────────────────────────
-    const sniperRes = await fetch(
-      apiUrl("/api/sniper-feed?rarity=all"),
-      { headers: { "User-Agent": "rpc-context/1.0" } }
-    );
+    if (session) {
+      returningUser = true;
+      lastTopics = session.last_topics ?? [];
+      lastPlayerSearched = session.last_player_searched ?? null;
+      conversationCount = session.conversation_count ?? 1;
 
-    if (sniperRes.ok) {
-      const sniperData = await sniperRes.json();
-      const deals = Array.isArray(sniperData)
-        ? sniperData
-        : sniperData.deals || [];
-
-      const bestDeal = deals
-        .filter((d: any) => (d.discountPct ?? d.discount_pct ?? 0) > 10)
-        .sort(
-          (a: any, b: any) =>
-            (b.discountPct ?? b.discount_pct ?? 0) -
-            (a.discountPct ?? a.discount_pct ?? 0)
-        )[0];
-
-      if (bestDeal) {
-        result.dailyDeal = {
-          playerName: bestDeal.playerName || bestDeal.player_name,
-          setName: bestDeal.setName || bestDeal.set_name,
-          tier: bestDeal.tier || bestDeal.rarity,
-          price: bestDeal.price,
-          fmv: bestDeal.fmv,
-          discountPct: bestDeal.discountPct ?? bestDeal.discount_pct,
-          source: bestDeal.source,
-          buyUrl: bestDeal.buyUrl ?? bestDeal.buy_url ?? bestDeal.purchaseURL,
-        };
-      }
-
-      const hotDeals = deals.filter(
-        (d: any) => (d.discountPct ?? d.discount_pct ?? 0) >= 20
-      ).length;
-
-      if (hotDeals > 0) {
-        result.marketPulse = `${hotDeals} moment${hotDeals > 1 ? "s" : ""} listed 20%+ below FMV right now`;
-      }
+      await supabase
+        .from("chat_sessions")
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq("session_id", sessionId);
+    } else {
+      await supabase.from("chat_sessions").upsert(
+        {
+          session_id: sessionId,
+          last_seen_at: new Date().toISOString(),
+          first_seen_at: new Date().toISOString(),
+          conversation_count: 1,
+        },
+        { onConflict: "session_id" }
+      );
     }
-
-    // ── 2. Returning User ─────────────────────────────────────
-    if (sessionId) {
-      const { data: prevSessions } = await supabase
-        .from("support_conversations")
-        .select("session_id, category, user_message")
-        .neq("session_id", sessionId)
-        .order("created_at", { ascending: false })
-        .limit(20);
-
-      if (prevSessions && prevSessions.length > 0) {
-        result.returningUser = true;
-        const categories: string[] = [
-          ...new Set<string>(
-            prevSessions
-              .map((r: any) => r.category as string)
-              .filter((c: string) => c && c !== "general")
-          ),
-        ];
-        result.lastTopics = categories.slice(0, 3);
-      }
-    }
-  } catch (err: any) {
-    console.error("Support context error:", err?.message || err);
   }
 
-  return NextResponse.json(result);
+  // ── 2. Daily deal ──────────────────────────────────────────────────────────
+  let dailyDeal: object | null = null;
+  try {
+    const { data: dealRows } = await supabase
+      .from("badge_editions")
+      .select(
+        `
+        player_name, team, tier, set_name, series_number,
+        low_ask, circulation_count, play_tags,
+        editions!inner(
+          external_id,
+          fmv_snapshots!inner(fmv_usd, confidence)
+        )
+      `
+      )
+      .eq("parallel_id", 0)
+      .eq("flow_retired", false)
+      .not("low_ask", "is", null)
+      .gt("low_ask", 0)
+      .lte("low_ask", 50)
+      .limit(200);
+
+    if (dealRows && dealRows.length > 0) {
+      const scored = dealRows
+        .map((be: any) => {
+          const fmv = parseFloat(be.editions?.[0]?.fmv_snapshots?.[0]?.fmv_usd ?? "0");
+          const confidence = be.editions?.[0]?.fmv_snapshots?.[0]?.confidence ?? "LOW";
+          const ask = parseFloat(be.low_ask);
+          if (!fmv || ask <= 0) return null;
+          const discount = ((fmv - ask) / fmv) * 100;
+          if (discount < 10) return null;
+          const badges: string[] = Array.isArray(be.play_tags)
+            ? be.play_tags.map((t: any) => t.title).filter(Boolean)
+            : [];
+          const score =
+            discount +
+            (badges.length > 0 ? 10 : 0) +
+            (confidence === "HIGH" ? 5 : confidence === "MEDIUM" ? 2 : 0);
+          return {
+            player_name: be.player_name,
+            team: be.team,
+            tier: tierLabel(be.tier),
+            set_name: be.set_name,
+            series: seriesLabel(be.series_number),
+            low_ask: ask,
+            fmv,
+            discount_pct: Math.round(discount),
+            badges,
+            confidence,
+            score,
+          };
+        })
+        .filter(Boolean)
+        .sort((a: any, b: any) => b.score - a.score);
+
+      if (scored.length > 0) dailyDeal = scored[0];
+    }
+  } catch (err) {
+    console.error("[context] dailyDeal error:", err);
+  }
+
+  // ── 3. Market pulse ────────────────────────────────────────────────────────
+  let marketPulse: string | null = null;
+  try {
+    const { data: pulseRows } = await supabase
+      .from("badge_editions")
+      .select(`low_ask, editions!inner(fmv_snapshots!inner(fmv_usd))`)
+      .eq("parallel_id", 0)
+      .eq("flow_retired", false)
+      .not("low_ask", "is", null)
+      .gt("low_ask", 0)
+      .limit(500);
+
+    if (pulseRows && pulseRows.length > 0) {
+      let dealsBelow20 = 0;
+      let dealsBelow30 = 0;
+      pulseRows.forEach((be: any) => {
+        const fmv = parseFloat(be.editions?.[0]?.fmv_snapshots?.[0]?.fmv_usd ?? "0");
+        const ask = parseFloat(be.low_ask);
+        if (!fmv || ask <= 0) return;
+        const disc = ((fmv - ask) / fmv) * 100;
+        if (disc >= 20) dealsBelow20++;
+        if (disc >= 30) dealsBelow30++;
+      });
+      if (dealsBelow30 > 0) {
+        marketPulse = `${dealsBelow30} moment${dealsBelow30 !== 1 ? "s" : ""} listed 30%+ below FMV right now`;
+      } else if (dealsBelow20 > 0) {
+        marketPulse = `${dealsBelow20} moment${dealsBelow20 !== 1 ? "s" : ""} listed 20%+ below FMV right now`;
+      } else {
+        marketPulse = `${pulseRows.length} moments tracked — FMV data fresh`;
+      }
+    }
+  } catch (err) {
+    console.error("[context] marketPulse error:", err);
+  }
+
+  // ── 4. Welcome message ─────────────────────────────────────────────────────
+  let pageWelcome = "I can help you find deals, check FMV on any moment, or answer questions about the platform.";
+  if (returningUser && lastPlayerSearched) {
+    pageWelcome = `Welcome back! Last time you were looking at ${lastPlayerSearched} moments — want me to check for new deals?`;
+  } else if (returningUser) {
+    pageWelcome = "Welcome back! Want me to surface today's best deals, or is there something specific you're hunting?";
+  } else if (dailyDeal) {
+    const d = dailyDeal as any;
+    pageWelcome = `\u{1F44B} Today's top deal: ${d.player_name} ${d.set_name}, $${d.low_ask} — ${d.discount_pct}% below FMV. Want me to find more?`;
+  }
+
+  const suggestions =
+    returningUser && lastPlayerSearched
+      ? [`Find me ${lastPlayerSearched} deals`, "Show top discounts right now", "How is FMV calculated?", "What are badges?"]
+      : ["Find me deals under $10", "Show top discounts right now", "How is FMV calculated?", "What are badges?"];
+
+  return NextResponse.json({
+    dailyDeal,
+    marketPulse,
+    returningUser,
+    conversationCount,
+    lastTopics,
+    lastPlayerSearched,
+    pageWelcome,
+    pageSuggestions: suggestions,
+  });
 }
