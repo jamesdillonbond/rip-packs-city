@@ -368,6 +368,8 @@ export default function WalletPage() {
   const [offset, setOffset] = useState(0)
   const [showDebug, setShowDebug] = useState(false)
   const [badgeFilter, setBadgeFilter] = useState(false)
+  const [offerFilter, setOfferFilter] = useState(false)
+  const [listedFilter, setListedFilter] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
   const [ownerKey, setOwnerKey] = useState("")
   const [sealedPackCount, setSealedPackCount] = useState<number | null>(null)
@@ -382,7 +384,7 @@ export default function WalletPage() {
   const [parallelFilter, setParallelFilter] = useState("all")
   const [lockedFilter, setLockedFilter] = useState("all")
   const [searchWithin, setSearchWithin] = useState("")
-  const [sortKey, setSortKey] = useState<SortKey>("acquired")
+  const [sortKey, setSortKey] = useState<SortKey>("fmv")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
 
   useEffect(function() {
@@ -763,7 +765,9 @@ export default function WalletPage() {
       if (parallelFilter !== "all" && parallel !== parallelFilter) return false
       if (lockedFilter === "locked" && !getLocked(r)) return false
       if (lockedFilter === "unlocked" && getLocked(r)) return false
-      if (badgeFilter && !r.badgeInfo?.badge_score) return false
+      if (badgeFilter && !(r.badgeInfo?.badge_score || (r.officialBadges && r.officialBadges.length > 0))) return false
+      if (offerFilter && !(typeof r.bestOffer === "number" && r.bestOffer > 0)) return false
+      if (listedFilter && r.lowAsk == null) return false
       if (q) {
         const haystack = [r.playerName, r.team ?? "", r.league ?? "", r.series ?? "", r.setName, parallel, r.tier ?? "", ...(r.officialBadges ?? []), ...(r.badgeInfo?.badge_titles ?? []), ...getTraits(r)].join(" ").toLowerCase()
         if (!haystack.includes(q)) return false
@@ -797,7 +801,7 @@ export default function WalletPage() {
       return sortDirection === "asc" ? result : -result
     })
     return filtered
-  }, [rows, searchWithin, teamFilter, leagueFilter, rarityFilter, parallelFilter, lockedFilter, badgeFilter, sortKey, sortDirection, batchEditionStats])
+  }, [rows, searchWithin, teamFilter, leagueFilter, rarityFilter, parallelFilter, lockedFilter, badgeFilter, offerFilter, listedFilter, sortKey, sortDirection, batchEditionStats])
 
   const totals = useMemo(function() {
     let totalFmv = 0, totalBestOffer = 0, lockedFmv = 0, unlockedFmv = 0
@@ -1021,11 +1025,28 @@ export default function WalletPage() {
               </button>
             )
           })}
+          <span className="shrink-0 w-px bg-zinc-800 mx-1" />
+          <button onClick={function() { setBadgeFilter(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (badgeFilter ? "border-blue-600 text-blue-400 bg-blue-950/30" : "border-zinc-600 text-zinc-400 hover:bg-zinc-900")}>Badges</button>
+          <button onClick={function() { setOfferFilter(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (offerFilter ? "border-blue-600 text-blue-400 bg-blue-950/30" : "border-zinc-600 text-zinc-400 hover:bg-zinc-900")}>Has Offer</button>
+          <button onClick={function() { setListedFilter(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (listedFilter ? "border-blue-600 text-blue-400 bg-blue-950/30" : "border-zinc-600 text-zinc-400 hover:bg-zinc-900")}>Listed</button>
+          <span className="shrink-0 w-px bg-zinc-800 mx-1" />
           <button onClick={function() { setShowDebug(function(prev) { return !prev }) }} className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">{showDebug ? "Hide Debug" : "Debug"}</button>
           <button onClick={copySeedCandidates} className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">Copy Seeds</button>
         </div>
 
         {error ? <div className="mb-4 rounded-lg border border-red-800 bg-red-950 p-3 text-red-300 text-sm">{error}</div> : null}
+
+        {/* Empty pre-search state */}
+        {!hasSearched && !loading && (
+          <div className="mb-6 flex flex-col items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-6 py-16 text-center">
+            <div className="text-lg font-semibold text-zinc-300 mb-2">Analyze any Top Shot collection</div>
+            <div className="text-sm text-zinc-500 mb-5 max-w-md">Enter a Top Shot username or wallet address to see FMV, badges, offers, and market intelligence for every moment.</div>
+            <button
+              onClick={function() { setInput("jamesdillonbond"); runSearch("jamesdillonbond") }}
+              className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-900 transition"
+            >Try jamesdillonbond →</button>
+          </div>
+        )}
 
         {/* Debug table */}
         {showDebug ? (
