@@ -962,12 +962,12 @@ export default function ProfilePage() {
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(data) {
         if (!data) return;
-        const raw: any[] = data.deals ?? data.rows ?? [];
+        const raw: any[] = data.deals ?? [];
         setSniperRows(raw.slice(0, 5).map(function(r: any) {
-          const price = r.lowAsk ?? r.price ?? 0;
-          const fmv = r.adjustedFmv ?? r.fmv ?? 0;
-          const pct = fmv > 0 && price > 0 ? Math.round(((price - fmv) / fmv) * 100) : 0;
-          return { player: r.playerName ?? r.player ?? "Unknown", set: r.setName ?? r.set ?? "", serial: r.serialNumber ? "#" + r.serialNumber : "", price, fmv, pct, tier: r.tier ?? "Common" };
+          const price = r.askPrice ?? 0;
+          const fmv = r.adjustedFmv ?? 0;
+          const pct = fmv > 0 && price > 0 ? Math.round(((fmv - price) / fmv) * 100) : 0;
+          return { player: r.playerName ?? "Unknown", set: r.setName ?? "", serial: r.serial ? "#" + r.serial : "", price, fmv, pct, tier: r.tier ?? "Common" };
         }));
       })
       .catch(function() {}).finally(function() { setSniperLoading(false); });
@@ -1034,20 +1034,20 @@ export default function ProfilePage() {
   ];
 
   const navItems = [
-    { label: "Wallet", href: "/wallet" },
-    { label: "Packs", href: "/packs" },
-    { label: "Sniper", href: "/sniper" },
-    { label: "Badges", href: "/badges" },
-    { label: "Sets", href: "/sets" },
+    { label: "Wallet", href: "/nba-top-shot/collection" },
+    { label: "Packs", href: "/nba-top-shot/packs" },
+    { label: "Sniper", href: "/nba-top-shot/sniper" },
+    { label: "Badges", href: "/nba-top-shot/badges" },
+    { label: "Sets", href: "/nba-top-shot/sets" },
     { label: "Profile", href: "/profile", active: true },
   ];
 
   const quickLinks = [
-    { label: "Wallet Analyzer", desc: "FMV · Flowty asks · badge intel", icon: "◈", href: "/wallet", color: "#E03A2F" },
-    { label: "Pack EV", desc: "Expected value vs price", icon: "▣", href: "/packs", color: "#F59E0B" },
-    { label: "Sniper", desc: "Real-time deals below FMV", icon: "⚡", href: "/sniper", color: "#34D399" },
-    { label: "Badge Tracker", desc: "Debut · Fresh · Rookie Year", icon: "⭐", href: "/badges", color: "#818CF8" },
-    { label: "Set Tracker", desc: "Completion + bottleneck finder", icon: "◉", href: "/sets", color: "#F472B6" },
+    { label: "Wallet Analyzer", desc: "FMV · Flowty asks · badge intel", icon: "◈", href: "/nba-top-shot/collection", color: "#E03A2F" },
+    { label: "Pack EV", desc: "Expected value vs price", icon: "▣", href: "/nba-top-shot/packs", color: "#F59E0B" },
+    { label: "Sniper", desc: "Real-time deals below FMV", icon: "⚡", href: "/nba-top-shot/sniper", color: "#34D399" },
+    { label: "Badge Tracker", desc: "Debut · Fresh · Rookie Year", icon: "⭐", href: "/nba-top-shot/badges", color: "#818CF8" },
+    { label: "Set Tracker", desc: "Completion + bottleneck finder", icon: "◉", href: "/nba-top-shot/sets", color: "#F472B6" },
   ];
 
   return (
