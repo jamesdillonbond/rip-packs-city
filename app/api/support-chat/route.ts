@@ -147,12 +147,27 @@ Keep responses concise — most users are on mobile. Use short paragraphs over b
 ## What RPC Is
 Rip Packs City (rippackscity.com) is a collector intelligence platform built by Trevor Dillon-Bond, an official Portland Trail Blazers Team Captain on NBA Top Shot. Features:
 
-- **Collection Analyzer** (/nba-top-shot/collection) — full wallet analytics: FMV per moment, best offers, series labels, badge quick-filter, FMV delta indicator, portfolio summary cards (Wallet/Unlocked/Locked/Best Offer FMV), share button
-- **Sniper** (/nba-top-shot/sniper) — real-time deal feed from NBA Top Shot + Flowty marketplaces; shows Deals (below FMV) and Offers; filter by tier, min discount, max price; Flowty covers when Top Shot feed is blocked
+### NBA Top Shot
+- **Collection Analyzer** (/nba-top-shot/collection) — full wallet analytics: FMV per moment (now showing on ~95%+ of moments), best offers, series column (restored), default sort FMV descending, three quick-filter pills (Badges Only, Has Offer, Listed), ask price line in FMV cell, serial/edition label on Best Offer, empty state with demo wallet link, portfolio summary cards (Wallet/Unlocked/Locked/Best Offer FMV), share button
+- **Sniper** (/nba-top-shot/sniper) — real-time deal feed from NBA Top Shot + Flowty marketplaces; shows Deals (below FMV) and Offers; filter by tier, min discount, max price; TS CACHED badge when Top Shot data is from cache; share button on each deal with highlight-on-load via URL param; Flow Wallet filter (⚡) to show only FLOW/USDC.e purchasable deals; fetch retry logic + cursor pagination (3 TS pages) + 5 Flowty pages; Flowty covers when Top Shot feed is blocked
 - **Packs** (/nba-top-shot/packs) — secondary market pack browser with EV calculator, tier/type filters, wallet ownership lookup, best-value EV ratio sort, EV breakdown modal, FMV coverage notes
 - **Badges** (/nba-top-shot/badges) — badge tracker for all play tags (Rookie Year, Top Shot Debut, Three Stars, Championship Year, etc.)
 - **Sets** (/nba-top-shot/sets) — set browser with completion tracking and bottleneck detection
 - **Profile** (/nba-top-shot/profile/[username]) — public collector profile with trophy case
+
+### NFL All Day (NEW — live)
+- **Wallet Analytics** (/nfl-all-day/collection) — wallet search and moment analytics for NFL All Day moments on Flow blockchain (contract: 0xe4cf4bdc1751c65d)
+- **Sniper Feed** (/nfl-all-day/sniper) — real-time deal feed for NFL All Day moments from Flowty listings
+- **Sets Tracker** (/nfl-all-day/sets) — set completion tracking for NFL All Day
+- Ingest pipeline running every 20 minutes
+
+### Disney Pinnacle (preview)
+- **Sniper Feed** (/disney-pinnacle/sniper) — Flowty listings for Disney/Pixar/Marvel pin NFTs
+
+### Cart (built, activation pending)
+- Flow Wallet cart supports FLOW and USDC.e purchases
+- Offer mode for submitting USDC.e bids via FlowtyOffers
+- Dapper Wallet cart ready pending WalletConnect ID registration
 
 ## FMV Methodology (v1.3.0 — be accurate about this)
 RPC's FMV is a weighted average price (WAP) model:

@@ -15,6 +15,12 @@ on:
 
 jobs:
   post-deals:
+    # DISABLED: Twitter API keys not yet configured.
+    # To activate: remove the `if: false` from the job and
+    # ensure TWITTER_API_KEY, TWITTER_API_SECRET,
+    # TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_SECRET are set
+    # in Vercel environment variables.
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
