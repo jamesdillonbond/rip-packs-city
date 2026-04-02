@@ -1,7 +1,7 @@
 "use client"
 
 import { Fragment, useMemo, useState, useEffect, useCallback, useRef, Suspense } from "react"
-import { useSearchParams, useRouter } from "next/navigation"
+import { useSearchParams, useRouter, useParams } from "next/navigation"
 import {
   normalizeSetName,
   normalizeParallel,
@@ -9,6 +9,7 @@ import {
 } from "@/lib/wallet-normalize"
 import { buildEditionSeedCandidate } from "@/lib/edition-market-seed"
 import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key"
+import { getCollection } from "@/lib/collections"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -62,6 +63,7 @@ type MomentRow = {
   league?: string
   setName: string
   series?: string
+  season?: string
   tier?: string
   serialNumber?: number
   serial?: number
@@ -381,6 +383,11 @@ function AutoSearchReader(props: { onSearch: (q: string) => void }) {
 
 export default function WalletPage() {
   const router = useRouter()
+  const params = useParams()
+  const collectionSlug = (params?.collection as string) ?? "nba-top-shot"
+  const collectionConfig = getCollection(collectionSlug)
+  const isAllDay = collectionSlug === "nfl-all-day"
+  const accent = collectionConfig?.accent ?? "#E03A2F"
   const lastSearchedRef = useRef("")
   const [rows, setRows] = useState<MomentRow[]>([])
   const [input, setInput] = useState("")
@@ -663,7 +670,8 @@ export default function WalletPage() {
       .catch(function() {})
       .finally(function() { setSalesLoading(false); });
     try {
-      const response = await fetch("/api/wallet-search", {
+      const walletEndpoint = isAllDay ? "/api/allday-wallet-search" : "/api/wallet-search"
+      const response = await fetch(walletEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ input: query.trim(), offset: 0, limit: 50 }),
@@ -693,10 +701,11 @@ export default function WalletPage() {
     } finally {
       setLoading(false)
     }
-  }, [router])
+  }, [router, isAllDay])
 
   async function fetchWalletPage(nextOffset: number, append: boolean) {
-    const response = await fetch("/api/wallet-search", {
+    const walletEndpoint = isAllDay ? "/api/allday-wallet-search" : "/api/wallet-search"
+    const response = await fetch(walletEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ input, offset: nextOffset, limit: 50 }),
@@ -803,6 +812,19 @@ export default function WalletPage() {
     return ["all", ...Array.from(s).sort()]
   }, [rows])
 
+  // For NFL All Day, build season options from data; for Top Shot, use series display labels
+  const availableSeriesOrSeasons = useMemo(function() {
+    if (isAllDay) {
+      const s = new Set<string>()
+      rows.forEach(function(r) {
+        const val = r.season ?? r.series
+        if (val) s.add(val)
+      })
+      return ["all", ...Array.from(s).sort()]
+    }
+    return null // Top Shot uses hardcoded options
+  }, [rows, isAllDay])
+
   // True when the loaded collection belongs to the signed-in / connected user
   const isOwnCollection = useMemo(function() {
     if (!input.trim()) return false
@@ -817,7 +839,13 @@ export default function WalletPage() {
     const filtered = rows.filter(function(r) {
       if (playerFilter !== "all" && r.playerName !== playerFilter) return false
       if (setFilter !== "all" && normalizeSetName(r.setName) !== setFilter) return false
-      if (seriesFilter !== "all" && seriesDisplayLabel(r.series) !== seriesFilter) return false
+      if (seriesFilter !== "all") {
+        if (isAllDay) {
+          if ((r.season ?? r.series) !== seriesFilter) return false
+        } else {
+          if (seriesDisplayLabel(r.series) !== seriesFilter) return false
+        }
+      }
       if (rarityFilter !== "all" && r.tier !== rarityFilter) return false
       if (lockedFilter === "locked" && !getLocked(r)) return false
       if (lockedFilter === "unlocked" && getLocked(r)) return false
@@ -859,7 +887,7 @@ export default function WalletPage() {
       return sortDirection === "asc" ? result : -result
     })
     return filtered
-  }, [rows, searchWithin, playerFilter, setFilter, seriesFilter, rarityFilter, lockedFilter, badgeFilter, filterBadges, filterHasOffer, filterListed, sortKey, sortDirection, batchEditionStats])
+  }, [rows, searchWithin, playerFilter, setFilter, seriesFilter, rarityFilter, lockedFilter, badgeFilter, filterBadges, filterHasOffer, filterListed, sortKey, sortDirection, batchEditionStats, isAllDay])
 
   const totals = useMemo(function() {
     let totalFmv = 0, totalBestOffer = 0, lockedFmv = 0, unlockedFmv = 0
@@ -923,13 +951,18 @@ export default function WalletPage() {
             value={input}
             onChange={function(e) { setInput(e.target.value) }}
             onKeyDown={function(e) { if (e.key === "Enter" && !loading && input.trim()) handleSearch() }}
-            placeholder={ownerKey ? "Enter Top Shot username or wallet address (or press Enter to load your wallet)" : "Enter Top Shot username or wallet address"}
-            className="w-full max-w-lg rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white outline-none placeholder:text-zinc-500 focus:border-red-600"
+            placeholder={ownerKey
+              ? (isAllDay ? "Enter NFL All Day username or wallet address (or press Enter to load your wallet)" : "Enter Top Shot username or wallet address (or press Enter to load your wallet)")
+              : (isAllDay ? "Enter NFL All Day username or wallet address" : "Enter Top Shot username or wallet address")}
+            className="w-full max-w-lg rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white outline-none placeholder:text-zinc-500"
+            onFocus={function(e) { e.target.style.borderColor = accent }}
+            onBlur={function(e) { e.target.style.borderColor = "" }}
           />
           <button
             onClick={handleSearch}
             disabled={loading || !input.trim()}
-            className="rounded-lg bg-red-600 px-5 py-2 font-semibold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg px-5 py-2 font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ backgroundColor: accent }}
           >
             {loading ? "Loading..." : "Search"}
           </button>
@@ -971,7 +1004,7 @@ export default function WalletPage() {
                       <span>{loadProgress.pct}%</span>
                     </div>
                     <div className="h-1 w-full rounded-full bg-zinc-800">
-                      <div className="h-1 rounded-full bg-red-600 transition-all duration-300" style={{ width: loadProgress.pct + "%" }} />
+                      <div className="h-1 rounded-full transition-all duration-300" style={{ width: loadProgress.pct + "%", backgroundColor: accent }} />
                     </div>
                   </div>
                 ) : (
@@ -1007,16 +1040,22 @@ export default function WalletPage() {
             {availableSets.map(function(s) { return <option key={s} value={s}>{s === "all" ? "All Sets" : s}</option> })}
           </select>
           <select value={seriesFilter} onChange={function(e) { setSeriesFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
-            <option value="all">All Series</option>
-            <option value="Beta">Beta</option>
-            <option value="Series 1">Series 1</option>
-            <option value="Series 2">Series 2</option>
-            <option value="Series 3">Series 3</option>
-            <option value="Series 4">Series 4</option>
-            <option value="Series 5">Series 5</option>
-            <option value="Series 6">Series 6</option>
-            <option value="Series 7">Series 7</option>
-            <option value="2025-26">2025-26</option>
+            {isAllDay && availableSeriesOrSeasons ? (
+              availableSeriesOrSeasons.map(function(s) { return <option key={s} value={s}>{s === "all" ? "All Seasons" : s}</option> })
+            ) : (
+              <>
+                <option value="all">All Series</option>
+                <option value="Beta">Beta</option>
+                <option value="Series 1">Series 1</option>
+                <option value="Series 2">Series 2</option>
+                <option value="Series 3">Series 3</option>
+                <option value="Series 4">Series 4</option>
+                <option value="Series 5">Series 5</option>
+                <option value="Series 6">Series 6</option>
+                <option value="Series 7">Series 7</option>
+                <option value="2025-26">2025-26</option>
+              </>
+            )}
           </select>
           <select value={rarityFilter} onChange={function(e) { setRarityFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
             {availableRarities.map(function(tier) { return <option key={tier} value={tier}>{tier === "all" ? "All Rarities" : tier}</option> })}
@@ -1035,7 +1074,7 @@ export default function WalletPage() {
             ["acquired", "Recent"],
             ["fmv", "FMV"],
             ["player", "Player"],
-            ["series", "Series"],
+            ["series", isAllDay ? "Season" : "Series"],
             ["set", "Set"],
             ["parallel", "Parallel"],
             ["rarity", "Rarity"],
@@ -1044,16 +1083,25 @@ export default function WalletPage() {
             ["bestOffer", "Best Offer"],
             ["badge", "Badge"],
           ] as [SortKey, string][]).map(function([key, label]) {
+            const isActive = sortKey === key
             return (
-              <button key={key} onClick={function() { toggleSort(key) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 " + (sortKey === key ? "border-red-600 text-white" : "border-zinc-700 text-zinc-400")}>
-                {label}{sortKey === key && <span className="ml-1 text-zinc-500">{sortDirection === "asc" ? "↑" : "↓"}</span>}
+              <button key={key} onClick={function() { toggleSort(key) }}
+                className={"shrink-0 rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 " + (isActive ? "text-white" : "border-zinc-700 text-zinc-400")}
+                style={isActive ? { borderColor: accent } : undefined}>
+                {label}{isActive && <span className="ml-1 text-zinc-500">{sortDirection === "asc" ? "↑" : "↓"}</span>}
               </button>
             )
           })}
           <div className="border-l border-zinc-700 mx-1" />
-          <button onClick={function() { setFilterBadges(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterBadges ? "bg-red-950/40 border-red-500/50 text-red-400" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>🏷 BADGES</button>
-          <button onClick={function() { setFilterHasOffer(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterHasOffer ? "bg-red-950/40 border-red-500/50 text-red-400" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>💰 HAS OFFER</button>
-          <button onClick={function() { setFilterListed(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterListed ? "bg-red-950/40 border-red-500/50 text-red-400" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>📋 LISTED</button>
+          <button onClick={function() { setFilterBadges(function(f) { return !f }) }}
+            className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterBadges ? "border-current" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")}
+            style={filterBadges ? { color: accent, borderColor: accent, backgroundColor: accent + "15" } : undefined}>🏷 BADGES</button>
+          <button onClick={function() { setFilterHasOffer(function(f) { return !f }) }}
+            className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterHasOffer ? "border-current" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")}
+            style={filterHasOffer ? { color: accent, borderColor: accent, backgroundColor: accent + "15" } : undefined}>💰 HAS OFFER</button>
+          <button onClick={function() { setFilterListed(function(f) { return !f }) }}
+            className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterListed ? "border-current" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")}
+            style={filterListed ? { color: accent, borderColor: accent, backgroundColor: accent + "15" } : undefined}>📋 LISTED</button>
           <button onClick={function() { setShowDebug(function(prev) { return !prev }) }} className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">{showDebug ? "Hide Debug" : "Debug"}</button>
           <button onClick={copySeedCandidates} className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">Copy Seeds</button>
         </div>
@@ -1113,7 +1161,7 @@ export default function WalletPage() {
               <tr className="border-b border-zinc-800 text-left">
                 <th className="p-3">Player</th>
                 <th className="p-3">Set</th>
-                <th className="p-3 hidden sm:table-cell text-left">Series</th>
+                <th className="p-3 hidden sm:table-cell text-left">{isAllDay ? "Season" : "Series"}</th>
                 <th className="p-3 hidden md:table-cell">Parallel</th>
                 <th className="p-3 hidden md:table-cell">Rarity</th>
                 <th className="p-3">Serial / Mint</th>
@@ -1175,7 +1223,7 @@ export default function WalletPage() {
                         </div>
                       </td>
                       <td className="p-3 text-sm">{normalizeSetName(row.setName)}</td>
-                      <td className="p-3 text-zinc-400 text-sm hidden sm:table-cell">{seriesDisplayLabel(row.series)}</td>
+                      <td className="p-3 text-zinc-400 text-sm hidden sm:table-cell">{isAllDay ? (row.season ?? row.series ?? "—") : seriesDisplayLabel(row.series)}</td>
                       <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{getParallel(row)}</td>
                       <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{row.tier ?? "—"}</td>
                       <td className="p-3">
@@ -1195,7 +1243,7 @@ export default function WalletPage() {
                           const count = getPackCount(row.setName)
                           if (!count) return <span className="text-zinc-600">—</span>
                           return (
-                            <a href={"/nba-top-shot/packs?wallet=" + encodeURIComponent(input.trim())} className="text-red-400 hover:text-red-300">
+                            <a href={"/" + collectionSlug + "/packs?wallet=" + encodeURIComponent(input.trim())} style={{ color: accent }}>
                               {count + (count === 1 ? " pack" : " packs")}
                             </a>
                           )
@@ -1298,7 +1346,7 @@ export default function WalletPage() {
                                   <a href={"https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/NFT/" + row.momentId} target="_blank" rel="noopener noreferrer" className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-500 hover:bg-zinc-900">Check Flowty</a>
                                 )}
                                 {summary && (
-                                  <a href={"/nba-top-shot/sets?wallet=" + encodeURIComponent(input.trim())} className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-400 hover:bg-zinc-900">View Set Progress →</a>
+                                  <a href={"/" + collectionSlug + "/sets?wallet=" + encodeURIComponent(input.trim())} className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-400 hover:bg-zinc-900">View Set Progress →</a>
                                 )}
                                 <a href={"/profile?pin=" + row.momentId} className="block rounded-lg border border-yellow-800 bg-yellow-950/30 px-3 py-1.5 text-center text-xs font-semibold text-yellow-400 hover:bg-yellow-950/60">⭐ Pin to Trophy Case</a>
                               </div>
@@ -1309,7 +1357,7 @@ export default function WalletPage() {
                                 <div>Team: {row.team ?? "-"}</div>
                                 <div>League: {row.league ?? "-"}</div>
                                 <div>Parallel: {getParallel(row)}</div>
-                                <div>Series: {row.series ?? "-"} ({seriesIntToSeason(row.series) || "—"})</div>
+                                <div>{isAllDay ? ("Season: " + (row.season ?? row.series ?? "-")) : ("Series: " + (row.series ?? "-") + " (" + (seriesIntToSeason(row.series) || "—") + ")")}</div>
                                 <div>Acquired: {formatAcquiredAt(row.acquiredAt)}</div>
                                 <div>Locked: {isLocked ? "Yes" : "No"}</div>
                                 <div className="flex flex-wrap gap-1 pt-1">
@@ -1323,7 +1371,7 @@ export default function WalletPage() {
                                 <div className="space-y-1 text-sm">
                                   <div className="flex items-center gap-2">
                                     <span className="text-zinc-400">Score</span>
-                                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-red-600 text-[11px] font-black text-white">{row.badgeInfo.badge_score}</span>
+                                    <span className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-black text-white" style={{ backgroundColor: accent }}>{row.badgeInfo.badge_score}</span>
                                   </div>
                                   <div className="flex flex-wrap gap-1 pt-1">
                                     {(row.badgeInfo.badge_titles ?? []).filter(function(t) { return BADGE_PILL_TITLES.has(t) }).map(function(title) {
@@ -1372,7 +1420,8 @@ export default function WalletPage() {
             <div className="mt-2 text-sm text-zinc-500">Try searching a different wallet or connect yours</div>
             <button
               onClick={function() { runSearch("0xbd94cade097e50ac") }}
-              className="mt-4 text-sm text-red-400 hover:text-red-300 transition-colors"
+              className="mt-4 text-sm transition-colors"
+              style={{ color: accent }}
             >
               View example: 0xbd94cade097e50ac →
             </button>
@@ -1381,7 +1430,7 @@ export default function WalletPage() {
 
         {summary && summary.remainingMoments > 0 ? (
           <div className="mt-6 flex justify-center">
-            <button onClick={handleLoadMore} disabled={loadingMore} className="rounded-lg bg-red-600 px-4 py-2 font-semibold text-white disabled:opacity-50 hover:bg-red-500">
+            <button onClick={handleLoadMore} disabled={loadingMore} className="rounded-lg px-4 py-2 font-semibold text-white disabled:opacity-50" style={{ backgroundColor: accent }}>
               {loadingMore ? "Loading..." : "Load More (" + summary.remainingMoments + " left)"}
             </button>
           </div>
