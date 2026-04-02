@@ -14,7 +14,7 @@ const QUERY = `{
   searchMomentListings(
     input: {
       
-      searchInput: { pagination: { cursor: "CURSOR_PLACEHOLDER", direction: RIGHT, count: 100 } }
+      searchInput: { pagination: { cursor: "CURSOR_PLACEHOLDER", limit: 100 } }
     }
   ) {
     data {
