@@ -277,10 +277,21 @@ async function upsertSale(
   editionId: string,
   tx: SaleTransaction
 ): Promise<boolean> {
-  if (!tx.txHash || !tx.price || !tx.updatedAt) return false
+  if (!tx.txHash || !tx.price || !tx.updatedAt) {
+    console.error("DB write failed: sale missing required fields", {
+      txHash: !!tx.txHash,
+      price: tx.price,
+      updatedAt: !!tx.updatedAt,
+      txId: tx.id,
+    })
+    return false
+  }
 
   const price = toNum(tx.price)
-  if (!price) return false
+  if (!price) {
+    console.error("DB write failed: price parsed to null/zero", { raw: tx.price, txId: tx.id })
+    return false
+  }
 
   const serialNumber = toNum(tx.moment?.flowSerialNumber)
   const nftId = tx.moment?.flowId ? String(tx.moment.flowId) : null
@@ -308,7 +319,7 @@ async function upsertSale(
   }
 
   // ── Write sale row ────────────────────────────────────────────────────────
-  const { error } = await supabaseAdmin.from("sales").insert({
+  const { error: saleError, status, statusText } = await supabaseAdmin.from("sales").insert({
     edition_id: editionId,
     collection_id: collectionId,
     serial_number: serialNumber ?? 0,
@@ -320,15 +331,16 @@ async function upsertSale(
     nft_id: nftId,
   })
 
-  if (error) {
+  if (saleError) {
     // Duplicate = already ingested, not an error
-    if (error.message.includes("duplicate") || error.code === "23505") {
+    if (saleError.message.includes("duplicate") || saleError.code === "23505") {
       return false
     }
-    console.error("[INGEST] upsertSale error:", error.message)
+    console.error("DB write failed:", saleError, { status, statusText, txId: tx.id })
     return false
   }
 
+  console.log(`[INGEST] Sale written OK — txHash=${tx.txHash} price=${price} status=${status}`)
   return true
 }
 
@@ -363,7 +375,7 @@ async function upsertFmvSnapshot(
         ? "MEDIUM"
         : "LOW"
 
-  await supabaseAdmin
+  const { error } = await supabaseAdmin
     .from("fmv_snapshots")
     .upsert(
       {
@@ -377,6 +389,10 @@ async function upsertFmvSnapshot(
       },
       { onConflict: "edition_id", ignoreDuplicates: false }
     )
+
+  if (error) {
+    console.error("DB write failed:", error)
+  }
 }
 
 // ── Main ingestion logic ──────────────────────────────────────────────────────
@@ -461,6 +477,7 @@ export async function POST(req: NextRequest) {
     const cursor = (body.cursor as string | null) ?? null
 
     console.log(`[INGEST] Starting — batchSize=${batchSize} cursor=${cursor ?? "start"}`)
+    console.log(`[INGEST] SUPABASE_SERVICE_ROLE_KEY set: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}, length: ${process.env.SUPABASE_SERVICE_ROLE_KEY?.length ?? 0}`)
 
     // Get NBA Top Shot collection ID
     const { data: collections } = await supabaseAdmin

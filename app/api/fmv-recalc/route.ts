@@ -95,6 +95,7 @@ export async function POST(req: NextRequest) {
     console.log(
       `[FMV-RECALC] Starting — offset=${offset} limit=${limit} window=${WINDOW_DAYS}d since=${windowStart}`
     )
+    console.log(`[FMV-RECALC] SUPABASE_SERVICE_ROLE_KEY set: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}, length: ${process.env.SUPABASE_SERVICE_ROLE_KEY?.length ?? 0}`)
 
     // ── Step 1: Get sales rows in window (paginated) ──────────────────────────
     // Also fetching sold_at for WAP and days_since_sale computation
@@ -210,13 +211,13 @@ export async function POST(req: NextRequest) {
     console.log(`[FMV-RECALC] Flowty LiveToken FMV available for ${flowtyFmvCount} editions`)
 
     // ── Step 3: Delete existing snapshots for these editions ─────────────────
-    const { error: deleteError } = await supabaseAdmin
+    const { error: deleteError, status: delStatus } = await supabaseAdmin
       .from("fmv_snapshots")
       .delete()
       .in("edition_id", editionIds)
 
     if (deleteError) {
-      console.error("[FMV-RECALC] Delete error:", deleteError.message)
+      console.error("DB write failed:", deleteError, { status: delStatus })
       return NextResponse.json({ ok: false, error: deleteError.message }, { status: 500 })
     }
 
@@ -274,7 +275,7 @@ export async function POST(req: NextRequest) {
         .insert(chunk)
 
       if (insertError) {
-        console.error("[FMV-RECALC] Insert error:", insertError.message)
+        console.error("DB write failed:", insertError, { chunkIndex: i, chunkSize: chunk.length })
       } else {
         snapshotsUpdated += chunk.length
       }
