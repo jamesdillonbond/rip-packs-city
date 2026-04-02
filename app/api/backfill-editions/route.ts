@@ -1,116 +1,84 @@
 import { NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import fcl from "@/lib/flow"
+import * as t from "@onflow/types"
 
-// Uses searchMarketplaceTransactions — proven to work in backfill/route.ts.
-// Extracts integer setID/playID from parallelSetPlay on each moment.
-const SEARCH_TRANSACTIONS_QUERY = `
-  query BackfillEditions($input: SearchMarketplaceTransactionsInput!) {
-    searchMarketplaceTransactions(input: $input) {
-      data {
-        searchSummary {
-          pagination { rightCursor }
-          data {
-            ... on MarketplaceTransactions {
-              size
-              data {
-                ... on MarketplaceTransaction {
-                  id
-                  moment {
-                    id
-                    set { id flowName flowSeriesNumber }
-                    play {
-                      id
-                      stats {
-                        playerName teamAtMoment
-                      }
-                    }
-                    setPlay {
-                      ID flowRetired
-                      circulations { circulationCount }
-                    }
-                    parallelSetPlay { setID playID }
-                    tier
-                  }
-                }
-              }
-            }
-          }
-        }
+// Default wallet for FCL queries — the Cadence script borrows from a
+// public MomentCollection, so any wallet that owns TopShot moments works.
+const DEFAULT_WALLET = "0xbd94cade097e50ac"
+
+// Process at most 100 NFTs per run to stay within Vercel's ~25s timeout.
+const BATCH_SIZE = 100
+// FCL concurrency — keep low to avoid rate limiting.
+const CONCURRENCY = 5
+// Backfill state key for offset tracking across runs.
+const STATE_KEY = "topshot_edition_integer_keys"
+
+// ── FCL metadata query ──────────────────────────────────────────────────────
+
+async function getMomentMetadata(
+  wallet: string,
+  nftId: number
+): Promise<{ setID: number; playID: number } | null> {
+  const cadence = `
+    import TopShot from 0x0b2a3299cc857e29
+    import MetadataViews from 0x1d7e57aa55817448
+    access(all)
+    fun main(address: Address, id: UInt64): {String:String} {
+      let acct = getAccount(address)
+      let col = acct.capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
+        ?? panic("no collection")
+      let nft = col.borrowMoment(id:id) ?? panic("no nft")
+      let view = nft.resolveView(Type<TopShot.TopShotMomentMetadataView>()) ?? panic("no metadata")
+      let data = view as! TopShot.TopShotMomentMetadataView
+      return {
+        "playID": data.playID.toString(),
+        "setID": data.setID.toString()
       }
     }
+  `
+
+  try {
+    const result = await fcl.query({
+      cadence,
+      args: (arg: any) => [arg(wallet, t.Address), arg(String(nftId), t.UInt64)],
+    })
+
+    const setID = parseInt(result?.setID, 10)
+    const playID = parseInt(result?.playID, 10)
+    if (isNaN(setID) || isNaN(playID) || setID <= 0 || playID <= 0) return null
+    return { setID, playID }
+  } catch (err) {
+    console.warn(
+      `[backfill-editions] FCL failed for nftId=${nftId}: ${err instanceof Error ? err.message.slice(0, 120) : String(err)}`
+    )
+    return null
   }
-`
-
-const TOPSHOT_GQL = "https://public-api.nbatopshot.com/graphql"
-const GQL_HEADERS = {
-  "Content-Type": "application/json",
-  "User-Agent": "sports-collectible-tool/0.1",
 }
 
-interface TransactionMoment {
-  id: string
-  set?: { id: string; flowName?: string; flowSeriesNumber?: number }
-  play?: { id: string; stats?: { playerName?: string; teamAtMoment?: string } }
-  setPlay?: { ID?: string; flowRetired?: boolean; circulations?: { circulationCount?: number } }
-  parallelSetPlay?: { setID?: number; playID?: number }
-  tier?: string
-}
+// ── Concurrency helper ──────────────────────────────────────────────────────
 
-interface SaleTransaction {
-  id: string
-  moment?: TransactionMoment
-}
-
-async function fetchTransactionsPage(
-  limit: number,
-  cursor: string | null
-): Promise<{ transactions: SaleTransaction[]; nextCursor: string | null }> {
-  const res = await fetch(TOPSHOT_GQL, {
-    method: "POST",
-    headers: GQL_HEADERS,
-    body: JSON.stringify({
-      query: SEARCH_TRANSACTIONS_QUERY,
-      variables: {
-        input: {
-          sortBy: "UPDATED_AT_DESC",
-          searchInput: {
-            pagination: {
-              cursor: cursor ?? "",
-              direction: "RIGHT",
-              limit,
-            },
-          },
-        },
-      },
-    }),
-  })
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "")
-    throw new Error(`GQL ${res.status}: ${text.slice(0, 300)}`)
-  }
-
-  const json = await res.json()
-  const summary = json?.data?.searchMarketplaceTransactions?.data?.searchSummary
-  const nextCursor = summary?.pagination?.rightCursor ?? null
-  const transactions: SaleTransaction[] = []
-  const dataField = summary?.data
-
-  if (Array.isArray(dataField)) {
-    for (const block of dataField) {
-      if (Array.isArray(block?.data)) {
-        transactions.push(...block.data)
-      }
-    }
-  } else if (dataField && typeof dataField === "object") {
-    const b = dataField as any
-    if (Array.isArray(b.data)) {
-      transactions.push(...b.data)
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let nextIndex = 0
+  async function runWorker() {
+    while (true) {
+      const currentIndex = nextIndex++
+      if (currentIndex >= items.length) return
+      results[currentIndex] = await worker(items[currentIndex], currentIndex)
     }
   }
-
-  return { transactions, nextCursor }
+  await Promise.all(
+    Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, () => runWorker())
+  )
+  return results
 }
+
+// ── Route handler ───────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
   // Auth check
@@ -120,199 +88,150 @@ export async function POST(req: Request) {
   }
 
   const startTime = Date.now()
-  let cursor: string | null = null
-  let pagesProcessed = 0
-  let editionsFound = 0
-  let editionsUpdated = 0
-  const maxPages = 20
-  const batchSize = 200
-
-  // Collect unique editions: key "setID:playID" → metadata
-  const editionMap = new Map<string, {
-    setIdOnchain: number
-    playIdOnchain: number
-    setUuid: string | null
-    playUuid: string | null
-    playerName: string | null
-    teamAtMoment: string | null
-    setName: string | null
-    series: number | null
-    tier: string | null
-    circulationCount: number | null
-  }>()
+  let processed = 0
+  let upserted = 0
+  let updated = 0
 
   try {
-    // Phase 1: Fetch transactions from GQL and extract unique editions
-    for (let page = 0; page < maxPages; page++) {
-      const { transactions, nextCursor } = await fetchTransactionsPage(batchSize, cursor)
-      pagesProcessed++
+    // ── Step 1: Load backfill offset from backfill_state ──────────────────
+    const { data: stateRow } = await supabaseAdmin
+      .from("backfill_state")
+      .select("*")
+      .eq("id", STATE_KEY)
+      .single()
 
-      if (transactions.length === 0) break
+    const offset = stateRow?.cursor ? parseInt(stateRow.cursor, 10) : 0
 
-      for (const tx of transactions) {
-        const m = tx.moment
-        if (!m) continue
+    // ── Step 2: Query moments with UUID-format edition external_ids ───────
+    // external_id NOT matching "digits:digits" means it still has UUID keys.
+    const { data: rows, error: queryErr } = await supabaseAdmin
+      .from("moments")
+      .select("nft_id, edition_id, editions!inner(external_id)")
+      .not("nft_id", "is", null)
+      .order("nft_id", { ascending: true })
+      .range(offset, offset + BATCH_SIZE - 1)
 
-        const psp = m.parallelSetPlay
-        const setID = psp?.setID
-        const playID = psp?.playID
-        if (setID == null || playID == null) continue
-        if (isNaN(setID) || isNaN(playID)) continue
-
-        const key = `${setID}:${playID}`
-        if (!editionMap.has(key)) {
-          editionMap.set(key, {
-            setIdOnchain: setID,
-            playIdOnchain: playID,
-            setUuid: m.set?.id ?? null,
-            playUuid: m.play?.id ?? null,
-            playerName: m.play?.stats?.playerName ?? null,
-            teamAtMoment: m.play?.stats?.teamAtMoment ?? null,
-            setName: m.set?.flowName ?? null,
-            series: m.set?.flowSeriesNumber ?? null,
-            tier: m.tier ?? null,
-            circulationCount: m.setPlay?.circulations?.circulationCount ?? null,
-          })
-        }
-      }
-
-      cursor = nextCursor
-      if (!cursor) break
-
-      if (pagesProcessed % 5 === 0) {
-        console.log(`[backfill-editions] page ${pagesProcessed}, ${editionMap.size} unique editions so far`)
-      }
+    if (queryErr) {
+      throw new Error(`Supabase query error: ${queryErr.message}`)
     }
 
-    editionsFound = editionMap.size
-    console.log(`[backfill-editions] Fetched ${editionsFound} unique editions from ${pagesProcessed} pages`)
+    // Filter to only UUID-format external_ids (not yet integer-keyed)
+    const candidates = (rows ?? []).filter((row: any) => {
+      const extId = row.editions?.external_id as string | undefined
+      return extId && !/^\d+:\d+$/.test(extId)
+    })
 
-    // Phase 2: Update editions in Supabase
-    // First, find editions missing set_id_onchain
-    const { data: missingEditions, error: fetchErr } = await supabaseAdmin
-      .from("editions")
-      .select("id, external_id")
-      .is("set_id_onchain", null)
-      .limit(5000)
+    if (candidates.length === 0) {
+      // Check if we've processed everything
+      const totalRows = rows?.length ?? 0
+      if (totalRows === 0) {
+        // Reset offset — we've covered all moments
+        await supabaseAdmin
+          .from("backfill_state")
+          .upsert({
+            id: STATE_KEY,
+            cursor: "0",
+            status: "complete",
+            last_run_at: new Date().toISOString(),
+          }, { onConflict: "id" })
 
-    if (fetchErr) {
-      throw new Error(`Supabase fetch error: ${fetchErr.message}`)
-    }
-
-    if (missingEditions && missingEditions.length > 0) {
-      for (const edition of missingEditions) {
-        const extId = edition.external_id as string
-        if (!extId) continue
-
-        // Try to match by integer format "setID:playID"
-        const parts = extId.split(":")
-        if (parts.length === 2) {
-          const leftInt = parseInt(parts[0], 10)
-          const rightInt = parseInt(parts[1], 10)
-
-          // Already integer format — use directly
-          if (!isNaN(leftInt) && !isNaN(rightInt) && String(leftInt) === parts[0] && String(rightInt) === parts[1]) {
-            const { error: updateErr } = await supabaseAdmin
-              .from("editions")
-              .update({ set_id_onchain: leftInt, play_id_onchain: rightInt })
-              .eq("id", edition.id)
-
-            if (!updateErr) editionsUpdated++
-            continue
-          }
-
-          // UUID format — try to find a matching edition from GQL data
-          // Match by UUID set:play → find the edition in our map that has matching UUIDs
-          const [setUuid, playUuid] = parts
-          for (const [, meta] of editionMap) {
-            if (meta.setUuid === setUuid && meta.playUuid === playUuid) {
-              const { error: updateErr } = await supabaseAdmin
-                .from("editions")
-                .update({
-                  set_id_onchain: meta.setIdOnchain,
-                  play_id_onchain: meta.playIdOnchain,
-                })
-                .eq("id", edition.id)
-
-              if (!updateErr) editionsUpdated++
-              break
-            }
-          }
-        }
+        return NextResponse.json({
+          ok: true,
+          message: "No more UUID-format editions to backfill",
+          processed: 0,
+          upserted: 0,
+          updated: 0,
+          offset,
+          durationMs: Date.now() - startTime,
+        })
       }
+
+      // There were rows but all already have integer keys — advance offset
+      await supabaseAdmin
+        .from("backfill_state")
+        .upsert({
+          id: STATE_KEY,
+          cursor: String(offset + BATCH_SIZE),
+          status: "running",
+          last_run_at: new Date().toISOString(),
+        }, { onConflict: "id" })
+
+      return NextResponse.json({
+        ok: true,
+        message: "Batch already had integer keys, advancing offset",
+        processed: 0,
+        upserted: 0,
+        updated: 0,
+        offset: offset + BATCH_SIZE,
+        durationMs: Date.now() - startTime,
+      })
     }
 
-    // Phase 3: Upsert any new editions discovered from GQL that aren't in Supabase yet
-    const CHUNK = 100
-    const entries = Array.from(editionMap.entries())
-    let newEditionsUpserted = 0
+    // ── Step 3: Call FCL for each nft_id with concurrency ─────────────────
+    const results = await mapWithConcurrency(candidates, CONCURRENCY, async (row: any) => {
+      const nftId = Number(row.nft_id)
+      const editionId = row.edition_id as string
+      const meta = await getMomentMetadata(DEFAULT_WALLET, nftId)
+      return { nftId, editionId, meta }
+    })
 
-    for (let i = 0; i < entries.length; i += CHUNK) {
-      const chunk = entries.slice(i, i + CHUNK)
-      const rows = chunk.map(([key, meta]) => ({
-        external_id: key,
-        set_id_onchain: meta.setIdOnchain,
-        play_id_onchain: meta.playIdOnchain,
-      }))
+    // ── Step 4: Upsert / update for each successful result ────────────────
+    for (const { editionId, meta } of results) {
+      processed++
+      if (!meta) continue
 
-      const { error } = await supabaseAdmin
+      const externalId = `${meta.setID}:${meta.playID}`
+
+      // Upsert an edition row with the integer external_id
+      const { error: upsertErr } = await supabaseAdmin
         .from("editions")
-        .upsert(rows, { onConflict: "external_id", ignoreDuplicates: false })
+        .upsert(
+          [{ external_id: externalId }],
+          { onConflict: "external_id", ignoreDuplicates: true }
+        )
 
-      if (error) {
-        console.error("[backfill-editions] Upsert error:", error.message)
-      } else {
-        newEditionsUpserted += chunk.length
-      }
-    }
+      if (!upsertErr) upserted++
 
-    // Phase 4: Also update sets table where set_id_onchain is null
-    const uniqueSets = new Map<string, number>()
-    for (const [, meta] of editionMap) {
-      if (meta.setUuid) {
-        uniqueSets.set(meta.setUuid, meta.setIdOnchain)
-      }
-    }
-
-    let setsUpdated = 0
-    for (const [setUuid, setIdOnchain] of uniqueSets) {
-      const { error: setErr } = await supabaseAdmin
-        .from("sets")
-        .update({ set_id_onchain: setIdOnchain })
-        .eq("external_id", setUuid)
+      // Update the existing edition record with on-chain integer IDs
+      const { error: updateErr } = await supabaseAdmin
+        .from("editions")
+        .update({ set_id_onchain: meta.setID, play_id_onchain: meta.playID })
+        .eq("id", editionId)
         .is("set_id_onchain", null)
 
-      if (!setErr) setsUpdated++
+      if (!updateErr) updated++
     }
+
+    // ── Step 5: Persist offset in backfill_state ──────────────────────────
+    await supabaseAdmin
+      .from("backfill_state")
+      .upsert({
+        id: STATE_KEY,
+        cursor: String(offset + BATCH_SIZE),
+        status: "running",
+        total_ingested: (stateRow?.total_ingested ?? 0) + processed,
+        last_run_at: new Date().toISOString(),
+      }, { onConflict: "id" })
 
     const durationMs = Date.now() - startTime
     console.log(
-      `[backfill-editions] Done — ${pagesProcessed} pages, ${editionsFound} found, ` +
-      `${editionsUpdated} existing updated, ${newEditionsUpserted} upserted, ` +
-      `${setsUpdated} sets updated in ${durationMs}ms`
+      `[backfill-editions] Done — processed=${processed}, upserted=${upserted}, ` +
+      `updated=${updated}, offset=${offset}, durationMs=${durationMs}`
     )
 
     return NextResponse.json({
       ok: true,
-      pagesProcessed,
-      editionsFound,
-      editionsUpdated,
-      newEditionsUpserted,
-      setsUpdated,
+      processed,
+      upserted,
+      updated,
+      offset: offset + BATCH_SIZE,
       durationMs,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error("[backfill-editions] Fatal error:", message)
     return NextResponse.json(
-      {
-        ok: false,
-        error: message,
-        pagesProcessed,
-        editionsFound,
-        editionsUpdated,
-        durationMs: Date.now() - startTime,
-      },
+      { ok: false, error: message, processed, upserted, updated, durationMs: Date.now() - startTime },
       { status: 500 }
     )
   }

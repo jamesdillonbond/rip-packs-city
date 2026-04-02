@@ -6,11 +6,22 @@ jobs:
   backfill:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger backfill
-        run: |
-          curl -s -X POST \
-            -H "x-ingest-token: ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            --max-time 300 \
-            https://rip-packs-city.vercel.app/api/backfill-editions
+      - name: Run backfill (pass 1)
+        run: curl -s -X POST -H "x-ingest-token: ${{ secrets.INGEST_SECRET_TOKEN }}" https://rip-packs-city.vercel.app/api/backfill-editions
+      - name: Wait
+        run: sleep 35
+      - name: Run backfill (pass 2)
+        run: curl -s -X POST -H "x-ingest-token: ${{ secrets.INGEST_SECRET_TOKEN }}" https://rip-packs-city.vercel.app/api/backfill-editions
+      - name: Wait
+        run: sleep 35
+      - name: Run backfill (pass 3)
+        run: curl -s -X POST -H "x-ingest-token: ${{ secrets.INGEST_SECRET_TOKEN }}" https://rip-packs-city.vercel.app/api/backfill-editions
+      - name: Wait
+        run: sleep 35
+      - name: Run backfill (pass 4)
+        run: curl -s -X POST -H "x-ingest-token: ${{ secrets.INGEST_SECRET_TOKEN }}" https://rip-packs-city.vercel.app/api/backfill-editions
+      - name: Wait
+        run: sleep 35
+      - name: Run backfill (pass 5)
+        run: curl -s -X POST -H "x-ingest-token: ${{ secrets.INGEST_SECRET_TOKEN }}" https://rip-packs-city.vercel.app/api/backfill-editions
     timeout-minutes: 10
