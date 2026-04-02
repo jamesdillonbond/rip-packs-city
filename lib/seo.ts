@@ -58,44 +58,46 @@ export const organizationJsonLd = {
   },
 }
 
-// Per-page metadata generators
+// Per-page metadata generators — keyed by page, with {label} placeholder for collection name
 const PAGE_META: Record<string, { title: string; description: string }> = {
   collection: {
-    title: 'Wallet Analytics — Track Your NBA Top Shot Collection Value',
+    title: 'Wallet Analytics — Track Your {label} Collection Value',
     description:
-      'Analyze any NBA Top Shot wallet with real-time FMV, badge detection, serial premiums, and Flowty ask prices.',
+      'Analyze any {label} wallet with real-time FMV, badge detection, serial premiums, and Flowty ask prices.',
   },
   sniper: {
-    title: 'Sniper Deals — Find Undervalued NBA Top Shot Moments',
+    title: 'Sniper — {label}',
     description:
-      'Real-time deal feed comparing Top Shot and Flowty listings against FMV. Find moments priced below fair market value.',
+      'Track {label} moments with real-time FMV, sniper deals, and Flowty marketplace intelligence.',
   },
   packs: {
-    title: 'Pack Drop Tools — NBA Top Shot Pack Analysis & EV Calculator',
+    title: 'Pack Drop Tools — {label} Pack Analysis & EV Calculator',
     description:
-      'Browse active and past NBA Top Shot packs with expected value calculations, pull odds, and buy/skip recommendations.',
+      'Browse active and past {label} packs with expected value calculations, pull odds, and buy/skip recommendations.',
   },
   badges: {
     title: 'Badge Tracker — Rookie Year, Top Shot Debut & More',
     description:
-      'Explore NBA Top Shot badge editions including Top Shot Debut, Rookie Year, Championship, and serial badges.',
+      'Explore {label} badge editions including Top Shot Debut, Rookie Year, Championship, and serial badges.',
   },
   sets: {
-    title: 'Set Completion — Track Your NBA Top Shot Sets',
+    title: 'Set Completion — Track Your {label} Sets',
     description:
-      'Track set completion progress, find bottleneck moments, and discover the cheapest path to completing any NBA Top Shot set.',
+      'Track set completion progress, find bottleneck moments, and discover the cheapest path to completing any {label} set.',
   },
 }
 
-export function collectionPageMetadata(page: string): Metadata {
+export function collectionPageMetadata(page: string, collectionLabel = 'NBA Top Shot'): Metadata {
   const meta = PAGE_META[page]
   if (!meta) return {}
+  const title = meta.title.replace(/\{label\}/g, collectionLabel)
+  const description = meta.description.replace(/\{label\}/g, collectionLabel)
   return {
-    title: meta.title,
-    description: meta.description,
+    title,
+    description,
     openGraph: {
-      title: `${meta.title} | Rip Packs City`,
-      description: meta.description,
+      title: `${title} | Rip Packs City`,
+      description,
     },
   }
 }

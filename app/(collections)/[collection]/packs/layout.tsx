@@ -1,9 +1,19 @@
 import type { Metadata } from "next"
+import { getCollection } from "@/lib/collections"
+import { collectionPageMetadata } from "@/lib/seo"
 
-export async function generateMetadata(): Promise<Metadata> {
-  const title = "Pack EV Calculator — NBA Top Shot Secondary Market"
+export async function generateMetadata(
+  props: { params: Promise<{ collection: string }> }
+): Promise<Metadata> {
+  const params = await props.params
+  const collection = getCollection(params.collection)
+  const label = collection?.label ?? "NBA Top Shot"
+
+  const pageMeta = collectionPageMetadata("packs", label) as Metadata
+  const title = (pageMeta.title as string) ?? `Pack EV Calculator — ${label}`
   const description =
-    "Calculate expected value for every NBA Top Shot pack on the secondary market. Real-time FMV, pull rates, and tier breakdowns powered by RPC."
+    (pageMeta.description as string) ??
+    `Calculate expected value for every ${label} pack on the secondary market. Real-time FMV, pull rates, and tier breakdowns powered by RPC.`
   return {
     title,
     description,
