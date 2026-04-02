@@ -1051,9 +1051,9 @@ export default function WalletPage() {
             )
           })}
           <div className="border-l border-zinc-700 mx-1" />
-          <button onClick={function() { setFilterBadges(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterBadges ? "border-blue-500 text-blue-400 bg-blue-950" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>🏅 Badges</button>
-          <button onClick={function() { setFilterHasOffer(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterHasOffer ? "border-blue-500 text-blue-400 bg-blue-950" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>💰 Has Offer</button>
-          <button onClick={function() { setFilterListed(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterListed ? "border-blue-500 text-blue-400 bg-blue-950" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>🏷 Listed</button>
+          <button onClick={function() { setFilterBadges(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterBadges ? "bg-red-950/40 border-red-500/50 text-red-400" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>🏷 BADGES</button>
+          <button onClick={function() { setFilterHasOffer(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterHasOffer ? "bg-red-950/40 border-red-500/50 text-red-400" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>💰 HAS OFFER</button>
+          <button onClick={function() { setFilterListed(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterListed ? "bg-red-950/40 border-red-500/50 text-red-400" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>📋 LISTED</button>
           <button onClick={function() { setShowDebug(function(prev) { return !prev }) }} className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">{showDebug ? "Hide Debug" : "Debug"}</button>
           <button onClick={copySeedCandidates} className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">Copy Seeds</button>
         </div>
@@ -1112,8 +1112,8 @@ export default function WalletPage() {
             <thead className="bg-zinc-900">
               <tr className="border-b border-zinc-800 text-left">
                 <th className="p-3">Player</th>
-                <th className="p-3 hidden sm:table-cell">Series</th>
                 <th className="p-3">Set</th>
+                <th className="p-3 hidden sm:table-cell text-left">Series</th>
                 <th className="p-3 hidden md:table-cell">Parallel</th>
                 <th className="p-3 hidden md:table-cell">Rarity</th>
                 <th className="p-3">Serial / Mint</th>
@@ -1174,8 +1174,8 @@ export default function WalletPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="p-3 text-zinc-400 text-sm hidden sm:table-cell">{seriesDisplayLabel(row.series)}</td>
                       <td className="p-3 text-sm">{normalizeSetName(row.setName)}</td>
+                      <td className="p-3 text-zinc-400 text-sm hidden sm:table-cell">{seriesDisplayLabel(row.series)}</td>
                       <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{getParallel(row)}</td>
                       <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{row.tier ?? "—"}</td>
                       <td className="p-3">
