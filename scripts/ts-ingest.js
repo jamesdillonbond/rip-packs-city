@@ -13,7 +13,7 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
 const QUERY = `{
   searchMomentListings(
     input: {
-      filters: { byListings: { listingType: { value: FOR_SALE } } }
+      filters: { byListingType: { value: FOR_SALE } }
       searchInput: { pagination: { cursor: "CURSOR_PLACEHOLDER", direction: RIGHT, count: 100 } }
     }
   ) {
