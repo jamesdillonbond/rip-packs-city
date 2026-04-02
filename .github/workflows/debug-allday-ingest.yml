@@ -1,0 +1,23 @@
+name: Debug AllDay Ingest
+on:
+  workflow_dispatch:
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Call debug endpoint
+        run: |
+          curl -sS --max-time 60 \
+            "https://rip-packs-city.vercel.app/api/allday-ingest?token=rippackscity2026&dry=1&debug=1&limit=3" \
+            -o debug-output.json || echo '{"error":"curl failed"}' > debug-output.json
+          echo "--- RAW RESPONSE ---"
+          cat debug-output.json
+          echo "--- END ---"
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add debug-output.json
+          git commit -m "chore: allday-ingest debug output [skip ci]" || echo "nothing to commit"
+          git push
