@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
+import { getCollection } from "@/lib/collections"
 
 type PackType = "standard" | "topper" | "chance_hit" | "reward" | "bundle"
 
@@ -143,6 +144,11 @@ export default function PacksPage() {
   const params = useParams()
   const collection = (params?.collection as string) ?? "nba-top-shot"
   const base = "/" + collection
+  const collectionObj = getCollection(collection)
+  const accent = collectionObj?.accent ?? "#E03A2F"
+  const isAllDay = collection === "nfl-all-day"
+  const packListingsEndpoint = isAllDay ? "/api/allday-pack-listings" : "/api/pack-listings"
+  const packEvEndpoint = isAllDay ? "/api/allday-pack-ev" : "/api/pack-ev"
 
   const [listings, setListings] = useState<PackListing[]>([])
   const [listingsLoading, setListingsLoading] = useState(true)
@@ -193,7 +199,7 @@ export default function PacksPage() {
     const id = pack.packListingId
     setEvCache((prev) => ({ ...prev, [id]: { grossEV: 0, packEV: 0, isPositiveEV: false, valueRatio: 0, loading: true, error: false } }))
     try {
-      const res = await fetch("/api/pack-ev", {
+      const res = await fetch(packEvEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ packListingId: id, packPrice: pack.lowestAsk }),
@@ -257,7 +263,7 @@ export default function PacksPage() {
   useEffect(() => {
     async function fetchListings() {
       try {
-        const res = await fetch("/api/pack-listings")
+        const res = await fetch(packListingsEndpoint)
         const json = await res.json()
         if (!res.ok) throw new Error(json.error || "Failed to load pack listings")
         const data: PackListing[] = json.listings ?? []
@@ -377,7 +383,7 @@ export default function PacksPage() {
     setShowAllAlerts(false)
     window.scrollTo({ top: 0, behavior: "smooth" })
     try {
-      const response = await fetch("/api/pack-ev", {
+      const response = await fetch(packEvEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -413,7 +419,7 @@ export default function PacksPage() {
     setModalResult(null)
     setModalLoading(true)
     try {
-      const res = await fetch("/api/pack-ev", {
+      const res = await fetch(packEvEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ packListingId: pack.packListingId, packPrice: pack.lowestAsk }),
@@ -549,8 +555,8 @@ export default function PacksPage() {
                 </div>
               </div>
               <div className="ml-auto flex flex-wrap items-center gap-2">
-                <button onClick={() => setTtMode(false)} className={"rounded-lg px-3 py-1 text-xs font-semibold transition " + (!ttMode ? "bg-red-600 text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>Cash Price</button>
-                <button onClick={() => setTtMode(true)} className={"rounded-lg px-3 py-1 text-xs font-semibold transition " + (ttMode ? "bg-red-600 text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>Trade Tickets</button>
+                <button onClick={() => setTtMode(false)} className={"rounded-lg px-3 py-1 text-xs font-semibold transition " + (!ttMode ? "text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")} style={!ttMode ? { backgroundColor: accent } : undefined}>Cash Price</button>
+                <button onClick={() => setTtMode(true)} className={"rounded-lg px-3 py-1 text-xs font-semibold transition " + (ttMode ? "text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")} style={ttMode ? { backgroundColor: accent } : undefined}>Trade Tickets</button>
                 {ttMode && (
                   <>
                     <input value={ttCount} onChange={(e) => setTtCount(e.target.value)} placeholder="# TTs" type="number" min="1" className="w-20 rounded-lg border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-white outline-none" />
@@ -619,7 +625,7 @@ export default function PacksPage() {
                               <span className={"font-semibold " + tierText(tier)}>{fmt(data.totalEV)}</span>
                             </div>
                             <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
-                              <div className="h-full rounded-full bg-red-600" style={{ width: (result.grossEV > 0 ? Math.min(100, (data.totalEV / result.grossEV) * 100) : 0) + "%" }} />
+                              <div className="h-full rounded-full" style={{ width: (result.grossEV > 0 ? Math.min(100, (data.totalEV / result.grossEV) * 100) : 0) + "%", backgroundColor: accent }} />
                             </div>
                           </div>
                         </div>
@@ -732,7 +738,8 @@ export default function PacksPage() {
                   return (
                     <button key={distId}
                       onClick={() => canAnalyzeEV(listing.packType) ? handleAnalyze(listing) : undefined}
-                      className={"flex items-center gap-2 rounded-lg border px-3 py-2 text-left transition " + (canAnalyzeEV(listing.packType) ? "hover:bg-zinc-800 cursor-pointer" : "cursor-default opacity-80") + " " + (selectedPack?.distId === distId ? "border-red-600 bg-zinc-800" : "border-zinc-700 bg-zinc-900")}>
+                      className={"flex items-center gap-2 rounded-lg border px-3 py-2 text-left transition " + (canAnalyzeEV(listing.packType) ? "hover:bg-zinc-800 cursor-pointer" : "cursor-default opacity-80") + " " + (selectedPack?.distId === distId ? "bg-zinc-800" : "border-zinc-700 bg-zinc-900")}
+                      style={selectedPack?.distId === distId ? { borderColor: accent } : undefined}>
                       {listing.imageUrl && <img src={listing.imageUrl} alt={listing.title} className="h-8 w-8 rounded object-cover flex-shrink-0" />}
                       <div>
                         <div className="text-xs font-semibold text-white max-w-[140px] truncate">{listing.title}</div>
@@ -769,11 +776,15 @@ export default function PacksPage() {
                 {"Secondary Market — " + (listings.length > 0 ? listings.length + " drops" : "loading...")}
               </div>
               <input value={searchFilter} onChange={(e) => setSearchFilter(e.target.value)} placeholder="Search packs..."
-                className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-red-600 w-40" />
+                className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white outline-none placeholder:text-zinc-500 w-40"
+                style={{ "--tw-ring-color": accent } as React.CSSProperties}
+                onFocus={(e) => (e.currentTarget.style.borderColor = accent)}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "")} />
               <button
                 onClick={calculateAllEV}
                 disabled={calcAllProgress !== null || listingsLoading}
-                className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed transition"
+                style={{ backgroundColor: accent }}
               >
                 {calcAllProgress !== null
                   ? "Calculating… " + calcAllProgress.done + " / " + calcAllProgress.total
@@ -783,7 +794,9 @@ export default function PacksPage() {
                 <input value={walletInput} onChange={(e) => setWalletInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && walletInput.trim()) handleWalletSearch() }}
                   placeholder="Username or wallet to show owned"
-                  className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-red-600 w-56" />
+                  className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white outline-none placeholder:text-zinc-500 w-56"
+                  onFocus={(e) => (e.currentTarget.style.borderColor = accent)}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = "")} />
                 <button onClick={handleWalletSearch} disabled={walletLoading || !walletInput.trim()}
                   className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:bg-zinc-900 disabled:opacity-50">
                   {walletLoading ? "Loading..." : "Show Owned"}
@@ -795,14 +808,16 @@ export default function PacksPage() {
               <span className="text-[10px] text-zinc-600 mr-1">TIER</span>
               {["all", "ultimate", "legendary", "rare", "fandom", "common"].map((t) => (
                 <button key={t} onClick={() => setTierFilter(t)}
-                  className={"rounded-lg px-2.5 py-1 text-xs font-semibold capitalize transition " + (tierFilter === t ? "bg-red-600 text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>
+                  className={"rounded-lg px-2.5 py-1 text-xs font-semibold capitalize transition " + (tierFilter === t ? "text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}
+                  style={tierFilter === t ? { backgroundColor: accent } : undefined}>
                   {t === "all" ? "All" : t}
                 </button>
               ))}
               <span className="text-[10px] text-zinc-600 ml-3 mr-1">TYPE</span>
               {packTypeFilters.map(({ key, label }) => (
                 <button key={key} onClick={() => setPackTypeFilter(key)}
-                  className={"rounded-lg px-2.5 py-1 text-xs font-semibold transition " + (packTypeFilter === key ? "bg-red-600 text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>
+                  className={"rounded-lg px-2.5 py-1 text-xs font-semibold transition " + (packTypeFilter === key ? "text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}
+                  style={packTypeFilter === key ? { backgroundColor: accent } : undefined}>
                   {label}
                 </button>
               ))}
@@ -888,7 +903,8 @@ export default function PacksPage() {
                         <td className="p-3">
                           {canAnalyzeEV(listing.packType) ? (
                             <button onClick={(e) => { e.stopPropagation(); handleAnalyze(listing) }}
-                              className={"rounded-lg px-3 py-1 text-xs font-semibold text-white transition " + (isSelected ? "bg-zinc-600" : "bg-red-600 hover:bg-red-500")}>
+                              className={"rounded-lg px-3 py-1 text-xs font-semibold text-white transition " + (isSelected ? "bg-zinc-600" : "")}
+                              style={!isSelected ? { backgroundColor: accent } : undefined}>
                               {isSelected && loading ? "..." : "Analyze"}
                             </button>
                           ) : (

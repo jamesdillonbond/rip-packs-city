@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { useParams } from "next/navigation";
 import Link from "next/link";
+import { getCollection } from "@/lib/collections";
 
 // ── Types (mirrors API response) ─────────────────────────────────────────────
 
@@ -68,21 +70,30 @@ function fmt$(n: number | null): string {
 const displayFont = "'Barlow Condensed', sans-serif";
 const monoFont = "'Share Tech Mono', monospace";
 
-const colors = {
-  bg: "#080808",
-  card: "rgba(255,255,255,0.04)",
-  cardBorder: "rgba(255,255,255,0.08)",
-  cardHover: "rgba(224,58,47,0.3)",
-  red: "#E03A2F",
-  text: "#F1F1F1",
-  muted: "rgba(255,255,255,0.45)",
-  green: "#22c55e",
-  barBg: "rgba(255,255,255,0.08)",
-};
+function makeColors(accent: string) {
+  return {
+    bg: "#080808",
+    card: "rgba(255,255,255,0.04)",
+    cardBorder: "rgba(255,255,255,0.08)",
+    cardHover: `${accent}4D`,
+    accent,
+    text: "#F1F1F1",
+    muted: "rgba(255,255,255,0.45)",
+    green: "#22c55e",
+    barBg: "rgba(255,255,255,0.08)",
+  };
+}
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function SetsPage({ params }: { params: { collection: string } }) {
+export default function SetsPage() {
+  const params = useParams();
+  const collectionSlug = (params?.collection as string) ?? "nba-top-shot";
+  const collectionObj = getCollection(collectionSlug);
+  const accent = collectionObj?.accent ?? "#E03A2F";
+  const colors = makeColors(accent);
+  const isAllDay = collectionSlug === "nfl-all-day";
+  const seriesLabel = isAllDay ? "Season" : "Series";
   const [wallet, setWallet] = useState<string | null>(null);
   const [data, setData] = useState<SetsResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -107,8 +118,9 @@ export default function SetsPage({ params }: { params: { collection: string } })
       setError(null);
       setData(null);
       try {
+        const endpoint = isAllDay ? "/api/allday-sets" : "/api/sets";
         const res = await fetch(
-          "/api/sets?wallet=" + encodeURIComponent(w) + "&skipAsks=1"
+          endpoint + "?wallet=" + encodeURIComponent(w) + "&skipAsks=1"
         );
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
@@ -168,9 +180,9 @@ export default function SetsPage({ params }: { params: { collection: string } })
               Search a wallet on the Collection tab first
             </div>
             <Link
-              href="/nba-top-shot/collection"
-              style={{ fontFamily: monoFont, fontSize: 12, color: colors.red, textDecoration: "none", border: "1px solid rgba(224,58,47,0.3)", padding: "8px 20px", borderRadius: 4, marginTop: 8, transition: "background 0.15s ease" }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(224,58,47,0.08)")}
+              href={`/${collectionSlug}/collection`}
+              style={{ fontFamily: monoFont, fontSize: 12, color: colors.accent, textDecoration: "none", border: `1px solid ${accent}4D`, padding: "8px 20px", borderRadius: 4, marginTop: 8, transition: "background 0.15s ease" }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = `${accent}14`)}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
             >
               GO TO COLLECTION →
@@ -215,8 +227,8 @@ export default function SetsPage({ params }: { params: { collection: string } })
 
         {/* ── Error ───────────────────────────────────────────────────────── */}
         {error && !loading && (
-          <div style={{ background: "rgba(224,58,47,0.08)", border: "1px solid rgba(224,58,47,0.25)", borderRadius: 8, padding: "16px 20px", marginBottom: 20 }}>
-            <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 14, color: colors.red, textTransform: "uppercase", marginBottom: 4 }}>ERROR</div>
+          <div style={{ background: `${accent}14`, border: `1px solid ${accent}40`, borderRadius: 8, padding: "16px 20px", marginBottom: 20 }}>
+            <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 14, color: colors.accent, textTransform: "uppercase", marginBottom: 4 }}>ERROR</div>
             <div style={{ fontFamily: monoFont, fontSize: 12, color: colors.muted, lineHeight: 1.5 }}>{error}</div>
           </div>
         )}
@@ -228,7 +240,7 @@ export default function SetsPage({ params }: { params: { collection: string } })
               NO SETS FOUND
             </div>
             <div style={{ fontFamily: monoFont, fontSize: 12, color: colors.muted }}>
-              No Top Shot moments found in this wallet
+              {isAllDay ? "No NFL All Day moments found in this wallet" : "No Top Shot moments found in this wallet"}
             </div>
           </div>
         )}
@@ -238,31 +250,31 @@ export default function SetsPage({ params }: { params: { collection: string } })
           <>
             {/* Summary bar */}
             <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-              <SummaryCard label="TOTAL SETS" value={String(data.totalSets)} />
-              <SummaryCard label="COMPLETE" value={completeSets + " / " + data.totalSets} sub={completePct + "%"} />
+              <SummaryCard label="TOTAL SETS" value={String(data.totalSets)} accent={accent} />
+              <SummaryCard label="COMPLETE" value={completeSets + " / " + data.totalSets} sub={completePct + "%"} accent={accent} />
             </div>
 
             {/* Sort pills */}
             <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
               <span style={{ fontFamily: monoFont, fontSize: 10, color: colors.muted, letterSpacing: "0.1em", textTransform: "uppercase", alignSelf: "center", marginRight: 4 }}>SORT</span>
-              <Pill label="COMPLETION %" active={sortBy === "completion"} onClick={() => setSortBy("completion")} />
-              <Pill label="COST TO COMPLETE" active={sortBy === "cost"} onClick={() => setSortBy("cost")} />
-              <Pill label="NAME A-Z" active={sortBy === "name"} onClick={() => setSortBy("name")} />
+              <Pill label="COMPLETION %" active={sortBy === "completion"} onClick={() => setSortBy("completion")} accent={accent} />
+              <Pill label="COST TO COMPLETE" active={sortBy === "cost"} onClick={() => setSortBy("cost")} accent={accent} />
+              <Pill label="NAME A-Z" active={sortBy === "name"} onClick={() => setSortBy("name")} accent={accent} />
             </div>
 
             {/* Filter pills */}
             <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
               <span style={{ fontFamily: monoFont, fontSize: 10, color: colors.muted, letterSpacing: "0.1em", textTransform: "uppercase", alignSelf: "center", marginRight: 4 }}>FILTER</span>
-              <Pill label="ALL" active={filter === "all"} onClick={() => setFilter("all")} />
-              <Pill label="COMPLETE" active={filter === "complete"} onClick={() => setFilter("complete")} />
-              <Pill label="IN PROGRESS" active={filter === "in_progress"} onClick={() => setFilter("in_progress")} />
-              <Pill label="NOT STARTED" active={filter === "not_started"} onClick={() => setFilter("not_started")} />
+              <Pill label="ALL" active={filter === "all"} onClick={() => setFilter("all")} accent={accent} />
+              <Pill label="COMPLETE" active={filter === "complete"} onClick={() => setFilter("complete")} accent={accent} />
+              <Pill label="IN PROGRESS" active={filter === "in_progress"} onClick={() => setFilter("in_progress")} accent={accent} />
+              <Pill label="NOT STARTED" active={filter === "not_started"} onClick={() => setFilter("not_started")} accent={accent} />
             </div>
 
             {/* Set cards grid */}
             <div className="sets-grid">
               {displaySets.map((set) => (
-                <SetCard key={set.setId} set={set} />
+                <SetCard key={set.setId} set={set} accent={accent} />
               ))}
             </div>
 
@@ -294,18 +306,19 @@ export default function SetsPage({ params }: { params: { collection: string } })
 
 // ── Subcomponents ────────────────────────────────────────────────────────────
 
-function SummaryCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function SummaryCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent: string }) {
+  const c = makeColors(accent);
   return (
-    <div style={{ background: colors.card, border: "1px solid " + colors.cardBorder, borderRadius: 8, padding: "12px 18px", minWidth: 100 }}>
-      <div style={{ fontFamily: monoFont, fontSize: 9, color: colors.muted, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 4 }}>
+    <div style={{ background: c.card, border: "1px solid " + c.cardBorder, borderRadius: 8, padding: "12px 18px", minWidth: 100 }}>
+      <div style={{ fontFamily: monoFont, fontSize: 9, color: c.muted, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 4 }}>
         {label}
       </div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-        <span style={{ fontFamily: displayFont, fontWeight: 800, fontSize: 22, color: colors.text }}>
+        <span style={{ fontFamily: displayFont, fontWeight: 800, fontSize: 22, color: c.text }}>
           {value}
         </span>
         {sub && (
-          <span style={{ fontFamily: monoFont, fontSize: 11, color: colors.muted }}>
+          <span style={{ fontFamily: monoFont, fontSize: 11, color: c.muted }}>
             {sub}
           </span>
         )}
@@ -314,7 +327,7 @@ function SummaryCard({ label, value, sub }: { label: string; value: string; sub?
   );
 }
 
-function Pill({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function Pill({ label, active, onClick, accent }: { label: string; active: boolean; onClick: () => void; accent: string }) {
   return (
     <button
       onClick={onClick}
@@ -324,9 +337,9 @@ function Pill({ label, active, onClick }: { label: string; active: boolean; onCl
         letterSpacing: "0.08em",
         padding: "5px 14px",
         borderRadius: 4,
-        border: "1px solid " + (active ? "rgba(224,58,47,0.5)" : "rgba(255,255,255,0.09)"),
-        background: active ? "rgba(224,58,47,0.08)" : "rgba(255,255,255,0.03)",
-        color: active ? colors.red : colors.muted,
+        border: "1px solid " + (active ? `${accent}80` : "rgba(255,255,255,0.09)"),
+        background: active ? `${accent}14` : "rgba(255,255,255,0.03)",
+        color: active ? accent : "rgba(255,255,255,0.45)",
         cursor: "pointer",
         transition: "all 0.15s ease",
         whiteSpace: "nowrap",
@@ -337,7 +350,8 @@ function Pill({ label, active, onClick }: { label: string; active: boolean; onCl
   );
 }
 
-function SetCard({ set }: { set: SetProgress }) {
+function SetCard({ set, accent }: { set: SetProgress; accent: string }) {
+  const colors = makeColors(accent);
   const isComplete = set.completionPct === 100;
   const pctLabel = set.ownedCount + " / " + set.totalEditions + " · " + set.completionPct + "%";
 
@@ -382,7 +396,7 @@ function SetCard({ set }: { set: SetProgress }) {
               width: set.completionPct + "%",
               height: "100%",
               borderRadius: 4,
-              background: isComplete ? colors.green : colors.red,
+              background: isComplete ? colors.green : colors.accent,
               transition: "width 0.5s ease",
             }}
           />
@@ -404,7 +418,7 @@ function SetCard({ set }: { set: SetProgress }) {
         <div style={{ fontFamily: monoFont, fontSize: 11, color: colors.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           Cheapest: <span style={{ color: "rgba(255,255,255,0.65)" }}>{cheapestMissing.playerName}</span>
           {cheapestMissing.lowestAsk !== null && (
-            <span style={{ color: colors.red, marginLeft: 6 }}>{fmt$(cheapestMissing.lowestAsk)}</span>
+            <span style={{ color: colors.accent, marginLeft: 6 }}>{fmt$(cheapestMissing.lowestAsk)}</span>
           )}
         </div>
       )}
