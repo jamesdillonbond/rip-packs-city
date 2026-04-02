@@ -235,6 +235,7 @@ export async function POST(req: NextRequest) {
       const median = trimmedMedian(prices)
       const wap = weightedAveragePrice(sales, now)
       const floor = Math.min(...prices)
+      // fmv_confidence is a Postgres enum with UPPERCASE values — never use lowercase strings here.
       const confidence = computeConfidence(sales.length)
       const daysSinceSale = Math.round(
         (now.getTime() - latestSoldAt.getTime()) / (1000 * 60 * 60 * 24)

@@ -161,6 +161,7 @@ async function getSupabaseMarketMap(
     const { createClient } = await import("@supabase/supabase-js")
     const db = createClient(supabaseUrl, supabaseKey)
 
+    // fmv_confidence is a Postgres enum with UPPERCASE values — never use lowercase strings here.
     const { data: fmvRows, error } = await db
       .from("fmv_current")
       .select("edition_id, fmv_usd, floor_price_usd, cross_market_ask, top_shot_ask, flowty_ask, confidence, computed_at")
