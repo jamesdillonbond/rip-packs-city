@@ -2,17 +2,36 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-
-const TABS = [
-  { label: "HOME", icon: "🏠", href: "/" },
-  { label: "WALLET", icon: "◈", href: "/nba-top-shot/collection" },
-  { label: "SNIPER", icon: "⚡", href: "/nba-top-shot/sniper" },
-  { label: "BADGES", icon: "⭐", href: "/nba-top-shot/badges" },
-  { label: "PROFILE", icon: "👤", href: "/profile" },
-] as const;
+import { useState, useEffect } from "react";
+import { getLastCollection } from "@/lib/active-collection";
+import { getCollection } from "@/lib/collections";
 
 export default function MobileNav() {
   const pathname = usePathname();
+  const [collectionId, setCollectionId] = useState("nba-top-shot");
+
+  useEffect(() => {
+    setCollectionId(getLastCollection());
+  }, []);
+
+  const collection = getCollection(collectionId);
+  const pages = collection?.pages ?? [];
+
+  // Build dynamic tabs
+  const tabs: { label: string; icon: string; href: string }[] = [
+    { label: "HOME", icon: "🏠", href: "/" },
+    { label: "WALLET", icon: "◈", href: `/${collectionId}/collection` },
+    { label: "SNIPER", icon: "⚡", href: `/${collectionId}/sniper` },
+  ];
+
+  // Badges tab — only if collection has badges; otherwise try sets
+  if (pages.includes("badges")) {
+    tabs.push({ label: "BADGES", icon: "⭐", href: `/${collectionId}/badges` });
+  } else if (pages.includes("sets")) {
+    tabs.push({ label: "SETS", icon: "📋", href: `/${collectionId}/sets` });
+  }
+
+  tabs.push({ label: "PROFILE", icon: "👤", href: "/profile" });
 
   return (
     <nav
@@ -32,7 +51,7 @@ export default function MobileNav() {
       }}
       className="rpc-mobile-nav"
     >
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const isActive = pathname === tab.href || pathname.startsWith(tab.href + "/");
         return (
           <Link
