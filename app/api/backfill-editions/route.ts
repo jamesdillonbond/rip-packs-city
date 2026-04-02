@@ -1,56 +1,52 @@
 import { NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import fcl from "@/lib/flow"
-import * as t from "@onflow/types"
-
-// Default wallet for FCL queries — the Cadence script borrows from a
-// public MomentCollection, so any wallet that owns TopShot moments works.
-const DEFAULT_WALLET = "0xbd94cade097e50ac"
+import { topshotGraphql } from "@/lib/topshot"
 
 // Process at most 100 NFTs per run to stay within Vercel's ~25s timeout.
 const BATCH_SIZE = 100
-// FCL concurrency — keep low to avoid rate limiting.
+// GQL concurrency — keep low to avoid rate limiting.
 const CONCURRENCY = 5
 // Backfill state key for offset tracking across runs.
 const STATE_KEY = "topshot_edition_integer_keys"
 
-// ── FCL metadata query ──────────────────────────────────────────────────────
+// ── GQL moment lookup ──────────────────────────────────────────────────────
 
-async function getMomentMetadata(
-  wallet: string,
-  nftId: number
-): Promise<{ setID: number; playID: number } | null> {
-  const cadence = `
-    import TopShot from 0x0b2a3299cc857e29
-    import MetadataViews from 0x1d7e57aa55817448
-    access(all)
-    fun main(address: Address, id: UInt64): {String:String} {
-      let acct = getAccount(address)
-      let col = acct.capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
-        ?? panic("no collection")
-      let nft = col.borrowMoment(id:id) ?? panic("no nft")
-      let view = nft.resolveView(Type<TopShot.TopShotMomentMetadataView>()) ?? panic("no metadata")
-      let data = view as! TopShot.TopShotMomentMetadataView
-      return {
-        "playID": data.playID.toString(),
-        "setID": data.setID.toString()
+type MintedMomentData = {
+  getMintedMoment?: {
+    data?: {
+      set?: { id?: string | null } | null
+      play?: { id?: string | null } | null
+    } | null
+  } | null
+}
+
+const GET_MOMENT_QUERY = `
+  query GetMomentEdition($id: ID!) {
+    getMintedMoment(momentId: $id) {
+      data {
+        set { id }
+        play { id }
       }
     }
-  `
+  }
+`
 
+async function fetchMomentSetPlay(
+  nftId: string
+): Promise<{ setID: number; playID: number } | null> {
   try {
-    const result = await fcl.query({
-      cadence,
-      args: (arg: any) => [arg(wallet, t.Address), arg(String(nftId), t.UInt64)],
-    })
+    const data = await topshotGraphql<MintedMomentData>(GET_MOMENT_QUERY, { id: nftId })
+    const moment = data?.getMintedMoment?.data
+    if (!moment?.set?.id || !moment?.play?.id) return null
 
-    const setID = parseInt(result?.setID, 10)
-    const playID = parseInt(result?.playID, 10)
+    const setID = parseInt(moment.set.id, 10)
+    const playID = parseInt(moment.play.id, 10)
     if (isNaN(setID) || isNaN(playID) || setID <= 0 || playID <= 0) return null
+
     return { setID, playID }
   } catch (err) {
     console.warn(
-      `[backfill-editions] FCL failed for nftId=${nftId}: ${err instanceof Error ? err.message.slice(0, 120) : String(err)}`
+      `[backfill-editions] GQL failed for nftId=${nftId}: ${err instanceof Error ? err.message.slice(0, 120) : String(err)}`
     )
     return null
   }
@@ -161,11 +157,11 @@ export async function POST(req: Request) {
       })
     }
 
-    // ── Step 3: Call FCL for each nft_id with concurrency ─────────────────
+    // ── Step 3: Call GQL for each nft_id with concurrency ────────────────
     const results = await mapWithConcurrency(candidates, CONCURRENCY, async (row: any) => {
-      const nftId = Number(row.nft_id)
+      const nftId = String(row.nft_id)
       const editionId = row.edition_id as string
-      const meta = await getMomentMetadata(DEFAULT_WALLET, nftId)
+      const meta = await fetchMomentSetPlay(nftId)
       return { nftId, editionId, meta }
     })
 
