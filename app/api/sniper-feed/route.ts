@@ -58,6 +58,17 @@ interface RawListing {
   circulationCount: number;
 }
 
+// Extract ask price from various listing shapes
+function parseListingPrice(l: RawListing): number | null {
+  if (typeof l.marketplacePrice === "number" && l.marketplacePrice > 0) return l.marketplacePrice;
+  if (typeof l.lowAsk === "number" && l.lowAsk > 0) return l.lowAsk;
+  if (l.flowRetailPrice?.value) {
+    const v = parseFloat(l.flowRetailPrice.value);
+    if (!isNaN(v) && v > 0) return v;
+  }
+  return null;
+}
+
 interface FmvRow {
   editionKey: string;
   fmv: number;
@@ -665,7 +676,7 @@ async function computeSniperFeed(opts: {
 
   // 1. Fetch TS listings + Flowty in parallel
   const [{ listings: tsListings, tsCount }, flowtyListings] = await Promise.all([
-    fetchTopShotPool(supabase),
+    fetchTopShotPool(supabase as any),
     fetchAllFlowtyListings(),
   ]);
 

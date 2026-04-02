@@ -21,6 +21,7 @@ export interface Collection {
   published: boolean
   graphqlUrl?: string
   flowContractName?: string
+  openSeaSlug?: string
 }
 
 export const COLLECTIONS: Collection[] = [
@@ -102,8 +103,9 @@ export const COLLECTIONS: Collection[] = [
     partner: "Panini America",
     accent: "#C084FC",
     icon: "🃏",
-    pages: ["overview", "collection", "packs", "sniper"],
-    published: false,
+    pages: ["overview", "sniper"],
+    published: true,
+    openSeaSlug: "paniniblockchain",
   },
   {
     id: "candy-mlb",
