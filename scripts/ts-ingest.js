@@ -20,7 +20,17 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
         "Referer": "https://www.flowty.io/",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146 Safari/537.36",
       },
-      body: JSON.stringify({ from: 0, size: 3, filters: {}, sort: [{ field: "updated_at", order: "desc" }] }),
+      body: JSON.stringify({
+        address: null,
+        addresses: [],
+        collectionFilters: [{ collection: "0x0b2a3299cc857e29.TopShot", traits: [] }],
+        from: 0,
+        includeAllListings: true,
+        limit: 24,
+        onlyUnlisted: false,
+        orderFilters: [{ conditions: [], kind: "storefront", paymentTokens: [] }],
+        sort: { direction: "desc", listingKind: "storefront", path: "blockTimestamp" },
+      }),
       signal: AbortSignal.timeout(12000),
     });
     console.log("Status:", res.status);
