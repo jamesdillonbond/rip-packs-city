@@ -127,15 +127,6 @@ export interface SniperDeal {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const TS_GQL = "https://public-api.nbatopshot.com/graphql";
-const GQL_HEADERS: Record<string, string> = {
-  "Content-Type": "application/json",
-  "User-Agent": "sports-collectible-tool/0.1",
-};
-
-const TS_PROXY_URL = process.env.TS_PROXY_URL ?? "";
-const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET ?? "";
-
 const FLOWTY_ENDPOINT = "https://api2.flowty.io/collection/0x0b2a3299cc857e29/TopShot";
 const FLOWTY_HEADERS = {
   "Content-Type": "application/json",
@@ -211,64 +202,7 @@ function serialMultiplier(
   return { mult: 1, signal: null, isSpecial: false };
 }
 
-// ─── Top Shot GQL ─────────────────────────────────────────────────────────────
-
-const SEARCH_MARKETPLACE_QUERY = `
-  query SearchMarketplaceEditions($cursor: String = "", $limit: Int = 100) {
-    searchMarketplaceEditions(input: {
-      filters: {
-        byMarketPlaceListingType: LISTED_AND_UNLISTED
-      }
-      sortBy: EDITION_CREATED_AT_DESC
-      searchInput: { pagination: { direction: RIGHT, limit: $limit, cursor: $cursor } }
-    }) {
-      data {
-        searchSummary {
-          pagination { rightCursor }
-          data {
-            size
-            data {
-              ... on MarketplaceEdition {
-                id
-                tier
-                lowAsk
-                circulationCount
-                parallelID
-                parallelName
-                set {
-                  id
-                  flowId
-                  flowSeriesNumber
-                  flowName
-                }
-                play {
-                  id
-                  flowID
-                  stats {
-                    playerName
-                    teamAtMoment
-                    jerseyNumber
-                    nbaSeason
-                  }
-                }
-                setPlay {
-                  ID
-                  flowRetired
-                  circulations {
-                    circulationCount
-                    forSaleByCollectors
-                    locked
-                  }
-                }
-                editionListingCount
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-`;
+// ─── Top Shot listings from Supabase (populated every 5 min by GitHub Actions via Flowty) ─
 
 function parseListingPrice(listing: RawListing): number {
   // MarketplaceEdition shape (new TS GQL)
@@ -281,98 +215,46 @@ function parseListingPrice(listing: RawListing): number {
   return 0;
 }
 
-async function fetchTSPage(
-  cursor: string,
-  sortBy: string
-): Promise<{ listings: RawListing[]; nextCursor: string | null }> {
-  const endpoint = TS_PROXY_URL || TS_GQL;
-  const MAX_ATTEMPTS = 2;
+async function fetchTopShotPool(
+  supabase: SupabaseClient
+): Promise<{ listings: RawListing[]; tsCount: number }> {
+  const { data, error } = await (supabase as any)
+    .from("ts_listings")
+    .select("listing_id, flow_id, serial_number, circulation_count, price_usd, player_name, set_name, moment_tier, series_number, is_locked");
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    try {
-      if (attempt > 1) {
-        await new Promise((r) => setTimeout(r, 500));
-        console.log(`[sniper-feed] TS page retry attempt=${attempt} cursor=${cursor || "start"}`);
-      }
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 6000);
-      const headers: Record<string, string> = { ...GQL_HEADERS };
-      if (TS_PROXY_URL) headers["X-Proxy-Secret"] = TS_PROXY_SECRET;
-      const body = JSON.stringify({
-            query: SEARCH_MARKETPLACE_QUERY,
-            variables: { cursor: cursor || "", limit: 100 },
-          });
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers,
-        body,
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      if (!res.ok) throw new Error(`GQL ${res.status}: ${await res.text().then((t) => t.slice(0, 200))}`);
-      const json = await res.json();
-      if (json.errors?.length) throw new Error(json.errors.map((e: { message: string }) => e.message).join("; "));
-      const summary = json?.data?.searchMarketplaceEditions?.data?.searchSummary;
-      const nextCursor = summary?.pagination?.rightCursor ?? null;
-      const listings: RawListing[] = [];
-      const dataField = summary?.data;
-      if (dataField?.data && Array.isArray(dataField.data)) {
-        listings.push(...dataField.data);
-      } else if (Array.isArray(dataField)) {
-        for (const block of dataField) {
-          if (Array.isArray(block?.data)) listings.push(...block.data);
-        }
-      }
-      console.log(`[sniper-feed] TS page cursor=${cursor || "start"} attempt=${attempt} listings=${listings.length}`);
-      return { listings, nextCursor };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (attempt < MAX_ATTEMPTS) {
-        console.warn(`[sniper-feed] TS page attempt=${attempt} FAILED (will retry): ${msg}`);
-      } else {
-        console.error(`[sniper-feed] TS page FAILED all attempts endpoint=${endpoint}: ${msg}`);
-      }
-    }
-  }
-  return { listings: [], nextCursor: null };
-}
-
-async function fetchTopShotPool(): Promise<{ listings: RawListing[]; tsCount: number }> {
-  const seen = new Set<string>();
-  const all: RawListing[] = [];
-  function add(listings: RawListing[]) {
-    for (const l of listings) {
-      if (!seen.has(l.id)) { seen.add(l.id); all.push(l); }
-    }
+  if (error) {
+    console.error(`[sniper-feed] ts_listings fetch error: ${error.message}`);
+    return { listings: [], tsCount: 0 };
   }
 
-  // Page 1 — must complete before we know the cursor for pages 2+
-  const p1 = await fetchTSPage("", "");
-  add(p1.listings);
+  const rows = (data ?? []) as Array<{
+    listing_id: string;
+    flow_id: string;
+    serial_number: number;
+    circulation_count: number;
+    price_usd: number;
+    player_name: string;
+    set_name: string;
+    moment_tier: string;
+    series_number: number;
+    is_locked: boolean;
+  }>;
 
-  // Pages 2 and 3 — only if page 1 succeeded and returned a cursor
-  if (p1.listings.length > 0 && p1.nextCursor) {
-    const [r2] = await Promise.allSettled([
-      fetchTSPage(p1.nextCursor, ""),
-    ]);
-    if (r2.status === "fulfilled") {
-      add(r2.value.listings);
-      // Fetch page 3 using p2's cursor
-      if (r2.value.nextCursor) {
-        const p3 = await fetchTSPage(r2.value.nextCursor, "");
-        add(p3.listings);
-        console.log(`[sniper-feed] TS pool: p1=${p1.listings.length} p2=${r2.value.listings.length} p3=${p3.listings.length} total=${all.length}`);
-      } else {
-        console.log(`[sniper-feed] TS pool: p1=${p1.listings.length} p2=${r2.value.listings.length} total=${all.length}`);
-      }
-    } else {
-      console.log(`[sniper-feed] TS pool: p1=${p1.listings.length} p2=FAIL total=${all.length}`);
-    }
-  } else {
-    console.log(`[sniper-feed] TS pool: p1=${p1.listings.length} (no cursor, single page) total=${all.length}`);
-  }
+  const listings: RawListing[] = rows.map((r) => ({
+    id: r.flow_id,
+    marketplacePrice: r.price_usd,
+    serialNumber: r.serial_number,
+    circulationCount: r.circulation_count,
+    playerName: r.player_name,
+    setName: r.set_name,
+    momentTier: r.moment_tier,
+    setSeriesNumber: r.series_number,
+    isLocked: r.is_locked,
+    storefrontListingID: r.listing_id,
+  }));
 
-  return { listings: all, tsCount: all.length };
+  console.log(`[sniper-feed] ts_listings: ${listings.length} rows from Supabase`);
+  return { listings, tsCount: listings.length };
 }
 
 // ─── Flowty helpers ───────────────────────────────────────────────────────────
@@ -771,9 +653,9 @@ async function computeSniperFeed(opts: {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // 1. Fetch TS listings + Flowty in parallel
+  // 1. Fetch TS listings (from Supabase ts_listings) + Flowty in parallel
   const [{ listings: tsListings, tsCount }, flowtyListings] = await Promise.all([
-    fetchTopShotPool(),
+    fetchTopShotPool(supabase),
     fetchAllFlowtyListings(),
   ]);
 
