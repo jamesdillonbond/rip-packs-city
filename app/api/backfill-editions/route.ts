@@ -81,12 +81,6 @@ async function mapWithConcurrency<T, R>(
 // ── Route handler ───────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
-  // Auth check
-  const auth = req.headers.get("x-ingest-token")
-  if (auth !== process.env.INGEST_SECRET_TOKEN) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
-
   const startTime = Date.now()
   let processed = 0
   let upserted = 0
