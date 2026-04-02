@@ -110,6 +110,8 @@ type MomentRow = {
   fmvComputedAt?: string | null
   tssPoints?: number | null
   badgeInfo?: BadgeInfo | null
+  editionOffer?: number | null
+  bestOfferType?: "edition" | "serial" | null
 }
 
 type WalletSearchResponse = {
@@ -563,19 +565,30 @@ export default function WalletPage() {
         .then(function(r) { return r.ok ? r.json() : null })
         .then(function(d) {
           if (!d || !Array.isArray(d.results)) return
-          const offerMap = new Map<string, number>()
+          const offerMap = new Map<string, { bestOffer: number; bestOfferType: "edition" | "serial" | null; editionOffer: number | null }>()
           for (const result of d.results) {
             if (typeof result.bestOffer === "number" && result.bestOffer > 0) {
-              offerMap.set(String(result.momentId), result.bestOffer)
+              // Determine edition-level offer from bestOfferType
+              const editionOffer = result.bestOfferType === "edition" ? result.bestOffer : null
+              offerMap.set(String(result.momentId), {
+                bestOffer: result.bestOffer,
+                bestOfferType: result.bestOfferType ?? null,
+                editionOffer,
+              })
             }
           }
           if (!offerMap.size) return
           setRows(function(prev) {
             return prev.map(function(row) {
               const fresh = offerMap.get(row.momentId)
-              if (fresh === undefined) return row
-              if (row.bestOffer && row.bestOffer >= fresh) return row
-              return { ...row, bestOffer: fresh }
+              if (!fresh) return row
+              if (row.bestOffer && row.bestOffer >= fresh.bestOffer) return row
+              return {
+                ...row,
+                bestOffer: fresh.bestOffer,
+                bestOfferType: fresh.bestOfferType,
+                editionOffer: fresh.editionOffer,
+              }
             })
           })
         })
@@ -1203,7 +1216,9 @@ export default function WalletPage() {
                         })()}
                         {(function() {
                           const ask = getBestAsk(row)
-                          if (ask == null || !row.fmv || Math.abs(ask - row.fmv) < 0.01) return null
+                          if (ask == null || !row.fmv || row.fmv <= 0) return null
+                          const pctDiff = Math.abs((ask - row.fmv) / row.fmv) * 100
+                          if (pctDiff <= 1) return null
                           return <div className="text-[10px] text-zinc-500 font-mono">Ask {"$" + ask.toFixed(2)}</div>
                         })()}
                       </td>
@@ -1225,6 +1240,9 @@ export default function WalletPage() {
                       </td>
                       <td className="p-3 text-sm hidden lg:table-cell">
                         <span className="text-zinc-300">{formatCurrency(row.bestOffer)}</span>
+                        {typeof row.bestOffer === "number" && row.bestOffer > 0 && row.bestOfferType && (
+                          <span className="ml-1 text-[10px] text-zinc-500">{row.bestOfferType}</span>
+                        )}
                         {typeof row.bestOffer === "number" && row.bestOffer > 0 && typeof getBestAsk(row) === "number" && row.bestOffer > (getBestAsk(row) ?? Infinity) && (
                           <span className="ml-1.5 rounded bg-emerald-950 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400 border border-emerald-800">Flip</span>
                         )}
@@ -1346,6 +1364,20 @@ export default function WalletPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Empty state */}
+        {hasSearched && !loading && filteredRows.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="text-lg font-bold text-zinc-400 uppercase tracking-widest">No Moments Found</div>
+            <div className="mt-2 text-sm text-zinc-500">Try searching a different wallet or connect yours</div>
+            <button
+              onClick={function() { runSearch("0xbd94cade097e50ac") }}
+              className="mt-4 text-sm text-red-400 hover:text-red-300 transition-colors"
+            >
+              View example: 0xbd94cade097e50ac →
+            </button>
+          </div>
+        )}
 
         {summary && summary.remainingMoments > 0 ? (
           <div className="mt-6 flex justify-center">
