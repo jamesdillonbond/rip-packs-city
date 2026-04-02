@@ -191,7 +191,7 @@ const SEARCH_LISTINGS_QUERY = `
   {
     searchMomentListings(
       input: {
-        filters: { byListings: { listingType: { value: FOR_SALE } } }
+        filters: { byListingType: { value: FOR_SALE } }
         searchInput: { pagination: { cursor: "", direction: RIGHT, count: 100 } }
       }
     ) {
