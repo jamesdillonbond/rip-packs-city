@@ -10,10 +10,12 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
   process.exit(1);
 }
 
+// Minimal query - only fields we know exist, log full response to discover schema
 const QUERY = `{
   searchMomentListings(
     input: {
-      filters: {} searchInput: { pagination: { cursor: "CURSOR_PLACEHOLDER", direction: RIGHT, limit: 100 } }
+      filters: {}
+      searchInput: { pagination: { cursor: "CURSOR_PLACEHOLDER", direction: RIGHT, limit: 100 } }
     }
   ) {
     data {
@@ -24,9 +26,6 @@ const QUERY = `{
             data {
               ... on MomentListing {
                 id
-                flowRetailPrice { value }
-                marketplacePrice
-                setPlay { setID playID parallelID }
                 serialNumber
                 circulationCount
                 setName
@@ -38,6 +37,7 @@ const QUERY = `{
                 listingOrderID
                 sellerAddress
                 setSeriesNumber
+                setPlay { setID playID parallelID }
               }
             }
           }
@@ -61,8 +61,9 @@ async function fetchPage(cursor) {
     body: JSON.stringify({ query }),
     signal: AbortSignal.timeout(10000),
   });
-  if (!res.ok) throw new Error(`TS GQL ${res.status}: ${await res.text().then(t => t.slice(0, 300))}`);
-  const json = await res.json();
+  const text = await res.text();
+  if (!res.ok) throw new Error(`TS GQL ${res.status}: ${text.slice(0, 400)}`);
+  const json = JSON.parse(text);
   if (json.errors?.length) throw new Error(json.errors.map(e => e.message).join("; "));
   const summary = json?.data?.searchMomentListings?.data?.searchSummary;
   const nextCursor = summary?.pagination?.rightCursor ?? null;
@@ -75,7 +76,12 @@ async function fetchPage(cursor) {
   } else if (dataField?.data && Array.isArray(dataField.data)) {
     listings.push(...dataField.data);
   }
-  console.log(`  Page fetched: ${listings.length} listings, nextCursor=${nextCursor ? "yes" : "none"}`);
+  // Log first item to discover available price fields
+  if (listings.length > 0) {
+    console.log("Sample listing keys:", Object.keys(listings[0]).join(", "));
+    console.log("Sample listing:", JSON.stringify(listings[0]).slice(0, 500));
+  }
+  console.log(`  Page: ${listings.length} listings, nextCursor=${nextCursor ? "yes" : "none"}`);
   return { listings, nextCursor };
 }
 
@@ -119,36 +125,31 @@ async function deleteStale() {
       all.push(...listings);
       cursor = nextCursor;
       page++;
-      if (page > 5) break;
-    } while (cursor && all.length < 400);
+      if (page > 2) break; // Only 2 pages for now while discovering schema
+    } while (cursor && all.length < 200);
 
     console.log(`Total fetched: ${all.length}`);
 
     const now = new Date().toISOString();
     const rows = all
       .filter(l => l.setPlay?.setID && l.setPlay?.playID && l.serialNumber)
-      .map(l => {
-        const price = l.flowRetailPrice?.value
-          ? parseFloat(l.flowRetailPrice.value) / 100_000_000
-          : (l.marketplacePrice ?? 0);
-        return {
-          listing_id: l.listingOrderID ?? l.storefrontListingID ?? l.id,
-          flow_id: String(l.id),
-          set_id: parseInt(l.setPlay.setID, 10),
-          play_id: parseInt(l.setPlay.playID, 10),
-          parallel_id: parseInt(l.setPlay.parallelID ?? 0, 10),
-          serial_number: l.serialNumber,
-          circulation_count: l.circulationCount ?? 0,
-          price_usd: price,
-          seller_address: l.sellerAddress ?? null,
-          player_name: l.playerName ?? l.momentTitle ?? null,
-          set_name: l.setName ?? null,
-          moment_tier: (l.momentTier ?? "COMMON").replace("MOMENT_TIER_", ""),
-          series_number: l.setSeriesNumber ?? null,
-          is_locked: l.isLocked ?? false,
-          ingested_at: now,
-        };
-      });
+      .map(l => ({
+        listing_id: l.listingOrderID ?? l.storefrontListingID ?? l.id,
+        flow_id: String(l.id),
+        set_id: parseInt(l.setPlay.setID, 10),
+        play_id: parseInt(l.setPlay.playID, 10),
+        parallel_id: parseInt(l.setPlay.parallelID ?? 0, 10),
+        serial_number: l.serialNumber,
+        circulation_count: l.circulationCount ?? 0,
+        price_usd: 0, // Will fix once we know the price field name
+        seller_address: l.sellerAddress ?? null,
+        player_name: l.playerName ?? l.momentTitle ?? null,
+        set_name: l.setName ?? null,
+        moment_tier: (l.momentTier ?? "COMMON").replace("MOMENT_TIER_", ""),
+        series_number: l.setSeriesNumber ?? null,
+        is_locked: l.isLocked ?? false,
+        ingested_at: now,
+      }));
 
     console.log(`Upserting ${rows.length} rows...`);
     for (let i = 0; i < rows.length; i += 100) {
