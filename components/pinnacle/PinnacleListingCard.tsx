@@ -112,7 +112,7 @@ export default function PinnacleListingCard({
           whiteSpace: "nowrap",
         }}
       >
-        {characters}
+        {characters.replace(/^\[|\]$/g, "")}
       </p>
 
       {/* Set + Series */}

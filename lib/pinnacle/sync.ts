@@ -29,7 +29,7 @@ export async function syncPinnacleEditions(supabase: SupabaseClient) {
       editionMap.set(editionKey, {
         id: editionKey,
         external_id: listing.nftView.id,
-        character_name: traits.Characters,
+        character_name: traits.Characters.replace(/^\[|\]$/g, ""),
         franchise: studio,
         set_name: traits.SetName,
         royalty_code: traits.RoyaltyCodes.replace(/^\[|\]$/g, ""),
