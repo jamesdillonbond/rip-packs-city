@@ -717,6 +717,50 @@ export default function WalletPage() {
     enrichOffers(withBadges)
   }
 
+  // Auto-search when ownerKey is available and no results loaded yet
+  useEffect(function() {
+    if (ownerKey && rows.length === 0 && !loading) {
+      setInput(ownerKey)
+      runSearch(ownerKey)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownerKey])
+
+  // Auto-load remaining pages after search completes
+  useEffect(function() {
+    if (!summary || summary.remainingMoments <= 0 || loading || loadingMore) return
+    let cancelled = false
+    let currentOffset = offset
+    let requests = 0
+    async function loadAll() {
+      while (!cancelled && requests < 10) {
+        requests++
+        try {
+          const response = await fetch("/api/wallet-search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ input, offset: currentOffset, limit: 50 }),
+          })
+          const json = (await response.json()) as WalletSearchResponse
+          if (!response.ok || cancelled) break
+          const nextRows = Array.isArray(json.rows) ? json.rows : []
+          if (nextRows.length === 0) break
+          const hydrated = await hydrateMarket(nextRows)
+          const withBadges = await enrichWithBadges(hydrated)
+          setRows(function(prev) { return [...prev, ...withBadges] })
+          setSummary(json.summary)
+          currentOffset += nextRows.length
+          setOffset(currentOffset)
+          enrichOffers(withBadges)
+          if (!json.summary || json.summary.remainingMoments <= 0) break
+        } catch { break }
+      }
+    }
+    loadAll()
+    return function() { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [summary?.remainingMoments, loading])
+
   async function handleSearch() { await runSearch(input) }
 
   async function handleLoadMore() {

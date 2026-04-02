@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import { useCart } from "@/lib/cart/CartContext";
 import { getCollection } from "@/lib/collections";
+import { getOwnerKey } from "@/lib/owner-key";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const COMMISSION_RECIPIENT = "0xc1e4f4f4c4257510";
@@ -429,6 +430,8 @@ export default function SniperPage() {
 
   const [connectedWallet, setConnectedWallet] = useState<string | null>(null);
   const [ownedIds, setOwnedIds] = useState<Set<string>>(new Set());
+  const [editionStats, setEditionStats] = useState<Map<string, { owned: number; locked: number }>>(new Map());
+  const editionStatsFetchedRef = useRef<string | null>(null);
 
   const [tierTab, setTierTab] = useState<TierTab>("all");
   const [sortBy, setSortBy] = useState<SortOption>("discount");
@@ -486,6 +489,42 @@ export default function SniperPage() {
       }
     } catch {}
   }, [connectedWallet]);
+
+  // Fetch edition stats (own/lock counts) for connected wallet
+  useEffect(() => {
+    if (!connectedWallet) return;
+    if (editionStatsFetchedRef.current === connectedWallet) return;
+    fetch("/api/wallet-search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input: connectedWallet, offset: 0, limit: 200 }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (!json?.rows) return;
+        const map = new Map<string, { owned: number; locked: number }>();
+        for (const row of json.rows) {
+          const ek = row.editionKey;
+          if (!ek) continue;
+          const prev = map.get(ek) ?? { owned: 0, locked: 0 };
+          prev.owned += 1;
+          if (row.isLocked || row.locked) prev.locked += 1;
+          map.set(ek, prev);
+        }
+        setEditionStats(map);
+        editionStatsFetchedRef.current = connectedWallet;
+      })
+      .catch(() => {});
+  }, [connectedWallet]);
+
+  // Auto-set connectedWallet from ownerKey on mount
+  useEffect(() => {
+    const key = getOwnerKey();
+    if (key && connectedWallet === null) {
+      setConnectedWallet(key);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const buildFeedUrl = useCallback(() => {
     const params = new URLSearchParams();
@@ -880,11 +919,11 @@ export default function SniperPage() {
                   <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px", width: 40 }} />
                   <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px" }}>Moment</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Serial</th>
+                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Own/Lock</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Ask</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Adj. FMV</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Discount</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>FMV Quality</th>
-                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Src</th>
                   <th className="rpc-label" style={{ textAlign: "center", padding: "10px 4px", width: 36 }} />
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Action</th>
                 </tr>
@@ -973,6 +1012,14 @@ export default function SniperPage() {
                       {deal.isSpecialSerial && <SerialBadge deal={deal} />}
                     </td>
 
+                    {/* Own/Lock */}
+                    <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)" }}>
+                      {(() => {
+                        const stats = editionStats.get(deal.editionKey);
+                        return stats ? `${stats.owned} / ${stats.locked}` : "—";
+                      })()}
+                    </td>
+
                     {/* Ask */}
                     <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", color: "var(--rpc-text-primary)" }}>
                       ${fmt(deal.askPrice)}
@@ -1011,11 +1058,6 @@ export default function SniperPage() {
                         source={deal.confidenceSource}
                         daysSinceSale={deal.daysSinceSale}
                       />
-                    </td>
-
-                    {/* Source */}
-                    <td style={{ padding: "8px 12px", textAlign: "right" }}>
-                      <SourceBadge source={deal.source} isAllDay={isAllDay} />
                     </td>
 
                     {/* Share */}
