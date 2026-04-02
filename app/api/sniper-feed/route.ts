@@ -127,6 +127,15 @@ export interface SniperDeal {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+const TS_GQL = "https://public-api.nbatopshot.com/graphql";
+const GQL_HEADERS: Record<string, string> = {
+  "Content-Type": "application/json",
+  "User-Agent": "sports-collectible-tool/0.1",
+};
+
+const TS_PROXY_URL = process.env.TS_PROXY_URL ?? "";
+const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET ?? "";
+
 const FLOWTY_ENDPOINT = "https://api2.flowty.io/collection/0x0b2a3299cc857e29/TopShot";
 const FLOWTY_HEADERS = {
   "Content-Type": "application/json",
@@ -202,59 +211,60 @@ function serialMultiplier(
   return { mult: 1, signal: null, isSpecial: false };
 }
 
-// ─── Top Shot listings from Supabase (populated every 5 min by GitHub Actions via Flowty) ─
+// ─── Top Shot GQL ─────────────────────────────────────────────────────────────
 
-function parseListingPrice(listing: RawListing): number {
-  // MarketplaceEdition shape (new TS GQL)
-  if (listing.lowAsk && listing.lowAsk > 0) return listing.lowAsk;
-  // Legacy shape
-  if (listing.flowRetailPrice?.value) {
-    return parseFloat(listing.flowRetailPrice.value) / 100_000_000;
-  }
-  if (listing.marketplacePrice) return listing.marketplacePrice;
-  return 0;
-}
+// ─── Top Shot listings from Supabase cache ────────────────────────────────────
+// ts_listings is populated every 5 min by GitHub Actions via Flowty API.
+// The marketplace/graphql endpoint is Cloudflare-protected from Vercel IPs,
+// so we use the Supabase table as the primary TS feed source.
 
 async function fetchTopShotPool(
-  supabase: SupabaseClient
+  supabase: ReturnType<typeof createClient>
 ): Promise<{ listings: RawListing[]; tsCount: number }> {
-  const { data, error } = await (supabase as any)
-    .from("ts_listings")
-    .select("listing_id, flow_id, serial_number, circulation_count, price_usd, player_name, set_name, moment_tier, series_number, is_locked");
+  try {
+    const { data, error } = await (supabase as any)
+      .from("ts_listings")
+      .select("listing_id, flow_id, serial_number, circulation_count, price_usd, player_name, set_name, moment_tier, series_number, is_locked")
+      .order("ingested_at", { ascending: false })
+      .limit(200);
 
-  if (error) {
-    console.error(`[sniper-feed] ts_listings fetch error: ${error.message}`);
+    if (error) {
+      console.error("[sniper-feed] ts_listings fetch error:", error.message);
+      return { listings: [], tsCount: 0 };
+    }
+
+    const rows = data ?? [];
+    const listings: RawListing[] = rows.map((r: {
+      listing_id: string;
+      flow_id: string;
+      serial_number: number;
+      circulation_count: number;
+      price_usd: number;
+      player_name: string | null;
+      set_name: string | null;
+      moment_tier: string | null;
+      series_number: number | null;
+      is_locked: boolean | null;
+    }) => ({
+      id: r.flow_id,
+      circulationCount: r.circulation_count ?? 0,
+      serialNumber: r.serial_number ?? 0,
+      marketplacePrice: r.price_usd,
+      playerName: r.player_name ?? undefined,
+      setName: r.set_name ?? undefined,
+      momentTier: r.moment_tier ?? "COMMON",
+      setSeriesNumber: r.series_number ?? 0,
+      isLocked: r.is_locked ?? false,
+      listingOrderID: r.listing_id,
+      setPlay: { setID: 0, playID: 0 },
+    }));
+
+    console.log(`[sniper-feed] ts_listings: ${listings.length} rows from Supabase`);
+    return { listings, tsCount: listings.length };
+  } catch (err) {
+    console.error("[sniper-feed] ts_listings exception:", err instanceof Error ? err.message : String(err));
     return { listings: [], tsCount: 0 };
   }
-
-  const rows = (data ?? []) as Array<{
-    listing_id: string;
-    flow_id: string;
-    serial_number: number;
-    circulation_count: number;
-    price_usd: number;
-    player_name: string;
-    set_name: string;
-    moment_tier: string;
-    series_number: number;
-    is_locked: boolean;
-  }>;
-
-  const listings: RawListing[] = rows.map((r) => ({
-    id: r.flow_id,
-    marketplacePrice: r.price_usd,
-    serialNumber: r.serial_number,
-    circulationCount: r.circulation_count,
-    playerName: r.player_name,
-    setName: r.set_name,
-    momentTier: r.moment_tier,
-    setSeriesNumber: r.series_number,
-    isLocked: r.is_locked,
-    storefrontListingID: r.listing_id,
-  }));
-
-  console.log(`[sniper-feed] ts_listings: ${listings.length} rows from Supabase`);
-  return { listings, tsCount: listings.length };
 }
 
 // ─── Flowty helpers ───────────────────────────────────────────────────────────
@@ -653,7 +663,7 @@ async function computeSniperFeed(opts: {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // 1. Fetch TS listings (from Supabase ts_listings) + Flowty in parallel
+  // 1. Fetch TS listings + Flowty in parallel
   const [{ listings: tsListings, tsCount }, flowtyListings] = await Promise.all([
     fetchTopShotPool(supabase),
     fetchAllFlowtyListings(),
