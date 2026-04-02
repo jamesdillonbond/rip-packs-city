@@ -2,6 +2,8 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { getCollection, getPublishedCollection, publishedCollections, type Collection } from "@/lib/collections"
 import { CollectionTabBar } from "@/components/collection-tab-bar"
+import ActiveCollectionSync from "./ActiveCollectionSync"
+import CollectionSwitcher from "@/components/CollectionSwitcher"
 
 // ── Per-collection SEO metadata ────────────────────────────────────────────────
 const COLLECTION_META: Record<string, { title: string; description: string }> = {
@@ -67,6 +69,7 @@ export default async function CollectionSegmentLayout(props: any) {
 
   return (
     <>
+      <ActiveCollectionSync collectionId={col.id} />
       <CollectionTicker collection={col} />
       <CollectionBanner collection={col} />
       <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
@@ -119,6 +122,8 @@ function CollectionBanner({ collection }: { collection: Collection }) {
           <span style={{ color: "rgba(255,255,255,0.2)", fontSize: 10 }}>›</span>
           <span style={{ fontSize: 10, fontFamily: "'Share Tech Mono', monospace", color: "rgba(255,255,255,0.55)", letterSpacing: "0.1em" }}>{collection.label}</span>
         </div>
+
+        <CollectionSwitcher activeCollectionId={collection.id} />
 
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0 0" }}>
           <span style={{ fontSize: 22 }}>{collection.icon}</span>
