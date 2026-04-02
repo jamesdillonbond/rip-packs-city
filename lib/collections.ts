@@ -151,5 +151,6 @@ export const PAGE_LABELS: Record<CollectionPage, string> = {
   badges:     "Badges",
   sets:       "Sets",
   vault:      "Vault",
+  market:     "Market",
 }
 // cache-bust
