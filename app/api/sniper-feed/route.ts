@@ -295,42 +295,10 @@ async function fetchTSPage(
   return { listings: [], nextCursor: null };
 }
 
+// TS GQL live feed disabled — schema changed and introspection is off.
+// Relying on Flowty + ts_listings Supabase fallback instead.
 async function fetchTopShotPool(): Promise<{ listings: RawListing[]; tsCount: number }> {
-  const seen = new Set<string>();
-  const all: RawListing[] = [];
-  function add(listings: RawListing[]) {
-    for (const l of listings) {
-      if (!seen.has(l.id)) { seen.add(l.id); all.push(l); }
-    }
-  }
-
-  // Page 1 — must complete before we know the cursor for pages 2+
-  const p1 = await fetchTSPage("", "");
-  add(p1.listings);
-
-  // Pages 2 and 3 — only if page 1 succeeded and returned a cursor
-  if (p1.listings.length > 0 && p1.nextCursor) {
-    const [r2] = await Promise.allSettled([
-      fetchTSPage(p1.nextCursor, ""),
-    ]);
-    if (r2.status === "fulfilled") {
-      add(r2.value.listings);
-      // Fetch page 3 using p2's cursor
-      if (r2.value.nextCursor) {
-        const p3 = await fetchTSPage(r2.value.nextCursor, "");
-        add(p3.listings);
-        console.log(`[sniper-feed] TS pool: p1=${p1.listings.length} p2=${r2.value.listings.length} p3=${p3.listings.length} total=${all.length}`);
-      } else {
-        console.log(`[sniper-feed] TS pool: p1=${p1.listings.length} p2=${r2.value.listings.length} total=${all.length}`);
-      }
-    } else {
-      console.log(`[sniper-feed] TS pool: p1=${p1.listings.length} p2=FAIL total=${all.length}`);
-    }
-  } else {
-    console.log(`[sniper-feed] TS pool: p1=${p1.listings.length} (no cursor, single page) total=${all.length}`);
-  }
-
-  return { listings: all, tsCount: all.length };
+  return { listings: [], tsCount: 0 };
 }
 
 // ─── Flowty helpers ───────────────────────────────────────────────────────────
