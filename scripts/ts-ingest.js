@@ -112,7 +112,7 @@ async function deleteStale() {
       if (!order) continue;
       const serial = item.nftView?.serial ?? item.card?.num ?? 0;
       if (!serial) continue;
-      const traits = item.nftView?.traits ?? [];
+      const traits = Array.isArray(item.nftView?.traits) ? item.nftView.traits : Object.values(item.nftView?.traits ?? {});
       rows.push({
         listing_id: order.listingResourceID ?? String(item.id),
         flow_id: String(item.id),
