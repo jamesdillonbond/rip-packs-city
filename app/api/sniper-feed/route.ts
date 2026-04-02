@@ -243,38 +243,56 @@ async function fetchTSPage(
   sortBy: string
 ): Promise<{ listings: RawListing[]; nextCursor: string | null }> {
   const endpoint = TS_PROXY_URL || TS_GQL;
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    const headers: Record<string, string> = { ...GQL_HEADERS };
-    if (TS_PROXY_URL) headers["X-Proxy-Secret"] = TS_PROXY_SECRET;
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ query: SEARCH_LISTINGS_QUERY }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    if (!res.ok) throw new Error(`GQL ${res.status}: ${await res.text().then(t => t.slice(0, 200))}`);
-    const json = await res.json();
-    if (json.errors?.length) throw new Error(json.errors.map((e: { message: string }) => e.message).join("; "));
-    const summary = json?.data?.searchMomentListings?.data?.searchSummary;
-    const nextCursor = summary?.pagination?.rightCursor ?? null;
-    const listings: RawListing[] = [];
-    const dataField = summary?.data;
-    if (Array.isArray(dataField)) {
-      for (const block of dataField) {
-        if (Array.isArray(block?.data)) listings.push(...block.data);
+  const MAX_ATTEMPTS = 2;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      if (attempt > 1) {
+        await new Promise((r) => setTimeout(r, 500));
+        console.log(`[sniper-feed] TS page retry attempt=${attempt} cursor=${cursor || "start"}`);
       }
-    } else if (dataField?.data && Array.isArray(dataField.data)) {
-      listings.push(...dataField.data);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 6000);
+      const headers: Record<string, string> = { ...GQL_HEADERS };
+      if (TS_PROXY_URL) headers["X-Proxy-Secret"] = TS_PROXY_SECRET;
+      const body = cursor
+        ? JSON.stringify({
+            query: SEARCH_LISTINGS_QUERY.replace(`cursor: ""`, `cursor: "${cursor}"`),
+          })
+        : JSON.stringify({ query: SEARCH_LISTINGS_QUERY });
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body,
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!res.ok) throw new Error(`GQL ${res.status}: ${await res.text().then((t) => t.slice(0, 200))}`);
+      const json = await res.json();
+      if (json.errors?.length) throw new Error(json.errors.map((e: { message: string }) => e.message).join("; "));
+      const summary = json?.data?.searchMomentListings?.data?.searchSummary;
+      const nextCursor = summary?.pagination?.rightCursor ?? null;
+      const listings: RawListing[] = [];
+      const dataField = summary?.data;
+      if (Array.isArray(dataField)) {
+        for (const block of dataField) {
+          if (Array.isArray(block?.data)) listings.push(...block.data);
+        }
+      } else if (dataField?.data && Array.isArray(dataField.data)) {
+        listings.push(...dataField.data);
+      }
+      console.log(`[sniper-feed] TS page cursor=${cursor || "start"} attempt=${attempt} listings=${listings.length}`);
+      return { listings, nextCursor };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (attempt < MAX_ATTEMPTS) {
+        console.warn(`[sniper-feed] TS page attempt=${attempt} FAILED (will retry): ${msg}`);
+      } else {
+        console.error(`[sniper-feed] TS page FAILED all attempts endpoint=${endpoint}: ${msg}`);
+      }
     }
-    console.log(`[sniper-feed] TS page sortBy=${sortBy} listings=${listings.length}`);
-    return { listings, nextCursor };
-  } catch (err) {
-    console.error(`[sniper-feed] TS page FAILED endpoint=${endpoint} sortBy=${sortBy}: ${err instanceof Error ? err.message : String(err)}`);
-    return { listings: [], nextCursor: null };
   }
+  return { listings: [], nextCursor: null };
 }
 
 async function fetchTopShotPool(): Promise<{ listings: RawListing[]; tsCount: number }> {
@@ -286,13 +304,32 @@ async function fetchTopShotPool(): Promise<{ listings: RawListing[]; tsCount: nu
     }
   }
 
-  const [r1] = await Promise.allSettled([
-    fetchTSPage("", ""),
-  ]);
+  // Page 1 — must complete before we know the cursor for pages 2+
+  const p1 = await fetchTSPage("", "");
+  add(p1.listings);
 
-  if (r1.status === "fulfilled") add(r1.value.listings);
+  // Pages 2 and 3 — only if page 1 succeeded and returned a cursor
+  if (p1.listings.length > 0 && p1.nextCursor) {
+    const [r2] = await Promise.allSettled([
+      fetchTSPage(p1.nextCursor, ""),
+    ]);
+    if (r2.status === "fulfilled") {
+      add(r2.value.listings);
+      // Fetch page 3 using p2's cursor
+      if (r2.value.nextCursor) {
+        const p3 = await fetchTSPage(r2.value.nextCursor, "");
+        add(p3.listings);
+        console.log(`[sniper-feed] TS pool: p1=${p1.listings.length} p2=${r2.value.listings.length} p3=${p3.listings.length} total=${all.length}`);
+      } else {
+        console.log(`[sniper-feed] TS pool: p1=${p1.listings.length} p2=${r2.value.listings.length} total=${all.length}`);
+      }
+    } else {
+      console.log(`[sniper-feed] TS pool: p1=${p1.listings.length} p2=FAIL total=${all.length}`);
+    }
+  } else {
+    console.log(`[sniper-feed] TS pool: p1=${p1.listings.length} (no cursor, single page) total=${all.length}`);
+  }
 
-  console.log(`[sniper-feed] TS pool: p1=${r1.status === "fulfilled" ? r1.value.listings.length : "FAIL"} total=${all.length}`);
   return { listings: all, tsCount: all.length };
 }
 
@@ -447,6 +484,7 @@ async function fetchAllFlowtyListings(): Promise<FlowtyListing[]> {
   const pages = await Promise.all([
     fetchFlowtyPage(0), fetchFlowtyPage(24),
     fetchFlowtyPage(48), fetchFlowtyPage(72),
+    fetchFlowtyPage(96),
   ]);
   return pages.flat();
 }
