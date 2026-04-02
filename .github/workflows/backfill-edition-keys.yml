@@ -1,0 +1,16 @@
+name: Backfill Edition Integer Keys
+on:
+  workflow_dispatch:
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger backfill
+        run: |
+          curl -s -X POST \
+            -H "x-ingest-token: ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --max-time 300 \
+            https://rip-packs-city.vercel.app/api/backfill-editions
+    timeout-minutes: 10
