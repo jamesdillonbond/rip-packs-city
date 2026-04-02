@@ -13,7 +13,6 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
 const QUERY = `{
   searchMomentListings(
     input: {
-      
       searchInput: { pagination: { cursor: "CURSOR_PLACEHOLDER", limit: 100 } }
     }
   ) {
@@ -62,7 +61,7 @@ async function fetchPage(cursor) {
     body: JSON.stringify({ query }),
     signal: AbortSignal.timeout(10000),
   });
-  if (!res.ok) throw new Error(`TS GQL ${res.status}: ${await res.text().then(t => t.slice(0, 200))}`);
+  if (!res.ok) throw new Error(`TS GQL ${res.status}: ${await res.text().then(t => t.slice(0, 300))}`);
   const json = await res.json();
   if (json.errors?.length) throw new Error(json.errors.map(e => e.message).join("; "));
   const summary = json?.data?.searchMomentListings?.data?.searchSummary;
@@ -76,6 +75,7 @@ async function fetchPage(cursor) {
   } else if (dataField?.data && Array.isArray(dataField.data)) {
     listings.push(...dataField.data);
   }
+  console.log(`  Page fetched: ${listings.length} listings, nextCursor=${nextCursor ? "yes" : "none"}`);
   return { listings, nextCursor };
 }
 
@@ -106,7 +106,6 @@ async function deleteStale() {
     },
   });
   if (!res.ok) console.error(`Stale delete failed: ${res.status}`);
-  else console.log("Stale rows deleted.");
 }
 
 (async () => {
@@ -115,8 +114,8 @@ async function deleteStale() {
     let cursor = null;
     let page = 1;
     do {
+      console.log(`Fetching page ${page}...`);
       const { listings, nextCursor } = await fetchPage(cursor);
-      console.log(`Page ${page}: ${listings.length} listings`);
       all.push(...listings);
       cursor = nextCursor;
       page++;
@@ -154,9 +153,7 @@ async function deleteStale() {
     console.log(`Upserting ${rows.length} rows...`);
     for (let i = 0; i < rows.length; i += 100) {
       await upsert(rows.slice(i, i + 100));
-      console.log(`  Upserted rows ${i + 1}–${Math.min(i + 100, rows.length)}`);
     }
-
     await deleteStale();
     console.log(`Done. ${rows.length} listings ingested.`);
   } catch (err) {
