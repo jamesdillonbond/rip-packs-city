@@ -20,6 +20,7 @@ export interface Collection {
   published: boolean
   graphqlUrl?: string
   flowContractName?: string
+  flowContractAddress?: string
 }
 
 export const COLLECTIONS: Collection[] = [
@@ -60,10 +61,11 @@ export const COLLECTIONS: Collection[] = [
     partner: "Dapper Labs",
     accent: "#A855F7",
     icon: "✨",
-    pages: ["overview", "collection", "sniper"],
+    pages: ["overview", "collection", "sniper", "sets"],
     published: false,
     graphqlUrl: "https://public-api.disneypinnacle.com/graphql",
     flowContractName: "Pinnacle",
+    flowContractAddress: "0xedf9df96c92f4595",
   },
   {
     id: "laliga-golazos",
