@@ -95,6 +95,38 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "manage_watchlist",
+    description: "Add, remove, or list moments on the user's watchlist. Use when the user says 'watch this', 'add to my watchlist', 'what am I watching', or 'remove from watchlist'. Requires owner_key from the session.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        action: { type: "string", enum: ["add", "remove", "list"] },
+        edition_key: { type: "string", description: "setID:playID format — use from a prior search result" },
+        player_name: { type: "string" },
+        set_name: { type: "string" },
+        tier: { type: "string" },
+        thumbnail_url: { type: "string" },
+      },
+      required: ["action"],
+    },
+  },
+  {
+    name: "manage_alerts",
+    description: "Set, remove, or list FMV price alerts for moments. Use when user says 'alert me when', 'notify me if', 'set an alert', 'what alerts do I have', or 'turn off alert'. Requires owner_key.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        action: { type: "string", enum: ["set", "remove", "list"] },
+        edition_key: { type: "string" },
+        player_name: { type: "string" },
+        alert_type: { type: "string", enum: ["below_fmv_pct", "below_price"] },
+        threshold: { type: "number", description: "Percent (0-100) for below_fmv_pct, dollar amount for below_price" },
+        channel: { type: "string", enum: ["email", "telegram", "both"] },
+      },
+      required: ["action"],
+    },
+  },
+  {
     name: "escalate_to_human",
     description: "Escalate to Trevor (RPC creator) when the user has an account-specific problem, bug, or issue the bot cannot resolve. Only use after already trying to help.",
     input_schema: {
@@ -168,6 +200,7 @@ Rip Packs City (rippackscity.com) is a collector intelligence platform built by 
 - Flow Wallet cart supports FLOW and USDC.e purchases
 - Offer mode for submitting USDC.e bids via FlowtyOffers
 - Dapper Wallet cart ready pending WalletConnect ID registration
+- **Watchlist & Alerts** — save moments to your watchlist and set FMV or price-drop alerts delivered by email or Telegram
 
 ## FMV Methodology (v1.3.0 — be accurate about this)
 RPC's FMV is a weighted average price (WAP) model:
@@ -209,7 +242,17 @@ When a user wants to find or buy moments:
 - "Why is the sniper feed empty?" \u2192 Cloudflare sometimes blocks Top Shot; Flowty backup covers it; refresh or check back
 - "What does confidence mean?" \u2192 HIGH = reliable, MEDIUM = some data, LOW = sparse/directional
 - "How do I buy a moment?" \u2192 Connect Dapper wallet on Top Shot or Flowty; RPC links directly
-- "How do I connect my wallet?" \u2192 Flow/Dapper wallet; connect at top of any collection page${marketSection}${walletSection}${pageSection}
+- "How do I connect my wallet?" \u2192 Flow/Dapper wallet; connect at top of any collection page
+
+## Watchlist & Alerts
+- User says "watch this" or "add to watchlist" → call manage_watchlist with action="add" using the most recent moment from the conversation
+- User says "what's on my watchlist" or "show my watchlist" → call manage_watchlist with action="list"
+- User says "alert me when [X] drops below [Y]%" → call manage_alerts with action="set", alert_type="below_fmv_pct", threshold=Y
+- User says "alert me if [X] goes under $[Y]" → call manage_alerts with action="set", alert_type="below_price", threshold=Y
+- User says "what alerts do I have" → call manage_alerts with action="list"
+- If owner_key (userWallet) is not in session and user tries to use watchlist/alerts, respond: "To save watchlists and alerts, enter your Top Shot username in the RPC profile tab first — it only takes a second."
+- After adding to watchlist, always offer: "Want me to set a price alert for this one too?"
+- After setting an alert, confirm: the moment name, threshold, and delivery channel${marketSection}${walletSection}${pageSection}
 
 ## Escalation Rules
 Escalate ONLY when you've tried to help and cannot resolve it:
@@ -342,6 +385,127 @@ async function executeTool(
           player: m.playerName, set: m.setName, tier: m.tier, serial: m.serialNumber, fmv: m.fmv,
         })),
       });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: err.message });
+    }
+  }
+
+  if (toolName === "manage_watchlist") {
+    if (!ctx.userWallet) {
+      return JSON.stringify({ status: "error", message: "owner_key_missing" });
+    }
+    try {
+      if (toolInput.action === "list") {
+        const res = await fetch(`${base}/api/watchlist?owner_key=${encodeURIComponent(ctx.userWallet)}`, {
+          signal: AbortSignal.timeout(8000),
+        });
+        const data = await res.json();
+        const items = data.watchlist || data.items || data || [];
+        if (!Array.isArray(items) || items.length === 0) {
+          return JSON.stringify({ status: "ok", message: "Your watchlist is empty.", results: [] });
+        }
+        const results = items.map((item: any) => ({
+          player: item.player_name,
+          set: item.set_name,
+          tier: item.tier,
+          edition_key: item.edition_key,
+          low_ask: item.low_ask,
+          fmv: item.fmv,
+          discount_pct: item.fmv && item.low_ask ? Math.round((1 - item.low_ask / item.fmv) * 100) : null,
+        }));
+        return JSON.stringify({ status: "ok", results });
+      }
+      if (toolInput.action === "add") {
+        const res = await fetch(`${base}/api/watchlist`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            owner_key: ctx.userWallet,
+            edition_key: toolInput.edition_key,
+            player_name: toolInput.player_name,
+            set_name: toolInput.set_name,
+            tier: toolInput.tier,
+            thumbnail_url: toolInput.thumbnail_url,
+          }),
+          signal: AbortSignal.timeout(8000),
+        });
+        const data = await res.json();
+        return JSON.stringify({ status: "ok", message: `Added ${toolInput.player_name || "moment"} to your watchlist.`, data });
+      }
+      if (toolInput.action === "remove") {
+        const res = await fetch(`${base}/api/watchlist`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            owner_key: ctx.userWallet,
+            edition_key: toolInput.edition_key,
+          }),
+          signal: AbortSignal.timeout(8000),
+        });
+        const data = await res.json();
+        return JSON.stringify({ status: "ok", message: `Removed from your watchlist.`, data });
+      }
+      return JSON.stringify({ status: "error", message: "Invalid action. Use add, remove, or list." });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: err.message });
+    }
+  }
+
+  if (toolName === "manage_alerts") {
+    if (!ctx.userWallet) {
+      return JSON.stringify({ status: "error", message: "owner_key_missing" });
+    }
+    try {
+      if (toolInput.action === "list") {
+        const res = await fetch(`${base}/api/alerts?owner_key=${encodeURIComponent(ctx.userWallet)}`, {
+          signal: AbortSignal.timeout(8000),
+        });
+        const data = await res.json();
+        const alerts = data.alerts || data.items || data || [];
+        if (!Array.isArray(alerts) || alerts.length === 0) {
+          return JSON.stringify({ status: "ok", message: "You have no active alerts.", results: [] });
+        }
+        const results = alerts.map((a: any) => ({
+          player: a.player_name,
+          edition_key: a.edition_key,
+          alert_type: a.alert_type,
+          threshold: a.threshold,
+          channel: a.channel,
+          triggered: a.triggered ?? false,
+        }));
+        return JSON.stringify({ status: "ok", results });
+      }
+      if (toolInput.action === "set") {
+        const res = await fetch(`${base}/api/alerts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            owner_key: ctx.userWallet,
+            edition_key: toolInput.edition_key,
+            player_name: toolInput.player_name,
+            alert_type: toolInput.alert_type,
+            threshold: toolInput.threshold,
+            channel: toolInput.channel,
+          }),
+          signal: AbortSignal.timeout(8000),
+        });
+        const data = await res.json();
+        return JSON.stringify({ status: "ok", message: `Alert set for ${toolInput.player_name || "moment"}.`, data });
+      }
+      if (toolInput.action === "remove") {
+        const res = await fetch(`${base}/api/alerts`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            owner_key: ctx.userWallet,
+            edition_key: toolInput.edition_key,
+          }),
+          signal: AbortSignal.timeout(8000),
+        });
+        const data = await res.json();
+        return JSON.stringify({ status: "ok", message: `Alert removed.`, data });
+      }
+      return JSON.stringify({ status: "error", message: "Invalid action. Use set, remove, or list." });
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: err.message });
     }
