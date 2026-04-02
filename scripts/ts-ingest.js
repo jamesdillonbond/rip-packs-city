@@ -93,6 +93,7 @@ async function deleteStale() {
         console.error(`Page from=${offsets[i]} failed: ${result.reason?.message}`);
       }
     }
+<<<<<<< HEAD
 
     // Log first item structure for debugging
     if (all.length > 0) {
@@ -107,11 +108,17 @@ async function deleteStale() {
     const now = new Date().toISOString();
     const rows = [];
 
+=======
+    console.log(`Total fetched: ${all.length}`);
+    const now = new Date().toISOString();
+    const rows = [];
+>>>>>>> d00746a (fix: ts-ingest correct Flowty body (collectionFilters/orderFilters))
     for (const item of all) {
       const order = item.orders?.find(o => (o.salePrice ?? 0) > 0);
       if (!order) continue;
       const serial = item.nftView?.serial ?? item.card?.num ?? 0;
       if (!serial) continue;
+<<<<<<< HEAD
       const traits = Array.isArray(item.nftView?.traits) ? item.nftView.traits : Object.values(item.nftView?.traits ?? {});
       rows.push({
         listing_id: order.listingResourceID ?? String(item.id),
@@ -119,6 +126,13 @@ async function deleteStale() {
         set_id: 0,
         play_id: 0,
         parallel_id: 0,
+=======
+      const traits = item.nftView?.traits ?? [];
+      rows.push({
+        listing_id: order.listingResourceID ?? String(item.id),
+        flow_id: String(item.id),
+        set_id: 0, play_id: 0, parallel_id: 0,
+>>>>>>> d00746a (fix: ts-ingest correct Flowty body (collectionFilters/orderFilters))
         serial_number: serial,
         circulation_count: item.card?.max ?? 0,
         price_usd: order.salePrice,
@@ -131,11 +145,16 @@ async function deleteStale() {
         ingested_at: now,
       });
     }
+<<<<<<< HEAD
 
     console.log(`Upserting ${rows.length} rows...`);
     for (let i = 0; i < rows.length; i += 100) {
       await upsert(rows.slice(i, i + 100));
     }
+=======
+    console.log(`Upserting ${rows.length} rows...`);
+    for (let i = 0; i < rows.length; i += 100) await upsert(rows.slice(i, i + 100));
+>>>>>>> d00746a (fix: ts-ingest correct Flowty body (collectionFilters/orderFilters))
     await deleteStale();
     console.log(`Done. ${rows.length} listings ingested.`);
   } catch (err) {
