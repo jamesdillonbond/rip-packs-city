@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo, useCallback, useRef } from "react"
+import { Suspense, useEffect, useState, useMemo, useCallback, useRef } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key"
 
@@ -479,7 +479,7 @@ function ListingsModal({
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
-export default function MarketPage() {
+function MarketPageInner() {
   const searchParams = useSearchParams()
   const router = useRouter()
 
@@ -1198,4 +1198,12 @@ const thStyle: React.CSSProperties = {
   cursor: "pointer",
   userSelect: "none",
   whiteSpace: "nowrap",
+}
+
+export default function MarketPage() {
+  return (
+    <Suspense>
+      <MarketPageInner />
+    </Suspense>
+  )
 }
