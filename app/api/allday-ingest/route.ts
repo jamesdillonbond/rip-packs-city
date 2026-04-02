@@ -361,30 +361,67 @@ async function upsertFmvSnapshot(
 
 async function fetchRecentSales(
   limit: number,
-  cursor: string | null
-): Promise<{ transactions: SaleTransaction[]; nextCursor: string | null }> {
-  const data = await alldayGraphql<SearchTransactionsResponse>(
-    SEARCH_TRANSACTIONS_QUERY,
-    {
-      input: {
-        sortBy: "UPDATED_AT_DESC",
-        filters: {},
-        searchInput: {
-          pagination: {
-            cursor: cursor ?? "",
-            direction: "RIGHT",
-            limit,
-          },
+  cursor: string | null,
+  debug = false
+): Promise<{ transactions: SaleTransaction[]; nextCursor: string | null; rawDebug?: unknown }> {
+  const variables = {
+    input: {
+      sortBy: "UPDATED_AT_DESC",
+      filters: {},
+      searchInput: {
+        pagination: {
+          cursor: cursor ?? "",
+          direction: "RIGHT",
+          limit,
         },
       },
-    }
+    },
+  }
+
+  const data = await alldayGraphql<SearchTransactionsResponse>(
+    SEARCH_TRANSACTIONS_QUERY,
+    variables
   )
 
+  // ── Debug logging: raw response shape ──────────────────────────────────
+  console.log("[allday-ingest-debug] top-level keys:", JSON.stringify(data ? Object.keys(data) : null))
+  const smt = (data as Record<string, unknown>)?.searchMarketplaceTransactions
+  console.log("[allday-ingest-debug] searchMarketplaceTransactions keys:", JSON.stringify(smt ? Object.keys(smt as object) : null))
+  const smtData = smt && typeof smt === "object" ? (smt as Record<string, unknown>).data : undefined
+  console.log("[allday-ingest-debug] .data keys:", JSON.stringify(smtData ? Object.keys(smtData as object) : null))
+
+  // Log first raw transaction object in full
   const summary = data?.searchMarketplaceTransactions?.data?.searchSummary
+  const dataField = summary?.data as unknown
+  let firstTx: unknown = null
+  if (Array.isArray(dataField) && dataField.length > 0) {
+    const block = dataField[0] as { data?: unknown[] }
+    if (Array.isArray(block?.data) && block.data.length > 0) {
+      firstTx = block.data[0]
+    }
+  } else if (dataField && typeof dataField === "object" && !Array.isArray(dataField)) {
+    const block = dataField as { data?: unknown[] }
+    if (Array.isArray(block?.data) && block.data.length > 0) {
+      firstTx = block.data[0]
+    }
+  }
+  // If firstTx is still null, the shape may be totally different — log the full nested data
+  if (!firstTx) {
+    console.log("[allday-ingest-debug] summary?.data raw:", JSON.stringify(dataField)?.slice(0, 2000))
+    // Also try direct .data at searchMarketplaceTransactions level
+    console.log("[allday-ingest-debug] smtData raw:", JSON.stringify(smtData)?.slice(0, 2000))
+  } else {
+    console.log("[allday-ingest-debug] firstTransaction:", JSON.stringify(firstTx)?.slice(0, 2000))
+  }
+
+  // If debug mode, return raw data for inspection
+  if (debug) {
+    return { transactions: [], nextCursor: null, rawDebug: data }
+  }
+
   const nextCursor = summary?.pagination?.rightCursor ?? null
 
   const transactions: SaleTransaction[] = []
-  const dataField = summary?.data as unknown
 
   if (Array.isArray(dataField)) {
     for (const block of dataField) {
@@ -539,7 +576,36 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Allow GET for browser testing
+// Allow GET for browser / debug testing
 export async function GET(req: NextRequest) {
+  const token = req.nextUrl.searchParams.get("token") ?? ""
+  const expectedToken = process.env.INGEST_SECRET_TOKEN
+  if (expectedToken && token !== expectedToken) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const debug = req.nextUrl.searchParams.get("debug") === "1"
+  const dry = req.nextUrl.searchParams.get("dry") === "1"
+  const limit = Math.min(Number(req.nextUrl.searchParams.get("limit") ?? "50"), 200)
+  const cursor = req.nextUrl.searchParams.get("cursor") ?? null
+
+  // ── Debug/dry-run mode: return raw GQL response, skip all Supabase writes ──
+  if (debug || dry) {
+    try {
+      const { rawDebug } = await fetchRecentSales(limit, cursor, true)
+      return NextResponse.json({
+        mode: "debug-dry-run",
+        limit,
+        rawGqlResponse: rawDebug,
+      })
+    } catch (e) {
+      return NextResponse.json({
+        mode: "debug-dry-run",
+        error: e instanceof Error ? e.message : String(e),
+      }, { status: 500 })
+    }
+  }
+
+  // Normal flow — delegate to POST handler
   return POST(req)
 }
