@@ -665,7 +665,7 @@ async function computeSniperFeed(opts: {
 
   // 1. Fetch TS listings + Flowty in parallel
   const [{ listings: tsListings, tsCount }, flowtyListings] = await Promise.all([
-    fetchTopShotPool(supabase),
+    fetchTopShotPool(supabase as any),
     fetchAllFlowtyListings(),
   ]);
 
