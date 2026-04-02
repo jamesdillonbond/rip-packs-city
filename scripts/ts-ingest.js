@@ -13,7 +13,7 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
 const QUERY = `{
   searchMomentListings(
     input: {
-      searchInput: { pagination: { cursor: "CURSOR_PLACEHOLDER", limit: 100 } }
+      filters: {} searchInput: { pagination: { cursor: "CURSOR_PLACEHOLDER", direction: RIGHT, limit: 100 } }
     }
   ) {
     data {
