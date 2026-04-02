@@ -125,6 +125,19 @@ export interface SniperDeal {
   offerFmvPct: number | null;
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Extract the USD ask price from a RawListing, trying multiple field shapes. */
+function parseListingPrice(l: RawListing): number {
+  if (typeof l.marketplacePrice === "number" && l.marketplacePrice > 0) return l.marketplacePrice;
+  if (l.flowRetailPrice?.value) {
+    const parsed = parseFloat(l.flowRetailPrice.value);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  if (typeof l.lowAsk === "number" && l.lowAsk > 0) return l.lowAsk;
+  return 0;
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TS_GQL = "https://public-api.nbatopshot.com/graphql";
