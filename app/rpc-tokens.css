@@ -14,17 +14,17 @@
 
   --rpc-black: #080808;
   --rpc-surface: #0D0D0D;
-  --rpc-surface-raised: rgba(255, 255, 255, 0.03);
+  --rpc-surface-raised: rgba(255, 255, 255, 0.04);
   --rpc-surface-hover: rgba(255, 255, 255, 0.06);
-  --rpc-border: rgba(255, 255, 255, 0.07);
+  --rpc-border: rgba(255, 255, 255, 0.10);
   --rpc-border-hover: rgba(255, 255, 255, 0.12);
   --rpc-silver: #BFC0BF;
 
   /* ── Text ──────────────────────────────────────────────── */
   --rpc-text-primary: #F1F1F1;
   --rpc-text-secondary: rgba(255, 255, 255, 0.55);
-  --rpc-text-muted: rgba(255, 255, 255, 0.35);
-  --rpc-text-ghost: rgba(255, 255, 255, 0.2);
+  --rpc-text-muted: rgba(255, 255, 255, 0.45);
+  --rpc-text-ghost: rgba(255, 255, 255, 0.28);
 
   /* ── Tier Colors ──────────────────────────────────────── */
   --tier-legendary: #FFD700;
@@ -120,9 +120,9 @@
   background: linear-gradient(
     105deg,
     transparent 20%,
-    rgba(255, 215, 0, 0.08) 35%,
-    rgba(255, 215, 0, 0.15) 50%,
-    rgba(255, 215, 0, 0.08) 65%,
+    rgba(255, 215, 0, 0.12) 35%,
+    rgba(255, 215, 0, 0.22) 50%,
+    rgba(255, 215, 0, 0.12) 65%,
     transparent 80%
   );
   background-size: 200% 100%;
@@ -326,3 +326,15 @@
 .rpc-tier-stripe.rare { background: var(--tier-rare); }
 .rpc-tier-stripe.fandom { background: var(--tier-fandom); }
 .rpc-tier-stripe.common { background: var(--tier-common); }
+
+/* ── Hot Row Accent ──────────────────────────────────────────── */
+.rpc-hot-row {
+  border-left: 3px solid #E03A2F !important;
+}
+
+/* ── Binder Background ───────────────────────────────────────── */
+.rpc-binder-bg {
+  background-image:
+    repeating-linear-gradient(0deg, transparent, transparent 23px, rgba(255,255,255,0.025) 23px, rgba(255,255,255,0.025) 24px),
+    repeating-linear-gradient(90deg, transparent, transparent 23px, rgba(255,255,255,0.015) 23px, rgba(255,255,255,0.015) 24px);
+}
