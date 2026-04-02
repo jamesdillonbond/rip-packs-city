@@ -417,11 +417,23 @@ export default function WalletPage() {
   const [filterBadges, setFilterBadges] = useState(false)
   const [filterHasOffer, setFilterHasOffer] = useState(false)
   const [filterListed, setFilterListed] = useState(false)
+  const [isLoadingAll, setIsLoadingAll] = useState(false)
+  const [loadAllProgress, setLoadAllProgress] = useState<{ loaded: number; total: number } | null>(null)
+  const loadAllFiredRef = useRef(false)
+
+  const autoSearchFired = useRef(false)
 
   useEffect(function() {
-    setOwnerKey(getOwnerKey())
-    return onOwnerKeyChange(function(key) { setOwnerKey(key) })
-  }, [])
+    const key = getOwnerKey()
+    setOwnerKey(key)
+    // Auto-load the signed-in wallet if no search has been triggered yet
+    if (key && !autoSearchFired.current && !input && rows.length === 0) {
+      autoSearchFired.current = true
+      setInput(key)
+      runSearch(key)
+    }
+    return onOwnerKeyChange(function(k) { setOwnerKey(k) })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── FCL wallet connection (for own-collection detection) ───────────────────
   useEffect(function() {
@@ -657,6 +669,9 @@ export default function WalletPage() {
     setHasSearched(false)
     setSealedPackCount(null)
     setPacksByTitle({})
+    loadAllFiredRef.current = false
+    setIsLoadingAll(false)
+    setLoadAllProgress(null)
     setRecentSales([]);
     // Clear any pending offer enrichment from previous search
     pendingOfferRowsRef.current = []
@@ -726,6 +741,54 @@ export default function WalletPage() {
     catch (err) { setError(err instanceof Error ? err.message : "Something went wrong") }
     finally { setLoadingMore(false) }
   }
+
+  // Auto-load all remaining wallet pages after first page loads
+  useEffect(function() {
+    if (!summary || summary.remainingMoments <= 0) return
+    if (loadAllFiredRef.current) return
+    if (!hasSearched || loading) return
+    loadAllFiredRef.current = true
+    setIsLoadingAll(true)
+    setLoadAllProgress({ loaded: rows.length, total: summary.totalMoments })
+
+    let currentOffset = rows.length
+    let cancelled = false
+    const LIMIT = 50
+    const MAX_PAGES = 10
+
+    async function loadAll() {
+      for (let page = 0; page < MAX_PAGES && !cancelled; page++) {
+        try {
+          const response = await fetch("/api/wallet-search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ input: input || lastSearchedRef.current, offset: currentOffset, limit: LIMIT }),
+          })
+          const json = (await response.json()) as WalletSearchResponse
+          if (!response.ok) break
+          const nextRows = Array.isArray(json.rows) ? json.rows : []
+          if (nextRows.length === 0) break
+          const hydrated = await hydrateMarket(nextRows)
+          const withBadges = await enrichWithBadges(hydrated)
+          setRows(function(prev) { return [...prev, ...withBadges] })
+          currentOffset += nextRows.length
+          setLoadAllProgress({ loaded: currentOffset, total: summary.totalMoments })
+          setSummary(json.summary)
+          setOffset(currentOffset)
+          enrichOffers(withBadges)
+          if (!json.summary || json.summary.remainingMoments <= 0) break
+        } catch {
+          break
+        }
+      }
+      if (!cancelled) {
+        setIsLoadingAll(false)
+        setLoadAllProgress(null)
+      }
+    }
+    loadAll()
+    return function() { cancelled = true }
+  }, [summary, hasSearched, loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function toggleSort(next: SortKey) {
     if (sortKey === next) { setSortDirection(function(prev) { return prev === "asc" ? "desc" : "asc" }) }
@@ -906,7 +969,7 @@ export default function WalletPage() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-black text-zinc-100">
+    <div className="min-h-screen bg-black text-zinc-100 rpc-binder-bg">
       <Suspense fallback={null}>
         <AutoSearchReader onSearch={runSearch} />
       </Suspense>
@@ -919,6 +982,14 @@ export default function WalletPage() {
             <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
             Signed in as <span className="font-semibold text-white">{ownerKey}</span>
             <span className="ml-1 text-zinc-600">· Loading wallet will update your profile stats</span>
+          </div>
+        )}
+
+        {/* Auto-load progress */}
+        {isLoadingAll && loadAllProgress && (
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-400">
+            <span className="inline-block h-2 w-2 rounded-full bg-blue-400 animate-pulse" />
+            Loading {loadAllProgress.loaded} / {loadAllProgress.total} moments…
           </div>
         )}
 
