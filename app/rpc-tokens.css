@@ -16,14 +16,15 @@
   --rpc-surface: #0D0D0D;
   --rpc-surface-raised: rgba(255, 255, 255, 0.03);
   --rpc-surface-hover: rgba(255, 255, 255, 0.06);
-  --rpc-border: rgba(255, 255, 255, 0.07);
-  --rpc-border-hover: rgba(255, 255, 255, 0.12);
+  --rpc-border: rgba(255, 255, 255, 0.12);
+  --rpc-border-hover: rgba(255, 255, 255, 0.18);
+  --rpc-border-active: rgba(224, 58, 47, 0.6);
   --rpc-silver: #BFC0BF;
 
   /* ── Text ──────────────────────────────────────────────── */
   --rpc-text-primary: #F1F1F1;
   --rpc-text-secondary: rgba(255, 255, 255, 0.55);
-  --rpc-text-muted: rgba(255, 255, 255, 0.35);
+  --rpc-text-muted: rgba(255, 255, 255, 0.42);
   --rpc-text-ghost: rgba(255, 255, 255, 0.2);
 
   /* ── Tier Colors ──────────────────────────────────────── */
@@ -326,3 +327,84 @@
 .rpc-tier-stripe.rare { background: var(--tier-rare); }
 .rpc-tier-stripe.fandom { background: var(--tier-fandom); }
 .rpc-tier-stripe.common { background: var(--tier-common); }
+
+/* ── Card Binder Background ──────────────────────────────── */
+.rpc-binder-bg {
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 23px,
+      rgba(255, 255, 255, 0.03) 23px,
+      rgba(255, 255, 255, 0.03) 24px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 23px,
+      rgba(255, 255, 255, 0.03) 23px,
+      rgba(255, 255, 255, 0.03) 24px
+    );
+}
+
+/* ── Hot Deal Accent ─────────────────────────────────────── */
+.rpc-hot-deal {
+  border-left: 3px solid #E03A2F;
+  background: rgba(224, 58, 47, 0.08) !important;
+}
+
+/* ── Tier Glow Badges ────────────────────────────────────── */
+.rpc-tier-glow-legendary {
+  text-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
+  color: var(--tier-legendary);
+}
+.rpc-tier-glow-ultimate {
+  text-shadow: 0 0 8px rgba(168, 85, 247, 0.6);
+  color: var(--tier-ultimate);
+}
+.rpc-tier-glow-rare {
+  text-shadow: 0 0 8px rgba(129, 140, 248, 0.6);
+  color: var(--tier-rare);
+}
+
+/* ── Arcade Button Style ─────────────────────────────────── */
+.rpc-chip {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  padding: 5px 14px;
+}
+
+/* ── Sniper Table Header Scanline ────────────────────────── */
+.rpc-thead-scanline {
+  position: relative;
+}
+.rpc-thead-scanline::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.04) 2px,
+    rgba(0, 0, 0, 0.04) 4px
+  );
+  pointer-events: none;
+}
+
+/* ── FMV Delta Chevrons ──────────────────────────────────── */
+.rpc-fmv-delta-up {
+  color: var(--rpc-success);
+  font-size: var(--text-xs);
+  margin-left: 2px;
+}
+.rpc-fmv-delta-down {
+  color: var(--rpc-danger);
+  font-size: var(--text-xs);
+  margin-left: 2px;
+}
+
+/* ── Active border accent ────────────────────────────────── */
+.rpc-card:active,
+.rpc-chip:active {
+  border-color: var(--rpc-border-active);
+}

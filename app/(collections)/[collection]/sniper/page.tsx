@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import { useCart } from "@/lib/cart/CartContext";
 import { getCollection } from "@/lib/collections";
+import { getOwnerKey } from "@/lib/owner-key";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const COMMISSION_RECIPIENT = "0xc1e4f4f4c4257510";
@@ -71,7 +72,8 @@ type SortOption =
   | "price_asc"
   | "price_desc"
   | "fmv_desc"
-  | "serial_asc";
+  | "serial_asc"
+  | "listed_desc";
 
 // ─── Click tracking helper ────────────────────────────────────────────────────
 
@@ -404,11 +406,12 @@ const TIER_TABS = ["all", "common", "fandom", "rare", "legendary", "ultimate"] a
 type TierTab = (typeof TIER_TABS)[number];
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
-  { value: "discount",   label: "Best Discount" },
-  { value: "price_asc",  label: "Cheapest First" },
-  { value: "price_desc", label: "Most Expensive" },
-  { value: "fmv_desc",   label: "Highest FMV" },
-  { value: "serial_asc", label: "Lowest Serial" },
+  { value: "listed_desc", label: "Recently Listed" },
+  { value: "discount",    label: "Best Discount" },
+  { value: "price_asc",   label: "Cheapest First" },
+  { value: "price_desc",  label: "Most Expensive" },
+  { value: "fmv_desc",    label: "Highest FMV" },
+  { value: "serial_asc",  label: "Lowest Serial" },
 ];
 
 export default function SniperPage() {
@@ -431,7 +434,7 @@ export default function SniperPage() {
   const [ownedIds, setOwnedIds] = useState<Set<string>>(new Set());
 
   const [tierTab, setTierTab] = useState<TierTab>("all");
-  const [sortBy, setSortBy] = useState<SortOption>("discount");
+  const [sortBy, setSortBy] = useState<SortOption>("listed_desc");
   const [minDiscount, setMinDiscount] = useState(0);
   const [maxPrice, setMaxPrice] = useState(0);
   const [serialFilter, setSerialFilter] = useState("all");
@@ -442,6 +445,8 @@ export default function SniperPage() {
   const [search, setSearch] = useState("");
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(false);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const [editionStats, setEditionStats] = useState<Map<string, { owned: number; locked: number }>>(new Map());
+  const editionStatsFetchedRef = useRef<string | null>(null);
 
   // Highlight detection on page load
   useEffect(() => {
@@ -476,6 +481,14 @@ export default function SniperPage() {
     return () => { cancelled = true; };
   }, []);
 
+  // Fall back to owner key if FCL wallet isn't connected
+  useEffect(() => {
+    if (!connectedWallet) {
+      const key = getOwnerKey();
+      if (key) setConnectedWallet(key);
+    }
+  }, [connectedWallet]);
+
   useEffect(() => {
     if (!connectedWallet) { setOwnedIds(new Set()); return; }
     try {
@@ -485,6 +498,54 @@ export default function SniperPage() {
         setOwnedIds(new Set(ids));
       }
     } catch {}
+  }, [connectedWallet]);
+
+  // Fetch edition-level owned/locked stats for the connected wallet
+  useEffect(() => {
+    if (!connectedWallet || editionStatsFetchedRef.current === connectedWallet) return;
+    editionStatsFetchedRef.current = connectedWallet;
+    let cancelled = false;
+
+    async function loadEditionStats() {
+      try {
+        // Load all wallet moments to build edition stats
+        const allRows: Array<{ editionKey?: string; isLocked?: boolean; locked?: boolean }> = [];
+        let offset = 0;
+        const limit = 50;
+        let remaining = 1; // start with 1 to enter loop
+
+        for (let page = 0; page < 10 && remaining > 0; page++) {
+          const res = await fetch("/api/wallet-search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ input: connectedWallet, offset, limit }),
+          });
+          if (!res.ok || cancelled) break;
+          const json = await res.json();
+          const rows = json.rows ?? [];
+          allRows.push(...rows);
+          remaining = json.summary?.remainingMoments ?? 0;
+          offset += rows.length;
+          if (rows.length === 0) break;
+        }
+
+        if (cancelled) return;
+
+        // Build edition stats map
+        const statsMap = new Map<string, { owned: number; locked: number }>();
+        for (const row of allRows) {
+          const key = row.editionKey ?? "";
+          if (!key) continue;
+          const current = statsMap.get(key) ?? { owned: 0, locked: 0 };
+          current.owned += 1;
+          if (row.isLocked || row.locked) current.locked += 1;
+          statsMap.set(key, current);
+        }
+        setEditionStats(statsMap);
+      } catch {}
+    }
+    loadEditionStats();
+    return () => { cancelled = true; };
   }, [connectedWallet]);
 
   const buildFeedUrl = useCallback(() => {
@@ -559,7 +620,7 @@ export default function SniperPage() {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
+    <div className="rpc-binder-bg" style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
       {/* ── Header ── */}
       <div style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)", padding: "16px" }}>
         <div style={{ maxWidth: "var(--max-width)", margin: "0 auto" }}>
@@ -876,15 +937,15 @@ export default function SniperPage() {
           <div className="rpc-card" style={{ overflow: "auto", borderRadius: "var(--radius-md)" }}>
             <table style={{ width: "100%", fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)", borderCollapse: "collapse" }}>
               <thead>
-                <tr style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)" }}>
+                <tr className="rpc-thead-scanline" style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)" }}>
                   <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px", width: 40 }} />
                   <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px" }}>Moment</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Serial</th>
+                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Own / Lock</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Ask</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Adj. FMV</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Discount</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>FMV Quality</th>
-                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Src</th>
                   <th className="rpc-label" style={{ textAlign: "center", padding: "10px 4px", width: 36 }} />
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Action</th>
                 </tr>
@@ -893,10 +954,10 @@ export default function SniperPage() {
                 {visibleDeals.map((deal) => (
                   <tr
                     key={`${deal.source}-${deal.flowId}-${deal.listingResourceID}`}
-                    className={`${holoClass(deal.tier)}${deal.flowId === highlightedId ? " ring-2" : ""}`}
-                    style={{ borderBottom: "1px solid var(--rpc-border)", transition: "background var(--transition-fast)", ...(deal.flowId === highlightedId ? { boxShadow: `0 0 0 2px ${accent}80`, background: `${accent}12` } : { background: deal.discount >= 40 ? `${accent}0A` : "transparent" }) }}
+                    className={`${holoClass(deal.tier)}${deal.flowId === highlightedId ? " ring-2" : ""}${deal.discount >= 40 ? " rpc-hot-deal" : ""}`}
+                    style={{ borderBottom: "1px solid var(--rpc-border)", transition: "background var(--transition-fast)", ...(deal.flowId === highlightedId ? { boxShadow: `0 0 0 2px ${accent}80`, background: `${accent}12` } : {}) }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--rpc-surface-hover)"; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = deal.discount >= 40 ? `${accent}0A` : "transparent"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = deal.discount >= 40 ? "rgba(224,58,47,0.08)" : "transparent"; }}
                   >
                     {/* Thumbnail */}
                     <td style={{ padding: "8px 12px" }}>
@@ -916,7 +977,7 @@ export default function SniperPage() {
                     <td style={{ padding: "8px 12px" }}>
                       <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, color: "var(--rpc-text-primary)", lineHeight: 1.2 }}>{deal.playerName}</div>
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)" }}>
-                        <span style={{ color: tierColor(deal.tier), fontWeight: 600 }}>
+                        <span className={deal.tier.toUpperCase() === "LEGENDARY" ? "rpc-tier-glow-legendary" : deal.tier.toUpperCase() === "ULTIMATE" ? "rpc-tier-glow-ultimate" : deal.tier.toUpperCase() === "RARE" ? "rpc-tier-glow-rare" : ""} style={{ color: tierColor(deal.tier), fontWeight: 600 }}>
                           {deal.tier.charAt(0) + deal.tier.slice(1).toLowerCase()}
                         </span>
                         {deal.parallel !== "Base" && (
@@ -973,6 +1034,15 @@ export default function SniperPage() {
                       {deal.isSpecialSerial && <SerialBadge deal={deal} />}
                     </td>
 
+                    {/* Own / Lock */}
+                    <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>
+                      {(() => {
+                        const stats = editionStats.get(deal.editionKey);
+                        if (!stats) return "—";
+                        return `${stats.owned} / ${stats.locked}`;
+                      })()}
+                    </td>
+
                     {/* Ask */}
                     <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", color: "var(--rpc-text-primary)" }}>
                       ${fmt(deal.askPrice)}
@@ -1011,11 +1081,6 @@ export default function SniperPage() {
                         source={deal.confidenceSource}
                         daysSinceSale={deal.daysSinceSale}
                       />
-                    </td>
-
-                    {/* Source */}
-                    <td style={{ padding: "8px 12px", textAlign: "right" }}>
-                      <SourceBadge source={deal.source} isAllDay={isAllDay} />
                     </td>
 
                     {/* Share */}
