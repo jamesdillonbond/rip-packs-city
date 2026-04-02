@@ -192,7 +192,7 @@ const SEARCH_LISTINGS_QUERY = `
     searchMomentListings(
       input: {
         
-        searchInput: { pagination: { cursor: "", direction: RIGHT, count: 100 } }
+        searchInput: { pagination: { cursor: "", limit: 100 } }
       }
     ) {
       data {
