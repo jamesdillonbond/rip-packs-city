@@ -1,0 +1,28 @@
+name: Twitter Deal Bot
+
+on:
+  schedule:
+    - cron: "0 */4 * * *"
+  workflow_dispatch:
+
+jobs:
+  tweet-deal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Post best deal tweet
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            "https://rip-packs-city.vercel.app/api/bots/deal-tweet")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          echo "Response: $BODY"
+          echo "HTTP Status: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Deal tweet bot returned non-200 status"
+            exit 1
+          fi
