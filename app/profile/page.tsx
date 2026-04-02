@@ -134,9 +134,11 @@ function relTime(iso: string | null): string {
 }
 
 function tierColor(t: string | null): string {
-  if (t === "Legendary") return "#F59E0B";
+  if (t === "Legendary") return "#FFD700";
+  if (t === "Ultimate") return "#FF6B35";
   if (t === "Rare") return "#818CF8";
-  return "#6B7280";
+  if (t === "Fandom") return "#34D399";
+  return "#94A3B8";
 }
 
 function typeColor(t: string): string {
@@ -156,31 +158,31 @@ function fmtDate(iso: string): string {
   return (d.getMonth() + 1) + "/" + d.getDate();
 }
 
-// ─── STYLE TOKENS ─────────────────────────────────────────────
-const monoFont = "'Share Tech Mono', monospace";
-const condensedFont = "'Barlow Condensed', sans-serif";
+// ─── STYLE TOKENS (referencing rpc-tokens.css custom properties) ──
+const monoFont = "var(--font-mono)";
+const condensedFont = "var(--font-display)";
 
 const labelStyle: React.CSSProperties = {
-  fontSize: 9,
+  fontSize: "var(--text-xs)" as any,
   fontFamily: monoFont,
   letterSpacing: "0.2em",
-  color: "rgba(255,255,255,0.4)",
+  color: "var(--rpc-text-muted)",
   textTransform: "uppercase",
 };
 
 const btnBase: React.CSSProperties = {
-  background: "rgba(255,255,255,0.05)",
-  border: "1px solid rgba(255,255,255,0.1)",
-  borderRadius: 4,
+  background: "var(--rpc-surface-raised)",
+  border: "1px solid var(--rpc-border)",
+  borderRadius: "var(--radius-sm)" as any,
   padding: "4px 10px",
-  color: "rgba(255,255,255,0.5)",
+  color: "var(--rpc-text-secondary)",
   fontFamily: condensedFont,
   fontWeight: 700,
   fontSize: 10,
   letterSpacing: "0.08em",
   cursor: "pointer",
   textTransform: "uppercase",
-  transition: "all 0.15s",
+  transition: "all var(--transition-fast)",
 };
 
 // ─── AVATAR COMPONENT ─────────────────────────────────────────
@@ -191,7 +193,7 @@ function Avatar(props: { ownerKey: string; bio: ProfileBio | null; size?: number
 
   if (props.bio?.avatar_url) {
     return (
-      <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", border: "2px solid rgba(224,58,47,0.4)", flexShrink: 0 }}>
+      <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", border: "2px solid var(--rpc-red-border)", flexShrink: 0 }}>
         <img
           src={props.bio.avatar_url}
           alt={props.ownerKey}
@@ -202,11 +204,11 @@ function Avatar(props: { ownerKey: string; bio: ProfileBio | null; size?: number
             if (e.currentTarget.parentElement) {
               e.currentTarget.parentElement.innerHTML = initials;
               Object.assign(e.currentTarget.parentElement.style, {
-                background: "rgba(224,58,47,0.15)",
+                background: "var(--rpc-red-bg)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontFamily: condensedFont,
+                fontFamily: "'Barlow Condensed', sans-serif",
                 fontWeight: 800,
                 fontSize: fontSize + "px",
                 color: "#E03A2F",
@@ -219,7 +221,7 @@ function Avatar(props: { ownerKey: string; bio: ProfileBio | null; size?: number
   }
 
   return (
-    <div style={{ width: size, height: size, borderRadius: "50%", background: "rgba(224,58,47,0.15)", border: "1px solid rgba(224,58,47,0.35)", display: "flex", alignItems: "center", justifyContent: "center", fontSize, fontWeight: 800, color: "#E03A2F", fontFamily: condensedFont, flexShrink: 0 }}>
+    <div style={{ width: size, height: size, borderRadius: "50%", background: "var(--rpc-red-bg)", border: "1px solid var(--rpc-red-border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize, fontWeight: 800, color: "var(--rpc-red)", fontFamily: condensedFont, flexShrink: 0 }}>
       {initials}
     </div>
   );
@@ -251,16 +253,16 @@ function SignInBanner(props: { onSetKey: (key: string) => void }) {
   const [focused, setFocused] = useState(false);
 
   return (
-    <div style={{ background: "linear-gradient(135deg, rgba(224,58,47,0.14) 0%, rgba(224,58,47,0.04) 100%)", border: "1px solid rgba(224,58,47,0.35)", borderRadius: 12, padding: "22px 28px", marginBottom: 16, animation: "fadeIn 0.4s ease both" }}>
+    <div className="rpc-hud" style={{ borderRadius: "var(--radius-lg)" as any, padding: "22px 28px", marginBottom: 16, animation: "fadeIn 0.4s ease both" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
-        <div style={{ width: 52, height: 52, borderRadius: "50%", background: "rgba(224,58,47,0.15)", border: "1px solid rgba(224,58,47,0.4)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>
+        <div style={{ width: 52, height: 52, borderRadius: "50%", background: "var(--rpc-red-bg)", border: "1px solid var(--rpc-red-border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>
           👤
         </div>
         <div style={{ flex: 1, minWidth: 200 }}>
-          <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 18, color: "#fff", letterSpacing: "0.04em", marginBottom: 4 }}>
+          <div className="rpc-heading" style={{ fontSize: 18, marginBottom: 4 }}>
             Set Up Your Rip Packs City Profile
           </div>
-          <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", lineHeight: 1.7 }}>
+          <div style={{ fontSize: 10, fontFamily: monoFont, color: "var(--rpc-text-muted)", lineHeight: 1.7 }}>
             Save wallets · track searches · pin trophy moments · build your FMV sparkline.
             <br />Just your Top Shot username — no account, no password. Stays signed in everywhere.
           </div>
@@ -273,13 +275,12 @@ function SignInBanner(props: { onSetKey: (key: string) => void }) {
             onFocus={function() { setFocused(true); }}
             onBlur={function() { setFocused(false); }}
             placeholder="your Top Shot username…"
-            style={{ background: "rgba(255,255,255,0.07)", border: "1px solid " + (focused ? "rgba(224,58,47,0.7)" : "rgba(224,58,47,0.35)"), borderRadius: 7, padding: "9px 16px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none", width: 220, transition: "border-color 0.15s" }}
+            style={{ background: "var(--rpc-surface-hover)", border: "1px solid " + (focused ? "var(--rpc-red)" : "var(--rpc-red-border)"), borderRadius: 7, padding: "9px 16px", color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 11, outline: "none", width: 220, transition: "border-color var(--transition-fast)" }}
           />
           <button
             onClick={function() { if (val.trim()) props.onSetKey(val.trim()); }}
-            style={{ background: "#E03A2F", border: "none", borderRadius: 7, padding: "9px 20px", color: "#fff", fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer", flexShrink: 0 }}
-            onMouseEnter={function(e) { e.currentTarget.style.background = "#c42e24"; }}
-            onMouseLeave={function(e) { e.currentTarget.style.background = "#E03A2F"; }}
+            className="rpc-btn-primary"
+            style={{ borderRadius: 7, padding: "9px 20px", fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", flexShrink: 0 }}
           >
             Sign In
           </button>
@@ -300,8 +301,8 @@ function Ticker() {
   ];
   const doubled = [...items, ...items];
   return (
-    <div style={{ background: "#0D0D0D", borderBottom: "1px solid rgba(224,58,47,0.2)", overflow: "hidden", height: 28, display: "flex", alignItems: "center" }}>
-      <div style={{ background: "#E03A2F", padding: "0 12px", fontSize: 9, fontFamily: monoFont, letterSpacing: "0.15em", color: "#fff", height: "100%", display: "flex", alignItems: "center", flexShrink: 0, fontWeight: 700 }}>LIVE</div>
+    <div style={{ background: "var(--rpc-surface)", borderBottom: "1px solid var(--rpc-red-border)", overflow: "hidden", height: 28, display: "flex", alignItems: "center" }}>
+      <div style={{ background: "var(--rpc-red)", padding: "0 12px", fontSize: 9, fontFamily: monoFont, letterSpacing: "0.15em", color: "#fff", height: "100%", display: "flex", alignItems: "center", flexShrink: 0, fontWeight: 700 }}>LIVE</div>
       <div style={{ overflow: "hidden", flex: 1 }}>
         <div style={{ display: "flex", gap: 64, animation: "ticker 38s linear infinite", whiteSpace: "nowrap", paddingLeft: 24 }}>
           {doubled.map(function(item, i) { return <span key={i} style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.45)", letterSpacing: "0.07em" }}>{"⚡ " + item}</span>; })}
@@ -316,16 +317,16 @@ function StatTile(props: { label: string; value: string; sub: string; change: st
   const [vis, setVis] = useState(false);
   useEffect(function() { const t = setTimeout(function() { setVis(true); }, props.delay); return function() { clearTimeout(t); }; }, [props.delay]);
   return (
-    <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, padding: "16px 18px", position: "relative", overflow: "hidden", opacity: vis ? 1 : 0, transform: vis ? "translateY(0)" : "translateY(10px)", transition: "opacity 0.35s, transform 0.35s" }}>
-      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: props.color, opacity: 0.7 }} />
+    <div className="rpc-card" style={{ padding: "16px 18px", position: "relative", overflow: "hidden", opacity: vis ? 1 : 0, transform: vis ? "translateY(0)" : "translateY(10px)", transition: "opacity 0.35s, transform 0.35s" }}>
+      <div className="rpc-tier-stripe" style={{ background: props.color }} />
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-        <span style={labelStyle}>{props.label}</span>
+        <span className="rpc-label">{props.label}</span>
         <span style={{ fontSize: 16, opacity: 0.5 }}>{props.icon}</span>
       </div>
-      <div style={{ fontSize: 24, fontFamily: condensedFont, fontWeight: 800, color: "#fff", letterSpacing: "0.02em", lineHeight: 1, marginBottom: 6 }}>{props.value}</div>
+      <div className="rpc-heading" style={{ fontSize: "var(--text-2xl)" as any, marginBottom: 6 }}>{props.value}</div>
       <div style={{ display: "flex", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)" }}>{props.sub}</span>
-        <span style={{ fontSize: 10, fontFamily: monoFont, color: props.up ? "#34D399" : "#F87171", fontWeight: 700 }}>{props.change}</span>
+        <span style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)" }}>{props.sub}</span>
+        <span style={{ fontSize: 10, fontFamily: monoFont, color: props.up ? "var(--rpc-success)" : "var(--rpc-danger)", fontWeight: 700 }}>{props.change}</span>
       </div>
     </div>
   );
@@ -359,7 +360,7 @@ function PortfolioSparkline(props: { ownerKey: string; currentFmv: number }) {
   const range = maxVal - minVal || 1;
   const change = points.length >= 2 ? points[points.length - 1].total_fmv - points[0].total_fmv : 0;
   const changePct = points.length >= 2 && points[0].total_fmv > 0 ? (change / points[0].total_fmv) * 100 : 0;
-  const changeColor = change >= 0 ? "#34D399" : "#F87171";
+  const changeColor = change >= 0 ? "var(--rpc-success)" : "var(--rpc-danger)";
   const changeSign = change >= 0 ? "+" : "";
   const W = 360; const H = 56; const PAD = 4;
 
@@ -375,9 +376,9 @@ function PortfolioSparkline(props: { ownerKey: string; currentFmv: number }) {
   const areaPath = svgPath ? svgPath + " L " + (W - PAD).toFixed(1) + "," + (H - PAD).toFixed(1) + " L " + PAD.toFixed(1) + "," + (H - PAD).toFixed(1) + " Z" : "";
 
   return (
-    <section style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "14px 18px", marginBottom: 14 }}>
+    <section className="rpc-card" style={{ borderRadius: "var(--radius-lg)" as any, padding: "14px 18px", marginBottom: 14 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-        <span style={labelStyle}>◈ Portfolio Value · 30d</span>
+        <span className="rpc-label">◈ Portfolio Value · 30d</span>
         {points.length >= 2 && (
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.1em" }}>30D CHANGE</div>
@@ -442,9 +443,9 @@ function MarketPulseWidget(props: { pulse: MarketPulse | null; loading: boolean 
     { label: "Indexed Editions", value: props.pulse?.indexedEditions ? props.pulse.indexedEditions.toLocaleString() : "—", color: "#34D399" },
   ];
   return (
-    <section style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "14px 18px", marginBottom: 14 }}>
+    <section className="rpc-card" style={{ borderRadius: "var(--radius-lg)" as any, padding: "14px 18px", marginBottom: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#34D399", animation: "pulse 2s infinite" }} />
+        <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--rpc-success)", animation: "pulse 2s infinite" }} />
         <span style={labelStyle}>Market Pulse</span>
         <span style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.2)", letterSpacing: "0.1em", marginLeft: "auto" }}>60s cache · from RPC index</span>
       </div>
@@ -501,11 +502,11 @@ function BioWidget(props: { ownerKey: string; bio: ProfileBio | null; onSave: (b
 
   if (!editing) {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 18px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, marginBottom: 14 }}>
+      <div className="rpc-card" style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 18px", borderRadius: "var(--radius-lg)" as any, marginBottom: 14 }}>
         <Avatar ownerKey={props.ownerKey} bio={props.bio} size={48} fontSize={17} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 17, color: "#fff", letterSpacing: "0.04em" }}>{props.bio?.display_name || props.ownerKey}</div>
-          <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", marginTop: 2 }}>{props.bio?.tagline || "NBA Top Shot Collector"}</div>
+          <div className="rpc-heading" style={{ fontSize: 17 }}>{props.bio?.display_name || props.ownerKey}</div>
+          <div style={{ fontSize: 10, fontFamily: monoFont, color: "var(--rpc-text-muted)", marginTop: 2 }}>{props.bio?.tagline || "NBA Top Shot Collector"}</div>
           {(props.bio?.twitter || props.bio?.favorite_team || props.bio?.discord) && (
             <div style={{ display: "flex", gap: 10, marginTop: 5, flexWrap: "wrap" }}>
               {props.bio?.favorite_team && <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)" }}>{"🏀 " + props.bio.favorite_team}</span>}
@@ -529,7 +530,7 @@ function BioWidget(props: { ownerKey: string; bio: ProfileBio | null; onSave: (b
   ];
 
   return (
-    <div style={{ padding: "16px 18px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(224,58,47,0.25)", borderRadius: 10, marginBottom: 14 }}>
+    <div className="rpc-hud" style={{ padding: "16px 18px", borderRadius: "var(--radius-lg)" as any, marginBottom: 14 }}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
         {fields.map(function(f) {
           return (
@@ -541,8 +542,8 @@ function BioWidget(props: { ownerKey: string; bio: ProfileBio | null; onSave: (b
         })}
       </div>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-        <button onClick={function() { setEditing(false); }} style={Object.assign({}, btnBase, { padding: "6px 14px" })}>Cancel</button>
-        <button onClick={handleSave} disabled={saving} style={Object.assign({}, btnBase, { background: "#E03A2F", color: "#fff", borderColor: "#E03A2F", padding: "6px 14px", opacity: saving ? 0.6 : 1 })}>{saving ? "Saving…" : "Save Profile"}</button>
+        <button onClick={function() { setEditing(false); }} className="rpc-btn-ghost" style={{ padding: "6px 14px", fontSize: 11 }}>Cancel</button>
+        <button onClick={handleSave} disabled={saving} className="rpc-btn-primary" style={{ padding: "6px 14px", fontSize: 11, opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : "Save Profile"}</button>
       </div>
     </div>
   );
@@ -641,10 +642,10 @@ function PinModal(props: { slot: number; ownerKey: string; prefilled: PinPreview
   const tc = tierColor(preview?.tier ?? null);
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: 24, width: "100%", maxWidth: 460, animation: "fadeIn 0.2s ease both" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: "var(--z-modal)" as any, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-lg)" as any, padding: 24, width: "100%", maxWidth: 460, animation: "fadeIn 0.2s ease both", boxShadow: "var(--shadow-elevated)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 17, color: "#fff", letterSpacing: "0.05em", textTransform: "uppercase" }}>{"Pin to Slot " + props.slot}</div>
+          <div className="rpc-heading" style={{ fontSize: 17 }}>{"Pin to Slot " + props.slot}</div>
           <button onClick={props.onClose} style={Object.assign({}, btnBase, { padding: "3px 8px" })}>✕</button>
         </div>
         {props.prefilled && preview ? (
@@ -720,10 +721,10 @@ function SetsProgressWidget(props: { savedWallets: SavedWallet[] }) {
   }
 
   return (
-    <section style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "14px 16px" }}>
+    <section className="rpc-card" style={{ borderRadius: "var(--radius-lg)" as any, padding: "14px 16px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: loaded && sets.length > 0 ? 12 : 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={labelStyle}>◉ Sets Progress</span>
+          <span className="rpc-label">◉ Sets Progress</span>
           {props.savedWallets[0]?.username && <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.25)" }}>{"— " + props.savedWallets[0].username}</span>}
         </div>
         <div style={{ display: "flex", gap: 6 }}>
@@ -789,9 +790,9 @@ function ActivityFeed(props: { savedWallets: SavedWallet[] }) {
   }
 
   return (
-    <section style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, overflow: "hidden" }}>
-      <div style={{ padding: "12px 16px", borderBottom: loaded && items.length > 0 ? "1px solid rgba(255,255,255,0.06)" : "none", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={labelStyle}>📈 Activity Feed</span>
+    <section className="rpc-card" style={{ borderRadius: "var(--radius-lg)" as any, overflow: "hidden" }}>
+      <div style={{ padding: "12px 16px", borderBottom: loaded && items.length > 0 ? "1px solid var(--rpc-border)" : "none", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span className="rpc-label">📈 Activity Feed</span>
         {!loaded && <button onClick={loadActivity} disabled={loading} style={Object.assign({}, btnBase, { fontSize: 9, opacity: loading ? 0.6 : 1 })}>{loading ? "Loading…" : "Load Activity"}</button>}
       </div>
       {loaded && items.length === 0 && <div style={{ padding: "16px", fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", textAlign: "center" }}>No recent sales found.</div>}
@@ -884,8 +885,9 @@ function AddWalletForm(props: { onAdd: (val: string) => void; onCancel: () => vo
 }
 
 // ─── MAIN PAGE ────────────────────────────────────────────────
-export default function ProfilePage() {
+function ProfilePageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [ownerKey, setOwnerKeyState] = useState("");
   const [ownerInput, setOwnerInput] = useState("");
@@ -904,16 +906,27 @@ export default function ProfilePage() {
 
   // Read from localStorage + listen for cross-tab changes
   useEffect(function() {
+    // Support ?address= URL param (same pattern as collection page)
+    const addressParam = searchParams.get("address");
+    if (addressParam && addressParam.trim()) {
+      const key = addressParam.trim();
+      setOwnerKeyState(key);
+      saveOwnerKey(key);
+      loadProfile(key);
+      return;
+    }
     setOwnerKeyState(getOwnerKey());
     return onOwnerKeyChange(function(key) {
       setOwnerKeyState(key);
       if (key) loadProfile(key);
     });
-  }, []);
+  }, [searchParams]);
 
   function setOwnerKey(key: string) {
     setOwnerKeyState(key);
     saveOwnerKey(key);
+    // Persist in URL for shareable links
+    router.replace("/profile?address=" + encodeURIComponent(key));
   }
 
   const handlePinRequest = useCallback(async function(slot: number, momentId: string) {
@@ -985,7 +998,7 @@ export default function ProfilePage() {
     const q = val.trim();
     if (!q) return;
     recordSearch(q);
-    router.push("/nba-top-shot/collection?q=" + encodeURIComponent(q));
+    router.push("/nba-top-shot/collection?address=" + encodeURIComponent(q));
   }
 
   async function handleAddWallet(input: string) {
@@ -1010,7 +1023,7 @@ export default function ProfilePage() {
   function handleLoadWallet(addr: string, username?: string) {
     const q = username ?? addr;
     recordSearch(q, "wallet");
-    router.push("/nba-top-shot/collection?q=" + encodeURIComponent(q));
+    router.push("/nba-top-shot/collection?address=" + encodeURIComponent(q));
   }
 
   async function handleRemoveTrophy(slot: number) {
@@ -1051,7 +1064,7 @@ export default function ProfilePage() {
   ];
 
   return (
-    <div style={{ minHeight: "100vh", background: "#080808", color: "#fff" }}>
+    <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Share+Tech+Mono&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
@@ -1086,8 +1099,8 @@ export default function ProfilePage() {
       <Ticker />
 
       {/* NAV */}
-      <header style={{ background: "rgba(8,8,8,0.97)", borderBottom: "1px solid rgba(255,255,255,0.06)", position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(20px)" }}>
-        <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 20px", height: 56, display: "flex", alignItems: "center", gap: 16 }}>
+      <header style={{ background: "rgba(8,8,8,0.97)", borderBottom: "1px solid var(--rpc-border)", position: "sticky", top: 0, zIndex: "var(--z-sticky)" as any, backdropFilter: "blur(20px)" }}>
+        <div style={{ maxWidth: "var(--max-width)" as any, margin: "0 auto", padding: "0 20px", height: 56, display: "flex", alignItems: "center", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, cursor: "pointer" }} onClick={function() { router.push("/"); }}>
             <svg width="28" height="28" viewBox="0 0 100 100">
               <circle cx="50" cy="50" r="46" fill="none" stroke="#E03A2F" strokeWidth="4" />
@@ -1099,12 +1112,12 @@ export default function ProfilePage() {
               <circle cx="50" cy="50" r="7" fill="#080808" />
             </svg>
             <div>
-              <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 17, letterSpacing: "0.06em", color: "#F1F1F1", lineHeight: 1, textTransform: "uppercase" }}>{"Rip Packs "}<span style={{ color: "#E03A2F" }}>City</span></div>
-              <div style={{ fontSize: 7, fontFamily: monoFont, letterSpacing: "0.2em", color: "rgba(224,58,47,0.5)" }}>@RIPPACKSCITY</div>
+              <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 17, letterSpacing: "0.06em", color: "var(--rpc-text-primary)", lineHeight: 1, textTransform: "uppercase" }}>{"Rip Packs "}<span style={{ color: "var(--rpc-red)" }}>City</span></div>
+              <div style={{ fontSize: 7, fontFamily: monoFont, letterSpacing: "0.2em", color: "var(--rpc-red-muted)" }}>@RIPPACKSCITY</div>
             </div>
           </div>
           <div style={{ flex: 1, position: "relative", maxWidth: 440 }}>
-            <input value={heroSearch} onChange={function(e) { setHeroSearch(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && heroSearch.trim()) handleSearch(heroSearch); }} placeholder="Search wallet, player, edition…" style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "7px 34px 7px 14px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none" }} onFocus={function(e) { e.target.style.borderColor = "rgba(224,58,47,0.5)"; }} onBlur={function(e) { e.target.style.borderColor = "rgba(255,255,255,0.1)"; }} />
+            <input value={heroSearch} onChange={function(e) { setHeroSearch(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && heroSearch.trim()) handleSearch(heroSearch); }} placeholder="Search wallet, player, edition…" style={{ width: "100%", background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: 6, padding: "7px 34px 7px 14px", color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 11, outline: "none" }} onFocus={function(e) { e.target.style.borderColor = "var(--rpc-red-muted)"; }} onBlur={function(e) { e.target.style.borderColor = "var(--rpc-border)"; }} />
             <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.3)", fontSize: 14, pointerEvents: "none" }}>⌕</span>
           </div>
           {/* Avatar in nav when signed in */}
@@ -1117,24 +1130,24 @@ export default function ProfilePage() {
           <nav className="rpc-nav-links" style={{ display: "flex", gap: 3, flexShrink: 0 }}>
             {navItems.map(function(item) {
               const active = item.active ?? false;
-              return <button key={item.label} onClick={function() { router.push(item.href); }} style={{ background: active ? "rgba(224,58,47,0.15)" : "transparent", border: active ? "1px solid rgba(224,58,47,0.4)" : "1px solid transparent", color: active ? "#E03A2F" : "rgba(255,255,255,0.5)", padding: "4px 10px", borderRadius: 4, fontSize: 10, fontFamily: condensedFont, fontWeight: 700, letterSpacing: "0.08em", cursor: "pointer", textTransform: "uppercase", transition: "all 0.15s" }}>{item.label}</button>;
+              return <button key={item.label} onClick={function() { router.push(item.href); }} style={{ background: active ? "var(--rpc-red-bg)" : "transparent", border: active ? "1px solid var(--rpc-red-border)" : "1px solid transparent", color: active ? "var(--rpc-red)" : "var(--rpc-text-secondary)", padding: "4px 10px", borderRadius: "var(--radius-sm)" as any, fontSize: 10, fontFamily: condensedFont, fontWeight: 700, letterSpacing: "0.08em", cursor: "pointer", textTransform: "uppercase", transition: "all var(--transition-fast)" }}>{item.label}</button>;
             })}
           </nav>
         </div>
       </header>
 
-      <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
+      <main className="rpc-main" style={{ maxWidth: "var(--max-width)" as any, margin: "0 auto", padding: "24px 24px 60px" }}>
 
         {/* HERO */}
         <section className="rpc-hero" style={{ marginBottom: 20, textAlign: "center" }}>
           <div style={{ maxWidth: 560, margin: "0 auto" }}>
             <div style={Object.assign({}, labelStyle, { marginBottom: 8 })}>◈ COLLECTOR INTELLIGENCE PLATFORM ◈</div>
-            <h1 style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 32, letterSpacing: "0.04em", color: "#fff", textTransform: "uppercase", lineHeight: 1, marginBottom: 16 }}>
-              {"Rip Packs "}<span style={{ color: "#E03A2F" }}>City</span>
+            <h1 className="rpc-heading" style={{ fontSize: "var(--text-3xl)" as any, fontWeight: 900, marginBottom: 16 }}>
+              {"Rip Packs "}<span style={{ color: "var(--rpc-red)" }}>City</span>
             </h1>
-            <div style={{ display: "flex", gap: 8, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 10, padding: "8px 8px 8px 16px", alignItems: "center" }}>
-              <input value={heroSearch} onChange={function(e) { setHeroSearch(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && heroSearch.trim()) handleSearch(heroSearch); }} placeholder="Enter any Top Shot username or wallet address…" style={{ flex: 1, background: "transparent", border: "none", color: "#fff", fontFamily: monoFont, fontSize: 12, outline: "none" }} />
-              <button onClick={function() { if (heroSearch.trim()) handleSearch(heroSearch); }} style={{ background: "#E03A2F", border: "none", borderRadius: 7, padding: "8px 20px", color: "#fff", fontFamily: condensedFont, fontWeight: 800, fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer", flexShrink: 0 }} onMouseEnter={function(e) { e.currentTarget.style.background = "#c42e24"; }} onMouseLeave={function(e) { e.currentTarget.style.background = "#E03A2F"; }}>Search</button>
+            <div style={{ display: "flex", gap: 8, background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-lg)" as any, padding: "8px 8px 8px 16px", alignItems: "center" }}>
+              <input value={heroSearch} onChange={function(e) { setHeroSearch(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && heroSearch.trim()) handleSearch(heroSearch); }} placeholder="Enter any Top Shot username or wallet address…" style={{ flex: 1, background: "transparent", border: "none", color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 12, outline: "none" }} />
+              <button onClick={function() { if (heroSearch.trim()) handleSearch(heroSearch); }} className="rpc-btn-primary" style={{ borderRadius: 7, padding: "8px 20px", fontFamily: condensedFont, fontWeight: 800, fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", flexShrink: 0 }}>Search</button>
             </div>
           </div>
         </section>
@@ -1214,11 +1227,11 @@ export default function ProfilePage() {
 
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {/* Sniper */}
-            <section style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, overflow: "hidden" }}>
-              <div style={{ padding: "12px 14px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <section className="rpc-card" style={{ borderRadius: "var(--radius-lg)" as any, overflow: "hidden" }}>
+              <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--rpc-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#34D399", animation: "pulse 2s infinite" }} />
-                  <span style={labelStyle}>Live Sniper — Below FMV</span>
+                  <div style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--rpc-success)", animation: "pulse 2s infinite" }} />
+                  <span className="rpc-label">Live Sniper — Below FMV</span>
                 </div>
                 <button onClick={function() { router.push("/nba-top-shot/sniper"); }} style={Object.assign({}, btnBase, { background: "rgba(52,211,153,0.1)", color: "#34D399", borderColor: "rgba(52,211,153,0.25)", fontSize: 9 })}>{"Full Sniper →"}</button>
               </div>
@@ -1247,9 +1260,9 @@ export default function ProfilePage() {
             </section>
 
             {/* Recent Searches */}
-            <section style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "14px 16px" }}>
+            <section className="rpc-card" style={{ borderRadius: "var(--radius-lg)" as any, padding: "14px 16px" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <span style={labelStyle}>Recent Searches</span>
+                <span className="rpc-label">Recent Searches</span>
                 {recentSearches.length > 0 && <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.25)" }}>{recentSearches.length + " / 20"}</span>}
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
@@ -1275,7 +1288,7 @@ export default function ProfilePage() {
           <div className="rpc-quick-links" style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
             {quickLinks.map(function(link) {
               return (
-                <button key={link.label} onClick={function() { router.push(link.href); }} style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, padding: "14px 16px", textAlign: "left", cursor: "pointer", transition: "all 0.2s", position: "relative", overflow: "hidden" }} onMouseEnter={function(e) { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; e.currentTarget.style.borderColor = link.color + "44"; e.currentTarget.style.transform = "translateY(-2px)"; }} onMouseLeave={function(e) { e.currentTarget.style.background = "rgba(255,255,255,0.025)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)"; e.currentTarget.style.transform = "translateY(0)"; }}>
+                <button key={link.label} onClick={function() { router.push(link.href); }} className="rpc-card" style={{ padding: "14px 16px", textAlign: "left", cursor: "pointer", transition: "all var(--transition-normal)", position: "relative", overflow: "hidden" }} onMouseEnter={function(e) { e.currentTarget.style.borderColor = link.color + "44"; e.currentTarget.style.transform = "translateY(-2px)"; }} onMouseLeave={function(e) { e.currentTarget.style.borderColor = ""; e.currentTarget.style.transform = "translateY(0)"; }}>
                   <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 2, background: link.color, opacity: 0.5 }} />
                   <div style={{ fontSize: 18, marginBottom: 7, color: link.color }}>{link.icon}</div>
                   <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 13, color: "#fff", letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 3 }}>{link.label}</div>
@@ -1287,21 +1300,21 @@ export default function ProfilePage() {
         </section>
 
         {/* PROFILE KEY — secondary */}
-        <section style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "16px 20px" }}>
+        <section className="rpc-card" style={{ borderRadius: "var(--radius-lg)" as any, padding: "16px 20px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
             <div>
-              <span style={labelStyle}>Set Up Your Rip Packs City Profile</span>
-              <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", marginTop: 4 }}>
+              <span className="rpc-label">Set Up Your Rip Packs City Profile</span>
+              <div style={{ fontSize: 10, fontFamily: monoFont, color: "var(--rpc-text-muted)", marginTop: 4 }}>
                 {ownerKey ? ("Signed in as: " + ownerKey + "  ·  Public: rip-packs-city.vercel.app/profile/" + ownerKey) : "Enter your Top Shot username to unlock the full profile experience."}
               </div>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input value={ownerInput} onChange={function(e) { setOwnerInput(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && ownerInput.trim()) { setOwnerKey(ownerInput.trim()); loadProfile(ownerInput.trim()); } }} placeholder={ownerKey ? ownerKey : "your username…"} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, padding: "6px 12px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none", width: 200 }} />
-              <button onClick={function() { if (ownerInput.trim()) { setOwnerKey(ownerInput.trim()); loadProfile(ownerInput.trim()); } }} style={Object.assign({}, btnBase, { background: "#E03A2F", color: "#fff", borderColor: "#E03A2F" })}>
+              <input value={ownerInput} onChange={function(e) { setOwnerInput(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && ownerInput.trim()) { setOwnerKey(ownerInput.trim()); loadProfile(ownerInput.trim()); } }} placeholder={ownerKey ? ownerKey : "your username…"} style={{ background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border-hover)", borderRadius: 6, padding: "6px 12px", color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 11, outline: "none", width: 200 }} />
+              <button onClick={function() { if (ownerInput.trim()) { setOwnerKey(ownerInput.trim()); loadProfile(ownerInput.trim()); } }} className="rpc-btn-primary" style={{ padding: "6px 14px" }}>
                 {ownerKey ? "Update" : "Sign In"}
               </button>
               {ownerKey && (
-                <button onClick={function() { setOwnerKey(""); setOwnerKeyState(""); setSavedWallets([]); setRecentSearches([]); setTrophies([null, null, null]); setBio(null); }} style={Object.assign({}, btnBase, { fontSize: 9 })}>Sign Out</button>
+                <button onClick={function() { saveOwnerKey(""); setOwnerKeyState(""); setSavedWallets([]); setRecentSearches([]); setTrophies([null, null, null]); setBio(null); router.replace("/profile"); }} className="rpc-btn-ghost" style={{ padding: "4px 10px", fontSize: 9 }}>Sign Out</button>
               )}
             </div>
           </div>
@@ -1309,5 +1322,14 @@ export default function ProfilePage() {
 
       </main>
     </div>
+  );
+}
+
+// Wrap in Suspense for useSearchParams
+export default function ProfilePage() {
+  return (
+    <Suspense fallback={null}>
+      <ProfilePageInner />
+    </Suspense>
   );
 }
