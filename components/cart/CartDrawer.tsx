@@ -172,7 +172,7 @@ function CartRow({ item, walletProvider }: CartRowProps) {
 
 function CartSummary() {
   const { items, totalPrice, purchaseStatus } = useCart()
-  const { buyAll, executePurchase, isExecuting } = usePurchaseQueue()
+  const { buyAll, executePurchase, executeOffers, isExecuting } = usePurchaseQueue()
   const { user, logIn } = useFlowUser()
   const { flowBalance, usdcBalance, isLoading: balancesLoading, refetch: refetchBalances } = useFlowWalletBalances()
 
@@ -186,33 +186,41 @@ function CartSummary() {
     (i) => !purchaseStatus[i.listingResourceID] || purchaseStatus[i.listingResourceID] === 'idle'
   )
 
+  // Split pending items into buy and offer items
+  const pendingBuyItems = pendingItems.filter((i) => i.cartMode !== 'offer')
+  const pendingOfferItems = pendingItems.filter((i) => i.cartMode === 'offer')
+
   const isConnected = user.loggedIn === true
   const isNonDapper = user.walletProvider !== 'dapper' && user.walletProvider !== 'unknown'
 
-  // When connected with Flow Wallet, split items by compatibility
+  // When connected with Flow Wallet, split buy items by compatibility
   const flowCompatibleItems = isNonDapper
-    ? pendingItems.filter((i) => isFlowCompatible(i))
-    : pendingItems
+    ? pendingBuyItems.filter((i) => isFlowCompatible(i))
+    : pendingBuyItems
   const skippedCount = isNonDapper
-    ? pendingItems.filter((i) => isDapperOnly(i)).length
+    ? pendingBuyItems.filter((i) => isDapperOnly(i)).length
     : 0
 
   const buyableTotal = flowCompatibleItems.reduce((s, i) => s + i.expectedPrice, 0)
 
-  // Calculate totals per token type for Flow Wallet balance checks
+  // Calculate totals per token type for Flow Wallet balance checks (buys only)
   const flowItemsTotal = isNonDapper
     ? flowCompatibleItems.filter((i) => i.paymentToken === 'FLOW').reduce((s, i) => s + i.expectedPrice, 0)
     : 0
-  const usdcItemsTotal = isNonDapper
+  const usdcBuyTotal = isNonDapper
     ? flowCompatibleItems.filter((i) => i.paymentToken === 'USDC_E').reduce((s, i) => s + i.expectedPrice, 0)
     : 0
 
+  // Offer totals (always USDC.e)
+  const offerTotal = pendingOfferItems.reduce((s, i) => s + (i.offerAmount ?? 0), 0)
+  const totalUsdcNeeded = usdcBuyTotal + offerTotal
+
   const hasFlowItems = flowItemsTotal > 0
-  const hasUsdcItems = usdcItemsTotal > 0
+  const hasUsdcItems = usdcBuyTotal > 0 || offerTotal > 0
   const showBalances = isConnected && isNonDapper && (hasFlowItems || hasUsdcItems)
 
   const insufficientFlow = hasFlowItems && flowItemsTotal > flowBalance
-  const insufficientUsdc = hasUsdcItems && usdcItemsTotal > usdcBalance
+  const insufficientUsdc = hasUsdcItems && totalUsdcNeeded > usdcBalance
   const hasInsufficientBalance = showBalances && !balancesLoading && (insufficientFlow || insufficientUsdc)
 
   // Re-fetch balances after purchases complete
@@ -259,23 +267,26 @@ function CartSummary() {
       {/* Insufficient balance warning */}
       {hasInsufficientBalance && (
         <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs text-amber-300">
-          Insufficient balance to complete all Flow Wallet items.
+          {insufficientUsdc && offerTotal > 0
+            ? `Insufficient USDC.e balance for buys + offers (need ${formatPrice(totalUsdcNeeded)}).`
+            : 'Insufficient balance to complete all Flow Wallet items.'}
         </div>
       )}
 
       {hasResults && (
         <div className="rounded-lg bg-white/5 px-3 py-2 text-sm text-slate-300">
-          {successCount > 0 && <span className="text-emerald-400 font-medium">{successCount} purchased</span>}
+          {successCount > 0 && <span className="text-emerald-400 font-medium">{successCount} completed</span>}
           {successCount > 0 && failedCount > 0 && <span className="text-slate-500 mx-1">·</span>}
           {failedCount > 0 && <span className="text-red-400 font-medium">{failedCount} failed or sniped</span>}
         </div>
       )}
 
-      {pendingItems.length > 0 && (
+      {/* Buy items section */}
+      {pendingBuyItems.length > 0 && (
         <div className="flex items-center justify-between text-sm">
-          <span className="text-slate-400">{pendingItems.length} item{pendingItems.length !== 1 ? 's' : ''}</span>
+          <span className="text-slate-400">{pendingBuyItems.length} buy item{pendingBuyItems.length !== 1 ? 's' : ''}</span>
           <span className="font-bold text-white tabular-nums">
-            {formatPrice(pendingItems.reduce((s, i) => s + i.expectedPrice, 0))}
+            {formatPrice(pendingBuyItems.reduce((s, i) => s + i.expectedPrice, 0))}
           </span>
         </div>
       )}
@@ -300,7 +311,7 @@ function CartSummary() {
         <button
           onClick={() => {
             if (isNonDapper) {
-              // Only execute Flow-compatible items
+              // Only execute Flow-compatible buy items
               executePurchase(flowCompatibleItems, {
                 onItemComplete: (result) => {
                   console.log('[RPC Cart] item complete', result.status, result.item.momentId)
@@ -328,9 +339,58 @@ function CartSummary() {
       )}
 
       {/* All items are Dapper-only and user has Flow Wallet */}
-      {flowCompatibleItems.length === 0 && pendingItems.length > 0 && !isExecuting && isConnected && isNonDapper && (
+      {flowCompatibleItems.length === 0 && pendingBuyItems.length > 0 && !isExecuting && isConnected && isNonDapper && (
         <div className="w-full rounded-lg bg-white/5 border border-white/10 text-slate-400 font-medium py-3 px-4 text-sm text-center">
           All items require Dapper Wallet
+        </div>
+      )}
+
+      {/* ── Offers section ── */}
+      {pendingOfferItems.length > 0 && (
+        <div className="border-t border-white/10 pt-3 space-y-2">
+          <p className="text-xs font-medium text-blue-400 uppercase tracking-wide">Offers ({pendingOfferItems.length})</p>
+          {pendingOfferItems.map((item) => {
+            const status = purchaseStatus[item.listingResourceID] ?? 'idle'
+            const expiryDate = item.offerExpiry
+              ? new Date(item.offerExpiry * 1000).toLocaleDateString()
+              : '—'
+            return (
+              <div key={item.listingResourceID} className="flex items-center justify-between gap-2 rounded-lg bg-blue-500/5 border border-blue-500/15 px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-white truncate">{item.playerName}</p>
+                  <p className="text-xs text-slate-500 truncate">{item.setName} #{item.serialNumber}</p>
+                  {status !== 'idle' && <StatusBadge status={status} />}
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-sm font-bold text-blue-300 tabular-nums">
+                    {formatPrice(item.offerAmount ?? 0)} <span className="text-xs text-slate-500">USDC.e</span>
+                  </p>
+                  <p className="text-xs text-slate-500">exp {expiryDate}</p>
+                </div>
+              </div>
+            )
+          })}
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-slate-400">Total offers</span>
+            <span className="font-bold text-blue-300 tabular-nums">{formatPrice(offerTotal)} USDC.e</span>
+          </div>
+          {isConnected && isNonDapper && !isExecuting && (
+            <button
+              onClick={() => {
+                executeOffers(pendingOfferItems, {
+                  onItemComplete: (result) => {
+                    console.log('[RPC Cart] offer complete', result.status, result.item.momentId)
+                  },
+                  onQueueComplete: (results) => {
+                    console.log('[RPC Cart] offers queue complete', results)
+                  },
+                })
+              }}
+              className="w-full rounded-lg bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-semibold py-3 px-4 transition text-sm"
+            >
+              Submit All {pendingOfferItems.length} Offer{pendingOfferItems.length !== 1 ? 's' : ''} — {formatPrice(offerTotal)}
+            </button>
+          )}
         </div>
       )}
 
@@ -338,7 +398,7 @@ function CartSummary() {
         <div className="w-full rounded-lg bg-white/10 text-slate-400 font-semibold py-3 px-4 text-sm text-center">
           <span className="inline-flex items-center gap-2">
             <span className="w-3.5 h-3.5 rounded-full border-2 border-slate-400 border-t-transparent animate-spin" />
-            Purchasing…
+            Processing…
           </span>
         </div>
       )}
@@ -433,13 +493,40 @@ export function CartDrawer({ open, onClose }: CartDrawerProps) {
               <p className="text-slate-500 text-xs mt-1">Add moments from the Sniper or your Wallet</p>
             </div>
           ) : (
-            items.map((item) => (
-              <CartRow
-                key={item.listingResourceID}
-                item={item}
-                walletProvider={user.walletProvider}
-              />
-            ))
+            <>
+              {/* Buy items */}
+              {items.filter((i) => i.cartMode !== 'offer').length > 0 && (
+                <div className="space-y-2">
+                  {items.filter((i) => i.cartMode !== 'offer').map((item) => (
+                    <CartRow
+                      key={item.listingResourceID}
+                      item={item}
+                      walletProvider={user.walletProvider}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Offer items — shown in a separate section */}
+              {items.filter((i) => i.cartMode === 'offer').length > 0 && (
+                <div className="space-y-2">
+                  {items.filter((i) => i.cartMode !== 'offer').length > 0 && (
+                    <div className="flex items-center gap-2 pt-2">
+                      <div className="flex-1 h-px bg-blue-500/20" />
+                      <span className="text-xs font-medium text-blue-400 uppercase tracking-wide">Offers</span>
+                      <div className="flex-1 h-px bg-blue-500/20" />
+                    </div>
+                  )}
+                  {items.filter((i) => i.cartMode === 'offer').map((item) => (
+                    <CartRow
+                      key={item.listingResourceID}
+                      item={item}
+                      walletProvider={user.walletProvider}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
 
