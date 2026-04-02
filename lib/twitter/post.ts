@@ -101,6 +101,11 @@ export async function postTweet(
   brand: Brand,
   text: string
 ): Promise<TweetResponse> {
+  const prefix = brand === "rpc" ? "RPC" : "FLOWTY";
+  if (!process.env[`${prefix}_X_API_KEY`]) {
+    console.warn("[twitter] API keys not configured — skipping post");
+    return { } as TweetResponse;
+  }
   const { oauth, token } = createOAuthClient(brand);
   const url = "https://api.x.com/2/tweets";
   const authHeader = getAuthHeader(oauth, url, "POST", token);
@@ -142,6 +147,11 @@ export async function postTweetWithMedia(
   text: string,
   imageUrl: string
 ): Promise<TweetResponse> {
+  const prefix = brand === "rpc" ? "RPC" : "FLOWTY";
+  if (!process.env[`${prefix}_X_API_KEY`]) {
+    console.warn("[twitter] API keys not configured — skipping post");
+    return { } as TweetResponse;
+  }
   const { oauth, token } = createOAuthClient(brand);
 
   // 1. Download image to buffer

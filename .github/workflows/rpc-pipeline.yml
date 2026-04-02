@@ -74,7 +74,13 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             -H "Content-Type: application/json")
           echo "Price snapshots: $RESPONSE"
+      # DISABLED: Twitter API keys not yet configured.
+      # To activate: remove the `if: false` from the steps and
+      # ensure TWITTER_API_KEY, TWITTER_API_SECRET,
+      # TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_SECRET are set
+      # in Vercel environment variables.
       - name: Social Bot — Post deals to Twitter
+        if: false
         continue-on-error: true
         run: |
           STATUS=$(curl -s -o /tmp/social.json -w "%{http_code}" -X POST \
@@ -83,6 +89,7 @@ jobs:
           echo "Social bot status: $STATUS"
           cat /tmp/social.json
       - name: Sales Alert Bot
+        if: false
         continue-on-error: true
         run: |
           STATUS=$(curl -s -o /tmp/sales-alert.json -w "%{http_code}" -X POST \
@@ -91,6 +98,7 @@ jobs:
           echo "Sales alert status: $STATUS"
           cat /tmp/sales-alert.json
       - name: Milestone Bot
+        if: false
         continue-on-error: true
         run: |
           STATUS=$(curl -s -o /tmp/milestone.json -w "%{http_code}" -X POST \
