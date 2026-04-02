@@ -2,11 +2,12 @@
 import OffersTab from "@/components/sniper/OffersTab"
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useParams } from "next/navigation";
 import { useCart } from "@/lib/cart/CartContext";
+import { getCollection } from "@/lib/collections";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const COMMISSION_RECIPIENT = "0xc1e4f4f4c4257510";
-const ACCENT = "#E03A2F";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -202,7 +203,7 @@ function SerialBadge({ deal }: { deal: SniperDeal }) {
   );
 }
 
-function SourceBadge({ source }: { source?: "topshot" | "flowty" }) {
+function SourceBadge({ source, isAllDay }: { source?: "topshot" | "flowty"; isAllDay?: boolean }) {
   if (source === "flowty") {
     return (
       <span className="rpc-chip" style={{ background: "rgba(59,130,246,0.12)", borderColor: "rgba(59,130,246,0.25)", color: "var(--rpc-info)" }}>
@@ -212,7 +213,7 @@ function SourceBadge({ source }: { source?: "topshot" | "flowty" }) {
   }
   return (
     <span className="rpc-chip" style={{ background: "var(--rpc-surface-raised)", color: "var(--rpc-text-muted)" }}>
-      TS
+      {isAllDay ? "AD" : "TS"}
     </span>
   );
 }
@@ -244,10 +245,12 @@ function ActionCell({
   deal,
   ownedIds,
   connectedWallet,
+  accent,
 }: {
   deal: SniperDeal;
   ownedIds: Set<string>;
   connectedWallet: string | null;
+  accent: string;
 }) {
   const { addToCart, removeFromCart, isInCart } = useCart();
   const inCart = deal.listingResourceID ? isInCart(deal.listingResourceID) : false;
@@ -325,7 +328,7 @@ function ActionCell({
         className={isFlowty ? "rpc-chip" : "rpc-btn-ghost"}
         style={isFlowty
           ? { background: "rgba(59,130,246,0.15)", borderColor: "rgba(59,130,246,0.4)", color: "var(--rpc-info)", textDecoration: "none", padding: "4px 12px" }
-          : { padding: "4px 12px", textDecoration: "none" }
+          : { padding: "4px 12px", textDecoration: "none", borderColor: `${accent}40`, color: accent }
         }
       >
         {isFlowty ? "FLOWTY →" : "BUY →"}
@@ -349,6 +352,14 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 ];
 
 export default function SniperPage() {
+  const routeParams = useParams();
+  const collectionSlug = routeParams.collection as string;
+  const collectionObj = getCollection(collectionSlug);
+  const accent = collectionObj?.accent ?? "#E03A2F";
+  const isAllDay = collectionSlug === "nfl-all-day";
+  const feedEndpoint = isAllDay ? "/api/allday-sniper-feed" : "/api/sniper-feed";
+  const brandLabel = collectionObj?.shortLabel ?? "Top Shot";
+
   const [data, setData] = useState<FeedResult | null>(null);
   const [mode, setMode] = useState<"deals" | "offers">("deals");
   const [loading, setLoading] = useState(true);
@@ -424,8 +435,8 @@ export default function SniperPage() {
     if (badgeOnly) params.set("badgeOnly", "true");
     if (flowWalletOnly) params.set("flowWalletOnly", "true");
     params.set("sortBy", sortBy);
-    return `/api/sniper-feed?${params}`;
-  }, [tierTab, minDiscount, maxPrice, playerFilter, serialFilter, badgeOnly, flowWalletOnly, sortBy]);
+    return `${feedEndpoint}?${params}`;
+  }, [tierTab, minDiscount, maxPrice, playerFilter, serialFilter, badgeOnly, flowWalletOnly, sortBy, feedEndpoint]);
 
   const fetchFeed = useCallback(async () => {
     try {
@@ -508,7 +519,7 @@ export default function SniperPage() {
                   : { background: "rgba(248,113,113,0.08)", borderColor: "rgba(248,113,113,0.2)", color: "var(--rpc-danger)" }
                 }>
                   <span className={`inline-block w-1.5 h-1.5 rounded-full ${stats.tsLive ? "bg-emerald-400 animate-pulse" : stats.tsCached ? "bg-amber-400 animate-pulse" : "bg-red-400/50"}`} style={{ marginRight: 4 }} />
-                  TS {stats.tsLive ? `(${data?.tsCount})` : stats.tsCached ? "CACHED" : "OFFLINE"}
+                  {isAllDay ? "AD" : "TS"} {stats.tsLive ? `(${data?.tsCount})` : stats.tsCached ? "CACHED" : "OFFLINE"}
                 </span>
                 <span className="rpc-chip" style={stats.flowtyLive
                   ? { background: "rgba(59,130,246,0.08)", borderColor: "rgba(59,130,246,0.3)", color: "var(--rpc-info)" }
@@ -528,7 +539,7 @@ export default function SniperPage() {
                 onClick={() => { fetchFeed(); setCountdown(REFRESH_INTERVAL); }}
                 disabled={loading}
                 className="rpc-btn-ghost"
-                style={{ opacity: loading ? 0.5 : 1 }}
+                style={{ opacity: loading ? 0.5 : 1, borderColor: `${accent}40`, color: accent }}
               >
                 {loading ? "↻" : "↻ REFRESH"}
               </button>
@@ -539,7 +550,8 @@ export default function SniperPage() {
           <div className="flex items-center gap-2 mb-4">
             {(["deals", "offers"] as const).map((m) => (
               <button key={m} onClick={() => setMode(m)}
-                className={`rpc-chip ${mode === m ? "active" : ""}`}>
+                className={`rpc-chip ${mode === m ? "active" : ""}`}
+                style={mode === m ? { background: `${accent}1A`, borderColor: `${accent}66`, color: accent } : undefined}>
                 {m === "deals" ? "⚡ DEALS" : "🤝 OFFERS"}
               </button>
             ))}
@@ -595,7 +607,7 @@ export default function SniperPage() {
                 key={t}
                 onClick={() => setTierTab(t)}
                 className={`rpc-chip ${tierTab === t ? "active" : ""}`}
-                style={{ textTransform: "uppercase" }}
+                style={tierTab === t ? { textTransform: "uppercase", background: `${accent}1A`, borderColor: `${accent}66`, color: accent } : { textTransform: "uppercase" }}
               >
                 {t}
               </button>
@@ -735,12 +747,12 @@ export default function SniperPage() {
         {!loading && visibleDeals.length === 0 && data && (
           <div style={{ padding: "80px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, textAlign: "center" }}>
             <svg width="40" height="40" viewBox="0 0 100 100" style={{ opacity: 0.3 }}>
-              <circle cx="50" cy="50" r="46" fill="none" stroke="#E03A2F" strokeWidth="4" />
-              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(0 50 50)" />
-              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(72 50 50)" />
-              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(144 50 50)" />
-              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(216 50 50)" />
-              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(288 50 50)" />
+              <circle cx="50" cy="50" r="46" fill="none" stroke={accent} strokeWidth="4" />
+              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill={accent} transform="rotate(0 50 50)" />
+              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill={accent} transform="rotate(72 50 50)" />
+              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill={accent} transform="rotate(144 50 50)" />
+              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill={accent} transform="rotate(216 50 50)" />
+              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill={accent} transform="rotate(288 50 50)" />
               <circle cx="50" cy="50" r="7" fill="#080808" />
             </svg>
             <p className="rpc-heading" style={{ fontSize: "var(--text-lg)" }}>THE FLOOR IS QUIET</p>
@@ -751,7 +763,7 @@ export default function SniperPage() {
                 setSerialFilter("all"); setBadgeOnly(false);
                 setFlowWalletOnly(false); setShowVerifiedOnly(false); setSearch("");
               }}
-              className="rpc-btn-ghost" style={{ marginTop: 8 }}
+              className="rpc-btn-ghost" style={{ marginTop: 8, borderColor: `${accent}66`, color: accent }}
             >
               CLEAR FILTERS
             </button>
@@ -779,10 +791,10 @@ export default function SniperPage() {
                 {visibleDeals.map((deal) => (
                   <tr
                     key={`${deal.source}-${deal.flowId}-${deal.listingResourceID}`}
-                    className={`${holoClass(deal.tier)}${deal.flowId === highlightedId ? " ring-2 ring-red-500/50 bg-red-950/20" : ""}`}
-                    style={{ borderBottom: "1px solid var(--rpc-border)", transition: "background var(--transition-fast)", background: deal.flowId === highlightedId ? undefined : deal.discount >= 40 ? "rgba(224,58,47,0.04)" : "transparent" }}
+                    className={`${holoClass(deal.tier)}${deal.flowId === highlightedId ? " ring-2" : ""}`}
+                    style={{ borderBottom: "1px solid var(--rpc-border)", transition: "background var(--transition-fast)", ...(deal.flowId === highlightedId ? { boxShadow: `0 0 0 2px ${accent}80`, background: `${accent}12` } : { background: deal.discount >= 40 ? `${accent}0A` : "transparent" }) }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--rpc-surface-hover)"; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = deal.discount >= 40 ? "rgba(224,58,47,0.04)" : "transparent"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = deal.discount >= 40 ? `${accent}0A` : "transparent"; }}
                   >
                     {/* Thumbnail */}
                     <td style={{ padding: "8px 12px" }}>
@@ -901,7 +913,7 @@ export default function SniperPage() {
 
                     {/* Source */}
                     <td style={{ padding: "8px 12px", textAlign: "right" }}>
-                      <SourceBadge source={deal.source} />
+                      <SourceBadge source={deal.source} isAllDay={isAllDay} />
                     </td>
 
                     {/* Share */}
@@ -915,6 +927,7 @@ export default function SniperPage() {
                         deal={deal}
                         ownedIds={ownedIds}
                         connectedWallet={connectedWallet}
+                        accent={accent}
                       />
                     </td>
                   </tr>
