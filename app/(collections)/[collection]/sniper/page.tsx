@@ -448,6 +448,43 @@ export default function SniperPage() {
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(false);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
+  // Hydrate filter state from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = (key: string) => localStorage.getItem("rpc_sniper_" + key);
+      const t = stored("tierTab");
+      if (t && TIER_TABS.includes(t as TierTab)) setTierTab(t as TierTab);
+      const md = stored("minDiscount");
+      if (md) setMinDiscount(Number(md) || 0);
+      const mp = stored("maxPrice");
+      if (mp) setMaxPrice(Number(mp) || 0);
+      const s = stored("search");
+      if (s) setSearch(s);
+      const sf = stored("serialFilter");
+      if (sf) setSerialFilter(sf);
+      const bo = stored("badgeOnly");
+      if (bo) setBadgeOnly(bo === "true");
+      const sv = stored("showVerifiedOnly");
+      if (sv) setShowVerifiedOnly(sv === "true");
+      const sb = stored("sortBy");
+      if (sb) setSortBy(sb as SortOption);
+    } catch {}
+  }, []);
+
+  // Persist filter state to localStorage on every change
+  useEffect(() => {
+    try {
+      localStorage.setItem("rpc_sniper_tierTab", JSON.stringify(tierTab));
+      localStorage.setItem("rpc_sniper_minDiscount", JSON.stringify(minDiscount));
+      localStorage.setItem("rpc_sniper_maxPrice", JSON.stringify(maxPrice));
+      localStorage.setItem("rpc_sniper_search", JSON.stringify(search));
+      localStorage.setItem("rpc_sniper_serialFilter", JSON.stringify(serialFilter));
+      localStorage.setItem("rpc_sniper_badgeOnly", JSON.stringify(badgeOnly));
+      localStorage.setItem("rpc_sniper_showVerifiedOnly", JSON.stringify(showVerifiedOnly));
+      localStorage.setItem("rpc_sniper_sortBy", JSON.stringify(sortBy));
+    } catch {}
+  }, [tierTab, minDiscount, maxPrice, search, serialFilter, badgeOnly, showVerifiedOnly, sortBy]);
+
   // Highlight detection on page load
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("highlight");

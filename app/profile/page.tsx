@@ -755,6 +755,14 @@ function SetsProgressWidget(props: { savedWallets: SavedWallet[] }) {
             <div style={{ height: 4, background: "rgba(255,255,255,0.07)", borderRadius: 2, overflow: "hidden" }}>
               <div style={{ width: pct + "%", height: "100%", background: barColor, borderRadius: 2, transition: "width 0.6s ease" }} />
             </div>
+            {isClose && (
+              <a
+                href="/nba-top-shot/sniper"
+                style={{ display: "inline-block", marginTop: 4, fontSize: 9, fontFamily: monoFont, color: "#34D399", textDecoration: "none" }}
+              >
+                → Find missing moments
+              </a>
+            )}
           </div>
         );
       })}

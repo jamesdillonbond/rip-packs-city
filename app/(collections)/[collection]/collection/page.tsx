@@ -417,6 +417,44 @@ export default function WalletPage() {
   const [filterBadges, setFilterBadges] = useState(false)
   const [filterHasOffer, setFilterHasOffer] = useState(false)
   const [filterListed, setFilterListed] = useState(false)
+  const [setsData, setSetsData] = useState<{ sets: any[] } | null>(null)
+
+  // Hydrate filter state from localStorage on mount
+  useEffect(function() {
+    try {
+      var stored = function(key: string) { return localStorage.getItem("rpc_collection_" + key) }
+      var sk = stored("sortKey")
+      if (sk) setSortKey(JSON.parse(sk) as SortKey)
+      var sd = stored("sortDirection")
+      if (sd) setSortDirection(JSON.parse(sd) as "asc" | "desc")
+      var pf = stored("playerFilter")
+      if (pf) setPlayerFilter(JSON.parse(pf))
+      var sf = stored("setFilter")
+      if (sf) setSetFilter(JSON.parse(sf))
+      var serf = stored("seriesFilter")
+      if (serf) setSeriesFilter(JSON.parse(serf))
+      var rf = stored("rarityFilter")
+      if (rf) setRarityFilter(JSON.parse(rf))
+      var lf = stored("lockedFilter")
+      if (lf) setLockedFilter(JSON.parse(lf))
+      var bf = stored("badgeFilter")
+      if (bf) setBadgeFilter(JSON.parse(bf) === true)
+    } catch {}
+  }, [])
+
+  // Persist filter state to localStorage on every change
+  useEffect(function() {
+    try {
+      localStorage.setItem("rpc_collection_sortKey", JSON.stringify(sortKey))
+      localStorage.setItem("rpc_collection_sortDirection", JSON.stringify(sortDirection))
+      localStorage.setItem("rpc_collection_playerFilter", JSON.stringify(playerFilter))
+      localStorage.setItem("rpc_collection_setFilter", JSON.stringify(setFilter))
+      localStorage.setItem("rpc_collection_seriesFilter", JSON.stringify(seriesFilter))
+      localStorage.setItem("rpc_collection_rarityFilter", JSON.stringify(rarityFilter))
+      localStorage.setItem("rpc_collection_lockedFilter", JSON.stringify(lockedFilter))
+      localStorage.setItem("rpc_collection_badgeFilter", JSON.stringify(badgeFilter))
+    } catch {}
+  }, [sortKey, sortDirection, playerFilter, setFilter, seriesFilter, rarityFilter, lockedFilter, badgeFilter])
 
   useEffect(function() {
     setOwnerKey(getOwnerKey())
@@ -683,6 +721,11 @@ export default function WalletPage() {
       setOffset(nextRows.length)
       setHasSearched(true)
       maybePatchProfileStats(query.trim(), withBadges, json.summary).catch(function() {})
+      // Fire-and-forget: fetch sets data for "close to completing" callout
+      fetch("/api/sets?wallet=" + encodeURIComponent(query.trim()) + "&skipAsks=1")
+        .then(function(r) { return r.ok ? r.json() : null })
+        .then(function(d) { if (d) setSetsData(d) })
+        .catch(function() {})
       // Fire-and-forget: enrich best offers for loaded rows
       enrichOffers(withBadges)
       // Fire-and-forget: load sealed pack count + titles for this wallet
@@ -947,6 +990,14 @@ export default function WalletPage() {
     ? { loaded: rows.length, total: summary.totalMoments, pct: Math.min(100, Math.round((rows.length / Math.max(1, summary.totalMoments)) * 100)) }
     : null
 
+  const nearCompleteSets = useMemo(function() {
+    if (!setsData?.sets) return []
+    return setsData.sets
+      .filter(function(s: any) { return s.missingCount >= 1 && s.missingCount <= 3 && s.completionPct >= 50 })
+      .sort(function(a: any, b: any) { return a.missingCount - b.missingCount })
+      .slice(0, 3)
+  }, [setsData])
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -1047,6 +1098,36 @@ export default function WalletPage() {
                 <div className="text-xl font-black text-white">{formatCurrency(totals.totalBestOffer)}</div>
                 <div className="mt-1 text-[11px] text-zinc-500">Spread gap: {formatCurrency(totals.spreadGap)}</div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Close to Completing callout */}
+        {nearCompleteSets.length > 0 && hasSearched && (
+          <div className="rpc-card mb-5" style={{ borderLeft: "3px solid #22c55e", padding: "12px 16px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#22c55e", letterSpacing: "0.1em", whiteSpace: "nowrap" }}>◉ CLOSE TO COMPLETING</span>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {nearCompleteSets.map(function(s: any) {
+                return (
+                  <a
+                    key={s.setId ?? s.setName}
+                    href={"/nba-top-shot/sets?wallet=" + encodeURIComponent(lastSearchedRef.current)}
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 11,
+                      color: "var(--rpc-text-secondary)",
+                      background: "var(--rpc-surface-raised)",
+                      border: "1px solid var(--rpc-border)",
+                      borderRadius: "var(--radius-sm)",
+                      padding: "4px 10px",
+                      textDecoration: "none",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {s.setName} — {s.missingCount} away{s.totalMissingCost != null ? " · $" + s.totalMissingCost.toFixed(2) : ""}
+                  </a>
+                )
+              })}
             </div>
           </div>
         )}

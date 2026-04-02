@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -103,7 +103,18 @@ const TOP_SHOT_NEWS = [
 
 export default function OverviewPage() {
   const params = useParams()
+  const router = useRouter()
   const collection = (params?.collection as string) ?? "nba-top-shot"
+
+  const [walletInput, setWalletInput] = useState("")
+  const [hasWallet, setHasWallet] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("rpc_last_wallet")) setHasWallet(true)
+    } catch {}
+  }, [])
 
   const [pulseData, setPulseData] = useState<MarketPulseData | null>(null)
   const [topSales, setTopSales] = useState<TopSale[]>([])
@@ -175,6 +186,67 @@ export default function OverviewPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+      {/* ── Wallet-Connect Hero CTA ── */}
+      {!hasWallet && !submitted && (
+        <section className="rpc-card" style={{ padding: "32px 24px", textAlign: "center" }}>
+          <div style={{ fontSize: 32, color: "var(--rpc-success)", marginBottom: 12 }}>⚡</div>
+          <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "var(--text-xl)", color: "var(--rpc-text-primary)", letterSpacing: "0.04em", marginBottom: 8 }}>
+            SEE YOUR COLLECTION VALUE INSTANTLY
+          </div>
+          <div className="rpc-mono" style={{ color: "var(--rpc-text-muted)", marginBottom: 16 }}>
+            Enter your Top Shot username or wallet address
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (!walletInput.trim()) return
+              try {
+                localStorage.setItem("rpc_last_wallet", walletInput.trim())
+                localStorage.setItem("rpc_collection_last_wallet", walletInput.trim())
+              } catch {}
+              setSubmitted(true)
+              router.push("/" + collection + "/collection?address=" + encodeURIComponent(walletInput.trim()))
+            }}
+            style={{ display: "inline-flex", gap: 8, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}
+          >
+            <input
+              type="text"
+              value={walletInput}
+              onChange={(e) => setWalletInput(e.target.value)}
+              placeholder="Username or 0x address…"
+              style={{
+                width: 300,
+                padding: "10px 14px",
+                background: "var(--rpc-surface-raised)",
+                border: "1px solid var(--rpc-border)",
+                borderRadius: "var(--radius-sm)",
+                color: "var(--rpc-text-primary)",
+                fontFamily: "var(--font-mono)",
+                fontSize: "var(--text-sm)",
+                outline: "none",
+              }}
+            />
+            <button
+              type="submit"
+              style={{
+                padding: "10px 20px",
+                background: "#E03A2F",
+                border: "none",
+                borderRadius: "var(--radius-sm)",
+                color: "#fff",
+                fontFamily: "var(--font-display)",
+                fontWeight: 700,
+                fontSize: "var(--text-sm)",
+                cursor: "pointer",
+                letterSpacing: "0.04em",
+              }}
+            >
+              ANALYZE →
+            </button>
+          </form>
+        </section>
+      )}
 
       {/* ── Market Summary (from concierge context) ── */}
       <section className="rpc-card" style={{ padding: "16px 20px" }}>
