@@ -374,7 +374,7 @@ export default function OverviewPage() {
             { label: "Collection",   desc: "FMV \u00b7 Flowty asks \u00b7 badge intel", icon: "\u25C8", color: "var(--rpc-red)", page: "collection" },
             { label: "Pack EV",      desc: "Expected value vs price",                    icon: "\u25A3", color: "var(--tier-legendary)", page: "packs" },
             { label: "Sniper",       desc: "Real-time deals below FMV",                  icon: "\u26A1", color: "var(--rpc-success)", page: "sniper" },
-            { label: "Badges",       desc: "Debut \u00b7 Fresh \u00b7 Rookie Year",      icon: "\u2B50", color: "var(--tier-rare)", page: "badges" },
+            { label: "Market",       desc: "Browse \u00b7 filter \u00b7 shop by edition", icon: "\uD83D\uDED2", color: "var(--rpc-info)", page: "market" },
             { label: "Sets",         desc: "Completion + bottleneck finder",              icon: "\u25C9", color: "#F472B6", page: "sets" },
           ].map(({ label, desc, icon, color, page }) => (
             <Link key={page} href={basePath + "/" + page} style={{ textDecoration: "none" }}>

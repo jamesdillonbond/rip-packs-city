@@ -105,7 +105,7 @@ function FeedbackButtons({ messageId, sessionId, dbId, feedback: initialFeedback
 /* ── Default quick suggestions by page ─────────────────────────── */
 const PAGE_DEFAULTS: Record<string, string[]> = {
   sniper: ["Best deals right now", "Rare moments under $20", "Find me a LeBron deal", "What badges are hot?"],
-  badges: ["Most valuable badges?", "Rookie Year moments under $15", "Check badges for Wembanyama", "What is Top Shot Debut?"],
+  market: ["Find me badge moments under $10", "Show me Rookie Year floors", "What are the cheapest Legendary moments?", "Best deals for set completion?"],
   wallet: ["Analyze my portfolio", "What should I sell?", "My most undervalued moment?", "Sets I'm close to completing?"],
   sets: ["Cheapest set to complete?", "What's in Run It Back?", "Best investment sets?", "Show me S8 sets"],
   packs: ["Are packs worth buying?", "How does Pack EV work?", "Best value pack right now?", "What's inside the latest drop?"],
