@@ -1,7 +1,7 @@
 "use client"
 
 import { Suspense, useEffect, useState, useMemo, useCallback, useRef } from "react"
-import { useSearchParams, useRouter } from "next/navigation"
+import { useSearchParams, useRouter, ReadonlyURLSearchParams } from "next/navigation"
 import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -477,10 +477,25 @@ function ListingsModal({
   )
 }
 
+// ── Search params reader (must be inside Suspense) ───────────────────────────
+
+function SearchParamsReader({ onParams }: { onParams: (sp: ReadonlyURLSearchParams) => void }) {
+  const searchParams = useSearchParams()
+  useEffect(() => {
+    onParams(searchParams)
+  }, [searchParams, onParams])
+  return null
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
 function MarketPageInner() {
-  const searchParams = useSearchParams()
+  const [searchParams, setSearchParams] = useState<ReadonlyURLSearchParams>(
+    () => new URLSearchParams() as unknown as ReadonlyURLSearchParams
+  )
+  const handleParams = useCallback((sp: ReadonlyURLSearchParams) => {
+    setSearchParams(sp)
+  }, [])
   const router = useRouter()
 
   // ── Filter state ──────────────────────────────────────────────────────────
@@ -700,6 +715,9 @@ function MarketPageInner() {
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div style={{ padding: "20px 16px", maxWidth: 1200, margin: "0 auto" }}>
+      <Suspense fallback={null}>
+        <SearchParamsReader onParams={handleParams} />
+      </Suspense>
 
       {/* Page header */}
       <div style={{ marginBottom: 20 }}>
@@ -1201,9 +1219,5 @@ const thStyle: React.CSSProperties = {
 }
 
 export default function MarketPage() {
-  return (
-    <Suspense>
-      <MarketPageInner />
-    </Suspense>
-  )
+  return <MarketPageInner />
 }
