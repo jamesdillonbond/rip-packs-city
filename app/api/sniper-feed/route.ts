@@ -996,7 +996,7 @@ async function computeSniperFeed(opts: {
     if (sortBy === "price_desc") return b.askPrice - a.askPrice;
     if (sortBy === "fmv_desc") return b.adjustedFmv - a.adjustedFmv;
     if (sortBy === "serial_asc") return a.serial - b.serial;
-    if (sortBy === "listed_desc") return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    if (sortBy === "listed_desc") return new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime();
     return b.discount - a.discount;
   });
 
