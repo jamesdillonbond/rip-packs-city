@@ -1,6 +1,42 @@
 // Cadence scripts for NFL All Day (AllDay contract on Flow mainnet)
 // Contract address: 0xe4cf4bdc1751c65d
 
+// Get all edition IDs in a set → returns an array of edition IDs
+export const GET_EDITIONS_IN_SET = `
+  import AllDay from 0xe4cf4bdc1751c65d
+  access(all)
+  fun main(setID: UInt64): [UInt64] {
+    let setData = AllDay.getSetData(id: setID) ?? panic("no set")
+    return setData.editionIDs
+  }
+`
+
+// Get edition data (playID, setID, tier, etc.)
+export const GET_EDITION_DATA = `
+  import AllDay from 0xe4cf4bdc1751c65d
+  access(all)
+  fun main(editionID: UInt64): {String: String} {
+    let ed = AllDay.getEditionData(id: editionID) ?? panic("no edition")
+    return {
+      "playID": ed.playID.toString(),
+      "setID": ed.setID.toString(),
+      "tier": ed.tier ?? "COMMON",
+      "maxMintSize": ed.maxMintSize?.toString() ?? "0",
+      "numMinted": ed.numMinted.toString()
+    }
+  }
+`
+
+// Get play metadata (player name, team, etc.)
+export const GET_PLAY_DATA = `
+  import AllDay from 0xe4cf4bdc1751c65d
+  access(all)
+  fun main(playID: UInt64): {String: String} {
+    let play = AllDay.getPlayData(id: playID) ?? panic("no play")
+    return play.metadata
+  }
+`
+
 export const GET_OWNED_MOMENT_IDS = `
   import AllDay from 0xe4cf4bdc1751c65d
   access(all)
