@@ -8,15 +8,18 @@ import { z } from "zod";
 
 interface RawListing {
   id: string;
+  // Legacy Flowty/MomentListing fields
   flowRetailPrice?: { value: string };
   marketplacePrice?: number;
-  setPlay: {
-    setID: number;
-    playID: number;
+  setPlay?: {
+    setID?: number;
+    playID?: number;
     parallelID?: number;
+    ID?: string;
+    flowRetired?: boolean;
+    circulations?: { circulationCount?: number; forSaleByCollectors?: number; locked?: number };
   };
-  serialNumber: number;
-  circulationCount: number;
+  serialNumber?: number;
   setName?: string;
   momentTier?: string;
   momentTitle?: string;
@@ -30,6 +33,29 @@ interface RawListing {
   listingOrderID?: string;
   setSeriesNumber?: number;
   parallelSetPlay?: { setID: number; playID: number; parallelID?: number };
+  // New MarketplaceEdition fields
+  tier?: string;
+  lowAsk?: number;
+  parallelID?: number;
+  parallelName?: string;
+  editionListingCount?: number;
+  set?: {
+    id?: string;
+    flowId?: string;
+    flowSeriesNumber?: number;
+    flowName?: string;
+  };
+  play?: {
+    id?: string;
+    flowID?: string;
+    stats?: {
+      playerName?: string;
+      teamAtMoment?: string;
+      jerseyNumber?: string;
+      nbaSeason?: string;
+    };
+  };
+  circulationCount: number;
 }
 
 interface FmvRow {
@@ -187,40 +213,54 @@ function serialMultiplier(
 
 // ─── Top Shot GQL ─────────────────────────────────────────────────────────────
 
-const SEARCH_LISTINGS_QUERY = `
-  {
-    searchMomentListings(
-      input: {
-        
-        searchInput: { pagination: { cursor: "", limit: 100 } }
+const SEARCH_MARKETPLACE_QUERY = `
+  query SearchMarketplaceEditions($cursor: String = "", $limit: Int = 100) {
+    searchMarketplaceEditions(input: {
+      filters: {
+        byMarketPlaceListingType: LISTED_AND_UNLISTED
       }
-    ) {
+      sortBy: EDITION_CREATED_AT_DESC
+      searchInput: { pagination: { direction: RIGHT, limit: $limit, cursor: $cursor } }
+    }) {
       data {
         searchSummary {
           pagination { rightCursor }
           data {
-            ... on MomentListings {
-              size
-              data {
-                ... on MomentListing {
+            size
+            data {
+              ... on MarketplaceEdition {
+                id
+                tier
+                lowAsk
+                circulationCount
+                parallelID
+                parallelName
+                set {
                   id
-                  flowRetailPrice { value }
-                  setPlay {
-                    setID
-                    playID
-                    parallelID
-                  }
-                  serialNumber
-                  circulationCount
-                  setName
-                  momentTier
-                  momentTitle
-                  playerName
-                  isLocked
-                  listingOrderID
-                  storefrontListingID
-                  sellerAddress
+                  flowId
+                  flowSeriesNumber
+                  flowName
                 }
+                play {
+                  id
+                  flowID
+                  stats {
+                    playerName
+                    teamAtMoment
+                    jerseyNumber
+                    nbaSeason
+                  }
+                }
+                setPlay {
+                  ID
+                  flowRetired
+                  circulations {
+                    circulationCount
+                    forSaleByCollectors
+                    locked
+                  }
+                }
+                editionListingCount
               }
             }
           }
@@ -231,6 +271,9 @@ const SEARCH_LISTINGS_QUERY = `
 `;
 
 function parseListingPrice(listing: RawListing): number {
+  // MarketplaceEdition shape (new TS GQL)
+  if (listing.lowAsk && listing.lowAsk > 0) return listing.lowAsk;
+  // Legacy shape
   if (listing.flowRetailPrice?.value) {
     return parseFloat(listing.flowRetailPrice.value) / 100_000_000;
   }
@@ -255,11 +298,10 @@ async function fetchTSPage(
       const timeout = setTimeout(() => controller.abort(), 6000);
       const headers: Record<string, string> = { ...GQL_HEADERS };
       if (TS_PROXY_URL) headers["X-Proxy-Secret"] = TS_PROXY_SECRET;
-      const body = cursor
-        ? JSON.stringify({
-            query: SEARCH_LISTINGS_QUERY.replace(`cursor: ""`, `cursor: "${cursor}"`),
-          })
-        : JSON.stringify({ query: SEARCH_LISTINGS_QUERY });
+      const body = JSON.stringify({
+            query: SEARCH_MARKETPLACE_QUERY,
+            variables: { cursor: cursor || "", limit: 100 },
+          });
       const res = await fetch(endpoint, {
         method: "POST",
         headers,
@@ -270,16 +312,16 @@ async function fetchTSPage(
       if (!res.ok) throw new Error(`GQL ${res.status}: ${await res.text().then((t) => t.slice(0, 200))}`);
       const json = await res.json();
       if (json.errors?.length) throw new Error(json.errors.map((e: { message: string }) => e.message).join("; "));
-      const summary = json?.data?.searchMomentListings?.data?.searchSummary;
+      const summary = json?.data?.searchMarketplaceEditions?.data?.searchSummary;
       const nextCursor = summary?.pagination?.rightCursor ?? null;
       const listings: RawListing[] = [];
       const dataField = summary?.data;
-      if (Array.isArray(dataField)) {
+      if (dataField?.data && Array.isArray(dataField.data)) {
+        listings.push(...dataField.data);
+      } else if (Array.isArray(dataField)) {
         for (const block of dataField) {
           if (Array.isArray(block?.data)) listings.push(...block.data);
         }
-      } else if (dataField?.data && Array.isArray(dataField.data)) {
-        listings.push(...dataField.data);
       }
       console.log(`[sniper-feed] TS page cursor=${cursor || "start"} attempt=${attempt} listings=${listings.length}`);
       return { listings, nextCursor };
@@ -742,21 +784,22 @@ async function computeSniperFeed(opts: {
   const tsEditionKeys = new Set<string>();
   const flowIdToEditionKey = new Map<string, string>();
   for (const l of tsListings) {
-    const sp = l.setPlay;
-    if (sp?.setID && sp?.playID) {
-      const parallelId = sp.parallelID ?? 0;
-      const key = parallelId > 0 ? `${sp.setID}:${sp.playID}::${parallelId}` : `${sp.setID}:${sp.playID}`;
+    // Support both MarketplaceEdition shape (set.flowId + play.flowID) and legacy shape (setPlay.setID/playID)
+    const setId = l.set?.flowId ?? l.setPlay?.setID;
+    const playId = l.play?.flowID ?? l.setPlay?.playID;
+    if (setId && playId) {
+      const parallelId = l.parallelID ?? l.setPlay?.parallelID ?? 0;
+      const key = parallelId > 0 ? `${setId}:${playId}::${parallelId}` : `${setId}:${playId}`;
       tsEditionKeys.add(key);
-      tsEditionKeys.add(`${sp.setID}:${sp.playID}`);
-      // Map this listing's flowId to its edition key for Flowty cross-reference
-      flowIdToEditionKey.set(String(l.id), `${sp.setID}:${sp.playID}`);
+      tsEditionKeys.add(`${setId}:${playId}`);
+      flowIdToEditionKey.set(String(l.id), `${setId}:${playId}`);
     }
   }
 
   // 3. Collect unique player names for badge + jersey lookups
   const allPlayerNames = Array.from(new Set([
     ...flowtyListings.map(l => l.playerName).filter(Boolean),
-    ...tsListings.map(l => l.playerName ?? "").filter(Boolean),
+    ...tsListings.map(l => l.play?.stats?.playerName ?? l.playerName ?? "").filter(Boolean),
   ]));
 
   // 4. Fire all Supabase lookups in parallel (including jersey numbers + retired moments)
@@ -779,27 +822,29 @@ async function computeSniperFeed(opts: {
     if (!askPrice || askPrice <= 0) continue;
     if (maxPrice > 0 && askPrice > maxPrice) continue;
 
-    const tierRaw = (l.momentTier ?? "COMMON").replace("MOMENT_TIER_", "");
+    const tierRaw = (l.tier ?? l.momentTier ?? "COMMON").replace("MOMENT_TIER_", "").toUpperCase();
     if (rarity !== "all" && tierRaw.toUpperCase() !== rarity.toUpperCase()) continue;
 
-    const sp = l.setPlay;
-    if (!sp?.setID || !sp?.playID) continue;
-    const parallelId = sp.parallelID ?? 0;
-    const editionKeyParallel = parallelId > 0 ? `${sp.setID}:${sp.playID}::${parallelId}` : null;
-    const editionKeyBase = `${sp.setID}:${sp.playID}`;
+    // Support both MarketplaceEdition (set.flowId/play.flowID) and legacy (setPlay.setID/playID)
+    const setId = l.set?.flowId ?? l.setPlay?.setID;
+    const playId = l.play?.flowID ?? l.setPlay?.playID;
+    if (!setId || !playId) continue;
+    const parallelId = l.parallelID ?? l.setPlay?.parallelID ?? 0;
+    const editionKeyParallel = parallelId > 0 ? `${setId}:${playId}::${parallelId}` : null;
+    const editionKeyBase = `${setId}:${playId}`;
     const editionKey = editionKeyParallel ?? editionKeyBase;
 
+    // MarketplaceEdition is edition-level (no serial) — use 0 as placeholder
     const serial = l.serialNumber ?? 0;
-    if (!serial) continue;
-    const circ = l.circulationCount ?? 1000;
+    const circ = l.circulationCount ?? l.setPlay?.circulations?.circulationCount ?? 1000;
 
-    const playerNameRaw = l.playerName ?? l.momentTitle ?? "Unknown";
+    const playerNameRaw = l.play?.stats?.playerName ?? l.playerName ?? l.momentTitle ?? "Unknown";
     const jerseyNumber = jerseyMap.get(playerNameRaw.toLowerCase().trim()) ?? null;
     const { mult: serialMult, signal: serialSignal, isSpecial: isSpecialSerial } =
       serialMultiplier(serial, circ, jerseyNumber);
     const isJersey = jerseyNumber !== null && serial === jerseyNumber;
 
-    const teamName = NBA_TEAMS[l.teamAtMomentNbaId ?? ""] ?? "";
+    const teamName = NBA_TEAMS[l.play?.stats?.teamAtMoment ?? l.teamAtMomentNbaId ?? ""] ?? l.play?.stats?.teamAtMoment ?? "";
     if (team !== "all" && teamName !== team) continue;
 
     const badgeSlugs = extractBadgeSlugs(l.tags);
@@ -825,7 +870,7 @@ async function computeSniperFeed(opts: {
 
     const thumbnailUrl = l.assetPathPrefix
       ? `${l.assetPathPrefix}Hero_Black_2880_2880.jpg`
-      : null;
+      : `https://assets.nbatopshot.com/media/${l.id}?width=256`;
 
     tsDeals.push({
       flowId: String(l.id),
@@ -833,8 +878,8 @@ async function computeSniperFeed(opts: {
       editionKey,
       playerName: playerNameRaw,
       teamName,
-      setName: l.setName ?? "",
-      seriesName: l.setSeriesNumber != null ? (SERIES_NAMES[l.setSeriesNumber] ?? "") : "",
+      setName: l.set?.flowName ?? l.setName ?? "",
+      seriesName: (() => { const sn = l.set?.flowSeriesNumber ?? l.setSeriesNumber; return sn != null ? (SERIES_NAMES[sn] ?? "") : ""; })(),
       tier: tierRaw,
       parallel: PARALLEL_NAMES[parallelId] ?? (parallelId > 0 ? `Parallel #${parallelId}` : "Base"),
       parallelId,
@@ -864,7 +909,7 @@ async function computeSniperFeed(opts: {
       packName: fmvRow.packName,
       packEv: null,
       packEvRatio: null,
-      buyUrl: `https://nbatopshot.com/moment/${l.id}`,
+      buyUrl: l.set?.flowId && l.play?.flowID ? `https://nbatopshot.com/marketplace/editions/${l.set.flowId}/${l.play.flowID}${parallelId > 0 ? `/${parallelId}` : ''}` : `https://nbatopshot.com/moment/${l.id}`,
       listingResourceID: l.listingOrderID ?? l.storefrontListingID ?? null,
       listingOrderID: l.listingOrderID ?? null,
       storefrontAddress: l.sellerAddress ?? null,
