@@ -414,7 +414,8 @@ async function getCollectionId(): Promise<string | null> {
 
 // ── Batch FMV + Ask Enrichment ────────────────────────────────────
 // Resolves integer editionKeys → Supabase edition UUIDs → fmv_snapshots
-// Also looks up cached_listings by flowId for low ask prices
+// Upserts missing editions so integer-format keys always resolve.
+// Also looks up cached_listings by flowId for low ask prices.
 async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
   if (!rows.length) return rows
 
@@ -423,8 +424,34 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
     const editionKeys = [...new Set(rows.map(r => r.editionKey).filter(Boolean))] as string[]
     const flowIds = [...new Set(rows.map(r => r.flowId).filter(Boolean))] as string[]
 
-    // 2. Parallel: resolve editions + fetch cached_listings
     const CHUNK = 50
+
+    // 2. Batch upsert any missing editions so integer-format keys exist
+    //    (ignoreDuplicates: true means existing rows are untouched)
+    if (editionKeys.length) {
+      let collectionId: string | null = null
+      try {
+        collectionId = await getCollectionId()
+      } catch { /* proceed without collection_id */ }
+
+      const upsertChunks: Promise<any>[] = []
+      for (let i = 0; i < editionKeys.length; i += CHUNK) {
+        upsertChunks.push(
+          (supabaseAdmin as any)
+            .from("editions")
+            .upsert(
+              editionKeys.slice(i, i + CHUNK).map(k => ({
+                external_id: k,
+                ...(collectionId ? { collection_id: collectionId } : {}),
+              })),
+              { onConflict: "external_id", ignoreDuplicates: true }
+            )
+        )
+      }
+      await Promise.all(upsertChunks)
+    }
+
+    // 3. Parallel: resolve editions + fetch cached_listings
     const editionChunks: Promise<any>[] = []
     for (let i = 0; i < editionKeys.length; i += CHUNK) {
       editionChunks.push(
@@ -450,7 +477,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
       Promise.all(listingChunks),
     ])
 
-    // 3. Build edition external_id → internal UUID map
+    // 4. Build edition external_id → internal UUID map
     const extToId = new Map<string, string>()
     for (const { data } of editionResults) {
       for (const row of (data ?? [])) {
@@ -458,7 +485,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
       }
     }
 
-    // 4. Build flowId → ask_price map from cached_listings
+    // 5. Build flowId → ask_price map from cached_listings
     const askMap = new Map<string, number>()
     for (const { data } of listingResults) {
       for (const row of (data ?? [])) {
@@ -466,7 +493,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
       }
     }
 
-    // 5. Fetch FMV snapshots for resolved edition UUIDs
+    // 6. Fetch FMV snapshots for resolved edition UUIDs
     const internalIds = [...new Set(extToId.values())]
     const fmvMap = new Map<string, { fmv_usd: number; confidence: string; computed_at: string }>()
 
@@ -490,7 +517,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
       }
     }
 
-    // 6. Build editionKey → FMV data map
+    // 7. Build editionKey → FMV data map
     const editionFmvMap = new Map<string, { fmv: number; confidence: string; computedAt: string }>()
     for (const [extId, intId] of extToId) {
       const snap = fmvMap.get(intId)
@@ -503,7 +530,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
       }
     }
 
-    // 7. Apply FMV + ask data to rows
+    // 8. Apply FMV + ask data to rows
     return rows.map(row => {
       const fmvData = row.editionKey ? editionFmvMap.get(row.editionKey) : null
       const cachedAsk = row.flowId ? askMap.get(row.flowId) : null
