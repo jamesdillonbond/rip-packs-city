@@ -6,6 +6,7 @@ export type CollectionPage =
   | "badges"
   | "sets"
   | "vault"
+  | "market"
 
 export interface Collection {
   id: string
@@ -32,7 +33,7 @@ export const COLLECTIONS: Collection[] = [
     partner: "Dapper Labs",
     accent: "#E03A2F",
     icon: "🏀",
-    pages: ["overview", "collection", "packs", "sniper", "badges", "sets"],
+    pages: ["overview", "collection", "packs", "sniper", "market", "sets"],
     published: true,
     graphqlUrl: "https://public-api.nbatopshot.com/graphql",
     flowContractName: "TopShot",
