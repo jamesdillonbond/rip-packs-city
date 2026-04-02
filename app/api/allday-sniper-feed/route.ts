@@ -252,18 +252,20 @@ interface FlowtyListing {
   teamName: string;
   tier: string;
   season: string;
+  editionID: string;
   isLocked: boolean;
   paymentToken: "DUC" | "FUT" | "FLOW" | "USDC_E";
 }
 
 // Multi-key trait lookup: tries each key name variant in order
 const FLOWTY_TRAIT_MAP: Record<string, string[]> = {
-  setName:  ["SetName", "setName", "Set Name", "set_name"],
-  teamName: ["TeamName", "teamName", "Team Name", "team_name", "Team", "team"],
-  tier:     ["Tier", "tier", "MomentTier", "momentTier"],
-  season:   ["Season", "season"],
-  locked:   ["Locked", "locked", "IsLocked", "isLocked"],
-  fullName: ["PlayerName", "playerName", "FullName", "fullName", "Full Name", "Player Name"],
+  setName:    ["SetName", "setName", "Set Name", "set_name"],
+  teamName:   ["TeamName", "teamName", "Team Name", "team_name", "Team", "team"],
+  tier:       ["Tier", "tier", "MomentTier", "momentTier"],
+  season:     ["Season", "season"],
+  locked:     ["Locked", "locked", "IsLocked", "isLocked"],
+  fullName:   ["PlayerName", "playerName", "FullName", "fullName", "Full Name", "Player Name"],
+  editionID:  ["editionID", "edition_id", "EditionID", "editionId"],
 };
 
 function getTraitMulti(
@@ -324,6 +326,8 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
       // Normalize vault type to short payment token enum
       const paymentToken = VAULT_TO_PAYMENT_TOKEN[order.salePaymentVaultType ?? ""] ?? "DUC";
 
+      const editionID = getTraitMulti(traits, FLOWTY_TRAIT_MAP.editionID);
+
       listings.push({
         momentId: String(item.id),
         listingResourceID: order.listingResourceID,
@@ -338,6 +342,7 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
         teamName: getTraitMulti(traits, FLOWTY_TRAIT_MAP.teamName),
         tier: (getTraitMulti(traits, FLOWTY_TRAIT_MAP.tier) || "COMMON").toUpperCase(),
         season: getTraitMulti(traits, FLOWTY_TRAIT_MAP.season),
+        editionID,
         isLocked: getTraitMulti(traits, FLOWTY_TRAIT_MAP.locked) === "true",
         paymentToken,
       });
@@ -551,6 +556,12 @@ async function computeSniperFeed(opts: {
       alldayEditionKeys.add(`allday:${l.moment.editionID}`);
     }
   }
+  // Include Flowty editionIDs so they also get FMV resolved
+  for (const l of flowtyListings) {
+    if (l.editionID) {
+      alldayEditionKeys.add(`allday:${l.editionID}`);
+    }
+  }
 
   // 3. Collect unique player names for jersey lookups
   const allPlayerNames = Array.from(new Set([
@@ -688,6 +699,11 @@ async function computeSniperFeed(opts: {
     let editionKey = "";
     let fmvRow: FmvRow | null = null;
 
+    // Resolve editionKey from Flowty trait data
+    if (item.editionID) {
+      editionKey = `allday:${item.editionID}`;
+    }
+
     if (item.livetokenFmv && item.livetokenFmv > 0) {
       // LiveToken FMV available
       baseFmv = item.livetokenFmv;
@@ -695,14 +711,9 @@ async function computeSniperFeed(opts: {
       confidenceSource = "livetoken";
       flowtyLivetokenHits++;
     } else {
-      // Try Supabase FMV — for Flowty we don't have editionID directly,
-      // so we attempt matching via momentId overlap with AllDay listings
-      const overlappedListing = alldayListings.find(
-        (l) => String(l.moment?.id) === item.momentId
-      );
-      if (overlappedListing?.moment?.editionID) {
-        const overlapKey = `allday:${overlappedListing.moment.editionID}`;
-        fmvRow = fmvMap.get(overlapKey) ?? null;
+      // Try Supabase FMV using editionKey from traits
+      if (editionKey) {
+        fmvRow = fmvMap.get(editionKey) ?? null;
       }
 
       if (fmvRow && fmvRow.fmv > 0) {
@@ -753,7 +764,9 @@ async function computeSniperFeed(opts: {
       isSpecialSerial,
       isJersey,
       serialSignal,
-      thumbnailUrl: null,
+      thumbnailUrl: item.editionID
+        ? `https://media.nflallday.com/editions/${item.editionID}/media/image?width=150&format=webp`
+        : null,
       updatedAt: item.blockTimestamp ? new Date(item.blockTimestamp).toISOString() : new Date().toISOString(),
       packListingId: fmvRow?.packListingId ?? null,
       packName: fmvRow?.packName ?? null,
