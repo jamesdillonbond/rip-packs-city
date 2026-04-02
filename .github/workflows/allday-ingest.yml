@@ -1,0 +1,20 @@
+name: NFL All Day Data Pipeline
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Ingest — Fetch latest All Day sales
+        run: |
+          STATUS=$(curl -s -o /tmp/allday-ingest.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            https://rip-packs-city.vercel.app/api/allday-ingest)
+          echo "All Day ingest status: $STATUS"
+          cat /tmp/allday-ingest.json
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::All Day ingest returned $STATUS"
+          fi
