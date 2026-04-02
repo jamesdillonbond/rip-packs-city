@@ -1,11 +1,16 @@
 name: Debug AllDay Ingest
 on:
+  push:
+    paths:
+      - '.github/workflows/debug-allday-ingest.yml'
   workflow_dispatch:
 jobs:
   capture:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Wait for Vercel deploy
+        run: sleep 90
       - name: Call debug endpoint
         run: |
           curl -sS --max-time 60 \
