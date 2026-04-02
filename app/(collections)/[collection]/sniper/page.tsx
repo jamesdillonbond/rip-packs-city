@@ -72,7 +72,8 @@ type SortOption =
   | "price_asc"
   | "price_desc"
   | "fmv_desc"
-  | "serial_asc";
+  | "serial_asc"
+  | "listed_desc";
 
 // ─── Click tracking helper ────────────────────────────────────────────────────
 
@@ -410,6 +411,7 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "price_desc", label: "Most Expensive" },
   { value: "fmv_desc",   label: "Highest FMV" },
   { value: "serial_asc", label: "Lowest Serial" },
+  { value: "listed_desc", label: "Recently Listed" },
 ];
 
 export default function SniperPage() {
@@ -434,7 +436,7 @@ export default function SniperPage() {
   const editionStatsFetchedRef = useRef<string | null>(null);
 
   const [tierTab, setTierTab] = useState<TierTab>("all");
-  const [sortBy, setSortBy] = useState<SortOption>("discount");
+  const [sortBy, setSortBy] = useState<SortOption>("listed_desc");
   const [minDiscount, setMinDiscount] = useState(0);
   const [maxPrice, setMaxPrice] = useState(0);
   const [serialFilter, setSerialFilter] = useState("all");
