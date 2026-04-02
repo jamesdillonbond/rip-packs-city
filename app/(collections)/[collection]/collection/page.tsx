@@ -1,7 +1,7 @@
 "use client"
 
 import { Fragment, useMemo, useState, useEffect, useCallback, useRef, Suspense } from "react"
-import { useSearchParams, useRouter } from "next/navigation"
+import { useSearchParams, useRouter, useParams } from "next/navigation"
 import {
   normalizeSetName,
   normalizeParallel,
@@ -9,6 +9,7 @@ import {
 } from "@/lib/wallet-normalize"
 import { buildEditionSeedCandidate } from "@/lib/edition-market-seed"
 import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key"
+import { getCollection } from "@/lib/collections"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -381,6 +382,10 @@ function AutoSearchReader(props: { onSearch: (q: string) => void }) {
 
 export default function WalletPage() {
   const router = useRouter()
+  const routeParams = useParams()
+  const collectionSlug = (routeParams?.collection as string) ?? "nba-top-shot"
+  const collectionObj = getCollection(collectionSlug)
+  const accent = collectionObj?.accent ?? "#E03A2F"
   const lastSearchedRef = useRef("")
   const [rows, setRows] = useState<MomentRow[]>([])
   const [input, setInput] = useState("")
@@ -924,12 +929,16 @@ export default function WalletPage() {
             onChange={function(e) { setInput(e.target.value) }}
             onKeyDown={function(e) { if (e.key === "Enter" && !loading && input.trim()) handleSearch() }}
             placeholder={ownerKey ? "Enter Top Shot username or wallet address (or press Enter to load your wallet)" : "Enter Top Shot username or wallet address"}
-            className="w-full max-w-lg rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white outline-none placeholder:text-zinc-500 focus:border-red-600"
+            className="w-full max-w-lg rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white outline-none placeholder:text-zinc-500"
+            style={{ ["--accent" as string]: accent }}
+            onFocus={function(e) { e.currentTarget.style.borderColor = accent }}
+            onBlur={function(e) { e.currentTarget.style.borderColor = "" }}
           />
           <button
             onClick={handleSearch}
             disabled={loading || !input.trim()}
-            className="rounded-lg bg-red-600 px-5 py-2 font-semibold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg px-5 py-2 font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ backgroundColor: accent }}
           >
             {loading ? "Loading..." : "Search"}
           </button>
@@ -971,7 +980,7 @@ export default function WalletPage() {
                       <span>{loadProgress.pct}%</span>
                     </div>
                     <div className="h-1 w-full rounded-full bg-zinc-800">
-                      <div className="h-1 rounded-full bg-red-600 transition-all duration-300" style={{ width: loadProgress.pct + "%" }} />
+                      <div className="h-1 rounded-full transition-all duration-300" style={{ width: loadProgress.pct + "%", backgroundColor: accent }} />
                     </div>
                   </div>
                 ) : (
@@ -1045,15 +1054,15 @@ export default function WalletPage() {
             ["badge", "Badge"],
           ] as [SortKey, string][]).map(function([key, label]) {
             return (
-              <button key={key} onClick={function() { toggleSort(key) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 " + (sortKey === key ? "border-red-600 text-white" : "border-zinc-700 text-zinc-400")}>
+              <button key={key} onClick={function() { toggleSort(key) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 " + (sortKey === key ? "text-white" : "border-zinc-700 text-zinc-400")} style={sortKey === key ? { borderColor: accent } : undefined}>
                 {label}{sortKey === key && <span className="ml-1 text-zinc-500">{sortDirection === "asc" ? "↑" : "↓"}</span>}
               </button>
             )
           })}
           <div className="border-l border-zinc-700 mx-1" />
-          <button onClick={function() { setFilterBadges(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterBadges ? "bg-red-950/40 border-red-500/50 text-red-400" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>🏷 BADGES</button>
-          <button onClick={function() { setFilterHasOffer(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterHasOffer ? "bg-red-950/40 border-red-500/50 text-red-400" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>💰 HAS OFFER</button>
-          <button onClick={function() { setFilterListed(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterListed ? "bg-red-950/40 border-red-500/50 text-red-400" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")}>📋 LISTED</button>
+          <button onClick={function() { setFilterBadges(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterBadges ? "text-white" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")} style={filterBadges ? { borderColor: accent, backgroundColor: accent + "1A", color: accent } : undefined}>🏷 BADGES</button>
+          <button onClick={function() { setFilterHasOffer(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterHasOffer ? "text-white" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")} style={filterHasOffer ? { borderColor: accent, backgroundColor: accent + "1A", color: accent } : undefined}>💰 HAS OFFER</button>
+          <button onClick={function() { setFilterListed(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterListed ? "text-white" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")} style={filterListed ? { borderColor: accent, backgroundColor: accent + "1A", color: accent } : undefined}>📋 LISTED</button>
           <button onClick={function() { setShowDebug(function(prev) { return !prev }) }} className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">{showDebug ? "Hide Debug" : "Debug"}</button>
           <button onClick={copySeedCandidates} className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">Copy Seeds</button>
         </div>
@@ -1179,9 +1188,9 @@ export default function WalletPage() {
                       <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{getParallel(row)}</td>
                       <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{row.tier ?? "—"}</td>
                       <td className="p-3">
-                        <div className={"inline-flex min-w-[80px] flex-col rounded-lg border px-2 py-1 " + (primaryBadge ? "border-red-700 bg-red-950/50" : "border-zinc-800 bg-black")}>
+                        <div className={"inline-flex min-w-[80px] flex-col rounded-lg border px-2 py-1 " + (primaryBadge ? "" : "border-zinc-800 bg-black")} style={primaryBadge ? { borderColor: accent, backgroundColor: accent + "1A" } : undefined}>
                           <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} />
-                          <div className={"text-sm font-black " + (primaryBadge ? "text-red-300" : "text-white")}>{"#" + (getSerial(row) ?? "-")}</div>
+                          <div className={"text-sm font-black " + (primaryBadge ? "" : "text-white")} style={primaryBadge ? { color: accent } : undefined}>{"#" + (getSerial(row) ?? "-")}</div>
                           <div className="text-xs text-zinc-400">{"/ " + (getMint(row) ?? "-")}</div>
                           {primaryBadge ? <div className="mt-1 rounded bg-white px-1 py-0.5 text-[9px] font-bold text-black">{primaryBadge}</div> : null}
                         </div>
@@ -1195,7 +1204,7 @@ export default function WalletPage() {
                           const count = getPackCount(row.setName)
                           if (!count) return <span className="text-zinc-600">—</span>
                           return (
-                            <a href={"/nba-top-shot/packs?wallet=" + encodeURIComponent(input.trim())} className="text-red-400 hover:text-red-300">
+                            <a href={"/" + collectionSlug + "/packs?wallet=" + encodeURIComponent(input.trim())} className="hover:opacity-80" style={{ color: accent }}>
                               {count + (count === 1 ? " pack" : " packs")}
                             </a>
                           )
@@ -1313,7 +1322,7 @@ export default function WalletPage() {
                                 <div>Acquired: {formatAcquiredAt(row.acquiredAt)}</div>
                                 <div>Locked: {isLocked ? "Yes" : "No"}</div>
                                 <div className="flex flex-wrap gap-1 pt-1">
-                                  {getTraits(row).map(function(trait) { return <span key={trait} className="rounded bg-red-950 px-2 py-0.5 text-[10px] text-red-300">{trait}</span> })}
+                                  {getTraits(row).map(function(trait) { return <span key={trait} className="rounded px-2 py-0.5 text-[10px]" style={{ backgroundColor: accent + "1A", color: accent }}>{trait}</span> })}
                                 </div>
                               </div>
                             </div>
@@ -1323,7 +1332,7 @@ export default function WalletPage() {
                                 <div className="space-y-1 text-sm">
                                   <div className="flex items-center gap-2">
                                     <span className="text-zinc-400">Score</span>
-                                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-red-600 text-[11px] font-black text-white">{row.badgeInfo.badge_score}</span>
+                                    <span className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-black text-white" style={{ backgroundColor: accent }}>{row.badgeInfo.badge_score}</span>
                                   </div>
                                   <div className="flex flex-wrap gap-1 pt-1">
                                     {(row.badgeInfo.badge_titles ?? []).filter(function(t) { return BADGE_PILL_TITLES.has(t) }).map(function(title) {
@@ -1372,7 +1381,8 @@ export default function WalletPage() {
             <div className="mt-2 text-sm text-zinc-500">Try searching a different wallet or connect yours</div>
             <button
               onClick={function() { runSearch("0xbd94cade097e50ac") }}
-              className="mt-4 text-sm text-red-400 hover:text-red-300 transition-colors"
+              className="mt-4 text-sm transition-colors hover:opacity-80"
+              style={{ color: accent }}
             >
               View example: 0xbd94cade097e50ac →
             </button>
@@ -1381,7 +1391,7 @@ export default function WalletPage() {
 
         {summary && summary.remainingMoments > 0 ? (
           <div className="mt-6 flex justify-center">
-            <button onClick={handleLoadMore} disabled={loadingMore} className="rounded-lg bg-red-600 px-4 py-2 font-semibold text-white disabled:opacity-50 hover:bg-red-500">
+            <button onClick={handleLoadMore} disabled={loadingMore} className="rounded-lg px-4 py-2 font-semibold text-white disabled:opacity-50" style={{ backgroundColor: accent }}>
               {loadingMore ? "Loading..." : "Load More (" + summary.remainingMoments + " left)"}
             </button>
           </div>
