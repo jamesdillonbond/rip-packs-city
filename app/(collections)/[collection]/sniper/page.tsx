@@ -246,13 +246,20 @@ function ActionCell({
   ownedIds,
   connectedWallet,
   accent,
+  offerMode,
+  offerDurationDays,
 }: {
   deal: SniperDeal;
   ownedIds: Set<string>;
   connectedWallet: string | null;
   accent: string;
+  offerMode: boolean;
+  offerDurationDays: number;
 }) {
-  const { addToCart, removeFromCart, isInCart } = useCart();
+  const { addToCart, addOffer, removeFromCart, isInCart } = useCart();
+  const [localOfferAmt, setLocalOfferAmt] = useState<number>(
+    Math.round(deal.adjustedFmv * 0.8 * 100) / 100
+  );
   const inCart = deal.listingResourceID ? isInCart(deal.listingResourceID) : false;
   const isOwned = ownedIds.has(deal.flowId);
   const canCart = !!deal.listingResourceID && !!deal.storefrontAddress;
@@ -262,6 +269,30 @@ function ActionCell({
     if (!canCart) return;
     if (inCart) {
       removeFromCart(deal.listingResourceID!);
+      return;
+    }
+
+    if (offerMode) {
+      // Add as offer item
+      const expiryTimestamp = Math.floor(Date.now() / 1000) + offerDurationDays * 24 * 60 * 60;
+      addOffer({
+        listingResourceID: deal.listingResourceID!,
+        storefrontAddress: deal.storefrontAddress!,
+        expectedPrice: deal.askPrice,
+        commissionRecipient: COMMISSION_RECIPIENT,
+        momentId: Number(deal.momentId),
+        playerName: deal.playerName,
+        setName: deal.setName,
+        serialNumber: deal.serial,
+        totalEditions: deal.circulationCount,
+        tier: deal.tier,
+        thumbnailUrl: deal.thumbnailUrl ?? null,
+        fmv: deal.adjustedFmv,
+        source: "sniper",
+        paymentToken: "USDC_E",
+        offerAmount: localOfferAmt,
+        offerExpiry: expiryTimestamp,
+      });
     } else {
       addToCart({
         listingResourceID: deal.listingResourceID!,
@@ -278,6 +309,7 @@ function ActionCell({
         fmv: deal.adjustedFmv,
         source: "sniper",
         paymentToken: deal.paymentToken ?? "DUC",
+        cartMode: "buy",
       });
     }
   }
@@ -308,16 +340,44 @@ function ActionCell({
 
   return (
     <div className="flex flex-col items-end gap-1.5">
+      {/* Offer amount input — shown when offer mode is active */}
+      {offerMode && canCart && !inCart && (
+        <div className="flex items-center gap-1">
+          <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>$</span>
+          <input
+            type="number"
+            min={0.01}
+            step={0.01}
+            value={localOfferAmt}
+            onChange={(e) => setLocalOfferAmt(Number(e.target.value))}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 64,
+              background: "var(--rpc-surface-raised)",
+              border: "1px solid rgba(59,130,246,0.3)",
+              borderRadius: "var(--radius-sm)",
+              padding: "3px 6px",
+              color: "var(--rpc-text-primary)",
+              fontFamily: "var(--font-mono)",
+              fontSize: "var(--text-xs)",
+              outline: "none",
+              textAlign: "right",
+            }}
+          />
+        </div>
+      )}
       {canCart && (
         <button
           onClick={handleCart}
           className="rpc-chip"
           style={inCart
             ? { background: "rgba(52,211,153,0.15)", borderColor: "rgba(52,211,153,0.4)", color: "var(--rpc-success)" }
+            : offerMode
+            ? { background: "rgba(59,130,246,0.10)", borderColor: "rgba(59,130,246,0.4)", color: "var(--rpc-info)" }
             : { color: "var(--rpc-text-secondary)" }
           }
         >
-          {inCart ? "✓ IN CART" : "+ CART"}
+          {inCart ? "✓ IN CART" : offerMode ? "+ OFFER" : "+ CART"}
         </button>
       )}
       <a
@@ -377,6 +437,8 @@ export default function SniperPage() {
   const [serialFilter, setSerialFilter] = useState("all");
   const [badgeOnly, setBadgeOnly] = useState(false);
   const [flowWalletOnly, setFlowWalletOnly] = useState(false);
+  const [offerMode, setOfferMode] = useState(false);
+  const [offerDurationDays, setOfferDurationDays] = useState(30);
   const [search, setSearch] = useState("");
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(false);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
@@ -685,9 +747,49 @@ export default function SniperPage() {
                 FLOW WALLET
               </span>
             </button>
-            {flowWalletOnly && (
+            <button
+              onClick={() => setOfferMode((v) => !v)}
+              className={`rpc-chip ${offerMode ? "active" : ""}`}
+              title="Add items as Flowty offers instead of direct purchases."
+              style={offerMode ? { background: "rgba(59,130,246,0.10)", borderColor: "rgba(59,130,246,0.40)", color: "var(--rpc-info)" } : {}}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                OFFER MODE
+              </span>
+            </button>
+            {offerMode && (
+              <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)" }}>
+                <span>DURATION</span>
+                <select
+                  value={offerDurationDays}
+                  onChange={(e) => setOfferDurationDays(Number(e.target.value))}
+                  style={{
+                    background: "var(--rpc-surface-raised)",
+                    border: "1px solid rgba(59,130,246,0.3)",
+                    borderRadius: "var(--radius-sm)",
+                    padding: "4px 8px",
+                    color: "var(--rpc-text-primary)",
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "var(--text-xs)",
+                    outline: "none",
+                  }}
+                >
+                  <option value={7}>7 days</option>
+                  <option value={14}>14 days</option>
+                  <option value={30}>30 days</option>
+                  <option value={60}>60 days</option>
+                  <option value={90}>90 days</option>
+                </select>
+              </label>
+            )}
+            {flowWalletOnly && !offerMode && (
               <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", letterSpacing: "0.05em" }}>
                 FLOW &amp; USDC.e listings only — no Dapper Wallet needed.
+              </span>
+            )}
+            {offerMode && (
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", letterSpacing: "0.05em" }}>
+                Click + OFFER to add deals as Flowty USDC.e offers.
               </span>
             )}
           </div>
@@ -928,6 +1030,8 @@ export default function SniperPage() {
                         ownedIds={ownedIds}
                         connectedWallet={connectedWallet}
                         accent={accent}
+                        offerMode={offerMode}
+                        offerDurationDays={offerDurationDays}
                       />
                     </td>
                   </tr>

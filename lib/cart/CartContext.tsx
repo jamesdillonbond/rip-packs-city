@@ -12,6 +12,8 @@ import React, {
 // Types
 // ---------------------------------------------------------------------------
 
+export type CartMode = 'buy' | 'offer'
+
 export interface CartItem {
   // Listing identity
   listingResourceID: string   // UInt64 as string (FCL arg)
@@ -30,6 +32,13 @@ export interface CartItem {
   fmv: number | null          // FMV at time of add — informational only
   source: 'sniper' | 'wallet' | 'sets' | 'marketplace'
   paymentToken: 'DUC' | 'FUT' | 'FLOW' | 'USDC_E'
+
+  // Cart mode: "buy" (default) or "offer" (Flowty offer via USDC.e)
+  cartMode: CartMode
+
+  // Offer-specific fields (only used when cartMode === 'offer')
+  offerAmount?: number        // USDC.e amount to offer
+  offerExpiry?: number        // Unix timestamp when the offer expires
 
   // Cart bookkeeping
   addedAt: number             // Date.now()
@@ -58,6 +67,7 @@ type CartAction =
   | { type: 'SET_EXECUTING'; value: boolean }
   | { type: 'RESET_STATUSES' }
   | { type: 'HYDRATE'; items: CartItem[] }
+  | { type: 'SET_OFFER_MODE'; listingResourceID: string; cartMode: CartMode; offerAmount?: number; offerExpiry?: number }
 
 // ---------------------------------------------------------------------------
 // Reducer
@@ -107,6 +117,21 @@ function cartReducer(state: CartState, action: CartAction): CartState {
     case 'RESET_STATUSES':
       return { ...state, purchaseStatus: {}, isExecuting: false }
 
+    case 'SET_OFFER_MODE':
+      return {
+        ...state,
+        items: state.items.map((i) =>
+          i.listingResourceID === action.listingResourceID
+            ? {
+                ...i,
+                cartMode: action.cartMode,
+                offerAmount: action.offerAmount,
+                offerExpiry: action.offerExpiry,
+              }
+            : i
+        ),
+      }
+
     default:
       return state
   }
@@ -124,12 +149,14 @@ const initialState: CartState = {
 
 interface CartContextValue extends CartState {
   addToCart: (item: Omit<CartItem, 'addedAt'>) => void
+  addOffer: (item: Omit<CartItem, 'addedAt' | 'cartMode'> & { offerAmount: number; offerExpiry: number }) => void
   removeFromCart: (listingResourceID: string) => void
   clearCart: () => void
   isInCart: (listingResourceID: string) => boolean
   totalPrice: number
   itemCount: number
   setItemStatus: (listingResourceID: string, status: PurchaseStatus) => void
+  setOfferMode: (listingResourceID: string, cartMode: CartMode, offerAmount?: number, offerExpiry?: number) => void
   setExecuting: (value: boolean) => void
   resetStatuses: () => void
   /** Remove successfully purchased items from cart after a run completes */
@@ -178,8 +205,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   // ---------------------------------------------------------------------------
 
   const addToCart = useCallback((item: Omit<CartItem, 'addedAt'>) => {
-    dispatch({ type: 'ADD_ITEM', item: { ...item, addedAt: Date.now() } })
+    dispatch({ type: 'ADD_ITEM', item: { ...item, cartMode: item.cartMode ?? 'buy', addedAt: Date.now() } })
   }, [])
+
+  const addOffer = useCallback(
+    (item: Omit<CartItem, 'addedAt' | 'cartMode'> & { offerAmount: number; offerExpiry: number }) => {
+      dispatch({
+        type: 'ADD_ITEM',
+        item: { ...item, cartMode: 'offer', addedAt: Date.now() },
+      })
+    },
+    []
+  )
 
   const removeFromCart = useCallback((listingResourceID: string) => {
     dispatch({ type: 'REMOVE_ITEM', listingResourceID })
@@ -199,6 +236,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const setItemStatus = useCallback(
     (listingResourceID: string, status: PurchaseStatus) => {
       dispatch({ type: 'SET_ITEM_STATUS', listingResourceID, status })
+    },
+    []
+  )
+
+  const setOfferMode = useCallback(
+    (listingResourceID: string, cartMode: CartMode, offerAmount?: number, offerExpiry?: number) => {
+      dispatch({ type: 'SET_OFFER_MODE', listingResourceID, cartMode, offerAmount, offerExpiry })
     },
     []
   )
@@ -233,12 +277,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       value={{
         ...state,
         addToCart,
+        addOffer,
         removeFromCart,
         clearCart,
         isInCart,
         totalPrice,
         itemCount,
         setItemStatus,
+        setOfferMode,
         setExecuting,
         resetStatuses,
         removeCompleted,
