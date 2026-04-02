@@ -9,12 +9,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Wait for Vercel deploy
-        run: sleep 90
-      - name: Call debug endpoint
+      - name: Call probe endpoint
         run: |
           curl -sS --max-time 60 \
-            "https://rip-packs-city.vercel.app/api/allday-ingest?token=rippackscity2026&dry=1&debug=1&limit=3" \
+            "https://rip-packs-city.vercel.app/api/allday-gql-probe?token=rippackscity2026" \
             -o debug-output.json || echo '{"error":"curl failed"}' > debug-output.json
           echo "--- RAW RESPONSE ---"
           cat debug-output.json
