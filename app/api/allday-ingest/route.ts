@@ -383,43 +383,14 @@ async function fetchRecentSales(
     variables
   )
 
-  // ── Debug logging: raw response shape ──────────────────────────────────
-  console.log("[allday-ingest-debug] top-level keys:", JSON.stringify(data ? Object.keys(data) : null))
-  const smt = (data as Record<string, unknown>)?.searchMarketplaceTransactions
-  console.log("[allday-ingest-debug] searchMarketplaceTransactions keys:", JSON.stringify(smt ? Object.keys(smt as object) : null))
-  const smtData = smt && typeof smt === "object" ? (smt as Record<string, unknown>).data : undefined
-  console.log("[allday-ingest-debug] .data keys:", JSON.stringify(smtData ? Object.keys(smtData as object) : null))
-
-  // Log first raw transaction object in full
-  const summary = data?.searchMarketplaceTransactions?.data?.searchSummary
-  const dataField = summary?.data as unknown
-  let firstTx: unknown = null
-  if (Array.isArray(dataField) && dataField.length > 0) {
-    const block = dataField[0] as { data?: unknown[] }
-    if (Array.isArray(block?.data) && block.data.length > 0) {
-      firstTx = block.data[0]
-    }
-  } else if (dataField && typeof dataField === "object" && !Array.isArray(dataField)) {
-    const block = dataField as { data?: unknown[] }
-    if (Array.isArray(block?.data) && block.data.length > 0) {
-      firstTx = block.data[0]
-    }
-  }
-  // If firstTx is still null, the shape may be totally different — log the full nested data
-  if (!firstTx) {
-    console.log("[allday-ingest-debug] summary?.data raw:", JSON.stringify(dataField)?.slice(0, 2000))
-    // Also try direct .data at searchMarketplaceTransactions level
-    console.log("[allday-ingest-debug] smtData raw:", JSON.stringify(smtData)?.slice(0, 2000))
-  } else {
-    console.log("[allday-ingest-debug] firstTransaction:", JSON.stringify(firstTx)?.slice(0, 2000))
-  }
-
   // If debug mode, return raw data for inspection
   if (debug) {
     return { transactions: [], nextCursor: null, rawDebug: data }
   }
 
+  const summary = data?.searchMarketplaceTransactions?.data?.searchSummary
   const nextCursor = summary?.pagination?.rightCursor ?? null
+  const dataField = summary?.data as unknown
 
   const transactions: SaleTransaction[] = []
 
