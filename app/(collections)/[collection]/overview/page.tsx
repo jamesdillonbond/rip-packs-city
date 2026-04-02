@@ -76,26 +76,20 @@ function freshnessIndicator(minutes: number | null): { color: string; label: str
   return { color: "var(--rpc-danger)", label: "OUTDATED" }
 }
 
-// ── Static news items ─────────────────────────────────────────────────────────
+// ── About the Community content ──────────────────────────────────────────────
 
-const TOP_SHOT_NEWS = [
+const COMMUNITY_BLOCKS = [
   {
-    title: "All-Star 2026 LA Takeover \u2014 $17,500 Top Sale",
-    date: "2026-02-07",
-    summary: "Top Shot partnered with Baron Davis for an All-Star event while a Legendary Steph Curry Moment set the 2026 high-water mark.",
-    url: "https://blog.nbatopshot.com",
+    heading: "Built for Collectors, By Collectors",
+    body: "Rip Packs City started as a tool for the Portland Trail Blazers community on NBA Top Shot — collectors who care about getting real value from their moments, not just chasing hype. That same obsession with data and fairness drives everything here.",
   },
   {
-    title: "2025-26: Scarcity-First Drops & New Parallel System",
-    date: "2026-01-15",
-    summary: "Dapper shifts to lower-print-run releases with redesigned parallels. LAVA tools integration now live for FMV transparency.",
-    url: "https://blog.nbatopshot.com",
+    heading: "The Top Shot Ecosystem",
+    body: "NBA Top Shot has traded over $1 billion in moments since 2020. Behind those numbers is a global community of collectors who track serial numbers, chase badge premiums, complete sets, and hunt deals across multiple marketplaces. RPC gives that community the intelligence layer it deserves — FMV that reflects real sales, not ask prices.",
   },
   {
-    title: "Top Shot This (TST) \u2014 Real-Time Minting from Live Games",
-    date: "2026-01-10",
-    summary: "Best dunks and moments now minted within 24 hours and delivered to fans directly after each game.",
-    url: "https://blog.nbatopshot.com",
+    heading: "Digital Collectibles, Broadly",
+    body: "The tools and principles here — fair market value, scarcity analysis, badge premiums, set completion — apply across digital collectibles. Whether it\u2019s Top Shot, NFL All Day, or what comes next, collectors deserve transparent data and real intelligence, not guesswork.",
   },
 ]
 
@@ -340,24 +334,34 @@ export default function OverviewPage() {
           )}
         </section>
 
-        {/* Platform News */}
+        {/* About the Community */}
         <section className="rpc-card" style={{ padding: "16px 20px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--rpc-red)" }} />
-            <span className="rpc-label">Platform News</span>
-            <a href="https://blog.nbatopshot.com" target="_blank" rel="noreferrer" className="rpc-mono" style={{ marginLeft: "auto", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", textDecoration: "none" }}>blog {"\u2192"}</a>
+            <span className="rpc-label">About the Community</span>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {TOP_SHOT_NEWS.map((item, i) => (
-              <a key={i} href={item.url} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
-                <div className="rpc-card" style={{ padding: "10px 14px", cursor: "pointer" }}>
-                  <div className="rpc-label" style={{ marginBottom: 4 }}>
-                    {new Date(item.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                  </div>
-                  <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: "var(--text-base)", color: "var(--rpc-text-primary)", letterSpacing: "0.02em", marginBottom: 4, lineHeight: 1.3 }}>{item.title}</div>
-                  <div className="rpc-mono" style={{ color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>{item.summary}</div>
-                </div>
-              </a>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {COMMUNITY_BLOCKS.map((block, i) => (
+              <div key={i} style={{
+                padding: "16px 0",
+                borderTop: i > 0 ? "1px solid var(--rpc-border)" : "none",
+              }}>
+                <div style={{
+                  fontSize: "var(--text-base)",
+                  fontFamily: "var(--font-display)",
+                  fontWeight: 700,
+                  color: "var(--rpc-text-primary)",
+                  letterSpacing: "0.03em",
+                  marginBottom: 6,
+                }}>{block.heading}</div>
+                <div style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "var(--text-xs)",
+                  color: "var(--rpc-text-muted)",
+                  lineHeight: 1.7,
+                  opacity: 0.85,
+                }}>{block.body}</div>
+              </div>
             ))}
           </div>
         </section>
