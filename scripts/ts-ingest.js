@@ -39,6 +39,8 @@ const TRAIT_MAP = {
   tier:         ["Tier", "tier", "MomentTier", "momentTier"],
   seriesNumber: ["SeriesNumber", "seriesNumber", "Series Number", "series_number", "Series"],
   locked:       ["Locked", "locked"],
+  setID:        ["SetID", "setID", "Set ID", "set_id"],
+  playID:       ["PlayID", "playID", "Play ID", "play_id"],
 };
 
 async function fetchFlowtyPage(from) {
@@ -110,6 +112,9 @@ async function deleteStale() {
       const order = first.orders?.[0];
       if (order) console.log("First order keys:", Object.keys(order).join(", "), "| salePrice:", order.salePrice);
       console.log("nftView serial:", first.nftView?.serial, "card.num:", first.card?.num, "card.max:", first.card?.max);
+      const firstTraits = Array.isArray(first.nftView?.traits) ? first.nftView.traits : Object.values(first.nftView?.traits ?? {});
+      console.log("Trait keys:", firstTraits.map(t => t.name).join(", "));
+      console.log("SetID:", getTraitMulti(firstTraits, TRAIT_MAP.setID), "PlayID:", getTraitMulti(firstTraits, TRAIT_MAP.playID));
     }
 
     console.log(`Total fetched: ${all.length}`);
@@ -121,11 +126,16 @@ async function deleteStale() {
       const serial = item.nftView?.serial ?? item.card?.num ?? 0;
       if (!serial) continue;
       const traits = flattenTraits(item.nftView?.traits);
+
+      // Extract integer set/play IDs from Flowty NFT traits
+      const rawSetId = parseInt(getTraitMulti(traits, TRAIT_MAP.setID) ?? "0", 10) || 0;
+      const rawPlayId = parseInt(getTraitMulti(traits, TRAIT_MAP.playID) ?? "0", 10) || 0;
+
       rows.push({
         listing_id: order.listingResourceID ?? String(item.id),
         flow_id: String(item.id),
-        set_id: 0,
-        play_id: 0,
+        set_id: rawSetId,
+        play_id: rawPlayId,
         parallel_id: 0,
         serial_number: serial,
         circulation_count: item.card?.max ?? 0,
@@ -139,6 +149,10 @@ async function deleteStale() {
         ingested_at: now,
       });
     }
+
+    // Log how many rows got valid set/play IDs for monitoring
+    const resolvedCount = rows.filter(r => r.set_id > 0 && r.play_id > 0).length;
+    console.log(`Edition key resolution: ${resolvedCount}/${rows.length} rows have valid set_id/play_id`);
 
     console.log(`Upserting ${rows.length} rows...`);
     for (let i = 0; i < rows.length; i += 100) {
