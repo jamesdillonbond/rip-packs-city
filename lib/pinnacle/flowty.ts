@@ -4,8 +4,8 @@ import type {
 } from "./types"
 
 const FLOWTY_URL = "https://api2.flowty.io/collection/0xedf9df96c92f4595/Pinnacle"
-const PAGE_SIZE = 24
-const OFFSETS = [0, 24, 48, 72]
+const PAGE_SIZE = 250
+const OFFSETS = [0, 250, 500, 750, 1000, 1250, 1500, 1750, 2000, 2250, 2500, 2750, 3000, 3250, 3500, 3750, 4000, 4250, 4500, 4750]
 
 // ─── Fetch all pages from Flowty ─────────────────────────────────────────────
 
