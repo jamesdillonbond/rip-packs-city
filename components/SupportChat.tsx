@@ -219,15 +219,23 @@ export default function SupportChat({ pageContext, userWallet, walletConnected, 
     if (!trimmed || isLoading) return;
     setMessages((prev) => [...prev, { id: `u_${Date.now()}`, role: "user", text: trimmed, timestamp: new Date() }]);
     setInput(""); setIsLoading(true);
+    setMessages((prev) => [...prev, { id: "typing", role: "system", text: "...", timestamp: new Date() }]);
     try {
       const res = await fetch("/api/support-chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: trimmed, sessionId, userWallet: userWallet || null, pageContext: pageContext || null, walletConnected: !!walletConnected }),
       });
+      if (res.status === 429) {
+        setMessages((prev) => prev.filter((m) => m.id !== "typing"));
+        setMessages((prev) => [...prev, { id: `e_${Date.now()}`, role: "assistant", text: "You\u2019ve sent a lot of messages \u2014 I need a short break. Come back in an hour and I\u2019ll be ready to help again.", timestamp: new Date() }]);
+        return;
+      }
       const data = await res.json();
+      setMessages((prev) => prev.filter((m) => m.id !== "typing"));
       setMessages((prev) => [...prev, { id: `b_${Date.now()}`, dbId: data.messageId, role: "assistant", text: data.response || "Sorry, try again?", escalated: data.escalated, momentCards: data.momentCards, feedback: null, timestamp: new Date() }]);
       if (!isOpen) setHasNewMessage(true);
     } catch {
+      setMessages((prev) => prev.filter((m) => m.id !== "typing"));
       setMessages((prev) => [...prev, { id: `e_${Date.now()}`, role: "assistant", text: "Connection issue. Try again in a moment.", timestamp: new Date() }]);
     } finally { setIsLoading(false); }
   }, [input, isLoading, sessionId, userWallet, pageContext, walletConnected, isOpen]);
@@ -252,6 +260,7 @@ export default function SupportChat({ pageContext, userWallet, walletConnected, 
         .rpc-chat-scrollbar::-webkit-scrollbar { width: 4px; }
         .rpc-chat-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .rpc-chat-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+        .rpc-hide-scrollbar::-webkit-scrollbar { display: none; }
       `}</style>
 
       {isOpen && (
@@ -278,7 +287,11 @@ export default function SupportChat({ pageContext, userWallet, walletConnected, 
                   whiteSpace: "pre-wrap", wordBreak: "break-word",
                   border: msg.role === "system" ? "1px solid #1a2e1a" : msg.role !== "user" ? "1px solid #1e1e1e" : "none",
                 }}>
-                  {msg.text}
+                  {msg.id === "typing" ? (
+                    <span style={{ display: "inline-flex", alignItems: "center", padding: "4px 0" }}>
+                      <span className="rpc-typing-dot" /><span className="rpc-typing-dot" /><span className="rpc-typing-dot" />
+                    </span>
+                  ) : msg.text}
                   {msg.escalated && (
                     <div style={{ marginTop: 8, padding: "6px 10px", background: "rgba(224,58,47,0.1)", border: "1px solid rgba(224,58,47,0.25)", borderRadius: 8, fontSize: 12, color: "#E03A2F" }}>📋 Flagged for Trevor — he'll follow up</div>
                   )}
@@ -293,21 +306,14 @@ export default function SupportChat({ pageContext, userWallet, walletConnected, 
                 )}
               </div>
             ))}
-            {isLoading && (
-              <div className="rpc-msg-enter" style={{ display: "flex" }}>
-                <div style={{ padding: "12px 16px", borderRadius: "14px 14px 14px 4px", background: "#141414", border: "1px solid #1e1e1e", display: "flex", alignItems: "center", gap: 2 }}>
-                  <span className="rpc-typing-dot" /><span className="rpc-typing-dot" /><span className="rpc-typing-dot" />
-                </div>
-              </div>
-            )}
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Quick Action Pills */}
-          {messages.length <= 2 && quickSuggestions.length > 0 && !isLoading && (
-            <div style={{ padding: "0 14px 8px", display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {/* Quick Action Pills — always visible */}
+          {quickSuggestions.length > 0 && (
+            <div style={{ overflowX: "auto", whiteSpace: "nowrap", padding: "8px 12px", display: "flex", gap: 6, scrollbarWidth: "none", flexShrink: 0 }} className="rpc-hide-scrollbar">
               {quickSuggestions.map((suggestion) => (
-                <button key={suggestion} onClick={() => sendMessage(suggestion)} style={{ fontSize: 12, color: "#aaa", background: "#141414", border: "1px solid #222", padding: "6px 12px", borderRadius: 20, cursor: "pointer", transition: "border-color 0.15s, color 0.15s", whiteSpace: "nowrap" }}
+                <button key={suggestion} onClick={() => sendMessage(suggestion)} disabled={isLoading} style={{ fontSize: 12, color: "#aaa", background: "#141414", border: "1px solid #222", padding: "6px 12px", borderRadius: 20, cursor: isLoading ? "default" : "pointer", transition: "border-color 0.15s, color 0.15s", whiteSpace: "nowrap", flexShrink: 0 }}
                   onMouseEnter={(e) => { (e.target as HTMLElement).style.borderColor = "#E03A2F"; (e.target as HTMLElement).style.color = "#fff"; }}
                   onMouseLeave={(e) => { (e.target as HTMLElement).style.borderColor = "#222"; (e.target as HTMLElement).style.color = "#aaa"; }}>
                   {suggestion}
