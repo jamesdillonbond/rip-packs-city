@@ -238,7 +238,7 @@ async function fetchTopShotPool(
   try {
     const { data, error } = await (supabase as any)
       .from("ts_listings")
-      .select("listing_id, flow_id, serial_number, circulation_count, price_usd, player_name, set_name, moment_tier, series_number, is_locked")
+      .select("listing_id, flow_id, set_id, play_id, serial_number, circulation_count, price_usd, player_name, set_name, moment_tier, series_number, is_locked")
       .order("ingested_at", { ascending: false })
       .limit(200);
 
@@ -256,6 +256,8 @@ async function fetchTopShotPool(
     const listings: RawListing[] = rows.map((r: {
       listing_id: string;
       flow_id: string;
+      set_id: number | null;
+      play_id: number | null;
       serial_number: number;
       circulation_count: number;
       price_usd: number;
