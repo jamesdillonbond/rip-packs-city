@@ -352,6 +352,28 @@ async function upsertFmvSnapshot(
   }
 }
 
+// ── Legacy GQL stubs (Flowty API replaced AllDay GQL — kept for reference) ──
+
+interface SearchTransactionsResponse {
+  searchMarketplaceTransactions?: {
+    data?: {
+      searchSummary?: {
+        pagination?: { rightCursor?: string };
+        data?: unknown;
+      };
+    };
+  };
+}
+
+const SEARCH_TRANSACTIONS_QUERY = ""
+
+async function alldayGraphql<T>(
+  _query: string,
+  _variables: Record<string, unknown>
+): Promise<T> {
+  throw new Error("AllDay GQL is deprecated — use Flowty API instead")
+}
+
 // ── Main ingestion logic ──────────────────────────────────────────────────────
 
 async function fetchRecentSales(
