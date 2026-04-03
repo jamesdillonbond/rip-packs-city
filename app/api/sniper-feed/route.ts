@@ -248,6 +248,11 @@ async function fetchTopShotPool(
     }
 
     const rows = data ?? [];
+
+    // Resolve edition external_ids by matching player_name + set_name + series
+    // against the editions + players tables. This gives us the edition key for FMV lookup.
+    const editionKeyMap = await resolveEditionKeys(supabase, rows);
+
     const listings: RawListing[] = rows.map((r: {
       listing_id: string;
       flow_id: string;
@@ -259,26 +264,99 @@ async function fetchTopShotPool(
       moment_tier: string | null;
       series_number: number | null;
       is_locked: boolean | null;
-    }) => ({
-      id: r.flow_id,
-      circulationCount: r.circulation_count ?? 0,
-      serialNumber: r.serial_number ?? 0,
-      marketplacePrice: r.price_usd,
-      playerName: r.player_name ?? undefined,
-      setName: r.set_name ?? undefined,
-      momentTier: r.moment_tier ?? "COMMON",
-      setSeriesNumber: r.series_number ?? 0,
-      isLocked: r.is_locked ?? false,
-      listingOrderID: r.listing_id,
-      setPlay: { setID: 0, playID: 0 },
-    }));
+    }) => {
+      const editionKey = editionKeyMap.get(r.flow_id);
+      // Parse edition key "setId:playId" into setPlay IDs
+      const parts = editionKey?.split(":") ?? [];
+      const setID = parts[0] ?? "";
+      const playID = parts[1] ?? "";
+      return {
+        id: r.flow_id,
+        circulationCount: r.circulation_count ?? 0,
+        serialNumber: r.serial_number ?? 0,
+        marketplacePrice: r.price_usd,
+        playerName: r.player_name ?? undefined,
+        setName: r.set_name ?? undefined,
+        momentTier: r.moment_tier ?? "COMMON",
+        setSeriesNumber: r.series_number ?? 0,
+        isLocked: r.is_locked ?? false,
+        listingOrderID: r.listing_id,
+        setPlay: { setID, playID },
+      };
+    });
 
-    console.log(`[sniper-feed] ts_listings: ${listings.length} rows from Supabase`);
+    console.log(`[sniper-feed] ts_listings: ${listings.length} rows, ${editionKeyMap.size} edition keys resolved`);
     return { listings, tsCount: listings.length };
   } catch (err) {
     console.error("[sniper-feed] ts_listings exception:", err instanceof Error ? err.message : String(err));
     return { listings: [], tsCount: 0 };
   }
+}
+
+// Resolve ts_listings rows to edition external_ids by matching player + set + series
+// against editions joined with players. Returns flowId → external_id map.
+async function resolveEditionKeys(
+  supabase: SupabaseClient,
+  rows: Array<{ flow_id: string; player_name: string | null; set_name: string | null; series_number: number | null }>
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (!rows.length) return result;
+
+  // Build unique (player, set, series) tuples from ts_listings
+  const tuples = new Map<string, string[]>();
+  for (const r of rows) {
+    if (!r.player_name || !r.set_name) continue;
+    const key = `${r.player_name.toLowerCase()}|${r.set_name.toLowerCase()}|${r.series_number ?? 0}`;
+    const existing = tuples.get(key);
+    if (existing) existing.push(r.flow_id);
+    else tuples.set(key, [r.flow_id]);
+  }
+
+  if (!tuples.size) return result;
+
+  // Fetch editions with their player names. The editions table is small (~5k rows)
+  // so we fetch all and match in JS for reliability.
+  const { data: editionRows, error } = await (supabase as any)
+    .from("editions")
+    .select("external_id, name, series");
+
+  if (error) {
+    console.error("[sniper-feed] edition key resolve error:", error.message);
+    return result;
+  }
+
+  if (!editionRows?.length) {
+    console.log("[sniper-feed] edition key resolve: 0 editions in DB");
+    return result;
+  }
+
+  // Build lookup: "playerName|setName|series" → external_id from edition names
+  // Edition name format: "PlayerName — SetName"
+  const editionLookup = new Map<string, string>();
+  for (const e of editionRows as Array<{ external_id: string; name: string; series: number }>) {
+    const dashIdx = e.name.indexOf(" \u2014 ");
+    if (dashIdx < 0) continue;
+    const playerName = e.name.slice(0, dashIdx);
+    const setName = e.name.slice(dashIdx + 3);
+    const lookupKey = `${playerName.toLowerCase()}|${setName.toLowerCase()}|${e.series}`;
+    // Prefer keeping the first match (don't overwrite)
+    if (!editionLookup.has(lookupKey)) {
+      editionLookup.set(lookupKey, e.external_id);
+    }
+  }
+
+  // Match ts_listings tuples to editions
+  for (const [tupleKey, flowIds] of tuples) {
+    const extId = editionLookup.get(tupleKey);
+    if (extId) {
+      for (const flowId of flowIds) {
+        result.set(flowId, extId);
+      }
+    }
+  }
+
+  console.log(`[sniper-feed] edition key resolve: ${result.size}/${rows.length} listings matched`);
+  return result;
 }
 
 // ─── Flowty helpers ───────────────────────────────────────────────────────────
