@@ -795,16 +795,26 @@ export default function WalletPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownerKey])
 
-  // Background auto-load: fetch all remaining wallet pages after initial 50
+  // Background auto-load: fetch remaining wallet pages 3 at a time in parallel
   async function backgroundAutoLoad(startOffset: number, remaining: number, total: number) {
     let currentOffset = startOffset
     let left = remaining
+    const PAGES_PER_BATCH = 3
+    const PAGE_SIZE = 50
     try {
       while (left > 0) {
-        await new Promise(function(r) { setTimeout(r, 600) })
-        await fetchWalletPage(currentOffset, true)
-        currentOffset += 50
-        left -= 50
+        await new Promise(function(r) { setTimeout(r, 300) })
+        const batchCount = Math.min(PAGES_PER_BATCH, Math.ceil(left / PAGE_SIZE))
+        const fetches: Promise<void>[] = []
+        for (let i = 0; i < batchCount; i++) {
+          const off = currentOffset + i * PAGE_SIZE
+          if (off < total) {
+            fetches.push(fetchWalletPage(off, true))
+          }
+        }
+        await Promise.all(fetches)
+        currentOffset += batchCount * PAGE_SIZE
+        left -= batchCount * PAGE_SIZE
         setBackgroundProgress(Math.min(currentOffset, total))
       }
     } catch {
@@ -1366,18 +1376,38 @@ export default function WalletPage() {
                           <span style={{ color: row.fmv && row.lowAsk < row.fmv ? "#22c55e" : "#9ca3af" }}>
                             ${row.lowAsk.toFixed(2)}
                           </span>
+                        ) : row.flowtyAsk != null ? (
+                          <span style={{ color: row.fmv && row.flowtyAsk < row.fmv ? "#22c55e" : "#9ca3af" }}>
+                            ${row.flowtyAsk.toFixed(2)}
+                            <span className="ml-1 text-[10px] font-bold text-blue-400">F</span>
+                          </span>
                         ) : (
                           <span className="text-zinc-600">—</span>
                         )}
                       </td>
                       <td className="p-3 text-sm hidden lg:table-cell">
-                        <span className="text-zinc-300">{formatCurrency(row.bestOffer)}</span>
-                        {typeof row.bestOffer === "number" && row.bestOffer > 0 && row.bestOfferType && (
-                          <span className="ml-1 text-[10px] text-zinc-500">{row.bestOfferType}</span>
-                        )}
-                        {typeof row.bestOffer === "number" && row.bestOffer > 0 && typeof getBestAsk(row) === "number" && row.bestOffer > (getBestAsk(row) ?? Infinity) && (
-                          <span className="ml-1.5 rounded bg-emerald-950 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400 border border-emerald-800">Flip</span>
-                        )}
+                        {(function() {
+                          const offer = row.bestOffer
+                          const edOffer = row.editionOffer
+                          // Show the higher of edition vs serial offer
+                          const displayOffer = (typeof offer === "number" && offer > 0) ? offer : null
+                          const displayEdOffer = (typeof edOffer === "number" && edOffer > 0) ? edOffer : null
+                          const best = displayOffer && displayEdOffer
+                            ? (displayOffer >= displayEdOffer ? { val: displayOffer, label: row.bestOfferType ?? "serial" } : { val: displayEdOffer, label: "edition" })
+                            : displayOffer ? { val: displayOffer, label: row.bestOfferType ?? "offer" }
+                            : displayEdOffer ? { val: displayEdOffer, label: "edition" }
+                            : null
+                          if (!best) return <span className="text-zinc-600">—</span>
+                          return (
+                            <div>
+                              <div className="text-zinc-300 font-semibold">{formatCurrency(best.val)}</div>
+                              <div className="text-[10px] font-mono text-zinc-500">{best.label} offer</div>
+                              {best.val > (getBestAsk(row) ?? Infinity) && (
+                                <span className="inline-block mt-0.5 rounded bg-emerald-950 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400 border border-emerald-800">Flip</span>
+                              )}
+                            </div>
+                          )
+                        })()}
                       </td>
                       <td className="p-3 text-zinc-500 text-xs hidden xl:table-cell">{formatAcquiredAt(row.acquiredAt)}</td>
                       <td className="p-3">
