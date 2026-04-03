@@ -236,11 +236,14 @@ async function fetchTopShotPool(
   supabase: SupabaseClient
 ): Promise<{ listings: RawListing[]; tsCount: number }> {
   try {
-    const { data, error } = await (supabase as any)
+    console.log(`[sniper-feed] ts_listings query starting, supabase url=${!!process.env.NEXT_PUBLIC_SUPABASE_URL}, key=${!!process.env.SUPABASE_SERVICE_ROLE_KEY}`);
+    const { data, error, status, statusText } = await (supabase as any)
       .from("ts_listings")
       .select("listing_id, flow_id, serial_number, circulation_count, price_usd, player_name, set_name, moment_tier, series_number, is_locked")
       .order("ingested_at", { ascending: false })
       .limit(200);
+
+    console.log(`[sniper-feed] ts_listings response: status=${status} statusText=${statusText} dataLen=${data?.length ?? 'null'} error=${error?.message ?? 'none'}`);
 
     if (error) {
       console.error("[sniper-feed] ts_listings fetch error:", error.message);
