@@ -1,130 +1,28 @@
 import { NextRequest, NextResponse } from "next/server"
-import { alldayGraphql } from "@/lib/allday"
 import { supabaseAdmin } from "@/lib/supabase"
 
-// ── Types ────────────────────────────────────────────────────────────────────
+// ── AllDay Ingest via Flowty API ─────────────────────────────────────────────
+//
+// The AllDay GQL (searchMarketplaceTransactions) never returned data reliably.
+// This rewrite fetches AllDay listings from Flowty's collection endpoint —
+// the same approach that works for Top Shot (scripts/ts-ingest.js).
+//
+// Flowty endpoint: POST https://api2.flowty.io/collection/0xe4cf4bdc1751c65d/AllDay
+// NFT traits contain editionID, setID, playID, playerName, jerseyNumber, etc.
+// We parse these traits into editions, players, sets, and sales tables.
+// ─────────────────────────────────────────────────────────────────────────────
 
-type SaleTransaction = {
-  id: string
-  price: number | null
-  updatedAt: string | null
-  txHash: string | null
-  moment: {
-    id: string
-    flowId: string | null
-    flowSerialNumber: string | null
-    tier: string | null
-    isLocked: boolean | null
-    set: {
-      id: string
-      flowName: string | null
-      flowSeriesNumber: number | null
-    } | null
-    setPlay: {
-      ID: string
-      flowRetired: boolean | null
-      circulations: {
-        circulationCount: number | null
-        forSaleByCollectors: number | null
-        locked: number | null
-      } | null
-    } | null
-    play: {
-      id: string
-      stats: {
-        playerID: string | null
-        playerName: string | null
-        firstName: string | null
-        lastName: string | null
-        jerseyNumber: string | null
-        teamAtMoment: string | null
-        playCategory: string | null
-        dateOfMoment: string | null
-      } | null
-    } | null
-  } | null
+const FLOWTY_ENDPOINT = "https://api2.flowty.io/collection/0xe4cf4bdc1751c65d/AllDay"
+
+const FLOWTY_HEADERS = {
+  "Content-Type": "application/json",
+  "Origin": "https://www.flowty.io",
+  "Referer": "https://www.flowty.io/",
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146 Safari/537.36",
 }
 
-type SearchTransactionsResponse = {
-  searchMarketplaceTransactions?: {
-    data?: {
-      searchSummary?: {
-        pagination?: {
-          rightCursor?: string | null
-        }
-        data?: Array<{
-          size?: number
-          data?: SaleTransaction[]
-        }>
-      }
-    }
-  }
-}
-
-// ── GraphQL Query ─────────────────────────────────────────────────────────────
-
-const SEARCH_TRANSACTIONS_QUERY = `
-  query IngestRecentSales($input: SearchMarketplaceTransactionsInput!) {
-    searchMarketplaceTransactions(input: $input) {
-      data {
-        searchSummary {
-          pagination {
-            rightCursor
-          }
-          data {
-            ... on MarketplaceTransactions {
-              size
-              data {
-                ... on MarketplaceTransaction {
-                  id
-                  price
-                  updatedAt
-                  txHash
-                  moment {
-                    id
-                    flowId
-                    flowSerialNumber
-                    tier
-                    isLocked
-                    set {
-                      id
-                      flowName
-                      flowSeriesNumber
-                    }
-                    setPlay {
-                      ID
-                      flowRetired
-                      circulations {
-                        circulationCount
-                        forSaleByCollectors
-                        locked
-                      }
-                    }
-                    play {
-                      id
-                      stats {
-                        playerID
-                        playerName
-                        firstName
-                        lastName
-                        jerseyNumber
-                        teamAtMoment
-                        playCategory
-                        dateOfMoment
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-`
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function toNum(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null
@@ -132,7 +30,7 @@ function toNum(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-function formatTier(tier: string | null): string {
+function formatTier(tier: string | null | undefined): string {
   if (!tier) return "COMMON"
   const t = tier.toUpperCase()
   if (t.includes("ULTIMATE")) return "ULTIMATE"
@@ -142,34 +40,120 @@ function formatTier(tier: string | null): string {
   return "COMMON"
 }
 
-function buildEditionKey(tx: SaleTransaction): string | null {
-  const moment = tx.moment
-  if (!moment) return null
-  const setId = moment.set?.id
-  const playId = moment.play?.id
-  if (!setId || !playId) return null
-  return `${setId}:${playId}`
+// Multi-key trait lookup — Flowty trait names vary between collections
+const TRAIT_MAP: Record<string, string[]> = {
+  playerName: ["PlayerName", "playerName", "Player Name", "FullName", "fullName"],
+  firstName: ["FirstName", "firstName", "First Name"],
+  lastName: ["LastName", "lastName", "Last Name"],
+  jerseyNumber: ["JerseyNumber", "jerseyNumber", "Jersey Number", "jersey_number"],
+  team: ["TeamAtMoment", "teamAtMoment", "Team", "team", "TeamName", "teamName"],
+  tier: ["Tier", "tier", "MomentTier", "momentTier"],
+  setName: ["SetName", "setName", "Set Name", "set_name"],
+  seriesNumber: ["SeriesNumber", "seriesNumber", "Series Number", "series_number", "Series"],
+  playCategory: ["PlayType", "playType", "PlayCategory", "playCategory", "Play Type"],
+  gameDate: ["DateOfMoment", "dateOfMoment", "GameDate", "gameDate", "Date"],
+  setID: ["SetID", "setID", "Set ID", "set_id"],
+  playID: ["PlayID", "playID", "Play ID", "play_id"],
+  editionID: ["EditionID", "editionID", "Edition ID", "edition_id"],
+  playerID: ["PlayerID", "playerID", "Player ID", "player_id"],
+  position: ["Position", "position"],
+  circulationCount: ["CirculationCount", "circulationCount", "MaxMintSize", "maxMintSize"],
+  retired: ["Retired", "retired", "FlowRetired", "flowRetired"],
+  locked: ["Locked", "locked", "IsLocked", "isLocked"],
 }
 
-// ── Supabase upserts ──────────────────────────────────────────────────────────
+type TraitArray = Array<{ name: string; value: string }>
+
+function getTraitMulti(
+  traits: TraitArray | undefined,
+  keys: string[]
+): string | null {
+  if (!traits) return null
+  for (const key of keys) {
+    const t = traits.find((tr) => tr.name === key)
+    if (t?.value) return t.value
+  }
+  return null
+}
+
+// ── Flowty fetch ─────────────────────────────────────────────────────────────
+
+interface FlowtyOrder {
+  listingResourceID?: string
+  storefrontAddress?: string
+  flowtyStorefrontAddress?: string
+  salePrice: number
+  blockTimestamp?: number
+}
+
+interface FlowtyNftItem {
+  id: string
+  orders?: FlowtyOrder[]
+  card?: { title?: string; num?: number; max?: number }
+  nftView?: { serial?: number; traits?: TraitArray }
+}
+
+async function fetchFlowtyPage(from: number): Promise<FlowtyNftItem[]> {
+  const res = await fetch(FLOWTY_ENDPOINT, {
+    method: "POST",
+    headers: FLOWTY_HEADERS,
+    body: JSON.stringify({
+      address: null,
+      addresses: [],
+      collectionFilters: [
+        { collection: "0xe4cf4bdc1751c65d.AllDay", traits: [] },
+      ],
+      from,
+      includeAllListings: true,
+      limit: 24,
+      onlyUnlisted: false,
+      orderFilters: [
+        { conditions: [], kind: "storefront", paymentTokens: [] },
+      ],
+      sort: {
+        direction: "desc",
+        listingKind: "storefront",
+        path: "blockTimestamp",
+      },
+    }),
+    signal: AbortSignal.timeout(12000),
+  })
+  if (!res.ok) {
+    throw new Error(
+      `Flowty HTTP ${res.status} from=${from}: ${(await res.text()).slice(0, 200)}`
+    )
+  }
+  const json = await res.json()
+  return (json?.nfts ?? json?.data ?? []) as FlowtyNftItem[]
+}
+
+// ── Supabase upserts ─────────────────────────────────────────────────────────
 
 async function upsertPlayer(
   collectionId: string,
-  stats: NonNullable<NonNullable<SaleTransaction["moment"]>["play"]>["stats"]
+  traits: TraitArray
 ): Promise<string | null> {
-  if (!stats?.playerID) return null
+  const playerIdRaw = getTraitMulti(traits, TRAIT_MAP.playerID)
+  if (!playerIdRaw) return null
+
+  const playerName =
+    getTraitMulti(traits, TRAIT_MAP.playerName) ?? "Unknown Player"
+  const firstName = getTraitMulti(traits, TRAIT_MAP.firstName)
+  const lastName = getTraitMulti(traits, TRAIT_MAP.lastName)
+  const team = getTraitMulti(traits, TRAIT_MAP.team)
+  const jerseyNumber = toNum(getTraitMulti(traits, TRAIT_MAP.jerseyNumber))
 
   const { data, error } = await supabaseAdmin
     .from("players")
     .upsert(
       {
-        external_id: String(stats.playerID),
+        external_id: String(playerIdRaw),
         collection_id: collectionId,
-        name: stats.playerName ?? "Unknown Player",
-        first_name: stats.firstName ?? null,
-        last_name: stats.lastName ?? null,
-        team: stats.teamAtMoment ?? null,
-        jersey_number: toNum(stats.jerseyNumber),
+        name: playerName,
+        first_name: firstName ?? null,
+        last_name: lastName ?? null,
+        team: team ?? null,
+        jersey_number: jerseyNumber,
       },
       { onConflict: "external_id", ignoreDuplicates: false }
     )
@@ -180,25 +164,28 @@ async function upsertPlayer(
     console.error("[ALLDAY-INGEST] upsertPlayer error:", error.message)
     return null
   }
-
   return data?.id ?? null
 }
 
 async function upsertSet(
   collectionId: string,
-  set: NonNullable<NonNullable<SaleTransaction["moment"]>["set"]>,
+  traits: TraitArray,
   tier: string
 ): Promise<string | null> {
-  if (!set?.id) return null
+  const setIdRaw = getTraitMulti(traits, TRAIT_MAP.setID)
+  if (!setIdRaw) return null
+
+  const setName = getTraitMulti(traits, TRAIT_MAP.setName) ?? "Unknown Set"
+  const series = toNum(getTraitMulti(traits, TRAIT_MAP.seriesNumber))
 
   const { data, error } = await supabaseAdmin
     .from("sets")
     .upsert(
       {
-        external_id: set.id,
+        external_id: setIdRaw,
         collection_id: collectionId,
-        name: set.flowName ?? "Unknown Set",
-        series: toNum(set.flowSeriesNumber),
+        name: setName,
+        series,
         tier: tier as "COMMON" | "RARE" | "LEGENDARY" | "ULTIMATE" | "FANDOM",
       },
       { onConflict: "external_id", ignoreDuplicates: false }
@@ -210,23 +197,28 @@ async function upsertSet(
     console.error("[ALLDAY-INGEST] upsertSet error:", error.message)
     return null
   }
-
   return data?.id ?? null
 }
 
 async function upsertEdition(
   collectionId: string,
   playerId: string | null,
-  setId: string | null,
-  tx: SaleTransaction,
-  editionKey: string
+  setDbId: string | null,
+  traits: TraitArray,
+  editionKey: string,
+  tier: string
 ): Promise<string | null> {
-  const moment = tx.moment
-  if (!moment?.set || !moment?.play) return null
-
-  const circulations = moment.setPlay?.circulations
-  const tier = formatTier(moment.tier)
-  const isRetired = moment.setPlay?.flowRetired ?? false
+  const circulationCount = toNum(
+    getTraitMulti(traits, TRAIT_MAP.circulationCount)
+  )
+  const isRetired =
+    getTraitMulti(traits, TRAIT_MAP.retired) === "true"
+  const playerName =
+    getTraitMulti(traits, TRAIT_MAP.playerName) ?? "Unknown"
+  const setName = getTraitMulti(traits, TRAIT_MAP.setName) ?? "Unknown Set"
+  const series = toNum(getTraitMulti(traits, TRAIT_MAP.seriesNumber))
+  const playCategory = getTraitMulti(traits, TRAIT_MAP.playCategory)
+  const gameDate = getTraitMulti(traits, TRAIT_MAP.gameDate)
 
   const { data, error } = await supabaseAdmin
     .from("editions")
@@ -235,16 +227,14 @@ async function upsertEdition(
         external_id: editionKey,
         collection_id: collectionId,
         player_id: playerId,
-        set_id: setId,
-        name: `${moment.play.stats?.playerName ?? "Unknown"} — ${moment.set.flowName ?? "Unknown Set"}`,
+        set_id: setDbId,
+        name: `${playerName} — ${setName}`,
         tier: tier as "COMMON" | "RARE" | "LEGENDARY" | "ULTIMATE" | "FANDOM",
-        series: toNum(moment.set.flowSeriesNumber),
+        series,
         edition_kind: isRetired ? "LE" : "CC",
-        circulation_count: toNum(circulations?.circulationCount),
-        play_category: moment.play.stats?.playCategory ?? null,
-        game_date: moment.play.stats?.dateOfMoment
-          ? moment.play.stats.dateOfMoment.split("T")[0]
-          : null,
+        circulation_count: circulationCount,
+        play_category: playCategory ?? null,
+        game_date: gameDate ? gameDate.split("T")[0] : null,
       },
       { onConflict: "external_id", ignoreDuplicates: false }
     )
@@ -255,25 +245,26 @@ async function upsertEdition(
     console.error("[ALLDAY-INGEST] upsertEdition error:", error.message)
     return null
   }
-
   return data?.id ?? null
 }
 
-async function upsertSale(
+async function insertSale(
   collectionId: string,
   editionId: string,
-  tx: SaleTransaction
+  nftId: string,
+  serial: number,
+  price: number,
+  listingId: string,
+  blockTimestamp: number | undefined
 ): Promise<boolean> {
-  if (!tx.txHash || !tx.price || !tx.updatedAt) return false
+  // Use listing ID as a pseudo transaction hash for dedup
+  const txHash = `flowty-allday-${listingId}`
+  const soldAt = blockTimestamp
+    ? new Date(blockTimestamp * 1000).toISOString()
+    : new Date().toISOString()
 
-  const price = toNum(tx.price)
-  if (!price) return false
-
-  const serialNumber = toNum(tx.moment?.flowSerialNumber)
-  const nftId = tx.moment?.flowId ? String(tx.moment.flowId) : null
-
-  // Write moments row
-  if (nftId && serialNumber !== null) {
+  // Write moment row
+  if (nftId && serial > 0) {
     const { error: momentError } = await supabaseAdmin
       .from("moments")
       .upsert(
@@ -281,37 +272,35 @@ async function upsertSale(
           nft_id: nftId,
           edition_id: editionId,
           collection_id: collectionId,
-          serial_number: serialNumber,
+          serial_number: serial,
         },
         { onConflict: "nft_id", ignoreDuplicates: true }
       )
-
     if (momentError && momentError.code !== "23505") {
       console.error("[ALLDAY-INGEST] upsertMoment error:", momentError.message)
     }
   }
 
   // Write sale row
-  const { error: saleError } = await supabaseAdmin.from("sales").insert({
+  const { error } = await supabaseAdmin.from("sales").insert({
     edition_id: editionId,
     collection_id: collectionId,
-    serial_number: serialNumber ?? 0,
+    serial_number: serial || 0,
     price_usd: price,
     currency: "USD",
     marketplace: "nfl_all_day",
-    transaction_hash: tx.txHash,
-    sold_at: tx.updatedAt,
-    nft_id: nftId,
+    transaction_hash: txHash,
+    sold_at: soldAt,
+    nft_id: nftId || null,
   })
 
-  if (saleError) {
-    if (saleError.message.includes("duplicate") || saleError.code === "23505") {
-      return false
+  if (error) {
+    if (error.message.includes("duplicate") || error.code === "23505") {
+      return false // duplicate, not an error
     }
-    console.error("[ALLDAY-INGEST] upsertSale error:", saleError.message)
+    console.error("[ALLDAY-INGEST] insertSale error:", error.message)
     return false
   }
-
   return true
 }
 
@@ -357,90 +346,7 @@ async function upsertFmvSnapshot(
   }
 }
 
-// ── Main ingestion logic ──────────────────────────────────────────────────────
-
-async function fetchRecentSales(
-  limit: number,
-  cursor: string | null,
-  debug = false
-): Promise<{ transactions: SaleTransaction[]; nextCursor: string | null; rawDebug?: unknown }> {
-  const variables = {
-    input: {
-      sortBy: "UPDATED_AT_DESC",
-      filters: {},
-      searchInput: {
-        pagination: {
-          cursor: cursor ?? "",
-          direction: "RIGHT",
-          limit,
-        },
-      },
-    },
-  }
-
-  const data = await alldayGraphql<SearchTransactionsResponse>(
-    SEARCH_TRANSACTIONS_QUERY,
-    variables
-  )
-
-  // ── Debug logging: raw response shape ──────────────────────────────────
-  console.log("[allday-ingest-debug] top-level keys:", JSON.stringify(data ? Object.keys(data) : null))
-  const smt = (data as Record<string, unknown>)?.searchMarketplaceTransactions
-  console.log("[allday-ingest-debug] searchMarketplaceTransactions keys:", JSON.stringify(smt ? Object.keys(smt as object) : null))
-  const smtData = smt && typeof smt === "object" ? (smt as Record<string, unknown>).data : undefined
-  console.log("[allday-ingest-debug] .data keys:", JSON.stringify(smtData ? Object.keys(smtData as object) : null))
-
-  // Log first raw transaction object in full
-  const summary = data?.searchMarketplaceTransactions?.data?.searchSummary
-  const dataField = summary?.data as unknown
-  let firstTx: unknown = null
-  if (Array.isArray(dataField) && dataField.length > 0) {
-    const block = dataField[0] as { data?: unknown[] }
-    if (Array.isArray(block?.data) && block.data.length > 0) {
-      firstTx = block.data[0]
-    }
-  } else if (dataField && typeof dataField === "object" && !Array.isArray(dataField)) {
-    const block = dataField as { data?: unknown[] }
-    if (Array.isArray(block?.data) && block.data.length > 0) {
-      firstTx = block.data[0]
-    }
-  }
-  // If firstTx is still null, the shape may be totally different — log the full nested data
-  if (!firstTx) {
-    console.log("[allday-ingest-debug] summary?.data raw:", JSON.stringify(dataField)?.slice(0, 2000))
-    // Also try direct .data at searchMarketplaceTransactions level
-    console.log("[allday-ingest-debug] smtData raw:", JSON.stringify(smtData)?.slice(0, 2000))
-  } else {
-    console.log("[allday-ingest-debug] firstTransaction:", JSON.stringify(firstTx)?.slice(0, 2000))
-  }
-
-  // If debug mode, return raw data for inspection
-  if (debug) {
-    return { transactions: [], nextCursor: null, rawDebug: data }
-  }
-
-  const nextCursor = summary?.pagination?.rightCursor ?? null
-
-  const transactions: SaleTransaction[] = []
-
-  if (Array.isArray(dataField)) {
-    for (const block of dataField) {
-      const b = block as { data?: SaleTransaction[] }
-      if (Array.isArray(b?.data)) {
-        transactions.push(...b.data)
-      }
-    }
-  } else if (dataField && typeof dataField === "object") {
-    const b = dataField as { data?: SaleTransaction[] }
-    if (Array.isArray(b.data)) {
-      transactions.push(...b.data)
-    }
-  }
-
-  return { transactions, nextCursor }
-}
-
-// ── Route handler ─────────────────────────────────────────────────────────────
+// ── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now()
@@ -454,10 +360,9 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}))
-    const batchSize = Math.min(Number(body.batchSize ?? 50), 200)
-    const cursor = (body.cursor as string | null) ?? null
+    const pageCount = Math.min(Number(body.pages ?? 5), 10)
 
-    console.log(`[ALLDAY-INGEST] Starting — batchSize=${batchSize} cursor=${cursor ?? "start"}`)
+    console.log(`[ALLDAY-INGEST] Starting — pages=${pageCount} via Flowty API`)
 
     // Get NFL All Day collection ID
     const { data: collections } = await supabaseAdmin
@@ -475,10 +380,41 @@ export async function POST(req: NextRequest) {
 
     const collectionId = collections.id
 
-    // Fetch recent sales from All Day
-    const { transactions, nextCursor } = await fetchRecentSales(batchSize, cursor)
+    // Fetch listings from Flowty in parallel (same pattern as ts-ingest.js)
+    const offsets = Array.from({ length: pageCount }, (_, i) => i * 24)
+    const pages = await Promise.allSettled(offsets.map((o) => fetchFlowtyPage(o)))
 
-    console.log(`[ALLDAY-INGEST] Fetched ${transactions.length} transactions`)
+    const allItems: FlowtyNftItem[] = []
+    for (const [i, result] of pages.entries()) {
+      if (result.status === "fulfilled") {
+        console.log(`[ALLDAY-INGEST] Page from=${offsets[i]}: ${result.value.length} items`)
+        allItems.push(...result.value)
+      } else {
+        console.error(
+          `[ALLDAY-INGEST] Page from=${offsets[i]} failed: ${result.reason?.message}`
+        )
+      }
+    }
+
+    // Log first item structure for debugging
+    if (allItems.length > 0) {
+      const first = allItems[0]
+      const traits = first.nftView?.traits ?? []
+      console.log(
+        "[ALLDAY-INGEST] Trait keys:",
+        traits.map((t) => t.name).join(", ")
+      )
+      console.log(
+        "[ALLDAY-INGEST] Sample — SetID:",
+        getTraitMulti(traits, TRAIT_MAP.setID),
+        "PlayID:",
+        getTraitMulti(traits, TRAIT_MAP.playID),
+        "Player:",
+        getTraitMulti(traits, TRAIT_MAP.playerName)
+      )
+    }
+
+    console.log(`[ALLDAY-INGEST] Total fetched: ${allItems.length}`)
 
     let salesIngested = 0
     let momentsWritten = 0
@@ -489,38 +425,60 @@ export async function POST(req: NextRequest) {
     // Track sales prices per edition for FMV snapshot computation
     const editionSalesMap = new Map<string, number[]>()
 
-    for (const tx of transactions) {
+    for (const item of allItems) {
       try {
-        const moment = tx.moment
-        if (!moment?.play?.stats || !moment?.set) continue
+        const order = item.orders?.find((o) => (o.salePrice ?? 0) > 0)
+        if (!order) continue
 
-        const price = toNum(tx.price)
+        const price = order.salePrice
         if (!price || price <= 0) continue
 
-        const editionKey = buildEditionKey(tx)
-        if (!editionKey) continue
+        const traits = item.nftView?.traits ?? []
+        const serial = item.card?.num ?? item.nftView?.serial ?? 0
+
+        // Build edition key from setID:playID traits
+        const rawSetId = getTraitMulti(traits, TRAIT_MAP.setID)
+        const rawPlayId = getTraitMulti(traits, TRAIT_MAP.playID)
+        if (!rawSetId || !rawPlayId) continue
+        const editionKey = `${rawSetId}:${rawPlayId}`
+
+        const tier = formatTier(getTraitMulti(traits, TRAIT_MAP.tier))
 
         // Upsert player, set, edition
-        const playerId = await upsertPlayer(collectionId, moment.play.stats)
-        const tier = formatTier(moment.tier)
-        const setDbId = await upsertSet(collectionId, moment.set, tier)
-        const editionId = await upsertEdition(collectionId, playerId, setDbId, tx, editionKey)
+        const playerId = await upsertPlayer(collectionId, traits)
+        const setDbId = await upsertSet(collectionId, traits, tier)
+        const editionId = await upsertEdition(
+          collectionId,
+          playerId,
+          setDbId,
+          traits,
+          editionKey,
+          tier
+        )
         if (!editionId) continue
 
         editionsUpdated++
 
-        const inserted = await upsertSale(collectionId, editionId, tx)
+        const nftId = String(item.id)
+        const listingId =
+          order.listingResourceID ?? String(item.id)
 
-        if (tx.moment?.flowId && tx.moment?.flowSerialNumber) {
-          momentsWritten++
-        }
+        const inserted = await insertSale(
+          collectionId,
+          editionId,
+          nftId,
+          serial,
+          price,
+          listingId,
+          order.blockTimestamp
+        )
+
+        if (serial > 0) momentsWritten++
 
         if (inserted) {
           salesIngested++
         } else {
-          if (tx.moment?.flowId && tx.moment?.flowSerialNumber) {
-            momentsWritten--
-          }
+          if (serial > 0) momentsWritten--
           duplicates++
         }
 
@@ -529,7 +487,7 @@ export async function POST(req: NextRequest) {
         arr.push(price)
         editionSalesMap.set(editionId, arr)
       } catch (err) {
-        console.error("[ALLDAY-INGEST] Transaction error:", err)
+        console.error("[ALLDAY-INGEST] Item error:", err)
         errors++
       }
     }
@@ -560,8 +518,6 @@ export async function POST(req: NextRequest) {
       editionsUpdated,
       fmvUpdated,
       errors,
-      nextCursor,
-      hasMore: !!nextCursor,
       durationMs: duration,
     })
   } catch (e) {
@@ -585,24 +541,27 @@ export async function GET(req: NextRequest) {
   }
 
   const debug = req.nextUrl.searchParams.get("debug") === "1"
-  const dry = req.nextUrl.searchParams.get("dry") === "1"
-  const limit = Math.min(Number(req.nextUrl.searchParams.get("limit") ?? "50"), 200)
-  const cursor = req.nextUrl.searchParams.get("cursor") ?? null
 
-  // ── Debug/dry-run mode: return raw GQL response, skip all Supabase writes ──
-  if (debug || dry) {
+  // Debug mode: return raw Flowty response for inspection
+  if (debug) {
     try {
-      const { rawDebug } = await fetchRecentSales(limit, cursor, true)
+      const items = await fetchFlowtyPage(0)
+      const sample = items.length > 0 ? items[0] : null
       return NextResponse.json({
-        mode: "debug-dry-run",
-        limit,
-        rawGqlResponse: rawDebug,
+        mode: "debug",
+        itemCount: items.length,
+        sampleTraits: sample?.nftView?.traits ?? [],
+        sampleCard: sample?.card ?? null,
+        sampleOrders: sample?.orders?.slice(0, 1) ?? [],
       })
     } catch (e) {
-      return NextResponse.json({
-        mode: "debug-dry-run",
-        error: e instanceof Error ? e.message : String(e),
-      }, { status: 500 })
+      return NextResponse.json(
+        {
+          mode: "debug",
+          error: e instanceof Error ? e.message : String(e),
+        },
+        { status: 500 }
+      )
     }
   }
 
