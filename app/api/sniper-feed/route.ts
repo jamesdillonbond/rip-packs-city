@@ -314,11 +314,11 @@ async function resolveEditionKeys(
 
   if (!tuples.size) return result;
 
-  // Fetch editions with their player names. The editions table is small (~5k rows)
-  // so we fetch all and match in JS for reliability.
+  // Fetch editions — PostgREST defaults to 1000 rows, so set explicit limit
   const { data: editionRows, error } = await (supabase as any)
     .from("editions")
-    .select("external_id, name, series");
+    .select("external_id, name, series")
+    .limit(10000);
 
   if (error) {
     console.error("[sniper-feed] edition key resolve error:", error.message);
