@@ -230,6 +230,26 @@ async function getOwnedMomentIds(wallet: string): Promise<number[]> {
   })
 }
 
+async function getAllDayOwnedIds(wallet: string): Promise<number[]> {
+  return getOrSetCache(`owned-allday:${wallet}`, OWNED_IDS_TTL, async () => {
+    const cadence = `
+      import AllDay from 0xe4cf4bdc1751c65d
+      access(all)
+      fun main(address: Address): [UInt64] {
+        let acct = getAccount(address)
+        let col = acct.capabilities.borrow<&{AllDay.MomentNFTCollectionPublic}>(/public/AllDayNFTCollection)
+        if col == nil { return [] }
+        return col!.getIDs()
+      }
+    `
+    const result = await fcl.query({
+      cadence,
+      args: (arg: any) => [arg(wallet, t.Address)],
+    })
+    return Array.isArray(result) ? (result as number[]) : []
+  })
+}
+
 async function getMomentMetadata(wallet: string, id: number) {
   return getOrSetCache(`metadata:${wallet}:${id}`, METADATA_TTL, async () => {
     const cadence = `
@@ -554,6 +574,7 @@ const walletSearchSchema = z.object({
   input: z.string().min(1, "Please enter a wallet address or username.").transform(s => s.trim()),
   offset: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(60).default(24),
+  collection: z.string().optional(),
 })
 
 export async function POST(req: NextRequest) {
@@ -572,10 +593,11 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { input, offset, limit } = parsed.data
+    const { input, offset, limit, collection } = parsed.data
+    const isAllDay = collection === "nfl-all-day"
 
     const wallet = await resolveWalletFromInput(input)
-    const ids = await getOwnedMomentIds(wallet)
+    const ids = isAllDay ? await getAllDayOwnedIds(wallet) : await getOwnedMomentIds(wallet)
     const slice = ids.slice(offset, offset + limit)
 
     const baseRows = (await mapWithConcurrency(slice, 8, async (id) => {

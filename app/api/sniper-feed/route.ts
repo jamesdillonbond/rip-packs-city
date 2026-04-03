@@ -864,9 +864,22 @@ async function computeSniperFeed(opts: {
 
     if (!fmvRow) continue;
 
-    const baseFmv = fmvRow.fmv;
+    let baseFmv = fmvRow.fmv;
     const confidence = fmvRow.confidence;
-    const confidenceSource = "supabase";
+    let confidenceSource = "supabase";
+
+    // Ask-proxy fallback: if FMV is effectively zero with LOW confidence,
+    // use floor ask price * 0.90 as a usable price signal
+    if (
+      (confidence === "LOW" || confidence === "low") &&
+      baseFmv < 1 &&
+      fmvRow.floorPriceUsd &&
+      fmvRow.floorPriceUsd > 0
+    ) {
+      baseFmv = fmvRow.floorPriceUsd * 0.90;
+      confidenceSource = "ask_proxy";
+    }
+
     const adjustedFmv = baseFmv * serialMult;
     const discount = askPrice >= adjustedFmv
       ? 0
@@ -974,6 +987,13 @@ async function computeSniperFeed(opts: {
         editionKey = fmvRow.editionKey;
         confidence = fmvRow.confidence;
         confidenceSource = "supabase";
+        flowtySupabaseHits++;
+      } else if (fmvRow && (fmvRow.confidence === "LOW" || fmvRow.confidence === "low") && fmvRow.fmv < 1 && fmvRow.floorPriceUsd && fmvRow.floorPriceUsd > 0) {
+        // Ask-proxy fallback for illiquid editions
+        baseFmv = fmvRow.floorPriceUsd * 0.90;
+        editionKey = fmvRow.editionKey;
+        confidence = fmvRow.confidence;
+        confidenceSource = "ask_proxy";
         flowtySupabaseHits++;
       } else {
         // Ask-price fallback — show as speculative deal

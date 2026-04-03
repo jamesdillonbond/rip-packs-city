@@ -138,13 +138,20 @@ const BADGE_PILL_TITLES = new Set([
 ])
 
 const SERIES_INT_TO_SEASON: Record<number, string> = {
-  0: "2019-20", 1: "2019-20", 2: "2020-21", 3: "2021",
-  4: "2021-22", 5: "2022-23", 6: "2023-24", 7: "2024-25", 8: "2025-26",
+  0: "2019-20", 1: "2019-20", 2: "2020-21", 3: "2021-22",
+  4: "2022-23", 5: "2023-24", 6: "2024-25", 7: "2025-26", 8: "2026-27",
 }
 
 const SERIES_DISPLAY: Record<number, string> = {
-  0: "Beta", 1: "Series 1", 2: "Series 2", 3: "Series 3",
-  4: "Series 4", 5: "Series 5", 6: "Series 6", 7: "Series 7", 8: "2025-26",
+  0: "Beta",
+  1: "S1 · 2019-20",
+  2: "S2 · 2020-21",
+  3: "S3 · 2021-22",
+  4: "S4 · 2022-23",
+  5: "S5 · 2023-24",
+  6: "S6 · 2024-25",
+  7: "S7 · 2025-26",
+  8: "S8 · 2026-27",
 }
 
 function seriesDisplayLabel(seriesRaw: string | undefined | null): string {
@@ -201,7 +208,7 @@ function getLocked(row: MomentRow) { return Boolean(row.isLocked ?? row.locked) 
 
 function getBestAsk(row: MomentRow) {
   const values = [row.lowAsk, row.bestAsk, row.topshotAsk, row.flowtyAsk].filter(
-    (v): v is number => typeof v === "number" && Number.isFinite(v)
+    (v): v is number => typeof v === "number" && Number.isFinite(v) && v !== 0
   )
   return values.length ? Math.min(...values) : null
 }
@@ -711,7 +718,7 @@ export default function WalletPage() {
       const response = await fetch("/api/wallet-search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: query.trim(), offset: 0, limit: 50 }),
+        body: JSON.stringify({ input: query.trim(), offset: 0, limit: 50, collection: collectionSlug }),
       })
       const json = (await response.json()) as WalletSearchResponse
       if (!response.ok) throw new Error(json.error || "Wallet search failed")
@@ -723,6 +730,17 @@ export default function WalletPage() {
       setOffset(nextRows.length)
       setHasSearched(true)
       maybePatchProfileStats(query.trim(), withBadges, json.summary).catch(function() {})
+      // Fire-and-forget: cache wallet moments for background analytics
+      fetch("/api/wallet-cache", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          wallet: query.trim(),
+          moments: withBadges.map(function(r) {
+            return { momentId: r.momentId, editionKey: r.editionKey, fmv: r.fmv, serial: r.serialNumber ?? r.serial }
+          }),
+        }),
+      }).catch(function() {})
       // Fire-and-forget: fetch sets data for "close to completing" callout
       fetch("/api/sets?wallet=" + encodeURIComponent(query.trim()) + "&skipAsks=1")
         .then(function(r) { return r.ok ? r.json() : null })
@@ -749,13 +767,13 @@ export default function WalletPage() {
     } finally {
       setLoading(false)
     }
-  }, [router])
+  }, [router, collectionSlug])
 
   async function fetchWalletPage(nextOffset: number, append: boolean) {
     const response = await fetch("/api/wallet-search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ input, offset: nextOffset, limit: 50 }),
+      body: JSON.stringify({ input, offset: nextOffset, limit: 50, collection: collectionSlug }),
     })
     const json = (await response.json()) as WalletSearchResponse
     if (!response.ok) throw new Error(json.error || "Wallet search failed")
@@ -1095,28 +1113,17 @@ export default function WalletPage() {
 
         {/* Close to Completing callout */}
         {nearCompleteSets.length > 0 && hasSearched && (
-          <div className="rpc-card mb-5" style={{ borderLeft: "3px solid #22c55e", padding: "12px 16px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#22c55e", letterSpacing: "0.1em", whiteSpace: "nowrap" }}>◉ CLOSE TO COMPLETING</span>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {nearCompleteSets.map(function(s: any) {
+          <div style={{ borderLeft: "3px solid #22c55e", background: "rgba(34,197,94,0.05)", borderRadius: 6, padding: "10px 14px", marginBottom: 12 }}>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "#22c55e", letterSpacing: "0.1em", marginBottom: 4 }}>◉ CLOSE TO COMPLETING</div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#a1a1aa" }}>
+              {nearCompleteSets.map(function(s: any, i: number) {
                 return (
-                  <a
-                    key={s.setId ?? s.setName}
-                    href={"/nba-top-shot/sets?wallet=" + encodeURIComponent(lastSearchedRef.current)}
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 11,
-                      color: "var(--rpc-text-secondary)",
-                      background: "var(--rpc-surface-raised)",
-                      border: "1px solid var(--rpc-border)",
-                      borderRadius: "var(--radius-sm)",
-                      padding: "4px 10px",
-                      textDecoration: "none",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {s.setName} — {s.missingCount} away{s.totalMissingCost != null ? " · $" + s.totalMissingCost.toFixed(2) : ""}
-                  </a>
+                  <span key={s.setId ?? s.setName}>
+                    {i > 0 && " · "}
+                    <a href={"/nba-top-shot/sets"} style={{ color: "#a1a1aa", textDecoration: "none" }}>
+                      {s.setName} — {s.missingCount} away{s.totalMissingCost != null ? " · $" + s.totalMissingCost.toFixed(2) : ""}
+                    </a>
+                  </span>
                 )
               })}
             </div>
@@ -1134,14 +1141,14 @@ export default function WalletPage() {
           <select value={seriesFilter} onChange={function(e) { setSeriesFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
             <option value="all">All Series</option>
             <option value="Beta">Beta</option>
-            <option value="Series 1">Series 1</option>
-            <option value="Series 2">Series 2</option>
-            <option value="Series 3">Series 3</option>
-            <option value="Series 4">Series 4</option>
-            <option value="Series 5">Series 5</option>
-            <option value="Series 6">Series 6</option>
-            <option value="Series 7">Series 7</option>
-            <option value="2025-26">2025-26</option>
+            <option value="S1 · 2019-20">S1 · 2019-20</option>
+            <option value="S2 · 2020-21">S2 · 2020-21</option>
+            <option value="S3 · 2021-22">S3 · 2021-22</option>
+            <option value="S4 · 2022-23">S4 · 2022-23</option>
+            <option value="S5 · 2023-24">S5 · 2023-24</option>
+            <option value="S6 · 2024-25">S6 · 2024-25</option>
+            <option value="S7 · 2025-26">S7 · 2025-26</option>
+            <option value="S8 · 2026-27">S8 · 2026-27</option>
           </select>
           <select value={rarityFilter} onChange={function(e) { setRarityFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
             {availableRarities.map(function(tier) { return <option key={tier} value={tier}>{tier === "all" ? "All Rarities" : tier}</option> })}
