@@ -688,6 +688,7 @@ async function fetchJerseyNumbers(
   const { data, error } = await (supabase as any)
     .from("players")
     .select("name, jersey_number")
+    .eq("collection", "nba_top_shot")
     .not("jersey_number", "is", null);
 
   if (error || !data?.length) return new Map();

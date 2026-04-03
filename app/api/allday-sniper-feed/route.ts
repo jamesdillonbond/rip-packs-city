@@ -404,6 +404,7 @@ async function fetchJerseyNumbers(
   const { data } = await (supabase as any)
     .from("players")
     .select("name, jersey_number")
+    .eq("collection", "nfl_all_day")
     .in("name", playerNames)
     .not("jersey_number", "is", null)
   const map = new Map<string, number>()
