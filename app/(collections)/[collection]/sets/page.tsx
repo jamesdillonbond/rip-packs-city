@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { getCollection } from "@/lib/collections";
+import { getOwnerKey } from "@/lib/owner-key";
 
 // ── Types (mirrors API response) ─────────────────────────────────────────────
 
@@ -101,11 +102,21 @@ export default function SetsPage() {
   const [sortBy, setSortBy] = useState<SortKey>("completion");
   const [filter, setFilter] = useState<FilterKey>("all");
 
-  // Read wallet from URL params on mount (client-only)
+  const autoLoadFired = useRef(false);
+
+  // Read wallet from URL params on mount, or auto-load from owner key
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     const w = p.get("wallet") || p.get("address") || null;
-    if (w && w.trim()) setWallet(w.trim());
+    if (w && w.trim()) {
+      setWallet(w.trim());
+    } else if (!autoLoadFired.current) {
+      const key = getOwnerKey();
+      if (key) {
+        autoLoadFired.current = true;
+        setWallet(key);
+      }
+    }
   }, []);
 
   // Fetch sets when wallet is set
