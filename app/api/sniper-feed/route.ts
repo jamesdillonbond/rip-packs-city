@@ -425,6 +425,18 @@ const FLOWTY_TRAIT_MAP: Record<string, string[]> = {
   fullName:     ["FullName", "fullName", "Full Name", "PlayerName", "playerName"],
 };
 
+// Flowty returns traits as a nested object { traits: { "0": {name, value}, ... } }
+// rather than a flat array. Flatten it into an array for uniform access.
+function flattenTraits(raw: unknown): Array<{ name: string; value: string }> {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  const inner = (raw as Record<string, unknown>).traits ?? raw;
+  if (Array.isArray(inner)) return inner;
+  return Object.values(inner as Record<string, unknown>)
+    .filter((v): v is { name: string; value: string } =>
+      typeof v === "object" && v !== null && "name" in v);
+}
+
 function getTraitMulti(
   traits: Array<{ name: string; value: string }> | undefined,
   keys: string[]
@@ -460,7 +472,7 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
 
     // Log actual trait keys from first item so we can verify field names in Vercel logs
     if (from === 0 && rawItems.length > 0) {
-      const firstTraits = rawItems[0].nftView?.traits ?? [];
+      const firstTraits = flattenTraits(rawItems[0].nftView?.traits);
       console.log(`[sniper-feed] Flowty trait keys: ${firstTraits.map(t => t.name).join(", ")}`);
       // Also log a sample set/team value to verify enrichment
       const sampleSetName = getTraitMulti(firstTraits, FLOWTY_TRAIT_MAP.setName);
@@ -475,7 +487,7 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
       const order = item.orders?.find((o) => (o.salePrice ?? 0) > 0) ?? item.orders?.[0];
       if (!order?.listingResourceID) continue;
       if (order.salePrice <= 0) continue;
-      const traits = item.nftView?.traits ?? [];
+      const traits = flattenTraits(item.nftView?.traits);
       const serial = item.card?.num ?? item.nftView?.serial ?? 0;
       const circ = item.card?.max ?? 0;
       const subStr = getTraitMulti(traits, FLOWTY_TRAIT_MAP.subedition);
