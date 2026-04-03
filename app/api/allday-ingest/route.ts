@@ -347,6 +347,60 @@ async function upsertFmvSnapshot(
   }
 }
 
+// ── Main ingestion logic ──────────────────────────────────────────────────────
+
+async function fetchRecentSales(
+  limit: number,
+  cursor: string | null,
+  debug = false
+): Promise<{ transactions: SaleTransaction[]; nextCursor: string | null; rawDebug?: unknown }> {
+  const variables = {
+    input: {
+      sortBy: "UPDATED_AT_DESC",
+      filters: {},
+      searchInput: {
+        pagination: {
+          cursor: cursor ?? "",
+          direction: "RIGHT",
+          limit,
+        },
+      },
+    },
+  }
+
+  const data = await alldayGraphql<SearchTransactionsResponse>(
+    SEARCH_TRANSACTIONS_QUERY,
+    variables
+  )
+
+  // If debug mode, return raw data for inspection
+  if (debug) {
+    return { transactions: [], nextCursor: null, rawDebug: data }
+  }
+
+  const summary = data?.searchMarketplaceTransactions?.data?.searchSummary
+  const nextCursor = summary?.pagination?.rightCursor ?? null
+  const dataField = summary?.data as unknown
+
+  const transactions: SaleTransaction[] = []
+
+  if (Array.isArray(dataField)) {
+    for (const block of dataField) {
+      const b = block as { data?: SaleTransaction[] }
+      if (Array.isArray(b?.data)) {
+        transactions.push(...b.data)
+      }
+    }
+  } else if (dataField && typeof dataField === "object") {
+    const b = dataField as { data?: SaleTransaction[] }
+    if (Array.isArray(b.data)) {
+      transactions.push(...b.data)
+    }
+  }
+
+  return { transactions, nextCursor }
+}
+
 // ── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
