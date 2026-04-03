@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
+interface SaleTransaction {
+  id: string;
+  [key: string]: unknown;
+}
+
 // ── AllDay Ingest via Flowty API ─────────────────────────────────────────────
 //
 // The AllDay GQL (searchMarketplaceTransactions) never returned data reliably.
