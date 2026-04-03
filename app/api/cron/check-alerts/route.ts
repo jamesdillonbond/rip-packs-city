@@ -15,7 +15,7 @@ const supabase: any = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export async function GET(req: NextRequest) {
+async function handler(req: NextRequest) {
   // Auth check
   const authHeader = req.headers.get("authorization");
   const expectedToken = process.env.INGEST_SECRET_TOKEN;
@@ -215,3 +215,6 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+
+export const GET = handler;
+export const POST = handler;
