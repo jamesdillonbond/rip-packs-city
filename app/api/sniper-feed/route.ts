@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { SupabaseClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/lib/supabase";
 import { fetchOpenOffers } from "@/lib/flowty/fetchOpenOffers";
 import { getOrSetCache } from "@/lib/cache";
 import { z } from "zod";
@@ -232,7 +233,7 @@ function serialMultiplier(
 // so we use the Supabase table as the primary TS feed source.
 
 async function fetchTopShotPool(
-  supabase: ReturnType<typeof createClient>
+  supabase: SupabaseClient
 ): Promise<{ listings: RawListing[]; tsCount: number }> {
   try {
     const { data, error } = await (supabase as any)
@@ -671,10 +672,7 @@ async function computeSniperFeed(opts: {
 }) {
   const { minDiscount, rarity, team, badgeOnly, serialFilter, maxPrice, sortBy } = opts;
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  const supabase = supabaseAdmin;
 
   // 1. Fetch TS listings + Flowty in parallel
   const [{ listings: tsListings, tsCount }, flowtyListings] = await Promise.all([
