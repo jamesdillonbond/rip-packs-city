@@ -17,6 +17,11 @@ const COLLECTION_META: Record<string, { title: string; description: string }> = 
     description:
       "Wallet analysis, FMV pricing, and marketplace intelligence for NFL All Day collectors on the Flow blockchain.",
   },
+  "panini-blockchain": {
+    title: "Panini Blockchain — Collector Intelligence on Rip Packs City",
+    description:
+      "Live OpenSea market data and bridged card listings for Panini Blockchain digital trading cards. Ethereum bridge opened March 2026.",
+  },
 }
 
 const DEFAULT_META = {
@@ -87,6 +92,12 @@ const TICKER_ITEMS: Record<string, string[]> = {
     "⚡ SNIPER — real-time deals below FMV",
     "⚡ BADGE TRACKER — Top Shot Debut · Fresh · Rookie Year",
     "⚡ SET TRACKER — completion + bottleneck finder",
+  ],
+  "panini-blockchain": [
+    "🃏 ETHEREUM BRIDGE LIVE — Panini cards now on-chain",
+    "⚡ MARKET SNIPER — live OpenSea floor + listings",
+    "🃏 BASKETBALL · FOOTBALL · SOCCER · WNBA · RACING",
+    "⚡ WALLET ANALYZER — coming soon for bridged cards",
   ],
 }
 
