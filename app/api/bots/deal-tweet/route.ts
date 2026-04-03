@@ -67,6 +67,11 @@ function buildOgCardUrl(deal: SniperDeal): string {
 // ─── Route Handler ───────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
+  // Kill switch — skip when bot is not explicitly enabled
+  if (process.env.TWITTER_BOT_ENABLED !== "true") {
+    return NextResponse.json({ ok: false, reason: "bot_disabled" }, { status: 200 });
+  }
+
   // Auth check
   const auth = req.headers.get("authorization");
   if (auth !== `Bearer ${INGEST_TOKEN}`) {

@@ -96,7 +96,13 @@ export async function DELETE(req: NextRequest) {
 //         cachedChange24h, cachedBadges, cachedRpcScore }
 // Updates cached stats and fires portfolio snapshot write.
 export async function PATCH(req: NextRequest) {
-  const body = await req.json();
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
   const {
     ownerKey,
     walletAddr,
@@ -108,8 +114,11 @@ export async function PATCH(req: NextRequest) {
     cachedRpcScore,
   } = body;
 
-  if (!ownerKey || !walletAddr) {
-    return NextResponse.json({ error: "ownerKey and walletAddr required" }, { status: 400 });
+  if (!ownerKey || typeof ownerKey !== "string") {
+    return NextResponse.json({ error: "ownerKey is required and must be a string" }, { status: 400 });
+  }
+  if (!walletAddr || typeof walletAddr !== "string") {
+    return NextResponse.json({ error: "walletAddr is required and must be a string" }, { status: 400 });
   }
 
   try {
@@ -148,8 +157,8 @@ export async function PATCH(req: NextRequest) {
 
     return NextResponse.json({ wallet: data });
   } catch (err: any) {
-    console.error("[saved-wallets PATCH] unexpected:", err?.message);
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    console.log("[saved-wallets PATCH] error:", err?.message);
+    return NextResponse.json({ error: "Failed to update saved wallet" }, { status: 500 });
   }
 }
 

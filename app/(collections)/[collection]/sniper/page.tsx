@@ -986,7 +986,6 @@ export default function SniperPage() {
             <table style={{ width: "100%", fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)", borderCollapse: "collapse" }}>
               <thead>
                 <tr className="rpc-thead-scanline" style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)" }}>
-                  <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px", width: 40 }} />
                   <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px" }}>Moment</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Serial</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Listed</th>
@@ -1007,22 +1006,20 @@ export default function SniperPage() {
                     onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--rpc-surface-hover)"; }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = deal.discount >= 40 ? "rgba(224,58,47,0.08)" : "transparent"; }}
                   >
-                    {/* Thumbnail */}
-                    <td style={{ padding: "8px 12px" }}>
-                      {deal.thumbnailUrl ? (
-                        <img
-                          src={deal.thumbnailUrl}
-                          alt={deal.playerName}
-                          style={{ width: 36, height: 36, objectFit: "cover", objectPosition: "top center", borderRadius: 4, display: "block" }}
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div style={{ width: 36, height: 36, borderRadius: 4, background: "var(--rpc-surface-raised)" }} />
-                      )}
-                    </td>
-
                     {/* Moment info */}
                     <td style={{ padding: "8px 12px" }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                        {deal.thumbnailUrl ? (
+                          <img
+                            src={deal.thumbnailUrl}
+                            alt={deal.playerName}
+                            style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 4, flexShrink: 0, background: "#1a1a1a" }}
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div style={{ width: 36, height: 36, borderRadius: 4, background: "var(--rpc-surface-raised)", flexShrink: 0 }} />
+                        )}
+                        <div style={{ minWidth: 0 }}>
                       <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, color: "var(--rpc-text-primary)", lineHeight: 1.2 }}>{deal.playerName}</div>
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)" }}>
                         <span className={deal.tier.toUpperCase() === "LEGENDARY" ? "rpc-tier-glow-legendary" : deal.tier.toUpperCase() === "ULTIMATE" ? "rpc-tier-glow-ultimate" : deal.tier.toUpperCase() === "RARE" ? "rpc-tier-glow-rare" : ""} style={{ color: tierColor(deal.tier), fontWeight: 600 }}>
@@ -1062,6 +1059,8 @@ export default function SniperPage() {
                           )}
                         </div>
                       )}
+                        </div>
+                      </div>
                     </td>
 
                     {/* Serial */}
