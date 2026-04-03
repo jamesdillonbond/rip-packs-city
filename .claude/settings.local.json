@@ -1,20 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "mcp__supabase__execute_sql",
-      "Bash(node:*)",
-      "Bash(git add:*)",
-      "Bash(git commit -m ':*)",
+      "Bash(rm -f .claude/settings.local.json)",
+      "Bash(git rebase:*)",
       "Bash(git checkout:*)",
-      "Bash(git stash:*)",
-      "Bash(git cherry-pick:*)",
+      "Bash(git merge:*)",
       "Bash(git push:*)",
-      "Bash(gh workflow:*)",
-      "Bash(powershell -Command '$r = Invoke-RestMethod -Uri \"https://api.vercel.com/v6/deployments?projectId=prj_YBJ6Utl32GfyBOIzbsp3kbshJh96&teamId=team_YWGCVToPBJSS60NgVh8jiCFV&limit=1\" -Headers @{\"Authorization\"=\"Bearer $env:VERCEL_TOKEN\"}; $d = $r.deployments[0]; \"$\\($d.state\\) $\\($d.meta.githubCommitMessage.Substring\\(0, [Math]::Min\\(60, $d.meta.githubCommitMessage.Length\\)\\)\\)\"')",
-      "Bash(ls:*)",
-      "Bash(powershell:*)",
-      "mcp__claude_ai_Vercel__get_runtime_logs",
-      "mcp__claude_ai_Vercel__get_deployment_build_logs"
+      "Bash(powershell -Command '$r = Invoke-RestMethod -Uri \"https://api.vercel.com/v6/deployments?projectId=prj_YBJ6Utl32GfyBOIzbsp3kbshJh96&teamId=team_YWGCVToPBJSS60NgVh8jiCFV&limit=1\" -Headers @{\"Authorization\"=\"Bearer $env:VERCEL_TOKEN\"}; \"$\\($r.deployments[0].state\\) $\\($r.deployments[0].meta.githubCommitSha.Substring\\(0,7\\)\\)\"')"
     ]
   }
 }
