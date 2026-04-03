@@ -86,18 +86,25 @@ export default function PinnacleListingCard({
         e.currentTarget.style.boxShadow = "none"
       }}
     >
-      {/* Pin emoji placeholder */}
+      {/* SVG pushpin */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           height: 64,
-          fontSize: 36,
-          opacity: 0.7,
         }}
       >
-        📌
+        <svg width="32" height="56" viewBox="0 0 32 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+          {/* Pin body (slate) */}
+          <rect x="14" y="20" width="4" height="28" rx="2" fill="#94a3b8" />
+          <path d="M10 18 L22 18 L19 28 L13 28 Z" fill="#94a3b8" />
+          {/* Pin tip */}
+          <path d="M15 48 L16 56 L17 48" fill="#94a3b8" />
+          {/* Gold circle head */}
+          <circle cx="16" cy="10" r="10" fill="#fbbf24" />
+          <circle cx="16" cy="10" r="6" fill="#f59e0b" opacity="0.5" />
+        </svg>
       </div>
 
       {/* Characters (title) */}
