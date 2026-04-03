@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/pinnacle-sync",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/tweet-deals",
+      "schedule": "0 * * * *"
     }
   ]
 }
