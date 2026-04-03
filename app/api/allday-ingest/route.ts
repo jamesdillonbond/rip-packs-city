@@ -149,6 +149,7 @@ async function upsertPlayer(
       {
         external_id: String(playerIdRaw),
         collection_id: collectionId,
+        collection: "nfl_all_day",
         name: playerName,
         first_name: firstName ?? null,
         last_name: lastName ?? null,

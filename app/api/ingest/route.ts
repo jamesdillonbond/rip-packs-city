@@ -178,6 +178,7 @@ async function upsertPlayer(
       {
         external_id: String(stats.playerID),
         collection_id: collectionId,
+        collection: "nba_top_shot",
         name: stats.playerName ?? "Unknown Player",
         first_name: stats.firstName ?? null,
         last_name: stats.lastName ?? null,
