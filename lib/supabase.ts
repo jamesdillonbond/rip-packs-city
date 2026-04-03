@@ -1,5 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 
+/*
+ * ── Sales table partitioning note ─────────────────────────────────────────
+ * Sales table is year-partitioned (sales_2020–2026). DISTINCT ON is not
+ * available via the JS client on partitioned tables — fetch ordered by
+ * computed_at DESC and deduplicate in app code.
+ * ──────────────────────────────────────────────────────────────────────────
+ */
+
 // Browser client — used in React components
 // Has read-only access to public market data
 export const supabase = createClient(
