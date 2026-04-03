@@ -405,6 +405,8 @@ export default function WalletPage() {
   const [salesLoading, setSalesLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [connectedWallet, setConnectedWallet] = useState<string | null>(null);
+  const [isBackgroundLoading, setIsBackgroundLoading] = useState(false);
+  const [backgroundProgress, setBackgroundProgress] = useState(0);
 
   const [playerFilter, setPlayerFilter] = useState("all")
   const [setFilter, setSetFilter] = useState("all")
@@ -728,6 +730,12 @@ export default function WalletPage() {
         .catch(function() {})
       // Fire-and-forget: enrich best offers for loaded rows
       enrichOffers(withBadges)
+      // Auto-load remaining moments in background
+      if (json.summary?.remainingMoments && json.summary.remainingMoments > 0) {
+        setIsBackgroundLoading(true)
+        setBackgroundProgress(nextRows.length)
+        backgroundAutoLoad(nextRows.length, json.summary.remainingMoments, json.summary.totalMoments)
+      }
       // Fire-and-forget: load sealed pack count + titles for this wallet
       fetch("/api/wallet-packs?wallet=" + encodeURIComponent(query.trim()))
         .then(function(r) { return r.ok ? r.json() : null })
@@ -769,40 +777,23 @@ export default function WalletPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownerKey])
 
-  // Auto-load remaining pages after search completes
-  useEffect(function() {
-    if (!summary || summary.remainingMoments <= 0 || loading || loadingMore) return
-    let cancelled = false
-    let currentOffset = offset
-    let requests = 0
-    async function loadAll() {
-      while (!cancelled && requests < 10) {
-        requests++
-        try {
-          const response = await fetch("/api/wallet-search", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ input, offset: currentOffset, limit: 50 }),
-          })
-          const json = (await response.json()) as WalletSearchResponse
-          if (!response.ok || cancelled) break
-          const nextRows = Array.isArray(json.rows) ? json.rows : []
-          if (nextRows.length === 0) break
-          const hydrated = await hydrateMarket(nextRows)
-          const withBadges = await enrichWithBadges(hydrated)
-          setRows(function(prev) { return [...prev, ...withBadges] })
-          setSummary(json.summary)
-          currentOffset += nextRows.length
-          setOffset(currentOffset)
-          enrichOffers(withBadges)
-          if (!json.summary || json.summary.remainingMoments <= 0) break
-        } catch { break }
+  // Background auto-load: fetch all remaining wallet pages after initial 50
+  async function backgroundAutoLoad(startOffset: number, remaining: number, total: number) {
+    let currentOffset = startOffset
+    let left = remaining
+    try {
+      while (left > 0) {
+        await new Promise(function(r) { setTimeout(r, 600) })
+        await fetchWalletPage(currentOffset, true)
+        currentOffset += 50
+        left -= 50
+        setBackgroundProgress(Math.min(currentOffset, total))
       }
+    } catch {
+      // On error, stop background loading — Load More button will remain as fallback
     }
-    loadAll()
-    return function() { cancelled = true }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [summary?.remainingMoments, loading])
+    setIsBackgroundLoading(false)
+  }
 
   async function handleSearch() { await runSearch(input) }
 
@@ -1514,7 +1505,11 @@ export default function WalletPage() {
           </div>
         )}
 
-        {summary && summary.remainingMoments > 0 ? (
+        {isBackgroundLoading ? (
+          <div className="mt-6 flex justify-center">
+            <span className="text-sm text-zinc-500">Loading… ({backgroundProgress} / {summary?.totalMoments ?? "?"})</span>
+          </div>
+        ) : summary && summary.remainingMoments > 0 ? (
           <div className="mt-6 flex justify-center">
             <button onClick={handleLoadMore} disabled={loadingMore} className="rounded-lg px-4 py-2 font-semibold text-white disabled:opacity-50" style={{ backgroundColor: accent }}>
               {loadingMore ? "Loading..." : "Load More (" + summary.remainingMoments + " left)"}
