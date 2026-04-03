@@ -1,26 +1,20 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git checkout:*)",
-      "mcp__supabase__list_projects",
-      "mcp__supabase__list_tables",
-      "Bash(npx tsc:*)",
-      "Bash(npm run:*)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(git push:*)",
-      "Bash(git fetch:*)",
-      "Bash(git rebase:*)",
-      "Bash(git stash:*)",
-      "Bash(git apply:*)",
-      "Bash(npx wrangler:*)",
-      "Bash(node:*)",
-      "Bash(powershell:*)",
-      "Bash(git:*)",
       "mcp__supabase__execute_sql",
+      "Bash(node:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git checkout:*)",
+      "Bash(git stash:*)",
+      "Bash(git cherry-pick:*)",
+      "Bash(git push:*)",
+      "Bash(gh workflow:*)",
+      "Bash(powershell -Command '$r = Invoke-RestMethod -Uri \"https://api.vercel.com/v6/deployments?projectId=prj_YBJ6Utl32GfyBOIzbsp3kbshJh96&teamId=team_YWGCVToPBJSS60NgVh8jiCFV&limit=1\" -Headers @{\"Authorization\"=\"Bearer $env:VERCEL_TOKEN\"}; $d = $r.deployments[0]; \"$\\($d.state\\) $\\($d.meta.githubCommitMessage.Substring\\(0, [Math]::Min\\(60, $d.meta.githubCommitMessage.Length\\)\\)\\)\"')",
+      "Bash(ls:*)",
+      "Bash(powershell:*)",
       "mcp__claude_ai_Vercel__get_runtime_logs",
-      "mcp__claude_ai_Vercel__get_deployment_build_logs",
-      "Bash(npx next:*)"
+      "mcp__claude_ai_Vercel__get_deployment_build_logs"
     ]
   }
 }
