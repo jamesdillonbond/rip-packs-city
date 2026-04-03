@@ -724,7 +724,7 @@ const feedParamsSchema = z.object({
   serial: z.string().default("all"),
   maxPrice: z.coerce.number().min(0).default(0),
   limit: z.coerce.number().min(1).max(500).default(0), // 0 = no limit
-  sortBy: z.enum(["discount", "price_asc", "price_desc", "fmv_desc", "serial_asc", "listed_desc"]).default("listed_desc"),
+  sortBy: z.enum(["recently_listed", "discount", "price_asc", "price_desc", "fmv_desc", "serial_asc"]).default("recently_listed"),
   flowWalletOnly: z.enum(["true", "false"]).default("false"),
 });
 
@@ -1102,11 +1102,11 @@ async function computeSniperFeed(opts: {
 
   // 9. Sort
   const sorted = allDeals.sort((a, b) => {
+    if (sortBy === "recently_listed") return (new Date(b.updatedAt ?? 0).getTime()) - (new Date(a.updatedAt ?? 0).getTime());
     if (sortBy === "price_asc") return a.askPrice - b.askPrice;
     if (sortBy === "price_desc") return b.askPrice - a.askPrice;
     if (sortBy === "fmv_desc") return b.adjustedFmv - a.adjustedFmv;
     if (sortBy === "serial_asc") return a.serial - b.serial;
-    if (sortBy === "listed_desc") return new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime();
     return b.discount - a.discount;
   });
 

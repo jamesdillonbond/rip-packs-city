@@ -67,13 +67,7 @@ interface FeedResult {
   cached?: boolean;
 }
 
-type SortOption =
-  | "discount"
-  | "price_asc"
-  | "price_desc"
-  | "fmv_desc"
-  | "serial_asc"
-  | "listed_desc";
+type SortOption = "recently_listed" | "discount" | "price_asc" | "price_desc" | "fmv_desc" | "serial_asc";
 
 // ─── Click tracking helper ────────────────────────────────────────────────────
 
@@ -406,12 +400,12 @@ const TIER_TABS = ["all", "common", "fandom", "rare", "legendary", "ultimate"] a
 type TierTab = (typeof TIER_TABS)[number];
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
-  { value: "listed_desc", label: "Recently Listed" },
-  { value: "discount",    label: "Best Discount" },
-  { value: "price_asc",   label: "Cheapest First" },
-  { value: "price_desc",  label: "Most Expensive" },
-  { value: "fmv_desc",    label: "Highest FMV" },
-  { value: "serial_asc",  label: "Lowest Serial" },
+  { value: "recently_listed", label: "Recently Listed" },
+  { value: "discount",        label: "Best Discount" },
+  { value: "price_asc",       label: "Cheapest First" },
+  { value: "price_desc",      label: "Most Expensive" },
+  { value: "fmv_desc",        label: "Highest FMV" },
+  { value: "serial_asc",      label: "Lowest Serial" },
 ];
 
 export default function SniperPage() {
@@ -434,7 +428,7 @@ export default function SniperPage() {
   const [ownedIds, setOwnedIds] = useState<Set<string>>(new Set());
 
   const [tierTab, setTierTab] = useState<TierTab>("all");
-  const [sortBy, setSortBy] = useState<SortOption>("listed_desc");
+  const [sortBy, setSortBy] = useState<SortOption>("recently_listed");
   const [minDiscount, setMinDiscount] = useState(0);
   const [maxPrice, setMaxPrice] = useState(0);
   const [serialFilter, setSerialFilter] = useState("all");
@@ -454,18 +448,6 @@ export default function SniperPage() {
     if (id) setHighlightedId(id);
   }, []);
 
-  // Player filter with 300ms debounce
-  const [playerInput, setPlayerInput] = useState("");
-  const [playerFilter, setPlayerFilter] = useState("");
-  const playerDebounceRef = useRef<NodeJS.Timeout | null>(null);
-
-  const handlePlayerChange = useCallback((value: string) => {
-    setPlayerInput(value);
-    if (playerDebounceRef.current) clearTimeout(playerDebounceRef.current);
-    playerDebounceRef.current = setTimeout(() => {
-      setPlayerFilter(value.trim());
-    }, 300);
-  }, []);
 
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -553,13 +535,12 @@ export default function SniperPage() {
     if (tierTab !== "all") params.set("tier", tierTab);
     if (minDiscount > 0) params.set("minDiscount", String(minDiscount));
     if (maxPrice > 0) params.set("maxPrice", String(maxPrice));
-    if (playerFilter) params.set("player", playerFilter);
     if (serialFilter !== "all") params.set("serial", serialFilter);
     if (badgeOnly) params.set("badgeOnly", "true");
     if (flowWalletOnly) params.set("flowWalletOnly", "true");
     params.set("sortBy", sortBy);
     return `${feedEndpoint}?${params}`;
-  }, [tierTab, minDiscount, maxPrice, playerFilter, serialFilter, badgeOnly, flowWalletOnly, sortBy, feedEndpoint]);
+  }, [tierTab, minDiscount, maxPrice, serialFilter, badgeOnly, flowWalletOnly, sortBy, feedEndpoint]);
 
   const fetchFeed = useCallback(async () => {
     try {
@@ -620,9 +601,9 @@ export default function SniperPage() {
   };
 
   return (
-    <div className="rpc-binder-bg" style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
+    <div className="rpc-binder-bg" style={{ minHeight: "100vh", background: "#080808", color: "var(--rpc-text-primary)" }}>
       {/* ── Header ── */}
-      <div style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)", padding: "16px" }}>
+      <div style={{ borderBottom: "1px solid var(--rpc-border)", background: "rgba(10,10,10,0.99)", padding: "16px" }}>
         <div style={{ maxWidth: "var(--max-width)", margin: "0 auto" }}>
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -682,8 +663,8 @@ export default function SniperPage() {
           {mode === "offers" && <OffersTab />}
           {mode === "deals" && (
           <>
-          {/* ── Primary Filters (Tier dropdown, Player input, Min Discount %) ── */}
-          <div className="flex flex-wrap items-center gap-3 mb-4" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
+          {/* ── Primary Filters (Tier dropdown, Min Discount %) ── */}
+          <div className="flex flex-wrap items-center gap-3 mb-4" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", background: "rgba(10,10,10,1)" }}>
             <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
               <span>TIER</span>
               <select
@@ -698,16 +679,6 @@ export default function SniperPage() {
                 <option value="ultimate">Ultimate</option>
                 <option value="fandom">Fandom</option>
               </select>
-            </label>
-            <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
-              <span>PLAYER</span>
-              <input
-                type="text"
-                placeholder="e.g. LeBron"
-                value={playerInput}
-                onChange={(e) => handlePlayerChange(e.target.value)}
-                style={{ width: 160, background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 12px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", outline: "none" }}
-              />
             </label>
             <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
               <span>MIN DISC.</span>
@@ -871,6 +842,7 @@ export default function SniperPage() {
             <span><span style={{ color: "#c084fc", fontWeight: 600 }}>{stats.special}</span> special serials</span>
           )}
           <span>avg <span style={{ color: "var(--rpc-text-primary)", fontWeight: 600 }}>{fmt(stats.avgDiscount, 1)}%</span> off</span>
+          {sortBy === "recently_listed" && <span style={{ color: "var(--rpc-text-ghost)" }}>· sorted by newest</span>}
           {connectedWallet && ownedIds.size > 0 && (
             <span style={{ color: "var(--rpc-text-ghost)" }}>{ownedIds.size} owned moments tracked</span>
           )}
