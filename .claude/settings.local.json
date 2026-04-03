@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git checkout:*)",
+      "mcp__supabase__list_projects",
+      "mcp__supabase__list_tables",
+      "Bash(npx tsc:*)",
+      "Bash(npm run:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git fetch:*)",
+      "Bash(git rebase:*)",
+      "Bash(git stash:*)",
+      "Bash(git apply:*)",
+      "Bash(npx wrangler:*)",
+      "Bash(node:*)",
+      "Bash(powershell:*)",
+      "Bash(git:*)",
+      "mcp__supabase__execute_sql",
+      "mcp__claude_ai_Vercel__get_runtime_logs",
+      "mcp__claude_ai_Vercel__get_deployment_build_logs",
+      "Bash(npx next:*)"
+    ]
+  }
+}
