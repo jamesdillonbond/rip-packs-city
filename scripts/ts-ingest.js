@@ -17,6 +17,15 @@ const FLOWTY_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146 Safari/537.36",
 };
 
+function flattenTraits(raw) {
+  // nftView.traits can be { traits: { "0": {name, value}, "1": ... } }
+  // or an array, or an object with numeric keys
+  if (!raw) return [];
+  const inner = raw.traits ?? raw;
+  if (Array.isArray(inner)) return inner;
+  return Object.values(inner).filter(v => typeof v === "object" && v !== null && v.name);
+}
+
 function getTraitMulti(traits, keys) {
   for (const key of keys) {
     const t = traits.find(t => t.name === key);
@@ -111,7 +120,7 @@ async function deleteStale() {
       if (!order) continue;
       const serial = item.nftView?.serial ?? item.card?.num ?? 0;
       if (!serial) continue;
-      const traits = Array.isArray(item.nftView?.traits) ? item.nftView.traits : Object.values(item.nftView?.traits ?? {});
+      const traits = flattenTraits(item.nftView?.traits);
       rows.push({
         listing_id: order.listingResourceID ?? String(item.id),
         flow_id: String(item.id),
