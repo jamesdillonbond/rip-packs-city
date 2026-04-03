@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useEffect, useState, useMemo, useCallback, useRef } from "react"
+import { useEffect, useState, useMemo, useCallback, useRef, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key"
 
@@ -700,6 +700,8 @@ function MarketPageInner() {
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div style={{ padding: "20px 16px", maxWidth: 1200, margin: "0 auto" }}>
+      <Suspense fallback={null}>
+      </Suspense>
 
       {/* Page header */}
       <div style={{ marginBottom: 20 }}>

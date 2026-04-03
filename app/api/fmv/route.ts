@@ -74,18 +74,27 @@ async function lookupEditions(supabase: any, editionKeys: string[], serial?: num
     const internalId = extToId.get(externalId);
 
     if (!internalId) {
-      return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, error: "Edition not found" };
+      return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", error: "Edition not found" };
     }
 
     const fmv = fmvMap.get(internalId);
     if (!fmv) {
-      return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, error: "No FMV data yet" };
+      return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", error: "No FMV data yet" };
     }
 
     const baseFmv = fmv.fmv_usd;
     const mult = serial != null ? serialMultiplier(serial, 1000) : null; // circ unknown without metadata
     const adjustedFmv = mult != null ? baseFmv * mult : baseFmv;
     const confidence = (fmv.confidence ?? "low").toLowerCase();
+
+    // Track which fallback tier produced the FMV value.
+    // Currently only "rpc_fmv" (primary snapshot) is implemented.
+    // Future tiers: "pack_wap", "market_wap", "ask_haircut", "last_sale_haircut"
+    const fallbackTier = "rpc_fmv";
+
+    if (fallbackTier !== "rpc_fmv") {
+      console.log(JSON.stringify({ tier: fallbackTier, editionKey: externalId, fmv: r2(baseFmv) }));
+    }
 
     return {
       edition: externalId,
@@ -95,6 +104,7 @@ async function lookupEditions(supabase: any, editionKeys: string[], serial?: num
       adjustedFmv: r2(adjustedFmv),
       confidence,
       updatedAt: fmv.computed_at,
+      fallbackTier,
     };
   });
 }
@@ -207,13 +217,13 @@ export async function POST(req: Request) {
       const internalId = extToId.get(externalId);
       if (!internalId) {
         errorCount++;
-        return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, error: "Edition not found" };
+        return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", error: "Edition not found" };
       }
 
       const fmv = fmvMap.get(internalId);
       if (!fmv) {
         errorCount++;
-        return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, error: "No FMV data yet" };
+        return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", error: "No FMV data yet" };
       }
 
       const baseFmv = fmv.fmv_usd;
@@ -221,6 +231,15 @@ export async function POST(req: Request) {
       const mult = serial != null ? serialMultiplier(serial, 1000) : null;
       const adjustedFmv = mult != null ? baseFmv * mult : baseFmv;
       const confidence = (fmv.confidence ?? "low").toLowerCase();
+
+      // Track which fallback tier produced the FMV value.
+      // Currently only "rpc_fmv" (primary snapshot) is implemented.
+      // Future tiers: "pack_wap", "market_wap", "ask_haircut", "last_sale_haircut"
+      const fallbackTier = "rpc_fmv";
+
+      if (fallbackTier !== "rpc_fmv") {
+        console.log(JSON.stringify({ tier: fallbackTier, editionKey: externalId, fmv: r2(baseFmv) }));
+      }
 
       successCount++;
       return {
@@ -231,6 +250,7 @@ export async function POST(req: Request) {
         adjustedFmv: r2(adjustedFmv),
         confidence,
         updatedAt: fmv.computed_at,
+        fallbackTier,
       };
     });
 

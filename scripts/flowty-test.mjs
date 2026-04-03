@@ -1,4 +1,6 @@
-﻿const res = await fetch("https://api2.flowty.io/collection/0xedf9df96c92f4595/Pinnacle", {
+// Fetch one Flowty Pinnacle listing and log the full raw JSON structure.
+// Usage: node scripts/flowty-test.mjs
+const res = await fetch("https://api2.flowty.io/collection/0xedf9df96c92f4595/Pinnacle", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
@@ -10,9 +12,10 @@
     limit: 1,
     onlyUnlisted: false,
     orderFilters: [{ conditions: [], kind: "storefront", paymentTokens: [] }],
-    sort: { direction: "desc", listingKind: "storefront", path: "blockTimestamp" }
+    sort: { direction: "desc", listingKind: "storefront", path: "blockTimestamp" },
   }),
 });
+
 const data = await res.json();
 console.log("nfts:", data.nfts?.length, "total:", data.total);
 if (data.nfts?.length > 0) {

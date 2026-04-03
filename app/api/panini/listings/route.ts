@@ -1,188 +1,192 @@
 import { NextResponse } from "next/server"
 
-// ── In-process cache ──────────────────────────────────────────────────────────
-
-let cache: { data: Record<string, unknown>; ts: number } | null = null
-const CACHE_TTL = 60 * 1000 // 60 seconds
-
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface ListingOutput {
+interface ListingOut {
   id: string
-  name: string
+  name: string | null
   image_url: string | null
   traits: Record<string, string>
   price_eth: number
   price_usd: number | null
   seller: string
+  listed_at: string
   buy_url: string
-  listed_at: string | null
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-// Trait keys to extract — check multiple casings
-const TRAIT_KEYS = [
-  "Player", "player",
-  "Set Name", "set name", "set_name",
-  "Serial Number", "serial number", "serial_number",
-  "Circulation Count", "circulation count", "circulation_count",
-  "Tier", "tier",
-  "Sport", "sport",
-]
-
-function extractTraits(rawTraits: Array<{ trait_type: string; value: string }> | undefined): Record<string, string> {
-  const traits: Record<string, string> = {}
-  if (!rawTraits || !Array.isArray(rawTraits)) return traits
-
-  for (const t of rawTraits) {
-    // Keep canonical casing for the key
-    const matchedKey = TRAIT_KEYS.find(
-      (k) => k.toLowerCase() === t.trait_type?.toLowerCase()
-    )
-    if (matchedKey) {
-      traits[matchedKey] = String(t.value)
-    }
-  }
-  return traits
+interface CachedListings {
+  data: { listings: ListingOut[]; floor_eth: number | null; count: number; updated_at: string }
+  ts: number
 }
 
-async function fetchEthUsd(): Promise<number | null> {
-  try {
-    const res = await fetch(
-      "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd",
-      { next: { revalidate: 300 } }
-    )
-    if (!res.ok) return null
-    const json = await res.json()
-    return json.ethereum?.usd ?? null
-  } catch {
-    return null
+// ── In-process cache ──────────────────────────────────────────────────────────
+
+let cache: CachedListings | null = null
+const CACHE_TTL = 60 * 1000 // 60 seconds
+
+// ── Trait key normalization ───────────────────────────────────────────────────
+
+const TRAIT_KEYS = ["Player", "Set Name", "Serial Number", "Circulation Count", "Tier", "Sport"]
+
+function normalizeTrait(key: string): string | null {
+  const lower = key.toLowerCase()
+  for (const tk of TRAIT_KEYS) {
+    if (tk.toLowerCase() === lower) return tk
   }
+  return null
 }
 
 // ── GET /api/panini/listings ──────────────────────────────────────────────────
 
 export async function GET() {
-  // Return cached data if fresh
-  if (cache && Date.now() - cache.ts < CACHE_TTL) {
-    return NextResponse.json(cache.data)
-  }
+  const now = Date.now()
 
-  const apiKey = process.env.OPENSEA_API_KEY ?? ""
-  const headers: Record<string, string> = {
-    "x-api-key": apiKey,
-    Accept: "application/json",
+  // Return cached if fresh
+  if (cache && now - cache.ts < CACHE_TTL) {
+    return NextResponse.json(cache.data, {
+      headers: { "Cache-Control": "public, max-age=60" },
+    })
   }
 
   try {
-    // Fetch listings and ETH price in parallel
-    const [listingsRes, ethUsd] = await Promise.all([
-      fetch(
-        "https://api.opensea.io/api/v2/listings/collection/paniniblockchain/best?limit=50",
-        { headers, next: { revalidate: 60 } }
-      ),
-      fetchEthUsd(),
-    ])
+    const apiKey = process.env.OPENSEA_API_KEY ?? ""
+    const headers = { "x-api-key": apiKey }
+
+    // Fetch listings
+    const listingsRes = await fetch(
+      "https://api.opensea.io/api/v2/listings/collection/paniniblockchain/best?limit=50",
+      { headers }
+    )
 
     if (!listingsRes.ok) {
-      throw new Error(`OpenSea API returned ${listingsRes.status}`)
+      throw new Error(`OpenSea listings API ${listingsRes.status}`)
     }
 
-    const json = await listingsRes.json()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rawListings: any[] = json.listings ?? []
+    const listingsJson = await listingsRes.json()
+    const orders = listingsJson.listings ?? listingsJson.orders ?? []
 
-    // Build basic listing data
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const basicListings = rawListings.map((item: any) => {
-      const priceData = item.price?.current
-      const decimals = priceData?.decimals ?? 18
-      const rawValue = parseFloat(priceData?.value ?? "0")
-      const priceEth = rawValue / Math.pow(10, decimals)
+    // Fetch ETH/USD price
+    let ethUsd: number | null = null
+    try {
+      const cgRes = await fetch(
+        "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd",
+        { next: { revalidate: 300 } }
+      )
+      if (cgRes.ok) {
+        const cgData = await cgRes.json()
+        ethUsd = cgData?.ethereum?.usd ?? null
+      }
+    } catch {
+      // Non-critical — USD conversion just won't be available
+    }
 
-      const offer = item.protocol_data?.parameters?.offer?.[0]
+    // Process each listing
+    const listings: ListingOut[] = []
+    let minPrice = Infinity
+
+    for (let i = 0; i < orders.length; i++) {
+      const order = orders[i]
+      const orderId = order.order_hash ?? order.id ?? `order-${i}`
+
+      // Extract price
+      const priceData = order.price?.current
+      let priceEth = 0
+      if (priceData) {
+        const value = parseFloat(priceData.value ?? "0")
+        const decimals = priceData.decimals ?? 18
+        priceEth = value / Math.pow(10, decimals)
+      }
+
+      if (priceEth > 0 && priceEth < minPrice) {
+        minPrice = priceEth
+      }
+
+      // Extract seller
+      const seller = order.maker?.address ?? order.protocol_data?.parameters?.offerer ?? ""
+
+      // Extract token info from offer
+      const offer = order.protocol_data?.parameters?.offer?.[0]
       const tokenAddress = offer?.token ?? ""
       const tokenId = offer?.identifierOrCriteria ?? ""
-      const seller = item.protocol_data?.parameters?.offerer ?? item.maker?.address ?? ""
 
-      return {
-        id: item.order_hash ?? `${tokenAddress}-${tokenId}`,
-        tokenAddress,
-        tokenId,
+      const buyUrl = tokenAddress && tokenId
+        ? `https://opensea.io/assets/ethereum/${tokenAddress}/${tokenId}`
+        : "https://opensea.io/collection/paniniblockchain"
+
+      // Listed time
+      const listedAt = order.listing_time
+        ? new Date(Number(order.listing_time) * 1000).toISOString()
+        : order.created_date ?? new Date().toISOString()
+
+      // Enrich first 20 listings with NFT metadata
+      let name: string | null = null
+      let imageUrl: string | null = null
+      const traits: Record<string, string> = {}
+
+      if (i < 20 && tokenAddress && tokenId) {
+        try {
+          const nftRes = await fetch(
+            `https://api.opensea.io/api/v2/chain/ethereum/contract/${tokenAddress}/nfts/${tokenId}`,
+            { headers }
+          )
+          if (nftRes.ok) {
+            const nftData = await nftRes.json()
+            const nft = nftData.nft ?? nftData
+            name = nft.name ?? null
+            imageUrl = nft.image_url ?? null
+
+            // Extract traits
+            const traitArr = nft.traits ?? []
+            for (const t of traitArr) {
+              const traitType = t.trait_type ?? t.type ?? ""
+              const traitValue = String(t.value ?? "")
+              const normalized = normalizeTrait(traitType)
+              if (normalized) {
+                traits[normalized] = traitValue
+              }
+            }
+          }
+        } catch {
+          // Non-critical — listing will just lack metadata
+        }
+      }
+
+      listings.push({
+        id: orderId,
+        name,
+        image_url: imageUrl,
+        traits,
         price_eth: priceEth,
         price_usd: ethUsd != null ? priceEth * ethUsd : null,
         seller,
-        buy_url: tokenAddress && tokenId
-          ? `https://opensea.io/assets/ethereum/${tokenAddress}/${tokenId}`
-          : "https://opensea.io/collection/paniniblockchain",
-        listed_at: item.listing_time ? new Date(item.listing_time * 1000).toISOString() : null,
-        // Placeholders for enrichment
-        name: "",
-        image_url: null as string | null,
-        traits: {} as Record<string, string>,
-      }
-    })
+        listed_at: listedAt,
+        buy_url: buyUrl,
+      })
+    }
 
-    // Enrich first 20 listings with NFT metadata
-    const enrichLimit = Math.min(20, basicListings.length)
-    const enrichPromises = basicListings.slice(0, enrichLimit).map(async (listing) => {
-      if (!listing.tokenAddress || !listing.tokenId) return listing
-      try {
-        const nftRes = await fetch(
-          `https://api.opensea.io/api/v2/chain/ethereum/contract/${listing.tokenAddress}/nfts/${listing.tokenId}`,
-          { headers }
-        )
-        if (!nftRes.ok) return listing
-        const nftJson = await nftRes.json()
-        const nft = nftJson.nft ?? nftJson
-        listing.name = nft.name ?? ""
-        listing.image_url = nft.image_url ?? null
-        listing.traits = extractTraits(nft.traits)
-      } catch {
-        // Enrichment failed — keep basic data
-      }
-      return listing
-    })
-
-    await Promise.all(enrichPromises)
-
-    // Build final output (strip internal fields)
-    const listings: ListingOutput[] = basicListings.map((l) => ({
-      id: l.id,
-      name: l.name,
-      image_url: l.image_url,
-      traits: l.traits,
-      price_eth: l.price_eth,
-      price_usd: l.price_usd,
-      seller: l.seller,
-      buy_url: l.buy_url,
-      listed_at: l.listed_at,
-    }))
-
-    // Find floor from sorted listings
-    const floor = listings.length > 0
-      ? Math.min(...listings.map((l) => l.price_eth))
-      : null
-
-    const data = {
+    const result = {
       listings,
-      floor_eth: floor,
+      floor_eth: minPrice === Infinity ? null : minPrice,
       count: listings.length,
       updated_at: new Date().toISOString(),
     }
 
-    cache = { data, ts: Date.now() }
+    cache = { data: result, ts: now }
 
-    return NextResponse.json(data)
+    return NextResponse.json(result, {
+      headers: { "Cache-Control": "public, max-age=60" },
+    })
   } catch (err) {
     // Return stale cache if available
     if (cache) {
-      return NextResponse.json(cache.data)
+      return NextResponse.json(cache.data, {
+        headers: { "Cache-Control": "public, max-age=30" },
+      })
     }
 
+    const message = err instanceof Error ? err.message : "Unknown error"
     return NextResponse.json(
-      { error: "Failed to fetch listings", detail: String(err) },
+      { error: "Failed to fetch listings", detail: message },
       { status: 502 }
     )
   }
