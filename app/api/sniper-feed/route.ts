@@ -288,7 +288,7 @@ async function fetchTopShotPool(
     console.log(`[sniper-feed] ts_listings: ${listings.length} rows, ${editionKeyMap.size} edition keys resolved`);
     return { listings, tsCount: listings.length };
   } catch (err) {
-    console.error("[sniper-feed] ts_listings exception:", err instanceof Error ? err.message : String(err));
+    console.error("[sniper-feed] ts_listings exception:", err instanceof Error ? `${err.message}\n${err.stack}` : String(err));
     return { listings: [], tsCount: 0 };
   }
 }
