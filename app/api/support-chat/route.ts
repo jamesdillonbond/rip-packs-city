@@ -166,10 +166,10 @@ Use this context naturally in welcome messages and recommendations.`
     : "";
 
   const pageSection = pageContext
-    ? `\n## Current Page\nUser is on: ${pageContext}\nTailor your responses to this context — e.g., on Sniper, focus on deals; on Badges, focus on badge strategy.`
+    ? `\n## Current Page\nUser is on: ${pageContext}\nTailor your responses to this context — e.g., on Sniper, focus on deals; on Market, focus on browsing and filtering; on Collection, focus on portfolio insights.`
     : "";
 
-  return `You are the RPC Assistant — the official AI concierge for Rip Packs City, the sharpest collector intelligence platform for NBA Top Shot on the Flow blockchain.
+  return `You are the RPC Assistant — the official AI concierge for Rip Packs City, the sharpest collector intelligence platform for Flow blockchain digital collectibles.
 
 ## Your Persona
 You are part personal shopper, part portfolio advisor, part collector expert. You speak fluent collector — moments, serials, FMV, floor, badges, rips, mints, Low Asks, parallel editions, set bottlenecks. You are direct, helpful, and genuinely excited about finding good deals. You never pad responses with corporate fluff.
@@ -180,21 +180,22 @@ Keep responses concise — most users are on mobile. Use short paragraphs over b
 Rip Packs City (rippackscity.com) is a collector intelligence platform built by Trevor Dillon-Bond, an official Portland Trail Blazers Team Captain on NBA Top Shot. Features:
 
 ### NBA Top Shot
-- **Collection Analyzer** (/nba-top-shot/collection) — full wallet analytics: FMV per moment (now showing on ~95%+ of moments), best offers, series column (restored), default sort FMV descending, three quick-filter pills (Badges Only, Has Offer, Listed), ask price line in FMV cell, serial/edition label on Best Offer, empty state with demo wallet link, portfolio summary cards (Wallet/Unlocked/Locked/Best Offer FMV), share button
-- **Sniper** (/nba-top-shot/sniper) — real-time deal feed from NBA Top Shot + Flowty marketplaces; shows Deals (below FMV) and Offers; filter by tier, min discount, max price; TS CACHED badge when Top Shot data is from cache; share button on each deal with highlight-on-load via URL param; Flow Wallet filter (⚡) to show only FLOW/USDC.e purchasable deals; fetch retry logic + cursor pagination (3 TS pages) + 5 Flowty pages; Flowty covers when Top Shot feed is blocked
-- **Packs** (/nba-top-shot/packs) — secondary market pack browser with EV calculator, tier/type filters, wallet ownership lookup, best-value EV ratio sort, EV breakdown modal, FMV coverage notes
-- **Badges** (/nba-top-shot/badges) — badge tracker for all play tags (Rookie Year, Top Shot Debut, Three Stars, Championship Year, etc.)
+- **Collection Analyzer** (/nba-top-shot/collection) — full wallet analytics: FMV per moment, best offers with edition/serial labels, series column, default sort FMV descending, quick-filter pills (Badges Only, Has Offer, Listed), Flowty ask fallback in Low Ask column, portfolio summary cards (Wallet/Unlocked/Locked/Best Offer FMV), near-complete sets callout, background parallel page loading, share button
+- **Sniper** (/nba-top-shot/sniper) — real-time deal feed from NBA Top Shot + Flowty marketplaces; shows Deals (below FMV) and Offers; filter by tier, min discount, max price; TS CACHED badge when Top Shot data is from cache; share button on each deal; Flow Wallet filter for FLOW/USDC.e deals; Flowty covers when Top Shot feed is blocked
+- **Packs** (/nba-top-shot/packs) — secondary market pack browser with EV calculator, tier/type filters, wallet ownership lookup, best-value EV ratio sort, EV breakdown modal
+- **Market** (/nba-top-shot/market) — full marketplace browser with badge and discount filtering, player search, tier tabs
 - **Sets** (/nba-top-shot/sets) — set browser with completion tracking and bottleneck detection
 - **Profile** (/nba-top-shot/profile/[username]) — public collector profile with trophy case
 
-### NFL All Day (NEW — live)
+### NFL All Day
+- **Overview** (/nfl-all-day/overview) — collection overview and stats
 - **Wallet Analytics** (/nfl-all-day/collection) — wallet search and moment analytics for NFL All Day moments on Flow blockchain (contract: 0xe4cf4bdc1751c65d)
 - **Sniper Feed** (/nfl-all-day/sniper) — real-time deal feed for NFL All Day moments from Flowty listings
 - **Sets Tracker** (/nfl-all-day/sets) — set completion tracking for NFL All Day
-- Ingest pipeline running every 20 minutes
 
-### Disney Pinnacle (preview)
-- **Sniper Feed** (/disney-pinnacle/sniper) — Flowty listings for Disney/Pixar/Marvel pin NFTs
+### Disney Pinnacle
+- **Overview** (/disney-pinnacle/overview) — Disney/Pixar/Star Wars pin NFTs via the OpenSea bridge
+- **Sniper Feed** (/disney-pinnacle/sniper) — Flowty listings for Disney Pinnacle pins
 
 ### Cart (built, activation pending)
 - Flow Wallet cart supports FLOW and USDC.e purchases
@@ -207,8 +208,9 @@ RPC's FMV is a weighted average price (WAP) model:
 - Recalculated every 20 minutes via automated pipeline
 - Weights recent sales more heavily than older ones using days_since_sale decay
 - Adjusted for sales volume (sales_count_30d) — low-volume editions get wider confidence intervals
-- Confidence levels: HIGH (many recent sales, stable price), MEDIUM, LOW (sparse data)
+- Three confidence levels: HIGH (many recent sales, stable price — reliable), MEDIUM (some data — directional), LOW (sparse or stale data — use with caution)
 - When FMV confidence is LOW, caveat pricing suggestions
+- For illiquid editions with no sales data, an ask_proxy fallback (floor ask × 0.90) provides a usable signal
 
 ## Sniper Feed Data Sources
 - Primary: NBA Top Shot marketplace GraphQL (public API)
@@ -229,12 +231,13 @@ Beta (S0), S1, S2, S3, S4, S5, S6, S7, S8
 
 ## Shopping & Recommendations
 When a user wants to find or buy moments:
-1. ALWAYS try search_live_deals first
-2. If live feed returns nothing or errors, use search_catalog_deals as fallback
+1. ALWAYS try search_live_deals first — it now auto-falls back to Supabase catalog if the live feed is empty or times out
+2. If both fail, use search_catalog_deals explicitly
 3. Surface 3-5 concrete options with: player name, tier, price, FMV, discount%, any badges
 4. Give a clear buy/watch/pass recommendation on individual moments when asked
 5. For budget queries ("I have $50"), optimize for value: badge presence, discount %, confidence
 6. Never make up prices — always use tool results
+7. You can check a user's wallet for near-complete sets and surface the cheapest missing moments
 
 ## Common Questions (no tools needed)
 - "How is FMV calculated?" \u2192 WAP model, 20-min refresh, confidence levels
@@ -285,30 +288,59 @@ async function executeTool(
       if (toolInput.minDiscount) params.set("minDiscount", String(toolInput.minDiscount));
 
       const res = await fetch(`${base}/api/sniper-feed?${params.toString()}`, {
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(5000),
       });
       if (!res.ok) throw new Error(`Sniper feed returned ${res.status}`);
       const data = await res.json();
       const deals = (data.deals || data || []).filter((d: any) =>
         toolInput.player ? d.playerName?.toLowerCase().includes(toolInput.player.toLowerCase()) : true
       );
-      if (!deals || deals.length === 0) {
-        return JSON.stringify({ status: "no_results", message: "Live feed returned no matches \u2014 falling back to catalog search recommended" });
+      if (deals && deals.length > 0) {
+        const results = deals.slice(0, toolInput.limit || 5).map((d: any) => ({
+          player: d.playerName,
+          tier: d.tier,
+          serial: d.serialNumber,
+          price: d.askPrice,
+          fmv: d.adjustedFmv,
+          discount_pct: d.discount,
+          source: d.source,
+          buy_url: d.buyUrl || `https://www.nbatopshot.com`,
+        }));
+        return JSON.stringify({ status: "ok", results, total: deals.length });
       }
-      const results = deals.slice(0, toolInput.limit || 5).map((d: any) => ({
-        player: d.playerName,
-        tier: d.tier,
-        serial: d.serialNumber,
-        price: d.askPrice,
-        fmv: d.adjustedFmv,
-        discount_pct: d.discount,
-        source: d.source,
-        buy_url: d.buyUrl || `https://www.nbatopshot.com`,
-      }));
-      return JSON.stringify({ status: "ok", results, total: deals.length });
-    } catch (err: any) {
-      return JSON.stringify({ status: "error", message: `Live feed unavailable: ${err.message}. Use search_catalog_deals instead.` });
+    } catch {
+      // Fall through to Supabase fallback
     }
+
+    // Supabase cached_listings fallback when sniper-feed returns 0 or errors
+    try {
+      let query = supabase
+        .from("cached_listings")
+        .select("player_name, set_name, tier, serial_number, circulation_count, ask_price, fmv, discount, badge_slugs, buy_url")
+        .gt("discount", 0)
+        .order("discount", { ascending: false })
+        .limit(toolInput.limit || 10);
+      if (toolInput.player) query = query.ilike("player_name", `%${toolInput.player}%`);
+      if (toolInput.tier) query = query.ilike("tier", `%${toolInput.tier}%`);
+      if (toolInput.maxPrice) query = query.lte("ask_price", toolInput.maxPrice);
+      if (toolInput.minDiscount) query = query.gte("discount", toolInput.minDiscount);
+      const { data: fallbackRows } = await query;
+      if (fallbackRows && fallbackRows.length > 0) {
+        const results = fallbackRows.map((d: any) => ({
+          player: d.player_name,
+          tier: d.tier,
+          serial: d.serial_number,
+          price: Number(d.ask_price),
+          fmv: Number(d.fmv),
+          discount_pct: Number(d.discount),
+          source: "catalog",
+          buy_url: d.buy_url || "https://www.nbatopshot.com",
+        }));
+        return JSON.stringify({ status: "ok", results, total: results.length, source: "catalog_fallback" });
+      }
+    } catch { /* silent */ }
+
+    return JSON.stringify({ status: "no_results", message: "No deals found matching those criteria." });
   }
 
   if (toolName === "search_catalog_deals") {
@@ -376,7 +408,26 @@ async function executeTool(
       const data = await res.json();
       const moments = data.moments || data.rows || [];
       const totalFmv = moments.reduce((s: number, m: any) => s + (m.fmv ?? 0), 0);
-      return JSON.stringify({
+
+      // Fetch near-complete sets for actionable intel
+      let nearCompleteSets: string[] = [];
+      try {
+        const setsRes = await fetch(
+          `${base}/api/sets?wallet=${encodeURIComponent(toolInput.walletAddress)}&skipAsks=1`,
+          { signal: AbortSignal.timeout(8000) }
+        );
+        if (setsRes.ok) {
+          const setsData = await setsRes.json();
+          const sets = (setsData.sets ?? [])
+            .filter((s: any) => s.missingCount >= 1 && s.missingCount <= 3)
+            .slice(0, 5);
+          nearCompleteSets = sets.map((s: any) =>
+            `${s.setName} (${s.missingCount} missing${s.totalMissingCost != null ? `, est. $${Number(s.totalMissingCost).toFixed(2)} to finish` : ""})`
+          );
+        }
+      } catch { /* non-fatal */ }
+
+      const result: any = {
         status: "ok",
         wallet: toolInput.walletAddress,
         total_moments: moments.length,
@@ -384,7 +435,11 @@ async function executeTool(
         top_moments: moments.slice(0, 5).map((m: any) => ({
           player: m.playerName, set: m.setName, tier: m.tier, serial: m.serialNumber, fmv: m.fmv,
         })),
-      });
+      };
+      if (nearCompleteSets.length > 0) {
+        result.near_complete_sets = nearCompleteSets;
+      }
+      return JSON.stringify(result);
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: err.message });
     }

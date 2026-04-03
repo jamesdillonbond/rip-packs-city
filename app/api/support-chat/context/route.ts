@@ -52,7 +52,10 @@ export async function GET(req: NextRequest) {
 
       await supabase
         .from("chat_sessions")
-        .update({ last_seen_at: new Date().toISOString() })
+        .update({
+          last_seen_at: new Date().toISOString(),
+          conversation_count: (session.conversation_count ?? 1) + 1,
+        })
         .eq("session_id", sessionId);
     } else {
       await supabase.from("chat_sessions").upsert(
@@ -67,7 +70,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // ── 2. Daily deal (via get_top_deals RPC) ───────────────────────────────────
+  // ── 2. Daily deal (via get_top_deals RPC, fallback to direct query) ─────────
   let dailyDeal: object | null = null;
   try {
     const { data: dealRows } = await supabase.rpc("get_top_deals", {
@@ -113,10 +116,39 @@ export async function GET(req: NextRequest) {
       if (scored.length > 0) dailyDeal = scored[0];
     }
   } catch (err) {
-    console.error("[context] dailyDeal error:", err);
+    console.error("[context] dailyDeal RPC error:", err);
   }
 
-  // ── 3. Market pulse (via get_market_pulse RPC) ──────────────────────────────
+  // Fallback: direct cached_listings + fmv_snapshots join if RPC returned nothing
+  if (!dailyDeal) {
+    try {
+      const { data: fallbackRows } = await supabase
+        .from("cached_listings")
+        .select("player_name, set_name, tier, ask_price, fmv, discount, badge_slugs, buy_url")
+        .gt("discount", 10)
+        .not("fmv", "is", null)
+        .lt("ask_price", 500)
+        .order("discount", { ascending: false })
+        .limit(1);
+      if (fallbackRows && fallbackRows.length > 0) {
+        const r = fallbackRows[0];
+        dailyDeal = {
+          player_name: r.player_name,
+          tier: tierLabel(r.tier ?? "COMMON"),
+          set_name: r.set_name,
+          low_ask: Number(r.ask_price),
+          fmv: Number(r.fmv),
+          discount_pct: Math.round(Number(r.discount)),
+          badges: r.badge_slugs ?? [],
+          buy_url: r.buy_url ?? null,
+        };
+      }
+    } catch (err) {
+      console.error("[context] dailyDeal fallback error:", err);
+    }
+  }
+
+  // ── 3. Market pulse (via get_market_pulse RPC, fallback to direct count) ────
   let marketPulse: string | null = null;
   try {
     const { data: pulse } = await supabase.rpc("get_market_pulse");
@@ -130,18 +162,52 @@ export async function GET(req: NextRequest) {
       marketPulse = `${total_tracked} moments tracked — FMV data fresh`;
     }
   } catch (err) {
-    console.error("[context] marketPulse error:", err);
+    console.error("[context] marketPulse RPC error:", err);
   }
 
-  // ── 4. Welcome message ─────────────────────────────────────────────────────
+  // Fallback: direct count from cached_listings if RPC returned nothing
+  if (!marketPulse) {
+    try {
+      const { count } = await supabase
+        .from("cached_listings")
+        .select("*", { count: "exact", head: true })
+        .gte("discount", 30);
+      if (count && count > 0) {
+        marketPulse = `${count} moment${count !== 1 ? "s" : ""} listed 30%+ below FMV right now`;
+      }
+    } catch (err) {
+      console.error("[context] marketPulse fallback error:", err);
+    }
+  }
+
+  // ── 4. Welcome message (page-aware) ────────────────────────────────────────
+  const pageContext = req.nextUrl.searchParams.get("page") ?? "";
+  const dealSnippet = dailyDeal
+    ? `Top deal: ${(dailyDeal as any).player_name} ${(dailyDeal as any).set_name}, $${(dailyDeal as any).low_ask} — ${(dailyDeal as any).discount_pct}% below FMV.`
+    : null;
+
   let pageWelcome = "I can help you find deals, check FMV on any moment, or answer questions about the platform.";
+
   if (returningUser && lastPlayerSearched) {
     pageWelcome = `Welcome back! Last time you were looking at ${lastPlayerSearched} moments — want me to check for new deals?`;
   } else if (returningUser) {
     pageWelcome = "Welcome back! Want me to surface today's best deals, or is there something specific you're hunting?";
-  } else if (dailyDeal) {
-    const d = dailyDeal as any;
-    pageWelcome = `\u{1F44B} Today's top deal: ${d.player_name} ${d.set_name}, $${d.low_ask} — ${d.discount_pct}% below FMV. Want me to find more?`;
+  } else if (pageContext.includes("sniper") && dealSnippet) {
+    pageWelcome = `\u{1F525} ${dealSnippet} Want me to find more?`;
+  } else if (pageContext.includes("sniper")) {
+    pageWelcome = "The sniper feed shows live deals below FMV. I can help you filter or find specific players.";
+  } else if (pageContext.includes("collection")) {
+    pageWelcome = "Connect your wallet to see your portfolio FMV and near-complete sets. I can analyze any wallet — just paste a username.";
+  } else if (pageContext.includes("market")) {
+    pageWelcome = "Browse the full marketplace here. Try filtering by badge type or discount to find value." + (dealSnippet ? ` ${dealSnippet}` : "");
+  } else if (pageContext.includes("sets")) {
+    pageWelcome = "I can find the cheapest path to completing your nearest set. Paste your username and I'll check.";
+  } else if (pageContext.includes("packs")) {
+    pageWelcome = "Check the EV calculator to find the best-value packs. I can compare pack EVs if you need help deciding.";
+  } else if (pageContext.includes("overview")) {
+    pageWelcome = "Welcome to RPC — your collector intel hub. Sniper finds deals, Collection analyzes your wallet, and Market lets you browse everything." + (dealSnippet ? ` ${dealSnippet}` : "");
+  } else if (dealSnippet) {
+    pageWelcome = `\u{1F44B} ${dealSnippet} Want me to find more?`;
   }
 
   const suggestions =

@@ -183,7 +183,15 @@ export default function SupportChat({ pageContext, userWallet, walletConnected, 
 
         if (ctx.dailyDeal) {
           const d = ctx.dailyDeal;
-          parts.push(`🔥 Top deal: ${d.playerName} (${d.tier}) — $${d.price?.toFixed(2)}, ${d.discountPct}% below FMV on ${d.source === "flowty" ? "Flowty" : "TopShot"}`);
+          const playerName = d.player_name ?? d.playerName;
+          const price = d.low_ask ?? d.price;
+          const discountPct = d.discount_pct ?? d.discountPct;
+          const tier = d.tier ?? "Moment";
+          if (playerName && price != null && discountPct != null) {
+            const priceStr = typeof price === "number" ? price.toFixed(2) : parseFloat(price).toFixed(2);
+            const source = d.source === "flowty" ? "Flowty" : "TopShot";
+            parts.push(`🔥 Top deal: ${playerName} (${tier}) — $${priceStr}, ${Math.round(discountPct)}% below FMV on ${source}`);
+          }
         }
         if (ctx.marketPulse) {
           parts.push(`📊 ${ctx.marketPulse}`);
