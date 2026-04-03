@@ -332,14 +332,7 @@ async function resolveEditionKeys(
     if (batch.length < PAGE_SIZE) break;
     page++;
   }
-  const error = null;
-
-  if (error) {
-    console.error("[sniper-feed] edition key resolve error:", error.message);
-    return result;
-  }
-
-  if (!editionRows?.length) {
+  if (!editionRows.length) {
     console.log("[sniper-feed] edition key resolve: 0 editions in DB");
     return result;
   }
