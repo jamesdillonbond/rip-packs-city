@@ -105,6 +105,18 @@ function trackClick(deal: SniperDeal, walletAddress: string | null) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+function timeAgo(iso: string | null): string {
+  if (!iso) return "—";
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 0) return "just now";
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return mins + "m ago";
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + "h ago";
+  return Math.floor(hrs / 24) + "d ago";
+}
+
 function fmt(n: number, decimals = 2) {
   return n.toLocaleString("en-US", {
     minimumFractionDigits: decimals,
@@ -220,6 +232,41 @@ function SourceBadge({ source, isAllDay }: { source?: "topshot" | "flowty"; isAl
   );
 }
 
+const BADGE_SLUG_LABELS: Record<string, string> = {
+  rookie_year: "Rookie Year",
+  top_shot_debut: "TS Debut",
+  championship_year: "Champ Year",
+  three_star_rookie: "Three-Star",
+  jersey_match: "#Jersey",
+  perfect_mint: "PM",
+  number_one: "#1",
+};
+
+const BADGE_SLUG_COLORS: Record<string, string> = {
+  rookie_year: "bg-red-500/15 text-red-400 border-red-500/25",
+  top_shot_debut: "bg-white/10 text-black border-white/25",
+  championship_year: "bg-zinc-500/15 text-zinc-400 border-zinc-500/25",
+  three_star_rookie: "bg-yellow-500/15 text-yellow-400 border-yellow-500/25",
+  jersey_match: "bg-blue-500/15 text-blue-400 border-blue-500/25",
+  perfect_mint: "bg-green-500/15 text-green-400 border-green-500/25",
+  number_one: "bg-amber-500/15 text-amber-400 border-amber-500/25",
+};
+
+function BadgePills({ slugs }: { slugs: string[] }) {
+  return (
+    <div className="flex gap-1 mt-1 flex-wrap">
+      {slugs.map((slug) => (
+        <span
+          key={slug}
+          className={`px-1 py-0.5 rounded text-xs border ${BADGE_SLUG_COLORS[slug] ?? "bg-yellow-500/15 text-yellow-400 border-yellow-500/25"}`}
+        >
+          {BADGE_SLUG_LABELS[slug] ?? slug}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function ShareButton({ deal }: { deal: SniperDeal }) {
   const [copied, setCopied] = useState(false);
 
@@ -263,7 +310,7 @@ function ActionCell({
     Math.round(deal.adjustedFmv * 0.8 * 100) / 100
   );
   const inCart = deal.listingResourceID ? isInCart(deal.listingResourceID) : false;
-  const isOwned = ownedIds.has(deal.flowId);
+  const isOwned = ownedIds.has(String(deal.momentId)) || ownedIds.has(String(deal.flowId));
   const canCart = !!deal.listingResourceID && !!deal.storefrontAddress;
   const isFlowty = (deal.source ?? "topshot") === "flowty";
 
@@ -593,6 +640,7 @@ export default function SniperPage() {
   }, [paused, fetchFeed]);
 
   const visibleDeals = (data?.deals ?? []).filter((d) => {
+    if (d.discount < 0) return false;
     if (search) {
       const q = search.toLowerCase();
       if (
@@ -941,11 +989,11 @@ export default function SniperPage() {
                   <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px", width: 40 }} />
                   <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px" }}>Moment</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Serial</th>
+                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Listed</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Own / Lock</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Ask</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Adj. FMV</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Discount</th>
-                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>FMV Quality</th>
                   <th className="rpc-label" style={{ textAlign: "center", padding: "10px 4px", width: 36 }} />
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Action</th>
                 </tr>
@@ -965,11 +1013,11 @@ export default function SniperPage() {
                         <img
                           src={deal.thumbnailUrl}
                           alt={deal.playerName}
-                          style={{ width: 32, height: 32, borderRadius: "var(--radius-sm)", objectFit: "cover" }}
+                          style={{ width: 36, height: 36, objectFit: "cover", objectPosition: "top center", borderRadius: 4, display: "block" }}
                           loading="lazy"
                         />
                       ) : (
-                        <div style={{ width: 32, height: 32, borderRadius: "var(--radius-sm)", background: "var(--rpc-surface-raised)" }} />
+                        <div style={{ width: 36, height: 36, borderRadius: 4, background: "var(--rpc-surface-raised)" }} />
                       )}
                     </td>
 
@@ -998,17 +1046,8 @@ export default function SniperPage() {
                           </>
                         )}
                       </div>
-                      {deal.hasBadge && (
-                        <div className="flex gap-1 mt-1 flex-wrap">
-                          {deal.badgeLabels.map((label) => (
-                            <span
-                              key={label}
-                              className="px-1 py-0.5 rounded text-xs bg-yellow-500/15 text-yellow-400 border border-yellow-500/25"
-                            >
-                              {label}
-                            </span>
-                          ))}
-                        </div>
+                      {deal.hasBadge && deal.badgeSlugs.length > 0 && (
+                        <BadgePills slugs={deal.badgeSlugs} />
                       )}
                       {deal.offerAmount != null && deal.offerAmount > 0 && (
                         <div className="flex gap-1 mt-1 flex-wrap">
@@ -1034,12 +1073,19 @@ export default function SniperPage() {
                       {deal.isSpecialSerial && <SerialBadge deal={deal} />}
                     </td>
 
+                    {/* Listed */}
+                    <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>
+                      {timeAgo(deal.updatedAt)}
+                    </td>
+
                     {/* Own / Lock */}
                     <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>
                       {(() => {
-                        const stats = editionStats.get(deal.editionKey);
-                        if (!stats) return "—";
-                        return `${stats.owned} / ${stats.locked}`;
+                        if (!connectedWallet) return "—";
+                        const isOwned = ownedIds.has(String(deal.momentId)) || ownedIds.has(String(deal.flowId));
+                        if (isOwned) return <span style={{ color: "var(--rpc-success)" }}>✓ OWN</span>;
+                        if (deal.isLocked) return <span title="Locked">🔒</span>;
+                        return "—";
                       })()}
                     </td>
 
@@ -1072,15 +1118,6 @@ export default function SniperPage() {
                       <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${discountColor(deal.discount)}`} style={{ fontFamily: "var(--font-mono)" }}>
                         {deal.discount > 0 ? `-${fmt(deal.discount, 1)}%` : "~0%"}
                       </span>
-                    </td>
-
-                    {/* Confidence + staleness */}
-                    <td style={{ padding: "8px 12px", textAlign: "right" }}>
-                      <ConfidenceDot
-                        confidence={deal.confidence}
-                        source={deal.confidenceSource}
-                        daysSinceSale={deal.daysSinceSale}
-                      />
                     </td>
 
                     {/* Share */}
