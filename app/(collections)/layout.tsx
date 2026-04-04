@@ -62,7 +62,7 @@ function SiteHeader() {
           </div>
         </Link>
         <div style={{ flex: 1 }} />
-        <Link href="/pinnacle" style={{ color: "rgba(255,255,255,0.5)", fontSize: 10, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none", transition: "color 0.15s" }}>
+        <Link href="/disney-pinnacle/overview" style={{ color: "rgba(255,255,255,0.5)", fontSize: 10, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none", transition: "color 0.15s" }}>
           Disney Pinnacle
         </Link>
         <CartButton />
