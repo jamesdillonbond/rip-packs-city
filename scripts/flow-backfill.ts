@@ -231,7 +231,7 @@ async function lookupEditions(
     }
   }
 
-  // Layer 2: sales table for any remaining
+  // Layer 2: sales table (generic) for any remaining
   const missing = nftIds.filter((id) => !result.has(id));
   if (missing.length > 0) {
     const { data: salesRows } = await supabase
@@ -241,6 +241,26 @@ async function lookupEditions(
       .not("nft_id", "is", null);
 
     for (const row of salesRows ?? []) {
+      if (row.nft_id && row.edition_id && !result.has(String(row.nft_id))) {
+        result.set(String(row.nft_id), {
+          edition_id: row.edition_id,
+          collection_id: row.collection_id,
+          serial_number: row.serial_number ?? null,
+        });
+      }
+    }
+  }
+
+  // Layer 3: sales_2026 partition directly (catches rows the generic view may miss)
+  const stillMissing = nftIds.filter((id) => !result.has(id));
+  if (stillMissing.length > 0) {
+    const { data: sales2026Rows } = await supabase
+      .from("sales_2026")
+      .select("nft_id, edition_id, collection_id, serial_number")
+      .in("nft_id", stillMissing)
+      .not("nft_id", "is", null);
+
+    for (const row of sales2026Rows ?? []) {
       if (row.nft_id && row.edition_id && !result.has(String(row.nft_id))) {
         result.set(String(row.nft_id), {
           edition_id: row.edition_id,
@@ -284,9 +304,13 @@ async function lookupMomentViaGql(nftId: string): Promise<GqlMomentData | null> 
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        query: `query GetMomentById($id: ID!) {
-          getMoment(input: { id: $id }) {
-            data { id setID playID serialNumber setData { id } }
+        query: `query GetMintedMoment($id: ID!) {
+          getMintedMoment(momentId: $id) {
+            data {
+              flowSerialNumber
+              set { id }
+              play { id }
+            }
           }
         }`,
         variables: { id: nftId },
@@ -300,16 +324,18 @@ async function lookupMomentViaGql(nftId: string): Promise<GqlMomentData | null> 
     }
 
     const json = await res.json();
-    const moment = json?.data?.getMoment?.data;
-    if (!moment?.setID || !moment?.playID) {
+    const moment = json?.data?.getMintedMoment?.data;
+    const setID = moment?.set?.id;
+    const playID = moment?.play?.id;
+    if (!setID || !playID) {
       gqlCache.set(nftId, null);
       return null;
     }
 
     const data: GqlMomentData = {
-      setID: String(moment.setID),
-      playID: String(moment.playID),
-      serialNumber: moment.serialNumber ? Number(moment.serialNumber) : null,
+      setID: String(setID),
+      playID: String(playID),
+      serialNumber: moment.flowSerialNumber ? Number(moment.flowSerialNumber) : null,
     };
     gqlCache.set(nftId, data);
     return data;
