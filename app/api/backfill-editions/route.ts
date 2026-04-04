@@ -78,6 +78,14 @@ async function mapWithConcurrency<T, R>(
 
 export async function POST(req: Request) {
   const startTime = Date.now()
+
+  // Auth — Bearer token
+  const authHeader = req.headers.get("authorization")
+  const expectedToken = process.env.INGEST_SECRET_TOKEN
+  if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
   let processed = 0
   let upserted = 0
   let updated = 0
