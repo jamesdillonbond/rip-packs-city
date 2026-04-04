@@ -180,13 +180,14 @@ async function upsertEdition(tx: SaleTransaction): Promise<string | null> {
 }
 
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get("authorization");
-  const expectedToken = process.env.INGEST_SECRET_TOKEN;
-  if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const startTime = Date.now();
+
+  // Auth — Bearer token
+  const authHeader = req.headers.get("authorization")
+  const expectedToken = process.env.INGEST_SECRET_TOKEN
+  if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
 
   const { data: state } = await supabase
     .from("backfill_state")
