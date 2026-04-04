@@ -468,8 +468,9 @@ export default function SniperPage() {
   const collectionObj = getCollection(collectionSlug);
   const accent = collectionObj?.accent ?? "#E03A2F";
   const isAllDay = collectionSlug === "nfl-all-day";
-  const feedEndpoint = isAllDay ? "/api/allday-sniper-feed" : "/api/sniper-feed";
-  const brandLabel = collectionObj?.shortLabel ?? "Top Shot";
+  const isPinnacle = collectionSlug === "pinnacle" || collectionSlug === "disney-pinnacle";
+  const feedEndpoint = isPinnacle ? "/api/pinnacle-sniper" : isAllDay ? "/api/allday-sniper-feed" : "/api/sniper-feed";
+  const brandLabel = isPinnacle ? "Pinnacle" : collectionObj?.shortLabel ?? "Top Shot";
 
   const [data, setData] = useState<FeedResult | null>(null);
   const [mode, setMode] = useState<"deals" | "offers">("deals");
@@ -495,6 +496,15 @@ export default function SniperPage() {
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [editionStats, setEditionStats] = useState<Map<string, { owned: number; locked: number }>>(new Map());
   const editionStatsFetchedRef = useRef<string | null>(null);
+
+  // ── Task 10: Tab visibility pause/resume
+  const [tabHidden, setTabHidden] = useState(false);
+  const [resumedIndicator, setResumedIndicator] = useState(false);
+
+  // ── Task 7: Listing suggestions panel
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestions, setSuggestions] = useState<Array<{ player: string; serial: number; pctAbove: number }>>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
 
   // ── Task 1: "Just Sold" ghost listings ──────────────────────────────────────
   const prevDealIdsRef = useRef<Set<string>>(new Set());
@@ -682,7 +692,7 @@ export default function SniperPage() {
   }, [fetchFeed]);
 
   useEffect(() => {
-    if (paused) return;
+    if (paused || tabHidden) return;
     countdownRef.current = setInterval(() => {
       setCountdown((c) => {
         if (c <= 1) { fetchFeed(); return REFRESH_INTERVAL; }
@@ -690,7 +700,24 @@ export default function SniperPage() {
       });
     }, 1000);
     return () => clearInterval(countdownRef.current!);
-  }, [paused, fetchFeed]);
+  }, [paused, tabHidden, fetchFeed]);
+
+  // ── Task 10: Page Visibility API — pause polling when tab hidden
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.hidden) {
+        setTabHidden(true);
+      } else {
+        setTabHidden(false);
+        setResumedIndicator(true);
+        fetchFeed();
+        setCountdown(REFRESH_INTERVAL);
+        setTimeout(() => setResumedIndicator(false), 2000);
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [fetchFeed]);
 
   // ── Task 2: Edition depth panel — Escape key handler ─────────────────────
   useEffect(() => {
@@ -813,11 +840,58 @@ export default function SniperPage() {
                   FLOWTY {stats.flowtyLive ? `(${data?.flowtyCount})` : "OFFLINE"}
                 </span>
               </div>
+              {/* Task 10: Resumed indicator */}
+              {resumedIndicator && (
+                <span className="rpc-chip" style={{ background: "rgba(52,211,153,0.10)", borderColor: "rgba(52,211,153,0.3)", color: "var(--rpc-success)", animation: "fadeOut 2s forwards" }}>
+                  Resumed
+                </span>
+              )}
+              {tabHidden && (
+                <span className="rpc-chip" style={{ background: "rgba(234,179,8,0.10)", borderColor: "rgba(234,179,8,0.3)", color: "#fbbf24" }}>
+                  Paused — tab hidden
+                </span>
+              )}
               <button
                 onClick={() => setPaused((p) => !p)}
                 className="rpc-chip"
               >
                 {paused ? "▶ RESUME" : `⏸ ${countdown}s`}
+              </button>
+              {/* Task 7: Listing Suggestions button */}
+              <button
+                onClick={() => {
+                  setShowSuggestions((v) => !v);
+                  if (!showSuggestions && connectedWallet) {
+                    setSuggestionsLoading(true);
+                    fetch(`/api/collection-snapshot?wallet=${encodeURIComponent(connectedWallet)}`)
+                      .then((r) => r.ok ? r.json() : null)
+                      .then((snapshot) => {
+                        if (!snapshot?.topMoments || !data?.deals) { setSuggestionsLoading(false); return; }
+                        const userMoments = snapshot.topMoments ?? [];
+                        const dealMap = new Map<string, SniperDeal>();
+                        for (const d of data.deals) { dealMap.set(d.editionKey, d); }
+                        const results: Array<{ player: string; serial: number; pctAbove: number }> = [];
+                        for (const m of userMoments) {
+                          const edKey = m.editionKey ?? "";
+                          const deal = dealMap.get(edKey);
+                          if (deal && m.fmv && deal.askPrice > m.fmv) {
+                            results.push({
+                              player: m.playerName ?? "Unknown",
+                              serial: m.serialNumber ?? 0,
+                              pctAbove: Math.round(((deal.askPrice - m.fmv) / m.fmv) * 100),
+                            });
+                          }
+                        }
+                        results.sort((a, b) => b.pctAbove - a.pctAbove);
+                        setSuggestions(results.slice(0, 10));
+                        setSuggestionsLoading(false);
+                      })
+                      .catch(() => setSuggestionsLoading(false));
+                  }
+                }}
+                className="rpc-chip"
+              >
+                Listing Suggestions
               </button>
               <button
                 onClick={() => { fetchFeed(); setCountdown(REFRESH_INTERVAL); }}
@@ -1381,6 +1455,51 @@ export default function SniperPage() {
         </div>
       </div>
       </>)}
+
+      {/* Task 7: Listing Suggestions slide-in panel */}
+      {showSuggestions && (
+        <div style={{
+          position: "fixed", top: 0, right: 0, bottom: 0, width: 340,
+          background: "var(--rpc-bg, #080808)", borderLeft: "1px solid var(--rpc-border)",
+          zIndex: 200, overflowY: "auto", padding: 20,
+          boxShadow: "-4px 0 20px rgba(0,0,0,0.5)",
+        }}>
+          <div className="flex items-center justify-between mb-4">
+            <span className="rpc-heading" style={{ fontSize: "var(--text-lg)" }}>Listing Suggestions</span>
+            <button onClick={() => setShowSuggestions(false)} className="rpc-chip" style={{ padding: "4px 10px" }}>✕</button>
+          </div>
+          {!connectedWallet ? (
+            <div className="rpc-mono" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-sm)" }}>
+              Load your wallet to see listing suggestions
+            </div>
+          ) : suggestionsLoading ? (
+            <div className="rpc-mono" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-sm)" }}>
+              Analyzing your portfolio...
+            </div>
+          ) : suggestions.length === 0 ? (
+            <div className="rpc-mono" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-sm)" }}>
+              No listing suggestions found. Your moments are priced at or below current market asks.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {suggestions.map((s, i) => (
+                <div key={i} style={{
+                  background: "var(--rpc-surface, rgba(255,255,255,0.03))",
+                  border: "1px solid var(--rpc-border)",
+                  borderRadius: 8, padding: 12,
+                }}>
+                  <div className="rpc-mono" style={{ fontSize: "var(--text-sm)", color: "var(--rpc-text-primary)" }}>
+                    Consider listing: <strong>{s.player}</strong> serial #{s.serial}
+                  </div>
+                  <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-success)", marginTop: 4 }}>
+                    Current asks are {s.pctAbove}% above your FMV
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
