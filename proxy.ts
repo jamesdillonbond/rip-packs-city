@@ -7,8 +7,9 @@ const ALLOWED_ORIGINS = [
   "http://localhost:3000",
 ];
 
-const API_PATHS = ["/api/fmv", "/api/sniper-feed", "/api/health"];
+const CORS_API_PATHS = ["/api/fmv", "/api/sniper-feed", "/api/health"];
 
+// ── Rate limiting (in-memory, per-IP) ────────────────────────────────────────
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 30;
@@ -45,17 +46,49 @@ function cleanupRateLimitMap() {
 
 let lastCleanup = Date.now();
 
+// ── Security headers applied to every response ──────────────────────────────
+function applySecurityHeaders(response: NextResponse) {
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=(), payment=()"
+  );
+  response.headers.set(
+    "Strict-Transport-Security",
+    "max-age=63072000; includeSubDomains; preload"
+  );
+  response.headers.set(
+    "Content-Security-Policy",
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: https://assets.nbatopshot.com https://storage.googleapis.com https://*.supabase.co",
+      "font-src 'self'",
+      "connect-src 'self' https://*.supabase.co https://public-api.nbatopshot.com https://api2.flowty.io https://rest-mainnet.onflow.org https://access-mainnet.onflow.org wss://*.supabase.co",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join("; ")
+  );
+  return response;
+}
+
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Periodic cleanup
   if (Date.now() - lastCleanup > 300_000) {
     cleanupRateLimitMap();
     lastCleanup = Date.now();
   }
 
-  const isApiRoute = API_PATHS.some((p) => pathname.startsWith(p));
+  // ── CORS handling for public API paths ──────────────────────────────────
+  const isCorsApiRoute = CORS_API_PATHS.some((p) => pathname.startsWith(p));
 
-  if (isApiRoute) {
+  if (isCorsApiRoute) {
     const origin = request.headers.get("origin") || "";
     const isAllowed = ALLOWED_ORIGINS.includes(origin) || !origin;
 
@@ -70,46 +103,46 @@ export function proxy(request: NextRequest) {
         },
       });
     }
+  }
 
-      // BEARER_EXEMPT: skip rate limiting for authenticated bot/pipeline requests
-      const authHeader = request.headers.get("authorization") || "";
-      const isBotRequest = authHeader === `Bearer ${process.env.INGEST_SECRET_TOKEN}`;
-      if (isBotRequest) return NextResponse.next();
-    if (!pathname.startsWith("/api/cron") && !pathname.startsWith("/api/ingest")) {
+  // ── Rate limiting for all /api/ routes ──────────────────────────────────
+  if (pathname.startsWith("/api/")) {
+    // Skip rate limiting for authenticated bot/pipeline requests
+    const authHeader = request.headers.get("authorization") || "";
+    const isBotRequest = authHeader === `Bearer ${process.env.INGEST_SECRET_TOKEN}`;
+
+    if (
+      !isBotRequest &&
+      !pathname.startsWith("/api/cron") &&
+      !pathname.startsWith("/api/ingest")
+    ) {
       const clientKey = getRateLimitKey(request);
       if (isRateLimited(clientKey)) {
         return NextResponse.json(
           { error: "Rate limit exceeded. Max 30 requests per minute." },
           {
             status: 429,
-            headers: {
-              "Retry-After": "60",
-              "Access-Control-Allow-Origin": isAllowed ? origin : "",
-            },
+            headers: { "Retry-After": "60" },
           }
         );
       }
     }
+  }
 
-    const response = NextResponse.next();
+  // ── Build response with security headers ────────────────────────────────
+  const response = NextResponse.next();
 
+  // CORS headers for public API paths
+  if (isCorsApiRoute) {
+    const origin = request.headers.get("origin") || "";
+    const isAllowed = ALLOWED_ORIGINS.includes(origin) || !origin;
     if (isAllowed && origin) {
       response.headers.set("Access-Control-Allow-Origin", origin);
       response.headers.set("Vary", "Origin");
     }
-
-    return response;
   }
 
-  const response = NextResponse.next();
-
-  response.headers.set("X-Frame-Options", "DENY");
-  response.headers.set("X-Content-Type-Options", "nosniff");
-  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  response.headers.set(
-    "Permissions-Policy",
-    "camera=(), microphone=(), geolocation=(), payment=()"
-  );
+  applySecurityHeaders(response);
 
   return response;
 }

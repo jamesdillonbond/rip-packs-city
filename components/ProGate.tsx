@@ -106,8 +106,25 @@ export default function ProGate({ children, walletAddress }: ProGateProps) {
           <li>&#x2713; Advanced portfolio analytics</li>
           <li>&#x2713; Export to CSV</li>
         </ul>
-        <a
-          href="mailto:trevor@rippackscity.com?subject=RPC%20Pro%20Early%20Access"
+        <button
+          onClick={async () => {
+            try {
+              const res = await fetch("/api/stripe/checkout", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ walletAddress }),
+              })
+              const data = await res.json()
+              if (data.url) {
+                window.location.href = data.url
+              } else {
+                // Stripe not configured yet — fallback to email
+                window.location.href = "mailto:trevor@rippackscity.com?subject=RPC%20Pro%20Early%20Access"
+              }
+            } catch {
+              window.location.href = "mailto:trevor@rippackscity.com?subject=RPC%20Pro%20Early%20Access"
+            }
+          }}
           style={{
             display: "inline-block",
             background: RED,
@@ -119,12 +136,13 @@ export default function ProGate({ children, walletAddress }: ProGateProps) {
             textTransform: "uppercase",
             padding: "10px 24px",
             borderRadius: 6,
-            textDecoration: "none",
+            border: "none",
+            cursor: "pointer",
             transition: "opacity 0.15s",
           }}
         >
-          Get Early Access
-        </a>
+          Upgrade to Pro
+        </button>
       </div>
     )
   }
