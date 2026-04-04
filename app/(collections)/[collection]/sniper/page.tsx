@@ -1,5 +1,6 @@
 "use client";
 import OffersTab from "@/components/sniper/OffersTab"
+import React from "react";
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
@@ -495,6 +496,20 @@ export default function SniperPage() {
   const [editionStats, setEditionStats] = useState<Map<string, { owned: number; locked: number }>>(new Map());
   const editionStatsFetchedRef = useRef<string | null>(null);
 
+  // ── Task 1: "Just Sold" ghost listings ──────────────────────────────────────
+  const prevDealIdsRef = useRef<Set<string>>(new Set());
+  const [soldIds, setSoldIds] = useState<Set<string>>(new Set());
+  const [soldDeals, setSoldDeals] = useState<Map<string, SniperDeal>>(new Map());
+
+  // ── Task 2: Edition depth panel ─────────────────────────────────────────────
+  const [expandedEditionKey, setExpandedEditionKey] = useState<string | null>(null);
+  const [expandedFlowId, setExpandedFlowId] = useState<string | null>(null);
+  const [depthDeals, setDepthDeals] = useState<SniperDeal[]>([]);
+  const [depthLoading, setDepthLoading] = useState(false);
+
+  // ── Task 5: Save search ─────────────────────────────────────────────────────
+  const [saveSearchMsg, setSaveSearchMsg] = useState<string | null>(null);
+
   // Highlight detection on page load
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("highlight");
@@ -614,6 +629,43 @@ export default function SniperPage() {
       const res = await fetch(buildFeedUrl(), { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json: FeedResult = await res.json();
+
+      // ── Task 1: detect sold/delisted deals ──────────────────────────────
+      const newIds = new Set(json.deals.map((d) => d.flowId));
+      if (prevDealIdsRef.current.size > 0) {
+        const justSold: string[] = [];
+        prevDealIdsRef.current.forEach((id) => {
+          if (!newIds.has(id)) justSold.push(id);
+        });
+        if (justSold.length > 0) {
+          const prevDeals = data?.deals ?? [];
+          const soldMap = new Map(soldDeals);
+          for (const id of justSold) {
+            const deal = prevDeals.find((d) => d.flowId === id);
+            if (deal) soldMap.set(id, deal);
+          }
+          setSoldDeals(soldMap);
+          setSoldIds((prev) => {
+            const next = new Set(prev);
+            justSold.forEach((id) => next.add(id));
+            return next;
+          });
+          setTimeout(() => {
+            setSoldIds((prev) => {
+              const next = new Set(prev);
+              justSold.forEach((id) => next.delete(id));
+              return next;
+            });
+            setSoldDeals((prev) => {
+              const next = new Map(prev);
+              justSold.forEach((id) => next.delete(id));
+              return next;
+            });
+          }, 8000);
+        }
+      }
+      prevDealIdsRef.current = newIds;
+
       setData(json);
       setError(null);
     } catch (e) {
@@ -621,6 +673,7 @@ export default function SniperPage() {
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buildFeedUrl]);
 
   useEffect(() => {
@@ -638,6 +691,66 @@ export default function SniperPage() {
     }, 1000);
     return () => clearInterval(countdownRef.current!);
   }, [paused, fetchFeed]);
+
+  // ── Task 2: Edition depth panel — Escape key handler ─────────────────────
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setExpandedEditionKey(null);
+        setExpandedFlowId(null);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  async function toggleEditionDepth(deal: SniperDeal) {
+    if (expandedFlowId === deal.flowId) {
+      setExpandedEditionKey(null);
+      setExpandedFlowId(null);
+      return;
+    }
+    setExpandedFlowId(deal.flowId);
+    setExpandedEditionKey(deal.editionKey);
+    setDepthLoading(true);
+    setDepthDeals([]);
+    try {
+      const res = await fetch(`${feedEndpoint}?editionKey=${encodeURIComponent(deal.editionKey)}&limit=20`, { cache: "no-store" });
+      if (res.ok) {
+        const json = await res.json();
+        setDepthDeals((json.deals ?? []).filter((d: SniperDeal) => d.flowId !== deal.flowId));
+      }
+    } catch {}
+    setDepthLoading(false);
+  }
+
+  // ── Task 5: Save search handler ────────────────────────────────────────────
+  async function handleSaveSearch() {
+    setSaveSearchMsg(null);
+    try {
+      const res = await fetch("/api/watchlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "search",
+          player: playerFilter || null,
+          tier: tierTab !== "all" ? tierTab : null,
+          maxPrice: maxPrice || null,
+          minDiscount: minDiscount || null,
+        }),
+      });
+      if (res.ok) {
+        setSaveSearchMsg("Saved!");
+        setTimeout(() => setSaveSearchMsg(null), 3000);
+      } else {
+        setSaveSearchMsg("Sign in to save searches");
+        setTimeout(() => setSaveSearchMsg(null), 3000);
+      }
+    } catch {
+      setSaveSearchMsg("Sign in to save searches");
+      setTimeout(() => setSaveSearchMsg(null), 3000);
+    }
+  }
 
   const visibleDeals = (data?.deals ?? []).filter((d) => {
     if (d.discount < 0) return false;
@@ -901,6 +1014,15 @@ export default function SniperPage() {
                 Click + OFFER to add deals as Flowty USDC.e offers.
               </span>
             )}
+            {/* Task 5: Save Search button */}
+            <button
+              onClick={handleSaveSearch}
+              className="rpc-chip"
+              title="Save current filter state to your watchlist"
+              style={{ marginLeft: "auto" }}
+            >
+              {saveSearchMsg ?? "💾 SAVE SEARCH"}
+            </button>
           </div>
         </>)}
         </div>
@@ -998,11 +1120,43 @@ export default function SniperPage() {
                 </tr>
               </thead>
               <tbody>
+                {/* Task 1: Render sold ghost deals */}
+                {Array.from(soldIds).map((soldId) => {
+                  const deal = soldDeals.get(soldId);
+                  if (!deal) return null;
+                  return (
+                    <tr
+                      key={`sold-${soldId}`}
+                      style={{ borderBottom: "1px solid var(--rpc-border)", opacity: 0.4, textDecoration: "line-through", pointerEvents: "none" }}
+                    >
+                      <td style={{ padding: "8px 12px" }}>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <div style={{ width: 36, height: 36, borderRadius: 4, background: "var(--rpc-surface-raised)", flexShrink: 0 }} />
+                          <div>
+                            <div style={{ fontFamily: "var(--font-display)", fontWeight: 700 }}>{deal.playerName}</div>
+                            <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>{deal.setName}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)" }}>#{deal.serial}</td>
+                      <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>{timeAgo(deal.updatedAt)}</td>
+                      <td style={{ padding: "8px 12px", textAlign: "right" }}>—</td>
+                      <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)" }}>${fmt(deal.askPrice)}</td>
+                      <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)" }}>${fmt(deal.adjustedFmv)}</td>
+                      <td style={{ padding: "8px 12px", textAlign: "right" }}>
+                        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-red-500/30 text-red-300 border border-red-500/50" style={{ fontFamily: "var(--font-mono)" }}>SOLD</span>
+                      </td>
+                      <td />
+                      <td />
+                    </tr>
+                  );
+                })}
                 {visibleDeals.map((deal) => (
+                  <React.Fragment key={`${deal.source}-${deal.flowId}-${deal.listingResourceID}`}>
                   <tr
-                    key={`${deal.source}-${deal.flowId}-${deal.listingResourceID}`}
                     className={`${holoClass(deal.tier)}${deal.flowId === highlightedId ? " ring-2" : ""}${deal.discount >= 40 ? " rpc-hot-deal" : ""}`}
-                    style={{ borderBottom: "1px solid var(--rpc-border)", transition: "background var(--transition-fast)", ...(deal.flowId === highlightedId ? { boxShadow: `0 0 0 2px ${accent}80`, background: `${accent}12` } : {}) }}
+                    style={{ borderBottom: expandedFlowId === deal.flowId ? "none" : "1px solid var(--rpc-border)", transition: "background var(--transition-fast)", cursor: "pointer", ...(deal.flowId === highlightedId ? { boxShadow: `0 0 0 2px ${accent}80`, background: `${accent}12` } : {}) }}
+                    onClick={() => toggleEditionDepth(deal)}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--rpc-surface-hover)"; }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = deal.discount >= 40 ? "rgba(224,58,47,0.08)" : "transparent"; }}
                   >
@@ -1046,6 +1200,17 @@ export default function SniperPage() {
                       {deal.hasBadge && deal.badgeSlugs.length > 0 && (
                         <BadgePills slugs={deal.badgeSlugs} />
                       )}
+                      {/* Task 4: Pack-linked listing tag */}
+                      {deal.packName && (
+                        <div className="flex gap-1 mt-1">
+                          <span
+                            className="px-1 py-0.5 rounded text-xs border bg-amber-500/10 text-amber-300 border-amber-500/25"
+                            title={`${deal.packName}${deal.packEvRatio != null ? ` · EV ratio: ${deal.packEvRatio.toFixed(2)}x` : ""}`}
+                          >
+                            📦 Pack
+                          </span>
+                        </div>
+                      )}
                       {deal.offerAmount != null && deal.offerAmount > 0 && (
                         <div className="flex gap-1 mt-1 flex-wrap">
                           {deal.offerFmvPct != null && deal.offerFmvPct >= 100 ? (
@@ -1063,13 +1228,34 @@ export default function SniperPage() {
                       </div>
                     </td>
 
-                    {/* Serial */}
+                    {/* Serial — Task 3: serial intelligence chips */}
                     <td style={{ padding: "8px 12px", textAlign: "right" }}>
                       <div style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)" }}>#{deal.serial}</div>
                       {deal.circulationCount > 0 && (
                         <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>/ {deal.circulationCount.toLocaleString()}</div>
                       )}
-                      {deal.isSpecialSerial && <SerialBadge deal={deal} />}
+                      <div className="flex gap-1 mt-0.5 flex-wrap justify-end">
+                        {deal.isJersey && (
+                          <span className="rpc-chip" title="Jersey match" style={{ background: "rgba(20,184,166,0.15)", borderColor: "rgba(20,184,166,0.3)", color: "#5eead4", fontSize: 9, padding: "1px 5px" }}>
+                            🏀 Jersey
+                          </span>
+                        )}
+                        {deal.serial <= 10 && (
+                          <span className="rpc-chip" style={{ background: "rgba(234,179,8,0.15)", borderColor: "rgba(234,179,8,0.3)", color: "#fde047", fontSize: 9, padding: "1px 5px" }}>
+                            LOW POP
+                          </span>
+                        )}
+                        {deal.serial > 10 && String(deal.serial).endsWith("00") && (
+                          <span className="rpc-chip" style={{ background: "rgba(168,85,247,0.12)", borderColor: "rgba(168,85,247,0.25)", color: "#c084fc", fontSize: 9, padding: "1px 5px" }}>
+                            ROUND
+                          </span>
+                        )}
+                        {deal.serialSignal && !deal.isJersey && deal.serial > 10 && (
+                          <span className="rpc-chip" style={{ background: "rgba(168,85,247,0.12)", borderColor: "rgba(168,85,247,0.25)", color: "#c084fc", fontSize: 9, padding: "1px 5px" }}>
+                            {deal.serialSignal}
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Listed */}
@@ -1125,7 +1311,7 @@ export default function SniperPage() {
                     </td>
 
                     {/* Action */}
-                    <td style={{ padding: "8px 12px" }}>
+                    <td style={{ padding: "8px 12px" }} onClick={(e) => e.stopPropagation()}>
                       <ActionCell
                         deal={deal}
                         ownedIds={ownedIds}
@@ -1136,6 +1322,37 @@ export default function SniperPage() {
                       />
                     </td>
                   </tr>
+                  {/* Task 2: Edition depth panel */}
+                  {expandedFlowId === deal.flowId && (
+                    <tr style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)" }}>
+                      <td colSpan={9} style={{ padding: "8px 16px" }}>
+                        {depthLoading ? (
+                          <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", padding: "8px 0" }}>Loading other listings…</div>
+                        ) : depthDeals.length === 0 ? (
+                          <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", padding: "8px 0" }}>No other listings for this edition.</div>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em", marginBottom: 4 }}>
+                              {depthDeals.length} OTHER LISTING{depthDeals.length !== 1 ? "S" : ""} FOR {deal.playerName} — {deal.setName}
+                            </div>
+                            {depthDeals.map((dd) => (
+                              <div key={dd.flowId} className="flex items-center gap-4" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", padding: "4px 0" }}>
+                                <span style={{ color: "var(--rpc-text-secondary)", minWidth: 60 }}>#{dd.serial}</span>
+                                <span style={{ color: "var(--rpc-text-primary)", fontWeight: 600, minWidth: 70 }}>${fmt(dd.askPrice)}</span>
+                                <span style={{ color: dd.discount >= 15 ? "var(--rpc-success)" : "var(--rpc-text-muted)", minWidth: 60 }}>
+                                  {dd.discount > 0 ? `-${fmt(dd.discount, 1)}%` : "~0%"}
+                                </span>
+                                <span style={{ color: "var(--rpc-text-ghost)", minWidth: 50 }}>{dd.source === "flowty" ? "Flowty" : "TS"}</span>
+                                <span style={{ color: "var(--rpc-text-ghost)", minWidth: 60 }}>{timeAgo(dd.updatedAt)}</span>
+                                <a href={dd.buyUrl} target="_blank" rel="noopener noreferrer" style={{ color: accent, textDecoration: "none" }}>BUY →</a>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>

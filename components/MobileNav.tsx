@@ -24,11 +24,11 @@ export default function MobileNav() {
     { label: "SNIPER", icon: "⚡", href: `/${collectionId}/sniper` },
   ];
 
-  // Badges tab — only if collection has badges; otherwise try sets
+  // Badges tab — only if collection has badges; otherwise Deals shortcut
   if (pages.includes("badges")) {
     tabs.push({ label: "BADGES", icon: "⭐", href: `/${collectionId}/badges` });
-  } else if (pages.includes("sets")) {
-    tabs.push({ label: "SETS", icon: "📋", href: `/${collectionId}/sets` });
+  } else {
+    tabs.push({ label: "DEALS", icon: "⚡", href: `/${collectionId}/sniper?minDiscount=20&sortBy=listed_desc` });
   }
 
   tabs.push({ label: "PROFILE", icon: "👤", href: "/profile" });

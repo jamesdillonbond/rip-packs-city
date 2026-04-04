@@ -375,10 +375,11 @@ function EditionRecentSales({ editionKey, mintCount }: { editionKey: string | nu
 function AutoSearchReader(props: { onSearch: (q: string) => void }) {
   const searchParams = useSearchParams()
   useEffect(function() {
-    // Support both ?address= (preferred) and legacy ?q= param
+    // Support ?wallet= (preferred), ?address=, and legacy ?q= param
+    const wallet = searchParams.get("wallet")
     const address = searchParams.get("address")
     const q = searchParams.get("q")
-    const query = address || q
+    const query = wallet || address || q
     if (query && query.trim()) props.onSearch(query.trim())
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -427,6 +428,10 @@ export default function WalletPage() {
   const [filterHasOffer, setFilterHasOffer] = useState(false)
   const [filterListed, setFilterListed] = useState(false)
   const [setsData, setSetsData] = useState<{ sets: any[] } | null>(null)
+
+  // ── Task 14: Duplicate edition callout ─────────────────────────────────────
+  const [dupDismissed, setDupDismissed] = useState(false)
+  const [filterDupsOnly, setFilterDupsOnly] = useState(false)
 
   // Hydrate filter state from localStorage on mount
   useEffect(function() {
@@ -693,8 +698,8 @@ export default function WalletPage() {
     const trimmed = query.trim()
     setInput(trimmed)
     lastSearchedRef.current = trimmed
-    // Persist address in URL for bookmarking and sharing
-    try { router.replace("?address=" + encodeURIComponent(trimmed), { scroll: false }) } catch {}
+    // Task 15: Persist wallet address in URL for bookmarking and sharing
+    try { router.replace("?wallet=" + encodeURIComponent(trimmed), { scroll: false }) } catch {}
     setLoading(true)
     setError("")
     setRows([])
@@ -936,6 +941,11 @@ export default function WalletPage() {
       if (filterBadges && !(r.officialBadges?.length || (r as any).badgeScore > 0)) return false
       if (filterHasOffer && !(typeof r.bestOffer === "number" && r.bestOffer > 0)) return false
       if (filterListed && r.lowAsk == null) return false
+      // Task 14: filter to duplicates only
+      if (filterDupsOnly) {
+        const key = (r.setName ?? "") + "||" + (r.playerName ?? "") + "||" + getParallel(r)
+        if (!duplicateEditions.has(key)) return false
+      }
       if (q) {
         const haystack = [r.playerName, r.team ?? "", r.league ?? "", r.series ?? "", r.setName, getParallel(r), r.tier ?? "", ...(r.officialBadges ?? []), ...(r.badgeInfo?.badge_titles ?? []), ...getTraits(r)].join(" ").toLowerCase()
         if (!haystack.includes(q)) return false
@@ -970,7 +980,7 @@ export default function WalletPage() {
       return sortDirection === "asc" ? result : -result
     })
     return filtered
-  }, [rows, searchWithin, playerFilter, setFilter, seriesFilter, rarityFilter, lockedFilter, badgeFilter, filterBadges, filterHasOffer, filterListed, sortKey, sortDirection, batchEditionStats])
+  }, [rows, searchWithin, playerFilter, setFilter, seriesFilter, rarityFilter, lockedFilter, badgeFilter, filterBadges, filterHasOffer, filterListed, filterDupsOnly, duplicateEditions, sortKey, sortDirection, batchEditionStats])
 
   const totals = useMemo(function() {
     let totalFmv = 0, totalBestOffer = 0, lockedFmv = 0, unlockedFmv = 0
@@ -1016,6 +1026,52 @@ export default function WalletPage() {
       .sort(function(a: any, b: any) { return a.missingCount - b.missingCount })
       .slice(0, 3)
   }, [setsData])
+
+  // ── Task 14: Detect duplicate editions ──────────────────────────────────
+  const duplicateEditions = useMemo(function() {
+    const countMap = new Map<string, number>()
+    for (const row of rows) {
+      const key = (row.setName ?? "") + "||" + (row.playerName ?? "") + "||" + getParallel(row)
+      countMap.set(key, (countMap.get(key) ?? 0) + 1)
+    }
+    const dupKeys = new Set<string>()
+    countMap.forEach(function(count, key) { if (count > 1) dupKeys.add(key) })
+    return dupKeys
+  }, [rows])
+
+  // Restore dismissed state from sessionStorage
+  useEffect(function() {
+    try {
+      if (sessionStorage.getItem("rpc_dup_dismissed") === "true") setDupDismissed(true)
+    } catch {}
+  }, [])
+
+  // ── Task 12: Set completion data ──────────────────────────────────────
+  const setCompletion = useMemo(function() {
+    if (!setsData?.sets || !rows.length) return []
+    const ownedBySet = new Map<string, number>()
+    for (const row of rows) {
+      const setName = normalizeSetName(row.setName)
+      ownedBySet.set(setName, (ownedBySet.get(setName) ?? 0) + 1)
+    }
+    return setsData.sets
+      .filter(function(s: any) {
+        const owned = ownedBySet.get(s.setName) ?? 0
+        return owned > 0 && owned < (s.totalCount ?? s.editionCount ?? 999)
+      })
+      .map(function(s: any) {
+        const owned = ownedBySet.get(s.setName) ?? 0
+        const total = s.totalCount ?? s.editionCount ?? 0
+        return {
+          setName: s.setName,
+          owned,
+          total,
+          pct: total > 0 ? Math.round((owned / total) * 100) : 0,
+          floorCost: s.totalMissingCost ?? null,
+        }
+      })
+      .sort(function(a: any, b: any) { return b.pct - a.pct })
+  }, [setsData, rows])
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -1134,6 +1190,52 @@ export default function WalletPage() {
                       {s.setName} — {s.missingCount} away{s.totalMissingCost != null ? " · $" + s.totalMissingCost.toFixed(2) : ""}
                     </a>
                   </span>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Task 14: Duplicate edition callout */}
+        {hasSearched && duplicateEditions.size > 0 && !dupDismissed && (
+          <div style={{ borderLeft: "3px solid #f59e0b", background: "rgba(245,158,11,0.05)", borderRadius: 6, padding: "10px 14px", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "#f59e0b", letterSpacing: "0.1em", marginBottom: 4 }}>⚠ DUPLICATE EDITIONS</div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#a1a1aa" }}>
+                You hold {duplicateEditions.size} duplicate edition{duplicateEditions.size !== 1 ? "s" : ""} — consider selling the highest serials.{" "}
+                <button
+                  onClick={function() { setFilterDupsOnly(function(v) { return !v }) }}
+                  style={{ color: accent, background: "none", border: "none", cursor: "pointer", fontFamily: "var(--font-mono)", fontSize: 11, textDecoration: "underline" }}
+                >
+                  {filterDupsOnly ? "Show all" : "Show duplicates only"}
+                </button>
+              </div>
+            </div>
+            <button
+              onClick={function() { setDupDismissed(true); try { sessionStorage.setItem("rpc_dup_dismissed", "true") } catch {} }}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "#71717a", fontSize: 16, padding: 4 }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* Task 12: Set completion mini progress bars */}
+        {hasSearched && setCompletion.length > 0 && (
+          <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, border: "1px solid #27272a", background: "#09090b" }}>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "#52525b", letterSpacing: "0.1em", marginBottom: 8 }}>SET COMPLETION</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {setCompletion.slice(0, 10).map(function(s: any) {
+                return (
+                  <div key={s.setName} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, fontFamily: "var(--font-mono)" }}>
+                    <div style={{ minWidth: 180, color: "#e4e4e7", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.setName}</div>
+                    <div style={{ minWidth: 60, color: "#a1a1aa" }}>{s.owned}/{s.total}</div>
+                    <div style={{ flex: 1, height: 6, borderRadius: 3, background: "#18181b", overflow: "hidden" }}>
+                      <div style={{ height: "100%", borderRadius: 3, width: s.pct + "%", background: accent, transition: "width 0.3s" }} />
+                    </div>
+                    <div style={{ minWidth: 36, textAlign: "right", color: "#a1a1aa" }}>{s.pct}%</div>
+                    {s.floorCost != null && <div style={{ minWidth: 70, textAlign: "right", color: "#52525b" }}>${Number(s.floorCost).toFixed(2)}</div>}
+                  </div>
                 )
               })}
             </div>
@@ -1268,6 +1370,7 @@ export default function WalletPage() {
                 <th className="p-3 hidden lg:table-cell">Low Ask</th>
                 <th className="p-3 hidden lg:table-cell">Best Offer</th>
                 <th className="p-3 hidden xl:table-cell">Acquired</th>
+                <th className="p-3 hidden lg:table-cell">vs Cost</th>
                 <th className="p-3">Details</th>
               </tr>
             </thead>
@@ -1327,6 +1430,17 @@ export default function WalletPage() {
                           <div className="text-xs text-zinc-400">{"/ " + (getMint(row) ?? "-")}</div>
                           {primaryBadge ? <div className="mt-1 rounded bg-white px-1 py-0.5 text-[9px] font-bold text-black">{primaryBadge}</div> : null}
                         </div>
+                        {/* Task 11: Upgrade available signal */}
+                        {(function() {
+                          const serial = getSerial(row)
+                          const lowAsk = row.lowAsk ?? row.badgeInfo?.low_ask
+                          if (serial == null || serial <= 100 || !lowAsk || !row.fmv || lowAsk >= row.fmv) return null
+                          return (
+                            <div className="mt-1 text-[10px] font-mono text-emerald-400">
+                              ⬇ Lower serial at ${lowAsk.toFixed(2)}
+                            </div>
+                          )
+                        })()}
                       </td>
                       <td className="p-3 text-sm hidden lg:table-cell">
                         {editionCounts.owned} / {editionCounts.locked}
@@ -1410,6 +1524,20 @@ export default function WalletPage() {
                         })()}
                       </td>
                       <td className="p-3 text-zinc-500 text-xs hidden xl:table-cell">{formatAcquiredAt(row.acquiredAt)}</td>
+                      {/* Task 13: vs Cost column */}
+                      <td className="p-3 text-sm hidden lg:table-cell">
+                        {(function() {
+                          const fmvVal = row.fmv
+                          const cost = row.lastPurchasePrice
+                          if (!fmvVal || !cost || cost <= 0) return <span className="text-zinc-600">—</span>
+                          const delta = fmvVal - cost
+                          return (
+                            <span className={"font-mono font-semibold " + (delta >= 0 ? "text-emerald-400" : "text-red-400")}>
+                              {delta >= 0 ? "+" : ""}{formatCurrency(delta)}
+                            </span>
+                          )
+                        })()}
+                      </td>
                       <td className="p-3">
                         <div className="flex items-center gap-1.5">
                           <button onClick={function() { toggleExpanded(row.momentId) }} className="rounded-lg border border-zinc-700 px-2 py-1 text-xs text-white hover:bg-zinc-900">
