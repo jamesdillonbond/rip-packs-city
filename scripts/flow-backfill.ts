@@ -20,6 +20,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -34,6 +35,10 @@ const EVENT_MARKET = "A.c1e4f4f4c4257510.Market.MomentPurchased";
 
 const DEFAULT_START = 137_390_146; // current spork root block
 const DEFAULT_END = 0; // 0 = fetch current sealed height at runtime
+
+const TOPSHOT_GQL = "https://public-api.nbatopshot.com/graphql";
+const GQL_DELAY_MS = 100; // 100ms between GQL calls = max 10/sec
+const TS_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 
 // ── Supabase client ─────────────────────────────────────────────────────────
 
@@ -249,6 +254,98 @@ async function lookupEditions(
   return result;
 }
 
+// ── Top Shot GQL fallback for unknown nft_ids ──────────────────────────────
+
+interface GqlMomentData {
+  setID: string;
+  playID: string;
+  serialNumber: number | null;
+}
+
+const gqlCache = new Map<string, GqlMomentData | null>();
+let lastGqlCallTime = 0;
+
+async function gqlRateLimit(): Promise<void> {
+  const now = Date.now();
+  const elapsed = now - lastGqlCallTime;
+  if (elapsed < GQL_DELAY_MS) {
+    await sleep(GQL_DELAY_MS - elapsed);
+  }
+  lastGqlCallTime = Date.now();
+}
+
+async function lookupMomentViaGql(nftId: string): Promise<GqlMomentData | null> {
+  if (gqlCache.has(nftId)) return gqlCache.get(nftId) ?? null;
+
+  await gqlRateLimit();
+
+  try {
+    const res = await fetch(TOPSHOT_GQL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: `query GetMomentById($id: ID!) {
+          getMoment(input: { id: $id }) {
+            data { id setID playID serialNumber setData { id } }
+          }
+        }`,
+        variables: { id: nftId },
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (!res.ok) {
+      gqlCache.set(nftId, null);
+      return null;
+    }
+
+    const json = await res.json();
+    const moment = json?.data?.getMoment?.data;
+    if (!moment?.setID || !moment?.playID) {
+      gqlCache.set(nftId, null);
+      return null;
+    }
+
+    const data: GqlMomentData = {
+      setID: String(moment.setID),
+      playID: String(moment.playID),
+      serialNumber: moment.serialNumber ? Number(moment.serialNumber) : null,
+    };
+    gqlCache.set(nftId, data);
+    return data;
+  } catch {
+    gqlCache.set(nftId, null);
+    return null;
+  }
+}
+
+async function upsertEdition(externalId: string): Promise<string> {
+  // Check if edition already exists
+  const { data: existing } = await supabase
+    .from("editions")
+    .select("id")
+    .eq("external_id", externalId)
+    .single();
+
+  if (existing?.id) return existing.id;
+
+  // Create new edition
+  const newId = randomUUID();
+  await supabase.from("editions").upsert(
+    { id: newId, external_id: externalId, collection_id: TS_COLLECTION_ID },
+    { onConflict: "external_id" },
+  );
+
+  // Return the actual id (in case of race condition, re-fetch)
+  const { data: refetch } = await supabase
+    .from("editions")
+    .select("id")
+    .eq("external_id", externalId)
+    .single();
+
+  return refetch?.id ?? newId;
+}
+
 // ── Fetch events from Flow REST API ─────────────────────────────────────────
 
 interface FlowEvent {
@@ -330,6 +427,7 @@ async function main() {
   let totalInserted = progress?.total_inserted ?? 0;
   let totalSkipped = progress?.total_skipped ?? 0;
   let editionsMissing = 0;
+  let gqlResolved = 0;
   const startTime = Date.now();
   let lastLogHeight = startHeight;
 
@@ -377,14 +475,30 @@ async function main() {
       const nftIds = [...new Set(dedupedSales.map((s) => s.nftId))];
       const editionMap = await lookupEditions(nftIds);
 
-      // Build insert rows
+      // Build insert rows — GQL fallback for missing editions
       const rows: object[] = [];
       for (const sale of dedupedSales) {
-        const info = editionMap.get(sale.nftId);
+        let info = editionMap.get(sale.nftId);
+
         if (!info) {
-          editionsMissing++;
-          totalSkipped++;
-          continue;
+          // Fallback: resolve via Top Shot GQL API
+          const gqlData = await lookupMomentViaGql(sale.nftId);
+          if (gqlData) {
+            const externalId = `${gqlData.setID}:${gqlData.playID}`;
+            const editionId = await upsertEdition(externalId);
+            info = {
+              edition_id: editionId,
+              collection_id: TS_COLLECTION_ID,
+              serial_number: gqlData.serialNumber,
+            };
+            // Cache in editionMap so other sales with same nftId in this batch reuse it
+            editionMap.set(sale.nftId, info);
+            gqlResolved++;
+          } else {
+            editionsMissing++;
+            totalSkipped++;
+            continue;
+          }
         }
 
         rows.push({
@@ -443,7 +557,8 @@ async function main() {
           `Events: ${totalEventsFound.toLocaleString()} | ` +
           `Inserted: ${totalInserted.toLocaleString()} | ` +
           `Skipped: ${totalSkipped.toLocaleString()} | ` +
-          `Missing editions: ${editionsMissing.toLocaleString()} | ` +
+          `GQL resolved: ${gqlResolved.toLocaleString()} | ` +
+          `Still missing: ${editionsMissing.toLocaleString()} | ` +
           `ETA: ${etaMin}min`,
       );
       lastLogHeight = batchStart;
@@ -462,7 +577,9 @@ async function main() {
   console.log(`  Total events found:     ${totalEventsFound.toLocaleString()}`);
   console.log(`  Total inserted:         ${totalInserted.toLocaleString()}`);
   console.log(`  Total skipped/dupes:    ${totalSkipped.toLocaleString()}`);
-  console.log(`  Editions missing:       ${editionsMissing.toLocaleString()}`);
+  console.log(`  Resolved via GQL:       ${gqlResolved.toLocaleString()}`);
+  console.log(`  Editions still missing: ${editionsMissing.toLocaleString()}`);
+  console.log(`  GQL cache size:         ${gqlCache.size.toLocaleString()}`);
   console.log(`  Elapsed:                ${totalElapsed} min`);
   console.log("═══════════════════════════════════════════════════════");
 }
