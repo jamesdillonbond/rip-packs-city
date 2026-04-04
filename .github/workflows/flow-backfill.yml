@@ -1,0 +1,42 @@
+name: Flow Blockchain Backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_height:
+        description: "Start block height (default: 73000000 ≈ Jan 1 2024)"
+        required: false
+        default: ""
+      end_height:
+        description: "End block height (default: 96000000 ≈ Jan 1 2026)"
+        required: false
+        default: ""
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360 # 6 hours
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install ts-node
+        run: npm install -g ts-node
+
+      - name: Run Flow backfill script
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          START_HEIGHT: ${{ github.event.inputs.start_height }}
+          END_HEIGHT: ${{ github.event.inputs.end_height }}
+        run: ts-node --skip-project scripts/flow-backfill.ts
