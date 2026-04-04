@@ -18,8 +18,4 @@ export default withSentryConfig(nextConfig, {
   silent: true,
   // Upload source maps for better stack traces (requires SENTRY_AUTH_TOKEN)
   widenClientFileUpload: true,
-  // Hides source maps from client bundles
-  hideSourceMaps: true,
-  // Automatically tree-shake Sentry logger statements
-  disableLogger: true,
 })
