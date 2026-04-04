@@ -32,8 +32,8 @@ jobs:
 
       - name: Run Flow backfill script
         env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: https://bxcqstmqfzmuolpuynti.supabase.co
+          SUPABASE_URL: https://bxcqstmqfzmuolpuynti.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           START_HEIGHT: ${{ github.event.inputs.start_height }}
           END_HEIGHT: ${{ github.event.inputs.end_height }}
