@@ -10,7 +10,7 @@ const COLLECTION_META: Record<string, { title: string; description: string }> = 
   "nba-top-shot": {
     title: "NBA Top Shot Analytics — Rip Packs City",
     description:
-      "Wallet analysis, FMV pricing, set completion intelligence, pack EV, and live sniper deals for NBA Top Shot collectors on the Flow blockchain.",
+      "Real-time FMV pricing, deal sniper, pack EV calculator, and collection analytics for NBA Top Shot collectors on Flow blockchain.",
   },
   "nfl-all-day": {
     title: "NFL All Day Analytics — Rip Packs City",
@@ -51,12 +51,14 @@ export async function generateMetadata(
       url: canonical,
       siteName: "Rip Packs City",
       type: "website",
+      images: [{ url: "/og-default.png", width: 1200, height: 630 }],
     },
     twitter: {
       card: "summary_large_image",
       title: meta.title,
       description: meta.description,
       site: "@rippackscity",
+      images: ["/og-default.png"],
     },
   }
 }

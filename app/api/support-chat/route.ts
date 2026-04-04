@@ -140,6 +140,17 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "get_collection_snapshot",
+    description: "Get a shareable summary of a collector's portfolio including total moments, total FMV, top moments by value, badge count, and series breakdown. Use when a user asks about their portfolio value, total collection worth, or wants to share their collection.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        walletAddress: { type: "string", description: "Flow wallet address (0x...) or Top Shot username" },
+      },
+      required: ["walletAddress"],
+    },
+  },
+  {
     name: "explain_fmv",
     description: "Get a detailed FMV breakdown for a specific edition, including confidence, methodology, and a plain-English explanation. Use when a user asks why a moment is priced a certain way, or asks about FMV confidence or methodology.",
     input_schema: {
@@ -249,6 +260,9 @@ When a user wants to find or buy moments:
 5. For budget queries ("I have $50"), optimize for value: badge presence, discount %, confidence
 6. Never make up prices — always use tool results
 7. You can check a user's wallet for near-complete sets and surface the cheapest missing moments
+
+## Collection Snapshot
+Use get_collection_snapshot when a user asks about their portfolio value, total collection worth, or wants to share their collection. It returns a full summary with top moments and a shareable link.
 
 ## FMV Deep Dive
 Use explain_fmv when a user asks why a moment is priced a certain way, or asks about FMV confidence or methodology. It returns a full breakdown with plain-English explanation.
@@ -575,6 +589,27 @@ async function executeTool(
         return JSON.stringify({ status: "ok", message: `Alert removed.`, data });
       }
       return JSON.stringify({ status: "error", message: "Invalid action. Use set, remove, or list." });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: err.message });
+    }
+  }
+
+  if (toolName === "get_collection_snapshot") {
+    try {
+      const res = await fetch(
+        `${base}/api/collection-snapshot?wallet=${encodeURIComponent(toolInput.walletAddress)}`,
+        { signal: AbortSignal.timeout(10000) }
+      );
+      if (!res.ok) throw new Error(`Snapshot returned ${res.status}`);
+      const data = await res.json();
+      const topList = (data.topMoments ?? [])
+        .map((m: any) => `${m.playerName} (${m.tier}) — $${Number(m.fmv).toFixed(2)}`)
+        .join(", ");
+      return JSON.stringify({
+        status: "ok",
+        summary: `Your collection: ${data.totalMoments} moments, total FMV $${Number(data.totalFmv).toFixed(2)}. Top moments: ${topList}. Share your collection at https://rip-packs-city.vercel.app/share/${encodeURIComponent(toolInput.walletAddress)}`,
+        raw: data,
+      });
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: err.message });
     }

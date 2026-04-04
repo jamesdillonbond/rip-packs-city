@@ -579,7 +579,33 @@ const walletSearchSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
+    let body: unknown
+    try {
+      body = await req.json()
+    } catch {
+      console.log("[wallet-search] malformed JSON in request body")
+      return NextResponse.json(
+        {
+          error: "Malformed JSON in request body.",
+          rows: [],
+          summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+        } satisfies WalletSearchResponse,
+        { status: 400 }
+      )
+    }
+
+    if (!body || typeof body !== "object" || !("input" in body) || !(body as any).input || String((body as any).input).trim() === "") {
+      console.log("[wallet-search] missing or empty input field")
+      return NextResponse.json(
+        {
+          error: "input is required",
+          rows: [],
+          summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+        } satisfies WalletSearchResponse,
+        { status: 400 }
+      )
+    }
+
     const parsed = walletSearchSchema.safeParse(body)
 
     if (!parsed.success) {

@@ -1112,17 +1112,18 @@ export default function WalletPage() {
           >
             {loading ? "Loading..." : "Search"}
           </button>
-          {rows.length > 0 && (
+          {rows.length > 0 && input.trim() && (
             <button
               onClick={function() {
-                navigator.clipboard.writeText(window.location.href)
+                const shareUrl = "https://rip-packs-city.vercel.app/share/" + encodeURIComponent(input.trim())
+                navigator.clipboard.writeText(shareUrl)
                 setCopied(true)
-                setTimeout(function() { setCopied(false) }, 1500)
+                setTimeout(function() { setCopied(false) }, 2000)
               }}
-              title="Copy shareable link"
+              title="Copy shareable collection card link"
               className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-400 hover:bg-zinc-900 transition"
             >
-              {copied ? "✓" : "🔗"}
+              {copied ? "Link copied!" : "Share"}
             </button>
           )}
         </div>

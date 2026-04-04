@@ -41,6 +41,20 @@ interface HealthData {
   [key: string]: unknown
 }
 
+interface OverviewStats {
+  totalEditions: number
+  highConfCount: number
+  volume24h: number
+  movers: Array<{
+    player_name?: string
+    set_name?: string
+    tier?: string
+    old_fmv?: number
+    new_fmv?: number
+    pct_change?: number
+  }>
+}
+
 interface TopSale {
   playerName: string
   setName: string
@@ -114,9 +128,22 @@ export default function OverviewPage() {
   const [topSales, setTopSales] = useState<TopSale[]>([])
   const [sniperDeals, setSniperDeals] = useState<SniperDealPreview[]>([])
   const [health, setHealth] = useState<HealthData | null>(null)
+  const [overviewStats, setOverviewStats] = useState<OverviewStats | null>(null)
+  const [statsLoading, setStatsLoading] = useState(true)
   const [pulseLoading, setPulseLoading] = useState(true)
   const [salesLoading, setSalesLoading] = useState(true)
   const [sniperLoading, setSniperLoading] = useState(true)
+
+  // Fetch overview stats (FMV coverage, volume, movers)
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await fetch("/api/overview-stats")
+      if (!res.ok) return
+      setOverviewStats(await res.json())
+    } catch { /* swallow */ } finally {
+      setStatsLoading(false)
+    }
+  }, [])
 
   // Fetch market pulse from the concierge context API
   const fetchPulse = useCallback(async () => {
@@ -167,11 +194,12 @@ export default function OverviewPage() {
   }, [])
 
   useEffect(() => {
+    fetchStats()
     fetchPulse()
     fetchSales()
     fetchSniper()
     fetchHealth()
-  }, [fetchPulse, fetchSales, fetchSniper, fetchHealth])
+  }, [fetchStats, fetchPulse, fetchSales, fetchSniper, fetchHealth])
 
   // Derive pipeline freshness
   const fmvMinutes = health?.fmv_pipeline?.minutes_since_last_fmv ?? null
@@ -239,6 +267,93 @@ export default function OverviewPage() {
               ANALYZE →
             </button>
           </form>
+        </section>
+      )}
+
+      {/* ── Live Stats ── */}
+      {collection === "nba-top-shot" ? (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
+          <section className="rpc-card" style={{ padding: "16px 20px", position: "relative", overflow: "hidden" }}>
+            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "var(--rpc-red)", opacity: 0.7 }} />
+            <div className="rpc-label" style={{ marginBottom: 4 }}>Total Moments Tracked</div>
+            {statsLoading ? (
+              <div className="rpc-skeleton" style={{ width: "50%", height: 20 }} />
+            ) : (
+              <div className="rpc-heading" style={{ fontSize: "var(--text-xl)", color: "var(--rpc-text-primary)" }}>
+                {(overviewStats?.totalEditions ?? 0).toLocaleString()}
+              </div>
+            )}
+          </section>
+          <section className="rpc-card" style={{ padding: "16px 20px", position: "relative", overflow: "hidden" }}>
+            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "var(--rpc-success)", opacity: 0.7 }} />
+            <div className="rpc-label" style={{ marginBottom: 4 }}>Verified FMV Coverage</div>
+            {statsLoading ? (
+              <div className="rpc-skeleton" style={{ width: "50%", height: 20 }} />
+            ) : (
+              <div className="rpc-heading" style={{ fontSize: "var(--text-xl)", color: "var(--rpc-success)" }}>
+                {(overviewStats?.highConfCount ?? 0).toLocaleString()}
+              </div>
+            )}
+          </section>
+          <section className="rpc-card" style={{ padding: "16px 20px", position: "relative", overflow: "hidden" }}>
+            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "var(--tier-legendary)", opacity: 0.7 }} />
+            <div className="rpc-label" style={{ marginBottom: 4 }}>24h Sales Volume</div>
+            {statsLoading ? (
+              <div className="rpc-skeleton" style={{ width: "50%", height: 20 }} />
+            ) : (
+              <div className="rpc-heading" style={{ fontSize: "var(--text-xl)", color: "var(--tier-legendary)" }}>
+                {fmtDollars(overviewStats?.volume24h ?? 0)}
+              </div>
+            )}
+          </section>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
+          {["Total Moments Tracked", "FMV Coverage", "24h Sales Volume"].map((label) => (
+            <section key={label} className="rpc-card" style={{ padding: "16px 20px", position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "var(--rpc-text-ghost)", opacity: 0.4 }} />
+              <div className="rpc-label" style={{ marginBottom: 4 }}>{label}</div>
+              <div className="rpc-heading" style={{ fontSize: "var(--text-xl)", color: "var(--rpc-text-ghost)" }}>Coming soon</div>
+            </section>
+          ))}
+        </div>
+      )}
+
+      {/* ── FMV Movers (24h) ── */}
+      {!statsLoading && overviewStats?.movers && overviewStats.movers.length > 0 && (
+        <section className="rpc-card" style={{ padding: "16px 20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--rpc-success)" }} />
+            <span className="rpc-label">FMV Movers (24h)</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            {/* Risers */}
+            <div>
+              <div className="rpc-label" style={{ marginBottom: 8, color: "var(--rpc-success)" }}>Rising</div>
+              {overviewStats.movers
+                .filter((m) => (m.pct_change ?? 0) > 0)
+                .slice(0, 5)
+                .map((m, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", marginBottom: 4 }}>
+                    <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: "var(--text-sm)", color: "var(--rpc-text-primary)" }}>{m.player_name}</span>
+                    <span className="rpc-mono" style={{ color: "var(--rpc-success)", fontWeight: 700, fontSize: "var(--text-sm)" }}>+{(m.pct_change ?? 0).toFixed(1)}%</span>
+                  </div>
+                ))}
+            </div>
+            {/* Fallers */}
+            <div>
+              <div className="rpc-label" style={{ marginBottom: 8, color: "var(--rpc-danger)" }}>Falling</div>
+              {overviewStats.movers
+                .filter((m) => (m.pct_change ?? 0) < 0)
+                .slice(0, 5)
+                .map((m, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", marginBottom: 4 }}>
+                    <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: "var(--text-sm)", color: "var(--rpc-text-primary)" }}>{m.player_name}</span>
+                    <span className="rpc-mono" style={{ color: "var(--rpc-danger)", fontWeight: 700, fontSize: "var(--text-sm)" }}>{(m.pct_change ?? 0).toFixed(1)}%</span>
+                  </div>
+                ))}
+            </div>
+          </div>
         </section>
       )}
 
