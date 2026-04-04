@@ -154,9 +154,21 @@ export async function GET(req: NextRequest) {
       packsByTitle,
     })
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "wallet-packs failed" },
-      { status: 500 }
-    )
+    const message = e instanceof Error ? e.message : "wallet-packs failed"
+
+    // Username resolution failures and similar client errors → 400
+    if (message.includes("Could not resolve")) {
+      return NextResponse.json({ error: message }, { status: 400 })
+    }
+
+    // GraphQL / network failures → return empty result instead of 500
+    console.error("[wallet-packs] error:", message)
+    return NextResponse.json({
+      walletAddress: null,
+      totalSealedPacks: 0,
+      owned: {},
+      packsByTitle: {},
+      error: message,
+    })
   }
 }

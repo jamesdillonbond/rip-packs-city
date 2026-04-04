@@ -98,8 +98,24 @@ export async function GET(req: NextRequest) {
         },
       }
     )
-  } catch (err) {
-    console.log("[collection-snapshot] error:", err)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  } catch (err: any) {
+    console.error("[collection-snapshot] error:", err?.message ?? err)
+    return NextResponse.json(
+      {
+        wallet: wallet.trim(),
+        totalMoments: 0,
+        totalFmv: 0,
+        topMoments: [],
+        badgeCount: 0,
+        seriesBreakdown: {},
+        generatedAt: new Date().toISOString(),
+        error: err?.message ?? "Internal server error",
+      },
+      {
+        headers: {
+          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120",
+        },
+      }
+    )
   }
 }

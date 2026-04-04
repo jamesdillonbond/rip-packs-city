@@ -143,11 +143,18 @@ export async function PATCH(req: NextRequest) {
       .eq("owner_key", ownerKey)
       .eq("wallet_address", walletAddr)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error("[saved-wallets PATCH]", error.message, error.details, error.hint);
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (!data) {
+      return NextResponse.json(
+        { error: "Could not find saved wallet for the given ownerKey and walletAddr. Save the wallet first via POST." },
+        { status: 400 }
+      );
     }
 
     // Fire-and-forget: aggregate all wallets and write a daily portfolio snapshot
