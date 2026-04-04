@@ -928,6 +928,18 @@ export default function WalletPage() {
     return false
   }, [input, ownerKey, connectedWallet])
 
+  // ── Task 14: Detect duplicate editions ──────────────────────────────────
+  const duplicateEditions = useMemo(function() {
+    const countMap = new Map<string, number>()
+    for (const row of rows) {
+      const key = (row.setName ?? "") + "||" + (row.playerName ?? "") + "||" + getParallel(row)
+      countMap.set(key, (countMap.get(key) ?? 0) + 1)
+    }
+    const dupKeys = new Set<string>()
+    countMap.forEach(function(count, key) { if (count > 1) dupKeys.add(key) })
+    return dupKeys
+  }, [rows])
+
   const filteredRows = useMemo(function() {
     const q = searchWithin.trim().toLowerCase()
     const filtered = rows.filter(function(r) {
@@ -1026,18 +1038,6 @@ export default function WalletPage() {
       .sort(function(a: any, b: any) { return a.missingCount - b.missingCount })
       .slice(0, 3)
   }, [setsData])
-
-  // ── Task 14: Detect duplicate editions ──────────────────────────────────
-  const duplicateEditions = useMemo(function() {
-    const countMap = new Map<string, number>()
-    for (const row of rows) {
-      const key = (row.setName ?? "") + "||" + (row.playerName ?? "") + "||" + getParallel(row)
-      countMap.set(key, (countMap.get(key) ?? 0) + 1)
-    }
-    const dupKeys = new Set<string>()
-    countMap.forEach(function(count, key) { if (count > 1) dupKeys.add(key) })
-    return dupKeys
-  }, [rows])
 
   // Restore dismissed state from sessionStorage
   useEffect(function() {
