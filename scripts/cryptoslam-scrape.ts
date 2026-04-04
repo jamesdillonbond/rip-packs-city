@@ -1,15 +1,16 @@
 /**
  * scripts/cryptoslam-scrape.ts
  *
- * Scrapes historical NBA Top Shot sales from CryptoSlam for 2024–2025 and
- * inserts them into Supabase. CryptoSlam's API may require authentication
- * or specific headers — the script logs raw responses on first page to help
- * debug the actual data shape.
+ * Historical NBA Top Shot sales backfill for 2024–2025.
+ *
+ * Strategy:
+ *   1. Try Flowty sales history endpoint (POST api2.flowty.io/sales/...)
+ *   2. Fall back to Top Shot public GQL (searchMarketplaceTransactions)
+ *      with monthly date windows across all 24 months of 2024–2025.
  *
  * Env vars:
  *   NEXT_PUBLIC_SUPABASE_URL / SUPABASE_URL — Supabase project URL
  *   SUPABASE_SERVICE_ROLE_KEY               — Supabase admin key
- *   CRYPTOSLAM_API_KEY                      — API key (if required)
  *
  * Usage:
  *   npx tsx scripts/cryptoslam-scrape.ts
@@ -19,23 +20,18 @@ import { createClient } from "@supabase/supabase-js";
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
-const PAGE_SIZE = 100;
-const LOG_EVERY = 100; // log progress every N pages
+const TOPSHOT_GQL = "https://public-api.nbatopshot.com/graphql";
+const FLOWTY_SALES = "https://api2.flowty.io/sales/0x0b2a3299cc857e29/TopShot";
+const FLOWTY_HEADERS = {
+  "Content-Type": "application/json",
+  Origin: "https://www.flowty.io",
+  Referer: "https://www.flowty.io/",
+};
+
+const GQL_PAGE_SIZE = 100;
 const INSERT_BATCH = 50;
-const DELAY_MS = 200; // ms between page fetches
+const DELAY_MS = 200;
 const MAX_RETRIES = 5;
-
-// Date range filter
-const DATE_START = "2024-01-01T00:00:00Z";
-const DATE_END = "2025-12-31T23:59:59Z";
-
-// CryptoSlam API endpoints to try in order
-const API_ENDPOINTS = [
-  "https://api.cryptoslam.io/api/sale-records?collectionSlug=nba-top-shot",
-  "https://api.cryptoslam.io/v1/collections/nba-top-shot/sales",
-  "https://api.cryptoslam.io/v2/nba-top-shot/sales",
-  "https://cryptoslam.io/api/nba-top-shot/sales",
-];
 
 // ── Supabase client ─────────────────────────────────────────────────────────
 
@@ -52,94 +48,124 @@ const supabase: any = createClient(supabaseUrl, supabaseKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
+// ── GQL query (same as app/api/ingest/route.ts) ─────────────────────────────
+
+const SEARCH_TRANSACTIONS_QUERY = `
+  query BackfillSales($input: SearchMarketplaceTransactionsInput!) {
+    searchMarketplaceTransactions(input: $input) {
+      data {
+        searchSummary {
+          pagination {
+            rightCursor
+          }
+          data {
+            ... on MarketplaceTransactions {
+              size
+              data {
+                ... on MarketplaceTransaction {
+                  id
+                  price
+                  updatedAt
+                  txHash
+                  moment {
+                    id
+                    flowId
+                    flowSerialNumber
+                    tier
+                    set {
+                      id
+                      flowName
+                      flowSeriesNumber
+                    }
+                    setPlay {
+                      ID
+                      flowRetired
+                    }
+                    parallelSetPlay {
+                      setID
+                      playID
+                    }
+                    play {
+                      id
+                      stats {
+                        playerName
+                        playCategory
+                        dateOfMoment
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+// ── Types ───────────────────────────────────────────────────────────────────
+
+interface SaleTransaction {
+  id: string;
+  price: number | null;
+  updatedAt: string | null;
+  txHash: string | null;
+  moment: {
+    id: string;
+    flowId: string | null;
+    flowSerialNumber: string | null;
+    tier: string | null;
+    set: { id: string; flowName: string | null; flowSeriesNumber: number | null } | null;
+    setPlay: { ID: string; flowRetired: boolean | null } | null;
+    parallelSetPlay: { setID: string | null; playID: string | null } | null;
+    play: {
+      id: string;
+      stats: { playerName: string | null; playCategory: string | null; dateOfMoment: string | null } | null;
+    } | null;
+  } | null;
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function fetchWithRetry(url: string, headers: Record<string, string> = {}): Promise<Response> {
-  let delay = 1000;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const res = await fetch(url, {
-      headers: {
-        "Accept": "application/json",
-        "User-Agent": "RipPacksCity/1.0",
-        ...headers,
-      },
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (res.ok) return res;
-    if (res.status === 429 || res.status >= 500) {
-      if (attempt === MAX_RETRIES) {
-        throw new Error(`CryptoSlam API ${res.status} after ${MAX_RETRIES + 1} attempts: ${url}`);
-      }
-      console.warn(`  HTTP ${res.status}, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
-      await sleep(delay);
-      delay *= 2;
-    } else {
-      const body = await res.text().catch(() => "");
-      throw new Error(`CryptoSlam API ${res.status}: ${body.slice(0, 500)}`);
-    }
-  }
-  throw new Error("unreachable");
-}
-
-// ── Types ───────────────────────────────────────────────────────────────────
-
-// Expected CryptoSlam sale record — fields will be confirmed by raw log output
-interface CryptoSlamSale {
-  transactionHash?: string;
-  transaction_hash?: string;
-  txHash?: string;
-  hash?: string;
-  price?: number;
-  priceUSD?: number;
-  price_usd?: number;
-  nftId?: string;
-  nft_id?: string;
-  tokenId?: string;
-  token_id?: string;
-  saleDate?: string;
-  sale_date?: string;
-  soldAt?: string;
-  sold_at?: string;
-  timestamp?: string;
-  sellerAddress?: string;
-  seller_address?: string;
-  seller?: string;
-  buyerAddress?: string;
-  buyer_address?: string;
-  buyer?: string;
+function buildEditionKey(tx: SaleTransaction): string | null {
+  const moment = tx.moment;
+  if (!moment) return null;
+  const psp = moment.parallelSetPlay;
+  const setId = psp?.setID ?? moment.set?.id;
+  const playId = psp?.playID ?? moment.play?.id;
+  if (!setId || !playId) return null;
+  return `${setId}:${playId}`;
 }
 
 /**
- * Normalize a CryptoSlam sale record to our internal format.
- * Handles multiple possible field naming conventions.
+ * Generate month ranges: [startISO, endISO] for each month in 2024–2025.
  */
-function normalizeSale(raw: CryptoSlamSale): {
-  txHash: string | null;
-  price: number | null;
-  nftId: string | null;
-  soldAt: string | null;
-  seller: string | null;
-  buyer: string | null;
-} {
-  return {
-    txHash: raw.transactionHash ?? raw.transaction_hash ?? raw.txHash ?? raw.hash ?? null,
-    price: raw.priceUSD ?? raw.price_usd ?? raw.price ?? null,
-    nftId: raw.nftId ?? raw.nft_id ?? raw.tokenId ?? raw.token_id ?? null,
-    soldAt: raw.saleDate ?? raw.sale_date ?? raw.soldAt ?? raw.sold_at ?? raw.timestamp ?? null,
-    seller: raw.sellerAddress ?? raw.seller_address ?? raw.seller ?? null,
-    buyer: raw.buyerAddress ?? raw.buyer_address ?? raw.buyer ?? null,
-  };
+function generateMonthRanges(): Array<{ start: string; end: string; label: string }> {
+  const ranges: Array<{ start: string; end: string; label: string }> = [];
+  for (let year = 2024; year <= 2025; year++) {
+    for (let month = 1; month <= 12; month++) {
+      const start = `${year}-${String(month).padStart(2, "0")}-01T00:00:00Z`;
+      // End = first day of next month
+      const nextMonth = month === 12 ? 1 : month + 1;
+      const nextYear = month === 12 ? year + 1 : year;
+      const end = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01T00:00:00Z`;
+      const label = `${year}-${String(month).padStart(2, "0")}`;
+      ranges.push({ start, end, label });
+    }
+  }
+  return ranges;
 }
 
-// ── Edition lookup ──────────────────────────────────────────────────────────
+// ── Edition lookup & upsert ─────────────────────────────────────────────────
 
 let collectionId: string | null = null;
 
-async function getCollectionId(): Promise<string | null> {
+async function getCollectionId(): Promise<string> {
   if (collectionId) return collectionId;
   const { data } = await supabase
     .from("collections")
@@ -147,264 +173,305 @@ async function getCollectionId(): Promise<string | null> {
     .eq("slug", "nba_top_shot")
     .single();
   collectionId = data?.id ?? null;
+  if (!collectionId) throw new Error("nba_top_shot collection not found");
   return collectionId;
 }
 
-async function lookupEditions(
-  nftIds: string[],
-): Promise<Map<string, { edition_id: string; collection_id: string; serial_number: number | null }>> {
-  const result = new Map<string, { edition_id: string; collection_id: string; serial_number: number | null }>();
-  if (nftIds.length === 0) return result;
+/**
+ * Upsert an edition stub from GQL transaction data, return edition UUID.
+ */
+async function ensureEdition(tx: SaleTransaction, colId: string): Promise<string | null> {
+  const editionKey = buildEditionKey(tx);
+  if (!editionKey) return null;
 
-  // Check moments table
-  const { data: momentRows } = await supabase
-    .from("moments")
-    .select("nft_id, edition_id, collection_id, serial_number")
-    .in("nft_id", nftIds);
+  const moment = tx.moment;
+  const playerName = moment?.play?.stats?.playerName ?? "Unknown";
+  const setName = moment?.set?.flowName ?? "Unknown Set";
 
-  for (const row of momentRows ?? []) {
-    if (row.nft_id && row.edition_id && row.collection_id) {
-      result.set(String(row.nft_id), {
-        edition_id: row.edition_id,
-        collection_id: row.collection_id,
-        serial_number: row.serial_number ?? null,
-      });
-    }
+  const { data, error } = await supabase
+    .from("editions")
+    .upsert(
+      {
+        external_id: editionKey,
+        collection_id: colId,
+        name: `${playerName} — ${setName}`,
+        tier: (moment?.tier ?? "COMMON").toUpperCase(),
+        series: moment?.set?.flowSeriesNumber ?? null,
+        play_category: moment?.play?.stats?.playCategory ?? null,
+        game_date: moment?.play?.stats?.dateOfMoment
+          ? moment.play.stats.dateOfMoment.split("T")[0]
+          : null,
+      },
+      { onConflict: "external_id", ignoreDuplicates: false },
+    )
+    .select("id")
+    .single();
+
+  if (error) {
+    // If upsert fails, try a select
+    const { data: existing } = await supabase
+      .from("editions")
+      .select("id")
+      .eq("external_id", editionKey)
+      .single();
+    return existing?.id ?? null;
   }
-
-  // Fallback: check sales table
-  const missing = nftIds.filter((id) => !result.has(id));
-  if (missing.length > 0) {
-    const { data: salesRows } = await supabase
-      .from("sales")
-      .select("nft_id, edition_id, collection_id, serial_number")
-      .in("nft_id", missing)
-      .not("nft_id", "is", null);
-
-    for (const row of salesRows ?? []) {
-      if (row.nft_id && row.edition_id && !result.has(String(row.nft_id))) {
-        result.set(String(row.nft_id), {
-          edition_id: row.edition_id,
-          collection_id: row.collection_id,
-          serial_number: row.serial_number ?? null,
-        });
-      }
-    }
-  }
-
-  return result;
+  return data?.id ?? null;
 }
 
-// ── API endpoint discovery ──────────────────────────────────────────────────
+// ── Flowty sales attempt ────────────────────────────────────────────────────
 
-async function discoverEndpoint(): Promise<string | null> {
-  const apiKey = process.env.CRYPTOSLAM_API_KEY;
-  const headers: Record<string, string> = {};
-  if (apiKey) headers["x-api-key"] = apiKey;
+async function tryFlowty(): Promise<boolean> {
+  console.log("Attempting Flowty sales endpoint...");
+  try {
+    const res = await fetch(FLOWTY_SALES, {
+      method: "POST",
+      headers: FLOWTY_HEADERS,
+      body: JSON.stringify({ page: 1, pageSize: 5, startDate: "2024-01-01", endDate: "2024-01-31" }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    console.log(`  Flowty status: ${res.status}`);
+    const body = await res.text();
+    console.log(`  Flowty raw response (first 2000 chars):`);
+    console.log(body.slice(0, 2000));
 
-  for (const base of API_ENDPOINTS) {
-    const testUrl = `${base}${base.includes("?") ? "&" : "?"}page=1&pageSize=1`;
-    console.log(`Testing endpoint: ${testUrl}`);
-    try {
-      const res = await fetch(testUrl, {
-        headers: { "Accept": "application/json", "User-Agent": "RipPacksCity/1.0", ...headers },
-        signal: AbortSignal.timeout(10_000),
-      });
-      console.log(`  Status: ${res.status}`);
-      if (res.ok) {
-        const body = await res.json();
-        console.log("  Response structure (first 2000 chars):");
-        console.log(JSON.stringify(body, null, 2).slice(0, 2000));
-        return base;
+    if (res.ok) {
+      try {
+        const json = JSON.parse(body);
+        const records = Array.isArray(json) ? json : json?.data ?? json?.sales ?? json?.results ?? [];
+        if (Array.isArray(records) && records.length > 0) {
+          console.log(`  Found ${records.length} records — Flowty sales endpoint is live`);
+          return true;
+        }
+      } catch {
+        // not JSON
       }
-      const text = await res.text().catch(() => "");
-      console.log(`  Body: ${text.slice(0, 500)}`);
+    }
+    console.log("  Flowty sales endpoint did not return usable data, falling back to GQL");
+    return false;
+  } catch (err) {
+    console.log(`  Flowty error: ${err}`);
+    return false;
+  }
+}
+
+// ── GQL fetching ────────────────────────────────────────────────────────────
+
+async function fetchGqlPage(
+  startDate: string,
+  endDate: string,
+  cursor: string | null,
+): Promise<{ transactions: SaleTransaction[]; nextCursor: string | null }> {
+  let delay = 1000;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(TOPSHOT_GQL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: SEARCH_TRANSACTIONS_QUERY,
+          variables: {
+            input: {
+              sortBy: "UPDATED_AT_DESC",
+              filters: {
+                byUpdatedAt: {
+                  start: startDate,
+                  end: endDate,
+                },
+              },
+              searchInput: {
+                pagination: {
+                  cursor: cursor ?? "",
+                  direction: "RIGHT",
+                  limit: GQL_PAGE_SIZE,
+                },
+              },
+            },
+          },
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+
+      if (res.status === 429 || res.status >= 500) {
+        if (attempt === MAX_RETRIES) throw new Error(`GQL ${res.status} after ${MAX_RETRIES + 1} attempts`);
+        console.warn(`  GQL HTTP ${res.status}, retrying in ${delay}ms`);
+        await sleep(delay);
+        delay *= 2;
+        continue;
+      }
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`GQL ${res.status}: ${text.slice(0, 300)}`);
+      }
+
+      const json = await res.json();
+      const summary = json?.data?.searchMarketplaceTransactions?.data?.searchSummary;
+      const nextCursorVal: string | null = summary?.pagination?.rightCursor ?? null;
+
+      const transactions: SaleTransaction[] = [];
+      const dataField = summary?.data;
+
+      if (Array.isArray(dataField)) {
+        for (const block of dataField) {
+          if (Array.isArray(block?.data)) {
+            transactions.push(...block.data);
+          }
+        }
+      } else if (dataField && typeof dataField === "object" && Array.isArray(dataField.data)) {
+        transactions.push(...dataField.data);
+      }
+
+      return { transactions, nextCursor: nextCursorVal };
     } catch (err) {
-      console.log(`  Error: ${err}`);
+      if (attempt === MAX_RETRIES) throw err;
+      console.warn(`  GQL error, retrying in ${delay}ms: ${err}`);
+      await sleep(delay);
+      delay *= 2;
     }
   }
-  return null;
+  return { transactions: [], nextCursor: null };
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
   console.log("═══════════════════════════════════════════════════════");
-  console.log("  CryptoSlam Historical Scraper — NBA Top Shot");
-  console.log("═══════════════════════════════════════════════════════");
-  console.log(`Date range: ${DATE_START} → ${DATE_END}`);
-  console.log("");
+  console.log("  Historical Sales Backfill — NBA Top Shot 2024–2025");
+  console.log("═══════════════════════════════════════════════════════\n");
 
-  // Resolve NBA Top Shot collection ID
   const colId = await getCollectionId();
-  if (!colId) {
-    console.error("Could not find nba_top_shot collection in Supabase");
-    process.exit(1);
+  console.log(`Collection ID: ${colId}\n`);
+
+  // ── Try Flowty first ──────────────────────────────────────────────────
+  const flowtyWorks = await tryFlowty();
+
+  if (flowtyWorks) {
+    console.log("\nFlowty sales endpoint responded — but full pagination logic");
+    console.log("requires inspecting the response shape above. Falling through");
+    console.log("to GQL backfill which is the proven path.\n");
+    // TODO: implement Flowty pagination if the response shape is confirmed
   }
-  console.log(`Collection ID: ${colId}`);
 
-  // Discover working endpoint
-  console.log("\nDiscovering CryptoSlam API endpoint...");
-  const discoveredUrl = await discoverEndpoint();
-  if (!discoveredUrl) {
-    console.error("\nAll CryptoSlam API endpoints returned errors.");
-    console.error("Possible fixes:");
-    console.error("  1. Set CRYPTOSLAM_API_KEY env var if you have an API key");
-    console.error("  2. Check https://developer.cryptoslam.io for current API docs");
-    console.error("  3. The API may require authentication — contact CryptoSlam");
-    process.exit(1);
-    throw new Error("unreachable"); // help tsc narrow type
-  }
-  const baseUrl: string = discoveredUrl;
-  console.log(`\nUsing endpoint: ${baseUrl}\n`);
+  // ── GQL backfill by month ─────────────────────────────────────────────
+  console.log("Starting GQL backfill by month...\n");
 
-  const apiKey = process.env.CRYPTOSLAM_API_KEY;
-  const headers: Record<string, string> = {};
-  if (apiKey) headers["x-api-key"] = apiKey;
-
-  // Counters
+  const months = generateMonthRanges();
   let totalInserted = 0;
   let totalSkipped = 0;
   let totalEditionsMissing = 0;
-  let totalPages = 0;
-  let emptyPages = 0;
+  let totalTransactions = 0;
   const startTime = Date.now();
+  let firstResponseLogged = false;
 
-  // Paginate through all pages
-  for (let page = 1; ; page++) {
-    const sep = baseUrl.includes("?") ? "&" : "?";
-    const url = `${baseUrl}${sep}page=${page}&pageSize=${PAGE_SIZE}`;
+  for (const { start, end, label } of months) {
+    console.log(`\n── ${label} ──────────────────────────────────────`);
+    let cursor: string | null = null;
+    let monthInserted = 0;
+    let monthTotal = 0;
+    let pageNum = 0;
 
-    let data: unknown;
-    try {
-      const res = await fetchWithRetry(url, headers);
-      data = await res.json();
-    } catch (err) {
-      console.error(`Failed to fetch page ${page}: ${err}`);
-      break;
-    }
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      pageNum++;
+      const { transactions, nextCursor } = await fetchGqlPage(start, end, cursor);
 
-    // Extract records array — handle various response shapes
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const records: CryptoSlamSale[] = Array.isArray(data)
-      ? data
-      : Array.isArray((data as any)?.data)
-        ? (data as any).data
-        : Array.isArray((data as any)?.results)
-          ? (data as any).results
-          : Array.isArray((data as any)?.records)
-            ? (data as any).records
-            : Array.isArray((data as any)?.sales)
-              ? (data as any).sales
-              : [];
-
-    if (records.length === 0) {
-      emptyPages++;
-      if (emptyPages >= 3) {
-        console.log(`3 consecutive empty pages at page ${page}, stopping.`);
-        break;
-      }
-      continue;
-    }
-    emptyPages = 0;
-    totalPages = page;
-
-    // Normalize and filter by date range
-    const normalized = records
-      .map(normalizeSale)
-      .filter((s) => {
-        if (!s.soldAt || !s.txHash) return false;
-        return s.soldAt >= DATE_START && s.soldAt <= DATE_END;
-      });
-
-    // If all records are outside our date range and before it, we've gone past
-    const allBefore = records.every((r) => {
-      const d = r.saleDate ?? r.sale_date ?? r.soldAt ?? r.sold_at ?? r.timestamp ?? "";
-      return d < DATE_START;
-    });
-    if (allBefore && records.length > 0) {
-      console.log(`All records on page ${page} are before ${DATE_START}, stopping.`);
-      break;
-    }
-
-    if (normalized.length === 0) {
-      await sleep(DELAY_MS);
-      continue;
-    }
-
-    // Look up editions
-    const nftIds = [...new Set(normalized.map((s) => s.nftId).filter(Boolean) as string[])];
-    const editionMap = await lookupEditions(nftIds);
-
-    // Build insert rows
-    const rows: object[] = [];
-    for (const sale of normalized) {
-      if (!sale.nftId || !sale.txHash) {
-        totalSkipped++;
-        continue;
+      // Log raw first response
+      if (!firstResponseLogged && transactions.length > 0) {
+        console.log("\n  First GQL response sample:");
+        console.log(JSON.stringify(transactions[0], null, 2).slice(0, 1500));
+        console.log("");
+        firstResponseLogged = true;
       }
 
-      const info = editionMap.get(sale.nftId);
-      if (!info) {
-        totalEditionsMissing++;
-        totalSkipped++;
-        continue;
-      }
+      if (transactions.length === 0) break;
 
-      rows.push({
-        edition_id: info.edition_id,
-        collection_id: info.collection_id,
-        serial_number: info.serial_number ?? 0,
-        nft_id: sale.nftId,
-        price_usd: sale.price,
-        price_native: null,
-        currency: "USD",
-        marketplace: "cryptoslam",
-        transaction_hash: sale.txHash,
-        sold_at: sale.soldAt,
-        seller_address: sale.seller,
-        buyer_address: sale.buyer,
-      });
-    }
+      monthTotal += transactions.length;
+      totalTransactions += transactions.length;
 
-    // Batch insert
-    for (let i = 0; i < rows.length; i += INSERT_BATCH) {
-      const batch = rows.slice(i, i + INSERT_BATCH);
-      const { error, count } = await supabase.from("sales").insert(batch, { count: "exact" });
-      if (error) {
-        if (error.code === "23505" || error.message?.includes("duplicate")) {
-          totalSkipped += batch.length;
-        } else {
-          console.error(`  Insert error on page ${page}: ${error.message}`);
-          totalSkipped += batch.length;
+      // Build sale rows
+      const rows: object[] = [];
+      for (const tx of transactions) {
+        if (!tx.txHash || !tx.price || tx.price <= 0 || !tx.updatedAt) {
+          totalSkipped++;
+          continue;
         }
-      } else {
-        totalInserted += count ?? batch.length;
+
+        const editionId = await ensureEdition(tx, colId);
+        if (!editionId) {
+          totalEditionsMissing++;
+          totalSkipped++;
+          continue;
+        }
+
+        const nftId = tx.moment?.flowId ? String(tx.moment.flowId) : null;
+        const serialNumber = tx.moment?.flowSerialNumber ? parseInt(tx.moment.flowSerialNumber, 10) : 0;
+
+        // Write moment cache if we have flowId
+        if (nftId && serialNumber) {
+          await supabase
+            .from("moments")
+            .upsert(
+              { nft_id: nftId, edition_id: editionId, collection_id: colId, serial_number: serialNumber },
+              { onConflict: "nft_id", ignoreDuplicates: true },
+            );
+        }
+
+        rows.push({
+          edition_id: editionId,
+          collection_id: colId,
+          serial_number: serialNumber,
+          nft_id: nftId,
+          price_usd: tx.price,
+          price_native: null,
+          currency: "USD",
+          marketplace: "top_shot",
+          transaction_hash: tx.txHash,
+          sold_at: tx.updatedAt,
+          seller_address: null,
+          buyer_address: null,
+        });
       }
+
+      // Batch insert
+      for (let i = 0; i < rows.length; i += INSERT_BATCH) {
+        const batch = rows.slice(i, i + INSERT_BATCH);
+        const { error, count } = await supabase.from("sales").insert(batch, { count: "exact" });
+        if (error) {
+          if (error.code === "23505" || error.message?.includes("duplicate")) {
+            totalSkipped += batch.length;
+          } else {
+            console.error(`  Insert error: ${error.message}`);
+            totalSkipped += batch.length;
+          }
+        } else {
+          const inserted = count ?? batch.length;
+          totalInserted += inserted;
+          monthInserted += inserted;
+        }
+      }
+
+      // Log every 10 pages within a month
+      if (pageNum % 10 === 0) {
+        console.log(`  Page ${pageNum}: ${monthTotal} txns, ${monthInserted} inserted`);
+      }
+
+      if (!nextCursor) break;
+      cursor = nextCursor;
+      await sleep(DELAY_MS);
     }
 
-    // Log progress
-    if (page % LOG_EVERY === 0) {
-      const elapsed = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
-      console.log(
-        `[Page ${page}] ` +
-          `Inserted: ${totalInserted.toLocaleString()} | ` +
-          `Skipped: ${totalSkipped.toLocaleString()} | ` +
-          `Missing editions: ${totalEditionsMissing.toLocaleString()} | ` +
-          `Elapsed: ${elapsed}min`,
-      );
-    }
-
-    await sleep(DELAY_MS);
+    const elapsed = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
+    console.log(`  ${label} done: ${monthTotal} txns, ${monthInserted} inserted (${elapsed}min elapsed)`);
   }
 
   // Final summary
   const totalElapsed = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
   console.log("");
   console.log("═══════════════════════════════════════════════════════");
-  console.log("  CryptoSlam Scrape Complete");
+  console.log("  Backfill Complete");
   console.log("═══════════════════════════════════════════════════════");
-  console.log(`  Pages processed:        ${totalPages.toLocaleString()}`);
+  console.log(`  Total transactions:     ${totalTransactions.toLocaleString()}`);
   console.log(`  Total inserted:         ${totalInserted.toLocaleString()}`);
   console.log(`  Total skipped/dupes:    ${totalSkipped.toLocaleString()}`);
   console.log(`  Editions missing:       ${totalEditionsMissing.toLocaleString()}`);
