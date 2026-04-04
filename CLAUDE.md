@@ -34,7 +34,16 @@ Active routes:
 - /nba-top-shot/badges
 - /nba-top-shot/sets
 - /nba-top-shot/overview
-- /nba-top-shot/market (new — needs Suspense wrapper around useSearchParams)
+- /nba-top-shot/market
+- /nfl-all-day/overview
+- /nfl-all-day/collection
+- /share/[wallet] (shareable collection card)
+
+API endpoints:
+- /api/edition-stats
+- /api/pack-roi
+- /api/collection-snapshot
+- /api/overview-stats
 
 Collection registry: lib/collections.ts (8 collections defined)
 Old flat routes redirect to the new nested paths.
@@ -71,7 +80,7 @@ git push origin <branch>
 - lib/cart/CartContext.tsx — cart state (addToCart: thumbnailUrl must be null not undefined)
 - app/api/sniper-feed/route.ts — merges Top Shot GQL + Flowty listings
 - app/api/fmv/route.ts — FMV lookup endpoint
-- app/api/support-chat/route.ts — AI concierge (5 tools, Claude Sonnet)
+- app/api/support-chat/route.ts — AI concierge (8 tools, Claude Sonnet)
 - workers/topshot-proxy/ — Cloudflare Worker (committed but NOT yet deployed)
 - .github/workflows/ — cron jobs (ingest, alerts, weekly report)
 
@@ -227,42 +236,37 @@ Telegram sentinel bot: @rpc_sentinel_bot, chat_id 1755958876
 
 ## Known issues / active work
 
-1. Main branch broken — useSearchParams Suspense error on /[collection]/market page
-   Active fix branches: fix-market-suspense, finalize-market-page, cleanup-and-backfill-fix
-   Last good deploy: dpl_GChjXRm...
+Main branch is the canonical clean branch. Latest production deploy: commit f6ca38a.
 
-2. Top Shot proxy not deployed — workers/topshot-proxy/ committed but wrangler deploy never run
+1. Top Shot proxy not deployed — workers/topshot-proxy/ committed but wrangler deploy never run
    Missing env vars: TS_PROXY_URL, TS_PROXY_SECRET
    Remediation: wrangler login && wrangler deploy → wrangler secret put PROXY_SECRET → set env vars via Vercel REST → redeploy
 
-3. Cart execution blocked — needs NEXT_PUBLIC_WALLETCONNECT_ID (register at dashboard.reown.com) + Dapper co-signer registration
+2. Cart execution blocked — needs NEXT_PUBLIC_WALLETCONNECT_ID (register at dashboard.reown.com) + Dapper co-signer registration
 
-4. Twitter deal bot — lib/twitter/post.ts shipped, posted_deals table exists, needs cron trigger
+3. Twitter deal bot — lib/twitter/post.ts shipped, posted_deals table exists, needs cron trigger
 
-5. ~3,600 editions missing onchain IDs; 42 badge_editions rows with no player name
+4. ~3,600 editions missing onchain IDs; 42 badge_editions rows with no player name
 
 ---
 
 ## Prioritized next actions
 
-1. Fix main branch (Suspense wrapper → merge fix branches)
-2. Deploy Cloudflare Worker proxy (restore tsCount > 0)
-3. Cart execution (WalletConnect ID + Dapper registration)
-4. Austin Kline FMV API outreach (demo URL live)
-5. Twitter deal bot activation (add cron trigger)
-6. NFL All Day expansion (architecture researched, build order established)
-7. LLC formation (Oregon, Milwaukie)
-8. RPC Pro monetization ($9/month freemium gate)
-9. Custom domain rippackscity.com (affects Resend + Supabase auth redirects)
-10. SEO: generateMetadata in server-component layout.tsx files
+1. Deploy Cloudflare Worker proxy (restore tsCount > 0)
+2. Cart execution (WalletConnect ID + Dapper registration)
+3. Austin Kline FMV API outreach (demo URL live)
+4. Twitter deal bot activation (add cron trigger)
+5. LLC formation (Oregon, Milwaukie)
+6. RPC Pro monetization ($9/month freemium gate)
+7. Custom domain rippackscity.com (affects Resend + Supabase auth redirects)
 
 ---
 
 ## Architecture notes
 
-- FMV recalc v1.3.0 live (WAP + days_since_sale + sales_count_30d)
+- FMV recalc v1.5.0 live (WAP + days_since_sale + sales_count_30d)
 - GitHub Actions cron every 20min calling /api/ingest with INGEST_SECRET_TOKEN=rippackscity2026
-- Watchlist + FMV Alerts: tables applied, API routes written, concierge tools added — not yet merged
-- Merge order: Pinnacle rebase branch first → watchlist/alerts branch → main
+- Watchlist + FMV Alerts: tables applied, API routes written, concierge tools added
+- Collection sharing: /api/collection-snapshot + /share/[wallet] with OG image generation
 - unique index on transaction_hash in sales_2026 (prevents duplicate wallet-seed rows)
 - Flowty relationship: CEO Mike Levy, CTO Austin Kline — aware of and supportive of RPC
