@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { getCollection, getPublishedCollection, publishedCollections, type Collection } from "@/lib/collections"
+import { getCollection, publishedCollections, type Collection } from "@/lib/collections"
 import { CollectionTabBar } from "@/components/collection-tab-bar"
 import ActiveCollectionSync from "./ActiveCollectionSync"
 import CollectionSwitcher from "@/components/CollectionSwitcher"
@@ -68,17 +68,53 @@ export async function generateMetadata(
 export default async function CollectionSegmentLayout(props: any) {
   const params = await props.params
   const collectionId: string = params?.collection ?? ""
-  const collection = getPublishedCollection(collectionId)
+  const collection = getCollection(collectionId)
 
-  // Fallback to first published collection if not found
-  const fallback = publishedCollections()[0]
-  const col: Collection = collection ?? fallback
+  // Unknown collection → fall back to first published collection
+  if (!collection) {
+    const fallback = publishedCollections()[0]
+    return (
+      <>
+        <ActiveCollectionSync collectionId={fallback.id} />
+        <CollectionTicker collection={fallback} />
+        <CollectionBanner collection={fallback} />
+        <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
+          {props.children}
+        </main>
+      </>
+    )
+  }
+
+  // Unpublished collection → show "Coming Soon" in the layout shell
+  if (!collection.published) {
+    return (
+      <>
+        <ActiveCollectionSync collectionId={collection.id} />
+        <CollectionTicker collection={collection} />
+        <CollectionBanner collection={collection} />
+        <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "80px 24px" }}>
+            <div style={{ fontSize: 56, marginBottom: 20 }}>{collection.icon}</div>
+            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 28, letterSpacing: "0.06em", color: "#fff", textTransform: "uppercase", marginBottom: 12 }}>
+              {collection.label}
+            </div>
+            <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 14, color: "rgba(255,255,255,0.5)", lineHeight: 1.7, maxWidth: 480, marginBottom: 32 }}>
+              {"We\u2019re building something great for " + collection.label + " \u2014 check back soon."}
+            </div>
+            <Link href="/nba-top-shot/overview" style={{ display: "inline-block", padding: "10px 24px", background: "#E03A2F", borderRadius: 6, color: "#fff", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", textDecoration: "none" }}>
+              Back to NBA Top Shot
+            </Link>
+          </div>
+        </main>
+      </>
+    )
+  }
 
   return (
     <>
-      <ActiveCollectionSync collectionId={col.id} />
-      <CollectionTicker collection={col} />
-      <CollectionBanner collection={col} />
+      <ActiveCollectionSync collectionId={collection.id} />
+      <CollectionTicker collection={collection} />
+      <CollectionBanner collection={collection} />
       <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
         {props.children}
       </main>
