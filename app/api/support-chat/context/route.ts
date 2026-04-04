@@ -70,56 +70,38 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // ── 2. Daily deal (via get_top_deals RPC, fallback to direct query) ─────────
+  // ── 2. Daily deal (live sniper feed) ────────────────────────────────────────
   let dailyDeal: object | null = null;
   try {
-    const { data: dealRows } = await supabase.rpc("get_top_deals", {
-      p_player: null,
-      p_team: null,
-      p_tier: null,
-      p_max_price: 50,
-      p_min_discount: 10,
-      p_has_badge: false,
-      p_limit: 8,
-    });
-
-    if (dealRows && dealRows.length > 0) {
-      const scored = dealRows
-        .map((row: any) => {
-          const fmv = parseFloat(row.fmv_usd ?? "0");
-          const ask = parseFloat(row.low_ask ?? "0");
-          if (!fmv || ask <= 0) return null;
-          const discount = row.discount_pct ?? ((fmv - ask) / fmv) * 100;
-          const badges: string[] = Array.isArray(row.play_tags)
-            ? row.play_tags.map((t: any) => t.title ?? t).filter(Boolean)
-            : [];
-          const score =
-            discount +
-            (badges.length > 0 ? 10 : 0);
-          return {
-            player_name: row.player_name,
-            team: row.team ?? null,
-            tier: tierLabel(row.tier),
-            set_name: row.set_name,
-            series: seriesLabel(row.series_number),
-            low_ask: ask,
-            fmv,
-            discount_pct: Math.round(discount),
-            badges,
-            external_id: row.external_id,
-            score,
-          };
-        })
-        .filter(Boolean)
-        .sort((a: any, b: any) => b.score - a.score);
-
-      if (scored.length > 0) dailyDeal = scored[0];
+    const base =
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://rip-packs-city.vercel.app");
+    const sniperRes = await fetch(
+      `${base}/api/sniper-feed?limit=1&minDiscount=15&sortBy=discount`,
+      { signal: AbortSignal.timeout(6000) }
+    );
+    if (sniperRes.ok) {
+      const sniperData = await sniperRes.json();
+      const deals = sniperData.deals ?? [];
+      if (deals.length > 0) {
+        const d = deals[0];
+        dailyDeal = {
+          player_name: d.playerName,
+          low_ask: d.askPrice,
+          discount_pct: Math.round(d.discount),
+          tier: tierLabel(d.tier ?? "COMMON"),
+          source: d.source ?? "topshot",
+          set_name: d.setName,
+          fmv: d.adjustedFmv ?? d.baseFmv,
+          buy_url: d.buyUrl ?? null,
+        };
+      }
     }
   } catch (err) {
-    console.error("[context] dailyDeal RPC error:", err);
+    console.error("[context] dailyDeal sniper-feed error:", err);
   }
 
-  // Fallback: direct cached_listings + fmv_snapshots join if RPC returned nothing
+  // Fallback: direct cached_listings if sniper feed returned nothing
   if (!dailyDeal) {
     try {
       const { data: fallbackRows } = await supabase
@@ -163,6 +145,26 @@ export async function GET(req: NextRequest) {
     }
   } catch (err) {
     console.error("[context] marketPulse RPC error:", err);
+  }
+
+  // ── 3b. FMV movers — append heating-up signal to marketPulse ────────────────
+  try {
+    const { data: movers } = await supabase.rpc("get_fmv_movers", {
+      lookback_interval: "24 hours",
+      min_fmv: 2,
+      limit_count: 3,
+    });
+    if (movers && movers.length > 0) {
+      const hot = movers.filter((m: any) => m.pct_change > 20);
+      if (hot.length > 0) {
+        const moverStr = hot
+          .map((m: any) => `${m.player_name} up ${Math.round(m.pct_change)}% today`)
+          .join(", ");
+        marketPulse = (marketPulse ?? "Market active") + ` · \u{1F525} ${moverStr}`;
+      }
+    }
+  } catch (err) {
+    console.error("[context] fmv_movers error:", err);
   }
 
   // Fallback: direct count from cached_listings if RPC returned nothing

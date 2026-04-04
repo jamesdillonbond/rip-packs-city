@@ -1,5 +1,6 @@
 "use client"
 
+import React from "react"
 import { useEffect, useState, useMemo, useCallback, useRef, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key"
@@ -477,6 +478,27 @@ function ListingsModal({
   )
 }
 
+// ── Task 6: Sparkline SVG component ──────────────────────────────────────────
+
+function Sparkline({ values }: { values: number[] }) {
+  if (values.length < 2) return null
+  const w = 60, h = 24, pad = 2
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const range = max - min || 1
+  const pts = values.map((v, i) => {
+    const x = pad + (i / (values.length - 1)) * (w - pad * 2)
+    const y = h - pad - ((v - min) / range) * (h - pad * 2)
+    return `${x},${y}`
+  }).join(" ")
+  const trend = values[values.length - 1] > values[0] ? "#4ade80" : values[values.length - 1] < values[0] ? "#f87171" : "#71717a"
+  return (
+    <svg width={w} height={h} style={{ display: "inline-block", verticalAlign: "middle", marginLeft: 4 }}>
+      <polyline points={pts} fill="none" stroke={trend} strokeWidth={1.5} />
+    </svg>
+  )
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
 function MarketPageInner() {
@@ -523,6 +545,24 @@ function MarketPageInner() {
 
   // ── Modal state ───────────────────────────────────────────────────────────
   const [selectedEdition, setSelectedEdition] = useState<BadgeEdition | null>(null)
+
+  // ── Task 6: WAP sparkline data ───────────────────────────────────────────
+  const [sparkData, setSparkData] = useState<Map<string, number[]>>(new Map())
+
+  // ── Task 7: Volume heatmap ───────────────────────────────────────────────
+  const [heatmapData, setHeatmapData] = useState<Map<string, number>>(new Map())
+  const [heatmapFilter, setHeatmapFilter] = useState<{ tier: string; series: number } | null>(null)
+
+  // ── Task 8: Mispriced detector tab ───────────────────────────────────────
+  const [activeTab, setActiveTab] = useState<"browse" | "mispriced">("browse")
+  const [mispricedData, setMispricedData] = useState<{ overpriced: any[]; steals: any[] }>({ overpriced: [], steals: [] })
+  const [mispricedLoading, setMispricedLoading] = useState(false)
+
+  // ── Task 9: FMV Movers ──────────────────────────────────────────────────
+  const [movers, setMovers] = useState<{ rising: any[]; falling: any[] }>({ rising: [], falling: [] })
+
+  // ── Task 10: Tightest spreads ───────────────────────────────────────────
+  const [spreads, setSpreads] = useState<any[]>([])
 
   // ── Debounce ref ──────────────────────────────────────────────────────────
   const playerDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -592,6 +632,106 @@ function MarketPageInner() {
     load()
     return () => { cancelled = true }
   }, [walletAddress])
+
+  // ── Task 6: Fetch sparkline data when editions change ────────────────────
+  useEffect(() => {
+    if (!editions.length) return
+    const editionIds = editions.map(e => e.id).slice(0, 50)
+    fetch(`/api/market-sparklines?editionIds=${editionIds.join(",")}`)
+      .then(r => r.ok ? r.json() : null)
+      .then((data: any) => {
+        if (!data?.sparklines) return
+        const map = new Map<string, number[]>()
+        for (const [id, values] of Object.entries(data.sparklines)) {
+          map.set(id, values as number[])
+        }
+        setSparkData(map)
+      })
+      .catch(() => {})
+  }, [editions])
+
+  // ── Task 9: Fetch FMV movers on mount ──────────────────────────────────
+  useEffect(() => {
+    fetch("/api/market-movers")
+      .then(r => r.ok ? r.json() : null)
+      .then((data: any) => {
+        if (!data?.movers) return
+        setMovers({
+          rising: data.movers.filter((m: any) => m.pct_change > 0),
+          falling: data.movers.filter((m: any) => m.pct_change < 0),
+        })
+      })
+      .catch(() => {})
+  }, [])
+
+  // ── Task 10: Fetch tightest spreads on mount ───────────────────────────
+  useEffect(() => {
+    fetch("/api/market?mode=all&sort=low_ask&dir=asc&limit=200")
+      .then(r => r.ok ? r.json() : null)
+      .then((json: any) => {
+        if (!json?.editions) return
+        const withSpread = (json.editions as any[])
+          .filter((r: any) => r.low_ask != null && r.highest_offer != null && r.low_ask > 0 && r.highest_offer > 0)
+          .map((r: any) => ({
+            player_name: r.player_name,
+            tier: r.tier,
+            set_name: r.set_name,
+            best_offer: Number(r.highest_offer),
+            low_ask: Number(r.low_ask),
+            spread: Number(r.low_ask) - Number(r.highest_offer),
+            spread_pct: ((Number(r.low_ask) - Number(r.highest_offer)) / Number(r.low_ask)) * 100,
+          }))
+          .filter((r: any) => r.spread > 0)
+          .sort((a: any, b: any) => a.spread - b.spread)
+          .slice(0, 20)
+        setSpreads(withSpread)
+      })
+      .catch(() => {})
+  }, [])
+
+  // ── Task 7: Heatmap — fetch on mount ───────────────────────────────────
+  useEffect(() => {
+    fetch("/api/market?mode=all&limit=500")
+      .then(r => r.ok ? r.json() : null)
+      .then((json: any) => {
+        if (!json?.editions) return
+        const map = new Map<string, number>()
+        for (const r of json.editions) {
+          const key = `${(r.tier ?? "").replace("MOMENT_TIER_", "")}::${r.series_number}`
+          map.set(key, (map.get(key) ?? 0) + 1)
+        }
+        setHeatmapData(map)
+      })
+      .catch(() => {})
+  }, [])
+
+  // ── Task 8: Mispriced detector fetch ───────────────────────────────────
+  useEffect(() => {
+    if (activeTab !== "mispriced") return
+    setMispricedLoading(true)
+    fetch("/api/market?mode=all&limit=500&sort=low_ask&dir=asc")
+      .then(r => r.ok ? r.json() : null)
+      .then((json: any) => {
+        if (!json?.editions) { setMispricedLoading(false); return }
+        const overpriced: any[] = []
+        const steals: any[] = []
+        for (const r of json.editions) {
+          const ask = Number(r.low_ask)
+          const wap = Number(r.avg_sale_price)
+          if (!ask || !wap || ask <= 0 || wap <= 0) continue
+          if (ask > wap * 2) {
+            overpriced.push({ ...r, low_ask: ask, wap_usd: wap, pct_diff: Math.round(((ask - wap) / wap) * 100) })
+          } else if (ask < wap * 0.6) {
+            steals.push({ ...r, low_ask: ask, wap_usd: wap, pct_diff: Math.round(((wap - ask) / wap) * 100) })
+          }
+        }
+        overpriced.sort((a: any, b: any) => b.pct_diff - a.pct_diff)
+        steals.sort((a: any, b: any) => b.pct_diff - a.pct_diff)
+        setMispricedData({ overpriced: overpriced.slice(0, 30), steals: steals.slice(0, 30) })
+        setMispricedLoading(false)
+      })
+      .catch(() => setMispricedLoading(false))
+  }, [activeTab])
 
   // ── Build API params ───────────────────────────────────────────────────────
   function buildParams(off: number): URLSearchParams {
@@ -919,7 +1059,234 @@ function MarketPageInner() {
         </div>
       )}
 
+      {/* ── Task 9: FMV Movers ────────────────────────────────────────── */}
+      {(movers.rising.length > 0 || movers.falling.length > 0) && (
+        <div className="rpc-card" style={{ marginBottom: 16, padding: 16 }}>
+          <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em", marginBottom: 10 }}>
+            FMV MOVERS (7-DAY)
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            {/* Rising */}
+            <div>
+              <div className="rpc-mono" style={{ fontSize: 10, color: "#4ade80", marginBottom: 6, fontWeight: 700 }}>RISING</div>
+              {movers.rising.slice(0, 5).map((m: any, i: number) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--rpc-border)" }}>
+                  <span className="rpc-mono" style={{ fontSize: 11 }}>{m.player_name}</span>
+                  <span className="rpc-mono" style={{ fontSize: 11, color: "#4ade80", fontWeight: 700 }}>+{m.pct_change?.toFixed(0)}%</span>
+                </div>
+              ))}
+              {movers.rising.length === 0 && <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-ghost)" }}>None</div>}
+            </div>
+            {/* Falling */}
+            <div>
+              <div className="rpc-mono" style={{ fontSize: 10, color: "#f87171", marginBottom: 6, fontWeight: 700 }}>FALLING</div>
+              {movers.falling.slice(0, 5).map((m: any, i: number) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--rpc-border)" }}>
+                  <span className="rpc-mono" style={{ fontSize: 11 }}>{m.player_name}</span>
+                  <span className="rpc-mono" style={{ fontSize: 11, color: "#f87171", fontWeight: 700 }}>{m.pct_change?.toFixed(0)}%</span>
+                </div>
+              ))}
+              {movers.falling.length === 0 && <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-ghost)" }}>None</div>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Task 7: Volume Heatmap ──────────────────────────────────────── */}
+      {heatmapData.size > 0 && (
+        <div className="rpc-card" style={{ marginBottom: 16, padding: 16, overflowX: "auto" }}>
+          <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em", marginBottom: 10 }}>
+            VOLUME HEATMAP (TIER x SERIES)
+          </div>
+          <table style={{ borderCollapse: "collapse", width: "100%" }}>
+            <thead>
+              <tr>
+                <th style={{ padding: "4px 8px", fontSize: 9, color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", textAlign: "left" }}>TIER</th>
+                {Object.entries(SERIES_LABELS).map(([k, v]) => (
+                  <th key={k} style={{ padding: "4px 8px", fontSize: 9, color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", textAlign: "center" }}>{v}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {TIER_ORDER.map(t => {
+                const heatMax = Math.max(...Array.from(heatmapData.values() as IterableIterator<number>), 1)
+                return (
+                  <React.Fragment key={t}>
+                    <tr>
+                      <td style={{ padding: "4px 8px", fontSize: 10, fontFamily: "var(--font-mono)", color: TIER_COLORS[t] ?? "var(--rpc-text-muted)", fontWeight: 700 }}>{t}</td>
+                      {Object.keys(SERIES_LABELS).map(s => {
+                        const key = `${t}::${s}`
+                        const count = heatmapData.get(key) ?? 0
+                        const intensity = count / heatMax
+                        const isSelected = heatmapFilter?.tier === t && heatmapFilter?.series === Number(s)
+                        return (
+                          <td
+                            key={s}
+                            onClick={() => {
+                              if (isSelected) {
+                                setHeatmapFilter(null)
+                                setTier(""); setSeries("")
+                              } else {
+                                setHeatmapFilter({ tier: t, series: Number(s) })
+                                setTier(t); setSeries(s)
+                              }
+                            }}
+                            style={{
+                              padding: "6px 8px", textAlign: "center", cursor: "pointer",
+                              fontFamily: "var(--font-mono)", fontSize: 11,
+                              background: isSelected
+                                ? "rgba(224,58,47,0.3)"
+                                : count > 0
+                                ? `rgba(224,58,47,${0.05 + intensity * 0.4})`
+                                : "transparent",
+                              color: count > 0 ? "var(--rpc-text)" : "var(--rpc-text-ghost)",
+                              border: isSelected ? "1px solid var(--rpc-red)" : "1px solid transparent",
+                              borderRadius: 4,
+                            }}
+                          >
+                            {count || ""}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  </React.Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Task 10: Tightest Spreads ──────────────────────────────────── */}
+      {spreads.length > 0 && (
+        <div className="rpc-card" style={{ marginBottom: 16, padding: 16 }}>
+          <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em", marginBottom: 10 }}>
+            TIGHTEST SPREADS (BID-ASK)
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--rpc-border)" }}>
+                  <th style={{ ...thStyle, cursor: "default" }}>PLAYER</th>
+                  <th style={{ ...thStyle, cursor: "default" }}>TIER</th>
+                  <th style={{ ...thStyle, cursor: "default" }}>SET</th>
+                  <th style={{ ...thStyle, cursor: "default", textAlign: "right" }}>BEST OFFER</th>
+                  <th style={{ ...thStyle, cursor: "default", textAlign: "right" }}>LOW ASK</th>
+                  <th style={{ ...thStyle, cursor: "default", textAlign: "right" }}>SPREAD</th>
+                  <th style={{ ...thStyle, cursor: "default", textAlign: "right" }}>SPREAD %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {spreads.map((s: any, i: number) => (
+                  <tr key={i} style={{ borderBottom: "1px solid var(--rpc-border)" }}>
+                    <td className="rpc-mono" style={{ padding: "6px 12px", fontSize: 11 }}>{s.player_name}</td>
+                    <td className="rpc-mono" style={{ padding: "6px 12px", fontSize: 11, color: tierColor(s.tier ?? "") }}>{(s.tier ?? "").replace("MOMENT_TIER_", "")}</td>
+                    <td className="rpc-mono" style={{ padding: "6px 12px", fontSize: 11, color: "var(--rpc-text-muted)" }}>{s.set_name}</td>
+                    <td className="rpc-mono" style={{ padding: "6px 12px", fontSize: 11, textAlign: "right" }}>{fmt(s.best_offer)}</td>
+                    <td className="rpc-mono" style={{ padding: "6px 12px", fontSize: 11, textAlign: "right" }}>{fmt(s.low_ask)}</td>
+                    <td className="rpc-mono" style={{ padding: "6px 12px", fontSize: 11, textAlign: "right", color: "#4ade80" }}>{fmt(s.spread)}</td>
+                    <td className="rpc-mono" style={{ padding: "6px 12px", fontSize: 11, textAlign: "right", color: "var(--rpc-text-muted)" }}>{s.spread_pct.toFixed(1)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Task 8: Tab bar ────────────────────────────────────────────── */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <button
+          onClick={() => setActiveTab("browse")}
+          style={{
+            padding: "6px 16px", borderRadius: 6, cursor: "pointer",
+            fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700,
+            letterSpacing: "0.05em",
+            background: activeTab === "browse" ? "var(--rpc-red)" : "var(--rpc-surface-raised)",
+            color: activeTab === "browse" ? "#fff" : "var(--rpc-text-muted)",
+            border: activeTab === "browse" ? "1px solid var(--rpc-red)" : "1px solid var(--rpc-border)",
+          }}
+        >
+          BROWSE
+        </button>
+        <button
+          onClick={() => setActiveTab("mispriced")}
+          style={{
+            padding: "6px 16px", borderRadius: 6, cursor: "pointer",
+            fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700,
+            letterSpacing: "0.05em",
+            background: activeTab === "mispriced" ? "var(--rpc-red)" : "var(--rpc-surface-raised)",
+            color: activeTab === "mispriced" ? "#fff" : "var(--rpc-text-muted)",
+            border: activeTab === "mispriced" ? "1px solid var(--rpc-red)" : "1px solid var(--rpc-border)",
+          }}
+        >
+          MISPRICED DETECTOR
+        </button>
+      </div>
+
+      {/* ── Task 8: Mispriced panel ────────────────────────────────────── */}
+      {activeTab === "mispriced" && (
+        <div className="rpc-card" style={{ padding: 16 }}>
+          {mispricedLoading && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="rpc-skeleton" style={{ height: 32, borderRadius: 6 }} />
+              ))}
+            </div>
+          )}
+          {!mispricedLoading && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+              {/* Steals */}
+              <div>
+                <div className="rpc-mono" style={{ fontSize: 10, color: "#4ade80", marginBottom: 8, fontWeight: 700, letterSpacing: "0.1em" }}>
+                  STEALS (ASK &lt; 60% FMV)
+                </div>
+                {mispricedData.steals.length === 0 && (
+                  <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-ghost)" }}>No steals found</div>
+                )}
+                {mispricedData.steals.map((r: any, i: number) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 0", borderBottom: "1px solid var(--rpc-border)" }}>
+                    <div>
+                      <span className="rpc-mono" style={{ fontSize: 11 }}>{r.player_name}</span>
+                      <span className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-ghost)", marginLeft: 6 }}>{(r.tier ?? "").replace("MOMENT_TIER_", "")}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                      <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>FMV {fmt(r.wap_usd)}</span>
+                      <span className="rpc-mono" style={{ fontSize: 11, fontWeight: 700 }}>ASK {fmt(r.low_ask)}</span>
+                      <span className="rpc-mono" style={{ fontSize: 10, color: "#4ade80", fontWeight: 700 }}>-{r.pct_diff}%</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Overpriced */}
+              <div>
+                <div className="rpc-mono" style={{ fontSize: 10, color: "#f87171", marginBottom: 8, fontWeight: 700, letterSpacing: "0.1em" }}>
+                  OVERPRICED (ASK &gt; 2x FMV)
+                </div>
+                {mispricedData.overpriced.length === 0 && (
+                  <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-ghost)" }}>No overpriced found</div>
+                )}
+                {mispricedData.overpriced.map((r: any, i: number) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 0", borderBottom: "1px solid var(--rpc-border)" }}>
+                    <div>
+                      <span className="rpc-mono" style={{ fontSize: 11 }}>{r.player_name}</span>
+                      <span className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-ghost)", marginLeft: 6 }}>{(r.tier ?? "").replace("MOMENT_TIER_", "")}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                      <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>FMV {fmt(r.wap_usd)}</span>
+                      <span className="rpc-mono" style={{ fontSize: 11, fontWeight: 700 }}>ASK {fmt(r.low_ask)}</span>
+                      <span className="rpc-mono" style={{ fontSize: 10, color: "#f87171", fontWeight: 700 }}>+{r.pct_diff}%</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Results count */}
+      {activeTab === "browse" && <>
       <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 12 }}>
         <span className="rpc-mono" style={{ fontSize: "var(--text-sm)", color: "var(--rpc-text-muted)" }}>
           {loading ? "Loading…" : meta ? `${meta.total.toLocaleString()} editions` : "—"}
@@ -1024,6 +1391,7 @@ function MarketPageInner() {
                     <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
                       <span className="rpc-mono" style={{ fontSize: "var(--text-sm)", color: "var(--rpc-text-muted)" }}>
                         {fmt(e.avg_sale_price)}
+                        {sparkData.has(e.id) && <Sparkline values={sparkData.get(e.id)!} />}
                       </span>
                     </td>
 
@@ -1160,6 +1528,7 @@ function MarketPageInner() {
           onClose={() => setSelectedEdition(null)}
         />
       )}
+      </>}
     </div>
   )
 }

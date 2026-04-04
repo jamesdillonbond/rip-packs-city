@@ -738,6 +738,10 @@ export async function POST(req: NextRequest) {
       finalResponse = "Sorry, I ran into an issue. Try again in a moment, or reach out to Trevor on Discord.";
     }
 
+    if (escalated) {
+      finalResponse += "\n\nYou can also DM us directly at https://twitter.com/RipPacksCity for a faster response.";
+    }
+
     const playerSearched =
       usedTools.includes("search_catalog_deals") || usedTools.includes("search_live_deals")
         ? body.message.match(/\b([A-Z][a-z]+ [A-Z][a-z]+)\b/)?.[0] ?? undefined
