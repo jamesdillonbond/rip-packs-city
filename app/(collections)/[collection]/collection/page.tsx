@@ -1187,7 +1187,7 @@ export default function WalletPage() {
 
         {/* Close to Completing callout */}
         {nearCompleteSets.length > 0 && hasSearched && (
-          <div style={{ borderLeft: "3px solid #22c55e", background: "rgba(34,197,94,0.05)", borderRadius: 6, padding: "10px 14px", marginBottom: 12 }}>
+          <div style={{ borderLeft: "3px solid #22c55e", background: "#09090b", borderRadius: 6, padding: "10px 14px", marginBottom: 12 }}>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "#22c55e", letterSpacing: "0.1em", marginBottom: 4 }}>◉ CLOSE TO COMPLETING</div>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#a1a1aa" }}>
               {nearCompleteSets.map(function(s: any, i: number) {
@@ -1204,29 +1204,6 @@ export default function WalletPage() {
           </div>
         )}
 
-        {/* Task 14: Duplicate edition callout */}
-        {hasSearched && duplicateEditions.size > 0 && !dupDismissed && (
-          <div style={{ borderLeft: "3px solid #f59e0b", background: "rgba(245,158,11,0.05)", borderRadius: 6, padding: "10px 14px", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div>
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "#f59e0b", letterSpacing: "0.1em", marginBottom: 4 }}>⚠ DUPLICATE EDITIONS</div>
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#a1a1aa" }}>
-                You hold {duplicateEditions.size} duplicate edition{duplicateEditions.size !== 1 ? "s" : ""} — consider selling the highest serials.{" "}
-                <button
-                  onClick={function() { setFilterDupsOnly(function(v) { return !v }) }}
-                  style={{ color: accent, background: "none", border: "none", cursor: "pointer", fontFamily: "var(--font-mono)", fontSize: 11, textDecoration: "underline" }}
-                >
-                  {filterDupsOnly ? "Show all" : "Show duplicates only"}
-                </button>
-              </div>
-            </div>
-            <button
-              onClick={function() { setDupDismissed(true); try { sessionStorage.setItem("rpc_dup_dismissed", "true") } catch {} }}
-              style={{ background: "none", border: "none", cursor: "pointer", color: "#71717a", fontSize: 16, padding: 4 }}
-            >
-              ✕
-            </button>
-          </div>
-        )}
 
         {/* Task 12: Set completion mini progress bars */}
         {hasSearched && setCompletion.length > 0 && (
