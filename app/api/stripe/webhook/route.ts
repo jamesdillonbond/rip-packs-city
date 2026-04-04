@@ -2,7 +2,7 @@
 // Provisions and deprovisions RPC Pro in the pro_users table.
 
 import { NextRequest, NextResponse } from "next/server"
-import { stripe } from "@/lib/stripe"
+import { getStripe } from "@/lib/stripe"
 import { createClient } from "@supabase/supabase-js"
 
 const supabase: any = createClient(
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
 
   let event
   try {
-    event = stripe.webhooks.constructEvent(body, sig, endpointSecret)
+    event = getStripe().webhooks.constructEvent(body, sig, endpointSecret)
   } catch (err: any) {
     console.log("[stripe/webhook] signature verification failed:", err.message)
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 })
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
       if (!wallet) break
 
       const subscriptionId = session.subscription as string
-      const sub = await stripe.subscriptions.retrieve(subscriptionId)
+      const sub = await getStripe().subscriptions.retrieve(subscriptionId)
       const periodEnd = new Date((sub as any).current_period_end * 1000).toISOString()
 
       await supabase.from("pro_users").upsert(

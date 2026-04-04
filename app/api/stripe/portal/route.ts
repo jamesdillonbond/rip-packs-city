@@ -1,6 +1,6 @@
 // POST /api/stripe/portal — redirect Pro subscriber to Stripe billing portal
 import { NextRequest, NextResponse } from "next/server"
-import { stripe } from "@/lib/stripe"
+import { getStripe } from "@/lib/stripe"
 import { createClient } from "@supabase/supabase-js"
 
 const supabase: any = createClient(
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
 
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://rip-packs-city.vercel.app"
 
-    const session = await stripe.billingPortal.sessions.create({
+    const session = await getStripe().billingPortal.sessions.create({
       customer: row.stripe_customer_id,
       return_url: `${baseUrl}/nba-top-shot/overview`,
     })

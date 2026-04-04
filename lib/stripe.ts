@@ -1,14 +1,20 @@
-// lib/stripe.ts — Stripe client singleton
+// lib/stripe.ts — lazy Stripe client
 import Stripe from "stripe"
 
-if (!process.env.STRIPE_SECRET_KEY) {
-  console.log("[stripe] STRIPE_SECRET_KEY not set — Stripe features disabled")
-}
+let _stripe: Stripe | null = null
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
-  apiVersion: "2025-03-31.basil",
-  typescript: true,
-})
+export function getStripe(): Stripe {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error("STRIPE_SECRET_KEY not configured")
+  }
+  if (!_stripe) {
+    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: "2025-03-31.basil",
+      typescript: true,
+    })
+  }
+  return _stripe
+}
 
 /**
  * The Stripe Price ID for the RPC Pro monthly subscription.
