@@ -1,6 +1,6 @@
 // POST /api/stripe/checkout — create a Stripe Checkout session for RPC Pro
 import { NextRequest, NextResponse } from "next/server"
-import { stripe, PRO_PRICE_ID } from "@/lib/stripe"
+import { getStripe, PRO_PRICE_ID } from "@/lib/stripe"
 
 export async function POST(req: NextRequest) {
   if (!PRO_PRICE_ID) {
@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
 
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://rip-packs-city.vercel.app"
 
-    const session = await stripe.checkout.sessions.create({
+    const session = await getStripe().checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
       line_items: [{ price: PRO_PRICE_ID, quantity: 1 }],
