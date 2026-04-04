@@ -119,6 +119,9 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// Simple email format validation
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -130,14 +133,18 @@ export async function POST(req: NextRequest) {
     if (!edition_key) {
       return NextResponse.json({ error: "Missing required field: edition_key" }, { status: 400 });
     }
-    if (!alert_type) {
-      return NextResponse.json({ error: "Missing required field: alert_type" }, { status: 400 });
+    if (!alert_type || !["below_fmv_pct", "below_price"].includes(alert_type)) {
+      return NextResponse.json({ error: "alert_type must be 'below_fmv_pct' or 'below_price'" }, { status: 400 });
     }
-    if (threshold == null) {
-      return NextResponse.json({ error: "Missing required field: threshold" }, { status: 400 });
+    if (threshold == null || typeof threshold !== "number" || threshold <= 0) {
+      return NextResponse.json({ error: "threshold must be a positive number" }, { status: 400 });
     }
-    if (!channel) {
-      return NextResponse.json({ error: "Missing required field: channel" }, { status: 400 });
+    if (!channel || !["email", "telegram", "both"].includes(channel)) {
+      return NextResponse.json({ error: "channel must be 'email', 'telegram', or 'both'" }, { status: 400 });
+    }
+    // Require valid email when channel includes email delivery
+    if ((channel === "email" || channel === "both") && (!notification_email || !EMAIL_RE.test(notification_email))) {
+      return NextResponse.json({ error: "A valid notification_email is required when channel includes email" }, { status: 400 });
     }
 
     const { data, error } = await supabase

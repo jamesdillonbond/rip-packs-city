@@ -1,0 +1,20 @@
+{
+  "name": "Rip Packs City",
+  "short_name": "RPC",
+  "description": "NBA Top Shot collector intelligence — analytics, sniper tools, FMV pricing, and badge tracking.",
+  "start_url": "/nba-top-shot/overview",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#f97316",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/rip-packs-city-logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["sports", "finance", "utilities"]
+}
