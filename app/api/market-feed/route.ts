@@ -19,6 +19,7 @@ type EditionStats = {
   saleCount: number
   source: string
   tags: string[]
+  sellerConcentration?: "high" | "medium" | "low" | null
 }
 
 type TopShotEditionStatsResponse = {
@@ -176,6 +177,69 @@ export async function GET(req: NextRequest) {
     }
 
     const statsMap = await fetchStatsForEditions(editionKeys)
+
+    // ── Seller concentration per edition ────────────────────────────────────
+    // Check if cached_listings has a seller_address column before querying.
+    try {
+      const { data: colCheck } = await supabaseAdmin.rpc("execute_sql", {
+        query: `SELECT column_name FROM information_schema.columns WHERE table_name = 'cached_listings' AND column_name = 'seller_address' LIMIT 1`,
+      })
+
+      const hasSellerCol = Array.isArray(colCheck) && colCheck.length > 0
+
+      if (hasSellerCol) {
+        // Fetch seller concentration for all edition keys via moments bridge
+        const { data: concRows } = await supabaseAdmin.rpc("execute_sql", {
+          query: `
+            WITH listing_sellers AS (
+              SELECT m.edition_id, cl.seller_address, COUNT(*)::int AS cnt
+              FROM cached_listings cl
+              JOIN moments m ON m.nft_id = cl.flow_id
+              WHERE cl.seller_address IS NOT NULL
+              GROUP BY m.edition_id, cl.seller_address
+            ),
+            edition_totals AS (
+              SELECT edition_id, SUM(cnt)::int AS total,
+                     ARRAY_AGG(cnt ORDER BY cnt DESC) AS counts
+              FROM listing_sellers
+              GROUP BY edition_id
+            )
+            SELECT edition_id, total,
+              COALESCE((counts[1] + COALESCE(counts[2], 0) + COALESCE(counts[3], 0)), 0) AS top3_count
+            FROM edition_totals
+            WHERE total > 0
+          `,
+        })
+
+        if (Array.isArray(concRows)) {
+          // Map edition_id → concentration level
+          const concMap = new Map<string, "high" | "medium" | "low">()
+          for (const row of concRows as { edition_id: string; total: number; top3_count: number }[]) {
+            const pct = row.top3_count / row.total
+            concMap.set(row.edition_id, pct > 0.6 ? "high" : pct > 0.4 ? "medium" : "low")
+          }
+
+          // Map edition internal IDs to external keys for lookup
+          const edIds = [...concMap.keys()]
+          if (edIds.length > 0) {
+            const { data: edRows } = await supabaseAdmin
+              .from("editions")
+              .select("id, external_id")
+              .in("id", edIds)
+
+            for (const ed of edRows ?? []) {
+              const stats = statsMap.get(ed.external_id)
+              if (stats) {
+                stats.sellerConcentration = concMap.get(ed.id) ?? null
+              }
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[market-feed] Seller concentration check failed (non-fatal):", err instanceof Error ? err.message : err)
+    }
+
     const results = Array.from(statsMap.values())
 
     console.log(`[market-feed] Returning ${results.length} edition stats`)

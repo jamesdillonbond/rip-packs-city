@@ -23,7 +23,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 // Paginated — pass { offset, limit } in body to process in chunks.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ALGO_VERSION = "1.4.0"
+const ALGO_VERSION = "1.5.0"
 const WINDOW_DAYS = 30
 const DEFAULT_LIMIT = 500
 
@@ -51,16 +51,16 @@ function trimmedMedian(prices: number[]): number {
     : trimmed[mid]
 }
 
-// Recency-weighted average price.
-// Each sale is weighted by e^(-age_seconds / half_life).
-// Recent sales dominate; sales older than 2x half_life contribute minimally.
+// Recency-weighted average price with tiered decay:
+//   0-7 days: weight 3.0, 7-14 days: weight 2.0, 14-30 days: weight 1.0
+// This makes FMV react faster to recent price moves.
 function weightedAveragePrice(sales: { price: number; soldAt: Date }[], now: Date): number {
   if (sales.length === 0) return 0
   let weightedSum = 0
   let totalWeight = 0
   for (const sale of sales) {
-    const ageSeconds = (now.getTime() - sale.soldAt.getTime()) / 1000
-    const weight = Math.exp(-ageSeconds / WAP_HALF_LIFE_SECONDS)
+    const ageDays = (now.getTime() - sale.soldAt.getTime()) / (1000 * 60 * 60 * 24)
+    const weight = ageDays <= 7 ? 3.0 : ageDays <= 14 ? 2.0 : 1.0
     weightedSum += sale.price * weight
     totalWeight += weight
   }
@@ -71,6 +71,35 @@ function computeConfidence(salesCount: number): "HIGH" | "MEDIUM" | "LOW" {
   if (salesCount >= 5) return "HIGH"
   if (salesCount >= 2) return "MEDIUM"
   return "LOW"
+}
+
+// Upward-only confidence escalation based on sales volume and price stability.
+// If LOW + 3+ sales in 30d → MEDIUM. If 8+ sales + stddev < 40% of mean → HIGH.
+function escalateConfidence(
+  base: "HIGH" | "MEDIUM" | "LOW",
+  salesCount30d: number,
+  prices: number[]
+): "HIGH" | "MEDIUM" | "LOW" {
+  let confidence = base
+
+  // Escalate LOW → MEDIUM if 3+ sales in 30 days
+  if (confidence === "LOW" && salesCount30d >= 3) {
+    confidence = "MEDIUM"
+  }
+
+  // Escalate to HIGH if 8+ sales and price stability (stddev < 40% of mean)
+  if (confidence !== "HIGH" && salesCount30d >= 8 && prices.length >= 8) {
+    const mean = prices.reduce((a, b) => a + b, 0) / prices.length
+    if (mean > 0) {
+      const variance = prices.reduce((s, p) => s + (p - mean) ** 2, 0) / prices.length
+      const stddev = Math.sqrt(variance)
+      if (stddev / mean < 0.4) {
+        confidence = "HIGH"
+      }
+    }
+  }
+
+  return confidence
 }
 
 export async function POST(req: NextRequest) {
@@ -285,7 +314,8 @@ export async function POST(req: NextRequest) {
       const wap = weightedAveragePrice(sales, now)
       const floor = Math.min(...prices)
       // fmv_confidence is a Postgres enum with UPPERCASE values — never use lowercase strings here.
-      let confidence: string = computeConfidence(sales.length)
+      const baseConfidence = computeConfidence(sales.length)
+      let confidence: string = escalateConfidence(baseConfidence, sales.length, prices)
       const daysSinceSale = Math.round(
         (now.getTime() - latestSoldAt.getTime()) / (1000 * 60 * 60 * 24)
       )
@@ -345,11 +375,66 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── Step 5: Backfill editions with zero FMV coverage ─────────────────────
+    // Query editions that have no fmv_snapshots row at all and use badge_editions
+    // low_ask as a proxy to insert LOW confidence snapshots.
+    let backfillCount = 0
+
+    try {
+      const { data: uncoveredEditions } = await supabaseAdmin
+        .rpc("execute_sql", {
+          query: `
+            SELECT e.id AS edition_id, e.collection_id, be.low_ask
+            FROM editions e
+            LEFT JOIN fmv_snapshots fs ON fs.edition_id = e.id
+            LEFT JOIN badge_editions be ON be.edition_id = e.external_id
+            WHERE fs.edition_id IS NULL
+              AND be.low_ask IS NOT NULL
+              AND be.low_ask > 0
+            LIMIT 200
+          `,
+        })
+
+      const rows = (uncoveredEditions as { edition_id: string; collection_id: string; low_ask: number }[]) ?? []
+
+      if (rows.length > 0) {
+        console.log(`[FMV-RECALC] Backfill: ${rows.length} editions with no snapshot`)
+
+        const backfillRows = rows.map((row) => ({
+          edition_id: row.edition_id,
+          collection_id: row.collection_id,
+          fmv_usd: Number((row.low_ask * 0.90).toFixed(2)),
+          floor_price_usd: Number(Number(row.low_ask).toFixed(2)),
+          wap_usd: Number((row.low_ask * 0.90).toFixed(2)),
+          confidence: "LOW",
+          ask_proxy_fmv: Number((row.low_ask * 0.90).toFixed(2)),
+          sales_count_7d: 0,
+          sales_count_30d: 0,
+          days_since_sale: null,
+          algo_version: ALGO_VERSION,
+        }))
+
+        for (let i = 0; i < backfillRows.length; i += CHUNK_SIZE) {
+          const chunk = backfillRows.slice(i, i + CHUNK_SIZE)
+          const { error: bfError } = await supabaseAdmin
+            .from("fmv_snapshots")
+            .insert(chunk)
+
+          if (!bfError) backfillCount += chunk.length
+          else console.warn("[FMV-RECALC] Backfill insert error:", bfError.message)
+        }
+
+        console.log(`[FMV-RECALC] Backfill complete: ${backfillCount} editions covered`)
+      }
+    } catch (err) {
+      console.warn("[FMV-RECALC] Backfill pass error:", err instanceof Error ? err.message : err)
+    }
+
     const hasMore = salesPage.length === limit
     const duration = Date.now() - startTime
 
     console.log(
-      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} hasMore=${hasMore} duration=${duration}ms`
+      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} backfill=${backfillCount} hasMore=${hasMore} duration=${duration}ms`
     )
 
     return NextResponse.json({
@@ -358,6 +443,7 @@ export async function POST(req: NextRequest) {
       snapshotsUpdated,
       flowtyFmvBlended: blendedCount,
       askProxyApplied: askProxyCount,
+      backfillCovered: backfillCount,
       hasMore,
       nextOffset: hasMore ? offset + limit : null,
       durationMs: duration,

@@ -139,6 +139,17 @@ const TOOLS: Anthropic.Tool[] = [
       required: ["reason", "category"],
     },
   },
+  {
+    name: "explain_fmv",
+    description: "Get a detailed FMV breakdown for a specific edition, including confidence, methodology, and a plain-English explanation. Use when a user asks why a moment is priced a certain way, or asks about FMV confidence or methodology.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        editionKey: { type: "string", description: "Edition identifier in setID:playID format (e.g. '92:3459')" },
+      },
+      required: ["editionKey"],
+    },
+  },
 ];
 
 // ── System prompt ─────────────────────────────────────────────────────────────
@@ -238,6 +249,9 @@ When a user wants to find or buy moments:
 5. For budget queries ("I have $50"), optimize for value: badge presence, discount %, confidence
 6. Never make up prices — always use tool results
 7. You can check a user's wallet for near-complete sets and surface the cheapest missing moments
+
+## FMV Deep Dive
+Use explain_fmv when a user asks why a moment is priced a certain way, or asks about FMV confidence or methodology. It returns a full breakdown with plain-English explanation.
 
 ## Common Questions (no tools needed)
 - "How is FMV calculated?" \u2192 WAP model, 20-min refresh, confidence levels
@@ -566,6 +580,72 @@ async function executeTool(
     }
   }
 
+  if (toolName === "explain_fmv") {
+    try {
+      const editionKey = toolInput.editionKey
+      if (!editionKey) {
+        return JSON.stringify({ status: "error", message: "editionKey is required" })
+      }
+
+      // Resolve edition_id
+      const { data: edition } = await supabase
+        .from("editions")
+        .select("id")
+        .eq("external_id", editionKey)
+        .single()
+
+      if (!edition?.id) {
+        return JSON.stringify({ status: "not_found", message: "Edition not found for that key." })
+      }
+
+      // Get most recent fmv_snapshot
+      const { data: snapshot } = await supabase
+        .from("fmv_snapshots")
+        .select("fmv_usd, confidence, wap_usd, floor_price_usd, computed_at, sales_count_30d, days_since_sale, ask_proxy_fmv, algo_version")
+        .eq("edition_id", edition.id)
+        .order("computed_at", { ascending: false })
+        .limit(1)
+        .single()
+
+      // Get badge_editions info for player/set context
+      const { data: badgeInfo } = await supabase
+        .from("badge_editions")
+        .select("player_name, set_name, tier")
+        .eq("edition_id", editionKey)
+        .limit(1)
+        .single()
+
+      if (!snapshot) {
+        return JSON.stringify({ status: "no_data", message: "No FMV snapshot exists for this edition yet." })
+      }
+
+      // Build plain-English explanation
+      const computedAgo = snapshot.computed_at
+        ? `${Math.round((Date.now() - new Date(snapshot.computed_at).getTime()) / (1000 * 60))} minutes ago`
+        : "unknown"
+      const salesNote = snapshot.sales_count_30d
+        ? `across ${snapshot.sales_count_30d} recent sales`
+        : "with limited sales data"
+
+      const explanation = `FMV is $${Number(snapshot.fmv_usd).toFixed(2)} (${snapshot.confidence} confidence) based on a 30-day WAP of $${Number(snapshot.wap_usd || 0).toFixed(2)} ${salesNote}. Floor price is $${Number(snapshot.floor_price_usd || 0).toFixed(2)}. Last computed ${computedAgo}.${snapshot.ask_proxy_fmv ? ` Ask proxy FMV: $${Number(snapshot.ask_proxy_fmv).toFixed(2)}.` : ""}`
+
+      return JSON.stringify({
+        status: "ok",
+        player_name: badgeInfo?.player_name ?? null,
+        set_name: badgeInfo?.set_name ?? null,
+        tier: badgeInfo?.tier ?? null,
+        fmv_usd: snapshot.fmv_usd,
+        confidence: snapshot.confidence,
+        wap_usd: snapshot.wap_usd,
+        floor_price_usd: snapshot.floor_price_usd,
+        computed_at: snapshot.computed_at,
+        explanation,
+      })
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: err.message })
+    }
+  }
+
   if (toolName === "escalate_to_human") {
     const { reason, category, urgency } = toolInput;
     try {
@@ -763,7 +843,8 @@ export async function POST(req: NextRequest) {
       });
     } catch { /* non-fatal */ }
 
-    await updateSession(sessionId, category, message, playerSearched);
+    // Fire-and-forget session memory write-back — must not block the response
+    updateSession(sessionId, category, message, playerSearched).catch(() => {})
 
     return NextResponse.json({ response: finalResponse, escalated, escalationReason, category });
   } catch (err: any) {
