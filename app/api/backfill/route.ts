@@ -180,8 +180,9 @@ async function upsertEdition(tx: SaleTransaction): Promise<string | null> {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = req.headers.get("authorization");
-  if (auth !== `Bearer ${process.env.INGEST_SECRET_TOKEN}`) {
+  const authHeader = req.headers.get("authorization");
+  const expectedToken = process.env.INGEST_SECRET_TOKEN;
+  if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
