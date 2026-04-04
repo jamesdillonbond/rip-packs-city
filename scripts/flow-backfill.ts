@@ -12,8 +12,8 @@
  * Env vars:
  *   NEXT_PUBLIC_SUPABASE_URL  — Supabase project URL
  *   SUPABASE_SERVICE_ROLE_KEY — Supabase admin key
- *   START_HEIGHT             — first block (default 73000000 ≈ Jan 1 2024)
- *   END_HEIGHT               — last block  (default 96000000 ≈ Jan 1 2026)
+ *   START_HEIGHT             — first block (default 137390146 = current spork root)
+ *   END_HEIGHT               — last block  (default 0 = fetch current sealed height)
  *
  * Usage:
  *   npx ts-node --skip-project scripts/flow-backfill.ts
@@ -32,8 +32,8 @@ const INSERT_BATCH = 50; // rows per Supabase insert
 const EVENT_STOREFRONT = "A.4eb8a10cb9f87357.NFTStorefrontV2.ListingCompleted";
 const EVENT_MARKET = "A.c1e4f4f4c4257510.Market.MomentPurchased";
 
-const DEFAULT_START = 73_000_000; // ~Jan 1 2024
-const DEFAULT_END = 96_000_000; // ~Jan 1 2026
+const DEFAULT_START = 137_390_146; // current spork root block
+const DEFAULT_END = 0; // 0 = fetch current sealed height at runtime
 
 // ── Supabase client ─────────────────────────────────────────────────────────
 
@@ -282,7 +282,7 @@ async function fetchEvents(
 
 async function main() {
   console.log("═══════════════════════════════════════════════════════");
-  console.log("  Flow Blockchain Backfill — NBA Top Shot Sales");
+  console.log("  Flow On-Chain Sales Indexer — NBA Top Shot");
   console.log("═══════════════════════════════════════════════════════");
 
   // Resolve NBA Top Shot collection ID
@@ -295,7 +295,21 @@ async function main() {
 
   // Determine block range
   const envStart = process.env.START_HEIGHT ? parseInt(process.env.START_HEIGHT, 10) : DEFAULT_START;
-  const envEnd = process.env.END_HEIGHT ? parseInt(process.env.END_HEIGHT, 10) : DEFAULT_END;
+  let envEnd = process.env.END_HEIGHT ? parseInt(process.env.END_HEIGHT, 10) : DEFAULT_END;
+
+  // If END_HEIGHT is 0 or unset, fetch current sealed block height
+  if (!envEnd || envEnd <= 0) {
+    console.log("Fetching current sealed block height...");
+    const res = await fetchWithRetry(`${FLOW_REST}/blocks?height=sealed`);
+    const blocks = await res.json();
+    const sealed = Array.isArray(blocks) ? blocks[0] : blocks;
+    envEnd = parseInt(sealed?.header?.height ?? "0", 10);
+    if (!envEnd) {
+      console.error("Could not determine sealed block height");
+      process.exit(1);
+    }
+    console.log(`Current sealed height: ${envEnd.toLocaleString()}`);
+  }
 
   // Check for resume point
   const progress = await loadProgress();
