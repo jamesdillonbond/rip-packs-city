@@ -567,7 +567,11 @@ export default function SniperPage() {
       const cached = sessionStorage.getItem(`rpc_owned_${connectedWallet}`);
       if (cached) {
         const ids: string[] = JSON.parse(cached);
-        setOwnedIds(new Set(ids));
+        const newSet = new Set(ids);
+        console.log(`[Sniper] connectedWallet=${connectedWallet} ownedIds.size=${newSet.size}`);
+        setOwnedIds(newSet);
+      } else {
+        console.log(`[Sniper] connectedWallet=${connectedWallet} ownedIds.size=0 (no cache)`);
       }
     } catch {}
   }, [connectedWallet]);
@@ -613,6 +617,7 @@ export default function SniperPage() {
           if (row.isLocked || row.locked) current.locked += 1;
           statsMap.set(key, current);
         }
+        console.log(`[Sniper] editionStats built: ${statsMap.size} editions tracked for wallet ${connectedWallet}`);
         setEditionStats(statsMap);
       } catch {}
     }
@@ -810,7 +815,7 @@ export default function SniperPage() {
   return (
     <div className="rpc-binder-bg" style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
       {/* ── Header ── */}
-      <div style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)", padding: "16px" }}>
+      <div style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-black)", padding: "16px" }}>
         <div style={{ maxWidth: "var(--max-width)", margin: "0 auto" }}>
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -1341,6 +1346,16 @@ export default function SniperPage() {
                     <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>
                       {(() => {
                         if (!connectedWallet) return "—";
+                        // Use edition-level stats (editionKey match) for accurate own/lock counts
+                        const eStats = editionStats.get(deal.editionKey);
+                        if (eStats && eStats.owned > 0) {
+                          return (
+                            <span style={{ color: "var(--rpc-success)" }}>
+                              {eStats.owned}{eStats.locked > 0 ? ` / ${eStats.locked}🔒` : ""}
+                            </span>
+                          );
+                        }
+                        // Fallback to momentId/flowId check
                         const isOwned = ownedIds.has(String(deal.momentId)) || ownedIds.has(String(deal.flowId));
                         if (isOwned) return <span style={{ color: "var(--rpc-success)" }}>✓ OWN</span>;
                         if (deal.isLocked) return <span title="Locked">🔒</span>;
