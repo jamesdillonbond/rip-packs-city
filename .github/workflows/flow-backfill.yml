@@ -30,13 +30,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install ts-node
-        run: npm install -g ts-node
-
       - name: Run Flow backfill script
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           START_HEIGHT: ${{ github.event.inputs.start_height }}
           END_HEIGHT: ${{ github.event.inputs.end_height }}
-        run: ts-node --skip-project scripts/flow-backfill.ts
+        run: npx tsx scripts/flow-backfill.ts
