@@ -6,7 +6,16 @@
  * Strategy:
  *   1. Try Flowty sales history endpoint (POST api2.flowty.io/sales/...)
  *   2. Fall back to Top Shot public GQL (searchMarketplaceTransactions)
- *      with monthly date windows across all 24 months of 2024–2025.
+ *      paginating via cursor, filtering dates client-side.
+ *
+ * The Top Shot GQL API does NOT support date range filters — it only
+ * supports cursor-based pagination sorted by UPDATED_AT_DESC. We page
+ * through all results and filter to 2024–2025 in JavaScript.
+ *
+ * Stop conditions:
+ *   - 3 consecutive pages where ALL results are before 2024 → done
+ *   - No more pages (rightCursor is null)
+ *   - Hard cap of 5000 pages
  *
  * Env vars:
  *   NEXT_PUBLIC_SUPABASE_URL / SUPABASE_URL — Supabase project URL
@@ -32,6 +41,10 @@ const GQL_PAGE_SIZE = 100;
 const INSERT_BATCH = 50;
 const DELAY_MS = 200;
 const MAX_RETRIES = 5;
+const MAX_PAGES = 5000;
+
+const DATE_START = "2024-01-01T00:00:00Z";
+const DATE_END = "2025-12-31T23:59:59Z";
 
 // ── Supabase client ─────────────────────────────────────────────────────────
 
@@ -48,7 +61,7 @@ const supabase: any = createClient(supabaseUrl, supabaseKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-// ── GQL query (same as app/api/ingest/route.ts) ─────────────────────────────
+// ── GQL query ───────────────────────────────────────────────────────────────
 
 const SEARCH_TRANSACTIONS_QUERY = `
   query BackfillSales($input: SearchMarketplaceTransactionsInput!) {
@@ -142,23 +155,12 @@ function buildEditionKey(tx: SaleTransaction): string | null {
   return `${setId}:${playId}`;
 }
 
-/**
- * Generate month ranges: [startISO, endISO] for each month in 2024–2025.
- */
-function generateMonthRanges(): Array<{ start: string; end: string; label: string }> {
-  const ranges: Array<{ start: string; end: string; label: string }> = [];
-  for (let year = 2024; year <= 2025; year++) {
-    for (let month = 1; month <= 12; month++) {
-      const start = `${year}-${String(month).padStart(2, "0")}-01T00:00:00Z`;
-      // End = first day of next month
-      const nextMonth = month === 12 ? 1 : month + 1;
-      const nextYear = month === 12 ? year + 1 : year;
-      const end = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01T00:00:00Z`;
-      const label = `${year}-${String(month).padStart(2, "0")}`;
-      ranges.push({ start, end, label });
-    }
-  }
-  return ranges;
+function isInDateRange(dateStr: string): boolean {
+  return dateStr >= DATE_START && dateStr <= DATE_END;
+}
+
+function isBeforeRange(dateStr: string): boolean {
+  return dateStr < DATE_START;
 }
 
 // ── Edition lookup & upsert ─────────────────────────────────────────────────
@@ -177,9 +179,6 @@ async function getCollectionId(): Promise<string> {
   return collectionId;
 }
 
-/**
- * Upsert an edition stub from GQL transaction data, return edition UUID.
- */
 async function ensureEdition(tx: SaleTransaction, colId: string): Promise<string | null> {
   const editionKey = buildEditionKey(tx);
   if (!editionKey) return null;
@@ -208,7 +207,6 @@ async function ensureEdition(tx: SaleTransaction, colId: string): Promise<string
     .single();
 
   if (error) {
-    // If upsert fails, try a select
     const { data: existing } = await supabase
       .from("editions")
       .select("id")
@@ -255,11 +253,9 @@ async function tryFlowty(): Promise<boolean> {
   }
 }
 
-// ── GQL fetching ────────────────────────────────────────────────────────────
+// ── GQL fetching (no date filters — cursor only) ───────────────────────────
 
 async function fetchGqlPage(
-  startDate: string,
-  endDate: string,
   cursor: string | null,
 ): Promise<{ transactions: SaleTransaction[]; nextCursor: string | null }> {
   let delay = 1000;
@@ -273,12 +269,7 @@ async function fetchGqlPage(
           variables: {
             input: {
               sortBy: "UPDATED_AT_DESC",
-              filters: {
-                byUpdatedAt: {
-                  start: startDate,
-                  end: endDate,
-                },
-              },
+              filters: {},
               searchInput: {
                 pagination: {
                   cursor: cursor ?? "",
@@ -306,6 +297,12 @@ async function fetchGqlPage(
       }
 
       const json = await res.json();
+
+      // Check for GQL errors
+      if (json.errors) {
+        console.error("  GQL errors:", JSON.stringify(json.errors).slice(0, 500));
+      }
+
       const summary = json?.data?.searchMarketplaceTransactions?.data?.searchSummary;
       const nextCursorVal: string | null = summary?.pagination?.rightCursor ?? null;
 
@@ -338,7 +335,9 @@ async function fetchGqlPage(
 async function main() {
   console.log("═══════════════════════════════════════════════════════");
   console.log("  Historical Sales Backfill — NBA Top Shot 2024–2025");
-  console.log("═══════════════════════════════════════════════════════\n");
+  console.log("═══════════════════════════════════════════════════════");
+  console.log(`  Date range: ${DATE_START} → ${DATE_END}`);
+  console.log(`  Max pages:  ${MAX_PAGES}\n`);
 
   const colId = await getCollectionId();
   console.log(`Collection ID: ${colId}\n`);
@@ -350,53 +349,65 @@ async function main() {
     console.log("\nFlowty sales endpoint responded — but full pagination logic");
     console.log("requires inspecting the response shape above. Falling through");
     console.log("to GQL backfill which is the proven path.\n");
-    // TODO: implement Flowty pagination if the response shape is confirmed
   }
 
-  // ── GQL backfill by month ─────────────────────────────────────────────
-  console.log("Starting GQL backfill by month...\n");
+  // ── GQL backfill — paginate all, filter client-side ───────────────────
+  console.log("Starting GQL cursor-based backfill...\n");
 
-  const months = generateMonthRanges();
   let totalInserted = 0;
   let totalSkipped = 0;
   let totalEditionsMissing = 0;
   let totalTransactions = 0;
+  let totalInRange = 0;
   const startTime = Date.now();
   let firstResponseLogged = false;
 
-  for (const { start, end, label } of months) {
-    console.log(`\n── ${label} ──────────────────────────────────────`);
-    let cursor: string | null = null;
-    let monthInserted = 0;
-    let monthTotal = 0;
-    let pageNum = 0;
+  let cursor: string | null = null;
+  let consecutiveBeforeRange = 0;
 
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      pageNum++;
-      const { transactions, nextCursor } = await fetchGqlPage(start, end, cursor);
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const { transactions, nextCursor } = await fetchGqlPage(cursor);
 
-      // Log raw first response
-      if (!firstResponseLogged && transactions.length > 0) {
-        console.log("\n  First GQL response sample:");
-        console.log(JSON.stringify(transactions[0], null, 2).slice(0, 1500));
-        console.log("");
-        firstResponseLogged = true;
+    // Log raw first response
+    if (!firstResponseLogged && transactions.length > 0) {
+      console.log("First GQL response sample:");
+      console.log(JSON.stringify(transactions[0], null, 2).slice(0, 1500));
+      console.log("");
+      firstResponseLogged = true;
+    }
+
+    if (transactions.length === 0) {
+      console.log(`Page ${page}: empty response, stopping.`);
+      break;
+    }
+
+    totalTransactions += transactions.length;
+
+    // Check if all results on this page are before our date range
+    const datedTxs = transactions.filter((tx) => tx.updatedAt);
+    const allBeforeRange = datedTxs.length > 0 && datedTxs.every((tx) => isBeforeRange(tx.updatedAt!));
+
+    if (allBeforeRange) {
+      consecutiveBeforeRange++;
+      if (consecutiveBeforeRange >= 3) {
+        console.log(`Page ${page}: 3 consecutive pages before 2024, stopping.`);
+        break;
       }
+    } else {
+      consecutiveBeforeRange = 0;
+    }
 
-      if (transactions.length === 0) break;
+    // Filter to only 2024–2025 transactions
+    const inRange = transactions.filter(
+      (tx) => tx.updatedAt && isInDateRange(tx.updatedAt) && tx.txHash && tx.price && tx.price > 0,
+    );
 
-      monthTotal += transactions.length;
-      totalTransactions += transactions.length;
+    totalInRange += inRange.length;
 
+    if (inRange.length > 0) {
       // Build sale rows
       const rows: object[] = [];
-      for (const tx of transactions) {
-        if (!tx.txHash || !tx.price || tx.price <= 0 || !tx.updatedAt) {
-          totalSkipped++;
-          continue;
-        }
-
+      for (const tx of inRange) {
         const editionId = await ensureEdition(tx, colId);
         if (!editionId) {
           totalEditionsMissing++;
@@ -445,24 +456,32 @@ async function main() {
             totalSkipped += batch.length;
           }
         } else {
-          const inserted = count ?? batch.length;
-          totalInserted += inserted;
-          monthInserted += inserted;
+          totalInserted += count ?? batch.length;
         }
       }
-
-      // Log every 10 pages within a month
-      if (pageNum % 10 === 0) {
-        console.log(`  Page ${pageNum}: ${monthTotal} txns, ${monthInserted} inserted`);
-      }
-
-      if (!nextCursor) break;
-      cursor = nextCursor;
-      await sleep(DELAY_MS);
     }
 
-    const elapsed = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
-    console.log(`  ${label} done: ${monthTotal} txns, ${monthInserted} inserted (${elapsed}min elapsed)`);
+    // Log progress every 100 pages
+    if (page % 100 === 0) {
+      const elapsed = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
+      const oldest = datedTxs.length > 0 ? datedTxs[datedTxs.length - 1].updatedAt : "?";
+      console.log(
+        `[Page ${page}] ` +
+          `Total txns: ${totalTransactions.toLocaleString()} | ` +
+          `In range: ${totalInRange.toLocaleString()} | ` +
+          `Inserted: ${totalInserted.toLocaleString()} | ` +
+          `Skipped: ${totalSkipped.toLocaleString()} | ` +
+          `Oldest on page: ${oldest} | ` +
+          `Elapsed: ${elapsed}min`,
+      );
+    }
+
+    if (!nextCursor) {
+      console.log(`Page ${page}: no more pages (cursor is null), stopping.`);
+      break;
+    }
+    cursor = nextCursor;
+    await sleep(DELAY_MS);
   }
 
   // Final summary
@@ -471,7 +490,8 @@ async function main() {
   console.log("═══════════════════════════════════════════════════════");
   console.log("  Backfill Complete");
   console.log("═══════════════════════════════════════════════════════");
-  console.log(`  Total transactions:     ${totalTransactions.toLocaleString()}`);
+  console.log(`  Total transactions seen: ${totalTransactions.toLocaleString()}`);
+  console.log(`  In date range:          ${totalInRange.toLocaleString()}`);
   console.log(`  Total inserted:         ${totalInserted.toLocaleString()}`);
   console.log(`  Total skipped/dupes:    ${totalSkipped.toLocaleString()}`);
   console.log(`  Editions missing:       ${totalEditionsMissing.toLocaleString()}`);
