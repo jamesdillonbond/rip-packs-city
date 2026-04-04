@@ -223,7 +223,10 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* ── Section C — Onboarding trigger ───────────────────────── */}
+        {/* ── Section C — My Portfolio ───────────────────────────────── */}
+        <PortfolioWidget />
+
+        {/* ── Section D — Onboarding trigger ───────────────────────── */}
         <OnboardingBanner onOpen={() => setShowOnboarding(true)} />
       </main>
 
@@ -236,6 +239,113 @@ export default function HomePage() {
       )}
     </div>
   );
+}
+
+// ── Portfolio widget — shows collection snapshot for a wallet ────────────────
+function PortfolioWidget() {
+  const [wallet, setWallet] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [snapshot, setSnapshot] = useState<any>(null)
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("rpc_last_wallet")
+      if (saved) setWallet(saved)
+    } catch {}
+  }, [])
+
+  function handleSubmit() {
+    const val = wallet.trim()
+    if (!val) return
+    try { localStorage.setItem("rpc_last_wallet", val) } catch {}
+    setLoading(true)
+    fetch(`/api/collection-snapshot?wallet=${encodeURIComponent(val)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setSnapshot(d) })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }
+
+  return (
+    <section style={{ marginBottom: 32 }}>
+      <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)", marginBottom: 12 }}>
+        ◈ MY PORTFOLIO ◈
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, maxWidth: 460 }}>
+        <input
+          value={wallet}
+          onChange={e => setWallet(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") handleSubmit() }}
+          placeholder="0x address or username..."
+          style={{
+            flex: 1, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: 6, padding: "8px 12px", color: "#fff",
+            fontFamily: monoFont, fontSize: 12, outline: "none",
+          }}
+        />
+        <button
+          onClick={handleSubmit}
+          disabled={loading}
+          style={{
+            background: RED, border: "none", borderRadius: 5, padding: "8px 16px",
+            color: "#fff", fontFamily: condensedFont, fontWeight: 700, fontSize: 12,
+            letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer",
+            opacity: loading ? 0.5 : 1, flexShrink: 0,
+          }}
+        >
+          {loading ? "..." : "Load"}
+        </button>
+      </div>
+
+      {snapshot && (
+        <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: 16 }}>
+          <div style={{ fontFamily: monoFont, fontSize: 32, fontWeight: 700, color: "#fff", marginBottom: 8 }}>
+            ${Number(snapshot.totalFmv ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+          <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.5)", marginBottom: 12 }}>
+            Total FMV · {snapshot.totalMoments ?? 0} moments
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+            <span style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: "0.08em" }}>NBA TOP SHOT</span>
+            <span style={{ fontFamily: monoFont, fontSize: 12, color: "#fff" }}>
+              ${Number(snapshot.totalFmv ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+
+          {/* Top 3 moments */}
+          {(snapshot.topMoments ?? []).length > 0 && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+              {(snapshot.topMoments ?? []).slice(0, 3).map((m: any, i: number) => (
+                <div key={i} style={{
+                  background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)",
+                  borderRadius: 6, padding: "8px 10px", minWidth: 120, flex: 1,
+                }}>
+                  {m.thumbnailUrl && (
+                    <img src={m.thumbnailUrl} alt={m.playerName} style={{ width: 32, height: 32, borderRadius: 4, objectFit: "cover", marginBottom: 4 }} />
+                  )}
+                  <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, color: "#fff", lineHeight: 1.2 }}>{m.playerName}</div>
+                  <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
+                    ${Number(m.fmv ?? 0).toFixed(2)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <a
+            href={`/nba-top-shot/collection?wallet=${encodeURIComponent(wallet.trim())}`}
+            style={{
+              fontFamily: condensedFont, fontWeight: 700, fontSize: 11,
+              letterSpacing: "0.08em", textTransform: "uppercase",
+              color: RED, textDecoration: "none",
+            }}
+          >
+            View Full Collection →
+          </a>
+        </div>
+      )}
+    </section>
+  )
 }
 
 // ── Onboarding banner — only shows if rpc_onboarded is not set ──────────────

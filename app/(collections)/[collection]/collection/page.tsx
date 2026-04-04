@@ -416,6 +416,13 @@ export default function WalletPage() {
   const [isBackgroundLoading, setIsBackgroundLoading] = useState(false);
   const [backgroundProgress, setBackgroundProgress] = useState(0);
 
+  // Task 2: FMV Alert UI state
+  const [alertOpenMomentId, setAlertOpenMomentId] = useState<string | null>(null)
+  const [alertTargetPrice, setAlertTargetPrice] = useState("")
+  const [alertNotifType, setAlertNotifType] = useState<"email" | "in-app">("email")
+  const [alertStatus, setAlertStatus] = useState<"idle" | "saving" | "success" | "error">("idle")
+  const [alertError, setAlertError] = useState("")
+
   const [playerFilter, setPlayerFilter] = useState("all")
   const [setFilter, setSetFilter] = useState("all")
   const [seriesFilter, setSeriesFilter] = useState("all")
@@ -1299,6 +1306,49 @@ export default function WalletPage() {
           <button onClick={function() { setFilterBadges(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterBadges ? "text-white" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")} style={filterBadges ? { borderColor: accent, backgroundColor: accent + "1A", color: accent } : undefined}>🏷 BADGES</button>
           <button onClick={function() { setFilterHasOffer(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterHasOffer ? "text-white" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")} style={filterHasOffer ? { borderColor: accent, backgroundColor: accent + "1A", color: accent } : undefined}>💰 HAS OFFER</button>
           <button onClick={function() { setFilterListed(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterListed ? "text-white" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")} style={filterListed ? { borderColor: accent, backgroundColor: accent + "1A", color: accent } : undefined}>📋 LISTED</button>
+          {/* Task 6: CSV Export */}
+          {filteredRows.length > 0 && (
+            <button
+              onClick={function() {
+                const PRO_ALLOWLIST = ["0xbd94cade097e50ac"]
+                const wallet = connectedWallet || ownerKey || input.trim()
+                if (!PRO_ALLOWLIST.includes(wallet.toLowerCase())) {
+                  alert("Export is a Pro feature. Contact trevor@rippackscity.com for early access.")
+                  return
+                }
+                const headers = ["Player","Set","Series","Tier","Parallel","Serial","Circulation","FMV","Low Ask","Best Offer","Badges","Acquired"]
+                const csvRows = filteredRows.map(function(r) {
+                  return [
+                    r.playerName ?? "",
+                    normalizeSetName(r.setName) ?? "",
+                    seriesDisplayLabel(r.series),
+                    r.tier ?? "",
+                    getParallel(r),
+                    String(getSerial(r) ?? ""),
+                    String(getMint(r) ?? ""),
+                    r.fmv != null ? r.fmv.toFixed(2) : "",
+                    r.lowAsk != null ? r.lowAsk.toFixed(2) : "",
+                    r.bestOffer != null ? r.bestOffer.toFixed(2) : "",
+                    (r.badgeInfo?.badge_titles ?? []).join("; "),
+                    formatAcquiredAt(r.acquiredAt),
+                  ].map(function(cell) { return '"' + String(cell).replace(/"/g, '""') + '"' }).join(",")
+                })
+                const csvString = headers.join(",") + "\n" + csvRows.join("\n")
+                const dateStr = new Date().toISOString().slice(0, 10)
+                const filename = "rpc-collection-" + (wallet || "unknown") + "-" + dateStr + ".csv"
+                const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement("a")
+                a.href = url
+                a.download = filename
+                a.click()
+                URL.revokeObjectURL(url)
+              }}
+              className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900"
+            >
+              Export CSV
+            </button>
+          )}
           <button onClick={function() { setShowDebug(function(prev) { return !prev }) }} className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">{showDebug ? "Hide Debug" : "Debug"}</button>
           <button onClick={copySeedCandidates} className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">Copy Seeds</button>
         </div>
@@ -1540,10 +1590,64 @@ export default function WalletPage() {
                         })()}
                       </td>
                       <td className="p-3">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 relative">
                           <button onClick={function() { toggleExpanded(row.momentId) }} className="rounded-lg border border-zinc-700 px-2 py-1 text-xs text-white hover:bg-zinc-900">
                             {expanded ? "Hide" : "Show"}
                           </button>
+                          {/* Task 2: FMV Alert bell */}
+                          <button
+                            onClick={function(e) { e.stopPropagation(); if (alertOpenMomentId === row.momentId) { setAlertOpenMomentId(null) } else { setAlertOpenMomentId(row.momentId); setAlertTargetPrice(row.fmv ? (Math.round(row.fmv * 0.85 * 100) / 100).toString() : ""); setAlertNotifType("email"); setAlertStatus("idle"); setAlertError("") } }}
+                            className="rounded-lg border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-900"
+                            title="Set FMV alert"
+                            style={{ color: alertOpenMomentId === row.momentId ? accent : "#a1a1aa" }}
+                          >
+                            {"\uD83D\uDD14"}
+                          </button>
+                          {alertOpenMomentId === row.momentId && (
+                            <div onClick={function(e) { e.stopPropagation() }} style={{ position: "absolute", top: "100%", right: 0, zIndex: 50, background: "#18181b", border: "1px solid #3f3f46", borderRadius: 8, padding: 12, width: 240, marginTop: 4 }}>
+                              <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "#71717a", letterSpacing: "0.1em", marginBottom: 8 }}>SET FMV ALERT</div>
+                              <div style={{ marginBottom: 8 }}>
+                                <label style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#a1a1aa", display: "block", marginBottom: 4 }}>Target Price ($)</label>
+                                <input type="number" min="0" step="0.01" value={alertTargetPrice} onChange={function(e) { setAlertTargetPrice(e.target.value) }} style={{ width: "100%", background: "#09090b", border: "1px solid #3f3f46", borderRadius: 6, padding: "6px 8px", color: "#fff", fontFamily: "var(--font-mono)", fontSize: 12, outline: "none" }} />
+                              </div>
+                              <div style={{ marginBottom: 10 }}>
+                                <label style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#a1a1aa", display: "block", marginBottom: 4 }}>Notify via</label>
+                                <div style={{ display: "flex", gap: 8 }}>
+                                  {(["email", "in-app"] as const).map(function(t) {
+                                    return <label key={t} style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: "var(--font-mono)", fontSize: 11, color: alertNotifType === t ? "#fff" : "#71717a", cursor: "pointer" }}><input type="radio" name="alert-notif" checked={alertNotifType === t} onChange={function() { setAlertNotifType(t) }} style={{ accentColor: accent }} />{t === "email" ? "Email" : "In-app"}</label>
+                                  })}
+                                </div>
+                              </div>
+                              {alertStatus === "success" && <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#4ade80", marginBottom: 6 }}>Alert set!</div>}
+                              {alertStatus === "error" && <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#f87171", marginBottom: 6 }}>{alertError || "Failed"} <a href="mailto:trevor@rippackscity.com?subject=RPC%20Pro%20Early%20Access" style={{ color: accent, textDecoration: "underline" }}>Upgrade to Pro</a></div>}
+                              <button
+                                disabled={alertStatus === "saving"}
+                                onClick={function() {
+                                  setAlertStatus("saving")
+                                  const ownerWallet = connectedWallet || ownerKey || input.trim()
+                                  fetch("/api/alerts", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                      owner_key: ownerWallet,
+                                      edition_key: row.editionKey || "",
+                                      player_name: row.playerName,
+                                      set_name: row.setName,
+                                      alert_type: "below_price",
+                                      threshold: parseFloat(alertTargetPrice) || 0,
+                                      channel: alertNotifType === "email" ? "email" : "telegram",
+                                    }),
+                                  })
+                                    .then(function(r) { if (!r.ok) throw new Error("not_pro"); return r.json() })
+                                    .then(function() { setAlertStatus("success"); setTimeout(function() { setAlertOpenMomentId(null) }, 1500) })
+                                    .catch(function(err) { setAlertStatus("error"); setAlertError(err.message === "not_pro" ? "Upgrade to Pro to set unlimited alerts" : "Failed to set alert") })
+                                }}
+                                style={{ width: "100%", background: accent, color: "#fff", border: "none", borderRadius: 6, padding: "7px 0", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", cursor: "pointer", opacity: alertStatus === "saving" ? 0.5 : 1 }}
+                              >
+                                {alertStatus === "saving" ? "Setting..." : "Set Alert"}
+                              </button>
+                            </div>
+                          )}
                           {isOwnCollection && (
                             <a
                               href={"https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/" + row.momentId}

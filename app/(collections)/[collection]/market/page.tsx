@@ -1025,6 +1025,7 @@ function MarketPageInner() {
                 <select value={sort} onChange={e => { setSort(e.target.value); setDir("asc") }} style={{ ...selectStyle, width: 160 }}>
                   <option value="low_ask">Low Ask</option>
                   <option value="avg_sale_price">FMV</option>
+                  <option value="opportunity_score">Best Opportunity</option>
                   <option value="badge_score">Badge Score</option>
                   <option value="burn_rate_pct">Burn Rate</option>
                   <option value="lock_rate_pct">Lock Rate</option>
@@ -1340,13 +1341,16 @@ function MarketPageInner() {
                   BURN {sortIndicator("burn_rate_pct")}
                 </th>
                 <th style={thStyle}>BADGES</th>
+                <th style={thStyle} onClick={() => { setSort("opportunity_score"); setDir("desc") }}>
+                  OPP. SCORE {sort === "opportunity_score" ? (dir === "asc" ? "↑" : "↓") : ""}
+                </th>
                 <th style={{ ...thStyle, width: 80 }}>ACTION</th>
               </tr>
             </thead>
             <tbody>
               {loading && [...Array(12)].map((_, i) => (
                 <tr key={i} style={{ borderBottom: "1px solid var(--rpc-border)" }}>
-                  <td colSpan={10} style={{ padding: 8 }}>
+                  <td colSpan={11} style={{ padding: 8 }}>
                     <div className="rpc-skeleton" style={{ height: 36, borderRadius: 6 }} />
                   </td>
                 </tr>
@@ -1460,6 +1464,33 @@ function MarketPageInner() {
                       </div>
                     </td>
 
+                    {/* Opportunity Score */}
+                    <td style={{ padding: "8px 12px" }}>
+                      {(() => {
+                        const discountPct = (e.avg_sale_price && e.low_ask && e.avg_sale_price > 0)
+                          ? Math.max(0, ((e.avg_sale_price - e.low_ask) / e.avg_sale_price) * 100)
+                          : 0
+                        const salesCount = (e as any).sales_count_30d ?? 0
+                        const hasBadge = e.badge_titles.length > 0
+                        const confStr = ((e as any).confidence ?? "").toUpperCase()
+                        const rawScore =
+                          (discountPct * 0.4) +
+                          (Math.min(salesCount, 50) * 0.3) +
+                          (hasBadge ? 20 : 0) +
+                          (confStr === "HIGH" ? 15 : confStr === "MEDIUM" ? 5 : 0)
+                        const score = Math.min(100, Math.round(rawScore))
+                        const barColor = score >= 60 ? "#4ade80" : score >= 30 ? "#fbbf24" : "#f87171"
+                        return (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <div style={{ width: 48, height: 6, borderRadius: 3, background: "var(--rpc-surface-raised, #27272a)", overflow: "hidden" }}>
+                              <div style={{ height: "100%", width: `${score}%`, background: barColor, borderRadius: 3, transition: "width 0.2s" }} />
+                            </div>
+                            <span className="rpc-mono" style={{ fontSize: 10, color: barColor, fontWeight: 700 }}>{score}</span>
+                          </div>
+                        )
+                      })()}
+                    </td>
+
                     {/* Action */}
                     <td style={{ padding: "8px 10px" }} onClick={ev => ev.stopPropagation()}>
                       <button
@@ -1481,7 +1512,7 @@ function MarketPageInner() {
 
               {!loading && displayEditions.length === 0 && (
                 <tr>
-                  <td colSpan={10} style={{ padding: "60px 0", textAlign: "center" }}>
+                  <td colSpan={11} style={{ padding: "60px 0", textAlign: "center" }}>
                     <div style={{ fontSize: 36, marginBottom: 8, opacity: 0.25 }}>🔍</div>
                     <div className="rpc-heading" style={{ fontSize: "var(--text-base)", marginBottom: 4 }}>
                       NO EDITIONS FOUND

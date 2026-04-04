@@ -151,6 +151,20 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "add_to_watchlist",
+    description: "Add a moment to the user's watchlist with optional price alert criteria. Use when a user says things like 'let me know when X drops below $Y' or 'alert me for deals on [player]'. Confirm the alert was set and describe what will trigger it.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        player_name: { type: "string", description: "Player name to watch for" },
+        tier: { type: "string", description: "Optional tier filter (e.g. rare, legendary)" },
+        max_price: { type: "number", description: "Maximum price to alert on" },
+        min_discount: { type: "number", description: "Minimum discount % below FMV to alert on, default 15" },
+      },
+      required: ["player_name"],
+    },
+  },
+  {
     name: "explain_fmv",
     description: "Get a detailed FMV breakdown for a specific edition, including confidence, methodology, and a plain-English explanation. Use when a user asks why a moment is priced a certain way, or asks about FMV confidence or methodology.",
     input_schema: {
@@ -274,6 +288,10 @@ Use explain_fmv when a user asks why a moment is priced a certain way, or asks a
 - "What does confidence mean?" \u2192 HIGH = reliable, MEDIUM = some data, LOW = sparse/directional
 - "How do I buy a moment?" \u2192 Connect Dapper wallet on Top Shot or Flowty; RPC links directly
 - "How do I connect my wallet?" \u2192 Flow/Dapper wallet; connect at top of any collection page
+
+## Quick Watchlist (add_to_watchlist)
+- Use add_to_watchlist when a user says things like "let me know when X drops below $Y" or "alert me for deals on [player]". Confirm the alert was set and describe what will trigger it.
+- This creates a search-type watchlist entry that fires when matching deals appear.
 
 ## Watchlist & Alerts
 - User says "watch this" or "add to watchlist" → call manage_watchlist with action="add" using the most recent moment from the conversation
@@ -609,6 +627,43 @@ async function executeTool(
         status: "ok",
         summary: `Your collection: ${data.totalMoments} moments, total FMV $${Number(data.totalFmv).toFixed(2)}. Top moments: ${topList}. Share your collection at https://rip-packs-city.vercel.app/share/${encodeURIComponent(toolInput.walletAddress)}`,
         raw: data,
+      });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: err.message });
+    }
+  }
+
+  if (toolName === "add_to_watchlist") {
+    if (!ctx.userWallet) {
+      return JSON.stringify({ status: "error", message: "owner_key_missing" });
+    }
+    try {
+      const res = await fetch(`${base}/api/watchlist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          owner_key: ctx.userWallet,
+          type: "search",
+          player_name: toolInput.player_name,
+          tier: toolInput.tier ?? null,
+          max_price: toolInput.max_price ?? null,
+          min_discount: toolInput.min_discount ?? 15,
+        }),
+        signal: AbortSignal.timeout(8000),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return JSON.stringify({ status: "error", message: data.error ?? "Failed to add to watchlist" });
+      }
+      const criteria: string[] = [];
+      if (toolInput.max_price) criteria.push(`price drops below $${toolInput.max_price}`);
+      if (toolInput.min_discount) criteria.push(`${toolInput.min_discount}%+ below FMV`);
+      if (toolInput.tier) criteria.push(`tier: ${toolInput.tier}`);
+      const triggerDesc = criteria.length > 0 ? criteria.join(", ") : "any deal appears";
+      return JSON.stringify({
+        status: "ok",
+        message: `Watchlist alert set for ${toolInput.player_name}. You'll be notified when ${triggerDesc}.`,
+        data,
       });
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: err.message });
