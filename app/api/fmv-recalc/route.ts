@@ -107,8 +107,21 @@ export async function POST(req: NextRequest) {
   const now = new Date()
 
   const authHeader = req.headers.get("authorization")
-  const expectedToken = process.env.INGEST_SECRET_TOKEN
-  if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+  const receivedToken = authHeader?.replace("Bearer ", "") ?? ""
+  const ingestToken = process.env.INGEST_SECRET_TOKEN ?? "rippackscity2026"
+  const cronSecret = process.env.CRON_SECRET
+
+  console.log(
+    `[FMV-RECALC] Auth debug — received: "${receivedToken.slice(0, 8)}…" ` +
+    `expected INGEST: "${ingestToken.slice(0, 8)}…" ` +
+    `CRON_SECRET set: ${!!cronSecret}`
+  )
+
+  const isAuthed =
+    receivedToken === ingestToken ||
+    (cronSecret && receivedToken === cronSecret)
+
+  if (!isAuthed) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
