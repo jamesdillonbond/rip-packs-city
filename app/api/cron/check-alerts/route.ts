@@ -1,6 +1,6 @@
 // app/api/cron/check-alerts/route.ts
 // Cron endpoint: checks all active FMV alerts and sends notifications
-// Auth: Bearer ${INGEST_SECRET_TOKEN}
+// Auth: Bearer ${INGEST_SECRET_TOKEN} or Bearer ${CRON_SECRET}
 // Returns: { checked, triggered, notifications_sent, errors }
 
 export const maxDuration = 25;
@@ -16,10 +16,15 @@ const supabase: any = createClient(
 );
 
 async function handler(req: NextRequest) {
-  // Auth check
+  // Auth check — accept INGEST_SECRET_TOKEN or CRON_SECRET
   const authHeader = req.headers.get("authorization");
-  const expectedToken = process.env.INGEST_SECRET_TOKEN;
-  if (!authHeader || authHeader !== `Bearer ${expectedToken}`) {
+  const ingestToken = process.env.INGEST_SECRET_TOKEN;
+  const cronSecret = process.env.CRON_SECRET;
+  const isValid =
+    authHeader != null &&
+    (authHeader === `Bearer ${ingestToken}` ||
+      authHeader === `Bearer ${cronSecret}`);
+  if (!isValid) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
