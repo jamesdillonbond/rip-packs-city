@@ -13,38 +13,6 @@ import { getCollection } from "@/lib/collections"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type MarketResult = {
-  momentId: string
-  fmv: number | null
-  bestOffer: number | null
-  lowAsk: number | null
-  valuationScope: "Parallel" | "Edition" | "Modeled"
-  isSpecialSerial: boolean
-  debugReason: "OK" | "NO_LOW_ASK" | "NO_BEST_OFFER" | "NO_MARKET_INPUTS" | "SPECIAL_SERIAL_NO_BASE"
-  normalizedParallel: string
-  normalizedSetName: string
-  scopeKey: string
-  marketSource: "row" | "edition" | "row+edition" | "edition-sale" | "special-serial" | "none"
-  fmvMethod: "band" | "low-ask-only" | "best-offer-only" | "edition-last-sale" | "special-serial-premium" | "none"
-  marketConfidence: "high" | "medium" | "low" | "none"
-  rowLowAsk: number | null
-  rowBestOffer: number | null
-  editionLowAsk: number | null
-  editionBestOffer: number | null
-  editionLastSale: number | null
-  editionAskCount: number
-  editionOfferCount: number
-  editionSaleCount: number
-  editionMarketSource: string | null
-  editionMarketSourceChain: string[]
-  editionMarketTags: string[]
-  topshotAsk?: number | null
-  flowtyAsk?: number | null
-  fmvUsd?: number | null
-  fmvConfidence?: string | null
-  fmvComputedAt?: string | null
-}
-
 type BadgeInfo = {
   badge_score: number
   badge_titles: string[]
@@ -407,7 +375,6 @@ export default function WalletPage() {
   const [error, setError] = useState("")
   const [summary, setSummary] = useState<WalletSearchResponse["summary"]>()
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
-  const [offset, setOffset] = useState(0)
   const [showDebug, setShowDebug] = useState(false)
   const [badgeFilter, setBadgeFilter] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
@@ -418,8 +385,6 @@ export default function WalletPage() {
   const [salesLoading, setSalesLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [connectedWallet, setConnectedWallet] = useState<string | null>(null);
-  const [isBackgroundLoading, setIsBackgroundLoading] = useState(false);
-  const [backgroundProgress, setBackgroundProgress] = useState(0);
 
   // Server-paginated moments API state
   const [paginatedPage, setPaginatedPage] = useState(1)
@@ -558,65 +523,6 @@ export default function WalletPage() {
     } catch {
       return rowsIn
     }
-  }
-
-  async function hydrateMarket(rowsIn: MomentRow[]) {
-    if (!rowsIn.length) return rowsIn
-    const response = await fetch("/api/market-truth", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        rows: rowsIn.map(function(row) {
-          return {
-            momentId: row.momentId,
-            editionKey: row.editionKey ?? null,
-            parallel: row.parallel ?? row.subedition ?? null,
-            setName: row.setName ?? null,
-            playerName: row.playerName ?? null,
-            bestAsk: row.bestAsk ?? null,
-            lowAsk: row.lowAsk ?? null,
-            bestOffer: row.bestOffer ?? null,
-            lastPurchasePrice: row.lastPurchasePrice ?? null,
-            specialSerialTraits: getTraits(row),
-          }
-        }),
-      }),
-    })
-    const json = await response.json()
-    if (!response.ok) throw new Error(json.error || "market-truth failed")
-    const marketRows = Array.isArray(json.rows) ? (json.rows as MarketResult[]) : []
-    const marketMap = new Map<string, MarketResult>()
-    marketRows.forEach(function(r) { marketMap.set(String(r.momentId), r) })
-    return rowsIn.map(function(row) {
-      const market = marketMap.get(String(row.momentId))
-      return {
-        ...row,
-        setName: market?.normalizedSetName || normalizeSetName(row.setName),
-        parallel: market?.normalizedParallel || normalizeParallel(row.parallel ?? row.subedition ?? ""),
-        fmv: market?.fmv ?? row.fmv ?? null,
-        bestOffer: market?.bestOffer ?? row.bestOffer ?? null,
-        valuationScope: market?.valuationScope ?? row.valuationScope,
-        marketDebugReason: market?.debugReason ?? row.marketDebugReason,
-        marketSource: market?.marketSource ?? row.marketSource,
-        fmvMethod: market?.fmvMethod ?? row.fmvMethod,
-        marketConfidence: market?.marketConfidence ?? row.marketConfidence,
-        scopeKey: market?.scopeKey ?? row.scopeKey,
-        rowLowAsk: market?.rowLowAsk ?? row.rowLowAsk,
-        rowBestOffer: market?.rowBestOffer ?? row.rowBestOffer,
-        editionLowAsk: market?.editionLowAsk ?? row.editionLowAsk,
-        editionBestOffer: market?.editionBestOffer ?? row.editionBestOffer,
-        editionLastSale: market?.editionLastSale ?? row.editionLastSale,
-        editionAskCount: market?.editionAskCount ?? row.editionAskCount,
-        editionOfferCount: market?.editionOfferCount ?? row.editionOfferCount,
-        editionSaleCount: market?.editionSaleCount ?? row.editionSaleCount,
-        editionMarketSource: market?.editionMarketSource ?? row.editionMarketSource,
-        editionMarketSourceChain: market?.editionMarketSourceChain ?? row.editionMarketSourceChain,
-        editionMarketTags: market?.editionMarketTags ?? row.editionMarketTags,
-        topshotAsk: market?.topshotAsk ?? row.topshotAsk ?? null,
-        flowtyAsk: market?.flowtyAsk ?? row.flowtyAsk ?? null,
-        fmvUsd: market?.fmvUsd ?? row.fmvUsd ?? null,
-      }
-    })
   }
 
   // Debounced offer enrichment — accumulates rows across page loads,
@@ -771,8 +677,10 @@ export default function WalletPage() {
     // Enrich with badges
     const withBadges = await enrichWithBadges(momentRows)
 
+    // Append new pages at end — API returns pre-sorted results, so concat
+    // preserves sort order without client-side re-sort (see filteredRows memo).
     if (append) {
-      setRows(function(prev) { return [...prev, ...withBadges] })
+      setRows(function(prev) { return prev.concat(withBadges) })
     } else {
       setRows(withBadges)
     }
@@ -829,7 +737,6 @@ export default function WalletPage() {
     setError("")
     setRows([])
     setSummary(undefined)
-    setOffset(0)
     setExpandedRows({})
     setHasSearched(false)
     setSealedPackCount(null)
@@ -905,62 +812,14 @@ export default function WalletPage() {
     }
   }, [router, collectionSlug, sortKey, sortDirection, playerFilter, seriesFilter, rarityFilter])
 
-  async function fetchWalletPage(nextOffset: number, append: boolean) {
-    // Legacy function kept for backgroundAutoLoad compatibility
-    const searchInput = lastSearchedRef.current || input
-    if (!searchInput.trim()) return
-    const response = await fetch("/api/wallet-search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ input: searchInput, offset: nextOffset, limit: 50, collection: collectionSlug }),
-    })
-    const json = (await response.json()) as WalletSearchResponse
-    if (!response.ok) throw new Error(json.error || "Wallet search failed")
-    const nextRows = Array.isArray(json.rows) ? json.rows : []
-    const hydrated = await hydrateMarket(nextRows)
-    const withBadges = await enrichWithBadges(hydrated)
-    setRows(function(prev) { return append ? [...prev, ...withBadges] : withBadges })
-    setSummary(json.summary)
-    setOffset(nextOffset + nextRows.length)
-    enrichOffers(withBadges)
-  }
-
   // Auto-search when ownerKey is available and no results loaded yet
   useEffect(function() {
-    if (ownerKey && rows.length === 0 && !loading) {
+    if (ownerKey && rows.length === 0 && !loading && !lastSearchedRef.current) {
       setInput(ownerKey)
       runSearch(ownerKey)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownerKey])
-
-  // Background auto-load: fetch remaining wallet pages 3 at a time in parallel
-  async function backgroundAutoLoad(startOffset: number, remaining: number, total: number) {
-    let currentOffset = startOffset
-    let left = remaining
-    const PAGES_PER_BATCH = 3
-    const PAGE_SIZE = 50
-    try {
-      while (left > 0) {
-        await new Promise(function(r) { setTimeout(r, 300) })
-        const batchCount = Math.min(PAGES_PER_BATCH, Math.ceil(left / PAGE_SIZE))
-        const fetches: Promise<void>[] = []
-        for (let i = 0; i < batchCount; i++) {
-          const off = currentOffset + i * PAGE_SIZE
-          if (off < total) {
-            fetches.push(fetchWalletPage(off, true))
-          }
-        }
-        await Promise.all(fetches)
-        currentOffset += batchCount * PAGE_SIZE
-        left -= batchCount * PAGE_SIZE
-        setBackgroundProgress(Math.min(currentOffset, total))
-      }
-    } catch {
-      // On error, stop background loading — Load More button will remain as fallback
-    }
-    setIsBackgroundLoading(false)
-  }
 
   async function handleSearch() { await runSearch(input) }
 
@@ -1868,11 +1727,7 @@ export default function WalletPage() {
           </div>
         )}
 
-        {isBackgroundLoading ? (
-          <div className="mt-6 flex justify-center">
-            <span className="text-sm text-zinc-500">Loading... ({backgroundProgress} / {summary?.totalMoments ?? "?"})</span>
-          </div>
-        ) : paginatedPage < paginatedTotalPages ? (
+        {paginatedPage < paginatedTotalPages ? (
           <div className="mt-6 flex flex-col items-center gap-2">
             <button onClick={handleLoadMore} disabled={loadingMore} className="rounded-lg px-4 py-2 font-semibold text-white disabled:opacity-50" style={{ backgroundColor: accent }}>
               {loadingMore ? "Loading..." : "Load More (" + (paginatedTotal - rows.length) + " remaining)"}
