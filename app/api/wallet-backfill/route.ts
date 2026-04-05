@@ -126,6 +126,10 @@ export async function POST(req: NextRequest) {
       moment_id: string
       edition_key: string
       serial_number: number | null
+      player_name: string | null
+      set_name: string | null
+      tier: string | null
+      series_number: number | null
       fmv_usd: null
       last_seen_at: string
     }> = []
@@ -156,12 +160,17 @@ export async function POST(req: NextRequest) {
         const playID = meta.playID ?? null
         const editionKey = setID && playID ? `${setID}:${playID}` : ""
         const serial = meta.serial ? parseInt(meta.serial, 10) : null
+        const seriesNum = meta.series ? parseInt(meta.series, 10) : null
 
         allRows.push({
           wallet_address: wallet,
           moment_id: String(batch[i]),
           edition_key: editionKey,
           serial_number: Number.isFinite(serial) ? serial : null,
+          player_name: meta.player || null,
+          set_name: meta.setName || null,
+          tier: null,
+          series_number: Number.isFinite(seriesNum) ? seriesNum : null,
           fmv_usd: null,
           last_seen_at: now,
         })
