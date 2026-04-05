@@ -164,7 +164,7 @@ export async function PATCH(req: NextRequest) {
 
     return NextResponse.json({ wallet: data });
   } catch (err: any) {
-    console.log("[saved-wallets PATCH] error:", err?.message);
+    console.error("[saved-wallets PATCH] error:", err?.message, err?.stack);
     return NextResponse.json({ error: "Failed to update saved wallet" }, { status: 500 });
   }
 }

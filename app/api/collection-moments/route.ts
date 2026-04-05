@@ -103,7 +103,7 @@ export async function GET(req: NextRequest) {
     // wallet_moments_cache columns: wallet_address, moment_id, edition_key, fmv_usd, serial_number, last_seen_at
     let query = (supabaseAdmin as any)
       .from("wallet_moments_cache")
-      .select("moment_id, edition_key, fmv_usd, serial_number, last_seen_at")
+      .select("moment_id, edition_key, fmv_usd, serial_number, last_seen_at", { count: "exact" })
       .eq("wallet_address", wallet)
 
     // Apply FMV range filters at DB level (these columns exist on wallet_moments_cache)
@@ -138,7 +138,7 @@ export async function GET(req: NextRequest) {
     // Fetch up to 10000 rows (covers even the largest wallets)
     query = query.limit(10000)
 
-    const { data: cacheRows, error: cacheError } = await query
+    const { data: cacheRows, error: cacheError, count: exactCount } = await query
 
     if (cacheError) {
       console.log("[collection-moments] cache query error:", cacheError.message)
@@ -326,7 +326,10 @@ export async function GET(req: NextRequest) {
     }
 
     // Step 5: Paginate
-    const totalCount = filtered.length
+    // Use the exact count from PostgREST headers when no post-fetch filters are active,
+    // since the .limit(10000) cap on rows may truncate the in-memory count.
+    const hasPostFilters = !!(playerFilter || setNameFilter || seriesFilter || tierFilter)
+    const totalCount = hasPostFilters ? filtered.length : (exactCount ?? filtered.length)
     const offset = (page - 1) * limit
     const moments = filtered.slice(offset, offset + limit)
 

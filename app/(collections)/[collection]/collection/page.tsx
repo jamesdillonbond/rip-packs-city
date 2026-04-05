@@ -1269,14 +1269,23 @@ export default function WalletPage() {
               {/* Wallet FMV with projected estimate + load progress */}
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                 <div className="text-[10px] uppercase tracking-widest text-zinc-500">Wallet FMV</div>
-                <div className="text-xl font-black text-white">
-                  {formatCurrency(totals.totalFmv)}
-                  {projectedFmv !== null && (
-                    <span className="ml-2 text-sm font-normal text-zinc-500">
-                      {"~" + formatCurrencyCompact(projectedFmv) + " est."}
-                    </span>
-                  )}
-                </div>
+                {projectedFmv !== null ? (
+                  <>
+                    <div className="text-xl font-black text-white">
+                      {"~" + formatCurrencyCompact(projectedFmv)}
+                      <span className="ml-1 text-sm font-normal text-zinc-400">
+                        {"est. (" + (paginatedTotal || summary?.totalMoments || "?") + " moments)"}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-[11px] text-zinc-500">
+                      {formatCurrency(totals.totalFmv) + " from " + totals.totalCount + " moments loaded"}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-xl font-black text-white">
+                    {formatCurrency(totals.totalFmv)}
+                  </div>
+                )}
                 {loadProgress && loadProgress.total > loadProgress.loaded ? (
                   <div className="mt-2 space-y-1">
                     <div className="flex justify-between text-[10px] text-zinc-600">
@@ -1287,9 +1296,9 @@ export default function WalletPage() {
                       <div className="h-1 rounded-full transition-all duration-300" style={{ width: loadProgress.pct + "%", backgroundColor: accent }} />
                     </div>
                   </div>
-                ) : (
+                ) : projectedFmv === null ? (
                   <div className="mt-1 text-[11px] text-zinc-500">{totals.totalCount} moments shown</div>
-                )}
+                ) : null}
               </div>
 
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
