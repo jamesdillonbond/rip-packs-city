@@ -162,10 +162,24 @@ async function getSupabaseMarketMap(
     const db = createClient(supabaseUrl, supabaseKey)
 
     // fmv_confidence is a Postgres enum with UPPERCASE values — never use lowercase strings here.
-    const { data: fmvRows, error } = await db
-      .from("fmv_current")
-      .select("edition_id, fmv_usd, floor_price_usd, cross_market_ask, top_shot_ask, flowty_ask, confidence, computed_at")
+    // Query fmv_snapshots directly, ordered by computed_at DESC so the first
+    // row per edition_id is the most recent. Deduplicate in JS below.
+    const { data: fmvRowsRaw, error } = await db
+      .from("fmv_snapshots")
+      .select("edition_id, fmv_usd, confidence, computed_at")
+      .order("computed_at", { ascending: false })
       .limit(10000)
+
+    // Deduplicate: keep only the first (most recent) row per edition_id
+    const fmvRows = (() => {
+      if (!fmvRowsRaw?.length) return fmvRowsRaw
+      const seen = new Set<string>()
+      return fmvRowsRaw.filter((r: { edition_id: string }) => {
+        if (seen.has(r.edition_id)) return false
+        seen.add(r.edition_id)
+        return true
+      })
+    })()
 
     if (error || !fmvRows?.length) {
       if (error) console.warn("[market-sources] fmv_current error:", error.message)
@@ -196,10 +210,6 @@ async function getSupabaseMarketMap(
     for (const row of fmvRows as Array<{
       edition_id: string
       fmv_usd: number | null
-      floor_price_usd: number | null
-      cross_market_ask: number | null
-      top_shot_ask: number | null
-      flowty_ask: number | null
       confidence: string | null
       computed_at: string | null
     }>) {
@@ -211,11 +221,11 @@ async function getSupabaseMarketMap(
 
       if (out.has(scopeKey)) {
         out.set(scopeKey, {
-          lowAsk: row.floor_price_usd ?? row.cross_market_ask ?? null,
+          lowAsk: null,
           lastSale: row.fmv_usd ?? null,
           source: "supabase-fmv",
-          topshotAsk: row.top_shot_ask ?? null,
-          flowtyAsk: row.flowty_ask ?? null,
+          topshotAsk: null,
+          flowtyAsk: null,
           fmvUsd: row.fmv_usd ?? null,
           fmvConfidence: row.confidence ?? null,
           fmvComputedAt: row.computed_at ?? null,
