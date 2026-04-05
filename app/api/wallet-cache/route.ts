@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
       .select("moment_id, edition_key, fmv_usd, serial_number, last_seen_at")
       .eq("wallet_address", wallet)
       .order("last_seen_at", { ascending: false })
+      .limit(10000)
 
     if (error) {
       console.warn("[wallet-cache] GET error:", error.message)

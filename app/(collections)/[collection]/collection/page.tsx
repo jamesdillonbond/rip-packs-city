@@ -758,6 +758,7 @@ export default function WalletPage() {
         if (cacheRes.ok) {
           const cacheJson = await cacheRes.json()
           const cachedMoments = Array.isArray(cacheJson.moments) ? cacheJson.moments : []
+          console.log("[collection] wallet-cache returned " + cachedMoments.length + " rows")
           if (cachedMoments.length > 0) {
             // Build a map of live rows by momentId for metadata overlay
             const liveMap = new Map<string, MomentRow>()
@@ -803,6 +804,40 @@ export default function WalletPage() {
         }
       } catch { /* cache fallback is non-critical */ }
       const hydrated = await hydrateMarket(mergedRows)
+      // Fallback FMV enrichment: for moments that still have no FMV but have an editionKey,
+      // batch-fetch from /api/fmv which queries fmv_snapshots directly
+      const needFmv = hydrated.filter(function(r) { return (r.fmv == null || r.fmv <= 0) && r.editionKey })
+      if (needFmv.length > 0) {
+        try {
+          const editionKeys = [...new Set(needFmv.map(function(r) { return r.editionKey! }))]
+          const BATCH = 100
+          const fmvMap = new Map<string, { fmv: number; confidence: string; updatedAt: string | null }>()
+          for (let i = 0; i < editionKeys.length; i += BATCH) {
+            const batch = editionKeys.slice(i, i + BATCH)
+            const fmvRes = await fetch("/api/fmv", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ editions: batch }),
+            })
+            if (fmvRes.ok) {
+              const fmvJson = await fmvRes.json()
+              for (const r of (fmvJson.results ?? [])) {
+                if (r.fmv > 0) fmvMap.set(r.edition, { fmv: r.fmv, confidence: r.confidence, updatedAt: r.updatedAt })
+              }
+            }
+          }
+          if (fmvMap.size > 0) {
+            for (let i = 0; i < hydrated.length; i++) {
+              const row = hydrated[i]
+              if ((row.fmv == null || row.fmv <= 0) && row.editionKey && fmvMap.has(row.editionKey)) {
+                const f = fmvMap.get(row.editionKey)!
+                hydrated[i] = { ...row, fmv: f.fmv, marketConfidence: f.confidence as any, fmvComputedAt: f.updatedAt }
+              }
+            }
+            console.log("[collection] FMV fallback enriched " + fmvMap.size + " editions from /api/fmv")
+          }
+        } catch { /* FMV fallback is non-critical */ }
+      }
       const withBadges = await enrichWithBadges(hydrated)
       // Log FMV enrichment stats for Vercel log verification
       const fmvCount = withBadges.filter(function(r) { return r.fmv != null && r.fmv > 0 }).length
@@ -1407,7 +1442,8 @@ export default function WalletPage() {
         ) : null}
 
         {/* Main table */}
-        <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-950">
+         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px] border-collapse text-sm">
             <thead className="bg-zinc-900">
               <tr className="border-b border-zinc-800 text-left">
@@ -1767,6 +1803,7 @@ export default function WalletPage() {
               })}
             </tbody>
           </table>
+         </div>
         </div>
 
         {/* Empty state */}
