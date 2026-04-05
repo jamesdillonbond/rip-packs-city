@@ -70,36 +70,85 @@ function flattenTraits(raw: unknown): Array<{ name: string; value: string }> {
 
 type FlowtyEditionData = { flowtyAsk: number; livetokenFmv: number | null; playerName: string }
 
-async function fetchFlowtyPage(from: number): Promise<Array<{ editionKey: string; data: FlowtyEditionData }>> {
-  const results: Array<{ editionKey: string; data: FlowtyEditionData }> = []
+type FlowtyPageDebug = {
+  from: number
+  httpStatus: number | null
+  error: string | null
+  rawSample: string | null
+  responseKeys: string | null
+  itemCount: number
+  parsedCount: number
+}
+
+async function fetchFlowtyPage(from: number): Promise<{ items: Array<{ editionKey: string; data: FlowtyEditionData }>; debug: FlowtyPageDebug }> {
+  const items: Array<{ editionKey: string; data: FlowtyEditionData }> = []
+  const debug: FlowtyPageDebug = { from, httpStatus: null, error: null, rawSample: null, responseKeys: null, itemCount: 0, parsedCount: 0 }
+
+  const requestBody = {
+    address: null, addresses: [],
+    collectionFilters: [{ collection: "0x0b2a3299cc857e29.TopShot", traits: [] }],
+    from, includeAllListings: true, limit: 24, onlyUnlisted: false,
+    orderFilters: [{ conditions: [], kind: "storefront", paymentTokens: [] }],
+    sort: { direction: "desc", listingKind: "storefront", path: "blockTimestamp" },
+  }
+
+  // Log exact request details on first page
+  if (from === 0) {
+    console.log("[wallet-enrich] Flowty URL: " + FLOWTY_ENDPOINT)
+    console.log("[wallet-enrich] Flowty headers: " + JSON.stringify(FLOWTY_HEADERS))
+    console.log("[wallet-enrich] Flowty body: " + JSON.stringify(requestBody))
+  }
+
   try {
     const controller = new AbortController()
     const timeout = setTimeout(function () { controller.abort() }, 10000)
     const res = await fetch(FLOWTY_ENDPOINT, {
       method: "POST",
       headers: FLOWTY_HEADERS,
-      body: JSON.stringify({
-        address: null, addresses: [],
-        collectionFilters: [{ collection: "0x0b2a3299cc857e29.TopShot", traits: [] }],
-        from, includeAllListings: true, limit: 24, onlyUnlisted: false,
-        orderFilters: [{ conditions: [], kind: "storefront", paymentTokens: [] }],
-        sort: { direction: "desc", listingKind: "storefront", path: "blockTimestamp" },
-      }),
+      body: JSON.stringify(requestBody),
       signal: controller.signal,
     })
     clearTimeout(timeout)
+
+    debug.httpStatus = res.status
+
+    // Read raw text first so we can capture it regardless of parse success
+    const rawText = await res.text()
+    debug.rawSample = rawText.substring(0, 500)
+
     if (!res.ok) {
-      console.log("[wallet-enrich] Flowty HTTP " + res.status + " from=" + from)
-      return results
+      debug.error = "HTTP " + res.status + " " + res.statusText
+      console.log("[wallet-enrich] Flowty HTTP " + res.status + " from=" + from + " body=" + rawText.substring(0, 200))
+      return { items, debug }
     }
-    const json = await res.json()
+
+    // Parse JSON from text
+    let json: any
+    try {
+      json = JSON.parse(rawText)
+    } catch (parseErr) {
+      debug.error = "JSON parse failed: " + (parseErr instanceof Error ? parseErr.message : String(parseErr))
+      console.log("[wallet-enrich] Flowty JSON parse error from=" + from + " raw=" + rawText.substring(0, 200))
+      return { items, debug }
+    }
+
+    // Log response shape
+    const topKeys = Object.keys(json ?? {})
+    debug.responseKeys = topKeys.join(", ")
+
     const rawItems: any[] = json?.nfts ?? json?.data ?? []
+    debug.itemCount = rawItems.length
 
     if (from === 0) {
+      console.log("[wallet-enrich] Flowty response keys: " + topKeys.join(", "))
       console.log("[wallet-enrich] Flowty page 0 rawItems=" + rawItems.length)
+      if (rawItems.length === 0) {
+        console.log("[wallet-enrich] Flowty page 0 EMPTY — full response keys: " + topKeys.join(", ") + " nfts type: " + typeof json?.nfts + " data type: " + typeof json?.data)
+      }
       if (rawItems.length > 0) {
         const firstTraits = flattenTraits(rawItems[0].nftView?.traits)
         console.log("[wallet-enrich] Flowty trait keys: " + firstTraits.map(function (t: { name: string }) { return t.name }).join(", "))
+        console.log("[wallet-enrich] Flowty first item keys: " + Object.keys(rawItems[0]).join(", "))
       }
     }
 
@@ -131,7 +180,7 @@ async function fetchFlowtyPage(from: number): Promise<Array<{ editionKey: string
       const editionKey = setID + ":" + playID
       const playerName = item.card?.title ?? ""
 
-      results.push({
+      items.push({
         editionKey,
         data: {
           flowtyAsk: order.salePrice,
@@ -140,23 +189,35 @@ async function fetchFlowtyPage(from: number): Promise<Array<{ editionKey: string
         },
       })
     }
-    return results
+    debug.parsedCount = items.length
+    return { items, debug }
   } catch (err) {
-    console.log("[wallet-enrich] Flowty from=" + from + " error: " + (err instanceof Error ? err.message : String(err)))
-    return results
+    debug.error = "exception: " + (err instanceof Error ? err.message : String(err))
+    console.log("[wallet-enrich] Flowty from=" + from + " exception: " + (err instanceof Error ? err.message : String(err)))
+    return { items, debug }
   }
 }
 
-async function fetchAllFlowtyData(): Promise<{ flowtyMap: Map<string, FlowtyEditionData>; totalItems: number }> {
+type FlowtyDebugSummary = {
+  totalItems: number
+  uniqueEditions: number
+  pageDebug: FlowtyPageDebug[]
+  requestUrl: string
+  requestHeaders: Record<string, string>
+}
+
+async function fetchAllFlowtyData(): Promise<{ flowtyMap: Map<string, FlowtyEditionData>; debugSummary: FlowtyDebugSummary }> {
   const flowtyMap = new Map<string, FlowtyEditionData>()
   // 10 pages = ~240 listings
   const offsets = [0, 24, 48, 72, 96, 120, 144, 168, 192, 216]
-  const pages = await Promise.all(offsets.map(function (o) { return fetchFlowtyPage(o) }))
+  const pageResults = await Promise.all(offsets.map(function (o) { return fetchFlowtyPage(o) }))
 
   let totalItems = 0
-  for (const page of pages) {
-    totalItems += page.length
-    for (const item of page) {
+  const pageDebug: FlowtyPageDebug[] = []
+  for (const page of pageResults) {
+    pageDebug.push(page.debug)
+    totalItems += page.items.length
+    for (const item of page.items) {
       const existing = flowtyMap.get(item.editionKey)
       // Keep the cheapest ask per edition
       if (!existing || item.data.flowtyAsk < existing.flowtyAsk) {
@@ -165,7 +226,16 @@ async function fetchAllFlowtyData(): Promise<{ flowtyMap: Map<string, FlowtyEdit
     }
   }
 
-  return { flowtyMap, totalItems }
+  return {
+    flowtyMap,
+    debugSummary: {
+      totalItems,
+      uniqueEditions: flowtyMap.size,
+      pageDebug,
+      requestUrl: FLOWTY_ENDPOINT,
+      requestHeaders: FLOWTY_HEADERS,
+    },
+  }
 }
 
 // ── Main route handler ──────────────────────────────────────────────────────
@@ -227,21 +297,30 @@ export async function POST(req: NextRequest) {
   console.log("[wallet-enrich] edition_uuid_resolved=" + editionUuidMap.size + "/" + uniqueKeys.length)
 
   // Step 3: Fetch Flowty data (PRIMARY source) — 10 pages
-  const { flowtyMap, totalItems: flowtyTotal } = await fetchAllFlowtyData()
-  console.log("[wallet-enrich] flowty: " + flowtyTotal + " items across 10 pages, " + flowtyMap.size + " unique editions")
+  const { flowtyMap, debugSummary: flowtyDebug } = await fetchAllFlowtyData()
+  console.log("[wallet-enrich] flowty: " + flowtyDebug.totalItems + " items across 10 pages, " + flowtyMap.size + " unique editions")
 
   // Step 4: For editions NOT found on Flowty, try badge_editions fallback
   const missingKeys = uniqueKeys.filter(function (ek) { return !flowtyMap.has(ek) })
   const badgeFallbackMap = new Map<string, number>()
+  let badgeDebug = { queriedKeys: 0, totalRows: 0, withLowAsk: 0, error: null as string | null }
   if (missingKeys.length > 0) {
+    badgeDebug.queriedKeys = missingKeys.length
     for (let i = 0; i < missingKeys.length; i += CHUNK) {
       const chunk = missingKeys.slice(i, i + CHUNK)
-      const { data: badgeRows } = await (supabaseAdmin as any)
+      const { data: badgeRows, error: badgeErr } = await (supabaseAdmin as any)
         .from("badge_editions")
         .select("edition_key, low_ask")
         .in("edition_key", chunk)
-      for (const r of (badgeRows ?? [])) {
+      if (badgeErr) {
+        badgeDebug.error = badgeErr.message
+        console.log("[wallet-enrich] badge_editions error: " + badgeErr.message)
+      }
+      const rows = badgeRows ?? []
+      badgeDebug.totalRows += rows.length
+      for (const r of rows) {
         if (r.low_ask && r.low_ask > 0) {
+          badgeDebug.withLowAsk++
           const existing = badgeFallbackMap.get(r.edition_key)
           if (!existing || r.low_ask < existing) {
             badgeFallbackMap.set(r.edition_key, r.low_ask)
@@ -249,7 +328,7 @@ export async function POST(req: NextRequest) {
         }
       }
     }
-    console.log("[wallet-enrich] badge_editions fallback: " + badgeFallbackMap.size + " editions with low_ask (of " + missingKeys.length + " missing)")
+    console.log("[wallet-enrich] badge_editions fallback: " + badgeFallbackMap.size + " editions with low_ask (of " + missingKeys.length + " missing, " + badgeDebug.totalRows + " rows returned)")
   }
 
   // Step 5: Build fmv_snapshots upsert rows
@@ -310,6 +389,9 @@ export async function POST(req: NextRequest) {
   }
 
   console.log("[wallet-enrich] rows_to_write=" + upsertRows.length + " flowty_matches=" + flowtyMatches + " badge_matches=" + badgeMatches + " skipped_no_uuid=" + skippedNoUuid + " skipped_no_data=" + skippedNoData)
+  if (flowtyMatches === 0) {
+    console.log("[wallet-enrich] WARNING: zero Flowty matches. page0 status=" + (flowtyDebug.pageDebug[0]?.httpStatus ?? "null") + " items=" + (flowtyDebug.pageDebug[0]?.itemCount ?? 0) + " error=" + (flowtyDebug.pageDebug[0]?.error ?? "none"))
+  }
 
   // Step 6: Upsert into fmv_snapshots with ON CONFLICT (edition_id) DO UPDATE
   let upsertSucceeded = 0
@@ -335,15 +417,36 @@ export async function POST(req: NextRequest) {
   const duration = Date.now() - startTime
   console.log("[wallet-enrich] DONE: enriched=" + enriched + " upserted=" + upsertSucceeded + " errors=" + upsertErrors.length + " duration=" + duration + "ms")
 
+  // Summarize Flowty page debug: only include first page rawSample + any error pages
+  const flowtyPageSummary = flowtyDebug.pageDebug.map(function (p) {
+    return {
+      from: p.from,
+      httpStatus: p.httpStatus,
+      error: p.error,
+      responseKeys: p.responseKeys,
+      itemCount: p.itemCount,
+      parsedCount: p.parsedCount,
+      rawSample: p.from === 0 ? p.rawSample : (p.error ? p.rawSample : null),
+    }
+  })
+
   const diagnostics = {
     ok: true,
     input: walletInput,
     wallet,
     unique_editions: uniqueKeys.length,
     edition_uuids_found: editionUuidMap.size,
-    flowty_total_items: flowtyTotal,
+    flowty_total_items: flowtyDebug.totalItems,
     flowty_unique_editions: flowtyMap.size,
     flowty_wallet_matches: flowtyMatches,
+    flowty_request_url: flowtyDebug.requestUrl,
+    flowty_request_headers: flowtyDebug.requestHeaders,
+    flowty_http_status: flowtyDebug.pageDebug[0]?.httpStatus ?? null,
+    flowty_error: flowtyDebug.pageDebug[0]?.error ?? null,
+    flowty_raw_sample: flowtyDebug.pageDebug[0]?.rawSample ?? null,
+    flowty_response_keys: flowtyDebug.pageDebug[0]?.responseKeys ?? null,
+    flowty_page_debug: flowtyPageSummary,
+    badge_debug: badgeDebug,
     badge_fallback_matches: badgeMatches,
     rows_built: upsertRows.length,
     rows_upserted: upsertSucceeded,
