@@ -840,6 +840,12 @@ export default function WalletPage() {
           .catch(function() {})
       }
 
+      // Fire-and-forget: enrich FMV/asks via Flowty for editions missing data
+      fetch("/api/wallet-enrich-flowty", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet: trimmed }),
+      }).catch(function() {})
       // Fire-and-forget: fetch sets data for "close to completing" callout
       fetch("/api/sets?wallet=" + encodeURIComponent(trimmed) + "&skipAsks=1")
         .then(function(r) { return r.ok ? r.json() : null })
