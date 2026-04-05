@@ -165,6 +165,7 @@ async function getSupabaseMarketMap(
     const { data: fmvRows, error } = await db
       .from("fmv_current")
       .select("edition_id, fmv_usd, floor_price_usd, cross_market_ask, top_shot_ask, flowty_ask, confidence, computed_at")
+      .limit(10000)
 
     if (error || !fmvRows?.length) {
       if (error) console.warn("[market-sources] fmv_current error:", error.message)

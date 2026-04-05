@@ -49,7 +49,7 @@ export const COLLECTIONS: Collection[] = [
     accent: "#4F94D4",
     icon: "🏈",
     pages: ["overview", "collection", "packs", "sniper", "sets"],
-    published: true,
+    published: false,
     graphqlUrl: "https://public-api.nflallday.com/graphql",
     flowContractName: "AllDay",
   },
@@ -104,7 +104,7 @@ export const COLLECTIONS: Collection[] = [
     accent: "#C084FC",
     icon: "🃏",
     pages: ["overview", "sniper"],
-    published: true,
+    published: false,
     openSeaSlug: "paniniblockchain",
   },
   {
