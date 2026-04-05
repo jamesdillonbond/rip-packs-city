@@ -4,10 +4,9 @@ import { supabaseAdmin } from "@/lib/supabase"
 /**
  * POST /api/wallet-enrich-flowty
  *
- * Enriches a collector's wallet with live FMV and Low Ask data:
- * - Top Shot lowest asks from ts_listings table (populated by ts-listing-ingest)
- * - Flowty floor prices + LiveToken FMV from Flowty API (same pattern as sniper-feed)
- * Writes results as fmv_snapshots with algo_version 'flowty-live'.
+ * Enriches a collector's wallet with live FMV and Low Ask data from Flowty API
+ * (primary source) with badge_editions fallback. Writes fmv_snapshots with
+ * algo_version 'flowty-live'.
  *
  * Body: { wallet: string }  — accepts Flow address or Top Shot username
  */
@@ -57,47 +56,7 @@ async function resolveToFlowAddress(input: string): Promise<string | null> {
   }
 }
 
-// ── Top Shot: get lowest ask per edition from ts_listings table ──────────────
-// Uses the same data source as the sniper feed — no GQL calls needed.
-
-async function fetchTopShotAsks(
-  editionKeys: Set<string>
-): Promise<{ askMap: Map<string, number>; debug: string }> {
-  const askMap = new Map<string, number>()
-  try {
-    // ts_listings has set_id + play_id columns. Fetch all current listings.
-    const { data: rows, error } = await (supabaseAdmin as any)
-      .from("ts_listings")
-      .select("set_id, play_id, price_usd")
-      .order("price_usd", { ascending: true })
-      .limit(5000)
-
-    if (error) return { askMap, debug: "ts_listings error: " + error.message }
-    if (!rows?.length) return { askMap, debug: "ts_listings: 0 rows" }
-
-    // Build lowest ask per edition key
-    for (const r of rows) {
-      if (!r.set_id || !r.play_id || !r.price_usd || r.price_usd <= 0) continue
-      const ek = r.set_id + ":" + r.play_id
-      if (!editionKeys.has(ek)) continue
-      if (!askMap.has(ek)) {
-        askMap.set(ek, Number(r.price_usd))
-      }
-    }
-    return { askMap, debug: "ts_listings: " + rows.length + " rows, " + askMap.size + " matched" }
-  } catch (err) {
-    return { askMap, debug: "ts_listings exception: " + (err instanceof Error ? err.message : String(err)) }
-  }
-}
-
-// ── Flowty: exact same pattern as sniper-feed fetchFlowtyPage ───────────────
-
-const FLOWTY_TRAIT_MAP: Record<string, string[]> = {
-  setName: ["SetName", "setName", "Set Name", "set_name"],
-  tier: ["Tier", "tier", "MomentTier", "momentTier"],
-  seriesNumber: ["SeriesNumber", "seriesNumber", "Series Number", "series_number", "Series"],
-  fullName: ["FullName", "fullName", "Full Name", "PlayerName", "playerName"],
-}
+// ── Flowty: same pattern as sniper-feed ────────────────────────────────────
 
 function flattenTraits(raw: unknown): Array<{ name: string; value: string }> {
   if (!raw) return []
@@ -109,15 +68,7 @@ function flattenTraits(raw: unknown): Array<{ name: string; value: string }> {
       typeof v === "object" && v !== null && "name" in v)
 }
 
-function getTraitMulti(traits: Array<{ name: string; value: string }>, keys: string[]): string {
-  for (const key of keys) {
-    const found = traits.find(function (t) { return t.name === key })
-    if (found?.value) return found.value
-  }
-  return ""
-}
-
-type FlowtyEditionData = { flowtyAsk: number | null; livetokenFmv: number | null; playerName: string }
+type FlowtyEditionData = { flowtyAsk: number; livetokenFmv: number | null; playerName: string }
 
 async function fetchFlowtyPage(from: number): Promise<Array<{ editionKey: string; data: FlowtyEditionData }>> {
   const results: Array<{ editionKey: string; data: FlowtyEditionData }> = []
@@ -137,13 +88,19 @@ async function fetchFlowtyPage(from: number): Promise<Array<{ editionKey: string
       signal: controller.signal,
     })
     clearTimeout(timeout)
-    if (!res.ok) return results
+    if (!res.ok) {
+      console.log("[wallet-enrich] Flowty HTTP " + res.status + " from=" + from)
+      return results
+    }
     const json = await res.json()
     const rawItems: any[] = json?.nfts ?? json?.data ?? []
 
-    if (from === 0 && rawItems.length > 0) {
-      const firstTraits = flattenTraits(rawItems[0].nftView?.traits)
-      console.log("[wallet-enrich] Flowty trait keys: " + firstTraits.map(function (t: { name: string }) { return t.name }).join(", "))
+    if (from === 0) {
+      console.log("[wallet-enrich] Flowty page 0 rawItems=" + rawItems.length)
+      if (rawItems.length > 0) {
+        const firstTraits = flattenTraits(rawItems[0].nftView?.traits)
+        console.log("[wallet-enrich] Flowty trait keys: " + firstTraits.map(function (t: { name: string }) { return t.name }).join(", "))
+      }
     }
 
     for (const item of rawItems) {
@@ -152,14 +109,11 @@ async function fetchFlowtyPage(from: number): Promise<Array<{ editionKey: string
       const traits = flattenTraits(item.nftView?.traits)
       const livetokenFmv = item.valuations?.blended?.usdValue ?? item.valuations?.livetoken?.usdValue ?? null
 
-      // Build edition key from card fields or traits
-      // Flowty nft has nftView.traits with SetID/PlayID
+      // Build edition key from SetID + PlayID (nft-level fields or traits)
       let setID = ""
       let playID = ""
-      // Try nft-level fields first
       if (item.nftView?.setID) setID = String(item.nftView.setID)
       if (item.nftView?.playID) playID = String(item.nftView.playID)
-      // Fallback to traits
       if (!setID) {
         for (const key of ["SetID", "setID", "setId", "Set ID"]) {
           const t = traits.find(function (t: { name: string }) { return t.name === key })
@@ -175,47 +129,43 @@ async function fetchFlowtyPage(from: number): Promise<Array<{ editionKey: string
 
       if (!setID || !playID) continue
       const editionKey = setID + ":" + playID
-      const playerName = item.card?.title ?? getTraitMulti(traits, FLOWTY_TRAIT_MAP.fullName) ?? ""
+      const playerName = item.card?.title ?? ""
 
       results.push({
         editionKey,
         data: {
-          flowtyAsk: order.salePrice > 0 ? order.salePrice : null,
+          flowtyAsk: order.salePrice,
           livetokenFmv: livetokenFmv && livetokenFmv > 0 ? livetokenFmv : null,
           playerName,
         },
       })
     }
     return results
-  } catch {
+  } catch (err) {
+    console.log("[wallet-enrich] Flowty from=" + from + " error: " + (err instanceof Error ? err.message : String(err)))
     return results
   }
 }
 
-async function fetchAllFlowtyData(targetEditionKeys: Set<string>): Promise<{ flowtyMap: Map<string, FlowtyEditionData>; debug: string }> {
+async function fetchAllFlowtyData(): Promise<{ flowtyMap: Map<string, FlowtyEditionData>; totalItems: number }> {
   const flowtyMap = new Map<string, FlowtyEditionData>()
-  try {
-    // Same 5-page parallel fetch as sniper-feed
-    const pages = await Promise.all([
-      fetchFlowtyPage(0), fetchFlowtyPage(24),
-      fetchFlowtyPage(48), fetchFlowtyPage(72),
-      fetchFlowtyPage(96),
-    ])
+  // 10 pages = ~240 listings
+  const offsets = [0, 24, 48, 72, 96, 120, 144, 168, 192, 216]
+  const pages = await Promise.all(offsets.map(function (o) { return fetchFlowtyPage(o) }))
 
-    let totalItems = 0
-    for (const page of pages) {
-      totalItems += page.length
-      for (const item of page) {
-        if (!targetEditionKeys.has(item.editionKey)) continue
-        if (flowtyMap.has(item.editionKey)) continue // keep cheapest (first seen)
+  let totalItems = 0
+  for (const page of pages) {
+    totalItems += page.length
+    for (const item of page) {
+      const existing = flowtyMap.get(item.editionKey)
+      // Keep the cheapest ask per edition
+      if (!existing || item.data.flowtyAsk < existing.flowtyAsk) {
         flowtyMap.set(item.editionKey, item.data)
       }
     }
-
-    return { flowtyMap, debug: "flowty: " + totalItems + " items across 5 pages, " + flowtyMap.size + " matched" }
-  } catch (err) {
-    return { flowtyMap, debug: "flowty exception: " + (err instanceof Error ? err.message : String(err)) }
   }
+
+  return { flowtyMap, totalItems }
 }
 
 // ── Main route handler ──────────────────────────────────────────────────────
@@ -269,96 +219,121 @@ export async function POST(req: NextRequest) {
       .select("id, external_id, collection_id")
       .in("external_id", chunk)
     for (const r of (rows ?? [])) {
-      if (r.collection_id) {
-        editionUuidMap.set(r.external_id, { id: r.id, collectionId: r.collection_id })
+      if (r.id) {
+        editionUuidMap.set(r.external_id, { id: r.id, collectionId: r.collection_id ?? null })
       }
     }
   }
   console.log("[wallet-enrich] edition_uuid_resolved=" + editionUuidMap.size + "/" + uniqueKeys.length)
 
-  // Step 3: Fetch market data in parallel
-  const [tsResult, flowtyResult] = await Promise.all([
-    fetchTopShotAsks(keySet),
-    fetchAllFlowtyData(keySet),
-  ])
+  // Step 3: Fetch Flowty data (PRIMARY source) — 10 pages
+  const { flowtyMap, totalItems: flowtyTotal } = await fetchAllFlowtyData()
+  console.log("[wallet-enrich] flowty: " + flowtyTotal + " items across 10 pages, " + flowtyMap.size + " unique editions")
 
-  console.log("[wallet-enrich] " + tsResult.debug)
-  console.log("[wallet-enrich] " + flowtyResult.debug)
+  // Step 4: For editions NOT found on Flowty, try badge_editions fallback
+  const missingKeys = uniqueKeys.filter(function (ek) { return !flowtyMap.has(ek) })
+  const badgeFallbackMap = new Map<string, number>()
+  if (missingKeys.length > 0) {
+    for (let i = 0; i < missingKeys.length; i += CHUNK) {
+      const chunk = missingKeys.slice(i, i + CHUNK)
+      const { data: badgeRows } = await (supabaseAdmin as any)
+        .from("badge_editions")
+        .select("edition_key, low_ask")
+        .in("edition_key", chunk)
+      for (const r of (badgeRows ?? [])) {
+        if (r.low_ask && r.low_ask > 0) {
+          const existing = badgeFallbackMap.get(r.edition_key)
+          if (!existing || r.low_ask < existing) {
+            badgeFallbackMap.set(r.edition_key, r.low_ask)
+          }
+        }
+      }
+    }
+    console.log("[wallet-enrich] badge_editions fallback: " + badgeFallbackMap.size + " editions with low_ask (of " + missingKeys.length + " missing)")
+  }
 
-  // Step 4: Build fmv_snapshots rows
+  // Step 5: Build fmv_snapshots upsert rows
   let enriched = 0
   let skippedNoUuid = 0
   let skippedNoData = 0
+  let flowtyMatches = 0
+  let badgeMatches = 0
   const upsertRows: Record<string, unknown>[] = []
 
   for (const ek of uniqueKeys) {
     const edUuid = editionUuidMap.get(ek)
     if (!edUuid) { skippedNoUuid++; continue }
 
-    const topShotAsk = tsResult.askMap.get(ek) ?? null
-    const fl = flowtyResult.flowtyMap.get(ek)
-    const flowtyAsk = fl?.flowtyAsk ?? null
-    const livetokenFmv = fl?.livetokenFmv ?? null
+    const fl = flowtyMap.get(ek)
+    const badgeLowAsk = badgeFallbackMap.get(ek) ?? null
 
-    const crossMarketAsk = topShotAsk !== null && flowtyAsk !== null
-      ? Math.min(topShotAsk, flowtyAsk)
-      : topShotAsk ?? flowtyAsk
+    if (!fl && !badgeLowAsk) { skippedNoData++; continue }
 
-    if (!topShotAsk && !flowtyAsk && !livetokenFmv) { skippedNoData++; continue }
+    let fmvUsd: number | null = null
+    let floorPriceUsd: number | null = null
+    let confidence: string = "LOW"
+    let flowtyAsk: number | null = null
 
-    const fmvUsd = livetokenFmv ?? (crossMarketAsk ? Number((crossMarketAsk * 0.9).toFixed(2)) : null)
-    const confidence = livetokenFmv ? "LOW" : "ASK_ONLY"
+    if (fl) {
+      // Flowty data available
+      flowtyMatches++
+      flowtyAsk = fl.flowtyAsk
+      floorPriceUsd = fl.flowtyAsk
+      if (fl.livetokenFmv) {
+        fmvUsd = fl.livetokenFmv
+        confidence = "MEDIUM"
+      } else {
+        // Use ask price * 0.9 as FMV proxy
+        fmvUsd = Number((fl.flowtyAsk * 0.9).toFixed(2))
+        confidence = "LOW"
+      }
+    } else if (badgeLowAsk) {
+      // Badge fallback
+      badgeMatches++
+      floorPriceUsd = badgeLowAsk
+      fmvUsd = Number((badgeLowAsk * 0.9).toFixed(2))
+      confidence = "LOW"
+    }
 
     upsertRows.push({
       edition_id: edUuid.id,
       collection_id: edUuid.collectionId,
       fmv_usd: fmvUsd,
-      floor_price_usd: crossMarketAsk,
-      top_shot_ask: topShotAsk,
+      floor_price_usd: floorPriceUsd,
       flowty_ask: flowtyAsk,
-      cross_market_ask: crossMarketAsk,
+      cross_market_ask: floorPriceUsd,
       confidence,
-      sales_count_7d: 0,
-      sales_count_30d: 0,
       algo_version: "flowty-live",
+      computed_at: new Date().toISOString(),
     })
     enriched++
   }
 
-  console.log("[wallet-enrich] rows_to_write=" + upsertRows.length + " skipped_no_uuid=" + skippedNoUuid + " skipped_no_data=" + skippedNoData)
+  console.log("[wallet-enrich] rows_to_write=" + upsertRows.length + " flowty_matches=" + flowtyMatches + " badge_matches=" + badgeMatches + " skipped_no_uuid=" + skippedNoUuid + " skipped_no_data=" + skippedNoData)
 
-  // Step 5: Delete old flowty-live snapshots then insert fresh
-  let insertSucceeded = 0
-  let insertErrors: string[] = []
+  // Step 6: Upsert into fmv_snapshots with ON CONFLICT (edition_id) DO UPDATE
+  let upsertSucceeded = 0
+  let upsertErrors: string[] = []
 
   if (upsertRows.length > 0) {
-    const editionIds = upsertRows.map(function (r) { return r.edition_id as string })
-
-    const { error: delErr } = await (supabaseAdmin as any)
-      .from("fmv_snapshots")
-      .delete()
-      .in("edition_id", editionIds)
-      .eq("algo_version", "flowty-live")
-    if (delErr) console.log("[wallet-enrich] delete error:", delErr.message)
-
     for (let i = 0; i < upsertRows.length; i += CHUNK) {
       const chunk = upsertRows.slice(i, i + CHUNK)
-      const { data: inserted, error: insertErr } = await (supabaseAdmin as any)
+      const { data: inserted, error: upsertErr } = await (supabaseAdmin as any)
         .from("fmv_snapshots")
-        .insert(chunk)
-        .select("id")
-      if (insertErr) {
-        insertErrors.push(insertErr.message)
-        console.log("[wallet-enrich] insert error chunk " + Math.floor(i / CHUNK) + ": " + insertErr.message)
+        .upsert(chunk, { onConflict: "edition_id" })
+        .select("edition_id")
+      if (upsertErr) {
+        upsertErrors.push(upsertErr.message)
+        console.log("[wallet-enrich] upsert error chunk " + Math.floor(i / CHUNK) + ": " + upsertErr.message)
         if (chunk.length > 0) console.log("[wallet-enrich] sample row: " + JSON.stringify(chunk[0]))
       } else {
-        insertSucceeded += inserted?.length ?? chunk.length
+        upsertSucceeded += inserted?.length ?? chunk.length
       }
     }
   }
 
   const duration = Date.now() - startTime
-  console.log("[wallet-enrich] DONE: enriched=" + enriched + " inserted=" + insertSucceeded + " errors=" + insertErrors.length + " duration=" + duration + "ms")
+  console.log("[wallet-enrich] DONE: enriched=" + enriched + " upserted=" + upsertSucceeded + " errors=" + upsertErrors.length + " duration=" + duration + "ms")
 
   const diagnostics = {
     ok: true,
@@ -366,13 +341,13 @@ export async function POST(req: NextRequest) {
     wallet,
     unique_editions: uniqueKeys.length,
     edition_uuids_found: editionUuidMap.size,
-    ts_debug: tsResult.debug,
-    ts_asks_found: tsResult.askMap.size,
-    flowty_debug: flowtyResult.debug,
-    flowty_data_found: flowtyResult.flowtyMap.size,
+    flowty_total_items: flowtyTotal,
+    flowty_unique_editions: flowtyMap.size,
+    flowty_wallet_matches: flowtyMatches,
+    badge_fallback_matches: badgeMatches,
     rows_built: upsertRows.length,
-    rows_inserted: insertSucceeded,
-    insert_errors: insertErrors.slice(0, 3),
+    rows_upserted: upsertSucceeded,
+    upsert_errors: upsertErrors.slice(0, 3),
     skipped_no_uuid: skippedNoUuid,
     skipped_no_data: skippedNoData,
     duration_ms: duration,
