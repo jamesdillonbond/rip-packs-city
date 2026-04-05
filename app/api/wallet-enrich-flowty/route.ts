@@ -345,7 +345,7 @@ export async function POST(req: NextRequest) {
   const duration = Date.now() - startTime
   console.log("[wallet-enrich-flowty] DONE: enriched=" + enriched + " inserted=" + insertSucceeded + " errors=" + insertErrors.length + " duration=" + duration + "ms")
 
-  return NextResponse.json({
+  const diagnostics = {
     ok: true,
     wallet,
     editions_checked: editionsToEnrich.length,
@@ -358,5 +358,14 @@ export async function POST(req: NextRequest) {
     skipped_no_uuid: skippedNoUuid,
     skipped_no_data: skippedNoData,
     duration_ms: duration,
-  })
+  }
+
+  // Persist diagnostics to debug_logs for Supabase MCP inspection
+  await (supabaseAdmin as any)
+    .from("debug_logs")
+    .insert({ route: "wallet-enrich-flowty", payload: diagnostics, created_at: new Date().toISOString() })
+    .then(function () {})
+    .catch(function () {})
+
+  return NextResponse.json(diagnostics)
 }
