@@ -291,14 +291,27 @@ export async function GET(req: NextRequest) {
     }
 
     // Re-sort by enriched FMV (fmv_snapshots data may differ from cached fmv_usd)
+    // Nulls always sort last regardless of direction
     switch (sortBy) {
       case "fmv_desc":
       case "price_desc":
-        filtered.sort(function (a: any, b: any) { return (b.fmv_usd ?? 0) - (a.fmv_usd ?? 0) })
+        filtered.sort(function (a: any, b: any) {
+          const av = a.fmv_usd, bv = b.fmv_usd
+          if (av == null && bv == null) return 0
+          if (av == null) return 1
+          if (bv == null) return -1
+          return bv - av
+        })
         break
       case "fmv_asc":
       case "price_asc":
-        filtered.sort(function (a: any, b: any) { return (a.fmv_usd ?? 0) - (b.fmv_usd ?? 0) })
+        filtered.sort(function (a: any, b: any) {
+          const av = a.fmv_usd, bv = b.fmv_usd
+          if (av == null && bv == null) return 0
+          if (av == null) return 1
+          if (bv == null) return -1
+          return av - bv
+        })
         break
       case "serial_asc":
         filtered.sort(function (a: any, b: any) { return (a.serial_number ?? 999999) - (b.serial_number ?? 999999) })
