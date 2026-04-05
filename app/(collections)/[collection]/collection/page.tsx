@@ -1491,18 +1491,18 @@ export default function WalletPage() {
         {/* Main table */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-950">
          <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] border-collapse text-sm">
+          <table className="w-full min-w-[480px] border-collapse text-sm">
             <thead className="bg-zinc-900">
               <tr className="border-b border-zinc-800 text-left">
                 <th className="p-3">Player</th>
-                <th className="p-3">Set</th>
+                <th className="p-3 hidden sm:table-cell">Set</th>
                 <th className="p-3 hidden sm:table-cell text-left">Series</th>
                 <th className="p-3 hidden md:table-cell">Parallel</th>
                 <th className="p-3 hidden md:table-cell">Rarity</th>
-                <th className="p-3">Serial / Mint</th>
+                <th className="p-3 hidden sm:table-cell">Serial / Mint</th>
                 <th className="p-3 hidden lg:table-cell">Held / Locked</th>
                 <th className="p-3 hidden xl:table-cell">Packs</th>
-                <th className="p-3">FMV</th>
+                <th className="p-3 whitespace-nowrap">FMV</th>
                 <th className="p-3 hidden lg:table-cell" style={{ cursor: "pointer" }} onClick={function() { if (sortKey === "tss") { setSortDirection(sortDirection === "asc" ? "desc" : "asc") } else { setSortKey("tss"); setSortDirection("desc") } }}>
                   TSS{sortKey === "tss" ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}
                 </th>
@@ -1562,11 +1562,11 @@ export default function WalletPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="p-3 text-sm">{normalizeSetName(row.setName)}</td>
+                      <td className="p-3 text-sm hidden sm:table-cell">{normalizeSetName(row.setName)}</td>
                       <td className="p-3 text-zinc-400 text-sm hidden sm:table-cell">{seriesDisplayLabel(row.series)}</td>
                       <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{getParallel(row)}</td>
                       <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{row.tier ?? "—"}</td>
-                      <td className="p-3">
+                      <td className="p-3 hidden sm:table-cell">
                         <div className={"inline-flex min-w-[80px] flex-col rounded-lg border px-2 py-1 " + (primaryBadge ? "" : "border-zinc-800 bg-black")} style={primaryBadge ? { borderColor: accent, backgroundColor: accent + "1A" } : undefined}>
                           <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} />
                           <div className={"text-sm font-black " + (primaryBadge ? "" : "text-white")} style={primaryBadge ? { color: accent } : undefined}>{"#" + (getSerial(row) ?? "-")}</div>
@@ -1600,7 +1600,7 @@ export default function WalletPage() {
                           )
                         })()}
                       </td>
-                      <td className="p-3">
+                      <td className="p-3 min-w-[90px] whitespace-nowrap">
                         <div className={"font-semibold text-sm " + (fmv.muted ? "text-zinc-500" : "text-white")}>{fmv.text}</div>
                         <div className={"text-[10px] " + conf.color}>{conf.label}</div>
                         {(function() {

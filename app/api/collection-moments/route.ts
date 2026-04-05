@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase"
  *
  * Server-side paginated collection moments from wallet_moments_cache,
  * enriched with FMV from fmv_snapshots and player metadata from badge_editions.
+ * Falls back to Top Shot GQL for moments missing player_name after badge lookup.
  *
  * Query params:
  *   wallet  - Flow address (required)
@@ -23,6 +24,61 @@ import { supabaseAdmin } from "@/lib/supabase"
 const VALID_SORTS = new Set([
   "fmv_desc", "fmv_asc", "serial_asc", "price_asc", "price_desc", "recent",
 ])
+
+const TOPSHOT_GQL_URL = "https://public-api.nbatopshot.com/graphql"
+
+const GQL_GET_MOMENT = `
+  query GetMomentMeta($id: ID!) {
+    getMintedMoment(momentId: $id) {
+      data {
+        play {
+          stats { playerName teamAtMoment }
+        }
+        set { flowName }
+        tier
+      }
+    }
+  }
+`
+
+type GqlMomentResponse = {
+  getMintedMoment?: {
+    data?: {
+      play?: { stats?: { playerName?: string; teamAtMoment?: string } }
+      set?: { flowName?: string }
+      tier?: string
+    } | null
+  } | null
+}
+
+async function fetchMomentMetaFromGql(momentId: string): Promise<{
+  player_name: string | null
+  set_name: string | null
+  tier: string | null
+} | null> {
+  try {
+    const res = await fetch(TOPSHOT_GQL_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "sports-collectible-tool/0.1",
+      },
+      body: JSON.stringify({ query: GQL_GET_MOMENT, variables: { id: momentId } }),
+      signal: AbortSignal.timeout(6000),
+    })
+    if (!res.ok) return null
+    const json = await res.json()
+    const data = (json?.data as GqlMomentResponse)?.getMintedMoment?.data
+    if (!data) return null
+    return {
+      player_name: data.play?.stats?.playerName ?? null,
+      set_name: data.set?.flowName ?? null,
+      tier: data.tier ?? null,
+    }
+  } catch {
+    return null
+  }
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -260,6 +316,59 @@ export async function GET(req: NextRequest) {
     const totalCount = filtered.length
     const offset = (page - 1) * limit
     const moments = filtered.slice(offset, offset + limit)
+
+    // Step 6: GQL fallback for moments in current page that are missing player_name.
+    // Group by edition_key to avoid duplicate GQL calls for the same edition.
+    const missingByEditionKey = new Map<string, number[]>() // edition_key -> indices in moments[]
+    for (let i = 0; i < moments.length; i++) {
+      const m = moments[i]
+      if (!m.player_name && m.moment_id) {
+        const key = m.edition_key ?? m.moment_id
+        if (!missingByEditionKey.has(key)) {
+          missingByEditionKey.set(key, [])
+        }
+        missingByEditionKey.get(key)!.push(i)
+      }
+    }
+
+    if (missingByEditionKey.size > 0) {
+      console.log("[collection-moments] GQL fallback needed for " + missingByEditionKey.size + " edition keys")
+      const gqlCache = new Map<string, { player_name: string | null; set_name: string | null; tier: string | null }>()
+
+      // Fetch GQL data in parallel (max 10 concurrent to avoid rate limits)
+      const entries = [...missingByEditionKey.entries()]
+      const BATCH = 10
+      for (let i = 0; i < entries.length; i += BATCH) {
+        const batch = entries.slice(i, i + BATCH)
+        const promises = batch.map(function ([editionKey, indices]) {
+          // Use first moment_id for this edition_key as the GQL lookup key
+          const momentId = moments[indices[0]].moment_id
+          return fetchMomentMetaFromGql(momentId).then(function (result) {
+            return { editionKey, result }
+          })
+        })
+        const results = await Promise.all(promises)
+        for (const { editionKey, result } of results) {
+          if (result) {
+            gqlCache.set(editionKey, result)
+          }
+        }
+      }
+
+      // Apply GQL results to moments
+      let gqlHits = 0
+      for (const [editionKey, indices] of missingByEditionKey.entries()) {
+        const gqlData = gqlCache.get(editionKey)
+        if (!gqlData) continue
+        gqlHits++
+        for (const idx of indices) {
+          if (gqlData.player_name) moments[idx].player_name = gqlData.player_name
+          if (gqlData.set_name) moments[idx].set_name = gqlData.set_name
+          if (gqlData.tier && !moments[idx].tier) moments[idx].tier = gqlData.tier
+        }
+      }
+      console.log("[collection-moments] GQL fallback resolved " + gqlHits + "/" + missingByEditionKey.size + " edition keys")
+    }
 
     return NextResponse.json({
       moments,
