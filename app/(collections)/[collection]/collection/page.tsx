@@ -309,16 +309,8 @@ function confidenceLabel(conf?: string | null): { label: string; color: string }
 
 function fmvDisplay(row: MomentRow): { text: string; muted: boolean } {
   const fmv = row.fmv ?? (typeof row.fmvUsd === "number" && row.fmvUsd > 0 ? row.fmvUsd : null)
-  const conf = row.marketConfidence
   if (fmv === null || fmv === undefined || fmv === 0) return { text: "—", muted: true }
-  const ask = getBestAsk(row)
-  switch (conf) {
-    case "high":   return { text: "$" + fmv.toFixed(2), muted: false }
-    case "medium": return { text: "~$" + fmv.toFixed(2), muted: false }
-    case "low":    return { text: "$" + Math.floor(fmv) + "–$" + Math.ceil(fmv * 1.15), muted: false }
-    case "none":   return ask ? { text: "Floor $" + ask.toFixed(2), muted: true } : { text: "No data", muted: true }
-    default:       return { text: "$" + fmv.toFixed(2), muted: false }
-  }
+  return { text: "$" + fmv.toFixed(2), muted: false }
 }
 
 type SortKey = "player" | "series" | "set" | "parallel" | "rarity" | "serial" | "fmv" | "tss" | "bestOffer" | "held" | "badge" | "acquired"
@@ -1602,7 +1594,6 @@ export default function WalletPage() {
                       </td>
                       <td className="p-3 min-w-[90px] whitespace-nowrap">
                         <div className={"font-semibold text-sm " + (fmv.muted ? "text-zinc-500" : "text-white")}>{fmv.text}</div>
-                        <div className={"text-[10px] " + conf.color}>{conf.label}</div>
                         {(function() {
                           if (row.marketConfidence === "none" || !row.fmv || row.fmv <= 0 || row.lowAsk == null) return null
                           const delta = ((row.lowAsk - row.fmv) / row.fmv) * 100
