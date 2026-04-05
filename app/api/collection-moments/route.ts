@@ -129,6 +129,15 @@ export async function GET(req: NextRequest) {
     const rawMoments: any[] = rpcResult?.moments ?? []
     const totalCount = Number(rpcResult?.total_count ?? 0)
 
+    // Compute total portfolio FMV in parallel (non-blocking for pagination)
+    const totalFmvPromise = (supabaseAdmin as any)
+      .rpc("get_wallet_total_fmv", { p_wallet: wallet })
+      .then(function (res: any) {
+        if (res.error) { console.log("[collection-moments] total_fmv error:", res.error.message); return 0 }
+        return res.data ?? 0
+      })
+      .catch(function () { return 0 })
+
     // Add thumbnail URLs (string formatting, not worth doing in SQL)
     const moments = rawMoments.map(function (row: any) {
       let thumbnailUrl: string | null = null
@@ -206,9 +215,12 @@ export async function GET(req: NextRequest) {
       console.log("[collection-moments] GQL fallback resolved " + gqlHits + "/" + missingByEditionKey.size + " edition keys")
     }
 
+    const totalFmv = await totalFmvPromise
+
     return NextResponse.json({
       moments,
       total_count: totalCount,
+      total_fmv: Number(totalFmv),
       page,
       limit,
       total_pages: Math.ceil(totalCount / limit),

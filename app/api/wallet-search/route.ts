@@ -390,29 +390,8 @@ async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
         .single()
 
       if (!edition?.id) continue
-
-      if (row.lastPurchasePrice && row.lastPurchasePrice > 0) {
-        await supabaseAdmin.from("sales").insert({
-          edition_id: edition.id,
-          collection_id: collectionId,
-          serial_number: row.serial ?? 0,
-          price_usd: row.lastPurchasePrice,
-          currency: "USD",
-          marketplace: "top_shot",
-          transaction_hash: `wallet-seed:${row.momentId}`,
-          sold_at: new Date().toISOString(),
-        })
-
-        await supabaseAdmin.from("fmv_snapshots").insert({
-          edition_id: edition.id,
-          collection_id: collectionId,
-          fmv_usd: row.lastPurchasePrice,
-          floor_price_usd: row.lastPurchasePrice,
-          confidence: "LOW" as any,
-          sales_count_7d: 1,
-          algo_version: "wallet-seed-1.0",
-        })
-      }
+      // Sales and FMV snapshots are only written by the real ingest pipeline
+      // and fmv-recalc cron — never seeded from wallet purchase prices.
     } catch {
       // Never let seeding errors bubble up to the user
     }
