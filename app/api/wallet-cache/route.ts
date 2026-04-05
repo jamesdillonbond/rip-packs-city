@@ -16,6 +16,32 @@ import { supabaseAdmin } from "@/lib/supabase"
   CREATE INDEX IF NOT EXISTS idx_wallet_moments_cache_wallet ON wallet_moments_cache (wallet_address);
 */
 
+// GET /api/wallet-cache?wallet=0x... — returns cached moments for fallback
+export async function GET(req: NextRequest) {
+  try {
+    const wallet = req.nextUrl.searchParams.get("wallet")
+    if (!wallet) {
+      return NextResponse.json({ ok: false, error: "wallet required" }, { status: 400 })
+    }
+
+    const { data, error } = await (supabaseAdmin as any)
+      .from("wallet_moments_cache")
+      .select("moment_id, edition_key, fmv_usd, serial_number, last_seen_at")
+      .eq("wallet_address", wallet)
+      .order("last_seen_at", { ascending: false })
+
+    if (error) {
+      console.warn("[wallet-cache] GET error:", error.message)
+      return NextResponse.json({ ok: false, moments: [] })
+    }
+
+    return NextResponse.json({ ok: true, moments: data ?? [] })
+  } catch (err) {
+    console.warn("[wallet-cache] GET error:", err instanceof Error ? err.message : String(err))
+    return NextResponse.json({ ok: false, moments: [] })
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()

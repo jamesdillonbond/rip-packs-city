@@ -749,7 +749,47 @@ export default function WalletPage() {
       const json = (await response.json()) as WalletSearchResponse
       if (!response.ok) throw new Error(json.error || "Wallet search failed")
       const nextRows = Array.isArray(json.rows) ? json.rows : []
-      const hydrated = await hydrateMarket(nextRows)
+      // Check wallet_moments_cache for moments missing from live fetch
+      let mergedRows = nextRows
+      try {
+        const cacheRes = await fetch("/api/wallet-cache?wallet=" + encodeURIComponent(query.trim()))
+        if (cacheRes.ok) {
+          const cacheJson = await cacheRes.json()
+          const cachedMoments = Array.isArray(cacheJson.moments) ? cacheJson.moments : []
+          const liveMomentIds = new Set(nextRows.map(function(r: MomentRow) { return r.momentId }))
+          const fallbackRows = cachedMoments
+            .filter(function(cm: any) { return cm.moment_id && !liveMomentIds.has(cm.moment_id) })
+            .map(function(cm: any) {
+              return {
+                momentId: cm.moment_id,
+                playerName: "Cached Moment",
+                setName: "Unknown Set",
+                editionKey: cm.edition_key ?? null,
+                fmv: cm.fmv_usd != null ? Number(cm.fmv_usd) : null,
+                serialNumber: cm.serial_number != null ? Number(cm.serial_number) : null,
+                serial: cm.serial_number != null ? Number(cm.serial_number) : null,
+                acquiredAt: cm.last_seen_at ?? null,
+                officialBadges: [],
+                specialSerialTraits: [],
+                isLocked: false,
+                bestAsk: null,
+                lowAsk: null,
+                bestOffer: null,
+                lastPurchasePrice: null,
+                parallel: null,
+                subedition: null,
+                flowId: null,
+                thumbnailUrl: null,
+                tssPoints: null,
+              } as MomentRow
+            })
+          if (fallbackRows.length > 0) {
+            console.log("[collection] Added " + fallbackRows.length + " cached fallback moments")
+            mergedRows = [...nextRows, ...fallbackRows]
+          }
+        }
+      } catch { /* cache fallback is non-critical */ }
+      const hydrated = await hydrateMarket(mergedRows)
       const withBadges = await enrichWithBadges(hydrated)
       setRows(withBadges)
       setSummary(json.summary)

@@ -550,10 +550,105 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
       }
     }
 
+    // 7b. Fallback: for edition keys that didn't resolve, try alternate format
+    // Some editions.external_id use UUID format (setUUID:playUUID), while
+    // wallet moments use numeric format (setID:playID). If a numeric key
+    // didn't match, query the editions table by name pattern to find the UUID variant.
+    const unmatchedKeys = editionKeys.filter(k => !editionFmvMap.has(k))
+    if (unmatchedKeys.length > 0) {
+      try {
+        // Look up editions that have an fmv_snapshot but whose external_id
+        // differs from the numeric key. We use the edition name which contains
+        // the player + set combo, or we query fmv_snapshots directly by
+        // joining through editions with a broader search.
+        const fallbackChunks: Promise<any>[] = []
+        for (let i = 0; i < unmatchedKeys.length; i += CHUNK) {
+          const chunk = unmatchedKeys.slice(i, i + CHUNK)
+          // Try to find editions where external_id contains the playID part
+          // (the second half of setID:playID) as a substring match
+          const orFilter = chunk
+            .map(k => {
+              const parts = k.split(":")
+              if (parts.length === 2) return `external_id.ilike.%:${parts[1]}`
+              return null
+            })
+            .filter(Boolean)
+            .join(",")
+
+          if (orFilter) {
+            fallbackChunks.push(
+              (supabaseAdmin as any)
+                .from("editions")
+                .select("id, external_id")
+                .or(orFilter)
+            )
+          }
+        }
+
+        if (fallbackChunks.length > 0) {
+          const fallbackResults = await Promise.all(fallbackChunks)
+          // Build playID → edition UUID map from fallback results
+          const playIdToEdition = new Map<string, string>()
+          for (const { data } of fallbackResults) {
+            for (const row of (data ?? [])) {
+              const parts = (row.external_id as string).split(":")
+              if (parts.length === 2) {
+                playIdToEdition.set(parts[1], row.id)
+              }
+            }
+          }
+
+          // Fetch FMV snapshots for any newly found edition UUIDs
+          const newInternalIds = [...new Set(playIdToEdition.values())]
+            .filter(id => !fmvMap.has(id))
+
+          if (newInternalIds.length > 0) {
+            const newFmvChunks: Promise<any>[] = []
+            for (let i = 0; i < newInternalIds.length; i += CHUNK) {
+              newFmvChunks.push(
+                (supabaseAdmin as any)
+                  .from("fmv_snapshots")
+                  .select("edition_id, fmv_usd, confidence, computed_at")
+                  .in("edition_id", newInternalIds.slice(i, i + CHUNK))
+                  .order("computed_at", { ascending: false })
+              )
+            }
+            const newFmvResults = await Promise.all(newFmvChunks)
+            for (const { data } of newFmvResults) {
+              for (const row of (data ?? [])) {
+                if (!fmvMap.has(row.edition_id)) fmvMap.set(row.edition_id, row)
+              }
+            }
+          }
+
+          // Map unmatched numeric keys to FMV via playID
+          for (const key of unmatchedKeys) {
+            const parts = key.split(":")
+            if (parts.length !== 2) continue
+            const editionUuid = playIdToEdition.get(parts[1])
+            if (!editionUuid) continue
+            const snap = fmvMap.get(editionUuid)
+            if (snap) {
+              editionFmvMap.set(key, {
+                fmv: Number(snap.fmv_usd),
+                confidence: (snap.confidence ?? "low").toLowerCase(),
+                computedAt: snap.computed_at,
+              })
+            }
+          }
+        }
+      } catch (fallbackErr) {
+        console.warn("[wallet-search] FMV fallback lookup failed:", fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr))
+      }
+    }
+
     // 8. Apply FMV + ask data to rows
-    return rows.map(row => {
+    let enrichedCount = 0
+    const enrichedRows = rows.map(row => {
       const fmvData = row.editionKey ? editionFmvMap.get(row.editionKey) : null
       const cachedAsk = row.flowId ? askMap.get(row.flowId) : null
+
+      if (fmvData) enrichedCount++
 
       return {
         ...row,
@@ -564,9 +659,40 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
         lowAsk: cachedAsk ?? row.lowAsk ?? null,
       }
     })
+
+    console.log(`[wallet-search] FMV enrichment: ${enrichedCount}/${rows.length} moments enriched with FMV`)
+    return enrichedRows
   } catch (err) {
     console.warn("[wallet-search] FMV/ask enrichment failed:", err instanceof Error ? err.message : String(err))
     return rows
+  }
+}
+
+async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
+  try {
+    const cacheRows = rows
+      .filter(r => r.momentId)
+      .map(r => ({
+        wallet_address: wallet,
+        moment_id: r.momentId,
+        edition_key: r.editionKey ?? null,
+        fmv_usd: r.fmv ?? null,
+        serial_number: r.serialNumber ?? (r.serial != null ? r.serial : null),
+        last_seen_at: new Date().toISOString(),
+      }))
+
+    if (!cacheRows.length) return
+
+    const CHUNK = 200
+    for (let i = 0; i < cacheRows.length; i += CHUNK) {
+      const chunk = cacheRows.slice(i, i + CHUNK)
+      await (supabaseAdmin as any)
+        .from("wallet_moments_cache")
+        .upsert(chunk, { onConflict: "wallet_address,moment_id" })
+    }
+    console.log(`[wallet-search] Cached ${cacheRows.length} moments for ${wallet}`)
+  } catch (err) {
+    console.warn("[wallet-search] Cache upsert failed:", err instanceof Error ? err.message : String(err))
   }
 }
 
@@ -739,6 +865,9 @@ export async function POST(req: NextRequest) {
     getCollectionId().then((collectionId) => {
       if (collectionId) seedEditionsToSupabase(rows, collectionId).catch(() => {})
     })
+
+    // Fire-and-forget — upsert wallet moments into cache for fallback
+    upsertWalletMomentsCache(wallet, rows).catch(() => {})
 
     return NextResponse.json({
       rows,

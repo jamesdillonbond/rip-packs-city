@@ -28,6 +28,18 @@ jobs:
           if [ "$STATUS" != "200" ]; then
             echo "::warning::FMV recalc returned $STATUS"
           fi
+      - name: FMV Backfill — Cover editions with sales but no FMV snapshot
+        run: |
+          STATUS=$(curl -s -o /tmp/fmv-backfill.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"batchSize":100}' \
+            https://rip-packs-city.vercel.app/api/fmv-backfill)
+          echo "FMV backfill status: $STATUS"
+          cat /tmp/fmv-backfill.json
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::FMV backfill returned $STATUS"
+          fi
       - name: Listing Cache — Refresh Flowty listings
         run: |
           STATUS=$(curl -s -o /tmp/cache.json -w "%{http_code}" -X POST \
