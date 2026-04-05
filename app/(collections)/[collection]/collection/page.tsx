@@ -200,7 +200,7 @@ function formatAcquiredAt(iso: string | null | undefined): string {
 }
 
 function compareText(a?: string | null, b?: string | null) { return (a ?? "").localeCompare(b ?? "") }
-function compareNumber(a?: number | null, b?: number | null) { return (a ?? -1) - (b ?? -1) }
+function compareNumber(a?: number | null, b?: number | null) { return (a ?? -Infinity) - (b ?? -Infinity) }
 function getParallel(row: MomentRow) { return normalizeParallel(row.parallel ?? row.subedition ?? "") }
 function getSerial(row: MomentRow) { return row.serialNumber ?? row.serial ?? null }
 function getMint(row: MomentRow) { return row.mintCount ?? row.mintSize ?? null }
@@ -699,12 +699,15 @@ export default function WalletPage() {
   }
 
   function serverMomentToRow(m: ServerMoment): MomentRow {
+    // Ensure fmv_usd is a real number (Supabase numeric cols can arrive as strings)
+    const fmvNum = m.fmv_usd != null ? Number(m.fmv_usd) : null
+    const fmvVal = (fmvNum != null && Number.isFinite(fmvNum) && fmvNum > 0) ? fmvNum : null
     return {
       momentId: m.moment_id,
       playerName: m.player_name ?? "Unknown",
       setName: m.set_name ?? "Unknown Set",
       editionKey: m.edition_key,
-      fmv: m.fmv_usd,
+      fmv: fmvVal,
       serialNumber: m.serial_number ?? undefined,
       serial: m.serial_number ?? undefined,
       mintCount: m.circulation_count ?? undefined,
@@ -714,7 +717,7 @@ export default function WalletPage() {
       thumbnailUrl: m.thumbnail_url,
       acquiredAt: m.last_seen_at,
       marketConfidence: (m.confidence?.toLowerCase() ?? "none") as "high" | "medium" | "low" | "none",
-      fmvUsd: m.fmv_usd,
+      fmvUsd: fmvVal,
       officialBadges: [],
       specialSerialTraits: [],
       isLocked: false,
@@ -1172,7 +1175,7 @@ export default function WalletPage() {
   }, [filteredRows])
 
   const projectedFmv = useMemo(function() {
-    const totalMoments = summary?.totalMoments ?? 0
+    const totalMoments = paginatedTotal || summary?.totalMoments || 0
     const loadedCount = rows.length
     if (!totalMoments || !loadedCount || loadedCount >= totalMoments) return null
     const rowsWithFmv = rows.filter(function(r) { return typeof r.fmv === "number" && r.fmv > 0 })
