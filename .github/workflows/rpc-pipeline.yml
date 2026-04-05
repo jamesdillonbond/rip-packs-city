@@ -40,6 +40,16 @@ jobs:
           if [ "$STATUS" != "200" ]; then
             echo "::warning::FMV backfill returned $STATUS"
           fi
+      - name: Flowty Enrich — Backfill FMV/asks for Trevor's wallet
+        continue-on-error: true
+        run: |
+          STATUS=$(curl -s -o /tmp/flowty-enrich.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"wallet":"0xbd94cade097e50ac"}' \
+            https://rip-packs-city.vercel.app/api/wallet-enrich-flowty)
+          echo "Flowty enrich status: $STATUS"
+          cat /tmp/flowty-enrich.json
       - name: Backfill Player Names — Fill missing player names via Supabase Edge Function
         continue-on-error: true
         run: |
