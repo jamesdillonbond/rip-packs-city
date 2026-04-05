@@ -214,15 +214,15 @@ function supadgePillClass(title: string) {
   return BADGE_COLORS[title] ?? "bg-zinc-800 text-zinc-300 border border-zinc-700"
 }
 
-const BADGE_ICONS: Record<string, string> = {
-  "Rookie Year":        "https://nbatopshot.com/img/momentTags/static/rookieYear.svg",
-  "Rookie Premiere":    "https://nbatopshot.com/img/momentTags/static/rookiePremiere.svg",
-  "Top Shot Debut":     "https://nbatopshot.com/img/momentTags/static/topShotDebut.svg",
-  "Rookie of the Year": "https://nbatopshot.com/img/momentTags/static/rookieOfTheYear.svg",
-  "Rookie Mint":        "https://nbatopshot.com/img/momentTags/static/rookieMint.svg",
-  "Championship Year":  "https://nbatopshot.com/img/momentTags/static/championshipYear.svg",
+const BADGE_SHORT_LABELS: Record<string, string> = {
+  "Rookie Year": "RY",
+  "Rookie Premiere": "RP",
+  "Top Shot Debut": "TSD",
+  "Rookie of the Year": "ROY",
+  "Rookie Mint": "RM",
+  "Championship Year": "Champ",
+  "Three-Star Rookie": "3★R",
 }
-
 
 function SerialBadge({ serial, mintSize, jerseyNumber }: { serial: number | undefined; mintSize: number | undefined; jerseyNumber: number | null | undefined }) {
   if (!serial) return null
@@ -244,14 +244,9 @@ function SerialBadge({ serial, mintSize, jerseyNumber }: { serial: number | unde
     </span>
   )
 }
-function BadgeIcon({ title, size = 20 }: { title: string; size?: number }) {
-  const src = BADGE_ICONS[title]
-  if (src) return (
-    <img src={src} alt={title} title={title} width={size} height={size}
-      style={{ display: "inline-block", verticalAlign: "middle" }}
-      onError={function(e) { (e.target as HTMLImageElement).style.display = "none" }} />
-  )
-  return <span className={"rounded px-1.5 py-0.5 text-[10px] font-semibold " + supadgePillClass(title)}>{title}</span>
+function BadgePill({ title }: { title: string }) {
+  const shortLabel = BADGE_SHORT_LABELS[title] ?? title
+  return <span title={title} className={"rounded px-1.5 py-0.5 text-[10px] font-semibold " + supadgePillClass(title)}>{shortLabel}</span>
 }
 
 function debugReasonLabel(reason?: string | null) {
@@ -281,7 +276,7 @@ function fmvDisplay(row: MomentRow): { text: string; muted: boolean } {
   return { text: "$" + fmv.toFixed(2), muted: false }
 }
 
-type SortKey = "player" | "series" | "set" | "parallel" | "rarity" | "serial" | "fmv" | "tss" | "bestOffer" | "held" | "badge" | "acquired"
+type SortKey = "player" | "series" | "set" | "parallel" | "rarity" | "serial" | "fmv" | "bestOffer" | "held" | "badge" | "acquired"
 
 // ── Edition Recent Sales (inline in expand panel) ────────────────────────────
 
@@ -642,12 +637,14 @@ export default function WalletPage() {
     serial_number: number | null
     fmv_usd: number | null
     confidence: string | null
+    low_ask: number | null
     player_name: string | null
     set_name: string | null
     tier: string | null
     series_number: number | null
     circulation_count: number | null
     thumbnail_url: string | null
+    acquired_at: string | null
     last_seen_at: string | null
   }
 
@@ -655,6 +652,8 @@ export default function WalletPage() {
     // Ensure fmv_usd is a real number (Supabase numeric cols can arrive as strings)
     const fmvNum = m.fmv_usd != null ? Number(m.fmv_usd) : null
     const fmvVal = (fmvNum != null && Number.isFinite(fmvNum) && fmvNum > 0) ? fmvNum : null
+    const lowAskNum = m.low_ask != null ? Number(m.low_ask) : null
+    const lowAskVal = (lowAskNum != null && Number.isFinite(lowAskNum) && lowAskNum > 0) ? lowAskNum : null
     return {
       momentId: m.moment_id,
       playerName: m.player_name ?? "Unknown",
@@ -668,20 +667,19 @@ export default function WalletPage() {
       tier: m.tier ?? undefined,
       series: m.series_number != null ? String(m.series_number) : undefined,
       thumbnailUrl: m.thumbnail_url,
-      acquiredAt: m.last_seen_at,
+      acquiredAt: m.acquired_at ?? null,
       marketConfidence: (m.confidence?.toLowerCase() ?? "none") as "high" | "medium" | "low" | "none",
       fmvUsd: fmvVal,
+      lowAsk: lowAskVal,
       officialBadges: [],
       specialSerialTraits: [],
       isLocked: false,
       bestAsk: null,
-      lowAsk: null,
       bestOffer: null,
       lastPurchasePrice: null,
       parallel: null,
       subedition: null,
       flowId: null,
-      tssPoints: null,
     }
   }
 
@@ -1042,7 +1040,6 @@ export default function WalletPage() {
           case "set":       result = compareText(a.setName, b.setName); break
           case "parallel":  result = compareText(getParallel(a), getParallel(b)); break
           case "rarity":    result = compareText(a.tier, b.tier); break
-          case "tss":       result = compareNumber(a.tssPoints, b.tssPoints); break
           case "bestOffer": result = compareNumber(a.bestOffer, b.bestOffer); break
           case "badge":     result = compareNumber(a.badgeInfo?.badge_score, b.badgeInfo?.badge_score); break
           case "held":
@@ -1413,13 +1410,10 @@ export default function WalletPage() {
                 <th className="p-3 hidden lg:table-cell">Held / Locked</th>
                 <th className="p-3 hidden xl:table-cell">Packs</th>
                 <th className="p-3 whitespace-nowrap">FMV</th>
-                <th className="p-3 hidden lg:table-cell" style={{ cursor: "pointer" }} onClick={function() { if (sortKey === "tss") { setSortDirection(sortDirection === "asc" ? "desc" : "asc") } else { setSortKey("tss"); setSortDirection("desc") } }}>
-                  TSS{sortKey === "tss" ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}
-                </th>
                 <th className="p-3 hidden lg:table-cell">Low Ask</th>
                 <th className="p-3 hidden lg:table-cell">Best Offer</th>
                 <th className="p-3 hidden xl:table-cell">Acquired</th>
-                <th className="p-3 hidden lg:table-cell">vs Cost</th>
+                <th className="p-3 hidden lg:table-cell">Purchase Price</th>
                 <th className="p-3">Details</th>
               </tr>
             </thead>
@@ -1461,12 +1455,9 @@ export default function WalletPage() {
                             <div className="font-semibold text-white text-sm">{row.playerName}</div>
                             <div className="mt-1 flex flex-wrap gap-1">
                               {officialBadges.map(function(badge) { return <span key={"official-" + badge} className={"rounded px-1.5 py-0.5 text-[10px] font-semibold " + badgeClass(badge)}>{badge}</span> })}
-                              {supaBadges.map(function(title) { return <BadgeIcon key={"supa-" + title} title={title} size={20} /> })}
+                              {supaBadges.map(function(title) { return <BadgePill key={"supa-" + title} title={title} /> })}
                               {row.badgeInfo?.is_three_star_rookie && row.badgeInfo?.has_rookie_mint && (
-                                <img src="https://nbatopshot.com/img/momentTags/static/threeStars.svg"
-                                  alt="Three-Star Rookie" title="Three-Star Rookie"
-                                  width={20} height={20}
-                                  style={{ display: "inline-block", verticalAlign: "middle" }} />
+                                <BadgePill title="Three-Star Rookie" />
                               )}
                             </div>
                           </div>
@@ -1483,17 +1474,6 @@ export default function WalletPage() {
                           <div className="text-xs text-zinc-400">{"/ " + (getMint(row) ?? "-")}</div>
                           {primaryBadge ? <div className="mt-1 rounded bg-white px-1 py-0.5 text-[9px] font-bold text-black">{primaryBadge}</div> : null}
                         </div>
-                        {/* Task 11: Upgrade available signal */}
-                        {(function() {
-                          const serial = getSerial(row)
-                          const lowAsk = row.lowAsk ?? row.badgeInfo?.low_ask
-                          if (serial == null || serial <= 100 || !lowAsk || !row.fmv || lowAsk >= row.fmv) return null
-                          return (
-                            <div className="mt-1 text-[10px] font-mono text-emerald-400">
-                              ⬇ Lower serial at ${lowAsk.toFixed(2)}
-                            </div>
-                          )
-                        })()}
                       </td>
                       <td className="p-3 text-sm hidden lg:table-cell">
                         {editionCounts.owned} / {editionCounts.locked}
@@ -1529,13 +1509,6 @@ export default function WalletPage() {
                           if (pctDiff <= 1) return null
                           return <div className="text-[10px] text-zinc-500 font-mono">Ask {"$" + ask.toFixed(2)}</div>
                         })()}
-                      </td>
-                      <td className="p-3 text-sm hidden lg:table-cell">
-                        {row.tssPoints != null ? (
-                          <span className="font-mono text-zinc-300">{row.tssPoints.toLocaleString()}</span>
-                        ) : (
-                          <span className="text-zinc-600">&mdash;</span>
-                        )}
                       </td>
                       <td className="p-3 text-sm hidden lg:table-cell">
                         {row.lowAsk != null ? (
@@ -1576,19 +1549,13 @@ export default function WalletPage() {
                         })()}
                       </td>
                       <td className="p-3 text-zinc-500 text-xs hidden xl:table-cell">{formatAcquiredAt(row.acquiredAt)}</td>
-                      {/* Task 13: vs Cost column */}
+                      {/* Purchase Price column */}
                       <td className="p-3 text-sm hidden lg:table-cell">
-                        {(function() {
-                          const fmvVal = row.fmv
-                          const cost = row.lastPurchasePrice
-                          if (!fmvVal || !cost || cost <= 0) return <span className="text-zinc-600">—</span>
-                          const delta = fmvVal - cost
-                          return (
-                            <span className={"font-mono font-semibold " + (delta >= 0 ? "text-emerald-400" : "text-red-400")}>
-                              {delta >= 0 ? "+" : ""}{formatCurrency(delta)}
-                            </span>
-                          )
-                        })()}
+                        {row.lastPurchasePrice != null && row.lastPurchasePrice > 0 ? (
+                          <span className="font-mono text-zinc-300">{formatCurrency(row.lastPurchasePrice)}</span>
+                        ) : (
+                          <span className="text-zinc-600">—</span>
+                        )}
                       </td>
                       <td className="p-3">
                         <div className="flex items-center gap-1.5 relative">
@@ -1723,7 +1690,7 @@ export default function WalletPage() {
                                   </div>
                                   <div className="flex flex-wrap gap-1 pt-1">
                                     {(row.badgeInfo.badge_titles ?? []).filter(function(t) { return BADGE_PILL_TITLES.has(t) }).map(function(title) {
-                                      return <BadgeIcon key={title} title={title} size={24} />
+                                      return <BadgePill key={title} title={title} />
                                     })}
                                   </div>
                                   <div className="pt-1 text-xs text-zinc-500">
