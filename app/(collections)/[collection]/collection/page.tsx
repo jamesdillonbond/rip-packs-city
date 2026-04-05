@@ -109,6 +109,7 @@ type MomentRow = {
   editionMarketSourceChain?: string[]
   editionMarketTags?: string[]
   fmvComputedAt?: string | null
+  fmvUsd?: number | null
   tssPoints?: number | null
   badgeInfo?: BadgeInfo | null
   editionOffer?: number | null
@@ -206,6 +207,18 @@ function getMint(row: MomentRow) { return row.mintCount ?? row.mintSize ?? null 
 function getTraits(row: MomentRow) { return row.specialSerialTraits ?? row.traits ?? [] }
 function getLocked(row: MomentRow) { return Boolean(row.isLocked ?? row.locked) }
 
+function getThumbnailUrl(row: MomentRow): string | null {
+  if (row.thumbnailUrl) return row.thumbnailUrl
+  if (row.editionKey) {
+    const parts = row.editionKey.split(":")
+    if (parts.length === 2) {
+      const [setID, playID] = parts
+      return `https://assets.nbatopshot.com/editions/${setID}${playID}/play${playID}_capture_Hero_Black_2880_2880_default.jpg`
+    }
+  }
+  return null
+}
+
 function getBestAsk(row: MomentRow) {
   const values = [row.lowAsk, row.bestAsk, row.topshotAsk, row.flowtyAsk].filter(
     (v): v is number => typeof v === "number" && Number.isFinite(v) && v !== 0
@@ -295,7 +308,7 @@ function confidenceLabel(conf?: string | null): { label: string; color: string }
 }
 
 function fmvDisplay(row: MomentRow): { text: string; muted: boolean } {
-  const fmv = row.fmv
+  const fmv = row.fmv ?? (typeof row.fmvUsd === "number" && row.fmvUsd > 0 ? row.fmvUsd : null)
   const conf = row.marketConfidence
   if (fmv === null || fmv === undefined || fmv === 0) return { text: "—", muted: true }
   const ask = getBestAsk(row)
@@ -602,6 +615,7 @@ export default function WalletPage() {
         editionMarketTags: market?.editionMarketTags ?? row.editionMarketTags,
         topshotAsk: market?.topshotAsk ?? row.topshotAsk ?? null,
         flowtyAsk: market?.flowtyAsk ?? row.flowtyAsk ?? null,
+        fmvUsd: market?.fmvUsd ?? row.fmvUsd ?? null,
       }
     })
   }
@@ -1053,32 +1067,6 @@ export default function WalletPage() {
     } catch {}
   }, [])
 
-  // ── Task 12: Set completion data ──────────────────────────────────────
-  const setCompletion = useMemo(function() {
-    if (!setsData?.sets || !rows.length) return []
-    const ownedBySet = new Map<string, number>()
-    for (const row of rows) {
-      const setName = normalizeSetName(row.setName)
-      ownedBySet.set(setName, (ownedBySet.get(setName) ?? 0) + 1)
-    }
-    return setsData.sets
-      .filter(function(s: any) {
-        const owned = ownedBySet.get(s.setName) ?? 0
-        return owned > 0 && owned < (s.totalCount ?? s.editionCount ?? 999)
-      })
-      .map(function(s: any) {
-        const owned = ownedBySet.get(s.setName) ?? 0
-        const total = s.totalCount ?? s.editionCount ?? 0
-        return {
-          setName: s.setName,
-          owned,
-          total,
-          pct: total > 0 ? Math.round((owned / total) * 100) : 0,
-          floorCost: s.totalMissingCost ?? null,
-        }
-      })
-      .sort(function(a: any, b: any) { return b.pct - a.pct })
-  }, [setsData, rows])
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -1205,27 +1193,6 @@ export default function WalletPage() {
         )}
 
 
-        {/* Task 12: Set completion mini progress bars */}
-        {hasSearched && setCompletion.length > 0 && (
-          <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, border: "1px solid #27272a", background: "#09090b" }}>
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "#52525b", letterSpacing: "0.1em", marginBottom: 8 }}>SET COMPLETION</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {setCompletion.slice(0, 10).map(function(s: any) {
-                return (
-                  <div key={s.setName} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, fontFamily: "var(--font-mono)" }}>
-                    <div style={{ minWidth: 180, color: "#e4e4e7", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.setName}</div>
-                    <div style={{ minWidth: 60, color: "#a1a1aa" }}>{s.owned}/{s.total}</div>
-                    <div style={{ flex: 1, height: 6, borderRadius: 3, background: "#18181b", overflow: "hidden" }}>
-                      <div style={{ height: "100%", borderRadius: 3, width: s.pct + "%", background: accent, transition: "width 0.3s" }} />
-                    </div>
-                    <div style={{ minWidth: 36, textAlign: "right", color: "#a1a1aa" }}>{s.pct}%</div>
-                    {s.floorCost != null && <div style={{ minWidth: 70, textAlign: "right", color: "#52525b" }}>${Number(s.floorCost).toFixed(2)}</div>}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
 
         {/* Filters */}
         <div className="mb-5 grid gap-2 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
@@ -1419,19 +1386,23 @@ export default function WalletPage() {
                     <tr className={"group border-b border-zinc-800 align-top " + (isLocked ? "opacity-60" : "") + (row.tier?.toUpperCase() === "LEGENDARY" ? " rpc-holo-legendary" : row.tier?.toUpperCase() === "ULTIMATE" ? " rpc-holo-ultimate" : row.tier?.toUpperCase() === "RARE" ? " rpc-holo-rare" : "")}>
                       <td className="p-3 min-w-[160px]">
                         <div className="flex items-center gap-2">
-                          {row.thumbnailUrl ? (
-                            <img
-                              src={row.thumbnailUrl}
-                              alt={row.playerName}
-                              width={36}
-                              height={36}
-                              loading="lazy"
-                              className="shrink-0 rounded object-cover bg-zinc-900"
-                              style={{ width: 36, height: 36 }}
-                            />
-                          ) : (
-                            <div className="shrink-0 rounded bg-zinc-900" style={{ width: 36, height: 36 }} />
-                          )}
+                          {(() => {
+                            const thumbUrl = getThumbnailUrl(row)
+                            return thumbUrl ? (
+                              <img
+                                src={thumbUrl}
+                                alt={row.playerName}
+                                width={36}
+                                height={36}
+                                loading="lazy"
+                                className="shrink-0 rounded object-cover bg-zinc-900"
+                                style={{ width: 36, height: 36 }}
+                                onError={function(e) { (e.target as HTMLImageElement).style.display = "none" }}
+                              />
+                            ) : (
+                              <div className="shrink-0 rounded bg-zinc-900" style={{ width: 36, height: 36 }} />
+                            )
+                          })()}
                           <div>
                             <div className="font-semibold text-white text-sm">{row.playerName}</div>
                             <div className="mt-1 flex flex-wrap gap-1">
@@ -1648,11 +1619,11 @@ export default function WalletPage() {
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                               <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Market</div>
                               <div className="space-y-1 text-sm">
-                                <div>Top Shot Ask: {formatCurrency(row.topshotAsk)}</div>
+                                <div>Top Shot Ask: {formatCurrency(row.topshotAsk ?? row.editionLowAsk)}</div>
                                 <div>Flowty Ask: {formatCurrency(row.flowtyAsk)}</div>
-                                <div>Best Ask: {formatCurrency(getBestAsk(row))}</div>
-                                <div>Best Market: {row.bestMarket ?? "-"}</div>
-                                <div>Best Offer: {formatCurrency(row.bestOffer)}</div>
+                                <div>Best Ask: {formatCurrency(getBestAsk(row) ?? row.editionLowAsk)}</div>
+                                <div>Best Market: {row.bestMarket ?? (row.editionMarketSource ? row.editionMarketSource : "-")}</div>
+                                <div>Best Offer: {formatCurrency(row.bestOffer ?? row.editionBestOffer)}</div>
                                 <div>FMV: {fmv.text}</div>
                                 <div>FMV Method: {row.fmvMethod ?? "-"}</div>
                                 <div className={"font-medium " + conf.color}>Confidence: {conf.label}</div>
@@ -1710,7 +1681,7 @@ export default function WalletPage() {
                                   </div>
                                 </div>
                               </div>
-                            ) : (
+                            ) : showDebug ? (
                               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                                 <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Debug</div>
                                 <div className="space-y-1 text-sm">
@@ -1722,7 +1693,7 @@ export default function WalletPage() {
                                   <div>Edition Source: {row.editionMarketSource ?? "-"}</div>
                                 </div>
                               </div>
-                            )}
+                            ) : null}
                           </div>
                           <div className="mt-4">
                             <EditionRecentSales editionKey={row.editionKey ?? null} mintCount={getMint(row)} />

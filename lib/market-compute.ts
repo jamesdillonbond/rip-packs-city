@@ -375,6 +375,13 @@ export function computeFmv(input: MarketTruthInput): MarketTruthRow {
     }
   }
 
+  // Final fallback: use Supabase fmv_snapshots if no live market data produced an FMV
+  if (fmv === null && typeof input.fmvUsd === "number" && input.fmvUsd > 0) {
+    fmv = input.fmvUsd
+    fmvMethod = "low-ask-only"
+    marketSource = "edition"
+  }
+
   const marketConfidence = resolveConfidenceTier(
     editionSaleCount,
     editionAskCount,
