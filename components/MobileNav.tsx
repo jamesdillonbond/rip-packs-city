@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { getLastCollection } from "@/lib/active-collection";
-import { getCollection } from "@/lib/collections";
 
 export default function MobileNav() {
   const pathname = usePathname();
@@ -14,24 +13,14 @@ export default function MobileNav() {
     setCollectionId(getLastCollection());
   }, []);
 
-  const collection = getCollection(collectionId);
-  const pages = collection?.pages ?? [];
-
   // Build dynamic tabs
   const tabs: { label: string; icon: string; href: string }[] = [
     { label: "HOME", icon: "🏠", href: "/" },
     { label: "WALLET", icon: "◈", href: `/${collectionId}/collection` },
     { label: "SNIPER", icon: "⚡", href: `/${collectionId}/sniper` },
+    { label: "SETS", icon: "◉", href: `/${collectionId}/sets` },
+    { label: "PROFILE", icon: "👤", href: "/profile" },
   ];
-
-  // Badges tab — only if collection has badges; otherwise Deals shortcut
-  if (pages.includes("badges")) {
-    tabs.push({ label: "BADGES", icon: "⭐", href: `/${collectionId}/badges` });
-  } else {
-    tabs.push({ label: "DEALS", icon: "⚡", href: `/${collectionId}/sniper?minDiscount=20&sortBy=listed_desc` });
-  }
-
-  tabs.push({ label: "PROFILE", icon: "👤", href: "/profile" });
 
   return (
     <nav

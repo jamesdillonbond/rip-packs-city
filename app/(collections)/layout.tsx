@@ -43,7 +43,7 @@ export default async function CollectionLayout(props: any) {
 function SiteHeader() {
   return (
     <header style={{ background: "rgba(8,8,8,0.97)", borderBottom: "1px solid rgba(255,255,255,0.06)", position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(20px)" }}>
-      <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 20px", height: 56, display: "flex", alignItems: "center", gap: 16 }}>
+      <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 20px", height: 56, display: "flex", alignItems: "center", gap: 16, overflow: "hidden" }}>
         <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, textDecoration: "none" }}>
           <svg width="28" height="28" viewBox="0 0 100 100">
             <circle cx="50" cy="50" r="46" fill="none" stroke="#E03A2F" strokeWidth="4" />
@@ -62,11 +62,8 @@ function SiteHeader() {
           </div>
         </Link>
         <div style={{ flex: 1 }} />
-        <Link href="/disney-pinnacle/overview" style={{ color: "rgba(255,255,255,0.5)", fontSize: 10, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none", transition: "color 0.15s" }}>
-          Disney Pinnacle
-        </Link>
         <CartButton />
-        <Link href="/profile" style={{ background: "rgba(224,58,47,0.15)", border: "1px solid rgba(224,58,47,0.4)", color: "#E03A2F", padding: "4px 10px", borderRadius: 4, fontSize: 10, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}>
+        <Link href="/profile" style={{ background: "rgba(224,58,47,0.15)", border: "1px solid rgba(224,58,47,0.4)", color: "#E03A2F", padding: "4px 10px", borderRadius: 4, fontSize: 10, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none", flexShrink: 0, maxWidth: 80 }}>
           Profile
         </Link>
       </div>

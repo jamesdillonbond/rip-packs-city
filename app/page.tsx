@@ -77,9 +77,6 @@ export default function HomePage() {
             </div>
           </Link>
           <div style={{ flex: 1 }} />
-          <Link href="/pinnacle" style={{ color: "rgba(255,255,255,0.5)", fontSize: 10, fontFamily: condensedFont, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none", transition: "color 0.15s" }}>
-            Disney Pinnacle
-          </Link>
           <Link href="/profile" style={{ background: "rgba(224,58,47,0.15)", border: "1px solid rgba(224,58,47,0.4)", color: RED, padding: "4px 10px", borderRadius: 4, fontSize: 10, fontFamily: condensedFont, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}>
             Profile
           </Link>
@@ -150,11 +147,12 @@ export default function HomePage() {
                 padding: "16px 14px 12px",
                 position: "relative",
                 borderBottom: `2px solid ${col.accent}`,
-                opacity: isPublished ? 1 : 0.45,
+                opacity: isPublished ? 1 : 0.5,
                 transition: "all 0.2s ease",
                 textDecoration: "none",
                 color: "#fff",
                 display: "block",
+                pointerEvents: isPublished ? "auto" : "none",
               };
 
               const inner = (
