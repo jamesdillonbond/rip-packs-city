@@ -183,9 +183,9 @@ export default function SupportChat({ pageContext, userWallet, walletConnected, 
 
         if (ctx.dailyDeal) {
           const d = ctx.dailyDeal;
-          const playerName = d.player_name ?? d.playerName;
-          const price = d.low_ask ?? d.price;
-          const discountPct = d.discount_pct ?? d.discountPct;
+          const playerName = d.player_name;
+          const price = d.low_ask;
+          const discountPct = d.discount_pct;
           const tier = d.tier ?? "Moment";
           if (playerName && price != null && discountPct != null) {
             const priceStr = typeof price === "number" ? price.toFixed(2) : parseFloat(price).toFixed(2);

@@ -525,6 +525,53 @@ export default function WalletPage() {
     }
   }
 
+  // ── FMV enrichment via batch /api/fmv endpoint ─────────────────────────────
+  async function enrichFmv(rowsIn: MomentRow[]): Promise<MomentRow[]> {
+    if (!rowsIn.length) return rowsIn
+    try {
+      const uniqueKeys = Array.from(new Set(
+        rowsIn.map(function(r) { return r.editionKey }).filter(function(k): k is string { return !!k })
+      ))
+      if (!uniqueKeys.length) return rowsIn
+
+      const fmvMap = new Map<string, { fmv: number; confidence: string; updatedAt: string | null }>()
+      const BATCH = 100
+      for (let i = 0; i < uniqueKeys.length; i += BATCH) {
+        const batch = uniqueKeys.slice(i, i + BATCH)
+        try {
+          const res = await fetch("/api/fmv", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ editions: batch }),
+          })
+          if (!res.ok) continue
+          const json = await res.json()
+          if (Array.isArray(json.results)) {
+            for (const r of json.results) {
+              if (r.fmv && r.fmv > 0) {
+                fmvMap.set(r.edition, { fmv: r.fmv, confidence: r.confidence, updatedAt: r.updatedAt })
+              }
+            }
+          }
+        } catch { /* batch failed, continue with next */ }
+      }
+
+      console.log("[FMV-ENRICH] " + fmvMap.size + " / " + uniqueKeys.length + " editions enriched with FMV")
+
+      if (!fmvMap.size) return rowsIn
+      return rowsIn.map(function(row) {
+        if (!row.editionKey) return row
+        const fmvData = fmvMap.get(row.editionKey)
+        if (!fmvData) return row
+        // Only overwrite if row has no FMV or zero FMV
+        if (row.fmv && row.fmv > 0) return row
+        return { ...row, fmv: fmvData.fmv, fmvComputedAt: fmvData.updatedAt, marketConfidence: fmvData.confidence as MomentRow["marketConfidence"] }
+      })
+    } catch {
+      return rowsIn
+    }
+  }
+
   // Debounced offer enrichment — accumulates rows across page loads,
   // fires once after 2s idle, chunks into batches of 200 momentIds
   const pendingOfferRowsRef = useRef<MomentRow[]>([])
@@ -674,24 +721,25 @@ export default function WalletPage() {
     const moments: ServerMoment[] = json.moments ?? []
     const momentRows = moments.map(serverMomentToRow)
 
-    // Enrich with badges
+    // Enrich with badges, then FMV via batch API
     const withBadges = await enrichWithBadges(momentRows)
+    const withFmv = await enrichFmv(withBadges)
 
     // Append new pages at end — API returns pre-sorted results, so concat
     // preserves sort order without client-side re-sort (see filteredRows memo).
     if (append) {
-      setRows(function(prev) { return prev.concat(withBadges) })
+      setRows(function(prev) { return prev.concat(withFmv) })
     } else {
-      setRows(withBadges)
+      setRows(withFmv)
     }
     setPaginatedPage(json.page ?? page)
     setPaginatedTotal(json.total_count ?? 0)
     setPaginatedTotalPages(json.total_pages ?? 0)
 
     // Fire-and-forget: enrich best offers
-    enrichOffers(withBadges)
+    enrichOffers(withFmv)
 
-    return { momentRows: withBadges, totalCount: json.total_count ?? 0 }
+    return { momentRows: withFmv, totalCount: json.total_count ?? 0 }
   }
 
   async function maybePatchProfileStats(query: string, resultRows: MomentRow[], resultSummary: WalletSearchResponse["summary"]) {
@@ -765,32 +813,34 @@ export default function WalletPage() {
 
       // Secondary: call wallet-search for summary stats only (total FMV, locked/unlocked counts)
       // This runs in parallel as a background fetch — does NOT block the moment display.
-      fetch("/api/wallet-search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: trimmed, offset: 0, limit: 50, collection: collectionSlug }),
-      })
-        .then(function(r) { return r.ok ? r.json() : null })
-        .then(function(json: WalletSearchResponse | null) {
-          if (!json) return
-          setSummary(json.summary)
-          // Also update the wallet cache from live data for future loads
-          const liveRows = Array.isArray(json.rows) ? json.rows : []
-          if (liveRows.length > 0) {
-            fetch("/api/wallet-cache", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                wallet: trimmed,
-                moments: liveRows.map(function(r) {
-                  return { momentId: r.momentId, editionKey: r.editionKey, fmv: r.fmv, serial: r.serialNumber ?? r.serial }
-                }),
-              }),
-            }).catch(function() {})
-          }
-          maybePatchProfileStats(trimmed, liveRows, json.summary).catch(function() {})
+      if (trimmed) {
+        fetch("/api/wallet-search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ input: trimmed, offset: 0, limit: 50, collection: collectionSlug }),
         })
-        .catch(function() {})
+          .then(function(r) { return r.ok ? r.json() : null })
+          .then(function(json: WalletSearchResponse | null) {
+            if (!json) return
+            setSummary(json.summary)
+            // Also update the wallet cache from live data for future loads
+            const liveRows = Array.isArray(json.rows) ? json.rows : []
+            if (liveRows.length > 0) {
+              fetch("/api/wallet-cache", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  wallet: trimmed,
+                  moments: liveRows.map(function(r) {
+                    return { momentId: r.momentId, editionKey: r.editionKey, fmv: r.fmv, serial: r.serialNumber ?? r.serial }
+                  }),
+                }),
+              }).catch(function() {})
+            }
+            maybePatchProfileStats(trimmed, liveRows, json.summary).catch(function() {})
+          })
+          .catch(function() {})
+      }
 
       // Fire-and-forget: fetch sets data for "close to completing" callout
       fetch("/api/sets?wallet=" + encodeURIComponent(trimmed) + "&skipAsks=1")

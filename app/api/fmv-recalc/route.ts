@@ -441,6 +441,19 @@ export async function POST(req: NextRequest) {
     let backfillCount = 0
 
     try {
+      // Log how many editions are still missing FMV
+      const { data: missingCount } = await supabaseAdmin
+        .rpc("execute_sql", {
+          query: `
+            SELECT COUNT(*) AS cnt
+            FROM editions e
+            LEFT JOIN fmv_snapshots fs ON fs.edition_id = e.id
+            WHERE fs.edition_id IS NULL
+          `,
+        })
+      const missingEditions = (missingCount as { cnt: number }[])?.[0]?.cnt ?? "unknown"
+      console.log(`[FMV-RECALC] Editions missing FMV snapshots: ${missingEditions}`)
+
       const { data: uncoveredEditions } = await supabaseAdmin
         .rpc("execute_sql", {
           query: `
@@ -451,7 +464,7 @@ export async function POST(req: NextRequest) {
             WHERE fs.edition_id IS NULL
               AND be.low_ask IS NOT NULL
               AND be.low_ask > 0
-            LIMIT 200
+            LIMIT 500
           `,
         })
 

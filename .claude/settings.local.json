@@ -6,7 +6,10 @@
       "Bash(git checkout:*)",
       "Bash(git merge:*)",
       "Bash(git push:*)",
-      "Bash(powershell -Command '$r = Invoke-RestMethod -Uri \"https://api.vercel.com/v6/deployments?projectId=prj_YBJ6Utl32GfyBOIzbsp3kbshJh96&teamId=team_YWGCVToPBJSS60NgVh8jiCFV&limit=1\" -Headers @{\"Authorization\"=\"Bearer $env:VERCEL_TOKEN\"}; \"$\\($r.deployments[0].state\\) $\\($r.deployments[0].meta.githubCommitSha.Substring\\(0,7\\)\\)\"')"
+      "Bash(powershell -Command '$r = Invoke-RestMethod -Uri \"https://api.vercel.com/v6/deployments?projectId=prj_YBJ6Utl32GfyBOIzbsp3kbshJh96&teamId=team_YWGCVToPBJSS60NgVh8jiCFV&limit=1\" -Headers @{\"Authorization\"=\"Bearer $env:VERCEL_TOKEN\"}; \"$\\($r.deployments[0].state\\) $\\($r.deployments[0].meta.githubCommitSha.Substring\\(0,7\\)\\)\"')",
+      "Bash(npx tsc:*)",
+      "Bash(git add:*)",
+      "Bash(GIT_EDITOR=true git rebase:*)"
     ]
   }
 }
