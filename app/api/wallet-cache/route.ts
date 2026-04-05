@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await (supabaseAdmin as any)
       .from("wallet_moments_cache")
-      .select("moment_id, edition_key, fmv_usd, serial_number, last_seen_at")
+      .select("moment_id, edition_key, fmv_usd, serial_number, player_name, set_name, tier, series_number, last_seen_at")
       .eq("wallet_address", wallet)
       .order("last_seen_at", { ascending: false })
       .limit(10000)
@@ -52,6 +52,10 @@ export async function POST(req: NextRequest) {
       editionKey?: string | null
       fmv?: number | null
       serial?: number | null
+      playerName?: string | null
+      setName?: string | null
+      tier?: string | null
+      series?: string | number | null
     }> | undefined
 
     if (!wallet || !Array.isArray(moments) || !moments.length) {
@@ -61,12 +65,17 @@ export async function POST(req: NextRequest) {
     const rows = moments
       .filter(function(m) { return m.momentId })
       .map(function(m) {
+        const seriesNum = m.series != null ? parseInt(String(m.series), 10) : null
         return {
           wallet_address: wallet,
           moment_id: m.momentId!,
           edition_key: m.editionKey ?? null,
           fmv_usd: m.fmv ?? null,
           serial_number: m.serial ?? null,
+          player_name: m.playerName ?? null,
+          set_name: m.setName ?? null,
+          tier: m.tier ?? null,
+          series_number: seriesNum != null && Number.isFinite(seriesNum) ? seriesNum : null,
           last_seen_at: new Date().toISOString(),
         }
       })

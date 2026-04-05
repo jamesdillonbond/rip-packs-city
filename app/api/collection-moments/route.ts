@@ -66,16 +66,26 @@ async function fetchMomentMetaFromGql(momentId: string): Promise<{
       body: JSON.stringify({ query: GQL_GET_MOMENT, variables: { id: momentId } }),
       signal: AbortSignal.timeout(6000),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      console.log("[collection-moments] GQL fetch failed for moment " + momentId + ": HTTP " + res.status)
+      return null
+    }
     const json = await res.json()
+    if (json?.errors) {
+      console.log("[collection-moments] GQL errors for moment " + momentId + ": " + JSON.stringify(json.errors).slice(0, 200))
+    }
     const data = (json?.data as GqlMomentResponse)?.getMintedMoment?.data
-    if (!data) return null
+    if (!data) {
+      console.log("[collection-moments] GQL returned no data for moment " + momentId)
+      return null
+    }
     return {
       player_name: data.play?.stats?.playerName ?? null,
       set_name: data.set?.flowName ?? null,
       tier: data.tier ?? null,
     }
-  } catch {
+  } catch (err) {
+    console.log("[collection-moments] GQL exception for moment " + momentId + ": " + (err instanceof Error ? err.message : String(err)))
     return null
   }
 }
@@ -100,10 +110,11 @@ export async function GET(req: NextRequest) {
 
     // Step 1: Fetch ALL wallet moments from cache (needed for accurate counts
     // and for post-enrichment filtering by player/set/tier/series).
-    // wallet_moments_cache columns: wallet_address, moment_id, edition_key, fmv_usd, serial_number, last_seen_at
+    // wallet_moments_cache columns: wallet_address, moment_id, edition_key, fmv_usd, serial_number,
+    //   player_name, set_name, tier, series_number, last_seen_at
     let query = (supabaseAdmin as any)
       .from("wallet_moments_cache")
-      .select("moment_id, edition_key, fmv_usd, serial_number, last_seen_at", { count: "exact" })
+      .select("moment_id, edition_key, fmv_usd, serial_number, player_name, set_name, tier, series_number, last_seen_at", { count: "exact" })
       .eq("wallet_address", wallet)
 
     // Apply FMV range filters at DB level (these columns exist on wallet_moments_cache)
@@ -198,15 +209,10 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Step 2c: Fetch badge_editions for player_name, set_name, tier, series_number, circulation_count
-    // badge_editions.id format: "setID+playID", editions.external_id format: "setID:playID"
-    // Convert edition_keys to badge_editions id format
-    const badgeIds = editionKeys.map(function (ek) {
-      const parts = ek.split(":")
-      return parts.length === 2 ? parts[0] + "+" + parts[1] : null
-    }).filter(Boolean) as string[]
-
-    const badgeMap = new Map<string, {
+    // Step 2c: Fetch metadata from editions table (name, tier, series, circulation_count)
+    // editions.name format: "Player Name — Set Name"
+    // editions.external_id matches wallet_moments_cache.edition_key (e.g. "92:3459")
+    const metaMap = new Map<string, {
       player_name: string | null
       set_name: string | null
       tier: string | null
@@ -214,38 +220,47 @@ export async function GET(req: NextRequest) {
       circulation_count: number | null
     }>()
 
-    if (badgeIds.length > 0) {
+    // We already fetched editions in Step 2a — reuse editionMap keys to look up metadata
+    if (editionKeys.length > 0) {
       const CHUNK = 200
-      for (let i = 0; i < badgeIds.length; i += CHUNK) {
-        const chunk = badgeIds.slice(i, i + CHUNK)
-        const { data: badgeRows } = await (supabaseAdmin as any)
-          .from("badge_editions")
-          .select("id, player_name, set_name, tier, series_number, circulation_count")
-          .in("id", chunk)
-          .eq("parallel_id", 0)
-        for (const row of (badgeRows ?? [])) {
-          // Convert badge id "setID+playID" back to edition_key "setID:playID"
-          const parts = (row.id as string).split("+")
-          if (parts.length >= 2) {
-            const editionKey = parts[0] + ":" + parts[1]
-            badgeMap.set(editionKey, {
-              player_name: row.player_name ?? null,
-              set_name: row.set_name ?? null,
-              tier: row.tier ?? null,
-              series_number: row.series_number != null ? Number(row.series_number) : null,
-              circulation_count: row.circulation_count != null ? Number(row.circulation_count) : null,
-            })
+      for (let i = 0; i < editionKeys.length; i += CHUNK) {
+        const chunk = editionKeys.slice(i, i + CHUNK)
+        const { data: editionRows } = await (supabaseAdmin as any)
+          .from("editions")
+          .select("external_id, name, tier, series, circulation_count")
+          .in("external_id", chunk)
+        for (const row of (editionRows ?? [])) {
+          // Parse "Player Name — Set Name" from editions.name
+          let playerName: string | null = null
+          let setName: string | null = null
+          if (row.name) {
+            const dashIdx = (row.name as string).indexOf(" — ")
+            if (dashIdx >= 0) {
+              playerName = (row.name as string).slice(0, dashIdx).trim() || null
+              setName = (row.name as string).slice(dashIdx + 3).trim() || null
+            } else {
+              playerName = (row.name as string).trim() || null
+            }
           }
+          metaMap.set(row.external_id, {
+            player_name: playerName,
+            set_name: setName,
+            tier: row.tier ?? null,
+            series_number: row.series != null ? Number(row.series) : null,
+            circulation_count: row.circulation_count != null ? Number(row.circulation_count) : null,
+          })
         }
       }
     }
+    console.log("[collection-moments] editions metadata matched " + metaMap.size + "/" + editionKeys.length + " edition keys")
 
     // Step 3: Merge enrichment data into rows
+    // Priority: cache columns first (populated by wallet-backfill), then editions table fallback
     const enriched = allRows.map(function (row: any) {
       const ek = row.edition_key as string | null
       const internalId = ek ? editionMap.get(ek) : undefined
       const fmvData = internalId ? fmvMap.get(internalId) : undefined
-      const badgeData = ek ? badgeMap.get(ek) : undefined
+      const meta = ek ? metaMap.get(ek) : undefined
 
       const fmvUsd = fmvData?.fmv_usd ?? (row.fmv_usd != null ? Number(row.fmv_usd) : null)
       const confidence = fmvData?.confidence ?? null
@@ -256,11 +271,11 @@ export async function GET(req: NextRequest) {
         serial_number: row.serial_number != null ? Number(row.serial_number) : null,
         fmv_usd: fmvUsd,
         confidence,
-        player_name: badgeData?.player_name ?? null,
-        set_name: badgeData?.set_name ?? null,
-        tier: badgeData?.tier ?? null,
-        series_number: badgeData?.series_number ?? null,
-        circulation_count: badgeData?.circulation_count ?? null,
+        player_name: row.player_name ?? meta?.player_name ?? null,
+        set_name: row.set_name ?? meta?.set_name ?? null,
+        tier: row.tier ?? meta?.tier ?? null,
+        series_number: row.series_number ?? meta?.series_number ?? null,
+        circulation_count: meta?.circulation_count ?? null,
         thumbnail_url: "https://assets.nbatopshot.com/media/" + row.moment_id + "?width=256",
         last_seen_at: row.last_seen_at ?? null,
       }
