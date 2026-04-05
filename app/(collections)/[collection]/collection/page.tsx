@@ -753,12 +753,16 @@ export default function WalletPage() {
       // Build full moment list from wallet_moments_cache as primary data source,
       // then overlay richer metadata from live wallet-search results.
       let mergedRows = liveRows
+      console.log("[collection] wallet-search returned " + liveRows.length + " live rows, now fetching wallet-cache...")
       try {
-        const cacheRes = await fetch("/api/wallet-cache?wallet=" + encodeURIComponent(query.trim()))
+        const cacheUrl = "/api/wallet-cache?wallet=" + encodeURIComponent(query.trim())
+        console.log("[collection] GET " + cacheUrl)
+        const cacheRes = await fetch(cacheUrl)
+        console.log("[collection] wallet-cache response status: " + cacheRes.status)
         if (cacheRes.ok) {
           const cacheJson = await cacheRes.json()
           const cachedMoments = Array.isArray(cacheJson.moments) ? cacheJson.moments : []
-          console.log("[collection] wallet-cache returned " + cachedMoments.length + " rows")
+          console.log("[collection] wallet-cache returned " + cachedMoments.length + " cached moments (live had " + liveRows.length + ")")
           if (cachedMoments.length > 0) {
             // Build a map of live rows by momentId for metadata overlay
             const liveMap = new Map<string, MomentRow>()
@@ -802,7 +806,10 @@ export default function WalletPage() {
             console.log("[collection] Loaded " + mergedRows.length + " moments from wallet cache (" + liveRows.length + " live, " + (mergedRows.length - liveRows.length) + " cache-only)")
           }
         }
-      } catch { /* cache fallback is non-critical */ }
+      } catch (cacheErr) {
+        console.log("[collection] wallet-cache fetch failed: " + (cacheErr instanceof Error ? cacheErr.message : String(cacheErr)))
+      }
+      console.log("[collection] mergedRows count before hydration: " + mergedRows.length)
       const hydrated = await hydrateMarket(mergedRows)
       // Fallback FMV enrichment: for moments that still have no FMV but have an editionKey,
       // batch-fetch from /api/fmv which queries fmv_snapshots directly
