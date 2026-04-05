@@ -429,6 +429,13 @@ export default function WalletPage() {
   const [isBackgroundLoading, setIsBackgroundLoading] = useState(false);
   const [backgroundProgress, setBackgroundProgress] = useState(0);
 
+  // Server-paginated moments API state
+  const [paginatedPage, setPaginatedPage] = useState(1)
+  const [paginatedTotal, setPaginatedTotal] = useState(0)
+  const [paginatedTotalPages, setPaginatedTotalPages] = useState(0)
+  const [activeWallet, setActiveWallet] = useState("")
+  const [serverSortBy, setServerSortBy] = useState("fmv_desc")
+
   // Task 2: FMV Alert UI state
   const [alertOpenMomentId, setAlertOpenMomentId] = useState<string | null>(null)
   const [alertTargetPrice, setAlertTargetPrice] = useState("")
@@ -683,6 +690,107 @@ export default function WalletPage() {
     offerTimerRef.current = setTimeout(flushOfferEnrichment, 2000)
   }
 
+  // ── Server-paginated moments fetch ──────────────────────────────────────
+  type ServerMoment = {
+    moment_id: string
+    edition_key: string | null
+    serial_number: number | null
+    fmv_usd: number | null
+    confidence: string | null
+    player_name: string | null
+    set_name: string | null
+    tier: string | null
+    series_number: number | null
+    circulation_count: number | null
+    thumbnail_url: string | null
+    last_seen_at: string | null
+  }
+
+  function serverMomentToRow(m: ServerMoment): MomentRow {
+    return {
+      momentId: m.moment_id,
+      playerName: m.player_name ?? "Unknown",
+      setName: m.set_name ?? "Unknown Set",
+      editionKey: m.edition_key,
+      fmv: m.fmv_usd,
+      serialNumber: m.serial_number ?? undefined,
+      serial: m.serial_number ?? undefined,
+      mintCount: m.circulation_count ?? undefined,
+      mintSize: m.circulation_count ?? undefined,
+      tier: m.tier ?? undefined,
+      series: m.series_number != null ? String(m.series_number) : undefined,
+      thumbnailUrl: m.thumbnail_url,
+      acquiredAt: m.last_seen_at,
+      marketConfidence: (m.confidence?.toLowerCase() ?? "none") as "high" | "medium" | "low" | "none",
+      fmvUsd: m.fmv_usd,
+      officialBadges: [],
+      specialSerialTraits: [],
+      isLocked: false,
+      bestAsk: null,
+      lowAsk: null,
+      bestOffer: null,
+      lastPurchasePrice: null,
+      parallel: null,
+      subedition: null,
+      flowId: null,
+      tssPoints: null,
+    }
+  }
+
+  // Map SortKey to server sortBy param
+  function sortKeyToServerSort(key: SortKey, dir: "asc" | "desc"): string {
+    switch (key) {
+      case "fmv": return dir === "asc" ? "fmv_asc" : "fmv_desc"
+      case "serial": return "serial_asc"
+      case "acquired": return "recent"
+      default: return dir === "asc" ? "fmv_asc" : "fmv_desc"
+    }
+  }
+
+  async function fetchPaginatedMoments(wallet: string, page: number, sort: string, append: boolean) {
+    const params = new URLSearchParams({
+      wallet,
+      page: String(page),
+      limit: "50",
+      sortBy: sort,
+    })
+    // Apply active filters to server query
+    if (playerFilter !== "all") params.set("player", playerFilter)
+    if (seriesFilter !== "all") {
+      // Convert display label back to series number
+      const match = seriesFilter.match(/^S(\d+)/)
+      if (match) params.set("series", match[1])
+      else if (seriesFilter === "Beta") params.set("series", "0")
+    }
+    if (rarityFilter !== "all") params.set("tier", rarityFilter)
+
+    const res = await fetch("/api/collection-moments?" + params.toString())
+    if (!res.ok) {
+      const json = await res.json().catch(function() { return {} })
+      throw new Error(json.error || "Failed to load moments")
+    }
+    const json = await res.json()
+    const moments: ServerMoment[] = json.moments ?? []
+    const momentRows = moments.map(serverMomentToRow)
+
+    // Enrich with badges
+    const withBadges = await enrichWithBadges(momentRows)
+
+    if (append) {
+      setRows(function(prev) { return [...prev, ...withBadges] })
+    } else {
+      setRows(withBadges)
+    }
+    setPaginatedPage(json.page ?? page)
+    setPaginatedTotal(json.total_count ?? 0)
+    setPaginatedTotalPages(json.total_pages ?? 0)
+
+    // Fire-and-forget: enrich best offers
+    enrichOffers(withBadges)
+
+    return { momentRows: withBadges, totalCount: json.total_count ?? 0 }
+  }
+
   async function maybePatchProfileStats(query: string, resultRows: MomentRow[], resultSummary: WalletSearchResponse["summary"]) {
     const key = getOwnerKey()
     if (!key) return
@@ -718,6 +826,7 @@ export default function WalletPage() {
     if (!query.trim()) return
     const trimmed = query.trim()
     setInput(trimmed)
+    setActiveWallet(trimmed)
     lastSearchedRef.current = trimmed
     // Task 15: Persist wallet address in URL for bookmarking and sharing
     try { router.replace("?wallet=" + encodeURIComponent(trimmed), { scroll: false }) } catch {}
@@ -731,6 +840,9 @@ export default function WalletPage() {
     setSealedPackCount(null)
     setPacksByTitle({})
     setRecentSales([]);
+    setPaginatedPage(1)
+    setPaginatedTotal(0)
+    setPaginatedTotalPages(0)
     // Clear any pending offer enrichment from previous search
     pendingOfferRowsRef.current = []
     if (offerTimerRef.current) { clearTimeout(offerTimerRef.current); offerTimerRef.current = null }
@@ -741,148 +853,50 @@ export default function WalletPage() {
       .catch(function() {})
       .finally(function() { setSalesLoading(false); });
     try {
-      const response = await fetch("/api/wallet-search", {
+      const sort = sortKeyToServerSort(sortKey, sortDirection)
+      setServerSortBy(sort)
+
+      // Primary: fetch paginated moments from Supabase cache (fast ~200ms)
+      const { totalCount } = await fetchPaginatedMoments(trimmed, 1, sort, false)
+      setHasSearched(true)
+      console.log("[collection] paginated API returned page 1, total_count=" + totalCount)
+
+      // Secondary: call wallet-search for summary stats only (total FMV, locked/unlocked counts)
+      // This runs in parallel as a background fetch — does NOT block the moment display.
+      fetch("/api/wallet-search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: query.trim(), offset: 0, limit: 50, collection: collectionSlug }),
+        body: JSON.stringify({ input: trimmed, offset: 0, limit: 50, collection: collectionSlug }),
       })
-      const json = (await response.json()) as WalletSearchResponse
-      if (!response.ok) throw new Error(json.error || "Wallet search failed")
-      const liveRows = Array.isArray(json.rows) ? json.rows : []
-
-      // Build full moment list from wallet_moments_cache as primary data source,
-      // then overlay richer metadata from live wallet-search results.
-      let mergedRows = liveRows
-      console.log("[collection] wallet-search returned " + liveRows.length + " live rows, now fetching wallet-cache...")
-      try {
-        const cacheUrl = "/api/wallet-cache?wallet=" + encodeURIComponent(query.trim())
-        console.log("[collection] GET " + cacheUrl)
-        const cacheRes = await fetch(cacheUrl)
-        console.log("[collection] wallet-cache response status: " + cacheRes.status)
-        if (cacheRes.ok) {
-          const cacheJson = await cacheRes.json()
-          const cachedMoments = Array.isArray(cacheJson.moments) ? cacheJson.moments : []
-          console.log("[collection] wallet-cache returned " + cachedMoments.length + " cached moments (live had " + liveRows.length + ")")
-          if (cachedMoments.length > 0) {
-            // Build a map of live rows by momentId for metadata overlay
-            const liveMap = new Map<string, MomentRow>()
-            for (const r of liveRows) liveMap.set(r.momentId, r)
-            // Use ALL cached moments as the full list
-            mergedRows = cachedMoments
-              .filter(function(cm: any) { return cm.moment_id })
-              .map(function(cm: any) {
-                const live = liveMap.get(cm.moment_id)
-                if (live) {
-                  // Live row has richer metadata — overlay cached FMV if live has none
-                  return {
-                    ...live,
-                    fmv: live.fmv ?? (cm.fmv_usd != null ? Number(cm.fmv_usd) : null),
-                  }
-                }
-                // Cached-only moment: create a skeleton row with cache data
-                return {
-                  momentId: cm.moment_id,
-                  playerName: "Cached Moment",
-                  setName: "Unknown Set",
-                  editionKey: cm.edition_key ?? null,
-                  fmv: cm.fmv_usd != null ? Number(cm.fmv_usd) : null,
-                  serialNumber: cm.serial_number != null ? Number(cm.serial_number) : null,
-                  serial: cm.serial_number != null ? Number(cm.serial_number) : null,
-                  acquiredAt: cm.last_seen_at ?? null,
-                  officialBadges: [],
-                  specialSerialTraits: [],
-                  isLocked: false,
-                  bestAsk: null,
-                  lowAsk: null,
-                  bestOffer: null,
-                  lastPurchasePrice: null,
-                  parallel: null,
-                  subedition: null,
-                  flowId: null,
-                  thumbnailUrl: null,
-                  tssPoints: null,
-                } as MomentRow
-              })
-            console.log("[collection] Loaded " + mergedRows.length + " moments from wallet cache (" + liveRows.length + " live, " + (mergedRows.length - liveRows.length) + " cache-only)")
-          }
-        }
-      } catch (cacheErr) {
-        console.log("[collection] wallet-cache fetch failed: " + (cacheErr instanceof Error ? cacheErr.message : String(cacheErr)))
-      }
-      console.log("[collection] mergedRows count before hydration: " + mergedRows.length)
-      const hydrated = await hydrateMarket(mergedRows)
-      // Fallback FMV enrichment: for moments that still have no FMV but have an editionKey,
-      // batch-fetch from /api/fmv which queries fmv_snapshots directly
-      const needFmv = hydrated.filter(function(r) { return (r.fmv == null || r.fmv <= 0) && r.editionKey })
-      if (needFmv.length > 0) {
-        try {
-          const editionKeys = [...new Set(needFmv.map(function(r) { return r.editionKey! }))]
-          const BATCH = 100
-          const fmvMap = new Map<string, { fmv: number; confidence: string; updatedAt: string | null }>()
-          for (let i = 0; i < editionKeys.length; i += BATCH) {
-            const batch = editionKeys.slice(i, i + BATCH)
-            const fmvRes = await fetch("/api/fmv", {
+        .then(function(r) { return r.ok ? r.json() : null })
+        .then(function(json: WalletSearchResponse | null) {
+          if (!json) return
+          setSummary(json.summary)
+          // Also update the wallet cache from live data for future loads
+          const liveRows = Array.isArray(json.rows) ? json.rows : []
+          if (liveRows.length > 0) {
+            fetch("/api/wallet-cache", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ editions: batch }),
-            })
-            if (fmvRes.ok) {
-              const fmvJson = await fmvRes.json()
-              for (const r of (fmvJson.results ?? [])) {
-                if (r.fmv > 0) fmvMap.set(r.edition, { fmv: r.fmv, confidence: r.confidence, updatedAt: r.updatedAt })
-              }
-            }
+              body: JSON.stringify({
+                wallet: trimmed,
+                moments: liveRows.map(function(r) {
+                  return { momentId: r.momentId, editionKey: r.editionKey, fmv: r.fmv, serial: r.serialNumber ?? r.serial }
+                }),
+              }),
+            }).catch(function() {})
           }
-          if (fmvMap.size > 0) {
-            for (let i = 0; i < hydrated.length; i++) {
-              const row = hydrated[i]
-              if ((row.fmv == null || row.fmv <= 0) && row.editionKey && fmvMap.has(row.editionKey)) {
-                const f = fmvMap.get(row.editionKey)!
-                hydrated[i] = { ...row, fmv: f.fmv, marketConfidence: f.confidence as any, fmvComputedAt: f.updatedAt }
-              }
-            }
-            console.log("[collection] FMV fallback enriched " + fmvMap.size + " editions from /api/fmv")
-          }
-        } catch { /* FMV fallback is non-critical */ }
-      }
-      const withBadges = await enrichWithBadges(hydrated)
-      // Log FMV enrichment stats for Vercel log verification
-      const fmvCount = withBadges.filter(function(r) { return r.fmv != null && r.fmv > 0 }).length
-      const fmvMissing = withBadges.length - fmvCount
-      console.log("[collection] FMV enrichment complete: " + withBadges.length + " total moments, " + fmvCount + " with FMV, " + fmvMissing + " missing FMV")
-      setRows(withBadges)
-      setSummary(json.summary)
-      setOffset(liveRows.length)
-      setHasSearched(true)
-      maybePatchProfileStats(query.trim(), withBadges, json.summary).catch(function() {})
-      // Fire-and-forget: cache wallet moments for background analytics
-      fetch("/api/wallet-cache", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          wallet: query.trim(),
-          moments: withBadges.map(function(r) {
-            return { momentId: r.momentId, editionKey: r.editionKey, fmv: r.fmv, serial: r.serialNumber ?? r.serial }
-          }),
-        }),
-      }).catch(function() {})
+          maybePatchProfileStats(trimmed, liveRows, json.summary).catch(function() {})
+        })
+        .catch(function() {})
+
       // Fire-and-forget: fetch sets data for "close to completing" callout
-      fetch("/api/sets?wallet=" + encodeURIComponent(query.trim()) + "&skipAsks=1")
+      fetch("/api/sets?wallet=" + encodeURIComponent(trimmed) + "&skipAsks=1")
         .then(function(r) { return r.ok ? r.json() : null })
         .then(function(d) { if (d) setSetsData(d) })
         .catch(function() {})
-      // Fire-and-forget: enrich best offers for loaded rows
-      enrichOffers(withBadges)
-      // Auto-load remaining moments in background only if cache didn't already provide full coverage
-      const cachedCoverage = mergedRows.length
-      const totalExpected = json.summary?.totalMoments ?? 0
-      if (cachedCoverage < totalExpected && json.summary?.remainingMoments && json.summary.remainingMoments > 0) {
-        setIsBackgroundLoading(true)
-        setBackgroundProgress(liveRows.length)
-        backgroundAutoLoad(liveRows.length, json.summary.remainingMoments, json.summary.totalMoments)
-      }
       // Fire-and-forget: load sealed pack count + titles for this wallet
-      fetch("/api/wallet-packs?wallet=" + encodeURIComponent(query.trim()))
+      fetch("/api/wallet-packs?wallet=" + encodeURIComponent(trimmed))
         .then(function(r) { return r.ok ? r.json() : null })
         .then(function(d) {
           if (d && typeof d.totalSealedPacks === "number") setSealedPackCount(d.totalSealedPacks)
@@ -894,9 +908,10 @@ export default function WalletPage() {
     } finally {
       setLoading(false)
     }
-  }, [router, collectionSlug])
+  }, [router, collectionSlug, sortKey, sortDirection, playerFilter, seriesFilter, rarityFilter])
 
   async function fetchWalletPage(nextOffset: number, append: boolean) {
+    // Legacy function kept for backgroundAutoLoad compatibility
     const searchInput = lastSearchedRef.current || input
     if (!searchInput.trim()) return
     const response = await fetch("/api/wallet-search", {
@@ -955,16 +970,39 @@ export default function WalletPage() {
   async function handleSearch() { await runSearch(input) }
 
   async function handleLoadMore() {
+    if (!activeWallet) return
     setLoadingMore(true)
     setError("")
-    try { await fetchWalletPage(offset, true) }
-    catch (err) { setError(err instanceof Error ? err.message : "Something went wrong") }
-    finally { setLoadingMore(false) }
+    try {
+      await fetchPaginatedMoments(activeWallet, paginatedPage + 1, serverSortBy, true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong")
+    } finally {
+      setLoadingMore(false)
+    }
   }
 
   function toggleSort(next: SortKey) {
-    if (sortKey === next) { setSortDirection(function(prev) { return prev === "asc" ? "desc" : "asc" }) }
-    else { setSortKey(next); setSortDirection("desc") }
+    let newDir: "asc" | "desc"
+    if (sortKey === next) {
+      newDir = sortDirection === "asc" ? "desc" : "asc"
+      setSortDirection(newDir)
+    } else {
+      newDir = "desc"
+      setSortKey(next)
+      setSortDirection(newDir)
+    }
+    // For server-sortable columns, re-fetch from page 1 with new sort
+    const serverSortable = ["fmv", "serial", "acquired"]
+    if (serverSortable.includes(next) && activeWallet) {
+      const newServerSort = sortKeyToServerSort(next, newDir)
+      setServerSortBy(newServerSort)
+      setRows([])
+      setLoading(true)
+      fetchPaginatedMoments(activeWallet, 1, newServerSort, false)
+        .catch(function(err) { setError(err instanceof Error ? err.message : "Sort failed") })
+        .finally(function() { setLoading(false) })
+    }
   }
 
   function toggleExpanded(momentId: string) {
@@ -1151,7 +1189,9 @@ export default function WalletPage() {
     return (sumLoaded / rowsWithFmv.length) * totalMoments
   }, [rows, summary])
 
-  const loadProgress = summary
+  const loadProgress = paginatedTotal > 0
+    ? { loaded: rows.length, total: paginatedTotal, pct: Math.min(100, Math.round((rows.length / Math.max(1, paginatedTotal)) * 100)) }
+    : summary
     ? { loaded: rows.length, total: summary.totalMoments, pct: Math.min(100, Math.round((rows.length / Math.max(1, summary.totalMoments)) * 100)) }
     : null
 
@@ -1830,13 +1870,20 @@ export default function WalletPage() {
 
         {isBackgroundLoading ? (
           <div className="mt-6 flex justify-center">
-            <span className="text-sm text-zinc-500">Loading… ({backgroundProgress} / {summary?.totalMoments ?? "?"})</span>
+            <span className="text-sm text-zinc-500">Loading... ({backgroundProgress} / {summary?.totalMoments ?? "?"})</span>
           </div>
-        ) : summary && summary.remainingMoments > 0 ? (
-          <div className="mt-6 flex justify-center">
+        ) : paginatedPage < paginatedTotalPages ? (
+          <div className="mt-6 flex flex-col items-center gap-2">
             <button onClick={handleLoadMore} disabled={loadingMore} className="rounded-lg px-4 py-2 font-semibold text-white disabled:opacity-50" style={{ backgroundColor: accent }}>
-              {loadingMore ? "Loading..." : "Load More (" + summary.remainingMoments + " left)"}
+              {loadingMore ? "Loading..." : "Load More (" + (paginatedTotal - rows.length) + " remaining)"}
             </button>
+            <span className="text-xs text-zinc-600">
+              Showing {rows.length} of {paginatedTotal} moments
+            </span>
+          </div>
+        ) : hasSearched && paginatedTotal > 0 ? (
+          <div className="mt-4 text-center text-xs text-zinc-600">
+            All {paginatedTotal} moments loaded
           </div>
         ) : null}
 
