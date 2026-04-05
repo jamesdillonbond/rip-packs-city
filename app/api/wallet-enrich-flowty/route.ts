@@ -83,10 +83,22 @@ async function fetchTopShotAsks(editions: { setID: string; playID: string; editi
           }),
           signal: AbortSignal.timeout(8000),
         })
-        if (!res.ok) return
+        if (!res.ok) {
+          if (i === 0) console.log("[wallet-enrich-flowty] TS GQL HTTP " + res.status + " for " + ed.editionKey)
+          return
+        }
         const json = await res.json()
-        const editions = json?.data?.searchEditions?.data?.searchSummary?.data?.data
-        const edition = Array.isArray(editions) ? editions[0] : null
+        if (json.errors?.length) {
+          if (i === 0) console.log("[wallet-enrich-flowty] TS GQL errors for " + ed.editionKey + ": " + JSON.stringify(json.errors).slice(0, 200))
+          return
+        }
+        const editionsData = json?.data?.searchEditions?.data?.searchSummary?.data
+        // Log first response structure for debugging
+        if (result.size === 0 && editionsData) {
+          console.log("[wallet-enrich-flowty] TS GQL response shape for " + ed.editionKey + ": " + JSON.stringify(editionsData).slice(0, 300))
+        }
+        const editionArr = Array.isArray(editionsData) ? editionsData : editionsData?.data
+        const edition = Array.isArray(editionArr) ? editionArr[0] : null
         if (!edition) return
         const lowestAsk = edition.lowestAsk != null ? parseFloat(String(edition.lowestAsk)) : null
         result.set(ed.editionKey, {
@@ -96,7 +108,9 @@ async function fetchTopShotAsks(editions: { setID: string; playID: string; editi
           lowestAsk: lowestAsk && lowestAsk > 0 ? lowestAsk : null,
           circulationCount: edition.circulationCount ?? null,
         })
-      } catch { /* timeout or network error — skip */ }
+      } catch (err) {
+        if (i === 0) console.log("[wallet-enrich-flowty] TS GQL exception for " + ed.editionKey + ": " + (err instanceof Error ? err.message : String(err)))
+      }
     })
     await Promise.all(promises)
   }
@@ -213,8 +227,8 @@ export async function POST(req: NextRequest) {
     })
     .filter(Boolean) as { editionKey: string; setID: string; playID: string }[]
 
-  // Step 2: Resolve editions to internal UUIDs
-  const editionUuidMap = new Map<string, { id: string; collectionId: string | null }>()
+  // Step 2: Resolve editions to internal UUIDs (integer-format edition)
+  const editionUuidMap = new Map<string, { id: string; collectionId: string }>()
   const CHUNK = 200
   for (let i = 0; i < uniqueKeys.length; i += CHUNK) {
     const chunk = uniqueKeys.slice(i, i + CHUNK)
@@ -223,9 +237,12 @@ export async function POST(req: NextRequest) {
       .select("id, external_id, collection_id")
       .in("external_id", chunk)
     for (const r of (rows ?? [])) {
-      editionUuidMap.set(r.external_id, { id: r.id, collectionId: r.collection_id })
+      if (r.collection_id) {
+        editionUuidMap.set(r.external_id, { id: r.id, collectionId: r.collection_id })
+      }
     }
   }
+  console.log("[wallet-enrich-flowty] edition_uuid_resolved=" + editionUuidMap.size + "/" + uniqueKeys.length)
 
   // Step 3: Fetch Top Shot asks (up to 200 editions to stay within timeout)
   const editionsToEnrich = editionPairs.slice(0, 200)
@@ -236,10 +253,17 @@ export async function POST(req: NextRequest) {
     fetchFlowtyData(targetKeySet),
   ])
 
-  console.log("[wallet-enrich-flowty] ts_asks=" + tsAsks.size + " flowty_data=" + flowtyData.size)
+  // Detailed logging for debugging
+  let tsWithAsk = 0
+  let tsNoAsk = 0
+  for (const v of tsAsks.values()) { if (v.lowestAsk) tsWithAsk++; else tsNoAsk++ }
+  console.log("[wallet-enrich-flowty] ts_gql_responded=" + tsAsks.size + " ts_with_ask=" + tsWithAsk + " ts_no_ask=" + tsNoAsk + " flowty_matched=" + flowtyData.size)
 
-  // Step 4: Build fmv_snapshots upsert rows
+  // Step 4: Build fmv_snapshots rows — write a row for EVERY edition that got
+  // any market signal (lowestAsk, flowtyAsk, or livetokenFmv)
   let enriched = 0
+  let skippedNoUuid = 0
+  let skippedNoData = 0
   const upsertRows: Record<string, unknown>[] = []
 
   for (const ed of editionsToEnrich) {
@@ -247,7 +271,8 @@ export async function POST(req: NextRequest) {
     const fl = flowtyData.get(ed.editionKey)
     const edUuid = editionUuidMap.get(ed.editionKey)
 
-    if (!edUuid) continue
+    if (!edUuid) { skippedNoUuid++; continue }
+
     const topShotAsk = ts?.lowestAsk ?? null
     const flowtyAsk = fl?.flowtyAsk ?? null
     const livetokenFmv = fl?.livetokenFmv ?? null
@@ -255,11 +280,14 @@ export async function POST(req: NextRequest) {
       ? Math.min(topShotAsk, flowtyAsk)
       : topShotAsk ?? flowtyAsk
 
-    // Skip if we have nothing useful
-    if (!topShotAsk && !flowtyAsk && !livetokenFmv) continue
+    // Skip only if we have absolutely nothing
+    if (!topShotAsk && !flowtyAsk && !livetokenFmv) { skippedNoData++; continue }
 
-    // Use LiveToken FMV as the FMV value, falling back to 90% of cross-market ask
+    // FMV priority: LiveToken FMV > 90% of lowest ask
     const fmvUsd = livetokenFmv ?? (crossMarketAsk ? Number((crossMarketAsk * 0.9).toFixed(2)) : null)
+
+    // Use ASK_ONLY confidence when we have asks but no sales
+    const confidence = livetokenFmv ? "LOW" : "ASK_ONLY"
 
     upsertRows.push({
       edition_id: edUuid.id,
@@ -269,7 +297,7 @@ export async function POST(req: NextRequest) {
       top_shot_ask: topShotAsk,
       flowty_ask: flowtyAsk,
       cross_market_ask: crossMarketAsk,
-      confidence: "LOW",
+      confidence,
       sales_count_7d: 0,
       sales_count_30d: 0,
       algo_version: "flowty-live",
@@ -277,51 +305,58 @@ export async function POST(req: NextRequest) {
     enriched++
   }
 
-  // Step 5: Delete old flowty-live snapshots for these editions, then insert fresh
+  console.log("[wallet-enrich-flowty] rows_to_write=" + upsertRows.length + " skipped_no_uuid=" + skippedNoUuid + " skipped_no_data=" + skippedNoData)
+
+  // Step 5: Delete old flowty-live snapshots then insert fresh ones
+  let insertSucceeded = 0
+  let insertErrors: string[] = []
+
   if (upsertRows.length > 0) {
     const editionIds = upsertRows.map(function (r) { return r.edition_id as string })
 
-    // Only delete flowty-live rows (don't touch sales-based FMV from fmv-recalc)
-    await (supabaseAdmin as any)
+    // Delete old flowty-live rows only
+    const { error: delErr } = await (supabaseAdmin as any)
       .from("fmv_snapshots")
       .delete()
       .in("edition_id", editionIds)
       .eq("algo_version", "flowty-live")
+    if (delErr) console.log("[wallet-enrich-flowty] delete error:", delErr.message)
 
     // Insert in chunks
     for (let i = 0; i < upsertRows.length; i += CHUNK) {
       const chunk = upsertRows.slice(i, i + CHUNK)
-      const { error: insertErr } = await (supabaseAdmin as any)
+      const { data: inserted, error: insertErr } = await (supabaseAdmin as any)
         .from("fmv_snapshots")
         .insert(chunk)
+        .select("id")
       if (insertErr) {
-        console.warn("[wallet-enrich-flowty] insert error:", insertErr.message)
-      }
-    }
-
-    // Also update floor_price_usd on existing non-flowty-live snapshots
-    // so the bridge join picks up the floor even when algo_version differs
-    for (const row of upsertRows) {
-      if (row.cross_market_ask) {
-        await (supabaseAdmin as any)
-          .from("fmv_snapshots")
-          .update({ floor_price_usd: row.cross_market_ask, top_shot_ask: row.top_shot_ask, flowty_ask: row.flowty_ask, cross_market_ask: row.cross_market_ask })
-          .eq("edition_id", row.edition_id)
-          .neq("algo_version", "flowty-live")
+        insertErrors.push(insertErr.message)
+        console.log("[wallet-enrich-flowty] insert error chunk " + Math.floor(i / CHUNK) + ": " + insertErr.message)
+        // Log first failing row for debugging
+        if (chunk.length > 0) {
+          console.log("[wallet-enrich-flowty] sample failing row: " + JSON.stringify(chunk[0]))
+        }
+      } else {
+        insertSucceeded += inserted?.length ?? chunk.length
       }
     }
   }
 
   const duration = Date.now() - startTime
-  console.log("[wallet-enrich-flowty] done: enriched=" + enriched + " duration=" + duration + "ms")
+  console.log("[wallet-enrich-flowty] DONE: enriched=" + enriched + " inserted=" + insertSucceeded + " errors=" + insertErrors.length + " duration=" + duration + "ms")
 
   return NextResponse.json({
     ok: true,
     wallet,
     editions_checked: editionsToEnrich.length,
-    ts_asks_found: tsAsks.size,
+    edition_uuids_found: editionUuidMap.size,
+    ts_asks_found: tsWithAsk,
     flowty_data_found: flowtyData.size,
-    enriched,
+    rows_built: upsertRows.length,
+    rows_inserted: insertSucceeded,
+    insert_errors: insertErrors.slice(0, 3),
+    skipped_no_uuid: skippedNoUuid,
+    skipped_no_data: skippedNoData,
     duration_ms: duration,
   })
 }
