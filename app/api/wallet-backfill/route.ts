@@ -130,6 +130,7 @@ export async function POST(req: NextRequest) {
       set_name: string | null
       tier: string | null
       series_number: number | null
+      acquired_at: string | null
       fmv_usd: null
       last_seen_at: string
     }> = []
@@ -171,6 +172,7 @@ export async function POST(req: NextRequest) {
           set_name: meta.setName || null,
           tier: null,
           series_number: Number.isFinite(seriesNum) ? seriesNum : null,
+          acquired_at: null,
           fmv_usd: null,
           last_seen_at: now,
         })

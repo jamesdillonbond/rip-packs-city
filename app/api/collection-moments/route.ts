@@ -114,7 +114,7 @@ export async function GET(req: NextRequest) {
     //   player_name, set_name, tier, series_number, last_seen_at
     let query = (supabaseAdmin as any)
       .from("wallet_moments_cache")
-      .select("moment_id, edition_key, fmv_usd, serial_number, player_name, set_name, tier, series_number, last_seen_at", { count: "exact" })
+      .select("moment_id, edition_key, fmv_usd, serial_number, player_name, set_name, tier, series_number, acquired_at, last_seen_at", { count: "exact" })
       .eq("wallet_address", wallet)
 
     // Apply FMV range filters at DB level (these columns exist on wallet_moments_cache)
@@ -146,8 +146,8 @@ export async function GET(req: NextRequest) {
         break
     }
 
-    // Fetch up to 10000 rows (covers even the largest wallets)
-    query = query.limit(10000)
+    // Fetch up to 20000 rows (covers even the largest wallets)
+    query = query.limit(20000)
 
     const { data: cacheRows, error: cacheError, count: exactCount } = await query
 
@@ -188,8 +188,8 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Step 2b: Fetch latest FMV per edition from fmv_snapshots
-    const fmvMap = new Map<string, { fmv_usd: number; confidence: string }>()
+    // Step 2b: Fetch latest FMV per edition from fmv_snapshots (includes floor_price_usd for low_ask)
+    const fmvMap = new Map<string, { fmv_usd: number; confidence: string; floor_price_usd: number | null }>()
     const internalIds = [...editionMap.values()]
     if (internalIds.length > 0) {
       const CHUNK = 200
@@ -197,13 +197,17 @@ export async function GET(req: NextRequest) {
         const chunk = internalIds.slice(i, i + CHUNK)
         const { data: fmvRows } = await (supabaseAdmin as any)
           .from("fmv_snapshots")
-          .select("edition_id, fmv_usd, confidence")
+          .select("edition_id, fmv_usd, confidence, floor_price_usd")
           .in("edition_id", chunk)
           .order("computed_at", { ascending: false })
         // Keep only the most recent snapshot per edition (ordered desc, first wins)
         for (const row of (fmvRows ?? [])) {
           if (!fmvMap.has(row.edition_id)) {
-            fmvMap.set(row.edition_id, { fmv_usd: Number(row.fmv_usd), confidence: row.confidence })
+            fmvMap.set(row.edition_id, {
+              fmv_usd: Number(row.fmv_usd),
+              confidence: row.confidence,
+              floor_price_usd: row.floor_price_usd != null ? Number(row.floor_price_usd) : null,
+            })
           }
         }
       }
@@ -264,6 +268,16 @@ export async function GET(req: NextRequest) {
 
       const fmvUsd = fmvData?.fmv_usd ?? (row.fmv_usd != null ? Number(row.fmv_usd) : null)
       const confidence = fmvData?.confidence ?? null
+      const lowAsk = fmvData?.floor_price_usd ?? null
+
+      // Thumbnail: use Top Shot CDN with setID/playID from edition_key
+      let thumbnailUrl: string | null = null
+      if (ek) {
+        const parts = ek.split(":")
+        if (parts.length === 2) {
+          thumbnailUrl = "https://assets.nbatopshot.com/resize/editions/" + parts[0] + "_" + parts[1] + "/play" + parts[1] + "_capture_Hero_Black_2880_2880_default.jpg?width=100&quality=80"
+        }
+      }
 
       return {
         moment_id: row.moment_id,
@@ -271,12 +285,14 @@ export async function GET(req: NextRequest) {
         serial_number: row.serial_number != null ? Number(row.serial_number) : null,
         fmv_usd: fmvUsd,
         confidence,
+        low_ask: lowAsk,
         player_name: row.player_name ?? meta?.player_name ?? null,
         set_name: row.set_name ?? meta?.set_name ?? null,
         tier: row.tier ?? meta?.tier ?? null,
         series_number: row.series_number ?? meta?.series_number ?? null,
         circulation_count: meta?.circulation_count ?? null,
-        thumbnail_url: "https://assets.nbatopshot.com/media/" + row.moment_id + "?width=256",
+        thumbnail_url: thumbnailUrl,
+        acquired_at: row.acquired_at ?? null,
         last_seen_at: row.last_seen_at ?? null,
       }
     })
@@ -342,7 +358,7 @@ export async function GET(req: NextRequest) {
 
     // Step 5: Paginate
     // Use the exact count from PostgREST headers when no post-fetch filters are active,
-    // since the .limit(10000) cap on rows may truncate the in-memory count.
+    // since the .limit(20000) cap on rows may truncate the in-memory count.
     const hasPostFilters = !!(playerFilter || setNameFilter || seriesFilter || tierFilter)
     const totalCount = hasPostFilters ? filtered.length : (exactCount ?? filtered.length)
     const offset = (page - 1) * limit
