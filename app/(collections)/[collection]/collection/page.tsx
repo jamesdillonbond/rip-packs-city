@@ -1121,33 +1121,30 @@ export default function WalletPage() {
       }
       return true
     })
-    filtered.sort(function(a, b) {
-      let result = 0
-      switch (sortKey) {
-        case "player":    result = compareText(a.playerName, b.playerName); break
-        case "series":    result = compareText(a.series, b.series); break
-        case "set":       result = compareText(a.setName, b.setName); break
-        case "parallel":  result = compareText(getParallel(a), getParallel(b)); break
-        case "rarity":    result = compareText(a.tier, b.tier); break
-        case "serial":    result = compareNumber(getSerial(a), getSerial(b)); break
-        case "fmv":       result = compareNumber(a.fmv, b.fmv); break
-        case "tss":       result = compareNumber(a.tssPoints, b.tssPoints); break
-        case "bestOffer": result = compareNumber(a.bestOffer, b.bestOffer); break
-        case "badge":     result = compareNumber(a.badgeInfo?.badge_score, b.badgeInfo?.badge_score); break
-        case "acquired": {
-          const ta = a.acquiredAt ? new Date(a.acquiredAt).getTime() : 0
-          const tb = b.acquiredAt ? new Date(b.acquiredAt).getTime() : 0
-          result = ta - tb
-          break
+    // Only apply client-side sort for non-server-sortable columns.
+    // Server-sortable columns (fmv, serial, acquired) are already sorted by the API.
+    const serverSortableKeys: SortKey[] = ["fmv", "serial", "acquired"]
+    if (!serverSortableKeys.includes(sortKey)) {
+      filtered.sort(function(a, b) {
+        let result = 0
+        switch (sortKey) {
+          case "player":    result = compareText(a.playerName, b.playerName); break
+          case "series":    result = compareText(a.series, b.series); break
+          case "set":       result = compareText(a.setName, b.setName); break
+          case "parallel":  result = compareText(getParallel(a), getParallel(b)); break
+          case "rarity":    result = compareText(a.tier, b.tier); break
+          case "tss":       result = compareNumber(a.tssPoints, b.tssPoints); break
+          case "bestOffer": result = compareNumber(a.bestOffer, b.bestOffer); break
+          case "badge":     result = compareNumber(a.badgeInfo?.badge_score, b.badgeInfo?.badge_score); break
+          case "held":
+            result = compareNumber(
+              a.editionsOwned ?? batchEditionStats.get(buildEditionScopeKey(a))?.owned,
+              b.editionsOwned ?? batchEditionStats.get(buildEditionScopeKey(b))?.owned
+            ); break
         }
-        case "held":
-          result = compareNumber(
-            a.editionsOwned ?? batchEditionStats.get(buildEditionScopeKey(a))?.owned,
-            b.editionsOwned ?? batchEditionStats.get(buildEditionScopeKey(b))?.owned
-          ); break
-      }
-      return sortDirection === "asc" ? result : -result
-    })
+        return sortDirection === "asc" ? result : -result
+      })
+    }
     return filtered
   }, [rows, searchWithin, playerFilter, setFilter, seriesFilter, rarityFilter, lockedFilter, badgeFilter, filterBadges, filterHasOffer, filterListed, filterDupsOnly, duplicateEditions, sortKey, sortDirection, batchEditionStats])
 
