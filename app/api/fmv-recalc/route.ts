@@ -188,6 +188,53 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── Step 2a: Wash-trade filter ─────────────────────────────────────────
+    // Exclude suspicious sale clusters: if 3+ sales for the same edition occur
+    // within a 10-minute window, remove all sales in that cluster from WAP.
+    let washTradeEditionCount = 0
+    const WASH_WINDOW_MS = 10 * 60 * 1000 // 10 minutes
+
+    for (const [editionId, editionData] of editionSalesMap.entries()) {
+      const { sales } = editionData
+      if (sales.length < 3) continue
+
+      // Sort by time to find clusters
+      const sorted = [...sales].sort((a, b) => a.soldAt.getTime() - b.soldAt.getTime())
+      const suspicious = new Set<number>() // indices into sorted array
+
+      for (let i = 0; i < sorted.length; i++) {
+        // Find how many sales fall within 10 min of sorted[i]
+        const windowEnd = sorted[i].soldAt.getTime() + WASH_WINDOW_MS
+        const clusterIndices: number[] = []
+        for (let j = i; j < sorted.length && sorted[j].soldAt.getTime() <= windowEnd; j++) {
+          clusterIndices.push(j)
+        }
+        if (clusterIndices.length >= 3) {
+          for (const idx of clusterIndices) suspicious.add(idx)
+        }
+      }
+
+      if (suspicious.size > 0) {
+        const filtered = sorted.filter((_, idx) => !suspicious.has(idx))
+        if (filtered.length === 0) {
+          // All sales are suspicious — remove the edition entirely
+          editionSalesMap.delete(editionId)
+        } else {
+          editionData.sales = filtered
+          // Recompute latestSoldAt from remaining sales
+          editionData.latestSoldAt = filtered.reduce(
+            (latest, s) => s.soldAt > latest ? s.soldAt : latest,
+            filtered[0].soldAt
+          )
+        }
+        washTradeEditionCount++
+      }
+    }
+
+    if (washTradeEditionCount > 0) {
+      console.log(`[FMV-RECALC] Wash-trade filter: removed suspicious clusters from ${washTradeEditionCount} editions`)
+    }
+
     const editionIds = [...editionSalesMap.keys()]
     console.log(`[FMV-RECALC] Processing ${editionIds.length} distinct editions`)
 
@@ -447,7 +494,7 @@ export async function POST(req: NextRequest) {
     const duration = Date.now() - startTime
 
     console.log(
-      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} backfill=${backfillCount} hasMore=${hasMore} duration=${duration}ms`
+      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} hasMore=${hasMore} duration=${duration}ms`
     )
 
     return NextResponse.json({
@@ -456,6 +503,7 @@ export async function POST(req: NextRequest) {
       snapshotsUpdated,
       flowtyFmvBlended: blendedCount,
       askProxyApplied: askProxyCount,
+      washTradeFiltered: washTradeEditionCount,
       backfillCovered: backfillCount,
       hasMore,
       nextOffset: hasMore ? offset + limit : null,
