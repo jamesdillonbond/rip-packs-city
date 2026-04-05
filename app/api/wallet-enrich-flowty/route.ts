@@ -420,29 +420,50 @@ export async function POST(req: NextRequest) {
     console.log("[wallet-enrich] WARNING: zero Flowty matches. page0 status=" + (flowtyDebug.pageDebug[0]?.httpStatus ?? "null") + " items=" + (flowtyDebug.pageDebug[0]?.itemCount ?? 0) + " error=" + (flowtyDebug.pageDebug[0]?.error ?? "none"))
   }
 
-  // Step 6: Upsert into fmv_snapshots with ON CONFLICT (edition_id) DO UPDATE
-  let upsertSucceeded = 0
-  let upsertErrors: string[] = []
+  // Step 6: Delete existing flowty-live rows, then insert new ones (chunks of 50)
+  // Cannot use upsert — fmv_snapshots is partitioned by computed_at, so ON CONFLICT fails.
+  let writeSucceeded = 0
+  let writeErrors: string[] = []
+  const WRITE_CHUNK = 50
 
   if (upsertRows.length > 0) {
-    for (let i = 0; i < upsertRows.length; i += CHUNK) {
-      const chunk = upsertRows.slice(i, i + CHUNK)
-      const { data: inserted, error: upsertErr } = await (supabaseAdmin as any)
+    // Collect all edition_ids we're about to write
+    const editionIdsToWrite = upsertRows.map(function (r) { return r.edition_id as string })
+
+    // Delete existing flowty-live rows in chunks of 50
+    for (let i = 0; i < editionIdsToWrite.length; i += WRITE_CHUNK) {
+      const idChunk = editionIdsToWrite.slice(i, i + WRITE_CHUNK)
+      const { error: delErr } = await (supabaseAdmin as any)
         .from("fmv_snapshots")
-        .upsert(chunk, { onConflict: "edition_id" })
+        .delete()
+        .in("edition_id", idChunk)
+        .eq("algo_version", "flowty-live")
+      if (delErr) {
+        writeErrors.push("delete chunk " + Math.floor(i / WRITE_CHUNK) + ": " + delErr.message)
+        console.log("[wallet-enrich] delete error chunk " + Math.floor(i / WRITE_CHUNK) + ": " + delErr.message)
+      }
+    }
+    console.log("[wallet-enrich] deleted old flowty-live rows for " + editionIdsToWrite.length + " editions")
+
+    // Insert new rows in chunks of 50
+    for (let i = 0; i < upsertRows.length; i += WRITE_CHUNK) {
+      const chunk = upsertRows.slice(i, i + WRITE_CHUNK)
+      const { data: inserted, error: insertErr } = await (supabaseAdmin as any)
+        .from("fmv_snapshots")
+        .insert(chunk)
         .select("edition_id")
-      if (upsertErr) {
-        upsertErrors.push(upsertErr.message)
-        console.log("[wallet-enrich] upsert error chunk " + Math.floor(i / CHUNK) + ": " + upsertErr.message)
+      if (insertErr) {
+        writeErrors.push("insert chunk " + Math.floor(i / WRITE_CHUNK) + ": " + insertErr.message)
+        console.log("[wallet-enrich] insert error chunk " + Math.floor(i / WRITE_CHUNK) + ": " + insertErr.message)
         if (chunk.length > 0) console.log("[wallet-enrich] sample row: " + JSON.stringify(chunk[0]))
       } else {
-        upsertSucceeded += inserted?.length ?? chunk.length
+        writeSucceeded += inserted?.length ?? chunk.length
       }
     }
   }
 
   const duration = Date.now() - startTime
-  console.log("[wallet-enrich] DONE: enriched=" + enriched + " upserted=" + upsertSucceeded + " errors=" + upsertErrors.length + " duration=" + duration + "ms")
+  console.log("[wallet-enrich] DONE: enriched=" + enriched + " written=" + writeSucceeded + " errors=" + writeErrors.length + " duration=" + duration + "ms")
 
   // Summarize Flowty page debug: only include first page rawSample + any error pages
   const flowtyPageSummary = flowtyDebug.pageDebug.map(function (p) {
@@ -477,8 +498,8 @@ export async function POST(req: NextRequest) {
     badge_fallback_matches: badgeMatches,
     unmatched_editions: unmatchedEditions.length - badgeMatches,
     rows_built: upsertRows.length,
-    rows_upserted: upsertSucceeded,
-    upsert_errors: upsertErrors.slice(0, 3),
+    rows_written: writeSucceeded,
+    write_errors: writeErrors.slice(0, 3),
     skipped_no_uuid: skippedNoUuid,
     duration_ms: duration,
   }
