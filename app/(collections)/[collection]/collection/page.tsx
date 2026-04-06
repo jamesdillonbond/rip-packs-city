@@ -158,11 +158,6 @@ function formatCurrency(value: number | null | undefined) {
   return "$" + value.toFixed(2)
 }
 
-function formatCurrencyCompact(value: number): string {
-  if (value >= 1000000) return "$" + (value / 1000000).toFixed(1) + "M"
-  if (value >= 1000) return "$" + (value / 1000).toFixed(1) + "K"
-  return "$" + value.toFixed(2)
-}
 
 function formatAcquiredAt(iso: string | null | undefined): string {
   if (!iso) return "—"
@@ -397,6 +392,7 @@ export default function WalletPage() {
   const [paginatedPage, setPaginatedPage] = useState(1)
   const [paginatedTotal, setPaginatedTotal] = useState(0)
   const [paginatedTotalPages, setPaginatedTotalPages] = useState(0)
+  const [walletTotalFmv, setWalletTotalFmv] = useState<number | null>(null)
   const [activeWallet, setActiveWallet] = useState("")
   const [serverSortBy, setServerSortBy] = useState("fmv_desc")
 
@@ -749,6 +745,7 @@ export default function WalletPage() {
     setPaginatedPage(json.page ?? page)
     setPaginatedTotal(json.total_count ?? 0)
     setPaginatedTotalPages(json.total_pages ?? 0)
+    if (typeof json.total_fmv === "number") setWalletTotalFmv(json.total_fmv)
 
     // Fire-and-forget: enrich best offers
     enrichOffers(withFmv)
@@ -769,9 +766,11 @@ export default function WalletPage() {
         return (w.username ?? "").toLowerCase() === q || (w.wallet_addr ?? "").toLowerCase() === q
       })
       if (!matched) return
-      let totalFmv = 0
-      for (const row of resultRows) {
-        if (typeof row.fmv === "number") totalFmv += row.fmv
+      let totalFmv = walletTotalFmv ?? 0
+      if (!totalFmv) {
+        for (const row of resultRows) {
+          if (typeof row.fmv === "number") totalFmv += row.fmv
+        }
       }
       const momentCount = resultSummary?.totalMoments ?? resultRows.length
       await fetch("/api/profile/saved-wallets", {
@@ -802,6 +801,7 @@ export default function WalletPage() {
     setExpandedRows({})
     setHasSearched(false)
     setSealedPackCount(null)
+    setWalletTotalFmv(null)
     setPacksByTitle({})
     setRecentSales([]);
     setPaginatedPage(1)
@@ -1099,21 +1099,7 @@ export default function WalletPage() {
     return { totalFmv, totalBestOffer, lockedFmv, unlockedFmv, totalCount: filteredRows.length, lockedCount, unlockedCount, spreadGap: totalFmv - totalBestOffer, badgeCount, confHigh, confMedium, confLow, confNone }
   }, [filteredRows])
 
-  const projectedFmv = useMemo(function() {
-    const totalMoments = paginatedTotal || summary?.totalMoments || 0
-    const loadedCount = rows.length
-    if (!totalMoments || !loadedCount || loadedCount >= totalMoments) return null
-    const rowsWithFmv = rows.filter(function(r) { return typeof r.fmv === "number" && r.fmv > 0 })
-    if (!rowsWithFmv.length) return null
-    const sumLoaded = rowsWithFmv.reduce(function(acc, r) { return acc + (r.fmv ?? 0) }, 0)
-    return (sumLoaded / rowsWithFmv.length) * totalMoments
-  }, [rows, summary])
 
-  const loadProgress = paginatedTotal > 0
-    ? { loaded: rows.length, total: paginatedTotal, pct: Math.min(100, Math.round((rows.length / Math.max(1, paginatedTotal)) * 100)) }
-    : summary
-    ? { loaded: rows.length, total: summary.totalMoments, pct: Math.min(100, Math.round((rows.length / Math.max(1, summary.totalMoments)) * 100)) }
-    : null
 
   const nearCompleteSets = useMemo(function() {
     if (!setsData?.sets) return []
@@ -1191,39 +1177,17 @@ export default function WalletPage() {
           <div className="mb-5 space-y-3">
             <div className="grid gap-3 grid-cols-2 xl:grid-cols-4">
 
-              {/* Wallet FMV with projected estimate + load progress */}
+              {/* Wallet FMV — real total from get_wallet_total_fmv() */}
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                 <div className="text-[10px] uppercase tracking-widest text-zinc-500">Wallet FMV</div>
-                {projectedFmv !== null ? (
-                  <>
-                    <div className="text-xl font-black text-white">
-                      {"~" + formatCurrencyCompact(projectedFmv)}
-                      <span className="ml-1 text-sm font-normal text-zinc-400">
-                        {"est. (" + (paginatedTotal || summary?.totalMoments || "?") + " moments)"}
-                      </span>
-                    </div>
-                    <div className="mt-1 text-[11px] text-zinc-500">
-                      {formatCurrency(totals.totalFmv) + " from " + totals.totalCount + " moments loaded"}
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-xl font-black text-white">
-                    {formatCurrency(totals.totalFmv)}
-                  </div>
-                )}
-                {loadProgress && loadProgress.total > loadProgress.loaded ? (
-                  <div className="mt-2 space-y-1">
-                    <div className="flex justify-between text-[10px] text-zinc-600">
-                      <span>{loadProgress.loaded} / {loadProgress.total} loaded</span>
-                      <span>{loadProgress.pct}%</span>
-                    </div>
-                    <div className="h-1 w-full rounded-full bg-zinc-800">
-                      <div className="h-1 rounded-full transition-all duration-300" style={{ width: loadProgress.pct + "%", backgroundColor: accent }} />
-                    </div>
-                  </div>
-                ) : projectedFmv === null ? (
-                  <div className="mt-1 text-[11px] text-zinc-500">{totals.totalCount} moments shown</div>
-                ) : null}
+                <div className="text-xl font-black text-white">
+                  {walletTotalFmv !== null ? formatCurrency(walletTotalFmv) : formatCurrency(totals.totalFmv)}
+                </div>
+                <div className="mt-1 text-[11px] text-zinc-500">
+                  {walletTotalFmv !== null
+                    ? "from " + (paginatedTotal || totals.totalCount) + " moments"
+                    : totals.totalCount + " moments loaded"}
+                </div>
               </div>
 
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
