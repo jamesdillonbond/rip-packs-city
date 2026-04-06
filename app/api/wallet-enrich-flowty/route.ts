@@ -322,6 +322,7 @@ export async function POST(req: NextRequest) {
       .from("editions")
       .select("id, external_id, collection_id, name, series")
       .in("external_id", chunk)
+      .limit(10000)
     for (const r of (rows ?? [])) {
       if (r.id) {
         editionUuidMap.set(r.external_id, { id: r.id, collectionId: r.collection_id ?? null, name: r.name ?? "", series: r.series != null ? String(r.series) : null })
