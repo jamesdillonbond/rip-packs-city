@@ -294,17 +294,37 @@ export async function POST(req: NextRequest) {
   }
   console.log("[wallet-enrich] input=" + walletInput + " resolved=" + wallet)
 
-  // Step 1: Get unique edition_keys for this wallet via RPC (bypasses PostgREST row limit)
-  const { data: cacheRows, error: cacheErr } = await (supabaseAdmin as any)
+  // Step 1: Get unique edition_keys for this wallet via RPC (returns json_agg array)
+  const { data: rpcData, error: cacheErr } = await (supabaseAdmin as any)
     .rpc("get_wallet_edition_keys", { p_wallet: wallet })
 
-  if (cacheErr || !cacheRows?.length) {
-    const diag = { ok: true, enriched: 0, reason: cacheErr ? "cache error: " + cacheErr.message : "no editions", wallet, input: walletInput }
+  console.log("[wallet-enrich] rpc raw type=" + typeof rpcData + " isArray=" + Array.isArray(rpcData) + " length=" + (rpcData?.length ?? "null"))
+
+  // json_agg returns: the JSON array directly, OR a single-element wrapper array containing it
+  let editionKeys: string[]
+  if (Array.isArray(rpcData) && rpcData.length > 0 && Array.isArray(rpcData[0])) {
+    // Single-element wrapper: data[0] is the JSON array
+    editionKeys = rpcData[0]
+  } else if (Array.isArray(rpcData) && rpcData.length > 0 && typeof rpcData[0] === "string") {
+    // Direct JSON array of strings
+    editionKeys = rpcData
+  } else if (typeof rpcData === "string") {
+    // Returned as raw JSON string
+    editionKeys = JSON.parse(rpcData)
+  } else if (Array.isArray(rpcData)) {
+    // Fallback: might be [{edition_key: "..."}] row format
+    editionKeys = rpcData.map(function (r: any) { return r.edition_key ?? r })
+  } else {
+    editionKeys = []
+  }
+
+  if (cacheErr || !editionKeys.length) {
+    const diag = { ok: true, enriched: 0, reason: cacheErr ? "cache error: " + cacheErr.message : "no editions", wallet, input: walletInput, rpc_type: typeof rpcData, rpc_sample: JSON.stringify(rpcData)?.substring(0, 200) }
     await (supabaseAdmin as any).from("debug_logs").insert({ route: "wallet-enrich-flowty", payload: diag }).catch(function () {})
     return NextResponse.json(diag)
   }
 
-  const uniqueKeys: string[] = cacheRows.map(function (r: any) { return r.edition_key as string })
+  const uniqueKeys: string[] = editionKeys.filter(function (k: any) { return typeof k === "string" && k.length > 0 })
   const keySet = new Set<string>(uniqueKeys)
   console.log("[wallet-enrich] wallet=" + wallet + " unique_editions=" + uniqueKeys.length)
 
