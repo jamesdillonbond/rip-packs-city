@@ -37,6 +37,28 @@ async function getSetName(setId: number): Promise<string> {
   return (result as string) ?? ""
 }
 
+// Cache circulation count per setID+playID
+const circulationCache = new Map<string, number>()
+
+async function getNumMomentsInEdition(setId: number, playId: number): Promise<number> {
+  const cacheKey = setId + ":" + playId
+  if (circulationCache.has(cacheKey)) return circulationCache.get(cacheKey)!
+
+  const cadence = `
+    import TopShot from 0x0b2a3299cc857e29
+    access(all) fun main(setID: UInt32, playID: UInt32): UInt32 {
+      return TopShot.getNumMomentsInEdition(setID: setID, playID: playID) ?? 0
+    }
+  `
+  const result = await fcl.query({
+    cadence,
+    args: (arg: any) => [arg(String(setId), t.UInt32), arg(String(playId), t.UInt32)],
+  })
+  const count = Number(result) || 0
+  circulationCache.set(cacheKey, count)
+  return count
+}
+
 // Cache setId → { name, series } since many editions share the same set
 const setCache = new Map<number, { name: string; series: number }>()
 
@@ -111,9 +133,10 @@ export async function POST(req: NextRequest) {
         const setId = Number(setIdStr)
         const playId = Number(playIdStr)
         try {
-          const [playMeta, setInfo] = await Promise.all([
+          const [playMeta, setInfo, circulationCount] = await Promise.all([
             getPlayMetaData(playId),
             getSetInfo(setId),
+            getNumMomentsInEdition(setId, playId),
           ])
 
           const playerName = playMeta.FullName || playMeta.PlayerName || playMeta.fullName || ""
@@ -125,7 +148,20 @@ export async function POST(req: NextRequest) {
           const tier = formatTier(playMeta)
           const series = setInfo.series
 
-          return { id: e.id, ek: e.external_id, name, tier, series, error: null }
+          // Extract additional play metadata
+          const play_category = playMeta.PlayCategory || playMeta.playCategory || null
+          const play_type = playMeta.PlayType || playMeta.playType || null
+          const home_team = playMeta.TeamAtMoment || playMeta.teamAtMoment || playMeta.HomeTeamName || playMeta.homeTeamName || null
+          const away_team = playMeta.AwayTeamName || playMeta.awayTeamName || null
+          const rawDate = playMeta.DateOfMoment || playMeta.dateOfMoment || null
+          const game_date = rawDate || null // stored as text, Supabase will parse date format
+
+          return {
+            id: e.id, ek: e.external_id, name, tier, series,
+            play_category, play_type, home_team, away_team, game_date,
+            circulation_count: circulationCount > 0 ? circulationCount : null,
+            error: null,
+          }
         } catch (err) {
           return { id: e.id, ek: e.external_id, error: err instanceof Error ? err.message : String(err) }
         }
@@ -140,9 +176,18 @@ export async function POST(req: NextRequest) {
         }
         continue
       }
+      // Build update payload — only include non-null new fields to avoid overwriting existing values
+      const updatePayload: Record<string, unknown> = { name: r.name, tier: r.tier, series: r.series }
+      if (r.play_category) updatePayload.play_category = r.play_category
+      if (r.play_type) updatePayload.play_type = r.play_type
+      if (r.home_team) updatePayload.home_team = r.home_team
+      if (r.away_team) updatePayload.away_team = r.away_team
+      if (r.game_date) updatePayload.game_date = r.game_date
+      if (r.circulation_count) updatePayload.circulation_count = r.circulation_count
+
       const { error: upErr } = await (supabaseAdmin as any)
         .from("editions")
-        .update({ name: r.name, tier: r.tier, series: r.series })
+        .update(updatePayload)
         .eq("id", r.id)
       if (upErr) {
         failed++
