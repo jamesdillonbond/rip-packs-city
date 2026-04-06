@@ -109,24 +109,29 @@ export async function GET(req: NextRequest) {
 
     // Single SQL call: joins wallet_moments_cache → editions → fmv_snapshots,
     // sorts by real FMV BEFORE pagination, returns one page + total count.
-    const { data: result, error: rpcError } = await (supabaseAdmin as any)
-      .rpc("get_wallet_moments_with_fmv", {
-        p_wallet: wallet,
-        p_sort_by: sortBy,
-        p_limit: limit,
-        p_offset: offset,
-        p_player: playerFilter || null,
-        p_series: seriesFilter !== null && !isNaN(seriesFilter) ? seriesFilter : null,
-        p_tier: tierFilter || null,
-      })
-      .single()
+    const rpcParams = {
+      p_wallet: wallet,
+      p_sort_by: sortBy,
+      p_limit: limit,
+      p_offset: offset,
+      p_player: playerFilter || null,
+      p_series: seriesFilter !== null && !isNaN(seriesFilter) ? seriesFilter : null,
+      p_tier: tierFilter || null,
+    }
+    console.log("[collection-moments] calling RPC with:", JSON.stringify(rpcParams))
+
+    const { data, error: rpcError } = await (supabaseAdmin as any)
+      .rpc("get_wallet_moments_with_fmv", rpcParams)
+
+    console.log("[collection-moments] RPC result data type:", typeof data, "isArray:", Array.isArray(data), "data:", JSON.stringify(data)?.slice(0, 200))
 
     if (rpcError) {
-      console.log("[collection-moments] RPC error:", rpcError.message)
+      console.log("[collection-moments] RPC error:", JSON.stringify(rpcError))
       return NextResponse.json({ error: "Database query failed" }, { status: 500 })
     }
 
-    const rpcResult = result as { moments: any[]; total_count: number } | null
+    // PostgREST wraps RETURNS json in an array — unwrap if needed
+    const rpcResult = (Array.isArray(data) ? data[0] : data) as { moments: any[]; total_count: number } | null
     const rawMoments: any[] = rpcResult?.moments ?? []
     const totalCount = Number(rpcResult?.total_count ?? 0)
 
