@@ -18,22 +18,13 @@ const GQL_HEADERS: Record<string, string> = {
 }
 
 const EDITION_QUERY = `
-query($setIDs: [ID], $playIDs: [ID]) {
-  searchEditions(input: { filters: { bySetIDs: $setIDs, byPlayIDs: $playIDs } }) {
-    searchSummary { data { ... on Editions { size } } }
+query($setID: ID, $playID: ID) {
+  searchEditions(input: { setID: $setID, playID: $playID, first: 1 }) {
     data {
-      ... on Editions {
-        edges {
-          node {
-            id
-            tier
-            set { flowName }
-            play { stats { playerName fullName } }
-            assetPathPrefix
-            flowSeriesNumber
-          }
-        }
-      }
+      tier
+      series
+      set { flowName }
+      play { stats { playerName fullName } }
     }
   }
 }
@@ -44,37 +35,47 @@ type EditionResult = {
   name: string | null
   tier: string | null
   series: number | null
+  error?: string
 }
 
-async function fetchEditionInfo(setId: string, playId: string): Promise<EditionResult | null> {
+async function fetchEditionInfo(setId: string, playId: string): Promise<EditionResult> {
   try {
     const res = await fetch(TOPSHOT_GQL, {
       method: "POST",
       headers: GQL_HEADERS,
       body: JSON.stringify({
         query: EDITION_QUERY,
-        variables: { setIDs: [setId], playIDs: [playId] },
+        variables: { setID: setId, playID: playId },
       }),
       signal: AbortSignal.timeout(8000),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      return { externalId: setId + ":" + playId, name: null, tier: null, series: null, error: "HTTP " + res.status }
+    }
     const json = await res.json()
-    const edges = json?.data?.searchEditions?.data?.edges
-    if (!edges?.length) return null
-    const node = edges[0].node
-    const playerName = node.play?.stats?.playerName || node.play?.stats?.fullName || ""
-    const setName = node.set?.flowName || ""
-    const tier = node.tier || null
-    const series = node.flowSeriesNumber != null ? Number(node.flowSeriesNumber) : null
-    if (!playerName) return null
+    if (json.errors?.length) {
+      return { externalId: setId + ":" + playId, name: null, tier: null, series: null, error: json.errors[0].message }
+    }
+    const editions = json?.data?.searchEditions?.data
+    if (!editions?.length) {
+      return { externalId: setId + ":" + playId, name: null, tier: null, series: null, error: "no editions returned" }
+    }
+    const ed = editions[0]
+    const playerName = ed.play?.stats?.playerName || ed.play?.stats?.fullName || ""
+    const setName = ed.set?.flowName || ""
+    const tier = ed.tier || null
+    const series = ed.series != null ? Number(ed.series) : null
+    if (!playerName) {
+      return { externalId: setId + ":" + playId, name: null, tier: null, series: null, error: "no playerName in response" }
+    }
     return {
       externalId: setId + ":" + playId,
       name: playerName + " — " + (setName || "Unknown Set"),
       tier,
       series,
     }
-  } catch {
-    return null
+  } catch (err) {
+    return { externalId: setId + ":" + playId, name: null, tier: null, series: null, error: err instanceof Error ? err.message : String(err) }
   }
 }
 
@@ -107,6 +108,7 @@ export async function POST(req: NextRequest) {
 
   let updated = 0
   let failed = 0
+  const sampleErrors: string[] = []
 
   // Process in batches of 10 concurrent
   for (let i = 0; i < editionsToFill.length; i += 10) {
@@ -121,13 +123,22 @@ export async function POST(req: NextRequest) {
     )
 
     for (const r of results) {
-      if (!r.info) { failed++; continue }
+      if (!r.info.name) {
+        failed++
+        if (sampleErrors.length < 5) {
+          sampleErrors.push(r.externalId + ": " + (r.info.error || "unknown"))
+        }
+        continue
+      }
       const { error: upErr } = await (supabaseAdmin as any)
         .from("editions")
         .update({ name: r.info.name, tier: r.info.tier, series: r.info.series })
         .eq("id", r.id)
       if (upErr) {
         failed++
+        if (sampleErrors.length < 5) {
+          sampleErrors.push(r.externalId + ": db update — " + upErr.message)
+        }
         console.log("[backfill-edition-names] update error for " + r.externalId + ": " + upErr.message)
       } else {
         updated++
@@ -142,5 +153,5 @@ export async function POST(req: NextRequest) {
     .is("name", null)
     .like("external_id", "%:%")
 
-  return NextResponse.json({ ok: true, updated, failed, remaining: remaining ?? 0 })
+  return NextResponse.json({ ok: true, updated, failed, remaining: remaining ?? 0, sample_errors: sampleErrors })
 }
