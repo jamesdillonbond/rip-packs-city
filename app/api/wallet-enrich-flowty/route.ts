@@ -92,16 +92,49 @@ function getTraitMulti(
 
 // ── Flowty data types ──────────────────────────────────────────────────────
 
-type FlowtyEditionData = { flowtyAsk: number; livetokenFmv: number | null; playerName: string; setName: string }
+type FlowtyEditionData = { editionKey: string; flowtyAsk: number; livetokenFmv: number | null; playerName: string; setName: string }
 
 type FlowtyPageDebug = {
   from: number
+  sortPath: string
   httpStatus: number | null
   error: string | null
   rawSample: string | null
   responseKeys: string | null
   itemCount: number
   parsedCount: number
+}
+
+// ── Edition key extraction from Flowty listing ──────────────────────────────
+
+function extractEditionKey(item: any, traits: Array<{ name: string; value: string }>): string | null {
+  // Try traits first: look for SetID and PlayID
+  const setIdTrait = traits.find(function (t) { return t.name === "SetID" || t.name === "setID" || t.name === "setId" })
+  const playIdTrait = traits.find(function (t) { return t.name === "PlayID" || t.name === "playID" || t.name === "playId" })
+  if (setIdTrait?.value && playIdTrait?.value) {
+    return setIdTrait.value + ":" + playIdTrait.value
+  }
+
+  // Try nft.card.traits array
+  const cardTraits = item.card?.traits
+  if (Array.isArray(cardTraits)) {
+    const cSetId = cardTraits.find(function (t: any) { return t.name === "SetID" || t.name === "setID" })
+    const cPlayId = cardTraits.find(function (t: any) { return t.name === "PlayID" || t.name === "playID" })
+    if (cSetId?.value && cPlayId?.value) {
+      return cSetId.value + ":" + cPlayId.value
+    }
+  }
+
+  // Try nft.nftId path (format may contain setID/playID)
+  const nftId = item.nftId ?? item.nft?.nftId
+  if (typeof nftId === "string" && nftId.includes(":")) {
+    const parts = nftId.split(":")
+    if (parts.length >= 2 && /^\d+$/.test(parts[0]) && /^\d+$/.test(parts[1])) {
+      return parts[0] + ":" + parts[1]
+    }
+  }
+
+  return null
 }
 
 // ── Flowty matching key: lowercase "playerName — setName — series" ───────────
@@ -118,21 +151,23 @@ function makeBaseKey(playerName: string, setName: string): string {
   return (playerName.trim() + " — " + setName.trim()).toLowerCase()
 }
 
-async function fetchFlowtyPage(from: number): Promise<{ items: Array<{ matchKey: string; baseKey: string; data: FlowtyEditionData }>; debug: FlowtyPageDebug }> {
-  const items: Array<{ matchKey: string; baseKey: string; data: FlowtyEditionData }> = []
-  const debug: FlowtyPageDebug = { from, httpStatus: null, error: null, rawSample: null, responseKeys: null, itemCount: 0, parsedCount: 0 }
+type FlowtyPageSort = { path: string; direction: string }
+
+async function fetchFlowtyPage(from: number, sort: FlowtyPageSort): Promise<{ items: Array<{ editionKey: string | null; matchKey: string; baseKey: string; data: FlowtyEditionData }>; debug: FlowtyPageDebug }> {
+  const items: Array<{ editionKey: string | null; matchKey: string; baseKey: string; data: FlowtyEditionData }> = []
+  const debug: FlowtyPageDebug = { from, sortPath: sort.path, httpStatus: null, error: null, rawSample: null, responseKeys: null, itemCount: 0, parsedCount: 0 }
 
   const requestBody = {
     address: null, addresses: [],
     collectionFilters: [{ collection: "0x0b2a3299cc857e29.TopShot", traits: [] }],
     from, includeAllListings: true, limit: 24, onlyUnlisted: false,
     orderFilters: [{ conditions: [], kind: "storefront", paymentTokens: [] }],
-    sort: { direction: "desc", listingKind: "storefront", path: "blockTimestamp" },
+    sort: { direction: sort.direction, listingKind: "storefront", path: sort.path },
   }
 
-  if (from === 0) {
+  const isFirstPage = from === 0 && sort.path === "blockTimestamp"
+  if (isFirstPage) {
     console.log("[wallet-enrich] Flowty URL: " + FLOWTY_ENDPOINT)
-    console.log("[wallet-enrich] Flowty headers: " + JSON.stringify(FLOWTY_HEADERS))
     console.log("[wallet-enrich] Flowty body: " + JSON.stringify(requestBody))
   }
 
@@ -154,7 +189,7 @@ async function fetchFlowtyPage(from: number): Promise<{ items: Array<{ matchKey:
 
     if (!res.ok) {
       debug.error = "HTTP " + res.status + " " + res.statusText
-      console.log("[wallet-enrich] Flowty HTTP " + res.status + " from=" + from + " body=" + rawText.substring(0, 200))
+      console.log("[wallet-enrich] Flowty HTTP " + res.status + " sort=" + sort.path + " from=" + from + " body=" + rawText.substring(0, 200))
       return { items, debug }
     }
 
@@ -163,7 +198,6 @@ async function fetchFlowtyPage(from: number): Promise<{ items: Array<{ matchKey:
       json = JSON.parse(rawText)
     } catch (parseErr) {
       debug.error = "JSON parse failed: " + (parseErr instanceof Error ? parseErr.message : String(parseErr))
-      console.log("[wallet-enrich] Flowty JSON parse error from=" + from + " raw=" + rawText.substring(0, 200))
       return { items, debug }
     }
 
@@ -173,17 +207,12 @@ async function fetchFlowtyPage(from: number): Promise<{ items: Array<{ matchKey:
     const rawItems: any[] = json?.nfts ?? json?.data ?? []
     debug.itemCount = rawItems.length
 
-    if (from === 0) {
-      console.log("[wallet-enrich] Flowty response keys: " + topKeys.join(", "))
-      console.log("[wallet-enrich] Flowty page 0 rawItems=" + rawItems.length)
-      if (rawItems.length === 0) {
-        console.log("[wallet-enrich] Flowty page 0 EMPTY — full response keys: " + topKeys.join(", ") + " nfts type: " + typeof json?.nfts + " data type: " + typeof json?.data)
-      }
-      if (rawItems.length > 0) {
-        const firstTraits = flattenTraits(rawItems[0].nftView?.traits)
-        console.log("[wallet-enrich] Flowty trait keys: " + firstTraits.map(function (t: { name: string }) { return t.name }).join(", "))
-        console.log("[wallet-enrich] Flowty first item keys: " + Object.keys(rawItems[0]).join(", "))
-      }
+    if (isFirstPage && rawItems.length > 0) {
+      // Log first listing structure for debugging edition key extraction
+      console.log("[wallet-enrich] Flowty first listing (500 chars): " + JSON.stringify(rawItems[0]).substring(0, 500))
+      const firstTraits = flattenTraits(rawItems[0].nftView?.traits)
+      console.log("[wallet-enrich] Flowty trait names: " + firstTraits.map(function (t: { name: string }) { return t.name }).join(", "))
+      console.log("[wallet-enrich] Flowty first item keys: " + Object.keys(rawItems[0]).join(", "))
     }
 
     for (const item of rawItems) {
@@ -192,24 +221,28 @@ async function fetchFlowtyPage(from: number): Promise<{ items: Array<{ matchKey:
       const traits = flattenTraits(item.nftView?.traits)
       const livetokenFmv = item.valuations?.blended?.usdValue ?? item.valuations?.livetoken?.usdValue ?? null
 
+      const editionKey = extractEditionKey(item, traits)
+
       // Extract player name from card.title, set name + series from traits
       const playerName = item.card?.title ?? getTraitMulti(traits, FLOWTY_TRAIT_MAP.fullName) ?? ""
       const setName = getTraitMulti(traits, FLOWTY_TRAIT_MAP.setName)
       const seriesNumber = getTraitMulti(traits, FLOWTY_TRAIT_MAP.seriesNumber)
 
-      if (!playerName || !setName) continue
+      if (!playerName && !editionKey) continue
 
-      const matchKey = makeMatchKey(playerName, setName, seriesNumber)
-      const baseKey = makeBaseKey(playerName, setName)
+      const matchKey = (playerName && setName) ? makeMatchKey(playerName, setName, seriesNumber) : ""
+      const baseKey = (playerName && setName) ? makeBaseKey(playerName, setName) : ""
 
       items.push({
+        editionKey,
         matchKey,
         baseKey,
         data: {
+          editionKey: editionKey ?? "",
           flowtyAsk: order.salePrice,
           livetokenFmv: livetokenFmv && livetokenFmv > 0 ? livetokenFmv : null,
-          playerName,
-          setName,
+          playerName: playerName || "",
+          setName: setName || "",
         },
       })
     }
@@ -217,7 +250,7 @@ async function fetchFlowtyPage(from: number): Promise<{ items: Array<{ matchKey:
     return { items, debug }
   } catch (err) {
     debug.error = "exception: " + (err instanceof Error ? err.message : String(err))
-    console.log("[wallet-enrich] Flowty from=" + from + " exception: " + (err instanceof Error ? err.message : String(err)))
+    console.log("[wallet-enrich] Flowty sort=" + sort.path + " from=" + from + " exception: " + (err instanceof Error ? err.message : String(err)))
     return { items, debug }
   }
 }
@@ -225,48 +258,100 @@ async function fetchFlowtyPage(from: number): Promise<{ items: Array<{ matchKey:
 type FlowtyDebugSummary = {
   totalItems: number
   uniqueEditions: number
+  pagesFetched: number
   pageDebug: FlowtyPageDebug[]
   requestUrl: string
-  requestHeaders: Record<string, string>
 }
 
-async function fetchAllFlowtyData(): Promise<{ flowtyMap: Map<string, FlowtyEditionData>; debugSummary: FlowtyDebugSummary }> {
-  const flowtyMap = new Map<string, FlowtyEditionData>()
-  // 10 pages = ~240 listings
-  const offsets = [0, 24, 48, 72, 96, 120, 144, 168, 192, 216]
-  const pageResults = await Promise.all(offsets.map(function (o) { return fetchFlowtyPage(o) }))
+async function fetchAllFlowtyData(): Promise<{
+  editionKeyMap: Map<string, FlowtyEditionData>
+  nameMatchMap: Map<string, FlowtyEditionData>
+  debugSummary: FlowtyDebugSummary
+}> {
+  // Map keyed by setID:playID edition key → lowest ask for that edition
+  const editionKeyMap = new Map<string, FlowtyEditionData>()
+  // Fallback map keyed by name for editions where we can't extract setID:playID
+  const nameMatchMap = new Map<string, FlowtyEditionData>()
+
+  const PAGES_PER_PASS = 50
+  const BATCH_SIZE = 5
+
+  const sorts: FlowtyPageSort[] = [
+    { path: "blockTimestamp", direction: "desc" },  // Pass 1: most recent
+    { path: "salePrice", direction: "asc" },        // Pass 2: cheapest first
+  ]
 
   let totalItems = 0
-  const pageDebug: FlowtyPageDebug[] = []
-  for (const page of pageResults) {
-    pageDebug.push(page.debug)
-    totalItems += page.items.length
-    for (const item of page.items) {
-      // Store under series-specific key (primary)
-      const existing = flowtyMap.get(item.matchKey)
-      if (!existing || item.data.flowtyAsk < existing.flowtyAsk) {
-        flowtyMap.set(item.matchKey, item.data)
-      }
-      // Also store under base key (name-only fallback) — only if no series-specific entry exists
-      if (!flowtyMap.has(item.baseKey)) {
-        flowtyMap.set(item.baseKey, item.data)
-      } else {
-        const existingBase = flowtyMap.get(item.baseKey)!
-        if (item.data.flowtyAsk < existingBase.flowtyAsk) {
-          flowtyMap.set(item.baseKey, item.data)
+  let totalPagesFetched = 0
+  const allPageDebug: FlowtyPageDebug[] = []
+
+  for (const sort of sorts) {
+    console.log("[wallet-enrich] Starting Flowty pass: sort=" + sort.path + " direction=" + sort.direction + " pages=" + PAGES_PER_PASS)
+
+    // Build all offsets for this pass
+    const offsets: number[] = []
+    for (let p = 0; p < PAGES_PER_PASS; p++) {
+      offsets.push(p * 24)
+    }
+
+    // Fetch in parallel batches of BATCH_SIZE
+    for (let b = 0; b < offsets.length; b += BATCH_SIZE) {
+      const batch = offsets.slice(b, b + BATCH_SIZE)
+      const results = await Promise.all(batch.map(function (o) { return fetchFlowtyPage(o, sort) }))
+
+      let batchEmpty = true
+      for (const page of results) {
+        allPageDebug.push(page.debug)
+        totalPagesFetched++
+        if (page.items.length > 0) batchEmpty = false
+        totalItems += page.items.length
+
+        for (const item of page.items) {
+          // Primary: key by setID:playID edition key
+          if (item.editionKey) {
+            const existing = editionKeyMap.get(item.editionKey)
+            if (!existing || item.data.flowtyAsk < existing.flowtyAsk) {
+              editionKeyMap.set(item.editionKey, item.data)
+            }
+          }
+
+          // Fallback: key by name (series-specific + base)
+          if (item.matchKey) {
+            const existing = nameMatchMap.get(item.matchKey)
+            if (!existing || item.data.flowtyAsk < existing.flowtyAsk) {
+              nameMatchMap.set(item.matchKey, item.data)
+            }
+          }
+          if (item.baseKey && !nameMatchMap.has(item.baseKey)) {
+            nameMatchMap.set(item.baseKey, item.data)
+          } else if (item.baseKey) {
+            const existingBase = nameMatchMap.get(item.baseKey)!
+            if (item.data.flowtyAsk < existingBase.flowtyAsk) {
+              nameMatchMap.set(item.baseKey, item.data)
+            }
+          }
         }
       }
+
+      // Stop this pass early if a full batch returned zero items
+      if (batchEmpty) {
+        console.log("[wallet-enrich] sort=" + sort.path + " batch at offset " + batch[0] + " empty, stopping pass early")
+        break
+      }
     }
+
+    console.log("[wallet-enrich] Pass sort=" + sort.path + " done: editionKeyMap=" + editionKeyMap.size + " nameMatchMap=" + nameMatchMap.size)
   }
 
   return {
-    flowtyMap,
+    editionKeyMap,
+    nameMatchMap,
     debugSummary: {
       totalItems,
-      uniqueEditions: flowtyMap.size,
-      pageDebug,
+      uniqueEditions: editionKeyMap.size,
+      pagesFetched: totalPagesFetched,
+      pageDebug: allPageDebug,
       requestUrl: FLOWTY_ENDPOINT,
-      requestHeaders: FLOWTY_HEADERS,
     },
   }
 }
@@ -452,19 +537,18 @@ export async function POST(req: NextRequest) {
     editionsCreateDebug.created = editionsCreated
   }
 
-  // Step 3: Fetch Flowty data (PRIMARY source) — 10 pages
-  // Flowty doesn't have SetID/PlayID traits, so we match by player name + set name
-  const { flowtyMap, debugSummary: flowtyDebug } = await fetchAllFlowtyData()
-  console.log("[wallet-enrich] flowty: " + flowtyDebug.totalItems + " items across 10 pages, " + flowtyMap.size + " unique editions")
+  // Step 3: Fetch Flowty data (PRIMARY source) — 50 pages × 2 passes (blockTimestamp desc + salePrice asc)
+  const { editionKeyMap: flowtyByKey, nameMatchMap: flowtyByName, debugSummary: flowtyDebug } = await fetchAllFlowtyData()
+  console.log("[wallet-enrich] flowty: " + flowtyDebug.totalItems + " items across " + flowtyDebug.pagesFetched + " pages, " + flowtyByKey.size + " by editionKey, " + flowtyByName.size + " by name")
 
-  // Step 4: Match wallet editions to Flowty data by name + series
-  // editions.name is in "Player Name — Set Name" format; series disambiguates same-name editions
-  let flowtyMatches = 0
-  let flowtySeriesMatches = 0
-  let flowtyBaseMatches = 0
+  // Step 4: Match wallet editions to Flowty data
+  // Primary: direct setID:playID edition key match
+  // Fallback: name-based match from edition name + series
+  let flowtyKeyMatches = 0
+  let flowtyNameSeriesMatches = 0
+  let flowtyNameBaseMatches = 0
   let badgeMatches = 0
   let skippedNoUuid = 0
-  let skippedNoData = 0
   let enriched = 0
   const upsertRows: Record<string, unknown>[] = []
   const unmatchedEditions: Array<{ externalId: string; name: string; series: string | null }> = []
@@ -473,31 +557,31 @@ export async function POST(req: NextRequest) {
     const edUuid = editionUuidMap.get(ek)
     if (!edUuid) { skippedNoUuid++; continue }
 
-    // Build match key from edition name + series (try series-specific first, fall back to name-only)
-    const editionName = edUuid.name
-    const baseKey = editionName ? editionName.toLowerCase() : ""
-    const seriesKey = (editionName && edUuid.series) ? makeMatchKey(editionName.split(" — ")[0] || "", editionName.split(" — ").slice(1).join(" — ") || "", edUuid.series) : ""
     let fl: FlowtyEditionData | undefined
-    if (seriesKey) {
-      fl = flowtyMap.get(seriesKey)
-      if (fl) flowtySeriesMatches++
-    }
-    if (!fl && baseKey) {
-      fl = flowtyMap.get(baseKey)
-      if (fl) flowtyBaseMatches++
+
+    // Primary: direct edition key match (setID:playID)
+    fl = flowtyByKey.get(ek)
+    if (fl) { flowtyKeyMatches++ }
+
+    // Fallback: name-based match
+    if (!fl) {
+      const editionName = edUuid.name
+      const seriesKey = (editionName && edUuid.series) ? makeMatchKey(editionName.split(" — ")[0] || "", editionName.split(" — ").slice(1).join(" — ") || "", edUuid.series) : ""
+      const baseKey = editionName ? editionName.toLowerCase() : ""
+      if (seriesKey) {
+        fl = flowtyByName.get(seriesKey)
+        if (fl) flowtyNameSeriesMatches++
+      }
+      if (!fl && baseKey) {
+        fl = flowtyByName.get(baseKey)
+        if (fl) flowtyNameBaseMatches++
+      }
     }
 
     if (fl) {
-      flowtyMatches++
-      let fmvUsd: number | null = null
-      let confidence: string = "LOW"
-      if (fl.livetokenFmv) {
-        fmvUsd = fl.livetokenFmv
-        confidence = "MEDIUM"
-      } else {
-        fmvUsd = Number((fl.flowtyAsk * 0.9).toFixed(2))
-        confidence = "LOW"
-      }
+      // FMV = lowest listing price (flowtyAsk is already the lowest for this edition)
+      const fmvUsd = fl.flowtyAsk
+      const confidence = "LOW"
       upsertRows.push({
         edition_id: edUuid.id,
         collection_id: edUuid.collectionId,
@@ -512,7 +596,7 @@ export async function POST(req: NextRequest) {
       enriched++
     } else {
       // Track for badge fallback
-      unmatchedEditions.push({ externalId: ek, name: editionName, series: edUuid.series })
+      unmatchedEditions.push({ externalId: ek, name: edUuid.name, series: edUuid.series })
     }
   }
 
@@ -602,8 +686,9 @@ export async function POST(req: NextRequest) {
     console.log("[wallet-enrich] badge_editions fallback: " + badgeMatches + " matches (of " + unmatchedEditions.length + " unmatched)")
   }
 
-  console.log("[wallet-enrich] rows_to_write=" + upsertRows.length + " flowty_matches=" + flowtyMatches + " (series=" + flowtySeriesMatches + " base=" + flowtyBaseMatches + ") badge_matches=" + badgeMatches + " skipped_no_uuid=" + skippedNoUuid + " skipped_no_data=" + (unmatchedEditions.length - badgeMatches))
-  if (flowtyMatches === 0) {
+  const totalFlowtyMatches = flowtyKeyMatches + flowtyNameSeriesMatches + flowtyNameBaseMatches
+  console.log("[wallet-enrich] rows_to_write=" + upsertRows.length + " flowty_matches=" + totalFlowtyMatches + " (key=" + flowtyKeyMatches + " nameSeries=" + flowtyNameSeriesMatches + " nameBase=" + flowtyNameBaseMatches + ") badge_matches=" + badgeMatches + " skipped_no_uuid=" + skippedNoUuid + " skipped_no_data=" + (unmatchedEditions.length - badgeMatches))
+  if (totalFlowtyMatches === 0) {
     console.log("[wallet-enrich] WARNING: zero Flowty matches. page0 status=" + (flowtyDebug.pageDebug[0]?.httpStatus ?? "null") + " items=" + (flowtyDebug.pageDebug[0]?.itemCount ?? 0) + " error=" + (flowtyDebug.pageDebug[0]?.error ?? "none"))
   }
 
@@ -653,17 +738,28 @@ export async function POST(req: NextRequest) {
   console.log("[wallet-enrich] DONE: enriched=" + enriched + " written=" + writeSucceeded + " errors=" + writeErrors.length + " duration=" + duration + "ms")
 
   // Summarize Flowty page debug: only include first page rawSample + any error pages
-  const flowtyPageSummary = flowtyDebug.pageDebug.map(function (p) {
-    return {
-      from: p.from,
-      httpStatus: p.httpStatus,
-      error: p.error,
-      responseKeys: p.responseKeys,
-      itemCount: p.itemCount,
-      parsedCount: p.parsedCount,
-      rawSample: p.from === 0 ? p.rawSample : (p.error ? p.rawSample : null),
-    }
-  })
+  const flowtyPageSummary = flowtyDebug.pageDebug
+    .filter(function (p) { return p.from === 0 || p.error })
+    .map(function (p) {
+      return {
+        from: p.from,
+        sortPath: p.sortPath,
+        httpStatus: p.httpStatus,
+        error: p.error,
+        responseKeys: p.responseKeys,
+        itemCount: p.itemCount,
+        parsedCount: p.parsedCount,
+        rawSample: p.from === 0 ? p.rawSample : (p.error ? p.rawSample : null),
+      }
+    })
+
+  // Build sample of 5 edition keys with their FMV for verification
+  const sampleEditions: Array<{ editionKey: string; fmv_usd: number }> = []
+  for (const row of upsertRows) {
+    if (sampleEditions.length >= 5) break
+    const ek = uniqueKeys.find(function (k) { return editionUuidMap.get(k)?.id === row.edition_id })
+    if (ek) sampleEditions.push({ editionKey: ek, fmv_usd: row.fmv_usd as number })
+  }
 
   const diagnostics = {
     ok: true,
@@ -673,13 +769,15 @@ export async function POST(req: NextRequest) {
     editions_created: editionsCreated,
     editions_create_debug: editionsCreateDebug,
     edition_uuids_found: editionUuidMap.size,
+    flowty_pages_fetched: flowtyDebug.pagesFetched,
     flowty_total_items: flowtyDebug.totalItems,
-    flowty_unique_editions: flowtyMap.size,
-    flowty_wallet_matches: flowtyMatches,
-    flowty_series_matches: flowtySeriesMatches,
-    flowty_base_matches: flowtyBaseMatches,
+    unique_editions_found: flowtyByKey.size,
+    flowty_name_editions: flowtyByName.size,
+    flowty_key_matches: flowtyKeyMatches,
+    flowty_name_series_matches: flowtyNameSeriesMatches,
+    flowty_name_base_matches: flowtyNameBaseMatches,
+    flowty_total_matches: totalFlowtyMatches,
     flowty_request_url: flowtyDebug.requestUrl,
-    flowty_request_headers: flowtyDebug.requestHeaders,
     flowty_http_status: flowtyDebug.pageDebug[0]?.httpStatus ?? null,
     flowty_error: flowtyDebug.pageDebug[0]?.error ?? null,
     flowty_raw_sample: flowtyDebug.pageDebug[0]?.rawSample ?? null,
@@ -688,10 +786,11 @@ export async function POST(req: NextRequest) {
     badge_debug: badgeDebug,
     badge_fallback_matches: badgeMatches,
     unmatched_editions: unmatchedEditions.length - badgeMatches,
+    fmv_rows_written: writeSucceeded,
     rows_built: upsertRows.length,
-    rows_written: writeSucceeded,
     write_errors: writeErrors.slice(0, 3),
     skipped_no_uuid: skippedNoUuid,
+    sample_editions: sampleEditions,
     duration_ms: duration,
   }
 
