@@ -18,18 +18,32 @@ const GQL_HEADERS: Record<string, string> = {
 }
 
 const EDITION_QUERY = `
-query($byEditions: [EditionFilterInput!], $searchInput: BaseSearchInput!) {
+query SearchMarketplaceEditions(
+  $byEditions: [EditionsFilterInput] = []
+  $searchInput: BaseSearchInput = {pagination: {direction: RIGHT, limit: 1, cursor: ""}}
+) {
   searchMarketplaceEditions(input: {
     filters: { byEditions: $byEditions }
     sortBy: EDITION_CREATED_AT_DESC
     searchInput: $searchInput
   }) {
     data {
-      searchSummary { data { data {
-        tier
-        set { flowName flowSeriesNumber }
-        play { stats { playerName teamAtMoment } }
-      } } }
+      searchSummary {
+        data {
+          data {
+            ... on MarketplaceEdition {
+              tier
+              set { flowName flowSeriesNumber __typename }
+              play { stats { playerName teamAtMoment __typename } __typename }
+              __typename
+            }
+            __typename
+          }
+          __typename
+        }
+        __typename
+      }
+      __typename
     }
   }
 }
@@ -59,17 +73,22 @@ async function fetchEditionInfo(setId: string, playId: string): Promise<EditionR
         query: EDITION_QUERY,
         variables: {
           byEditions: [{ setID: String(setId), playID: String(playId) }],
-          searchInput: { pagination: { cursor: "", direction: "RIGHT", limit: 1 } },
+          searchInput: { pagination: { direction: "RIGHT", limit: 1, cursor: "" } },
         },
       }),
+      cache: "no-store" as RequestCache,
       signal: AbortSignal.timeout(8000),
     })
+    const rawText = await res.text()
     if (!res.ok) {
-      return { externalId: ek, name: null, tier: null, series: null, error: "HTTP " + res.status }
+      return { externalId: ek, name: null, tier: null, series: null, error: "HTTP " + res.status + " body:" + rawText.substring(0, 500) }
     }
-    const json = await res.json()
+    let json: any
+    try { json = JSON.parse(rawText) } catch {
+      return { externalId: ek, name: null, tier: null, series: null, error: "JSON parse failed: " + rawText.substring(0, 300) }
+    }
     if (json.errors?.length) {
-      return { externalId: ek, name: null, tier: null, series: null, error: json.errors[0].message }
+      return { externalId: ek, name: null, tier: null, series: null, error: "GQL error: " + json.errors[0].message }
     }
     const edArr = json?.data?.searchMarketplaceEditions?.data?.searchSummary?.data?.data
     if (!edArr?.length) {
