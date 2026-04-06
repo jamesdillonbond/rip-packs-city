@@ -300,6 +300,7 @@ export async function POST(req: NextRequest) {
     .select("edition_key")
     .eq("wallet_address", wallet)
     .not("edition_key", "is", null)
+    .limit(10000)
 
   if (cacheErr || !cacheRows?.length) {
     const diag = { ok: true, enriched: 0, reason: cacheErr ? "cache error: " + cacheErr.message : "no editions", wallet, input: walletInput }
@@ -333,8 +334,10 @@ export async function POST(req: NextRequest) {
   const TS_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
   const missingKeys = uniqueKeys.filter(function (k) { return !editionUuidMap.has(k) })
   let editionsCreated = 0
+  const editionsCreateDebug: Record<string, unknown> = { missing_keys: 0, badge_meta_found: 0, wallet_cache_meta_found: 0, total_meta: 0, attempted_inserts: 0, insert_errors: [] as string[], created: 0 }
 
   if (missingKeys.length > 0) {
+    editionsCreateDebug.missing_keys = missingKeys.length
     console.log("[wallet-enrich] missing_editions=" + missingKeys.length + " — attempting to create")
 
     // Gather metadata from badge_editions (has edition_id = edition_key)
@@ -360,6 +363,7 @@ export async function POST(req: NextRequest) {
       }
     }
     console.log("[wallet-enrich] badge_meta_found=" + badgeMeta.size + "/" + missingKeys.length)
+    editionsCreateDebug.badge_meta_found = badgeMeta.size
 
     // Also try wallet_moments_cache for any keys not found in badge_editions
     const stillMissing = missingKeys.filter(function (k) { return !badgeMeta.has(k) })
@@ -386,7 +390,9 @@ export async function POST(req: NextRequest) {
         }
       }
       console.log("[wallet-enrich] after wallet_cache fallback, total_meta=" + badgeMeta.size + "/" + missingKeys.length)
+      editionsCreateDebug.wallet_cache_meta_found = badgeMeta.size - (editionsCreateDebug.badge_meta_found as number)
     }
+    editionsCreateDebug.total_meta = badgeMeta.size
 
     // Build edition insert rows for keys where we found at least a player name
     const editionInserts: Array<{ external_id: string; collection_id: string; name: string; tier: string | null; series: number | null }> = []
@@ -404,6 +410,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Bulk insert in chunks
+    editionsCreateDebug.attempted_inserts = editionInserts.length
     if (editionInserts.length > 0) {
       console.log("[wallet-enrich] inserting " + editionInserts.length + " new edition rows")
       for (let i = 0; i < editionInserts.length; i += CHUNK) {
@@ -413,7 +420,8 @@ export async function POST(req: NextRequest) {
           .upsert(chunk, { onConflict: "external_id", ignoreDuplicates: true })
           .select("id, external_id, collection_id, name, series")
         if (insertErr) {
-          console.log("[wallet-enrich] edition insert error chunk " + Math.floor(i / CHUNK) + ": " + insertErr.message)
+          console.log("[wallet-enrich] edition insert error chunk " + Math.floor(i / CHUNK) + ": " + insertErr.message);
+          (editionsCreateDebug.insert_errors as string[]).push("chunk " + Math.floor(i / CHUNK) + ": " + insertErr.message)
         } else {
           for (const r of (inserted ?? [])) {
             if (r.id) {
@@ -425,6 +433,7 @@ export async function POST(req: NextRequest) {
       }
       console.log("[wallet-enrich] editions_created=" + editionsCreated + " edition_uuids_now=" + editionUuidMap.size)
     }
+    editionsCreateDebug.created = editionsCreated
   }
 
   // Step 3: Fetch Flowty data (PRIMARY source) — 10 pages
@@ -501,6 +510,7 @@ export async function POST(req: NextRequest) {
     const { data: allBadges, error: badgeErr } = await (supabaseAdmin as any)
       .from("badge_editions")
       .select("player_name, set_name, series_number, low_ask")
+      .limit(10000)
 
     if (badgeErr) {
       badgeDebug.error = badgeErr.message
@@ -636,6 +646,7 @@ export async function POST(req: NextRequest) {
     wallet,
     unique_editions: uniqueKeys.length,
     editions_created: editionsCreated,
+    editions_create_debug: editionsCreateDebug,
     edition_uuids_found: editionUuidMap.size,
     flowty_total_items: flowtyDebug.totalItems,
     flowty_unique_editions: flowtyMap.size,
