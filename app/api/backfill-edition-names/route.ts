@@ -18,13 +18,18 @@ const GQL_HEADERS: Record<string, string> = {
 }
 
 const EDITION_QUERY = `
-query($setID: ID, $playID: ID) {
-  searchEditions(input: { setID: $setID, playID: $playID, first: 1 }) {
+query($byEditions: [EditionFilterInput!], $searchInput: BaseSearchInput!) {
+  searchMarketplaceEditions(input: {
+    filters: { byEditions: $byEditions }
+    sortBy: EDITION_CREATED_AT_DESC
+    searchInput: $searchInput
+  }) {
     data {
-      tier
-      series
-      set { flowName }
-      play { stats { playerName fullName } }
+      searchSummary { data { data {
+        tier
+        set { flowName flowSeriesNumber }
+        play { stats { playerName teamAtMoment } }
+      } } }
     }
   }
 }
@@ -38,44 +43,54 @@ type EditionResult = {
   error?: string
 }
 
+function cleanTier(raw: string | null): string | null {
+  if (!raw) return null
+  return raw.replace(/^MOMENT_TIER_/, "").toLowerCase()
+    .replace(/^./, function (c) { return c.toUpperCase() })
+}
+
 async function fetchEditionInfo(setId: string, playId: string): Promise<EditionResult> {
+  const ek = setId + ":" + playId
   try {
     const res = await fetch(TOPSHOT_GQL, {
       method: "POST",
       headers: GQL_HEADERS,
       body: JSON.stringify({
         query: EDITION_QUERY,
-        variables: { setID: setId, playID: playId },
+        variables: {
+          byEditions: [{ setID: String(setId), playID: String(playId) }],
+          searchInput: { pagination: { cursor: "", direction: "RIGHT", limit: 1 } },
+        },
       }),
       signal: AbortSignal.timeout(8000),
     })
     if (!res.ok) {
-      return { externalId: setId + ":" + playId, name: null, tier: null, series: null, error: "HTTP " + res.status }
+      return { externalId: ek, name: null, tier: null, series: null, error: "HTTP " + res.status }
     }
     const json = await res.json()
     if (json.errors?.length) {
-      return { externalId: setId + ":" + playId, name: null, tier: null, series: null, error: json.errors[0].message }
+      return { externalId: ek, name: null, tier: null, series: null, error: json.errors[0].message }
     }
-    const editions = json?.data?.searchEditions?.data
-    if (!editions?.length) {
-      return { externalId: setId + ":" + playId, name: null, tier: null, series: null, error: "no editions returned" }
+    const edArr = json?.data?.searchMarketplaceEditions?.data?.searchSummary?.data?.data
+    if (!edArr?.length) {
+      return { externalId: ek, name: null, tier: null, series: null, error: "no editions returned" }
     }
-    const ed = editions[0]
-    const playerName = ed.play?.stats?.playerName || ed.play?.stats?.fullName || ""
+    const ed = edArr[0]
+    const playerName = ed.play?.stats?.playerName || ""
     const setName = ed.set?.flowName || ""
-    const tier = ed.tier || null
-    const series = ed.series != null ? Number(ed.series) : null
+    const tier = cleanTier(ed.tier)
+    const series = ed.set?.flowSeriesNumber != null ? Number(ed.set.flowSeriesNumber) : null
     if (!playerName) {
-      return { externalId: setId + ":" + playId, name: null, tier: null, series: null, error: "no playerName in response" }
+      return { externalId: ek, name: null, tier: null, series: null, error: "no playerName in response" }
     }
     return {
-      externalId: setId + ":" + playId,
+      externalId: ek,
       name: playerName + " — " + (setName || "Unknown Set"),
       tier,
       series,
     }
   } catch (err) {
-    return { externalId: setId + ":" + playId, name: null, tier: null, series: null, error: err instanceof Error ? err.message : String(err) }
+    return { externalId: ek, name: null, tier: null, series: null, error: err instanceof Error ? err.message : String(err) }
   }
 }
 
