@@ -22,8 +22,8 @@ function tierLabel(raw: string): string {
 
 function seriesLabel(n: number): string {
   const map: Record<number, string> = {
-    0: "Beta", 1: "S1", 2: "S2", 3: "S3", 4: "S4",
-    5: "S5", 6: "S6", 7: "S7", 8: "S8",
+    0: "S1", 2: "S2", 3: "Sum 21", 4: "S3", 5: "S4",
+    6: "23-24", 7: "24-25", 8: "25-26",
   };
   return map[n] ?? `S${n}`;
 }

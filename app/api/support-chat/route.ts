@@ -263,7 +263,7 @@ RPC's FMV is a weighted average price (WAP) model:
 - **Burn rate** — high burn rate = shrinking effective supply
 
 ## Series Reference
-Beta (S0), S1, S2, S3, S4, S5, S6, S7, S8
+S1 (on-chain 0), S2 (on-chain 2), Summer 2021 (on-chain 3), S3 (on-chain 4), S4 (on-chain 5), Series 2023-24 (on-chain 6), Series 2024-25 (on-chain 7), Series 2025-26 (on-chain 8)
 
 ## Shopping & Recommendations
 When a user wants to find or buy moments:
