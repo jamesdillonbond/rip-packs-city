@@ -840,9 +840,6 @@ function MarketPageInner() {
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div style={{ padding: "20px 16px", maxWidth: 1200, margin: "0 auto" }}>
-      <Suspense fallback={null}>
-      </Suspense>
-
       {/* Page header */}
       <div style={{ marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
@@ -1604,7 +1601,7 @@ const thStyle: React.CSSProperties = {
 
 export default function MarketPage() {
   return (
-    <Suspense>
+    <Suspense fallback={<div style={{ padding: "20px 16px", maxWidth: 1200, margin: "0 auto", color: "#aaa" }}>Loading market…</div>}>
       <MarketPageInner />
     </Suspense>
   )

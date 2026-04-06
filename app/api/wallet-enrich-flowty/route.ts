@@ -522,17 +522,26 @@ export async function POST(req: NextRequest) {
   if (unmatchedEditions.length > 0) {
     badgeDebug.queriedEditions = unmatchedEditions.length
 
-    // Single query to fetch entire badge_editions table (small — hundreds of rows)
-    const { data: allBadges, error: badgeErr } = await (supabaseAdmin as any)
-      .from("badge_editions")
-      .select("player_name, set_name, series_number, low_ask")
-      .limit(10000)
+    // Fetch all badge_editions via RPC (bypasses PostgREST 1000-row cap)
+    const { data: badgeRpcData, error: badgeErr } = await (supabaseAdmin as any)
+      .rpc("get_all_badge_editions")
 
     if (badgeErr) {
       badgeDebug.error = badgeErr.message
-      console.log("[wallet-enrich] badge_editions fetch error: " + badgeErr.message)
+      console.log("[wallet-enrich] badge_editions RPC error: " + badgeErr.message)
     } else {
-      const badgeRows = allBadges ?? []
+      // Handle json_agg return: direct array, wrapper array, or JSON string
+      let badgeRows: any[]
+      if (Array.isArray(badgeRpcData) && badgeRpcData.length > 0 && Array.isArray(badgeRpcData[0])) {
+        badgeRows = badgeRpcData[0]
+      } else if (Array.isArray(badgeRpcData)) {
+        badgeRows = badgeRpcData
+      } else if (typeof badgeRpcData === "string") {
+        badgeRows = JSON.parse(badgeRpcData)
+      } else {
+        badgeRows = []
+      }
+      console.log("[wallet-enrich] badge RPC returned " + badgeRows.length + " rows (type=" + typeof badgeRpcData + " isArray=" + Array.isArray(badgeRpcData) + ")")
       badgeDebug.totalBadgeRows = badgeRows.length
 
       // Build badge map keyed by series-aware key + base key
