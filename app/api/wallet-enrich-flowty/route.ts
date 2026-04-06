@@ -314,7 +314,7 @@ export async function POST(req: NextRequest) {
 
   // Step 2: Resolve editions to internal UUIDs + names + series
   const editionUuidMap = new Map<string, { id: string; collectionId: string; name: string; series: string | null }>()
-  const CHUNK = 200
+  const CHUNK = 800
   for (let i = 0; i < uniqueKeys.length; i += CHUNK) {
     const chunk = uniqueKeys.slice(i, i + CHUNK)
     const { data: rows } = await (supabaseAdmin as any)
@@ -328,6 +328,104 @@ export async function POST(req: NextRequest) {
     }
   }
   console.log("[wallet-enrich] edition_uuid_resolved=" + editionUuidMap.size + "/" + uniqueKeys.length)
+
+  // Step 2b: Create missing editions on the fly
+  const TS_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+  const missingKeys = uniqueKeys.filter(function (k) { return !editionUuidMap.has(k) })
+  let editionsCreated = 0
+
+  if (missingKeys.length > 0) {
+    console.log("[wallet-enrich] missing_editions=" + missingKeys.length + " — attempting to create")
+
+    // Gather metadata from badge_editions (has edition_id = edition_key)
+    const badgeMeta = new Map<string, { playerName: string; setName: string; tier: string | null; series: number | null }>()
+    for (let i = 0; i < missingKeys.length; i += CHUNK) {
+      const chunk = missingKeys.slice(i, i + CHUNK)
+      const { data: bRows, error: bErr } = await (supabaseAdmin as any)
+        .from("badge_editions")
+        .select("edition_id, player_name, set_name, tier, series_number")
+        .in("edition_id", chunk)
+      if (bErr) {
+        console.log("[wallet-enrich] badge_editions lookup error: " + bErr.message)
+      }
+      for (const b of (bRows ?? [])) {
+        if (b.player_name && !badgeMeta.has(b.edition_id)) {
+          badgeMeta.set(b.edition_id, {
+            playerName: b.player_name,
+            setName: b.set_name ?? "Unknown Set",
+            tier: b.tier ?? null,
+            series: b.series_number != null ? Number(b.series_number) : null,
+          })
+        }
+      }
+    }
+    console.log("[wallet-enrich] badge_meta_found=" + badgeMeta.size + "/" + missingKeys.length)
+
+    // Also try wallet_moments_cache for any keys not found in badge_editions
+    const stillMissing = missingKeys.filter(function (k) { return !badgeMeta.has(k) })
+    if (stillMissing.length > 0) {
+      for (let i = 0; i < stillMissing.length; i += CHUNK) {
+        const chunk = stillMissing.slice(i, i + CHUNK)
+        const { data: cRows, error: cErr } = await (supabaseAdmin as any)
+          .from("wallet_moments_cache")
+          .select("edition_key, player_name, set_name, tier, series_number")
+          .in("edition_key", chunk)
+        if (cErr) {
+          console.log("[wallet-enrich] wallet_moments_cache metadata lookup error: " + cErr.message)
+        } else {
+          for (const c of (cRows ?? [])) {
+            if (c.player_name && !badgeMeta.has(c.edition_key)) {
+              badgeMeta.set(c.edition_key, {
+                playerName: c.player_name,
+                setName: c.set_name ?? "Unknown Set",
+                tier: c.tier ?? null,
+                series: c.series_number != null ? Number(c.series_number) : null,
+              })
+            }
+          }
+        }
+      }
+      console.log("[wallet-enrich] after wallet_cache fallback, total_meta=" + badgeMeta.size + "/" + missingKeys.length)
+    }
+
+    // Build edition insert rows for keys where we found at least a player name
+    const editionInserts: Array<{ external_id: string; collection_id: string; name: string; tier: string | null; series: number | null }> = []
+    for (const key of missingKeys) {
+      const meta = badgeMeta.get(key)
+      if (meta) {
+        editionInserts.push({
+          external_id: key,
+          collection_id: TS_COLLECTION_ID,
+          name: meta.playerName + " — " + meta.setName,
+          tier: meta.tier,
+          series: meta.series,
+        })
+      }
+    }
+
+    // Bulk insert in chunks
+    if (editionInserts.length > 0) {
+      console.log("[wallet-enrich] inserting " + editionInserts.length + " new edition rows")
+      for (let i = 0; i < editionInserts.length; i += CHUNK) {
+        const chunk = editionInserts.slice(i, i + CHUNK)
+        const { data: inserted, error: insertErr } = await (supabaseAdmin as any)
+          .from("editions")
+          .upsert(chunk, { onConflict: "external_id", ignoreDuplicates: true })
+          .select("id, external_id, collection_id, name, series")
+        if (insertErr) {
+          console.log("[wallet-enrich] edition insert error chunk " + Math.floor(i / CHUNK) + ": " + insertErr.message)
+        } else {
+          for (const r of (inserted ?? [])) {
+            if (r.id) {
+              editionUuidMap.set(r.external_id, { id: r.id, collectionId: r.collection_id ?? TS_COLLECTION_ID, name: r.name ?? "", series: r.series != null ? String(r.series) : null })
+              editionsCreated++
+            }
+          }
+        }
+      }
+      console.log("[wallet-enrich] editions_created=" + editionsCreated + " edition_uuids_now=" + editionUuidMap.size)
+    }
+  }
 
   // Step 3: Fetch Flowty data (PRIMARY source) — 10 pages
   // Flowty doesn't have SetID/PlayID traits, so we match by player name + set name
@@ -537,6 +635,7 @@ export async function POST(req: NextRequest) {
     input: walletInput,
     wallet,
     unique_editions: uniqueKeys.length,
+    editions_created: editionsCreated,
     edition_uuids_found: editionUuidMap.size,
     flowty_total_items: flowtyDebug.totalItems,
     flowty_unique_editions: flowtyMap.size,
