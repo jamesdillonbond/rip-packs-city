@@ -18,6 +18,18 @@ jobs:
           if [ "$STATUS" != "200" ]; then
             echo "::warning::Ingest returned $STATUS"
           fi
+      - name: Flowty Sales — Ingest cross-marketplace sales via Firestore
+        continue-on-error: true
+        run: |
+          STATUS=$(curl -s -o /tmp/flowty-sales.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            "https://rip-packs-city.vercel.app/api/flowty-sales?limit=200" \
+            --max-time 30)
+          echo "Flowty sales status: $STATUS"
+          cat /tmp/flowty-sales.json
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::Flowty sales returned $STATUS"
+          fi
       - name: FMV Recalc — Recompute fair market values
         run: |
           STATUS=$(curl -s -o /tmp/recalc.json -w "%{http_code}" -X POST \
@@ -87,16 +99,6 @@ jobs:
           cat /tmp/flowty-listings.json
           if [ "$STATUS" != "200" ]; then
             echo "::warning::Flowty listings returned $STATUS"
-          fi
-      - name: Flowty Sales — Ingest cross-marketplace sales via Firestore
-        run: |
-          STATUS=$(curl -s -o /tmp/flowty-sales.json -w "%{http_code}" \
-            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            "https://rip-packs-city.vercel.app/api/flowty-sales?limit=200")
-          echo "Flowty sales status: $STATUS"
-          cat /tmp/flowty-sales.json
-          if [ "$STATUS" != "200" ]; then
-            echo "::warning::Flowty sales returned $STATUS"
           fi
       - name: Price snapshots
         run: |

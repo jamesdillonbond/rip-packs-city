@@ -503,11 +503,110 @@ export async function POST(req: NextRequest) {
       console.warn("[FMV-RECALC] Backfill pass error:", err instanceof Error ? err.message : err)
     }
 
+    // ── Step 6: Integer edition FMV bridge ────────────────────────────────────
+    // Integer-format editions (external_id like "84:2892") exist in
+    // wallet_moments_cache but have no direct sales. Bridge FMV from UUID
+    // editions that share the same name + series + circulation_count.
+    let integerBridgeCount = 0
+
+    try {
+      const bridgeSql = `
+        WITH integer_eds AS (
+          SELECT DISTINCT e.id, e.name, e.series, e.circulation_count
+          FROM editions e
+          JOIN wallet_moments_cache wmc ON wmc.edition_key = e.external_id
+          WHERE e.external_id ~ '^\\d+:\\d+$'
+            AND e.name IS NOT NULL
+            AND e.circulation_count IS NOT NULL
+        ),
+        uuid_sales AS (
+          SELECT
+            e.name,
+            e.series,
+            e.circulation_count,
+            COUNT(*) AS sales_count,
+            SUM(s.price_usd * CASE
+              WHEN s.sold_at >= NOW() - INTERVAL '7 days'  THEN 3.0
+              WHEN s.sold_at >= NOW() - INTERVAL '14 days' THEN 2.0
+              ELSE 1.0
+            END) / NULLIF(SUM(CASE
+              WHEN s.sold_at >= NOW() - INTERVAL '7 days'  THEN 3.0
+              WHEN s.sold_at >= NOW() - INTERVAL '14 days' THEN 2.0
+              ELSE 1.0
+            END), 0) AS wap_usd,
+            MIN(s.price_usd) AS floor_price_usd,
+            MAX(s.sold_at)   AS latest_sold_at
+          FROM sales s
+          JOIN editions e ON e.id = s.edition_id
+          WHERE s.sold_at >= NOW() - INTERVAL '30 days'
+            AND s.price_usd > 0
+            AND e.external_id !~ '^\\d+:\\d+$'
+            AND e.name IS NOT NULL
+            AND e.circulation_count IS NOT NULL
+          GROUP BY e.name, e.series, e.circulation_count
+        ),
+        deleted AS (
+          DELETE FROM fmv_snapshots
+          WHERE edition_id IN (SELECT id FROM integer_eds)
+          RETURNING edition_id
+        )
+        INSERT INTO fmv_snapshots (
+          edition_id, collection_id, fmv_usd, floor_price_usd, wap_usd,
+          confidence, sales_count_7d, sales_count_30d, days_since_sale, algo_version
+        )
+        SELECT
+          ie.id,
+          '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid,
+          ROUND(us.wap_usd::numeric, 2),
+          ROUND(us.floor_price_usd::numeric, 2),
+          ROUND(us.wap_usd::numeric, 2),
+          CASE
+            WHEN us.sales_count >= 5 THEN 'HIGH'
+            WHEN us.sales_count >= 2 THEN 'MEDIUM'
+            ELSE 'LOW'
+          END::fmv_confidence,
+          us.sales_count,
+          us.sales_count,
+          EXTRACT(DAY FROM NOW() - us.latest_sold_at)::integer,
+          '${ALGO_VERSION}'
+        FROM integer_eds ie
+        JOIN uuid_sales us
+          ON us.name = ie.name
+          AND us.series = ie.series
+          AND us.circulation_count = ie.circulation_count
+      `
+
+      const { data: bridgeResult, error: bridgeError } = await supabaseAdmin
+        .rpc("execute_sql", { query: bridgeSql })
+
+      if (bridgeError) {
+        console.warn("[FMV-RECALC] Integer bridge error:", bridgeError.message)
+      } else {
+        // execute_sql returns an array; for INSERT the result may contain row count info
+        integerBridgeCount = Array.isArray(bridgeResult) ? bridgeResult.length : 0
+        // If execute_sql doesn't return rows, count via a follow-up query
+        if (integerBridgeCount === 0) {
+          const { data: countResult } = await supabaseAdmin
+            .rpc("execute_sql", {
+              query: `
+                SELECT COUNT(*) AS cnt FROM fmv_snapshots fs
+                JOIN editions e ON e.id = fs.edition_id
+                WHERE e.external_id ~ '^\\d+:\\d+$'
+              `,
+            })
+          integerBridgeCount = (countResult as { cnt: number }[])?.[0]?.cnt ?? 0
+        }
+        console.log(`[FMV-RECALC] Integer edition FMV bridge: ${integerBridgeCount} editions covered`)
+      }
+    } catch (err) {
+      console.warn("[FMV-RECALC] Integer bridge error:", err instanceof Error ? err.message : err)
+    }
+
     const hasMore = salesPage.length === limit
     const duration = Date.now() - startTime
 
     console.log(
-      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} hasMore=${hasMore} duration=${duration}ms`
+      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} integerBridge=${integerBridgeCount} hasMore=${hasMore} duration=${duration}ms`
     )
 
     return NextResponse.json({
@@ -518,6 +617,7 @@ export async function POST(req: NextRequest) {
       askProxyApplied: askProxyCount,
       washTradeFiltered: washTradeEditionCount,
       backfillCovered: backfillCount,
+      integerBridgeCovered: integerBridgeCount,
       hasMore,
       nextOffset: hasMore ? offset + limit : null,
       durationMs: duration,
