@@ -393,61 +393,80 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Step 5: Badge fallback — query badge_editions by player_name + set_name
-  const badgeFallbackMap = new Map<string, number>()
-  let badgeDebug = { queriedEditions: 0, totalRows: 0, withLowAsk: 0, error: null as string | null }
+  // Step 5: Badge fallback — fetch ALL badge_editions once, match in JS
+  let badgeDebug = { queriedEditions: 0, totalBadgeRows: 0, withLowAsk: 0, error: null as string | null }
 
   if (unmatchedEditions.length > 0) {
     badgeDebug.queriedEditions = unmatchedEditions.length
 
-    for (const ed of unmatchedEditions) {
-      if (!ed.name) continue
-      // Split "Player Name — Set Name" on the em dash
-      const parts = ed.name.split(" — ")
-      if (parts.length < 2) continue
-      const playerName = parts[0].trim()
-      const setName = parts.slice(1).join(" — ").trim()
-      if (!playerName || !setName) continue
+    // Single query to fetch entire badge_editions table (small — hundreds of rows)
+    const { data: allBadges, error: badgeErr } = await (supabaseAdmin as any)
+      .from("badge_editions")
+      .select("player_name, set_name, series_number, low_ask")
 
-      // Include series_number in badge query when available for precise matching
-      let badgeQuery = (supabaseAdmin as any)
-        .from("badge_editions")
-        .select("id, player_name, set_name, series_number, low_ask")
-        .ilike("player_name", playerName)
-        .eq("set_name", setName)
-      if (ed.series && ed.series !== "0") {
-        badgeQuery = badgeQuery.eq("series_number", Number(ed.series))
+    if (badgeErr) {
+      badgeDebug.error = badgeErr.message
+      console.log("[wallet-enrich] badge_editions fetch error: " + badgeErr.message)
+    } else {
+      const badgeRows = allBadges ?? []
+      badgeDebug.totalBadgeRows = badgeRows.length
+
+      // Build badge map keyed by series-aware key + base key
+      const badgeMapSeries = new Map<string, number>()
+      const badgeMapBase = new Map<string, number>()
+      for (const b of badgeRows) {
+        if (!b.player_name || !b.set_name || !b.low_ask || b.low_ask <= 0) continue
+        const series = b.series_number != null ? String(b.series_number) : ""
+        const seriesKey = makeMatchKey(b.player_name, b.set_name, series)
+        const bKey = makeBaseKey(b.player_name, b.set_name)
+        // Keep cheapest low_ask per key
+        if (!badgeMapSeries.has(seriesKey) || b.low_ask < badgeMapSeries.get(seriesKey)!) {
+          badgeMapSeries.set(seriesKey, b.low_ask)
+        }
+        if (!badgeMapBase.has(bKey) || b.low_ask < badgeMapBase.get(bKey)!) {
+          badgeMapBase.set(bKey, b.low_ask)
+        }
       }
-      const { data: badgeRows, error: badgeErr } = await badgeQuery.limit(1)
+      console.log("[wallet-enrich] badge map built: " + badgeMapSeries.size + " series keys, " + badgeMapBase.size + " base keys from " + badgeRows.length + " rows")
 
-      if (badgeErr) {
-        if (!badgeDebug.error) badgeDebug.error = badgeErr.message
-        console.log("[wallet-enrich] badge_editions error: " + badgeErr.message)
-        continue
-      }
+      for (const ed of unmatchedEditions) {
+        if (!ed.name) continue
+        const parts = ed.name.split(" — ")
+        if (parts.length < 2) continue
+        const playerName = parts[0].trim()
+        const setName = parts.slice(1).join(" — ").trim()
+        if (!playerName || !setName) continue
 
-      const rows = badgeRows ?? []
-      badgeDebug.totalRows += rows.length
+        // Try series-specific key first, fall back to base
+        let lowAsk: number | undefined
+        if (ed.series) {
+          const sKey = makeMatchKey(playerName, setName, ed.series)
+          lowAsk = badgeMapSeries.get(sKey)
+        }
+        if (lowAsk == null) {
+          const bKey = makeBaseKey(playerName, setName)
+          lowAsk = badgeMapBase.get(bKey)
+        }
 
-      if (rows.length > 0 && rows[0].low_ask && rows[0].low_ask > 0) {
-        badgeDebug.withLowAsk++
-        badgeMatches++
-        const lowAsk = rows[0].low_ask
-        upsertRows.push({
-          edition_id: editionUuidMap.get(ed.externalId)!.id,
-          collection_id: editionUuidMap.get(ed.externalId)!.collectionId,
-          fmv_usd: Number((lowAsk * 0.9).toFixed(2)),
-          floor_price_usd: lowAsk,
-          flowty_ask: null,
-          cross_market_ask: lowAsk,
-          confidence: "LOW",
-          algo_version: "flowty-live",
-          computed_at: new Date().toISOString(),
-        })
-        enriched++
+        if (lowAsk && lowAsk > 0) {
+          badgeDebug.withLowAsk++
+          badgeMatches++
+          upsertRows.push({
+            edition_id: editionUuidMap.get(ed.externalId)!.id,
+            collection_id: editionUuidMap.get(ed.externalId)!.collectionId,
+            fmv_usd: Number((lowAsk * 0.9).toFixed(2)),
+            floor_price_usd: lowAsk,
+            flowty_ask: null,
+            cross_market_ask: lowAsk,
+            confidence: "LOW",
+            algo_version: "flowty-live",
+            computed_at: new Date().toISOString(),
+          })
+          enriched++
+        }
       }
     }
-    console.log("[wallet-enrich] badge_editions fallback: " + badgeMatches + " matches (of " + unmatchedEditions.length + " unmatched, " + badgeDebug.totalRows + " rows returned)")
+    console.log("[wallet-enrich] badge_editions fallback: " + badgeMatches + " matches (of " + unmatchedEditions.length + " unmatched)")
   }
 
   console.log("[wallet-enrich] rows_to_write=" + upsertRows.length + " flowty_matches=" + flowtyMatches + " (series=" + flowtySeriesMatches + " base=" + flowtyBaseMatches + ") badge_matches=" + badgeMatches + " skipped_no_uuid=" + skippedNoUuid + " skipped_no_data=" + (unmatchedEditions.length - badgeMatches))
