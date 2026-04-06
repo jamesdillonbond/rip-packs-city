@@ -11,7 +11,8 @@ import { supabaseAdmin } from "@/lib/supabase"
  * Body: { wallet: string }  — accepts Flow address or Top Shot username
  */
 
-export const maxDuration = 60
+export const maxDuration = 120
+export const dynamic = "force-dynamic"
 
 const TOPSHOT_GQL = "https://public-api.nbatopshot.com/graphql"
 const GQL_HEADERS: Record<string, string> = {
