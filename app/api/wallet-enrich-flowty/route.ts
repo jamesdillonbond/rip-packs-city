@@ -294,13 +294,9 @@ export async function POST(req: NextRequest) {
   }
   console.log("[wallet-enrich] input=" + walletInput + " resolved=" + wallet)
 
-  // Step 1: Get unique edition_keys for this wallet
+  // Step 1: Get unique edition_keys for this wallet via RPC (bypasses PostgREST row limit)
   const { data: cacheRows, error: cacheErr } = await (supabaseAdmin as any)
-    .from("wallet_moments_cache")
-    .select("edition_key")
-    .eq("wallet_address", wallet)
-    .not("edition_key", "is", null)
-    .limit(50000)
+    .rpc("get_wallet_edition_keys", { p_wallet: wallet })
 
   if (cacheErr || !cacheRows?.length) {
     const diag = { ok: true, enriched: 0, reason: cacheErr ? "cache error: " + cacheErr.message : "no editions", wallet, input: walletInput }
@@ -308,9 +304,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(diag)
   }
 
-  const keySet = new Set<string>()
-  for (const r of cacheRows) { keySet.add((r as any).edition_key as string) }
-  const uniqueKeys = Array.from(keySet)
+  const uniqueKeys: string[] = cacheRows.map(function (r: any) { return r.edition_key as string })
+  const keySet = new Set<string>(uniqueKeys)
   console.log("[wallet-enrich] wallet=" + wallet + " unique_editions=" + uniqueKeys.length)
 
   // Step 2: Resolve editions to internal UUIDs + names + series
