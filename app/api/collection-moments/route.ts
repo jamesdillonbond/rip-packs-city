@@ -115,10 +115,11 @@ export async function GET(req: NextRequest) {
         p_sort_by: sortBy,
         p_limit: limit,
         p_offset: offset,
-        p_player: playerFilter,
+        p_player: playerFilter || null,
         p_series: seriesFilter !== null && !isNaN(seriesFilter) ? seriesFilter : null,
-        p_tier: tierFilter,
+        p_tier: tierFilter || null,
       })
+      .single()
 
     if (rpcError) {
       console.log("[collection-moments] RPC error:", rpcError.message)
