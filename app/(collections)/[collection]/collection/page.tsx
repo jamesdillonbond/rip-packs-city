@@ -462,6 +462,22 @@ export default function WalletPage() {
     return onOwnerKeyChange(function(key) { setOwnerKey(key) })
   }, [])
 
+  // ── Fetch real total FMV when wallet changes ──────────────────────────────
+  useEffect(function() {
+    if (!activeWallet) return
+    let cancelled = false
+    fetch("/api/collection-moments?wallet=" + encodeURIComponent(activeWallet) + "&limit=1&page=1")
+      .then(function(r) { return r.ok ? r.json() : null })
+      .then(function(json) {
+        if (cancelled || !json) return
+        if (typeof json.total_fmv === "number" && json.total_fmv > 0) {
+          setWalletTotalFmv(json.total_fmv)
+        }
+      })
+      .catch(function() {})
+    return function() { cancelled = true }
+  }, [activeWallet])
+
   // ── FCL wallet connection (for own-collection detection) ───────────────────
   useEffect(function() {
     let cancelled = false
