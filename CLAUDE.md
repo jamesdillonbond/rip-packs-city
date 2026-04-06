@@ -175,9 +175,10 @@ File: app/api/sniper-feed/route.ts
 
 ---
 
-## Series map
+## Series map (on-chain UInt32 → display name)
 
-0=Beta, 1=S1, 2=S2, 3=S3, 4=S4, 5=S5, 6=S6, 7=S7, 8=S8
+0=Series 1 (S1), 2=Series 2 (S2), 3=Summer 2021 (Sum 21), 4=Series 3 (S3), 5=Series 4 (S4), 6=Series 2023-24 (23-24), 7=Series 2024-25 (24-25), 8=Series 2025-26 (25-26)
+There is NO series=1 on-chain. Series 0 IS Series 1.
 
 ---
 

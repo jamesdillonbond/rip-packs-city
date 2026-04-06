@@ -15,8 +15,8 @@ const FLOWTY_HEADERS = {
 };
 
 const SERIES_NAMES: Record<number, string> = {
-  0: "Beta", 1: "Series 1", 2: "Series 2", 3: "Series 3", 4: "Series 4",
-  5: "Series 5", 6: "Series 6", 7: "Series 7", 8: "Series 8",
+  0: "Series 1", 2: "Series 2", 3: "Summer 2021", 4: "Series 3",
+  5: "Series 4", 6: "Series 2023-24", 7: "Series 2024-25", 8: "Series 2025-26",
 };
 
 function flowtyBody(from: number) {

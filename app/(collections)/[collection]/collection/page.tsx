@@ -107,26 +107,38 @@ const BADGE_PILL_TITLES = new Set([
 ])
 
 const SERIES_INT_TO_SEASON: Record<number, string> = {
-  0: "2019-20", 1: "2019-20", 2: "2020-21", 3: "2021-22",
-  4: "2022-23", 5: "2023-24", 6: "2024-25", 7: "2025-26", 8: "2026-27",
+  0: "2019-20", 2: "2020-21", 3: "2021",
+  4: "2021-22", 5: "2022-23", 6: "2023-24", 7: "2024-25", 8: "2025-26",
 }
 
 const SERIES_DISPLAY: Record<number, string> = {
-  0: "Beta",
-  1: "S1 · 2019-20",
+  0: "S1 · 2019-20",
   2: "S2 · 2020-21",
-  3: "S3 · 2021-22",
-  4: "S4 · 2022-23",
-  5: "S5 · 2023-24",
-  6: "S6 · 2024-25",
-  7: "S7 · 2025-26",
-  8: "S8 · 2026-27",
+  3: "Sum 21 · 2021",
+  4: "S3 · 2021-22",
+  5: "S4 · 2022-23",
+  6: "23-24 · 2023-24",
+  7: "24-25 · 2024-25",
+  8: "25-26 · 2025-26",
+}
+
+const SERIES_FILTER_LABEL: Record<number, string> = {
+  0: "Series 1", 2: "Series 2", 3: "Summer 2021",
+  4: "Series 3", 5: "Series 4", 6: "Series 2023-24",
+  7: "Series 2024-25", 8: "Series 2025-26",
 }
 
 function seriesDisplayLabel(seriesRaw: string | undefined | null): string {
   if (!seriesRaw) return "—"
   const n = parseInt(seriesRaw, 10)
   if (!Number.isNaN(n) && SERIES_DISPLAY[n] !== undefined) return SERIES_DISPLAY[n]
+  return seriesRaw
+}
+
+function seriesFilterLabel(seriesRaw: string | undefined | null): string {
+  if (!seriesRaw) return "—"
+  const n = parseInt(seriesRaw, 10)
+  if (!Number.isNaN(n) && SERIES_FILTER_LABEL[n] !== undefined) return SERIES_FILTER_LABEL[n]
   return seriesRaw
 }
 
@@ -704,9 +716,13 @@ export default function WalletPage() {
     if (playerFilter !== "all") params.set("player", playerFilter)
     if (seriesFilter !== "all") {
       // Convert display label back to series number
-      const match = seriesFilter.match(/^S(\d+)/)
-      if (match) params.set("series", match[1])
-      else if (seriesFilter === "Beta") params.set("series", "0")
+      const seriesLabelToNum: Record<string, string> = {
+        "Series 1": "0", "Series 2": "2", "Summer 2021": "3",
+        "Series 3": "4", "Series 4": "5", "Series 2023-24": "6",
+        "Series 2024-25": "7", "Series 2025-26": "8",
+      }
+      const sn = seriesLabelToNum[seriesFilter]
+      if (sn) params.set("series", sn)
     }
     if (rarityFilter !== "all") params.set("tier", rarityFilter)
 
@@ -1015,7 +1031,7 @@ export default function WalletPage() {
     const filtered = rows.filter(function(r) {
       if (playerFilter !== "all" && r.playerName !== playerFilter) return false
       if (setFilter !== "all" && normalizeSetName(r.setName) !== setFilter) return false
-      if (seriesFilter !== "all" && seriesDisplayLabel(r.series) !== seriesFilter) return false
+      if (seriesFilter !== "all" && seriesFilterLabel(r.series) !== seriesFilter) return false
       if (rarityFilter !== "all" && r.tier !== rarityFilter) return false
       if (lockedFilter === "locked" && !getLocked(r)) return false
       if (lockedFilter === "unlocked" && getLocked(r)) return false
@@ -1260,15 +1276,14 @@ export default function WalletPage() {
           </select>
           <select value={seriesFilter} onChange={function(e) { setSeriesFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
             <option value="all">All Series</option>
-            <option value="Beta">Beta</option>
-            <option value="S1 · 2019-20">S1 · 2019-20</option>
-            <option value="S2 · 2020-21">S2 · 2020-21</option>
-            <option value="S3 · 2021-22">S3 · 2021-22</option>
-            <option value="S4 · 2022-23">S4 · 2022-23</option>
-            <option value="S5 · 2023-24">S5 · 2023-24</option>
-            <option value="S6 · 2024-25">S6 · 2024-25</option>
-            <option value="S7 · 2025-26">S7 · 2025-26</option>
-            <option value="S8 · 2026-27">S8 · 2026-27</option>
+            <option value="Series 1">Series 1</option>
+            <option value="Series 2">Series 2</option>
+            <option value="Summer 2021">Summer 2021</option>
+            <option value="Series 3">Series 3</option>
+            <option value="Series 4">Series 4</option>
+            <option value="Series 2023-24">Series 2023-24</option>
+            <option value="Series 2024-25">Series 2024-25</option>
+            <option value="Series 2025-26">Series 2025-26</option>
           </select>
           <select value={rarityFilter} onChange={function(e) { setRarityFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
             {availableRarities.map(function(tier) { return <option key={tier} value={tier}>{tier === "all" ? "All Rarities" : tier}</option> })}
