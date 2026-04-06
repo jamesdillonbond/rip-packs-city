@@ -300,7 +300,7 @@ export async function POST(req: NextRequest) {
     .select("edition_key")
     .eq("wallet_address", wallet)
     .not("edition_key", "is", null)
-    .limit(10000)
+    .limit(50000)
 
   if (cacheErr || !cacheRows?.length) {
     const diag = { ok: true, enriched: 0, reason: cacheErr ? "cache error: " + cacheErr.message : "no editions", wallet, input: walletInput }
