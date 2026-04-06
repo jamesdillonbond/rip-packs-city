@@ -85,16 +85,14 @@ export async function POST(req: NextRequest) {
     .from("editions")
     .select("id, external_id")
     .is("name", null)
-    .like("external_id", "%:%")
+    .filter("external_id", "match", "^\\d+:\\d+$")
     .limit(200)
 
   if (queryErr) {
     return NextResponse.json({ error: "query error: " + queryErr.message }, { status: 500 })
   }
 
-  const editionsToFill = (stubs ?? []).filter(function (e: any) {
-    return /^\d+:\d+$/.test(e.external_id)
-  })
+  const editionsToFill = stubs ?? []
 
   if (editionsToFill.length === 0) {
     return NextResponse.json({ ok: true, updated: 0, failed: 0, remaining: 0 })
@@ -162,7 +160,7 @@ export async function POST(req: NextRequest) {
     .from("editions")
     .select("id", { count: "exact", head: true })
     .is("name", null)
-    .like("external_id", "%:%")
+    .filter("external_id", "match", "^\\d+:\\d+$")
 
   return NextResponse.json({
     ok: true,
