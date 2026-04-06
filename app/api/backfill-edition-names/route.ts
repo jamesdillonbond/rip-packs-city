@@ -159,7 +159,9 @@ export async function POST(req: NextRequest) {
           // New metadata fields — always set if we have data
           const playCategory = playMeta.PlayCategory || playMeta.playCategory || null
           const playType = playMeta.PlayType || playMeta.playType || null
-          const gameDate = playMeta.DateOfMoment || playMeta.dateOfMoment || null
+          const rawDate = playMeta.DateOfMoment || playMeta.dateOfMoment || null
+          const dateSlice = rawDate ? rawDate.slice(0, 10) : null
+          const gameDate = dateSlice && /^\d{4}-\d{2}-\d{2}$/.test(dateSlice) ? dateSlice : null
           const homeTeam = playMeta.TeamAtMoment || playMeta.teamAtMoment || playMeta.HomeTeamName || playMeta.homeTeamName || null
           const awayTeam = playMeta.TeamAtMomentOpponent || playMeta.teamAtMomentOpponent || playMeta.AwayTeamName || playMeta.awayTeamName || null
 
