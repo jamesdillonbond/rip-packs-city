@@ -6,8 +6,9 @@ import * as t from "@onflow/types"
 /**
  * POST /api/backfill-edition-names
  *
- * Backfills stub editions (external_id "setId:playId", name IS NULL) by
- * querying the TopShot smart contract on Flow mainnet via FCL Cadence scripts.
+ * Backfills editions missing metadata (play_category, game_date, circulation_count)
+ * by querying the TopShot smart contract on Flow mainnet via FCL Cadence scripts.
+ * Also fills name/tier/series if still null.
  * Auth: Bearer INGEST_SECRET_TOKEN. Processes up to 200 per run.
  */
 
@@ -102,11 +103,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   }
 
-  // Step 1: Fetch stub editions from Supabase
+  // Step 1: Fetch editions missing metadata fields
   const { data: stubs, error: queryErr } = await (supabaseAdmin as any)
     .from("editions")
-    .select("id, external_id")
-    .is("name", null)
+    .select("id, external_id, name, tier, series")
+    .or("play_category.is.null,circulation_count.is.null,game_date.is.null")
     .filter("external_id", "match", "^\\d+:\\d+$")
     .limit(200)
 
@@ -140,28 +141,40 @@ export async function POST(req: NextRequest) {
           ])
 
           const playerName = playMeta.FullName || playMeta.PlayerName || playMeta.fullName || ""
-          if (!playerName) {
-            return { id: e.id, ek: e.external_id, error: "no FullName in play metadata (keys: " + Object.keys(playMeta).join(",") + ")" }
+
+          // Build update payload — preserve existing name/tier/series if already set
+          const update: Record<string, any> = {}
+
+          if (!e.name && playerName) {
+            update.name = playerName + " — " + (setInfo.name || "Unknown Set")
+          }
+          if (e.tier == null) {
+            const tier = formatTier(playMeta)
+            if (tier) update.tier = tier
+          }
+          if (e.series == null) {
+            update.series = setInfo.series
           }
 
-          const name = playerName + " — " + (setInfo.name || "Unknown Set")
-          const tier = formatTier(playMeta)
-          const series = setInfo.series
+          // New metadata fields — always set if we have data
+          const playCategory = playMeta.PlayCategory || playMeta.playCategory || null
+          const playType = playMeta.PlayType || playMeta.playType || null
+          const gameDate = playMeta.DateOfMoment || playMeta.dateOfMoment || null
+          const homeTeam = playMeta.TeamAtMoment || playMeta.teamAtMoment || playMeta.HomeTeamName || playMeta.homeTeamName || null
+          const awayTeam = playMeta.TeamAtMomentOpponent || playMeta.teamAtMomentOpponent || playMeta.AwayTeamName || playMeta.awayTeamName || null
 
-          // Extract additional play metadata
-          const play_category = playMeta.PlayCategory || playMeta.playCategory || null
-          const play_type = playMeta.PlayType || playMeta.playType || null
-          const home_team = playMeta.TeamAtMoment || playMeta.teamAtMoment || playMeta.HomeTeamName || playMeta.homeTeamName || null
-          const away_team = playMeta.AwayTeamName || playMeta.awayTeamName || null
-          const rawDate = playMeta.DateOfMoment || playMeta.dateOfMoment || null
-          const game_date = rawDate || null // stored as text, Supabase will parse date format
+          if (playCategory) update.play_category = playCategory
+          if (playType) update.play_type = playType
+          if (gameDate) update.game_date = gameDate
+          if (homeTeam) update.home_team = homeTeam
+          if (awayTeam) update.away_team = awayTeam
+          if (circulationCount > 0) update.circulation_count = circulationCount
 
-          return {
-            id: e.id, ek: e.external_id, name, tier, series,
-            play_category, play_type, home_team, away_team, game_date,
-            circulation_count: circulationCount > 0 ? circulationCount : null,
-            error: null,
+          if (Object.keys(update).length === 0) {
+            return { id: e.id, ek: e.external_id, error: "no metadata to update (keys: " + Object.keys(playMeta).join(",") + ")" }
           }
+
+          return { id: e.id, ek: e.external_id, update, error: null }
         } catch (err) {
           return { id: e.id, ek: e.external_id, error: err instanceof Error ? err.message : String(err) }
         }
@@ -169,25 +182,16 @@ export async function POST(req: NextRequest) {
     )
 
     for (const r of results) {
-      if (r.error || !r.name) {
+      if (r.error) {
         failed++
         if (sampleErrors.length < 5) {
-          sampleErrors.push(r.ek + ": " + (r.error || "no name"))
+          sampleErrors.push(r.ek + ": " + r.error)
         }
         continue
       }
-      // Build update payload — only include non-null new fields to avoid overwriting existing values
-      const updatePayload: Record<string, unknown> = { name: r.name, tier: r.tier, series: r.series }
-      if (r.play_category) updatePayload.play_category = r.play_category
-      if (r.play_type) updatePayload.play_type = r.play_type
-      if (r.home_team) updatePayload.home_team = r.home_team
-      if (r.away_team) updatePayload.away_team = r.away_team
-      if (r.game_date) updatePayload.game_date = r.game_date
-      if (r.circulation_count) updatePayload.circulation_count = r.circulation_count
-
       const { error: upErr } = await (supabaseAdmin as any)
         .from("editions")
-        .update(updatePayload)
+        .update(r.update)
         .eq("id", r.id)
       if (upErr) {
         failed++
@@ -200,11 +204,11 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Step 3: Count remaining stubs
+  // Step 3: Count remaining editions missing metadata
   const { count: remaining } = await (supabaseAdmin as any)
     .from("editions")
     .select("id", { count: "exact", head: true })
-    .is("name", null)
+    .or("play_category.is.null,circulation_count.is.null,game_date.is.null")
     .filter("external_id", "match", "^\\d+:\\d+$")
 
   return NextResponse.json({
