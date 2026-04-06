@@ -658,6 +658,11 @@ async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
         fmv_usd: r.fmv ?? null,
         serial_number: r.serialNumber ?? (r.serial != null ? r.serial : null),
         last_seen_at: new Date().toISOString(),
+        tier: r.tier ?? null,
+        acquired_at: r.acquiredAt ?? null,
+        player_name: r.playerName ?? null,
+        set_name: r.setName ?? null,
+        series_number: r.series != null ? Number(r.series) || null : null,
       }))
 
     if (!cacheRows.length) return

@@ -512,7 +512,7 @@ export async function POST(req: NextRequest) {
     try {
       const bridgeSql = `
         WITH integer_eds AS (
-          SELECT DISTINCT e.id, e.name, e.series, e.circulation_count
+          SELECT DISTINCT e.id, e.name, e.series, e.circulation_count, e.tier
           FROM editions e
           JOIN wallet_moments_cache wmc ON wmc.edition_key = e.external_id
           WHERE e.external_id ~ '^\\d+:\\d+$'
@@ -524,6 +524,7 @@ export async function POST(req: NextRequest) {
             e.name,
             e.series,
             e.circulation_count,
+            e.tier,
             COUNT(*) AS sales_count,
             SUM(s.price_usd * CASE
               WHEN s.sold_at >= NOW() - INTERVAL '7 days'  THEN 3.0
@@ -543,7 +544,7 @@ export async function POST(req: NextRequest) {
             AND e.external_id !~ '^\\d+:\\d+$'
             AND e.name IS NOT NULL
             AND e.circulation_count IS NOT NULL
-          GROUP BY e.name, e.series, e.circulation_count
+          GROUP BY e.name, e.series, e.circulation_count, e.tier
         ),
         deleted AS (
           DELETE FROM fmv_snapshots
@@ -574,6 +575,7 @@ export async function POST(req: NextRequest) {
           ON us.name = ie.name
           AND us.series = ie.series
           AND us.circulation_count = ie.circulation_count
+          AND (ie.tier IS NULL OR us.tier = ie.tier)
       `
 
       const { data: bridgeResult, error: bridgeError } = await supabaseAdmin

@@ -206,7 +206,33 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Step 3: Count remaining editions missing metadata
+  // Step 3: Backfill tier from wallet_moments_cache for editions missing tier
+  let tierBackfilled = 0
+  try {
+    const tierSql = `
+      UPDATE editions e
+      SET tier = UPPER(wmc.tier)::edition_tier
+      FROM (
+        SELECT DISTINCT ON (edition_key) edition_key, tier
+        FROM wallet_moments_cache
+        WHERE tier IS NOT NULL AND tier != ''
+      ) wmc
+      WHERE e.external_id = wmc.edition_key
+        AND e.tier IS NULL
+    `
+    const { data: tierResult, error: tierErr } = await (supabaseAdmin as any)
+      .rpc("execute_sql", { query: tierSql })
+    if (tierErr) {
+      console.log("[backfill-edition-names] tier backfill error: " + tierErr.message)
+    } else {
+      tierBackfilled = Array.isArray(tierResult) ? tierResult.length : 0
+      console.log("[backfill-edition-names] tier backfill from wallet_moments_cache: " + tierBackfilled + " editions updated")
+    }
+  } catch (err) {
+    console.warn("[backfill-edition-names] tier backfill error:", err instanceof Error ? err.message : err)
+  }
+
+  // Step 4: Count remaining editions missing metadata
   const { count: remaining } = await (supabaseAdmin as any)
     .from("editions")
     .select("id", { count: "exact", head: true })
@@ -218,6 +244,7 @@ export async function POST(req: NextRequest) {
     stubs_found: editionsToFill.length,
     updated,
     failed,
+    tier_backfilled: tierBackfilled,
     remaining: remaining ?? 0,
     sample_errors: sampleErrors,
   })

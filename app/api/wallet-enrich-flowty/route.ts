@@ -92,7 +92,7 @@ function getTraitMulti(
 
 // ── Flowty data types ──────────────────────────────────────────────────────
 
-type FlowtyEditionData = { editionKey: string; flowtyAsk: number; livetokenFmv: number | null; playerName: string; setName: string; series: number | null; circulationCount: number | null }
+type FlowtyEditionData = { editionKey: string; flowtyAsk: number; livetokenFmv: number | null; playerName: string; setName: string; series: number | null; circulationCount: number | null; tier: string | null }
 
 type FlowtyPageDebug = {
   from: number
@@ -167,6 +167,10 @@ function makeMatchKeyWithCirculation(playerName: string, setName: string, series
   return (playerName.trim() + " — " + setName.trim() + " — " + series.trim() + " — " + String(circulation)).toLowerCase()
 }
 
+function makeMatchKeyWithTier(playerName: string, setName: string, series: string, circulation: number, tier: string): string {
+  return (playerName.trim() + " — " + setName.trim() + " — " + series.trim() + " — " + String(circulation) + " — " + tier.trim()).toLowerCase()
+}
+
 // ── Flowty matching key: lowercase "playerName — setName — series" ───────────
 
 function makeMatchKey(playerName: string, setName: string, series?: string): string {
@@ -183,8 +187,8 @@ function makeBaseKey(playerName: string, setName: string): string {
 
 type FlowtyPageSort = { path: string; direction: string }
 
-async function fetchFlowtyPage(from: number, sort: FlowtyPageSort): Promise<{ items: Array<{ editionKey: string | null; matchKey: string; baseKey: string; fullMatchKey: string; data: FlowtyEditionData }>; debug: FlowtyPageDebug }> {
-  const items: Array<{ editionKey: string | null; matchKey: string; baseKey: string; fullMatchKey: string; data: FlowtyEditionData }> = []
+async function fetchFlowtyPage(from: number, sort: FlowtyPageSort): Promise<{ items: Array<{ editionKey: string | null; matchKey: string; baseKey: string; fullMatchKey: string; tierMatchKey: string; data: FlowtyEditionData }>; debug: FlowtyPageDebug }> {
+  const items: Array<{ editionKey: string | null; matchKey: string; baseKey: string; fullMatchKey: string; tierMatchKey: string; data: FlowtyEditionData }> = []
   const debug: FlowtyPageDebug = { from, sortPath: sort.path, httpStatus: null, error: null, rawSample: null, responseKeys: null, itemCount: 0, parsedCount: 0 }
 
   const requestBody = {
@@ -258,14 +262,22 @@ async function fetchFlowtyPage(from: number, sort: FlowtyPageSort): Promise<{ it
       const setName = getTraitMulti(traits, FLOWTY_TRAIT_MAP.setName)
       const seriesNumber = getTraitMulti(traits, FLOWTY_TRAIT_MAP.seriesNumber)
 
-      // Extract series from headerTraits SeriesName (e.g. "Series 1" → 1, "Beta" → 0)
+      // Extract series and tier from headerTraits
       const headerTraits = item.card?.headerTraits
       let parsedSeries: number | null = null
+      let parsedTier: string | null = null
       if (Array.isArray(headerTraits)) {
         const seriesTrait = headerTraits.find(function (ht: any) { return ht.name === "SeriesName" || ht.name === "Series" })
         if (seriesTrait?.value) parsedSeries = parseSeriesName(seriesTrait.value)
+        const tierTrait = headerTraits.find(function (ht: any) { return ht.name === "Tier" || ht.name === "tier" })
+        if (tierTrait?.value) parsedTier = tierTrait.value.toUpperCase()
       }
       if (parsedSeries == null && seriesNumber) parsedSeries = parseSeriesName(seriesNumber)
+      // Fallback tier from nftView traits
+      if (!parsedTier) {
+        const traitTier = getTraitMulti(traits, FLOWTY_TRAIT_MAP.tier)
+        if (traitTier) parsedTier = traitTier.toUpperCase()
+      }
 
       // Extract circulation from additionalDetails[1] e.g. "Common #126 / 1149" → 1149
       const circulationCount = parseCirculationFromDetails(item)
@@ -277,12 +289,16 @@ async function fetchFlowtyPage(from: number, sort: FlowtyPageSort): Promise<{ it
       const fullMatchKey = (playerName && setName && parsedSeries != null && circulationCount != null)
         ? makeMatchKeyWithCirculation(playerName, setName, String(parsedSeries), circulationCount)
         : ""
+      const tierMatchKey = (playerName && setName && parsedSeries != null && circulationCount != null && parsedTier)
+        ? makeMatchKeyWithTier(playerName, setName, String(parsedSeries), circulationCount, parsedTier)
+        : ""
 
       items.push({
         editionKey,
         matchKey,
         baseKey,
         fullMatchKey,
+        tierMatchKey,
         data: {
           editionKey: editionKey ?? "",
           flowtyAsk: order.salePrice,
@@ -291,6 +307,7 @@ async function fetchFlowtyPage(from: number, sort: FlowtyPageSort): Promise<{ it
           setName: setName || "",
           series: parsedSeries,
           circulationCount,
+          tier: parsedTier,
         },
       })
     }
@@ -313,12 +330,15 @@ type FlowtyDebugSummary = {
 
 async function fetchAllFlowtyData(): Promise<{
   editionKeyMap: Map<string, FlowtyEditionData>
+  tierMatchMap: Map<string, FlowtyEditionData>
   fullMatchMap: Map<string, FlowtyEditionData>
   nameMatchMap: Map<string, FlowtyEditionData>
   debugSummary: FlowtyDebugSummary
 }> {
   // Map keyed by setID:playID edition key → lowest ask for that edition
   const editionKeyMap = new Map<string, FlowtyEditionData>()
+  // Tightest fallback: name + series + circulation_count + tier
+  const tierMatchMap = new Map<string, FlowtyEditionData>()
   // Best fallback: name + series + circulation_count (exact edition match)
   const fullMatchMap = new Map<string, FlowtyEditionData>()
   // Good fallback: name + series
@@ -366,6 +386,14 @@ async function fetchAllFlowtyData(): Promise<{
             }
           }
 
+          // Tightest fallback: name + series + circulation + tier
+          if (item.tierMatchKey) {
+            const existing = tierMatchMap.get(item.tierMatchKey)
+            if (!existing || item.data.flowtyAsk < existing.flowtyAsk) {
+              tierMatchMap.set(item.tierMatchKey, item.data)
+            }
+          }
+
           // Best fallback: name + series + circulation (exact edition)
           if (item.fullMatchKey) {
             const existing = fullMatchMap.get(item.fullMatchKey)
@@ -399,11 +427,12 @@ async function fetchAllFlowtyData(): Promise<{
       }
     }
 
-    console.log("[wallet-enrich] Pass sort=" + sort.path + " done: editionKeyMap=" + editionKeyMap.size + " fullMatchMap=" + fullMatchMap.size + " nameMatchMap=" + nameMatchMap.size)
+    console.log("[wallet-enrich] Pass sort=" + sort.path + " done: editionKeyMap=" + editionKeyMap.size + " tierMatchMap=" + tierMatchMap.size + " fullMatchMap=" + fullMatchMap.size + " nameMatchMap=" + nameMatchMap.size)
   }
 
   return {
     editionKeyMap,
+    tierMatchMap,
     fullMatchMap,
     nameMatchMap,
     debugSummary: {
@@ -473,19 +502,19 @@ export async function POST(req: NextRequest) {
   const keySet = new Set<string>(uniqueKeys)
   console.log("[wallet-enrich] wallet=" + wallet + " unique_editions=" + uniqueKeys.length)
 
-  // Step 2: Resolve editions to internal UUIDs + names + series + circulation_count
-  const editionUuidMap = new Map<string, { id: string; collectionId: string; name: string; series: string | null; circulationCount: number | null }>()
+  // Step 2: Resolve editions to internal UUIDs + names + series + circulation_count + tier
+  const editionUuidMap = new Map<string, { id: string; collectionId: string; name: string; series: string | null; circulationCount: number | null; tier: string | null }>()
   const CHUNK = 800
   for (let i = 0; i < uniqueKeys.length; i += CHUNK) {
     const chunk = uniqueKeys.slice(i, i + CHUNK)
     const { data: rows } = await (supabaseAdmin as any)
       .from("editions")
-      .select("id, external_id, collection_id, name, series, circulation_count")
+      .select("id, external_id, collection_id, name, series, circulation_count, tier")
       .in("external_id", chunk)
       .limit(10000)
     for (const r of (rows ?? [])) {
       if (r.id) {
-        editionUuidMap.set(r.external_id, { id: r.id, collectionId: r.collection_id ?? null, name: r.name ?? "", series: r.series != null ? String(r.series) : null, circulationCount: r.circulation_count != null ? Number(r.circulation_count) : null })
+        editionUuidMap.set(r.external_id, { id: r.id, collectionId: r.collection_id ?? null, name: r.name ?? "", series: r.series != null ? String(r.series) : null, circulationCount: r.circulation_count != null ? Number(r.circulation_count) : null, tier: r.tier ?? null })
       }
     }
   }
@@ -586,7 +615,7 @@ export async function POST(req: NextRequest) {
         } else {
           for (const r of (inserted ?? [])) {
             if (r.id) {
-              editionUuidMap.set(r.external_id, { id: r.id, collectionId: r.collection_id ?? TS_COLLECTION_ID, name: r.name ?? "", series: r.series != null ? String(r.series) : null, circulationCount: r.circulation_count != null ? Number(r.circulation_count) : null })
+              editionUuidMap.set(r.external_id, { id: r.id, collectionId: r.collection_id ?? TS_COLLECTION_ID, name: r.name ?? "", series: r.series != null ? String(r.series) : null, circulationCount: r.circulation_count != null ? Number(r.circulation_count) : null, tier: r.tier ?? null })
               editionsCreated++
             }
           }
@@ -598,8 +627,8 @@ export async function POST(req: NextRequest) {
   }
 
   // Step 3: Fetch Flowty data (PRIMARY source) — 50 pages × 2 passes (blockTimestamp desc + salePrice asc)
-  const { editionKeyMap: flowtyByKey, fullMatchMap: flowtyByFull, nameMatchMap: flowtyByName, debugSummary: flowtyDebug } = await fetchAllFlowtyData()
-  console.log("[wallet-enrich] flowty: " + flowtyDebug.totalItems + " items across " + flowtyDebug.pagesFetched + " pages, " + flowtyByKey.size + " by editionKey, " + flowtyByFull.size + " by fullMatch, " + flowtyByName.size + " by name")
+  const { editionKeyMap: flowtyByKey, tierMatchMap: flowtyByTier, fullMatchMap: flowtyByFull, nameMatchMap: flowtyByName, debugSummary: flowtyDebug } = await fetchAllFlowtyData()
+  console.log("[wallet-enrich] flowty: " + flowtyDebug.totalItems + " items across " + flowtyDebug.pagesFetched + " pages, " + flowtyByKey.size + " by editionKey, " + flowtyByTier.size + " by tierMatch, " + flowtyByFull.size + " by fullMatch, " + flowtyByName.size + " by name")
 
   // Step 4: Match wallet editions to Flowty data
   // Multi-level matching:
@@ -608,13 +637,16 @@ export async function POST(req: NextRequest) {
   //   3. OK: name + series (same player+set+series)
   //   4. Fallback: name only (may cross series)
   let flowtyKeyMatches = 0
+  let flowtyTierMatches = 0
   let flowtyFullMatches = 0
   let flowtyNameSeriesMatches = 0
   let flowtyNameBaseMatches = 0
   let badgeMatches = 0
   let skippedNoUuid = 0
   let enriched = 0
+  let tierUpdated = 0
   const upsertRows: Record<string, unknown>[] = []
+  const tierUpdateRows: Array<{ id: string; tier: string }> = []
   const unmatchedEditions: Array<{ externalId: string; name: string; series: string | null }> = []
 
   for (const ek of uniqueKeys) {
@@ -627,32 +659,45 @@ export async function POST(req: NextRequest) {
     fl = flowtyByKey.get(ek)
     if (fl) { flowtyKeyMatches++ }
 
-    // Level 2: name + series + circulation_count (exact edition match)
+    // Level 2+: name-based matching
     if (!fl) {
       const editionName = edUuid.name
       const parts = editionName ? editionName.split(" — ") : []
       const playerName = (parts[0] || "").trim()
       const setName = (parts.slice(1).join(" — ") || "").trim()
 
-      if (playerName && setName && edUuid.series && edUuid.circulationCount) {
+      // Level 2: name + series + circulation + tier (tightest)
+      if (playerName && setName && edUuid.series && edUuid.circulationCount && edUuid.tier) {
+        const tierKey = makeMatchKeyWithTier(playerName, setName, edUuid.series, edUuid.circulationCount, edUuid.tier)
+        fl = flowtyByTier.get(tierKey)
+        if (fl) flowtyTierMatches++
+      }
+
+      // Level 3: name + series + circulation_count
+      if (!fl && playerName && setName && edUuid.series && edUuid.circulationCount) {
         const fullKey = makeMatchKeyWithCirculation(playerName, setName, edUuid.series, edUuid.circulationCount)
         fl = flowtyByFull.get(fullKey)
         if (fl) flowtyFullMatches++
       }
 
-      // Level 3: name + series
+      // Level 4: name + series
       if (!fl && playerName && setName && edUuid.series) {
         const seriesKey = makeMatchKey(playerName, setName, edUuid.series)
         fl = flowtyByName.get(seriesKey)
         if (fl) flowtyNameSeriesMatches++
       }
 
-      // Level 4: name only (worst, may cross series)
+      // Level 5: name only (worst, may cross series)
       if (!fl && editionName) {
         const baseKey = editionName.toLowerCase()
         fl = flowtyByName.get(baseKey)
         if (fl) flowtyNameBaseMatches++
       }
+    }
+
+    // If Flowty data has a tier and the edition is missing tier, queue an update
+    if (fl && fl.tier && !edUuid.tier) {
+      tierUpdateRows.push({ id: edUuid.id, tier: fl.tier })
     }
 
     if (fl) {
@@ -763,8 +808,8 @@ export async function POST(req: NextRequest) {
     console.log("[wallet-enrich] badge_editions fallback: " + badgeMatches + " matches (of " + unmatchedEditions.length + " unmatched)")
   }
 
-  const totalFlowtyMatches = flowtyKeyMatches + flowtyFullMatches + flowtyNameSeriesMatches + flowtyNameBaseMatches
-  console.log("[wallet-enrich] rows_to_write=" + upsertRows.length + " flowty_matches=" + totalFlowtyMatches + " (key=" + flowtyKeyMatches + " full=" + flowtyFullMatches + " nameSeries=" + flowtyNameSeriesMatches + " nameBase=" + flowtyNameBaseMatches + ") badge_matches=" + badgeMatches + " skipped_no_uuid=" + skippedNoUuid + " skipped_no_data=" + (unmatchedEditions.length - badgeMatches))
+  const totalFlowtyMatches = flowtyKeyMatches + flowtyTierMatches + flowtyFullMatches + flowtyNameSeriesMatches + flowtyNameBaseMatches
+  console.log("[wallet-enrich] rows_to_write=" + upsertRows.length + " flowty_matches=" + totalFlowtyMatches + " (key=" + flowtyKeyMatches + " tier=" + flowtyTierMatches + " full=" + flowtyFullMatches + " nameSeries=" + flowtyNameSeriesMatches + " nameBase=" + flowtyNameBaseMatches + ") badge_matches=" + badgeMatches + " skipped_no_uuid=" + skippedNoUuid + " skipped_no_data=" + (unmatchedEditions.length - badgeMatches))
   if (totalFlowtyMatches === 0) {
     console.log("[wallet-enrich] WARNING: zero Flowty matches. page0 status=" + (flowtyDebug.pageDebug[0]?.httpStatus ?? "null") + " items=" + (flowtyDebug.pageDebug[0]?.itemCount ?? 0) + " error=" + (flowtyDebug.pageDebug[0]?.error ?? "none"))
   }
@@ -811,8 +856,21 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Step 7: Update edition tier from Flowty data where currently NULL
+  if (tierUpdateRows.length > 0) {
+    for (const row of tierUpdateRows) {
+      const { error: tierErr } = await (supabaseAdmin as any)
+        .from("editions")
+        .update({ tier: row.tier })
+        .eq("id", row.id)
+        .is("tier", null)
+      if (!tierErr) tierUpdated++
+    }
+    console.log("[wallet-enrich] tier backfill: " + tierUpdated + "/" + tierUpdateRows.length + " editions updated")
+  }
+
   const duration = Date.now() - startTime
-  console.log("[wallet-enrich] DONE: enriched=" + enriched + " written=" + writeSucceeded + " errors=" + writeErrors.length + " duration=" + duration + "ms")
+  console.log("[wallet-enrich] DONE: enriched=" + enriched + " written=" + writeSucceeded + " tierUpdated=" + tierUpdated + " errors=" + writeErrors.length + " duration=" + duration + "ms")
 
   // Summarize Flowty page debug: only include first page rawSample + any error pages
   const flowtyPageSummary = flowtyDebug.pageDebug
@@ -851,6 +909,7 @@ export async function POST(req: NextRequest) {
     unique_editions_found: flowtyByKey.size,
     flowty_name_editions: flowtyByName.size,
     flowty_key_matches: flowtyKeyMatches,
+    flowty_tier_matches: flowtyTierMatches,
     flowty_full_matches: flowtyFullMatches,
     flowty_name_series_matches: flowtyNameSeriesMatches,
     flowty_name_base_matches: flowtyNameBaseMatches,
@@ -864,6 +923,7 @@ export async function POST(req: NextRequest) {
     badge_debug: badgeDebug,
     badge_fallback_matches: badgeMatches,
     unmatched_editions: unmatchedEditions.length - badgeMatches,
+    tier_updated: tierUpdated,
     fmv_rows_written: writeSucceeded,
     rows_built: upsertRows.length,
     write_errors: writeErrors.slice(0, 3),
