@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { topshotGraphql } from "@/lib/topshot"
 
 /**
  * GET /api/collection-moments
@@ -91,13 +92,47 @@ async function fetchMomentMetaFromGql(momentId: string): Promise<{
   }
 }
 
+function isWalletAddress(value: string): boolean {
+  return value.startsWith("0x") && value.length === 18
+}
+
+type UsernameProfileResponse = {
+  getUserProfileByUsername?: {
+    publicInfo?: {
+      flowAddress?: string | null
+    } | null
+  } | null
+}
+
+async function resolveWalletAddress(input: string): Promise<string> {
+  const trimmed = input.trim()
+  if (isWalletAddress(trimmed)) return trimmed
+
+  const cleanedUsername = trimmed.replace(/^@+/, "")
+  const query = `
+    query GetUserProfileByUsername($username: String!) {
+      getUserProfileByUsername(input: { username: $username }) {
+        publicInfo { flowAddress }
+      }
+    }
+  `
+  const data = await topshotGraphql<UsernameProfileResponse>(query, { username: cleanedUsername })
+  const rawWallet = data?.getUserProfileByUsername?.publicInfo?.flowAddress ?? null
+  if (!rawWallet) throw new Error("Could not resolve username to wallet address.")
+  return rawWallet.startsWith("0x") ? rawWallet : `0x${rawWallet}`
+}
+
 export async function GET(req: NextRequest) {
   try {
     const sp = req.nextUrl.searchParams
-    const wallet = sp.get("wallet")
-    if (!wallet) {
+    const walletInput = sp.get("wallet")
+    if (!walletInput) {
       return NextResponse.json({ error: "wallet param required" }, { status: 400 })
     }
+
+    // Resolve username to wallet address if needed
+    const wallet = await resolveWalletAddress(walletInput)
+    console.log("[collection-moments] resolved wallet input %s → %s", walletInput, wallet)
 
     const page = Math.max(1, parseInt(sp.get("page") ?? "1", 10) || 1)
     const limit = Math.min(200, Math.max(1, parseInt(sp.get("limit") ?? "50", 10) || 50))
