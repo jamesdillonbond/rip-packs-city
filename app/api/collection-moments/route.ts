@@ -126,8 +126,8 @@ export async function GET(req: NextRequest) {
   try {
     const sp = req.nextUrl.searchParams
     const walletInput = sp.get("wallet")
-    if (!walletInput) {
-      return NextResponse.json({ error: "wallet param required" }, { status: 400 })
+    if (!walletInput || walletInput.trim() === "") {
+      return NextResponse.json({ message: "wallet parameter is required" }, { status: 400 })
     }
 
     // Resolve username to wallet address if needed
