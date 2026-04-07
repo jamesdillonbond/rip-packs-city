@@ -265,6 +265,7 @@ export async function GET(req: NextRequest) {
       page,
       limit,
       total_pages: Math.ceil(totalCount / limit),
+      wallet,
     })
   } catch (err) {
     console.log("[collection-moments] error:", err instanceof Error ? err.message : String(err))
