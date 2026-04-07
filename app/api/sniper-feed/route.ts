@@ -869,7 +869,8 @@ async function computeSniperFeed(opts: {
     const circ = l.circulationCount ?? l.setPlay?.circulations?.circulationCount ?? 1000;
 
     const playerNameRaw = l.play?.stats?.playerName ?? l.playerName ?? l.momentTitle ?? "Unknown";
-    const jerseyNumber = jerseyMap.get(playerNameRaw.toLowerCase().trim()) ?? null;
+    const jerseyRaw = jerseyMap.get(playerNameRaw.toLowerCase().trim()) ?? null;
+    const jerseyNumber = jerseyRaw !== null ? Number(jerseyRaw) || null : null;
     const { mult: serialMult, signal: serialSignal, isSpecial: isSpecialSerial } =
       serialMultiplier(serial, circ, jerseyNumber);
     const isJersey = jerseyNumber !== null && serial === jerseyNumber;
@@ -979,7 +980,8 @@ async function computeSniperFeed(opts: {
 
     const serial = item.serial;
     const circ = item.circulationCount;
-    const jerseyNumber = jerseyMap.get(item.playerName.toLowerCase().trim()) ?? null;
+    const jerseyRaw2 = jerseyMap.get(item.playerName.toLowerCase().trim()) ?? null;
+    const jerseyNumber = jerseyRaw2 !== null ? Number(jerseyRaw2) || null : null;
     const { mult: serialMult, signal: serialSignal, isSpecial: isSpecialSerial } =
       serialMultiplier(serial, circ > 0 ? circ : 99999, jerseyNumber);
     const isJersey = jerseyNumber !== null && serial === jerseyNumber;
