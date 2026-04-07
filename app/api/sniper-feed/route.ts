@@ -881,9 +881,8 @@ async function computeSniperFeed(opts: {
     }
 
     const adjustedFmv = baseFmv * serialMult;
-    const discount = askPrice >= adjustedFmv
-      ? 0
-      : Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10;
+    if (askPrice >= adjustedFmv) continue;
+    const discount = Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10;
     if (discount < minDiscount) continue;
 
     const thumbnailUrl = l.assetPathPrefix
@@ -1005,9 +1004,8 @@ async function computeSniperFeed(opts: {
     }
 
     const adjustedFmv = baseFmv * serialMult;
-    const discount = askPrice >= adjustedFmv
-      ? 0
-      : Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10;
+    if (askPrice >= adjustedFmv) continue;
+    const discount = Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10;
 
     // For ask-price fallback deals (discount=0), only include if minDiscount is 0
     if (confidenceSource === "ask_fallback" && minDiscount > 0) continue;

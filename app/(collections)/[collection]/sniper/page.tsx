@@ -566,10 +566,17 @@ export default function SniperPage() {
     try {
       const cached = sessionStorage.getItem(`rpc_owned_${connectedWallet}`);
       if (cached) {
-        const ids: string[] = JSON.parse(cached);
-        const newSet = new Set(ids);
-        console.log(`[Sniper] connectedWallet=${connectedWallet} ownedIds.size=${newSet.size}`);
-        setOwnedIds(newSet);
+        const parsed = JSON.parse(cached);
+        const ids: string[] = Array.isArray(parsed) ? parsed : parsed.ids ?? [];
+        const cachedAt: number = parsed.cachedAt ?? 0;
+        if (cachedAt && Date.now() - cachedAt > 10 * 60 * 1000) {
+          sessionStorage.removeItem(`rpc_owned_${connectedWallet}`);
+          console.log(`[Sniper] connectedWallet=${connectedWallet} ownedIds cache stale, clearing`);
+        } else {
+          const newSet = new Set(ids);
+          console.log(`[Sniper] connectedWallet=${connectedWallet} ownedIds.size=${newSet.size}`);
+          setOwnedIds(newSet);
+        }
       } else {
         console.log(`[Sniper] connectedWallet=${connectedWallet} ownedIds.size=0 (no cache)`);
       }
@@ -585,7 +592,7 @@ export default function SniperPage() {
     async function loadEditionStats() {
       try {
         // Load all wallet moments to build edition stats
-        const allRows: Array<{ editionKey?: string; isLocked?: boolean; locked?: boolean }> = [];
+        const allRows: Array<{ editionKey?: string; isLocked?: boolean; locked?: boolean; momentId?: string; flowId?: string }> = [];
         let offset = 0;
         const limit = 50;
         let remaining = 1; // start with 1 to enter loop
@@ -619,6 +626,18 @@ export default function SniperPage() {
         }
         console.log(`[Sniper] editionStats built: ${statsMap.size} editions tracked for wallet ${connectedWallet}`);
         setEditionStats(statsMap);
+
+        // Cache owned moment IDs with TTL
+        const newIds = new Set<string>();
+        for (const row of allRows) {
+          if (row.momentId) newIds.add(String(row.momentId));
+          if (row.flowId) newIds.add(String(row.flowId));
+        }
+        setOwnedIds(newIds);
+        try {
+          sessionStorage.setItem(`rpc_owned_${connectedWallet}`, JSON.stringify({ ids: Array.from(newIds), cachedAt: Date.now() }));
+        } catch {}
+        console.log(`[Sniper] ownedIds cached: ${newIds.size} IDs for wallet ${connectedWallet}`);
       } catch {}
     }
     loadEditionStats();
@@ -815,7 +834,7 @@ export default function SniperPage() {
   return (
     <div className="rpc-binder-bg" style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
       {/* ── Header ── */}
-      <div style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-black)", padding: "16px" }}>
+      <div style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-black)", padding: "16px", width: "100%", boxSizing: "border-box", overflowX: "hidden" }}>
         <div style={{ maxWidth: "var(--max-width)", margin: "0 auto" }}>
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -1134,7 +1153,7 @@ export default function SniperPage() {
       </div>
 
       {/* Table */}
-      <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "16px" }}>
+      <div style={{ maxWidth: "100vw", margin: "0 auto", padding: "16px" }}>
         {error && (
           <div className="rpc-hud" style={{ marginBottom: 16, borderColor: "var(--rpc-danger)", color: "var(--rpc-danger)", fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)" }}>
             FEED ERROR: {error}
