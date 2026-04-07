@@ -142,19 +142,15 @@ export async function PATCH(req: NextRequest) {
       .update(updatePayload)
       .eq("owner_key", ownerKey)
       .eq("wallet_address", walletAddr)
-      .select()
-      .maybeSingle();
+      .select();
 
     if (error) {
       console.error("[saved-wallets PATCH]", error.message, error.details, error.hint);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    if (!data) {
-      return NextResponse.json(
-        { error: "Could not find saved wallet for the given ownerKey and walletAddr. Save the wallet first via POST." },
-        { status: 400 }
-      );
+    if (!data || data.length === 0) {
+      return NextResponse.json({ ok: true, skipped: true });
     }
 
     // Fire-and-forget: aggregate all wallets and write a daily portfolio snapshot
@@ -162,7 +158,7 @@ export async function PATCH(req: NextRequest) {
       console.error("[portfolio-snapshot write]", err);
     });
 
-    return NextResponse.json({ wallet: data });
+    return NextResponse.json({ wallet: data[0] });
   } catch (err: any) {
     console.error("[saved-wallets PATCH] error:", err?.message, err?.stack);
     return NextResponse.json({ error: "Failed to update saved wallet" }, { status: 500 });
