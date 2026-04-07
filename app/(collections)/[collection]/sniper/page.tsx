@@ -2,7 +2,7 @@
 import OffersTab from "@/components/sniper/OffersTab"
 import React from "react";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { useCart } from "@/lib/cart/CartContext";
 import { getCollection } from "@/lib/collections";
@@ -493,6 +493,7 @@ export default function SniperPage() {
   const [offerDurationDays, setOfferDurationDays] = useState(30);
   const [search, setSearch] = useState("");
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(false);
+  const [ownedFilter, setOwnedFilter] = useState<"all" | "owned" | "not-owned">("all");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [editionStats, setEditionStats] = useState<Map<string, { owned: number; locked: number }>>(new Map());
   const editionStatsFetchedRef = useRef<string | null>(null);
@@ -803,6 +804,17 @@ export default function SniperPage() {
     }
   }
 
+  const ownedCountByEdition = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const deal of data?.deals ?? []) {
+      if (ownedIds.has(deal.flowId)) {
+        const key = deal.editionKey || deal.momentId;
+        m.set(key, (m.get(key) ?? 0) + 1);
+      }
+    }
+    return m;
+  }, [data?.deals, ownedIds]);
+
   const visibleDeals = (data?.deals ?? []).filter((d) => {
     if (d.discount < 0) return false;
     if (search) {
@@ -814,6 +826,8 @@ export default function SniperPage() {
       ) return false;
     }
     if (showVerifiedOnly && d.confidenceSource === "ask_fallback") return false;
+    if (ownedFilter === "owned" && !ownedIds.has(d.flowId)) return false;
+    if (ownedFilter === "not-owned" && ownedIds.has(d.flowId)) return false;
     return true;
   });
 
@@ -1053,6 +1067,23 @@ export default function SniperPage() {
                 VERIFIED FMV ONLY
               </span>
             </label>
+            {connectedWallet && (
+              <select
+                value={ownedFilter}
+                onChange={(e) => setOwnedFilter(e.target.value as "all" | "owned" | "not-owned")}
+                className="rpc-chip"
+                title="Filter by whether you own this edition"
+                style={{
+                  background: ownedFilter !== "all" ? "rgba(0,232,130,0.10)" : undefined,
+                  borderColor: ownedFilter !== "all" ? "rgba(0,232,130,0.40)" : undefined,
+                  color: ownedFilter !== "all" ? "#00e882" : undefined,
+                }}
+              >
+                <option value="all">ALL</option>
+                <option value="not-owned">NOT OWNED</option>
+                <option value="owned">OWNED</option>
+              </select>
+            )}
             <button
               onClick={() => setFlowWalletOnly((v) => !v)}
               className={`rpc-chip ${flowWalletOnly ? "active" : ""}`}
@@ -1295,6 +1326,23 @@ export default function SniperPage() {
                           </>
                         )}
                       </div>
+                      {connectedWallet && (ownedCountByEdition.get(deal.editionKey || deal.momentId) ?? 0) > 0 && (
+                        <div className="mt-1">
+                          <span
+                            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5"
+                            style={{
+                              fontSize: "var(--text-xs)",
+                              fontFamily: "var(--font-mono)",
+                              fontWeight: 600,
+                              background: "rgba(0,232,130,0.12)",
+                              border: "1px solid rgba(0,232,130,0.40)",
+                              color: "#00e882",
+                            }}
+                          >
+                            You own {ownedCountByEdition.get(deal.editionKey || deal.momentId)}
+                          </span>
+                        </div>
+                      )}
                       {deal.hasBadge && deal.badgeSlugs.length > 0 && (
                         <BadgePills slugs={deal.badgeSlugs} />
                       )}
