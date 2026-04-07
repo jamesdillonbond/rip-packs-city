@@ -899,6 +899,16 @@ async function computeSniperFeed(opts: {
       ? `${l.assetPathPrefix}Hero_Black_2880_2880.jpg`
       : `https://assets.nbatopshot.com/media/${l.id}?width=256`;
 
+    // Cross-listed Flowty detection: Top Shot marketplace enforces a $1 minimum
+    // for direct listings, so anything under $1 in the GQL feed is a Flowty mirror.
+    const isFlowtyCrossList = askPrice < 1.00;
+    const tsListingResourceId = l.listingOrderID ?? l.storefrontListingID ?? null;
+    const tsBuyUrl = isFlowtyCrossList
+      ? `https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/NFT/${l.id}?listingResourceID=${tsListingResourceId ?? ""}`
+      : (l.set?.flowId && l.play?.flowID
+          ? `https://nbatopshot.com/marketplace/editions/${l.set.flowId}/${l.play.flowID}${parallelId > 0 ? `/${parallelId}` : ''}`
+          : `https://nbatopshot.com/moment/${l.id}`);
+
     tsDeals.push({
       flowId: String(l.id),
       momentId: String(l.id),
@@ -936,11 +946,11 @@ async function computeSniperFeed(opts: {
       packName: fmvRow.packName,
       packEv: null,
       packEvRatio: null,
-      buyUrl: l.set?.flowId && l.play?.flowID ? `https://nbatopshot.com/marketplace/editions/${l.set.flowId}/${l.play.flowID}${parallelId > 0 ? `/${parallelId}` : ''}` : `https://nbatopshot.com/moment/${l.id}`,
-      listingResourceID: l.listingOrderID ?? l.storefrontListingID ?? null,
+      buyUrl: tsBuyUrl,
+      listingResourceID: tsListingResourceId,
       listingOrderID: l.listingOrderID ?? null,
       storefrontAddress: l.sellerAddress ?? null,
-      source: "topshot",
+      source: isFlowtyCrossList ? "flowty" : "topshot",
       paymentToken: "DUC",
       offerAmount: null,
       offerFmvPct: null,

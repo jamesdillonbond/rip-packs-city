@@ -549,6 +549,7 @@ export default function SniperPage() {
         if (cached) {
           const parsed = JSON.parse(cached);
           const ids: string[] = Array.isArray(parsed) ? parsed : parsed.ids ?? [];
+          console.log(`[sniper] ownedIds loaded: ${ids.length} ids, sample: ${JSON.stringify(ids.slice(0, 3))}`);
           setOwnedIds(new Set(ids));
         }
       }
@@ -1391,7 +1392,7 @@ export default function SniperPage() {
                             <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em", marginBottom: 4 }}>
                               {depthDeals.length} OTHER LISTING{depthDeals.length !== 1 ? "S" : ""} FOR {deal.playerName} — {deal.setName}
                             </div>
-                            {depthDeals.map((dd) => (
+                            {[...depthDeals].sort((a, b) => a.askPrice - b.askPrice).map((dd) => (
                               <div key={dd.flowId} className="flex items-center gap-4" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", padding: "4px 0" }}>
                                 <span style={{ color: "var(--rpc-text-secondary)", minWidth: 60 }}>#{dd.serial}</span>
                                 <span style={{ color: "var(--rpc-text-primary)", fontWeight: 600, minWidth: 70 }}>${fmt(dd.askPrice)}</span>
