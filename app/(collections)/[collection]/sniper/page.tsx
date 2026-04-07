@@ -1095,7 +1095,7 @@ export default function SniperPage() {
                 <svg width="10" height="12" viewBox="0 0 10 12" fill="none" style={{ flexShrink: 0 }}>
                   <path d="M6 0L0 7h4l-1 5 7-7H6l1-5z" fill="currentColor" />
                 </svg>
-                FLOW WALLET
+                CONNECT WALLET
               </span>
             </button>
             <button
