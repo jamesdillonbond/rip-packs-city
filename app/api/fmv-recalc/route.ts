@@ -255,6 +255,25 @@ export async function POST(req: NextRequest) {
     const editionIds = [...editionSalesMap.keys()]
     console.log(`[FMV-RECALC] Processing ${editionIds.length} distinct editions`)
 
+    // ── Step 2a-bis: Fetch tier + circulation_count for the sanity guard ─────
+    // Used downstream to skip anomalous high-priced single-sale snapshots on
+    // common editions while preserving legitimate Legendary/Ultimate FMVs.
+    const editionMetaById = new Map<string, { tier: string | null; circulationCount: number | null }>()
+    try {
+      const { data: edMetaRows } = await supabaseAdmin
+        .from("editions")
+        .select("id, tier, circulation_count")
+        .in("id", editionIds)
+      for (const row of edMetaRows ?? []) {
+        editionMetaById.set(String((row as any).id), {
+          tier: (row as any).tier ?? null,
+          circulationCount: (row as any).circulation_count ?? null,
+        })
+      }
+    } catch (err) {
+      console.warn("[FMV-RECALC] Edition meta fetch failed (non-fatal):", err instanceof Error ? err.message : err)
+    }
+
     // ── Step 2b: Fetch Flowty LiveToken FMVs from cached_listings ────────────
     // cached_listings.fmv contains valuations.blended.usdValue from Flowty's
     // LiveToken feed. We average per edition (multiple listings may exist).
@@ -423,12 +442,15 @@ export async function POST(req: NextRequest) {
 
       // Sanity guard: a single anomalous high-priced sale (e.g. a stale wallet
       // seed or one-off transaction) can produce a wildly inflated LOW
-      // confidence snapshot. Skip these to avoid poisoning common editions.
-      // Threshold is intentionally high so legitimate Legendary/Ultimate
-      // single-sale FMVs are not affected.
-      if (fmv > 500 && confidence === "LOW" && sales.length === 1) {
+      // confidence snapshot. Skip these for common-tier editions only — a
+      // $500+ single-sale price is plausible for Legendary/Ultimate but
+      // suspicious on a Common or Fandom edition.
+      const edMeta = editionMetaById.get(editionId)
+      const tierUpper = (edMeta?.tier ?? "").toUpperCase()
+      const isCommonish = !tierUpper || tierUpper === "COMMON" || tierUpper === "FANDOM"
+      if (fmv > 500 && confidence === "LOW" && sales.length === 1 && isCommonish) {
         console.warn(
-          `[FMV-RECALC] Skipping anomalous LOW snapshot — editionId=${editionId} fmv=${fmv.toFixed(2)} (single-sale guard)`
+          `[FMV-RECALC] Skipping anomalous LOW snapshot — editionId=${editionId} fmv=${fmv.toFixed(2)} tier=${tierUpper || "unknown"} (single-sale common guard)`
         )
         continue
       }
