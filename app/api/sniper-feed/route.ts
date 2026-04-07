@@ -545,7 +545,8 @@ async function fetchAllFlowtyListings(): Promise<FlowtyListing[]> {
 
 interface BadgeRow {
   player_name: string;
-  badge_type: string;
+  play_tags: Array<{ id: string; title: string }> | null;
+  set_play_tags: Array<{ id: string; title: string }> | null;
 }
 
 async function fetchBadgesByPlayers(
@@ -556,7 +557,7 @@ async function fetchBadgesByPlayers(
 
   const { data, error } = await (supabase as any)
     .from("badge_editions")
-    .select("player_name, badge_type");
+    .select("player_name, play_tags, set_play_tags");
 
   if (error) {
     console.error(`[sniper-feed] badge_editions fetch error: ${error.message}`);
@@ -566,12 +567,15 @@ async function fetchBadgesByPlayers(
   const rows = (data ?? []) as BadgeRow[];
   console.log(`[sniper-feed] badge_editions total rows: ${rows.length}`);
 
-  // Build normalized lookup: lowercased player_name -> badge_type[]
+  // Build normalized lookup: lowercased player_name -> badge titles[]
   const allBadges = new Map<string, string[]>();
   for (const row of rows) {
     const key = row.player_name.toLowerCase().trim();
     if (!allBadges.has(key)) allBadges.set(key, []);
-    allBadges.get(key)!.push(row.badge_type);
+    const tags = [...(row.play_tags ?? []), ...(row.set_play_tags ?? [])];
+    for (const tag of tags) {
+      if (tag?.title) allBadges.get(key)!.push(tag.title);
+    }
   }
 
   // Match against the player names we care about
