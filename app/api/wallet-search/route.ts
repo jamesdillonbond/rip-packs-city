@@ -46,6 +46,7 @@ type WalletRow = {
 
 type WalletSearchResponse = {
   rows: WalletRow[]
+  walletAddress?: string
   summary: {
     totalMoments: number
     returnedMoments: number
@@ -855,6 +856,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       rows,
+      walletAddress: wallet,
       summary: {
         totalMoments: ids.length,
         returnedMoments: rows.length,
