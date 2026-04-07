@@ -6,7 +6,6 @@ import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { useCart } from "@/lib/cart/CartContext";
 import { getCollection } from "@/lib/collections";
-import { getOwnerKey } from "@/lib/owner-key";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const COMMISSION_RECIPIENT = "0xc1e4f4f4c4257510";
@@ -294,14 +293,12 @@ function ShareButton({ deal }: { deal: SniperDeal }) {
 function ActionCell({
   deal,
   ownedIds,
-  connectedWallet,
   accent,
   offerMode,
   offerDurationDays,
 }: {
   deal: SniperDeal;
   ownedIds: Set<string>;
-  connectedWallet: string | null;
   accent: string;
   offerMode: boolean;
   offerDurationDays: number;
@@ -365,7 +362,7 @@ function ActionCell({
   }
 
   function handleBuy() {
-    trackClick(deal, connectedWallet);
+    trackClick(deal, null);
   }
 
   if (isOwned) {
@@ -479,7 +476,7 @@ export default function SniperPage() {
   const [countdown, setCountdown] = useState(REFRESH_INTERVAL);
   const [paused, setPaused] = useState(false);
 
-  const [connectedWallet, setConnectedWallet] = useState<string | null>(null);
+  const [ownerKey, setOwnerKey] = useState<string | null>(null);
   const [ownedIds, setOwnedIds] = useState<Set<string>>(new Set());
 
   const [tierTab, setTierTab] = useState<TierTab>("all");
@@ -496,7 +493,6 @@ export default function SniperPage() {
   const [ownedFilter, setOwnedFilter] = useState<"all" | "owned" | "not-owned">("all");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [editionStats, setEditionStats] = useState<Map<string, { owned: number; locked: number }>>(new Map());
-  const editionStatsFetchedRef = useRef<string | null>(null);
 
   // ── Task 10: Tab visibility pause/resume
   const [tabHidden, setTabHidden] = useState(false);
@@ -542,108 +538,22 @@ export default function SniperPage() {
 
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Auto-load owned IDs from localStorage owner key on mount
   useEffect(() => {
-    let cancelled = false;
-    import("@onflow/fcl")
-      .then((fcl) => {
-        fcl.currentUser.subscribe((user: { addr?: string | null }) => {
-          if (!cancelled) setConnectedWallet(user?.addr ?? null);
-        });
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
-
-  // Fall back to owner key if FCL wallet isn't connected
-  useEffect(() => {
-    if (!connectedWallet) {
-      const key = getOwnerKey();
-      if (key) setConnectedWallet(key);
-    }
-  }, [connectedWallet]);
-
-  useEffect(() => {
-    if (!connectedWallet) { setOwnedIds(new Set()); return; }
     try {
-      const cached = sessionStorage.getItem(`rpc_owned_${connectedWallet}`);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        const ids: string[] = Array.isArray(parsed) ? parsed : parsed.ids ?? [];
-        const cachedAt: number = parsed.cachedAt ?? 0;
-        if (cachedAt && Date.now() - cachedAt > 10 * 60 * 1000) {
-          sessionStorage.removeItem(`rpc_owned_${connectedWallet}`);
-          console.log(`[Sniper] connectedWallet=${connectedWallet} ownedIds cache stale, clearing`);
-        } else {
-          const newSet = new Set(ids);
-          console.log(`[Sniper] connectedWallet=${connectedWallet} ownedIds.size=${newSet.size}`);
-          setOwnedIds(newSet);
+      const key = localStorage.getItem("rpc_owner_key");
+      if (!key) return;
+      setOwnerKey(key);
+      if (key.startsWith("0x")) {
+        const cached = localStorage.getItem(`rpc_owned_${key}`);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          const ids: string[] = Array.isArray(parsed) ? parsed : parsed.ids ?? [];
+          setOwnedIds(new Set(ids));
         }
-      } else {
-        console.log(`[Sniper] connectedWallet=${connectedWallet} ownedIds.size=0 (no cache)`);
       }
     } catch {}
-  }, [connectedWallet]);
-
-  // Fetch edition-level owned/locked stats for the connected wallet
-  useEffect(() => {
-    if (!connectedWallet || editionStatsFetchedRef.current === connectedWallet) return;
-    editionStatsFetchedRef.current = connectedWallet;
-    let cancelled = false;
-
-    async function loadEditionStats() {
-      try {
-        // Load all wallet moments to build edition stats
-        const allRows: Array<{ editionKey?: string; isLocked?: boolean; locked?: boolean; momentId?: string; flowId?: string }> = [];
-        let offset = 0;
-        const limit = 50;
-        let remaining = 1; // start with 1 to enter loop
-
-        for (let page = 0; page < 10 && remaining > 0; page++) {
-          const res = await fetch("/api/wallet-search", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ input: connectedWallet, offset, limit }),
-          });
-          if (!res.ok || cancelled) break;
-          const json = await res.json();
-          const rows = json.rows ?? [];
-          allRows.push(...rows);
-          remaining = json.summary?.remainingMoments ?? 0;
-          offset += rows.length;
-          if (rows.length === 0) break;
-        }
-
-        if (cancelled) return;
-
-        // Build edition stats map
-        const statsMap = new Map<string, { owned: number; locked: number }>();
-        for (const row of allRows) {
-          const key = row.editionKey ?? "";
-          if (!key) continue;
-          const current = statsMap.get(key) ?? { owned: 0, locked: 0 };
-          current.owned += 1;
-          if (row.isLocked || row.locked) current.locked += 1;
-          statsMap.set(key, current);
-        }
-        console.log(`[Sniper] editionStats built: ${statsMap.size} editions tracked for wallet ${connectedWallet}`);
-        setEditionStats(statsMap);
-
-        // Cache owned moment IDs with TTL
-        const newIds = new Set<string>();
-        for (const row of allRows) {
-          if (row.momentId) newIds.add(String(row.momentId));
-          if (row.flowId) newIds.add(String(row.flowId));
-        }
-        setOwnedIds(newIds);
-        try {
-          sessionStorage.setItem(`rpc_owned_${connectedWallet}`, JSON.stringify({ ids: Array.from(newIds), cachedAt: Date.now() }));
-        } catch {}
-        console.log(`[Sniper] ownedIds cached: ${newIds.size} IDs for wallet ${connectedWallet}`);
-      } catch {}
-    }
-    loadEditionStats();
-    return () => { cancelled = true; };
-  }, [connectedWallet]);
+  }, []);
 
   const buildFeedUrl = useCallback(() => {
     const params = new URLSearchParams();
@@ -899,9 +809,9 @@ export default function SniperPage() {
               <button
                 onClick={() => {
                   setShowSuggestions((v) => !v);
-                  if (!showSuggestions && connectedWallet) {
+                  if (!showSuggestions && ownerKey) {
                     setSuggestionsLoading(true);
-                    fetch(`/api/collection-snapshot?wallet=${encodeURIComponent(connectedWallet)}`)
+                    fetch(`/api/collection-snapshot?wallet=${encodeURIComponent(ownerKey)}`)
                       .then((r) => r.ok ? r.json() : null)
                       .then((snapshot) => {
                         if (!snapshot?.topMoments || !data?.deals) { setSuggestionsLoading(false); return; }
@@ -1067,7 +977,7 @@ export default function SniperPage() {
                 VERIFIED FMV ONLY
               </span>
             </label>
-            {connectedWallet && (
+            {ownedIds.size > 0 && (
               <select
                 value={ownedFilter}
                 onChange={(e) => setOwnedFilter(e.target.value as "all" | "owned" | "not-owned")}
@@ -1084,20 +994,6 @@ export default function SniperPage() {
                 <option value="owned">OWNED</option>
               </select>
             )}
-            <button
-              onClick={() => setFlowWalletOnly((v) => !v)}
-              className={`rpc-chip ${flowWalletOnly ? "active" : ""}`}
-              title="FLOW &amp; USDC.e listings only — no Dapper Wallet needed."
-              style={flowWalletOnly ? { background: "rgba(0,232,130,0.10)", borderColor: "rgba(0,232,130,0.40)", color: "#00e882" } : {}}
-            >
-              <span className="inline-flex items-center gap-1.5">
-                {/* Flow logo — lightning bolt */}
-                <svg width="10" height="12" viewBox="0 0 10 12" fill="none" style={{ flexShrink: 0 }}>
-                  <path d="M6 0L0 7h4l-1 5 7-7H6l1-5z" fill="currentColor" />
-                </svg>
-                CONNECT WALLET
-              </span>
-            </button>
             <button
               onClick={() => setOfferMode((v) => !v)}
               className={`rpc-chip ${offerMode ? "active" : ""}`}
@@ -1170,7 +1066,7 @@ export default function SniperPage() {
             <span><span style={{ color: "#c084fc", fontWeight: 600 }}>{stats.special}</span> special serials</span>
           )}
           <span>avg <span style={{ color: "var(--rpc-text-primary)", fontWeight: 600 }}>{fmt(stats.avgDiscount, 1)}%</span> off</span>
-          {connectedWallet && ownedIds.size > 0 && (
+          {ownedIds.size > 0 && (
             <span style={{ color: "var(--rpc-text-ghost)" }}>{ownedIds.size} owned moments tracked</span>
           )}
           {data?.lastRefreshed && (
@@ -1326,7 +1222,7 @@ export default function SniperPage() {
                           </>
                         )}
                       </div>
-                      {connectedWallet && (ownedCountByEdition.get(deal.editionKey || deal.momentId) ?? 0) > 0 && (
+                      {(ownedCountByEdition.get(deal.editionKey || deal.momentId) ?? 0) > 0 && (
                         <div className="mt-1">
                           <span
                             className="inline-flex items-center gap-1 rounded-full px-2 py-0.5"
@@ -1412,7 +1308,7 @@ export default function SniperPage() {
                     {/* Own / Lock */}
                     <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>
                       {(() => {
-                        if (!connectedWallet) return "—";
+                        if (ownedIds.size === 0) return "—";
                         // Use edition-level stats (editionKey match) for accurate own/lock counts
                         const eStats = editionStats.get(deal.editionKey);
                         if (eStats && eStats.owned > 0) {
@@ -1471,7 +1367,6 @@ export default function SniperPage() {
                       <ActionCell
                         deal={deal}
                         ownedIds={ownedIds}
-                        connectedWallet={connectedWallet}
                         accent={accent}
                         offerMode={offerMode}
                         offerDurationDays={offerDurationDays}
@@ -1550,7 +1445,7 @@ export default function SniperPage() {
             <span className="rpc-heading" style={{ fontSize: "var(--text-lg)" }}>Listing Suggestions</span>
             <button onClick={() => setShowSuggestions(false)} className="rpc-chip" style={{ padding: "4px 10px" }}>✕</button>
           </div>
-          {!connectedWallet ? (
+          {!ownerKey ? (
             <div className="rpc-mono" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-sm)" }}>
               Load your wallet to see listing suggestions
             </div>
