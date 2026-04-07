@@ -817,12 +817,28 @@ async function computeSniperFeed(opts: {
   ]));
 
   // 4. Fire all Supabase lookups in parallel (including jersey numbers + retired moments)
+  console.log("[sniper-feed] starting parallel lookups");
   const [fmvMap, badgeMap, offerMap, jerseyMap, retiredResult] = await Promise.all([
-    fetchFmvBatch(supabase, Array.from(tsEditionKeys)),
-    fetchBadgesByPlayers(supabase, allPlayerNames),
-    fetchOpenOffers().catch(() => new Map<string, { amount: number; fmv: number | null }>()),
-    fetchJerseyNumbers(supabase, allPlayerNames),
-    (supabase as any).from("moments").select("nft_id").eq("retired", true),
+    fetchFmvBatch(supabase, Array.from(tsEditionKeys)).catch((err: any) => {
+      console.error("[sniper-feed] fmvBatch failed", err?.message);
+      return new Map<string, any>();
+    }),
+    fetchBadgesByPlayers(supabase, allPlayerNames).catch((err: any) => {
+      console.error("[sniper-feed] badgeMap failed", err?.message);
+      return new Map<string, string[]>();
+    }),
+    fetchOpenOffers().catch((err: any) => {
+      console.error("[sniper-feed] offerMap failed", err?.message);
+      return new Map<string, { amount: number; fmv: number | null }>();
+    }),
+    fetchJerseyNumbers(supabase, allPlayerNames).catch((err: any) => {
+      console.error("[sniper-feed] jerseyMap failed", err?.message);
+      return new Map<string, string>();
+    }),
+    (supabase as any).from("moments").select("nft_id").eq("retired", true).then((res: any) => res).catch((err: any) => {
+      console.error("[sniper-feed] retiredIds failed", err?.message);
+      return { data: [] };
+    }),
   ]);
   const retiredIds = new Set<string>(
     (retiredResult?.data ?? []).map((r: { nft_id: string }) => String(r.nft_id))
