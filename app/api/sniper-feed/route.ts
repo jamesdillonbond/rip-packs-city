@@ -772,7 +772,7 @@ export async function GET(req: Request) {
       headers: { "Cache-Control": "public, max-age=0, s-maxage=25, stale-while-revalidate=60" },
     });
   } catch (err: any) {
-    console.error("[sniper-feed] unhandled error:", err?.message);
+    console.error("[sniper-feed] unhandled error:", err?.message, err instanceof Error ? err.stack : String(err));
     return NextResponse.json({ error: "Feed unavailable", deals: [], count: 0 }, { status: 500 });
   }
 }
