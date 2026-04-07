@@ -681,7 +681,17 @@ export default function SniperPage() {
       const res = await fetch(`${feedEndpoint}?editionKey=${encodeURIComponent(deal.editionKey)}&limit=20`, { cache: "no-store" });
       if (res.ok) {
         const json = await res.json();
-        setDepthDeals((json.deals ?? []).filter((d: SniperDeal) => d.flowId !== deal.flowId));
+        // Group by full edition key: player + set + series + parallelId.
+        // This guarantees that different editions of the same player (e.g.
+        // Base vs Metallic Gold LE, or different sets) never bleed together.
+        const groupKey = `${deal.playerName}|${deal.setName}|${deal.seriesName}|${deal.parallelId}`;
+        setDepthDeals(
+          (json.deals ?? []).filter(
+            (d: SniperDeal) =>
+              d.flowId !== deal.flowId &&
+              `${d.playerName}|${d.setName}|${d.seriesName}|${d.parallelId}` === groupKey
+          )
+        );
       }
     } catch {}
     setDepthLoading(false);
@@ -1210,11 +1220,22 @@ export default function SniperPage() {
                         <span className={deal.tier.toUpperCase() === "LEGENDARY" ? "rpc-tier-glow-legendary" : deal.tier.toUpperCase() === "ULTIMATE" ? "rpc-tier-glow-ultimate" : deal.tier.toUpperCase() === "RARE" ? "rpc-tier-glow-rare" : ""} style={{ color: tierColor(deal.tier), fontWeight: 600 }}>
                           {deal.tier.charAt(0) + deal.tier.slice(1).toLowerCase()}
                         </span>
-                        {deal.parallel !== "Base" && (
-                          <span style={{ color: "var(--rpc-text-muted)" }}>{deal.parallel}</span>
-                        )}
                         <span style={{ color: "var(--rpc-text-ghost)" }}>·</span>
                         <span style={{ color: "var(--rpc-text-muted)" }}>{deal.setName}</span>
+                        {deal.parallel && deal.parallel !== "Base" && (
+                          <span
+                            style={{
+                              color: "#c084fc",
+                              fontWeight: 600,
+                              border: "1px solid rgba(192,132,252,0.4)",
+                              background: "rgba(192,132,252,0.10)",
+                              borderRadius: 3,
+                              padding: "0 4px",
+                            }}
+                          >
+                            {deal.parallel}
+                          </span>
+                        )}
                         {deal.seriesName && (
                           <>
                             <span style={{ color: "var(--rpc-text-ghost)" }}>·</span>
