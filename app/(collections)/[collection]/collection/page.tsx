@@ -747,6 +747,16 @@ export default function WalletPage() {
     const moments: ServerMoment[] = json.moments ?? []
     const momentRows = moments.map(serverMomentToRow)
 
+    // Sync rpc_owner_key to the resolved 0x address so the sniper page can
+    // find this wallet's owned IDs automatically (especially for username searches).
+    try {
+      const resolved: string | undefined = json.wallet
+      if (resolved && resolved.startsWith("0x")) {
+        const current = localStorage.getItem("rpc_owner_key")
+        if (current !== resolved) localStorage.setItem("rpc_owner_key", resolved)
+      }
+    } catch {}
+
     // Enrich with badges, then FMV via batch API
     const withBadges = await enrichWithBadges(momentRows)
     const withFmv = await enrichFmv(withBadges)
