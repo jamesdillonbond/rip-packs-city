@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { getOwnerKey } from "@/lib/owner-key";
+import { getOwnerKey, setOwnerKey } from "@/lib/owner-key";
 
 const TEN_MINUTES_MS = 10 * 60 * 1000;
 
@@ -40,6 +40,13 @@ export default function WalletPreloader() {
           typeof json?.walletAddress === "string" && json.walletAddress.length > 0
             ? json.walletAddress
             : ownerKey;
+
+        // Normalize rpc_owner_key to the resolved 0x address so any consumer
+        // (sniper page, etc.) reads `rpc_owned_${ownerKey}` with the same key
+        // the preloader wrote. Never overwrite an existing 0x address.
+        if (resolvedAddress.startsWith("0x") && !ownerKey.startsWith("0x")) {
+          setOwnerKey(resolvedAddress);
+        }
 
         localStorage.setItem(`rpc_owned_${resolvedAddress}`, JSON.stringify(flowIds));
         localStorage.setItem(`rpc_owned_ts_${resolvedAddress}`, String(Date.now()));
