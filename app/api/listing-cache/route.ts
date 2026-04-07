@@ -104,7 +104,7 @@ function mapFlowtyListing(nft: any): any | null {
       discount: (discount !== null && isFinite(discount)) ? Math.round(discount * 100) / 100 : null,
       confidence: fmvNum ? "HIGH" : null,
       source: "flowty",
-      buy_url: "https://www.flowty.io/listing/" + listingResourceId,
+      buy_url: "https://www.flowty.io/asset/A.0b2a3299cc857e29.TopShot.NFT/" + flowId,
       thumbnail_url: imageUrl,
       badge_slugs: [],
       listing_resource_id: listingResourceId,
