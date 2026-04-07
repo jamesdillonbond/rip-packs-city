@@ -421,6 +421,18 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // Sanity guard: a single anomalous high-priced sale (e.g. a stale wallet
+      // seed or one-off transaction) can produce a wildly inflated LOW
+      // confidence snapshot. Skip these to avoid poisoning common editions.
+      // Threshold is intentionally high so legitimate Legendary/Ultimate
+      // single-sale FMVs are not affected.
+      if (fmv > 500 && confidence === "LOW" && sales.length === 1) {
+        console.warn(
+          `[FMV-RECALC] Skipping anomalous LOW snapshot — editionId=${editionId} fmv=${fmv.toFixed(2)} (single-sale guard)`
+        )
+        continue
+      }
+
       insertRows.push({
         edition_id: editionId,
         collection_id: collectionId,

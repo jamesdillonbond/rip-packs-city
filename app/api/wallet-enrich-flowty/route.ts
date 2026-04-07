@@ -702,20 +702,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (fl) {
-      // FMV = lowest listing price (flowtyAsk is already the lowest for this edition)
-      const fmvUsd = fl.flowtyAsk
-      const confidence = "LOW"
-      upsertRows.push({
-        edition_id: edUuid.id,
-        collection_id: edUuid.collectionId,
-        fmv_usd: fmvUsd,
-        floor_price_usd: fl.flowtyAsk,
-        flowty_ask: fl.flowtyAsk,
-        cross_market_ask: fl.flowtyAsk,
-        confidence,
-        algo_version: "flowty-live",
-        computed_at: new Date().toISOString(),
-      })
+      // FMV snapshot writes removed — fmv_snapshots is owned by the main
+      // fmv-recalc pipeline. Flowty listing prices (LiveToken valuations) are
+      // listing-derived, not sales-derived, and must not be written here.
       enriched++
     } else {
       // Track for badge fallback
@@ -791,17 +780,8 @@ export async function POST(req: NextRequest) {
         if (lowAsk && lowAsk > 0) {
           badgeDebug.withLowAsk++
           badgeMatches++
-          upsertRows.push({
-            edition_id: editionUuidMap.get(ed.externalId)!.id,
-            collection_id: editionUuidMap.get(ed.externalId)!.collectionId,
-            fmv_usd: Number((lowAsk * 0.9).toFixed(2)),
-            floor_price_usd: lowAsk,
-            flowty_ask: null,
-            cross_market_ask: lowAsk,
-            confidence: "LOW",
-            algo_version: "flowty-live",
-            computed_at: new Date().toISOString(),
-          })
+          // FMV snapshot writes removed — badge low_ask is a listing-derived
+          // proxy and must not be written to fmv_snapshots from this route.
           enriched++
         }
       }
@@ -815,47 +795,13 @@ export async function POST(req: NextRequest) {
     console.log("[wallet-enrich] WARNING: zero Flowty matches. page0 status=" + (flowtyDebug.pageDebug[0]?.httpStatus ?? "null") + " items=" + (flowtyDebug.pageDebug[0]?.itemCount ?? 0) + " error=" + (flowtyDebug.pageDebug[0]?.error ?? "none"))
   }
 
-  // Step 6: Delete existing flowty-live rows, then insert new ones (chunks of 50)
-  // Cannot use upsert — fmv_snapshots is partitioned by computed_at, so ON CONFLICT fails.
-  let writeSucceeded = 0
-  let writeErrors: string[] = []
-  const WRITE_CHUNK = 50
-
-  if (upsertRows.length > 0) {
-    // Collect all edition_ids we're about to write
-    const editionIdsToWrite = upsertRows.map(function (r) { return r.edition_id as string })
-
-    // Delete existing flowty-live rows in chunks of 50
-    for (let i = 0; i < editionIdsToWrite.length; i += WRITE_CHUNK) {
-      const idChunk = editionIdsToWrite.slice(i, i + WRITE_CHUNK)
-      const { error: delErr } = await (supabaseAdmin as any)
-        .from("fmv_snapshots")
-        .delete()
-        .in("edition_id", idChunk)
-        .eq("algo_version", "flowty-live")
-      if (delErr) {
-        writeErrors.push("delete chunk " + Math.floor(i / WRITE_CHUNK) + ": " + delErr.message)
-        console.log("[wallet-enrich] delete error chunk " + Math.floor(i / WRITE_CHUNK) + ": " + delErr.message)
-      }
-    }
-    console.log("[wallet-enrich] deleted old flowty-live rows for " + editionIdsToWrite.length + " editions")
-
-    // Insert new rows in chunks of 50
-    for (let i = 0; i < upsertRows.length; i += WRITE_CHUNK) {
-      const chunk = upsertRows.slice(i, i + WRITE_CHUNK)
-      const { data: inserted, error: insertErr } = await (supabaseAdmin as any)
-        .from("fmv_snapshots")
-        .insert(chunk)
-        .select("edition_id")
-      if (insertErr) {
-        writeErrors.push("insert chunk " + Math.floor(i / WRITE_CHUNK) + ": " + insertErr.message)
-        console.log("[wallet-enrich] insert error chunk " + Math.floor(i / WRITE_CHUNK) + ": " + insertErr.message)
-        if (chunk.length > 0) console.log("[wallet-enrich] sample row: " + JSON.stringify(chunk[0]))
-      } else {
-        writeSucceeded += inserted?.length ?? chunk.length
-      }
-    }
-  }
+  // Step 6: fmv_snapshots writes removed.
+  // The wallet-enrich-flowty route no longer writes to fmv_snapshots.
+  // fmv_snapshots is owned exclusively by the fmv-recalc pipeline (sales-derived).
+  // Flowty listing prices and badge low_asks are listing-derived proxies and must
+  // not be persisted as FMV snapshots.
+  const writeSucceeded = 0
+  const writeErrors: string[] = []
 
   // Step 7: Update edition tier from Flowty data where currently NULL
   if (tierUpdateRows.length > 0) {
