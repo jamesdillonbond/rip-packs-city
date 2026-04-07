@@ -370,6 +370,7 @@ export default function WalletPage() {
   const collectionObj = getCollection(collectionSlug)
   const accent = collectionObj?.accent ?? "#E03A2F"
   const lastSearchedRef = useRef("")
+  const ownedFlowIdsRef: React.MutableRefObject<Set<string>> = useRef(new Set<string>())
   const [rows, setRows] = useState<MomentRow[]>([])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
@@ -749,11 +750,28 @@ export default function WalletPage() {
 
     // Sync rpc_owner_key to the resolved 0x address so the sniper page can
     // find this wallet's owned IDs automatically (especially for username searches).
+    const resolvedWallet: string | undefined = json.wallet
     try {
-      const resolved: string | undefined = json.wallet
-      if (resolved && resolved.startsWith("0x")) {
+      if (resolvedWallet && resolvedWallet.startsWith("0x")) {
         const current = localStorage.getItem("rpc_owner_key")
-        if (current !== resolved) localStorage.setItem("rpc_owner_key", resolved)
+        if (current !== resolvedWallet) localStorage.setItem("rpc_owner_key", resolvedWallet)
+      }
+    } catch {}
+
+    // Accumulate owned flow IDs from this page into the ref, then persist
+    // the full set to localStorage so the sniper page can read it.
+    // moment_id from collection-moments is the same on-chain NFT ID as
+    // sniper-feed's flowId, so they match for ownership lookups.
+    try {
+      for (const m of moments) {
+        const id = m && m.moment_id ? String(m.moment_id) : ""
+        if (id) ownedFlowIdsRef.current.add(id)
+      }
+      if (resolvedWallet) {
+        localStorage.setItem(
+          "rpc_owned_" + resolvedWallet,
+          JSON.stringify(Array.from(ownedFlowIdsRef.current))
+        )
       }
     } catch {}
 
@@ -818,6 +836,8 @@ export default function WalletPage() {
     setInput(trimmed)
     setActiveWallet(trimmed)
     lastSearchedRef.current = trimmed
+    // Reset accumulated owned flow IDs at the start of each new wallet search
+    ownedFlowIdsRef.current = new Set<string>()
     // Task 15: Persist wallet address in URL for bookmarking and sharing
     try { router.replace("?wallet=" + encodeURIComponent(trimmed), { scroll: false }) } catch {}
     setLoading(true)
