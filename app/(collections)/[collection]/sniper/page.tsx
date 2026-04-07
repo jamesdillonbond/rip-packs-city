@@ -1194,6 +1194,11 @@ export default function SniperPage() {
                             alt={deal.playerName}
                             style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 4, flexShrink: 0, background: "#1a1a1a" }}
                             loading="lazy"
+                            onError={(e) => {
+                              const img = e.currentTarget as HTMLImageElement;
+                              img.onerror = null;
+                              img.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+                            }}
                           />
                         ) : (
                           <div style={{ width: 36, height: 36, borderRadius: 4, background: "var(--rpc-surface-raised)", flexShrink: 0 }} />

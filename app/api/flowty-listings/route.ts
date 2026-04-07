@@ -397,8 +397,8 @@ export async function GET(req: NextRequest) {
       discount: discount !== null ? Math.round(discount * 100) / 100 : null,
       confidence: fmv ? "HIGH" : null,
       source: "flowty",
-      buy_url: evt.listingResourceID
-        ? `https://www.flowty.io/listing/${evt.listingResourceID}`
+      buy_url: evt.nftID
+        ? `https://www.flowty.io/asset/A.0b2a3299cc857e29.TopShot.NFT/${evt.nftID}`
         : null,
       listing_resource_id: evt.listingResourceID,
       storefront_address: evt.storefrontAddress,
