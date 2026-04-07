@@ -398,7 +398,7 @@ export async function GET(req: NextRequest) {
       confidence: fmv ? "HIGH" : null,
       source: "flowty",
       buy_url: evt.nftID
-        ? `https://www.flowty.io/asset/A.0b2a3299cc857e29.TopShot.NFT/${evt.nftID}`
+        ? `https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/NFT/${evt.nftID}?listingResourceID=${evt.listingResourceID}`
         : null,
       listing_resource_id: evt.listingResourceID,
       storefront_address: evt.storefrontAddress,
