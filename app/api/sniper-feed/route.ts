@@ -725,7 +725,7 @@ const feedParamsSchema = z.object({
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 25;
+export const maxDuration = 45;
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -741,35 +741,40 @@ export async function GET(req: Request) {
   const cacheKey = `sniper-feed:${JSON.stringify(params)}`;
   const CACHE_TTL = 25_000;
 
-  let result = await getOrSetCache(cacheKey, CACHE_TTL, async () => {
-    return computeSniperFeed({ minDiscount, rarity: effectiveRarity, team, badgeOnly, serialFilter, maxPrice, sortBy });
-  }) as { count: number; tsCount: number; flowtyCount: number; lastRefreshed: string; deals: SniperDeal[]; cached?: boolean };
+  try {
+    let result = await getOrSetCache(cacheKey, CACHE_TTL, async () => {
+      return computeSniperFeed({ minDiscount, rarity: effectiveRarity, team, badgeOnly, serialFilter, maxPrice, sortBy });
+    }) as { count: number; tsCount: number; flowtyCount: number; lastRefreshed: string; deals: SniperDeal[]; cached?: boolean };
 
-  // Post-fetch filter: player name (case-insensitive substring match)
-  if (player && player.trim()) {
-    const playerLower = player.trim().toLowerCase();
-    const filtered = (result.deals as SniperDeal[]).filter((d) =>
-      d.playerName.toLowerCase().includes(playerLower)
-    );
-    result = { ...result, deals: filtered, count: filtered.length };
+    // Post-fetch filter: player name (case-insensitive substring match)
+    if (player && player.trim()) {
+      const playerLower = player.trim().toLowerCase();
+      const filtered = (result.deals as SniperDeal[]).filter((d) =>
+        d.playerName.toLowerCase().includes(playerLower)
+      );
+      result = { ...result, deals: filtered, count: filtered.length };
+    }
+
+    // Post-fetch filter: Flow wallet only (FLOW or USDC_E payment tokens)
+    if (params.flowWalletOnly === "true") {
+      const filtered = (result.deals as SniperDeal[]).filter(
+        (d) => d.paymentToken === "FLOW" || d.paymentToken === "USDC_E"
+      );
+      result = { ...result, deals: filtered, count: filtered.length };
+    }
+
+    // Post-fetch limit
+    if (limit > 0 && result.deals.length > limit) {
+      result = { ...result, deals: result.deals.slice(0, limit), count: limit };
+    }
+
+    return NextResponse.json(result, {
+      headers: { "Cache-Control": "public, max-age=0, s-maxage=25, stale-while-revalidate=60" },
+    });
+  } catch (err: any) {
+    console.error("[sniper-feed] unhandled error:", err?.message);
+    return NextResponse.json({ error: "Feed unavailable", deals: [], count: 0 }, { status: 500 });
   }
-
-  // Post-fetch filter: Flow wallet only (FLOW or USDC_E payment tokens)
-  if (params.flowWalletOnly === "true") {
-    const filtered = (result.deals as SniperDeal[]).filter(
-      (d) => d.paymentToken === "FLOW" || d.paymentToken === "USDC_E"
-    );
-    result = { ...result, deals: filtered, count: filtered.length };
-  }
-
-  // Post-fetch limit
-  if (limit > 0 && result.deals.length > limit) {
-    result = { ...result, deals: result.deals.slice(0, limit), count: limit };
-  }
-
-  return NextResponse.json(result, {
-    headers: { "Cache-Control": "public, max-age=0, s-maxage=25, stale-while-revalidate=60" },
-  });
 }
 
 async function computeSniperFeed(opts: {
