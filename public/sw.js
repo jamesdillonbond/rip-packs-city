@@ -21,6 +21,16 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const { request } = event;
 
+  // Pass through external asset hosts directly to the network without
+  // any service worker interception (fixes thumbnail CSP issues).
+  if (
+    request.url.startsWith("https://assets.nbatopshot.com") ||
+    request.url.startsWith("https://storage.googleapis.com")
+  ) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
   // Skip non-GET and chrome-extension requests
   if (request.method !== "GET" || request.url.startsWith("chrome-extension")) return;
 
