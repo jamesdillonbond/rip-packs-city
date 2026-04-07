@@ -6,6 +6,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { useCart } from "@/lib/cart/CartContext";
 import { getCollection } from "@/lib/collections";
+import { getOwnerKey } from "@/lib/owner-key";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const COMMISSION_RECIPIENT = "0xc1e4f4f4c4257510";
@@ -541,7 +542,7 @@ export default function SniperPage() {
   // Auto-load owned IDs from localStorage owner key on mount
   useEffect(() => {
     try {
-      const key = localStorage.getItem("rpc_owner_key");
+      const key = getOwnerKey();
       if (!key) return;
       setOwnerKey(key);
       if (key.startsWith("0x")) {
@@ -549,7 +550,6 @@ export default function SniperPage() {
         if (cached) {
           const parsed = JSON.parse(cached);
           const ids: string[] = Array.isArray(parsed) ? parsed : parsed.ids ?? [];
-          console.log(`[sniper] ownedIds loaded: ${ids.length} ids, sample: ${JSON.stringify(ids.slice(0, 3))}`);
           setOwnedIds(new Set(ids));
         }
       }
