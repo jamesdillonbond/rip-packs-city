@@ -70,6 +70,11 @@ interface FmvRow {
   salesCount30d: number | null;
   packListingId: string | null;
   packName: string | null;
+  // On-chain integer setID:playID — null when the editions row hasn't
+  // been backfilled yet. This is the only valid source for ownership
+  // matching against /api/owned-flow-ids.
+  setIdOnchain: number | null;
+  playIdOnchain: number | null;
 }
 
 interface PackEvRow {
@@ -608,7 +613,7 @@ async function fetchFmvBatch(
 
   const { data: editionRows } = await (supabase as any)
     .from("editions")
-    .select("id, external_id")
+    .select("id, external_id, set_id_onchain, play_id_onchain")
     .in("external_id", integerKeys);
 
   if (!editionRows?.length) {
@@ -618,9 +623,19 @@ async function fetchFmvBatch(
 
   const extToUuid = new Map<string, string>();
   const uuidToExt = new Map<string, string>();
-  for (const row of editionRows as { id: string; external_id: string }[]) {
+  const onchainByExt = new Map<string, { setIdOnchain: number | null; playIdOnchain: number | null }>();
+  for (const row of editionRows as {
+    id: string;
+    external_id: string;
+    set_id_onchain: number | null;
+    play_id_onchain: number | null;
+  }[]) {
     extToUuid.set(row.external_id, row.id);
     uuidToExt.set(row.id, row.external_id);
+    onchainByExt.set(row.external_id, {
+      setIdOnchain: row.set_id_onchain,
+      playIdOnchain: row.play_id_onchain,
+    });
   }
 
   const { data: fmvRows } = await (supabase as any)
@@ -645,6 +660,7 @@ async function fetchFmvBatch(
     seen.add(row.edition_id);
     const extKey = uuidToExt.get(row.edition_id);
     if (!extKey) continue;
+    const onchain = onchainByExt.get(extKey);
     map.set(extKey, {
       editionKey: extKey,
       fmv: row.fmv_usd,
@@ -655,6 +671,8 @@ async function fetchFmvBatch(
       salesCount30d: row.sales_count_30d,
       packListingId: null,
       packName: null,
+      setIdOnchain: onchain?.setIdOnchain ?? null,
+      playIdOnchain: onchain?.playIdOnchain ?? null,
     });
   }
 
@@ -913,8 +931,17 @@ async function computeSniperFeed(opts: {
           ? `https://nbatopshot.com/marketplace/editions/${l.set.flowId}/${l.play.flowID}${parallelId > 0 ? `/${parallelId}` : ''}`
           : `https://nbatopshot.com/moment/${l.id}`);
 
-    // Bare integer setID:playID for on-chain ownership matching (no parallel suffix).
-    const intEditionKey = setId && playId ? `${setId}:${playId}` : null;
+    // Bare integer setID:playID for on-chain ownership matching. The ONLY
+    // valid source is set_id_onchain/play_id_onchain on the editions row.
+    // The TS GQL setId/playId values are NOT on-chain integers — do not use
+    // them. Falls back to parsing external_id when it happens to already be
+    // in integer form (e.g. "90:4060").
+    let intEditionKey: string | null = null;
+    if (fmvRow.setIdOnchain != null && fmvRow.playIdOnchain != null) {
+      intEditionKey = `${fmvRow.setIdOnchain}:${fmvRow.playIdOnchain}`;
+    } else if (fmvRow.editionKey && /^\d+:\d+(::\d+)?$/.test(fmvRow.editionKey)) {
+      intEditionKey = fmvRow.editionKey.split("::")[0];
+    }
 
     tsDeals.push({
       flowId: String(l.id),
@@ -1056,14 +1083,15 @@ async function computeSniperFeed(opts: {
 
     if (badgeOnly && !hasBadge) continue;
 
-    // Integer setID:playID for on-chain ownership matching. fmvRow.editionKey
-    // is already the external_id integer key from Supabase. Otherwise, if
-    // editionKey is already in bare integer form (no hyphens, contains colon),
-    // strip any parallel suffix and use it directly.
+    // Integer setID:playID for on-chain ownership matching. Prefer
+    // set_id_onchain/play_id_onchain from the editions row; fall back to
+    // parsing external_id only when it's already in bare integer form.
     let intEditionKey: string | null = null;
-    if (fmvRow?.editionKey && /^\d+:\d+$/.test(fmvRow.editionKey.split("::")[0])) {
+    if (fmvRow?.setIdOnchain != null && fmvRow.playIdOnchain != null) {
+      intEditionKey = `${fmvRow.setIdOnchain}:${fmvRow.playIdOnchain}`;
+    } else if (fmvRow?.editionKey && /^\d+:\d+(::\d+)?$/.test(fmvRow.editionKey)) {
       intEditionKey = fmvRow.editionKey.split("::")[0];
-    } else if (editionKey && !editionKey.includes("-") && editionKey.includes(":")) {
+    } else if (editionKey && /^\d+:\d+(::\d+)?$/.test(editionKey)) {
       intEditionKey = editionKey.split("::")[0];
     }
 
