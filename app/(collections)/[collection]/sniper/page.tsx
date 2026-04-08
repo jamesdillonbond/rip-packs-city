@@ -309,7 +309,9 @@ function ActionCell({
     Math.round(deal.adjustedFmv * 0.8 * 100) / 100
   );
   const inCart = deal.listingResourceID ? isInCart(deal.listingResourceID) : false;
-  const isOwned = ownedIds.has(String(deal.momentId)) || ownedIds.has(String(deal.flowId));
+  // ownedIds now contains edition keys (setID:playID), not flowIds. A deal
+  // matches when its editionKey is present in the set.
+  const isOwned = deal.editionKey ? ownedIds.has(deal.editionKey) : false;
   const canCart = !!deal.listingResourceID && !!deal.storefrontAddress;
   const isFlowty = (deal.source ?? "topshot") === "flowty";
 
@@ -539,10 +541,13 @@ export default function SniperPage() {
 
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Auto-load owned IDs from rpc_owner_key in localStorage on mount.
-  // No FCL wallet connection required: the collection page resolves
-  // username → 0x address and writes it to rpc_owner_key, then this
-  // effect (and WalletPreloader) hydrate ownedIds from /api/owned-flow-ids.
+  // Auto-load owned editions (setID:playID) from rpc_owner_key in localStorage
+  // on mount. No FCL wallet connection required: the collection page resolves
+  // username → 0x address and writes it to rpc_owner_key, then this effect
+  // hydrates ownedIds (now containing edition keys) from /api/owned-flow-ids.
+  //
+  // ownedIds is a Set<string> of edition keys ("218:8238"), not flowIds.
+  // A deal matches when deal.editionKey is in the set.
   useEffect(() => {
     const TEN_MINUTES_MS = 10 * 60 * 1000;
     (async () => {
@@ -561,26 +566,26 @@ export default function SniperPage() {
           return;
         }
 
-        // 1. localStorage cache check (fresh < 10 min)
+        // 1. localStorage cache check (fresh < 10 min, must contain editions)
         const cachedRaw = localStorage.getItem(`rpc_owned_${key}`);
         if (cachedRaw) {
           try {
-            const parsed = JSON.parse(cachedRaw) as { ids?: string[]; cachedAt?: number } | string[];
-            if (Array.isArray(parsed)) {
-              // Legacy format: bare array. Use it but force a refresh below.
-              setOwnedIds(new Set(parsed.map(String)));
-            } else if (
+            const parsed = JSON.parse(cachedRaw) as {
+              ids?: string[];
+              editions?: string[];
+              cachedAt?: number;
+            };
+            if (
               parsed &&
-              Array.isArray(parsed.ids) &&
+              Array.isArray(parsed.editions) &&
               typeof parsed.cachedAt === "number" &&
               Date.now() - parsed.cachedAt < TEN_MINUTES_MS
             ) {
-              setOwnedIds(new Set(parsed.ids.map(String)));
+              setOwnedIds(new Set(parsed.editions.map(String)));
               return;
-            } else if (parsed && Array.isArray(parsed.ids)) {
-              setOwnedIds(new Set(parsed.ids.map(String)));
-              // stale — fall through to refresh
             }
+            // Anything missing `editions` (e.g. old shape with only `ids`)
+            // is considered stale — fall through to refetch.
           } catch {
             // bad cache — ignore and refetch
           }
@@ -588,17 +593,20 @@ export default function SniperPage() {
 
         // 2. Fetch fresh from endpoint
         const res = await fetch(`/api/owned-flow-ids?wallet=${encodeURIComponent(key)}`, {
-          signal: AbortSignal.timeout(15000),
+          signal: AbortSignal.timeout(30000),
         });
         if (!res.ok) return;
         const json = await res.json();
         const ids: string[] = Array.isArray(json?.ids) ? json.ids.map((x: unknown) => String(x)) : [];
+        const editions: string[] = Array.isArray(json?.editions)
+          ? json.editions.map((x: unknown) => String(x))
+          : [];
 
         localStorage.setItem(
           `rpc_owned_${key}`,
-          JSON.stringify({ ids, cachedAt: Date.now() })
+          JSON.stringify({ ids, editions, cachedAt: Date.now() })
         );
-        setOwnedIds(new Set(ids));
+        setOwnedIds(new Set(editions));
       } catch {
         // Silent — empty ownedIds is the safe fallback
       }
@@ -777,8 +785,8 @@ export default function SniperPage() {
   const ownedCountByEdition = useMemo(() => {
     const m = new Map<string, number>();
     for (const deal of data?.deals ?? []) {
-      if (ownedIds.has(deal.flowId)) {
-        const key = deal.editionKey || deal.momentId;
+      if (deal.editionKey && ownedIds.has(deal.editionKey)) {
+        const key = deal.editionKey;
         m.set(key, (m.get(key) ?? 0) + 1);
       }
     }
@@ -796,8 +804,8 @@ export default function SniperPage() {
       ) return false;
     }
     if (showVerifiedOnly && d.confidenceSource === "ask_fallback") return false;
-    if (ownedFilter === "owned" && !ownedIds.has(d.flowId)) return false;
-    if (ownedFilter === "not-owned" && ownedIds.has(d.flowId)) return false;
+    if (ownedFilter === "owned" && !(d.editionKey && ownedIds.has(d.editionKey))) return false;
+    if (ownedFilter === "not-owned" && d.editionKey && ownedIds.has(d.editionKey)) return false;
     return true;
   });
 
@@ -1127,7 +1135,7 @@ export default function SniperPage() {
           )}
           <span>avg <span style={{ color: "var(--rpc-text-primary)", fontWeight: 600 }}>{fmt(stats.avgDiscount, 1)}%</span> off</span>
           {ownedIds.size > 0 && (
-            <span style={{ color: "var(--rpc-text-ghost)" }}>{ownedIds.size} owned moments tracked</span>
+            <span style={{ color: "var(--rpc-text-ghost)" }}>{ownedIds.size} owned editions tracked</span>
           )}
           {data?.lastRefreshed && (
             <span className="ml-auto">
@@ -1394,8 +1402,8 @@ export default function SniperPage() {
                             </span>
                           );
                         }
-                        // Fallback to momentId/flowId check
-                        const isOwned = ownedIds.has(String(deal.momentId)) || ownedIds.has(String(deal.flowId));
+                        // ownedIds is a set of edition keys (setID:playID).
+                        const isOwned = deal.editionKey ? ownedIds.has(deal.editionKey) : false;
                         if (isOwned) return <span style={{ color: "var(--rpc-success)" }}>✓ OWN</span>;
                         if (deal.isLocked) return <span title="Locked">🔒</span>;
                         return "—";
