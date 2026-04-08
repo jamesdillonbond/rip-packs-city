@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect } from "react";
-import { getOwnerKey, setOwnerKey } from "@/lib/owner-key";
+import { getOwnerKey } from "@/lib/owner-key";
 
 const TEN_MINUTES_MS = 10 * 60 * 1000;
+
+type CachedOwned = { ids: string[]; cachedAt: number };
 
 export default function WalletPreloader() {
   useEffect(() => {
@@ -12,48 +14,46 @@ export default function WalletPreloader() {
         const ownerKey = getOwnerKey();
         if (!ownerKey) return;
 
-        // If we already have a fresh cache for this key, skip the fetch.
-        const tsRaw = localStorage.getItem(`rpc_owned_ts_${ownerKey}`);
-        const cached = localStorage.getItem(`rpc_owned_${ownerKey}`);
-        if (cached && tsRaw) {
-          const ts = Number(tsRaw);
-          if (Number.isFinite(ts) && Date.now() - ts < TEN_MINUTES_MS) {
-            return;
+        // Preloader only handles resolved 0x addresses. Username keys are
+        // resolved to 0x by the collection page, which then writes the 0x
+        // value back into rpc_owner_key.
+        if (!ownerKey.startsWith("0x")) return;
+
+        // Cache hit: skip the network call if the cache is fresh.
+        const cachedRaw = localStorage.getItem(`rpc_owned_${ownerKey}`);
+        if (cachedRaw) {
+          try {
+            const parsed = JSON.parse(cachedRaw) as CachedOwned;
+            if (
+              parsed &&
+              Array.isArray(parsed.ids) &&
+              typeof parsed.cachedAt === "number" &&
+              Date.now() - parsed.cachedAt < TEN_MINUTES_MS
+            ) {
+              return;
+            }
+          } catch {
+            // fall through to fetch
           }
         }
 
-        const res = await fetch("/api/wallet-search", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ input: ownerKey }),
+        const res = await fetch(`/api/owned-flow-ids?wallet=${encodeURIComponent(ownerKey)}`, {
           signal: AbortSignal.timeout(15000),
         });
-        if (!res.ok) return;
-
-        const json = await res.json();
-        const rows: Array<{ flowId?: string | null }> = Array.isArray(json?.rows) ? json.rows : [];
-        const flowIds: string[] = rows
-          .map((r) => (r.flowId != null ? String(r.flowId) : null))
-          .filter((id): id is string => !!id);
-
-        const resolvedAddress: string =
-          typeof json?.walletAddress === "string" && json.walletAddress.length > 0
-            ? json.walletAddress
-            : ownerKey;
-
-        // Normalize rpc_owner_key to the resolved 0x address so any consumer
-        // (sniper page, etc.) reads `rpc_owned_${ownerKey}` with the same key
-        // the preloader wrote. Never overwrite an existing 0x address.
-        if (resolvedAddress.startsWith("0x") && !ownerKey.startsWith("0x")) {
-          setOwnerKey(resolvedAddress);
+        if (!res.ok) {
+          console.warn(`[preloader] /api/owned-flow-ids returned ${res.status}`);
+          return;
         }
 
-        localStorage.setItem(`rpc_owned_${resolvedAddress}`, JSON.stringify(flowIds));
-        localStorage.setItem(`rpc_owned_ts_${resolvedAddress}`, String(Date.now()));
+        const json = await res.json();
+        const ids: string[] = Array.isArray(json?.ids) ? json.ids.map((x: unknown) => String(x)) : [];
 
-        console.log(`[preloader] loaded ${flowIds.length} owned IDs for ${resolvedAddress}`);
-      } catch {
-        // Never crash the page on preloader failure.
+        const payload: CachedOwned = { ids, cachedAt: Date.now() };
+        localStorage.setItem(`rpc_owned_${ownerKey}`, JSON.stringify(payload));
+
+        console.log(`[preloader] loaded ${ids.length} owned IDs for ${ownerKey}`);
+      } catch (err) {
+        console.warn("[preloader] failed:", err);
       }
     })();
   }, []);
