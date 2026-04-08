@@ -539,21 +539,70 @@ export default function SniperPage() {
 
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Auto-load owned IDs from localStorage owner key on mount
+  // Auto-load owned IDs from rpc_owner_key in localStorage on mount.
+  // No FCL wallet connection required: the collection page resolves
+  // username → 0x address and writes it to rpc_owner_key, then this
+  // effect (and WalletPreloader) hydrate ownedIds from /api/owned-flow-ids.
   useEffect(() => {
-    try {
-      const key = getOwnerKey();
-      if (!key) return;
-      setOwnerKey(key);
-      if (key.startsWith("0x")) {
-        const cached = localStorage.getItem(`rpc_owned_${key}`);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          const ids: string[] = Array.isArray(parsed) ? parsed : parsed.ids ?? [];
-          setOwnedIds(new Set(ids));
+    const TEN_MINUTES_MS = 10 * 60 * 1000;
+    (async () => {
+      try {
+        const key = getOwnerKey();
+        if (!key) {
+          setOwnedIds(new Set());
+          return;
         }
+        setOwnerKey(key);
+
+        // Username can't be used directly — depend on collection page /
+        // WalletPreloader to resolve and rewrite rpc_owner_key as 0x.
+        if (!key.startsWith("0x")) {
+          setOwnedIds(new Set());
+          return;
+        }
+
+        // 1. localStorage cache check (fresh < 10 min)
+        const cachedRaw = localStorage.getItem(`rpc_owned_${key}`);
+        if (cachedRaw) {
+          try {
+            const parsed = JSON.parse(cachedRaw) as { ids?: string[]; cachedAt?: number } | string[];
+            if (Array.isArray(parsed)) {
+              // Legacy format: bare array. Use it but force a refresh below.
+              setOwnedIds(new Set(parsed.map(String)));
+            } else if (
+              parsed &&
+              Array.isArray(parsed.ids) &&
+              typeof parsed.cachedAt === "number" &&
+              Date.now() - parsed.cachedAt < TEN_MINUTES_MS
+            ) {
+              setOwnedIds(new Set(parsed.ids.map(String)));
+              return;
+            } else if (parsed && Array.isArray(parsed.ids)) {
+              setOwnedIds(new Set(parsed.ids.map(String)));
+              // stale — fall through to refresh
+            }
+          } catch {
+            // bad cache — ignore and refetch
+          }
+        }
+
+        // 2. Fetch fresh from endpoint
+        const res = await fetch(`/api/owned-flow-ids?wallet=${encodeURIComponent(key)}`, {
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!res.ok) return;
+        const json = await res.json();
+        const ids: string[] = Array.isArray(json?.ids) ? json.ids.map((x: unknown) => String(x)) : [];
+
+        localStorage.setItem(
+          `rpc_owned_${key}`,
+          JSON.stringify({ ids, cachedAt: Date.now() })
+        );
+        setOwnedIds(new Set(ids));
+      } catch {
+        // Silent — empty ownedIds is the safe fallback
       }
-    } catch {}
+    })();
   }, []);
 
   const buildFeedUrl = useCallback(() => {
