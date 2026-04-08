@@ -1184,7 +1184,7 @@ async function computeSniperFeed(opts: {
             flowId: r.flow_id || "",
             momentId: r.moment_id || "",
             editionKey: "",
-            intEditionKey: r.set_id != null && r.play_id != null ? `${r.set_id}:${r.play_id}` : null,
+            intEditionKey: r.set_id_onchain != null && r.play_id_onchain != null ? `${r.set_id_onchain}:${r.play_id_onchain}` : null,
             playerName: r.player_name || "",
             teamName: r.team_name || "",
             setName: r.set_name || "",
