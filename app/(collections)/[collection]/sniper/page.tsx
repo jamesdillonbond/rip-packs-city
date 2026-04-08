@@ -17,6 +17,7 @@ interface SniperDeal {
   flowId: string;
   momentId: string;
   editionKey: string;
+  intEditionKey?: string | null;
   playerName: string;
   teamName: string;
   setName: string;
@@ -309,9 +310,12 @@ function ActionCell({
     Math.round(deal.adjustedFmv * 0.8 * 100) / 100
   );
   const inCart = deal.listingResourceID ? isInCart(deal.listingResourceID) : false;
-  // ownedIds now contains edition keys (setID:playID), not flowIds. A deal
-  // matches when its editionKey is present in the set.
-  const isOwned = deal.editionKey ? ownedIds.has(deal.editionKey) : false;
+  // ownedIds contains integer setID:playID edition keys from on-chain Cadence.
+  // Match against intEditionKey first (always integer-format) and fall back
+  // to editionKey for any deal where the two happen to coincide.
+  const isOwned =
+    (!!deal.intEditionKey && ownedIds.has(deal.intEditionKey)) ||
+    (!!deal.editionKey && ownedIds.has(deal.editionKey));
   const canCart = !!deal.listingResourceID && !!deal.storefrontAddress;
   const isFlowty = (deal.source ?? "topshot") === "flowty";
 
@@ -785,8 +789,11 @@ export default function SniperPage() {
   const ownedCountByEdition = useMemo(() => {
     const m = new Map<string, number>();
     for (const deal of data?.deals ?? []) {
-      if (deal.editionKey && ownedIds.has(deal.editionKey)) {
-        const key = deal.editionKey;
+      const matched =
+        (deal.intEditionKey && ownedIds.has(deal.intEditionKey)) ||
+        (deal.editionKey && ownedIds.has(deal.editionKey));
+      if (matched) {
+        const key = deal.intEditionKey || deal.editionKey;
         m.set(key, (m.get(key) ?? 0) + 1);
       }
     }
@@ -804,8 +811,11 @@ export default function SniperPage() {
       ) return false;
     }
     if (showVerifiedOnly && d.confidenceSource === "ask_fallback") return false;
-    if (ownedFilter === "owned" && !(d.editionKey && ownedIds.has(d.editionKey))) return false;
-    if (ownedFilter === "not-owned" && d.editionKey && ownedIds.has(d.editionKey)) return false;
+    const dOwned =
+      (!!d.intEditionKey && ownedIds.has(d.intEditionKey)) ||
+      (!!d.editionKey && ownedIds.has(d.editionKey));
+    if (ownedFilter === "owned" && !dOwned) return false;
+    if (ownedFilter === "not-owned" && dOwned) return false;
     return true;
   });
 
@@ -1402,8 +1412,10 @@ export default function SniperPage() {
                             </span>
                           );
                         }
-                        // ownedIds is a set of edition keys (setID:playID).
-                        const isOwned = deal.editionKey ? ownedIds.has(deal.editionKey) : false;
+                        // ownedIds is a set of integer setID:playID keys from on-chain.
+                        const isOwned =
+                          (!!deal.intEditionKey && ownedIds.has(deal.intEditionKey)) ||
+                          (!!deal.editionKey && ownedIds.has(deal.editionKey));
                         if (isOwned) return <span style={{ color: "var(--rpc-success)" }}>✓ OWN</span>;
                         if (deal.isLocked) return <span title="Locked">🔒</span>;
                         return "—";
