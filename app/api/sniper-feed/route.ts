@@ -84,6 +84,10 @@ export interface SniperDeal {
   flowId: string;
   momentId: string;
   editionKey: string;
+  // Integer-format setID:playID key (e.g. "218:8238") used for matching
+  // against on-chain owned editions returned by /api/owned-flow-ids.
+  // Null when the deal cannot be resolved to a Supabase edition row.
+  intEditionKey: string | null;
   playerName: string;
   teamName: string;
   setName: string;
@@ -909,10 +913,14 @@ async function computeSniperFeed(opts: {
           ? `https://nbatopshot.com/marketplace/editions/${l.set.flowId}/${l.play.flowID}${parallelId > 0 ? `/${parallelId}` : ''}`
           : `https://nbatopshot.com/moment/${l.id}`);
 
+    // Bare integer setID:playID for on-chain ownership matching (no parallel suffix).
+    const intEditionKey = setId && playId ? `${setId}:${playId}` : null;
+
     tsDeals.push({
       flowId: String(l.id),
       momentId: String(l.id),
       editionKey,
+      intEditionKey,
       playerName: playerNameRaw,
       teamName,
       setName: l.set?.flowName ?? l.setName ?? "",
@@ -1048,10 +1056,22 @@ async function computeSniperFeed(opts: {
 
     if (badgeOnly && !hasBadge) continue;
 
+    // Integer setID:playID for on-chain ownership matching. fmvRow.editionKey
+    // is already the external_id integer key from Supabase. Otherwise, if
+    // editionKey is already in bare integer form (no hyphens, contains colon),
+    // strip any parallel suffix and use it directly.
+    let intEditionKey: string | null = null;
+    if (fmvRow?.editionKey && /^\d+:\d+$/.test(fmvRow.editionKey.split("::")[0])) {
+      intEditionKey = fmvRow.editionKey.split("::")[0];
+    } else if (editionKey && !editionKey.includes("-") && editionKey.includes(":")) {
+      intEditionKey = editionKey.split("::")[0];
+    }
+
     flowtyDeals.push({
       flowId: item.momentId,
       momentId: item.momentId,
       editionKey,
+      intEditionKey,
       playerName: item.playerName,
       teamName: teamAbbrev,
       setName: item.setName,
@@ -1164,6 +1184,7 @@ async function computeSniperFeed(opts: {
             flowId: r.flow_id || "",
             momentId: r.moment_id || "",
             editionKey: "",
+            intEditionKey: r.set_id != null && r.play_id != null ? `${r.set_id}:${r.play_id}` : null,
             playerName: r.player_name || "",
             teamName: r.team_name || "",
             setName: r.set_name || "",
