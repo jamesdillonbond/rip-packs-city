@@ -448,14 +448,16 @@ export async function POST(req: NextRequest) {
         (now.getTime() - latestSoldAt.getTime()) / (1000 * 60 * 60 * 24)
       )
 
-      // Blend Flowty LiveToken FMV if available and within 3x of WAP
+      // Outlier-filtered WAP is the primary FMV signal — matches LiveToken's
+      // averageWithoutWackos. Falls back to trimmed median when the cleaned
+      // WAP collapses to 0 (e.g. tiny sales sets all rejected as outliers).
       const cleanWap = wapWithoutOutliers(sales, now)
-      let fmv = median
+      let fmv = cleanWap > 0 ? cleanWap : median
       const livetokenFmv = flowtyFmvByEdition.get(editionId)
-      if (livetokenFmv && wap > 0) {
-        const ratio = livetokenFmv / wap
+      if (livetokenFmv && fmv > 0) {
+        const ratio = livetokenFmv / fmv
         if (ratio >= 1 / 3 && ratio <= 3) {
-          fmv = (wap * 0.6) + (livetokenFmv * 0.4)
+          fmv = (fmv * 0.6) + (livetokenFmv * 0.4)
           blendedCount++
         }
       }
