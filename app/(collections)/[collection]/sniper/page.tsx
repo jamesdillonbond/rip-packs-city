@@ -58,6 +58,8 @@ interface SniperDeal {
   paymentToken?: "DUC" | "FUT" | "FLOW" | "USDC_E";
   offerAmount?: number | null;
   offerFmvPct?: number | null;
+  dealRating?: number;
+  isLowestAsk?: boolean;
 }
 
 interface FeedResult {
@@ -1371,6 +1373,11 @@ export default function SniperPage() {
                         <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>/ {deal.circulationCount.toLocaleString()}</div>
                       )}
                       <div className="flex gap-1 mt-0.5 flex-wrap justify-end">
+                        {deal.isLowestAsk && (
+                          <span className="rpc-chip" title="Lowest ask for this edition" style={{ background: "rgba(16,185,129,0.15)", borderColor: "rgba(16,185,129,0.3)", color: "#34d399", fontSize: 9, padding: "1px 5px" }}>
+                            Floor
+                          </span>
+                        )}
                         {deal.isJersey && (
                           <span className="rpc-chip" title="Jersey match" style={{ background: "rgba(20,184,166,0.15)", borderColor: "rgba(20,184,166,0.3)", color: "#5eead4", fontSize: 9, padding: "1px 5px" }}>
                             🏀 Jersey
