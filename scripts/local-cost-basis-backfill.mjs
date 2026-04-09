@@ -2,11 +2,19 @@
 // Cost basis backfill v3 — uses searchMintedMoments (paginated, 100/page)
 // Runs locally. Calls nbatopshot.com/marketplace/graphql directly.
 //
+// REQUIRES fresh session cookies and x-id-token JWT from nbatopshot.com.
+// To get them: open DevTools → Network tab → find a SearchMintedMoments request
+// → right-click → Copy as cURL. Extract the values below.
+// The JWT (x-id-token) expires every ~30 minutes.
+// Only these cookies are needed: cf_clearance, sid, ts:s0, ts:s1, ts:s2, ts:s3, ts:s4
+//
 // Usage: node scripts/local-cost-basis-backfill.mjs
 //        node scripts/local-cost-basis-backfill.mjs 0xOTHER_WALLET
 
-import { readFileSync } from "fs";
+import { readFileSync, writeFileSync, unlinkSync } from "fs";
 import { resolve } from "path";
+import { execSync } from "child_process";
+import { tmpdir } from "os";
 
 // ── Load .env.local ───────────────────────────────────────────────────────────
 function loadEnv() {
@@ -50,7 +58,7 @@ const DELAY_MS = 1500;  // 1.5s between pages to be safe
 
 // ── GQL Query ─────────────────────────────────────────────────────────────────
 const SEARCH_MINTED_MOMENTS = `
-  query SearchMintedMoments($sortBy: MintedMomentSortType!, $byOwnerDapperID: [String!], $cursor: String!, $limit: Int!) {
+  query SearchMintedMoments($sortBy: MintedMomentSortType!, $byOwnerDapperID: [String!], $cursor: Cursor!, $limit: Int!) {
     searchMintedMoments(input: {
       sortBy: $sortBy
       filters: {
@@ -124,44 +132,103 @@ const SEARCH_MINTED_MOMENTS = `
   }
 `;
 
-// ── Fetch one page ────────────────────────────────────────────────────────────
+// ── Fetch one page (via curl.exe — Cloudflare blocks Node fetch) ─────────────
+const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
+const COOKIE = "PASTE_FRESH_COOKIES_HERE";
+const X_ID_TOKEN = "PASTE_FRESH_X_ID_TOKEN_HERE";
+
 async function fetchPage(cursor) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const body = JSON.stringify({
+    operationName: "SearchMintedMoments",
+    query: SEARCH_MINTED_MOMENTS,
+    variables: {
+      sortBy: "ACQUIRED_AT_DESC",
+      byOwnerDapperID: [DAPPER_ID],
+      cursor: cursor,
+      limit: PAGE_SIZE,
+    },
+  });
+
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const bodyFile = resolve(tmpdir(), `rpc-cb-body-${stamp}.json`);
+  const configFile = resolve(tmpdir(), `rpc-cb-cfg-${stamp}.txt`);
+  writeFileSync(bodyFile, body, "utf-8");
+
+  const outFile = configFile.replace('cfg', 'out');
+
+  // curl config file — keeps the giant Cookie header off the command line.
+  // One option per line; quoted values use double quotes (no values contain `"`).
+  const configLines = [
+    "-s",
+    "-X POST",
+    `-H "Content-Type: application/json"`,
+    `-H "User-Agent: ${USER_AGENT}"`,
+    `-H "Origin: https://nbatopshot.com"`,
+    `-H "Referer: https://nbatopshot.com/"`,
+    `-H "Cookie: ${COOKIE}"`,
+    `-H "x-id-token: ${X_ID_TOKEN}"`,
+    `--data @${bodyFile}`,
+    "",
+  ];
+  writeFileSync(configFile, configLines.join("\n"), "utf-8");
 
   try {
-    const res = await fetch(TS_GQL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Origin": "https://nbatopshot.com",
-        "Referer": "https://nbatopshot.com/",
-      },
-      body: JSON.stringify({
-        operationName: "SearchMintedMoments",
-        query: SEARCH_MINTED_MOMENTS,
-        variables: {
-          sortBy: "ACQUIRED_AT_DESC",
-          byOwnerDapperID: [DAPPER_ID],
-          cursor: cursor,
-          limit: PAGE_SIZE,
-        },
-      }),
-      signal: controller.signal,
-    });
+    let curlStatus = 0;
 
-    clearTimeout(timeout);
+    const curlCmd = `curl.exe --config "${configFile}" -o "${outFile}" "https://nbatopshot.com/marketplace/graphql?SearchMintedMoments"`;
 
-    if (res.status === 403 || res.status === 429) {
-      return { error: `cloudflare_${res.status}`, data: null, nextCursor: null, totalCount: 0 };
+    try {
+      execSync(curlCmd, {
+        maxBuffer: 64 * 1024 * 1024,
+        timeout: 30000,
+        windowsHide: true,
+        encoding: "utf-8",
+      });
+    } catch (err) {
+      curlStatus = err?.status ?? -1;
+      console.log(`[debug] curl exit status: ${curlStatus}`);
+      const stderrStr = typeof err?.stderr === "string" ? err.stderr : (err?.stderr ? err.stderr.toString("utf-8") : "");
+      console.log(`[debug] curl stderr: ${stderrStr ? stderrStr.slice(0, 500) : "(none)"}`);
+      // Don't return yet — curl may have written partial output to the file
     }
 
-    if (!res.ok) {
-      return { error: `http_${res.status}`, data: null, nextCursor: null, totalCount: 0 };
+    // Read response from output file
+    let stdout = "";
+    try {
+      stdout = readFileSync(outFile, "utf-8");
+    } catch (readErr) {
+      console.log(`[debug] Could not read outFile: ${readErr.message}`);
+      return { error: "curl_error", data: null, nextCursor: null, totalCount: 0 };
     }
 
-    const json = await res.json();
+    // Debug logging
+    console.log(`[debug] curl exit status: ${curlStatus}`);
+    if (stdout === undefined || stdout === null || stdout === "") {
+      console.log(`[debug] outFile is empty or undefined`);
+    } else {
+      console.log(`[debug] outFile (first 500 chars): ${stdout.slice(0, 500)}`);
+      const trimmed = stdout.trimStart();
+      if (trimmed.startsWith("<") || trimmed.includes("<!DOCTYPE")) {
+        console.log(`[debug] Got HTML response (likely Cloudflare challenge page)`);
+      }
+    }
+
+    if (!stdout || !stdout.trim()) {
+      return { error: "empty_response", data: null, nextCursor: null, totalCount: 0 };
+    }
+
+    let json;
+    try {
+      json = JSON.parse(stdout);
+    } catch {
+      const snippet = stdout.slice(0, 200);
+      if (snippet.includes("Cloudflare") || snippet.includes("cf-") || snippet.includes("Just a moment")) {
+        return { error: "cloudflare_block", data: null, nextCursor: null, totalCount: 0 };
+      }
+      console.error("\nParse error. First 200 chars:", snippet);
+      return { error: "parse_error", data: null, nextCursor: null, totalCount: 0 };
+    }
+
     if (json.errors) {
       console.error("\nGQL errors:", JSON.stringify(json.errors).slice(0, 200));
       return { error: "gql_error", data: null, nextCursor: null, totalCount: 0 };
@@ -173,9 +240,10 @@ async function fetchPage(cursor) {
     const totalCount = summary?.totalCount ?? 0;
 
     return { error: null, data: moments, nextCursor, totalCount };
-  } catch (err) {
-    clearTimeout(timeout);
-    return { error: "network_error", data: null, nextCursor: null, totalCount: 0 };
+  } finally {
+    try { unlinkSync(bodyFile); } catch {}
+    try { unlinkSync(configFile); } catch {}
+    try { unlinkSync(outFile); } catch {}
   }
 }
 
