@@ -733,8 +733,22 @@ export async function POST(req: NextRequest) {
     const { input, offset, limit, collection } = parsed.data
     const isAllDay = collection === "nfl-all-day"
 
-    const wallet = await resolveWalletFromInput(input)
-    const ids = isAllDay ? await getAllDayOwnedIds(wallet) : await getOwnedMomentIds(wallet)
+    let wallet: string
+    let ids: number[]
+    try {
+      wallet = await resolveWalletFromInput(input)
+      ids = isAllDay ? await getAllDayOwnedIds(wallet) : await getOwnedMomentIds(wallet)
+    } catch (err) {
+      console.error("[wallet-search] Failed to resolve wallet or fetch owned IDs:", err instanceof Error ? err.message : String(err))
+      return NextResponse.json(
+        {
+          error: "Failed to fetch wallet data. Please try again.",
+          rows: [],
+          summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+        } satisfies WalletSearchResponse,
+        { status: 500 }
+      )
+    }
     const slice = ids.slice(offset, offset + limit)
 
     const baseRows = (await mapWithConcurrency(slice, 8, async (id) => {
