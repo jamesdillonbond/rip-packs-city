@@ -49,10 +49,10 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const PARALLEL = 5;
-const BATCH_DELAY_MS = 300;
+const PARALLEL = 1;          // sequential to avoid Cloudflare rate limits
+const BATCH_DELAY_MS = 1200; // 1.2 seconds between requests
 const GQL_TIMEOUT_MS = 10000;
-const CHUNK_SIZE = 100; // Write to Supabase in chunks
+const CHUNK_SIZE = 50;       // write to Supabase in chunks of 50
 
 // ── GQL Query ─────────────────────────────────────────────────────────────────
 const GET_MINTED_MOMENT = `
@@ -111,7 +111,10 @@ async function fetchOwnedIds(wallet) {
 }
 
 // ── Fetch moment data from TS GQL ─────────────────────────────────────────────
-async function fetchMomentData(flowId) {
+// Returns either a data object or { error: <reason> }. Caller never gets null.
+// Cloudflare 403/429 → exponential backoff (5s, 10s, 15s) up to 3 retries.
+// Network/timeout errors → linear backoff (3s, 6s) up to 2 retries.
+async function fetchMomentData(flowId, attempt = 0) {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), GQL_TIMEOUT_MS);
@@ -120,7 +123,10 @@ async function fetchMomentData(flowId) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        "Origin": "https://nbatopshot.com",
+        "Referer": "https://nbatopshot.com/",
       },
       body: JSON.stringify({
         query: GET_MINTED_MOMENT,
@@ -131,10 +137,28 @@ async function fetchMomentData(flowId) {
 
     clearTimeout(timeout);
 
-    if (!res.ok) return null;
+    if (res.status === 403 || res.status === 429) {
+      if (attempt < 3) {
+        const wait = (attempt + 1) * 5000; // 5s, 10s, 15s
+        process.stdout.write(`\n  [CF block on ${flowId}, waiting ${wait / 1000}s...]\n`);
+        await new Promise((r) => setTimeout(r, wait));
+        return fetchMomentData(flowId, attempt + 1);
+      }
+      return { error: "cloudflare_blocked" };
+    }
+
+    if (!res.ok) {
+      return { error: `http_${res.status}` };
+    }
+
     const json = await res.json();
+
+    if (json.errors) {
+      return { error: "gql_error" };
+    }
+
     const data = json?.data?.getMintedMoment?.data;
-    if (!data) return null;
+    if (!data) return { error: "no_data" };
 
     return {
       lastPurchasePrice: data.lastPurchasePrice != null ? Number(data.lastPurchasePrice) : null,
@@ -143,7 +167,12 @@ async function fetchMomentData(flowId) {
       setName: data.set?.flowName ?? null,
     };
   } catch {
-    return null;
+    if (attempt < 2) {
+      const wait = (attempt + 1) * 3000; // 3s, 6s
+      await new Promise((r) => setTimeout(r, wait));
+      return fetchMomentData(flowId, attempt + 1);
+    }
+    return { error: "timeout_or_network" };
   }
 }
 
@@ -227,43 +256,46 @@ async function main() {
     return;
   }
 
-  // 4. Process in batches
+  // 4. Process sequentially (PARALLEL=1) with backoff and consecutive-error pause
   let totalInserted = 0;
   let totalNoPrice = 0;
   let totalErrors = 0;
+  let consecutiveErrors = 0;
   const pendingRows = [];
   const startTime = Date.now();
 
-  for (let i = 0; i < toProcess.length; i += PARALLEL) {
-    const batch = toProcess.slice(i, i + PARALLEL);
-    const results = await Promise.allSettled(batch.map(fetchMomentData));
+  for (let i = 0; i < toProcess.length; i++) {
+    const flowId = toProcess[i];
+    const result = await fetchMomentData(flowId);
 
-    for (let j = 0; j < batch.length; j++) {
-      const result = results[j];
-      const flowId = batch[j];
+    if (result.error) {
+      totalErrors++;
+      consecutiveErrors++;
 
-      if (result.status !== "fulfilled" || !result.value) {
-        totalErrors++;
-        continue;
+      // 5 consecutive errors → pause 60s and reset
+      if (consecutiveErrors >= 5) {
+        console.log(`\n  [${consecutiveErrors} consecutive errors — pausing 60s...]`);
+        await new Promise((r) => setTimeout(r, 60000));
+        consecutiveErrors = 0;
       }
+    } else {
+      consecutiveErrors = 0;
 
-      const data = result.value;
-      if (!data.lastPurchasePrice || data.lastPurchasePrice <= 0) {
+      if (!result.lastPurchasePrice || result.lastPurchasePrice <= 0) {
         totalNoPrice++;
-        continue;
+      } else {
+        pendingRows.push({
+          nft_id: flowId,
+          wallet: WALLET,
+          buy_price: result.lastPurchasePrice,
+          acquired_date: result.createdAt || new Date().toISOString(),
+          acquired_type: 1,
+          fmv_at_acquisition: null,
+          seller_address: null,
+          transaction_hash: "gql:" + flowId,
+          source: "gql_backfill",
+        });
       }
-
-      pendingRows.push({
-        nft_id: flowId,
-        wallet: WALLET,
-        buy_price: data.lastPurchasePrice,
-        acquired_date: data.createdAt || new Date().toISOString(),
-        acquired_type: 1,
-        fmv_at_acquisition: null,
-        seller_address: null,
-        transaction_hash: "gql:" + flowId,
-        source: "gql_backfill",
-      });
     }
 
     // Write to Supabase in chunks
@@ -274,18 +306,24 @@ async function main() {
     }
 
     // Progress
-    const processed = Math.min(i + PARALLEL, toProcess.length);
+    const processed = i + 1;
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     const rate = (processed / (Number(elapsed) || 1)).toFixed(1);
-    const eta = ((toProcess.length - processed) / (Number(rate) || 1)).toFixed(0);
+    const eta = Math.round((toProcess.length - processed) / (Number(rate) || 1));
+    const etaMin = Math.floor(eta / 60);
+    const etaSec = eta % 60;
     process.stdout.write(
-      `\r  ${processed}/${toProcess.length} | inserted: ${totalInserted + pendingRows.length} | noPrice: ${totalNoPrice} | errors: ${totalErrors} | ${rate}/s | ETA: ${eta}s  `
+      `\r  ${processed}/${toProcess.length} | inserted: ${totalInserted + pendingRows.length} | noPrice: ${totalNoPrice} | errors: ${totalErrors} | ${rate}/s | ETA: ${etaMin}m${etaSec}s  `
     );
 
-    // Delay between batches
-    if (i + PARALLEL < toProcess.length) {
-      await new Promise((r) => setTimeout(r, BATCH_DELAY_MS));
+    // Checkpoint every 500 — leaves a permanent line in scrollback in case
+    // the script crashes or is killed mid-run
+    if (processed % 500 === 0) {
+      console.log(`\n  [Checkpoint: ${processed}/${toProcess.length} — ${totalInserted + pendingRows.length} inserted, ${totalNoPrice} noPrice, ${totalErrors} errors]`);
     }
+
+    // Base delay between ALL requests
+    await new Promise((r) => setTimeout(r, BATCH_DELAY_MS));
   }
 
   // Flush remaining
