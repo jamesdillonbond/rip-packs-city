@@ -23,7 +23,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 // Paginated — pass { offset, limit } in body to process in chunks.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ALGO_VERSION = "1.5.0"
+const ALGO_VERSION = "1.5.1"
 const WINDOW_DAYS = 30
 const DEFAULT_LIMIT = 500
 
@@ -65,6 +65,32 @@ function weightedAveragePrice(sales: { price: number; soldAt: Date }[], now: Dat
     totalWeight += weight
   }
   return totalWeight > 0 ? weightedSum / totalWeight : 0
+}
+
+// Liquidity rating on a 0–5 scale based on the count of sales in the window.
+// Surfaced via fmv_snapshots.liquidity_rating for downstream filtering.
+function liquidityRating(salesCount: number): number {
+  if (salesCount === 0) return 0
+  if (salesCount <= 5) return 1
+  if (salesCount <= 20) return 2
+  if (salesCount <= 50) return 3
+  if (salesCount <= 100) return 4
+  return 5
+}
+
+// LiveToken averageWithoutWackos equivalent: drop sales >5x or <0.2x the
+// median price, then run the existing weighted-average over what's left.
+// Used as the primary FMV signal so wash trades and fat-finger sales never
+// pollute the snapshot.
+function wapWithoutOutliers(sales: { price: number; soldAt: Date }[], now: Date): number {
+  if (sales.length === 0) return 0
+  const prices = sales.map(s => s.price).sort((a, b) => a - b)
+  const mid = Math.floor(prices.length / 2)
+  const median = prices.length % 2 === 0 ? (prices[mid - 1] + prices[mid]) / 2 : prices[mid]
+  if (median <= 0) return weightedAveragePrice(sales, now)
+  const filtered = sales.filter(s => s.price >= median * 0.2 && s.price <= median * 5)
+  if (filtered.length === 0) return weightedAveragePrice(sales, now)
+  return weightedAveragePrice(filtered, now)
 }
 
 function computeConfidence(salesCount: number): "HIGH" | "MEDIUM" | "LOW" {
@@ -383,11 +409,17 @@ export async function POST(req: NextRequest) {
 
     console.log(`[FMV-RECALC] Floor ask available for ${floorAskByEdition.size} editions`)
 
-    // ── Step 3: Delete existing snapshots for these editions ─────────────────
+    // ── Step 3: Delete TODAY's snapshots for these editions only ─────────────
+    // History matters: yesterday + earlier rows must persist so we can chart
+    // price moves, market movers, and trend detection. The 20-min recalc cron
+    // overwrites today's row in place.
+    const todayStart = new Date()
+    todayStart.setUTCHours(0, 0, 0, 0)
     const { error: deleteError, status: delStatus } = await supabaseAdmin
       .from("fmv_snapshots")
       .delete()
       .in("edition_id", editionIds)
+      .gte("computed_at", todayStart.toISOString())
 
     if (deleteError) {
       console.error("DB write failed:", deleteError, { status: delStatus })
@@ -417,6 +449,7 @@ export async function POST(req: NextRequest) {
       )
 
       // Blend Flowty LiveToken FMV if available and within 3x of WAP
+      const cleanWap = wapWithoutOutliers(sales, now)
       let fmv = median
       const livetokenFmv = flowtyFmvByEdition.get(editionId)
       if (livetokenFmv && wap > 0) {
@@ -461,6 +494,8 @@ export async function POST(req: NextRequest) {
         fmv_usd: Number(fmv.toFixed(2)),
         floor_price_usd: Number(floor.toFixed(2)),
         wap_usd: Number(wap.toFixed(2)),
+        wap_without_outliers: Number(cleanWap.toFixed(2)),
+        liquidity_rating: liquidityRating(sales.length),
         confidence,
         ask_proxy_fmv: askProxyFmv,
         sales_count_7d: sales.length,    // column name retained for schema compat; reflects 30d window
