@@ -374,26 +374,6 @@ function ActionCell({
     trackClick(deal, null);
   }
 
-  if (isOwned) {
-    return (
-      <div className="flex flex-col items-end gap-1.5">
-        <span className="rpc-chip" style={{ color: "var(--rpc-text-muted)" }}>
-          ✓ OWNED
-        </span>
-        <a
-          href={deal.buyUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={handleBuy}
-          className="rpc-chip"
-          style={{ color: "var(--rpc-text-muted)", textDecoration: "none" }}
-        >
-          VIEW →
-        </a>
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col items-end gap-1.5">
       {/* Offer amount input — shown when offer mode is active */}
@@ -522,6 +502,13 @@ export default function SniperPage() {
   const [expandedFlowId, setExpandedFlowId] = useState<string | null>(null);
   const [depthDeals, setDepthDeals] = useState<SniperDeal[]>([]);
   const [depthLoading, setDepthLoading] = useState(false);
+  const [depthFloor, setDepthFloor] = useState<{
+    topShotFloor: number | null; topShotListingCount: number;
+    flowtyFloor: number | null; flowtyListingCount: number;
+    crossMarketFloor: number | null; crossMarketSource: string | null;
+    livetokenFmv: number | null;
+  } | null>(null);
+  const [depthFloorError, setDepthFloorError] = useState<string | null>(null);
 
   // ── Task 5: Save search ─────────────────────────────────────────────────────
   const [saveSearchMsg, setSaveSearchMsg] = useState<string | null>(null);
@@ -740,13 +727,24 @@ export default function SniperPage() {
     setExpandedEditionKey(deal.editionKey);
     setDepthLoading(true);
     setDepthDeals([]);
-    try {
-      const res = await fetch(`${feedEndpoint}?editionKey=${encodeURIComponent(deal.editionKey)}&limit=20`, { cache: "no-store" });
-      if (res.ok) {
+    setDepthFloor(null);
+    setDepthFloorError(null);
+
+    // Fetch edition floor data and other listings in parallel
+    const floorPromise = deal.editionKey
+      ? fetch(`/api/edition-floor?editionKey=${encodeURIComponent(deal.editionKey)}`, { cache: "no-store" })
+          .then(async (res) => {
+            if (!res.ok) throw new Error("Floor fetch failed");
+            return res.json();
+          })
+          .then((json) => setDepthFloor(json))
+          .catch(() => setDepthFloorError("Could not load floor data"))
+      : Promise.resolve(setDepthFloorError("No edition data available"));
+
+    const listingsPromise = fetch(`${feedEndpoint}?editionKey=${encodeURIComponent(deal.editionKey)}&limit=20`, { cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) return;
         const json = await res.json();
-        // Group by full edition key: player + set + series + parallelId.
-        // This guarantees that different editions of the same player (e.g.
-        // Base vs Metallic Gold LE, or different sets) never bleed together.
         const groupKey = `${deal.playerName}|${deal.setName}|${deal.seriesName}|${deal.parallelId}`;
         setDepthDeals(
           (json.deals ?? []).filter(
@@ -755,8 +753,10 @@ export default function SniperPage() {
               `${d.playerName}|${d.setName}|${d.seriesName}|${d.parallelId}` === groupKey
           )
         );
-      }
-    } catch {}
+      })
+      .catch(() => {});
+
+    try { await Promise.all([floorPromise, listingsPromise]); } catch {}
     setDepthLoading(false);
   }
 
@@ -945,23 +945,8 @@ export default function SniperPage() {
           {mode === "offers" && <OffersTab />}
           {mode === "deals" && (
           <>
-          {/* ── Primary Filters (Tier dropdown, Player input, Min Discount %) ── */}
+          {/* ── Primary Filters (Player input, Min Discount %) ── */}
           <div className="flex flex-wrap items-center gap-3 mb-4" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
-            <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
-              <span>TIER</span>
-              <select
-                value={tierTab}
-                onChange={(e) => setTierTab(e.target.value as TierTab)}
-                style={{ background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 10px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", outline: "none", textTransform: "uppercase" }}
-              >
-                <option value="all">All</option>
-                <option value="common">Common</option>
-                <option value="rare">Rare</option>
-                <option value="legendary">Legendary</option>
-                <option value="ultimate">Ultimate</option>
-                <option value="fandom">Fandom</option>
-              </select>
-            </label>
             <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
               <span>PLAYER</span>
               <input
@@ -1482,25 +1467,66 @@ export default function SniperPage() {
                       <td colSpan={9} style={{ padding: "8px 16px" }}>
                         {depthLoading ? (
                           <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", padding: "8px 0" }}>Loading other listings…</div>
-                        ) : depthDeals.length === 0 ? (
-                          <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", padding: "8px 0" }}>No other listings for this edition.</div>
                         ) : (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                            <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em", marginBottom: 4 }}>
-                              {depthDeals.length} OTHER LISTING{depthDeals.length !== 1 ? "S" : ""} FOR {deal.playerName} — {deal.setName}
-                            </div>
-                            {[...depthDeals].sort((a, b) => a.askPrice - b.askPrice).map((dd) => (
-                              <div key={dd.flowId} className="flex items-center gap-4" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", padding: "4px 0" }}>
-                                <span style={{ color: "var(--rpc-text-secondary)", minWidth: 60 }}>#{dd.serial}</span>
-                                <span style={{ color: "var(--rpc-text-primary)", fontWeight: 600, minWidth: 70 }}>${fmt(dd.askPrice)}</span>
-                                <span style={{ color: dd.discount >= 15 ? "var(--rpc-success)" : "var(--rpc-text-muted)", minWidth: 60 }}>
-                                  {dd.discount > 0 ? `-${fmt(dd.discount, 1)}%` : "~0%"}
-                                </span>
-                                <span style={{ color: "var(--rpc-text-ghost)", minWidth: 50 }}>{dd.source === "flowty" ? "Flowty" : "TS"}</span>
-                                <span style={{ color: "var(--rpc-text-ghost)", minWidth: 60 }}>{timeAgo(dd.updatedAt)}</span>
-                                <a href={dd.buyUrl} target="_blank" rel="noopener noreferrer" style={{ color: accent, textDecoration: "none" }}>BUY →</a>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            {/* Cross-market floor data */}
+                            {depthFloorError ? (
+                              <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", padding: "4px 0" }}>{depthFloorError}</div>
+                            ) : depthFloor ? (
+                              <div className="flex flex-wrap items-center gap-3" style={{ padding: "6px 0" }}>
+                                <div className="rpc-chip" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <span style={{ fontSize: 9, color: "var(--rpc-text-ghost)", letterSpacing: "0.08em" }}>TOP SHOT</span>
+                                  <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-primary)", fontWeight: 600 }}>
+                                    {depthFloor.topShotFloor != null ? `$${fmt(depthFloor.topShotFloor)}` : "—"}
+                                  </span>
+                                  <span style={{ fontSize: 9, color: "var(--rpc-text-ghost)" }}>({depthFloor.topShotListingCount} listed)</span>
+                                </div>
+                                <div className="rpc-chip" style={{ display: "flex", alignItems: "center", gap: 6, borderColor: "rgba(59,130,246,0.3)" }}>
+                                  <span style={{ fontSize: 9, color: "var(--rpc-info)", letterSpacing: "0.08em" }}>FLOWTY</span>
+                                  <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-primary)", fontWeight: 600 }}>
+                                    {depthFloor.flowtyFloor != null ? `$${fmt(depthFloor.flowtyFloor)}` : "—"}
+                                  </span>
+                                  <span style={{ fontSize: 9, color: "var(--rpc-text-ghost)" }}>({depthFloor.flowtyListingCount} listed)</span>
+                                </div>
+                                {depthFloor.crossMarketFloor != null && (
+                                  <div className="rpc-chip" style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(74,222,128,0.08)", borderColor: "rgba(74,222,128,0.3)" }}>
+                                    <span style={{ fontSize: 9, color: "var(--rpc-success)", letterSpacing: "0.08em" }}>BEST FLOOR</span>
+                                    <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-success)", fontWeight: 700 }}>
+                                      ${fmt(depthFloor.crossMarketFloor)}
+                                    </span>
+                                    <span style={{ fontSize: 9, color: "var(--rpc-text-ghost)" }}>on {depthFloor.crossMarketSource === "flowty" ? "Flowty" : "TopShot"}</span>
+                                  </div>
+                                )}
+                                {depthFloor.livetokenFmv != null && (
+                                  <span className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>
+                                    LT FMV: ${fmt(depthFloor.livetokenFmv)}
+                                  </span>
+                                )}
                               </div>
-                            ))}
+                            ) : null}
+
+                            {/* Other listings */}
+                            {depthDeals.length === 0 ? (
+                              <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", padding: "4px 0" }}>No other listings for this edition.</div>
+                            ) : (
+                              <>
+                                <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em" }}>
+                                  {depthDeals.length} OTHER LISTING{depthDeals.length !== 1 ? "S" : ""} FOR {deal.playerName} — {deal.setName}
+                                </div>
+                                {[...depthDeals].sort((a, b) => a.askPrice - b.askPrice).map((dd) => (
+                                  <div key={dd.flowId} className="flex items-center gap-4" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", padding: "4px 0" }}>
+                                    <span style={{ color: "var(--rpc-text-secondary)", minWidth: 60 }}>#{dd.serial}</span>
+                                    <span style={{ color: "var(--rpc-text-primary)", fontWeight: 600, minWidth: 70 }}>${fmt(dd.askPrice)}</span>
+                                    <span style={{ color: dd.discount >= 15 ? "var(--rpc-success)" : "var(--rpc-text-muted)", minWidth: 60 }}>
+                                      {dd.discount > 0 ? `-${fmt(dd.discount, 1)}%` : "~0%"}
+                                    </span>
+                                    <span style={{ color: "var(--rpc-text-ghost)", minWidth: 50 }}>{dd.source === "flowty" ? "Flowty" : "TS"}</span>
+                                    <span style={{ color: "var(--rpc-text-ghost)", minWidth: 60 }}>{timeAgo(dd.updatedAt)}</span>
+                                    <a href={dd.buyUrl} target="_blank" rel="noopener noreferrer" style={{ color: accent, textDecoration: "none" }}>BUY →</a>
+                                  </div>
+                                ))}
+                              </>
+                            )}
                           </div>
                         )}
                       </td>
