@@ -1143,6 +1143,8 @@ async function computeSniperFeed(opts: {
       isLowestAsk: false,
     });
   }
+  const crossListCount = tsDeals.filter(d => d.source === "flowty").length;
+  if (crossListCount > 0) console.log(`[sniper-feed] Re-tagged ${crossListCount} sub-$1 TS listings as Flowty cross-listings`);
 
   // 6. Enrich Flowty listings (with badge lookup from badgeMap)
   //    FMV priority: LiveToken → Supabase (via TS overlap) → ask-price fallback
