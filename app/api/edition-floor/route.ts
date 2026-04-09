@@ -229,8 +229,14 @@ async function persistFloorToSnapshot(
       if (!latestByEdition.has(eid)) latestByEdition.set(eid, row);
     }
 
-    // Delete old snapshots
-    await supabase.from("fmv_snapshots").delete().in("edition_id", editionIds);
+    // Delete only TODAY's snapshots so historical rows accumulate.
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+    await supabase
+      .from("fmv_snapshots")
+      .delete()
+      .in("edition_id", editionIds)
+      .gte("computed_at", todayStart.toISOString());
 
     // Re-insert with floor data
     const insertRows = results
