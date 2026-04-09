@@ -234,7 +234,12 @@ function serialMultiplier(
     return { mult: 2.5, signal: `Jersey #${serial}`, isSpecial: true };
   if (serial === circulationCount)
     return { mult: 1.3, signal: `Last #${serial}`, isSpecial: true };
-  return { mult: 1, signal: null, isSpecial: false };
+  // Smooth position-based curve for non-special serials. A serial at the
+  // start of an edition gets up to an 8% premium; a serial at the end gets
+  // ~1.0. Matches the LiveToken spread observed on dense editions.
+  const position = circulationCount > 0 ? serial / circulationCount : 0.5;
+  const mult = 1.0 + 0.08 * Math.max(0, 1 - position);
+  return { mult: Number(mult.toFixed(4)), signal: null, isSpecial: false };
 }
 
 // ─── Top Shot GQL ─────────────────────────────────────────────────────────────

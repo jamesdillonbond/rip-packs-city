@@ -23,7 +23,11 @@ function serialMultiplier(serial: number, circ: number): number {
   if (serial <= 10) return 4.5;
   if (serial <= 23) return 2.8;
   if (serial === circ) return 3.0;
-  return Math.max(1.0, Math.pow(circ / 2 / serial, 0.4));
+  // Smooth position-based curve. Mirrors sniper-feed.serialMultiplier so the
+  // FMV API and the sniper feed agree on per-serial weighting for ordinary
+  // serials.
+  const position = circ > 0 ? serial / circ : 0.5;
+  return 1.0 + 0.08 * Math.max(0, 1 - position);
 }
 
 function r2(n: number) { return Math.round(n * 100) / 100; }
