@@ -32,9 +32,21 @@ function serialMultiplier(serial: number, circ: number): number {
 
 function r2(n: number) { return Math.round(n * 100) / 100; }
 
+type FmvSnapshotRow = {
+  edition_id: string;
+  fmv_usd: number;
+  confidence: string;
+  computed_at: string;
+  liquidity_rating: number | null;
+  wap_without_outliers: number | null;
+  sales_count_30d: number | null;
+  days_since_sale: number | null;
+  wap_usd: number | null;
+};
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function lookupEditions(supabase: any, editionKeys: string[], serial?: number) {
-  if (!editionKeys.length) return [];
+  if (!editionKeys.length) return { results: [], extToId: new Map<string, string>() };
 
   // Step 1: resolve external_id → internal UUID (editions table only has id + external_id)
   const { data: editionRows, error: edErr } = await supabase
@@ -53,16 +65,16 @@ async function lookupEditions(supabase: any, editionKeys: string[], serial?: num
 
   const internalIds = Array.from(extToId.values());
 
-  // Step 2: fetch FMV snapshots — columns: edition_id, fmv_usd, confidence, computed_at
-  const fmvMap = new Map<string, { fmv_usd: number; confidence: string; computed_at: string }>();
+  // Step 2: fetch FMV snapshots
+  const fmvMap = new Map<string, FmvSnapshotRow>();
   if (internalIds.length) {
     const { data: fmvRows } = await supabase
       .from("fmv_snapshots")
-      .select("edition_id, fmv_usd, confidence, computed_at")
+      .select("edition_id, fmv_usd, confidence, computed_at, liquidity_rating, wap_without_outliers, sales_count_30d, days_since_sale, wap_usd")
       .in("edition_id", internalIds)
       .order("computed_at", { ascending: false });
 
-    for (const row of (fmvRows ?? [])) {
+    for (const row of (fmvRows ?? []) as FmvSnapshotRow[]) {
       if (!fmvMap.has(row.edition_id)) fmvMap.set(row.edition_id, row);
     }
   }
@@ -74,16 +86,16 @@ async function lookupEditions(supabase: any, editionKeys: string[], serial?: num
   // badge_editions uses series_number + player matching — skip for now, return 0 badge premium
   // TODO: wire badge premium when we confirm badge_editions schema joins to editions
 
-  return editionKeys.map(externalId => {
+  const results = editionKeys.map(externalId => {
     const internalId = extToId.get(externalId);
 
     if (!internalId) {
-      return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", error: "Edition not found" };
+      return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", liquidityRating: null, wapUsd: null, wapClean: null, salesCount30d: null, daysSinceSale: null, error: "Edition not found" };
     }
 
     const fmv = fmvMap.get(internalId);
     if (!fmv) {
-      return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", error: "No FMV data yet" };
+      return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", liquidityRating: null, wapUsd: null, wapClean: null, salesCount30d: null, daysSinceSale: null, error: "No FMV data yet" };
     }
 
     const baseFmv = fmv.fmv_usd;
@@ -109,8 +121,15 @@ async function lookupEditions(supabase: any, editionKeys: string[], serial?: num
       confidence,
       updatedAt: fmv.computed_at,
       fallbackTier,
+      liquidityRating: fmv.liquidity_rating ?? null,
+      wapUsd: fmv.wap_usd ? r2(fmv.wap_usd) : null,
+      wapClean: fmv.wap_without_outliers ? r2(fmv.wap_without_outliers) : null,
+      salesCount30d: fmv.sales_count_30d ?? null,
+      daysSinceSale: fmv.days_since_sale ?? null,
     };
   });
+
+  return { results, extToId };
 }
 
 export async function GET(req: Request) {
@@ -118,15 +137,16 @@ export async function GET(req: Request) {
   const edition = url.searchParams.get("edition");
   const serialParam = url.searchParams.get("serial");
   const serial = serialParam ? parseInt(serialParam, 10) : undefined;
+  const includeHistory = url.searchParams.get("history") === "true";
 
   if (!edition) {
     return NextResponse.json({
       error: "Missing required parameter: edition",
       usage: {
-        single: "GET /api/fmv?edition={setID:playID}[&serial=42]",
+        single: "GET /api/fmv?edition={setID:playID}[&serial=42][&history=true]",
         batch:  "POST /api/fmv  { editions: ['key1', { edition: 'key2', serial: 7 }], serial?: 42 }",
         demo:   "GET /api/fmv/demo",
-        notes:  "Batch accepts up to 100 editions. Each can be a string or { edition, serial? }. Global serial applies to entries without per-edition serial.",
+        notes:  "Batch accepts up to 100 editions. Each can be a string or { edition, serial? }. Global serial applies to entries without per-edition serial. history=true returns the last 21 daily FMV values for a single edition.",
       },
     }, { status: 400 });
   }
@@ -135,7 +155,33 @@ export async function GET(req: Request) {
   const supabase: any = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
   try {
-    const results = await lookupEditions(supabase, [edition], serial);
+    const editionKeys = [edition];
+    const { results, extToId } = await lookupEditions(supabase, editionKeys, serial);
+
+    if (includeHistory && editionKeys.length === 1) {
+      const internalId = extToId.get(editionKeys[0]);
+      if (internalId) {
+        const { data: historyRows } = await supabase
+          .from("fmv_snapshots")
+          .select("fmv_usd, computed_at, sales_count_30d")
+          .eq("edition_id", internalId)
+          .order("computed_at", { ascending: false })
+          .limit(21);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if (historyRows && historyRows.length > 0) {
+          const priceHistory = historyRows.reverse().map((row: any) => ({
+            date: typeof row.computed_at === "string" ? row.computed_at.slice(0, 10) : null,
+            fmv: r2(row.fmv_usd),
+            samples: row.sales_count_30d ?? null,
+          }));
+          if (results.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (results[0] as any).priceHistory = priceHistory;
+          }
+        }
+      }
+    }
+
     const result = results[0];
     const status = result?.error === "Edition not found" ? 404 : 200;
     return NextResponse.json(result, {
@@ -193,7 +239,7 @@ export async function POST(req: Request) {
     const internalIds = Array.from(extToId.values());
 
     // Fetch FMV snapshots in parallel chunks for large batches
-    const fmvMap = new Map<string, { fmv_usd: number; confidence: string; computed_at: string }>();
+    const fmvMap = new Map<string, FmvSnapshotRow>();
     if (internalIds.length) {
       const CHUNK = 50;
       const fmvChunks = [];
@@ -201,14 +247,14 @@ export async function POST(req: Request) {
         fmvChunks.push(
           supabase
             .from("fmv_snapshots")
-            .select("edition_id, fmv_usd, confidence, computed_at")
+            .select("edition_id, fmv_usd, confidence, computed_at, liquidity_rating, wap_without_outliers, sales_count_30d, days_since_sale, wap_usd")
             .in("edition_id", internalIds.slice(i, i + CHUNK))
             .order("computed_at", { ascending: false })
         );
       }
       const fmvResults = await Promise.all(fmvChunks);
       for (const { data: fmvRows } of fmvResults) {
-        for (const row of (fmvRows ?? [])) {
+        for (const row of (fmvRows ?? []) as FmvSnapshotRow[]) {
           if (!fmvMap.has(row.edition_id)) fmvMap.set(row.edition_id, row);
         }
       }
@@ -221,13 +267,13 @@ export async function POST(req: Request) {
       const internalId = extToId.get(externalId);
       if (!internalId) {
         errorCount++;
-        return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", error: "Edition not found" };
+        return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", liquidityRating: null, wapUsd: null, wapClean: null, salesCount30d: null, daysSinceSale: null, error: "Edition not found" };
       }
 
       const fmv = fmvMap.get(internalId);
       if (!fmv) {
         errorCount++;
-        return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", error: "No FMV data yet" };
+        return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", liquidityRating: null, wapUsd: null, wapClean: null, salesCount30d: null, daysSinceSale: null, error: "No FMV data yet" };
       }
 
       const baseFmv = fmv.fmv_usd;
@@ -255,6 +301,11 @@ export async function POST(req: Request) {
         confidence,
         updatedAt: fmv.computed_at,
         fallbackTier,
+        liquidityRating: fmv.liquidity_rating ?? null,
+        wapUsd: fmv.wap_usd ? r2(fmv.wap_usd) : null,
+        wapClean: fmv.wap_without_outliers ? r2(fmv.wap_without_outliers) : null,
+        salesCount30d: fmv.sales_count_30d ?? null,
+        daysSinceSale: fmv.days_since_sale ?? null,
       };
     });
 
