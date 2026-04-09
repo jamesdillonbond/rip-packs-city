@@ -2,6 +2,28 @@ import type { NextConfig } from "next"
 import { withSentryConfig } from "@sentry/nextjs"
 
 const nextConfig: NextConfig = {
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+              "font-src 'self' https://fonts.gstatic.com",
+              "img-src 'self' data: blob: https: http:",
+              "connect-src 'self' https: wss:",
+              "frame-src 'self' https:",
+              "media-src 'self' https:",
+            ].join("; "),
+          },
+        ],
+      },
+    ]
+  },
   async redirects() {
     return [
       { source: "/wallet",  destination: "/nba-top-shot/collection", permanent: false },
