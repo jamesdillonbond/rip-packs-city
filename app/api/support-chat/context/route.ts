@@ -92,6 +92,7 @@ export async function GET(req: NextRequest) {
           tier: tierLabel(d.tier ?? "COMMON"),
           source: d.source ?? "topshot",
           set_name: d.setName,
+          series: d.seriesName ?? null,
           fmv: d.adjustedFmv ?? d.baseFmv,
           buy_url: d.buyUrl ?? null,
         };
@@ -106,7 +107,7 @@ export async function GET(req: NextRequest) {
     try {
       const { data: fallbackRows } = await supabase
         .from("cached_listings")
-        .select("player_name, set_name, tier, ask_price, fmv, discount, badge_slugs, buy_url")
+        .select("player_name, set_name, series_name, tier, ask_price, fmv, discount, badge_slugs, buy_url")
         .gt("discount", 10)
         .not("fmv", "is", null)
         .lt("ask_price", 500)
@@ -118,6 +119,7 @@ export async function GET(req: NextRequest) {
           player_name: r.player_name,
           tier: tierLabel(r.tier ?? "COMMON"),
           set_name: r.set_name,
+          series: r.series_name ?? null,
           low_ask: Number(r.ask_price),
           fmv: Number(r.fmv),
           discount_pct: Math.round(Number(r.discount)),

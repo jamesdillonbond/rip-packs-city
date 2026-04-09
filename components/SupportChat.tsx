@@ -186,11 +186,14 @@ export default function SupportChat({ pageContext, userWallet, walletConnected, 
           const playerName = d.player_name;
           const price = d.low_ask;
           const discountPct = d.discount_pct;
-          const tier = d.tier ?? "Moment";
           if (playerName && price != null && discountPct != null) {
             const priceStr = typeof price === "number" ? price.toFixed(2) : parseFloat(price).toFixed(2);
             const source = d.source === "flowty" ? "Flowty" : "TopShot";
-            parts.push(`🔥 Top deal: ${playerName} (${tier}) — $${priceStr}, ${Math.round(discountPct)}% below FMV on ${source}`);
+            const seriesStr = d.series ? `, ${d.series}` : "";
+            const setStr = d.set_name ? `, ${d.set_name}` : "";
+            let dealLine = `🔥 Top deal: ${playerName}${seriesStr}${setStr} — $${priceStr}, ${Math.round(discountPct)}% below FMV on ${source}`;
+            if (d.buy_url) dealLine += `\n${d.buy_url}`;
+            parts.push(dealLine);
           }
         }
         if (ctx.marketPulse) {
@@ -219,11 +222,18 @@ export default function SupportChat({ pageContext, userWallet, walletConnected, 
     if (!trimmed || isLoading) return;
     setMessages((prev) => [...prev, { id: `u_${Date.now()}`, role: "user", text: trimmed, timestamp: new Date() }]);
     setInput(""); setIsLoading(true);
+    // Build conversationHistory from prior messages (system msgs become user role with [system] prefix so the bot sees context like daily deal URLs)
+    const history = messages
+      .filter((m) => m.id !== "typing" && m.text !== "...")
+      .map((m) => ({
+        role: (m.role === "system" ? "user" : m.role) as "user" | "assistant",
+        content: m.role === "system" ? `[system] ${m.text}` : m.text,
+      }));
     setMessages((prev) => [...prev, { id: "typing", role: "system", text: "...", timestamp: new Date() }]);
     try {
       const res = await fetch("/api/support-chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed, sessionId, userWallet: userWallet || null, pageContext: pageContext || null, walletConnected: !!walletConnected }),
+        body: JSON.stringify({ message: trimmed, sessionId, userWallet: userWallet || null, pageContext: pageContext || null, walletConnected: !!walletConnected, conversationHistory: history }),
       });
       if (res.status === 429) {
         setMessages((prev) => prev.filter((m) => m.id !== "typing"));
@@ -238,7 +248,7 @@ export default function SupportChat({ pageContext, userWallet, walletConnected, 
       setMessages((prev) => prev.filter((m) => m.id !== "typing"));
       setMessages((prev) => [...prev, { id: `e_${Date.now()}`, role: "assistant", text: "Connection issue. Try again in a moment.", timestamp: new Date() }]);
     } finally { setIsLoading(false); }
-  }, [input, isLoading, sessionId, userWallet, pageContext, walletConnected, isOpen]);
+  }, [input, isLoading, sessionId, userWallet, pageContext, walletConnected, isOpen, messages]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
 
