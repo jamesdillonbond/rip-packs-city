@@ -854,6 +854,30 @@ export async function POST(req: NextRequest) {
     // Fire-and-forget — upsert wallet moments into cache for fallback
     upsertWalletMomentsCache(wallet, rows).catch(() => {})
 
+    // Fire-and-forget — persist cost basis from wallet-search purchase data
+    const acquisitionRows = baseRows
+      .filter((r: WalletRow) => r.lastPurchasePrice && r.lastPurchasePrice > 0 && r.flowId)
+      .map((r: WalletRow) => ({
+        nft_id: r.flowId as string,
+        wallet: wallet.startsWith("0x") ? wallet : "0x" + wallet,
+        buy_price: r.lastPurchasePrice as number,
+        acquired_date: r.acquiredAt || new Date().toISOString(),
+        acquired_type: 1,
+        fmv_at_acquisition: (r as any).fmv ?? null,
+        transaction_hash: "ws:" + r.flowId,
+        source: "wallet_search",
+      }))
+    if (acquisitionRows.length > 0) {
+      ;(supabaseAdmin as any)
+        .from("moment_acquisitions")
+        .upsert(acquisitionRows, { onConflict: "nft_id,wallet,transaction_hash", ignoreDuplicates: true })
+        .then(({ error }: { error: any }) => {
+          if (error && !String(error.message ?? "").includes("duplicate")) {
+            console.warn("[wallet-search] Cost basis write error:", error.message)
+          }
+        })
+    }
+
     return NextResponse.json({
       rows,
       walletAddress: wallet,
