@@ -269,12 +269,14 @@ S1 (on-chain 0), S2 (on-chain 2), Summer 2021 (on-chain 3), S3 (on-chain 4), S4 
 When a user wants to find or buy moments:
 1. ALWAYS try search_live_deals first — it now auto-falls back to Supabase catalog if the live feed is empty or times out
 2. If both fail, use search_catalog_deals explicitly
-3. Surface 3-5 concrete options with: player name, series, set name, price, FMV, discount%, any badges
-4. Give a clear buy/watch/pass recommendation on individual moments when asked
-5. For budget queries ("I have $50"), optimize for value: badge presence, discount %, confidence
-6. Never make up prices — always use tool results
-7. ALWAYS include the buy URL for every deal you mention in your response text. Users will ask for links in follow-up messages, and tool results are NOT carried across messages — only your text responses persist in conversation history. If you don't put the URL in your text, you won't be able to reference it later.
-8. You can check a user's wallet for near-complete sets and surface the cheapest missing moments
+3. For badge-specific queries (e.g. 'Rookie Debut', 'Top Shot Debut', 'Championship Year'), go DIRECTLY to search_catalog_deals with hasBadge=true. Do NOT try search_live_deals first — the live feed cannot filter by badge type and you'll waste time.
+4. Surface 3-5 concrete options with: player name, series, set name, price, FMV, discount%, any badges
+5. Give a clear buy/watch/pass recommendation on individual moments when asked
+6. For budget queries ("I have $50"), optimize for value: badge presence, discount %, confidence
+7. Never make up prices — always use tool results
+8. ALWAYS include the buy URL for every deal you mention in your response text. Users will ask for links in follow-up messages, and tool results are NOT carried across messages — only your text responses persist in conversation history. If you don't put the URL in your text, you won't be able to reference it later.
+9. You can check a user's wallet for near-complete sets and surface the cheapest missing moments
+10. When a tool call fails or returns no results, ONLY reference moments you found from actual tool results. NEVER suggest specific players, sets, or prices from your training knowledge — your data is stale and may be wrong. Instead, suggest the user try the Sniper page directly or refine their search.
 
 ## Collection Snapshot
 Use get_collection_snapshot when a user asks about their portfolio value, total collection worth, or wants to share their collection. It returns a full summary with top moments and a shareable link.
@@ -881,7 +883,12 @@ export async function POST(req: NextRequest) {
             escalated = true;
             escalationReason = (tb.input as any).reason;
           }
-          const result = await executeTool(tb.name, tb.input, { sessionId, userWallet });
+          const result = await Promise.race([
+            executeTool(tb.name, tb.input, { sessionId, userWallet }),
+            new Promise<string>((resolve) =>
+              setTimeout(() => resolve(JSON.stringify({ status: "timeout", message: "Tool timed out — try a simpler query" })), 6000)
+            ),
+          ]);
           (toolResults.content as Anthropic.ToolResultBlockParam[]).push({
             type: "tool_result",
             tool_use_id: tb.id,
@@ -906,7 +913,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!finalResponse) {
-      finalResponse = "Sorry, I ran into an issue. Try again in a moment, or reach out to Trevor on Discord.";
+      finalResponse = "That query was too complex for me to handle in time. Try breaking it down — for example, ask me for 'Blazers deals' first, then ask about specific badges. You can also check the Sniper page directly at /nba-top-shot/sniper for the full live feed.";
     }
 
     if (escalated) {
