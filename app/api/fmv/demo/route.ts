@@ -26,7 +26,7 @@ export async function GET() {
     .limit(20);
 
   if (fmvErr) return NextResponse.json({ error: fmvErr.message }, { status: 500 });
-  if (!fmvRows?.length) return NextResponse.json({ description: "RIP PACKS CITY — FMV API Demo", note: "No FMV data available yet — ingest cron is still populating the database.", sampleCount: 0, samples: [] });
+  if (!fmvRows?.length) return NextResponse.json({ description: "RIP PACKS CITY — FMV API with liquidity rating, outlier-filtered WAP, and daily price history. All values USD.", note: "No FMV data available yet — ingest cron is still populating the database.", sampleCount: 0, samples: [] });
 
   // Resolve internal IDs → external edition keys (confirmed columns: id, external_id)
   const internalIds = [...new Set(fmvRows.map((r: { edition_id: string }) => r.edition_id))];
@@ -65,7 +65,7 @@ export async function GET() {
   }
 
   return NextResponse.json({
-    description: "RIP PACKS CITY — FMV API Demo",
+    description: "RIP PACKS CITY — FMV API with liquidity rating, outlier-filtered WAP, and daily price history. All values USD.",
     note: "Real FMV data from our LiveToken-powered ingest pipeline. All values USD.",
     apiUsage: {
       single: "GET  https://rip-packs-city.vercel.app/api/fmv?edition={setID:playID}[&serial=42]",
