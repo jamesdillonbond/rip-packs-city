@@ -22,6 +22,11 @@ type BadgeInfo = {
   lock_rate_pct: number
   low_ask: number | null
   circulation_count: number
+  effective_supply: number | null
+  burned: number
+  owned: number
+  hidden_in_packs: number
+  for_sale_by_collectors: number | null
 }
 
 type MomentRow = {
@@ -395,6 +400,7 @@ export default function WalletPage() {
   const [paginatedTotalPages, setPaginatedTotalPages] = useState(0)
   const [walletTotalFmv, setWalletTotalFmv] = useState<number | null>(null)
   const [activeWallet, setActiveWallet] = useState("")
+  const [costBasis, setCostBasis] = useState<Map<string, { buyPrice: number; acquiredDate: string; fmvAtAcquisition: number | null }>>(new Map())
   const [serverSortBy, setServerSortBy] = useState("fmv_desc")
 
   // Task 2: FMV Alert UI state
@@ -479,6 +485,28 @@ export default function WalletPage() {
     return function() { cancelled = true }
   }, [activeWallet])
 
+  // ── Fetch cost basis when wallet changes ──────────────────────────────────
+  useEffect(function() {
+    if (!activeWallet) { setCostBasis(new Map()); return }
+    let cancelled = false
+    fetch("/api/cost-basis?wallet=" + encodeURIComponent(activeWallet))
+      .then(function(r) { return r.ok ? r.json() : null })
+      .then(function(data) {
+        if (cancelled || !data) return
+        const map = new Map<string, { buyPrice: number; acquiredDate: string; fmvAtAcquisition: number | null }>()
+        for (const item of (data.acquisitions ?? [])) {
+          map.set(item.nft_id, {
+            buyPrice: Number(item.buy_price),
+            acquiredDate: item.acquired_date,
+            fmvAtAcquisition: item.fmv_at_acquisition != null ? Number(item.fmv_at_acquisition) : null,
+          })
+        }
+        setCostBasis(map)
+      })
+      .catch(function() {})
+    return function() { cancelled = true }
+  }, [activeWallet])
+
   // ── FCL wallet connection (for own-collection detection) ───────────────────
   useEffect(function() {
     let cancelled = false
@@ -529,6 +557,11 @@ export default function WalletPage() {
             lock_rate_pct: edition.lock_rate_pct,
             low_ask: edition.low_ask,
             circulation_count: edition.circulation_count,
+            effective_supply: edition.effective_supply ?? null,
+            burned: edition.burned ?? 0,
+            owned: edition.owned ?? 0,
+            hidden_in_packs: edition.hidden_in_packs ?? 0,
+            for_sale_by_collectors: edition.for_sale_by_collectors ?? null,
           })
         }
       }
@@ -1255,6 +1288,32 @@ export default function WalletPage() {
           </div>
         )}
 
+        {/* Cost basis / P&L summary */}
+        {hasSearched && costBasis.size > 0 && (function() {
+          let totalCost = 0
+          let totalFmv = 0
+          let count = 0
+          for (const row of rows) {
+            const cb = costBasis.get(row.flowId ?? "")
+            if (cb && row.fmv && row.fmv > 0) {
+              totalCost += cb.buyPrice
+              totalFmv += row.fmv
+              count++
+            }
+          }
+          const totalPl = totalFmv - totalCost
+          const plPct = totalCost > 0 ? (totalPl / totalCost) * 100 : 0
+          const plColor = totalPl >= 0 ? "text-emerald-400" : "text-red-400"
+          return (
+            <div className="flex flex-wrap gap-6 items-center mb-4 p-3 rounded-lg border border-zinc-800 bg-zinc-950 text-sm font-mono">
+              <div><span className="text-zinc-500">Cost Basis:</span> <span className="text-white">${totalCost.toFixed(2)}</span></div>
+              <div><span className="text-zinc-500">Current FMV:</span> <span className="text-white">${totalFmv.toFixed(2)}</span></div>
+              <div><span className="text-zinc-500">P&amp;L:</span> <span className={plColor}>{totalPl >= 0 ? "+" : ""}{totalPl.toFixed(2)} ({plPct >= 0 ? "+" : ""}{plPct.toFixed(0)}%)</span></div>
+              <div className="text-zinc-600 text-xs">{count} moments with cost data</div>
+            </div>
+          )
+        })()}
+
         {/* Close to Completing callout */}
         {nearCompleteSets.length > 0 && hasSearched && (
           <div style={{ borderLeft: "3px solid #22c55e", background: "#09090b", borderRadius: 6, padding: "10px 14px", marginBottom: 12 }}>
@@ -1441,6 +1500,8 @@ export default function WalletPage() {
                 <th className="p-3 hidden lg:table-cell">Held / Locked</th>
                 <th className="p-3 hidden xl:table-cell">Packs</th>
                 <th className="p-3 whitespace-nowrap">FMV</th>
+                <th className="p-3 hidden xl:table-cell">Paid</th>
+                <th className="p-3 hidden xl:table-cell">P&amp;L</th>
                 <th className="p-3 hidden lg:table-cell">Low Ask</th>
                 <th className="p-3 hidden lg:table-cell">Best Offer</th>
                 <th className="p-3 hidden xl:table-cell">Acquired</th>
@@ -1507,8 +1568,15 @@ export default function WalletPage() {
                         </div>
                       </td>
                       <td className="p-3 text-sm hidden lg:table-cell">
-                        {editionCounts.owned} / {editionCounts.locked}
+                        <div>{editionCounts.owned} / {editionCounts.locked}</div>
                         {isLocked && <span className="ml-1.5 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">Locked</span>}
+                        {row.badgeInfo && row.badgeInfo.circulation_count > 0 && (
+                          <div className="mt-1 text-[10px] text-zinc-500 font-mono leading-tight" title={"Minted: " + row.badgeInfo.circulation_count + " · Owned: " + row.badgeInfo.owned + " · For Sale: " + (row.badgeInfo.for_sale_by_collectors ?? "?") + " · In Packs: " + row.badgeInfo.hidden_in_packs + " · Burned: " + row.badgeInfo.burned}>
+                            <span>{row.badgeInfo.circulation_count.toLocaleString()} minted</span>
+                            {row.badgeInfo.burned > 0 && <span className="text-red-400"> · {row.badgeInfo.burned} burned</span>}
+                            {row.badgeInfo.hidden_in_packs > 0 && <span> · {row.badgeInfo.hidden_in_packs} in packs</span>}
+                          </div>
+                        )}
                       </td>
                       <td className="p-3 text-sm hidden xl:table-cell">
                         {(function() {
@@ -1539,6 +1607,29 @@ export default function WalletPage() {
                           const pctDiff = Math.abs((ask - row.fmv) / row.fmv) * 100
                           if (pctDiff <= 1) return null
                           return <div className="text-[10px] text-zinc-500 font-mono">Ask {"$" + ask.toFixed(2)}</div>
+                        })()}
+                      </td>
+                      <td className="p-3 text-sm hidden xl:table-cell">
+                        {(function() {
+                          const cb = costBasis.get(row.flowId ?? "")
+                          if (!cb) return <span className="text-zinc-600">—</span>
+                          return <span className="font-mono">${cb.buyPrice.toFixed(2)}</span>
+                        })()}
+                      </td>
+                      <td className="p-3 text-sm hidden xl:table-cell">
+                        {(function() {
+                          const cb = costBasis.get(row.flowId ?? "")
+                          const currentFmv = row.fmv
+                          if (!cb || !currentFmv) return <span className="text-zinc-600">—</span>
+                          const pl = currentFmv - cb.buyPrice
+                          const plPct = cb.buyPrice > 0 ? (pl / cb.buyPrice) * 100 : 0
+                          const color = pl >= 0 ? "text-emerald-400" : "text-red-400"
+                          return (
+                            <div className={"font-mono " + color}>
+                              <div>{pl >= 0 ? "+" : ""}{pl.toFixed(2)}</div>
+                              <div className="text-[10px]">{pl >= 0 ? "+" : ""}{plPct.toFixed(0)}%</div>
+                            </div>
+                          )
                         })()}
                       </td>
                       <td className="p-3 text-sm hidden lg:table-cell">
@@ -1665,7 +1756,7 @@ export default function WalletPage() {
 
                     {expanded ? (
                       <tr className="border-b border-zinc-800 bg-black/60">
-                        <td colSpan={12} className="p-4">
+                        <td colSpan={16} className="p-4">
                           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                               <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Market</div>
@@ -1728,6 +1819,11 @@ export default function WalletPage() {
                                     <div>Burn rate: {row.badgeInfo.burn_rate_pct.toFixed(1)}%</div>
                                     <div>Lock rate: {row.badgeInfo.lock_rate_pct.toFixed(1)}%</div>
                                     <div>Circ: {row.badgeInfo.circulation_count.toLocaleString()}</div>
+                                    {row.badgeInfo.effective_supply != null && <div>Effective supply: {row.badgeInfo.effective_supply.toLocaleString()}</div>}
+                                    {row.badgeInfo.owned > 0 && <div>Owned: {row.badgeInfo.owned.toLocaleString()}</div>}
+                                    {row.badgeInfo.for_sale_by_collectors != null && <div>For sale: {row.badgeInfo.for_sale_by_collectors.toLocaleString()}</div>}
+                                    {row.badgeInfo.hidden_in_packs > 0 && <div>In packs: {row.badgeInfo.hidden_in_packs.toLocaleString()}</div>}
+                                    {row.badgeInfo.burned > 0 && <div>Burned: {row.badgeInfo.burned.toLocaleString()}</div>}
                                     {row.badgeInfo.low_ask != null && <div>Edition ask: {formatCurrency(row.badgeInfo.low_ask)}</div>}
                                   </div>
                                 </div>
