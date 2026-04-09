@@ -57,6 +57,8 @@ interface RawListing {
     };
   };
   circulationCount: number;
+  // Wall-clock listing timestamp from the upstream marketplace, when known.
+  listedAt?: string | null;
 }
 
 
@@ -242,6 +244,55 @@ function serialMultiplier(
   return { mult: Number(mult.toFixed(4)), signal: null, isSpecial: false };
 }
 
+// ─── Display-time FMV staleness penalty ───────────────────────────────────────
+//
+// Editions whose only recent print is a single sale from weeks ago routinely
+// produce inflated FMVs after a market move. The recalc job already weights
+// WAP by days_since_sale, but a lone old sale still anchors the curve. This
+// helper applies a display-only haircut at deal-build time so the sniper
+// stops surfacing fake bargains. It does NOT mutate fmv_snapshots.
+//
+// Rules:
+//   - daysSinceSale > 14 AND salesCount30d <= 1 → multiply FMV by 0.7
+//   - confidence LOW AND daysSinceSale > 30   → cap FMV at askPrice (0% discount)
+function applyFmvStalenessPenalty(
+  adjustedFmv: number,
+  askPrice: number,
+  confidence: string,
+  daysSinceSale: number | null,
+  salesCount30d: number | null
+): number {
+  if (adjustedFmv <= 0) return adjustedFmv;
+  let result = adjustedFmv;
+  const days = daysSinceSale ?? 0;
+  const sales = salesCount30d ?? 0;
+
+  if (days > 14 && sales <= 1) {
+    result = result * 0.7;
+  }
+
+  const isLow = confidence === "LOW" || confidence === "low";
+  if (isLow && days > 30) {
+    result = Math.min(result, askPrice);
+  }
+
+  return result;
+}
+
+// Flowty's order.blockTimestamp has historically come back in either seconds
+// or milliseconds depending on the indexer build, and is occasionally 0/null
+// for fresh listings. Normalize to a sensible ISO timestamp; only fall back
+// to "now" when the value is genuinely unusable.
+function flowtyBlockTimestampToIso(raw: number | null | undefined): string {
+  if (!raw || !Number.isFinite(raw) || raw <= 0) return new Date().toISOString();
+  // Heuristic: anything below 10^12 is seconds (Unix epoch in 2001 in seconds
+  // is ~10^9; the same number interpreted as ms is 1970). Multiply by 1000.
+  const ms = raw < 1e12 ? raw * 1000 : raw;
+  const d = new Date(ms);
+  if (isNaN(d.getTime())) return new Date().toISOString();
+  return d.toISOString();
+}
+
 // ─── Top Shot GQL ─────────────────────────────────────────────────────────────
 
 // ─── Top Shot listings from Supabase cache ────────────────────────────────────
@@ -255,7 +306,7 @@ async function fetchTopShotPool(
   try {
     const { data, error } = await (supabase as any)
       .from("ts_listings")
-      .select("listing_id, flow_id, set_id, play_id, serial_number, circulation_count, price_usd, player_name, set_name, moment_tier, series_number, is_locked")
+      .select("listing_id, flow_id, set_id, play_id, serial_number, circulation_count, price_usd, player_name, set_name, moment_tier, series_number, is_locked, listed_at, ingested_at")
       .order("ingested_at", { ascending: false })
       .limit(200);
 
@@ -283,6 +334,8 @@ async function fetchTopShotPool(
       moment_tier: string | null;
       series_number: number | null;
       is_locked: boolean | null;
+      listed_at: string | null;
+      ingested_at: string | null;
     }) => {
       const editionKey = editionKeyMap.get(r.flow_id);
       // Parse edition key "setId:playId" into setPlay IDs
@@ -301,6 +354,10 @@ async function fetchTopShotPool(
         isLocked: r.is_locked ?? false,
         listingOrderID: r.listing_id,
         setPlay: { setID, playID },
+        // Prefer the actual on-chain listing time; fall back to when our
+        // ingest job first saw the row. Either is dramatically better than
+        // "now", which would make every TS deal show as "Just now".
+        listedAt: r.listed_at ?? r.ingested_at ?? null,
       };
     });
 
@@ -919,7 +976,16 @@ async function computeSniperFeed(opts: {
       confidenceSource = "ask_proxy";
     }
 
-    const adjustedFmv = baseFmv * serialMult;
+    let adjustedFmv = baseFmv * serialMult;
+    // Staleness penalty (display-only — does NOT mutate fmv_snapshots).
+    // The recalc weights WAP by days_since_sale decay, but a single sale
+    // from 20+ days ago can still leave FMV inflated relative to the
+    // current market. Apply a 30% haircut when the only data point is
+    // both old (>14d) and lonely (<=1 sale in the last 30d). For LOW
+    // confidence editions where the lone sale is older than a month,
+    // collapse FMV to the ask price so the deal renders at 0% discount
+    // instead of a fake bargain.
+    adjustedFmv = applyFmvStalenessPenalty(adjustedFmv, askPrice, confidence, fmvRow.daysSinceSale, fmvRow.salesCount30d);
     if (askPrice >= adjustedFmv) continue;
     const discount = Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10;
     const dealRating = adjustedFmv > 0 ? Math.max(0, Number((1 - askPrice / adjustedFmv).toFixed(4))) : 0;
@@ -984,7 +1050,7 @@ async function computeSniperFeed(opts: {
       serialSignal,
       thumbnailUrl,
       isLocked: l.isLocked ?? false,
-      updatedAt: new Date().toISOString(),
+      updatedAt: l.listedAt ?? new Date().toISOString(),
       packListingId: fmvRow.packListingId,
       packName: fmvRow.packName,
       packEv: null,
@@ -1069,7 +1135,13 @@ async function computeSniperFeed(opts: {
       }
     }
 
-    const adjustedFmv = baseFmv * serialMult;
+    let adjustedFmv = baseFmv * serialMult;
+    // Same staleness haircut as the TS GQL path. Skip when LiveToken is the
+    // FMV source (its blended price already incorporates fresh signals);
+    // only apply when we are reading from our own fmv_snapshots row.
+    if (confidenceSource !== "livetoken" && fmvRow) {
+      adjustedFmv = applyFmvStalenessPenalty(adjustedFmv, askPrice, confidence, fmvRow.daysSinceSale, fmvRow.salesCount30d);
+    }
     if (askPrice >= adjustedFmv) continue;
     const discount = Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10;
     const dealRating = adjustedFmv > 0 ? Math.max(0, Number((1 - askPrice / adjustedFmv).toFixed(4))) : 0;
@@ -1139,7 +1211,7 @@ async function computeSniperFeed(opts: {
       serialSignal,
       thumbnailUrl: `https://assets.nbatopshot.com/media/${item.momentId}?width=512`,
       isLocked: item.isLocked,
-      updatedAt: item.blockTimestamp ? new Date(item.blockTimestamp).toISOString() : new Date().toISOString(),
+      updatedAt: flowtyBlockTimestampToIso(item.blockTimestamp),
       packListingId: fmvRow?.packListingId ?? null,
       packName: fmvRow?.packName ?? null,
       packEv: null,
