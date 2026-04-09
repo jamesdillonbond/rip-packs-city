@@ -466,7 +466,7 @@ interface FlowtyOrder {
 interface FlowtyNftItem {
   id: string;
   orders?: FlowtyOrder[];
-  card?: { title?: string; num?: number; max?: number };
+  card?: { title?: string; num?: number; max?: number; headerTraits?: Array<{ name: string; value: string }> };
   nftView?: { serial?: number; traits?: Array<{ name: string; value: string }> };
   valuations?: { blended?: { usdValue?: number }; livetoken?: { usdValue?: number } };
 }
@@ -548,8 +548,11 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
 
     // Log actual trait keys from first item so we can verify field names in Vercel logs
     if (from === 0 && rawItems.length > 0) {
-      const firstTraits = flattenTraits(rawItems[0].nftView?.traits);
-      console.log(`[sniper-feed] Flowty trait keys: ${firstTraits.map(t => t.name).join(", ")}`);
+      const firstTraits = [
+        ...flattenTraits(rawItems[0].nftView?.traits),
+        ...(rawItems[0].card?.headerTraits ?? []),
+      ];
+      console.log(`[sniper-feed] Flowty trait keys (merged): ${firstTraits.map(t => t.name).join(", ")}`);
       // Also log a sample set/team value to verify enrichment
       const sampleSetName = getTraitMulti(firstTraits, FLOWTY_TRAIT_MAP.setName);
       const sampleTeam = getTraitMulti(firstTraits, FLOWTY_TRAIT_MAP.teamName);
@@ -563,10 +566,13 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
       const order = item.orders?.find((o) => (o.salePrice ?? 0) > 0) ?? item.orders?.[0];
       if (!order?.listingResourceID) continue;
       if (order.salePrice <= 0) continue;
-      const traits = flattenTraits(item.nftView?.traits);
+      const allTraits = [
+        ...flattenTraits(item.nftView?.traits),
+        ...(item.card?.headerTraits ?? []),
+      ];
       const serial = item.card?.num ?? item.nftView?.serial ?? 0;
       const circ = item.card?.max ?? 0;
-      const subStr = getTraitMulti(traits, FLOWTY_TRAIT_MAP.subedition);
+      const subStr = getTraitMulti(allTraits, FLOWTY_TRAIT_MAP.subedition);
       const livetokenFmv = item.valuations?.blended?.usdValue ?? item.valuations?.livetoken?.usdValue ?? null;
       if (!livetokenFmv || livetokenFmv <= 0) { nullFmvCount++; }
 
@@ -580,15 +586,15 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
         price: order.salePrice,
         livetokenFmv: (livetokenFmv && livetokenFmv > 0) ? livetokenFmv : null,
         blockTimestamp: order.blockTimestamp ?? 0,
-        playerName: item.card?.title ?? getTraitMulti(traits, FLOWTY_TRAIT_MAP.fullName) ?? "",
+        playerName: item.card?.title ?? getTraitMulti(allTraits, FLOWTY_TRAIT_MAP.fullName) ?? "",
         serial,
         circulationCount: circ,
-        setName: getTraitMulti(traits, FLOWTY_TRAIT_MAP.setName),
-        teamName: getTraitMulti(traits, FLOWTY_TRAIT_MAP.teamName),
-        tier: (getTraitMulti(traits, FLOWTY_TRAIT_MAP.tier) || "COMMON").toUpperCase(),
-        seriesNumber: parseInt(getTraitMulti(traits, FLOWTY_TRAIT_MAP.seriesNumber) || "0", 10),
+        setName: getTraitMulti(allTraits, FLOWTY_TRAIT_MAP.setName),
+        teamName: getTraitMulti(allTraits, FLOWTY_TRAIT_MAP.teamName),
+        tier: (getTraitMulti(allTraits, FLOWTY_TRAIT_MAP.tier) || "COMMON").toUpperCase(),
+        seriesNumber: parseInt(getTraitMulti(allTraits, FLOWTY_TRAIT_MAP.seriesNumber) || "0", 10),
         subeditionId: subStr ? parseInt(subStr, 10) || 0 : 0,
-        isLocked: getTraitMulti(traits, FLOWTY_TRAIT_MAP.locked) === "true",
+        isLocked: getTraitMulti(allTraits, FLOWTY_TRAIT_MAP.locked) === "true",
         paymentToken,
       });
     }
@@ -609,6 +615,74 @@ async function fetchAllFlowtyListings(): Promise<FlowtyListing[]> {
     fetchFlowtyPage(96),
   ]);
   return pages.flat();
+}
+
+// ─── Flowty metadata enrichment from badge_editions ──────────────────────────
+// Flowty trait extraction for setName/teamName/seriesNumber has been unreliable.
+// Instead, enrich from badge_editions which has player_name, set_name, team,
+// series_number, tier, and circulation_count.
+
+interface FlowtyEnrichRow {
+  player_name: string;
+  set_name: string | null;
+  team: string | null;
+  series_number: number | null;
+  tier: string | null;
+  circulation_count: number | null;
+}
+
+async function fetchFlowtyEnrichment(
+  supabase: SupabaseClient,
+  playerNames: string[]
+): Promise<Map<string, FlowtyEnrichRow[]>> {
+  if (!playerNames.length) return new Map();
+
+  const { data, error } = await (supabase as any)
+    .from("badge_editions")
+    .select("player_name, set_name, team, series_number, tier, circulation_count");
+
+  if (error) {
+    console.error(`[sniper-feed] flowty enrichment fetch error: ${error.message}`);
+    return new Map();
+  }
+
+  const rows = (data ?? []) as FlowtyEnrichRow[];
+  // Build lookup: lowercase player_name → array of rows (one player can have many editions)
+  const map = new Map<string, FlowtyEnrichRow[]>();
+  const targetNames = new Set(playerNames.map(n => n.toLowerCase().trim()));
+  for (const row of rows) {
+    const key = row.player_name.toLowerCase().trim();
+    if (!targetNames.has(key)) continue;
+    const existing = map.get(key);
+    if (existing) existing.push(row);
+    else map.set(key, [row]);
+  }
+
+  console.log(`[sniper-feed] flowty enrichment: ${map.size}/${playerNames.length} players matched from badge_editions`);
+  return map;
+}
+
+// Pick the best enrichment row for a Flowty listing. Prefer a row that matches
+// the listing's circulation count or tier, since the same player can appear
+// in multiple editions. Any match is better than empty.
+function pickBestEnrichRow(
+  rows: FlowtyEnrichRow[],
+  circ: number,
+  tier: string
+): FlowtyEnrichRow {
+  if (rows.length === 1) return rows[0];
+  // Exact circ match
+  const circMatch = rows.find(r => r.circulation_count === circ);
+  if (circMatch) return circMatch;
+  // Tier match (badge_editions uses MOMENT_TIER_ prefix)
+  const normalizedTier = tier.toUpperCase().replace("MOMENT_TIER_", "");
+  const tierMatch = rows.find(r => {
+    const rt = (r.tier ?? "").toUpperCase().replace("MOMENT_TIER_", "");
+    return rt === normalizedTier;
+  });
+  if (tierMatch) return tierMatch;
+  // Fallback: first row
+  return rows[0];
 }
 
 // ─── Badge enrichment for Flowty deals ───────────────────────────────────────
@@ -902,13 +976,15 @@ async function computeSniperFeed(opts: {
     ...tsListings.map(l => l.play?.stats?.playerName ?? l.playerName ?? "").filter(Boolean),
   ]));
 
-  // 4. Fire all Supabase lookups in parallel (including jersey numbers + retired moments)
-  const [fmvMap, badgeMap, offerMap, jerseyMap, retiredResult] = await Promise.all([
+  // 4. Fire all Supabase lookups in parallel (including jersey numbers + retired moments + Flowty enrichment)
+  const flowtyPlayerNames = Array.from(new Set(flowtyListings.map(l => l.playerName).filter(Boolean)));
+  const [fmvMap, badgeMap, offerMap, jerseyMap, retiredResult, flowtyEnrichMap] = await Promise.all([
     fetchFmvBatch(supabase, Array.from(tsEditionKeys)).catch(() => new Map<string, any>()),
     fetchBadgesByPlayers(supabase, allPlayerNames).catch(() => new Map<string, string[]>()),
     fetchOpenOffers().catch(() => new Map<string, { amount: number; fmv: number | null }>()),
     fetchJerseyNumbers(supabase, allPlayerNames).catch(() => new Map<string, string>()),
     (supabase as any).from("moments").select("nft_id").eq("retired", true).then((res: any) => res).catch(() => ({ data: [] })),
+    fetchFlowtyEnrichment(supabase, flowtyPlayerNames).catch(() => new Map<string, FlowtyEnrichRow[]>()),
   ]);
   const retiredIds = new Set<string>(
     (retiredResult?.data ?? []).map((r: { nft_id: string }) => String(r.nft_id))
@@ -1077,14 +1153,24 @@ async function computeSniperFeed(opts: {
     if (askPrice <= 0) continue;
     if (maxPrice > 0 && askPrice > maxPrice) continue;
 
-    const tier = item.tier ?? "COMMON";
-    if (rarity !== "all" && tier.toLowerCase() !== rarity.toLowerCase()) continue;
-
-    const teamAbbrev = TEAM_ABBREVS[item.teamName] ?? item.teamName;
-    if (team !== "all" && teamAbbrev !== team && item.teamName !== team) continue;
-
+    // Enrich from badge_editions when Flowty traits came back empty
     const serial = item.serial;
     const circ = item.circulationCount;
+    const enrichRows = flowtyEnrichMap.get(item.playerName.toLowerCase().trim());
+    const enrichRow = enrichRows ? pickBestEnrichRow(enrichRows, circ, item.tier) : null;
+
+    const enrichedSetName = item.setName || (enrichRow?.set_name ?? "");
+    const enrichedTeamName = item.teamName || (enrichRow?.team ?? "");
+    const enrichedSeriesNumber = item.seriesNumber || (enrichRow?.series_number ?? 0);
+    const enrichedTier = (item.tier && item.tier !== "COMMON"
+      ? item.tier
+      : (enrichRow?.tier ?? "COMMON").replace("MOMENT_TIER_", "")).toUpperCase() || "COMMON";
+
+    const tier = enrichedTier;
+    if (rarity !== "all" && tier.toLowerCase() !== rarity.toLowerCase()) continue;
+
+    const teamAbbrev = TEAM_ABBREVS[enrichedTeamName] ?? enrichedTeamName;
+    if (team !== "all" && teamAbbrev !== team && enrichedTeamName !== team) continue;
     const jerseyRaw2 = jerseyMap.get(item.playerName.toLowerCase().trim()) ?? null;
     const jerseyNumber = jerseyRaw2 !== null ? Number(jerseyRaw2) || null : null;
     const { mult: serialMult, signal: serialSignal, isSpecial: isSpecialSerial } =
@@ -1185,8 +1271,8 @@ async function computeSniperFeed(opts: {
       intEditionKey,
       playerName: item.playerName,
       teamName: teamAbbrev,
-      setName: item.setName,
-      seriesName: SERIES_NAMES[item.seriesNumber] ?? "",
+      setName: enrichedSetName,
+      seriesName: SERIES_NAMES[enrichedSeriesNumber] ?? "",
       tier,
       parallel: item.subeditionId > 0 ? `Parallel #${item.subeditionId}` : "Base",
       parallelId: item.subeditionId,
