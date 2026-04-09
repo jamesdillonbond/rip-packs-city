@@ -878,6 +878,62 @@ export async function POST(req: NextRequest) {
         })
     }
 
+    // Second pass — fill in cost basis from the sales table for moments that
+    // did not carry a lastPurchasePrice on the GQL response. The most recent
+    // sale of an nft_id is, by definition, the buy that put the moment into
+    // the current owner's collection.
+    const missingCostBasis = baseRows
+      .filter((r: WalletRow) => r.flowId && (!r.lastPurchasePrice || r.lastPurchasePrice <= 0))
+      .map((r: WalletRow) => r.flowId as string)
+      .filter(Boolean)
+
+    if (missingCostBasis.length > 0) {
+      ;(async () => {
+        try {
+          const { data: salesRows } = await (supabaseAdmin as any)
+            .from("sales")
+            .select("nft_id, price_usd, sold_at, seller_address, transaction_hash")
+            .in("nft_id", missingCostBasis.slice(0, 200))
+            .gt("price_usd", 0)
+            .order("sold_at", { ascending: false })
+
+          if (!salesRows || salesRows.length === 0) return
+
+          const latestSaleByNft = new Map<string, any>()
+          for (const row of salesRows) {
+            if (!latestSaleByNft.has(row.nft_id)) latestSaleByNft.set(row.nft_id, row)
+          }
+
+          const walletAddr = wallet.startsWith("0x") ? wallet : "0x" + wallet
+          const salesAcquisitions = Array.from(latestSaleByNft.entries()).map(([nftId, sale]) => ({
+            nft_id: nftId,
+            wallet: walletAddr,
+            buy_price: sale.price_usd,
+            acquired_date: sale.sold_at,
+            acquired_type: 1,
+            fmv_at_acquisition: null,
+            seller_address: sale.seller_address ?? null,
+            transaction_hash: sale.transaction_hash ?? "backfill:" + nftId,
+            source: "sales_backfill",
+          }))
+
+          if (salesAcquisitions.length === 0) return
+
+          const { error } = await (supabaseAdmin as any)
+            .from("moment_acquisitions")
+            .upsert(salesAcquisitions, { onConflict: "nft_id,wallet,transaction_hash", ignoreDuplicates: true })
+
+          if (error && !String(error.message ?? "").includes("duplicate")) {
+            console.warn("[wallet-search] Sales backfill write error:", error.message)
+          } else {
+            console.log("[wallet-search] Sales backfill: wrote " + salesAcquisitions.length + " acquisitions")
+          }
+        } catch (e) {
+          console.warn("[wallet-search] Sales backfill exception:", e instanceof Error ? e.message : String(e))
+        }
+      })()
+    }
+
     return NextResponse.json({
       rows,
       walletAddress: wallet,
