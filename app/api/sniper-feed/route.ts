@@ -134,6 +134,8 @@ export interface SniperDeal {
   paymentToken: "DUC" | "FUT" | "FLOW" | "USDC_E";
   offerAmount: number | null;
   offerFmvPct: number | null;
+  dealRating: number;
+  isLowestAsk: boolean;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -915,6 +917,7 @@ async function computeSniperFeed(opts: {
     const adjustedFmv = baseFmv * serialMult;
     if (askPrice >= adjustedFmv) continue;
     const discount = Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10;
+    const dealRating = adjustedFmv > 0 ? Math.max(0, Number((1 - askPrice / adjustedFmv).toFixed(4))) : 0;
     if (discount < minDiscount) continue;
 
     const thumbnailUrl = l.assetPathPrefix
@@ -989,6 +992,8 @@ async function computeSniperFeed(opts: {
       paymentToken: "DUC",
       offerAmount: null,
       offerFmvPct: null,
+      dealRating,
+      isLowestAsk: false,
     });
   }
 
@@ -1062,6 +1067,7 @@ async function computeSniperFeed(opts: {
     const adjustedFmv = baseFmv * serialMult;
     if (askPrice >= adjustedFmv) continue;
     const discount = Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10;
+    const dealRating = adjustedFmv > 0 ? Math.max(0, Number((1 - askPrice / adjustedFmv).toFixed(4))) : 0;
 
     // For ask-price fallback deals (discount=0), only include if minDiscount is 0
     if (confidenceSource === "ask_fallback" && minDiscount > 0) continue;
@@ -1141,6 +1147,8 @@ async function computeSniperFeed(opts: {
       paymentToken: item.paymentToken,
       offerAmount: null,
       offerFmvPct: null,
+      dealRating,
+      isLowestAsk: false,
     });
   }
 
@@ -1156,6 +1164,20 @@ async function computeSniperFeed(opts: {
       seen.add(d.flowId);
       allDeals.push(d);
     }
+  }
+
+  // 7b. Mark the lowest ask per edition so the UI can flag the floor listing.
+  const lowestAskByEdition = new Map<string, number>();
+  for (const d of allDeals) {
+    const key = d.editionKey || d.flowId;
+    const current = lowestAskByEdition.get(key);
+    if (current === undefined || d.askPrice < current) {
+      lowestAskByEdition.set(key, d.askPrice);
+    }
+  }
+  for (const d of allDeals) {
+    const key = d.editionKey || d.flowId;
+    d.isLowestAsk = d.askPrice === lowestAskByEdition.get(key);
   }
 
   // 8b. Offer enrichment
@@ -1250,6 +1272,12 @@ async function computeSniperFeed(opts: {
             paymentToken: (r.payment_token || "DUC") as "DUC" | "FUT" | "FLOW" | "USDC_E",
             offerAmount: null as number | null,
             offerFmvPct: null as number | null,
+            dealRating: (() => {
+              const adj = Number(r.adjusted_fmv) || Number(r.fmv) || 0;
+              const ask = Number(r.ask_price) || 0;
+              return adj > 0 ? Math.max(0, Number((1 - ask / adj).toFixed(4))) : 0;
+            })(),
+            isLowestAsk: false,
           };
         });
         return {
