@@ -92,17 +92,27 @@ async function supabaseUpdate(table, match, body) {
 }
 
 // ── Top Shot GQL ─────────────────────────────────────────────────────────────
-const GET_EDITION_QUERY = `
-  query GetEditionInfo($setID: String!, $playID: String!) {
-    getEdition(input: { setID: $setID, playID: $playID }) {
+const SEARCH_EDITIONS_QUERY = `
+  query SearchEditionBackfill($input: SearchEditionsInput!) {
+    searchEditions(input: $input) {
       data {
-        setID
-        playID
-        parallelID
-        setVisual { name }
-        playInfo { playerFullName }
-        circulationCount
-        tier
+        searchSummary {
+          data {
+            ... on Editions {
+              data {
+                ... on Edition {
+                  setID
+                  playID
+                  parallelID
+                  circulationCount
+                  tier
+                  setVisual { name }
+                  play { stats { playerName } }
+                }
+              }
+            }
+          }
+        }
       }
     }
   }
@@ -113,16 +123,23 @@ async function fetchEditionGQL(setUUID, playUUID) {
     method: "POST",
     headers: GQL_HEADERS,
     body: JSON.stringify({
-      operationName: "GetEditionInfo",
-      query: GET_EDITION_QUERY,
-      variables: { setID: setUUID, playID: playUUID },
+      operationName: "SearchEditionBackfill",
+      query: SEARCH_EDITIONS_QUERY,
+      variables: {
+        input: {
+          filters: { bySetID: setUUID, byPlayID: playUUID },
+          searchInput: { pagination: { cursor: "", direction: "RIGHT", limit: 1 } },
+        },
+      },
     }),
     signal: AbortSignal.timeout(10000),
   });
   if (!res.ok) throw new Error(`GQL ${res.status}`);
   const json = await res.json();
-  if (json.errors) throw new Error(json.errors[0]?.message || "GQL error");
-  return json.data?.getEdition?.data ?? null;
+  if (json.errors?.length) throw new Error(json.errors[0]?.message || "GQL error");
+  // Navigate: data.searchEditions.data.searchSummary.data.data[0]
+  const editions = json?.data?.searchEditions?.data?.searchSummary?.data?.data;
+  return Array.isArray(editions) ? editions[0] ?? null : null;
 }
 
 function sleep(ms) {
@@ -178,7 +195,9 @@ async function main() {
 
       const setIdOnchain = Number(data.setID);
       const playIdOnchain = Number(data.playID);
-      const playerName = data.playInfo?.playerFullName || null;
+      // play.stats may be an object or array depending on GQL response shape
+      const stats = data.play?.stats;
+      const playerName = (Array.isArray(stats) ? stats[0]?.playerName : stats?.playerName) || null;
       const setName = data.setVisual?.name || null;
       const rawTier = (data.tier || "").replace("MOMENT_TIER_", "").toUpperCase();
       const tier = VALID_TIERS.has(rawTier) ? rawTier : null;
