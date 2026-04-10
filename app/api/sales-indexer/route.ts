@@ -320,7 +320,7 @@ export async function POST(req: NextRequest) {
     if (stillUnresolved.length > 0) {
       console.log(`[sales-indexer] attempting GQL resolution for ${Math.min(stillUnresolved.length, GQL_MAX)} of ${stillUnresolved.length} unresolved nftIDs`)
 
-      const gqlQuery = `query($id:ID!){getMintedMoment(input:{momentId:$id}){data{...on MintedMoment{play{...on Play{id}}set{...on Set{id flowSeriesNumber}}}}}}`
+      const gqlQuery = `query($id:ID!){getMintedMoment(momentId:$id){data{...on MintedMoment{play{...on Play{id}}set{...on Set{id flowSeriesNumber}}}}}}`
 
       // In-memory cache: nftID → edition UUID (avoids repeat GQL calls for same moment)
       const gqlEditionCache = new Map<string, string>()
@@ -340,7 +340,7 @@ export async function POST(req: NextRequest) {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              ...(process.env.TS_PROXY_SECRET ? { "x-topshot-proxy-secret": process.env.TS_PROXY_SECRET } : {}),
+              ...(process.env.TS_PROXY_SECRET ? { "X-Proxy-Secret": process.env.TS_PROXY_SECRET } : {}),
             },
             body: JSON.stringify({
               query: gqlQuery,
