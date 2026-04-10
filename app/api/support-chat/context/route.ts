@@ -85,6 +85,7 @@ export async function GET(req: NextRequest) {
       const deals = sniperData.deals ?? [];
       if (deals.length > 0) {
         const d = deals[0];
+        console.log("[context] daily deal raw:", JSON.stringify({ setName: d.setName, seriesName: d.seriesName, playerName: d.playerName }));
         dailyDeal = {
           player_name: d.playerName,
           low_ask: d.askPrice,
