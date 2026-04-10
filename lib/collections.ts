@@ -22,6 +22,13 @@ export interface Collection {
   graphqlUrl?: string
   flowContractName?: string
   openSeaSlug?: string
+  contractAddress?: string
+  contractName?: string
+  flowtyCollectionFilter?: string
+  gqlEndpoint?: string
+  gqlProxyPath?: string
+  mediaCdnBase?: string
+  cadenceCollectionPath?: string
 }
 
 export const COLLECTIONS: Collection[] = [
@@ -38,6 +45,13 @@ export const COLLECTIONS: Collection[] = [
     published: true,
     graphqlUrl: "https://public-api.nbatopshot.com/graphql",
     flowContractName: "TopShot",
+    contractAddress: "0x0b2a3299cc857e29",
+    contractName: "TopShot",
+    flowtyCollectionFilter: "0x0b2a3299cc857e29/TopShot",
+    gqlEndpoint: "https://public-api.nbatopshot.com/graphql",
+    gqlProxyPath: "/topshot",
+    mediaCdnBase: "https://assets.nbatopshot.com",
+    cadenceCollectionPath: "/public/MomentCollection",
   },
   {
     id: "nfl-all-day",
@@ -52,6 +66,12 @@ export const COLLECTIONS: Collection[] = [
     published: false,
     graphqlUrl: "https://public-api.nflallday.com/graphql",
     flowContractName: "AllDay",
+    contractAddress: "0xe4cf4bdc1751c65d",
+    contractName: "AllDay",
+    flowtyCollectionFilter: "0xe4cf4bdc1751c65d/AllDay",
+    gqlEndpoint: "https://public-api.nflallday.com/graphql",
+    mediaCdnBase: "https://assets.nflallday.com",
+    cadenceCollectionPath: "/public/AllDayNFTCollection",
   },
   {
     id: "disney-pinnacle",
@@ -66,6 +86,11 @@ export const COLLECTIONS: Collection[] = [
     published: false,
     graphqlUrl: "https://public-api.disneypinnacle.com/graphql",
     flowContractName: "Pinnacle",
+    contractAddress: "0xedf9df96c92f4595",
+    contractName: "Pinnacle",
+    flowtyCollectionFilter: "0xedf9df96c92f4595/Pinnacle",
+    gqlEndpoint: "https://public-api.disneypinnacle.com/graphql",
+    cadenceCollectionPath: "/public/PinnacleCollection",
   },
   {
     id: "laliga-golazos",
@@ -80,6 +105,11 @@ export const COLLECTIONS: Collection[] = [
     published: false,
     graphqlUrl: "https://public-api.laligagolazos.com/graphql",
     flowContractName: "Golazos",
+    contractAddress: "0x87ca73a41bb50ad5",
+    contractName: "Golazos",
+    flowtyCollectionFilter: "0x87ca73a41bb50ad5/Golazos",
+    gqlEndpoint: "https://public-api.laligagolazos.com/graphql",
+    cadenceCollectionPath: "/public/GolazosNFTCollection",
   },
   {
     id: "ufc",
@@ -93,6 +123,10 @@ export const COLLECTIONS: Collection[] = [
     pages: ["overview", "collection", "sniper"],
     published: false,
     flowContractName: "UFCStrike",
+    contractAddress: "0x329feb3ab062d289",
+    contractName: "UFC_NFT",
+    flowtyCollectionFilter: "0x329feb3ab062d289/UFC_NFT",
+    cadenceCollectionPath: "/public/UFC_NFTCollection",
   },
   {
     id: "panini-blockchain",
