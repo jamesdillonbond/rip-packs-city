@@ -64,6 +64,8 @@ export async function POST(req: NextRequest) {
   const start = Date.now()
   const debugMode = req.nextUrl.searchParams.get("debug") === "true"
 
+  console.log(`[sales-indexer] proxy config: url=${process.env.TS_PROXY_URL ? 'SET' : 'UNSET'} secret=${process.env.TS_PROXY_SECRET ? 'SET' : 'UNSET'}`)
+
   // Auth check
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
@@ -333,6 +335,7 @@ export async function POST(req: NextRequest) {
         }
 
         try {
+          console.log(`[sales-indexer] GQL attempting nftID=${nftId} url=${proxyUrl}`)
           const resp = await fetch(proxyUrl, {
             method: "POST",
             headers: {
@@ -345,8 +348,10 @@ export async function POST(req: NextRequest) {
             }),
           })
 
+          console.log(`[sales-indexer] GQL response status=${resp.status}`)
           if (resp.ok) {
             const json = await resp.json()
+            console.log(`[sales-indexer] GQL response body=${JSON.stringify(json).slice(0, 500)}`)
             const momentData = json?.data?.getMintedMoment?.data
             if (momentData) {
               const playId = momentData.play?.id
@@ -380,8 +385,8 @@ export async function POST(req: NextRequest) {
                   if (edRow2?.id) {
                     gqlResolvedMap.set(nftId, edRow2.id)
                     gqlEditionCache.set(nftId, edRow2.id)
-                  } else if (debugMode) {
-                    console.log(`[sales-indexer][debug] GQL resolved nftID=${nftId} to set=${setId} play=${playId} but no edition found`)
+                  } else {
+                    console.log(`[sales-indexer] GQL edition lookup failed for setId=${setId} playId=${playId}`)
                   }
                 }
               }
