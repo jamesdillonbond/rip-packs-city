@@ -335,7 +335,10 @@ export async function POST(req: NextRequest) {
         try {
           const resp = await fetch(proxyUrl, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              ...(process.env.TS_PROXY_SECRET ? { "x-topshot-proxy-secret": process.env.TS_PROXY_SECRET } : {}),
+            },
             body: JSON.stringify({
               query: gqlQuery,
               variables: { id: nftId },
