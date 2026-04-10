@@ -11,6 +11,37 @@ Repo: github.com/jamesdillonbond/rip-packs-city (public)
 
 ---
 
+## Recent sessions
+
+### April 10, 2026 Session
+
+Shipped (16+ commits)
+
+- On-chain sales indexer: NFTStorefrontV2.ListingCompleted + TopShotMarketV3.MomentPurchased events, 250-block chunks, GQL fallback via Cloudflare proxy for unknown nftIDs, dedup via transaction_hash
+- Pipeline trigger endpoint: GET /api/pipeline-trigger?token= runs ingest→sales-indexer→fmv-recalc→listing-cache sequentially
+- Historical sales backfill script: scripts/sales-backfill.mjs
+- Edition metadata backfill script: scripts/backfill-edition-metadata.mjs (team_name + stub names via GQL)
+- Collection page FMV coalesce fix (get_wallet_moments_with_fmv uses direct edition columns)
+- Sniper: edition depth server-side filter, sub-$1 source re-tagging
+- Discovery scripts: All Day (23 NFTs), Golazos (44 NFTs), UFC Strike (247 NFTs, migrated to Aptos)
+- Collection adapter refactor: owned-flow-ids route accepts collection param with dynamic Cadence
+- Pipeline CI: sales indexer step added between Flowty Sales and FMV Recalc
+- Pipeline fixes: ask_proxy_fmv column added, editions upsert composite constraint, allday-ingest null guard
+- Analytics tab: /[collection]/analytics with marketplace volume/sales dashboard
+- Tier coverage: 100% (0 nulls)
+- CSP fix: Google Fonts domains allowed in proxy.ts style-src/font-src
+
+Key Constants
+
+- event_cursor table: tracks last_processed_block for on-chain event indexing
+- sales.source column: 'onchain' for chain-indexed sales, null for existing Flowty/GQL sales
+- Cloudflare proxy header: X-Proxy-Secret (not x-topshot-proxy-secret)
+- TopShotMarketV3 event: A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased (id, price, seller)
+- NFTStorefrontV2 event: A.4eb8a10cb9f87357.NFTStorefrontV2.ListingCompleted (purchased, nftType, nftID, salePrice)
+- Pipeline order: Ingest → Sales Indexer → FMV Recalc → FMV Backfill → Listing Cache
+
+---
+
 ## Infrastructure IDs (required on every tool call)
 
 - Supabase project ID: bxcqstmqfzmuolpuynti
