@@ -93,16 +93,16 @@ async function supabaseUpdate(table, match, body) {
 const SEARCH_EDITIONS_QUERY = `
   query SearchEditionBackfill($input: SearchEditionsInput!) {
     searchEditions(input: $input) {
-      data {
-        searchSummary {
-          data {
-            ... on Editions {
-              data {
-                ... on Edition {
-                  setID
-                  playID
-                  circulationCount
-                }
+      searchSummary {
+        data {
+          ... on Editions {
+            data {
+              ... on Edition {
+                id
+                set { flowId }
+                play { flowID }
+                circulationCount
+                tier
               }
             }
           }
@@ -121,7 +121,7 @@ async function fetchEditionGQL(setUUID, playUUID) {
       query: SEARCH_EDITIONS_QUERY,
       variables: {
         input: {
-          filters: { bySetID: setUUID, byPlayID: playUUID },
+          filters: { bySetIDs: [setUUID], byPlayIDs: [playUUID] },
           searchInput: { pagination: { cursor: "", direction: "RIGHT", limit: 1 } },
         },
       },
@@ -131,8 +131,8 @@ async function fetchEditionGQL(setUUID, playUUID) {
   if (!res.ok) throw new Error(`GQL ${res.status}`);
   const json = await res.json();
   if (json.errors?.length) throw new Error(json.errors[0]?.message || "GQL error");
-  // Navigate: data.searchEditions.data.searchSummary.data.data[0]
-  const editions = json?.data?.searchEditions?.data?.searchSummary?.data?.data;
+  // Navigate: data.searchEditions.searchSummary.data.data[0]
+  const editions = json?.data?.searchEditions?.searchSummary?.data?.data;
   return Array.isArray(editions) ? editions[0] ?? null : null;
 }
 
@@ -150,7 +150,7 @@ async function main() {
   while (true) {
     const rows = await supabaseSelect(
       "editions",
-      `select=id,external_id,circulation_count&or=(set_id_onchain.is.null,play_id_onchain.is.null)&order=id&offset=${offset}&limit=${pageSize}`
+      `select=id,external_id,circulation_count,tier&or=(set_id_onchain.is.null,play_id_onchain.is.null)&order=id&offset=${offset}&limit=${pageSize}`
     );
     allEditions.push(...rows);
     if (rows.length < pageSize) break;
@@ -180,22 +180,24 @@ async function main() {
 
     try {
       const data = await fetchEditionGQL(setUUID, playUUID);
-      if (!data || data.setID == null || data.playID == null) {
+      if (!data || data.set?.flowId == null || data.play?.flowID == null) {
         failures++;
         if (failures <= 20) console.warn(`[backfill] ${processed}/${allEditions.length} — GQL returned null for ${extId}`);
         await sleep(DELAY_MS);
         continue;
       }
 
-      const setIdOnchain = Number(data.setID);
-      const playIdOnchain = Number(data.playID);
+      const setIdOnchain = parseInt(data.set.flowId, 10);
+      const playIdOnchain = parseInt(data.play.flowID, 10);
       const circulationCount = data.circulationCount ? Number(data.circulationCount) : null;
+      const rawTier = data.tier ? data.tier.replace(/^MOMENT_TIER_/, "") : null;
 
       const patch = {
         set_id_onchain: setIdOnchain,
         play_id_onchain: playIdOnchain,
       };
       if (!edition.circulation_count && circulationCount) patch.circulation_count = circulationCount;
+      if (!edition.tier && rawTier) patch.tier = rawTier;
 
       await supabaseUpdate("editions", `id=eq.${edition.id}`, patch);
       updated++;
