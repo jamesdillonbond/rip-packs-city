@@ -24,7 +24,7 @@ const GQL_HEADERS = {
   "User-Agent": "sports-collectible-tool/0.1",
 }
 if (process.env.TS_PROXY_SECRET) {
-  GQL_HEADERS["x-topshot-proxy-secret"] = process.env.TS_PROXY_SECRET
+  GQL_HEADERS["X-Proxy-Secret"] = process.env.TS_PROXY_SECRET
 }
 
 const DELAY_MS = 200
