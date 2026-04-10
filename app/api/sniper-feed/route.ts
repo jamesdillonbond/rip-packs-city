@@ -880,6 +880,7 @@ const feedParamsSchema = z.object({
   limit: z.coerce.number().min(1).max(500).default(0), // 0 = no limit
   sortBy: z.enum(["discount", "price_asc", "price_desc", "fmv_desc", "serial_asc", "listed_desc"]).default("listed_desc"),
   flowWalletOnly: z.enum(["true", "false"]).default("false"),
+  editionKey: z.string().default(""), // edition depth filter (e.g. "26:504")
 });
 
 // ─── Route handler ────────────────────────────────────────────────────────────
@@ -905,6 +906,15 @@ export async function GET(req: Request) {
     let result = await getOrSetCache(cacheKey, CACHE_TTL, async () => {
       return computeSniperFeed({ minDiscount, rarity: effectiveRarity, team, badgeOnly, serialFilter, maxPrice, sortBy });
     }) as { count: number; tsCount: number; flowtyCount: number; lastRefreshed: string; deals: SniperDeal[]; cached?: boolean };
+
+    // Post-fetch filter: edition key (for edition depth panel)
+    if (params.editionKey) {
+      const ek = params.editionKey;
+      const filtered = (result.deals as SniperDeal[]).filter(
+        (d) => d.editionKey === ek || d.intEditionKey === ek
+      );
+      result = { ...result, deals: filtered, count: filtered.length };
+    }
 
     // Post-fetch filter: player name (case-insensitive substring match)
     if (player && player.trim()) {
