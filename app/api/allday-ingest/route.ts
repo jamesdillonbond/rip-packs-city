@@ -129,7 +129,12 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyNftItem[]> {
     )
   }
   const json = await res.json()
-  return (json?.nfts ?? json?.data ?? []) as FlowtyNftItem[]
+  const items = json?.nfts ?? json?.data ?? []
+  if (!Array.isArray(items)) {
+    console.error(`[ALLDAY-INGEST] fetchFlowtyPage from=${from}: expected array, got ${typeof items}`, JSON.stringify(items).slice(0, 300))
+    return []
+  }
+  return items as FlowtyNftItem[]
 }
 
 // ── Supabase upserts ─────────────────────────────────────────────────────────
@@ -242,7 +247,7 @@ async function upsertEdition(
         play_category: playCategory ?? null,
         game_date: gameDate ? gameDate.split("T")[0] : null,
       },
-      { onConflict: "external_id", ignoreDuplicates: false }
+      { onConflict: "external_id,collection_id", ignoreDuplicates: false }
     )
     .select("id")
     .single()
