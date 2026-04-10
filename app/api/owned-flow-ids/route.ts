@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import fcl from "@/lib/flow"
 import * as t from "@onflow/types"
+import { getCollection } from "@/lib/collections"
 
 // GET /api/owned-flow-ids?wallet=0x...
 //
@@ -23,23 +24,48 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "wallet must be a Flow 0x address" }, { status: 400 })
   }
 
-  const cadenceIds = `
-    import TopShot from 0x0b2a3299cc857e29
+  // Collection-aware: look up contract details from registry (default: nba-top-shot)
+  const collectionSlug = req.nextUrl.searchParams.get("collection") ?? "nba-top-shot"
+  const col = getCollection(collectionSlug)
+  const contractAddr = col?.contractAddress ?? "0x0b2a3299cc857e29"
+  const contractName = col?.contractName ?? "TopShot"
+  const collectionPath = col?.cadenceCollectionPath ?? "/public/MomentCollection"
+
+  // TopShot uses a specific MomentCollectionPublic interface; other collections
+  // use the generic NonFungibleToken.CollectionPublic interface.
+  const isTopShot = contractName === "TopShot"
+
+  const cadenceIds = isTopShot
+    ? `
+    import TopShot from ${contractAddr}
     access(all)
     fun main(address: Address): [UInt64] {
       let acct = getAccount(address)
-      let col = acct.capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
+      let col = acct.capabilities.borrow<&{TopShot.MomentCollectionPublic}>(${collectionPath})
+      if col == nil { return [] }
+      return col!.getIDs()
+    }
+  `
+    : `
+    import NonFungibleToken from 0x1d7e57aa55817448
+    access(all)
+    fun main(address: Address): [UInt64] {
+      let acct = getAccount(address)
+      let col = acct.capabilities.borrow<&{NonFungibleToken.CollectionPublic}>(${collectionPath})
       if col == nil { return [] }
       return col!.getIDs()
     }
   `
 
-  const cadenceEditions = `
-    import TopShot from 0x0b2a3299cc857e29
+  // Edition key extraction is TopShot-specific (setID:playID).
+  // Other collections don't have the same structure, so we skip editions for them.
+  const cadenceEditions = isTopShot
+    ? `
+    import TopShot from ${contractAddr}
 
     access(all) fun main(account: Address): {String: Bool} {
         let acct = getAccount(account)
-        let ref = acct.capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
+        let ref = acct.capabilities.borrow<&{TopShot.MomentCollectionPublic}>(${collectionPath})
             ?? panic("Could not borrow collection")
         let ids = ref.getIDs()
         let editions: {String: Bool} = {}
@@ -51,6 +77,7 @@ export async function GET(req: NextRequest) {
         return editions
     }
   `
+    : null
 
   // Wrap each script in its own promise. The editions script can fail under
   // execution-limit pressure for very large collections — we want to still
@@ -69,6 +96,7 @@ export async function GET(req: NextRequest) {
   })()
 
   const editionsPromise: Promise<string[]> = (async () => {
+    if (!cadenceEditions) return [] // Non-TopShot collections don't support edition keys
     try {
       // 30s soft timeout for the per-moment iteration script.
       const result = await Promise.race([
