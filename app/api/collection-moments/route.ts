@@ -198,6 +198,7 @@ export async function GET(req: NextRequest) {
         low_ask: row.low_ask != null ? Number(row.low_ask) : null,
         player_name: row.player_name ?? null,
         set_name: row.set_name ?? null,
+        team_name: row.team_name ?? null,
         tier: row.tier ?? null,
         series_number: row.series_number != null ? Number(row.series_number) : null,
         circulation_count: row.circulation_count != null ? Number(row.circulation_count) : null,
