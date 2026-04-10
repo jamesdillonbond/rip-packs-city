@@ -303,6 +303,103 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Step 4d: GQL fallback for unresolved nftIDs
+    const stillUnresolved = uniqueNftIds.filter((id) => {
+      if (cacheMap.has(id) && editionKeyToId.has(cacheMap.get(id)!.edition_key)) return false
+      if (momentsMap.has(id)) return false
+      return true
+    })
+
+    const GQL_MAX = 50
+    const GQL_DELAY_MS = 200
+    const gqlResolvedMap = new Map<string, string>() // nftID → edition UUID
+    const proxyUrl = process.env.TS_PROXY_URL || "https://public-api.nbatopshot.com/graphql"
+
+    if (stillUnresolved.length > 0) {
+      console.log(`[sales-indexer] attempting GQL resolution for ${Math.min(stillUnresolved.length, GQL_MAX)} of ${stillUnresolved.length} unresolved nftIDs`)
+
+      const gqlQuery = `query($id:ID!){getMintedMoment(input:{momentId:$id}){data{...on MintedMoment{play{...on Play{id}}set{...on Set{id flowSeriesNumber}}}}}}`
+
+      // In-memory cache: nftID → edition UUID (avoids repeat GQL calls for same moment)
+      const gqlEditionCache = new Map<string, string>()
+
+      for (let i = 0; i < Math.min(stillUnresolved.length, GQL_MAX); i++) {
+        const nftId = stillUnresolved[i]
+
+        // Skip if already resolved by a prior GQL call in this run
+        if (gqlEditionCache.has(nftId)) {
+          gqlResolvedMap.set(nftId, gqlEditionCache.get(nftId)!)
+          continue
+        }
+
+        try {
+          const resp = await fetch(proxyUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              query: gqlQuery,
+              variables: { id: nftId },
+            }),
+          })
+
+          if (resp.ok) {
+            const json = await resp.json()
+            const momentData = json?.data?.getMintedMoment?.data
+            if (momentData) {
+              const playId = momentData.play?.id
+              const setId = momentData.set?.id
+
+              if (playId && setId) {
+                // Try UUID-based lookup: set_id + player_id columns
+                const { data: edRow } = await (supabaseAdmin as any)
+                  .from("editions")
+                  .select("id, external_id")
+                  .eq("collection_id", TOPSHOT_COLLECTION_ID)
+                  .eq("set_id", setId)
+                  .eq("player_id", playId)
+                  .limit(1)
+                  .maybeSingle()
+
+                if (edRow?.id) {
+                  gqlResolvedMap.set(nftId, edRow.id)
+                  gqlEditionCache.set(nftId, edRow.id)
+                } else {
+                  // Fallback: try external_id if GQL returns integer-like IDs
+                  const extKey = `${setId}:${playId}`
+                  const { data: edRow2 } = await (supabaseAdmin as any)
+                    .from("editions")
+                    .select("id")
+                    .eq("collection_id", TOPSHOT_COLLECTION_ID)
+                    .eq("external_id", extKey)
+                    .limit(1)
+                    .maybeSingle()
+
+                  if (edRow2?.id) {
+                    gqlResolvedMap.set(nftId, edRow2.id)
+                    gqlEditionCache.set(nftId, edRow2.id)
+                  } else if (debugMode) {
+                    console.log(`[sales-indexer][debug] GQL resolved nftID=${nftId} to set=${setId} play=${playId} but no edition found`)
+                  }
+                }
+              }
+            }
+          } else {
+            console.log(`[sales-indexer] GQL lookup failed for nftID=${nftId}: HTTP ${resp.status}`)
+          }
+        } catch (err) {
+          console.log(`[sales-indexer] GQL lookup error for nftID=${nftId}:`, err instanceof Error ? err.message : String(err))
+        }
+
+        if (i < Math.min(stillUnresolved.length, GQL_MAX) - 1) {
+          await delay(GQL_DELAY_MS)
+        }
+      }
+
+      if (gqlResolvedMap.size > 0) {
+        console.log(`[sales-indexer] GQL resolved ${gqlResolvedMap.size} additional editions`)
+      }
+    }
+
     // Step 5 & 6: Build and insert sales
     const salesBatch: any[] = []
     const unresolvedIds: string[] = []
@@ -318,6 +415,11 @@ export async function POST(req: NextRequest) {
         serialNumber = cached.serial_number ?? 0
       } else {
         editionId = momentsMap.get(nftId) ?? null
+      }
+
+      // GQL fallback
+      if (!editionId) {
+        editionId = gqlResolvedMap.get(nftId) ?? null
       }
 
       if (!editionId) {
@@ -348,7 +450,7 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    console.log(`[sales-indexer] resolved ${salesBatch.length} sales, ${unresolvedIds.length} unresolved`)
+    console.log(`[sales-indexer] resolved ${salesBatch.length} sales (${gqlResolvedMap.size} via GQL), ${unresolvedIds.length} unresolved`)
 
     // Insert in batches of 100
     let inserted = 0
@@ -404,6 +506,7 @@ export async function POST(req: NextRequest) {
       blocksScanned: targetHeight - lastBlock,
       eventsFound: matchingEvents.length,
       salesResolved: salesBatch.length,
+      gqlResolved: gqlResolvedMap.size,
       salesInserted: inserted,
       salesDuped: duped,
       unresolved: unresolvedIds.slice(0, 50),
