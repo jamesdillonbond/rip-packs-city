@@ -4,7 +4,7 @@ const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://rip-packs-city.ver
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const collections = ['nba-top-shot']
-  const pages = ['collection', 'packs', 'sniper', 'badges', 'sets']
+  const pages = ['collection', 'packs', 'sniper', 'badges', 'sets', 'analytics']
 
   const staticPages: MetadataRoute.Sitemap = [
     { url: BASE_URL, lastModified: new Date(), changeFrequency: 'daily', priority: 1.0 },

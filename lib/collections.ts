@@ -7,6 +7,7 @@ export type CollectionPage =
   | "sets"
   | "vault"
   | "market"
+  | "analytics"
 
 export interface Collection {
   id: string
@@ -40,8 +41,8 @@ export const COLLECTIONS: Collection[] = [
     chain: "flow",
     partner: "Dapper Labs",
     accent: "#E03A2F",
-    icon: "🏀",
-    pages: ["overview", "collection", "packs", "sniper", "market", "sets"],
+    icon: "\u{1F3C0}",
+    pages: ["overview", "collection", "packs", "sniper", "market", "sets", "analytics"],
     published: true,
     graphqlUrl: "https://public-api.nbatopshot.com/graphql",
     flowContractName: "TopShot",
@@ -61,7 +62,7 @@ export const COLLECTIONS: Collection[] = [
     chain: "flow",
     partner: "Dapper Labs",
     accent: "#4F94D4",
-    icon: "🏈",
+    icon: "\u{1F3C8}",
     pages: ["overview", "collection", "packs", "sniper", "sets"],
     published: false,
     graphqlUrl: "https://public-api.nflallday.com/graphql",
@@ -81,7 +82,7 @@ export const COLLECTIONS: Collection[] = [
     chain: "flow",
     partner: "Dapper Labs",
     accent: "#A855F7",
-    icon: "✨",
+    icon: "\u2728",
     pages: ["overview", "collection", "sniper"],
     published: false,
     graphqlUrl: "https://public-api.disneypinnacle.com/graphql",
@@ -100,7 +101,7 @@ export const COLLECTIONS: Collection[] = [
     chain: "flow",
     partner: "Dapper Labs",
     accent: "#22C55E",
-    icon: "⚽",
+    icon: "\u26BD",
     pages: ["overview", "collection", "packs", "sniper", "sets"],
     published: false,
     graphqlUrl: "https://public-api.laligagolazos.com/graphql",
@@ -119,7 +120,7 @@ export const COLLECTIONS: Collection[] = [
     chain: "flow",
     partner: "Concept Labs",
     accent: "#EF4444",
-    icon: "🥊",
+    icon: "\u{1F94A}",
     pages: ["overview", "collection", "sniper"],
     published: false,
     flowContractName: "UFCStrike",
@@ -136,7 +137,7 @@ export const COLLECTIONS: Collection[] = [
     chain: "panini",
     partner: "Panini America",
     accent: "#C084FC",
-    icon: "🃏",
+    icon: "\u{1F0CF}",
     pages: ["overview", "sniper"],
     published: false,
     openSeaSlug: "paniniblockchain",
@@ -149,7 +150,7 @@ export const COLLECTIONS: Collection[] = [
     chain: "candy",
     partner: "Futureverse",
     accent: "#FB923C",
-    icon: "⚾",
+    icon: "\u26BE",
     pages: ["overview", "collection", "packs", "sniper"],
     published: false,
   },
@@ -161,7 +162,7 @@ export const COLLECTIONS: Collection[] = [
     chain: "rwa",
     partner: "Courtyard / Beezie",
     accent: "#F59E0B",
-    icon: "🏅",
+    icon: "\u{1F3C5}",
     pages: ["overview", "collection", "sniper", "vault"],
     published: false,
   },
@@ -188,5 +189,6 @@ export const PAGE_LABELS: Record<CollectionPage, string> = {
   sets:       "Sets",
   vault:      "Vault",
   market:     "Market",
+  analytics:  "Analytics",
 }
 // cache-bust
