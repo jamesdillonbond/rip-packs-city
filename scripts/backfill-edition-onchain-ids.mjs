@@ -60,8 +60,6 @@ const GQL_HEADERS = {
 const DELAY_MS = 200;
 const LOG_EVERY = 50;
 
-// tier_type enum values: ULTIMATE, LEGENDARY, RARE, FANDOM, COMMON
-const VALID_TIERS = new Set(["ULTIMATE", "LEGENDARY", "RARE", "FANDOM", "COMMON"]);
 
 // ── Supabase REST helpers ────────────────────────────────────────────────────
 const headers = {
@@ -103,11 +101,7 @@ const SEARCH_EDITIONS_QUERY = `
                 ... on Edition {
                   setID
                   playID
-                  parallelID
                   circulationCount
-                  tier
-                  setVisual { name }
-                  play { stats { playerName } }
                 }
               }
             }
@@ -156,7 +150,7 @@ async function main() {
   while (true) {
     const rows = await supabaseSelect(
       "editions",
-      `select=id,external_id,name,tier,circulation_count&or=(set_id_onchain.is.null,play_id_onchain.is.null)&order=id&offset=${offset}&limit=${pageSize}`
+      `select=id,external_id,circulation_count&or=(set_id_onchain.is.null,play_id_onchain.is.null)&order=id&offset=${offset}&limit=${pageSize}`
     );
     allEditions.push(...rows);
     if (rows.length < pageSize) break;
@@ -195,28 +189,19 @@ async function main() {
 
       const setIdOnchain = Number(data.setID);
       const playIdOnchain = Number(data.playID);
-      // play.stats may be an object or array depending on GQL response shape
-      const stats = data.play?.stats;
-      const playerName = (Array.isArray(stats) ? stats[0]?.playerName : stats?.playerName) || null;
-      const setName = data.setVisual?.name || null;
-      const rawTier = (data.tier || "").replace("MOMENT_TIER_", "").toUpperCase();
-      const tier = VALID_TIERS.has(rawTier) ? rawTier : null;
       const circulationCount = data.circulationCount ? Number(data.circulationCount) : null;
 
-      // Build update payload — only set fields that are currently NULL
       const patch = {
         set_id_onchain: setIdOnchain,
         play_id_onchain: playIdOnchain,
       };
-      if (!edition.name && playerName) patch.name = playerName;
-      if (!edition.tier && tier) patch.tier = tier;
       if (!edition.circulation_count && circulationCount) patch.circulation_count = circulationCount;
 
       await supabaseUpdate("editions", `id=eq.${edition.id}`, patch);
       updated++;
 
       if (processed % LOG_EVERY === 0) {
-        console.log(`[backfill] ${processed}/${allEditions.length} — setID=${setIdOnchain} playID=${playIdOnchain} player=${playerName || "?"}`);
+        console.log(`[backfill] ${processed}/${allEditions.length} — setID=${setIdOnchain} playID=${playIdOnchain}`);
       }
     } catch (err) {
       failures++;
