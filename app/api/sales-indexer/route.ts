@@ -15,7 +15,8 @@ function unauthorized() {
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const DAPPER_MERCHANT = "0xc1e4f4f4c4257510"
-const EVENT_TYPE = "A.4eb8a10cb9f87357.NFTStorefrontV2.ListingCompleted"
+const STOREFRONT_EVENT = "A.4eb8a10cb9f87357.NFTStorefrontV2.ListingCompleted"
+const TOPSHOT_MARKET_EVENT = "A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased"
 const CHUNK_SIZE = 250
 const MAX_BLOCKS_PER_RUN = 5000
 const INTER_CHUNK_DELAY_MS = 100
@@ -26,8 +27,14 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-function isTopShotNft(nftType: string): boolean {
-  return typeof nftType === "string" && nftType.includes("TopShot")
+function isTopShotNft(nftType: unknown): boolean {
+  if (typeof nftType === "string") return nftType.includes("TopShot")
+  if (nftType && typeof nftType === "object") {
+    const obj = nftType as Record<string, unknown>
+    if (typeof obj.typeID === "string") return obj.typeID.includes("TopShot")
+    if (typeof obj.value === "string") return obj.value.includes("TopShot")
+  }
+  return false
 }
 
 function determineMarketplace(commissionReceiver: string | null): string {
@@ -55,6 +62,7 @@ function toIsoTimestamp(ts: string | number | Date): string {
 
 export async function POST(req: NextRequest) {
   const start = Date.now()
+  const debugMode = req.nextUrl.searchParams.get("debug") === "true"
 
   // Auth check
   const auth = req.headers.get("authorization") ?? ""
@@ -111,48 +119,97 @@ export async function POST(req: NextRequest) {
       blockHeight: number
       blockTimestamp: string
       transactionId: string
+      source: "storefrontV2" | "topshotMarketV3"
       data: {
-        listingResourceID: string
-        storefrontResourceID: string
-        purchased: boolean
-        nftType: string
-        nftUUID: string
+        listingResourceID?: string
+        storefrontResourceID?: string
+        purchased?: boolean
+        nftType?: unknown
+        nftUUID?: string
         nftID: string
-        salePaymentVaultType: string
+        salePaymentVaultType?: string
         salePrice: string
-        customID: string | null
-        commissionAmount: string
-        commissionReceiver: string | null
-        expiry: string
+        customID?: string | null
+        commissionAmount?: string
+        commissionReceiver?: string | null
+        expiry?: string
+        id?: string
+        price?: string
+        seller?: string
       }
     }
 
     const matchingEvents: SaleEvent[] = []
+    let rawEventLogCount = 0
 
     for (let startH = lastBlock + 1; startH <= targetHeight; startH += CHUNK_SIZE) {
       const endH = Math.min(startH + CHUNK_SIZE - 1, targetHeight)
 
+      // Scan NFTStorefrontV2 events
       try {
         const events = await fcl.send([
-          fcl.getEventsAtBlockHeightRange(EVENT_TYPE, startH, endH),
+          fcl.getEventsAtBlockHeightRange(STOREFRONT_EVENT, startH, endH),
         ]).then(fcl.decode)
 
         if (Array.isArray(events)) {
+          // Debug: log first 5 raw storefront events before any filtering
+          if (debugMode && rawEventLogCount < 5) {
+            for (const evt of events.slice(0, 5 - rawEventLogCount)) {
+              const d = evt.data ?? evt
+              console.log(`[sales-indexer][debug] raw StorefrontV2 event nftType type=${typeof d.nftType} value=${JSON.stringify(d.nftType)}`)
+              console.log(`[sales-indexer][debug] raw StorefrontV2 event: ${JSON.stringify(evt)}`)
+              rawEventLogCount++
+            }
+          }
+
           for (const evt of events) {
             const d = evt.data ?? evt
-            if (d.purchased === true && isTopShotNft(d.nftType ?? "")) {
+            if (d.purchased === true && isTopShotNft(d.nftType)) {
               matchingEvents.push({
                 blockHeight: evt.blockHeight ?? startH,
                 blockTimestamp: evt.blockTimestamp ?? new Date().toISOString(),
                 transactionId: evt.transactionId ?? null,
+                source: "storefrontV2",
                 data: d,
               })
             }
           }
         }
       } catch (err) {
-        console.log(`[sales-indexer] chunk ${startH}-${endH} error:`, err instanceof Error ? err.message : String(err))
-        // Continue with next chunk
+        console.log(`[sales-indexer] StorefrontV2 chunk ${startH}-${endH} error:`, err instanceof Error ? err.message : String(err))
+      }
+
+      // Scan TopShotMarketV3 events
+      try {
+        const marketEvents = await fcl.send([
+          fcl.getEventsAtBlockHeightRange(TOPSHOT_MARKET_EVENT, startH, endH),
+        ]).then(fcl.decode)
+
+        if (Array.isArray(marketEvents)) {
+          if (debugMode && rawEventLogCount < 5) {
+            for (const evt of marketEvents.slice(0, 5 - rawEventLogCount)) {
+              console.log(`[sales-indexer][debug] raw TopShotMarketV3 event: ${JSON.stringify(evt)}`)
+              rawEventLogCount++
+            }
+          }
+
+          for (const evt of marketEvents) {
+            const d = evt.data ?? evt
+            matchingEvents.push({
+              blockHeight: evt.blockHeight ?? startH,
+              blockTimestamp: evt.blockTimestamp ?? new Date().toISOString(),
+              transactionId: evt.transactionId ?? null,
+              source: "topshotMarketV3",
+              data: {
+                nftID: String(d.id ?? d.nftID),
+                salePrice: String(d.price ?? d.salePrice ?? "0"),
+                seller: d.seller ?? null,
+              },
+            })
+          }
+        }
+      } catch (err) {
+        console.log(`[sales-indexer] TopShotMarketV3 chunk ${startH}-${endH} error:`, err instanceof Error ? err.message : String(err))
       }
 
       if (startH + CHUNK_SIZE <= targetHeight) {
@@ -160,7 +217,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    console.log(`[sales-indexer] found ${matchingEvents.length} TopShot sale events`)
+    console.log(`[sales-indexer] found ${matchingEvents.length} TopShot sale events (storefrontV2 + marketV3)`)
 
     if (matchingEvents.length === 0) {
       // Update cursor even if no events
@@ -268,7 +325,9 @@ export async function POST(req: NextRequest) {
         continue
       }
 
-      const marketplace = determineMarketplace(evt.data.commissionReceiver)
+      const marketplace = evt.source === "topshotMarketV3"
+        ? "topshot"
+        : determineMarketplace(evt.data.commissionReceiver ?? null)
 
       salesBatch.push({
         id: crypto.randomUUID(),
@@ -284,7 +343,7 @@ export async function POST(req: NextRequest) {
         block_height: evt.blockHeight,
         transaction_hash: evt.transactionId ?? null,
         buyer_address: null,
-        seller_address: null,
+        seller_address: evt.data.seller ?? null,
         ingested_at: new Date().toISOString(),
       })
     }
