@@ -3,6 +3,15 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+} from "recharts";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface TrophyMoment {
@@ -329,6 +338,126 @@ function BioEditor(props: {
   );
 }
 
+// ── Portfolio Value Time-Series Card ─────────────────────────────
+interface WalletFmvPoint {
+  snapshot_date: string;
+  total_fmv: number;
+  moment_count: number;
+}
+
+function PortfolioValueCard(props: { wallet: string; label?: string }) {
+  const { wallet, label } = props;
+  const [points, setPoints] = useState<WalletFmvPoint[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(function() {
+    if (!wallet) return;
+    setLoading(true);
+    fetch("/api/profile/portfolio-history?wallet=" + encodeURIComponent(wallet) + "&days=30")
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) {
+        const rows = (data?.snapshots ?? []) as WalletFmvPoint[];
+        setPoints(rows.map(function(r) {
+          return {
+            snapshot_date: r.snapshot_date,
+            total_fmv: Number(r.total_fmv) || 0,
+            moment_count: Number(r.moment_count) || 0,
+          };
+        }));
+      })
+      .catch(function() {})
+      .finally(function() { setLoading(false); });
+  }, [wallet]);
+
+  const daysWithValue = points.filter(function(p) { return p.total_fmv > 0; }).length;
+  const hasEnoughHistory = daysWithValue >= 7;
+  const latestValue = points.length > 0 ? points[points.length - 1].total_fmv : 0;
+  const firstNonZero = points.find(function(p) { return p.total_fmv > 0; });
+  const changePct = firstNonZero && firstNonZero.total_fmv > 0
+    ? ((latestValue - firstNonZero.total_fmv) / firstNonZero.total_fmv) * 100
+    : null;
+
+  function formatDate(iso: string) {
+    const d = new Date(iso);
+    return String(d.getUTCMonth() + 1) + "/" + String(d.getUTCDate());
+  }
+
+  return (
+    <section style={{ marginBottom: 24 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <span style={labelStyle}>{"\u{1F4C8}"} PORTFOLIO VALUE / 30D</span>
+        {label && (
+          <span style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.08em" }}>
+            {label}
+          </span>
+        )}
+        {changePct != null && hasEnoughHistory && (
+          <span style={{ marginLeft: "auto", fontSize: 10, fontFamily: monoFont, color: changePct >= 0 ? "var(--rpc-success)" : "var(--rpc-danger)", letterSpacing: "0.08em" }}>
+            {changePct >= 0 ? "\u2191" : "\u2193"} {Math.abs(changePct).toFixed(1)}%
+          </span>
+        )}
+      </div>
+      <div style={{ ...cardStyle, padding: "18px 18px 10px" }}>
+        {loading ? (
+          <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div className="rpc-skeleton" style={{ width: "90%", height: 14 }} />
+          </div>
+        ) : points.length === 0 ? (
+          <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontFamily: monoFont, fontSize: 11 }}>
+            No FMV history yet for this wallet.
+          </div>
+        ) : (
+          <>
+            <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 26, color: "var(--rpc-text-primary)", lineHeight: 1, marginBottom: 10 }}>
+              {latestValue > 0 ? fmtDollars(latestValue) : "\u2014"}
+            </div>
+            <div style={{ width: "100%", height: 180 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={points} margin={{ top: 6, right: 10, bottom: 4, left: -10 }}>
+                  <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
+                  <XAxis
+                    dataKey="snapshot_date"
+                    tickFormatter={formatDate}
+                    tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 9, fontFamily: monoFont }}
+                    axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
+                    tickLine={false}
+                    minTickGap={24}
+                  />
+                  <YAxis
+                    tickFormatter={function(v: number) { return v >= 1000 ? "$" + (v / 1000).toFixed(1) + "K" : "$" + v.toFixed(0); }}
+                    tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 9, fontFamily: monoFont }}
+                    axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
+                    tickLine={false}
+                    width={50}
+                  />
+                  <Tooltip
+                    contentStyle={{ background: "rgba(0,0,0,0.92)", border: "1px solid rgba(224,58,47,0.4)", borderRadius: 6, fontSize: 11, fontFamily: monoFont }}
+                    labelFormatter={function(v: unknown) { return formatDate(String(v ?? "")); }}
+                    formatter={function(v: unknown): [string, string] { return ["$" + Number(v ?? 0).toFixed(2), "FMV"]; }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="total_fmv"
+                    stroke="#34D399"
+                    strokeWidth={2}
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            {!hasEnoughHistory && (
+              <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.08em", marginTop: 6, textAlign: "center" }}>
+                BUILDING HISTORY&hellip; ({daysWithValue}/7 DAYS)
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
 // ── Main Page (v6) ───────────────────────────────────────────────
 export default function ProfilePageV6() {
   const params = useParams();
@@ -581,6 +710,14 @@ export default function ProfilePageV6() {
             })}
           </div>
         </section>
+      )}
+
+      {/* ── Portfolio Value Time-Series ── */}
+      {wallets.length > 0 && wallets[0]?.wallet_addr && (
+        <PortfolioValueCard
+          wallet={wallets[0].wallet_addr}
+          label={wallets[0].display_name || wallets[0].username || undefined}
+        />
       )}
 
       {/* ── Live Sniper Deals ── */}

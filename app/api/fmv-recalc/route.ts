@@ -594,6 +594,88 @@ export async function POST(req: NextRequest) {
       console.warn("[FMV-RECALC] Backfill pass error:", err instanceof Error ? err.message : err)
     }
 
+    // ── Step 5b: Historical sales fallback ───────────────────────────────────
+    // Some editions have sales in sales_2026 but all older than the 30-day
+    // recalc window. They never get a snapshot from Step 1 and they have no
+    // badge_editions.low_ask (Step 5 backfill skips them). Compute a LOW
+    // confidence FMV from whatever historical sales exist so these editions
+    // show up in wallet valuations instead of silently reading as "no FMV".
+    let historicalBackfillCount = 0
+
+    try {
+      const { data: histRows, error: histErr } = await supabaseAdmin
+        .rpc("execute_sql", {
+          query: `
+            SELECT
+              e.id AS edition_id,
+              e.collection_id,
+              AVG(s.price_usd)::numeric AS avg_price,
+              MIN(s.price_usd)::numeric AS min_price,
+              COUNT(s.id) AS sales_count,
+              MAX(s.sold_at) AS latest_sold_at
+            FROM editions e
+            JOIN sales s ON s.edition_id = e.id
+            LEFT JOIN fmv_snapshots fs ON fs.edition_id = e.id
+            WHERE fs.edition_id IS NULL
+              AND s.price_usd > 0
+            GROUP BY e.id, e.collection_id
+            LIMIT 1000
+          `,
+        })
+
+      if (histErr) {
+        console.warn("[FMV-RECALC] Historical fallback query error:", histErr.message)
+      } else {
+        const rows = (histRows as Array<{
+          edition_id: string
+          collection_id: string
+          avg_price: number
+          min_price: number
+          sales_count: number
+          latest_sold_at: string
+        }>) ?? []
+
+        if (rows.length > 0) {
+          console.log(`[FMV-RECALC] Historical fallback: ${rows.length} editions with sales but no snapshot`)
+
+          const histInsert = rows.map((row) => {
+            const avgPrice = Number(row.avg_price)
+            const daysSinceSale = Math.round(
+              (now.getTime() - new Date(row.latest_sold_at).getTime()) / (1000 * 60 * 60 * 24)
+            )
+            return {
+              edition_id: row.edition_id,
+              collection_id: row.collection_id,
+              fmv_usd: Number(avgPrice.toFixed(2)),
+              floor_price_usd: Number(Number(row.min_price).toFixed(2)),
+              wap_usd: Number(avgPrice.toFixed(2)),
+              wap_without_outliers: Number(avgPrice.toFixed(2)),
+              liquidity_rating: liquidityRating(Number(row.sales_count)),
+              confidence: "LOW",
+              sales_count_7d: 0,
+              sales_count_30d: 0,
+              days_since_sale: daysSinceSale,
+              algo_version: ALGO_VERSION,
+            }
+          })
+
+          for (let i = 0; i < histInsert.length; i += CHUNK_SIZE) {
+            const chunk = histInsert.slice(i, i + CHUNK_SIZE)
+            const { error: histInsertErr } = await supabaseAdmin
+              .from("fmv_snapshots")
+              .insert(chunk)
+
+            if (!histInsertErr) historicalBackfillCount += chunk.length
+            else console.warn("[FMV-RECALC] Historical fallback insert error:", histInsertErr.message)
+          }
+
+          console.log(`[FMV-RECALC] Historical fallback complete: ${historicalBackfillCount} editions covered`)
+        }
+      }
+    } catch (err) {
+      console.warn("[FMV-RECALC] Historical fallback error:", err instanceof Error ? err.message : err)
+    }
+
     // ── Step 6: Integer edition FMV bridge ────────────────────────────────────
     // Integer-format editions (external_id like "84:2892") exist in
     // wallet_moments_cache but have no direct sales. Bridge FMV from UUID
@@ -619,7 +701,7 @@ export async function POST(req: NextRequest) {
     const duration = Date.now() - startTime
 
     console.log(
-      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} integerBridge=${integerBridgeCount} hasMore=${hasMore} duration=${duration}ms`
+      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} integerBridge=${integerBridgeCount} hasMore=${hasMore} duration=${duration}ms`
     )
 
     await fireNextPipelineStep("/api/listing-cache", chain)
@@ -631,6 +713,7 @@ export async function POST(req: NextRequest) {
       askProxyApplied: askProxyCount,
       washTradeFiltered: washTradeEditionCount,
       backfillCovered: backfillCount,
+      historicalFallbackCovered: historicalBackfillCount,
       integerBridgeCovered: integerBridgeCount,
       hasMore,
       nextOffset: hasMore ? offset + limit : null,
