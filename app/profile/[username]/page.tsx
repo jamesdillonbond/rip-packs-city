@@ -59,6 +59,7 @@ interface SniperDealPreview {
 // ── Constants ─────────────────────────────────────────────────────
 const monoFont = "'Share Tech Mono', monospace";
 const condensedFont = "'Barlow Condensed', sans-serif";
+const MAX_SLOTS = 6;
 
 // ── Helpers ───────────────────────────────────────────────────────
 function fmtDollars(n: number): string {
@@ -137,7 +138,7 @@ function PublicTrophySlot(props: { slot: number; trophy: TrophyMoment | null }) 
   const [videoError, setVideoError] = useState(false);
   const t = props.trophy;
   const tc = tierColor(t?.tier ?? null);
-  const slotLabels = ["", "🥇", "🥈", "🥉"];
+  const slotLabels = ["", "🥇", "🥈", "🥉", "⭐", "⭐", "⭐"];
 
   if (!t) {
     return (
@@ -235,7 +236,7 @@ export default function PublicProfilePage() {
   const username = params?.username as string;
 
   // State
-  const [trophies, setTrophies] = useState<(TrophyMoment | null)[]>([null, null, null]);
+  const [trophies, setTrophies] = useState<(TrophyMoment | null)[]>([null, null, null, null, null, null]);
   const [bio, setBio] = useState<ProfileBio | null>(null);
   const [wallets, setWallets] = useState<SavedWalletPublic[]>([]);
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
@@ -255,9 +256,9 @@ export default function PublicProfilePage() {
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(data) {
         if (!data) return;
-        const slots: (TrophyMoment | null)[] = [null, null, null];
+        const slots: (TrophyMoment | null)[] = [null, null, null, null, null, null];
         (data.trophies ?? []).forEach(function(t: TrophyMoment) {
-          if (t.slot >= 1 && t.slot <= 3) slots[t.slot - 1] = t;
+          if (t.slot >= 1 && t.slot <= MAX_SLOTS) slots[t.slot - 1] = t;
         });
         setTrophies(slots);
       })
@@ -361,7 +362,7 @@ export default function PublicProfilePage() {
             </div>
           )}
           <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.15em" }}>
-            {"NBA TOP SHOT COLLECTOR · " + filledCount + " / 3 TROPHY MOMENTS"}
+            {"NBA TOP SHOT COLLECTOR · " + filledCount + " / " + MAX_SLOTS + " TROPHY MOMENTS"}
           </div>
           {isTeamCaptain && (
             <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 10, padding: "4px 12px", background: "var(--rpc-red-bg)", border: "1px solid var(--rpc-red-border)", borderRadius: "var(--radius-sm)", fontSize: 9, fontFamily: monoFont, letterSpacing: "0.1em", color: "var(--rpc-red)" }}>
