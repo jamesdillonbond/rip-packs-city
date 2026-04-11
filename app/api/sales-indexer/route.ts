@@ -68,10 +68,11 @@ export async function POST(req: NextRequest) {
 
   console.log(`[sales-indexer] proxy config: url=${process.env.TS_PROXY_URL ? 'SET' : 'UNSET'} secret=${process.env.TS_PROXY_SECRET ? 'SET' : 'UNSET'}`)
 
-  // Auth check
+  // Auth check (Bearer header OR ?token= query param for cron-job.org)
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
-  if (!TOKEN || bearer !== TOKEN) return unauthorized()
+  const urlToken = req.nextUrl.searchParams.get("token") ?? ""
+  if (!TOKEN || (bearer !== TOKEN && urlToken !== TOKEN)) return unauthorized()
 
   try {
     // Step 1: Read cursor
@@ -533,4 +534,8 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     )
   }
+}
+
+export async function GET(req: NextRequest) {
+  return POST(req)
 }
