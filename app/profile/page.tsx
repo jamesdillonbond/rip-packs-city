@@ -112,9 +112,49 @@ interface PortfolioSnapshot {
   wallet_count: number;
 }
 
+interface CostBasisSummary {
+  totalSpent: number;
+  totalPurchases: number;
+  totalFmv: number;
+  netPL: number;
+  plPercent: number | null;
+}
+
+interface TierBreakdown {
+  tiers: { tier: string; count: number }[];
+  total: number;
+}
+
+interface MoverRow {
+  edition_id: string;
+  player_name: string | null;
+  set_name: string | null;
+  current_fmv: number | null;
+  past_fmv: number | null;
+  delta: number;
+  pct_change: number | null;
+}
+
+interface TopMoversData {
+  gainers: MoverRow[];
+  losers: MoverRow[];
+}
+
+interface SuggestedMoment {
+  momentId: string;
+  playerName: string;
+  setName: string;
+  serialNumber: number | null;
+  circulationCount: number | null;
+  tier: string;
+  thumbnailUrl: string | null;
+  videoUrl: string | null;
+  fmv: number | null;
+}
+
 // ─── CONSTANTS ────────────────────────────────────────────────
 const ACCENT_CYCLE = ["#E03A2F", "#3B82F6", "#10B981", "#F59E0B", "#818CF8", "#F472B6"];
-const MAX_SLOTS = 3;
+const MAX_SLOTS = 6;
 
 // ─── HELPERS ──────────────────────────────────────────────────
 function fmtDollars(n: number): string {
@@ -333,7 +373,7 @@ function StatTile(props: { label: string; value: string; sub: string; change: st
 }
 
 // ─── PORTFOLIO SPARKLINE ──────────────────────────────────────
-function PortfolioSparkline(props: { ownerKey: string; currentFmv: number }) {
+function PortfolioSparkline(props: { ownerKey: string; currentFmv: number; onChange?: (pct: number | null) => void }) {
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -360,6 +400,13 @@ function PortfolioSparkline(props: { ownerKey: string; currentFmv: number }) {
   const range = maxVal - minVal || 1;
   const change = points.length >= 2 ? points[points.length - 1].total_fmv - points[0].total_fmv : 0;
   const changePct = points.length >= 2 && points[0].total_fmv > 0 ? (change / points[0].total_fmv) * 100 : 0;
+
+  useEffect(function() {
+    if (!props.onChange) return;
+    if (points.length >= 2) props.onChange(changePct);
+    else props.onChange(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [changePct, points.length]);
   const changeColor = change >= 0 ? "var(--rpc-success)" : "var(--rpc-danger)";
   const changeSign = change >= 0 ? "+" : "";
   const W = 360; const H = 56; const PAD = 4;
@@ -427,6 +474,213 @@ function PortfolioSparkline(props: { ownerKey: string; currentFmv: number }) {
               {points.length > 2 && <span style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.2)" }}>{fmtDate(points[Math.floor(points.length / 2)].snapshot_date)}</span>}
               <span style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.2)" }}>Today</span>
             </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─── COST BASIS CARD ──────────────────────────────────────────
+function CostBasisCard(props: { ownerKey: string }) {
+  const [data, setData] = useState<CostBasisSummary | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [errored, setErrored] = useState(false);
+
+  useEffect(function() {
+    if (!props.ownerKey) return;
+    setLoading(true);
+    setErrored(false);
+    fetch("/api/profile/cost-basis-summary?ownerKey=" + encodeURIComponent(props.ownerKey))
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) { if (d && typeof d.totalSpent === "number") setData(d); else setErrored(true); })
+      .catch(function() { setErrored(true); })
+      .finally(function() { setLoading(false); });
+  }, [props.ownerKey]);
+
+  const plPositive = (data?.netPL ?? 0) >= 0;
+  const plColor = plPositive ? "#34D399" : "#F87171";
+  const plSign = plPositive ? "+" : "−";
+
+  return (
+    <section className="rpc-card" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "16px 18px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <span style={labelStyle}>◈ Cost Basis · P/L</span>
+        {data && data.totalPurchases > 0 && (
+          <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.3)" }}>{data.totalPurchases + " purchases"}</span>
+        )}
+      </div>
+      {loading ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {[80, 60, 70].map(function(w, i) { return <div key={i} style={{ width: w + "%", height: 18, background: "rgba(255,255,255,0.04)", borderRadius: 4, animation: "pulse 1.6s ease-in-out infinite" }} />; })}
+        </div>
+      ) : errored || !data ? (
+        <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", padding: "6px 0" }}>Cost basis unavailable.</div>
+      ) : data.totalSpent === 0 ? (
+        <div>
+          <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 18, color: "#fff", marginBottom: 6 }}>No purchase data yet</div>
+          <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", lineHeight: 1.6 }}>Cost basis builds as you use the collection page — load any wallet to start tracking your buys.</div>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 12 }}>
+            <div>
+              <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 4 }}>Total Spent</div>
+              <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 22, color: "#fff", lineHeight: 1.1 }}>{fmtDollars(data.totalSpent)}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 4 }}>Current FMV</div>
+              <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 22, color: "#fff", lineHeight: 1.1 }}>{fmtDollars(data.totalFmv)}</div>
+            </div>
+          </div>
+          <div style={{ paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+            <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 4 }}>Net P/L</div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+              <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 22, color: plColor, lineHeight: 1.1 }}>{plSign + fmtDollars(Math.abs(data.netPL))}</div>
+              {data.plPercent != null && (
+                <div style={{ fontSize: 12, fontFamily: monoFont, color: plColor, fontWeight: 700 }}>{plSign + Math.abs(data.plPercent).toFixed(1) + "%"}</div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+// ─── TIER BREAKDOWN CARD ──────────────────────────────────────
+const TIER_COLORS: Record<string, string> = {
+  Common: "#9CA3AF",
+  Fandom: "#60A5FA",
+  Rare: "#3B82F6",
+  Legendary: "#F59E0B",
+  Ultimate: "#E03A2F",
+};
+
+function TierBreakdownCard(props: { ownerKey: string }) {
+  const [data, setData] = useState<TierBreakdown | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(function() {
+    if (!props.ownerKey) return;
+    setLoading(true);
+    fetch("/api/profile/tier-breakdown?ownerKey=" + encodeURIComponent(props.ownerKey))
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) { if (d && Array.isArray(d.tiers)) setData(d); })
+      .catch(function() {})
+      .finally(function() { setLoading(false); });
+  }, [props.ownerKey]);
+
+  const tiers = data?.tiers ?? [];
+  const total = data?.total ?? 0;
+
+  return (
+    <section className="rpc-card" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "16px 18px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <span style={labelStyle}>▣ Tier Breakdown</span>
+        {total > 0 && <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.3)" }}>{total.toLocaleString() + " moments"}</span>}
+      </div>
+      {loading ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ width: "100%", height: 14, background: "rgba(255,255,255,0.04)", borderRadius: 4, animation: "pulse 1.6s ease-in-out infinite" }} />
+          {[60, 50, 40].map(function(w, i) { return <div key={i} style={{ width: w + "%", height: 12, background: "rgba(255,255,255,0.04)", borderRadius: 4, animation: "pulse 1.6s ease-in-out infinite" }} />; })}
+        </div>
+      ) : total === 0 ? (
+        <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", padding: "6px 0", lineHeight: 1.6 }}>Load a saved wallet to see your tier mix.</div>
+      ) : (
+        <>
+          <div style={{ display: "flex", height: 14, borderRadius: 4, overflow: "hidden", border: "1px solid rgba(255,255,255,0.07)", marginBottom: 12 }}>
+            {tiers.map(function(t) {
+              const pct = (t.count / total) * 100;
+              const color = TIER_COLORS[t.tier] || "#6B7280";
+              return <div key={t.tier} title={t.tier + " · " + t.count} style={{ width: pct + "%", background: color, transition: "width 0.6s ease" }} />;
+            })}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 14px" }}>
+            {tiers.map(function(t) {
+              const color = TIER_COLORS[t.tier] || "#6B7280";
+              const pct = ((t.count / total) * 100).toFixed(1);
+              return (
+                <div key={t.tier} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
+                  <span style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.55)", letterSpacing: "0.04em", flex: 1 }}>{t.tier}</span>
+                  <span style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, color: "#fff" }}>{t.count.toLocaleString()}</span>
+                  <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", minWidth: 36, textAlign: "right" }}>{pct + "%"}</span>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+// ─── TOP MOVERS CARD ──────────────────────────────────────────
+function TopMoversCard(props: { ownerKey: string }) {
+  const [data, setData] = useState<TopMoversData | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(function() {
+    if (!props.ownerKey) return;
+    setLoading(true);
+    fetch("/api/profile/top-movers?ownerKey=" + encodeURIComponent(props.ownerKey) + "&days=7")
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) { if (d) setData({ gainers: d.gainers ?? [], losers: d.losers ?? [] }); })
+      .catch(function() {})
+      .finally(function() { setLoading(false); });
+  }, [props.ownerKey]);
+
+  const empty = !loading && (!data || (data.gainers.length === 0 && data.losers.length === 0));
+
+  function MoverRowDisplay(props: { row: MoverRow; positive: boolean }) {
+    const r = props.row;
+    const color = props.positive ? "#34D399" : "#F87171";
+    const sign = props.positive ? "+" : "−";
+    const fmv = Number(r.current_fmv ?? 0);
+    const delta = Math.abs(Number(r.delta ?? 0));
+    const pct = r.pct_change != null ? Math.abs(Number(r.pct_change)).toFixed(1) : null;
+    return (
+      <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.player_name ?? "Unknown"}</div>
+          <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.set_name ?? ""}</div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, color: "#fff" }}>{fmtDollars(fmv)}</div>
+          <div style={{ fontSize: 9, fontFamily: monoFont, color: color, fontWeight: 700 }}>
+            {sign + fmtDollars(delta) + (pct != null ? " · " + sign + pct + "%" : "")}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <section className="rpc-card" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "16px 18px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <span style={labelStyle}>📊 Top Movers · 7d</span>
+        <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.3)" }}>FMV deltas across owned editions</span>
+      </div>
+      {loading ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {[90, 80, 70, 60].map(function(w, i) { return <div key={i} style={{ width: w + "%", height: 14, background: "rgba(255,255,255,0.04)", borderRadius: 4, animation: "pulse 1.6s ease-in-out infinite" }} />; })}
+        </div>
+      ) : empty ? (
+        <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", padding: "6px 0", lineHeight: 1.6 }}>FMV history building — check back in a few days.</div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
+          <div>
+            <div style={{ fontSize: 9, fontFamily: monoFont, color: "#34D399", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 6, fontWeight: 700 }}>↑ Biggest Gainers</div>
+            {data && data.gainers.length > 0 ? data.gainers.map(function(g) { return <MoverRowDisplay key={g.edition_id} row={g} positive={true} />; }) : (
+              <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", padding: "8px 0" }}>No gainers in window.</div>
+            )}
+          </div>
+          <div>
+            <div style={{ fontSize: 9, fontFamily: monoFont, color: "#F87171", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 6, fontWeight: 700 }}>↓ Biggest Losers</div>
+            {data && data.losers.length > 0 ? data.losers.map(function(l) { return <MoverRowDisplay key={l.edition_id} row={l} positive={false} />; }) : (
+              <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", padding: "8px 0" }}>No losers in window.</div>
+            )}
           </div>
         </div>
       )}
@@ -555,7 +809,7 @@ function TrophySlot(props: { slot: number; trophy: TrophyMoment | null; ownerKey
   const [videoError, setVideoError] = useState(false);
   const t = props.trophy;
   const tc = tierColor(t?.tier ?? null);
-  const slotLabels = ["", "🥇 SLOT 1", "🥈 SLOT 2", "🥉 SLOT 3"];
+  const slotLabels = ["", "🥇 SLOT 1", "🥈 SLOT 2", "🥉 SLOT 3", "⭐ SLOT 4", "⭐ SLOT 5", "⭐ SLOT 6"];
 
   if (!t) {
     return (
@@ -833,11 +1087,20 @@ function ActivityFeed(props: { savedWallets: SavedWallet[] }) {
 function WalletCard(props: { wallet: SavedWallet; onLoad: (addr: string, user?: string) => void; onRemove: (addr: string) => void }) {
   const [hovered, setHovered] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const [copied, setCopied] = useState(false);
   const w = props.wallet;
   const label = w.display_name || w.username || (w.wallet_addr.slice(0, 10) + "…");
   const initials = label.slice(0, 2).toUpperCase();
   const changeColor = (w.cached_change_24h != null && w.cached_change_24h >= 0) ? "#34D399" : "#F87171";
   const changeStr = w.cached_change_24h != null ? ((w.cached_change_24h > 0 ? "+" : "") + w.cached_change_24h + "%") : "—";
+
+  function handleCopyAddr(e: React.MouseEvent) {
+    e.stopPropagation();
+    navigator.clipboard.writeText(w.wallet_addr).then(function() {
+      setCopied(true);
+      setTimeout(function() { setCopied(false); }, 1400);
+    }).catch(function() {});
+  }
 
   return (
     <div style={{ background: hovered ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.025)", border: "1px solid " + (hovered ? w.accent_color + "55" : "rgba(255,255,255,0.07)"), borderRadius: 10, padding: "14px 16px", cursor: "pointer", transition: "all 0.2s", position: "relative", overflow: "hidden" }}
@@ -848,7 +1111,10 @@ function WalletCard(props: { wallet: SavedWallet; onLoad: (addr: string, user?: 
         <div style={{ width: 36, height: 36, borderRadius: "50%", background: w.accent_color + "22", border: "1px solid " + w.accent_color + "44", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: w.accent_color, fontFamily: condensedFont, flexShrink: 0 }}>{initials}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 14, color: "#fff", letterSpacing: "0.04em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
-          <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.3)" }}>{w.wallet_addr.slice(0, 14) + "…"}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.3)" }}>{w.wallet_addr.slice(0, 14) + "…"}</div>
+            <button onClick={handleCopyAddr} title="Copy full address" style={{ background: copied ? "rgba(52,211,153,0.18)" : "rgba(255,255,255,0.04)", border: "1px solid " + (copied ? "rgba(52,211,153,0.4)" : "rgba(255,255,255,0.1)"), borderRadius: 3, padding: "1px 6px", fontSize: 8, fontFamily: monoFont, color: copied ? "#34D399" : "rgba(255,255,255,0.5)", cursor: "pointer", letterSpacing: "0.08em", lineHeight: 1.2 }}>{copied ? "COPIED!" : "COPY"}</button>
+          </div>
         </div>
         {(w.cached_badges ?? []).slice(0, 3).map(function(b, i) { return <span key={i} style={{ fontSize: 11 }}>{b}</span>; })}
       </div>
@@ -884,10 +1150,15 @@ function WalletCard(props: { wallet: SavedWallet; onLoad: (addr: string, user?: 
 function AddWalletForm(props: { onAdd: (val: string) => void; onCancel: () => void }) {
   const [val, setVal] = useState("");
   return (
-    <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-      <input autoFocus value={val} onChange={function(e) { setVal(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && val.trim()) props.onAdd(val.trim()); }} placeholder="Username or 0x address…" style={{ flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(224,58,47,0.35)", borderRadius: 6, padding: "7px 12px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none" }} />
-      <button onClick={function() { if (val.trim()) props.onAdd(val.trim()); }} style={Object.assign({}, btnBase, { background: "#E03A2F", color: "#fff", borderColor: "#E03A2F", fontSize: 11 })}>Save</button>
-      <button onClick={props.onCancel} style={Object.assign({}, btnBase, { fontSize: 11 })}>✕</button>
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input autoFocus value={val} onChange={function(e) { setVal(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && val.trim()) props.onAdd(val.trim()); }} placeholder="Top Shot username or 0x address" style={{ flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(224,58,47,0.35)", borderRadius: 6, padding: "7px 12px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none" }} />
+        <button onClick={function() { if (val.trim()) props.onAdd(val.trim()); }} style={Object.assign({}, btnBase, { background: "#E03A2F", color: "#fff", borderColor: "#E03A2F", fontSize: 11 })}>Save</button>
+        <button onClick={props.onCancel} style={Object.assign({}, btnBase, { fontSize: 11 })}>✕</button>
+      </div>
+      <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", marginTop: 6, letterSpacing: "0.04em" }}>
+        Tip: Your Top Shot username works best
+      </div>
     </div>
   );
 }
@@ -902,7 +1173,7 @@ function ProfilePageInner() {
   const [savedWallets, setSavedWallets] = useState<SavedWallet[]>([]);
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
   const [sniperRows, setSniperRows] = useState<SniperRow[]>([]);
-  const [trophies, setTrophies] = useState<(TrophyMoment | null)[]>([null, null, null]);
+  const [trophies, setTrophies] = useState<(TrophyMoment | null)[]>([null, null, null, null, null, null]);
   const [pulse, setPulse] = useState<MarketPulse | null>(null);
   const [bio, setBio] = useState<ProfileBio | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
@@ -911,6 +1182,8 @@ function ProfilePageInner() {
   const [heroSearch, setHeroSearch] = useState("");
   const [showAddWallet, setShowAddWallet] = useState(false);
   const [pinModal, setPinModal] = useState<{ slot: number; prefilled: PinPreview | null } | null>(null);
+  const [sparkChangePct, setSparkChangePct] = useState<number | null>(null);
+  const [suggestedMoments, setSuggestedMoments] = useState<SuggestedMoment[]>([]);
 
   // Read from localStorage + listen for cross-tab changes
   useEffect(function() {
@@ -961,8 +1234,8 @@ function ProfilePageInner() {
       if (sRes.ok) { const d = await sRes.json(); setRecentSearches(d.searches ?? []); }
       if (tRes.ok) {
         const d = await tRes.json();
-        const slots: (TrophyMoment | null)[] = [null, null, null];
-        (d.trophies ?? []).forEach(function(t: TrophyMoment) { if (t.slot >= 1 && t.slot <= 3) slots[t.slot - 1] = t; });
+        const slots: (TrophyMoment | null)[] = [null, null, null, null, null, null];
+        (d.trophies ?? []).forEach(function(t: TrophyMoment) { if (t.slot >= 1 && t.slot <= MAX_SLOTS) slots[t.slot - 1] = t; });
         setTrophies(slots);
       }
       if (bRes.ok) { const d = await bRes.json(); setBio(d.bio); }
@@ -993,6 +1266,42 @@ function ProfilePageInner() {
       })
       .catch(function() {}).finally(function() { setSniperLoading(false); });
   }, []);
+
+  // Auto-suggest top FMV moments to pin when trophy slots are empty
+  useEffect(function() {
+    const emptyCount = trophies.filter(function(t) { return t === null; }).length;
+    if (emptyCount === 0) { setSuggestedMoments([]); return; }
+    if (savedWallets.length === 0) { setSuggestedMoments([]); return; }
+    const wallet = savedWallets.find(function(w) { return (w.cached_fmv ?? 0) > 0; }) ?? savedWallets[0];
+    if (!wallet?.wallet_addr) return;
+    const addr = wallet.wallet_addr.startsWith("0x") ? wallet.wallet_addr : "0x" + wallet.wallet_addr;
+    fetch("/api/wallet-cache?wallet=" + encodeURIComponent(addr))
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) {
+        if (!d || !Array.isArray(d.moments)) return;
+        const pinned = new Set<string>();
+        trophies.forEach(function(t) { if (t?.moment_id) pinned.add(t.moment_id); });
+        const suggestions: SuggestedMoment[] = d.moments
+          .filter(function(m: any) { return m && Number(m.fmv_usd ?? 0) > 0 && !pinned.has(String(m.moment_id)); })
+          .sort(function(a: any, b: any) { return Number(b.fmv_usd ?? 0) - Number(a.fmv_usd ?? 0); })
+          .slice(0, 3)
+          .map(function(m: any) {
+            return {
+              momentId: String(m.moment_id),
+              playerName: m.player_name ?? "Unknown",
+              setName: m.set_name ?? "",
+              serialNumber: m.serial_number ?? null,
+              circulationCount: null,
+              tier: m.tier ?? "Common",
+              thumbnailUrl: null,
+              videoUrl: null,
+              fmv: Number(m.fmv_usd ?? 0) || null,
+            };
+          });
+        setSuggestedMoments(suggestions);
+      })
+      .catch(function() {});
+  }, [savedWallets, trophies]);
 
   function recordSearch(query: string, queryType?: string) {
     if (!ownerKey || !query.trim()) return;
@@ -1046,8 +1355,13 @@ function ProfilePageInner() {
 
   const totalFmv = useMemo(function() { return savedWallets.reduce(function(sum, w) { return sum + (w.cached_fmv ?? 0); }, 0); }, [savedWallets]);
 
+  const fmvTileChange = sparkChangePct != null
+    ? (sparkChangePct >= 0 ? "+" : "") + sparkChangePct.toFixed(1) + "% / 30D"
+    : "Updated";
+  const fmvTileUp = sparkChangePct == null ? true : sparkChangePct >= 0;
+
   const tiles = [
-    { label: "Portfolio FMV", value: totalFmv > 0 ? fmtDollars(totalFmv) : "—", sub: savedWallets.length + " wallet" + (savedWallets.length !== 1 ? "s" : ""), change: "Updated", up: true, icon: "◈", color: "#E03A2F" },
+    { label: "Portfolio FMV", value: totalFmv > 0 ? fmtDollars(totalFmv) : "—", sub: savedWallets.length + " wallet" + (savedWallets.length !== 1 ? "s" : ""), change: fmvTileChange, up: fmvTileUp, icon: "◈", color: "#E03A2F" },
     { label: "Trophy Case", value: trophies.filter(Boolean).length + " / " + MAX_SLOTS, sub: "pinned moments", change: "Your best", up: true, icon: "🏆", color: "#F59E0B" },
     { label: "Live Deals", value: sniperLoading ? "…" : (sniperRows.length + " below FMV"), sub: "sniper preview", change: "Live", up: true, icon: "⚡", color: "#34D399" },
     { label: "Searches", value: String(recentSearches.length), sub: "saved queries", change: "Synced", up: true, icon: "⌕", color: "#3B82F6" },
@@ -1175,7 +1489,22 @@ function ProfilePageInner() {
           </div>
         </section>
 
-        {ownerKey && <PortfolioSparkline ownerKey={ownerKey} currentFmv={totalFmv} />}
+        {ownerKey && <PortfolioSparkline ownerKey={ownerKey} currentFmv={totalFmv} onChange={setSparkChangePct} />}
+
+        {/* COST BASIS + TIER BREAKDOWN */}
+        {ownerKey && (
+          <div className="rpc-sets-activity" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+            <CostBasisCard ownerKey={ownerKey} />
+            <TierBreakdownCard ownerKey={ownerKey} />
+          </div>
+        )}
+
+        {/* TOP MOVERS */}
+        {ownerKey && (
+          <div style={{ marginBottom: 14 }}>
+            <TopMoversCard ownerKey={ownerKey} />
+          </div>
+        )}
 
         {/* TROPHY CASE */}
         <section style={{ marginBottom: 18 }}>
@@ -1197,6 +1526,29 @@ function ProfilePageInner() {
               return <TrophySlot key={i} slot={i + 1} trophy={trophy} ownerKey={ownerKey} onPin={function(slot) { setPinModal({ slot, prefilled: null }); }} onRemove={handleRemoveTrophy} />;
             })}
           </div>
+          {ownerKey && suggestedMoments.length > 0 && trophies.some(function(t) { return t === null; }) && (
+            <div style={{ marginTop: 12, padding: "12px 14px", background: "rgba(245,158,11,0.05)", border: "1px solid rgba(245,158,11,0.18)", borderRadius: 8 }}>
+              <div style={{ fontSize: 9, fontFamily: monoFont, color: "#F59E0B", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 8, fontWeight: 700 }}>⭐ Suggested Pins</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {suggestedMoments.map(function(s) {
+                  return (
+                    <div key={s.momentId} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ flex: 1, minWidth: 0, fontSize: 11, fontFamily: monoFont, color: "rgba(255,255,255,0.7)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        Pin your <span style={{ color: "#fff", fontWeight: 700 }}>{s.playerName}</span>
+                        {s.setName ? " " + s.setName : ""}
+                        {s.fmv != null ? " (" + fmtDollars(s.fmv) + ")" : ""}
+                      </div>
+                      <button onClick={function() {
+                        const firstEmpty = trophies.findIndex(function(t) { return t === null; });
+                        const slot = firstEmpty >= 0 ? firstEmpty + 1 : 1;
+                        setPinModal({ slot, prefilled: { momentId: s.momentId, playerName: s.playerName, setName: s.setName, serialNumber: s.serialNumber, circulationCount: s.circulationCount, tier: s.tier, thumbnailUrl: s.thumbnailUrl, videoUrl: s.videoUrl, fmv: s.fmv, badges: null } });
+                      }} style={Object.assign({}, btnBase, { background: "rgba(245,158,11,0.18)", color: "#F59E0B", borderColor: "rgba(245,158,11,0.4)", fontSize: 9 })}>Pin it</button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </section>
 
         {/* SETS + ACTIVITY */}
@@ -1322,7 +1674,7 @@ function ProfilePageInner() {
                 {ownerKey ? "Update" : "Sign In"}
               </button>
               {ownerKey && (
-                <button onClick={function() { saveOwnerKey(""); setOwnerKeyState(""); setSavedWallets([]); setRecentSearches([]); setTrophies([null, null, null]); setBio(null); router.replace("/profile"); }} className="rpc-btn-ghost" style={{ padding: "4px 10px", fontSize: 9 }}>Sign Out</button>
+                <button onClick={function() { saveOwnerKey(""); setOwnerKeyState(""); setSavedWallets([]); setRecentSearches([]); setTrophies([null, null, null, null, null, null]); setBio(null); router.replace("/profile"); }} className="rpc-btn-ghost" style={{ padding: "4px 10px", fontSize: 9 }}>Sign Out</button>
               )}
             </div>
           </div>
