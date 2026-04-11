@@ -1,13 +1,19 @@
 #!/usr/bin/env node
 
 /**
- * Backfill team_name and stub edition names from Top Shot GQL.
+ * Backfill team_name / player_name / set_name / edition name from Top Shot GQL.
  *
- * Usage: node scripts/backfill-edition-metadata.mjs
+ * Usage: node --env-file=.env.local scripts/backfill-edition-metadata.mjs
+ *
+ * Two phases:
+ *   1. Editions with matching moments in wallet_moments_cache → look up via flowId
+ *   2. UUID-format editions (no matching moments) → look up via play/set UUIDs
+ *
+ * Both phases route through the Cloudflare Worker proxy (TS_PROXY_URL +
+ * TS_PROXY_SECRET) when those env vars are set. Without the proxy, Cloudflare
+ * blocks local IPs from hitting the Top Shot GQL directly.
  */
 
-import { config } from "dotenv";
-config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js"
 
 const supabase = createClient(
@@ -17,24 +23,37 @@ const supabase = createClient(
 )
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
-const PROXY_URL = "https://topshot-proxy.tdillonbond.workers.dev/graphql"
-const DIRECT_URL = "https://public-api.nbatopshot.com/graphql"
-const GQL_URL = process.env.TS_PROXY_SECRET ? PROXY_URL : DIRECT_URL
-const GQL_HEADERS = {
-  "Content-Type": "application/json",
-  "User-Agent": "sports-collectible-tool/0.1",
-}
-if (process.env.TS_PROXY_SECRET) {
-  GQL_HEADERS["X-Proxy-Secret"] = process.env.TS_PROXY_SECRET
-}
-console.log(`[backfill-edition-metadata] GQL endpoint: ${GQL_URL === PROXY_URL ? "Cloudflare proxy" : "direct"}`)
-
 const DELAY_MS = 200
 const BATCH_SIZE = 50
 
+const TS_PROXY_URL = process.env.TS_PROXY_URL
+const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET
+
+async function topshotGql(query, variables) {
+  const url = TS_PROXY_URL || "https://public-api.nbatopshot.com/graphql"
+  const headers = { "Content-Type": "application/json" }
+  if (TS_PROXY_URL && TS_PROXY_SECRET) {
+    headers["X-Proxy-Secret"] = TS_PROXY_SECRET
+  }
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ query, variables }),
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new Error("GQL " + res.status + ": " + text.slice(0, 200))
+  }
+  const json = await res.json()
+  if (json.errors && json.errors.length) throw new Error(json.errors[0].message)
+  return json.data
+}
+
 function delay(ms) { return new Promise(r => setTimeout(r, ms)) }
 
-const GQL_QUERY = `
+// ── Phase 1 query (moment-backed editions) ──────────────────────────────────
+
+const GET_MINTED_MOMENT_QUERY = `
   query GetMintedMoment($momentId: ID!) {
     getMintedMoment(input: { momentId: $momentId }) {
       data {
@@ -65,23 +84,16 @@ const GQL_QUERY = `
 
 async function fetchMomentMeta(momentId) {
   try {
-    const res = await fetch(GQL_URL, {
-      method: "POST",
-      headers: GQL_HEADERS,
-      body: JSON.stringify({ query: GQL_QUERY, variables: { momentId } }),
-      signal: AbortSignal.timeout(8000),
-    })
-    if (!res.ok) return null
-    const json = await res.json()
-    const data = json?.data?.getMintedMoment?.data
-    if (!data) return null
+    const data = await topshotGql(GET_MINTED_MOMENT_QUERY, { momentId })
+    const m = data?.getMintedMoment?.data
+    if (!m) return null
 
-    const scores = data.play?.statsPlayerGameScores
+    const scores = m.play?.statsPlayerGameScores
     const teamAtMoment = Array.isArray(scores) && scores.length > 0 ? scores[0].teamAtMoment : null
     const playerName = Array.isArray(scores) && scores.length > 0
       ? scores[0].playerName
-      : data.play?.headline ?? null
-    const setName = data.set?.flowName ?? null
+      : m.play?.headline ?? null
+    const setName = m.set?.flowName ?? null
 
     return { teamAtMoment, playerName, setName }
   } catch (err) {
@@ -92,9 +104,9 @@ async function fetchMomentMeta(momentId) {
 
 async function main() {
   const start = Date.now()
+  console.log("Proxy:", TS_PROXY_URL ? TS_PROXY_URL : "DIRECT (no proxy — may be blocked by Cloudflare)")
   console.log("Fetching editions needing team_name or name backfill...")
 
-  // Fetch editions where team_name IS NULL OR name IS NULL
   const { data: editions, error } = await supabase
     .from("editions")
     .select("id, external_id, name, player_name, team_name")
@@ -116,7 +128,6 @@ async function main() {
   for (let i = 0; i < editions.length; i++) {
     const ed = editions[i]
 
-    // Find a moment in wallet_moments_cache for this edition
     const { data: momentRows } = await supabase
       .from("wallet_moments_cache")
       .select("moment_id")
@@ -180,13 +191,10 @@ async function main() {
 ════════════════════════════════════════`)
 
   // ── Phase 2: UUID-format editions with no matching moment ────────────────
-  // These are skipped by phase 1 because there's no wallet_moments_cache row
-  // to supply a flowId. Instead we query Top Shot GQL directly with the set
-  // and play UUIDs parsed out of external_id.
   await phase2UuidBackfill()
 }
 
-// ── Phase 2 helpers ──────────────────────────────────────────────────────────
+// ── Phase 2 queries ──────────────────────────────────────────────────────────
 
 const GET_PLAY_QUERY = `
   query GetPlay($playID: ID!) {
@@ -207,33 +215,21 @@ const GET_SET_QUERY = `
   }
 `
 
-async function gqlFetch(query, variables) {
+async function fetchPlayMeta(playId) {
   try {
-    const res = await fetch(GQL_URL, {
-      method: "POST",
-      headers: GQL_HEADERS,
-      body: JSON.stringify({ query, variables }),
-      signal: AbortSignal.timeout(10000),
-    })
-    if (!res.ok) return null
-    const json = await res.json()
-    return json?.data ?? null
+    const data = await topshotGql(GET_PLAY_QUERY, { playID: playId })
+    const play = data?.getPlay?.play
+    if (!play) return null
+    const stats = play.stats ?? {}
+    const playerName = play.statsPlayerFullName ?? stats.playerName ?? null
+    return {
+      playerName: playerName ? String(playerName).trim() : null,
+      playCategory: stats.playCategory ?? null,
+      dateOfMoment: stats.dateOfMoment ?? null,
+      teamAtMomentNbaId: stats.teamAtMomentNbaId ?? null,
+    }
   } catch {
     return null
-  }
-}
-
-async function fetchPlayMeta(playId) {
-  const d = await gqlFetch(GET_PLAY_QUERY, { playID: playId })
-  const play = d?.getPlay?.play
-  if (!play) return null
-  const stats = play.stats ?? {}
-  const playerName = play.statsPlayerFullName ?? stats.playerName ?? null
-  return {
-    playerName: playerName ? String(playerName).trim() : null,
-    playCategory: stats.playCategory ?? null,
-    dateOfMoment: stats.dateOfMoment ?? null,
-    teamAtMomentNbaId: stats.teamAtMomentNbaId ?? null,
   }
 }
 
@@ -241,14 +237,19 @@ async function fetchPlayMeta(playId) {
 const setCache = new Map()
 async function fetchSetMeta(setId) {
   if (setCache.has(setId)) return setCache.get(setId)
-  const d = await gqlFetch(GET_SET_QUERY, { setID: setId })
-  const set = d?.getSet?.set
-  const meta = set
-    ? {
-        setName: set.flowName ? String(set.flowName).trim() : null,
-        seriesNumber: set.flowSeriesNumber ?? null,
-      }
-    : null
+  let meta = null
+  try {
+    const data = await topshotGql(GET_SET_QUERY, { setID: setId })
+    const set = data?.getSet?.set
+    meta = set
+      ? {
+          setName: set.flowName ? String(set.flowName).trim() : null,
+          seriesNumber: set.flowSeriesNumber ?? null,
+        }
+      : null
+  } catch {
+    meta = null
+  }
   setCache.set(setId, meta)
   return meta
 }
@@ -286,7 +287,6 @@ async function phase2UuidBackfill() {
   const start = Date.now()
   console.log("\nPhase 2: UUID editions with no matching moment…")
 
-  // UUID external_ids contain dashes. Filter to ones still missing player_name.
   const { data: editions, error } = await supabase
     .from("editions")
     .select("id, external_id, name, player_name, set_name")

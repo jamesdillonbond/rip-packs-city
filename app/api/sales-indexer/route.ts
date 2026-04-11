@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import fcl from "@/lib/flow"
 import { supabaseAdmin } from "@/lib/supabase"
+import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import crypto from "crypto"
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -63,6 +64,7 @@ function toIsoTimestamp(ts: string | number | Date): string {
 export async function POST(req: NextRequest) {
   const start = Date.now()
   const debugMode = req.nextUrl.searchParams.get("debug") === "true"
+  const chain = req.nextUrl.searchParams.get("chain") === "true"
 
   console.log(`[sales-indexer] proxy config: url=${process.env.TS_PROXY_URL ? 'SET' : 'UNSET'} secret=${process.env.TS_PROXY_SECRET ? 'SET' : 'UNSET'}`)
 
@@ -100,6 +102,7 @@ export async function POST(req: NextRequest) {
     const targetHeight = Math.min(lastBlock + MAX_BLOCKS_PER_RUN, currentHeight)
 
     if (lastBlock >= currentHeight) {
+      await fireNextPipelineStep("/api/fmv-recalc", chain)
       return NextResponse.json({
         ok: true,
         blocksScanned: 0,
@@ -228,6 +231,7 @@ export async function POST(req: NextRequest) {
         .update({ last_processed_block: targetHeight, updated_at: new Date().toISOString() })
         .eq("id", "topshot_sales")
 
+      await fireNextPipelineStep("/api/fmv-recalc", chain)
       return NextResponse.json({
         ok: true,
         blocksScanned: targetHeight - lastBlock,
@@ -508,21 +512,8 @@ export async function POST(req: NextRequest) {
       .update({ last_processed_block: targetHeight, updated_at: new Date().toISOString() })
       .eq("id", "topshot_sales")
 
-    // ── Pipeline chain: fire-and-forget next step ──────────────────────────
-    if (req.nextUrl.searchParams.get("chain") === "true") {
-      const baseUrl = process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : "https://rip-packs-city.vercel.app"
-      const pipelineToken = process.env.INGEST_SECRET_TOKEN
-      if (pipelineToken) {
-        fetch(`${baseUrl}/api/fmv-recalc?chain=true`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${pipelineToken}` },
-        }).catch(() => {})
-      }
-    }
-
     // Step 8: Return summary
+    await fireNextPipelineStep("/api/fmv-recalc", chain)
     return NextResponse.json({
       ok: true,
       blocksScanned: targetHeight - lastBlock,
