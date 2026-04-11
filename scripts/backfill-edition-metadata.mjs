@@ -14,7 +14,14 @@
  * blocks local IPs from hitting the Top Shot GQL directly.
  */
 
+import { readFileSync } from "fs"
 import { createClient } from "@supabase/supabase-js"
+
+const envContent = readFileSync(".env.local", "utf-8")
+for (const line of envContent.split("\n")) {
+  const match = line.match(/^([^#=]+)=(.*)$/)
+  if (match) process.env[match[1].trim()] = match[2].trim()
+}
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
