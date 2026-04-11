@@ -6,7 +6,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 ) as any
 
-const TOPSHOT_GQL = "https://public-api.nbatopshot.com/graphql"
+const TOPSHOT_GQL_DIRECT = "https://public-api.nbatopshot.com/graphql"
 
 // Query a single moment listing to get setID + playID integers from a UUID-format external_id.
 // We look up by playUuid using searchMomentListings which is known to work from the sniper feed.
@@ -46,10 +46,19 @@ async function resolveFromUuids(
   playUuid: string
 ): Promise<{ setIdOnchain: number; playIdOnchain: number } | null> {
   try {
-    // Try primary query first
-    const res = await fetch(TOPSHOT_GQL, {
+    // Route through the Cloudflare Worker proxy when configured — Cloudflare
+    // blocks Vercel IPs from hitting public-api.nbatopshot.com directly.
+    const proxyUrl = process.env.TS_PROXY_URL
+    const proxySecret = process.env.TS_PROXY_SECRET
+    const url = proxyUrl || TOPSHOT_GQL_DIRECT
+    const headers: Record<string, string> = { "Content-Type": "application/json" }
+    if (proxyUrl && proxySecret) {
+      headers["X-Proxy-Secret"] = proxySecret
+    }
+
+    const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({
         operationName: "SearchByEdition",
         query: SEARCH_BY_EDITION,

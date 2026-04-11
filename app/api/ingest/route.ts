@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { topshotGraphql } from "@/lib/topshot"
 import { supabaseAdmin } from "@/lib/supabase"
+import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -464,6 +465,7 @@ async function fetchRecentSales(
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now()
+  const chain = req.nextUrl.searchParams.get("chain") === "true"
 
   // Auth — Bearer token
   const authHeader = req.headers.get("authorization")
@@ -642,20 +644,7 @@ export async function POST(req: NextRequest) {
       `[INGEST] Done — sales=${salesIngested} dupes=${duplicates} moments=${momentsWritten} editions=${editionsUpdated} fmv=${fmvUpdated} errors=${errors} duration=${duration}ms`
     )
 
-    // ── Pipeline chain: fire-and-forget next step ──────────────────────────
-    if (req.nextUrl.searchParams.get("chain") === "true") {
-      const baseUrl = process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : "https://rip-packs-city.vercel.app"
-      const pipelineToken = process.env.INGEST_SECRET_TOKEN
-      if (pipelineToken) {
-        fetch(`${baseUrl}/api/sales-indexer?chain=true`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${pipelineToken}` },
-        }).catch(() => {})
-      }
-    }
-
+    await fireNextPipelineStep("/api/sales-indexer", chain)
     return NextResponse.json({
       ok: true,
       salesIngested,
