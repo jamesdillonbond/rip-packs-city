@@ -10,7 +10,8 @@
  * For 30-day backfill: --start-block $(current - 2592000)
  */
 
-import "dotenv/config"
+import { config } from "dotenv";
+config({ path: ".env.local" });
 import * as fcl from "@onflow/fcl"
 import { createClient } from "@supabase/supabase-js"
 import crypto from "crypto"
