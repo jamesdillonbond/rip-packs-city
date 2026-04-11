@@ -326,7 +326,7 @@ async function upsertSale(
     serial_number: serialNumber ?? 0,
     price_usd: price,
     currency: "USD",
-    marketplace: "top_shot",
+    marketplace: "topshot",
     transaction_hash: tx.txHash,
     sold_at: tx.updatedAt,
     nft_id: nftId,
