@@ -55,18 +55,14 @@ function delay(ms) { return new Promise(r => setTimeout(r, ms)) }
 
 const GET_MINTED_MOMENT_QUERY = `
   query GetMintedMoment($momentId: ID!) {
-    getMintedMoment(input: { momentId: $momentId }) {
+    getMintedMoment(momentId: $momentId) {
       data {
         ... on MintedMoment {
           play {
             ... on Play {
               id
               headline
-              stats
-              statsPlayerGameScores {
-                teamAtMoment
-                playerName
-              }
+
             }
           }
           set {
@@ -88,11 +84,8 @@ async function fetchMomentMeta(momentId) {
     const m = data?.getMintedMoment?.data
     if (!m) return null
 
-    const scores = m.play?.statsPlayerGameScores
-    const teamAtMoment = Array.isArray(scores) && scores.length > 0 ? scores[0].teamAtMoment : null
-    const playerName = Array.isArray(scores) && scores.length > 0
-      ? scores[0].playerName
-      : m.play?.headline ?? null
+    const playerName = m.play?.headline ?? null
+    const teamAtMoment = null
     const setName = m.set?.flowName ?? null
 
     return { teamAtMoment, playerName, setName }
@@ -342,3 +335,5 @@ main().catch(err => {
   console.error("Fatal:", err)
   process.exit(1)
 })
+
+
