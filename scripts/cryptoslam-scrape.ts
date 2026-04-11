@@ -436,7 +436,7 @@ async function main() {
           price_usd: tx.price,
           price_native: null,
           currency: "USD",
-          marketplace: "top_shot",
+          marketplace: "topshot",
           transaction_hash: tx.txHash,
           sold_at: tx.updatedAt,
           seller_address: null,

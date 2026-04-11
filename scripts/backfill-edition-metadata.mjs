@@ -6,7 +6,8 @@
  * Usage: node scripts/backfill-edition-metadata.mjs
  */
 
-import "dotenv/config"
+import { config } from "dotenv";
+config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js"
 
 const supabase = createClient(
@@ -16,9 +17,9 @@ const supabase = createClient(
 )
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
-const GQL_URL = process.env.TS_PROXY_URL
-  ? `https://${process.env.TS_PROXY_URL}`
-  : "https://public-api.nbatopshot.com/graphql"
+const PROXY_URL = "https://topshot-proxy.tdillonbond.workers.dev/graphql"
+const DIRECT_URL = "https://public-api.nbatopshot.com/graphql"
+const GQL_URL = process.env.TS_PROXY_SECRET ? PROXY_URL : DIRECT_URL
 const GQL_HEADERS = {
   "Content-Type": "application/json",
   "User-Agent": "sports-collectible-tool/0.1",
@@ -26,6 +27,7 @@ const GQL_HEADERS = {
 if (process.env.TS_PROXY_SECRET) {
   GQL_HEADERS["X-Proxy-Secret"] = process.env.TS_PROXY_SECRET
 }
+console.log(`[backfill-edition-metadata] GQL endpoint: ${GQL_URL === PROXY_URL ? "Cloudflare proxy" : "direct"}`)
 
 const DELAY_MS = 200
 const BATCH_SIZE = 50

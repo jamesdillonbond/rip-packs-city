@@ -146,7 +146,7 @@ function parseStorefrontEvent(
   const seller = (getCadenceField(fields, "storefrontAddress") as string) ?? null;
   const buyer = (getCadenceField(fields, "buyer") as string) ?? null;
 
-  return { nftId, price, seller, buyer, transactionId, blockTimestamp, marketplace: "top_shot" };
+  return { nftId, price, seller, buyer, transactionId, blockTimestamp, marketplace: "topshot" };
 }
 
 /**
