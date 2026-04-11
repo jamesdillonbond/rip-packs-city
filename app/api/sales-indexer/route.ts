@@ -508,6 +508,20 @@ export async function POST(req: NextRequest) {
       .update({ last_processed_block: targetHeight, updated_at: new Date().toISOString() })
       .eq("id", "topshot_sales")
 
+    // ── Pipeline chain: fire-and-forget next step ──────────────────────────
+    if (req.nextUrl.searchParams.get("chain") === "true") {
+      const baseUrl = process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : "https://rip-packs-city.vercel.app"
+      const pipelineToken = process.env.INGEST_SECRET_TOKEN
+      if (pipelineToken) {
+        fetch(`${baseUrl}/api/fmv-recalc?chain=true`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${pipelineToken}` },
+        }).catch(() => {})
+      }
+    }
+
     // Step 8: Return summary
     return NextResponse.json({
       ok: true,

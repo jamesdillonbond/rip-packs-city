@@ -642,6 +642,20 @@ export async function POST(req: NextRequest) {
       `[INGEST] Done — sales=${salesIngested} dupes=${duplicates} moments=${momentsWritten} editions=${editionsUpdated} fmv=${fmvUpdated} errors=${errors} duration=${duration}ms`
     )
 
+    // ── Pipeline chain: fire-and-forget next step ──────────────────────────
+    if (req.nextUrl.searchParams.get("chain") === "true") {
+      const baseUrl = process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : "https://rip-packs-city.vercel.app"
+      const pipelineToken = process.env.INGEST_SECRET_TOKEN
+      if (pipelineToken) {
+        fetch(`${baseUrl}/api/sales-indexer?chain=true`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${pipelineToken}` },
+        }).catch(() => {})
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       salesIngested,

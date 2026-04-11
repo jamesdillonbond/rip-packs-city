@@ -619,6 +619,20 @@ export async function POST(req: NextRequest) {
       `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} integerBridge=${integerBridgeCount} hasMore=${hasMore} duration=${duration}ms`
     )
 
+    // ── Pipeline chain: fire-and-forget next step ──────────────────────────
+    if (req.nextUrl.searchParams.get("chain") === "true") {
+      const baseUrl = process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : "https://rip-packs-city.vercel.app"
+      const pipelineToken = process.env.INGEST_SECRET_TOKEN
+      if (pipelineToken) {
+        fetch(`${baseUrl}/api/listing-cache?chain=true`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${pipelineToken}` },
+        }).catch(() => {})
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       editionsProcessed: editionIds.length,
