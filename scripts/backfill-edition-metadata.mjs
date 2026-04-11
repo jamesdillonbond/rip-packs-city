@@ -171,12 +171,170 @@ async function main() {
   const elapsed = ((Date.now() - start) / 1000).toFixed(1)
   console.log(`
 ════════════════════════════════════════
-  EDITION METADATA BACKFILL COMPLETE
+  PHASE 1 COMPLETE — moment-backed editions
   Total editions:  ${editions.length}
   Updated:         ${updated}
   Skipped (no moment): ${skipped}
   GQL failures:    ${gqlFails}
   Elapsed:         ${elapsed}s
+════════════════════════════════════════`)
+
+  // ── Phase 2: UUID-format editions with no matching moment ────────────────
+  // These are skipped by phase 1 because there's no wallet_moments_cache row
+  // to supply a flowId. Instead we query Top Shot GQL directly with the set
+  // and play UUIDs parsed out of external_id.
+  await phase2UuidBackfill()
+}
+
+// ── Phase 2 helpers ──────────────────────────────────────────────────────────
+
+const GET_PLAY_QUERY = `
+  query GetPlay($playID: ID!) {
+    getPlay(input: { playID: $playID }) {
+      play {
+        stats { playerName teamAtMomentNbaId playCategory dateOfMoment }
+        statsPlayerFullName
+      }
+    }
+  }
+`
+
+const GET_SET_QUERY = `
+  query GetSet($setID: ID!) {
+    getSet(input: { setID: $setID }) {
+      set { flowName flowSeriesNumber }
+    }
+  }
+`
+
+async function gqlFetch(query, variables) {
+  try {
+    const res = await fetch(GQL_URL, {
+      method: "POST",
+      headers: GQL_HEADERS,
+      body: JSON.stringify({ query, variables }),
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!res.ok) return null
+    const json = await res.json()
+    return json?.data ?? null
+  } catch {
+    return null
+  }
+}
+
+async function fetchPlayMeta(playId) {
+  const d = await gqlFetch(GET_PLAY_QUERY, { playID: playId })
+  const play = d?.getPlay?.play
+  if (!play) return null
+  const stats = play.stats ?? {}
+  const playerName = play.statsPlayerFullName ?? stats.playerName ?? null
+  return {
+    playerName: playerName ? String(playerName).trim() : null,
+    playCategory: stats.playCategory ?? null,
+    dateOfMoment: stats.dateOfMoment ?? null,
+    teamAtMomentNbaId: stats.teamAtMomentNbaId ?? null,
+  }
+}
+
+// Memoize set lookups so we don't re-query the same set UUID 100 times.
+const setCache = new Map()
+async function fetchSetMeta(setId) {
+  if (setCache.has(setId)) return setCache.get(setId)
+  const d = await gqlFetch(GET_SET_QUERY, { setID: setId })
+  const set = d?.getSet?.set
+  const meta = set
+    ? {
+        setName: set.flowName ? String(set.flowName).trim() : null,
+        seriesNumber: set.flowSeriesNumber ?? null,
+      }
+    : null
+  setCache.set(setId, meta)
+  return meta
+}
+
+async function processUuidEdition(ed) {
+  const [setUuid, playUuid] = String(ed.external_id).split(":")
+  if (!setUuid || !playUuid) return "failed"
+
+  const [playMeta, setMeta] = await Promise.all([
+    fetchPlayMeta(playUuid),
+    fetchSetMeta(setUuid),
+  ])
+
+  if (!playMeta?.playerName && !setMeta?.setName) return "failed"
+
+  const patch = {}
+  if (!ed.player_name && playMeta?.playerName) patch.player_name = playMeta.playerName
+  if (!ed.set_name && setMeta?.setName) patch.set_name = setMeta.setName
+  if (!ed.name && playMeta?.playerName && setMeta?.setName) {
+    patch.name = `${playMeta.playerName} — ${setMeta.setName}`
+  }
+  if (setMeta?.seriesNumber != null) patch.series = setMeta.seriesNumber
+
+  if (Object.keys(patch).length === 0) return "failed"
+
+  const { error } = await supabase.from("editions").update(patch).eq("id", ed.id)
+  if (error) {
+    console.log(`  ✗ Edition ${ed.external_id}: ${error.message}`)
+    return "failed"
+  }
+  return "updated"
+}
+
+async function phase2UuidBackfill() {
+  const start = Date.now()
+  console.log("\nPhase 2: UUID editions with no matching moment…")
+
+  // UUID external_ids contain dashes. Filter to ones still missing player_name.
+  const { data: editions, error } = await supabase
+    .from("editions")
+    .select("id, external_id, name, player_name, set_name")
+    .eq("collection_id", TOPSHOT_COLLECTION_ID)
+    .is("player_name", null)
+    .like("external_id", "%-%")
+    .limit(2000)
+
+  if (error) {
+    console.error("Phase 2 fetch failed:", error.message)
+    return
+  }
+
+  const targets = (editions ?? []).filter((e) => {
+    const [a, b] = String(e.external_id).split(":")
+    return a && b && a.includes("-") && b.includes("-")
+  })
+
+  console.log(`Found ${targets.length} UUID editions to resolve`)
+
+  let updated = 0
+  let failed = 0
+  const CONCURRENCY = 8
+  const BATCH_DELAY_MS = 200
+  const LOG_EVERY = 50
+
+  for (let i = 0; i < targets.length; i += CONCURRENCY) {
+    const batch = targets.slice(i, i + CONCURRENCY)
+    const outcomes = await Promise.all(batch.map(processUuidEdition))
+    for (const r of outcomes) {
+      if (r === "updated") updated++
+      else failed++
+    }
+    const processed = Math.min(i + CONCURRENCY, targets.length)
+    if (processed % LOG_EVERY < CONCURRENCY || processed === targets.length) {
+      console.log(`  Progress: ${processed}/${targets.length} | updated: ${updated} | failed: ${failed}`)
+    }
+    if (i + CONCURRENCY < targets.length) await delay(BATCH_DELAY_MS)
+  }
+
+  const elapsed = ((Date.now() - start) / 1000).toFixed(1)
+  console.log(`
+════════════════════════════════════════
+  PHASE 2 COMPLETE — UUID editions
+  Total candidates: ${targets.length}
+  Updated:          ${updated}
+  Failed:           ${failed}
+  Elapsed:          ${elapsed}s
 ════════════════════════════════════════`)
 }
 
