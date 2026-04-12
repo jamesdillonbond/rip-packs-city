@@ -366,6 +366,20 @@ function AutoSearchReader(props: { onSearch: (q: string) => void }) {
   return null
 }
 
+// ── useMobile hook ───────────────────────────────────────────────────────────
+
+function useMobile() {
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" && window.innerWidth < 768
+  )
+  useEffect(function() {
+    function onResize() { setIsMobile(window.innerWidth < 768) }
+    window.addEventListener("resize", onResize)
+    return function() { window.removeEventListener("resize", onResize) }
+  }, [])
+  return isMobile
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function WalletPage() {
@@ -422,6 +436,7 @@ export default function WalletPage() {
   const [filterHasOffer, setFilterHasOffer] = useState(false)
   const [filterListed, setFilterListed] = useState(false)
   const [setsData, setSetsData] = useState<{ sets: any[] } | null>(null)
+  const isMobile = useMobile()
 
   // ── Task 14: Duplicate edition callout ─────────────────────────────────────
   const [dupDismissed, setDupDismissed] = useState(false)
@@ -970,6 +985,64 @@ export default function WalletPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownerKey])
 
+  // Auto-paginate: after initial search, fetch remaining pages automatically
+  useEffect(function() {
+    if (!hasSearched || !activeWallet || paginatedPage >= paginatedTotalPages || loading) return
+    let cancelled = false
+    const isMobileNow = typeof window !== "undefined" && window.innerWidth < 768
+    const pageLimit = isMobileNow ? 25 : 50
+    const maxRows = isMobileNow ? 150 : Infinity
+
+    async function autoPaginate() {
+      setLoadingMore(true)
+      let currentPage = paginatedPage
+      while (currentPage < paginatedTotalPages && !cancelled) {
+        if (rows.length >= maxRows) break
+        try {
+          await new Promise(function(resolve) { setTimeout(resolve, 300) })
+          if (cancelled) break
+          const params = new URLSearchParams({
+            wallet: activeWallet,
+            page: String(currentPage + 1),
+            limit: String(pageLimit),
+            sortBy: serverSortBy,
+          })
+          if (playerFilter !== "all") params.set("player", playerFilter)
+          if (seriesFilter !== "all") {
+            const seriesLabelToNum: Record<string, string> = {
+              "Series 1": "0", "Series 2": "2", "Summer 2021": "3",
+              "Series 3": "4", "Series 4": "5", "Series 2023-24": "6",
+              "Series 2024-25": "7", "Series 2025-26": "8",
+            }
+            const sn = seriesLabelToNum[seriesFilter]
+            if (sn) params.set("series", sn)
+          }
+          if (rarityFilter !== "all") params.set("tier", rarityFilter)
+          const res = await fetch("/api/collection-moments?" + params.toString())
+          if (!res.ok) break
+          const json = await res.json()
+          const moments: ServerMoment[] = json.moments ?? []
+          if (moments.length === 0) break
+          const momentRows = moments.map(serverMomentToRow)
+          const withBadges = await enrichWithBadges(momentRows)
+          const withFmv = await enrichFmv(withBadges)
+          if (cancelled) break
+          setRows(function(prev) { return prev.concat(withFmv) })
+          currentPage += 1
+          setPaginatedPage(currentPage)
+          enrichOffers(withFmv)
+        } catch {
+          break
+        }
+      }
+      setLoadingMore(false)
+    }
+
+    autoPaginate()
+    return function() { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasSearched, activeWallet, paginatedTotalPages])
+
   async function handleSearch() { await runSearch(input) }
 
   async function handleLoadMore() {
@@ -1199,7 +1272,7 @@ export default function WalletPage() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-black text-zinc-100">
+    <div className="min-h-screen bg-black text-zinc-100 overflow-x-hidden">
       <Suspense fallback={null}>
         <AutoSearchReader onSearch={runSearch} />
       </Suspense>
@@ -1485,7 +1558,95 @@ export default function WalletPage() {
           </div>
         ) : null}
 
-        {/* Main table */}
+        {/* Main table / mobile cards */}
+        {isMobile ? (
+          <div className="flex flex-col gap-2">
+            {filteredRows.map(function(row) {
+              const expanded = !!expandedRows[row.momentId]
+              const fmv = fmvDisplay(row)
+              const supaBadges = (row.badgeInfo?.badge_titles ?? []).filter(function(t) { return BADGE_PILL_TITLES.has(t) })
+              const scopeKey = buildEditionScopeKey({ editionKey: row.editionKey, setName: row.setName, playerName: row.playerName, parallel: row.parallel, subedition: row.subedition })
+              const editionCounts = { owned: row.editionsOwned ?? batchEditionStats.get(scopeKey)?.owned ?? 0, locked: row.editionsLocked ?? batchEditionStats.get(scopeKey)?.locked ?? 0 }
+              const cb = costBasis.get(row.flowId ?? "")
+              const tierColorMap: Record<string, string> = { COMMON: "#9ca3af", FANDOM: "#60a5fa", RARE: "#38bdf8", LEGENDARY: "#fbbf24", ULTIMATE: "#c084fc" }
+              const tierBg: Record<string, string> = { COMMON: "bg-zinc-800", FANDOM: "bg-blue-950", RARE: "bg-sky-950", LEGENDARY: "bg-yellow-950", ULTIMATE: "bg-purple-950" }
+              const tierKey = (row.tier ?? "").toUpperCase()
+              return (
+                <div key={row.momentId} className="rounded-xl border border-zinc-800 bg-zinc-950 p-3 flex flex-col gap-1.5">
+                  {/* Row 1: Player + Tier */}
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-white text-sm truncate mr-2">{row.playerName}</span>
+                    {row.tier && (
+                      <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold shrink-0 " + (tierBg[tierKey] ?? "bg-zinc-800")} style={{ color: tierColorMap[tierKey] ?? "#9ca3af" }}>
+                        {row.tier}
+                      </span>
+                    )}
+                  </div>
+                  {/* Row 2: Set + Series */}
+                  <div className="text-xs text-zinc-400">
+                    {normalizeSetName(row.setName)} &middot; {seriesIntToSeason(row.series) || "—"}
+                  </div>
+                  {/* Row 3: Serial, Badges, Details */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-mono text-white">#{getSerial(row) ?? "-"}<span className="text-zinc-500">/{getMint(row) ?? "-"}</span></span>
+                      <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} />
+                    </div>
+                    <div className="flex items-center gap-1 flex-wrap justify-center">
+                      {supaBadges.map(function(title) { return <BadgePill key={"m-" + title} title={title} /> })}
+                    </div>
+                    <button onClick={function() { toggleExpanded(row.momentId) }} className="rounded-lg border border-zinc-700 px-2 py-1 text-xs text-white hover:bg-zinc-900 shrink-0">
+                      {expanded ? "Hide" : "Details"}
+                    </button>
+                  </div>
+                  {/* Row 4: FMV, Low Ask, Cost/P&L */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={"text-sm font-mono " + (fmv.muted ? "text-zinc-500" : "text-green-400")}>{fmv.text}</span>
+                    {row.lowAsk != null && (
+                      <span className="text-xs text-zinc-400">Ask ${row.lowAsk.toFixed(2)}</span>
+                    )}
+                    {cb && row.fmv ? (function() {
+                      const pl = row.fmv - cb.buyPrice
+                      const plPct = cb.buyPrice > 0 ? (pl / cb.buyPrice) * 100 : 0
+                      const color = pl >= 0 ? "text-emerald-400" : "text-red-400"
+                      return (
+                        <div className="text-right">
+                          <div className="text-xs font-mono text-zinc-400">${cb.buyPrice.toFixed(2)}</div>
+                          <div className={"text-[10px] font-mono " + color}>{pl >= 0 ? "+" : ""}{pl.toFixed(2)} ({plPct >= 0 ? "+" : ""}{plPct.toFixed(0)}%)</div>
+                        </div>
+                      )
+                    })() : null}
+                  </div>
+                  {/* Expanded content */}
+                  {expanded && (
+                    <div className="mt-2 pt-2 border-t border-zinc-800">
+                      <div className="grid gap-3 grid-cols-1">
+                        <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Market</div>
+                          <div className="space-y-1 text-sm">
+                            <div>Low Ask: {formatCurrency(row.lowAsk ?? getBestAsk(row))}</div>
+                            <div>Best Offer: {formatCurrency(row.bestOffer ?? row.editionBestOffer)}</div>
+                            <div>FMV: {fmv.text}</div>
+                            <div>Confidence: {confidenceLabel(row.marketConfidence).label}</div>
+                            <div>Held: {editionCounts.owned} / Locked: {editionCounts.locked}</div>
+                          </div>
+                        </div>
+                        <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Links</div>
+                          <div className="space-y-2">
+                            <a href={"https://nbatopshot.com/moment/" + row.momentId} target="_blank" rel="noopener noreferrer" className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-white hover:bg-zinc-900">View on Top Shot</a>
+                            <a href={"https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/" + row.momentId} target="_blank" rel="noopener noreferrer" className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-white hover:bg-zinc-900">View on Flowty</a>
+                          </div>
+                        </div>
+                        <EditionRecentSales editionKey={row.editionKey ?? null} mintCount={getMint(row)} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ) : (
         <div className="rounded-xl border border-zinc-800 bg-zinc-950">
          <div className="overflow-x-auto">
           <table className="w-full min-w-[480px] border-collapse text-sm">
@@ -1855,6 +2016,7 @@ export default function WalletPage() {
           </table>
          </div>
         </div>
+        )}
 
         {/* Empty state */}
         {hasSearched && !loading && filteredRows.length === 0 && (
