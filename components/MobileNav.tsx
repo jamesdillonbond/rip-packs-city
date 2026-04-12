@@ -70,14 +70,26 @@ const ICON_COMPONENTS = {
 export default function MobileNav() {
   const pathname = usePathname();
   const [collectionId, setCollectionId] = useState("nba-top-shot");
+  const [walletHref, setWalletHref] = useState("/" + "nba-top-shot" + "/collection");
 
   useEffect(() => {
-    setCollectionId(getLastCollection());
+    const cid = getLastCollection();
+    setCollectionId(cid);
+    try {
+      const savedAddress = localStorage.getItem("rpc_last_wallet");
+      if (savedAddress) {
+        setWalletHref("/" + cid + "/collection?address=" + encodeURIComponent(savedAddress));
+      } else {
+        setWalletHref("/" + cid + "/collection");
+      }
+    } catch {
+      setWalletHref("/" + cid + "/collection");
+    }
   }, []);
 
   const tabs: { label: string; iconKey: keyof typeof ICON_COMPONENTS; href: string }[] = [
     { label: "HOME", iconKey: "home", href: "/" },
-    { label: "WALLET", iconKey: "wallet", href: `/${collectionId}/collection` },
+    { label: "WALLET", iconKey: "wallet", href: walletHref },
     { label: "SNIPER", iconKey: "sniper", href: `/${collectionId}/sniper` },
     { label: "SETS", iconKey: "sets", href: `/${collectionId}/sets` },
     { label: "PROFILE", iconKey: "profile", href: "/profile" },
@@ -102,12 +114,12 @@ export default function MobileNav() {
       className="rpc-mobile-nav"
     >
       {tabs.map((tab) => {
-        const isActive = pathname === tab.href || pathname.startsWith(tab.href + "/");
+        const isActive = pathname === tab.href || pathname.startsWith(tab.href.split("?")[0] + "/");
         const color = isActive ? "#E03A2F" : "var(--rpc-text-ghost)";
         const Icon = ICON_COMPONENTS[tab.iconKey];
         return (
           <Link
-            key={tab.href}
+            key={tab.label}
             href={tab.href}
             style={{
               display: "flex",

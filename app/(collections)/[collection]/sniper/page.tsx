@@ -436,10 +436,9 @@ function ActionCell({
 // ─── useMobile hook ──────────────────────────────────────────────────────────
 
 function useMobile() {
-  const [isMobile, setIsMobile] = useState(
-    typeof window !== "undefined" && window.innerWidth < 768
-  );
+  const [isMobile, setIsMobile] = useState(true);
   useEffect(() => {
+    setIsMobile(window.innerWidth < 768);
     function onResize() { setIsMobile(window.innerWidth < 768); }
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
@@ -497,6 +496,7 @@ export default function SniperPage() {
   const [ownedFilter, setOwnedFilter] = useState<"all" | "owned" | "not-owned">("all");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [editionStats, setEditionStats] = useState<Map<string, { owned: number; locked: number }>>(new Map());
+  const [showFilters, setShowFilters] = useState(false);
 
   // ── Task 10: Tab visibility pause/resume
   const [tabHidden, setTabHidden] = useState(false);
@@ -951,7 +951,7 @@ export default function SniperPage() {
           <div className="flex items-center gap-2 mb-4">
             {(["deals", "offers"] as const).map((m) => (
               <button key={m} onClick={() => setMode(m)}
-                className={`rpc-chip ${mode === m ? "active" : ""}`}
+                className={`rpc-chip min-h-[44px] ${mode === m ? "active" : ""}`}
                 style={mode === m ? { background: `${accent}1A`, borderColor: `${accent}66`, color: accent } : undefined}>
                 {m === "deals" ? "⚡ DEALS" : "🤝 OFFERS"}
               </button>
@@ -960,8 +960,9 @@ export default function SniperPage() {
           {mode === "offers" && <OffersTab />}
           {mode === "deals" && (
           <>
-          {/* ── Primary Filters (Player input, Min Discount %) ── */}
-          <div className="flex flex-wrap items-center gap-3 mb-4" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
+          {/* ── Primary Filters (Player input, Min Discount %) — hidden on mobile when filters collapsed ── */}
+          {(!isMobile || showFilters) && (
+          <div className={isMobile ? "flex flex-col gap-3 mb-4" : "flex flex-wrap items-center gap-3 mb-4"} style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
             <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
               <span>PLAYER</span>
               <input
@@ -969,7 +970,7 @@ export default function SniperPage() {
                 placeholder="e.g. LeBron"
                 value={playerInput}
                 onChange={(e) => handlePlayerChange(e.target.value)}
-                style={{ width: 160, background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 12px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", outline: "none" }}
+                style={{ width: isMobile ? "100%" : 160, background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 12px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", outline: "none" }}
               />
             </label>
             <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
@@ -985,6 +986,7 @@ export default function SniperPage() {
               <span>%</span>
             </label>
           </div>
+          )}
 
           {/* Tier quick tabs */}
           <div className="flex items-center gap-1 mb-4 flex-wrap">
@@ -992,16 +994,33 @@ export default function SniperPage() {
               <button
                 key={t}
                 onClick={() => setTierTab(t)}
-                className={`rpc-chip ${tierTab === t ? "active" : ""}`}
+                className={`rpc-chip min-h-[44px] ${tierTab === t ? "active" : ""}`}
                 style={tierTab === t ? { textTransform: "uppercase", background: `${accent}1A`, borderColor: `${accent}66`, color: accent } : { textTransform: "uppercase" }}
               >
                 {t}
               </button>
             ))}
+            {isMobile && (
+              <button
+                onClick={() => setShowFilters((v) => !v)}
+                className="rpc-chip min-h-[44px]"
+                style={showFilters ? { background: `${accent}1A`, borderColor: `${accent}66`, color: accent } : undefined}
+              >
+                {"⚙ FILTERS" + (function() {
+                  let count = 0;
+                  if (minDiscount > 0) count++;
+                  if (maxPrice > 0) count++;
+                  if (search.length > 0) count++;
+                  if (badgeOnly) count++;
+                  return count > 0 ? " (" + count + ")" : "";
+                })()}
+              </button>
+            )}
           </div>
 
-          {/* Advanced Filters */}
-          <div className="flex flex-wrap items-center gap-3" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
+          {/* Advanced Filters — always visible on desktop, collapsible on mobile */}
+          {(!isMobile || showFilters) && (
+          <div className={isMobile ? "flex flex-col gap-3 mb-4" : "flex flex-wrap items-center gap-3"} style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
             <input
               type="text"
               placeholder="Search player, set, team…"
@@ -1129,6 +1148,7 @@ export default function SniperPage() {
               {saveSearchMsg ?? "💾 SAVE SEARCH"}
             </button>
           </div>
+          )}
         </>)}
         </div>
       </div>
@@ -1259,8 +1279,8 @@ export default function SniperPage() {
                     <a
                       href={deal.buyUrl}
                       target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={() => trackClick(deal, null)}
+                      rel="noreferrer"
+                      onClick={(e) => { e.stopPropagation(); trackClick(deal, null); }}
                       className={isFlowty ? "rpc-chip" : "rpc-btn-ghost"}
                       style={isFlowty
                         ? { background: "rgba(59,130,246,0.15)", borderColor: "rgba(59,130,246,0.4)", color: "var(--rpc-info)", textDecoration: "none", padding: "4px 10px", fontSize: "var(--text-xs)" }

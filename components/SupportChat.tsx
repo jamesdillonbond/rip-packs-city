@@ -127,11 +127,37 @@ export default function SupportChat({ pageContext, userWallet, walletConnected, 
   const [hasNewMessage, setHasNewMessage] = useState(false);
   const [contextLoaded, setContextLoaded] = useState(false);
   const [quickSuggestions, setQuickSuggestions] = useState<string[]>([]);
+  const [inputFocused, setInputFocused] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
   useEffect(() => { if (isOpen) { setTimeout(() => inputRef.current?.focus(), 300); setHasNewMessage(false); } }, [isOpen]);
+
+  // Hide FAB when a text input/textarea is focused (mobile keyboard open)
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    function handleFocusIn(e: FocusEvent) {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") {
+        if (timer) clearTimeout(timer);
+        setInputFocused(true);
+      }
+    }
+    function handleFocusOut(e: FocusEvent) {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") {
+        timer = setTimeout(() => setInputFocused(false), 150);
+      }
+    }
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("focusout", handleFocusOut);
+    return () => {
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("focusout", handleFocusOut);
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
 
   // ── Instant welcome on open, then async context enrichment ─────
   useEffect(() => {
@@ -353,8 +379,8 @@ export default function SupportChat({ pageContext, userWallet, walletConnected, 
 
       {/* Floating Button */}
       <button onClick={() => setIsOpen((o) => !o)} aria-label={isOpen ? "Close chat" : "Open RPC concierge"}
-        className="rpc-chat-bubble"
-        style={{ position: "fixed", bottom: 20, right: 16, width: 52, height: 52, borderRadius: 14, border: "none", background: isOpen ? "#1a1a1a" : "linear-gradient(135deg, #E03A2F 0%, #b82e25 100%)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, zIndex: 9999, boxShadow: isOpen ? "0 4px 20px rgba(0,0,0,0.3)" : "0 4px 24px rgba(224,58,47,0.35), 0 0 0 1px rgba(224,58,47,0.15)", transition: "transform 0.15s, background 0.2s, box-shadow 0.2s" }}
+        className={`rpc-chat-bubble${inputFocused ? " hidden" : ""}`}
+        style={{ position: "fixed", bottom: 20, right: 16, width: 52, height: 52, borderRadius: 14, border: "none", background: isOpen ? "#1a1a1a" : "linear-gradient(135deg, #E03A2F 0%, #b82e25 100%)", color: "#fff", cursor: "pointer", display: inputFocused ? "none" : "flex", alignItems: "center", justifyContent: "center", fontSize: 22, zIndex: 9999, boxShadow: isOpen ? "0 4px 20px rgba(0,0,0,0.3)" : "0 4px 24px rgba(224,58,47,0.35), 0 0 0 1px rgba(224,58,47,0.15)", transition: "transform 0.15s, background 0.2s, box-shadow 0.2s" }}
         onMouseEnter={(e) => { (e.target as HTMLElement).style.transform = "scale(1.06)"; }}
         onMouseLeave={(e) => { (e.target as HTMLElement).style.transform = "scale(1)"; }}>
         {isOpen ? "✕" : "💬"}

@@ -369,10 +369,9 @@ function AutoSearchReader(props: { onSearch: (q: string) => void }) {
 // ── useMobile hook ───────────────────────────────────────────────────────────
 
 function useMobile() {
-  const [isMobile, setIsMobile] = useState(
-    typeof window !== "undefined" && window.innerWidth < 768
-  )
+  const [isMobile, setIsMobile] = useState(true)
   useEffect(function() {
+    setIsMobile(window.innerWidth < 768)
     function onResize() { setIsMobile(window.innerWidth < 768) }
     window.addEventListener("resize", onResize)
     return function() { window.removeEventListener("resize", onResize) }
@@ -917,6 +916,7 @@ export default function WalletPage() {
       // Primary: fetch paginated moments from Supabase cache (fast ~200ms)
       const { totalCount } = await fetchPaginatedMoments(trimmed, 1, sort, false)
       setHasSearched(true)
+      try { localStorage.setItem("rpc_last_wallet", trimmed) } catch {}
       console.log("[collection] paginated API returned page 1, total_count=" + totalCount)
 
       // Secondary: call wallet-search for summary stats only (total FMV, locked/unlocked counts)
@@ -1289,39 +1289,41 @@ export default function WalletPage() {
         )}
 
         {/* Search bar */}
-        <div className="mb-5 flex gap-2">
+        <div className="mb-5 flex flex-col gap-2 sm:flex-row">
           <input
             value={input}
             onChange={function(e) { setInput(e.target.value) }}
             onKeyDown={function(e) { if (e.key === "Enter" && !loading && input.trim()) handleSearch() }}
             placeholder={ownerKey ? "Enter Top Shot username or wallet address (or press Enter to load your wallet)" : "Enter Top Shot username or wallet address"}
-            className="w-full max-w-lg rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white outline-none placeholder:text-zinc-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white outline-none placeholder:text-zinc-500 sm:max-w-lg"
             style={{ ["--accent" as string]: accent }}
             onFocus={function(e) { e.currentTarget.style.borderColor = accent }}
             onBlur={function(e) { e.currentTarget.style.borderColor = "" }}
           />
-          <button
-            onClick={handleSearch}
-            disabled={loading || !input.trim()}
-            className="rounded-lg px-5 py-2 font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
-            style={{ backgroundColor: accent }}
-          >
-            {loading ? "Loading..." : "Search"}
-          </button>
-          {rows.length > 0 && input.trim() && (
+          <div className="flex gap-2">
             <button
-              onClick={function() {
-                const shareUrl = "https://rip-packs-city.vercel.app/share/" + encodeURIComponent(input.trim())
-                navigator.clipboard.writeText(shareUrl)
-                setCopied(true)
-                setTimeout(function() { setCopied(false) }, 2000)
-              }}
-              title="Copy shareable collection card link"
-              className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-400 hover:bg-zinc-900 transition"
+              onClick={handleSearch}
+              disabled={loading || !input.trim()}
+              className="rounded-lg px-5 py-2 font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
+              style={{ backgroundColor: accent }}
             >
-              {copied ? "Link copied!" : "Share"}
+              {loading ? "Loading..." : "Search"}
             </button>
-          )}
+            {rows.length > 0 && input.trim() && (
+              <button
+                onClick={function() {
+                  const shareUrl = "https://rip-packs-city.vercel.app/share/" + encodeURIComponent(input.trim())
+                  navigator.clipboard.writeText(shareUrl)
+                  setCopied(true)
+                  setTimeout(function() { setCopied(false) }, 2000)
+                }}
+                title="Copy shareable collection card link"
+                className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-400 hover:bg-zinc-900 transition"
+              >
+                {copied ? "Link copied!" : "Share"}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Portfolio summary */}
@@ -1572,21 +1574,24 @@ export default function WalletPage() {
               const tierBg: Record<string, string> = { COMMON: "bg-zinc-800", FANDOM: "bg-blue-950", RARE: "bg-sky-950", LEGENDARY: "bg-yellow-950", ULTIMATE: "bg-purple-950" }
               const tierKey = (row.tier ?? "").toUpperCase()
               return (
-                <div key={row.momentId} className="rounded-xl border border-zinc-800 bg-zinc-950 p-3 flex flex-col gap-1.5">
-                  {/* Row 1: Player + Tier */}
+                <div key={row.momentId} className="rounded-xl border border-zinc-800 bg-zinc-950 p-3 flex flex-col gap-1.5 cursor-pointer" onClick={function() { toggleExpanded(row.momentId) }}>
+                  {/* Row 1: Player + Tier + Chevron */}
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-white text-sm truncate mr-2">{row.playerName}</span>
-                    {row.tier && (
-                      <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold shrink-0 " + (tierBg[tierKey] ?? "bg-zinc-800")} style={{ color: tierColorMap[tierKey] ?? "#9ca3af" }}>
-                        {row.tier}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      {row.tier && (
+                        <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold shrink-0 " + (tierBg[tierKey] ?? "bg-zinc-800")} style={{ color: tierColorMap[tierKey] ?? "#9ca3af" }}>
+                          {row.tier}
+                        </span>
+                      )}
+                      <span className="text-zinc-500 text-xs shrink-0">{expanded ? "▾" : "›"}</span>
+                    </div>
                   </div>
                   {/* Row 2: Set + Series */}
                   <div className="text-xs text-zinc-400">
                     {normalizeSetName(row.setName)} &middot; {seriesIntToSeason(row.series) || "—"}
                   </div>
-                  {/* Row 3: Serial, Badges, Details */}
+                  {/* Row 3: Serial, Badges */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs font-mono text-white">#{getSerial(row) ?? "-"}<span className="text-zinc-500">/{getMint(row) ?? "-"}</span></span>
@@ -1595,9 +1600,6 @@ export default function WalletPage() {
                     <div className="flex items-center gap-1 flex-wrap justify-center">
                       {supaBadges.map(function(title) { return <BadgePill key={"m-" + title} title={title} /> })}
                     </div>
-                    <button onClick={function() { toggleExpanded(row.momentId) }} className="rounded-lg border border-zinc-700 px-2 py-1 text-xs text-white hover:bg-zinc-900 shrink-0">
-                      {expanded ? "Hide" : "Details"}
-                    </button>
                   </div>
                   {/* Row 4: FMV, Low Ask, Cost/P&L */}
                   <div className="flex items-center justify-between gap-2">
@@ -1645,6 +1647,11 @@ export default function WalletPage() {
                 </div>
               )
             })}
+            {summary && summary.remainingMoments > 0 && isMobile && (
+              <div className="mt-3 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-center text-xs text-zinc-500">
+                Showing {rows.length} of {summary.totalMoments} moments — open on desktop for full collection
+              </div>
+            )}
           </div>
         ) : (
         <div className="rounded-xl border border-zinc-800 bg-zinc-950">
