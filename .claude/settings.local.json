@@ -28,7 +28,9 @@
       "Bash(git commit -m 'fix: allow Google Fonts in CSP headers:*)",
       "Bash(git commit -m 'docs: update CLAUDE.md with April 10 session:*)",
       "Bash(git commit:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(curl -s \"https://rip-packs-city.vercel.app/api/allday-seed-editions?token=rippackscity2026\")",
+      "Bash(curl:*)"
     ]
   }
 }
