@@ -1,62 +1,62 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getOwnerKey } from "@/lib/owner-key";
-import { getTrackedCollections } from "@/lib/tracked-collections";
-import { COLLECTIONS } from "@/lib/collections";
 import SiteFooter from "@/components/SiteFooter";
 import MobileNav from "@/components/MobileNav";
 import SupportChatConnected from "@/components/SupportChatConnected";
-import OnboardingModal from "@/components/OnboardingModal";
 
 const condensedFont = "'Barlow Condensed', sans-serif";
 const monoFont = "'Share Tech Mono', monospace";
 const RED = "#E03A2F";
 
+interface MarketPulse {
+  commonFloor: number | null;
+  rareFloor: number | null;
+  legendaryFloor: number | null;
+  indexedEditions: number;
+}
+
+function fmtDollars(n: number): string {
+  if (n >= 1000) return "$" + (n / 1000).toFixed(1) + "K";
+  return "$" + n.toFixed(2);
+}
+
+const QUICK_COLLECTIONS = [
+  { id: "nba-top-shot", label: "NBA Top Shot", icon: "\u{1F3C0}", accent: "#E03A2F" },
+  { id: "nfl-all-day", label: "NFL All Day", icon: "\u{1F3C8}", accent: "#4F94D4" },
+  { id: "laliga-golazos", label: "LaLiga Golazos", icon: "\u26BD", accent: "#22C55E" },
+  { id: "disney-pinnacle", label: "Disney Pinnacle", icon: "\u2728", accent: "#A855F7" },
+];
+
 export default function HomePage() {
-  const router = useRouter();
-  const [address, setAddress] = useState("");
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [pulse, setPulse] = useState<MarketPulse | null>(null);
+  const [pulseLoading, setPulseLoading] = useState(false);
 
   useEffect(() => {
-    const saved = getOwnerKey();
-    if (saved) setAddress(saved);
-
-    try {
-      if (!localStorage.getItem("rpc_onboarded")) {
-        setShowOnboarding(true);
-      }
-    } catch {}
+    setPulseLoading(true);
+    fetch("/api/profile/market-pulse")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) setPulse(d); })
+      .catch(() => {})
+      .finally(() => setPulseLoading(false));
   }, []);
-
-  function handleLoad() {
-    const val = address.trim();
-    if (!val) return;
-    const tracked = getTrackedCollections();
-    const first = tracked[0] || "nba-top-shot";
-    const param = val.startsWith("0x") ? val : val;
-    router.push(`/${first}/collection?address=${encodeURIComponent(param)}`);
-  }
 
   return (
     <div style={{ minHeight: "100vh", background: "#080808", color: "#fff" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Share+Tech+Mono&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
-        input::placeholder{color:rgba(255,255,255,0.25)!important;}
         ::-webkit-scrollbar{width:4px}
         ::-webkit-scrollbar-track{background:#111}
         ::-webkit-scrollbar-thumb{background:rgba(224,58,47,0.3);border-radius:2px}
         @media(max-width:768px){
           .rpc-main{padding:16px 16px 80px!important;}
-          .rpc-chat-fab{bottom:76px!important;}
         }
         .rpc-coll-card:hover .rpc-coll-glow{box-shadow:0 0 12px var(--glow-color)!important;border-color:var(--glow-color)!important;}
       `}</style>
 
-      {/* Header — same pattern as profile page */}
+      {/* Header */}
       <header style={{ background: "rgba(8,8,8,0.97)", borderBottom: "1px solid rgba(255,255,255,0.06)", position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(20px)" }}>
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 20px", height: 56, display: "flex", alignItems: "center", gap: 16 }}>
           <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, textDecoration: "none" }}>
@@ -85,314 +85,88 @@ export default function HomePage() {
 
       <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
 
-        {/* ── Section A — Hero / wallet connect strip ──────────────── */}
-        <section style={{ marginBottom: 32 }}>
-          <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)", marginBottom: 10 }}>
-            ◈ ANALYZE YOUR COLLECTION ◈
-          </div>
-          <div style={{ display: "flex", gap: 8, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "8px 8px 8px 16px", alignItems: "center", maxWidth: 560 }}>
-            <input
-              value={address}
-              onChange={e => setAddress(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") handleLoad(); }}
-              placeholder="Dapper username or 0x address…"
-              style={{
-                flex: 1,
-                background: "transparent",
-                border: "none",
-                color: "#fff",
-                fontFamily: monoFont,
-                fontSize: 12,
-                outline: "none",
-              }}
-            />
-            <button
-              onClick={handleLoad}
-              style={{
-                background: RED,
-                border: "none",
-                borderRadius: 5,
-                padding: "8px 18px",
-                color: "#fff",
-                fontFamily: condensedFont,
-                fontWeight: 700,
-                fontSize: 12,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                cursor: "pointer",
-                flexShrink: 0,
-              }}
-            >
-              Load
-            </button>
-          </div>
-          <p style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 8, letterSpacing: "0.06em" }}>
-            Enter your username to see your portfolio across all collections.
+        {/* Hero */}
+        <section style={{ textAlign: "center", marginBottom: 40, paddingTop: 24 }}>
+          <h1 style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 42, letterSpacing: "0.04em", textTransform: "uppercase", lineHeight: 1.1, marginBottom: 10 }}>
+            Rip Packs <span style={{ color: RED }}>City</span>
+          </h1>
+          <p style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.45)", letterSpacing: "0.06em", maxWidth: 480, margin: "0 auto" }}>
+            Collector intelligence for NBA Top Shot, NFL All Day, LaLiga Golazos &amp; Disney Pinnacle. FMV pricing, sniper deals, badge tracking, and portfolio analytics.
           </p>
         </section>
 
-        {/* ── Section B — Collection grid ──────────────────────────── */}
+        {/* Collection quick-access grid */}
         <section style={{ marginBottom: 32 }}>
           <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)", marginBottom: 12 }}>
-            ◈ COLLECTIONS ◈
+            &#9670; COLLECTIONS &#9670;
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
-            {COLLECTIONS.map(col => {
-              const isPublished = col.published;
-
-              const cardStyle: React.CSSProperties = {
-                background: "rgba(255,255,255,0.03)",
-                border: "1px solid rgba(255,255,255,0.08)",
-                borderRadius: 8,
-                padding: "16px 14px 12px",
-                position: "relative",
-                borderBottom: `2px solid ${col.accent}`,
-                opacity: isPublished ? 1 : 0.5,
-                transition: "all 0.2s ease",
-                textDecoration: "none",
-                color: "#fff",
-                display: "block",
-                pointerEvents: isPublished ? "auto" : "none",
-              };
-
-              const inner = (
-                <>
-                  {/* Top-right badge */}
-                  <div style={{ position: "absolute", top: 8, right: 8 }}>
-                    {isPublished ? (
-                      <span style={{ fontFamily: monoFont, fontSize: 8, letterSpacing: "0.1em", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 3, padding: "2px 6px", color: "rgba(255,255,255,0.4)", textTransform: "uppercase" }}>
-                        {col.chain}
-                      </span>
-                    ) : (
-                      <span style={{ fontFamily: monoFont, fontSize: 8, letterSpacing: "0.1em", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 3, padding: "2px 6px", color: "rgba(255,255,255,0.5)", textTransform: "uppercase" }}>
-                        COMING SOON
-                      </span>
-                    )}
+            {QUICK_COLLECTIONS.map((col) => (
+              <Link
+                key={col.id}
+                href={`/${col.id}/overview`}
+                className="rpc-coll-card"
+                style={{
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: 8,
+                  padding: "16px 14px 12px",
+                  position: "relative",
+                  borderBottom: `2px solid ${col.accent}`,
+                  transition: "all 0.2s ease",
+                  textDecoration: "none",
+                  color: "#fff",
+                  display: "block",
+                  // @ts-expect-error CSS custom property
+                  "--glow-color": `${col.accent}66`,
+                }}
+              >
+                <div className="rpc-coll-glow" style={{ position: "absolute", inset: 0, borderRadius: 8, border: "1px solid transparent", transition: "all 0.2s ease", pointerEvents: "none" }} />
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <span style={{ fontSize: 24 }}>{col.icon}</span>
+                  <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 14, textTransform: "uppercase", letterSpacing: "0.04em", lineHeight: 1.2 }}>
+                    {col.label}
                   </div>
-                  {/* Lock icon for unpublished */}
-                  {!isPublished && (
-                    <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", fontSize: 28, opacity: 0.12, pointerEvents: "none" }}>
-                      🔒
-                    </div>
-                  )}
-                  {/* Icon + label */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                    <span style={{ fontSize: 24 }}>{col.icon}</span>
-                    <div>
-                      <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 14, textTransform: "uppercase", letterSpacing: "0.04em", lineHeight: 1.2 }}>
-                        {col.label}
-                      </div>
-                      <div style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.35)", letterSpacing: "0.08em" }}>
-                        {col.shortLabel}
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.25)", letterSpacing: "0.08em" }}>
-                    {col.sport}
-                  </div>
-                </>
-              );
-
-              if (isPublished) {
-                return (
-                  <Link
-                    key={col.id}
-                    href={`/${col.id}/overview`}
-                    className="rpc-coll-card"
-                    style={{
-                      ...cardStyle,
-                      // CSS custom property for hover glow
-                      // @ts-expect-error CSS custom property
-                      "--glow-color": `${col.accent}66`,
-                    }}
-                  >
-                    <div className="rpc-coll-glow" style={{ position: "absolute", inset: 0, borderRadius: 8, border: "1px solid transparent", transition: "all 0.2s ease", pointerEvents: "none" }} />
-                    {inner}
-                  </Link>
-                );
-              }
-
-              return (
-                <div key={col.id} style={cardStyle}>
-                  {inner}
                 </div>
-              );
-            })}
+              </Link>
+            ))}
           </div>
         </section>
 
-        {/* ── Section C — My Portfolio ───────────────────────────────── */}
-        <PortfolioWidget />
+        {/* Market Pulse */}
+        <MarketPulseWidget pulse={pulse} loading={pulseLoading} />
 
-        {/* ── Section D — Onboarding trigger ───────────────────────── */}
-        <OnboardingBanner onOpen={() => setShowOnboarding(true)} />
       </main>
 
       <SiteFooter />
       <MobileNav />
       <SupportChatConnected />
-
-      {showOnboarding && (
-        <OnboardingModal onClose={() => setShowOnboarding(false)} />
-      )}
     </div>
   );
 }
 
-// ── Portfolio widget — shows collection snapshot for a wallet ────────────────
-function PortfolioWidget() {
-  const [wallet, setWallet] = useState("")
-  const [loading, setLoading] = useState(false)
-  const [snapshot, setSnapshot] = useState<any>(null)
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("rpc_last_wallet")
-      if (saved) setWallet(saved)
-    } catch {}
-  }, [])
-
-  function handleSubmit() {
-    const val = wallet.trim()
-    if (!val) return
-    try { localStorage.setItem("rpc_last_wallet", val) } catch {}
-    setLoading(true)
-    fetch(`/api/collection-snapshot?wallet=${encodeURIComponent(val)}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) setSnapshot(d) })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }
-
+function MarketPulseWidget(props: { pulse: MarketPulse | null; loading: boolean }) {
+  const stats = [
+    { label: "Common Floor", value: props.pulse?.commonFloor != null ? fmtDollars(props.pulse.commonFloor) : "\u2014", color: "#6B7280" },
+    { label: "Rare Floor", value: props.pulse?.rareFloor != null ? fmtDollars(props.pulse.rareFloor) : "\u2014", color: "#818CF8" },
+    { label: "Legendary Floor", value: props.pulse?.legendaryFloor != null ? fmtDollars(props.pulse.legendaryFloor) : "\u2014", color: "#F59E0B" },
+    { label: "Indexed Editions", value: props.pulse?.indexedEditions ? props.pulse.indexedEditions.toLocaleString() : "\u2014", color: "#34D399" },
+  ];
   return (
-    <section style={{ marginBottom: 32 }}>
-      <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)", marginBottom: 12 }}>
-        ◈ MY PORTFOLIO ◈
+    <section style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "14px 18px", marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#34D399", animation: "pulse 2s infinite" }} />
+        <span style={{ fontSize: 9, fontFamily: monoFont, letterSpacing: "0.2em", color: "rgba(255,255,255,0.45)", textTransform: "uppercase" }}>Market Pulse</span>
+        <span style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.2)", letterSpacing: "0.1em", marginLeft: "auto" }}>60s cache</span>
       </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 12, maxWidth: 460 }}>
-        <input
-          value={wallet}
-          onChange={e => setWallet(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter") handleSubmit() }}
-          placeholder="0x address or username..."
-          style={{
-            flex: 1, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: 6, padding: "8px 12px", color: "#fff",
-            fontFamily: monoFont, fontSize: 12, outline: "none",
-          }}
-        />
-        <button
-          onClick={handleSubmit}
-          disabled={loading}
-          style={{
-            background: RED, border: "none", borderRadius: 5, padding: "8px 16px",
-            color: "#fff", fontFamily: condensedFont, fontWeight: 700, fontSize: 12,
-            letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer",
-            opacity: loading ? 0.5 : 1, flexShrink: 0,
-          }}
-        >
-          {loading ? "..." : "Load"}
-        </button>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12 }}>
+        {stats.map((s) => (
+          <div key={s.label}>
+            <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.1em", marginBottom: 4, textTransform: "uppercase" }}>{s.label}</div>
+            <div style={{ fontSize: 18, fontFamily: condensedFont, fontWeight: 800, color: props.loading ? "rgba(255,255,255,0.2)" : s.color }}>{props.loading ? "\u2026" : s.value}</div>
+          </div>
+        ))}
       </div>
-
-      {snapshot && (
-        <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: 16 }}>
-          <div style={{ fontFamily: monoFont, fontSize: 32, fontWeight: 700, color: "#fff", marginBottom: 8 }}>
-            ${Number(snapshot.totalFmv ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-          <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.5)", marginBottom: 12 }}>
-            Total FMV · {snapshot.totalMoments ?? 0} moments
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
-            <span style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: "0.08em" }}>NBA TOP SHOT</span>
-            <span style={{ fontFamily: monoFont, fontSize: 12, color: "#fff" }}>
-              ${Number(snapshot.totalFmv ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
-          </div>
-
-          {/* Top 3 moments */}
-          {(snapshot.topMoments ?? []).length > 0 && (
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-              {(snapshot.topMoments ?? []).slice(0, 3).map((m: any, i: number) => (
-                <div key={i} style={{
-                  background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)",
-                  borderRadius: 6, padding: "8px 10px", minWidth: 120, flex: 1,
-                }}>
-                  {m.thumbnailUrl && (
-                    <img src={m.thumbnailUrl} alt={m.playerName} style={{ width: 32, height: 32, borderRadius: 4, objectFit: "cover", marginBottom: 4 }} />
-                  )}
-                  <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, color: "#fff", lineHeight: 1.2 }}>{m.playerName}</div>
-                  <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
-                    ${Number(m.fmv ?? 0).toFixed(2)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <a
-            href={`/nba-top-shot/collection?wallet=${encodeURIComponent(wallet.trim())}`}
-            style={{
-              fontFamily: condensedFont, fontWeight: 700, fontSize: 11,
-              letterSpacing: "0.08em", textTransform: "uppercase",
-              color: RED, textDecoration: "none",
-            }}
-          >
-            View Full Collection →
-          </a>
-        </div>
-      )}
     </section>
-  )
-}
-
-// ── Onboarding banner — only shows if rpc_onboarded is not set ──────────────
-function OnboardingBanner({ onOpen }: { onOpen: () => void }) {
-  const [show, setShow] = useState(false);
-
-  useEffect(() => {
-    try {
-      if (!localStorage.getItem("rpc_onboarded")) {
-        setShow(true);
-      }
-    } catch {}
-  }, []);
-
-  if (!show) return null;
-
-  return (
-    <div style={{
-      background: `${RED}12`,
-      border: `1px solid ${RED}33`,
-      borderRadius: 8,
-      padding: "14px 18px",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: 12,
-      flexWrap: "wrap",
-    }}>
-      <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.6)", letterSpacing: "0.06em" }}>
-        New to RPC? Set up your collections →
-      </span>
-      <button
-        onClick={onOpen}
-        style={{
-          background: RED,
-          border: "none",
-          borderRadius: 5,
-          padding: "7px 16px",
-          color: "#fff",
-          fontFamily: "'Barlow Condensed', sans-serif",
-          fontWeight: 700,
-          fontSize: 11,
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          cursor: "pointer",
-        }}
-      >
-        Get Started
-      </button>
-    </div>
   );
 }

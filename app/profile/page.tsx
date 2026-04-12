@@ -288,9 +288,35 @@ function PinParamReader(props: {
 }
 
 // ─── SIGN IN BANNER ───────────────────────────────────────────
+async function resolveOwnerKeyToUsername(input: string): Promise<string> {
+  if (/^0x[a-fA-F0-9]{16}$/.test(input)) {
+    try {
+      const r = await fetch("/api/wallet-search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ input, offset: 0, limit: 1 }) });
+      if (r.ok) {
+        const json = await r.json();
+        if (json?.summary?.username) return json.summary.username;
+      }
+    } catch {}
+  }
+  return input;
+}
+
 function SignInBanner(props: { onSetKey: (key: string) => void }) {
   const [val, setVal] = useState("");
   const [focused, setFocused] = useState(false);
+  const [resolving, setResolving] = useState(false);
+
+  async function handleSignIn() {
+    const trimmed = val.trim();
+    if (!trimmed) return;
+    setResolving(true);
+    try {
+      const resolved = await resolveOwnerKeyToUsername(trimmed);
+      props.onSetKey(resolved);
+    } finally {
+      setResolving(false);
+    }
+  }
 
   return (
     <div className="rpc-hud" style={{ borderRadius: "var(--radius-lg)" as any, padding: "22px 28px", marginBottom: 16, animation: "fadeIn 0.4s ease both" }}>
@@ -311,18 +337,19 @@ function SignInBanner(props: { onSetKey: (key: string) => void }) {
           <input
             value={val}
             onChange={function(e) { setVal(e.target.value); }}
-            onKeyDown={function(e) { if (e.key === "Enter" && val.trim()) props.onSetKey(val.trim()); }}
+            onKeyDown={function(e) { if (e.key === "Enter" && val.trim()) handleSignIn(); }}
             onFocus={function() { setFocused(true); }}
             onBlur={function() { setFocused(false); }}
             placeholder="your Top Shot username…"
             style={{ background: "var(--rpc-surface-hover)", border: "1px solid " + (focused ? "var(--rpc-red)" : "var(--rpc-red-border)"), borderRadius: 7, padding: "9px 16px", color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 11, outline: "none", width: 220, transition: "border-color var(--transition-fast)" }}
           />
           <button
-            onClick={function() { if (val.trim()) props.onSetKey(val.trim()); }}
+            onClick={handleSignIn}
+            disabled={resolving}
             className="rpc-btn-primary"
-            style={{ borderRadius: 7, padding: "9px 20px", fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", flexShrink: 0 }}
+            style={{ borderRadius: 7, padding: "9px 20px", fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", flexShrink: 0, opacity: resolving ? 0.6 : 1 }}
           >
-            Sign In
+            {resolving ? "Resolving..." : "Sign In"}
           </button>
         </div>
       </div>
@@ -1184,6 +1211,20 @@ function ProfilePageInner() {
   const [pinModal, setPinModal] = useState<{ slot: number; prefilled: PinPreview | null } | null>(null);
   const [sparkChangePct, setSparkChangePct] = useState<number | null>(null);
   const [suggestedMoments, setSuggestedMoments] = useState<SuggestedMoment[]>([]);
+  const [bottomResolving, setBottomResolving] = useState(false);
+
+  async function handleBottomSignIn() {
+    const trimmed = ownerInput.trim();
+    if (!trimmed) return;
+    setBottomResolving(true);
+    try {
+      const resolved = await resolveOwnerKeyToUsername(trimmed);
+      setOwnerKey(resolved);
+      loadProfile(resolved);
+    } finally {
+      setBottomResolving(false);
+    }
+  }
 
   // Read from localStorage + listen for cross-tab changes
   useEffect(function() {
@@ -1669,9 +1710,9 @@ function ProfilePageInner() {
               </div>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input value={ownerInput} onChange={function(e) { setOwnerInput(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && ownerInput.trim()) { setOwnerKey(ownerInput.trim()); loadProfile(ownerInput.trim()); } }} placeholder={ownerKey ? ownerKey : "your username…"} style={{ background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border-hover)", borderRadius: 6, padding: "6px 12px", color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 11, outline: "none", width: 200 }} />
-              <button onClick={function() { if (ownerInput.trim()) { setOwnerKey(ownerInput.trim()); loadProfile(ownerInput.trim()); } }} className="rpc-btn-primary" style={{ padding: "6px 14px" }}>
-                {ownerKey ? "Update" : "Sign In"}
+              <input value={ownerInput} onChange={function(e) { setOwnerInput(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && ownerInput.trim()) handleBottomSignIn(); }} placeholder={ownerKey ? ownerKey : "your username…"} style={{ background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border-hover)", borderRadius: 6, padding: "6px 12px", color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 11, outline: "none", width: 200 }} />
+              <button onClick={handleBottomSignIn} disabled={bottomResolving} className="rpc-btn-primary" style={{ padding: "6px 14px", opacity: bottomResolving ? 0.6 : 1 }}>
+                {bottomResolving ? "Resolving..." : ownerKey ? "Update" : "Sign In"}
               </button>
               {ownerKey && (
                 <button onClick={function() { saveOwnerKey(""); setOwnerKeyState(""); setSavedWallets([]); setRecentSearches([]); setTrophies([null, null, null, null, null, null]); setBio(null); router.replace("/profile"); }} className="rpc-btn-ghost" style={{ padding: "4px 10px", fontSize: 9 }}>Sign Out</button>

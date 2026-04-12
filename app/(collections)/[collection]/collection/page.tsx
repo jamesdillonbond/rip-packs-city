@@ -1290,7 +1290,7 @@ export default function WalletPage() {
         {ownerKey && (
           <div className="mb-4 flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-400">
             <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
-            Signed in as <span className="font-semibold text-white">{ownerKey}</span>
+            Signed in as <span className="font-semibold text-white">{/^0x[a-fA-F0-9]{16}$/.test(ownerKey) ? ownerKey.slice(0, 6) + "\u2026" + ownerKey.slice(-4) : ownerKey}</span>
             <span className="ml-1 text-zinc-600">· Loading wallet will update your profile stats</span>
           </div>
         )}
