@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import { useCart } from "@/lib/cart/CartContext";
 import { getCollection } from "@/lib/collections";
 import { getOwnerKey } from "@/lib/owner-key";
+import { PINNACLE_VARIANT_COLORS, PINNACLE_VARIANT_LABELS } from "@/lib/pinnacle/pinnacleTypes";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const COMMISSION_RECIPIENT = "0xc1e4f4f4c4257510";
@@ -137,6 +138,14 @@ function tierColor(tier: string): string {
     case "ULTIMATE":  return "var(--tier-ultimate)";
     default:          return "var(--tier-common)";
   }
+}
+
+function variantColor(variant: string): string {
+  return PINNACLE_VARIANT_COLORS[variant] ?? "#9CA3AF";
+}
+
+function variantLabel(variant: string): string {
+  return PINNACLE_VARIANT_LABELS[variant] ?? variant;
 }
 
 function holoClass(tier: string): string {
@@ -450,6 +459,7 @@ function useMobile() {
 
 const REFRESH_INTERVAL = 30;
 const TIER_TABS = ["all", "common", "fandom", "rare", "legendary", "ultimate"] as const;
+const PINNACLE_VARIANT_TABS = ["all", "Standard", "Brushed Silver", "Colored Enamel", "Golden", "Digital Display", "Limited Edition"] as const;
 type TierTab = (typeof TIER_TABS)[number];
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
@@ -880,11 +890,14 @@ export default function SniperPage() {
                 <span style={{ fontSize: "var(--text-2xl)" }}>⚡</span> SNIPER
               </h1>
               <p className="rpc-label" style={{ marginTop: 2 }}>
-                LIVE DEALS BELOW ADJUSTED FMV — BADGE-AWARE, SERIAL-ADJUSTED
+                {isPinnacle
+                  ? "LIVE PINNACLE DEALS BELOW FMV — VARIANT-AWARE, FLOWTY-ONLY"
+                  : "LIVE DEALS BELOW ADJUSTED FMV — BADGE-AWARE, SERIAL-ADJUSTED"}
               </p>
             </div>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
+                {!isPinnacle && (
                 <span className={`rpc-chip ${stats.tsCached ? "text-amber-400 border-amber-500/30 bg-amber-500/10" : ""}`} style={stats.tsLive
                   ? { background: "rgba(52,211,153,0.08)", borderColor: "rgba(52,211,153,0.3)", color: "var(--rpc-success)" }
                   : stats.tsCached
@@ -894,6 +907,7 @@ export default function SniperPage() {
                   <span className={`inline-block w-1.5 h-1.5 rounded-full ${stats.tsLive ? "bg-emerald-400 animate-pulse" : stats.tsCached ? "bg-amber-400 animate-pulse" : "bg-red-400/50"}`} style={{ marginRight: 4 }} />
                   {isAllDay ? "AD" : "TS"} {stats.tsLive ? `(${data?.tsCount})` : stats.tsCached ? "CACHED" : "OFFLINE"}
                 </span>
+                )}
                 <span className="rpc-chip" style={stats.flowtyLive
                   ? { background: "rgba(59,130,246,0.08)", borderColor: "rgba(59,130,246,0.3)", color: "var(--rpc-info)" }
                   : { background: "rgba(248,113,113,0.08)", borderColor: "rgba(248,113,113,0.2)", color: "var(--rpc-danger)" }
@@ -983,10 +997,10 @@ export default function SniperPage() {
           {(!isMobile || showFilters) && (
           <div className={isMobile ? "flex flex-col gap-3 mb-4" : "flex flex-wrap items-center gap-3 mb-4"} style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
             <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
-              <span>PLAYER</span>
+              <span>{isPinnacle ? "CHARACTER" : "PLAYER"}</span>
               <input
                 type="text"
-                placeholder="e.g. LeBron"
+                placeholder={isPinnacle ? "e.g. Grogu" : "e.g. LeBron"}
                 value={playerInput}
                 onChange={(e) => handlePlayerChange(e.target.value)}
                 style={{ width: isMobile ? "100%" : 160, background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 12px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", outline: "none" }}
@@ -1007,14 +1021,16 @@ export default function SniperPage() {
           </div>
           )}
 
-          {/* Tier quick tabs */}
+          {/* Tier / Variant quick tabs */}
           <div className="flex items-center gap-1 mb-4 flex-wrap">
-            {TIER_TABS.map((t) => (
+            {(isPinnacle ? PINNACLE_VARIANT_TABS : TIER_TABS).map((t) => (
               <button
                 key={t}
-                onClick={() => setTierTab(t)}
+                onClick={() => setTierTab(t as TierTab)}
                 className={`rpc-chip min-h-[44px] ${tierTab === t ? "active" : ""}`}
-                style={tierTab === t ? { textTransform: "uppercase", background: `${accent}1A`, borderColor: `${accent}66`, color: accent } : { textTransform: "uppercase" }}
+                style={tierTab === t
+                  ? { textTransform: "uppercase", background: `${accent}1A`, borderColor: `${accent}66`, color: isPinnacle && t !== "all" ? variantColor(t) : accent }
+                  : { textTransform: "uppercase" }}
               >
                 {t}
               </button>
@@ -1076,6 +1092,7 @@ export default function SniperPage() {
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
+            {!isPinnacle && (
             <label className="flex items-center gap-1.5 cursor-pointer select-none" style={{ color: "var(--rpc-text-muted)" }}>
               <input
                 type="checkbox"
@@ -1084,6 +1101,7 @@ export default function SniperPage() {
               />
               BADGES ONLY
             </label>
+            )}
             <label className="flex items-center gap-1.5 cursor-pointer select-none" style={{ color: "var(--rpc-text-muted)" }}>
               <input
                 type="checkbox"
@@ -1178,7 +1196,7 @@ export default function SniperPage() {
         <div className="rpc-mono flex items-center gap-6 flex-wrap" style={{ maxWidth: "var(--max-width)", margin: "0 auto", color: "var(--rpc-text-muted)" }}>
           <span><span style={{ color: "var(--rpc-text-primary)", fontWeight: 600 }}>{stats.total}</span> deals</span>
           <span><span style={{ color: "var(--rpc-danger)", fontWeight: 600 }}>{stats.hot}</span> hot (40%+)</span>
-          {stats.badge > 0 && (
+          {!isPinnacle && stats.badge > 0 && (
             <span><span style={{ color: "var(--tier-legendary)", fontWeight: 600 }}>{stats.badge}</span> badged</span>
           )}
           {stats.special > 0 && (
@@ -1260,14 +1278,20 @@ export default function SniperPage() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, color: "var(--rpc-text-primary)" }} className="truncate">{deal.playerName}</span>
-                      <span style={{ color: tierColor(deal.tier), fontWeight: 600, fontSize: "var(--text-xs)" }}>
-                        {deal.tier.charAt(0) + deal.tier.slice(1).toLowerCase()}
-                      </span>
+                      {isPinnacle ? (
+                        <span style={{ color: variantColor(deal.tier), fontWeight: 600, fontSize: "var(--text-xs)", border: `1px solid ${variantColor(deal.tier)}40`, background: `${variantColor(deal.tier)}15`, borderRadius: 3, padding: "0 4px" }}>
+                          {deal.tier}
+                        </span>
+                      ) : (
+                        <span style={{ color: tierColor(deal.tier), fontWeight: 600, fontSize: "var(--text-xs)" }}>
+                          {deal.tier.charAt(0) + deal.tier.slice(1).toLowerCase()}
+                        </span>
+                      )}
                     </div>
                     <SourceBadge source={deal.source} isAllDay={isAllDay} />
                   </div>
-                  {/* Row 2: Set name */}
-                  <div className="text-xs" style={{ color: "var(--rpc-text-muted)" }}>{deal.setName}{deal.seriesName ? ` · ${deal.seriesName}` : ""}</div>
+                  {/* Row 2: Set name + franchise */}
+                  <div className="text-xs" style={{ color: "var(--rpc-text-muted)" }}>{deal.setName}{deal.seriesName ? ` · ${deal.seriesName}` : ""}{isPinnacle && deal.teamName ? ` · ${deal.teamName}` : ""}</div>
                   {/* Row 3: Serial + Ask + Discount */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1">
@@ -1286,7 +1310,7 @@ export default function SniperPage() {
                   {/* Row 4: Adj. FMV + Action */}
                   <div className="flex items-center justify-between gap-2">
                     <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)" }}>Adj. FMV ${fmt(deal.adjustedFmv)}</span>
-                    {deal.hasBadge && deal.badgeSlugs.length > 0 && (
+                    {!isPinnacle && deal.hasBadge && deal.badgeSlugs.length > 0 && (
                       <div className="flex gap-1 flex-wrap">
                         {deal.badgeSlugs.slice(0, 2).map((slug) => (
                           <span key={slug} className={`px-1 py-0.5 rounded text-[10px] border ${BADGE_SLUG_COLORS[slug] ?? "bg-yellow-500/15 text-yellow-400 border-yellow-500/25"}`}>
@@ -1393,12 +1417,27 @@ export default function SniperPage() {
                         <div style={{ minWidth: 0 }}>
                       <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, color: "var(--rpc-text-primary)", lineHeight: 1.2 }}>{deal.playerName}</div>
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)" }}>
-                        <span className={deal.tier.toUpperCase() === "LEGENDARY" ? "rpc-tier-glow-legendary" : deal.tier.toUpperCase() === "ULTIMATE" ? "rpc-tier-glow-ultimate" : deal.tier.toUpperCase() === "RARE" ? "rpc-tier-glow-rare" : ""} style={{ color: tierColor(deal.tier), fontWeight: 600 }}>
-                          {deal.tier.charAt(0) + deal.tier.slice(1).toLowerCase()}
-                        </span>
+                        {isPinnacle ? (
+                          <span
+                            style={{
+                              color: variantColor(deal.tier),
+                              fontWeight: 600,
+                              border: `1px solid ${variantColor(deal.tier)}40`,
+                              background: `${variantColor(deal.tier)}15`,
+                              borderRadius: 3,
+                              padding: "0 4px",
+                            }}
+                          >
+                            {deal.tier}
+                          </span>
+                        ) : (
+                          <span className={deal.tier.toUpperCase() === "LEGENDARY" ? "rpc-tier-glow-legendary" : deal.tier.toUpperCase() === "ULTIMATE" ? "rpc-tier-glow-ultimate" : deal.tier.toUpperCase() === "RARE" ? "rpc-tier-glow-rare" : ""} style={{ color: tierColor(deal.tier), fontWeight: 600 }}>
+                            {deal.tier.charAt(0) + deal.tier.slice(1).toLowerCase()}
+                          </span>
+                        )}
                         <span style={{ color: "var(--rpc-text-ghost)" }}>·</span>
                         <span style={{ color: "var(--rpc-text-muted)" }}>{deal.setName}</span>
-                        {deal.parallel && deal.parallel !== "Base" && (
+                        {!isPinnacle && deal.parallel && deal.parallel !== "Base" && (
                           <span
                             style={{
                               color: "#c084fc",
@@ -1442,11 +1481,11 @@ export default function SniperPage() {
                           </span>
                         </div>
                       )}
-                      {deal.hasBadge && deal.badgeSlugs.length > 0 && (
+                      {!isPinnacle && deal.hasBadge && deal.badgeSlugs.length > 0 && (
                         <BadgePills slugs={deal.badgeSlugs} />
                       )}
                       {/* Task 4: Pack-linked listing tag */}
-                      {deal.packName && (
+                      {!isPinnacle && deal.packName && (
                         <div className="flex gap-1 mt-1">
                           <span
                             className="px-1 py-0.5 rounded text-xs border bg-amber-500/10 text-amber-300 border-amber-500/25"
