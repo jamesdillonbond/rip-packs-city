@@ -21,6 +21,26 @@ export async function GET(req: NextRequest) {
   const normalized = wallet.startsWith("0x") ? wallet : "0x" + wallet
 
   const { data, error } = await (supabase as any).rpc("get_wallet_cost_basis", { p_wallet: normalized })
+
+  // Enrich with acquisition_method from moment_acquisitions
+  if (data && Array.isArray(data)) {
+    const nftIds = data.map((r: any) => r.nft_id).filter(Boolean)
+    if (nftIds.length > 0) {
+      const { data: acqData } = await (supabase as any).rpc("get_wallet_acquisition_data", {
+        p_wallet: normalized,
+        p_moment_ids: nftIds,
+      })
+      if (acqData) {
+        const acqMap = new Map<string, string>()
+        for (const row of acqData) {
+          if (!acqMap.has(row.moment_id)) acqMap.set(row.moment_id, row.acquisition_method)
+        }
+        for (const item of data) {
+          item.acquisition_method = acqMap.get(item.nft_id) ?? null
+        }
+      }
+    }
+  }
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }

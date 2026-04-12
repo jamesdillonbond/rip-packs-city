@@ -87,6 +87,9 @@ type MomentRow = {
   badgeInfo?: BadgeInfo | null
   editionOffer?: number | null
   bestOfferType?: "edition" | "serial" | null
+  acquisitionMethod?: string | null
+  costBasis?: number | null
+  costBasisLabel?: string | null
 }
 
 type WalletSearchResponse = {
@@ -413,7 +416,7 @@ export default function WalletPage() {
   const [paginatedTotalPages, setPaginatedTotalPages] = useState(0)
   const [walletTotalFmv, setWalletTotalFmv] = useState<number | null>(null)
   const [activeWallet, setActiveWallet] = useState("")
-  const [costBasis, setCostBasis] = useState<Map<string, { buyPrice: number; acquiredDate: string; fmvAtAcquisition: number | null }>>(new Map())
+  const [costBasis, setCostBasis] = useState<Map<string, { buyPrice: number; acquiredDate: string; fmvAtAcquisition: number | null; acquisitionMethod: string | null; costBasisLabel: string | null }>>(new Map())
   const [serverSortBy, setServerSortBy] = useState("fmv_desc")
 
   // Task 2: FMV Alert UI state
@@ -507,12 +510,16 @@ export default function WalletPage() {
       .then(function(r) { return r.ok ? r.json() : null })
       .then(function(data) {
         if (cancelled || !data) return
-        const map = new Map<string, { buyPrice: number; acquiredDate: string; fmvAtAcquisition: number | null }>()
+        const LABEL_MAP: Record<string, string | null> = { marketplace: "Bought", pack_pull: "Pack", loan_default: "Loan", gift: "Gift", challenge_reward: "Reward", airdrop: "Airdrop", unknown: null }
+        const map = new Map<string, { buyPrice: number; acquiredDate: string; fmvAtAcquisition: number | null; acquisitionMethod: string | null; costBasisLabel: string | null }>()
         for (const item of (data.acquisitions ?? [])) {
+          const method = item.acquisition_method ?? null
           map.set(item.nft_id, {
             buyPrice: Number(item.buy_price),
             acquiredDate: item.acquired_date,
             fmvAtAcquisition: item.fmv_at_acquisition != null ? Number(item.fmv_at_acquisition) : null,
+            acquisitionMethod: method,
+            costBasisLabel: method ? (LABEL_MAP[method] ?? null) : null,
           })
         }
         setCostBasis(map)
@@ -1607,16 +1614,25 @@ export default function WalletPage() {
                     {row.lowAsk != null && (
                       <span className="text-xs text-zinc-400">Ask ${row.lowAsk.toFixed(2)}</span>
                     )}
-                    {cb && row.fmv ? (function() {
-                      const pl = row.fmv - cb.buyPrice
-                      const plPct = cb.buyPrice > 0 ? (pl / cb.buyPrice) * 100 : 0
-                      const color = pl >= 0 ? "text-emerald-400" : "text-red-400"
-                      return (
-                        <div className="text-right">
-                          <div className="text-xs font-mono text-zinc-400">${cb.buyPrice.toFixed(2)}</div>
-                          <div className={"text-[10px] font-mono " + color}>{pl >= 0 ? "+" : ""}{pl.toFixed(2)} ({plPct >= 0 ? "+" : ""}{plPct.toFixed(0)}%)</div>
-                        </div>
-                      )
+                    {cb ? (function() {
+                      const label = cb.costBasisLabel
+                      if (label === "Pack") return <span className="inline-block rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-zinc-600">PACK</span>
+                      if (label === "Gift") return <span className="inline-block rounded border border-blue-900 bg-blue-900 px-1.5 py-0.5 font-mono text-[10px] text-blue-400">GIFT</span>
+                      if (label === "Reward") return <span className="inline-block rounded border border-purple-900 bg-purple-900 px-1.5 py-0.5 font-mono text-[10px] text-purple-400">REWARD</span>
+                      if (label === "Airdrop") return <span className="inline-block rounded border border-green-900 bg-green-900 px-1.5 py-0.5 font-mono text-[10px] text-green-400">AIRDROP</span>
+                      const basis = label === "Loan" ? cb.buyPrice : cb.buyPrice
+                      if (basis > 0 && row.fmv) {
+                        const pl = row.fmv - basis
+                        const plPct = basis > 0 ? (pl / basis) * 100 : 0
+                        const color = pl >= 0 ? "text-emerald-400" : "text-red-400"
+                        return (
+                          <div className="text-right">
+                            <div className="text-xs font-mono text-zinc-400">{label === "Loan" ? <span className="text-amber-400">Loan </span> : null}${basis.toFixed(2)}</div>
+                            <div className={"text-[10px] font-mono " + color}>{pl >= 0 ? "+" : ""}{pl.toFixed(2)} ({plPct >= 0 ? "+" : ""}{plPct.toFixed(0)}%)</div>
+                          </div>
+                        )
+                      }
+                      return null
                     })() : null}
                   </div>
                   {/* Expanded content */}
@@ -1780,8 +1796,16 @@ export default function WalletPage() {
                       <td className="p-3 text-sm hidden xl:table-cell">
                         {(function() {
                           const cb = costBasis.get(row.flowId ?? "")
-                          if (!cb) return <span className="text-zinc-600">—</span>
-                          return <span className="font-mono">${cb.buyPrice.toFixed(2)}</span>
+                          if (!cb) return <span className="text-zinc-700">—</span>
+                          const label = cb.costBasisLabel
+                          if (label === "Bought" && cb.buyPrice > 0) return <span className="font-mono text-white">${cb.buyPrice.toFixed(2)}</span>
+                          if (label === "Pack") return <span className="inline-block rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-zinc-600">PACK</span>
+                          if (label === "Loan" && cb.buyPrice > 0) return <span className="font-mono"><span className="text-amber-400">Loan</span> <span className="text-white">${cb.buyPrice.toFixed(2)}</span></span>
+                          if (label === "Gift") return <span className="inline-block rounded border border-blue-900 bg-blue-900 px-1.5 py-0.5 font-mono text-[10px] text-blue-400">GIFT</span>
+                          if (label === "Reward") return <span className="inline-block rounded border border-purple-900 bg-purple-900 px-1.5 py-0.5 font-mono text-[10px] text-purple-400">REWARD</span>
+                          if (label === "Airdrop") return <span className="inline-block rounded border border-green-900 bg-green-900 px-1.5 py-0.5 font-mono text-[10px] text-green-400">AIRDROP</span>
+                          if (cb.buyPrice > 0) return <span className="font-mono text-white">${cb.buyPrice.toFixed(2)}</span>
+                          return <span className="text-zinc-700">—</span>
                         })()}
                       </td>
                       <td className="p-3 text-sm hidden xl:table-cell">
@@ -1789,8 +1813,11 @@ export default function WalletPage() {
                           const cb = costBasis.get(row.flowId ?? "")
                           const currentFmv = row.fmv
                           if (!cb || !currentFmv) return <span className="text-zinc-600">—</span>
-                          const pl = currentFmv - cb.buyPrice
-                          const plPct = cb.buyPrice > 0 ? (pl / cb.buyPrice) * 100 : 0
+                          // Only calculate P&L when costBasis is a positive number (marketplace/loan)
+                          const basis = cb.costBasisLabel === "Bought" ? cb.buyPrice : cb.costBasisLabel === "Loan" ? cb.buyPrice : 0
+                          if (!basis || basis <= 0) return <span className="text-zinc-600">—</span>
+                          const pl = currentFmv - basis
+                          const plPct = basis > 0 ? (pl / basis) * 100 : 0
                           const color = pl >= 0 ? "text-emerald-400" : "text-red-400"
                           return (
                             <div className={"font-mono " + color}>
