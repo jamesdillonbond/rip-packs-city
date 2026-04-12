@@ -1837,6 +1837,11 @@ export default function WalletPage() {
                             ${row.flowtyAsk.toFixed(2)}
                             <span className="ml-1 text-[10px] font-bold text-blue-400">F</span>
                           </span>
+                        ) : row.editionLowAsk != null ? (
+                          <span style={{ color: row.fmv && row.editionLowAsk < row.fmv ? "#22c55e" : "#9ca3af" }}>
+                            ${row.editionLowAsk.toFixed(2)}
+                            <span className="ml-1 text-[10px] text-zinc-500">floor</span>
+                          </span>
                         ) : (
                           <span className="text-zinc-600">—</span>
                         )}
@@ -1848,10 +1853,12 @@ export default function WalletPage() {
                           // Show the higher of edition vs serial offer
                           const displayOffer = (typeof offer === "number" && offer > 0) ? offer : null
                           const displayEdOffer = (typeof edOffer === "number" && edOffer > 0) ? edOffer : null
+                          const displayEdBestOffer = (typeof row.editionBestOffer === "number" && row.editionBestOffer > 0) ? row.editionBestOffer : null
                           const best = displayOffer && displayEdOffer
                             ? (displayOffer >= displayEdOffer ? { val: displayOffer, label: row.bestOfferType ?? "serial" } : { val: displayEdOffer, label: "edition" })
                             : displayOffer ? { val: displayOffer, label: row.bestOfferType ?? "offer" }
                             : displayEdOffer ? { val: displayEdOffer, label: "edition" }
+                            : displayEdBestOffer ? { val: displayEdBestOffer, label: "edition" }
                             : null
                           if (!best) return <span className="text-zinc-600">—</span>
                           return (
