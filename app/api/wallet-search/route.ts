@@ -81,9 +81,13 @@ type MintedMomentGraphqlData = {
         iconSvg?: string | null
       }> | null
       set?: {
+        id?: string | null
         leagues?: Array<string | null> | null
       } | null
-      play?: { stats?: { jerseyNumber?: string | null } | null } | null
+      play?: {
+        id?: string | null
+        stats?: { jerseyNumber?: string | null } | null
+      } | null
       topshotScore?: { score?: number | null } | null
     } | null
   } | null
@@ -253,6 +257,11 @@ async function getAllDayOwnedIds(wallet: string): Promise<number[]> {
 
 async function getMomentMetadata(wallet: string, id: number) {
   return getOrSetCache(`metadata:${wallet}:${id}`, METADATA_TTL, async () => {
+    // Non-panicking variant: always pulls setID/playID/serial directly from
+    // moment.data (resource fields on TopShot.NFT) so edition_key resolution
+    // does not depend on metadata view availability. Falls back to empty
+    // strings for rich fields if TopShotMomentMetadataView cannot be
+    // resolved (e.g. for some newer moment types).
     const cadence = `
       import TopShot from 0x0b2a3299cc857e29
       import MetadataViews from 0x1d7e57aa55817448
@@ -262,17 +271,39 @@ async function getMomentMetadata(wallet: string, id: number) {
         let col = acct.capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
           ?? panic("no collection")
         let nft = col.borrowMoment(id:id) ?? panic("no nft")
-        let view = nft.resolveView(Type<TopShot.TopShotMomentMetadataView>()) ?? panic("no metadata")
-        let data = view as! TopShot.TopShotMomentMetadataView
+
+        let setID = nft.data.setID.toString()
+        let playID = nft.data.playID.toString()
+        let serial = nft.data.serialNumber.toString()
+
+        if let view = nft.resolveView(Type<TopShot.TopShotMomentMetadataView>()) {
+          let data = view as! TopShot.TopShotMomentMetadataView
+          return {
+            "player": data.fullName ?? "",
+            "team": data.teamAtMoment ?? "",
+            "setName": data.setName ?? "",
+            "series": data.seriesNumber?.toString() ?? "",
+            "serial": serial,
+            "mint": data.numMomentsInEdition?.toString() ?? "",
+            "playID": playID,
+            "setID": setID
+          }
+        }
+
+        var displayName = ""
+        if let display = nft.resolveView(Type<MetadataViews.Display>()) as? MetadataViews.Display {
+          displayName = display.name
+        }
+
         return {
-          "player": data.fullName ?? "",
-          "team": data.teamAtMoment ?? "",
-          "setName": data.setName ?? "",
-          "series": data.seriesNumber?.toString() ?? "",
-          "serial": data.serialNumber.toString(),
-          "mint": data.numMomentsInEdition?.toString() ?? "",
-          "playID": data.playID.toString(),
-          "setID": data.setID.toString()
+          "player": displayName,
+          "team": "",
+          "setName": "",
+          "series": "",
+          "serial": serial,
+          "mint": "",
+          "playID": playID,
+          "setID": setID
         }
       }
     `
@@ -292,8 +323,8 @@ async function fetchMomentGraphQL(id: string) {
           data {
             flowId flowSerialNumber tier forSale price lastPurchasePrice isLocked createdAt
             badges { type iconSvg }
-            play { stats { jerseyNumber } }
-            set { leagues }
+            play { id stats { jerseyNumber } }
+            set { id leagues }
             topshotScore { score }
           }
         }
@@ -319,6 +350,8 @@ async function fetchMomentGraphQL(id: string) {
         ? m.badges.map((b) => ({ type: b?.type ?? "UNKNOWN", iconSvg: b?.iconSvg ?? "" }))
         : [],
       tssPoints: toNum(m?.topshotScore?.score) ?? null,
+      setID: m?.set?.id ?? null,
+      playID: m?.play?.id ?? null,
     }
   })
 }
@@ -650,32 +683,43 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
 
 async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
   try {
-    const cacheRows = rows
-      .filter(r => r.momentId)
-      .map(r => ({
-        wallet_address: wallet,
-        moment_id: r.momentId,
-        edition_key: r.editionKey ?? null,
-        fmv_usd: r.fmv ?? null,
-        serial_number: r.serialNumber ?? (r.serial != null ? r.serial : null),
-        last_seen_at: new Date().toISOString(),
-        tier: r.tier ?? null,
-        acquired_at: r.acquiredAt ?? null,
-        player_name: r.playerName ?? null,
-        set_name: r.setName ?? null,
-        series_number: r.series != null ? Number(r.series) || null : null,
-      }))
+    const now = new Date().toISOString()
+    const baseRow = (r: WalletRow) => ({
+      wallet_address: wallet,
+      moment_id: r.momentId,
+      fmv_usd: r.fmv ?? null,
+      serial_number: r.serialNumber ?? (r.serial != null ? r.serial : null),
+      last_seen_at: now,
+      tier: r.tier ?? null,
+      acquired_at: r.acquiredAt ?? null,
+      player_name: r.playerName ?? null,
+      set_name: r.setName ?? null,
+      series_number: r.series != null ? Number(r.series) || null : null,
+    })
 
-    if (!cacheRows.length) return
+    // Split rows by edition_key availability so that rows that failed to
+    // resolve edition_key don't clobber previously-cached edition_key values.
+    const resolvedRows = rows
+      .filter(r => r.momentId && r.editionKey)
+      .map(r => ({ ...baseRow(r), edition_key: r.editionKey }))
+    const unresolvedRows = rows
+      .filter(r => r.momentId && !r.editionKey)
+      .map(r => baseRow(r))
 
     const CHUNK = 200
-    for (let i = 0; i < cacheRows.length; i += CHUNK) {
-      const chunk = cacheRows.slice(i, i + CHUNK)
+    for (let i = 0; i < resolvedRows.length; i += CHUNK) {
+      const chunk = resolvedRows.slice(i, i + CHUNK)
       await (supabaseAdmin as any)
         .from("wallet_moments_cache")
         .upsert(chunk, { onConflict: "wallet_address,moment_id" })
     }
-    console.log(`[wallet-search] Cached ${cacheRows.length} moments for ${wallet}`)
+    for (let i = 0; i < unresolvedRows.length; i += CHUNK) {
+      const chunk = unresolvedRows.slice(i, i + CHUNK)
+      await (supabaseAdmin as any)
+        .from("wallet_moments_cache")
+        .upsert(chunk, { onConflict: "wallet_address,moment_id" })
+    }
+    console.log(`[wallet-search] Cached ${resolvedRows.length + unresolvedRows.length} moments for ${wallet} (${resolvedRows.length} with edition_key)`)
   } catch (err) {
     console.warn("[wallet-search] Cache upsert failed:", err instanceof Error ? err.message : String(err))
   }
@@ -761,8 +805,8 @@ export async function POST(req: NextRequest) {
 
       const serial = toNum(meta.serial)
       const mint = toNum(meta.mint)
-      const setId = toNum(meta.setID)
-      const playId = toNum(meta.playID)
+      const setId = toNum(meta.setID) ?? toNum(gql.setID)
+      const playId = toNum(meta.playID) ?? toNum(gql.playID)
       const editionKey = setId !== null && playId !== null ? `${setId}:${playId}` : null
       const normalizedSet = normalizeSetName(meta.setName ?? "Unknown Set")
       const normalizedParallel = normalizeParallel("")
@@ -797,7 +841,15 @@ export async function POST(req: NextRequest) {
       } as WalletRow
       } catch (momentErr: any) {
         console.warn("[wallet-search] Moment " + id + " failed: " + (momentErr.message || "unknown").slice(0, 100));
-        const meta = await getMomentMetadata(wallet, id).catch(function() { return {} as Record<string,string>; });
+        const [meta, gqlFallback] = await Promise.all([
+          getMomentMetadata(wallet, id).catch(function() { return {} as Record<string,string>; }),
+          fetchMomentGraphQL(String(id)).catch(function() {
+            return { flowId: null, setID: null, playID: null } as any;
+          }),
+        ]);
+        const setIdFb = toNum(meta.setID) ?? toNum(gqlFallback.setID);
+        const playIdFb = toNum(meta.playID) ?? toNum(gqlFallback.playID);
+        const editionKeyFb = setIdFb !== null && playIdFb !== null ? `${setIdFb}:${playIdFb}` : null;
         return {
           momentId: String(id),
           playerName: meta.player || "Unknown (error loading)",
@@ -816,10 +868,10 @@ export async function POST(req: NextRequest) {
           bestOffer: null,
           lastPurchasePrice: null,
           acquiredAt: null,
-          editionKey: null,
+          editionKey: editionKeyFb,
           parallel: null,
           subedition: null,
-          flowId: null,
+          flowId: gqlFallback.flowId ?? null,
           thumbnailUrl: null,
           tssPoints: null,
         } as WalletRow;

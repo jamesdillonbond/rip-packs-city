@@ -70,9 +70,10 @@ export async function GET(req: NextRequest) {
         let ids = ref.getIDs()
         let editions: {String: Bool} = {}
         for id in ids {
-            let moment = ref.borrowMoment(id: id)!
-            let key = moment.data.setID.toString().concat(":").concat(moment.data.playID.toString())
-            editions[key] = true
+            if let moment = ref.borrowMoment(id: id) {
+                let key = moment.data.setID.toString().concat(":").concat(moment.data.playID.toString())
+                editions[key] = true
+            }
         }
         return editions
     }

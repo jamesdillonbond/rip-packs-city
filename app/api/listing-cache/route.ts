@@ -14,6 +14,10 @@ const FLOWTY_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146 Safari/537.36",
 };
 
+// 22 pages × 24 per page = 528 listings per run (up from 6 pages × 24 = 144)
+const PAGES_TO_FETCH = 22;
+const PAGE_SIZE = 24;
+
 const SERIES_NAMES: Record<number, string> = {
   0: "Series 1", 2: "Series 2", 3: "Summer 2021", 4: "Series 3",
   5: "Series 4", 6: "Series 2023-24", 7: "Series 2024-25", 8: "Series 2025-26",
@@ -23,7 +27,7 @@ function flowtyBody(from: number) {
   return {
     address: null, addresses: [],
     collectionFilters: [{ collection: "0x0b2a3299cc857e29.TopShot", traits: [] }],
-    from, includeAllListings: true, limit: 24, onlyUnlisted: false,
+    from, includeAllListings: true, limit: PAGE_SIZE, onlyUnlisted: false,
     orderFilters: [{ conditions: [], kind: "storefront", paymentTokens: [] }],
     sort: { direction: "desc", listingKind: "storefront", path: "blockTimestamp" },
   };
@@ -120,6 +124,89 @@ function mapFlowtyListing(nft: any): any | null {
   }
 }
 
+// After cached_listings is refreshed, create LOW-confidence fmv_snapshots for
+// editions that have active listings but NO existing FMV. Uses the minimum
+// Flowty ask price as an ask-proxy value. Never overwrites sales-based FMV.
+// Join path: cached_listings.flow_id → moments.nft_id → moments.edition_id.
+async function backfillAskProxyFmv(listings: any[]): Promise<{ created: number; editionsConsidered: number }> {
+  const flowIds = [...new Set(
+    listings.map(function(l: any) { return l.flow_id; }).filter(Boolean)
+  )] as string[];
+  if (flowIds.length === 0) return { created: 0, editionsConsidered: 0 };
+
+  // Resolve flow_id → edition_id via moments table (populated by sales-indexer + wallet-search)
+  const nftToEdition = new Map<string, string>();
+  for (let i = 0; i < flowIds.length; i += 200) {
+    const chunk = flowIds.slice(i, i + 200);
+    const { data: rows } = await supabase
+      .from("moments")
+      .select("nft_id, edition_id")
+      .in("nft_id", chunk);
+    for (const row of rows ?? []) {
+      if (row.nft_id && row.edition_id) nftToEdition.set(String(row.nft_id), row.edition_id);
+    }
+  }
+  if (nftToEdition.size === 0) return { created: 0, editionsConsidered: 0 };
+
+  // Aggregate min ask per edition_id
+  const minAskByEdition = new Map<string, number>();
+  for (const l of listings) {
+    const editionId = nftToEdition.get(String(l.flow_id));
+    if (!editionId) continue;
+    const price = Number(l.ask_price);
+    if (!Number.isFinite(price) || price <= 0) continue;
+    const current = minAskByEdition.get(editionId);
+    if (current === undefined || price < current) minAskByEdition.set(editionId, price);
+  }
+  if (minAskByEdition.size === 0) return { created: 0, editionsConsidered: 0 };
+
+  const editionIds = [...minAskByEdition.keys()];
+
+  // Find which of these editions already have an FMV snapshot (any confidence)
+  const existingEditionIds = new Set<string>();
+  for (let i = 0; i < editionIds.length; i += 200) {
+    const chunk = editionIds.slice(i, i + 200);
+    const { data: existing } = await supabase
+      .from("fmv_snapshots")
+      .select("edition_id")
+      .in("edition_id", chunk);
+    for (const row of existing ?? []) {
+      if (row.edition_id) existingEditionIds.add(row.edition_id);
+    }
+  }
+
+  // Only insert FMV rows for editions with no existing snapshot
+  const now = new Date().toISOString();
+  const newRows: any[] = [];
+  for (const [editionId, minAsk] of minAskByEdition.entries()) {
+    if (existingEditionIds.has(editionId)) continue;
+    // Ask-proxy FMV: discount low ask by 10% to approximate realistic FMV.
+    const fmvUsd = Math.round(minAsk * 0.9 * 100) / 100;
+    newRows.push({
+      edition_id: editionId,
+      fmv_usd: fmvUsd,
+      ask_proxy_fmv: minAsk,
+      confidence: "LOW",
+      algo_version: "v1.5.1_ask_proxy",
+      computed_at: now,
+      listing_count: 1,
+    });
+  }
+
+  let created = 0;
+  for (let i = 0; i < newRows.length; i += 100) {
+    const chunk = newRows.slice(i, i + 100);
+    const { error } = await supabase.from("fmv_snapshots").insert(chunk);
+    if (error) {
+      console.log("[listing-cache] ask-proxy insert error: " + error.message);
+    } else {
+      created += chunk.length;
+    }
+  }
+
+  return { created, editionsConsidered: minAskByEdition.size };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const auth = req.headers.get("authorization");
@@ -128,10 +215,11 @@ export async function POST(req: NextRequest) {
     }
 
     const startTime = Date.now();
-    const pageOffsets = [0, 24, 48, 72, 96, 120];
+    const pageOffsets: number[] = [];
+    for (let i = 0; i < PAGES_TO_FETCH; i++) pageOffsets.push(i * PAGE_SIZE);
     const pageResults = await Promise.all(pageOffsets.map(function(off) { return fetchFlowtyPage(off); }));
     const allNfts = pageResults.flat();
-    console.log("[listing-cache] Fetched " + allNfts.length + " raw NFTs from Flowty");
+    console.log("[listing-cache] Fetched " + allNfts.length + " raw NFTs from Flowty (" + PAGES_TO_FETCH + " pages)");
 
     if (allNfts.length === 0) {
       return NextResponse.json({
@@ -183,9 +271,24 @@ export async function POST(req: NextRequest) {
 
     console.log("[listing-cache] Done: " + inserted + " inserted, " + insertErrors + " chunk errors");
 
+    // Ask-proxy FMV backfill — creates LOW-confidence FMV snapshots for editions
+    // with active listings but no existing FMV history.
+    let askProxyCreated = 0;
+    let askProxyConsidered = 0;
+    try {
+      const result = await backfillAskProxyFmv(listings);
+      askProxyCreated = result.created;
+      askProxyConsidered = result.editionsConsidered;
+      console.log("[listing-cache] ask-proxy FMV: created " + askProxyCreated + " (considered " + askProxyConsidered + ")");
+    } catch (e: any) {
+      console.log("[listing-cache] ask-proxy FMV error: " + (e.message || "unknown"));
+    }
+
     return NextResponse.json({
       ok: true, fetched: allNfts.length, mapped: listings.length,
-      cached: inserted, errors: insertErrors, elapsed: Date.now() - startTime,
+      cached: inserted, errors: insertErrors,
+      askProxyCreated, askProxyConsidered,
+      elapsed: Date.now() - startTime,
     });
   } catch (e: any) {
     console.error("[listing-cache] FATAL: " + (e.message || "unknown"), e.stack || "");
