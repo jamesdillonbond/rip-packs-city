@@ -89,7 +89,7 @@ export default function MobileNav() {
 
   const tabs: { label: string; iconKey: keyof typeof ICON_COMPONENTS; href: string }[] = [
     { label: "HOME", iconKey: "home", href: "/" },
-    { label: "WALLET", iconKey: "wallet", href: walletHref },
+    { label: "COLLECTION", iconKey: "wallet", href: walletHref },
     { label: "SNIPER", iconKey: "sniper", href: `/${collectionId}/sniper` },
     { label: "SETS", iconKey: "sets", href: `/${collectionId}/sets` },
     { label: "PROFILE", iconKey: "profile", href: "/profile" },
