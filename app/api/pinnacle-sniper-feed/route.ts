@@ -2,4 +2,7 @@
 // Alias for /api/pinnacle-sniper — re-exports the same handler.
 // The disney-pinnacle/sniper/page.tsx references this endpoint.
 
-export { GET, dynamic, maxDuration } from "../pinnacle-sniper/route"
+export const dynamic = "force-dynamic"
+export const maxDuration = 25
+
+export { GET } from "../pinnacle-sniper/route"
