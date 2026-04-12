@@ -433,6 +433,20 @@ function ActionCell({
   );
 }
 
+// ─── useMobile hook ──────────────────────────────────────────────────────────
+
+function useMobile() {
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" && window.innerWidth < 768
+  );
+  useEffect(() => {
+    function onResize() { setIsMobile(window.innerWidth < 768); }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return isMobile;
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 const REFRESH_INTERVAL = 30;
@@ -458,6 +472,7 @@ export default function SniperPage() {
   const feedEndpoint = isPinnacle ? "/api/pinnacle-sniper" : isAllDay ? "/api/allday-sniper-feed" : "/api/sniper-feed";
   const brandLabel = isPinnacle ? "Pinnacle" : collectionObj?.shortLabel ?? "Top Shot";
 
+  const isMobile = useMobile();
   const [data, setData] = useState<FeedResult | null>(null);
   const [mode, setMode] = useState<"deals" | "offers">("deals");
   const [loading, setLoading] = useState(true);
@@ -836,7 +851,7 @@ export default function SniperPage() {
   };
 
   return (
-    <div className="rpc-binder-bg" style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
+    <div className="rpc-binder-bg" style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)", overflowX: "hidden" }}>
       {/* ── Header ── */}
       <div style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-black)", padding: "16px", width: "100%", boxSizing: "border-box", overflowX: "hidden" }}>
         <div style={{ maxWidth: "var(--max-width)", margin: "0 auto" }}>
@@ -1193,8 +1208,76 @@ export default function SniperPage() {
           </div>
         )}
 
-        {visibleDeals.length > 0 && (
-          <div className="rpc-card" style={{ overflow: "auto", borderRadius: "var(--radius-md)" }}>
+        {visibleDeals.length > 0 && isMobile && (
+          <div className="flex flex-col gap-2">
+            {visibleDeals.map((deal) => {
+              const isFlowty = (deal.source ?? "topshot") === "flowty";
+              const isOwned =
+                (!!deal.intEditionKey && ownedIds.has(deal.intEditionKey)) ||
+                (!!deal.editionKey && ownedIds.has(deal.editionKey));
+              return (
+                <div key={`m-${deal.source}-${deal.flowId}`} className="rpc-card p-3 flex flex-col gap-1.5">
+                  {/* Row 1: Player + Tier + Source */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, color: "var(--rpc-text-primary)" }} className="truncate">{deal.playerName}</span>
+                      <span style={{ color: tierColor(deal.tier), fontWeight: 600, fontSize: "var(--text-xs)" }}>
+                        {deal.tier.charAt(0) + deal.tier.slice(1).toLowerCase()}
+                      </span>
+                    </div>
+                    <SourceBadge source={deal.source} isAllDay={isAllDay} />
+                  </div>
+                  {/* Row 2: Set name */}
+                  <div className="text-xs" style={{ color: "var(--rpc-text-muted)" }}>{deal.setName}{deal.seriesName ? ` · ${deal.seriesName}` : ""}</div>
+                  {/* Row 3: Serial + Ask + Discount */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1">
+                      <span style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)", fontSize: "var(--text-sm)" }}>#{deal.serial}</span>
+                      {isOwned && <span style={{ color: "var(--rpc-success)", fontSize: 10 }}>✓</span>}
+                      <SerialBadge deal={deal} />
+                      {deal.isJersey && (
+                        <span className="rpc-chip" style={{ background: "rgba(20,184,166,0.15)", borderColor: "rgba(20,184,166,0.3)", color: "#5eead4", fontSize: 9, padding: "1px 5px" }}>Jersey</span>
+                      )}
+                    </div>
+                    <span style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-primary)", fontSize: "var(--text-sm)", fontWeight: 600 }}>${fmt(deal.askPrice)}</span>
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${discountColor(deal.discount)}`} style={{ fontFamily: "var(--font-mono)" }}>
+                      {deal.discount > 0 ? `-${fmt(deal.discount, 1)}%` : "~0%"}
+                    </span>
+                  </div>
+                  {/* Row 4: Adj. FMV + Action */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)" }}>Adj. FMV ${fmt(deal.adjustedFmv)}</span>
+                    {deal.hasBadge && deal.badgeSlugs.length > 0 && (
+                      <div className="flex gap-1 flex-wrap">
+                        {deal.badgeSlugs.slice(0, 2).map((slug) => (
+                          <span key={slug} className={`px-1 py-0.5 rounded text-[10px] border ${BADGE_SLUG_COLORS[slug] ?? "bg-yellow-500/15 text-yellow-400 border-yellow-500/25"}`}>
+                            {BADGE_SLUG_LABELS[slug] ?? slug}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <a
+                      href={deal.buyUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => trackClick(deal, null)}
+                      className={isFlowty ? "rpc-chip" : "rpc-btn-ghost"}
+                      style={isFlowty
+                        ? { background: "rgba(59,130,246,0.15)", borderColor: "rgba(59,130,246,0.4)", color: "var(--rpc-info)", textDecoration: "none", padding: "4px 10px", fontSize: "var(--text-xs)" }
+                        : { padding: "4px 10px", textDecoration: "none", borderColor: `${accent}40`, color: accent, fontSize: "var(--text-xs)" }
+                      }
+                    >
+                      {isFlowty ? "FLOWTY →" : "BUY →"}
+                    </a>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {visibleDeals.length > 0 && !isMobile && (
+          <div className="rpc-card" style={{ overflow: "auto", borderRadius: "var(--radius-md)", maxWidth: "100%" }}>
             <table style={{ width: "100%", fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)", borderCollapse: "collapse" }}>
               <thead>
                 <tr className="rpc-thead-scanline" style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)" }}>
