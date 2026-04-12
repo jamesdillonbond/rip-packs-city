@@ -309,7 +309,7 @@ export async function GET(req: NextRequest) {
         }));
         const { data: insertedEditions } = await supabase
           .from("editions")
-          .upsert(stubRows, { onConflict: "external_id", ignoreDuplicates: false })
+          .upsert(stubRows, { onConflict: "external_id,collection_id", ignoreDuplicates: false })
           .select("id, external_id");
         for (const row of insertedEditions ?? []) {
           if (row.external_id && row.id) editionByKey.set(row.external_id, row.id);

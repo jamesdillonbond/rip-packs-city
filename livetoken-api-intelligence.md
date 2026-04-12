@@ -1,83 +1,104 @@
 # LiveToken API Intelligence
 
-Reverse-engineered April 9, 2026. All endpoints require session cookie auth.
+Reverse-engineered April 9–12, 2026. All endpoints require custom header auth (not cookies).
 
 ## Authentication
 
-Log into https://livetoken.co in browser. Copy the full `Cookie` header from any `/api/` request in DevTools → Network tab. The session expires periodically — rotate as needed.
+LiveToken uses custom request headers, NOT cookies or Bearer tokens.
+
+Log into https://livetoken.co → DevTools → Network → find any `/api/topshot/` request → copy these headers:
+
+| Header | Example | Notes |
+|--------|---------|-------|
+| `sessionid` | `o0197nr1wwz7` | Session identifier, rotates on login |
+| `token` | `e7c8f37009108ff28ea930ff9778747147295df0` | Auth token |
+| `userid` | `608166543299e1a70865915c` | LiveToken user ID |
+| `ucid` | `6589579015296496` | Unknown context ID |
+| `av` | `2.97` | App version — may increment over time |
+
+Also include the standard cookie header (for Cloudflare `cf_clearance`).
+
+Set these in `.env.local`:
+```
+LIVETOKEN_SESSION_ID=o0197nr1wwz7
+LIVETOKEN_TOKEN=e7c8f37009108ff28ea930ff9778747147295df0
+LIVETOKEN_USER_ID=608166543299e1a70865915c
+LIVETOKEN_UCID=6589579015296496
+LIVETOKEN_COOKIE=<full cookie string including cf_clearance>
+```
 
 ## Portfolio Endpoint
 
 ```
-GET https://livetoken.co/api/topshot/portfolio/{walletAddress}
+GET https://livetoken.co/api/topshot/portfolio/{walletAddress}?page={N}&sortOrder=AcquiredDate_DESC&sc=true&useCS2bForSorting=true
 ```
 
-- `walletAddress` includes `0x` prefix (e.g., `0xbd94cade097e50ac`)
-- Returns JSON array of moment objects
+- `walletAddress` does **NOT** include `0x` prefix (e.g., `bd94cade097e50ac`)
+- **Paginated** — increment `page` param (1-indexed) until empty response
+- `sortOrder` options: `AcquiredDate_DESC`, likely others
+- `sc=true` and `useCS2bForSorting=true` — include these as-is
 
-### Response Shape
+### Account Summary Endpoint
 
+```
+GET https://livetoken.co/api/topshot/account/{walletAddress}
+```
+
+Returns summary stats (total FMV, cost basis, etc.). Same auth headers.
+
+### Response Shape (Portfolio)
+
+Based on the UI displaying: FMV, Paid, Player, Set, Serial, Circulation, TSS.
+
+Expected fields per moment (verify on first run via key logging):
 ```json
-[
-  {
-    "flowID": "12345678",
-    "setID": 26,
-    "playID": 504,
-    "serial": 42,
-    "circulation": 40000,
-    "tier": "common",
-    "setName": "Base Set",
-    "playerName": "LeBron James",
-    "teamAtMoment": "Los Angeles Lakers",
-    "playCategory": "Dunk",
-    "playType": "Dunk",
+{
+  "flowID": "12345678",
+  "setID": 26,
+  "playID": 504,
+  "serial": 42,
+  "circulation": 40000,
+  "tier": "common",
+  "setName": "Base Set",
+  "playerName": "LeBron James",
+  "teamAtMoment": "Los Angeles Lakers",
 
-    "valueFMV": 3.50,
-    "dealRating": 0.72,
-    "liquidityRating": 3,
+  "valueFMV": 3.50,
+  "dealRating": 0.72,
+  "liquidityRating": 3,
 
-    "buyPrice": 2.00,
-    "acquiredDate": "2024-11-09T01:00:00.000Z",
+  "buyPrice": 2.00,
+  "acquiredDate": "2024-11-09T01:00:00.000Z",
 
-    "lowestAsk": 3.00,
-    "highestOffer": 2.50,
-    "avgSale": 3.25,
-    "lastSalePrice": 3.10,
+  "lowestAsk": 3.00,
+  "highestOffer": 2.50,
 
-    "badges": ["tsd", "ry"],
-    "locked": false,
-    "retired": false,
-    "forSale": false
-  }
-]
+  "topshotScore": 53,
+  "locked": false,
+  "retired": false,
+  "forSale": false
+}
 ```
+
+**IMPORTANT**: Field names above are best-guesses from UI + Flowty integration code. The script logs actual keys on first run — update mappings if different.
 
 ### Key Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `flowID` | string | On-chain moment NFT ID |
-| `setID` | integer | On-chain set ID |
-| `playID` | integer | On-chain play ID |
-| `serial` | integer | Serial number |
-| `circulation` | integer | Edition mint count |
 | `valueFMV` | number | Per-serial fair market value (USD) — LiveToken's proprietary calc |
-| `dealRating` | number | 0-1 score (1 = best deal) |
-| `liquidityRating` | number | 0-5 (5 = most liquid) |
-| `buyPrice` | number\|null | What the holder paid (marketplace purchases only, null for pack pulls) |
-| `acquiredDate` | string\|null | ISO timestamp of acquisition |
-| `lowestAsk` | number\|null | Current lowest ask on Top Shot marketplace |
-| `highestOffer` | number\|null | Current highest offer |
-| `badges` | string[] | Badge slugs: "tsd" (Top Shot Debut), "ry" (Rookie Year), "champ" (Championship), etc. |
+| `buyPrice` | number\|null | What the holder paid (null for pack pulls) |
+| `dealRating` | number | 0-1 score |
+| `liquidityRating` | number | 0-5 |
+| `lowestAsk` | number\|null | Current lowest ask on Top Shot |
 
 ### Notes
 
-- `valueFMV` is per-serial — serial #1 will have a higher FMV than serial #39999
-- For edition-level FMV, take the median of `valueFMV` across all serials in a wallet (or across all serials if available)
-- `buyPrice` is null for pack-pulled moments — LiveToken can't determine individual pack pull cost
-- `acquiredDate` may also be null for very old moments
-- The array can be large (14K+ items for heavy collectors)
-- Response is NOT paginated — entire portfolio in one response
+- `valueFMV` is per-serial — serial #1 will have higher FMV than serial #39999
+- For edition-level FMV, take the median of `valueFMV` across all serials
+- Response is paginated (not all-at-once like originally assumed)
+- 14,183 moments for Trevor's wallet per the UI
+- The `t` header should be set to `Date.now()` for each request
 
 ## Deals Endpoint
 
@@ -85,22 +106,8 @@ GET https://livetoken.co/api/topshot/portfolio/{walletAddress}
 GET https://livetoken.co/api/topshot/deals
 ```
 
-Returns current marketplace deals sorted by deal rating. Same auth. Fields include `gone` (boolean — already sold) and `goneInSec` (how fast it sold for "Fast Fingers" tracking). 127 expired challenges tracked.
+Returns current marketplace deals. Same auth headers.
 
-## WebSocket Feed
+## LiveToken in Flowty Data
 
-```
-wss://livetoken.co/socket.io/?...
-```
-
-Real-time feed of new listings, sales, and deal alerts. Same session cookie auth via handshake.
-
-## Edge vs Public Data
-
-LiveToken's "edge" is computed fields on top of public blockchain/marketplace data:
-- `valueFMV` — proprietary per-serial valuation model
-- `dealRating` — scoring model combining FMV, ask price, liquidity, time-on-market
-- `liquidityRating` — based on sales velocity and listing depth
-- `buyPrice` / `acquiredDate` — enriched from on-chain transaction history
-
-The raw marketplace data (asks, offers, sales) is public. LiveToken's value-add is the computed intelligence layer.
+Flowty's API embeds LiveToken FMV at `item.valuations.blended.usdValue` and `item.valuations.livetoken.usdValue`. This data is free but only covers actively listed moments, not full portfolios.

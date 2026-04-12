@@ -166,7 +166,7 @@ async function upsertPlayer(
         team: team ?? null,
         jersey_number: jerseyNumber,
       },
-      { onConflict: "external_id", ignoreDuplicates: false }
+      { onConflict: "external_id,collection_id", ignoreDuplicates: false }
     )
     .select("id")
     .single()
@@ -199,7 +199,7 @@ async function upsertSet(
         series,
         tier: tier as "COMMON" | "RARE" | "LEGENDARY" | "ULTIMATE" | "FANDOM",
       },
-      { onConflict: "external_id", ignoreDuplicates: false }
+      { onConflict: "external_id,collection_id", ignoreDuplicates: false }
     )
     .select("id")
     .single()

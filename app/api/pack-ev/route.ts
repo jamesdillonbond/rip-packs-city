@@ -619,7 +619,7 @@ export async function POST(req: NextRequest) {
     if (unseeded.length > 0) {
       supabaseAdmin
         .from("editions")
-        .upsert(unseeded, { onConflict: "external_id", ignoreDuplicates: true })
+        .upsert(unseeded, { onConflict: "external_id,collection_id", ignoreDuplicates: true })
         .then(({ error }: { error: any }) => {
           if (error) console.warn(`[pack-ev] Edition seed error: ${error.message}`)
           else console.log(`[pack-ev] Seeded ${unseeded.length} new editions`)
