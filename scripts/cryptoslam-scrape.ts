@@ -201,7 +201,7 @@ async function ensureEdition(tx: SaleTransaction, colId: string): Promise<string
           ? moment.play.stats.dateOfMoment.split("T")[0]
           : null,
       },
-      { onConflict: "external_id", ignoreDuplicates: false },
+      { onConflict: "external_id,collection_id", ignoreDuplicates: false },
     )
     .select("id")
     .single();

@@ -608,7 +608,7 @@ export async function POST(req: NextRequest) {
         const chunk = editionInserts.slice(i, i + CHUNK)
         const { data: inserted, error: insertErr } = await (supabaseAdmin as any)
           .from("editions")
-          .upsert(chunk, { onConflict: "external_id", ignoreDuplicates: true })
+          .upsert(chunk, { onConflict: "external_id,collection_id", ignoreDuplicates: true })
           .select("id, external_id, collection_id, name, series, circulation_count")
         if (insertErr) {
           console.log("[wallet-enrich] edition insert error chunk " + Math.floor(i / CHUNK) + ": " + insertErr.message);

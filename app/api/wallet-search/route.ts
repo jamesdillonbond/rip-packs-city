@@ -399,7 +399,7 @@ async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
               name: row.playerName,
               team: row.team ?? null,
             },
-            { onConflict: "external_id", ignoreDuplicates: false }
+            { onConflict: "external_id,collection_id", ignoreDuplicates: false }
           )
           .select("id")
           .single()
@@ -418,7 +418,7 @@ async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
             series: toNum(row.series),
             circulation_count: row.mintSize ?? null,
           },
-          { onConflict: "external_id", ignoreDuplicates: false }
+          { onConflict: "external_id,collection_id", ignoreDuplicates: false }
         )
         .select("id")
         .single()
@@ -477,7 +477,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
                 external_id: k,
                 ...(collectionId ? { collection_id: collectionId } : {}),
               })),
-              { onConflict: "external_id", ignoreDuplicates: true }
+              { onConflict: "external_id,collection_id", ignoreDuplicates: true }
             )
         )
       }

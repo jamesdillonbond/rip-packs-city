@@ -185,7 +185,7 @@ export async function POST(req: Request) {
         .from("editions")
         .upsert(
           [{ external_id: externalId }],
-          { onConflict: "external_id", ignoreDuplicates: true }
+          { onConflict: "external_id,collection_id", ignoreDuplicates: true }
         )
 
       if (!upsertErr) upserted++

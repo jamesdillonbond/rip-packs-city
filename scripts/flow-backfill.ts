@@ -359,7 +359,7 @@ async function upsertEdition(externalId: string): Promise<string> {
   const newId = randomUUID();
   await supabase.from("editions").upsert(
     { id: newId, external_id: externalId, collection_id: TS_COLLECTION_ID },
-    { onConflict: "external_id" },
+    { onConflict: "external_id,collection_id" },
   );
 
   // Return the actual id (in case of race condition, re-fetch)
