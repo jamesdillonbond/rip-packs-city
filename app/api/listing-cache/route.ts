@@ -6,7 +6,6 @@ const supabase: any = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const FLOWTY_ENDPOINT = "https://api2.flowty.io/collection/0x0b2a3299cc857e29/TopShot";
 const FLOWTY_HEADERS = {
   "Content-Type": "application/json",
   Origin: "https://www.flowty.io",
@@ -14,19 +13,57 @@ const FLOWTY_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146 Safari/537.36",
 };
 
-// 22 pages × 24 per page = 528 listings per run (up from 6 pages × 24 = 144)
-const PAGES_TO_FETCH = 22;
 const PAGE_SIZE = 24;
 
-const SERIES_NAMES: Record<number, string> = {
-  0: "Series 1", 2: "Series 2", 3: "Summer 2021", 4: "Series 3",
-  5: "Series 4", 6: "Series 2023-24", 7: "Series 2024-25", 8: "Series 2025-26",
+// ── Collection configs ──────────────────────────────────────────────────────
+// Each collection defines its Flowty endpoint, filter, series labels, buy URL,
+// and the number of pages to fetch per run.
+
+type CollectionConfig = {
+  slug: string;
+  collectionId: string;
+  flowtyEndpoint: string;
+  flowtyCollectionFilter: string;
+  seriesNames: Record<number, string>;
+  buyUrlBase: string;
+  pagesToFetch: number;
 };
 
-function flowtyBody(from: number) {
+const COLLECTIONS: Record<string, CollectionConfig> = {
+  "nba-top-shot": {
+    slug: "nba-top-shot",
+    collectionId: "c7a95cbe-024e-44c0-a7f3-6a821528834a",
+    flowtyEndpoint: "https://api2.flowty.io/collection/0x0b2a3299cc857e29/TopShot",
+    flowtyCollectionFilter: "0x0b2a3299cc857e29.TopShot",
+    seriesNames: {
+      0: "Series 1", 2: "Series 2", 3: "Summer 2021", 4: "Series 3",
+      5: "Series 4", 6: "Series 2023-24", 7: "Series 2024-25", 8: "Series 2025-26",
+    },
+    buyUrlBase: "https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/NFT/",
+    pagesToFetch: 22,
+  },
+  "nfl-all-day": {
+    slug: "nfl-all-day",
+    collectionId: "dee28451-5d62-409e-a1ad-a83f763ac070",
+    flowtyEndpoint: "https://api2.flowty.io/collection/0xe4cf4bdc1751c65d/AllDay",
+    flowtyCollectionFilter: "0xe4cf4bdc1751c65d.AllDay",
+    seriesNames: {
+      0: "Series 1", 1: "Series 2", 2: "Series 3", 3: "Series 4", 4: "Series 5",
+    },
+    buyUrlBase: "https://www.flowty.io/asset/0xe4cf4bdc1751c65d/AllDay/NFT/",
+    pagesToFetch: 10,
+  },
+};
+
+function getCollectionConfig(slug: string | null): CollectionConfig {
+  if (slug && COLLECTIONS[slug]) return COLLECTIONS[slug];
+  return COLLECTIONS["nba-top-shot"];
+}
+
+function flowtyBody(from: number, config: CollectionConfig) {
   return {
     address: null, addresses: [],
-    collectionFilters: [{ collection: "0x0b2a3299cc857e29.TopShot", traits: [] }],
+    collectionFilters: [{ collection: config.flowtyCollectionFilter, traits: [] }],
     from, includeAllListings: true, limit: PAGE_SIZE, onlyUnlisted: false,
     orderFilters: [{ conditions: [], kind: "storefront", paymentTokens: [] }],
     sort: { direction: "desc", listingKind: "storefront", path: "blockTimestamp" },
@@ -39,13 +76,13 @@ function getTrait(traits: any[], name: string): string {
   return t && t.value ? String(t.value) : "";
 }
 
-async function fetchFlowtyPage(from: number): Promise<any[]> {
+async function fetchFlowtyPage(from: number, config: CollectionConfig): Promise<any[]> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(function() { controller.abort(); }, 8000);
-    const res = await fetch(FLOWTY_ENDPOINT, {
+    const res = await fetch(config.flowtyEndpoint, {
       method: "POST", headers: FLOWTY_HEADERS,
-      body: JSON.stringify(flowtyBody(from)), signal: controller.signal,
+      body: JSON.stringify(flowtyBody(from, config)), signal: controller.signal,
     });
     clearTimeout(timeout);
     if (!res.ok) {
@@ -61,7 +98,7 @@ async function fetchFlowtyPage(from: number): Promise<any[]> {
   }
 }
 
-function mapFlowtyListing(nft: any): any | null {
+function mapFlowtyListing(nft: any, config: CollectionConfig): any | null {
   try {
     if (!nft) return null;
     const orders = nft.orders;
@@ -98,7 +135,7 @@ function mapFlowtyListing(nft: any): any | null {
       player_name: playerName,
       team_name: getTrait(traits, "TeamAtMoment"),
       set_name: getTrait(traits, "SetName"),
-      series_name: (seriesNum !== null && !isNaN(seriesNum)) ? (SERIES_NAMES[seriesNum] || "Series " + seriesNum) : "",
+      series_name: (seriesNum !== null && !isNaN(seriesNum)) ? (config.seriesNames[seriesNum] || "Series " + seriesNum) : "",
       tier: tier.toUpperCase(),
       serial_number: serial,
       circulation_count: circ,
@@ -108,7 +145,8 @@ function mapFlowtyListing(nft: any): any | null {
       discount: (discount !== null && isFinite(discount)) ? Math.round(discount * 100) / 100 : null,
       confidence: fmvNum ? "HIGH" : null,
       source: "flowty",
-      buy_url: "https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/NFT/" + flowId + "?listingResourceID=" + listingResourceId,
+      collection_id: config.collectionId,
+      buy_url: config.buyUrlBase + flowId + "?listingResourceID=" + listingResourceId,
       thumbnail_url: imageUrl,
       badge_slugs: [],
       listing_resource_id: listingResourceId,
@@ -214,12 +252,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Collection param: ?collection=nfl-all-day or defaults to nba-top-shot
+    const collectionSlug = req.nextUrl.searchParams.get("collection") ?? "nba-top-shot";
+    const config = getCollectionConfig(collectionSlug);
+    console.log("[listing-cache] Collection: " + config.slug + " (" + config.flowtyEndpoint + ")");
+
     const startTime = Date.now();
     const pageOffsets: number[] = [];
-    for (let i = 0; i < PAGES_TO_FETCH; i++) pageOffsets.push(i * PAGE_SIZE);
-    const pageResults = await Promise.all(pageOffsets.map(function(off) { return fetchFlowtyPage(off); }));
+    for (let i = 0; i < config.pagesToFetch; i++) pageOffsets.push(i * PAGE_SIZE);
+    const pageResults = await Promise.all(pageOffsets.map(function(off) { return fetchFlowtyPage(off, config); }));
     const allNfts = pageResults.flat();
-    console.log("[listing-cache] Fetched " + allNfts.length + " raw NFTs from Flowty (" + PAGES_TO_FETCH + " pages)");
+    console.log("[listing-cache] Fetched " + allNfts.length + " raw NFTs from Flowty (" + config.pagesToFetch + " pages)");
 
     if (allNfts.length === 0) {
       return NextResponse.json({
@@ -230,7 +273,7 @@ export async function POST(req: NextRequest) {
 
     const listings: any[] = [];
     for (let i = 0; i < allNfts.length; i++) {
-      const mapped = mapFlowtyListing(allNfts[i]);
+      const mapped = mapFlowtyListing(allNfts[i], config);
       if (mapped) listings.push(mapped);
     }
     console.log("[listing-cache] Mapped " + listings.length + " valid listings");
@@ -238,11 +281,15 @@ export async function POST(req: NextRequest) {
     if (listings.length === 0) {
       return NextResponse.json({
         ok: true, message: "All listings filtered out during mapping",
+        collection: config.slug,
         fetched: allNfts.length, cached: 0, elapsed: Date.now() - startTime,
       });
     }
 
-    const delResult = await supabase.from("cached_listings").delete().eq("source", "flowty");
+    // Delete existing cached listings for this collection + source only
+    const delResult = config.collectionId
+      ? await supabase.from("cached_listings").delete().eq("source", "flowty").eq("collection_id", config.collectionId)
+      : await supabase.from("cached_listings").delete().eq("source", "flowty");
     if (delResult.error) {
       console.log("[listing-cache] Delete error: " + delResult.error.message);
     }
@@ -285,7 +332,8 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({
-      ok: true, fetched: allNfts.length, mapped: listings.length,
+      ok: true, collection: config.slug,
+      fetched: allNfts.length, mapped: listings.length,
       cached: inserted, errors: insertErrors,
       askProxyCreated, askProxyConsidered,
       elapsed: Date.now() - startTime,
