@@ -1,128 +1,182 @@
 // app/api/pinnacle-sniper/route.ts
-// GET /api/pinnacle-sniper — Disney Pinnacle sniper deals
-// Queries pinnacle_editions joined with pinnacle_fmv_snapshots for FMV-aware deals
+// GET /api/pinnacle-sniper — Disney Pinnacle sniper deals (Flowty-only)
+// Fetches listed Pinnacle NFTs from Flowty, enriches with FMV from
+// pinnacle_fmv_snapshots, calculates discount, returns sorted deals.
 
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+import { supabaseAdmin } from "@/lib/supabase"
+import {
+  fetchFlowtyPinnacleListings,
+  flowtyNftToSniperDeals,
+  type FlowtyPinnacleNft,
+} from "@/lib/pinnacle/pinnacleFlowty"
 
-const supabase: any = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+export const dynamic = "force-dynamic"
+export const maxDuration = 25
+
+interface FmvRow {
+  edition_id: string
+  fmv_usd: number
+  confidence: string
+}
+
+async function loadFmvMap(): Promise<Map<string, { fmv: number; confidence: string }>> {
+  const { data, error } = await (supabaseAdmin as any)
+    .from("pinnacle_fmv_snapshots")
+    .select("edition_id, fmv_usd, confidence")
+    .order("computed_at", { ascending: false })
+
+  if (error || !data) {
+    console.warn("[pinnacle-sniper] FMV fetch error:", error?.message)
+    return new Map()
+  }
+
+  const map = new Map<string, { fmv: number; confidence: string }>()
+  for (const row of data as FmvRow[]) {
+    // DISTINCT ON equivalent: first row per edition (ordered by computed_at DESC)
+    if (!map.has(row.edition_id)) {
+      map.set(row.edition_id, { fmv: row.fmv_usd, confidence: row.confidence })
+    }
+  }
+  return map
+}
 
 export async function GET(req: NextRequest) {
-  try {
-    // Check if pinnacle_editions table has an ask_price column
-    const { data: columns } = await supabase
-      .from("information_schema.columns" as any)
-      .select("column_name")
-      .eq("table_schema", "public")
-      .eq("table_name", "pinnacle_editions")
+  const url = new URL(req.url)
+  const variantFilter = url.searchParams.get("tier") ?? url.searchParams.get("variant") ?? "all"
+  const maxPrice = parseFloat(url.searchParams.get("maxPrice") ?? "0")
+  const minDiscount = parseFloat(url.searchParams.get("minDiscount") ?? "0")
+  const playerFilter = url.searchParams.get("player") ?? ""
+  const sortBy = url.searchParams.get("sortBy") ?? "discount"
 
-    const columnNames = (columns ?? []).map((c: any) => c.column_name)
+  // Fetch Flowty listings and FMV in parallel
+  // 4 pages of 24 = 96 listed NFTs
+  const [page0, page1, page2, page3, fmvMap] = await Promise.all([
+    fetchFlowtyPinnacleListings({ limit: 24, offset: 0, listedOnly: true, timeoutMs: 10000 }),
+    fetchFlowtyPinnacleListings({ limit: 24, offset: 24, listedOnly: true, timeoutMs: 10000 }),
+    fetchFlowtyPinnacleListings({ limit: 24, offset: 48, listedOnly: true, timeoutMs: 10000 }),
+    fetchFlowtyPinnacleListings({ limit: 24, offset: 72, listedOnly: true, timeoutMs: 10000 }),
+    loadFmvMap(),
+  ])
 
-    if (!columnNames.includes("ask_price")) {
-      // No ask price column — return empty with message
-      return NextResponse.json({
-        count: 0,
-        deals: [],
-        message: "Pinnacle ask data is not yet synced. The ask_price column does not exist on pinnacle_editions.",
-        lastRefreshed: new Date().toISOString(),
-      })
-    }
+  const allNfts: FlowtyPinnacleNft[] = [...page0, ...page1, ...page2, ...page3]
 
-    // Query pinnacle editions with ask prices
-    const { data: editions, error } = await supabase
-      .from("pinnacle_editions")
-      .select("*")
-      .not("ask_price", "is", null)
-      .gt("ask_price", 0)
-      .order("ask_price", { ascending: true })
-      .limit(200)
+  // Dedup by NFT id
+  const seen = new Set<string>()
+  const uniqueNfts = allNfts.filter((nft) => {
+    if (seen.has(nft.id)) return false
+    seen.add(nft.id)
+    return true
+  })
 
-    if (error) throw new Error(error.message)
+  console.log(`[pinnacle-sniper] Flowty: ${uniqueNfts.length} unique listed NFTs, FMV coverage: ${fmvMap.size} editions`)
 
-    // Try to get FMV data from pinnacle_fmv_snapshots
-    const editionIds = (editions ?? []).map((e: any) => e.id)
-    let fmvMap = new Map<string, number>()
+  // Convert NFTs to sniper deals
+  let deals = uniqueNfts.flatMap((nft) => flowtyNftToSniperDeals(nft, fmvMap))
 
-    if (editionIds.length > 0) {
-      const { data: fmvRows } = await supabase
-        .from("pinnacle_fmv_snapshots")
-        .select("edition_id, fmv_usd")
-        .in("edition_id", editionIds)
-        .order("computed_at", { ascending: false })
-
-      for (const row of fmvRows ?? []) {
-        if (!fmvMap.has(row.edition_id)) {
-          fmvMap.set(row.edition_id, row.fmv_usd)
-        }
-      }
-    }
-
-    // Build SniperDeal-shaped objects
-    const deals = (editions ?? []).map((e: any) => {
-      const fmv = fmvMap.get(e.id) ?? e.fmv_usd ?? null
-      const askPrice = Number(e.ask_price)
-      const discount = fmv && fmv > 0 ? Math.round(((fmv - askPrice) / fmv) * 100) : 0
-
-      return {
-        flowId: e.id ?? e.external_id ?? String(Math.random()),
-        momentId: e.id ?? "",
-        editionKey: e.external_id ?? e.id ?? "",
-        playerName: e.name ?? e.character_name ?? "Unknown",
-        teamName: e.franchise ?? e.collection_name ?? "Disney Pinnacle",
-        setName: e.set_name ?? "Pinnacle",
-        seriesName: e.series ?? "",
-        tier: e.tier ?? e.rarity ?? "Common",
-        parallel: "Base",
-        parallelId: 0,
-        serial: e.serial_number ?? 0,
-        circulationCount: e.circulation_count ?? e.edition_size ?? 0,
-        askPrice,
-        baseFmv: fmv ?? askPrice,
-        adjustedFmv: fmv ?? askPrice,
-        wapUsd: null,
-        daysSinceSale: null,
-        salesCount30d: null,
-        discount,
-        confidence: fmv ? "medium" : "low",
-        hasBadge: false,
-        badgeSlugs: [],
-        badgeLabels: [],
-        badgePremiumPct: 0,
-        serialMult: 1,
-        isSpecialSerial: false,
-        isJersey: false,
-        serialSignal: null,
-        thumbnailUrl: e.image_url ?? e.thumbnail_url ?? null,
-        isLocked: false,
-        updatedAt: e.updated_at ?? new Date().toISOString(),
-        packListingId: null,
-        packName: null,
-        packEv: null,
-        packEvRatio: null,
-        buyUrl: `https://disneypinnacle.com/marketplace`,
-        listingResourceID: null,
-        storefrontAddress: null,
-        source: "pinnacle" as const,
-      }
-    })
-
-    return NextResponse.json({
-      count: deals.length,
-      deals,
-      lastRefreshed: new Date().toISOString(),
-    })
-  } catch (err: any) {
-    // If the table doesn't exist at all, return gracefully
-    return NextResponse.json({
-      count: 0,
-      deals: [],
-      message: err.message?.includes("does not exist")
-        ? "Pinnacle tables are not yet provisioned."
-        : err.message,
-      lastRefreshed: new Date().toISOString(),
-    })
+  // Apply filters
+  if (variantFilter !== "all") {
+    deals = deals.filter((d) => d.variantType.toLowerCase() === variantFilter.toLowerCase())
   }
+  if (maxPrice > 0) {
+    deals = deals.filter((d) => d.askPrice <= maxPrice)
+  }
+  if (minDiscount > 0) {
+    deals = deals.filter((d) => d.discount >= minDiscount)
+  }
+  if (playerFilter) {
+    const q = playerFilter.toLowerCase()
+    deals = deals.filter((d) =>
+      d.characterName.toLowerCase().includes(q) ||
+      d.franchise.toLowerCase().includes(q) ||
+      d.setName.toLowerCase().includes(q)
+    )
+  }
+
+  // Sort
+  switch (sortBy) {
+    case "price_asc":
+      deals.sort((a, b) => a.askPrice - b.askPrice)
+      break
+    case "price_desc":
+      deals.sort((a, b) => b.askPrice - a.askPrice)
+      break
+    case "fmv_desc":
+      deals.sort((a, b) => b.adjustedFmv - a.adjustedFmv)
+      break
+    case "listed_desc":
+      deals.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      break
+    case "discount":
+    default:
+      deals.sort((a, b) => b.discount - a.discount)
+      break
+  }
+
+  // Map PinnacleSniperDeal to the SniperDeal shape the sniper page expects.
+  // playerName = characterName, teamName = franchise, tier = variantType.
+  const mappedDeals = deals.slice(0, 200).map((d) => ({
+    flowId: d.flowId,
+    momentId: d.nftId,
+    editionKey: d.editionKey,
+    intEditionKey: null,
+    playerName: d.characterName,
+    teamName: d.franchise,
+    setName: d.setName,
+    seriesName: d.seriesYear ? String(d.seriesYear) : "",
+    tier: d.variantType,
+    parallel: "",
+    parallelId: 0,
+    serial: d.serial ?? 0,
+    circulationCount: d.mintCount ?? 0,
+    askPrice: d.askPrice,
+    baseFmv: d.baseFmv,
+    adjustedFmv: d.adjustedFmv,
+    wapUsd: null,
+    daysSinceSale: null,
+    salesCount30d: null,
+    discount: d.discount,
+    confidence: d.confidence.toLowerCase(),
+    confidenceSource: "rpc_fmv",
+    hasBadge: false,
+    badgeSlugs: [] as string[],
+    badgeLabels: [] as string[],
+    badgePremiumPct: 0,
+    serialMult: d.serialMult,
+    isSpecialSerial: d.isSpecialSerial,
+    isJersey: false,
+    serialSignal: d.serialSignal,
+    thumbnailUrl: d.thumbnailUrl,
+    isLocked: d.isLocked,
+    updatedAt: d.updatedAt,
+    packListingId: null,
+    packName: null,
+    packEv: null,
+    packEvRatio: null,
+    buyUrl: d.buyUrl,
+    listingResourceID: d.listingResourceID,
+    listingOrderID: d.listingOrderID,
+    storefrontAddress: d.storefrontAddress,
+    source: "flowty" as const,
+    paymentToken: "DUC" as const,
+    offerAmount: d.offerAmount,
+    offerFmvPct: d.offerFmvPct,
+    dealRating: d.discount,
+    isLowestAsk: false,
+  }))
+
+  return NextResponse.json(
+    {
+      count: mappedDeals.length,
+      flowtyCount: uniqueNfts.length,
+      fmvCoverage: fmvMap.size,
+      lastRefreshed: new Date().toISOString(),
+      deals: mappedDeals,
+    },
+    {
+      headers: {
+        "Cache-Control": "public, max-age=0, s-maxage=30, stale-while-revalidate=60",
+      },
+    }
+  )
 }

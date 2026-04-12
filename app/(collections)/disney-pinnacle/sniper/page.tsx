@@ -5,7 +5,6 @@ import {
   type PinnacleSniperDeal,
   type PinnacleVariant,
   PINNACLE_VARIANT_COLORS,
-  stripBrackets,
 } from "@/lib/pinnacle/pinnacleTypes";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -176,7 +175,7 @@ export default function PinnacleSniperPage() {
       if (
         !d.characterName.toLowerCase().includes(q) &&
         !d.setName.toLowerCase().includes(q) &&
-        !d.editionId.toLowerCase().includes(q)
+        !d.editionKey.toLowerCase().includes(q)
       )
         return false;
     }
@@ -186,7 +185,7 @@ export default function PinnacleSniperPage() {
   const stats = {
     total: visibleDeals.length,
     locked: visibleDeals.filter((d) => d.isLocked).length,
-    chasers: visibleDeals.filter((d) => d.isChaser).length,
+    chasers: 0,
     special: visibleDeals.filter((d) => d.isSpecialSerial).length,
     flowtyLive: (data?.flowtyTotal ?? 0) > 0,
   };
@@ -471,7 +470,7 @@ export default function PinnacleSniperPage() {
                     {/* Pin info */}
                     <td style={{ padding: "8px 12px" }}>
                       <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, color: "var(--rpc-text-primary)", lineHeight: 1.2 }}>
-                        {stripBrackets(deal.characterName)}
+                        {deal.characterName}
                         {deal.isLocked && (
                           <span title="Pin is locked (maturity date in future)" style={{ marginLeft: 6, fontSize: "var(--text-xs)", opacity: 0.5 }}>
                             🔒
@@ -479,12 +478,12 @@ export default function PinnacleSniperPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)" }}>
-                        <span style={{ color: PINNACLE_VARIANT_COLORS[deal.variant] ?? "#6B7280", fontWeight: 600 }}>
-                          {stripBrackets(deal.franchise)}
+                        <span style={{ color: PINNACLE_VARIANT_COLORS[deal.variantType] ?? "#6B7280", fontWeight: 600 }}>
+                          {deal.franchise}
                         </span>
                         <span style={{ color: "var(--rpc-text-ghost)" }}>·</span>
-                        <span style={{ color: "var(--rpc-text-muted)" }}>{stripBrackets(deal.setName) || "—"}</span>
-                        {deal.seriesYear > 0 && (
+                        <span style={{ color: "var(--rpc-text-muted)" }}>{deal.setName || "—"}</span>
+                        {(deal.seriesYear ?? 0) > 0 && (
                           <>
                             <span style={{ color: "var(--rpc-text-ghost)" }}>·</span>
                             <span style={{ color: "var(--rpc-text-ghost)" }}>{deal.seriesYear}</span>
@@ -492,7 +491,7 @@ export default function PinnacleSniperPage() {
                         )}
                       </div>
                       <div className="flex gap-1 mt-1 flex-wrap">
-                        {deal.isChaser && (
+                        {false /* isChaser */ && (
                           <span
                             className="px-1 py-0.5 rounded text-xs font-bold"
                             style={{ background: "rgba(245,158,11,0.15)", color: "#F59E0B", border: "1px solid rgba(245,158,11,0.3)" }}
@@ -513,7 +512,7 @@ export default function PinnacleSniperPage() {
 
                     {/* Variant pill */}
                     <td style={{ padding: "8px 12px" }}>
-                      {variantPill(deal.variant)}
+                      {variantPill(deal.variantType)}
                     </td>
 
                     {/* Serial */}
@@ -523,9 +522,9 @@ export default function PinnacleSniperPage() {
                           <div style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)" }}>
                             #{deal.serial}
                           </div>
-                          {deal.mintCount > 0 && (
+                          {(deal.mintCount ?? 0) > 0 && (
                             <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>
-                              / {deal.mintCount.toLocaleString()}
+                              / {(deal.mintCount ?? 0).toLocaleString()}
                             </div>
                           )}
                           {deal.isSpecialSerial && (
