@@ -42,6 +42,9 @@ type WalletRow = {
   fmv?: number | null
   marketConfidence?: string | null
   fmvComputedAt?: string | null
+  acquisitionMethod?: string | null
+  costBasis?: number | null
+  costBasisLabel?: string | null
 }
 
 type WalletSearchResponse = {
@@ -681,6 +684,57 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
   }
 }
 
+const ACQUISITION_LABELS: Record<string, string | null> = {
+  marketplace: "Bought",
+  pack_pull: "Pack",
+  loan_default: "Loan",
+  gift: "Gift",
+  challenge_reward: "Reward",
+  airdrop: "Airdrop",
+  unknown: null,
+}
+
+async function enrichWithAcquisitionData(rows: WalletRow[], wallet: string): Promise<WalletRow[]> {
+  if (!rows.length) return rows
+  try {
+    const momentIds = rows.map(r => r.momentId).filter(Boolean)
+    if (!momentIds.length) return rows
+
+    const { data, error } = await (supabaseAdmin as any).rpc("get_wallet_acquisition_data", {
+      p_wallet: wallet,
+      p_moment_ids: momentIds,
+    })
+
+    if (error || !data) return rows
+
+    const acqMap = new Map<string, { acquisition_method: string; buy_price: number | null; loan_principal: number | null }>()
+    for (const row of data) {
+      // Keep first match per moment (ordered by nft_id in the RPC)
+      if (!acqMap.has(row.moment_id)) {
+        acqMap.set(row.moment_id, row)
+      }
+    }
+
+    return rows.map(row => {
+      const acq = acqMap.get(row.momentId)
+      if (!acq) return row
+      const method = acq.acquisition_method
+      const costBasis = method === "marketplace" ? (acq.buy_price != null ? Number(acq.buy_price) : null)
+        : method === "loan_default" ? (acq.loan_principal != null ? Number(acq.loan_principal) : null)
+        : null
+      return {
+        ...row,
+        acquisitionMethod: method,
+        costBasis,
+        costBasisLabel: ACQUISITION_LABELS[method] ?? null,
+      }
+    })
+  } catch (err) {
+    console.warn("[wallet-search] Acquisition enrichment failed:", err instanceof Error ? err.message : String(err))
+    return rows
+  }
+}
+
 async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
   try {
     const now = new Date().toISOString()
@@ -906,7 +960,10 @@ export async function POST(req: NextRequest) {
     })
 
     // Batch-enrich FMV from fmv_snapshots + low ask from cached_listings
-    const rows = await batchEnrichFmvAndAsks(rowsWithCounts)
+    const fmvEnriched = await batchEnrichFmvAndAsks(rowsWithCounts)
+
+    // Enrich with acquisition method data
+    const rows = await enrichWithAcquisitionData(fmvEnriched, wallet)
 
     const totalTssPoints = rows.reduce(function(sum, r) {
       return sum + (r.tssPoints ?? 0)
