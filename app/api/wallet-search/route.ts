@@ -735,6 +735,65 @@ async function enrichWithAcquisitionData(rows: WalletRow[], wallet: string): Pro
   }
 }
 
+async function progressivelyClassify(rows: WalletRow[], wallet: string) {
+  try {
+    const walletAddr = wallet.startsWith("0x") ? wallet : "0x" + wallet
+    let marketplaceCount = 0
+    let dateCount = 0
+
+    // 1. Reclassify moments with lastPurchasePrice but unknown/null acquisition
+    const toReclassify = rows.filter(
+      (r) => r.lastPurchasePrice != null && r.lastPurchasePrice > 0 && (!r.acquisitionMethod || r.acquisitionMethod === "unknown")
+    )
+
+    for (const row of toReclassify) {
+      const { error } = await (supabaseAdmin as any)
+        .from("moment_acquisitions")
+        .update({
+          acquisition_method: "marketplace",
+          buy_price: row.lastPurchasePrice,
+          acquired_date: row.acquiredAt ? new Date(row.acquiredAt).toISOString() : null,
+          source: "progressive_classify",
+        })
+        .eq("nft_id", row.momentId)
+        .eq("wallet", walletAddr)
+        .eq("acquisition_method", "unknown")
+      if (!error) marketplaceCount++
+    }
+
+    // 2. Fill in acquired_date where GQL has it but moment_acquisitions does not
+    const toDateFill = rows.filter(
+      (r) => r.acquiredAt && r.acquisitionMethod && r.acquisitionMethod !== "unknown"
+    )
+
+    for (const row of toDateFill) {
+      const { error } = await (supabaseAdmin as any)
+        .from("moment_acquisitions")
+        .update({ acquired_date: new Date(row.acquiredAt!).toISOString() })
+        .eq("nft_id", row.momentId)
+        .eq("wallet", walletAddr)
+        .is("acquired_date", null)
+      if (!error) dateCount++
+    }
+
+    // 3. Propagate acquiredAt to wallet_moments_cache where missing
+    const toCacheFill = rows.filter((r) => r.acquiredAt && r.momentId)
+    for (const row of toCacheFill) {
+      await (supabaseAdmin as any)
+        .from("wallet_moments_cache")
+        .update({ acquired_at: row.acquiredAt })
+        .eq("moment_id", row.momentId)
+        .eq("wallet_address", walletAddr)
+        .is("acquired_at", null)
+    }
+
+    console.log(`[wallet-search] Progressive classify: ${marketplaceCount} marketplace, ${dateCount} dates updated`)
+  } catch (err) {
+    // Never let progressive classification crash the response
+    console.warn("[wallet-search] Progressive classify error:", err instanceof Error ? err.message : String(err))
+  }
+}
+
 async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
   try {
     const now = new Date().toISOString()
@@ -964,6 +1023,9 @@ export async function POST(req: NextRequest) {
 
     // Enrich with acquisition method data
     const rows = await enrichWithAcquisitionData(fmvEnriched, wallet)
+
+    // Fire-and-forget — progressively reclassify unknown acquisitions
+    progressivelyClassify(rows, wallet)
 
     const totalTssPoints = rows.reduce(function(sum, r) {
       return sum + (r.tssPoints ?? 0)
