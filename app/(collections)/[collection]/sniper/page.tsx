@@ -548,6 +548,9 @@ export default function SniperPage() {
   }, []);
 
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
+  const fetchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasMountedRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Auto-load owned editions (setID:playID) from rpc_owner_key in localStorage
   // on mount. No FCL wallet connection required: the collection page resolves
@@ -635,9 +638,12 @@ export default function SniperPage() {
   }, [tierTab, minDiscount, maxPrice, playerFilter, serialFilter, badgeOnly, flowWalletOnly, sortBy, feedEndpoint]);
 
   const fetchFeed = useCallback(async () => {
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     try {
       setLoading(true);
-      const res = await fetch(buildFeedUrl(), { cache: "no-store" });
+      const res = await fetch(buildFeedUrl(), { cache: "no-store", signal: controller.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json: FeedResult = await res.json();
 
@@ -679,7 +685,8 @@ export default function SniperPage() {
 
       setData(json);
       setError(null);
-    } catch (e) {
+    } catch (e: any) {
+      if (e?.name === "AbortError") return;
       setError(String(e));
     } finally {
       setLoading(false);
@@ -688,8 +695,20 @@ export default function SniperPage() {
   }, [buildFeedUrl]);
 
   useEffect(() => {
-    fetchFeed();
-    setCountdown(REFRESH_INTERVAL);
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      fetchFeed();
+      setCountdown(REFRESH_INTERVAL);
+    } else {
+      if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current);
+      fetchDebounceRef.current = setTimeout(() => {
+        fetchFeed();
+        setCountdown(REFRESH_INTERVAL);
+      }, 400);
+    }
+    return () => {
+      if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current);
+    };
   }, [fetchFeed]);
 
   useEffect(() => {
