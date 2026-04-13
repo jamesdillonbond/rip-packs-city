@@ -130,12 +130,21 @@ function mapFlowtyListing(nft: any, config: CollectionConfig): any | null {
     const fmvNum = fmvRaw ? parseFloat(String(fmvRaw)) : null;
     const discount = fmvNum && fmvNum > 0 && isFinite(fmvNum) ? ((fmvNum - price) / fmvNum) * 100 : null;
 
-    const traits = (nft.nftView && Array.isArray(nft.nftView.traits)) ? nft.nftView.traits : [];
+    // Normalize traits: Top Shot has nftView.traits as array directly,
+    // All Day has nftView.traits.traits (object with nested array)
+    let traits: any[] = [];
+    if (nft.nftView && nft.nftView.traits) {
+      if (Array.isArray(nft.nftView.traits)) {
+        traits = nft.nftView.traits;
+      } else if (nft.nftView.traits.traits && Array.isArray(nft.nftView.traits.traits)) {
+        traits = nft.nftView.traits.traits;
+      }
+    }
 
     // Extract traits with multi-variant names (covers Top Shot + All Day + future collections)
-    const seriesStr = getTraitMulti(traits, "SeriesNumber", "seriesNumber", "Series Number", "series");
+    const seriesStr = getTraitMulti(traits, "SeriesNumber", "seriesNumber", "Series Number", "series", "seriesName");
     const seriesNum = seriesStr ? parseInt(seriesStr, 10) : null;
-    const tier = getTraitMulti(traits, "Tier", "Moment Tier", "tier", "momentTier") || "COMMON";
+    const tier = getTraitMulti(traits, "Tier", "Moment Tier", "tier", "momentTier", "editionTier") || "COMMON";
     const teamName = getTraitMulti(traits, "TeamAtMoment", "Team", "teamAtMoment", "team", "TeamName", "teamName");
     const setName = getTraitMulti(traits, "SetName", "Set Name", "setName", "set_name");
     const editionFlowID = getTraitMulti(traits, "Edition ID", "editionID", "editionFlowID", "EditionFlowID");
@@ -153,12 +162,10 @@ function mapFlowtyListing(nft: any, config: CollectionConfig): any | null {
     const serial = parseInt(String((nft.card && nft.card.num) || "0"), 10) || 0;
     const circ = parseInt(String((nft.card && nft.card.max) || "0"), 10) || 0;
 
-    // Thumbnail: for All Day, build from edition ID; for others, use card images
-    let imageUrl: string | null = null;
-    if (config.slug === "nfl-all-day" && editionFlowID) {
+    // Thumbnail: prefer card.images[0].url (works for both collections), fall back to CDN for All Day
+    let imageUrl: string | null = (nft.card && Array.isArray(nft.card.images) && nft.card.images[0]) ? nft.card.images[0].url : null;
+    if (!imageUrl && config.slug === "nfl-all-day" && editionFlowID) {
       imageUrl = "https://media.nflallday.com/editions/" + editionFlowID + "/media/image?width=512&format=webp&quality=90";
-    } else {
-      imageUrl = (nft.card && Array.isArray(nft.card.images) && nft.card.images[0]) ? nft.card.images[0].url : null;
     }
 
     // moment_id: for All Day, use editionFlowID (maps to editions.external_id);
@@ -174,7 +181,9 @@ function mapFlowtyListing(nft: any, config: CollectionConfig): any | null {
       player_name: playerName,
       team_name: teamName,
       set_name: setName,
-      series_name: (seriesNum !== null && !isNaN(seriesNum)) ? (config.seriesNames[seriesNum] || "Series " + seriesNum) : "",
+      series_name: (seriesNum !== null && !isNaN(seriesNum))
+        ? (config.seriesNames[seriesNum] || "Series " + seriesNum)
+        : (seriesStr || ""),
       tier: tier.toUpperCase(),
       serial_number: serial,
       circulation_count: circ,
