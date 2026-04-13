@@ -1841,22 +1841,26 @@ export default function WalletPage() {
                               {row.badgeInfo?.is_three_star_rookie && row.badgeInfo?.has_rookie_mint && (
                                 <BadgePill title="Three-Star Rookie" />
                               )}
-                              {row.acquisitionMethod && (() => {
+                            </div>
+                            {row.acquisitionMethod && (() => {
                                 const acqConfig: Record<string, { label: string; icon: string; color: string }> = {
                                   pack_pull: { label: "Pack", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4", color: "59,130,246" },
                                   marketplace: { label: "Bought", icon: "M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.3 2.3c-.5.5-.2 1.4.5 1.4H17m0 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-8 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4z", color: "16,185,129" },
                                   challenge_reward: { label: "Reward", icon: "M12 15l-2 5h4l-2-5zm-4-3a4 4 0 0 1 8 0H8zm-2-2h12l1-2H5l1 2zm3-4h6V3H9v3z", color: "245,158,11" },
+                                  gift: { label: "🎁 Gift", icon: "", color: "96,165,250" },
+                                  loan_default: { label: "🏦 Loan Default", icon: "", color: "239,68,68" },
                                 }
                                 const cfg = acqConfig[row.acquisitionMethod!]
                                 if (!cfg) return null
                                 return (
-                                  <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ background: "rgba(" + cfg.color + ",0.1)", color: "rgba(" + cfg.color + ",0.8)", border: "1px solid rgba(" + cfg.color + ",0.15)" }}>
-                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={cfg.icon}/></svg>
-                                    {cfg.label}
-                                  </span>
+                                  <div className="mt-1">
+                                    <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ background: "rgba(" + cfg.color + ",0.1)", color: "rgba(" + cfg.color + ",0.8)", border: "1px solid rgba(" + cfg.color + ",0.15)" }}>
+                                      {cfg.icon && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={cfg.icon}/></svg>}
+                                      {cfg.label}
+                                    </span>
+                                  </div>
                                 )
                               })()}
-                            </div>
                           </div>
                         </div>
                       </td>
@@ -1875,12 +1879,15 @@ export default function WalletPage() {
                       <td className="p-3 text-sm hidden lg:table-cell">
                         <div>{editionCounts.owned} / {editionCounts.locked}</div>
                         {isLocked && <span className="ml-1.5 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">Locked</span>}
-                        {row.badgeInfo && row.badgeInfo.circulation_count > 0 && (
+                        {row.badgeInfo && row.badgeInfo.circulation_count > 0 && !(row.badgeInfo.circulation_count === 1 || row.tier?.toUpperCase() === "ULTIMATE") && (
                           <div className="mt-1 text-[10px] text-zinc-500 font-mono leading-tight" title={"Minted: " + row.badgeInfo.circulation_count + " · Owned: " + row.badgeInfo.owned + " · For Sale: " + (row.badgeInfo.for_sale_by_collectors ?? "?") + " · In Packs: " + row.badgeInfo.hidden_in_packs + " · Burned: " + row.badgeInfo.burned}>
                             <span>{row.badgeInfo.circulation_count.toLocaleString()} minted</span>
                             {row.badgeInfo.burned > 0 && <span className="text-red-400"> · {row.badgeInfo.burned} burned</span>}
                             {row.badgeInfo.hidden_in_packs > 0 && <span> · {row.badgeInfo.hidden_in_packs} in packs</span>}
                           </div>
+                        )}
+                        {(row.badgeInfo?.circulation_count === 1 || row.tier?.toUpperCase() === "ULTIMATE") && (
+                          <div className="mt-1 text-[10px] text-purple-400 font-mono">1/1</div>
                         )}
                       </td>
                       <td className="p-3 text-sm hidden xl:table-cell">
@@ -2110,6 +2117,7 @@ export default function WalletPage() {
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                               <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Metadata</div>
                               <div className="space-y-1 text-sm">
+                                {/* TODO: team_name from UUID-keyed Flowty editions is often wrong. Long-term fix: add team column to wallet_moments_cache and prefer that over editions.team_name */}
                                 <div>Team: {row.team ?? "-"}</div>
                                 <div>League: {row.league ?? "-"}</div>
                                 <div>Parallel: {getParallel(row)}</div>
@@ -2137,12 +2145,18 @@ export default function WalletPage() {
                                   <div className="pt-1 text-xs text-zinc-500">
                                     <div>Burn rate: {row.badgeInfo.burn_rate_pct.toFixed(1)}%</div>
                                     <div>Lock rate: {row.badgeInfo.lock_rate_pct.toFixed(1)}%</div>
-                                    <div>Circ: {row.badgeInfo.circulation_count.toLocaleString()}</div>
-                                    {row.badgeInfo.effective_supply != null && <div>Effective supply: {row.badgeInfo.effective_supply.toLocaleString()}</div>}
-                                    {row.badgeInfo.owned > 0 && <div>Owned: {row.badgeInfo.owned.toLocaleString()}</div>}
-                                    {row.badgeInfo.for_sale_by_collectors != null && <div>For sale: {row.badgeInfo.for_sale_by_collectors.toLocaleString()}</div>}
-                                    {row.badgeInfo.hidden_in_packs > 0 && <div>In packs: {row.badgeInfo.hidden_in_packs.toLocaleString()}</div>}
-                                    {row.badgeInfo.burned > 0 && <div>Burned: {row.badgeInfo.burned.toLocaleString()}</div>}
+                                    {(row.badgeInfo.circulation_count === 1 || row.tier?.toUpperCase() === "ULTIMATE") ? (
+                                      <div className="text-purple-400">1/1 Ultimate</div>
+                                    ) : (
+                                      <>
+                                        <div>Circ: {row.badgeInfo.circulation_count.toLocaleString()}</div>
+                                        {row.badgeInfo.effective_supply != null && <div>Effective supply: {row.badgeInfo.effective_supply.toLocaleString()}</div>}
+                                        {row.badgeInfo.owned > 0 && <div>Owned: {row.badgeInfo.owned.toLocaleString()}</div>}
+                                        {row.badgeInfo.for_sale_by_collectors != null && <div>For sale: {row.badgeInfo.for_sale_by_collectors.toLocaleString()}</div>}
+                                        {row.badgeInfo.hidden_in_packs > 0 && <div>In packs: {row.badgeInfo.hidden_in_packs.toLocaleString()}</div>}
+                                        {row.badgeInfo.burned > 0 && <div>Burned: {row.badgeInfo.burned.toLocaleString()}</div>}
+                                      </>
+                                    )}
                                     {row.badgeInfo.low_ask != null && <div>Edition ask: {formatCurrency(row.badgeInfo.low_ask)}</div>}
                                   </div>
                                 </div>
