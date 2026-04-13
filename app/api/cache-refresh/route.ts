@@ -272,8 +272,24 @@ export async function GET(req: NextRequest) {
     }
 
     // Step 5: Insert moment_acquisitions rows for new IDs (unknown method)
-    for (let i = 0; i < newIds.length; i += 200) {
-      const chunk = newIds.slice(i, i + 200)
+    // Only insert for nft_ids that don't already have ANY acquisition row for this wallet,
+    // to avoid creating duplicate rows that override real marketplace data.
+    const existingAcqIds = new Set<string>()
+    for (let i = 0; i < newIds.length; i += 500) {
+      const chunk = newIds.slice(i, i + 500)
+      const { data: existingRows } = await supabase
+        .from("moment_acquisitions")
+        .select("nft_id")
+        .eq("wallet", wallet)
+        .in("nft_id", chunk)
+      for (const row of existingRows ?? []) {
+        if (row.nft_id) existingAcqIds.add(String(row.nft_id))
+      }
+    }
+    const acqNewIds = newIds.filter(function(id) { return !existingAcqIds.has(id) })
+
+    for (let i = 0; i < acqNewIds.length; i += 200) {
+      const chunk = acqNewIds.slice(i, i + 200)
       const rows = chunk.map(function(id) {
         return {
           nft_id: id,
@@ -287,7 +303,7 @@ export async function GET(req: NextRequest) {
       })
       const { error } = await supabase
         .from("moment_acquisitions")
-        .upsert(rows, { onConflict: "nft_id,wallet,transaction_hash" })
+        .insert(rows)
       if (error) {
         console.log("[cache-refresh] acquisitions insert error: " + error.message)
       }
