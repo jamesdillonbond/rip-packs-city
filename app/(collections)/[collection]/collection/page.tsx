@@ -755,7 +755,12 @@ export default function WalletPage() {
     thumbnail_url: string | null
     acquired_at: string | null
     last_seen_at: string | null
+    buy_price: number | null
+    acquisition_method: string | null
+    loan_principal: number | null
   }
+
+  const ACQUISITION_LABEL_MAP: Record<string, string | null> = { marketplace: "Bought", pack_pull: "Pack", loan_default: "Loan", gift: "Gift", challenge_reward: "Reward", airdrop: "Airdrop", unknown: null }
 
   function serverMomentToRow(m: ServerMoment): MomentRow {
     // Ensure fmv_usd is a real number (Supabase numeric cols can arrive as strings)
@@ -763,6 +768,14 @@ export default function WalletPage() {
     const fmvVal = (fmvNum != null && Number.isFinite(fmvNum) && fmvNum > 0) ? fmvNum : null
     const lowAskNum = m.low_ask != null ? Number(m.low_ask) : null
     const lowAskVal = (lowAskNum != null && Number.isFinite(lowAskNum) && lowAskNum > 0) ? lowAskNum : null
+
+    // Derive cost basis from RPC acquisition fields
+    const acqMethod = m.acquisition_method ?? null
+    const label = acqMethod ? (ACQUISITION_LABEL_MAP[acqMethod] ?? null) : null
+    let basis: number | null = null
+    if (acqMethod === "marketplace" && m.buy_price != null) basis = Number(m.buy_price)
+    else if (acqMethod === "loan_default" && m.loan_principal != null) basis = Number(m.loan_principal)
+
     return {
       momentId: m.moment_id,
       playerName: m.player_name ?? "Unknown",
@@ -789,6 +802,9 @@ export default function WalletPage() {
       parallel: null,
       subedition: null,
       flowId: null,
+      acquisitionMethod: acqMethod,
+      costBasis: basis,
+      costBasisLabel: label,
     }
   }
 
@@ -1416,14 +1432,15 @@ export default function WalletPage() {
         )}
 
         {/* Cost basis / P&L summary */}
-        {hasSearched && costBasis.size > 0 && (function() {
+        {hasSearched && (costBasis.size > 0 || rows.some(function(r) { return r.costBasis != null })) && (function() {
           let totalCost = 0
           let totalFmv = 0
           let count = 0
           for (const row of rows) {
             const cb = costBasis.get(row.flowId ?? "")
-            if (cb && row.fmv && row.fmv > 0) {
-              totalCost += cb.buyPrice
+            const rowBasis = cb ? cb.buyPrice : (row.costBasis ?? 0)
+            if (rowBasis > 0 && row.fmv && row.fmv > 0) {
+              totalCost += rowBasis
               totalFmv += row.fmv
               count++
             }
@@ -1618,7 +1635,8 @@ export default function WalletPage() {
               const supaBadges = (row.badgeInfo?.badge_titles ?? []).filter(function(t) { return BADGE_PILL_TITLES.has(t) })
               const scopeKey = buildEditionScopeKey({ editionKey: row.editionKey, setName: row.setName, playerName: row.playerName, parallel: row.parallel, subedition: row.subedition })
               const editionCounts = { owned: row.editionsOwned ?? batchEditionStats.get(scopeKey)?.owned ?? 0, locked: row.editionsLocked ?? batchEditionStats.get(scopeKey)?.locked ?? 0 }
-              const cb = costBasis.get(row.flowId ?? "")
+              const cbMap = costBasis.get(row.flowId ?? "")
+              const cb = cbMap ?? (row.costBasis != null || row.costBasisLabel ? { buyPrice: row.costBasis ?? 0, acquiredDate: row.acquiredAt ?? "", fmvAtAcquisition: null, acquisitionMethod: row.acquisitionMethod ?? null, costBasisLabel: row.costBasisLabel ?? null } : undefined)
               const tierColorMap: Record<string, string> = { COMMON: "#9ca3af", UNCOMMON: "#14b8a6", FANDOM: "#60a5fa", RARE: "#38bdf8", LEGENDARY: "#fbbf24", ULTIMATE: "#c084fc" }
               const tierBg: Record<string, string> = { COMMON: "bg-zinc-800", UNCOMMON: "bg-teal-950", FANDOM: "bg-blue-950", RARE: "bg-sky-950", LEGENDARY: "bg-yellow-950", ULTIMATE: "bg-purple-950" }
               const tierKey = (row.tier ?? "").toUpperCase()
@@ -1836,7 +1854,8 @@ export default function WalletPage() {
                       </td>
                       <td className="p-3 text-sm hidden xl:table-cell">
                         {(function() {
-                          const cb = costBasis.get(row.flowId ?? "")
+                          const cbMap = costBasis.get(row.flowId ?? "")
+                          const cb = cbMap ?? (row.costBasis != null || row.costBasisLabel ? { buyPrice: row.costBasis ?? 0, acquiredDate: row.acquiredAt ?? "", fmvAtAcquisition: null, acquisitionMethod: row.acquisitionMethod ?? null, costBasisLabel: row.costBasisLabel ?? null } : undefined)
                           if (cb) {
                             const label = cb.costBasisLabel
                             if (label === "Bought" && cb.buyPrice > 0) return <span className="font-mono text-white">${cb.buyPrice.toFixed(2)}</span>
@@ -1855,8 +1874,9 @@ export default function WalletPage() {
                         {(function() {
                           const currentFmv = row.fmv
                           if (!currentFmv) return <span className="text-zinc-600">—</span>
-                          const cb = costBasis.get(row.flowId ?? "")
-                          const cbBasis = cb ? (cb.costBasisLabel === "Bought" ? cb.buyPrice : cb.costBasisLabel === "Loan" ? cb.buyPrice : 0) : 0
+                          const cbMap = costBasis.get(row.flowId ?? "")
+                          const cbObj = cbMap ?? (row.costBasis != null || row.costBasisLabel ? { buyPrice: row.costBasis ?? 0, costBasisLabel: row.costBasisLabel ?? null } : undefined)
+                          const cbBasis = cbObj ? (cbObj.costBasisLabel === "Bought" ? cbObj.buyPrice : cbObj.costBasisLabel === "Loan" ? cbObj.buyPrice : 0) : 0
                           const basis = cbBasis > 0 ? cbBasis : (row.lastPurchasePrice != null && row.lastPurchasePrice > 0 ? row.lastPurchasePrice : 0)
                           if (!basis || basis <= 0) return <span className="text-zinc-600">—</span>
                           const pl = currentFmv - basis
