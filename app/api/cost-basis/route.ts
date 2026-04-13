@@ -1,11 +1,25 @@
 // app/api/cost-basis/route.ts
 //
-// GET /api/cost-basis?wallet=0x...
+// GET /api/cost-basis?wallet=0x...&collection=nfl-all-day
 // Returns per-moment cost basis for a wallet via get_wallet_cost_basis() RPC.
 // Bypasses PostgREST 1000-row cap.
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { getCollection } from "@/lib/collections"
+
+async function resolveCollectionId(supabase: any, slug: string | null): Promise<string | null> {
+  if (!slug) return null
+  const collectionObj = getCollection(slug)
+  const contractName = collectionObj?.flowContractName
+  if (!contractName) return null
+  const { data } = await supabase
+    .from("collection_config")
+    .select("collection_id")
+    .eq("flow_contract_name", contractName)
+    .single()
+  return data?.collection_id ?? null
+}
 
 export async function GET(req: NextRequest) {
   const wallet = req.nextUrl.searchParams.get("wallet")?.trim()
@@ -19,8 +33,13 @@ export async function GET(req: NextRequest) {
   )
 
   const normalized = wallet.startsWith("0x") ? wallet : "0x" + wallet
+  const collectionSlug = req.nextUrl.searchParams.get("collection")?.trim() || null
+  const collectionId = await resolveCollectionId(supabase as any, collectionSlug)
 
-  const { data, error } = await (supabase as any).rpc("get_wallet_cost_basis", { p_wallet: normalized })
+  const rpcParams: Record<string, any> = { p_wallet: normalized }
+  if (collectionId) rpcParams.p_collection_id = collectionId
+
+  const { data, error } = await (supabase as any).rpc("get_wallet_cost_basis", rpcParams)
 
   // Enrich with acquisition_method from moment_acquisitions
   if (data && Array.isArray(data)) {

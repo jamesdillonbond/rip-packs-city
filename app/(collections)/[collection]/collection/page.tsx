@@ -520,7 +520,7 @@ export default function WalletPage() {
   useEffect(function() {
     if (!activeWallet) return
     let cancelled = false
-    fetch("/api/collection-moments?wallet=" + encodeURIComponent(activeWallet) + "&limit=1&page=1")
+    fetch("/api/collection-moments?wallet=" + encodeURIComponent(activeWallet) + "&limit=1&page=1&collection=" + encodeURIComponent(collectionSlug))
       .then(function(r) { return r.ok ? r.json() : null })
       .then(function(json) {
         if (cancelled || !json) return
@@ -530,13 +530,13 @@ export default function WalletPage() {
       })
       .catch(function() {})
     return function() { cancelled = true }
-  }, [activeWallet])
+  }, [activeWallet, collectionSlug])
 
   // ── Fetch cost basis when wallet changes ──────────────────────────────────
   useEffect(function() {
     if (!activeWallet) { setCostBasis(new Map()); return }
     let cancelled = false
-    fetch("/api/cost-basis?wallet=" + encodeURIComponent(activeWallet))
+    fetch("/api/cost-basis?wallet=" + encodeURIComponent(activeWallet) + "&collection=" + encodeURIComponent(collectionSlug))
       .then(function(r) { return r.ok ? r.json() : null })
       .then(function(data) {
         if (cancelled || !data) return
@@ -556,7 +556,7 @@ export default function WalletPage() {
       })
       .catch(function() {})
     return function() { cancelled = true }
-  }, [activeWallet])
+  }, [activeWallet, collectionSlug])
 
   // ── FCL wallet connection (for own-collection detection) ───────────────────
   useEffect(function() {
@@ -773,7 +773,7 @@ export default function WalletPage() {
       serial: m.serial_number ?? undefined,
       mintCount: m.circulation_count ?? undefined,
       mintSize: m.circulation_count ?? undefined,
-      tier: m.tier ?? undefined,
+      tier: m.tier ? m.tier.replace(/^MOMENT_TIER_/i, "") : undefined,
       series: m.series_number != null ? String(m.series_number) : undefined,
       thumbnailUrl: m.thumbnail_url,
       acquiredAt: m.acquired_at ?? null,

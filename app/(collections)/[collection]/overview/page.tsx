@@ -138,13 +138,13 @@ export default function OverviewPage() {
   // Fetch overview stats (FMV coverage, volume, movers)
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch("/api/overview-stats")
+      const res = await fetch("/api/overview-stats?collection=" + encodeURIComponent(collection))
       if (!res.ok) return
       setOverviewStats(await res.json())
     } catch { /* swallow */ } finally {
       setStatsLoading(false)
     }
-  }, [])
+  }, [collection])
 
   // Fetch market pulse from the concierge context API
   const fetchPulse = useCallback(async () => {
@@ -163,7 +163,7 @@ export default function OverviewPage() {
 
   const fetchSales = useCallback(async () => {
     try {
-      const res = await fetch("/api/edition-sales?limit=5")
+      const res = await fetch("/api/edition-sales?limit=5&collection=" + encodeURIComponent(collection))
       if (!res.ok) return
       const data = await res.json()
       if (Array.isArray(data.sales)) setTopSales(data.sales)
@@ -171,19 +171,19 @@ export default function OverviewPage() {
     } catch { /* swallow */ } finally {
       setSalesLoading(false)
     }
-  }, [])
+  }, [collection])
 
   // Fetch top 5 sniper deals with minDiscount=15
   const fetchSniper = useCallback(async () => {
     try {
-      const res = await fetch("/api/sniper-feed?limit=5&minDiscount=15", { cache: "no-store" })
+      const res = await fetch("/api/sniper-feed?limit=5&minDiscount=15&collection=" + encodeURIComponent(collection), { cache: "no-store" })
       if (!res.ok) return
       const data = await res.json()
       if (Array.isArray(data.deals)) setSniperDeals(data.deals.slice(0, 5))
     } catch { /* swallow */ } finally {
       setSniperLoading(false)
     }
-  }, [])
+  }, [collection])
 
   // Fetch pipeline health for freshness indicator
   const fetchHealth = useCallback(async () => {
