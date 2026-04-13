@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { fireNextPipelineStep } from "@/lib/pipeline-chain";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -27,12 +28,16 @@ type CollectionConfig = {
   seriesNames: Record<number, string>;
   buyUrlBase: string;
   pagesToFetch: number;
+  // If set, chain to this collection slug after this one completes
+  chainNext: string | null;
+  // If true, call fmv_from_cached_listings RPC after inserting listings
+  askOnlyFmv: boolean;
 };
 
 const COLLECTIONS: Record<string, CollectionConfig> = {
   "nba-top-shot": {
     slug: "nba-top-shot",
-    collectionId: "c7a95cbe-024e-44c0-a7f3-6a821528834a",
+    collectionId: "95f28a17-224a-4025-96ad-adf8a4c63bfd",
     flowtyEndpoint: "https://api2.flowty.io/collection/0x0b2a3299cc857e29/TopShot",
     flowtyCollectionFilter: "0x0b2a3299cc857e29.TopShot",
     seriesNames: {
@@ -41,6 +46,8 @@ const COLLECTIONS: Record<string, CollectionConfig> = {
     },
     buyUrlBase: "https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/NFT/",
     pagesToFetch: 22,
+    chainNext: "nfl-all-day",
+    askOnlyFmv: false,
   },
   "nfl-all-day": {
     slug: "nfl-all-day",
@@ -51,7 +58,9 @@ const COLLECTIONS: Record<string, CollectionConfig> = {
       0: "Series 1", 1: "Series 2", 2: "Series 3", 3: "Series 4", 4: "Series 5",
     },
     buyUrlBase: "https://www.flowty.io/asset/0xe4cf4bdc1751c65d/AllDay/NFT/",
-    pagesToFetch: 10,
+    pagesToFetch: 6,
+    chainNext: null,
+    askOnlyFmv: true,
   },
 };
 
@@ -70,10 +79,17 @@ function flowtyBody(from: number, config: CollectionConfig) {
   };
 }
 
-function getTrait(traits: any[], name: string): string {
+// Multi-variant trait lookup — tries each name in order (case-sensitive match
+// on trait.name or trait.trait_type), returns first non-empty hit.
+function getTraitMulti(traits: any[], ...names: string[]): string {
   if (!Array.isArray(traits)) return "";
-  const t = traits.find(function(tr: any) { return tr && (tr.name === name || tr.trait_type === name); });
-  return t && t.value ? String(t.value) : "";
+  for (const name of names) {
+    const t = traits.find(function(tr: any) {
+      return tr && (tr.name === name || tr.trait_type === name);
+    });
+    if (t && t.value != null && String(t.value).trim() !== "") return String(t.value).trim();
+  }
+  return "";
 }
 
 async function fetchFlowtyPage(from: number, config: CollectionConfig): Promise<any[]> {
@@ -115,10 +131,20 @@ function mapFlowtyListing(nft: any, config: CollectionConfig): any | null {
     const discount = fmvNum && fmvNum > 0 && isFinite(fmvNum) ? ((fmvNum - price) / fmvNum) * 100 : null;
 
     const traits = (nft.nftView && Array.isArray(nft.nftView.traits)) ? nft.nftView.traits : [];
-    const seriesStr = getTrait(traits, "SeriesNumber");
+
+    // Extract traits with multi-variant names (covers Top Shot + All Day + future collections)
+    const seriesStr = getTraitMulti(traits, "SeriesNumber", "seriesNumber", "Series Number", "series");
     const seriesNum = seriesStr ? parseInt(seriesStr, 10) : null;
-    const tier = getTrait(traits, "Tier") || "COMMON";
-    const playerName = (nft.card && nft.card.title ? String(nft.card.title) : "").trim();
+    const tier = getTraitMulti(traits, "Tier", "Moment Tier", "tier", "momentTier") || "COMMON";
+    const teamName = getTraitMulti(traits, "TeamAtMoment", "Team", "teamAtMoment", "team", "TeamName", "teamName");
+    const setName = getTraitMulti(traits, "SetName", "Set Name", "setName", "set_name");
+    const editionFlowID = getTraitMulti(traits, "Edition ID", "editionID", "editionFlowID", "EditionFlowID");
+
+    // Player name: prefer card.title (works for both), fall back to trait variants
+    const playerName = (
+      (nft.card && nft.card.title ? String(nft.card.title) : "") ||
+      getTraitMulti(traits, "Full Name", "Player Name", "playerFullName", "playerName", "name")
+    ).trim();
     const flowId = nft.id ? String(nft.id) : "";
     const listingResourceId = order.listingResourceID ? String(order.listingResourceID) : "";
 
@@ -126,15 +152,28 @@ function mapFlowtyListing(nft: any, config: CollectionConfig): any | null {
 
     const serial = parseInt(String((nft.card && nft.card.num) || "0"), 10) || 0;
     const circ = parseInt(String((nft.card && nft.card.max) || "0"), 10) || 0;
-    const imageUrl = (nft.card && Array.isArray(nft.card.images) && nft.card.images[0]) ? nft.card.images[0].url : null;
+
+    // Thumbnail: for All Day, build from edition ID; for others, use card images
+    let imageUrl: string | null = null;
+    if (config.slug === "nfl-all-day" && editionFlowID) {
+      imageUrl = "https://media.nflallday.com/editions/" + editionFlowID + "/media/image?width=512&format=webp&quality=90";
+    } else {
+      imageUrl = (nft.card && Array.isArray(nft.card.images) && nft.card.images[0]) ? nft.card.images[0].url : null;
+    }
+
+    // moment_id: for All Day, use editionFlowID (maps to editions.external_id);
+    // for Top Shot, use nftView.uuid
+    const momentId = config.slug === "nfl-all-day"
+      ? (editionFlowID || null)
+      : ((nft.nftView && nft.nftView.uuid) ? String(nft.nftView.uuid) : null);
 
     return {
       id: "flowty-" + flowId + "-" + listingResourceId,
       flow_id: flowId,
-      moment_id: (nft.nftView && nft.nftView.uuid) ? String(nft.nftView.uuid) : null,
+      moment_id: momentId,
       player_name: playerName,
-      team_name: getTrait(traits, "TeamAtMoment"),
-      set_name: getTrait(traits, "SetName"),
+      team_name: teamName,
+      set_name: setName,
       series_name: (seriesNum !== null && !isNaN(seriesNum)) ? (config.seriesNames[seriesNum] || "Series " + seriesNum) : "",
       tier: tier.toUpperCase(),
       serial_number: serial,
@@ -151,7 +190,7 @@ function mapFlowtyListing(nft: any, config: CollectionConfig): any | null {
       badge_slugs: [],
       listing_resource_id: listingResourceId,
       storefront_address: order.storefrontAddress ? String(order.storefrontAddress) : "",
-      is_locked: getTrait(traits, "Locked") === "true",
+      is_locked: getTraitMulti(traits, "Locked", "locked") === "true",
       raw_data: null,
       listed_at: order.blockTimestamp ? new Date(Number(order.blockTimestamp)).toISOString() : null,
       cached_at: new Date().toISOString(),
@@ -245,6 +284,27 @@ async function backfillAskProxyFmv(listings: any[]): Promise<{ created: number; 
   return { created, editionsConsidered: minAskByEdition.size };
 }
 
+// Call the fmv_from_cached_listings RPC to create ASK_ONLY fmv_snapshots
+// for collections that don't have sales-based FMV (e.g. All Day).
+async function runAskOnlyFmv(collectionId: string): Promise<number> {
+  try {
+    const { data, error } = await supabase.rpc("fmv_from_cached_listings", {
+      p_collection_id: collectionId,
+      p_algo_version: "v1.0_ask_only",
+    });
+    if (error) {
+      console.log("[listing-cache] fmv_from_cached_listings error: " + error.message);
+      return 0;
+    }
+    const count = typeof data === "number" ? data : 0;
+    console.log("[listing-cache] ASK_ONLY FMV snapshots created: " + count);
+    return count;
+  } catch (e: any) {
+    console.log("[listing-cache] fmv_from_cached_listings exception: " + (e.message || "unknown"));
+    return 0;
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const auth = req.headers.get("authorization");
@@ -254,6 +314,7 @@ export async function POST(req: NextRequest) {
 
     // Collection param: ?collection=nfl-all-day or defaults to nba-top-shot
     const collectionSlug = req.nextUrl.searchParams.get("collection") ?? "nba-top-shot";
+    const chain = req.nextUrl.searchParams.get("chain") === "true";
     const config = getCollectionConfig(collectionSlug);
     console.log("[listing-cache] Collection: " + config.slug + " (" + config.flowtyEndpoint + ")");
 
@@ -265,8 +326,13 @@ export async function POST(req: NextRequest) {
     console.log("[listing-cache] Fetched " + allNfts.length + " raw NFTs from Flowty (" + config.pagesToFetch + " pages)");
 
     if (allNfts.length === 0) {
+      // Chain to next collection even on empty result
+      if (config.chainNext && chain) {
+        await fireNextPipelineStep("/api/listing-cache?collection=" + config.chainNext, chain);
+      }
       return NextResponse.json({
         ok: true, message: "Flowty returned 0 - preserving existing cache",
+        collection: config.slug,
         cached: 0, elapsed: Date.now() - startTime,
       });
     }
@@ -279,6 +345,9 @@ export async function POST(req: NextRequest) {
     console.log("[listing-cache] Mapped " + listings.length + " valid listings");
 
     if (listings.length === 0) {
+      if (config.chainNext && chain) {
+        await fireNextPipelineStep("/api/listing-cache?collection=" + config.chainNext, chain);
+      }
       return NextResponse.json({
         ok: true, message: "All listings filtered out during mapping",
         collection: config.slug,
@@ -287,9 +356,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Delete existing cached listings for this collection + source only
-    const delResult = config.collectionId
-      ? await supabase.from("cached_listings").delete().eq("source", "flowty").eq("collection_id", config.collectionId)
-      : await supabase.from("cached_listings").delete().eq("source", "flowty");
+    const delResult = await supabase.from("cached_listings").delete()
+      .eq("source", "flowty").eq("collection_id", config.collectionId);
     if (delResult.error) {
       console.log("[listing-cache] Delete error: " + delResult.error.message);
     }
@@ -318,17 +386,30 @@ export async function POST(req: NextRequest) {
 
     console.log("[listing-cache] Done: " + inserted + " inserted, " + insertErrors + " chunk errors");
 
+    // ASK_ONLY FMV for collections without sales-based FMV (e.g. All Day)
+    let askOnlyFmvCount = 0;
+    if (config.askOnlyFmv) {
+      askOnlyFmvCount = await runAskOnlyFmv(config.collectionId);
+    }
+
     // Ask-proxy FMV backfill — creates LOW-confidence FMV snapshots for editions
-    // with active listings but no existing FMV history.
+    // with active listings but no existing FMV history (Top Shot only).
     let askProxyCreated = 0;
     let askProxyConsidered = 0;
-    try {
-      const result = await backfillAskProxyFmv(listings);
-      askProxyCreated = result.created;
-      askProxyConsidered = result.editionsConsidered;
-      console.log("[listing-cache] ask-proxy FMV: created " + askProxyCreated + " (considered " + askProxyConsidered + ")");
-    } catch (e: any) {
-      console.log("[listing-cache] ask-proxy FMV error: " + (e.message || "unknown"));
+    if (!config.askOnlyFmv) {
+      try {
+        const result = await backfillAskProxyFmv(listings);
+        askProxyCreated = result.created;
+        askProxyConsidered = result.editionsConsidered;
+        console.log("[listing-cache] ask-proxy FMV: created " + askProxyCreated + " (considered " + askProxyConsidered + ")");
+      } catch (e: any) {
+        console.log("[listing-cache] ask-proxy FMV error: " + (e.message || "unknown"));
+      }
+    }
+
+    // Chain to next collection if pipeline chaining is active
+    if (config.chainNext && chain) {
+      await fireNextPipelineStep("/api/listing-cache?collection=" + config.chainNext, chain);
     }
 
     return NextResponse.json({
@@ -336,6 +417,7 @@ export async function POST(req: NextRequest) {
       fetched: allNfts.length, mapped: listings.length,
       cached: inserted, errors: insertErrors,
       askProxyCreated, askProxyConsidered,
+      askOnlyFmvCount,
       elapsed: Date.now() - startTime,
     });
   } catch (e: any) {
