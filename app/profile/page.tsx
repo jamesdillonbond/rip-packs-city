@@ -576,6 +576,120 @@ function CostBasisCard(props: { ownerKey: string }) {
   );
 }
 
+// ─── ACQUISITION BREAKDOWN CARD ──────────────────────────────
+const ACQ_COLORS: Record<string, string> = {
+  pack_pull: "#3B82F6",
+  marketplace: "#10B981",
+  challenge_reward: "#F59E0B",
+  loan_default: "#F87171",
+  gift: "#818CF8",
+  airdrop: "#34D399",
+};
+const ACQ_LABELS: Record<string, string> = {
+  pack_pull: "Pack Pulls",
+  marketplace: "Marketplace",
+  challenge_reward: "Rewards",
+  loan_default: "Loan Default",
+  gift: "Gifts",
+  airdrop: "Airdrops",
+};
+
+interface AcqBreakdownItem {
+  method: string;
+  count: number;
+  total_spent: number;
+}
+
+function AcquisitionBreakdownCard(props: { ownerKey: string }) {
+  const [data, setData] = useState<{ breakdown: AcqBreakdownItem[]; total_moments: number; total_spent: number; locked_count: number } | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(function() {
+    if (!props.ownerKey) return;
+    setLoading(true);
+    // Resolve wallet addresses from saved_wallets, then call acquisition-stats for each
+    fetch("/api/profile/saved-wallets?ownerKey=" + encodeURIComponent(props.ownerKey))
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(walletData) {
+        const wallets: Array<{ wallet_addr: string }> = walletData?.wallets ?? [];
+        if (wallets.length === 0) { setLoading(false); return; }
+        // Use first wallet for now
+        const addr = wallets[0].wallet_addr;
+        const walletHex = addr.startsWith("0x") ? addr : "0x" + addr;
+        return fetch("/api/acquisition-stats?wallet=" + encodeURIComponent(walletHex))
+          .then(function(r) { return r.ok ? r.json() : null; })
+          .then(function(d) { if (d && Array.isArray(d.breakdown)) setData(d); });
+      })
+      .catch(function() {})
+      .finally(function() { setLoading(false); });
+  }, [props.ownerKey]);
+
+  const breakdown = data?.breakdown ?? [];
+  const total = data?.total_moments ?? 0;
+  const totalSpent = data?.total_spent ?? 0;
+
+  return (
+    <section className="rpc-card" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "16px 18px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <span style={labelStyle}>◉ Acquisition Breakdown</span>
+        {total > 0 && <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.3)" }}>{total.toLocaleString() + " moments"}</span>}
+      </div>
+      {loading ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {[80, 60].map(function(w, i) { return <div key={i} style={{ width: w + "%", height: 18, background: "rgba(255,255,255,0.04)", borderRadius: 4, animation: "pulse 1.6s ease-in-out infinite" }} />; })}
+        </div>
+      ) : !data || breakdown.length === 0 ? (
+        <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", padding: "6px 0" }}>No acquisition data yet.</div>
+      ) : (
+        <>
+          {/* Stacked horizontal bar */}
+          <div style={{ display: "flex", height: 20, borderRadius: 6, overflow: "hidden", marginBottom: 14 }}>
+            {breakdown.map(function(item) {
+              const pct = total > 0 ? (item.count / total) * 100 : 0;
+              if (pct < 0.5) return null;
+              const color = ACQ_COLORS[item.method] ?? "#6B7280";
+              return (
+                <div
+                  key={item.method}
+                  title={ACQ_LABELS[item.method] ?? item.method}
+                  style={{ width: pct + "%", background: color, minWidth: pct > 2 ? 8 : 2, transition: "width 0.3s ease" }}
+                />
+              );
+            })}
+          </div>
+          {/* Legend rows */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {breakdown.map(function(item) {
+              const color = ACQ_COLORS[item.method] ?? "#6B7280";
+              const label = ACQ_LABELS[item.method] ?? item.method;
+              const pct = total > 0 ? ((item.count / total) * 100).toFixed(1) : "0";
+              return (
+                <div key={item.method} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 11, fontFamily: condensedFont, fontWeight: 700, color: "rgba(255,255,255,0.7)" }}>{label}</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 11, fontFamily: monoFont, color: "rgba(255,255,255,0.5)" }}>{item.count.toLocaleString()}</span>
+                    <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", width: 40, textAlign: "right" }}>{pct + "%"}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {/* Total spent */}
+          {totalSpent > 0 && (
+            <div style={{ paddingTop: 10, marginTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.15em", textTransform: "uppercase" }}>Total Spent</span>
+              <span style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 18, color: "#fff" }}>{fmtDollars(totalSpent)}</span>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 // ─── TIER BREAKDOWN CARD ──────────────────────────────────────
 const TIER_COLORS: Record<string, string> = {
   Common: "#9CA3AF",
@@ -1538,6 +1652,13 @@ function ProfilePageInner() {
           <div className="rpc-sets-activity" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
             <CostBasisCard ownerKey={ownerKey} />
             <TierBreakdownCard ownerKey={ownerKey} />
+          </div>
+        )}
+
+        {/* ACQUISITION BREAKDOWN */}
+        {ownerKey && (
+          <div style={{ marginBottom: 14 }}>
+            <AcquisitionBreakdownCard ownerKey={ownerKey} />
           </div>
         )}
 

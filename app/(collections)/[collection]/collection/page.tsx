@@ -783,6 +783,7 @@ export default function WalletPage() {
     buy_price: number | null
     acquisition_method: string | null
     loan_principal: number | null
+    is_locked: boolean
   }
 
   const ACQUISITION_LABEL_MAP: Record<string, string | null> = { marketplace: "Bought", pack_pull: "Pack", loan_default: "Loan", gift: "Gift", challenge_reward: "Reward", airdrop: "Airdrop", unknown: null }
@@ -832,7 +833,7 @@ export default function WalletPage() {
       bestMarket: bestMarketVal,
       officialBadges: [],
       specialSerialTraits: [],
-      isLocked: false,
+      isLocked: m.is_locked === true,
       bestAsk: lowAskVal,
       bestOffer: null,
       lastPurchasePrice: null,
@@ -1808,19 +1809,28 @@ export default function WalletPage() {
                         <div className="flex items-center gap-2">
                           {(() => {
                             const thumbUrl = getThumbnailUrl(row)
-                            return thumbUrl ? (
-                              <img
-                                src={thumbUrl}
-                                alt={row.playerName}
-                                width={48}
-                                height={64}
-                                loading="lazy"
-                                className="shrink-0 rounded object-cover bg-zinc-900"
-                                style={{ width: 48, height: 64 }}
-                                onError={function(e) { (e.target as HTMLImageElement).style.display = "none" }}
-                              />
-                            ) : (
-                              <div className="shrink-0 rounded bg-zinc-900" style={{ width: 48, height: 64 }} />
+                            return (
+                              <div className="relative shrink-0" style={{ width: 48, height: 64 }}>
+                                {thumbUrl ? (
+                                  <img
+                                    src={thumbUrl}
+                                    alt={row.playerName}
+                                    width={48}
+                                    height={64}
+                                    loading="lazy"
+                                    className="rounded object-cover bg-zinc-900"
+                                    style={{ width: 48, height: 64 }}
+                                    onError={function(e) { (e.target as HTMLImageElement).style.display = "none" }}
+                                  />
+                                ) : (
+                                  <div className="rounded bg-zinc-900" style={{ width: 48, height: 64 }} />
+                                )}
+                                {isLocked && (
+                                  <div className="absolute inset-0 rounded bg-zinc-900/60 flex items-center justify-center">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                  </div>
+                                )}
+                              </div>
                             )
                           })()}
                           <div>
@@ -1831,6 +1841,21 @@ export default function WalletPage() {
                               {row.badgeInfo?.is_three_star_rookie && row.badgeInfo?.has_rookie_mint && (
                                 <BadgePill title="Three-Star Rookie" />
                               )}
+                              {row.acquisitionMethod && (() => {
+                                const acqConfig: Record<string, { label: string; icon: string; color: string }> = {
+                                  pack_pull: { label: "Pack", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4", color: "59,130,246" },
+                                  marketplace: { label: "Bought", icon: "M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.3 2.3c-.5.5-.2 1.4.5 1.4H17m0 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-8 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4z", color: "16,185,129" },
+                                  challenge_reward: { label: "Reward", icon: "M12 15l-2 5h4l-2-5zm-4-3a4 4 0 0 1 8 0H8zm-2-2h12l1-2H5l1 2zm3-4h6V3H9v3z", color: "245,158,11" },
+                                }
+                                const cfg = acqConfig[row.acquisitionMethod!]
+                                if (!cfg) return null
+                                return (
+                                  <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ background: "rgba(" + cfg.color + ",0.1)", color: "rgba(" + cfg.color + ",0.8)", border: "1px solid rgba(" + cfg.color + ",0.15)" }}>
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={cfg.icon}/></svg>
+                                    {cfg.label}
+                                  </span>
+                                )
+                              })()}
                             </div>
                           </div>
                         </div>
