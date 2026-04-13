@@ -289,7 +289,7 @@ export async function GET(req: NextRequest) {
       " onChain=" + onChainIds.length + " cached=" + cachedIds.size +
       " new=" + newIds.length + " removed=" + removedCount)
 
-    if (newIds.length === 0) {
+    if (newIds.length === 0 && sp.get("refreshLocked") !== "1") {
       return NextResponse.json({
         ok: true, total_on_chain: onChainIds.length, total_cached: cachedIds.size,
         new_stubs_inserted: 0, enriched: 0, removed_count: removedCount,
@@ -409,6 +409,61 @@ export async function GET(req: NextRequest) {
     console.log("[cache-refresh] Done: stubs=" + stubsInserted + " enriched=" + enriched +
       " elapsed=" + (Date.now() - startTime) + "ms")
 
+    // Step 7: Optional is_locked backfill for ALL cached moments (triggered by refreshLocked=1)
+    let lockedBackfillCount = 0
+    let lockedBackfillTotal = 0
+    let lockedBackfillRemaining = 0
+    const refreshLocked = sp.get("refreshLocked") === "1"
+    if (refreshLocked && collectionSlug === "nba-top-shot") {
+      // Fetch all cached moment IDs for this wallet+collection
+      const allCachedIds: string[] = []
+      for (let i = 0; i < onChainIds.length; i += 500) {
+        const chunk = onChainIds.slice(i, i + 500)
+        const { data } = await supabase
+          .from("wallet_moments_cache")
+          .select("moment_id")
+          .eq("wallet_address", wallet)
+          .eq("collection_id", collectionId)
+          .in("moment_id", chunk)
+        for (const row of data ?? []) {
+          if (row.moment_id) allCachedIds.push(String(row.moment_id))
+        }
+      }
+
+      // Cap at 500 to stay within Vercel function timeout
+      const CAP = 500
+      const toRefreshLocked = allCachedIds.slice(0, CAP)
+      lockedBackfillRemaining = Math.max(0, allCachedIds.length - CAP)
+      lockedBackfillTotal = toRefreshLocked.length
+
+      if (lockedBackfillRemaining > 0) {
+        console.log("[cache-refresh] is_locked backfill: processing " + CAP + " of " + allCachedIds.length + " cached moments (" + lockedBackfillRemaining + " remain)")
+      }
+
+      // Batch GQL in groups of 10, concurrency 5
+      const batches: string[][] = []
+      for (let i = 0; i < toRefreshLocked.length; i += 10) {
+        batches.push(toRefreshLocked.slice(i, i + 10))
+      }
+
+      await mapWithConcurrency(batches, 5, async function(batch) {
+        const results = await Promise.all(batch.map(function(id) { return fetchMomentGql(id) }))
+        for (let j = 0; j < batch.length; j++) {
+          const gqlData = results[j]
+          if (gqlData == null) continue
+          const locked = gqlData.isLocked === true
+          if (locked) lockedBackfillCount++
+          await supabase
+            .from("wallet_moments_cache")
+            .update({ is_locked: locked })
+            .eq("wallet_address", wallet)
+            .eq("moment_id", batch[j])
+        }
+      })
+
+      console.log("[cache-refresh] is_locked backfill complete: " + lockedBackfillCount + "/" + lockedBackfillTotal + " locked")
+    }
+
     return NextResponse.json({
       ok: true,
       total_on_chain: onChainIds.length,
@@ -416,6 +471,7 @@ export async function GET(req: NextRequest) {
       new_stubs_inserted: stubsInserted,
       enriched,
       removed_count: removedCount,
+      locked_backfill: refreshLocked ? { total: lockedBackfillTotal, locked: lockedBackfillCount, remaining: lockedBackfillRemaining } : undefined,
       elapsed: Date.now() - startTime,
     })
   } catch (e: any) {
