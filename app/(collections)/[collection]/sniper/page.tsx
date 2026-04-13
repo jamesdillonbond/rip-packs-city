@@ -479,7 +479,8 @@ export default function SniperPage() {
   const accent = collectionObj?.accent ?? "#E03A2F";
   const isAllDay = collectionSlug === "nfl-all-day";
   const isPinnacle = collectionSlug === "pinnacle" || collectionSlug === "disney-pinnacle";
-  const feedEndpoint = isPinnacle ? "/api/pinnacle-sniper" : isAllDay ? "/api/allday-sniper-feed" : "/api/sniper-feed";
+  const feedEndpoint = isPinnacle ? "/api/pinnacle-sniper" : "/api/sniper-feed";
+  const feedCollection = isAllDay ? "nfl-all-day" : "nba-top-shot";
   const brandLabel = isPinnacle ? "Pinnacle" : collectionObj?.shortLabel ?? "Top Shot";
 
   const isMobile = useMobile();
@@ -637,6 +638,7 @@ export default function SniperPage() {
 
   const buildFeedUrl = useCallback(() => {
     const params = new URLSearchParams();
+    if (!isPinnacle) params.set("collection", feedCollection);
     if (tierTab !== "all") params.set("tier", tierTab);
     if (minDiscount > 0) params.set("minDiscount", String(minDiscount));
     if (maxPrice > 0) params.set("maxPrice", String(maxPrice));
@@ -646,7 +648,7 @@ export default function SniperPage() {
     if (flowWalletOnly) params.set("flowWalletOnly", "true");
     params.set("sortBy", sortBy);
     return `${feedEndpoint}?${params}`;
-  }, [tierTab, minDiscount, maxPrice, playerFilter, serialFilter, badgeOnly, flowWalletOnly, sortBy, feedEndpoint]);
+  }, [tierTab, minDiscount, maxPrice, playerFilter, serialFilter, badgeOnly, flowWalletOnly, sortBy, feedEndpoint, feedCollection, isPinnacle]);
 
   const fetchFeed = useCallback(async () => {
     abortControllerRef.current?.abort();
@@ -786,7 +788,7 @@ export default function SniperPage() {
           .catch(() => setDepthFloorError("Could not load floor data"))
       : Promise.resolve(setDepthFloorError("No edition data available"));
 
-    const listingsPromise = fetch(`${feedEndpoint}?editionKey=${encodeURIComponent(deal.editionKey)}&limit=20`, { cache: "no-store" })
+    const listingsPromise = fetch(`${feedEndpoint}?collection=${feedCollection}&editionKey=${encodeURIComponent(deal.editionKey)}&limit=20`, { cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) return;
         const json = await res.json();
