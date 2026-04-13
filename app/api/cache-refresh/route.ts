@@ -165,31 +165,52 @@ async function mapWithConcurrency<T, R>(
   return results
 }
 
-// ── GQL helper for isLocked ─────────────────────────────────────────────────
+// ── GQL helper for moment enrichment (isLocked + metadata) ─────────────────
 
 const TOPSHOT_GQL_URL = "https://public-api.nbatopshot.com/graphql"
 
-const GQL_IS_LOCKED = `
-  query GetMomentLocked($id: ID!) {
+const GQL_GET_MOMENT = `
+  query GetMomentEnrich($id: ID!) {
     getMintedMoment(momentId: $id) {
-      data { isLocked }
+      data {
+        flowId
+        flowSerialNumber
+        tier
+        isLocked
+      }
     }
   }
 `
 
-async function fetchIsLocked(momentId: string): Promise<boolean> {
+type GqlMomentData = {
+  flowId?: string | null
+  flowSerialNumber?: number | null
+  tier?: string | null
+  isLocked?: boolean | null
+}
+
+async function fetchMomentGql(momentId: string): Promise<GqlMomentData | null> {
   try {
     const res = await fetch(TOPSHOT_GQL_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", "User-Agent": "sports-collectible-tool/0.1" },
-      body: JSON.stringify({ query: GQL_IS_LOCKED, variables: { id: momentId } }),
-      signal: AbortSignal.timeout(6000),
+      body: JSON.stringify({ query: GQL_GET_MOMENT, variables: { id: momentId } }),
+      signal: AbortSignal.timeout(8000),
     })
-    if (!res.ok) return false
+    if (!res.ok) {
+      console.log("[cache-refresh] GQL HTTP " + res.status + " for moment " + momentId)
+      return null
+    }
     const json = await res.json()
-    return json?.data?.getMintedMoment?.data?.isLocked === true
-  } catch {
-    return false
+    const data = json?.data?.getMintedMoment?.data as GqlMomentData | undefined
+    if (!data) {
+      console.log("[cache-refresh] GQL returned no data for moment " + momentId)
+      return null
+    }
+    return data
+  } catch (e: any) {
+    console.log("[cache-refresh] GQL error for moment " + momentId + ": " + (e.message || "unknown"))
+    return null
   }
 }
 
@@ -344,33 +365,36 @@ export async function GET(req: NextRequest) {
       const isTopShot = collectionSlug === "nba-top-shot"
       const results = await mapWithConcurrency(toEnrich, 8, async function(id) {
         try {
-          const [meta, locked] = await Promise.all([
+          const [meta, gql] = await Promise.all([
             fcl.query({
               cadence: scripts.getMetadata,
               args: (arg: any) => [arg(wallet, t.Address), arg(id, t.UInt64)],
             }) as Promise<Record<string, string>>,
-            isTopShot ? fetchIsLocked(id) : Promise.resolve(false),
+            isTopShot ? fetchMomentGql(id) : Promise.resolve(null),
           ])
-          return { id, meta, locked }
+          return { id, meta, gql }
         } catch (e: any) {
           console.log("[cache-refresh] metadata error for " + id + ": " + (e.message || "unknown"))
-          return { id, meta: null, locked: false }
+          return { id, meta: null, gql: null }
         }
       })
 
-      for (const { id, meta, locked } of results) {
+      let lockedCount = 0
+      for (const { id, meta, gql } of results) {
         if (!meta) continue
         const editionKey = scripts.buildEditionKey(meta)
         const seriesNum = meta.series ? parseInt(meta.series, 10) : null
+        const isLocked = gql?.isLocked === true
+        if (isLocked) lockedCount++
         const update: Record<string, any> = {
           player_name: meta.player || null,
           set_name: meta.setName || null,
           edition_key: editionKey || null,
           serial_number: meta.serial ? parseInt(meta.serial, 10) : null,
-          is_locked: locked,
+          is_locked: isLocked,
         }
         if (seriesNum !== null && !isNaN(seriesNum)) update.series_number = seriesNum
-        if (meta.tier) update.tier = meta.tier
+        if (meta.tier || gql?.tier) update.tier = meta.tier || gql?.tier
 
         const { error } = await supabase
           .from("wallet_moments_cache")
@@ -379,6 +403,7 @@ export async function GET(req: NextRequest) {
           .eq("moment_id", id)
         if (!error) enriched++
       }
+      console.log("[cache-refresh] isLocked: " + lockedCount + "/" + results.length + " moments locked")
     }
 
     console.log("[cache-refresh] Done: stubs=" + stubsInserted + " enriched=" + enriched +
