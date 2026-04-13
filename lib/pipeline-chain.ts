@@ -20,7 +20,8 @@ export async function fireNextPipelineStep(nextPath: string, chain: boolean) {
   const base = process.env.VERCEL_URL
     ? "https://" + process.env.VERCEL_URL
     : "https://rip-packs-city.vercel.app"
-  const url = base + nextPath + "?chain=true"
+  const separator = nextPath.includes("?") ? "&" : "?"
+  const url = base + nextPath + separator + "chain=true"
   console.log(`[PIPELINE-CHAIN] Scheduling chain to ${nextPath} at ${url}`)
 
   after(async () => {
