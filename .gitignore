@@ -11,3 +11,12 @@ pnpm-debug.log*
 *.tsbuildinfo
 .mcp.json
 .vercel/
+
+# Local credentials and data dumps
+creds.json
+scripts/ts-creds.json
+settings.local.json
+allday-moments.json
+flowty-locker-test.json
+nftlocker-contract.json
+nftlocker-full.json
