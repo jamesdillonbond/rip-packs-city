@@ -368,7 +368,7 @@ export default function PacksPage() {
     .filter((l) => {
       if (tierFilter !== "all" && l.tier !== tierFilter) return false
       if (packTypeFilter !== "all" && l.packType !== packTypeFilter) return false
-      if (searchFilter && !l.title.toLowerCase().includes(searchFilter.toLowerCase())) return false
+      if (searchFilter && !(l.title ?? "").toLowerCase().includes(searchFilter.toLowerCase())) return false
       return true
     })
     .sort((a, b) => {
@@ -385,7 +385,7 @@ export default function PacksPage() {
       } else if (sortKey === "momentsPerPack") {
         diff = a.momentsPerPack - b.momentsPerPack
       } else if (sortKey === "title") {
-        diff = a.title.localeCompare(b.title)
+        diff = (a.title ?? "").localeCompare(b.title ?? "")
       } else if (sortKey === "owned") {
         diff = (ownedPacks[b.distId] ?? 0) - (ownedPacks[a.distId] ?? 0)
         if (diff === 0) diff = tierOrder(a.tier) - tierOrder(b.tier)
