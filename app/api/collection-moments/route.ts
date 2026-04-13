@@ -200,19 +200,21 @@ export async function GET(req: NextRequest) {
       })
       .catch(function () { return 0 })
 
-    // Add thumbnail URLs (string formatting, not worth doing in SQL)
+    // Add thumbnail URLs: prefer RPC thumbnail_url (from editions table), fall back to constructed Top Shot URL
     const moments = rawMoments.map(function (row: any) {
-      let thumbnailUrl: string | null = null
-      const ek = row.edition_key as string | null
-      if (ek) {
-        const parts = ek.split(":")
-        if (parts.length === 2) {
-          thumbnailUrl = "https://assets.nbatopshot.com/resize/editions/" + parts[0] + "_" + parts[1] + "/play" + parts[1] + "_capture_Hero_Black_2880_2880_default.jpg?width=100&quality=80"
+      let thumbnailUrl: string | null = row.thumbnail_url ?? null
+      if (!thumbnailUrl) {
+        const ek = row.edition_key as string | null
+        if (ek) {
+          const parts = ek.split(":")
+          if (parts.length === 2) {
+            thumbnailUrl = "https://assets.nbatopshot.com/resize/editions/" + parts[0] + "_" + parts[1] + "/play" + parts[1] + "_capture_Hero_Black_2880_2880_default.jpg?width=100&quality=80"
+          }
         }
       }
       return {
         moment_id: row.moment_id,
-        edition_key: ek,
+        edition_key: row.edition_key ?? null,
         serial_number: row.serial_number != null ? Number(row.serial_number) : null,
         fmv_usd: row.fmv_usd != null ? Number(row.fmv_usd) : null,
         confidence: row.confidence ?? null,
@@ -231,10 +233,6 @@ export async function GET(req: NextRequest) {
         loan_principal: row.loan_principal != null ? Number(row.loan_principal) : null,
       }
     })
-
-    if (moments.length > 0) {
-      console.log("[collection-moments] first moment sample:", JSON.stringify(moments[0]).slice(0, 500))
-    }
 
     // GQL fallback for moments in current page missing player_name
     const missingByEditionKey = new Map<string, number[]>()

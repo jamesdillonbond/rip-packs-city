@@ -701,14 +701,10 @@ async function enrichWithAcquisitionData(rows: WalletRow[], wallet: string): Pro
     const momentIds = rows.map(r => r.momentId).filter(Boolean)
     if (!momentIds.length) return rows
 
-    console.log("[wallet-search] enrichWithAcquisitionData: wallet=" + wallet + " momentIds=" + momentIds.length + " first3=" + JSON.stringify(momentIds.slice(0, 3)))
-
     const { data, error } = await (supabaseAdmin as any).rpc("get_wallet_acquisition_data", {
       p_wallet: wallet,
       p_moment_ids: momentIds,
     })
-
-    console.log("[wallet-search] enrichWithAcquisitionData RPC result: count=" + (data ? data.length : 0) + " error=" + (error ? error.message : "none") + " first3=" + JSON.stringify((data ?? []).slice(0, 3)))
 
     if (error || !data) return rows
 

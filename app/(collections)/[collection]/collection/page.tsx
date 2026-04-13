@@ -204,7 +204,7 @@ function getThumbnailUrl(row: MomentRow): string | null {
     const parts = row.editionKey.split(":")
     if (parts.length === 2) {
       const [setID, playID] = parts
-      return `https://assets.nbatopshot.com/editions/${setID}${playID}/play${playID}_capture_Hero_Black_2880_2880_default.jpg`
+      return `https://assets.nbatopshot.com/resize/editions/${setID}_${playID}/play${playID}_capture_Hero_Black_2880_2880_default.jpg?width=100&quality=80`
     }
   }
   return null
@@ -797,10 +797,18 @@ export default function WalletPage() {
     if (acqMethod === "marketplace" && m.buy_price != null) basis = Number(m.buy_price)
     else if (acqMethod === "loan_default" && m.loan_principal != null) basis = Number(m.loan_principal)
 
+    // Map confidence to FMV method label
+    const conf = m.confidence?.toUpperCase() ?? null
+    const fmvMethodLabel: MomentRow["fmvMethod"] = conf === "HIGH" ? "band" : conf === "MEDIUM" ? "low-ask-only" : conf === "LOW" ? "best-offer-only" : "none"
+
+    // Determine best market from low_ask (Top Shot floor)
+    const bestMarketVal: MomentRow["bestMarket"] = lowAskVal ? "Top Shot" : null
+
     return {
       momentId: m.moment_id,
       playerName: m.player_name ?? "Unknown",
       team: m.team_name ?? undefined,
+      league: "NBA",
       setName: m.set_name ?? "Unknown Set",
       editionKey: m.edition_key,
       fmv: fmvVal,
@@ -814,11 +822,14 @@ export default function WalletPage() {
       acquiredAt: m.acquired_at ?? null,
       marketConfidence: (m.confidence?.toLowerCase() ?? "none") as "high" | "medium" | "low" | "none",
       fmvUsd: fmvVal,
+      fmvMethod: fmvMethodLabel,
       lowAsk: lowAskVal,
+      topshotAsk: lowAskVal,
+      bestMarket: bestMarketVal,
       officialBadges: [],
       specialSerialTraits: [],
       isLocked: false,
-      bestAsk: null,
+      bestAsk: lowAskVal,
       bestOffer: null,
       lastPurchasePrice: null,
       parallel: null,
@@ -1797,15 +1808,15 @@ export default function WalletPage() {
                               <img
                                 src={thumbUrl}
                                 alt={row.playerName}
-                                width={40}
-                                height={56}
+                                width={48}
+                                height={64}
                                 loading="lazy"
                                 className="shrink-0 rounded object-cover bg-zinc-900"
-                                style={{ width: 40, height: 56 }}
+                                style={{ width: 48, height: 64 }}
                                 onError={function(e) { (e.target as HTMLImageElement).style.display = "none" }}
                               />
                             ) : (
-                              <div className="shrink-0 rounded bg-zinc-900" style={{ width: 40, height: 56 }} />
+                              <div className="shrink-0 rounded bg-zinc-900" style={{ width: 48, height: 64 }} />
                             )
                           })()}
                           <div>
@@ -2046,7 +2057,7 @@ export default function WalletPage() {
                                 <div>Best Market: {row.bestMarket ?? (row.editionMarketSource ? row.editionMarketSource : "-")}</div>
                                 <div>Best Offer: {formatCurrency(row.bestOffer ?? row.editionBestOffer)}</div>
                                 <div>FMV: {fmv.text}</div>
-                                <div>FMV Method: {row.fmvMethod ?? "-"}</div>
+                                <div>FMV Method: {row.fmvMethod === "band" ? "WAP (high confidence)" : row.fmvMethod === "low-ask-only" ? "WAP (medium)" : row.fmvMethod === "best-offer-only" ? "Floor/Ask price" : row.fmvMethod === "none" ? "-" : (row.fmvMethod ?? "-")}</div>
                                 <div className={"font-medium " + conf.color}>Confidence: {conf.label}</div>
                               </div>
                             </div>
