@@ -177,6 +177,7 @@ function tierColor(t: string | null): string {
   if (t === "Legendary") return "#FFD700";
   if (t === "Ultimate") return "#FF6B35";
   if (t === "Rare") return "#818CF8";
+  if (t === "Uncommon") return "#14B8A6";
   if (t === "Fandom") return "#34D399";
   return "#94A3B8";
 }

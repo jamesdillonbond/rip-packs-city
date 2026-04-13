@@ -59,6 +59,7 @@ export async function generateMetadata(
 const TIER_COLORS: Record<string, string> = {
   legendary: "#FFD700",
   rare: "#A855F7",
+  uncommon: "#14B8A6",
   fandom: "#3B82F6",
   common: "#9CA3AF",
   ultimate: "#EF4444",

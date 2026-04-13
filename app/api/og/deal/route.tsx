@@ -35,9 +35,11 @@ export async function GET(req: NextRequest) {
       ? "#FFD700"
       : tier.toLowerCase() === "rare"
         ? "#A855F7"
-        : tier.toLowerCase() === "fandom"
-          ? "#3B82F6"
-          : "#9CA3AF";
+        : tier.toLowerCase() === "uncommon"
+          ? "#14B8A6"
+          : tier.toLowerCase() === "fandom"
+            ? "#3B82F6"
+            : "#9CA3AF";
 
   // Source badge
   const sourceLabel = source === "flowty" ? "FLOWTY" : "TOP SHOT";

@@ -68,10 +68,11 @@ const BADGE_COLORS: Record<string, { bg: string; text: string; border: string }>
   "Championship Year":  { bg: "rgba(255,255,255,0.04)", text: "rgba(255,255,255,0.55)", border: "rgba(255,255,255,0.12)" },
 }
 
-const TIER_ORDER = ["COMMON", "FANDOM", "RARE", "LEGENDARY", "ULTIMATE"]
+const TIER_ORDER = ["COMMON", "UNCOMMON", "FANDOM", "RARE", "LEGENDARY", "ULTIMATE"]
 
 const TIER_COLORS: Record<string, string> = {
   COMMON: "var(--rpc-text-muted)",
+  UNCOMMON: "var(--tier-uncommon)",
   FANDOM: "var(--rpc-info)",
   RARE: "var(--tier-rare)",
   LEGENDARY: "var(--tier-legendary)",
