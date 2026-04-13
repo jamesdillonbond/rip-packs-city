@@ -187,15 +187,7 @@ function formatAcquiredAt(iso: string | null | undefined): string {
   if (!iso) return "—"
   const d = new Date(iso)
   if (isNaN(d.getTime())) return "—"
-  const now = Date.now()
-  const diff = now - d.getTime()
-  const days = Math.floor(diff / 86400000)
-  if (days === 0) return "Today"
-  if (days === 1) return "Yesterday"
-  if (days < 7) return days + "d ago"
-  if (days < 30) return Math.floor(days / 7) + "w ago"
-  if (days < 365) return Math.floor(days / 30) + "mo ago"
-  return d.toLocaleDateString("en-US", { month: "short", year: "numeric" })
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 }
 
 function compareText(a?: string | null, b?: string | null) { return (a ?? "").localeCompare(b ?? "") }
@@ -1739,7 +1731,6 @@ export default function WalletPage() {
                 <th className="p-3 hidden lg:table-cell">Low Ask</th>
                 <th className="p-3 hidden lg:table-cell">Best Offer</th>
                 <th className="p-3 hidden xl:table-cell">Acquired</th>
-                <th className="p-3 hidden lg:table-cell">Purchase Price</th>
                 <th className="p-3">Details</th>
               </tr>
             </thead>
@@ -1846,25 +1837,27 @@ export default function WalletPage() {
                       <td className="p-3 text-sm hidden xl:table-cell">
                         {(function() {
                           const cb = costBasis.get(row.flowId ?? "")
-                          if (!cb) return <span className="text-zinc-700">—</span>
-                          const label = cb.costBasisLabel
-                          if (label === "Bought" && cb.buyPrice > 0) return <span className="font-mono text-white">${cb.buyPrice.toFixed(2)}</span>
-                          if (label === "Pack") return <span className="inline-block rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-zinc-600">PACK</span>
-                          if (label === "Loan" && cb.buyPrice > 0) return <span className="font-mono"><span className="text-amber-400">Loan</span> <span className="text-white">${cb.buyPrice.toFixed(2)}</span></span>
-                          if (label === "Gift") return <span className="inline-block rounded border border-blue-900 bg-blue-900 px-1.5 py-0.5 font-mono text-[10px] text-blue-400">GIFT</span>
-                          if (label === "Reward") return <span className="inline-block rounded border border-purple-900 bg-purple-900 px-1.5 py-0.5 font-mono text-[10px] text-purple-400">REWARD</span>
-                          if (label === "Airdrop") return <span className="inline-block rounded border border-green-900 bg-green-900 px-1.5 py-0.5 font-mono text-[10px] text-green-400">AIRDROP</span>
-                          if (cb.buyPrice > 0) return <span className="font-mono text-white">${cb.buyPrice.toFixed(2)}</span>
+                          if (cb) {
+                            const label = cb.costBasisLabel
+                            if (label === "Bought" && cb.buyPrice > 0) return <span className="font-mono text-white">${cb.buyPrice.toFixed(2)}</span>
+                            if (label === "Pack") return <span className="inline-block rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-zinc-600">PACK</span>
+                            if (label === "Loan" && cb.buyPrice > 0) return <span className="font-mono"><span className="text-amber-400">Loan</span> <span className="text-white">${cb.buyPrice.toFixed(2)}</span></span>
+                            if (label === "Gift") return <span className="inline-block rounded border border-blue-900 bg-blue-900 px-1.5 py-0.5 font-mono text-[10px] text-blue-400">GIFT</span>
+                            if (label === "Reward") return <span className="inline-block rounded border border-purple-900 bg-purple-900 px-1.5 py-0.5 font-mono text-[10px] text-purple-400">REWARD</span>
+                            if (label === "Airdrop") return <span className="inline-block rounded border border-green-900 bg-green-900 px-1.5 py-0.5 font-mono text-[10px] text-green-400">AIRDROP</span>
+                            if (cb.buyPrice > 0) return <span className="font-mono text-white">${cb.buyPrice.toFixed(2)}</span>
+                          }
+                          if (row.lastPurchasePrice != null && row.lastPurchasePrice > 0) return <span className="font-mono text-zinc-300">{formatCurrency(row.lastPurchasePrice)}</span>
                           return <span className="text-zinc-700">—</span>
                         })()}
                       </td>
                       <td className="p-3 text-sm hidden xl:table-cell">
                         {(function() {
-                          const cb = costBasis.get(row.flowId ?? "")
                           const currentFmv = row.fmv
-                          if (!cb || !currentFmv) return <span className="text-zinc-600">—</span>
-                          // Only calculate P&L when costBasis is a positive number (marketplace/loan)
-                          const basis = cb.costBasisLabel === "Bought" ? cb.buyPrice : cb.costBasisLabel === "Loan" ? cb.buyPrice : 0
+                          if (!currentFmv) return <span className="text-zinc-600">—</span>
+                          const cb = costBasis.get(row.flowId ?? "")
+                          const cbBasis = cb ? (cb.costBasisLabel === "Bought" ? cb.buyPrice : cb.costBasisLabel === "Loan" ? cb.buyPrice : 0) : 0
+                          const basis = cbBasis > 0 ? cbBasis : (row.lastPurchasePrice != null && row.lastPurchasePrice > 0 ? row.lastPurchasePrice : 0)
                           if (!basis || basis <= 0) return <span className="text-zinc-600">—</span>
                           const pl = currentFmv - basis
                           const plPct = basis > 0 ? (pl / basis) * 100 : 0
@@ -1923,14 +1916,6 @@ export default function WalletPage() {
                         })()}
                       </td>
                       <td className="p-3 text-zinc-500 text-xs hidden xl:table-cell">{formatAcquiredAt(row.acquiredAt)}</td>
-                      {/* Purchase Price column */}
-                      <td className="p-3 text-sm hidden lg:table-cell">
-                        {row.lastPurchasePrice != null && row.lastPurchasePrice > 0 ? (
-                          <span className="font-mono text-zinc-300">{formatCurrency(row.lastPurchasePrice)}</span>
-                        ) : (
-                          <span className="text-zinc-600">—</span>
-                        )}
-                      </td>
                       <td className="p-3">
                         <div className="flex items-center gap-1.5 relative">
                           <button onClick={function() { toggleExpanded(row.momentId) }} className="rounded-lg border border-zinc-700 px-2 py-1 text-xs text-white hover:bg-zinc-900">
