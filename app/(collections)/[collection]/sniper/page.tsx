@@ -459,7 +459,7 @@ function useMobile() {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 const REFRESH_INTERVAL = 30;
-const TIER_TABS = ["all", "common", "fandom", "rare", "legendary", "ultimate"] as const;
+const TIER_TABS = ["all", "common", "uncommon", "fandom", "rare", "legendary", "ultimate"] as const;
 const PINNACLE_VARIANT_TABS = ["all", "Standard", "Brushed Silver", "Colored Enamel", "Golden", "Digital Display", "Limited Edition"] as const;
 type TierTab = (typeof TIER_TABS)[number];
 
@@ -480,7 +480,7 @@ export default function SniperPage() {
   const isAllDay = collectionSlug === "nfl-all-day";
   const isPinnacle = collectionSlug === "pinnacle" || collectionSlug === "disney-pinnacle";
   const feedEndpoint = isPinnacle ? "/api/pinnacle-sniper" : "/api/sniper-feed";
-  const feedCollection = isAllDay ? "nfl-all-day" : "nba-top-shot";
+  const feedCollection = isPinnacle ? "nba-top-shot" : collectionSlug;
   const brandLabel = isPinnacle ? "Pinnacle" : collectionObj?.shortLabel ?? "Top Shot";
 
   const isMobile = useMobile();

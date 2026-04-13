@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { fetchOpenOffers } from "@/lib/flowty/fetchOpenOffers";
 import { getOrSetCache } from "@/lib/cache";
 import { z } from "zod";
+import { getCollection } from "@/lib/collections";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -906,8 +907,8 @@ export async function GET(req: Request) {
   const CACHE_TTL = 25_000;
 
   try {
-    const computeFn = collection === "nfl-all-day"
-      ? () => computeAllDaySniperFeed({ minDiscount, rarity: effectiveRarity, team, maxPrice, sortBy, serialFilter })
+    const computeFn = collection !== "nba-top-shot"
+      ? () => computeCachedSniperFeed({ collection, minDiscount, rarity: effectiveRarity, team, maxPrice, sortBy, serialFilter })
       : () => computeSniperFeed({ minDiscount, rarity: effectiveRarity, team, badgeOnly, serialFilter, maxPrice, sortBy });
 
     let result = await getOrSetCache(cacheKey, CACHE_TTL, computeFn) as { count: number; tsCount: number; flowtyCount: number; lastRefreshed: string; deals: SniperDeal[]; cached?: boolean };
@@ -1008,24 +1009,45 @@ function mapCachedListingToDeal(r: any): SniperDeal {
   };
 }
 
-// ─── All Day sniper feed — reads directly from cached_listings ──────────────
+// ─── Cached-listings sniper feed — used by All Day and any non-Top-Shot collection ───
 
-const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070";
+const COLLECTION_UUID_MAP: Record<string, string> = {
+  "nfl-all-day": "dee28451-5d62-409e-a1ad-a83f763ac070",
+  "nba-top-shot": "95f28a17-224a-4025-96ad-adf8a4c63bfd",
+};
 
-async function computeAllDaySniperFeed(opts: {
-  minDiscount: number; rarity: string; team: string;
+function resolveCollectionUuid(slug: string): string | null {
+  if (COLLECTION_UUID_MAP[slug]) return COLLECTION_UUID_MAP[slug];
+  const col = getCollection(slug);
+  // Fall back to looking up in collection_config at runtime (not needed yet)
+  return null;
+}
+
+const ALLDAY_THUMBNAIL_BASE = "https://media.nflallday.com/editions/";
+
+async function computeCachedSniperFeed(opts: {
+  collection: string; minDiscount: number; rarity: string; team: string;
   maxPrice: number; sortBy: string; serialFilter: string;
 }) {
-  const { minDiscount, rarity, team, maxPrice, sortBy, serialFilter } = opts;
+  const { collection, minDiscount, rarity, team, maxPrice, sortBy, serialFilter } = opts;
   const supabase = supabaseAdmin;
+  const collectionId = resolveCollectionUuid(collection);
+  const isAllDay = collection === "nfl-all-day";
 
+  if (!collectionId) {
+    console.log("[sniper-feed] Unknown collection UUID for: " + collection);
+    return { count: 0, tsCount: 0, flowtyCount: 0, lastRefreshed: new Date().toISOString(), deals: [] };
+  }
+
+  // 1. Fetch cached listings — no discount filter because cached_listings.fmv
+  //    is null for non-TS collections (Flowty doesn't provide LiveToken FMV).
+  //    We compute dealRating in JS from fmv_snapshots instead.
   let query = (supabase as any)
     .from("cached_listings")
     .select("*")
-    .eq("collection_id", ALLDAY_COLLECTION_ID)
+    .eq("collection_id", collectionId)
     .gt("ask_price", 0)
-    .gt("discount", minDiscount > 0 ? minDiscount : 0)
-    .order("discount", { ascending: false })
+    .order("ask_price", { ascending: true })
     .limit(200);
 
   if (rarity !== "all") {
@@ -1041,28 +1063,90 @@ async function computeAllDaySniperFeed(opts: {
   const { data: cachedRows, error } = await query;
 
   if (error) {
-    console.error("[sniper-feed] All Day cached_listings error:", error.message);
+    console.error("[sniper-feed] cached_listings error (" + collection + "):", error.message);
     return { count: 0, tsCount: 0, flowtyCount: 0, lastRefreshed: new Date().toISOString(), deals: [] };
   }
 
   const rows = cachedRows ?? [];
-  console.log(`[sniper-feed] All Day cached_listings: ${rows.length} rows with discount > ${minDiscount}`);
+  if (rows.length === 0) {
+    return { count: 0, tsCount: 0, flowtyCount: 0, lastRefreshed: new Date().toISOString(), deals: [] };
+  }
 
-  let deals: SniperDeal[] = rows.map(mapCachedListingToDeal);
+  // 2. Fetch FMV from fmv_snapshots via editions table
+  const momentIds = [...new Set(rows.map((r: any) => String(r.moment_id)))];
+
+  const { data: editionRows } = await (supabase as any)
+    .from("editions")
+    .select("id, external_id")
+    .eq("collection_id", collectionId)
+    .in("external_id", momentIds);
+
+  const editionByMomentId = new Map<string, string>(); // external_id → edition UUID
+  for (const e of editionRows ?? []) {
+    editionByMomentId.set(e.external_id, e.id);
+  }
+
+  const editionUuids = [...new Set(editionByMomentId.values())];
+  const fmvByEditionId = new Map<string, { fmv_usd: number; confidence: string }>();
+
+  for (let i = 0; i < editionUuids.length; i += 500) {
+    const chunk = editionUuids.slice(i, i + 500);
+    const { data: fmvRows } = await (supabase as any)
+      .from("fmv_snapshots")
+      .select("edition_id, fmv_usd, confidence")
+      .in("edition_id", chunk)
+      .order("computed_at", { ascending: false });
+
+    for (const row of fmvRows ?? []) {
+      if (!fmvByEditionId.has(row.edition_id)) {
+        fmvByEditionId.set(row.edition_id, { fmv_usd: Number(row.fmv_usd), confidence: String(row.confidence) });
+      }
+    }
+  }
+
+  console.log(`[sniper-feed] ${collection}: ${rows.length} listings, ${editionByMomentId.size} editions resolved, ${fmvByEditionId.size} with FMV`);
+
+  // 3. Map to SniperDeal with FMV from fmv_snapshots
+  let deals: SniperDeal[] = rows.map(function (r: any) {
+    const editionUuid = editionByMomentId.get(String(r.moment_id));
+    const fmv = editionUuid ? fmvByEditionId.get(editionUuid) : null;
+    const editionFmv = fmv ? fmv.fmv_usd : 0;
+    const ask = Number(r.ask_price) || 0;
+    const dealRating = editionFmv > 0 ? Math.max(0, Number((1 - ask / editionFmv).toFixed(4))) : 0;
+
+    // Thumbnail fallback — All Day has a predictable CDN URL by edition ID
+    const thumbnailUrl = r.thumbnail_url ||
+      (isAllDay && r.moment_id ? ALLDAY_THUMBNAIL_BASE + r.moment_id + "/media/image?width=512&format=webp&quality=90" : null);
+
+    const deal = mapCachedListingToDeal(r);
+    deal.baseFmv = editionFmv;
+    deal.adjustedFmv = editionFmv;
+    deal.confidence = fmv ? fmv.confidence : "ASK_ONLY";
+    deal.confidenceSource = fmv ? "fmv_snapshots" : "none";
+    deal.dealRating = dealRating;
+    deal.discount = dealRating * 100;
+    deal.thumbnailUrl = thumbnailUrl;
+    return deal;
+  });
+
+  // 4. Apply minDiscount filter in JS (computed from fmv_snapshots, not cached)
+  if (minDiscount > 0) {
+    deals = deals.filter(function (d) { return d.dealRating * 100 >= minDiscount; });
+  }
 
   // Post-filter: serial
   if (serialFilter === "special") {
-    deals = deals.filter(d => d.serial === 1 || d.serial === d.circulationCount);
+    deals = deals.filter(function (d) { return d.serial === 1 || d.serial === d.circulationCount; });
   }
 
   // Sort
-  deals.sort((a, b) => {
+  deals.sort(function (a, b) {
     if (sortBy === "price_asc") return a.askPrice - b.askPrice;
     if (sortBy === "price_desc") return b.askPrice - a.askPrice;
     if (sortBy === "fmv_desc") return b.adjustedFmv - a.adjustedFmv;
     if (sortBy === "serial_asc") return a.serial - b.serial;
     if (sortBy === "listed_desc") return new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime();
-    return b.discount - a.discount;
+    return b.dealRating - a.dealRating;
   });
 
   // Mark lowest ask per edition
@@ -1077,7 +1161,7 @@ async function computeAllDaySniperFeed(opts: {
     d.isLowestAsk = d.askPrice === lowestAskByEdition.get(key);
   }
 
-  console.log(`[sniper-feed] All Day DONE: ${deals.length} deals`);
+  console.log(`[sniper-feed] ${collection} DONE: ${deals.length} deals`);
 
   return {
     count: deals.length,
