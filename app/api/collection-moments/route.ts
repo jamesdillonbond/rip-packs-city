@@ -200,7 +200,7 @@ export async function GET(req: NextRequest) {
       })
       .catch(function () { return 0 })
 
-    // Add thumbnail URLs: prefer RPC thumbnail_url (from editions table), fall back to constructed Top Shot URL
+    // Add thumbnail URLs: prefer RPC thumbnail_url, fall back to edition_key construction, then moment media URL
     const moments = rawMoments.map(function (row: any) {
       let thumbnailUrl: string | null = row.thumbnail_url ?? null
       if (!thumbnailUrl) {
@@ -211,6 +211,10 @@ export async function GET(req: NextRequest) {
             thumbnailUrl = "https://assets.nbatopshot.com/resize/editions/" + parts[0] + "_" + parts[1] + "/play" + parts[1] + "_capture_Hero_Black_2880_2880_default.jpg?width=100&quality=80"
           }
         }
+      }
+      // Final fallback: moment flow ID media URL (reliable for all Top Shot moments)
+      if (!thumbnailUrl && row.moment_id) {
+        thumbnailUrl = "https://assets.nbatopshot.com/media/" + row.moment_id + "?width=256"
       }
       return {
         moment_id: row.moment_id,

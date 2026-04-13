@@ -207,6 +207,10 @@ function getThumbnailUrl(row: MomentRow): string | null {
       return `https://assets.nbatopshot.com/resize/editions/${setID}_${playID}/play${playID}_capture_Hero_Black_2880_2880_default.jpg?width=100&quality=80`
     }
   }
+  // Final fallback: moment flow ID media URL (reliable for all Top Shot moments)
+  if (row.momentId) {
+    return `https://assets.nbatopshot.com/media/${row.momentId}?width=256`
+  }
   return null
 }
 
