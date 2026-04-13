@@ -165,6 +165,34 @@ async function mapWithConcurrency<T, R>(
   return results
 }
 
+// ── GQL helper for isLocked ─────────────────────────────────────────────────
+
+const TOPSHOT_GQL_URL = "https://public-api.nbatopshot.com/graphql"
+
+const GQL_IS_LOCKED = `
+  query GetMomentLocked($id: ID!) {
+    getMintedMoment(momentId: $id) {
+      data { isLocked }
+    }
+  }
+`
+
+async function fetchIsLocked(momentId: string): Promise<boolean> {
+  try {
+    const res = await fetch(TOPSHOT_GQL_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": "sports-collectible-tool/0.1" },
+      body: JSON.stringify({ query: GQL_IS_LOCKED, variables: { id: momentId } }),
+      signal: AbortSignal.timeout(6000),
+    })
+    if (!res.ok) return false
+    const json = await res.json()
+    return json?.data?.getMintedMoment?.data?.isLocked === true
+  } catch {
+    return false
+  }
+}
+
 // ── Route handler ───────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
@@ -313,20 +341,24 @@ export async function GET(req: NextRequest) {
     const toEnrich = newIds.slice(0, 50)
     let enriched = 0
     if (toEnrich.length > 0) {
+      const isTopShot = collectionSlug === "nba-top-shot"
       const results = await mapWithConcurrency(toEnrich, 8, async function(id) {
         try {
-          const meta = await fcl.query({
-            cadence: scripts.getMetadata,
-            args: (arg: any) => [arg(wallet, t.Address), arg(id, t.UInt64)],
-          }) as Record<string, string>
-          return { id, meta }
+          const [meta, locked] = await Promise.all([
+            fcl.query({
+              cadence: scripts.getMetadata,
+              args: (arg: any) => [arg(wallet, t.Address), arg(id, t.UInt64)],
+            }) as Promise<Record<string, string>>,
+            isTopShot ? fetchIsLocked(id) : Promise.resolve(false),
+          ])
+          return { id, meta, locked }
         } catch (e: any) {
           console.log("[cache-refresh] metadata error for " + id + ": " + (e.message || "unknown"))
-          return { id, meta: null }
+          return { id, meta: null, locked: false }
         }
       })
 
-      for (const { id, meta } of results) {
+      for (const { id, meta, locked } of results) {
         if (!meta) continue
         const editionKey = scripts.buildEditionKey(meta)
         const seriesNum = meta.series ? parseInt(meta.series, 10) : null
@@ -335,6 +367,7 @@ export async function GET(req: NextRequest) {
           set_name: meta.setName || null,
           edition_key: editionKey || null,
           serial_number: meta.serial ? parseInt(meta.serial, 10) : null,
+          is_locked: locked,
         }
         if (seriesNum !== null && !isNaN(seriesNum)) update.series_number = seriesNum
         if (meta.tier) update.tier = meta.tier
