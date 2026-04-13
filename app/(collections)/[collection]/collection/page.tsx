@@ -621,8 +621,11 @@ export default function WalletPage() {
           ? parseInt(row.series, 10)
           : (row.series as number | undefined)
         if (seriesNum == null || isNaN(seriesNum)) return { ...row, badgeInfo: null }
-        const key = (row.playerName?.toLowerCase().trim() ?? "") + "::" + seriesNum
-        return { ...row, badgeInfo: badgeMap.get(key) ?? null }
+        const playerKey = (row.playerName?.toLowerCase().trim() ?? "")
+        const key = playerKey + "::" + seriesNum
+        // On-chain series 0 = display Series 1 in badge_editions; try both
+        const badge = badgeMap.get(key) ?? (seriesNum === 0 ? badgeMap.get(playerKey + "::1") : null)
+        return { ...row, badgeInfo: badge ?? null }
       })
     } catch {
       return rowsIn
@@ -753,6 +756,7 @@ export default function WalletPage() {
     series_number: number | null
     circulation_count: number | null
     thumbnail_url: string | null
+    team_name: string | null
     acquired_at: string | null
     last_seen_at: string | null
     buy_price: number | null
@@ -779,6 +783,7 @@ export default function WalletPage() {
     return {
       momentId: m.moment_id,
       playerName: m.player_name ?? "Unknown",
+      team: m.team_name ?? undefined,
       setName: m.set_name ?? "Unknown Set",
       editionKey: m.edition_key,
       fmv: fmvVal,
@@ -801,7 +806,7 @@ export default function WalletPage() {
       lastPurchasePrice: null,
       parallel: null,
       subedition: null,
-      flowId: null,
+      flowId: m.moment_id,
       acquisitionMethod: acqMethod,
       costBasis: basis,
       costBasisLabel: label,
@@ -1775,15 +1780,15 @@ export default function WalletPage() {
                               <img
                                 src={thumbUrl}
                                 alt={row.playerName}
-                                width={36}
-                                height={36}
+                                width={40}
+                                height={56}
                                 loading="lazy"
                                 className="shrink-0 rounded object-cover bg-zinc-900"
-                                style={{ width: 36, height: 36 }}
+                                style={{ width: 40, height: 56 }}
                                 onError={function(e) { (e.target as HTMLImageElement).style.display = "none" }}
                               />
                             ) : (
-                              <div className="shrink-0 rounded bg-zinc-900" style={{ width: 36, height: 36 }} />
+                              <div className="shrink-0 rounded bg-zinc-900" style={{ width: 40, height: 56 }} />
                             )
                           })()}
                           <div>
