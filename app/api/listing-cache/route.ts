@@ -58,7 +58,7 @@ const COLLECTIONS: Record<string, CollectionConfig> = {
       0: "Series 1", 1: "Series 2", 2: "Series 3", 3: "Series 4", 4: "Series 5",
     },
     buyUrlBase: "https://www.flowty.io/asset/0xe4cf4bdc1751c65d/AllDay/NFT/",
-    pagesToFetch: 6,
+    pagesToFetch: 100,
     chainNext: null,
     askOnlyFmv: true,
   },

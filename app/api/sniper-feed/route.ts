@@ -881,6 +881,7 @@ const feedParamsSchema = z.object({
   sortBy: z.enum(["discount", "price_asc", "price_desc", "fmv_desc", "serial_asc", "listed_desc"]).default("listed_desc"),
   flowWalletOnly: z.enum(["true", "false"]).default("false"),
   editionKey: z.string().default(""), // edition depth filter (e.g. "26:504")
+  collection: z.string().default("nba-top-shot"), // collection slug — nba-top-shot or nfl-all-day
 });
 
 // ─── Route handler ────────────────────────────────────────────────────────────
@@ -898,14 +899,18 @@ export async function GET(req: Request) {
   const badgeOnly = params.badgeOnly === "true";
   const serialFilter = params.serial;
 
+  const collection = params.collection;
+
   // Cache key based on all query params — same params = same response for 25s
   const cacheKey = `sniper-feed:${JSON.stringify(params)}`;
   const CACHE_TTL = 25_000;
 
   try {
-    let result = await getOrSetCache(cacheKey, CACHE_TTL, async () => {
-      return computeSniperFeed({ minDiscount, rarity: effectiveRarity, team, badgeOnly, serialFilter, maxPrice, sortBy });
-    }) as { count: number; tsCount: number; flowtyCount: number; lastRefreshed: string; deals: SniperDeal[]; cached?: boolean };
+    const computeFn = collection === "nfl-all-day"
+      ? () => computeAllDaySniperFeed({ minDiscount, rarity: effectiveRarity, team, maxPrice, sortBy, serialFilter })
+      : () => computeSniperFeed({ minDiscount, rarity: effectiveRarity, team, badgeOnly, serialFilter, maxPrice, sortBy });
+
+    let result = await getOrSetCache(cacheKey, CACHE_TTL, computeFn) as { count: number; tsCount: number; flowtyCount: number; lastRefreshed: string; deals: SniperDeal[]; cached?: boolean };
 
     // Post-fetch filter: edition key (for edition depth panel)
     if (params.editionKey) {
@@ -945,6 +950,142 @@ export async function GET(req: Request) {
     console.error("[sniper-feed] unhandled error:", err?.message);
     return NextResponse.json({ error: "Feed unavailable", deals: [], count: 0 }, { status: 500 });
   }
+}
+
+// ─── Cached listing → SniperDeal mapper (shared by All Day primary path + TS fallback) ───
+
+function mapCachedListingToDeal(r: any): SniperDeal {
+  const adj = Number(r.adjusted_fmv) || Number(r.fmv) || 0;
+  const ask = Number(r.ask_price) || 0;
+  return {
+    flowId: r.flow_id || "",
+    momentId: r.moment_id || "",
+    editionKey: "",
+    intEditionKey: r.set_id_onchain != null && r.play_id_onchain != null ? `${r.set_id_onchain}:${r.play_id_onchain}` : null,
+    playerName: r.player_name || "",
+    teamName: r.team_name || "",
+    setName: r.set_name || "",
+    seriesName: r.series_name || "",
+    tier: r.tier || "COMMON",
+    parallel: "Base",
+    parallelId: 0,
+    serial: r.serial_number || 0,
+    circulationCount: r.circulation_count || 0,
+    askPrice: ask,
+    baseFmv: Number(r.fmv) || 0,
+    adjustedFmv: adj,
+    wapUsd: null,
+    daysSinceSale: null,
+    salesCount30d: null,
+    discount: Number(r.discount) || 0,
+    confidence: r.confidence || "HIGH",
+    confidenceSource: "cached_listings",
+    hasBadge: false,
+    badgeSlugs: r.badge_slugs || [],
+    badgeLabels: [],
+    badgePremiumPct: 0,
+    serialMult: 1,
+    isSpecialSerial: false,
+    isJersey: false,
+    serialSignal: null,
+    thumbnailUrl: r.thumbnail_url || null,
+    isLocked: r.is_locked || false,
+    updatedAt: r.listed_at || r.cached_at || null,
+    packListingId: null,
+    packName: null,
+    packEv: null,
+    packEvRatio: null,
+    buyUrl: r.buy_url || "",
+    listingResourceID: r.listing_resource_id || null,
+    listingOrderID: r.listing_order_id || null,
+    storefrontAddress: r.storefront_address || null,
+    source: (r.source ?? "flowty") as "topshot" | "flowty",
+    paymentToken: (r.payment_token || "DUC") as "DUC" | "FUT" | "FLOW" | "USDC_E",
+    offerAmount: null,
+    offerFmvPct: null,
+    dealRating: adj > 0 ? Math.max(0, Number((1 - ask / adj).toFixed(4))) : 0,
+    isLowestAsk: false,
+  };
+}
+
+// ─── All Day sniper feed — reads directly from cached_listings ──────────────
+
+const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070";
+
+async function computeAllDaySniperFeed(opts: {
+  minDiscount: number; rarity: string; team: string;
+  maxPrice: number; sortBy: string; serialFilter: string;
+}) {
+  const { minDiscount, rarity, team, maxPrice, sortBy, serialFilter } = opts;
+  const supabase = supabaseAdmin;
+
+  let query = (supabase as any)
+    .from("cached_listings")
+    .select("*")
+    .eq("collection_id", ALLDAY_COLLECTION_ID)
+    .gt("ask_price", 0)
+    .gt("discount", minDiscount > 0 ? minDiscount : 0)
+    .order("discount", { ascending: false })
+    .limit(200);
+
+  if (rarity !== "all") {
+    query = query.ilike("tier", rarity);
+  }
+  if (team !== "all") {
+    query = query.ilike("team_name", `%${team}%`);
+  }
+  if (maxPrice > 0) {
+    query = query.lte("ask_price", maxPrice);
+  }
+
+  const { data: cachedRows, error } = await query;
+
+  if (error) {
+    console.error("[sniper-feed] All Day cached_listings error:", error.message);
+    return { count: 0, tsCount: 0, flowtyCount: 0, lastRefreshed: new Date().toISOString(), deals: [] };
+  }
+
+  const rows = cachedRows ?? [];
+  console.log(`[sniper-feed] All Day cached_listings: ${rows.length} rows with discount > ${minDiscount}`);
+
+  let deals: SniperDeal[] = rows.map(mapCachedListingToDeal);
+
+  // Post-filter: serial
+  if (serialFilter === "special") {
+    deals = deals.filter(d => d.serial === 1 || d.serial === d.circulationCount);
+  }
+
+  // Sort
+  deals.sort((a, b) => {
+    if (sortBy === "price_asc") return a.askPrice - b.askPrice;
+    if (sortBy === "price_desc") return b.askPrice - a.askPrice;
+    if (sortBy === "fmv_desc") return b.adjustedFmv - a.adjustedFmv;
+    if (sortBy === "serial_asc") return a.serial - b.serial;
+    if (sortBy === "listed_desc") return new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime();
+    return b.discount - a.discount;
+  });
+
+  // Mark lowest ask per edition
+  const lowestAskByEdition = new Map<string, number>();
+  for (const d of deals) {
+    const key = d.momentId || d.flowId;
+    const current = lowestAskByEdition.get(key);
+    if (current === undefined || d.askPrice < current) lowestAskByEdition.set(key, d.askPrice);
+  }
+  for (const d of deals) {
+    const key = d.momentId || d.flowId;
+    d.isLowestAsk = d.askPrice === lowestAskByEdition.get(key);
+  }
+
+  console.log(`[sniper-feed] All Day DONE: ${deals.length} deals`);
+
+  return {
+    count: deals.length,
+    tsCount: 0,
+    flowtyCount: deals.length,
+    lastRefreshed: new Date().toISOString(),
+    deals,
+  };
 }
 
 async function computeSniperFeed(opts: {
@@ -1404,57 +1545,7 @@ async function computeSniperFeed(opts: {
         // Filter out retired moments from cached deals
         const liveCachedRows = cachedRows.filter((r: any) => !retiredIds.has(String(r.flow_id)));
         console.log("[sniper-feed] Live feeds empty, serving " + liveCachedRows.length + " cached deals (filtered " + (cachedRows.length - liveCachedRows.length) + " retired)");
-        const cachedDeals = liveCachedRows.map(function (r: any) {
-          return {
-            flowId: r.flow_id || "",
-            momentId: r.moment_id || "",
-            editionKey: "",
-            intEditionKey: r.set_id_onchain != null && r.play_id_onchain != null ? `${r.set_id_onchain}:${r.play_id_onchain}` : null,
-            playerName: r.player_name || "",
-            teamName: r.team_name || "",
-            setName: r.set_name || "",
-            seriesName: r.series_name || "",
-            tier: r.tier || "COMMON",
-            parallel: "Base",
-            parallelId: 0,
-            serial: r.serial_number || 0,
-            circulationCount: r.circulation_count || 0,
-            askPrice: Number(r.ask_price) || 0,
-            baseFmv: Number(r.fmv) || 0,
-            adjustedFmv: Number(r.adjusted_fmv) || Number(r.fmv) || 0,
-            discount: Number(r.discount) || 0,
-            confidence: r.confidence || "HIGH",
-            hasBadge: false,
-            badgeSlugs: r.badge_slugs || [],
-            badgeLabels: [],
-            badgePremiumPct: 0,
-            serialMult: 1,
-            isSpecialSerial: false,
-            isJersey: false,
-            serialSignal: null,
-            thumbnailUrl: r.thumbnail_url || null,
-            isLocked: r.is_locked || false,
-            updatedAt: r.listed_at || r.cached_at || null,
-            packListingId: null,
-            packName: null,
-            packEv: null,
-            packEvRatio: null,
-            buyUrl: r.buy_url || "",
-            listingResourceID: r.listing_resource_id || null,
-            listingOrderID: r.listing_order_id || null,
-            storefrontAddress: r.storefront_address || null,
-            source: (r.source ?? "flowty"),
-            paymentToken: (r.payment_token || "DUC") as "DUC" | "FUT" | "FLOW" | "USDC_E",
-            offerAmount: null as number | null,
-            offerFmvPct: null as number | null,
-            dealRating: (() => {
-              const adj = Number(r.adjusted_fmv) || Number(r.fmv) || 0;
-              const ask = Number(r.ask_price) || 0;
-              return adj > 0 ? Math.max(0, Number((1 - ask / adj).toFixed(4))) : 0;
-            })(),
-            isLowestAsk: false,
-          };
-        });
+        const cachedDeals = liveCachedRows.map(mapCachedListingToDeal);
         return {
           count: cachedDeals.length,
           tsCount: 0,
@@ -1463,8 +1554,8 @@ async function computeSniperFeed(opts: {
           deals: cachedDeals.map(d => {
             const offer = offerMap.get(d.flowId);
             if (offer && offer.amount > 0) {
-              (d as unknown as SniperDeal).offerAmount = offer.amount;
-              (d as unknown as SniperDeal).offerFmvPct = d.adjustedFmv > 0 ? Math.round((offer.amount / d.adjustedFmv) * 1000) / 10 : null;
+              d.offerAmount = offer.amount;
+              d.offerFmvPct = d.adjustedFmv > 0 ? Math.round((offer.amount / d.adjustedFmv) * 1000) / 10 : null;
             }
             return d;
           }),
