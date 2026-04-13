@@ -226,6 +226,9 @@ export async function GET(req: NextRequest) {
         thumbnail_url: thumbnailUrl,
         acquired_at: row.acquired_at ?? null,
         last_seen_at: row.last_seen_at ?? null,
+        buy_price: row.buy_price != null ? Number(row.buy_price) : null,
+        acquisition_method: row.acquisition_method ?? null,
+        loan_principal: row.loan_principal != null ? Number(row.loan_principal) : null,
       }
     })
 
