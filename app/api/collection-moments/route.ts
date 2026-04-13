@@ -232,6 +232,10 @@ export async function GET(req: NextRequest) {
       }
     })
 
+    if (moments.length > 0) {
+      console.log("[collection-moments] first moment sample:", JSON.stringify(moments[0]).slice(0, 500))
+    }
+
     // GQL fallback for moments in current page missing player_name
     const missingByEditionKey = new Map<string, number[]>()
     for (let i = 0; i < moments.length; i++) {
