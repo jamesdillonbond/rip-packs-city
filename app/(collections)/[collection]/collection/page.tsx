@@ -114,12 +114,13 @@ const BADGE_PILL_TITLES = new Set([
   "Rookie of the Year", "Rookie Mint", "Championship Year",
 ])
 
+// Fallback Top Shot series maps — used when collection_series data is not yet loaded
 const SERIES_INT_TO_SEASON: Record<number, string> = {
   0: "2019-20", 2: "2020-21", 3: "2021",
   4: "2021-22", 5: "2022-23", 6: "2023-24", 7: "2024-25", 8: "2025-26",
 }
 
-const SERIES_DISPLAY: Record<number, string> = {
+const SERIES_DISPLAY_FALLBACK: Record<number, string> = {
   0: "S1 · 2019-20",
   2: "S2 · 2020-21",
   3: "Sum 21 · 2021",
@@ -130,29 +131,44 @@ const SERIES_DISPLAY: Record<number, string> = {
   8: "25-26 · 2025-26",
 }
 
-const SERIES_FILTER_LABEL: Record<number, string> = {
+const SERIES_FILTER_LABEL_FALLBACK: Record<number, string> = {
   0: "Series 1", 2: "Series 2", 3: "Summer 2021",
   4: "Series 3", 5: "Series 4", 6: "Series 2023-24",
   7: "Series 2024-25", 8: "Series 2025-26",
 }
 
-function seriesDisplayLabel(seriesRaw: string | undefined | null): string {
+type CollectionSeriesEntry = {
+  series_number: number
+  display_label: string
+  season: string | null
+}
+
+function seriesDisplayLabel(seriesRaw: string | undefined | null, seriesMap?: Map<number, CollectionSeriesEntry>): string {
   if (!seriesRaw) return "—"
   const n = parseInt(seriesRaw, 10)
-  if (!Number.isNaN(n) && SERIES_DISPLAY[n] !== undefined) return SERIES_DISPLAY[n]
+  if (!Number.isNaN(n) && seriesMap?.has(n)) {
+    const entry = seriesMap.get(n)!
+    return entry.season ? entry.display_label + " · " + entry.season : entry.display_label
+  }
+  if (!Number.isNaN(n) && SERIES_DISPLAY_FALLBACK[n] !== undefined) return SERIES_DISPLAY_FALLBACK[n]
   return seriesRaw
 }
 
-function seriesFilterLabel(seriesRaw: string | undefined | null): string {
+function seriesFilterLabel(seriesRaw: string | undefined | null, seriesMap?: Map<number, CollectionSeriesEntry>): string {
   if (!seriesRaw) return "—"
   const n = parseInt(seriesRaw, 10)
-  if (!Number.isNaN(n) && SERIES_FILTER_LABEL[n] !== undefined) return SERIES_FILTER_LABEL[n]
+  if (!Number.isNaN(n) && seriesMap?.has(n)) return seriesMap.get(n)!.display_label
+  if (!Number.isNaN(n) && SERIES_FILTER_LABEL_FALLBACK[n] !== undefined) return SERIES_FILTER_LABEL_FALLBACK[n]
   return seriesRaw
 }
 
-function seriesIntToSeason(seriesRaw: string | undefined | null): string {
+function seriesIntToSeason(seriesRaw: string | undefined | null, seriesMap?: Map<number, CollectionSeriesEntry>): string {
   if (!seriesRaw) return ""
   const n = parseInt(seriesRaw, 10)
+  if (!Number.isNaN(n) && seriesMap?.has(n)) {
+    const entry = seriesMap.get(n)!
+    return entry.season ?? entry.display_label
+  }
   if (!Number.isNaN(n) && SERIES_INT_TO_SEASON[n] !== undefined) return SERIES_INT_TO_SEASON[n]
   if (/^\d{4}-\d{2}$/.test(seriesRaw.trim())) return seriesRaw.trim()
   if (/^\d{4}$/.test(seriesRaw.trim())) return seriesRaw.trim()
@@ -444,6 +460,10 @@ export default function WalletPage() {
   const [dupDismissed, setDupDismissed] = useState(false)
   const [filterDupsOnly, setFilterDupsOnly] = useState(false)
 
+  // ── Collection series (fetched from collection_series table) ──────────────
+  const [collectionSeriesMap, setCollectionSeriesMap] = useState<Map<number, CollectionSeriesEntry>>(new Map())
+  const [collectionSeriesOptions, setCollectionSeriesOptions] = useState<{ label: string; seriesNumber: number }[]>([])
+
   // Hydrate filter state from localStorage on mount
   useEffect(function() {
     try {
@@ -480,6 +500,24 @@ export default function WalletPage() {
       localStorage.setItem("rpc_collection_badgeFilter", JSON.stringify(badgeFilter))
     } catch {}
   }, [sortKey, sortDirection, playerFilter, setFilter, seriesFilter, rarityFilter, lockedFilter, badgeFilter])
+
+  // Fetch collection_series for the current collection
+  useEffect(function() {
+    fetch("/api/collection-series?collection=" + encodeURIComponent(collectionSlug))
+      .then(function(r) { return r.ok ? r.json() : null })
+      .then(function(data) {
+        if (!data || !Array.isArray(data.series)) return
+        const map = new Map<number, CollectionSeriesEntry>()
+        const opts: { label: string; seriesNumber: number }[] = []
+        for (const s of data.series) {
+          map.set(s.series_number, { series_number: s.series_number, display_label: s.display_label, season: s.season ?? null })
+          opts.push({ label: s.display_label, seriesNumber: s.series_number })
+        }
+        setCollectionSeriesMap(map)
+        setCollectionSeriesOptions(opts)
+      })
+      .catch(function() {})
+  }, [collectionSlug])
 
   useEffect(function() {
     setOwnerKey(getOwnerKey())
@@ -778,18 +816,25 @@ export default function WalletPage() {
       page: String(page),
       limit: "50",
       sortBy: sort,
+      collection: collectionSlug,
     })
     // Apply active filters to server query
     if (playerFilter !== "all") params.set("player", playerFilter)
     if (seriesFilter !== "all") {
-      // Convert display label back to series number
-      const seriesLabelToNum: Record<string, string> = {
-        "Series 1": "0", "Series 2": "2", "Summer 2021": "3",
-        "Series 3": "4", "Series 4": "5", "Series 2023-24": "6",
-        "Series 2024-25": "7", "Series 2025-26": "8",
+      // Convert display label back to series number using dynamic collection_series data
+      const match = collectionSeriesOptions.find(function(s) { return s.label === seriesFilter })
+      if (match) {
+        params.set("series", String(match.seriesNumber))
+      } else {
+        // Fallback for Top Shot hardcoded labels
+        const seriesLabelToNum: Record<string, string> = {
+          "Series 1": "0", "Series 2": "2", "Summer 2021": "3",
+          "Series 3": "4", "Series 4": "5", "Series 2023-24": "6",
+          "Series 2024-25": "7", "Series 2025-26": "8",
+        }
+        const sn = seriesLabelToNum[seriesFilter]
+        if (sn) params.set("series", sn)
       }
-      const sn = seriesLabelToNum[seriesFilter]
-      if (sn) params.set("series", sn)
     }
     if (rarityFilter !== "all") params.set("tier", rarityFilter)
 
@@ -1013,16 +1058,22 @@ export default function WalletPage() {
             page: String(currentPage + 1),
             limit: String(pageLimit),
             sortBy: serverSortBy,
+            collection: collectionSlug,
           })
           if (playerFilter !== "all") params.set("player", playerFilter)
           if (seriesFilter !== "all") {
-            const seriesLabelToNum: Record<string, string> = {
-              "Series 1": "0", "Series 2": "2", "Summer 2021": "3",
-              "Series 3": "4", "Series 4": "5", "Series 2023-24": "6",
-              "Series 2024-25": "7", "Series 2025-26": "8",
+            const match = collectionSeriesOptions.find(function(s) { return s.label === seriesFilter })
+            if (match) {
+              params.set("series", String(match.seriesNumber))
+            } else {
+              const seriesLabelToNum: Record<string, string> = {
+                "Series 1": "0", "Series 2": "2", "Summer 2021": "3",
+                "Series 3": "4", "Series 4": "5", "Series 2023-24": "6",
+                "Series 2024-25": "7", "Series 2025-26": "8",
+              }
+              const sn = seriesLabelToNum[seriesFilter]
+              if (sn) params.set("series", sn)
             }
-            const sn = seriesLabelToNum[seriesFilter]
-            if (sn) params.set("series", sn)
           }
           if (rarityFilter !== "all") params.set("tier", rarityFilter)
           const res = await fetch("/api/collection-moments?" + params.toString())
@@ -1190,7 +1241,7 @@ export default function WalletPage() {
     const filtered = rows.filter(function(r) {
       if (playerFilter !== "all" && r.playerName !== playerFilter) return false
       if (setFilter !== "all" && normalizeSetName(r.setName) !== setFilter) return false
-      if (seriesFilter !== "all" && seriesFilterLabel(r.series) !== seriesFilter) return false
+      if (seriesFilter !== "all" && seriesFilterLabel(r.series, collectionSeriesMap) !== seriesFilter) return false
       if (rarityFilter !== "all" && r.tier !== rarityFilter) return false
       if (lockedFilter === "locked" && !getLocked(r)) return false
       if (lockedFilter === "unlocked" && getLocked(r)) return false
@@ -1233,7 +1284,7 @@ export default function WalletPage() {
       })
     }
     return filtered
-  }, [rows, searchWithin, playerFilter, setFilter, seriesFilter, rarityFilter, lockedFilter, badgeFilter, filterBadges, filterHasOffer, filterListed, filterDupsOnly, duplicateEditions, sortKey, sortDirection, batchEditionStats])
+  }, [rows, searchWithin, playerFilter, setFilter, seriesFilter, rarityFilter, lockedFilter, badgeFilter, filterBadges, filterHasOffer, filterListed, filterDupsOnly, duplicateEditions, sortKey, sortDirection, batchEditionStats, collectionSeriesMap])
 
   const totals = useMemo(function() {
     let totalFmv = 0, totalBestOffer = 0, lockedFmv = 0, unlockedFmv = 0
@@ -1342,29 +1393,31 @@ export default function WalletPage() {
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                 <div className="text-[10px] uppercase tracking-widest text-zinc-500">Wallet FMV</div>
                 <div className="text-xl font-black text-white">
-                  {walletTotalFmv !== null ? formatCurrency(walletTotalFmv) : formatCurrency(totals.totalFmv)}
+                  {(function() {
+                    const fmvVal = walletTotalFmv !== null ? walletTotalFmv : totals.totalFmv
+                    if (fmvVal > 0) return formatCurrency(fmvVal)
+                    return "N/A"
+                  })()}
                 </div>
                 <div className="mt-1 text-[11px] text-zinc-500">
-                  {walletTotalFmv !== null
-                    ? "from " + (paginatedTotal || totals.totalCount) + " moments"
-                    : totals.totalCount + " moments loaded"}
+                  {(paginatedTotal || totals.totalCount) + " moments"}
                 </div>
               </div>
 
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                 <div className="text-[10px] uppercase tracking-widest text-zinc-500">Unlocked FMV</div>
-                <div className="text-xl font-black text-white">{formatCurrency(totals.unlockedFmv)}</div>
+                <div className="text-xl font-black text-white">{totals.unlockedFmv > 0 ? formatCurrency(totals.unlockedFmv) : "N/A"}</div>
                 <div className="mt-1 text-[11px] text-zinc-500">{totals.unlockedCount} unlocked</div>
               </div>
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                 <div className="text-[10px] uppercase tracking-widest text-zinc-500">Locked FMV</div>
-                <div className="text-xl font-black text-white">{formatCurrency(totals.lockedFmv)}</div>
+                <div className="text-xl font-black text-white">{totals.lockedFmv > 0 ? formatCurrency(totals.lockedFmv) : "N/A"}</div>
                 <div className="mt-1 text-[11px] text-zinc-500">{totals.lockedCount} locked</div>
               </div>
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                 <div className="text-[10px] uppercase tracking-widest text-zinc-500">Best Offer Total</div>
-                <div className="text-xl font-black text-white">{formatCurrency(totals.totalBestOffer)}</div>
-                <div className="mt-1 text-[11px] text-zinc-500">Spread gap: {formatCurrency(totals.spreadGap)}</div>
+                <div className="text-xl font-black text-white">{totals.totalBestOffer > 0 ? formatCurrency(totals.totalBestOffer) : "N/A"}</div>
+                <div className="mt-1 text-[11px] text-zinc-500">{totals.totalFmv > 0 && totals.totalBestOffer > 0 ? "Spread gap: " + formatCurrency(totals.spreadGap) : ""}</div>
               </div>
             </div>
           </div>
@@ -1383,6 +1436,7 @@ export default function WalletPage() {
               count++
             }
           }
+          if (count === 0) return null
           const totalPl = totalFmv - totalCost
           const plPct = totalCost > 0 ? (totalPl / totalCost) * 100 : 0
           const plColor = totalPl >= 0 ? "text-emerald-400" : "text-red-400"
@@ -1427,14 +1481,10 @@ export default function WalletPage() {
           </select>
           <select value={seriesFilter} onChange={function(e) { setSeriesFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
             <option value="all">All Series</option>
-            <option value="Series 1">Series 1</option>
-            <option value="Series 2">Series 2</option>
-            <option value="Summer 2021">Summer 2021</option>
-            <option value="Series 3">Series 3</option>
-            <option value="Series 4">Series 4</option>
-            <option value="Series 2023-24">Series 2023-24</option>
-            <option value="Series 2024-25">Series 2024-25</option>
-            <option value="Series 2025-26">Series 2025-26</option>
+            {collectionSeriesOptions.length > 0
+              ? collectionSeriesOptions.map(function(s) { return <option key={s.seriesNumber} value={s.label}>{s.label}</option> })
+              : Object.entries(SERIES_FILTER_LABEL_FALLBACK).map(function([num, label]) { return <option key={num} value={label}>{label}</option> })
+            }
           </select>
           <select value={rarityFilter} onChange={function(e) { setRarityFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
             {availableRarities.map(function(tier) { return <option key={tier} value={tier}>{tier === "all" ? "All Rarities" : tier}</option> })}
@@ -1487,7 +1537,7 @@ export default function WalletPage() {
                   return [
                     r.playerName ?? "",
                     normalizeSetName(r.setName) ?? "",
-                    seriesDisplayLabel(r.series),
+                    seriesDisplayLabel(r.series, collectionSeriesMap),
                     r.tier ?? "",
                     getParallel(r),
                     String(getSerial(r) ?? ""),
@@ -1538,7 +1588,7 @@ export default function WalletPage() {
                     <tr key={"debug-" + row.momentId} className="border-b border-zinc-800">
                       <td className="p-2">{row.playerName}</td>
                       <td className="p-2">{row.series ?? "-"}</td>
-                      <td className="p-2">{seriesIntToSeason(row.series)}</td>
+                      <td className="p-2">{seriesIntToSeason(row.series, collectionSeriesMap)}</td>
                       <td className="p-2">{row.acquiredAt ? new Date(row.acquiredAt).toLocaleDateString() : "-"}</td>
                       <td className="p-2">{row.editionKey ?? "-"}</td>
                       <td className="p-2">{getParallel(row)}</td>
@@ -1577,8 +1627,8 @@ export default function WalletPage() {
               const scopeKey = buildEditionScopeKey({ editionKey: row.editionKey, setName: row.setName, playerName: row.playerName, parallel: row.parallel, subedition: row.subedition })
               const editionCounts = { owned: row.editionsOwned ?? batchEditionStats.get(scopeKey)?.owned ?? 0, locked: row.editionsLocked ?? batchEditionStats.get(scopeKey)?.locked ?? 0 }
               const cb = costBasis.get(row.flowId ?? "")
-              const tierColorMap: Record<string, string> = { COMMON: "#9ca3af", FANDOM: "#60a5fa", RARE: "#38bdf8", LEGENDARY: "#fbbf24", ULTIMATE: "#c084fc" }
-              const tierBg: Record<string, string> = { COMMON: "bg-zinc-800", FANDOM: "bg-blue-950", RARE: "bg-sky-950", LEGENDARY: "bg-yellow-950", ULTIMATE: "bg-purple-950" }
+              const tierColorMap: Record<string, string> = { COMMON: "#9ca3af", UNCOMMON: "#14b8a6", FANDOM: "#60a5fa", RARE: "#38bdf8", LEGENDARY: "#fbbf24", ULTIMATE: "#c084fc" }
+              const tierBg: Record<string, string> = { COMMON: "bg-zinc-800", UNCOMMON: "bg-teal-950", FANDOM: "bg-blue-950", RARE: "bg-sky-950", LEGENDARY: "bg-yellow-950", ULTIMATE: "bg-purple-950" }
               const tierKey = (row.tier ?? "").toUpperCase()
               return (
                 <div key={row.momentId} className="rounded-xl border border-zinc-800 bg-zinc-950 p-3 flex flex-col gap-1.5 cursor-pointer" onClick={function() { toggleExpanded(row.momentId) }}>
@@ -1596,7 +1646,7 @@ export default function WalletPage() {
                   </div>
                   {/* Row 2: Set + Series */}
                   <div className="text-xs text-zinc-400">
-                    {normalizeSetName(row.setName)} &middot; {seriesIntToSeason(row.series) || "—"}
+                    {normalizeSetName(row.setName)} &middot; {seriesIntToSeason(row.series, collectionSeriesMap) || "—"}
                   </div>
                   {/* Row 3: Serial, Badges */}
                   <div className="flex items-center justify-between gap-2">
@@ -1740,7 +1790,7 @@ export default function WalletPage() {
                         </div>
                       </td>
                       <td className="p-3 text-sm hidden sm:table-cell">{normalizeSetName(row.setName)}</td>
-                      <td className="p-3 text-zinc-400 text-sm hidden sm:table-cell">{seriesDisplayLabel(row.series)}</td>
+                      <td className="p-3 text-zinc-400 text-sm hidden sm:table-cell">{seriesDisplayLabel(row.series, collectionSeriesMap)}</td>
                       <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{getParallel(row)}</td>
                       <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{row.tier ?? "—"}</td>
                       <td className="p-3 hidden sm:table-cell">
@@ -1996,7 +2046,7 @@ export default function WalletPage() {
                                 <div>Team: {row.team ?? "-"}</div>
                                 <div>League: {row.league ?? "-"}</div>
                                 <div>Parallel: {getParallel(row)}</div>
-                                <div>Series: {row.series ?? "-"} ({seriesIntToSeason(row.series) || "—"})</div>
+                                <div>Series: {row.series ?? "-"} ({seriesIntToSeason(row.series, collectionSeriesMap) || "—"})</div>
                                 <div>Acquired: {formatAcquiredAt(row.acquiredAt)}</div>
                                 <div>Locked: {isLocked ? "Yes" : "No"}</div>
                                 <div className="flex flex-wrap gap-1 pt-1">

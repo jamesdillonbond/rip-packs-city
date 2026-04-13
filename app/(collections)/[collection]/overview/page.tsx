@@ -74,6 +74,7 @@ function fmtDollars(n: number) {
 const TIER_COLORS: Record<string, string> = {
   legendary: "var(--tier-legendary)",
   rare:      "var(--tier-rare)",
+  uncommon:  "var(--tier-uncommon)",
   fandom:    "var(--tier-fandom)",
   common:    "var(--tier-common)",
   ultimate:  "var(--tier-ultimate)",

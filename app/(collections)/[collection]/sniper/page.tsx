@@ -134,6 +134,7 @@ function tierColor(tier: string): string {
     case "COMMON":    return "var(--tier-common)";
     case "FANDOM":    return "var(--tier-fandom)";
     case "RARE":      return "var(--tier-rare)";
+    case "UNCOMMON":  return "var(--tier-uncommon)";
     case "LEGENDARY": return "var(--tier-legendary)";
     case "ULTIMATE":  return "var(--tier-ultimate)";
     default:          return "var(--tier-common)";

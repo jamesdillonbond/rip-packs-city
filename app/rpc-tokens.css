@@ -44,6 +44,10 @@
   --tier-fandom-bg: rgba(52, 211, 153, 0.10);
   --tier-fandom-border: rgba(52, 211, 153, 0.30);
 
+  --tier-uncommon: #14B8A6;
+  --tier-uncommon-bg: rgba(20, 184, 166, 0.10);
+  --tier-uncommon-border: rgba(20, 184, 166, 0.30);
+
   --tier-common: #94A3B8;
   --tier-common-bg: rgba(148, 163, 184, 0.08);
   --tier-common-border: rgba(148, 163, 184, 0.20);
@@ -326,6 +330,7 @@
 .rpc-tier-stripe.ultimate { background: var(--tier-ultimate); }
 .rpc-tier-stripe.rare { background: var(--tier-rare); }
 .rpc-tier-stripe.fandom { background: var(--tier-fandom); }
+.rpc-tier-stripe.uncommon { background: var(--tier-uncommon); }
 .rpc-tier-stripe.common { background: var(--tier-common); }
 
 /* ── Card Binder Background ──────────────────────────────── */

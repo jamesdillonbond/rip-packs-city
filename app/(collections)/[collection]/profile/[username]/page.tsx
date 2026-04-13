@@ -80,6 +80,7 @@ function tierColor(t: string | null): string {
     case "LEGENDARY": return "var(--tier-legendary)";
     case "ULTIMATE": return "var(--tier-ultimate)";
     case "RARE": return "var(--tier-rare)";
+    case "UNCOMMON": return "var(--tier-uncommon)";
     case "FANDOM": return "var(--tier-fandom)";
     default: return "var(--tier-common)";
   }

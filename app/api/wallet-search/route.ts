@@ -389,6 +389,7 @@ async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
         tier.includes("LEGENDARY") ? "LEGENDARY" :
         tier.includes("RARE") ? "RARE" :
         tier.includes("ULTIMATE") ? "ULTIMATE" :
+        tier.includes("UNCOMMON") ? "UNCOMMON" :
         tier.includes("FANDOM") ? "FANDOM" : "COMMON"
 
       let playerId: string | null = null

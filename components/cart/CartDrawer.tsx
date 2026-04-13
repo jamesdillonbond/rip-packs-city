@@ -86,6 +86,7 @@ function CartRow({ item, walletProvider }: CartRowProps) {
     ULTIMATE: 'text-yellow-400',
     LEGENDARY: 'text-orange-400',
     RARE:      'text-purple-400',
+    UNCOMMON:  'text-teal-400',
     FANDOM:    'text-blue-400',
     COMMON:    'text-slate-400',
   }

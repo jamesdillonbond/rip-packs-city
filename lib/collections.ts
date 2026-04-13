@@ -64,7 +64,7 @@ export const COLLECTIONS: Collection[] = [
     accent: "#4F94D4",
     icon: "\u{1F3C8}",
     pages: ["overview", "collection", "packs", "sniper", "sets"],
-    published: false,
+    published: true,
     graphqlUrl: "https://public-api.nflallday.com/graphql",
     flowContractName: "AllDay",
     contractAddress: "0xe4cf4bdc1751c65d",

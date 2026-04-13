@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { topshotGraphql } from "@/lib/topshot"
+import { getCollection } from "@/lib/collections"
 
 /**
  * GET /api/collection-moments
@@ -140,11 +141,27 @@ export async function GET(req: NextRequest) {
     const playerFilter = sp.get("player")?.trim() || null
     const seriesFilter = sp.get("series") ? parseInt(sp.get("series")!, 10) : null
     const tierFilter = sp.get("tier")?.trim() || null
+    const collectionSlug = sp.get("collection")?.trim() || null
     const offset = (page - 1) * limit
+
+    // Resolve collection slug to UUID if provided
+    let collectionId: string | null = null
+    if (collectionSlug) {
+      const collectionObj = getCollection(collectionSlug)
+      const contractName = collectionObj?.flowContractName
+      if (contractName) {
+        const { data: config } = await (supabaseAdmin as any)
+          .from("collection_config")
+          .select("collection_id")
+          .eq("flow_contract_name", contractName)
+          .single()
+        if (config?.collection_id) collectionId = config.collection_id
+      }
+    }
 
     // Single SQL call: joins wallet_moments_cache → editions → fmv_snapshots,
     // sorts by real FMV BEFORE pagination, returns one page + total count.
-    const rpcParams = {
+    const rpcParams: Record<string, any> = {
       p_wallet: wallet,
       p_sort_by: sortBy,
       p_limit: limit,
@@ -153,6 +170,7 @@ export async function GET(req: NextRequest) {
       p_series: seriesFilter !== null && !isNaN(seriesFilter) ? seriesFilter : null,
       p_tier: tierFilter || null,
     }
+    if (collectionId) rpcParams.p_collection_id = collectionId
     console.log("[collection-moments] calling RPC with:", JSON.stringify(rpcParams))
 
     const { data, error: rpcError } = await (supabaseAdmin as any)
@@ -171,8 +189,11 @@ export async function GET(req: NextRequest) {
     const totalCount = Number(rpcResult?.total_count ?? 0)
 
     // Compute total portfolio FMV in parallel (non-blocking for pagination)
+    const totalFmvRpcParams: Record<string, any> = { p_wallet: wallet }
+    if (collectionId) totalFmvRpcParams.p_collection_id = collectionId
+
     const totalFmvPromise = (supabaseAdmin as any)
-      .rpc("get_wallet_total_fmv", { p_wallet: wallet })
+      .rpc("get_wallet_total_fmv", totalFmvRpcParams)
       .then(function (res: any) {
         if (res.error) { console.log("[collection-moments] total_fmv error:", res.error.message); return 0 }
         return res.data ?? 0

@@ -37,6 +37,7 @@ function tierColor(tier?: string): string {
   switch (tier?.toLowerCase()) {
     case "legendary": return "#f59e0b";
     case "rare": return "#818cf8";
+    case "uncommon": return "#14b8a6";
     case "ultimate": return "#ec4899";
     default: return "#6b7280";
   }
