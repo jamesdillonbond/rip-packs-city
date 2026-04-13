@@ -558,6 +558,23 @@ export default function WalletPage() {
     return function() { cancelled = true }
   }, [activeWallet, collectionSlug])
 
+  // ── Background cache refresh: detect new on-chain moments ─────────────────
+  useEffect(function() {
+    if (!activeWallet) return
+    let cancelled = false
+    fetch("/api/cache-refresh?wallet=" + encodeURIComponent(activeWallet) + "&collection=" + encodeURIComponent(collectionSlug))
+      .then(function(r) { return r.ok ? r.json() : null })
+      .then(function(data) {
+        if (cancelled || !data) return
+        if (data.new_stubs_inserted > 0) {
+          console.log("[collection] cache-refresh found " + data.new_stubs_inserted + " new moments, reloading page 1")
+          fetchPaginatedMoments(activeWallet, 1, serverSortBy, false)
+        }
+      })
+      .catch(function() {})
+    return function() { cancelled = true }
+  }, [activeWallet, collectionSlug])
+
   // ── FCL wallet connection (for own-collection detection) ───────────────────
   useEffect(function() {
     let cancelled = false
