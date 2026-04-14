@@ -9,6 +9,8 @@ import { supabaseAdmin } from "@/lib/supabase"
 // snapshots via the fmv_from_cached_listings RPC.
 // ─────────────────────────────────────────────────────────────────────────────
 
+export const maxDuration = 300
+
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const AD_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const AD_CONTRACT_ADDRESS = "0xe4cf4bdc1751c65d"
