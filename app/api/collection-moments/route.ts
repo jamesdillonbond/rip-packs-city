@@ -290,6 +290,40 @@ export async function GET(req: NextRequest) {
 
     const totalFmv = await totalFmvPromise
 
+    // Fire get_acquisition_stats in parallel (non-blocking — fail silently if missing)
+    let acquisitionStats: {
+      pack_pull_count: number
+      marketplace_count: number
+      challenge_reward_count: number
+      gift_count: number
+      total_count: number
+      locked_count: number
+      total_spent: number
+    } | null = null
+    try {
+      const acqParams: Record<string, any> = { p_wallet: wallet }
+      if (collectionId) acqParams.p_collection_id = collectionId
+      const { data: acqRaw, error: acqErr } = await (supabaseAdmin as any).rpc("get_acquisition_stats", acqParams)
+      if (!acqErr && acqRaw) {
+        const result = (Array.isArray(acqRaw) ? acqRaw[0] : acqRaw) as { breakdown?: Array<{ method: string; count: number; total_spent?: number }>; total_moments?: number; total_spent?: number; locked_count?: number }
+        const counts: Record<string, number> = { pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0 }
+        for (const b of result?.breakdown ?? []) {
+          if (b?.method && counts[b.method] !== undefined) counts[b.method] = Number(b.count) || 0
+        }
+        acquisitionStats = {
+          pack_pull_count: counts.pack_pull,
+          marketplace_count: counts.marketplace,
+          challenge_reward_count: counts.challenge_reward,
+          gift_count: counts.gift,
+          total_count: Number(result?.total_moments ?? 0),
+          locked_count: Number(result?.locked_count ?? 0),
+          total_spent: Number(result?.total_spent ?? 0),
+        }
+      }
+    } catch (err) {
+      console.log("[collection-moments] acquisition-stats lookup failed:", err instanceof Error ? err.message : String(err))
+    }
+
     return NextResponse.json({
       moments,
       total_count: totalCount,
@@ -298,6 +332,7 @@ export async function GET(req: NextRequest) {
       limit,
       total_pages: Math.ceil(totalCount / limit),
       wallet,
+      acquisitionStats,
     })
   } catch (err) {
     console.log("[collection-moments] error:", err instanceof Error ? err.message : String(err))

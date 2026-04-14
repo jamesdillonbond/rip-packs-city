@@ -96,6 +96,22 @@ export type PackListing = {
   startTime: string
   listingCount: number
   packType: PackType
+  seriesLabel: string
+}
+
+function seriesLabelFromStartTime(startTime: string): string {
+  if (!startTime) return "Unknown"
+  const d = new Date(startTime)
+  if (isNaN(d.getTime())) return "Unknown"
+  const y = d.getUTCFullYear()
+  const m = d.getUTCMonth() // 0-indexed
+  // July = 6
+  if (y < 2021 || (y === 2021 && m < 6)) return "Series 1"
+  if ((y === 2021 && m >= 6) || (y === 2022 && m < 6)) return "Series 2"
+  if ((y === 2022 && m >= 6) || (y === 2023 && m < 6)) return "Series 3"
+  if ((y === 2023 && m >= 6) || (y === 2024 && m < 6)) return "Series 2023-24"
+  if ((y === 2024 && m >= 6) || (y === 2025 && m < 6)) return "Series 2024-25"
+  return "Series 2025-26"
 }
 
 const listingsCache = new Map<string, { data: PackListing[]; expiresAt: number }>()
@@ -184,6 +200,7 @@ export async function GET() {
       const retailPrice = rawRetail > 0 && rawRetail <= 10000 ? rawRetail : 0
       const slots = parseInt(d.number_of_pack_slots.value, 10) || 1
       const packType = classifyPackType(d.title.value, slots, retailPrice)
+      const startTime = d.start_time.value
       return {
         packListingId: d.uuid.value,
         distId,
@@ -193,9 +210,10 @@ export async function GET() {
         momentsPerPack: slots,
         retailPrice,
         lowestAsk,
-        startTime: d.start_time.value,
+        startTime,
         listingCount: count,
         packType,
+        seriesLabel: seriesLabelFromStartTime(startTime),
       }
     })
 

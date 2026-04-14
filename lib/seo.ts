@@ -85,6 +85,16 @@ const PAGE_META: Record<string, { title: string; description: string }> = {
     description:
       'Track set completion progress, find bottleneck moments, and discover the cheapest path to completing any {label} set.',
   },
+  analytics: {
+    title: 'Portfolio Analytics — {label} Wallet Breakdown',
+    description:
+      'Deep-dive wallet analytics for {label}: acquisition origin, tier breakdown, series breakdown, liquid vs locked FMV, and portfolio clarity score.',
+  },
+  market: {
+    title: 'Market Intelligence — {label} Edition Lookup & Leaderboards',
+    description:
+      'Edition-level market intelligence for {label}: FMV, ask/offer depth, 30-day sales, liquidity and discount leaderboards.',
+  },
 }
 
 export function collectionPageMetadata(page: string, collectionLabel = 'NBA Top Shot'): Metadata {
