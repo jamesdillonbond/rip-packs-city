@@ -59,6 +59,21 @@ const COLLECTIONS: Record<string, CollectionConfig> = {
     },
     buyUrlBase: "https://www.flowty.io/asset/0xe4cf4bdc1751c65d/AllDay/NFT/",
     pagesToFetch: 100,
+    chainNext: "laliga-golazos",
+    askOnlyFmv: true,
+  },
+  "laliga-golazos": {
+    slug: "laliga-golazos",
+    collectionId: "06248cc4-b85f-47cd-af67-1855d14acd75",
+    flowtyEndpoint: "https://api2.flowty.io/collection/0x87ca73a41bb50ad5/Golazos",
+    flowtyCollectionFilter: "0x87ca73a41bb50ad5.Golazos",
+    seriesNames: {
+      // Golazos contract uses seriesID 1-indexed; we normalize to 0-indexed
+      // in editions.series. For display we map back here.
+      0: "Series 1 (2022-23)", 1: "Series 2 (2023-24)", 2: "Series 3 (2024-25)",
+    },
+    buyUrlBase: "https://www.flowty.io/asset/0x87ca73a41bb50ad5/Golazos/NFT/",
+    pagesToFetch: 60,
     chainNext: null,
     askOnlyFmv: true,
   },
@@ -152,7 +167,8 @@ function mapFlowtyListing(nft: any, config: CollectionConfig): any | null {
     // Player name: prefer card.title (works for both), fall back to trait variants
     const playerName = (
       (nft.card && nft.card.title ? String(nft.card.title) : "") ||
-      getTraitMulti(traits, "Full Name", "Player Name", "playerFullName", "playerName", "name")
+      getTraitMulti(traits, "Full Name", "Player Name", "playerFullName", "playerName", "name",
+        "PlayerKnownName", "PlayerJerseyName")
     ).trim();
     const flowId = nft.id ? String(nft.id) : "";
     const listingResourceId = order.listingResourceID ? String(order.listingResourceID) : "";
@@ -168,9 +184,9 @@ function mapFlowtyListing(nft: any, config: CollectionConfig): any | null {
       imageUrl = "https://media.nflallday.com/editions/" + editionFlowID + "/media/image?width=512&format=webp&quality=90";
     }
 
-    // moment_id: for All Day, use editionFlowID (maps to editions.external_id);
+    // moment_id: for All Day + Golazos, use editionFlowID (maps to editions.external_id);
     // for Top Shot, use nftView.uuid
-    const momentId = config.slug === "nfl-all-day"
+    const momentId = (config.slug === "nfl-all-day" || config.slug === "laliga-golazos")
       ? (editionFlowID || null)
       : ((nft.nftView && nft.nftView.uuid) ? String(nft.nftView.uuid) : null);
 

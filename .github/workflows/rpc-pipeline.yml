@@ -30,7 +30,7 @@ jobs:
           if [ "$STATUS" != "200" ]; then
             echo "::warning::Flowty sales returned $STATUS"
           fi
-      - name: Sales Indexer — On-chain NFTStorefrontV2 sales
+      - name: Sales Indexer — On-chain NFTStorefrontV2 sales (Top Shot)
         run: |
           STATUS=$(curl -s -o /tmp/sales-indexer.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
@@ -39,6 +39,28 @@ jobs:
           cat /tmp/sales-indexer.json
           if [ "$STATUS" != "200" ]; then
             echo "::warning::Sales indexer returned $STATUS"
+          fi
+      - name: All Day Sales Indexer — On-chain NFL All Day sales
+        continue-on-error: true
+        run: |
+          STATUS=$(curl -s -o /tmp/allday-sales.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            https://rip-packs-city.vercel.app/api/allday-sales-indexer)
+          echo "All Day sales indexer status: $STATUS"
+          cat /tmp/allday-sales.json
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::All Day sales indexer returned $STATUS"
+          fi
+      - name: Golazos Sales Indexer — On-chain LaLiga Golazos sales
+        continue-on-error: true
+        run: |
+          STATUS=$(curl -s -o /tmp/golazos-sales.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            https://rip-packs-city.vercel.app/api/golazos-sales-indexer)
+          echo "Golazos sales indexer status: $STATUS"
+          cat /tmp/golazos-sales.json
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::Golazos sales indexer returned $STATUS"
           fi
       - name: FMV Recalc — Recompute fair market values
         run: |

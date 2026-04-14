@@ -17,6 +17,11 @@ const COLLECTION_META: Record<string, { title: string; description: string }> = 
     description:
       "Wallet analysis, FMV pricing, and marketplace intelligence for NFL All Day collectors on the Flow blockchain.",
   },
+  "laliga-golazos": {
+    title: "LaLiga Golazos Analytics — Rip Packs City",
+    description:
+      "Wallet analysis, FMV pricing, and marketplace intelligence for LaLiga Golazos collectors on the Flow blockchain.",
+  },
   "panini-blockchain": {
     title: "Panini Blockchain — Collector Intelligence on Rip Packs City",
     description:
