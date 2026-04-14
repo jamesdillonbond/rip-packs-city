@@ -86,7 +86,7 @@ async function fetchPage(offset: number) {
     const text = await res.text().catch(() => "")
     throw new Error(`flowty-proxy ${res.status}: ${text.slice(0, 200)}`)
   }
-  return (await res.json()) as { nfts?: NFT[] }
+  return (await res.json()) as { nfts?: NFT[]; total?: number }
 }
 
 export async function GET(req: NextRequest) {
@@ -131,6 +131,7 @@ export async function GET(req: NextRequest) {
     })
     const nfts = Array.isArray(page.nfts) ? page.nfts : []
     totalFetched += nfts.length
+    const reportedTotal = typeof page.total === "number" ? page.total : null
 
     for (const nft of nfts) {
       const orders = Array.isArray(nft.orders) ? nft.orders : []
@@ -202,6 +203,7 @@ export async function GET(req: NextRequest) {
 
     if (nfts.length < PAGE_LIMIT) break
     offset += PAGE_LIMIT
+    if (reportedTotal !== null && offset >= reportedTotal) break
     await delay(INTER_PAGE_DELAY_MS)
   }
 
