@@ -34,18 +34,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const { data: editions, error } = await (supabase as any)
-    .from("editions")
-    .select("id, external_id, name, set_name, player_name, tier")
-    .eq("collection_id", ALLDAY_COLLECTION_ID)
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  // Paginate around PostgREST's default 1000-row cap.
+  const PAGE_SIZE = 1000
+  const editions: any[] = []
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { data: page, error } = await (supabase as any)
+      .from("editions")
+      .select("id, external_id, name, set_name, player_name, tier")
+      .eq("collection_id", ALLDAY_COLLECTION_ID)
+      .range(offset, offset + PAGE_SIZE - 1)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    const pageRows = page ?? []
+    editions.push(...pageRows)
+    if (pageRows.length < PAGE_SIZE) break
+  }
 
   const rows: any[] = []
   let withBadges = 0
-  const scanned = editions?.length ?? 0
+  const scanned = editions.length
 
-  for (const e of editions ?? []) {
+  for (const e of editions) {
     const setText = e.set_name ?? e.name ?? ""
     const matched = classifyAlldayBadges(setText)
     if (!matched.length) continue
