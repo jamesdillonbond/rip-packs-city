@@ -392,16 +392,17 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET() {
-  const { data, error } = await (supabaseAdmin as any)
-    .from("badge_editions")
-    .select("collection_id")
+  const { data, error } = await (supabaseAdmin as any).rpc("badge_editions_counts")
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
   const counts: Record<string, number> = {}
-  for (const row of (data as Array<{ collection_id: string | null }> | null) ?? []) {
+  let total = 0
+  for (const row of (data as Array<{ collection_id: string | null; count: number | string }> | null) ?? []) {
     const k = row.collection_id ?? "null"
-    counts[k] = (counts[k] ?? 0) + 1
+    const n = Number(row.count) || 0
+    counts[k] = n
+    total += n
   }
-  return NextResponse.json({ counts, total: (data?.length ?? 0) })
+  return NextResponse.json({ counts, total })
 }
