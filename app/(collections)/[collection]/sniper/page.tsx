@@ -55,7 +55,7 @@ interface SniperDeal {
   buyUrl: string;
   listingResourceID: string | null;
   storefrontAddress: string | null;
-  source?: "topshot" | "flowty";
+  source?: "topshot" | "flowty" | "pinnacle";
   paymentToken?: "DUC" | "FUT" | "FLOW" | "USDC_E";
   offerAmount?: number | null;
   offerFmvPct?: number | null;
@@ -231,7 +231,14 @@ function SerialBadge({ deal }: { deal: SniperDeal }) {
   );
 }
 
-function SourceBadge({ source, isAllDay }: { source?: "topshot" | "flowty"; isAllDay?: boolean }) {
+function SourceBadge({ source, isAllDay }: { source?: "topshot" | "flowty" | "pinnacle"; isAllDay?: boolean }) {
+  if (source === "pinnacle") {
+    return (
+      <span className="rpc-chip" style={{ background: "rgba(168,85,247,0.12)", borderColor: "rgba(168,85,247,0.25)", color: "#c084fc" }}>
+        PINNACLE
+      </span>
+    );
+  }
   if (source === "flowty") {
     return (
       <span className="rpc-chip" style={{ background: "rgba(59,130,246,0.12)", borderColor: "rgba(59,130,246,0.25)", color: "var(--rpc-info)" }}>
@@ -328,7 +335,8 @@ function ActionCell({
   const isOwned =
     (!!deal.intEditionKey && ownedIds.has(deal.intEditionKey)) ||
     (!!deal.editionKey && ownedIds.has(deal.editionKey));
-  const canCart = !!deal.listingResourceID && !!deal.storefrontAddress;
+  const isPinnacleDeal = deal.source === "pinnacle";
+  const canCart = !!deal.listingResourceID && !!deal.storefrontAddress && !isPinnacleDeal;
   const isFlowty = (deal.source ?? "topshot") === "flowty";
 
   function handleCart() {
@@ -431,13 +439,15 @@ function ActionCell({
         target="_blank"
         rel="noopener noreferrer"
         onClick={handleBuy}
-        className={isFlowty ? "rpc-chip" : "rpc-btn-ghost"}
-        style={isFlowty
+        className={isFlowty || isPinnacleDeal ? "rpc-chip" : "rpc-btn-ghost"}
+        style={isPinnacleDeal
+          ? { background: "rgba(168,85,247,0.15)", borderColor: "rgba(168,85,247,0.4)", color: "#c084fc", textDecoration: "none", padding: "4px 12px" }
+          : isFlowty
           ? { background: "rgba(59,130,246,0.15)", borderColor: "rgba(59,130,246,0.4)", color: "var(--rpc-info)", textDecoration: "none", padding: "4px 12px" }
           : { padding: "4px 12px", textDecoration: "none", borderColor: `${accent}40`, color: accent }
         }
       >
-        {isFlowty ? "FLOWTY →" : "BUY →"}
+        {isPinnacleDeal ? "BUY ON PINNACLE →" : isFlowty ? "FLOWTY →" : "BUY →"}
       </a>
     </div>
   );
@@ -1227,6 +1237,37 @@ export default function SniperPage() {
 
       {/* Table */}
       <div style={{ maxWidth: "100vw", margin: "0 auto", padding: "16px" }}>
+        {isPinnacle && (
+          <div
+            className="rpc-hud"
+            style={{
+              marginBottom: 12,
+              padding: "10px 14px",
+              borderColor: "rgba(168,85,247,0.4)",
+              color: "var(--rpc-text-secondary)",
+              fontSize: "var(--text-sm)",
+              fontFamily: "var(--font-mono)",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <span style={{ color: "#c084fc", fontWeight: 600 }}>ℹ</span>
+            <span>
+              Deals listed on the Disney Pinnacle Marketplace — purchase at{" "}
+              <a
+                href="https://disneypinnacle.com/marketplace"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "#c084fc", textDecoration: "underline" }}
+              >
+                disneypinnacle.com
+              </a>
+              .
+            </span>
+          </div>
+        )}
         {error && (
           <div className="rpc-hud" style={{ marginBottom: 16, borderColor: "var(--rpc-danger)", color: "var(--rpc-danger)", fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)" }}>
             FEED ERROR: {error}
@@ -1278,6 +1319,7 @@ export default function SniperPage() {
           <div className="flex flex-col gap-2">
             {visibleDeals.map((deal) => {
               const isFlowty = (deal.source ?? "topshot") === "flowty";
+              const isPinnacleDeal = deal.source === "pinnacle";
               const isOwned =
                 (!!deal.intEditionKey && ownedIds.has(deal.intEditionKey)) ||
                 (!!deal.editionKey && ownedIds.has(deal.editionKey));
@@ -1333,13 +1375,15 @@ export default function SniperPage() {
                       target="_blank"
                       rel="noreferrer"
                       onClick={(e) => { e.stopPropagation(); trackClick(deal, null); }}
-                      className={isFlowty ? "rpc-chip" : "rpc-btn-ghost"}
-                      style={isFlowty
+                      className={isFlowty || isPinnacleDeal ? "rpc-chip" : "rpc-btn-ghost"}
+                      style={isPinnacleDeal
+                        ? { background: "rgba(168,85,247,0.15)", borderColor: "rgba(168,85,247,0.4)", color: "#c084fc", textDecoration: "none", padding: "4px 10px", fontSize: "var(--text-xs)" }
+                        : isFlowty
                         ? { background: "rgba(59,130,246,0.15)", borderColor: "rgba(59,130,246,0.4)", color: "var(--rpc-info)", textDecoration: "none", padding: "4px 10px", fontSize: "var(--text-xs)" }
                         : { padding: "4px 10px", textDecoration: "none", borderColor: `${accent}40`, color: accent, fontSize: "var(--text-xs)" }
                       }
                     >
-                      {isFlowty ? "FLOWTY →" : "BUY →"}
+                      {isPinnacleDeal ? "BUY ON PINNACLE →" : isFlowty ? "FLOWTY →" : "BUY →"}
                     </a>
                   </div>
                 </div>

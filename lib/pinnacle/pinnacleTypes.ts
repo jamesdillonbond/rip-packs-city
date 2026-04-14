@@ -90,7 +90,7 @@ export interface PinnacleSniperDeal {
   listingResourceID: string | null
   listingOrderID: string | null
   storefrontAddress: string | null
-  source: "flowty"
+  source: "pinnacle"
   offerAmount: number | null
   offerFmvPct: number | null
 }

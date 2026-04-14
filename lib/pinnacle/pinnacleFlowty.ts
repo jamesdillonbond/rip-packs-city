@@ -22,7 +22,7 @@
 import {
   FLOWTY_PINNACLE_ENDPOINT,
   FLOWTY_PINNACLE_HEADERS,
-  PINNACLE_FLOWTY_BUY_URL,
+  PINNACLE_MARKETPLACE_URL,
   buildPinnacleEditionKey,
   parseStringifiedArray,
   pinnacleSerialMultiplier,
@@ -285,11 +285,11 @@ export function flowtyNftToSniperDeals(
       thumbnailUrl: nft.card.images?.[0]?.url ?? null,
       isLocked: false,
       updatedAt,
-      buyUrl: PINNACLE_FLOWTY_BUY_URL(nft.id, order.listingResourceID),
+      buyUrl: PINNACLE_MARKETPLACE_URL,
       listingResourceID: order.listingResourceID ?? null,
       listingOrderID: null,
       storefrontAddress: order.storefrontAddress ?? null,
-      source: "flowty",
+      source: "pinnacle",
       offerAmount: null,
       offerFmvPct: null,
     })

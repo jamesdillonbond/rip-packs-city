@@ -157,7 +157,7 @@ export async function GET(req: NextRequest) {
     listingResourceID: d.listingResourceID,
     listingOrderID: d.listingOrderID,
     storefrontAddress: d.storefrontAddress,
-    source: "flowty" as const,
+    source: "pinnacle" as const,
     paymentToken: "DUC" as const,
     offerAmount: d.offerAmount,
     offerFmvPct: d.offerFmvPct,
