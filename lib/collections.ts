@@ -122,7 +122,7 @@ export const COLLECTIONS: Collection[] = [
     icon: "\u{1F94A}",
     pages: ["overview", "collection", "sniper"],
     published: false,
-    flowContractName: "UFCStrike",
+    flowContractName: "UFC_NFT",
     contractAddress: "0x329feb3ab062d289",
     contractName: "UFC_NFT",
     flowtyCollectionFilter: "0x329feb3ab062d289/UFC_NFT",
