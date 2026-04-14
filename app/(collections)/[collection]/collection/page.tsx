@@ -427,6 +427,16 @@ export default function WalletPage() {
   const [paginatedTotal, setPaginatedTotal] = useState(0)
   const [paginatedTotalPages, setPaginatedTotalPages] = useState(0)
   const [walletTotalFmv, setWalletTotalFmv] = useState<number | null>(null)
+  const [walletSummary, setWalletSummary] = useState<{
+    wallet_fmv: number
+    unlocked_fmv: number
+    unlocked_count: number
+    locked_fmv: number
+    locked_count: number
+    cost_basis: number
+    pnl: number
+  } | null>(null)
+  const [walletSummaryLoading, setWalletSummaryLoading] = useState(false)
   const [activeWallet, setActiveWallet] = useState("")
   const [costBasis, setCostBasis] = useState<Map<string, { buyPrice: number; acquiredDate: string; fmvAtAcquisition: number | null; acquisitionMethod: string | null; costBasisLabel: string | null }>>(new Map())
   const [serverSortBy, setServerSortBy] = useState("fmv_desc")
@@ -993,6 +1003,7 @@ export default function WalletPage() {
     setHasSearched(false)
     setSealedPackCount(null)
     setWalletTotalFmv(null)
+    setWalletSummary(null)
     setPacksByTitle({})
     setRecentSales([]);
     setPaginatedPage(1)
@@ -1016,6 +1027,34 @@ export default function WalletPage() {
       setHasSearched(true)
       try { localStorage.setItem("rpc_last_wallet", trimmed) } catch {}
       console.log("[collection] paginated API returned page 1, total_count=" + totalCount)
+
+      // Fetch accurate wallet-wide totals (FMV, locked/unlocked, cost basis, pnl)
+      // via get_wallet_summary RPC — covers ALL moments, not just the loaded page.
+      setWalletSummaryLoading(true)
+      fetch("/api/wallet-summary?wallet=" + encodeURIComponent(trimmed) + "&collection=" + encodeURIComponent(collectionSlug))
+        .then(function(r) { return r.ok ? r.json() : null })
+        .then(function(json) {
+          if (!json || json.error) return
+          setWalletSummary({
+            wallet_fmv: Number(json.wallet_fmv) || 0,
+            unlocked_fmv: Number(json.unlocked_fmv) || 0,
+            unlocked_count: Number(json.unlocked_count) || 0,
+            locked_fmv: Number(json.locked_fmv) || 0,
+            locked_count: Number(json.locked_count) || 0,
+            cost_basis: Number(json.cost_basis) || 0,
+            pnl: Number(json.pnl) || 0,
+          })
+          if (typeof json.wallet_fmv === "number" && json.wallet_fmv > 0) {
+            setWalletTotalFmv(json.wallet_fmv)
+          }
+          // Fire-and-forget lock backfill if we haven't caught up yet.
+          const lockedCount = Number(json.locked_count) || 0
+          if (lockedCount < 500) {
+            fetch("/api/cache-refresh?wallet=" + encodeURIComponent(trimmed) + "&refreshLocked=1").catch(function() {})
+          }
+        })
+        .catch(function() {})
+        .finally(function() { setWalletSummaryLoading(false) })
 
       // Secondary: call wallet-search for summary stats only (total FMV, locked/unlocked counts)
       // This runs in parallel as a background fetch — does NOT block the moment display.
@@ -1435,12 +1474,15 @@ export default function WalletPage() {
           <div className="mb-5 space-y-3">
             <div className="grid gap-3 grid-cols-2 xl:grid-cols-4">
 
-              {/* Wallet FMV — real total from get_wallet_total_fmv() */}
+              {/* Wallet FMV — authoritative total from get_wallet_summary() when available */}
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Wallet FMV</div>
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500 flex items-center gap-2">
+                  <span>Wallet FMV</span>
+                  {walletSummaryLoading && <span className="inline-block h-1.5 w-1.5 rounded-full bg-zinc-600 animate-pulse" />}
+                </div>
                 <div className="text-xl font-black text-white">
                   {(function() {
-                    const fmvVal = walletTotalFmv !== null ? walletTotalFmv : totals.totalFmv
+                    const fmvVal = walletSummary ? walletSummary.wallet_fmv : (walletTotalFmv !== null ? walletTotalFmv : totals.totalFmv)
                     if (fmvVal > 0) return formatCurrency(fmvVal)
                     return "N/A"
                   })()}
@@ -1451,14 +1493,39 @@ export default function WalletPage() {
               </div>
 
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Unlocked FMV</div>
-                <div className="text-xl font-black text-white">{totals.unlockedFmv > 0 ? formatCurrency(totals.unlockedFmv) : "N/A"}</div>
-                <div className="mt-1 text-[11px] text-zinc-500">{totals.unlockedCount} unlocked</div>
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500 flex items-center gap-2">
+                  <span>Unlocked FMV</span>
+                  {walletSummaryLoading && <span className="inline-block h-1.5 w-1.5 rounded-full bg-zinc-600 animate-pulse" />}
+                </div>
+                {(function() {
+                  const unlockedFmv = walletSummary ? walletSummary.unlocked_fmv : totals.unlockedFmv
+                  const unlockedCount = walletSummary ? walletSummary.unlocked_count : totals.unlockedCount
+                  return (
+                    <>
+                      <div className="text-xl font-black text-white">{unlockedFmv > 0 ? formatCurrency(unlockedFmv) : "N/A"}</div>
+                      <div className="mt-1 text-[11px] text-zinc-500">{unlockedCount} unlocked</div>
+                    </>
+                  )
+                })()}
               </div>
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Locked FMV</div>
-                <div className="text-xl font-black text-white">{totals.lockedFmv > 0 ? formatCurrency(totals.lockedFmv) : "N/A"}</div>
-                <div className="mt-1 text-[11px] text-zinc-500">{totals.lockedCount} locked</div>
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500 flex items-center gap-2">
+                  <span>Locked FMV</span>
+                  {walletSummaryLoading && <span className="inline-block h-1.5 w-1.5 rounded-full bg-zinc-600 animate-pulse" />}
+                </div>
+                {(function() {
+                  const lockedFmv = walletSummary ? walletSummary.locked_fmv : totals.lockedFmv
+                  const lockedCount = walletSummary ? walletSummary.locked_count : totals.lockedCount
+                  const fmvLabel = walletSummary
+                    ? (lockedFmv > 0 ? formatCurrency(lockedFmv) : "$0")
+                    : (lockedFmv > 0 ? formatCurrency(lockedFmv) : "N/A")
+                  return (
+                    <>
+                      <div className="text-xl font-black text-white">{fmvLabel}</div>
+                      <div className="mt-1 text-[11px] text-zinc-500">{lockedCount} locked</div>
+                    </>
+                  )
+                })()}
               </div>
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                 <div className="text-[10px] uppercase tracking-widest text-zinc-500">Best Offer Total</div>
@@ -1470,21 +1537,35 @@ export default function WalletPage() {
         )}
 
         {/* Cost basis / P&L summary */}
-        {hasSearched && (costBasis.size > 0 || rows.some(function(r) { return r.costBasis != null })) && (function() {
-          let totalCost = 0
-          let totalFmv = 0
+        {hasSearched && (walletSummary?.cost_basis ? walletSummary.cost_basis > 0 : (costBasis.size > 0 || rows.some(function(r) { return r.costBasis != null }))) && (function() {
+          let totalCost: number
+          let totalFmv: number
+          let totalPl: number
           let count = 0
-          for (const row of rows) {
-            const cb = costBasis.get(row.flowId ?? "")
-            const rowBasis = cb ? cb.buyPrice : (row.costBasis ?? 0)
-            if (rowBasis > 0 && row.fmv && row.fmv > 0) {
-              totalCost += rowBasis
-              totalFmv += row.fmv
-              count++
+          if (walletSummary && walletSummary.cost_basis > 0) {
+            totalCost = walletSummary.cost_basis
+            totalFmv = walletSummary.wallet_fmv
+            totalPl = walletSummary.pnl
+            for (const row of rows) {
+              const cb = costBasis.get(row.flowId ?? "")
+              const rowBasis = cb ? cb.buyPrice : (row.costBasis ?? 0)
+              if (rowBasis > 0) count++
             }
+          } else {
+            totalCost = 0
+            totalFmv = 0
+            for (const row of rows) {
+              const cb = costBasis.get(row.flowId ?? "")
+              const rowBasis = cb ? cb.buyPrice : (row.costBasis ?? 0)
+              if (rowBasis > 0 && row.fmv && row.fmv > 0) {
+                totalCost += rowBasis
+                totalFmv += row.fmv
+                count++
+              }
+            }
+            totalPl = totalFmv - totalCost
           }
-          if (count === 0) return null
-          const totalPl = totalFmv - totalCost
+          if (totalCost === 0) return null
           const plPct = totalCost > 0 ? (totalPl / totalCost) * 100 : 0
           const plColor = totalPl >= 0 ? "text-emerald-400" : "text-red-400"
           return (
@@ -1492,7 +1573,9 @@ export default function WalletPage() {
               <div><span className="text-zinc-500">Cost Basis:</span> <span className="text-white">${totalCost.toFixed(2)}</span></div>
               <div><span className="text-zinc-500">Current FMV:</span> <span className="text-white">${totalFmv.toFixed(2)}</span></div>
               <div><span className="text-zinc-500">P&amp;L:</span> <span className={plColor}>{totalPl >= 0 ? "+" : ""}{totalPl.toFixed(2)} ({plPct >= 0 ? "+" : ""}{plPct.toFixed(0)}%)</span></div>
-              <div className="text-zinc-600 text-xs">{count} moments with cost data</div>
+              {walletSummary && walletSummary.cost_basis > 0
+                ? <div className="text-zinc-600 text-xs">wallet-wide totals</div>
+                : <div className="text-zinc-600 text-xs">{count} moments with cost data</div>}
             </div>
           )
         })()}
