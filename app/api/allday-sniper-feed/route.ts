@@ -263,6 +263,8 @@ interface FlowtyListing {
   teamName: string
   tier: string
   seriesNumber: number
+  editionId: string
+  listingResourceID: string
 }
 
 const FLOWTY_TRAIT_MAP: Record<string, string[]> = {
@@ -271,6 +273,7 @@ const FLOWTY_TRAIT_MAP: Record<string, string[]> = {
   tier:         ["Tier", "tier", "MomentTier"],
   seriesNumber: ["SeriesNumber", "seriesNumber", "Series"],
   fullName:     ["FullName", "fullName", "PlayerName", "playerName"],
+  editionId:    ["EditionID", "editionID", "Edition ID", "edition_id"],
 }
 
 function getTraitMulti(
@@ -326,6 +329,8 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
         teamName: getTraitMulti(traits, FLOWTY_TRAIT_MAP.teamName),
         tier: (getTraitMulti(traits, FLOWTY_TRAIT_MAP.tier) || "COMMON").toUpperCase(),
         seriesNumber: parseInt(getTraitMulti(traits, FLOWTY_TRAIT_MAP.seriesNumber) || "0", 10),
+        editionId: getTraitMulti(traits, FLOWTY_TRAIT_MAP.editionId) || "",
+        listingResourceID: order.listingResourceID ?? "",
       })
     }
     return listings
@@ -525,10 +530,11 @@ export async function GET(req: Request) {
       const discount = adjustedFmv > 0 ? (adjustedFmv - fl.price) / adjustedFmv : 0
       const seriesName = SERIES_NAMES[fl.seriesNumber] ?? `S${fl.seriesNumber || "?"}`
 
+      const thumbEditionId = fl.editionId || ""
       deals.push({
         flowId: fl.momentId,
         momentId: fl.momentId,
-        editionKey: "",
+        editionKey: thumbEditionId,
         playerName: fl.playerName || "Unknown",
         teamName: NFL_TEAMS[fl.teamName] ?? fl.teamName ?? "",
         setName: fl.setName || "Unknown Set",
@@ -545,9 +551,13 @@ export async function GET(req: Request) {
         isSpecialSerial: sm.isSpecial,
         isJersey: sm.signal?.startsWith("Jersey") ?? false,
         serialSignal: sm.signal,
-        thumbnailUrl: `https://assets.nflallday.com/media/${fl.momentId}/image?width=180`,
+        thumbnailUrl: thumbEditionId
+          ? `https://media.nflallday.com/editions/${thumbEditionId}/media/image?width=512&format=webp&quality=90`
+          : `https://assets.nflallday.com/media/${fl.momentId}/image?width=180`,
         isLocked: false,
-        buyUrl: `https://www.flowty.io/asset/${fl.momentId}`,
+        buyUrl: fl.listingResourceID
+          ? `https://www.flowty.io/asset/0xe4cf4bdc1751c65d/AllDay/NFT/${fl.momentId}?listingResourceID=${fl.listingResourceID}`
+          : `https://www.flowty.io/asset/0xe4cf4bdc1751c65d/AllDay/NFT/${fl.momentId}`,
         source: "flowty",
       })
     }
