@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
 // ── NFL All Day listing cache ─────────────────────────────────────────────────
@@ -95,6 +96,18 @@ export async function GET(req: NextRequest) {
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
   if (!TOKEN || (bearer !== TOKEN && urlToken !== TOKEN)) return unauthorized()
 
+  after(async () => {
+    await runListingCache()
+  })
+
+  return NextResponse.json({
+    status: "accepted",
+    message: "allday-listing-cache started in background via after()",
+    startedAt: new Date().toISOString(),
+  })
+}
+
+async function runListingCache() {
   const startedAt = Date.now()
 
   type Row = {
@@ -127,8 +140,10 @@ export async function GET(req: NextRequest) {
 
   while (true) {
     const page = await fetchPage(offset).catch((err) => {
-      throw new Error(`Page offset=${offset} failed: ${String(err)}`)
+      console.log(`[allday-listing-cache] Page offset=${offset} failed: ${String(err)}`)
+      return null
     })
+    if (!page) break
     const nfts = Array.isArray(page.nfts) ? page.nfts : []
     totalFetched += nfts.length
     const reportedTotal = typeof page.total === "number" ? page.total : null
@@ -238,10 +253,8 @@ export async function GET(req: NextRequest) {
     .delete()
     .eq("collection_id", AD_COLLECTION_ID)
   if (delErr) {
-    return NextResponse.json(
-      { error: `Delete failed: ${delErr.message}` },
-      { status: 500 }
-    )
+    console.log(`[allday-listing-cache] Delete failed: ${delErr.message}`)
+    return
   }
 
   // Upsert in batches.
@@ -280,13 +293,15 @@ export async function GET(req: NextRequest) {
     console.log(`[allday-listing-cache] fmv rpc threw: ${String(err)}`)
   }
 
-  return NextResponse.json({
-    totalFetched,
-    totalListed,
-    upserted,
-    upsertErrors,
-    editionsMapped,
-    fmvRpcCalled,
-    durationMs: Date.now() - startedAt,
-  })
+  console.log(
+    `[allday-listing-cache] done: ${JSON.stringify({
+      totalFetched,
+      totalListed,
+      upserted,
+      upsertErrors,
+      editionsMapped,
+      fmvRpcCalled,
+      durationMs: Date.now() - startedAt,
+    })}`
+  )
 }
