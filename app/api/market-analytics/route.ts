@@ -4,6 +4,23 @@ import { supabaseAdmin } from "@/lib/supabase"
 const COLLECTION_UUID_MAP: Record<string, string> = {
   "nba-top-shot": "95f28a17-224a-4025-96ad-adf8a4c63bfd",
   "nfl-all-day": "dee28451-5d62-409e-a1ad-a83f763ac070",
+  "laliga-golazos": "06248cc4-b85f-47cd-af67-1855d14acd75",
+  "disney-pinnacle": "7dd9dd11-e8b6-45c4-ac99-71331f959714",
+}
+
+function periodToDays(period: string): number {
+  switch (period) {
+    case "7d": return 7
+    case "30d": return 30
+    case "90d": return 90
+    case "ytd": {
+      const now = new Date()
+      const jan1 = new Date(now.getFullYear(), 0, 1)
+      return Math.max(1, Math.ceil((now.getTime() - jan1.getTime()) / 86400000))
+    }
+    case "all": return 365
+    default: return 30
+  }
 }
 
 const MAX_ROWS = 50000
@@ -30,6 +47,7 @@ export async function GET(req: NextRequest) {
   const collectionSlug = req.nextUrl.searchParams.get("collection") || "nba-top-shot"
   const period = req.nextUrl.searchParams.get("period") || "30d"
   const detail = req.nextUrl.searchParams.get("detail") || "basic"
+  const comparison = req.nextUrl.searchParams.get("comparison") === "true"
 
   const collectionId = COLLECTION_UUID_MAP[collectionSlug]
   if (!collectionId) {
@@ -131,6 +149,20 @@ export async function GET(req: NextRequest) {
       body.tierAnalytics = tierRes.data ?? []
       body.topEditions = topEdRes.data ?? []
       body.dailyTierVolume = dailyTierRes.data ?? []
+    }
+
+    if (comparison) {
+      const days = periodToDays(period)
+      const cmpRes = await (supabaseAdmin as any).rpc("get_period_comparison", {
+        p_collection_id: collectionId,
+        p_days: days,
+      })
+      if (cmpRes.error) {
+        console.log("[market-analytics] get_period_comparison:", cmpRes.error.message)
+        body.periodComparison = null
+      } else {
+        body.periodComparison = cmpRes.data ?? null
+      }
     }
 
     const response = NextResponse.json(body)
