@@ -100,7 +100,9 @@ export interface PinnacleSniperDeal {
 export type PinnacleVariant =
   | "Standard"
   | "Brushed Silver"
+  | "Silver Sparkle"
   | "Colored Enamel"
+  | "Embellished Enamel"
   | "Golden"
   | "Digital Display"
   | "Limited Edition"
@@ -109,16 +111,20 @@ export type PinnacleVariant =
 export const PINNACLE_VARIANT_RANK: Record<string, number> = {
   "Standard": 1,
   "Brushed Silver": 2,
-  "Colored Enamel": 3,
-  "Golden": 4,
-  "Digital Display": 5,
-  "Limited Edition": 6,
+  "Silver Sparkle": 3,
+  "Colored Enamel": 4,
+  "Embellished Enamel": 5,
+  "Golden": 6,
+  "Digital Display": 7,
+  "Limited Edition": 8,
 }
 
 export const PINNACLE_VARIANT_COLORS: Record<string, string> = {
   "Standard": "#9CA3AF",
   "Brushed Silver": "#C0C0C0",
+  "Silver Sparkle": "#94A3B8",
   "Colored Enamel": "#F59E0B",
+  "Embellished Enamel": "#D97706",
   "Golden": "#FFD700",
   "Digital Display": "#8B5CF6",
   "Limited Edition": "#EF4444",
@@ -127,7 +133,9 @@ export const PINNACLE_VARIANT_COLORS: Record<string, string> = {
 export const PINNACLE_VARIANT_LABELS: Record<string, string> = {
   "Standard": "STD",
   "Brushed Silver": "SLV",
+  "Silver Sparkle": "SSP",
   "Colored Enamel": "ENM",
+  "Embellished Enamel": "EEN",
   "Golden": "GLD",
   "Digital Display": "DD",
   "Limited Edition": "LE",

@@ -6,14 +6,16 @@ const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://rip-packs-city.ver
 export const rootMetadata: Metadata = {
   metadataBase: new URL(BASE_URL),
   title: {
-    default: 'Rip Packs City — NBA Top Shot & NFL All Day Collector Intelligence',
+    default: 'Rip Packs City — NBA Top Shot, NFL All Day & Disney Pinnacle Collector Intelligence',
     template: '%s | Rip Packs City',
   },
   description:
-    'Real-time FMV, deal sniping, wallet analytics, badge tracking, and pack tools for NBA Top Shot and NFL All Day collectors on Flow blockchain.',
+    'Real-time FMV, deal sniping, wallet analytics, badge tracking, and pack tools for NBA Top Shot, NFL All Day, and Disney Pinnacle collectors on Flow blockchain.',
   keywords: [
     'NBA Top Shot',
     'NFL All Day',
+    'Disney Pinnacle',
+    'digital pins',
     'FMV',
     'moment value',
     'Top Shot analytics',
