@@ -578,6 +578,20 @@ export async function POST(req: NextRequest) {
           algo_version: ALGO_VERSION,
         }))
 
+        // Delete-then-insert — never upsert fmv_snapshots (partitioned table).
+        // Scope delete to these edition_ids + today so we don't trash history.
+        const bfEditionIds = backfillRows.map((r) => r.edition_id)
+        const DEL_CHUNK = 500
+        for (let i = 0; i < bfEditionIds.length; i += DEL_CHUNK) {
+          const slice = bfEditionIds.slice(i, i + DEL_CHUNK)
+          const { error: bfDelErr } = await supabaseAdmin
+            .from("fmv_snapshots")
+            .delete()
+            .in("edition_id", slice)
+            .gte("computed_at", todayStart.toISOString())
+          if (bfDelErr) console.warn("[FMV-RECALC] Backfill delete error:", bfDelErr.message)
+        }
+
         for (let i = 0; i < backfillRows.length; i += CHUNK_SIZE) {
           const chunk = backfillRows.slice(i, i + CHUNK_SIZE)
           const { error: bfError } = await supabaseAdmin
@@ -658,6 +672,19 @@ export async function POST(req: NextRequest) {
               algo_version: ALGO_VERSION,
             }
           })
+
+          // Delete-then-insert — never upsert fmv_snapshots (partitioned table).
+          const histEditionIds = histInsert.map((r) => r.edition_id)
+          const DEL_CHUNK = 500
+          for (let i = 0; i < histEditionIds.length; i += DEL_CHUNK) {
+            const slice = histEditionIds.slice(i, i + DEL_CHUNK)
+            const { error: histDelErr } = await supabaseAdmin
+              .from("fmv_snapshots")
+              .delete()
+              .in("edition_id", slice)
+              .gte("computed_at", todayStart.toISOString())
+            if (histDelErr) console.warn("[FMV-RECALC] Historical fallback delete error:", histDelErr.message)
+          }
 
           for (let i = 0; i < histInsert.length; i += CHUNK_SIZE) {
             const chunk = histInsert.slice(i, i + CHUNK_SIZE)
