@@ -3,6 +3,13 @@
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
+import CostBasisCard from "@/components/profile/CostBasisCard";
+import TierBreakdownCard from "@/components/profile/TierBreakdownCard";
+import TopMoversCard from "@/components/profile/TopMoversCard";
+import CollectionBreakdownCard from "@/components/profile/CollectionBreakdownCard";
+import PortfolioSparkline from "@/components/profile/PortfolioSparkline";
+import PublicTrophyCase from "@/components/profile/PublicTrophyCase";
+import AchievementsCard from "@/components/profile/AchievementsCard";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface TrophyMoment {
@@ -386,6 +393,13 @@ export default function PublicProfilePage() {
           )}
         </div>
 
+        {/* ── Achievements ── */}
+        {username && (
+          <div style={{ marginBottom: 24 }}>
+            <AchievementsCard ownerKey={username} />
+          </div>
+        )}
+
         {/* ── Stat Tiles ── */}
         <div style={{ display: "grid", gridTemplateColumns: rpcScore != null ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 24 }}>
           {/* RPC Score */}
@@ -434,6 +448,35 @@ export default function PublicProfilePage() {
           </div>
         </div>
 
+        {/* ── Portfolio Sparkline ── */}
+        {username && (
+          <div style={{ marginBottom: 16 }}>
+            <PortfolioSparkline ownerKey={username} currentFmv={totalFmv} />
+          </div>
+        )}
+
+        {/* ── Cost Basis + Tier Breakdown ── */}
+        {username && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+            <CostBasisCard ownerKey={username} />
+            <TierBreakdownCard ownerKey={username} />
+          </div>
+        )}
+
+        {/* ── Collection Breakdown ── */}
+        {username && (
+          <div style={{ marginBottom: 14 }}>
+            <CollectionBreakdownCard ownerKey={username} />
+          </div>
+        )}
+
+        {/* ── Top Movers ── */}
+        {username && (
+          <div style={{ marginBottom: 18 }}>
+            <TopMoversCard ownerKey={username} />
+          </div>
+        )}
+
         {/* ── Trophy Case ── */}
         <section style={{ marginBottom: 32 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, justifyContent: "center" }}>
@@ -447,11 +490,7 @@ export default function PublicProfilePage() {
               <p className="rpc-label" style={{ marginTop: 8 }}>LOADING TROPHY CASE&hellip;</p>
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
-              {trophies.map(function(trophy, i) {
-                return <PublicTrophySlot key={i} slot={i + 1} trophy={trophy} />;
-              })}
-            </div>
+            <PublicTrophyCase trophies={trophies} />
           )}
         </section>
 
