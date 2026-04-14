@@ -22,6 +22,11 @@ const COLLECTION_META: Record<string, { title: string; description: string }> = 
     description:
       "Wallet analysis, FMV pricing, and marketplace intelligence for LaLiga Golazos collectors on the Flow blockchain.",
   },
+  "disney-pinnacle": {
+    title: "Disney Pinnacle Analytics — Rip Packs City",
+    description:
+      "Digital pin analytics, variant tracking, FMV pricing, and marketplace intelligence for Disney Pinnacle collectors on the Flow blockchain.",
+  },
   "panini-blockchain": {
     title: "Panini Blockchain — Collector Intelligence on Rip Packs City",
     description:

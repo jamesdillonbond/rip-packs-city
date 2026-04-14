@@ -1,7 +1,7 @@
 # Rip Packs City
 
 ## Overview
-Rip Packs City (RPC) is a collector intelligence platform for NBA Top Shot and NFL All Day digital collectibles on the Flow blockchain. Founded by Trevor Dillon-Bond, an official Portland Trail Blazers Team Captain on NBA Top Shot.
+Rip Packs City (RPC) is a collector intelligence platform for NBA Top Shot, NFL All Day, and Disney Pinnacle digital collectibles on the Flow blockchain. Founded by Trevor Dillon-Bond, an official Portland Trail Blazers Team Captain on NBA Top Shot.
 
 ## What RPC Does
 - **Wallet Analytics**: Analyze any collector's wallet with real-time Fair Market Value (FMV), badge detection, serial premium calculations, and Flowty marketplace ask prices

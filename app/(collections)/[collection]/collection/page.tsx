@@ -15,6 +15,7 @@ import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
 const COLLECTION_UUID_BY_SLUG: Record<string, string> = {
   "nba-top-shot": "95f28a17-224a-4025-96ad-adf8a4c63bfd",
   "nfl-all-day": "dee28451-5d62-409e-a1ad-a83f763ac070",
+  "disney-pinnacle": "7dd9dd11-e8b6-45c4-ac99-71331f959714",
 }
 const ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR = new Set(["Rookie Year", "Rookie Premiere", "Rookie Mint"])
 
