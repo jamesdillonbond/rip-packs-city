@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { flowtyTraitsToPinnacleEdition } from "@/lib/pinnacle/pinnacleTypes"
+
+const FLOWTY_PINNACLE_URL =
+  "https://api2.flowty.io/collection/0xedf9df96c92f4595/Pinnacle"
+const FLOWTY_LOOKUP_BUDGET = 5
+const FLOWTY_LOOKUP_TIMEOUT_MS = 8000
 
 // ── On-chain Disney Pinnacle sales indexer ───────────────────────────────────
 // Scans NFTStorefrontV2.ListingCompleted, filters to Pinnacle NFT purchases,
@@ -170,24 +176,83 @@ async function runIndexer(req: NextRequest) {
       })
     }
 
-    // Resolve nftID → edition_id via pinnacle_editions.id (which stores edition_key)
-    // pinnacle_editions doesn't hold per-NFT nft_id mappings directly — the
-    // pinnacle_moments cache (if present) does. Fall back to leaving edition_id
-    // null when we can't resolve (the row is still useful for later backfill).
+    // Resolve nftID → edition_key. Primary source: pinnacle_nft_map (populated
+    // by the regular pinnacle-ingest path). Secondary: wallet_moments_cache.
+    // Final fallback: live Flowty lookup of individual NFTs (rate-limited to
+    // FLOWTY_LOOKUP_BUDGET per invocation) — on hit, also backfill
+    // pinnacle_nft_map so future runs don't need the lookup.
     const uniqueNftIds = [...new Set(sales.map((s) => s.nftID))]
     const nftToEditionId = new Map<string, string>()
+
     for (let i = 0; i < uniqueNftIds.length; i += 500) {
       const batch = uniqueNftIds.slice(i, i + 500)
-      // Try wallet_moments_cache first (shared across collections)
       const { data } = await (supabaseAdmin as any)
-        .from("wallet_moments_cache")
-        .select("moment_id, edition_key")
-        .eq("collection_id", "7dd9dd11-e8b6-45c4-ac99-71331f959714")
-        .in("moment_id", batch)
+        .from("pinnacle_nft_map")
+        .select("nft_id, edition_key")
+        .in("nft_id", batch)
       for (const row of data ?? []) {
-        if (row.edition_key) nftToEditionId.set(row.moment_id, row.edition_key)
+        if (row.edition_key) nftToEditionId.set(String(row.nft_id), row.edition_key)
       }
     }
+
+    const stillUnresolved = uniqueNftIds.filter((id) => !nftToEditionId.has(id))
+    if (stillUnresolved.length > 0) {
+      for (let i = 0; i < stillUnresolved.length; i += 500) {
+        const batch = stillUnresolved.slice(i, i + 500)
+        const { data } = await (supabaseAdmin as any)
+          .from("wallet_moments_cache")
+          .select("moment_id, edition_key")
+          .eq("collection_id", "7dd9dd11-e8b6-45c4-ac99-71331f959714")
+          .in("moment_id", batch)
+        for (const row of data ?? []) {
+          if (row.edition_key) nftToEditionId.set(row.moment_id, row.edition_key)
+        }
+      }
+    }
+
+    // Flowty last-resort lookup — bounded to avoid hammering the API.
+    const flowtyTargets = uniqueNftIds.filter((id) => !nftToEditionId.has(id)).slice(0, FLOWTY_LOOKUP_BUDGET)
+    let flowtyResolved = 0
+    let flowtyAttempted = 0
+    for (const nftId of flowtyTargets) {
+      flowtyAttempted++
+      try {
+        const res = await fetch(FLOWTY_PINNACLE_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Origin: "https://www.flowty.io",
+          },
+          body: JSON.stringify({ filters: { id: [nftId] }, offset: 0, limit: 1 }),
+          signal: AbortSignal.timeout(FLOWTY_LOOKUP_TIMEOUT_MS),
+        })
+        if (!res.ok) {
+          console.log(`[pinnacle-sales-indexer] flowty lookup nft=${nftId} HTTP ${res.status}`)
+          continue
+        }
+        const body = await res.json() as { nfts?: Array<{ id?: string; owner?: string; nftView?: { traits?: { traits?: Array<{ name: string; value: string }> } } }> }
+        const hit = body.nfts?.[0]
+        const traits = hit?.nftView?.traits?.traits ?? []
+        if (!hit || traits.length === 0) continue
+        const ed = flowtyTraitsToPinnacleEdition(traits)
+        if (!ed.editionKey) continue
+        nftToEditionId.set(nftId, ed.editionKey)
+        flowtyResolved++
+        await (supabaseAdmin as any)
+          .from("pinnacle_nft_map")
+          .upsert(
+            { nft_id: nftId, edition_key: ed.editionKey, owner: hit.owner ?? null },
+            { onConflict: "nft_id", ignoreDuplicates: false }
+          )
+      } catch (err) {
+        console.log(`[pinnacle-sales-indexer] flowty lookup nft=${nftId} err:`, err instanceof Error ? err.message : String(err))
+      }
+    }
+
+    const unresolvedCount = uniqueNftIds.filter((id) => !nftToEditionId.has(id)).length
+    console.log(
+      `[pinnacle-sales-indexer] edition resolution: total=${uniqueNftIds.length} resolved=${nftToEditionId.size} unresolved=${unresolvedCount} flowtyAttempted=${flowtyAttempted} flowtyResolved=${flowtyResolved}`
+    )
 
     const rows = sales.map((s) => ({
       id: `${s.transactionId}_${s.nftID}`,
@@ -226,12 +291,17 @@ async function runIndexer(req: NextRequest) {
       }
     }
 
+    const finalUnresolved = sales.filter((s) => !nftToEditionId.has(s.nftID)).length
+
     return NextResponse.json({
       ok: true,
       blocksScanned: targetHeight - lastBlock,
       eventsFound: sales.length,
       salesInserted: inserted,
       salesDuped: duped,
+      salesUnresolved: finalUnresolved,
+      flowtyAttempted,
+      flowtyResolved,
       cursor: lastChunkEnd,
       elapsed: Date.now() - started,
     })
