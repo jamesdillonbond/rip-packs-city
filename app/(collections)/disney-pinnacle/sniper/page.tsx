@@ -5,6 +5,7 @@ import {
   type PinnacleSniperDeal,
   type PinnacleVariant,
   PINNACLE_VARIANT_COLORS,
+  PINNACLE_MARKETPLACE_URL,
 } from "@/lib/pinnacle/pinnacleTypes";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -201,7 +202,7 @@ export default function PinnacleSniperPage() {
                 <span style={{ fontSize: "var(--text-2xl)" }}>✨</span> PINNACLE SNIPER
               </h1>
               <p className="rpc-label" style={{ marginTop: 2 }}>
-                LIVE FLOWTY LISTINGS — SORTED BY PRICE
+                LIVE PINNACLE MARKETPLACE LISTINGS — SORTED BY PRICE
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -393,6 +394,35 @@ export default function PinnacleSniperPage() {
 
       {/* Table area */}
       <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "16px" }}>
+        <div
+          className="rpc-hud"
+          style={{
+            marginBottom: 12,
+            padding: "10px 14px",
+            borderColor: `${ACCENT}40`,
+            color: "var(--rpc-text-secondary)",
+            fontSize: "var(--text-sm)",
+            fontFamily: "var(--font-mono)",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          <span style={{ color: ACCENT, fontWeight: 600 }}>ℹ</span>
+          <span>
+            Deals listed on the Disney Pinnacle Marketplace — purchase at{" "}
+            <a
+              href={PINNACLE_MARKETPLACE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: ACCENT, textDecoration: "underline" }}
+            >
+              disneypinnacle.com
+            </a>
+            .
+          </span>
+        </div>
         {error && (
           <div
             className="rpc-hud"
@@ -589,7 +619,7 @@ export default function PinnacleSniperPage() {
                     {/* Action */}
                     <td style={{ padding: "8px 12px", textAlign: "right" }}>
                       <a
-                        href={deal.buyUrl}
+                        href={PINNACLE_MARKETPLACE_URL}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="rpc-chip"
@@ -601,7 +631,7 @@ export default function PinnacleSniperPage() {
                           padding: "4px 12px",
                         }}
                       >
-                        VIEW →
+                        BUY ON PINNACLE →
                       </a>
                     </td>
                   </tr>
@@ -617,7 +647,7 @@ export default function PinnacleSniperPage() {
           style={{ marginTop: 16, color: "var(--rpc-text-ghost)" }}
         >
           <span>FMV coverage: {data?.fmvCoverage ?? 0} editions — discount and FMV show once ingest pipeline is active</span>
-          <span className="ml-auto">Source: Flowty · Prices in USD (DUC)</span>
+          <span className="ml-auto">Source: Disney Pinnacle Marketplace · Prices in USD (DUC)</span>
         </div>
       </div>
     </div>

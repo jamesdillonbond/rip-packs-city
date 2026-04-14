@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js"
 import {
   FLOWTY_PINNACLE_ENDPOINT,
   FLOWTY_PINNACLE_HEADERS,
-  PINNACLE_FLOWTY_BUY_URL,
+  PINNACLE_MARKETPLACE_URL,
   buildPinnacleEditionKey,
   parseStringifiedArray,
 } from "@/lib/pinnacle/pinnacleTypes"
@@ -123,7 +123,7 @@ function mapNft(nft: FlowtyNft): any | null {
     owner: nft.owner ?? null,
     listing_resource_id: listingResourceId || null,
     storefront_address: storefrontAddress || null,
-    buy_url: PINNACLE_FLOWTY_BUY_URL(nftId, listingResourceId || undefined),
+    buy_url: PINNACLE_MARKETPLACE_URL,
     listed_at: listedAt,
     cached_at: new Date().toISOString(),
   }
@@ -141,6 +141,22 @@ async function runAskOnlyFmv(): Promise<number> {
     return count
   } catch (e: any) {
     console.log(`[pinnacle-listing-cache] pinnacle_fmv_from_listings exception: ${e?.message ?? "unknown"}`)
+    return 0
+  }
+}
+
+async function runSalesFmvRecalc(): Promise<number> {
+  try {
+    const { data, error } = await supabase.rpc("pinnacle_fmv_recalc_all")
+    if (error) {
+      console.log(`[pinnacle-listing-cache] pinnacle_fmv_recalc_all error: ${error.message}`)
+      return 0
+    }
+    const count = typeof data === "number" ? data : 0
+    console.log(`[pinnacle-listing-cache] SALES FMV snapshots recalculated: ${count}`)
+    return count
+  } catch (e: any) {
+    console.log(`[pinnacle-listing-cache] pinnacle_fmv_recalc_all exception: ${e?.message ?? "unknown"}`)
     return 0
   }
 }
@@ -201,6 +217,7 @@ async function run(req: NextRequest) {
   }
 
   const askOnlyFmvCount = await runAskOnlyFmv()
+  const salesFmvCount = await runSalesFmvRecalc()
 
   return NextResponse.json({
     ok: true,
@@ -209,6 +226,7 @@ async function run(req: NextRequest) {
     cached: inserted,
     errors,
     askOnlyFmvCount,
+    salesFmvCount,
     elapsed: Date.now() - started,
   })
 }
