@@ -39,12 +39,31 @@ export const GET_PLAY_DATA = `
 
 export const GET_OWNED_MOMENT_IDS = `
   import AllDay from 0xe4cf4bdc1751c65d
+  import NonFungibleToken from 0x1d7e57aa55817448
   access(all)
   fun main(address: Address): [UInt64] {
-    let acct = getAccount(address)
-    let col = acct.capabilities.borrow<&{AllDay.MomentNFTCollectionPublic}>(/public/AllDayMomentNFTCollection)
-    if col == nil { return [] }
-    return col!.getIDs()
+    let ref = getAccount(address).capabilities.borrow<&{NonFungibleToken.Collection}>(/public/AllDayNFTCollection)
+    if ref == nil { return [] }
+    return ref!.getIDs()
+  }
+`
+
+// Returns [[nftID, editionID, serialNumber], ...] for all UNLOCKED moments in the wallet.
+// Locked moments are moved to Dapper custodial infrastructure and are NOT present on-chain.
+// Compare these nftIDs to a Flowty-sourced full list to determine is_locked.
+export const GET_UNLOCKED_MOMENT_DETAILS = `
+  import AllDay from 0xe4cf4bdc1751c65d
+  import NonFungibleToken from 0x1d7e57aa55817448
+  access(all) fun main(addr: Address): [[UInt64]] {
+    let r: [[UInt64]] = []
+    let ref = getAccount(addr).capabilities.borrow<&{NonFungibleToken.Collection}>(/public/AllDayNFTCollection)
+    if ref == nil { return r }
+    for id in ref!.getIDs() {
+      let nft = ref!.borrowNFT(id)!
+      let ad = nft as! &AllDay.NFT
+      r.append([id, ad.editionID, ad.serialNumber])
+    }
+    return r
   }
 `
 

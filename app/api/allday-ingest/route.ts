@@ -270,8 +270,9 @@ async function insertSale(
 ): Promise<boolean> {
   // Use listing ID as a pseudo transaction hash for dedup
   const txHash = `flowty-allday-${listingId}`
+  // Flowty blockTimestamp is in milliseconds — detect by magnitude for safety
   const soldAt = blockTimestamp
-    ? new Date(blockTimestamp * 1000).toISOString()
+    ? new Date(blockTimestamp > 1e12 ? blockTimestamp : blockTimestamp * 1000).toISOString()
     : new Date().toISOString()
 
   // Write moment row
@@ -523,11 +524,13 @@ export async function POST(req: NextRequest) {
         const traits = item.nftView?.traits ?? []
         const serial = item.card?.num ?? item.nftView?.serial ?? 0
 
-        // Build edition key from setID:playID traits
+        // Build edition key from on-chain editionID (All Day uses a single numeric ID per edition,
+        // NOT setID:playID — multiple tiers share the same set+play).
+        const rawEditionId = getTraitMulti(traits, TRAIT_MAP.editionID)
         const rawSetId = getTraitMulti(traits, TRAIT_MAP.setID)
         const rawPlayId = getTraitMulti(traits, TRAIT_MAP.playID)
-        if (!rawSetId || !rawPlayId) continue
-        const editionKey = `${rawSetId}:${rawPlayId}`
+        if (!rawEditionId) continue
+        const editionKey = String(rawEditionId)
 
         const tier = formatTier(getTraitMulti(traits, TRAIT_MAP.tier))
 
