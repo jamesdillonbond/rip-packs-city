@@ -113,6 +113,7 @@ async function runListingCache() {
   type Row = {
     id: string
     flow_id: string
+    moment_id: string | null
     player_name: string | null
     team_name: string | null
     set_name: string | null
@@ -135,6 +136,7 @@ async function runListingCache() {
   }
 
   const rows: Row[] = []
+  const seenFlowIds = new Set<string>()
   let totalFetched = 0
   let offset = 0
 
@@ -147,6 +149,7 @@ async function runListingCache() {
     const nfts = Array.isArray(page.nfts) ? page.nfts : []
     totalFetched += nfts.length
     const reportedTotal = typeof page.total === "number" ? page.total : null
+    const prevSeenSize = seenFlowIds.size
 
     for (const nft of nfts) {
       const orders = Array.isArray(nft.orders) ? nft.orders : []
@@ -155,6 +158,7 @@ async function runListingCache() {
       const nftIdRaw = nft.nftId ?? nft.id
       if (nftIdRaw === undefined || nftIdRaw === null) continue
       const nftIdStr = String(nftIdRaw)
+      if (seenFlowIds.has(nftIdStr)) continue
       const listingResourceID = listedOrder.listingResourceID
       if (!listingResourceID) continue
 
@@ -191,9 +195,11 @@ async function runListingCache() {
       }
       const buyUrl = `https://www.flowty.io/asset/${AD_CONTRACT_ADDRESS}/${AD_CONTRACT_NAME}/NFT/${nftIdStr}?listingResourceID=${listingResourceID}`
 
+      seenFlowIds.add(nftIdStr)
       rows.push({
         id: String(listingResourceID),
         flow_id: nftIdStr,
+        moment_id: editionId ?? null,
         player_name: playerName,
         team_name: teamName,
         set_name: setName,
@@ -217,6 +223,7 @@ async function runListingCache() {
     }
 
     if (nfts.length < PAGE_LIMIT) break
+    if (seenFlowIds.size === prevSeenSize) break
     offset += PAGE_LIMIT
     if (reportedTotal !== null && offset >= reportedTotal) break
     await delay(INTER_PAGE_DELAY_MS)
