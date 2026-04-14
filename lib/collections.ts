@@ -103,7 +103,7 @@ export const COLLECTIONS: Collection[] = [
     accent: "#22C55E",
     icon: "\u26BD",
     pages: ["overview", "collection", "packs", "sniper", "sets"],
-    published: false,
+    published: true,
     graphqlUrl: "https://public-api.laligagolazos.com/graphql",
     flowContractName: "Golazos",
     contractAddress: "0x87ca73a41bb50ad5",
@@ -111,6 +111,7 @@ export const COLLECTIONS: Collection[] = [
     flowtyCollectionFilter: "0x87ca73a41bb50ad5/Golazos",
     gqlEndpoint: "https://public-api.laligagolazos.com/graphql",
     cadenceCollectionPath: "/public/GolazosNFTCollection",
+    mediaCdnBase: "https://assets.laligagolazos.com",
   },
   {
     id: "ufc",
