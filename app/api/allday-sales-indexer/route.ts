@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import crypto from "crypto"
@@ -184,7 +184,8 @@ export async function POST(req: NextRequest) {
   const rangeParam = Number(req.nextUrl.searchParams.get("range") ?? DEFAULT_SCAN_RANGE)
   const maxRange = Math.min(Math.max(rangeParam || DEFAULT_SCAN_RANGE, CHUNK_SIZE), MAX_SCAN_RANGE)
 
-  try {
+  after(async () => {
+   try {
     const { data: cursorRow, error: cursorErr } = await (supabaseAdmin as any)
       .from("event_cursor")
       .select("last_processed_block")
@@ -417,13 +418,16 @@ export async function POST(req: NextRequest) {
       cursor: targetHeight,
       elapsed: Date.now() - start,
     })
-  } catch (err) {
+   } catch (err) {
     console.log("[allday-sales-indexer] fatal:", err instanceof Error ? err.message : String(err))
     return NextResponse.json(
       { error: "Internal server error", details: err instanceof Error ? err.message : String(err) },
       { status: 500 }
     )
-  }
+   }
+  })
+
+  return NextResponse.json({ ok: true, message: "indexing started" })
 }
 
 export async function GET(req: NextRequest) {
