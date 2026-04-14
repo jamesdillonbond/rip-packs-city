@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
   const period = req.nextUrl.searchParams.get("period") || "30d"
   const detail = req.nextUrl.searchParams.get("detail") || "basic"
   const comparison = req.nextUrl.searchParams.get("comparison") === "true"
+  const player = req.nextUrl.searchParams.get("player")?.trim() || null
 
   const collectionId = COLLECTION_UUID_MAP[collectionSlug]
   if (!collectionId) {
@@ -119,7 +120,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (detail === "full") {
-      const [topSalesRes, tierRes, topEdRes, dailyTierRes] = await Promise.all([
+      const [topSalesRes, tierRes, topEdRes, dailyTierRes, badgeRes, seriesRes, dailySeriesRes, playerRes] = await Promise.all([
         (supabaseAdmin as any).rpc("get_top_sales", {
           p_collection_id: collectionId,
           p_since: startIso,
@@ -138,17 +139,45 @@ export async function GET(req: NextRequest) {
           p_collection_id: collectionId,
           p_since: startIso,
         }),
+        (supabaseAdmin as any).rpc("get_badge_premium", {
+          p_collection_id: collectionId,
+          p_since: startIso,
+        }),
+        (supabaseAdmin as any).rpc("get_series_analytics", {
+          p_collection_id: collectionId,
+          p_since: startIso,
+        }),
+        (supabaseAdmin as any).rpc("get_daily_series_volume", {
+          p_collection_id: collectionId,
+          p_since: startIso,
+        }),
+        player
+          ? (supabaseAdmin as any).rpc("search_player_analytics", {
+              p_collection_id: collectionId,
+              p_player: player,
+              p_since: startIso,
+              p_limit: 20,
+            })
+          : Promise.resolve({ data: null, error: null }),
       ])
 
       if (topSalesRes.error) console.log("[market-analytics] get_top_sales:", topSalesRes.error.message)
       if (tierRes.error) console.log("[market-analytics] get_tier_analytics:", tierRes.error.message)
       if (topEdRes.error) console.log("[market-analytics] get_top_editions:", topEdRes.error.message)
       if (dailyTierRes.error) console.log("[market-analytics] get_daily_tier_volume:", dailyTierRes.error.message)
+      if (badgeRes.error) console.log("[market-analytics] get_badge_premium:", badgeRes.error.message)
+      if (seriesRes.error) console.log("[market-analytics] get_series_analytics:", seriesRes.error.message)
+      if (dailySeriesRes.error) console.log("[market-analytics] get_daily_series_volume:", dailySeriesRes.error.message)
+      if (playerRes?.error) console.log("[market-analytics] search_player_analytics:", playerRes.error.message)
 
       body.topSales = topSalesRes.data ?? []
       body.tierAnalytics = tierRes.data ?? []
       body.topEditions = topEdRes.data ?? []
       body.dailyTierVolume = dailyTierRes.data ?? []
+      body.badgePremium = badgeRes.data ?? []
+      body.seriesAnalytics = seriesRes.data ?? []
+      body.dailySeriesVolume = dailySeriesRes.data ?? []
+      if (player) body.playerSearch = playerRes?.data ?? []
     }
 
     if (comparison) {
