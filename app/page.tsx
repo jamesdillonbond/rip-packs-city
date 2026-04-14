@@ -17,10 +17,38 @@ interface MarketPulse {
   indexedEditions: number;
 }
 
+interface CollectionPulseRow {
+  collection_slug?: string;
+  collection?: string;
+  slug?: string;
+  volume_24h?: number | null;
+  sales_24h?: number | null;
+  top_sale_24h?: number | null;
+  [k: string]: unknown;
+}
+
 function fmtDollars(n: number): string {
   if (n >= 1000) return "$" + (n / 1000).toFixed(1) + "K";
   return "$" + n.toFixed(2);
 }
+
+function fmtUsd0(n: number): string {
+  return "$" + Math.round(n).toLocaleString();
+}
+
+const PULSE_SLUG_MAP: Record<string, string> = {
+  nba_top_shot: "nba-top-shot",
+  nfl_all_day: "nfl-all-day",
+  laliga_golazos: "laliga-golazos",
+  disney_pinnacle: "disney-pinnacle",
+};
+
+const PULSE_COLLECTION_META: Record<string, { label: string; icon: string; accent: string }> = {
+  "nba-top-shot": { label: "NBA Top Shot", icon: "\u{1F3C0}", accent: "#E03A2F" },
+  "nfl-all-day": { label: "NFL All Day", icon: "\u{1F3C8}", accent: "#4F94D4" },
+  "laliga-golazos": { label: "LaLiga Golazos", icon: "\u26BD", accent: "#22C55E" },
+  "disney-pinnacle": { label: "Disney Pinnacle", icon: "\u2728", accent: "#A855F7" },
+};
 
 const QUICK_COLLECTIONS = [
   { id: "nba-top-shot", label: "NBA Top Shot", icon: "\u{1F3C0}", accent: "#E03A2F" },
@@ -32,6 +60,8 @@ const QUICK_COLLECTIONS = [
 export default function HomePage() {
   const [pulse, setPulse] = useState<MarketPulse | null>(null);
   const [pulseLoading, setPulseLoading] = useState(false);
+  const [crossPulse, setCrossPulse] = useState<CollectionPulseRow[] | null>(null);
+  const [crossPulseLoading, setCrossPulseLoading] = useState(true);
 
   useEffect(() => {
     setPulseLoading(true);
@@ -40,6 +70,17 @@ export default function HomePage() {
       .then((d) => { if (d) setPulse(d); })
       .catch(() => {})
       .finally(() => setPulseLoading(false));
+  }, []);
+
+  useEffect(() => {
+    setCrossPulseLoading(true);
+    fetch("/api/market-pulse")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (Array.isArray(d)) setCrossPulse(d as CollectionPulseRow[]);
+      })
+      .catch(() => {})
+      .finally(() => setCrossPulseLoading(false));
   }, []);
 
   return (
@@ -93,6 +134,68 @@ export default function HomePage() {
           <p style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.45)", letterSpacing: "0.06em", maxWidth: 480, margin: "0 auto" }}>
             Collector intelligence for NBA Top Shot, NFL All Day, LaLiga Golazos &amp; Disney Pinnacle. FMV pricing, sniper deals, badge tracking, and portfolio analytics.
           </p>
+        </section>
+
+        {/* Cross-collection Market Pulse */}
+        <section style={{ marginBottom: 24 }}>
+          <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.7)", marginBottom: 10 }}>
+            Market Pulse
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+            {crossPulseLoading && !crossPulse && [0, 1, 2, 3].map((i) => (
+              <div key={i} style={{ flex: "1 1 220px", minWidth: 220, height: 92, background: "#18181b", border: "1px solid #27272a", borderRadius: 8, opacity: 0.6 }} />
+            ))}
+            {!crossPulseLoading && crossPulse && crossPulse.map((row, i) => {
+              const rawSlug = String(row.collection_slug ?? row.collection ?? row.slug ?? "");
+              const slug = PULSE_SLUG_MAP[rawSlug] ?? rawSlug.replace(/_/g, "-");
+              const meta = PULSE_COLLECTION_META[slug] ?? { label: slug, icon: "\u{1F4CA}", accent: "#9CA3AF" };
+              const volume = Number(row.volume_24h ?? 0) || 0;
+              const sales = Number(row.sales_24h ?? 0) || 0;
+              const topSale = Number(row.top_sale_24h ?? 0) || 0;
+              const hasActivity = volume > 0 || sales > 0;
+              return (
+                <Link
+                  key={slug + i}
+                  href={`/${slug}/analytics`}
+                  style={{
+                    flex: "1 1 220px",
+                    minWidth: 220,
+                    background: "#18181b",
+                    border: "1px solid #27272a",
+                    borderLeft: `3px solid ${meta.accent}`,
+                    borderRadius: 8,
+                    padding: "12px 14px",
+                    textDecoration: "none",
+                    color: "#fff",
+                    display: "block",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <span style={{ fontSize: 18 }}>{meta.icon}</span>
+                    <span style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, letterSpacing: "0.04em", textTransform: "uppercase" }}>{meta.label}</span>
+                  </div>
+                  {hasActivity ? (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>24h Vol</div>
+                        <div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 800, color: meta.accent }}>{fmtDollars(volume)}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Sales</div>
+                        <div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 800 }}>{sales.toLocaleString()}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Top Sale</div>
+                        <div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 800 }}>{fmtUsd0(topSale)}</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", letterSpacing: "0.08em", textTransform: "uppercase" }}>No activity</div>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
         </section>
 
         {/* Collection quick-access grid */}

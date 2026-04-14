@@ -103,6 +103,38 @@ type MarketAnalyticsResponse = {
   tierAnalytics?: TierAnalyticsRow[]
   topEditions?: TopEditionRow[]
   dailyTierVolume?: DailyTierRow[]
+  periodComparison?: {
+    current?: { volume?: number; sales?: number; avgPrice?: number; uniqueEditions?: number }
+    previous?: { volume?: number; sales?: number; avgPrice?: number; uniqueEditions?: number }
+    changes?: { volumePct?: number | null; salesPct?: number | null; avgPricePct?: number | null; uniqueEditionsPct?: number | null }
+  } | null
+}
+
+function ChangeBadge({ pct }: { pct: number | null | undefined }) {
+  if (pct == null || !Number.isFinite(pct) || pct === 0) {
+    return <span className="text-[10px] text-zinc-500">— 0%</span>
+  }
+  const up = pct > 0
+  const color = up ? "#22C55E" : "#EF4444"
+  const arrow = up ? "\u25B2" : "\u25BC"
+  return (
+    <span className="text-[11px] font-mono" style={{ color }}>
+      {arrow} {Math.abs(pct).toFixed(1)}%
+    </span>
+  )
+}
+
+function KpiCard(props: { label: string; value: string; pct?: number | null; period: string }) {
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+      <div className="text-[10px] uppercase tracking-widest text-zinc-500">{props.label}</div>
+      <div className="mt-1 font-mono text-2xl font-black text-white">{props.value}</div>
+      <div className="mt-1 flex items-center gap-2">
+        <ChangeBadge pct={props.pct} />
+        <span className="text-[9px] uppercase tracking-widest text-zinc-600">vs prev {props.period}</span>
+      </div>
+    </div>
+  )
 }
 
 function pivotDailyTier<T extends "sale_count" | "volume" | "avg_price">(
@@ -174,7 +206,7 @@ function AnalyticsInner() {
     if (!collection) return
     let cancelled = false
     setMarketLoading(true)
-    fetch(`/api/market-analytics?collection=${encodeURIComponent(collection)}&period=30d&detail=full`)
+    fetch(`/api/market-analytics?collection=${encodeURIComponent(collection)}&period=30d&detail=full&comparison=true`)
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => { if (!cancelled && j && !j.error) setMarketData(j as MarketAnalyticsResponse) })
       .catch(() => { /* swallow */ })
@@ -457,6 +489,26 @@ function AnalyticsInner() {
 
       {/* ── Market analytics sections (collection-wide, not wallet-specific) ── */}
       <div className="mt-8 space-y-6">
+        {/* KPI cards with period-over-period comparison */}
+        {(() => {
+          const pc = marketData?.periodComparison
+          const cur = pc?.current
+          const ch = pc?.changes
+          const periodLabel = marketData?.period ?? "30d"
+          const totalVolume = cur?.volume ?? marketData?.totals?.totalVolume ?? 0
+          const totalSales = cur?.sales ?? marketData?.totals?.totalSales ?? 0
+          const avgPrice = cur?.avgPrice ?? (totalSales > 0 ? totalVolume / totalSales : 0)
+          const uniqueEds = cur?.uniqueEditions ?? 0
+          return (
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <KpiCard label="Total Volume" value={fmt(totalVolume)} pct={pc ? ch?.volumePct : undefined} period={periodLabel} />
+              <KpiCard label="Total Sales" value={totalSales.toLocaleString()} pct={pc ? ch?.salesPct : undefined} period={periodLabel} />
+              <KpiCard label="Avg Sale Price" value={fmtUsd(avgPrice)} pct={pc ? ch?.avgPricePct : undefined} period={periodLabel} />
+              <KpiCard label="Unique Editions Traded" value={uniqueEds.toLocaleString()} pct={pc ? ch?.uniqueEditionsPct : undefined} period={periodLabel} />
+            </div>
+          )
+        })()}
+
         {/* Section A — Volume by Tier */}
         <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
           <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
