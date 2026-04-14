@@ -72,13 +72,14 @@ type ApiResponse = {
 }
 
 const MODES = [
-  { value: "threestar",  label: "Three-Star" },
-  { value: "rookieyear", label: "Rookie Year" },
-  { value: "debut",      label: "TS Debut" },
-  { value: "rookiemint", label: "Rookie Mint" },
-  { value: "roty",       label: "ROTY" },
-  { value: "blazers",    label: "Blazers" },
-  { value: "all",        label: "All" },
+  { value: "threestar",    label: "Three-Star" },
+  { value: "rookieyear",   label: "Rookie Year" },
+  { value: "debut",        label: "TS Debut" },
+  { value: "rookiemint",   label: "Rookie Mint" },
+  { value: "roty",         label: "ROTY" },
+  { value: "championship", label: "Champ Year" },
+  { value: "blazers",      label: "Blazers" },
+  { value: "all",          label: "All" },
 ]
 
 const PARALLELS = [
@@ -192,15 +193,7 @@ export default function BadgesPage() {
   const collectionSlug = (routeParams?.collection as string) ?? "nba-top-shot"
   const isAllDay = collectionSlug === "nfl-all-day"
   const collectionId = COLLECTION_UUID_BY_SLUG[collectionSlug] ?? COLLECTION_UUID_BY_SLUG["nba-top-shot"]
-  const MODES_FOR_COLLECTION = isAllDay ? ALLDAY_MODES : [
-    { value: "threestar",  label: "Three-Star" },
-    { value: "rookieyear", label: "Rookie Year" },
-    { value: "debut",      label: "TS Debut" },
-    { value: "rookiemint", label: "Rookie Mint" },
-    { value: "roty",       label: "ROTY" },
-    { value: "blazers",    label: "Blazers" },
-    { value: "all",        label: "All" },
-  ]
+  const MODES_FOR_COLLECTION = isAllDay ? ALLDAY_MODES : MODES
   const [editions, setEditions]       = useState<BadgeEdition[]>([])
   const [meta, setMeta]               = useState<ApiResponse["meta"] | null>(null)
   const [loading, setLoading]         = useState(false)

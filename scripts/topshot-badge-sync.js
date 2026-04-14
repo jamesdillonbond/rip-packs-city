@@ -10,16 +10,7 @@
  * Run weekly or after new set drops to keep Supabase data fresh.
  */
 
-/*
- * ── How to discover the Championship Year tag ID ─────────────────────────
- * 1. Log into nbatopshot.com in the browser.
- * 2. Open DevTools → Network tab.
- * 3. Find any known Championship Year moment's getMintedMoment request.
- * 4. In the response, look at play.tags (array).
- * 5. Copy the id of the tag whose title is "Championship Year".
- * 6. Paste into BADGE.CHAMPIONSHIP_YEAR below (and lib/topshot-badges.ts).
- * ─────────────────────────────────────────────────────────────────────────
- */
+// Badge tag IDs confirmed from live API intercept. Run from nbatopshot.com DevTools console while logged in.
 (async () => {
   const SUPABASE_URL = "https://bxcqstmqfzmuolpuynti.supabase.co"
   const COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
@@ -35,7 +26,7 @@
     ROOKIE_OF_THE_YEAR: "34fe8d3f-681a-42df-856a-e98624f95b11",
     ROOKIE_MINT:        "24d515af-e967-45f5-a30e-11fc96dc2b62",
     INTERACTIVE:        "9bbb6f91-d09a-4d07-ab3d-8402a9c10cf1",
-    CHAMPIONSHIP_YEAR:  null,
+    CHAMPIONSHIP_YEAR:  "f197f60a-b502-4386-b0c0-7f4cde8164ff",
   }
 
   const QUERY = `
@@ -244,10 +235,11 @@
   const allEditions = new Map()
 
   const sweepResults = [
-    await sweep("Rookie Year",    [BADGE.ROOKIE_YEAR]),
-    await sweep("Top Shot Debut", [BADGE.TOP_SHOT_DEBUT]),
-    await sweep("ROTY",           [BADGE.ROOKIE_OF_THE_YEAR]),
-    await sweep("Rookie Mint",    [], [BADGE.ROOKIE_MINT]),
+    await sweep("Rookie Year",       [BADGE.ROOKIE_YEAR]),
+    await sweep("Top Shot Debut",    [BADGE.TOP_SHOT_DEBUT]),
+    await sweep("ROTY",              [BADGE.ROOKIE_OF_THE_YEAR]),
+    await sweep("Rookie Mint",       [], [BADGE.ROOKIE_MINT]),
+    await sweep("Championship Year", [BADGE.CHAMPIONSHIP_YEAR]),
   ]
 
   for (let i = 0; i < sweepResults.length; i++) {
