@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { topshotGraphql } from "@/lib/topshot"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
@@ -464,7 +464,6 @@ async function fetchRecentSales(
 // ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  const startTime = Date.now()
   const chain = req.nextUrl.searchParams.get("chain") === "true"
 
   // Auth — Bearer token
@@ -474,10 +473,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  try {
-    const body = await req.json().catch(() => ({}))
-    const batchSize = Math.min(Number(body.batchSize ?? 50), 200)
-    const cursor = (body.cursor as string | null) ?? null
+  const body = await req.json().catch(() => ({}))
+  const batchSize = Math.min(Number(body.batchSize ?? 50), 200)
+  const cursor = (body.cursor as string | null) ?? null
+
+  // Run the full ingest asynchronously so the HTTP response returns inside
+  // cron-job.org's 30s timeout even when processing takes longer.
+  after(async () => {
+    const startTime = Date.now()
+    try {
 
     console.log(`[INGEST] Starting — batchSize=${batchSize} cursor=${cursor ?? "start"}`)
     console.log(`[INGEST] SUPABASE_SERVICE_ROLE_KEY set: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}, length: ${process.env.SUPABASE_SERVICE_ROLE_KEY?.length ?? 0}`)
@@ -490,10 +494,8 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (!collections?.id) {
-      return NextResponse.json(
-        { error: "NBA Top Shot collection not found in DB" },
-        { status: 500 }
-      )
+      console.error("[INGEST] NBA Top Shot collection not found in DB")
+      return
     }
 
     const collectionId = collections.id
@@ -645,30 +647,19 @@ export async function POST(req: NextRequest) {
     )
 
     await fireNextPipelineStep("/api/sales-indexer", chain)
-    return NextResponse.json({
-      ok: true,
-      salesIngested,
-      momentsWritten,
-      duplicates,
-      editionsUpdated,
-      fmvUpdated,
-      proactiveFmvProcessed,
-      proactiveFmvUpdated,
-      errors,
-      nextCursor,
-      hasMore: !!nextCursor,
-      durationMs: duration,
-    })
-  } catch (e) {
-    console.error("[INGEST] Fatal error:", e)
-    return NextResponse.json(
-      {
-        ok: false,
-        error: e instanceof Error ? e.message : "Ingestion failed",
-      },
-      { status: 500 }
+    console.log(
+      `[INGEST] Summary — sales=${salesIngested} dupes=${duplicates} moments=${momentsWritten} editions=${editionsUpdated} fmv=${fmvUpdated} proactiveFmv=${proactiveFmvUpdated}/${proactiveFmvProcessed} errors=${errors} nextCursor=${nextCursor ?? "null"} durationMs=${duration}`
     )
-  }
+    } catch (e) {
+      console.error("[INGEST] Fatal error:", e instanceof Error ? e.message : String(e))
+    }
+  })
+
+  return NextResponse.json({
+    ok: true,
+    message: "Ingest triggered",
+    triggeredAt: new Date().toISOString(),
+  })
 }
 
 // Allow GET for browser testing
