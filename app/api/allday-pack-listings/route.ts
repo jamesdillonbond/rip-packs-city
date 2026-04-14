@@ -159,6 +159,8 @@ export async function POST(req: NextRequest) {
 
   console.log(`[allday-pack-listings] ${groupsFound} groups, ${groupsWithListings} with listings`)
 
+  console.log('[allday-packs] groups:', rows.slice(0, 5).map(g => ({ id: g.id, pack_name: g.pack_name, tier: g.tier })))
+
   const del = await supabase
     .from("pack_listings_cache")
     .delete()
@@ -168,9 +170,13 @@ export async function POST(req: NextRequest) {
   let inserted = 0
   for (let i = 0; i < rows.length; i += 100) {
     const chunk = rows.slice(i, i + 100)
-    const { error } = await supabase.from("pack_listings_cache").upsert(chunk, { onConflict: "id" })
-    if (error) console.log(`[allday-pack-listings] upsert error: ${error.message}`)
-    else inserted += chunk.length
+    try {
+      const { error } = await supabase.from("pack_listings_cache").upsert(chunk, { onConflict: "id" })
+      if (error) console.log(`[allday-packs] insert error:`, error)
+      else inserted += chunk.length
+    } catch (err) {
+      console.log(`[allday-packs] insert error:`, err)
+    }
   }
 
   return NextResponse.json({
