@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import {
   PINNACLE_COLLECTION_ID,
@@ -55,6 +55,14 @@ function variantBadge(variant: string | null | undefined) {
 }
 
 export default function PinnacleCollectionPage() {
+  return (
+    <Suspense fallback={<div style={{ color: "rgba(255,255,255,0.5)", padding: 20 }}>Loading…</div>}>
+      <PinnacleCollectionPageInner />
+    </Suspense>
+  )
+}
+
+function PinnacleCollectionPageInner() {
   const router = useRouter()
   const sp = useSearchParams()
   const walletParam = sp?.get("wallet") ?? ""
