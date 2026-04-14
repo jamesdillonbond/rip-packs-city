@@ -26,6 +26,7 @@ import { getCollection } from "@/lib/collections"
 
 const VALID_SORTS = new Set([
   "fmv_desc", "fmv_asc", "serial_asc", "price_asc", "price_desc", "recent",
+  "paid_desc", "paid_asc",
 ])
 
 const TOPSHOT_GQL_URL = "https://public-api.nbatopshot.com/graphql"
@@ -234,6 +235,8 @@ export async function GET(req: NextRequest) {
         last_seen_at: row.last_seen_at ?? null,
         buy_price: row.buy_price != null ? Number(row.buy_price) : null,
         acquisition_method: row.acquisition_method ?? null,
+        acquisition_source: row.acquisition_source ?? null,
+        acquisition_confidence: row.acquisition_confidence ?? null,
         loan_principal: row.loan_principal != null ? Number(row.loan_principal) : null,
         is_locked: row.is_locked === true,
       }

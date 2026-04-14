@@ -3,6 +3,13 @@
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { Suspense, useCallback, useEffect, useState } from "react"
 
+type MarketplaceBreakdown = {
+  topshot?: { count: number; total_spent: number; avg_price: number } | null
+  flowty?: { count: number; total_spent: number; avg_price: number } | null
+  summary?: { total_purchases?: number; total_spent?: number; flowty_pct?: number; topshot_pct?: number } | null
+  [k: string]: unknown
+}
+
 type AnalyticsResponse = {
   wallet: string
   acquisition: {
@@ -52,6 +59,7 @@ function AnalyticsInner() {
   const [data, setData] = useState<AnalyticsResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [mpBreakdown, setMpBreakdown] = useState<MarketplaceBreakdown | null>(null)
 
   const runSearch = useCallback(async (q: string) => {
     const trimmed = q.trim()
@@ -59,13 +67,21 @@ function AnalyticsInner() {
     setLoading(true)
     setError(null)
     setData(null)
+    setMpBreakdown(null)
     setActiveWallet(trimmed)
     try { router.replace(`?wallet=${encodeURIComponent(trimmed)}`, { scroll: false }) } catch {}
     try {
-      const res = await fetch(`/api/analytics?wallet=${encodeURIComponent(trimmed)}`)
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || "Failed to load analytics")
+      const [analyticsRes, mpRes] = await Promise.all([
+        fetch(`/api/analytics?wallet=${encodeURIComponent(trimmed)}`),
+        fetch(`/api/marketplace-breakdown?wallet=${encodeURIComponent(trimmed)}`),
+      ])
+      const json = await analyticsRes.json()
+      if (!analyticsRes.ok) throw new Error(json.error || "Failed to load analytics")
       setData(json)
+      if (mpRes.ok) {
+        const mp = await mpRes.json()
+        setMpBreakdown(mp && typeof mp === "object" && !mp.error ? mp : null)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load analytics")
     } finally {
@@ -168,6 +184,59 @@ function AnalyticsInner() {
             </div>
             <div className="mt-2 text-[11px] text-zinc-600">Locked moments cannot be listed or traded.</div>
           </section>
+
+          {/* Marketplace Breakdown — Top Shot vs Flowty */}
+          {mpBreakdown && (() => {
+            const ts = mpBreakdown.topshot ?? { count: 0, total_spent: 0, avg_price: 0 }
+            const fl = mpBreakdown.flowty ?? { count: 0, total_spent: 0, avg_price: 0 }
+            const total = (ts.count || 0) + (fl.count || 0)
+            if (total === 0) return null
+            const tsPct = total > 0 ? (ts.count / total) * 100 : 0
+            const flPct = total > 0 ? (fl.count / total) * 100 : 0
+            const flowtyPctSummary = typeof mpBreakdown.summary?.flowty_pct === "number" ? mpBreakdown.summary!.flowty_pct : flPct
+            return (
+              <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="text-[11px] uppercase tracking-widest text-zinc-500">Marketplace Breakdown</div>
+                  <div className="font-mono text-[11px] text-zinc-500">Flowty {Number(flowtyPctSummary).toFixed(1)}%</div>
+                </div>
+
+                {/* Horizontal split bar */}
+                <div className="mb-3 flex h-3 w-full overflow-hidden rounded-full border border-zinc-800">
+                  {tsPct > 0 && <div style={{ width: `${tsPct}%`, background: "var(--rpc-red)" }} title={`Top Shot ${tsPct.toFixed(1)}%`} />}
+                  {flPct > 0 && <div style={{ width: `${flPct}%`, background: "#14B8A6" }} title={`Flowty ${flPct.toFixed(1)}%`} />}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-zinc-800 bg-black p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[10px] uppercase tracking-widest text-zinc-500">Top Shot</div>
+                      <span className="rounded px-1.5 py-0.5 font-mono text-[9px] font-semibold" style={{ color: "var(--rpc-red)", border: "1px solid rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.10)" }}>TS</span>
+                    </div>
+                    <div className="mt-1 font-mono text-xl font-black text-white">{(ts.count ?? 0).toLocaleString()}</div>
+                    <div className="mt-1 text-[11px] text-zinc-500">purchases · {fmt(Number(ts.total_spent ?? 0))}</div>
+                    <div className="mt-1 text-[11px] text-zinc-600">avg {fmt(Number(ts.avg_price ?? 0))}</div>
+                  </div>
+                  <div className="rounded-lg border border-zinc-800 bg-black p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[10px] uppercase tracking-widest text-zinc-500">Flowty</div>
+                      <span className="rounded px-1.5 py-0.5 font-mono text-[9px] font-semibold" style={{ color: "#14B8A6", border: "1px solid rgba(20,184,166,0.35)", background: "rgba(20,184,166,0.10)" }}>Flowty</span>
+                    </div>
+                    <div className="mt-1 font-mono text-xl font-black text-white">{(fl.count ?? 0).toLocaleString()}</div>
+                    <div className="mt-1 text-[11px] text-zinc-500">purchases · {fmt(Number(fl.total_spent ?? 0))}</div>
+                    <div className="mt-1 text-[11px] text-zinc-600">avg {fmt(Number(fl.avg_price ?? 0))}</div>
+                  </div>
+                </div>
+
+                <div className="mt-3 text-[11px] text-zinc-600">
+                  Avg price gap:{" "}
+                  {ts.avg_price > 0 && fl.avg_price > 0
+                    ? `${fmt(Math.abs(Number(fl.avg_price) - Number(ts.avg_price)))} ${Number(fl.avg_price) > Number(ts.avg_price) ? "higher on Flowty" : "higher on Top Shot"}`
+                    : "—"}
+                </div>
+              </section>
+            )
+          })()}
 
           {/* Section 3 — Tier Breakdown */}
           <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
