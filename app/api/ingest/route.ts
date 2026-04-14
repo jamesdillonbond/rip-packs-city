@@ -377,20 +377,33 @@ async function upsertFmvSnapshot(
         ? "MEDIUM"
         : "LOW"
 
+  // fmv_snapshots is a partitioned table with PK (id, computed_at) — upsert
+  // with onConflict: "edition_id" 400s because no such unique constraint
+  // exists. Delete-then-insert scoped to today keeps history intact while
+  // ensuring the 20-min ingest cycle overwrites the current day's row.
+  const todayStart = new Date()
+  todayStart.setUTCHours(0, 0, 0, 0)
+  const { error: delError } = await supabaseAdmin
+    .from("fmv_snapshots")
+    .delete()
+    .eq("edition_id", editionId)
+    .gte("computed_at", todayStart.toISOString())
+
+  if (delError) {
+    console.error("DB delete failed:", delError)
+  }
+
   const { error } = await supabaseAdmin
     .from("fmv_snapshots")
-    .upsert(
-      {
-        edition_id: editionId,
-        collection_id: collectionId,
-        fmv_usd: Number(median.toFixed(2)),
-        floor_price_usd: Number(floor.toFixed(2)),
-        confidence: confidence as "LOW" | "MEDIUM" | "HIGH",
-        sales_count_7d: recentSales.length,
-        algo_version: "1.1.0",
-      },
-      { onConflict: "edition_id", ignoreDuplicates: false }
-    )
+    .insert({
+      edition_id: editionId,
+      collection_id: collectionId,
+      fmv_usd: Number(median.toFixed(2)),
+      floor_price_usd: Number(floor.toFixed(2)),
+      confidence: confidence as "LOW" | "MEDIUM" | "HIGH",
+      sales_count_7d: recentSales.length,
+      algo_version: "1.1.0",
+    })
 
   if (error) {
     console.error("DB write failed:", error)
