@@ -42,6 +42,7 @@ function formatTier(tier: string | null | undefined): string {
   if (t.includes("LEGENDARY")) return "LEGENDARY"
   if (t.includes("RARE")) return "RARE"
   if (t.includes("PREMIUM")) return "RARE"
+  if (t.includes("UNCOMMON")) return "UNCOMMON"
   return "COMMON"
 }
 
@@ -166,7 +167,7 @@ async function upsertPlayer(
         team: team ?? null,
         jersey_number: jerseyNumber,
       },
-      { onConflict: "external_id,collection_id", ignoreDuplicates: false }
+      { onConflict: "external_id", ignoreDuplicates: false }
     )
     .select("id")
     .single()
@@ -199,7 +200,7 @@ async function upsertSet(
         series,
         tier: tier as "COMMON" | "RARE" | "LEGENDARY" | "ULTIMATE" | "FANDOM",
       },
-      { onConflict: "external_id,collection_id", ignoreDuplicates: false }
+      { onConflict: "external_id", ignoreDuplicates: false }
     )
     .select("id")
     .single()
@@ -338,20 +339,19 @@ async function upsertFmvSnapshot(
         ? "MEDIUM"
         : "LOW"
 
+  // fmv_snapshots has PK (id, computed_at) with no unique on edition_id —
+  // insert a fresh snapshot each run; latest-per-edition is derived via ORDER BY computed_at DESC.
   const { error } = await supabaseAdmin
     .from("fmv_snapshots")
-    .upsert(
-      {
-        edition_id: editionId,
-        collection_id: collectionId,
-        fmv_usd: Number(median.toFixed(2)),
-        floor_price_usd: Number(floor.toFixed(2)),
-        confidence: confidence as "LOW" | "MEDIUM" | "HIGH",
-        sales_count_7d: recentSales.length,
-        algo_version: "1.1.0",
-      },
-      { onConflict: "edition_id", ignoreDuplicates: false }
-    )
+    .insert({
+      edition_id: editionId,
+      collection_id: collectionId,
+      fmv_usd: Number(median.toFixed(2)),
+      floor_price_usd: Number(floor.toFixed(2)),
+      confidence: confidence as "LOW" | "MEDIUM" | "HIGH",
+      sales_count_7d: recentSales.length,
+      algo_version: "1.1.0",
+    })
 
   if (error) {
     console.error("[ALLDAY-INGEST] FMV snapshot error:", error.message)
@@ -612,10 +612,16 @@ export async function POST(req: NextRequest) {
     })
   } catch (e) {
     console.error("[ALLDAY-INGEST] Fatal error:", e)
+    const err = e as { message?: string; code?: string; details?: string; hint?: string; name?: string; stack?: string }
     return NextResponse.json(
       {
         ok: false,
-        error: e instanceof Error ? e.message : "Ingestion failed",
+        error: err?.message ?? "Ingestion failed",
+        name: err?.name ?? null,
+        code: err?.code ?? null,
+        details: err?.details ?? null,
+        hint: err?.hint ?? null,
+        stack: typeof err?.stack === "string" ? err.stack.split("\n").slice(0, 6).join("\n") : null,
       },
       { status: 500 }
     )
