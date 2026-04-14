@@ -1,223 +1,184 @@
-// app/api/allday-pack-listings/route.ts
-// NFL All Day parallel of /api/pack-listings.
-// Only difference: PackNFT type filter uses A.e4cf4bdc1751c65d.PackNFT.NFT
+import { NextRequest, NextResponse } from "next/server"
+import { createClient } from "@supabase/supabase-js"
 
-import { NextResponse } from "next/server"
+const supabase: any = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+)
 
-const ALLDAY_GRAPHQL = "https://api.production.studio-platform.dapperlabs.com/graphql"
-
-const GRAPHQL_HEADERS = {
+const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
+const FLOWTY_ENDPOINT = "https://api2.flowty.io/collection/0xe4cf4bdc1751c65d/AllDay"
+const FLOWTY_HEADERS = {
   "Content-Type": "application/json",
-  "User-Agent": "RipPacksCity/1.0 (rip-packs-city.vercel.app)",
-  "Origin": "https://nflallday.com",
-  "Referer": "https://nflallday.com/",
+  Origin: "https://www.flowty.io",
+  Referer: "https://www.flowty.io/",
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146 Safari/537.36",
+}
+const PAGE_OFFSETS = [0, 24, 48]
+const PAGE_LIMIT = 100
+
+const TIER_ENUM = new Set(["COMMON", "UNCOMMON", "RARE", "LEGENDARY", "ULTIMATE"])
+
+function slug(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
 }
 
-const PACK_LISTINGS_QUERY = `
-  query searchPackNftAggregation_searchPacks($after: String, $first: Int, $filters: [PackNftFilter!], $sortBy: PackNftSortAggregation) {
-    searchPackNftAggregation(searchInput: {after: $after, first: $first, filters: $filters, sortBy: $sortBy}) {
-      pageInfo { endCursor hasNextPage }
-      totalCount
-      edges {
-        node {
-          dist_id { key value }
-          listing { price { min } }
-          distribution {
-            id { value }
-            uuid { value }
-            image_urls { value }
-            number_of_pack_slots { value }
-            pack_type { value }
-            price { value }
-            start_time { value }
-            tier { value }
-            title { value }
-          }
-        }
+function normalizeTier(raw: string | undefined): string {
+  const t = (raw ?? "").toUpperCase().trim()
+  if (TIER_ENUM.has(t)) return t
+  if (t.includes("COMMON")) return "COMMON"
+  if (t.includes("UNCOMMON")) return "UNCOMMON"
+  if (t.includes("LEGEND")) return "LEGENDARY"
+  if (t.includes("ULTIMATE")) return "ULTIMATE"
+  if (t.includes("RARE")) return "RARE"
+  return "COMMON"
+}
+
+function getTrait(traits: any[], ...names: string[]): string {
+  if (!Array.isArray(traits)) return ""
+  for (const name of names) {
+    const t = traits.find((tr: any) => tr && (tr.name === name || tr.trait_type === name))
+    if (t && t.value != null && String(t.value).trim() !== "") return String(t.value).trim()
+  }
+  return ""
+}
+
+async function fetchFlowtyPage(offset: number): Promise<any[]> {
+  try {
+    const res = await fetch(FLOWTY_ENDPOINT, {
+      method: "POST",
+      headers: FLOWTY_HEADERS,
+      body: JSON.stringify({ filters: {}, offset, limit: PAGE_LIMIT }),
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!res.ok) {
+      console.log(`[allday-pack-listings] Flowty offset=${offset} HTTP ${res.status}`)
+      return []
+    }
+    const json = await res.json()
+    const items = json.nfts ?? json.data ?? []
+    return Array.isArray(items) ? items : []
+  } catch (e: any) {
+    console.log(`[allday-pack-listings] Flowty offset=${offset} error: ${e?.message ?? "unknown"}`)
+    return []
+  }
+}
+
+export async function POST(req: NextRequest) {
+  const auth = req.headers.get("authorization") ?? ""
+  if (auth !== `Bearer ${process.env.INGEST_SECRET_TOKEN}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const started = Date.now()
+  const pages = await Promise.all(PAGE_OFFSETS.map(fetchFlowtyPage))
+  const allNfts = pages.flat()
+  console.log(`[allday-pack-listings] Fetched ${allNfts.length} raw NFTs from Flowty`)
+
+  type Group = { setName: string; tier: string; nfts: Array<{ price: number; image: string | null }> }
+  const groups = new Map<string, Group>()
+
+  for (const nft of allNfts) {
+    const orders = Array.isArray(nft?.orders) ? nft.orders : []
+    const listed = orders.find((o: any) => o?.state === "LISTED")
+    if (!listed) continue
+    const price = parseFloat(String(listed.salePrice ?? "0"))
+    if (!isFinite(price) || price <= 0) continue
+
+    let traits: any[] = []
+    if (nft.nftView?.traits) {
+      if (Array.isArray(nft.nftView.traits)) traits = nft.nftView.traits
+      else if (Array.isArray(nft.nftView.traits.traits)) traits = nft.nftView.traits.traits
+    }
+
+    const setName = getTrait(traits, "SetName", "setName", "Set Name")
+    const tierRaw = getTrait(traits, "Tier", "editionTier", "Moment Tier")
+    if (!setName || !tierRaw) continue
+    const tier = normalizeTier(tierRaw)
+
+    const image: string | null =
+      (nft?.card && Array.isArray(nft.card.images) && nft.card.images[0]?.url) || null
+
+    const key = `${setName}::${tier}`
+    let g = groups.get(key)
+    if (!g) {
+      g = { setName, tier, nfts: [] }
+      groups.set(key, g)
+    }
+    g.nfts.push({ price, image })
+  }
+
+  const now = new Date().toISOString()
+  const rows = Array.from(groups.values())
+    .filter((g) => g.nfts.length > 0)
+    .map((g) => {
+      const lowest = g.nfts.reduce((m, n) => (n.price < m ? n.price : m), Infinity)
+      const image = g.nfts.find((n) => n.image)?.image ?? null
+      const packName = `${g.setName} — ${g.tier}`
+      return {
+        id: `allday:${slug(packName)}`,
+        collection_id: ALLDAY_COLLECTION_ID,
+        pack_name: packName,
+        tier: g.tier,
+        pack_type: "standard",
+        lowest_ask_usd: Math.round(lowest * 100) / 100,
+        total_listed: g.nfts.length,
+        image_url: image,
+        source: "flowty",
+        cached_at: now,
+        first_seen_at: now,
       }
-    }
+    })
+
+  console.log(`[allday-pack-listings] Grouped ${rows.length} synthetic packs`)
+
+  const del = await supabase
+    .from("pack_listings_cache")
+    .delete()
+    .eq("collection_id", ALLDAY_COLLECTION_ID)
+  if (del.error) console.log(`[allday-pack-listings] delete error: ${del.error.message}`)
+
+  let inserted = 0
+  for (let i = 0; i < rows.length; i += 100) {
+    const chunk = rows.slice(i, i + 100)
+    const { error } = await supabase.from("pack_listings_cache").upsert(chunk, { onConflict: "id" })
+    if (error) console.log(`[allday-pack-listings] upsert error: ${error.message}`)
+    else inserted += chunk.length
   }
-`
 
-const ACTIVE_FILTERS = [
-  {
-    status: { eq: "Sealed" },
-    listing: {
-      exists: true,
-      ft_vault_type: { eq: "A.ead892083b3e2c6c.DapperUtilityCoin.Vault" },
-    },
-    owner_address: { ne: "e4cf4bdc1751c65d" },
-    excludeReserved: { eq: true },
-    type_name: { eq: "A.e4cf4bdc1751c65d.PackNFT.NFT" },
-    distribution: {
-      tier: { ignore_case: true, in: [] },
-      series_ids: { contains: [], contains_type: "ANY" },
-      title: { ignore_case: true, partial_match: true, in: [] },
-    },
-  },
-]
-
-type PackDistribution = {
-  id: { value: string }
-  uuid: { value: string }
-  image_urls: { value: string[] }
-  number_of_pack_slots: { value: string }
-  pack_type: { value: string | null }
-  price: { value: number }
-  start_time: { value: string }
-  tier: { value: string }
-  title: { value: string }
-}
-
-type PackNode = {
-  dist_id: { key: string; value: string }
-  listing: { price: { min: string } }
-  distribution: PackDistribution
-}
-
-type GraphQLResponse = {
-  data?: {
-    searchPackNftAggregation?: {
-      pageInfo: { endCursor: string; hasNextPage: boolean }
-      totalCount: number
-      edges: { node: PackNode }[]
-    }
-  }
-  errors?: { message: string }[]
-}
-
-export type PackType = "standard" | "topper" | "chance_hit" | "reward" | "bundle"
-
-export type PackListing = {
-  packListingId: string
-  distId: string
-  title: string
-  tier: string
-  imageUrl: string
-  momentsPerPack: number
-  retailPrice: number
-  lowestAsk: number
-  startTime: string
-  listingCount: number
-  packType: PackType
-}
-
-const listingsCache = new Map<string, { data: PackListing[]; expiresAt: number }>()
-const CACHE_TTL_MS = 2 * 60 * 1000
-
-function tierOrder(tier: string): number {
-  if (tier === "ultimate") return 0
-  if (tier === "legendary") return 1
-  if (tier === "rare") return 2
-  if (tier === "fandom") return 3
-  return 4
-}
-
-function classifyPackType(title: string, slots: number, retailPrice: number): PackType {
-  const t = title.toLowerCase()
-  if (slots >= 10) return "bundle"
-  if (t.includes("topper")) return "topper"
-  if (t.includes("chance hit") || t.includes("chance-hit")) return "chance_hit"
-  if (slots === 1) {
-    if (retailPrice === 0) return "reward"
-    if (t.includes("reward") || t.includes("airdrop")) return "reward"
-    return "chance_hit"
-  }
-  if (slots <= 3) {
-    if (retailPrice === 0) return "reward"
-    if (t.includes("reward") || t.includes("airdrop") || t.includes("fast break")) return "reward"
-    if (t.includes("chance") || t.includes("premium")) return "chance_hit"
-  }
-  return "standard"
+  return NextResponse.json({
+    ok: true,
+    fetched: allNfts.length,
+    groups: rows.length,
+    cached: inserted,
+    elapsed: Date.now() - started,
+  })
 }
 
 export async function GET() {
-  try {
-    const cached = listingsCache.get("listings")
-    if (cached && cached.expiresAt > Date.now()) {
-      return NextResponse.json({ listings: cached.data, cached: true })
-    }
-
-    const allNodes: PackNode[] = []
-    let cursor: string | undefined = undefined
-    let hasMore = true
-
-    while (hasMore) {
-      const res = await fetch(ALLDAY_GRAPHQL, {
-        method: "POST",
-        headers: GRAPHQL_HEADERS,
-        body: JSON.stringify({
-          operationName: "searchPackNftAggregation_searchPacks",
-          query: PACK_LISTINGS_QUERY,
-          variables: { first: 2000, after: cursor, filters: ACTIVE_FILTERS },
-        }),
-      })
-
-      const json = (await res.json()) as GraphQLResponse
-      if (json.errors) throw new Error(json.errors[0]?.message ?? "GraphQL error")
-
-      const connection = json.data?.searchPackNftAggregation
-      const edges = connection?.edges ?? []
-      for (const edge of edges) {
-        if (edge?.node) allNodes.push(edge.node)
-      }
-
-      hasMore = connection?.pageInfo?.hasNextPage === true
-      cursor = connection?.pageInfo?.endCursor ?? undefined
-    }
-
-    const packMap = new Map<string, { node: PackNode; count: number; lowestAsk: number }>()
-
-    for (const node of allNodes) {
-      const distId = node.dist_id?.value
-      if (!distId) continue
-      const askRaw = parseInt(node.listing?.price?.min ?? "0", 10)
-      const ask = askRaw / 100000000
-      const existing = packMap.get(distId)
-      if (existing) {
-        existing.count += 1
-        if (ask > 0 && (existing.lowestAsk === 0 || ask < existing.lowestAsk)) existing.lowestAsk = ask
-      } else {
-        packMap.set(distId, { node, count: 1, lowestAsk: ask > 0 ? ask : 0 })
-      }
-    }
-
-    const listings: PackListing[] = Array.from(packMap.entries()).map(([distId, { node, count, lowestAsk }]) => {
-      const d = node.distribution
-      const rawRetail = d.price.value ?? 0
-      const retailPrice = rawRetail > 0 && rawRetail <= 10000 ? rawRetail : 0
-      const slots = parseInt(d.number_of_pack_slots.value, 10) || 1
-      const packType = classifyPackType(d.title.value, slots, retailPrice)
-      return {
-        packListingId: d.uuid.value,
-        distId,
-        title: d.title.value,
-        tier: d.tier.value ?? "common",
-        imageUrl: d.image_urls?.value?.[0] ?? "",
-        momentsPerPack: slots,
-        retailPrice,
-        lowestAsk,
-        startTime: d.start_time.value,
-        listingCount: count,
-        packType,
-      }
-    })
-
-    listings.sort((a, b) => {
-      const aIsBundle = a.packType === "bundle" ? 1 : 0
-      const bIsBundle = b.packType === "bundle" ? 1 : 0
-      if (aIsBundle !== bIsBundle) return aIsBundle - bIsBundle
-      const tierDiff = tierOrder(a.tier) - tierOrder(b.tier)
-      if (tierDiff !== 0) return tierDiff
-      return (a.lowestAsk || 99999) - (b.lowestAsk || 99999)
-    })
-
-    listingsCache.set("listings", { data: listings, expiresAt: Date.now() + CACHE_TTL_MS })
-    return NextResponse.json({ listings, cached: false, totalPacks: listings.length })
-  } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "allday-pack-listings failed" },
-      { status: 500 }
-    )
+  const { data, error } = await supabase.rpc("get_pack_listings_by_collection", {
+    p_collection_id: ALLDAY_COLLECTION_ID,
+  })
+  if (error) {
+    console.warn(`[allday-pack-listings] rpc error: ${error.message}`)
+    return NextResponse.json({ error: error.message, listings: [] }, { status: 500 })
   }
+  const rows: any[] = Array.isArray(data) ? data : []
+
+  const listings = rows.map((r: any) => ({
+    packListingId: r.id,
+    distId: r.id,
+    title: r.pack_name,
+    tier: String(r.tier ?? "common").toLowerCase(),
+    imageUrl: r.image_url ?? "",
+    momentsPerPack: r.moments_per_pack ?? 1,
+    retailPrice: Number(r.retail_price_usd ?? 0),
+    lowestAsk: Number(r.lowest_ask_usd ?? 0),
+    startTime: r.first_seen_at ?? r.cached_at ?? new Date().toISOString(),
+    listingCount: Number(r.total_listed ?? 0),
+    packType: "standard" as const,
+    seriesLabel: null,
+  }))
+
+  return NextResponse.json({ listings })
 }

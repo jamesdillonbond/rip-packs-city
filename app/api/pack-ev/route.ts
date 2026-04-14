@@ -403,9 +403,10 @@ export async function POST(req: NextRequest) {
   let packListingId = ""
 
   try {
-    const body = await req.json().catch(() => ({})) as { packListingId?: string; packPrice?: number }
+    const body = await req.json().catch(() => ({})) as { packListingId?: string; packPrice?: number; packName?: string }
     packListingId = body.packListingId ?? ""
     const packPrice: number = body.packPrice ?? 0
+    const packName: string | null = body.packName ?? null
 
     if (!packListingId) {
       return NextResponse.json({ error: "packListingId is required" }, { status: 400 })
@@ -642,6 +643,59 @@ export async function POST(req: NextRequest) {
     })
 
     console.log(`[pack-ev] Done: grossEV=${grossEV} packEV=${packEV} editions=${editionEVs.length} fmvSource=${fmvSource} fmvCoverage=${fmvCoverage}%`)
+
+    // ── EV history snapshot + flip detection (fire-and-forget) ──────────────
+    ;(async () => {
+      try {
+        const TOP_SHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+        const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString()
+
+        const { data: recent } = await supabaseAdmin
+          .from("pack_ev_history")
+          .select("id")
+          .eq("pack_listing_id", packListingId)
+          .gt("snapshotted_at", fifteenMinAgo)
+          .limit(1)
+
+        if (recent && recent.length > 0) return
+
+        const valueRatio = packPrice > 0 ? Math.round((grossEV / packPrice) * 1000) / 1000 : null
+
+        const { error: insertErr } = await supabaseAdmin.from("pack_ev_history").insert({
+          pack_listing_id: packListingId,
+          collection_id: TOP_SHOT_COLLECTION_ID,
+          pack_name: packName,
+          pack_price: packPrice,
+          gross_ev: grossEV,
+          pack_ev: packEV,
+          is_positive_ev: isPositiveEV,
+          value_ratio: valueRatio,
+          fmv_coverage_pct: fmvCoverage,
+          edition_count: editionEVs.length,
+          total_unopened: supplySnapshot.totalUnopened,
+          depletion_pct: supplySnapshot.depletionPct,
+        })
+        if (insertErr) {
+          console.warn(`[pack-ev] history insert error: ${insertErr.message}`)
+          return
+        }
+
+        // Flip detection: look at the most recent prior snapshot (>15m old)
+        const { data: prev } = await supabaseAdmin
+          .from("pack_ev_history")
+          .select("is_positive_ev, snapshotted_at")
+          .eq("pack_listing_id", packListingId)
+          .lt("snapshotted_at", fifteenMinAgo)
+          .order("snapshotted_at", { ascending: false })
+          .limit(1)
+        const prevPositive = prev?.[0]?.is_positive_ev
+        if (prevPositive === false && isPositiveEV === true) {
+          console.log(`[pack-ev] EV FLIP TO POSITIVE: ${packName ?? ""} ${packListingId} grossEV=${grossEV} packEV=${packEV}`)
+        }
+      } catch (err) {
+        console.warn(`[pack-ev] history snapshot error: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    })()
 
     return NextResponse.json({
       packListingId,

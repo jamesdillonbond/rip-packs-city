@@ -3,8 +3,12 @@
 import { useEffect, useState, useRef, useCallback } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
+import { LineChart, Line, ResponsiveContainer } from "recharts"
 import { getCollection } from "@/lib/collections"
 import { getOwnerKey } from "@/lib/owner-key"
+
+type EvHistoryPoint = { snapshotted_at: string; gross_ev: number; pack_ev: number; value_ratio: number | null }
+type PullStat = { pull_tier: string; pull_count: number; avg_fmv_usd: number | null; pct_of_total: number }
 
 type PackType = "standard" | "topper" | "chance_hit" | "reward" | "bundle"
 
@@ -191,6 +195,14 @@ export default function PacksPage() {
   const [modalResult, setModalResult] = useState<PackEVResponse | null>(null)
   const [modalLoading, setModalLoading] = useState(false)
   const [historicalPulls, setHistoricalPulls] = useState<{ total: number; tierBreakdown: Record<string, number> } | null>(null)
+  const [evHistoryCache, setEvHistoryCache] = useState<Record<string, EvHistoryPoint[]>>({})
+  const [pullStats, setPullStats] = useState<PullStat[] | null>(null)
+  const [showPullsSection, setShowPullsSection] = useState(false)
+  const [pullForm, setPullForm] = useState({ tier: "COMMON", playerName: "", serial: "", price: "" })
+  const [pullSubmitting, setPullSubmitting] = useState(false)
+  const [pullSubmitSuccess, setPullSubmitSuccess] = useState(false)
+  const [pullSubmitError, setPullSubmitError] = useState("")
+  const [alldaySort, setAlldaySort] = useState<"lowestAsk" | "totalListed">("lowestAsk")
   const [calcAllProgress, setCalcAllProgress] = useState<{ done: number; total: number } | null>(null)
   const calcAllAbortRef = useRef(false)
 
@@ -206,7 +218,7 @@ export default function PacksPage() {
       const res = await fetch(packEvEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ packListingId: id, packPrice: pack.lowestAsk }),
+        body: JSON.stringify({ packListingId: id, packPrice: pack.lowestAsk, packName: pack.title }),
       })
       const json: PackEVResponse = await res.json()
       if (!res.ok || json.error) throw new Error(json.error ?? "failed")
@@ -215,6 +227,15 @@ export default function PacksPage() {
         ...prev,
         [id]: { grossEV: json.grossEV, packEV: json.packEV, isPositiveEV: json.isPositiveEV, valueRatio, loading: false, error: false, fmvCoverageNote: json.fmvCoverageNote ?? null },
       }))
+      // Fire-and-forget history fetch
+      fetch("/api/pack-ev-history?packListingId=" + encodeURIComponent(id))
+        .then((r) => r.ok ? r.json() : null)
+        .then((h) => {
+          if (h && Array.isArray(h.history)) {
+            setEvHistoryCache((prev) => ({ ...prev, [id]: h.history }))
+          }
+        })
+        .catch(() => {})
     } catch {
       setEvCache((prev) => ({ ...prev, [id]: { grossEV: 0, packEV: 0, isPositiveEV: false, valueRatio: 0, loading: false, error: true } }))
     }
@@ -419,6 +440,7 @@ export default function PacksPage() {
         body: JSON.stringify({
           packListingId: pack.packListingId,
           packPrice: !ttMode ? pack.lowestAsk : 0,
+          packName: pack.title,
         }),
       })
       const json: PackEVResponse = await response.json()
@@ -437,10 +459,64 @@ export default function PacksPage() {
     }
   }
 
+  async function submitPull() {
+    if (!modalPack) return
+    setPullSubmitting(true)
+    setPullSubmitError("")
+    try {
+      const res = await fetch("/api/pack-pulls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          packListingId: modalPack.packListingId,
+          tier: pullForm.tier,
+          playerName: pullForm.playerName || undefined,
+          serialNumber: pullForm.serial || undefined,
+          packPricePaid: pullForm.price || undefined,
+          collection,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json?.error ?? "Submit failed")
+      setPullSubmitSuccess(true)
+      setPullForm({ tier: "COMMON", playerName: "", serial: "", price: "" })
+      setTimeout(() => setPullSubmitSuccess(false), 3000)
+      // Re-fetch stats
+      fetch("/api/pack-pulls?packListingId=" + encodeURIComponent(modalPack.packListingId))
+        .then((r) => r.ok ? r.json() : null)
+        .then((s) => { if (s && Array.isArray(s.stats)) setPullStats(s.stats) })
+        .catch(() => {})
+    } catch (err) {
+      setPullSubmitError(err instanceof Error ? err.message : "Submit failed")
+    } finally {
+      setPullSubmitting(false)
+    }
+  }
+
   async function openEvModal(pack: PackListing) {
     if (!canAnalyzeEV(pack.packType)) return
     setModalPack(pack)
     setHistoricalPulls(null)
+    setPullStats(null)
+    setShowPullsSection(false)
+    setPullSubmitSuccess(false)
+    setPullSubmitError("")
+    // Fetch pull stats for this pack
+    fetch("/api/pack-pulls?packListingId=" + encodeURIComponent(pack.packListingId))
+      .then((r) => r.ok ? r.json() : null)
+      .then((s) => { if (s && Array.isArray(s.stats)) setPullStats(s.stats) })
+      .catch(() => {})
+    // Fetch EV history if not cached
+    if (!evHistoryCache[pack.packListingId]) {
+      fetch("/api/pack-ev-history?packListingId=" + encodeURIComponent(pack.packListingId))
+        .then((r) => r.ok ? r.json() : null)
+        .then((h) => {
+          if (h && Array.isArray(h.history)) {
+            setEvHistoryCache((prev) => ({ ...prev, [pack.packListingId]: h.history }))
+          }
+        })
+        .catch(() => {})
+    }
     // Fire historical pulls fetch in parallel
     fetch("/api/pack-listings/historical-pulls?title=" + encodeURIComponent(pack.title))
       .then((r) => r.ok ? r.json() : null)
@@ -458,7 +534,7 @@ export default function PacksPage() {
       const res = await fetch(packEvEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ packListingId: pack.packListingId, packPrice: pack.lowestAsk }),
+        body: JSON.stringify({ packListingId: pack.packListingId, packPrice: pack.lowestAsk, packName: pack.title }),
       })
       const json: PackEVResponse = await res.json()
       if (!res.ok || json.error) throw new Error(json.error ?? "failed")
@@ -562,6 +638,29 @@ export default function PacksPage() {
     return <span className={"text-xs font-semibold " + color}>{ratio.toFixed(2) + "x"}</span>
   }
 
+  function renderEvSparkline(packListingId: string, currentIsPositive: boolean) {
+    const history = evHistoryCache[packListingId]
+    if (!history || history.length < 3) return null
+    const data = [...history].reverse().map((h, i) => ({ i, gross: Number(h.gross_ev ?? 0) }))
+    const stroke = currentIsPositive ? "#34d399" : "#f87171"
+    const daysSpan = history.length > 0
+      ? (new Date(history[0].snapshotted_at).getTime() - new Date(history[history.length - 1].snapshotted_at).getTime()) / (1000 * 60 * 60 * 24)
+      : 0
+    const label = daysSpan >= 7 ? "EV 7d trend" : "EV recent"
+    return (
+      <div className="mt-2">
+        <div style={{ width: 100, height: 40 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data}>
+              <Line type="monotone" dataKey="gross" stroke={stroke} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="text-[9px] text-zinc-500 mt-0.5">{label}</div>
+      </div>
+    )
+  }
+
   const packTypeFilters: { key: PackTypeFilter; label: string }[] = [
     { key: "all", label: "All" },
     { key: "standard", label: "Standard" },
@@ -570,6 +669,99 @@ export default function PacksPage() {
     { key: "reward", label: "Rewards" },
     { key: "bundle", label: "Bundles" },
   ]
+
+  // ── All Day packs view — synthetic Flowty-grouped packs, no EV yet ──────
+  if (isAllDay) {
+    const alldayListings = [...listings].sort((a, b) => {
+      if (alldaySort === "lowestAsk") return (a.lowestAsk || Infinity) - (b.lowestAsk || Infinity)
+      return (b.listingCount || 0) - (a.listingCount || 0)
+    })
+    return (
+      <div className="min-h-screen bg-black text-zinc-100">
+        <div className="mx-auto max-w-[1400px] px-3 py-4 md:px-6">
+          <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+            <div className="text-sm font-semibold text-white mb-1">NFL All Day — Secondary Market Packs</div>
+            <div className="text-xs text-zinc-400 leading-relaxed">
+              Packs below are grouped by set and tier from Flowty secondary market listings.
+              Official pack odds are not published by NFL All Day, so EV calculation is not
+              yet available for this collection.
+            </div>
+          </div>
+
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <span className="text-[10px] uppercase tracking-wide text-zinc-500">Sort</span>
+            <button
+              onClick={() => setAlldaySort("lowestAsk")}
+              className={"rounded-lg px-3 py-1 text-xs font-semibold transition " + (alldaySort === "lowestAsk" ? "text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}
+              style={alldaySort === "lowestAsk" ? { backgroundColor: accent } : undefined}
+            >
+              Lowest Ask ↑
+            </button>
+            <button
+              onClick={() => setAlldaySort("totalListed")}
+              className={"rounded-lg px-3 py-1 text-xs font-semibold transition " + (alldaySort === "totalListed" ? "text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}
+              style={alldaySort === "totalListed" ? { backgroundColor: accent } : undefined}
+            >
+              Total Listed ↓
+            </button>
+          </div>
+
+          {listingsLoading && (
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-10 text-center text-sm text-zinc-500">
+              Loading All Day packs…
+            </div>
+          )}
+          {listingsError && (
+            <div className="rounded-xl border border-red-900 bg-red-950/30 p-4 text-sm text-red-300">{listingsError}</div>
+          )}
+          {!listingsLoading && !listingsError && alldayListings.length === 0 && (
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-10 text-center">
+              <div className="text-3xl mb-2 opacity-40">🏈</div>
+              <div className="text-sm font-semibold text-zinc-300 mb-1">No cached All Day packs yet</div>
+              <div className="text-xs text-zinc-500">
+                The listing cache runs on a schedule. Check back shortly, or trigger
+                <span className="font-mono text-zinc-400"> /api/allday-pack-listings </span>
+                with Bearer auth to seed it now.
+              </div>
+            </div>
+          )}
+          {!listingsLoading && alldayListings.length > 0 && (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {alldayListings.map((pack) => (
+                <div
+                  key={pack.packListingId}
+                  className="rounded-xl border border-zinc-800 bg-zinc-950 overflow-hidden"
+                >
+                  {pack.imageUrl && (
+                    <div className="aspect-video overflow-hidden bg-zinc-900">
+                      <img src={pack.imageUrl} alt={pack.title} className="h-full w-full object-cover" />
+                    </div>
+                  )}
+                  <div className="p-3 space-y-2">
+                    <div className="text-sm font-semibold text-white leading-snug line-clamp-2">{pack.title}</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={"rounded border px-2 py-0.5 text-[10px] font-semibold capitalize " + tierBadge(pack.tier)}>{pack.tier}</span>
+                      <span className="text-[10px] text-zinc-500">{pack.listingCount} listed</span>
+                    </div>
+                    <div className="flex items-end justify-between">
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wide text-zinc-500">Lowest Ask</div>
+                        <div className="text-lg font-black text-white">{pack.lowestAsk > 0 ? fmt(pack.lowestAsk) : "—"}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[10px] uppercase tracking-wide text-zinc-500">EV</div>
+                        <div className="text-[10px] text-zinc-500 italic">coming soon</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-black text-zinc-100">
@@ -1013,6 +1205,8 @@ export default function PacksPage() {
                     </div>
                   )}
 
+                  {renderEvSparkline(modalPack.packListingId, modalResult.isPositiveEV)}
+
                   {/* Top Pulls table */}
                   <div>
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Top Pulls</div>
@@ -1045,6 +1239,103 @@ export default function PacksPage() {
                     </div>
                     {modalResult.topPulls.length > 15 && (
                       <div className="mt-2 text-[10px] text-zinc-500">{modalResult.topPulls.length - 15} more editions not shown</div>
+                    )}
+                  </div>
+
+                  {/* Community Pulls collapsible */}
+                  <div className="rounded-lg border border-zinc-800 bg-zinc-950">
+                    <button
+                      onClick={() => setShowPullsSection((v) => !v)}
+                      className="flex w-full items-center justify-between px-4 py-3 text-left"
+                    >
+                      <span className="text-[11px] font-semibold uppercase tracking-widest text-zinc-400">📊 Community Pulls</span>
+                      <span className="text-xs text-zinc-500">{showPullsSection ? "▾" : "▸"}</span>
+                    </button>
+                    {showPullsSection && (
+                      <div className="border-t border-zinc-800 p-4 space-y-4">
+                        {pullStats === null ? (
+                          <div className="text-xs text-zinc-500">Loading pulls…</div>
+                        ) : pullStats.length === 0 ? (
+                          <div className="text-xs text-zinc-500">No community pulls logged yet. Be the first!</div>
+                        ) : (
+                          <div className="overflow-x-auto rounded border border-zinc-800">
+                            <table className="w-full text-xs">
+                              <thead className="bg-zinc-900 text-[10px] uppercase tracking-wide text-zinc-500">
+                                <tr>
+                                  <th className="p-2 text-left">Tier</th>
+                                  <th className="p-2 text-right">Pulls</th>
+                                  <th className="p-2 text-right">Avg FMV</th>
+                                  <th className="p-2 text-right">% of Total</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {pullStats.map((s) => (
+                                  <tr key={s.pull_tier} className="border-t border-zinc-800/50">
+                                    <td className="p-2">
+                                      <span className={"rounded border px-1.5 py-0.5 text-[10px] font-semibold capitalize " + tierBadge(String(s.pull_tier ?? "").toLowerCase())}>
+                                        {s.pull_tier}
+                                      </span>
+                                    </td>
+                                    <td className="p-2 text-right text-zinc-300">{s.pull_count}</td>
+                                    <td className="p-2 text-right text-zinc-300">{s.avg_fmv_usd != null ? fmt(Number(s.avg_fmv_usd)) : "—"}</td>
+                                    <td className="p-2 text-right text-zinc-300">{Number(s.pct_of_total ?? 0).toFixed(1)}%</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+
+                        <div className="rounded border border-zinc-800 bg-black p-3">
+                          <div className="mb-2 text-[10px] uppercase tracking-widest text-zinc-500">Submit a Pull</div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <select
+                              value={pullForm.tier}
+                              onChange={(e) => setPullForm((f) => ({ ...f, tier: e.target.value }))}
+                              className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-white"
+                            >
+                              <option value="COMMON">Common</option>
+                              <option value="RARE">Rare</option>
+                              <option value="LEGENDARY">Legendary</option>
+                              <option value="ULTIMATE">Ultimate</option>
+                            </select>
+                            <input
+                              type="text"
+                              placeholder="Player (optional)"
+                              value={pullForm.playerName}
+                              onChange={(e) => setPullForm((f) => ({ ...f, playerName: e.target.value }))}
+                              className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-white placeholder:text-zinc-600"
+                            />
+                            <input
+                              type="number"
+                              placeholder="Serial # (optional)"
+                              value={pullForm.serial}
+                              onChange={(e) => setPullForm((f) => ({ ...f, serial: e.target.value }))}
+                              className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-white placeholder:text-zinc-600"
+                            />
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder="Price paid (optional)"
+                              value={pullForm.price}
+                              onChange={(e) => setPullForm((f) => ({ ...f, price: e.target.value }))}
+                              className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-white placeholder:text-zinc-600"
+                            />
+                          </div>
+                          <div className="mt-2 flex items-center gap-2">
+                            <button
+                              onClick={submitPull}
+                              disabled={pullSubmitting}
+                              className="rounded px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                              style={{ backgroundColor: accent }}
+                            >
+                              {pullSubmitting ? "Submitting…" : "Submit Pull"}
+                            </button>
+                            {pullSubmitSuccess && <span className="text-xs text-green-400">✓ Thanks for sharing!</span>}
+                            {pullSubmitError && <span className="text-xs text-red-400">{pullSubmitError}</span>}
+                          </div>
+                        </div>
+                      </div>
                     )}
                   </div>
 
