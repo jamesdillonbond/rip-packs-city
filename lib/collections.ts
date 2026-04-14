@@ -121,7 +121,7 @@ export const COLLECTIONS: Collection[] = [
     accent: "#EF4444",
     icon: "\u{1F94A}",
     pages: ["overview", "collection", "sniper"],
-    published: false,
+    published: true,
     flowContractName: "UFC_NFT",
     contractAddress: "0x329feb3ab062d289",
     contractName: "UFC_NFT",
