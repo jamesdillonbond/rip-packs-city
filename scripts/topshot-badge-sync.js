@@ -10,8 +10,19 @@
  * Run weekly or after new set drops to keep Supabase data fresh.
  */
 
+/*
+ * ── How to discover the Championship Year tag ID ─────────────────────────
+ * 1. Log into nbatopshot.com in the browser.
+ * 2. Open DevTools → Network tab.
+ * 3. Find any known Championship Year moment's getMintedMoment request.
+ * 4. In the response, look at play.tags (array).
+ * 5. Copy the id of the tag whose title is "Championship Year".
+ * 6. Paste into BADGE.CHAMPIONSHIP_YEAR below (and lib/topshot-badges.ts).
+ * ─────────────────────────────────────────────────────────────────────────
+ */
 (async () => {
   const SUPABASE_URL = "https://bxcqstmqfzmuolpuynti.supabase.co"
+  const COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ4Y3FzdG1xZnptdW9scHV5bnRpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyMDg1MTUsImV4cCI6MjA4OTc4NDUxNX0.emIPddCyJ5KGG1CxjXx-BJEySV-TMDAnKGYGorV_RdM"
   const BATCH_SIZE = 50
   const PAGE_LIMIT = 100
@@ -24,15 +35,17 @@
     ROOKIE_OF_THE_YEAR: "34fe8d3f-681a-42df-856a-e98624f95b11",
     ROOKIE_MINT:        "24d515af-e967-45f5-a30e-11fc96dc2b62",
     INTERACTIVE:        "9bbb6f91-d09a-4d07-ab3d-8402a9c10cf1",
+    CHAMPIONSHIP_YEAR:  null,
   }
 
   const QUERY = `
     query SearchMarketplaceEditions(
       $byPlayTagIDs: [ID] = []
+      $bySetPlayTagIDs: [ID] = []
       $searchInput: BaseSearchInput = {pagination: {direction: RIGHT, limit: 100, cursor: ""}}
     ) {
       searchMarketplaceEditions(input: {
-        filters: { byPlayTagIDs: $byPlayTagIDs }
+        filters: { byPlayTagIDs: $byPlayTagIDs, bySetPlayTagIDs: $bySetPlayTagIDs }
         sortBy: EDITION_CREATED_AT_DESC
         searchInput: $searchInput
       }) {
@@ -110,8 +123,15 @@
     const burned = circ.burned || 0
     const locked = circ.locked || 0
     const owned = circ.ownedByCollectors || 0
+    const set_id = e.set?.id || null
+    const play_id = e.play?.id || null
+    const external_id = (set_id && play_id) ? `${set_id}:${play_id}` : null
     return {
       id: e.id,
+      collection_id: COLLECTION_ID,
+      external_id,
+      set_id,
+      play_id,
       player_id: e.play?.stats?.playerID || null,
       player_name: e.play?.stats?.playerName || null,
       team: e.play?.stats?.teamAtMoment || null,
@@ -144,7 +164,7 @@
     }
   }
 
-  async function fetchPage(playTagIDs, cursor) {
+  async function fetchPage(playTagIDs, cursor, setPlayTagIDs = []) {
     const res = await fetch("https://nbatopshot.com/marketplace/graphql", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -153,6 +173,7 @@
         query: QUERY,
         variables: {
           byPlayTagIDs: playTagIDs,
+          bySetPlayTagIDs: setPlayTagIDs,
           searchInput: {
             pagination: { direction: "RIGHT", limit: PAGE_LIMIT, cursor: cursor || "" }
           }
@@ -185,7 +206,7 @@
     }
   }
 
-  async function sweep(label, tagIDs) {
+  async function sweep(label, tagIDs, setPlayTagIDs = []) {
     console.log(`  Sweeping: ${label}...`)
     const collected = []
     const seenCursors = new Set()
@@ -199,7 +220,7 @@
       }
       if (cursor) seenCursors.add(cursor)
 
-      const { editions, nextCursor, total } = await fetchPage(tagIDs, cursor)
+      const { editions, nextCursor, total } = await fetchPage(tagIDs, cursor, setPlayTagIDs)
       pageNum++
       console.log(`    Page ${pageNum}: ${editions.length} editions (total: ${total})`)
 
@@ -226,12 +247,32 @@
     await sweep("Rookie Year",    [BADGE.ROOKIE_YEAR]),
     await sweep("Top Shot Debut", [BADGE.TOP_SHOT_DEBUT]),
     await sweep("ROTY",           [BADGE.ROOKIE_OF_THE_YEAR]),
+    await sweep("Rookie Mint",    [], [BADGE.ROOKIE_MINT]),
   ]
 
-  for (const editions of sweepResults) {
+  for (let i = 0; i < sweepResults.length; i++) {
+    const editions = sweepResults[i]
+    const isRookieMintSweep = i === 3
     for (const e of editions) {
       if (!allEditions.has(e.id)) {
         allEditions.set(e.id, normalizeEdition(e))
+      } else if (isRookieMintSweep) {
+        // Merge set_play_tags so three-star rookies who also have Rookie Mint
+        // retain all their play-level tags rather than being overwritten.
+        const existing = allEditions.get(e.id)
+        const newSetPlayTags = (e.setPlay?.tags || [])
+          .filter(t => t.visible && t.id !== BADGE.INTERACTIVE)
+          .map(t => ({ id: t.id, title: t.title }))
+        const mergedIds = new Set(existing.set_play_tags.map(t => t.id))
+        for (const t of newSetPlayTags) {
+          if (!mergedIds.has(t.id)) {
+            existing.set_play_tags.push(t)
+            mergedIds.add(t.id)
+          }
+        }
+        if (newSetPlayTags.some(t => t.id === BADGE.ROOKIE_MINT)) {
+          existing.has_rookie_mint = true
+        }
       }
     }
   }

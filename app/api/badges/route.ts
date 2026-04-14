@@ -9,6 +9,8 @@ const supabase = createClient(
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl
 
+  const TS_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+  const collection_id = searchParams.get("collection_id") ?? TS_COLLECTION_ID
   const mode     = searchParams.get("mode")     ?? "threestar"
   const season   = searchParams.get("season")   ?? ""
   const parallel = searchParams.get("parallel") ?? ""
@@ -52,11 +54,17 @@ export async function GET(req: NextRequest) {
         case "rookiemint": return q.contains("set_play_tags", JSON.stringify([{ id: "24d515af-e967-45f5-a30e-11fc96dc2b62" }]))
         case "roty":       return q.contains("play_tags", JSON.stringify([{ id: "34fe8d3f-681a-42df-856a-e98624f95b11" }]))
         case "blazers":    return q.eq("team_nba_id", "1610612757")
+        // NFL All Day modes — match on set_play_tags[].title
+        case "rookie_ad":     return q.contains("set_play_tags", JSON.stringify([{ title: "Rookie" }]))
+        case "superbowl_ad":  return q.contains("set_play_tags", JSON.stringify([{ title: "Super Bowl" }]))
+        case "playoffs_ad":   return q.contains("set_play_tags", JSON.stringify([{ title: "Playoffs" }]))
+        case "probowl_ad":    return q.contains("set_play_tags", JSON.stringify([{ title: "Pro Bowl" }]))
+        case "firsttd_ad":    return q.contains("set_play_tags", JSON.stringify([{ title: "First Touchdown" }]))
         default:           return q  // "all" — no filter
       }
     }
-    countQ = applyMode(countQ)
-    dataQ  = applyMode(dataQ)
+    countQ = applyMode(countQ).eq("collection_id", collection_id)
+    dataQ  = applyMode(dataQ).eq("collection_id", collection_id)
 
     // Season
     if (season) {
