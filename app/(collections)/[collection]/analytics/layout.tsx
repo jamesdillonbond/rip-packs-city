@@ -8,10 +8,10 @@ export async function generateMetadata(
 ): Promise<Metadata> {
   const { collection: id } = await props.params
   const collection = getCollection(id)
-  if (!collection) return pageMetadata("packs", "Flow", id)
-  return pageMetadata("packs", collection.label, collection.id)
+  if (!collection) return pageMetadata("analytics", "Flow", id)
+  return pageMetadata("analytics", collection.label, collection.id)
 }
 
-export default function PacksLayout({ children }: { children: ReactNode }) {
+export default function AnalyticsLayout({ children }: { children: ReactNode }) {
   return <>{children}</>
 }

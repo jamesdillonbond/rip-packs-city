@@ -8,10 +8,11 @@ export async function generateMetadata(
 ): Promise<Metadata> {
   const { collection: id } = await props.params
   const collection = getCollection(id)
-  if (!collection) return pageMetadata("packs", "Flow", id)
-  return pageMetadata("packs", collection.label, collection.id)
+  if (!collection) return pageMetadata("badges", "Flow", id)
+  return pageMetadata("badges", collection.label, collection.id)
 }
 
-export default function PacksLayout({ children }: { children: ReactNode }) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export default function BadgesLayout({ children }: { children: ReactNode; params: Promise<{ collection: string }> }) {
   return <>{children}</>
 }

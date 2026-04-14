@@ -10,10 +10,11 @@ export const rootMetadata: Metadata = {
     template: '%s | Rip Packs City',
   },
   description:
-    'Real-time FMV, deal sniping, wallet analytics, badge tracking, and pack tools for NBA Top Shot, NFL All Day, and Disney Pinnacle collectors on Flow blockchain.',
+    'NBA Top Shot, NFL All Day, LaLiga Golazos, and Disney Pinnacle collectors on Flow blockchain.',
   keywords: [
     'NBA Top Shot',
     'NFL All Day',
+    'LaLiga Golazos',
     'Disney Pinnacle',
     'digital pins',
     'FMV',
@@ -60,15 +61,22 @@ export const organizationJsonLd = {
   },
 }
 
-// Per-page metadata generators — keyed by page, with {label} placeholder for collection name
-const PAGE_META: Record<string, { title: string; description: string }> = {
+type PageMeta = { title: string; description: string }
+
+// Generic per-page templates — {label} is replaced by the collection's display name.
+const PAGE_META: Record<string, PageMeta> = {
+  overview: {
+    title: '{label} Overview — Market Pulse, Top Sales & Collector Intel',
+    description:
+      'Daily {label} market pulse: volume, active listings, top sales, and hottest editions for collectors on Flow.',
+  },
   collection: {
     title: 'Wallet Analytics — Track Your {label} Collection Value',
     description:
       'Analyze any {label} wallet with real-time FMV, badge detection, serial premiums, and Flowty ask prices.',
   },
   sniper: {
-    title: 'Sniper — {label}',
+    title: 'Sniper — {label} Deals Below FMV',
     description:
       'Track {label} moments with real-time FMV, sniper deals, and Flowty marketplace intelligence.',
   },
@@ -78,9 +86,9 @@ const PAGE_META: Record<string, { title: string; description: string }> = {
       'Browse active and past {label} packs with expected value calculations, pull odds, and buy/skip recommendations.',
   },
   badges: {
-    title: 'Badge Tracker — Rookie Year, Top Shot Debut & More',
+    title: 'Badge Tracker — {label} Rookie & Specialty Badges',
     description:
-      'Explore {label} badge editions including Top Shot Debut, Rookie Year, Championship, and serial badges.',
+      'Explore {label} badge editions with serial premiums, circulation, and specialty tags.',
   },
   sets: {
     title: 'Set Completion — Track Your {label} Sets',
@@ -99,19 +107,53 @@ const PAGE_META: Record<string, { title: string; description: string }> = {
   },
 }
 
-export function collectionPageMetadata(page: string, collectionLabel = 'NBA Top Shot'): Metadata {
-  const meta = PAGE_META[page]
+// Per-collection overrides keyed by `${page}:${collectionId}`.
+const PAGE_META_OVERRIDES: Record<string, PageMeta> = {
+  'badges:nba-top-shot': {
+    title: 'Badge Tracker — NBA Top Shot Rookie Year, Top Shot Debut & Championship Year Badges',
+    description:
+      'Explore NBA Top Shot badge editions: Rookie Year, Top Shot Debut, Championship Year, Fresh, and serial badges with real-time FMV and circulation.',
+  },
+  'badges:nfl-all-day': {
+    title: 'Badge Tracker — NFL All Day Rookie, Playoffs & Super Bowl Badges',
+    description:
+      'Explore NFL All Day badge editions: Rookie, Playoffs, Super Bowl, Pro Bowl, and First Touchdown badges with real-time FMV and circulation.',
+  },
+  'badges:laliga-golazos': {
+    title: 'Badge Tracker — LaLiga Golazos El Clásico, Ídolos & Estrellas Badges',
+    description:
+      'Explore LaLiga Golazos badge editions: El Clásico, Eterno Rival, Ídolos, Estrellas, Team Europa, and Tiki Taka with real-time FMV.',
+  },
+}
+
+export function pageMetadata(page: string, collectionLabel: string, collectionId: string): Metadata {
+  const override = PAGE_META_OVERRIDES[`${page}:${collectionId}`]
+  const base = PAGE_META[page]
+  const meta = override ?? base
   if (!meta) return {}
   const title = meta.title.replace(/\{label\}/g, collectionLabel)
   const description = meta.description.replace(/\{label\}/g, collectionLabel)
+  const canonical = `${BASE_URL}/${collectionId}/${page}`
   return {
     title,
     description,
+    alternates: { canonical },
     openGraph: {
       title: `${title} | Rip Packs City`,
       description,
+      url: canonical,
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
     },
   }
+}
+
+// Back-compat wrapper — defaults to NBA Top Shot.
+export function collectionPageMetadata(page: string, collectionLabel = 'NBA Top Shot'): Metadata {
+  return pageMetadata(page, collectionLabel, 'nba-top-shot')
 }
 
 export function profilePageMetadata(username: string): Metadata {
