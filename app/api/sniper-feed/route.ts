@@ -705,7 +705,8 @@ async function fetchBadgesByPlayers(
 
   const { data, error } = await (supabase as any)
     .from("badge_editions")
-    .select("player_name, play_tags, set_play_tags");
+    .select("player_name, play_tags, set_play_tags")
+    .eq("collection_id", "95f28a17-224a-4025-96ad-adf8a4c63bfd");
 
   if (error) {
     console.error(`[sniper-feed] badge_editions fetch error: ${error.message}`);

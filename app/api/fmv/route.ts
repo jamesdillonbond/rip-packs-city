@@ -12,11 +12,7 @@ const SERIES_NAMES: Record<number, string> = {
   4: "S3", 5: "S4", 6: "23-24", 7: "24-25", 8: "25-26",
 };
 
-const BADGE_PREMIUMS: Record<string, number> = {
-  "Rookie Year": 0.45, "Rookie Mint": 0.35, "Rookie Premiere": 0.30,
-  "Top Shot Debut": 0.25, "Three-Star Rookie": 0.20, "MVP Year": 0.20,
-  "Championship Year": 0.18, "Rookie of the Year": 0.18, "Fresh": 0.10, "Autograph": 0.60,
-};
+// Badge premiums are market-priced and excluded from FMV by design.
 
 function serialMultiplier(serial: number, circ: number): number {
   if (serial === 1) return 12.0;
@@ -79,23 +75,18 @@ async function lookupEditions(supabase: any, editionKeys: string[], serial?: num
     }
   }
 
-  // Step 3: fetch badge premiums via badge_editions table
-  // badge_editions has: player_name, badge_type, series_number, set_id, play_id (or similar)
-  // We join via editionKey (setID:playID) → need to check what badge_editions actually has
-  // For now, build badge map keyed by edition internal ID if possible
-  // badge_editions uses series_number + player matching — skip for now, return 0 badge premium
-  // TODO: wire badge premium when we confirm badge_editions schema joins to editions
+  // Badge premiums are market-priced and excluded from FMV by design.
 
   const results = editionKeys.map(externalId => {
     const internalId = extToId.get(externalId);
 
     if (!internalId) {
-      return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", liquidityRating: null, wapUsd: null, wapClean: null, salesCount30d: null, daysSinceSale: null, error: "Edition not found" };
+      return { edition: externalId, fmv: 0, serialMult: null, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", liquidityRating: null, wapUsd: null, wapClean: null, salesCount30d: null, daysSinceSale: null, error: "Edition not found" };
     }
 
     const fmv = fmvMap.get(internalId);
     if (!fmv) {
-      return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", liquidityRating: null, wapUsd: null, wapClean: null, salesCount30d: null, daysSinceSale: null, error: "No FMV data yet" };
+      return { edition: externalId, fmv: 0, serialMult: null, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", liquidityRating: null, wapUsd: null, wapClean: null, salesCount30d: null, daysSinceSale: null, error: "No FMV data yet" };
     }
 
     const baseFmv = fmv.fmv_usd;
@@ -116,7 +107,6 @@ async function lookupEditions(supabase: any, editionKeys: string[], serial?: num
       edition: externalId,
       fmv: r2(baseFmv),
       serialMult: mult != null ? r2(mult) : null,
-      badgePremiumPct: 0, // TODO: wire badge data
       adjustedFmv: r2(adjustedFmv),
       confidence,
       updatedAt: fmv.computed_at,
@@ -267,13 +257,13 @@ export async function POST(req: Request) {
       const internalId = extToId.get(externalId);
       if (!internalId) {
         errorCount++;
-        return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", liquidityRating: null, wapUsd: null, wapClean: null, salesCount30d: null, daysSinceSale: null, error: "Edition not found" };
+        return { edition: externalId, fmv: 0, serialMult: null, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", liquidityRating: null, wapUsd: null, wapClean: null, salesCount30d: null, daysSinceSale: null, error: "Edition not found" };
       }
 
       const fmv = fmvMap.get(internalId);
       if (!fmv) {
         errorCount++;
-        return { edition: externalId, fmv: 0, serialMult: null, badgePremiumPct: 0, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", liquidityRating: null, wapUsd: null, wapClean: null, salesCount30d: null, daysSinceSale: null, error: "No FMV data yet" };
+        return { edition: externalId, fmv: 0, serialMult: null, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", liquidityRating: null, wapUsd: null, wapClean: null, salesCount30d: null, daysSinceSale: null, error: "No FMV data yet" };
       }
 
       const baseFmv = fmv.fmv_usd;
@@ -296,7 +286,6 @@ export async function POST(req: Request) {
         edition: externalId,
         fmv: r2(baseFmv),
         serialMult: mult != null ? r2(mult) : null,
-        badgePremiumPct: 0,
         adjustedFmv: r2(adjustedFmv),
         confidence,
         updatedAt: fmv.computed_at,

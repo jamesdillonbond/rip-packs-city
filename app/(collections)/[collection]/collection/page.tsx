@@ -10,6 +10,13 @@ import {
 import { buildEditionSeedCandidate } from "@/lib/edition-market-seed"
 import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key"
 import { getCollection } from "@/lib/collections"
+import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
+
+const COLLECTION_UUID_BY_SLUG: Record<string, string> = {
+  "nba-top-shot": "95f28a17-224a-4025-96ad-adf8a4c63bfd",
+  "nfl-all-day": "dee28451-5d62-409e-a1ad-a83f763ac070",
+}
+const ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR = new Set(["Rookie Year", "Rookie Premiere", "Rookie Mint"])
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -624,11 +631,13 @@ export default function WalletPage() {
       if (!playerNames.length) return rowsIn
       const CHUNK = 50
       const allEditions: any[] = []
+      const collectionIdParam = COLLECTION_UUID_BY_SLUG[collectionSlug] ?? COLLECTION_UUID_BY_SLUG["nba-top-shot"]
       for (let i = 0; i < playerNames.length; i += CHUNK) {
         const chunk = playerNames.slice(i, i + CHUNK)
         const params = new URLSearchParams({
           mode: "all", sort: "badge_score", dir: "desc",
           limit: "500", offset: "0", players: chunk.join(","),
+          collection_id: collectionIdParam,
         })
         const res = await fetch("/api/badges?" + params.toString())
         if (!res.ok) continue
@@ -1762,7 +1771,7 @@ export default function WalletPage() {
                       <td className="p-2">{counts.owned}</td>
                       <td className="p-2">{counts.locked}</td>
                       <td className="p-2">{row.badgeInfo?.badge_score ?? "-"}</td>
-                      <td className="p-2">{row.badgeInfo?.badge_titles?.join(", ") ?? "-"}</td>
+                      <td className="p-2">{(row.badgeInfo?.badge_titles ?? []).filter(function(t) { return !row.badgeInfo?.is_three_star_rookie || !ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR.has(t) }).join(", ") || "-"}</td>
                       <td className="p-2">{formatCurrency(row.topshotAsk)}</td>
                       <td className="p-2">{formatCurrency(row.flowtyAsk)}</td>
                       <td className="p-2">{row.bestMarket ?? "-"}</td>
@@ -1789,7 +1798,9 @@ export default function WalletPage() {
             {filteredRows.map(function(row) {
               const expanded = !!expandedRows[row.momentId]
               const fmv = fmvDisplay(row)
-              const supaBadges = (row.badgeInfo?.badge_titles ?? []).filter(function(t) { return BADGE_PILL_TITLES.has(t) })
+              const mIsThreeStar = !!row.badgeInfo?.is_three_star_rookie
+              const supaBadgesMraw = (row.badgeInfo?.badge_titles ?? []).filter(function(t) { return BADGE_PILL_TITLES.has(t) })
+              const supaBadges = mIsThreeStar ? supaBadgesMraw.filter(function(t) { return !ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR.has(t) }) : supaBadgesMraw
               const scopeKey = buildEditionScopeKey({ editionKey: row.editionKey, setName: row.setName, playerName: row.playerName, parallel: row.parallel, subedition: row.subedition })
               const editionCounts = { owned: row.editionsOwned ?? batchEditionStats.get(scopeKey)?.owned ?? 0, locked: row.editionsLocked ?? batchEditionStats.get(scopeKey)?.locked ?? 0 }
               const cbMap = costBasis.get(row.flowId ?? "")
@@ -1915,8 +1926,14 @@ export default function WalletPage() {
                 const editionCounts = { owned: row.editionsOwned ?? batchEditionStats.get(scopeKey)?.owned ?? 0, locked: row.editionsLocked ?? batchEditionStats.get(scopeKey)?.locked ?? 0 }
                 const expanded = !!expandedRows[row.momentId]
                 const primaryBadge = getPrimarySerialBadge(row)
-                const supaBadges = (row.badgeInfo?.badge_titles ?? []).filter(function(t) { return BADGE_PILL_TITLES.has(t) })
-                const officialBadges = row.officialBadges ?? []
+                const isThreeStar = !!row.badgeInfo?.is_three_star_rookie
+                const supaBadgesRaw = (row.badgeInfo?.badge_titles ?? []).filter(function(t) { return BADGE_PILL_TITLES.has(t) })
+                const supaBadges = isThreeStar ? supaBadgesRaw.filter(function(t) { return !ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR.has(t) }) : supaBadgesRaw
+                const officialBadgesRaw = row.officialBadges ?? []
+                const officialBadges = officialBadgesRaw
+                  .map(function(b) { return BADGE_TYPE_TO_TITLE[b] ?? null })
+                  .filter(function(t: string | null): t is string { return t !== null && BADGE_PILL_TITLES.has(t) })
+                  .filter(function(t: string) { return !isThreeStar || !ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR.has(t) })
                 const fmv = fmvDisplay(row)
                 const conf = confidenceLabel(row.marketConfidence)
                 const isLocked = getLocked(row)
@@ -1955,7 +1972,7 @@ export default function WalletPage() {
                           <div>
                             <div className="font-semibold text-white text-sm">{row.playerName}</div>
                             <div className="mt-1 flex flex-wrap gap-1">
-                              {officialBadges.map(function(badge) { return <span key={"official-" + badge} className={"rounded px-1.5 py-0.5 text-[10px] font-semibold " + badgeClass(badge)}>{badge}</span> })}
+                              {officialBadges.map(function(title) { return <BadgePill key={"official-" + title} title={title} /> })}
                               {supaBadges.map(function(title) { return <BadgePill key={"supa-" + title} title={title} /> })}
                               {row.badgeInfo?.is_three_star_rookie && row.badgeInfo?.has_rookie_mint && (
                                 <BadgePill title="Three-Star Rookie" />
@@ -2132,7 +2149,20 @@ export default function WalletPage() {
                           )
                         })()}
                       </td>
-                      <td className="p-3 text-zinc-500 text-xs hidden xl:table-cell">{formatAcquiredAt(row.acquiredAt)}</td>
+                      <td className="p-3 text-zinc-500 text-xs hidden xl:table-cell">
+                        <div>{formatAcquiredAt(row.acquiredAt)}</div>
+                        {(() => {
+                          const acqPillMap: Record<string, { label: string; cls: string }> = {
+                            pack_pull:        { label: "PACK", cls: "bg-green-950 text-green-300 border border-green-800" },
+                            marketplace:      { label: "MKT",  cls: "bg-zinc-800 text-zinc-400 border border-zinc-700" },
+                            challenge_reward: { label: "CHAL", cls: "bg-purple-950 text-purple-300 border border-purple-800" },
+                            gift:             { label: "GIFT", cls: "bg-blue-950 text-blue-300 border border-blue-800" },
+                          }
+                          const cfg = row.acquisitionMethod ? acqPillMap[row.acquisitionMethod] : null
+                          if (!cfg) return null
+                          return <span className={"mt-0.5 inline-block text-[9px] font-bold px-1 py-0.5 rounded " + cfg.cls}>{cfg.label}</span>
+                        })()}
+                      </td>
                       <td className="p-3">
                         <div className="flex items-center gap-1.5 relative">
                           <button onClick={function() { toggleExpanded(row.momentId) }} className="rounded-lg border border-zinc-700 px-2 py-1 text-xs text-white hover:bg-zinc-900">
@@ -2266,9 +2296,10 @@ export default function WalletPage() {
                                     <span className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-black text-white" style={{ backgroundColor: accent }}>{row.badgeInfo.badge_score}</span>
                                   </div>
                                   <div className="flex flex-wrap gap-1 pt-1">
-                                    {(row.badgeInfo.badge_titles ?? []).filter(function(t) { return BADGE_PILL_TITLES.has(t) }).map(function(title) {
-                                      return <BadgePill key={title} title={title} />
-                                    })}
+                                    {(row.badgeInfo.badge_titles ?? [])
+                                      .filter(function(t) { return BADGE_PILL_TITLES.has(t) })
+                                      .filter(function(t) { return !row.badgeInfo?.is_three_star_rookie || !ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR.has(t) })
+                                      .map(function(title) { return <BadgePill key={title} title={title} /> })}
                                   </div>
                                   <div className="pt-1 text-xs text-zinc-500">
                                     <div>Burn rate: {row.badgeInfo.burn_rate_pct.toFixed(1)}%</div>

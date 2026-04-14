@@ -114,6 +114,7 @@ async function runSmokeTests() {
     ...([
       "/nba-top-shot/sniper", "/nba-top-shot/collection", "/nba-top-shot/sets",
       "/nba-top-shot/badges", "/nba-top-shot/packs", "/profile",
+      "/nfl-all-day/collection", "/nfl-all-day/badges",
     ].map(async (page): Promise<TestResult> => {
       const res = await fetch(`${BASE_URL}${page}`, { cache: "no-store", signal: AbortSignal.timeout(4000) });
       return { name: `page ${page} returns 200`, passed: res.ok, detail: `HTTP ${res.status}` };

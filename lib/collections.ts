@@ -63,7 +63,7 @@ export const COLLECTIONS: Collection[] = [
     partner: "Dapper Labs",
     accent: "#4F94D4",
     icon: "\u{1F3C8}",
-    pages: ["overview", "collection", "packs", "sniper", "sets"],
+    pages: ["overview", "collection", "packs", "sniper", "sets", "badges"],
     published: true,
     graphqlUrl: "https://public-api.nflallday.com/graphql",
     flowContractName: "AllDay",
