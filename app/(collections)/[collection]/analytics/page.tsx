@@ -5,8 +5,9 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
 import {
   PieChart, Pie, Cell, Tooltip as ReTooltip, Legend, ResponsiveContainer,
   LineChart, Line, XAxis, YAxis, CartesianGrid,
-  AreaChart, Area,
+  AreaChart, Area, BarChart, Bar,
 } from "recharts"
+import { getCollection } from "@/lib/collections"
 
 type MarketplaceBreakdown = {
   topshot?: { count: number; total_spent: number; avg_price: number } | null
@@ -93,6 +94,43 @@ type DailyTierRow = {
   avg_price: number
 }
 
+type BadgePremiumRow = {
+  tier: string
+  badged_avg: number
+  badged_sales: number
+  unbadged_avg: number
+  unbadged_sales: number
+  premium_pct: number
+}
+
+type SeriesAnalyticsRow = {
+  series: number | null
+  sale_count: number
+  volume: number
+  avg_price: number
+  max_sale: number
+}
+
+type DailySeriesRow = {
+  date: string
+  series: number | null
+  sale_count: number
+  volume: number
+}
+
+type PlayerSearchRow = {
+  player_name: string | null
+  set_name: string | null
+  tier: string | null
+  series: number | null
+  sale_count: number
+  volume: number
+  avg_price: number
+  min_price: number
+  max_price: number
+  edition_key?: string | null
+}
+
 type MarketAnalyticsResponse = {
   period: string
   startDate: string
@@ -103,12 +141,57 @@ type MarketAnalyticsResponse = {
   tierAnalytics?: TierAnalyticsRow[]
   topEditions?: TopEditionRow[]
   dailyTierVolume?: DailyTierRow[]
+  badgePremium?: BadgePremiumRow[]
+  seriesAnalytics?: SeriesAnalyticsRow[]
+  dailySeriesVolume?: DailySeriesRow[]
+  playerSearch?: PlayerSearchRow[]
   periodComparison?: {
     current?: { volume?: number; sales?: number; avgPrice?: number; uniqueEditions?: number }
     previous?: { volume?: number; sales?: number; avgPrice?: number; uniqueEditions?: number }
     changes?: { volumePct?: number | null; salesPct?: number | null; avgPricePct?: number | null; uniqueEditionsPct?: number | null }
   } | null
 }
+
+function seriesLabel(n: number | null | undefined): string {
+  if (n === null || n === undefined) return "Unknown"
+  switch (n) {
+    case 0: return "Series 1"
+    case 1: return "Series 1"
+    case 2: return "Series 2"
+    case 3: return "Summer 2021"
+    case 4: return "Series 3"
+    case 5: return "Series 4"
+    case 6: return "2023-24"
+    case 7: return "2024-25"
+    case 8: return "2025-26"
+    default: return "Unknown"
+  }
+}
+
+const SERIES_COLORS = ["#14B8A6", "#A855F7", "#F59E0B", "#3B82F6", "#EF4444", "#22C55E", "#F472B6", "#EAB308", "#60A5FA"]
+
+function pivotDailySeries(
+  rows: DailySeriesRow[] | undefined,
+  topSeriesKeys: string[]
+): Array<Record<string, string | number>> {
+  if (!rows || rows.length === 0) return []
+  const byDate = new Map<string, Record<string, string | number>>()
+  for (const r of rows) {
+    const key = seriesLabel(r.series)
+    if (!topSeriesKeys.includes(key)) continue
+    const bucket = byDate.get(r.date) ?? { date: r.date }
+    bucket[key] = Number(bucket[key] ?? 0) + Number(r.volume ?? 0)
+    byDate.set(r.date, bucket)
+  }
+  const data = Array.from(byDate.values()).sort((a, b) =>
+    String(a.date).localeCompare(String(b.date))
+  )
+  for (const row of data) {
+    for (const k of topSeriesKeys) if (row[k] === undefined) row[k] = 0
+  }
+  return data
+}
+
 
 function ChangeBadge({ pct }: { pct: number | null | undefined }) {
   if (pct == null || !Number.isFinite(pct) || pct === 0) {
@@ -201,6 +284,12 @@ function AnalyticsInner() {
   const [mpBreakdown, setMpBreakdown] = useState<MarketplaceBreakdown | null>(null)
   const [marketData, setMarketData] = useState<MarketAnalyticsResponse | null>(null)
   const [marketLoading, setMarketLoading] = useState(false)
+  const [playerQuery, setPlayerQuery] = useState("")
+  const [playerResults, setPlayerResults] = useState<PlayerSearchRow[] | null>(null)
+  const [playerLoading, setPlayerLoading] = useState(false)
+
+  const collectionMeta = useMemo(() => getCollection(collection), [collection])
+  const accent = collectionMeta?.accent ?? "#EF4444"
 
   useEffect(() => {
     if (!collection) return
@@ -229,6 +318,65 @@ function AnalyticsInner() {
     () => pivotDailyTier(marketData?.dailyTierVolume, "sale_count"),
     [marketData?.dailyTierVolume]
   )
+
+  const seriesVolumeBars = useMemo(() => {
+    if (!marketData?.seriesAnalytics) return []
+    return marketData.seriesAnalytics
+      .map((s) => ({
+        name: seriesLabel(s.series),
+        volume: Math.round(Number(s.volume) * 100) / 100,
+        avg_price: Number(s.avg_price) || 0,
+        sale_count: Number(s.sale_count) || 0,
+      }))
+      .filter((s) => s.volume > 0)
+      .sort((a, b) => b.volume - a.volume)
+  }, [marketData?.seriesAnalytics])
+
+  const topSeriesKeys = useMemo(() => {
+    return seriesVolumeBars.slice(0, 5).map((s) => s.name)
+  }, [seriesVolumeBars])
+
+  const dailySeriesPivot = useMemo(
+    () => pivotDailySeries(marketData?.dailySeriesVolume, topSeriesKeys),
+    [marketData?.dailySeriesVolume, topSeriesKeys]
+  )
+
+  // Debounced player search
+  useEffect(() => {
+    const q = playerQuery.trim()
+    if (!q) { setPlayerResults(null); return }
+    const timer = setTimeout(async () => {
+      setPlayerLoading(true)
+      try {
+        const res = await fetch(
+          `/api/market-analytics?collection=${encodeURIComponent(collection)}&period=30d&detail=full&player=${encodeURIComponent(q)}`
+        )
+        if (res.ok) {
+          const j = await res.json()
+          setPlayerResults(j.playerSearch ?? [])
+        }
+      } catch { /* swallow */ }
+      finally { setPlayerLoading(false) }
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [playerQuery, collection])
+
+  const exportCsv = useCallback(() => {
+    if (!marketData?.daily || marketData.daily.length === 0) return
+    const headers = ["Date", "Marketplace", "Sales", "Volume", "Avg Price"]
+    const rows = marketData.daily.map((d) => {
+      const avg = d.saleCount > 0 ? (d.volume / d.saleCount) : 0
+      return [d.date, d.marketplace, d.saleCount, d.volume.toFixed(2), avg.toFixed(2)].join(",")
+    })
+    const csv = [headers.join(","), ...rows].join("\n")
+    const blob = new Blob([csv], { type: "text/csv" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `${collection}-analytics-${marketData.period}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [marketData, collection])
 
   const runSearch = useCallback(async (q: string) => {
     const trimmed = q.trim()
@@ -727,6 +875,217 @@ function AnalyticsInner() {
             </div>
           )}
         </section>
+
+        {/* Section F — Badge Premium */}
+        <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+          <h2 className="mb-1 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+            Badge Premium
+          </h2>
+          <div className="mb-3 text-[11px] text-zinc-500">
+            How much more badged editions sell for vs non-badged within the same tier
+          </div>
+          {marketLoading && !marketData ? (
+            <div className="h-40 animate-pulse rounded bg-zinc-900" />
+          ) : !marketData?.badgePremium || marketData.badgePremium.length === 0 ? (
+            <div className="py-8 text-center text-sm text-zinc-500">No data</div>
+          ) : (
+            <div className="flex flex-wrap gap-3" style={{ fontFamily: "'Share Tech Mono', monospace" }}>
+              {marketData.badgePremium.map((b) => {
+                const tier = (b.tier ?? "").toUpperCase()
+                const dot = TIER_HEX[tier] ?? "#6B7280"
+                const pct = Number(b.premium_pct) || 0
+                const pctColor = pct >= 0 ? "#22C55E" : "#EF4444"
+                return (
+                  <div key={tier} className="flex-1 min-w-[180px] rounded-lg border border-zinc-800 bg-black p-3">
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-block h-2 w-2 rounded-full" style={{ background: dot }} />
+                      <span className="text-xs font-bold text-zinc-200">{tier || "—"}</span>
+                    </div>
+                    <div className="mt-2 text-[11px] text-zinc-400">Badged Avg: <span className="text-zinc-200">{fmtUsd(Number(b.badged_avg) || 0)}</span></div>
+                    <div className="text-[11px] text-zinc-400">Non-Badged Avg: <span className="text-zinc-200">{fmtUsd(Number(b.unbadged_avg) || 0)}</span></div>
+                    <div className="mt-2 text-2xl font-black" style={{ color: pctColor }}>
+                      {pct >= 0 ? "+" : ""}{pct.toFixed(0)}%
+                    </div>
+                    <div className="mt-1 text-[10px] text-zinc-500">
+                      {Number(b.badged_sales).toLocaleString()} badged / {Number(b.unbadged_sales).toLocaleString()} unbadged
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* Section G — Volume by Series */}
+        <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+          <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+            Volume by Series
+          </h2>
+          {marketLoading && !marketData ? (
+            <div className="h-64 animate-pulse rounded bg-zinc-900" />
+          ) : seriesVolumeBars.length === 0 ? (
+            <div className="py-8 text-center text-sm text-zinc-500">No data</div>
+          ) : (
+            <div className="h-72 w-full" style={{ fontFamily: "'Share Tech Mono', monospace" }}>
+              <ResponsiveContainer>
+                <BarChart data={seriesVolumeBars} layout="vertical" margin={{ left: 20 }}>
+                  <defs>
+                    <linearGradient id="seriesBarGrad" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor={accent} stopOpacity={0.9} />
+                      <stop offset="100%" stopColor={accent} stopOpacity={0.4} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
+                  <XAxis type="number" stroke="#71717a" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${Number(v).toLocaleString()}`} />
+                  <YAxis type="category" dataKey="name" stroke="#71717a" tick={{ fontSize: 10 }} width={100} />
+                  <ReTooltip
+                    contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "'Share Tech Mono', monospace" }}
+                    formatter={(v, n, p: any) => {
+                      const row = p?.payload ?? {}
+                      return [
+                        <span key="body">
+                          {fmtUsd(Number(v) || 0)}
+                          <div style={{ fontSize: 10, color: "#a1a1aa" }}>Avg {fmtUsd(row.avg_price || 0)} · {Number(row.sale_count).toLocaleString()} sales</div>
+                        </span>,
+                        "Volume",
+                      ]
+                    }}
+                  />
+                  <Bar dataKey="volume" fill="url(#seriesBarGrad)" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </section>
+
+        {/* Section H — Daily Volume by Series */}
+        <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+          <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+            Daily Volume by Series
+          </h2>
+          {marketLoading && !marketData ? (
+            <div className="h-64 animate-pulse rounded bg-zinc-900" />
+          ) : dailySeriesPivot.length === 0 ? (
+            <div className="py-8 text-center text-sm text-zinc-500">No data</div>
+          ) : (
+            <div className="h-72 w-full" style={{ fontFamily: "'Share Tech Mono', monospace" }}>
+              <ResponsiveContainer>
+                <AreaChart data={dailySeriesPivot}>
+                  <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
+                  <XAxis dataKey="date" stroke="#71717a" tick={{ fontSize: 10 }} />
+                  <YAxis stroke="#71717a" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${Number(v).toLocaleString()}`} />
+                  <ReTooltip
+                    contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "'Share Tech Mono', monospace" }}
+                    formatter={(v, n) => [fmtUsd(Number(v) || 0), String(n)]}
+                  />
+                  <Legend />
+                  {topSeriesKeys.map((s, i) => {
+                    const color = SERIES_COLORS[i % SERIES_COLORS.length]
+                    return (
+                      <Area
+                        key={s}
+                        type="monotone"
+                        dataKey={s}
+                        stackId="1"
+                        stroke={color}
+                        fill={color}
+                        fillOpacity={0.6}
+                      />
+                    )
+                  })}
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </section>
+
+        {/* Section I — Player Search */}
+        <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+          <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+            Player Search
+          </h2>
+          <input
+            value={playerQuery}
+            onChange={(e) => setPlayerQuery(e.target.value)}
+            placeholder="Search by player name..."
+            className="mb-3 w-full rounded-lg border border-zinc-800 bg-black px-4 py-2 text-white placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none font-mono"
+          />
+          {!playerQuery.trim() ? (
+            <div className="py-6 text-center text-sm text-zinc-500">
+              Search for a player to see their marketplace analytics
+            </div>
+          ) : playerLoading ? (
+            <div className="h-24 animate-pulse rounded bg-zinc-900" />
+          ) : !playerResults || playerResults.length === 0 ? (
+            <div className="py-6 text-center text-sm text-zinc-500">No results</div>
+          ) : (
+            <table className="w-full text-sm" style={{ fontFamily: "'Share Tech Mono', monospace" }}>
+              <thead>
+                <tr className="border-b border-zinc-800 text-left text-[10px] uppercase tracking-widest text-zinc-500">
+                  <th className="py-2 pr-2">Player</th>
+                  <th className="py-2 pr-2">Set</th>
+                  <th className="py-2 pr-2">Tier</th>
+                  <th className="py-2 pr-2">Series</th>
+                  <th className="py-2 pr-2 text-right">Sales</th>
+                  <th className="py-2 pr-2 text-right">Volume</th>
+                  <th className="py-2 pr-2 text-right">Avg</th>
+                  <th className="py-2 pr-2 text-right">Min</th>
+                  <th className="py-2 text-right">Max</th>
+                </tr>
+              </thead>
+              <tbody>
+                {playerResults.map((p, i) => {
+                  const tier = (p.tier ?? "").toUpperCase()
+                  const dot = TIER_HEX[tier] ?? "#6B7280"
+                  const clickable = !!p.edition_key
+                  return (
+                    <tr
+                      key={i}
+                      className={`border-b border-zinc-900 ${clickable ? "cursor-pointer hover:bg-zinc-900/60" : ""}`}
+                      onClick={() => {
+                        if (!p.edition_key) return
+                        window.open(`/api/edition-history?edition=${encodeURIComponent(p.edition_key)}&days=90`, "_blank")
+                      }}
+                    >
+                      <td className="py-1.5 pr-2 text-zinc-200">{p.player_name ?? "—"}</td>
+                      <td className="py-1.5 pr-2 text-zinc-400">{p.set_name ?? "—"}</td>
+                      <td className="py-1.5 pr-2 text-zinc-300">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="inline-block h-2 w-2 rounded-full" style={{ background: dot }} />
+                          {tier || "—"}
+                        </span>
+                      </td>
+                      <td className="py-1.5 pr-2 text-zinc-400">{seriesLabel(p.series)}</td>
+                      <td className="py-1.5 pr-2 text-right text-zinc-400">{Number(p.sale_count).toLocaleString()}</td>
+                      <td className="py-1.5 pr-2 text-right text-white">{fmtUsd(p.volume)}</td>
+                      <td className="py-1.5 pr-2 text-right text-zinc-300">{fmtUsd(p.avg_price)}</td>
+                      <td className="py-1.5 pr-2 text-right text-zinc-500">{fmtUsd(p.min_price)}</td>
+                      <td className="py-1.5 text-right text-zinc-300">{fmtUsd(p.max_price)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </section>
+
+        {/* Section J — Export CSV */}
+        <div className="flex justify-end pt-2">
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={!marketData?.daily?.length}
+            className="rounded-lg border px-5 py-2 font-semibold uppercase tracking-widest text-white disabled:opacity-50"
+            style={{
+              fontFamily: "'Barlow Condensed', sans-serif",
+              background: accent,
+              borderColor: accent,
+            }}
+          >
+            Export CSV
+          </button>
+        </div>
+
       </div>
     </div>
   )

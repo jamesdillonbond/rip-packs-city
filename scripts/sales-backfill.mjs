@@ -96,8 +96,10 @@ async function main() {
   const currentHeight = Number(latestBlock.height)
   console.log(`Current sealed block: ${currentHeight}`)
 
-  const endBlock = argEnd ?? currentHeight
-  const startBlock = argStart ?? endBlock - 86400
+  const envStart = process.env.START_BLOCK ? parseInt(process.env.START_BLOCK, 10) : null
+  const envEnd = process.env.END_BLOCK ? parseInt(process.env.END_BLOCK, 10) : null
+  const endBlock = argEnd ?? envEnd ?? currentHeight
+  const startBlock = argStart ?? envStart ?? endBlock - 86400
 
   console.log(`Scanning blocks ${startBlock} → ${endBlock} (${endBlock - startBlock} blocks)`)
 
