@@ -57,6 +57,18 @@ export async function POST(req: NextRequest) {
       const traits = nft.nftView?.traits?.traits ?? []
       const editionData = flowtyTraitsToPinnacleEdition(traits)
       if (!editionData.editionKey || !editionData.royaltyCode) continue
+
+      await (supabaseAdmin as any)
+        .from("pinnacle_nft_map")
+        .upsert(
+          {
+            nft_id: nft.id,
+            edition_key: editionData.editionKey,
+            owner: nft.owner,
+          },
+          { onConflict: "nft_id", ignoreDuplicates: true }
+        )
+
       if (seenEditions.has(editionData.editionKey)) continue
       seenEditions.add(editionData.editionKey)
 
