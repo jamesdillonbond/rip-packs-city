@@ -35,6 +35,23 @@ function toNum(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+// Defensive array coercion — Flowty sometimes returns object-wrapped arrays or
+// keyed object maps. This helper finds an array inside common wrapper keys,
+// coerces object-maps to Object.values arrays, and otherwise returns [].
+function asArray<T = unknown>(val: unknown): T[] {
+  if (Array.isArray(val)) return val as T[]
+  if (val && typeof val === "object") {
+    const obj = val as Record<string, unknown>
+    for (const key of ["data", "results", "nfts", "items", "listings", "edges", "nodes"]) {
+      if (Array.isArray(obj[key])) return obj[key] as T[]
+    }
+    // Some APIs return object-maps (numeric keys) instead of arrays
+    const vals = Object.values(obj)
+    if (vals.length > 0 && vals.every((v) => v && typeof v === "object")) return vals as T[]
+  }
+  return []
+}
+
 function formatTier(tier: string | null | undefined): string {
   if (!tier) return "COMMON"
   const t = tier.toUpperCase()
@@ -71,12 +88,13 @@ const TRAIT_MAP: Record<string, string[]> = {
 type TraitArray = Array<{ name: string; value: string }>
 
 function getTraitMulti(
-  traits: TraitArray | undefined,
+  traits: TraitArray | undefined | unknown,
   keys: string[]
 ): string | null {
-  if (!traits) return null
+  const arr = asArray<{ name: string; value: string }>(traits)
+  if (!arr.length) return null
   for (const key of keys) {
-    const t = traits.find((tr) => tr.name === key)
+    const t = arr.find((tr) => tr && tr.name === key)
     if (t?.value) return t.value
   }
   return null
@@ -100,42 +118,50 @@ interface FlowtyNftItem {
 }
 
 async function fetchFlowtyPage(from: number): Promise<FlowtyNftItem[]> {
-  const res = await fetch(FLOWTY_ENDPOINT, {
-    method: "POST",
-    headers: FLOWTY_HEADERS,
-    body: JSON.stringify({
-      address: null,
-      addresses: [],
-      collectionFilters: [
-        { collection: "0xe4cf4bdc1751c65d.AllDay", traits: [] },
-      ],
-      from,
-      includeAllListings: true,
-      limit: 24,
-      onlyUnlisted: false,
-      orderFilters: [
-        { conditions: [], kind: "storefront", paymentTokens: [] },
-      ],
-      sort: {
-        direction: "desc",
-        listingKind: "storefront",
-        path: "blockTimestamp",
-      },
-    }),
-    signal: AbortSignal.timeout(12000),
-  })
-  if (!res.ok) {
-    throw new Error(
-      `Flowty HTTP ${res.status} from=${from}: ${(await res.text()).slice(0, 200)}`
-    )
-  }
-  const json = await res.json()
-  const items = json?.nfts ?? json?.data ?? []
-  if (!Array.isArray(items)) {
-    console.error(`[ALLDAY-INGEST] fetchFlowtyPage from=${from}: expected array, got ${typeof items}`, JSON.stringify(items).slice(0, 300))
+  try {
+    const res = await fetch(FLOWTY_ENDPOINT, {
+      method: "POST",
+      headers: FLOWTY_HEADERS,
+      body: JSON.stringify({
+        address: null,
+        addresses: [],
+        collectionFilters: [
+          { collection: "0xe4cf4bdc1751c65d.AllDay", traits: [] },
+        ],
+        from,
+        includeAllListings: true,
+        limit: 24,
+        onlyUnlisted: false,
+        orderFilters: [
+          { conditions: [], kind: "storefront", paymentTokens: [] },
+        ],
+        sort: {
+          direction: "desc",
+          listingKind: "storefront",
+          path: "blockTimestamp",
+        },
+      }),
+      signal: AbortSignal.timeout(12000),
+    })
+    if (!res.ok) {
+      console.error(`[ALLDAY-INGEST] Flowty HTTP ${res.status} from=${from}: ${(await res.text()).slice(0, 200)}`)
+      return []
+    }
+    const json: unknown = await res.json()
+
+    // Log response shape once per page so the next time something moves we see it
+    const shapeKeys = json && typeof json === "object" ? Object.keys(json as Record<string, unknown>).slice(0, 15) : []
+    console.log(`[ALLDAY-INGEST] Flowty from=${from} typeof=${typeof json} keys=${JSON.stringify(shapeKeys)}`)
+
+    const items = asArray<FlowtyNftItem>(json)
+    if (items.length === 0) {
+      console.warn(`[ALLDAY-INGEST] Flowty from=${from}: no array found in response. Preview=${JSON.stringify(json).slice(0, 300)}`)
+    }
+    return items
+  } catch (err) {
+    console.error(`[ALLDAY-INGEST] fetchFlowtyPage from=${from} threw: ${err instanceof Error ? err.message : String(err)}`)
     return []
   }
-  return items as FlowtyNftItem[]
 }
 
 // ── Supabase upserts ─────────────────────────────────────────────────────────
@@ -487,10 +513,10 @@ export async function POST(req: NextRequest) {
     // Log first item structure for debugging
     if (allItems.length > 0) {
       const first = allItems[0]
-      const traits = first.nftView?.traits ?? []
+      const traits = asArray<{ name: string; value: string }>(first?.nftView?.traits)
       console.log(
         "[ALLDAY-INGEST] Trait keys:",
-        traits.map((t) => t.name).join(", ")
+        traits.map((t) => t?.name).filter(Boolean).join(", ")
       )
       console.log(
         "[ALLDAY-INGEST] Sample — SetID:",
@@ -521,7 +547,7 @@ export async function POST(req: NextRequest) {
         const price = order.salePrice
         if (!price || price <= 0) continue
 
-        const traits = item.nftView?.traits ?? []
+        const traits = asArray<{ name: string; value: string }>(item?.nftView?.traits)
         const serial = item.card?.num ?? item.nftView?.serial ?? 0
 
         // Build edition key from on-chain editionID (All Day uses a single numeric ID per edition,
