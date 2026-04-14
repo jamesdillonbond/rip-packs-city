@@ -1,52 +1,59 @@
 // app/api/pinnacle-ingest/route.ts
-// GET /api/pinnacle-ingest?token=<INGEST_SECRET_TOKEN>
-// Fetches all Pinnacle NFTs from Flowty in batches, upserts editions,
-// indexes sales, and triggers FMV recalc.
+// POST /api/pinnacle-ingest?token=<INGEST_SECRET_TOKEN>&limit=100&offset=0[&recalc=true]
+//   Fetches one batch of Pinnacle NFTs from Flowty, upserts editions + sales,
+//   and returns the next offset so the caller can chain requests.
+// GET  /api/pinnacle-ingest  → pinnacle_health_check (monitor progress, no auth)
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import {
-  fetchAllFlowtyPinnacleNfts,
+  fetchFlowtyPinnacleListings,
   extractEditionKeyFromNft,
-  type FlowtyPinnacleNft,
 } from "@/lib/pinnacle/pinnacleFlowty"
-import {
-  parseStringifiedArray,
-  flowtyTraitsToPinnacleEdition,
-} from "@/lib/pinnacle/pinnacleTypes"
+import { flowtyTraitsToPinnacleEdition } from "@/lib/pinnacle/pinnacleTypes"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
 
 const INGEST_SECRET = process.env.INGEST_SECRET_TOKEN ?? ""
 
-export async function GET(req: NextRequest) {
-  // Auth check
+export async function GET() {
+  const { data, error } = await (supabaseAdmin as any).rpc("pinnacle_health_check")
+  if (error) {
+    return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+  }
+  return NextResponse.json({ ok: true, health: data })
+}
+
+export async function POST(req: NextRequest) {
   const url = new URL(req.url)
   const token = url.searchParams.get("token") ?? req.headers.get("x-ingest-token") ?? ""
   if (!INGEST_SECRET || token !== INGEST_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
+  const limit = Math.max(1, Math.min(500, parseInt(url.searchParams.get("limit") ?? "100", 10)))
+  const offset = Math.max(0, parseInt(url.searchParams.get("offset") ?? "0", 10))
+  const recalc = url.searchParams.get("recalc") === "true"
+
   const startTime = Date.now()
   const log: string[] = []
 
   try {
-    // Step 1: Fetch all NFTs from Flowty
-    log.push("Fetching Pinnacle NFTs from Flowty...")
-    const allNfts = await fetchAllFlowtyPinnacleNfts({
-      batchSize: 24,
-      maxTotal: 12000,
-      timeoutMs: 12000,
+    log.push(`Fetching Pinnacle batch offset=${offset} limit=${limit}...`)
+    const batch = await fetchFlowtyPinnacleListings({
+      limit,
+      offset,
+      listedOnly: false,
+      timeoutMs: 15000,
     })
-    log.push(`Fetched ${allNfts.length} NFTs from Flowty`)
+    log.push(`Fetched ${batch.length} NFTs`)
 
-    // Step 2: Upsert editions
     let editionsUpserted = 0
     let editionErrors = 0
     const seenEditions = new Set<string>()
 
-    for (const nft of allNfts) {
+    for (const nft of batch) {
       const traits = nft.nftView?.traits?.traits ?? []
       const editionData = flowtyTraitsToPinnacleEdition(traits)
       if (!editionData.editionKey || !editionData.royaltyCode) continue
@@ -87,24 +94,16 @@ export async function GET(req: NextRequest) {
         editionsUpserted++
       }
     }
-    log.push(`Editions: ${editionsUpserted} upserted, ${editionErrors} errors, ${seenEditions.size} unique`)
 
-    // Step 3: Index sales from completed orders
-    // Flowty NFTs with orders where state !== "LISTED" are completed sales
     const salesRows: Array<Record<string, unknown>> = []
-
-    for (const nft of allNfts) {
+    for (const nft of batch) {
       const { editionKey } = extractEditionKeyFromNft(nft)
       if (!editionKey) continue
-
       for (const order of nft.orders ?? []) {
-        // Only process completed sales (not active listings)
         if (order.state === "LISTED") continue
         if (!order.salePrice || order.salePrice <= 0) continue
-
         const blockTs = order.blockTimestamp
         const ms = blockTs && blockTs > 0 ? (blockTs < 1e12 ? blockTs * 1000 : blockTs) : null
-
         salesRows.push({
           edition_key: editionKey,
           sale_price: order.salePrice,
@@ -119,7 +118,6 @@ export async function GET(req: NextRequest) {
 
     let salesInserted = 0
     if (salesRows.length > 0) {
-      // Batch insert via RPC
       const { data, error } = await (supabaseAdmin as any).rpc("bulk_insert_pinnacle_sales", {
         sales_json: JSON.stringify(salesRows),
       })
@@ -129,37 +127,35 @@ export async function GET(req: NextRequest) {
         salesInserted = typeof data === "number" ? data : salesRows.length
         log.push(`Sales: ${salesInserted} inserted from ${salesRows.length} candidates`)
       }
-    } else {
-      log.push("No completed sales found in Flowty response")
     }
 
-    // Step 4: Trigger FMV recalc
-    log.push("Triggering FMV recalc...")
-    const { error: fmvError } = await (supabaseAdmin as any).rpc("pinnacle_fmv_recalc_all")
-    if (fmvError) {
-      log.push(`FMV recalc error: ${fmvError.message}`)
-    } else {
-      log.push("FMV recalc complete")
+    if (recalc) {
+      log.push("Triggering FMV recalc...")
+      const { error: fmvError } = await (supabaseAdmin as any).rpc("pinnacle_fmv_recalc_all")
+      if (fmvError) log.push(`FMV recalc error: ${fmvError.message}`)
+      else log.push("FMV recalc complete")
     }
 
+    const done = batch.length < limit
+    const nextOffset = done ? null : offset + batch.length
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-    log.push(`Total elapsed: ${elapsed}s`)
 
     return NextResponse.json({
       ok: true,
-      nftsFromFlowty: allNfts.length,
+      batchSize: batch.length,
+      offset,
+      nextOffset,
+      done,
       editionsUpserted,
       editionErrors,
       salesInserted,
+      recalcRan: recalc,
       elapsed: `${elapsed}s`,
       log,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     log.push(`Fatal error: ${msg}`)
-    return NextResponse.json(
-      { ok: false, error: msg, log },
-      { status: 500 }
-    )
+    return NextResponse.json({ ok: false, error: msg, log }, { status: 500 })
   }
 }
