@@ -320,6 +320,61 @@ export default function OverviewPage() {
         </div>
       )}
 
+      {/* ── Golazos Section ── */}
+      {collection === "laliga-golazos" && (
+        <>
+          <section className="rpc-card" style={{ padding: "20px 24px" }}>
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "baseline" }}>
+              <div className="rpc-heading" style={{ fontSize: "var(--text-lg)", color: "#22C55E" }}>
+                575 Editions
+              </div>
+              <span style={{ color: "var(--rpc-text-ghost)" }}>·</span>
+              <div className="rpc-heading" style={{ fontSize: "var(--text-lg)" }}>23 Sets</div>
+              <span style={{ color: "var(--rpc-text-ghost)" }}>·</span>
+              <div className="rpc-heading" style={{ fontSize: "var(--text-lg)" }}>4 Tiers</div>
+              <span style={{ color: "var(--rpc-text-ghost)" }}>·</span>
+              <div className="rpc-heading" style={{ fontSize: "var(--text-lg)" }}>Series 1</div>
+            </div>
+          </section>
+
+          <section className="rpc-card" style={{ padding: "16px 20px" }}>
+            <div className="rpc-label" style={{ marginBottom: 12, color: "#22C55E" }}>Featured Sets</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
+              {[
+                { name: "ElCl\u00E1sico", blurb: "Bar\u00E7a vs Real Madrid. The biggest rivalry in football.", meta: "23 editions · Legendary available" },
+                { name: "\u00CDdolos", blurb: "The legends. Reserved for the cream of the crop.", meta: "17 Legendary · floor ~$224" },
+                { name: "Estrellas", blurb: "The stars lighting up LaLiga stadiums.", meta: "126 Rare editions" },
+                { name: "Lewandowski's Strikers", blurb: "The greatest goal scorers in LaLiga history.", meta: "24 editions · all 4 tiers" },
+              ].map((s) => (
+                <div key={s.name} style={{ padding: 12, background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)" }}>
+                  <div className="rpc-heading" style={{ fontSize: "var(--text-sm)", color: "#22C55E", marginBottom: 4 }}>{s.name}</div>
+                  <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-primary)", marginBottom: 6 }}>{s.blurb}</div>
+                  <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>{s.meta}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="rpc-card" style={{ padding: "16px 20px" }}>
+            <div className="rpc-label" style={{ marginBottom: 10, color: "#22C55E" }}>Notable Players</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {["Lionel Messi", "Cristiano Ronaldo", "Neymar", "Robert Lewandowski", "Luka Modri\u0107", "Pedri", "Vin\u00EDcius J\u00FAnior", "Antoine Griezmann", "Andr\u00E9s Iniesta", "Xavi"].map((p) => (
+                <span key={p} style={{ padding: "4px 10px", background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: 999, fontSize: "var(--text-xs)" }}>{p}</span>
+              ))}
+            </div>
+          </section>
+
+          <section className="rpc-card" style={{ padding: "16px 20px" }}>
+            <div className="rpc-label" style={{ marginBottom: 8, color: "#22C55E" }}>News</div>
+            <div className="rpc-heading" style={{ fontSize: "var(--text-sm)", marginBottom: 4 }}>LaLiga Golazos — Now Live on Rip Packs City</div>
+            <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-primary)", marginBottom: 4 }}>
+              Wallet analysis, FMV pricing, and marketplace intelligence for 575 editions across 23 sets.
+            </div>
+            <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>2026-04-14</div>
+          </section>
+        </>
+      )}
+
       {/* ── FMV Movers (24h) ── */}
       {!statsLoading && overviewStats?.movers && overviewStats.movers.length > 0 && (
         <section className="rpc-card" style={{ padding: "16px 20px" }}>
