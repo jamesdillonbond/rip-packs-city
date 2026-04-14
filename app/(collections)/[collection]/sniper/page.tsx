@@ -460,6 +460,7 @@ function useMobile() {
 
 const REFRESH_INTERVAL = 30;
 const TIER_TABS = ["all", "common", "uncommon", "fandom", "rare", "legendary", "ultimate"] as const;
+const GOLAZOS_TIER_TABS = ["all", "common", "fandom", "uncommon", "rare", "legendary"] as const;
 const PINNACLE_VARIANT_TABS = ["all", "Standard", "Brushed Silver", "Colored Enamel", "Golden", "Digital Display", "Limited Edition"] as const;
 type TierTab = (typeof TIER_TABS)[number];
 
@@ -479,7 +480,12 @@ export default function SniperPage() {
   const accent = collectionObj?.accent ?? "#E03A2F";
   const isAllDay = collectionSlug === "nfl-all-day";
   const isPinnacle = collectionSlug === "pinnacle" || collectionSlug === "disney-pinnacle";
-  const feedEndpoint = isPinnacle ? "/api/pinnacle-sniper" : "/api/sniper-feed";
+  const isGolazos = collectionSlug === "laliga-golazos";
+  const feedEndpoint = isPinnacle
+    ? "/api/pinnacle-sniper"
+    : isGolazos
+    ? "/api/golazos-sniper-feed"
+    : "/api/sniper-feed";
   const feedCollection = isPinnacle ? "nba-top-shot" : collectionSlug;
   const brandLabel = isPinnacle ? "Pinnacle" : collectionObj?.shortLabel ?? "Top Shot";
 
@@ -1026,7 +1032,7 @@ export default function SniperPage() {
 
           {/* Tier / Variant quick tabs */}
           <div className="flex items-center gap-1 mb-4 flex-wrap">
-            {(isPinnacle ? PINNACLE_VARIANT_TABS : TIER_TABS).map((t) => (
+            {(isPinnacle ? PINNACLE_VARIANT_TABS : isGolazos ? GOLAZOS_TIER_TABS : TIER_TABS).map((t) => (
               <button
                 key={t}
                 onClick={() => setTierTab(t as TierTab)}
