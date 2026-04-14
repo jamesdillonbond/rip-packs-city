@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
     }
     const wallets: any[] = walletsRes.data ?? []
     const addrs: string[] = wallets
-      .map((w) => w.wallet_address)
+      .map((w) => w.wallet_addr ?? w.wallet_address)
       .filter((a: any): a is string => typeof a === "string" && a.length > 0)
 
     // Aggregate stats from saved_wallets cache
@@ -93,7 +93,30 @@ export async function GET(req: NextRequest) {
     if (collectionCount >= 2) earnedIds.add("multi_collection")
     if (totalBadges >= 10) earnedIds.add("badge_hunter")
     if (totalFmv >= 10000) earnedIds.add("whale_alert")
-    // set_completionist, diamond_hands: intentionally skipped (not computed here)
+
+    // set_completionist + diamond_hands — parallelized across all saved wallets
+    if (addrs.length > 0) {
+      const [setChecks, dhChecks] = await Promise.all([
+        Promise.all(
+          addrs.map((a) =>
+            supabase.rpc("check_set_completion", { p_wallet: a }).then(
+              (r) => r.data === true,
+              () => false
+            )
+          )
+        ),
+        Promise.all(
+          addrs.map((a) =>
+            supabase.rpc("check_diamond_hands", { p_wallet: a }).then(
+              (r) => r.data === true,
+              () => false
+            )
+          )
+        ),
+      ])
+      if (setChecks.some(Boolean)) earnedIds.add("set_completionist")
+      if (dhChecks.some(Boolean)) earnedIds.add("diamond_hands")
+    }
 
     const newlyEarned: { owner_key: string; achievement_id: string }[] = []
     for (const id of earnedIds) {

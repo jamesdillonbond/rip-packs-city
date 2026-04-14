@@ -52,12 +52,13 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Latest FMV per edition
+    // Latest FMV + floor per edition (single query, take DISTINCT ON latest snapshot).
     const fmvMap = new Map<string, number>()
+    const floorMap = new Map<string, number>()
     if (editionIds.length > 0) {
       const { data: snaps } = await supabase
         .from("fmv_snapshots")
-        .select("edition_id, fmv_usd, top_shot_ask, computed_at")
+        .select("edition_id, fmv_usd, floor_price_usd, computed_at")
         .in("edition_id", editionIds)
         .order("computed_at", { ascending: false })
       for (const s of snaps ?? []) {
@@ -66,22 +67,8 @@ export async function GET(req: NextRequest) {
         if (!fmvMap.has(eid) && typeof s.fmv_usd === "number") {
           fmvMap.set(eid, s.fmv_usd)
         }
-      }
-    }
-
-    // Current ask proxy = fmv_snapshots.top_shot_ask (latest)
-    const askMap = new Map<string, number>()
-    if (editionIds.length > 0) {
-      const { data: snaps } = await supabase
-        .from("fmv_snapshots")
-        .select("edition_id, top_shot_ask, computed_at")
-        .in("edition_id", editionIds)
-        .order("computed_at", { ascending: false })
-      for (const s of snaps ?? []) {
-        const eid = s.edition_id as string | null
-        if (!eid) continue
-        if (!askMap.has(eid) && typeof s.top_shot_ask === "number") {
-          askMap.set(eid, s.top_shot_ask)
+        if (!floorMap.has(eid) && typeof s.floor_price_usd === "number") {
+          floorMap.set(eid, s.floor_price_usd)
         }
       }
     }
@@ -89,7 +76,7 @@ export async function GET(req: NextRequest) {
     const resp = rows.map((r) => {
       const ed = r.edition_id ? editionMap.get(r.edition_id) : null
       const fmv = r.edition_id ? fmvMap.get(r.edition_id) ?? null : null
-      const ask = r.edition_id ? askMap.get(r.edition_id) ?? null : null
+      const ask = r.edition_id ? floorMap.get(r.edition_id) ?? null : null
       const target = r.target_price !== null ? Number(r.target_price) : null
       const belowTarget =
         target !== null && ask !== null ? ask <= target : false
