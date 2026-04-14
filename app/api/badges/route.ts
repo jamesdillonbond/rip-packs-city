@@ -53,6 +53,7 @@ export async function GET(req: NextRequest) {
         case "debut":      return q.contains("play_tags", JSON.stringify([{ id: "a75e247a-ecbf-45a6-b1be-58bb07a1b651" }]))
         case "rookiemint": return q.contains("set_play_tags", JSON.stringify([{ id: "24d515af-e967-45f5-a30e-11fc96dc2b62" }]))
         case "roty":       return q.contains("play_tags", JSON.stringify([{ id: "34fe8d3f-681a-42df-856a-e98624f95b11" }]))
+        case "championship": return q.contains("play_tags", JSON.stringify([{ id: "f197f60a-b502-4386-b0c0-7f4cde8164ff" }]))
         case "blazers":    return q.eq("team_nba_id", "1610612757")
         // NFL All Day modes — match on set_play_tags[].title
         case "rookie_ad":     return q.contains("set_play_tags", JSON.stringify([{ title: "Rookie" }]))

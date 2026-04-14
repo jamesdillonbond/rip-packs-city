@@ -17,10 +17,7 @@ export const BADGE_TAG_IDS = {
   ROOKIE_MINT:        "24d515af-e967-45f5-a30e-11fc96dc2b62",
   // Internal/hidden — never display to users
   INTERACTIVE:        "9bbb6f91-d09a-4d07-ab3d-8402a9c10cf1",
-  // How to discover: log into nbatopshot.com → DevTools Network → find any known
-  // Championship Year moment's getMintedMoment request → response play.tags →
-  // copy the id of the tag titled "Championship Year" into this placeholder.
-  CHAMPIONSHIP_YEAR:  null as string | null,
+  CHAMPIONSHIP_YEAR:  "f197f60a-b502-4386-b0c0-7f4cde8164ff",
 } as const
 
 // GQL badge type strings → display titles. Used by the collection page to
