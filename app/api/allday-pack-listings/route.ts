@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
     while (true) {
       const { data, error } = await supabase
         .from("cached_listings")
-        .select("edition_id, ask_price, thumbnail_url")
+        .select("id, set_name, tier, ask_price, thumbnail_url, collection_id")
         .eq("collection_id", ALLDAY_COLLECTION_ID)
         .range(from, from + pageSize - 1)
       if (error) {
@@ -80,16 +80,22 @@ export async function POST(req: NextRequest) {
   }
   console.log(`[allday-pack-listings] Loaded ${listingRows.length} cached listings`)
 
-  // 3. Build edition_id → lowest ask + image
-  const lowestByEdition = new Map<string, { ask: number; image: string | null }>()
+  // 3. Build set_name:tier → lowest ask + image + count
+  const lowestByGroup = new Map<string, { ask: number; image: string | null; count: number }>()
   for (const row of listingRows) {
     const ask = parseFloat(String(row.ask_price ?? "0"))
     if (!isFinite(ask) || ask <= 0) continue
-    const prev = lowestByEdition.get(row.edition_id)
-    if (!prev || ask < prev.ask) {
-      lowestByEdition.set(row.edition_id, { ask, image: row.thumbnail_url ?? prev?.image ?? null })
-    } else if (!prev.image && row.thumbnail_url) {
-      prev.image = row.thumbnail_url
+    const setName: string = (row.set_name ?? "").toString().trim()
+    if (!setName) continue
+    const tier = normalizeTier(row.tier)
+    const key = `${setName}::${tier}`
+    const prev = lowestByGroup.get(key)
+    if (!prev) {
+      lowestByGroup.set(key, { ask, image: row.thumbnail_url ?? null, count: 1 })
+    } else {
+      prev.count++
+      if (ask < prev.ask) prev.ask = ask
+      if (!prev.image && row.thumbnail_url) prev.image = row.thumbnail_url
     }
   }
 
@@ -116,10 +122,13 @@ export async function POST(req: NextRequest) {
       groups.set(key, g)
     }
     g.editionCount++
-    const listing = lowestByEdition.get(ed.id)
+  }
+
+  for (const [key, g] of groups) {
+    const listing = lowestByGroup.get(key)
     if (listing) {
-      g.listedCount++
-      if (g.lowestAsk == null || listing.ask < g.lowestAsk) g.lowestAsk = listing.ask
+      g.listedCount = listing.count
+      g.lowestAsk = listing.ask
       if (!g.image && listing.image) g.image = listing.image
     }
   }
