@@ -7,15 +7,6 @@ const supabase: any = createClient(
 )
 
 const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
-const FLOWTY_ENDPOINT = "https://api2.flowty.io/collection/0xe4cf4bdc1751c65d/AllDay"
-const FLOWTY_HEADERS = {
-  "Content-Type": "application/json",
-  Origin: "https://www.flowty.io",
-  Referer: "https://www.flowty.io/",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146 Safari/537.36",
-}
-const PAGE_OFFSETS = [0, 24, 48]
-const PAGE_LIMIT = 100
 
 const TIER_ENUM = new Set(["COMMON", "UNCOMMON", "RARE", "LEGENDARY", "ULTIMATE"])
 
@@ -26,42 +17,13 @@ function slug(s: string): string {
 function normalizeTier(raw: string | undefined): string {
   const t = (raw ?? "").toUpperCase().trim()
   if (TIER_ENUM.has(t)) return t
+  if (t === "FANDOM") return "UNCOMMON"
   if (t.includes("COMMON")) return "COMMON"
   if (t.includes("UNCOMMON")) return "UNCOMMON"
   if (t.includes("LEGEND")) return "LEGENDARY"
   if (t.includes("ULTIMATE")) return "ULTIMATE"
   if (t.includes("RARE")) return "RARE"
   return "COMMON"
-}
-
-function getTrait(traits: any[], ...names: string[]): string {
-  if (!Array.isArray(traits)) return ""
-  for (const name of names) {
-    const t = traits.find((tr: any) => tr && (tr.name === name || tr.trait_type === name))
-    if (t && t.value != null && String(t.value).trim() !== "") return String(t.value).trim()
-  }
-  return ""
-}
-
-async function fetchFlowtyPage(offset: number): Promise<any[]> {
-  try {
-    const res = await fetch(FLOWTY_ENDPOINT, {
-      method: "POST",
-      headers: FLOWTY_HEADERS,
-      body: JSON.stringify({ filters: {}, offset, limit: PAGE_LIMIT }),
-      signal: AbortSignal.timeout(10_000),
-    })
-    if (!res.ok) {
-      console.log(`[allday-pack-listings] Flowty offset=${offset} HTTP ${res.status}`)
-      return []
-    }
-    const json = await res.json()
-    const items = json.nfts ?? json.data ?? []
-    return Array.isArray(items) ? items : []
-  } catch (e: any) {
-    console.log(`[allday-pack-listings] Flowty offset=${offset} error: ${e?.message ?? "unknown"}`)
-    return []
-  }
 }
 
 export async function POST(req: NextRequest) {
@@ -71,66 +33,123 @@ export async function POST(req: NextRequest) {
   }
 
   const started = Date.now()
-  const pages = await Promise.all(PAGE_OFFSETS.map(fetchFlowtyPage))
-  const allNfts = pages.flat()
-  console.log(`[allday-pack-listings] Fetched ${allNfts.length} raw NFTs from Flowty`)
 
-  type Group = { setName: string; tier: string; nfts: Array<{ price: number; image: string | null }> }
+  // 1. Fetch editions
+  const editionRows: any[] = []
+  {
+    const pageSize = 1000
+    let from = 0
+    while (true) {
+      const { data, error } = await supabase
+        .from("editions")
+        .select("id, external_id, set_name, tier, series, player_name")
+        .eq("collection_id", ALLDAY_COLLECTION_ID)
+        .range(from, from + pageSize - 1)
+      if (error) {
+        console.log(`[allday-pack-listings] editions fetch error: ${error.message}`)
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+      if (!data || data.length === 0) break
+      editionRows.push(...data)
+      if (data.length < pageSize) break
+      from += pageSize
+    }
+  }
+  console.log(`[allday-pack-listings] Loaded ${editionRows.length} editions`)
+
+  // 2. Fetch cached_listings
+  const listingRows: any[] = []
+  {
+    const pageSize = 1000
+    let from = 0
+    while (true) {
+      const { data, error } = await supabase
+        .from("cached_listings")
+        .select("edition_id, ask_price, thumbnail_url")
+        .eq("collection_id", ALLDAY_COLLECTION_ID)
+        .range(from, from + pageSize - 1)
+      if (error) {
+        console.log(`[allday-pack-listings] cached_listings fetch error: ${error.message}`)
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+      if (!data || data.length === 0) break
+      listingRows.push(...data)
+      if (data.length < pageSize) break
+      from += pageSize
+    }
+  }
+  console.log(`[allday-pack-listings] Loaded ${listingRows.length} cached listings`)
+
+  // 3. Build edition_id → lowest ask + image
+  const lowestByEdition = new Map<string, { ask: number; image: string | null }>()
+  for (const row of listingRows) {
+    const ask = parseFloat(String(row.ask_price ?? "0"))
+    if (!isFinite(ask) || ask <= 0) continue
+    const prev = lowestByEdition.get(row.edition_id)
+    if (!prev || ask < prev.ask) {
+      lowestByEdition.set(row.edition_id, { ask, image: row.thumbnail_url ?? prev?.image ?? null })
+    } else if (!prev.image && row.thumbnail_url) {
+      prev.image = row.thumbnail_url
+    }
+  }
+
+  // 4. Group editions by (set_name, tier)
+  type Group = {
+    setName: string
+    tier: string
+    series: number | string | null
+    editionCount: number
+    listedCount: number
+    lowestAsk: number | null
+    image: string | null
+  }
   const groups = new Map<string, Group>()
 
-  for (const nft of allNfts) {
-    const orders = Array.isArray(nft?.orders) ? nft.orders : []
-    const listed = orders.find((o: any) => o?.state === "LISTED")
-    if (!listed) continue
-    const price = parseFloat(String(listed.salePrice ?? "0"))
-    if (!isFinite(price) || price <= 0) continue
-
-    let traits: any[] = []
-    if (nft.nftView?.traits) {
-      if (Array.isArray(nft.nftView.traits)) traits = nft.nftView.traits
-      else if (Array.isArray(nft.nftView.traits.traits)) traits = nft.nftView.traits.traits
-    }
-
-    const setName = getTrait(traits, "SetName", "setName", "Set Name")
-    const tierRaw = getTrait(traits, "Tier", "editionTier", "Moment Tier")
-    if (!setName || !tierRaw) continue
-    const tier = normalizeTier(tierRaw)
-
-    const image: string | null =
-      (nft?.card && Array.isArray(nft.card.images) && nft.card.images[0]?.url) || null
-
+  for (const ed of editionRows) {
+    const setName: string = (ed.set_name ?? "").toString().trim()
+    if (!setName) continue
+    const tier = normalizeTier(ed.tier)
     const key = `${setName}::${tier}`
     let g = groups.get(key)
     if (!g) {
-      g = { setName, tier, nfts: [] }
+      g = { setName, tier, series: ed.series ?? null, editionCount: 0, listedCount: 0, lowestAsk: null, image: null }
       groups.set(key, g)
     }
-    g.nfts.push({ price, image })
+    g.editionCount++
+    const listing = lowestByEdition.get(ed.id)
+    if (listing) {
+      g.listedCount++
+      if (g.lowestAsk == null || listing.ask < g.lowestAsk) g.lowestAsk = listing.ask
+      if (!g.image && listing.image) g.image = listing.image
+    }
   }
+
+  const groupsFound = groups.size
+  const groupsWithListings = Array.from(groups.values()).filter((g) => g.listedCount > 0).length
 
   const now = new Date().toISOString()
   const rows = Array.from(groups.values())
-    .filter((g) => g.nfts.length > 0)
+    .filter((g) => g.listedCount > 0)
     .map((g) => {
-      const lowest = g.nfts.reduce((m, n) => (n.price < m ? n.price : m), Infinity)
-      const image = g.nfts.find((n) => n.image)?.image ?? null
       const packName = `${g.setName} — ${g.tier}`
       return {
-        id: `allday:${slug(packName)}`,
+        id: `allday:${slug(`${g.setName}-${g.tier}`)}`,
         collection_id: ALLDAY_COLLECTION_ID,
         pack_name: packName,
         tier: g.tier,
         pack_type: "standard",
-        lowest_ask_usd: Math.round(lowest * 100) / 100,
-        total_listed: g.nfts.length,
-        image_url: image,
+        lowest_ask_usd: g.lowestAsk != null ? Math.round(g.lowestAsk * 100) / 100 : null,
+        total_listed: g.listedCount,
+        moments_per_pack: null as number | null,
+        image_url: g.image,
         source: "flowty",
         cached_at: now,
         first_seen_at: now,
+        metadata: { edition_count: g.editionCount, series: g.series },
       }
     })
 
-  console.log(`[allday-pack-listings] Grouped ${rows.length} synthetic packs`)
+  console.log(`[allday-pack-listings] ${groupsFound} groups, ${groupsWithListings} with listings`)
 
   const del = await supabase
     .from("pack_listings_cache")
@@ -148,8 +167,8 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    fetched: allNfts.length,
-    groups: rows.length,
+    groups_found: groupsFound,
+    groups_with_listings: groupsWithListings,
     cached: inserted,
     elapsed: Date.now() - started,
   })
