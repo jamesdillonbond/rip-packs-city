@@ -88,6 +88,8 @@ type MomentRow = {
   editionOffer?: number | null
   bestOfferType?: "edition" | "serial" | null
   acquisitionMethod?: string | null
+  acquisitionSource?: string | null
+  acquisitionConfidence?: string | null
   costBasis?: number | null
   costBasisLabel?: string | null
 }
@@ -303,7 +305,7 @@ function fmvDisplay(row: MomentRow): { text: string; muted: boolean } {
   return { text: "$" + fmv.toFixed(2), muted: false }
 }
 
-type SortKey = "player" | "series" | "set" | "parallel" | "rarity" | "serial" | "fmv" | "bestOffer" | "held" | "badge" | "acquired"
+type SortKey = "player" | "series" | "set" | "parallel" | "rarity" | "serial" | "fmv" | "bestOffer" | "held" | "badge" | "acquired" | "paid"
 
 // ── Edition Recent Sales (inline in expand panel) ────────────────────────────
 
@@ -801,6 +803,8 @@ export default function WalletPage() {
     last_seen_at: string | null
     buy_price: number | null
     acquisition_method: string | null
+    acquisition_source: string | null
+    acquisition_confidence: string | null
     loan_principal: number | null
     is_locked: boolean
   }
@@ -860,6 +864,8 @@ export default function WalletPage() {
       subedition: null,
       flowId: m.moment_id,
       acquisitionMethod: acqMethod,
+      acquisitionSource: m.acquisition_source ?? null,
+      acquisitionConfidence: m.acquisition_confidence ?? null,
       costBasis: basis,
       costBasisLabel: label,
     }
@@ -871,6 +877,7 @@ export default function WalletPage() {
       case "fmv": return dir === "asc" ? "fmv_asc" : "fmv_desc"
       case "serial": return "serial_asc"
       case "acquired": return "recent"
+      case "paid": return dir === "asc" ? "paid_asc" : "paid_desc"
       default: return dir === "asc" ? "fmv_asc" : "fmv_desc"
     }
   }
@@ -1358,7 +1365,7 @@ export default function WalletPage() {
     })
     // Only apply client-side sort for non-server-sortable columns.
     // Server-sortable columns (fmv, serial, acquired) are already sorted by the API.
-    const serverSortableKeys: SortKey[] = ["fmv", "serial", "acquired"]
+    const serverSortableKeys: SortKey[] = ["fmv", "serial", "acquired", "paid"]
     if (!serverSortableKeys.includes(sortKey)) {
       filtered.sort(function(a, b) {
         let result = 0
@@ -1660,6 +1667,7 @@ export default function WalletPage() {
           {([
             ["acquired", "Recent"],
             ["fmv", "FMV"],
+            ["paid", "Paid"],
             ["player", "Player"],
             ["series", "Series"],
             ["set", "Set"],
@@ -1960,6 +1968,7 @@ export default function WalletPage() {
                                   challenge_reward: { label: "REWARD", icon: "M12 15l-2 5h4l-2-5zm-4-3a4 4 0 0 1 8 0H8zm-2-2h12l1-2H5l1 2zm3-4h6V3H9v3z", color: "245,158,11" },
                                   gift: { label: "GIFT", icon: "", color: "96,165,250" },
                                   loan_default: { label: "LOAN", icon: "", color: "239,68,68" },
+                                  unknown: { label: "? UNVERIFIED", icon: "", color: "113,113,122" },
                                 }
                                 const cfg = acqConfig[row.acquisitionMethod!]
                                 if (!cfg) return null
@@ -2036,17 +2045,25 @@ export default function WalletPage() {
                         {(function() {
                           const cbMap = costBasis.get(row.flowId ?? "")
                           const cb = cbMap ?? (row.costBasis != null || row.costBasisLabel ? { buyPrice: row.costBasis ?? 0, acquiredDate: row.acquiredAt ?? "", fmvAtAcquisition: null, acquisitionMethod: row.acquisitionMethod ?? null, costBasisLabel: row.costBasisLabel ?? null } : undefined)
+                          const src = (row.acquisitionSource ?? "").toLowerCase()
+                          const TS_SOURCES = new Set(["browser_backfill", "smm_final", "wallet_search", "progressive_classify", "sales_backfill"])
+                          let sourcePill: React.ReactNode = null
+                          if (src.includes("flowty")) {
+                            sourcePill = <span className="ml-1 inline-flex items-center rounded px-1 py-0 font-mono text-[9px] font-semibold" style={{ color: "#14B8A6", border: "1px solid rgba(20,184,166,0.35)", background: "rgba(20,184,166,0.10)" }}>Flowty</span>
+                          } else if (src && TS_SOURCES.has(src)) {
+                            sourcePill = <span className="ml-1 inline-flex items-center rounded px-1 py-0 font-mono text-[9px] font-semibold text-[color:var(--rpc-red)]" style={{ border: "1px solid rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.10)" }}>TS</span>
+                          }
                           if (cb) {
                             const label = cb.costBasisLabel
-                            if (label === "Bought" && cb.buyPrice > 0) return <span className="font-mono text-white">${cb.buyPrice.toFixed(2)}</span>
+                            if (label === "Bought" && cb.buyPrice > 0) return <span className="font-mono text-white">${cb.buyPrice.toFixed(2)}{sourcePill}</span>
                             if (label === "Pack") return <span className="inline-block rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-zinc-600">PACK</span>
-                            if (label === "Loan" && cb.buyPrice > 0) return <span className="font-mono"><span className="text-amber-400">Loan</span> <span className="text-white">${cb.buyPrice.toFixed(2)}</span></span>
+                            if (label === "Loan" && cb.buyPrice > 0) return <span className="font-mono"><span className="text-amber-400">Loan</span> <span className="text-white">${cb.buyPrice.toFixed(2)}</span>{sourcePill}</span>
                             if (label === "Gift") return <span className="inline-block rounded border border-blue-900 bg-blue-900 px-1.5 py-0.5 font-mono text-[10px] text-blue-400">GIFT</span>
                             if (label === "Reward") return <span className="inline-block rounded border border-purple-900 bg-purple-900 px-1.5 py-0.5 font-mono text-[10px] text-purple-400">REWARD</span>
                             if (label === "Airdrop") return <span className="inline-block rounded border border-green-900 bg-green-900 px-1.5 py-0.5 font-mono text-[10px] text-green-400">AIRDROP</span>
-                            if (cb.buyPrice > 0) return <span className="font-mono text-white">${cb.buyPrice.toFixed(2)}</span>
+                            if (cb.buyPrice > 0) return <span className="font-mono text-white">${cb.buyPrice.toFixed(2)}{sourcePill}</span>
                           }
-                          if (row.lastPurchasePrice != null && row.lastPurchasePrice > 0) return <span className="font-mono text-zinc-300">{formatCurrency(row.lastPurchasePrice)}</span>
+                          if (row.lastPurchasePrice != null && row.lastPurchasePrice > 0) return <span className="font-mono text-zinc-300">{formatCurrency(row.lastPurchasePrice)}{sourcePill}</span>
                           return <span className="text-zinc-700">—</span>
                         })()}
                       </td>
