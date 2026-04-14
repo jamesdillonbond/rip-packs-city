@@ -79,6 +79,7 @@ type PackListing = {
   startTime: string
   listingCount: number
   packType: PackType
+  seriesLabel?: string
 }
 
 type PackEVSummary = {
@@ -189,6 +190,7 @@ export default function PacksPage() {
   const [modalPack, setModalPack] = useState<PackListing | null>(null)
   const [modalResult, setModalResult] = useState<PackEVResponse | null>(null)
   const [modalLoading, setModalLoading] = useState(false)
+  const [historicalPulls, setHistoricalPulls] = useState<{ total: number; tierBreakdown: Record<string, number> } | null>(null)
   const [calcAllProgress, setCalcAllProgress] = useState<{ done: number; total: number } | null>(null)
   const calcAllAbortRef = useRef(false)
 
@@ -438,6 +440,12 @@ export default function PacksPage() {
   async function openEvModal(pack: PackListing) {
     if (!canAnalyzeEV(pack.packType)) return
     setModalPack(pack)
+    setHistoricalPulls(null)
+    // Fire historical pulls fetch in parallel
+    fetch("/api/pack-listings/historical-pulls?title=" + encodeURIComponent(pack.title))
+      .then((r) => r.ok ? r.json() : null)
+      .then((h) => { if (h && typeof h.total === "number") setHistoricalPulls(h) })
+      .catch(() => {})
     const cached = evDetailCache[pack.packListingId]
     if (cached) {
       setModalResult(cached)
@@ -876,6 +884,7 @@ export default function PacksPage() {
                   <tr className="border-b border-zinc-800 text-left text-[11px] uppercase tracking-wide text-zinc-500">
                     <th className="p-3"><button onClick={() => toggleSort("title")} className="hover:text-white">{"Pack" + sortIndicator("title")}</button></th>
                     <th className="p-3"><button onClick={() => toggleSort("tier")} className="hover:text-white">{"Tier" + sortIndicator("tier")}</button></th>
+                    <th className="p-3">Series</th>
                     <th className="p-3"><button onClick={() => toggleSort("momentsPerPack")} className="hover:text-white">{"Slots" + sortIndicator("momentsPerPack")}</button></th>
                     <th className="p-3"><button onClick={() => toggleSort("retailPrice")} className="hover:text-white">{"Retail" + sortIndicator("retailPrice")}</button></th>
                     <th className="p-3"><button onClick={() => toggleSort("lowestAsk")} className="hover:text-white">{"Lowest Ask" + sortIndicator("lowestAsk")}</button></th>
@@ -895,9 +904,12 @@ export default function PacksPage() {
                     const ptBadge = packTypeBadge(listing.packType)
                     const isBundle = listing.packType === "bundle"
                     const arb = isBundle ? bundleArbitrage[listing.distId] : null
+                    const ev = evCache[listing.packListingId]
+                    const ratio = ev && !ev.loading && !ev.error ? ev.valueRatio : null
+                    const evTint = ratio != null && ratio >= 1.0 ? "border-l-2 border-l-green-500/60 bg-green-950/10" : ratio != null && ratio < 0.8 ? "border-l-2 border-l-red-500/40 bg-red-950/10" : ""
                     return (
                       <tr key={listing.packListingId}
-                        className={"border-b border-zinc-800 " + (canAnalyzeEV(listing.packType) ? "hover:bg-zinc-900/50 cursor-pointer" : "opacity-75") + " " + (isSelected ? "bg-zinc-900/70" : "")}
+                        className={"border-b border-zinc-800 " + evTint + " " + (canAnalyzeEV(listing.packType) ? "hover:bg-zinc-900/50 cursor-pointer" : "opacity-75") + " " + (isSelected ? "bg-zinc-900/70" : "")}
                         onClick={() => canAnalyzeEV(listing.packType) ? openEvModal(listing) : undefined}>
                         <td className="p-3">
                           <div className="flex items-center gap-3">
@@ -916,6 +928,7 @@ export default function PacksPage() {
                           </div>
                         </td>
                         <td className="p-3"><span className={"rounded border px-2 py-0.5 text-[11px] font-semibold capitalize " + tierBadge(listing.tier)}>{listing.tier}</span></td>
+                        <td className="p-3 text-zinc-400 text-xs">{listing.seriesLabel ?? "—"}</td>
                         <td className="p-3 text-zinc-400">{listing.momentsPerPack}</td>
                         <td className="p-3 text-zinc-400">{listing.retailPrice > 0 ? fmt(listing.retailPrice) : "—"}</td>
                         <td className="p-3 font-semibold text-white">{listing.lowestAsk > 0 ? fmt(listing.lowestAsk) : "—"}</td>
@@ -1034,6 +1047,32 @@ export default function PacksPage() {
                       <div className="mt-2 text-[10px] text-zinc-500">{modalResult.topPulls.length - 15} more editions not shown</div>
                     )}
                   </div>
+
+                  {historicalPulls && (
+                    <div className="mt-6 rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+                      <div className="mb-2 text-[11px] uppercase tracking-widest text-zinc-500">Historical Pulls from RPC Data</div>
+                      {historicalPulls.total < 10 ? (
+                        <div className="text-sm text-zinc-500">Not enough pull data yet for this pack.</div>
+                      ) : (
+                        <>
+                          <div className="font-mono text-sm text-white">Total tracked pulls: <span className="font-black">{historicalPulls.total.toLocaleString()}</span></div>
+                          <div className="mt-3 grid grid-cols-2 md:grid-cols-5 gap-2 font-mono text-xs">
+                            {Object.entries(historicalPulls.tierBreakdown).map(([tier, count]) => {
+                              const pct = historicalPulls.total > 0 ? Math.round((count / historicalPulls.total) * 1000) / 10 : 0
+                              return (
+                                <div key={tier} className="rounded border border-zinc-800 bg-black p-2">
+                                  <div className="text-[10px] uppercase tracking-widest text-zinc-500">{tier}</div>
+                                  <div className="text-white">{pct}%</div>
+                                  <div className="text-[10px] text-zinc-600">{count.toLocaleString()}</div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                          <div className="mt-3 text-[10px] text-zinc-500">Based on {historicalPulls.total.toLocaleString()} pulls tracked by RPC — sample may be small.</div>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 

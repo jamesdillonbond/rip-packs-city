@@ -437,6 +437,15 @@ export default function WalletPage() {
     pnl: number
   } | null>(null)
   const [walletSummaryLoading, setWalletSummaryLoading] = useState(false)
+  const [acquisitionStats, setAcquisitionStats] = useState<{
+    pack_pull_count: number
+    marketplace_count: number
+    challenge_reward_count: number
+    gift_count: number
+    total_count: number
+    locked_count: number
+    total_spent: number
+  } | null>(null)
   const [activeWallet, setActiveWallet] = useState("")
   const [costBasis, setCostBasis] = useState<Map<string, { buyPrice: number; acquiredDate: string; fmvAtAcquisition: number | null; acquisitionMethod: string | null; costBasisLabel: string | null }>>(new Map())
   const [serverSortBy, setServerSortBy] = useState("fmv_desc")
@@ -945,6 +954,7 @@ export default function WalletPage() {
     setPaginatedTotal(json.total_count ?? 0)
     setPaginatedTotalPages(json.total_pages ?? 0)
     if (typeof json.total_fmv === "number") setWalletTotalFmv(json.total_fmv)
+    if (json.acquisitionStats) setAcquisitionStats(json.acquisitionStats)
 
     // Fire-and-forget: enrich best offers
     enrichOffers(withFmv)
@@ -1004,6 +1014,7 @@ export default function WalletPage() {
     setSealedPackCount(null)
     setWalletTotalFmv(null)
     setWalletSummary(null)
+    setAcquisitionStats(null)
     setPacksByTitle({})
     setRecentSales([]);
     setPaginatedPage(1)
@@ -1533,6 +1544,23 @@ export default function WalletPage() {
                 <div className="mt-1 text-[11px] text-zinc-500">{totals.totalFmv > 0 && totals.totalBestOffer > 0 ? "Spread gap: " + formatCurrency(totals.spreadGap) : ""}</div>
               </div>
             </div>
+
+            {acquisitionStats && acquisitionStats.total_count > 0 && (
+              <div className="grid grid-cols-3 gap-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3 font-mono">
+                <div className="flex flex-col">
+                  <span className="text-[10px] uppercase tracking-widest text-zinc-500">From Packs</span>
+                  <span className="text-lg font-black" style={{ color: "rgb(20,184,166)" }}>{acquisitionStats.pack_pull_count.toLocaleString()}</span>
+                </div>
+                <div className="flex flex-col border-l border-zinc-800 pl-3">
+                  <span className="text-[10px] uppercase tracking-widest text-zinc-500">From Market</span>
+                  <span className="text-lg font-black text-zinc-300">{acquisitionStats.marketplace_count.toLocaleString()}</span>
+                </div>
+                <div className="flex flex-col border-l border-zinc-800 pl-3">
+                  <span className="text-[10px] uppercase tracking-widest text-zinc-500">Rewards</span>
+                  <span className="text-lg font-black" style={{ color: "rgb(245,158,11)" }}>{acquisitionStats.challenge_reward_count.toLocaleString()}</span>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1927,11 +1955,11 @@ export default function WalletPage() {
                             </div>
                             {row.acquisitionMethod && (() => {
                                 const acqConfig: Record<string, { label: string; icon: string; color: string }> = {
-                                  pack_pull: { label: "Pack", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4", color: "59,130,246" },
-                                  marketplace: { label: "Bought", icon: "M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.3 2.3c-.5.5-.2 1.4.5 1.4H17m0 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-8 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4z", color: "16,185,129" },
-                                  challenge_reward: { label: "Reward", icon: "M12 15l-2 5h4l-2-5zm-4-3a4 4 0 0 1 8 0H8zm-2-2h12l1-2H5l1 2zm3-4h6V3H9v3z", color: "245,158,11" },
-                                  gift: { label: "🎁 Gift", icon: "", color: "96,165,250" },
-                                  loan_default: { label: "🏦 Loan Default", icon: "", color: "239,68,68" },
+                                  pack_pull: { label: "PACK", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4", color: "20,184,166" },
+                                  marketplace: { label: "BUY", icon: "M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.3 2.3c-.5.5-.2 1.4.5 1.4H17m0 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-8 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4z", color: "161,161,170" },
+                                  challenge_reward: { label: "REWARD", icon: "M12 15l-2 5h4l-2-5zm-4-3a4 4 0 0 1 8 0H8zm-2-2h12l1-2H5l1 2zm3-4h6V3H9v3z", color: "245,158,11" },
+                                  gift: { label: "GIFT", icon: "", color: "96,165,250" },
+                                  loan_default: { label: "LOAN", icon: "", color: "239,68,68" },
                                 }
                                 const cfg = acqConfig[row.acquisitionMethod!]
                                 if (!cfg) return null

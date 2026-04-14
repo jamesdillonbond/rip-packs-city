@@ -561,13 +561,15 @@ export default function OverviewPage() {
           <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--rpc-text-muted)" }} />
           <span className="rpc-label">Tools</span>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
           {[
             { label: "Collection",   desc: "FMV \u00b7 Flowty asks \u00b7 badge intel", icon: "\u25C8", color: "var(--rpc-red)", page: "collection" },
             { label: "Pack EV",      desc: "Expected value vs price",                    icon: "\u25A3", color: "var(--tier-legendary)", page: "packs" },
             { label: "Sniper",       desc: "Real-time deals below FMV",                  icon: "\u26A1", color: "var(--rpc-success)", page: "sniper" },
             { label: "Badges",       desc: "Debut \u00b7 Fresh \u00b7 Rookie Year",      icon: "\u2B50", color: "var(--tier-rare)", page: "badges" },
             { label: "Sets",         desc: "Completion + bottleneck finder",              icon: "\u25C9", color: "#F472B6", page: "sets" },
+            { label: "Analytics",    desc: "Portfolio breakdown + clarity",               icon: "\u25CE", color: "#A78BFA", page: "analytics" },
+            { label: "Market",       desc: "Edition lookup + leaderboards",               icon: "\u25C8", color: "var(--tier-rare)", page: "market" },
           ].map(({ label, desc, icon, color, page }) => (
             <Link key={page} href={basePath + "/" + page} style={{ textDecoration: "none" }}>
               <div className="rpc-card" style={{ padding: "14px 16px", cursor: "pointer", position: "relative", overflow: "hidden" }}>

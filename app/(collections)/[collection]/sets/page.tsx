@@ -15,6 +15,10 @@ interface MissingPiece {
   lowestAsk: number | null;
   thumbnailUrl: string | null;
   topshotUrl: string;
+  fmv?: number | null;
+  fmvConfidence?: string | null;
+  hasBadge?: boolean;
+  badgeSlugs?: string[];
 }
 
 interface OwnedPiece {
@@ -24,6 +28,7 @@ interface OwnedPiece {
   serialNumber: number | null;
   thumbnailUrl: string | null;
   topshotUrl: string;
+  isLocked?: boolean;
 }
 
 type SetTier = "complete" | "almost_there" | "bottleneck" | "completable" | "incomplete" | "unpriced";
@@ -44,6 +49,10 @@ interface SetProgress {
   owned: OwnedPiece[];
   missing: MissingPiece[];
   asksEnriched: boolean;
+  costConfidence?: "high" | "mixed" | "low";
+  lockedOwnedCount?: number;
+  tradeableOwnedCount?: number;
+  tradeableCompletionPct?: number;
 }
 
 interface SetsResponse {
@@ -421,6 +430,16 @@ function SetCard({ set, accent }: { set: SetProgress; accent: string }) {
       {set.totalMissingCost !== null && !isComplete && (
         <div style={{ fontFamily: monoFont, fontSize: 11, color: colors.muted, marginBottom: 6 }}>
           Cost to complete: <span style={{ color: colors.text }}>{fmt$(set.totalMissingCost)}</span>
+          {set.costConfidence === "low" && (
+            <span style={{ color: colors.muted, marginLeft: 6, opacity: 0.7 }}>est.</span>
+          )}
+        </div>
+      )}
+
+      {/* Locked vs tradeable completion */}
+      {!isComplete && typeof set.lockedOwnedCount === "number" && set.lockedOwnedCount > 0 && (
+        <div style={{ fontFamily: monoFont, fontSize: 10, color: colors.muted, marginBottom: 6, opacity: 0.85 }}>
+          {set.tradeableOwnedCount ?? 0} tradeable ({set.lockedOwnedCount} locked)
         </div>
       )}
 
@@ -428,8 +447,19 @@ function SetCard({ set, accent }: { set: SetProgress; accent: string }) {
       {cheapestMissing && !isComplete && (
         <div style={{ fontFamily: monoFont, fontSize: 11, color: colors.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           Cheapest: <span style={{ color: "rgba(255,255,255,0.65)" }}>{cheapestMissing.playerName}</span>
+          {cheapestMissing.hasBadge && (
+            <span title={(cheapestMissing.badgeSlugs ?? []).join(", ")} style={{ color: "#FFD700", marginLeft: 6, fontWeight: 700 }}>★</span>
+          )}
+          {cheapestMissing.fmv != null && cheapestMissing.fmv > 0 && (
+            <span style={{ color: colors.text, marginLeft: 6 }}>
+              FMV {fmt$(cheapestMissing.fmv)}
+              {(cheapestMissing.fmvConfidence === "LOW" || cheapestMissing.fmvConfidence === "ASK_ONLY") && (
+                <span style={{ color: colors.muted, opacity: 0.7 }}>*</span>
+              )}
+            </span>
+          )}
           {cheapestMissing.lowestAsk !== null && (
-            <span style={{ color: colors.accent, marginLeft: 6 }}>{fmt$(cheapestMissing.lowestAsk)}</span>
+            <span style={{ color: colors.accent, marginLeft: 6 }}>Ask {fmt$(cheapestMissing.lowestAsk)}</span>
           )}
         </div>
       )}

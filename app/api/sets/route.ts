@@ -6,6 +6,9 @@ import { NextRequest, NextResponse } from "next/server";
 import fcl from "@/lib/flow";
 import * as t from "@onflow/types";
 import { topshotGraphql } from "@/lib/topshot";
+import { supabaseAdmin } from "@/lib/supabase";
+
+const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 
 // ── Cache ─────────────────────────────────────────────────────────────────────
 
@@ -42,6 +45,8 @@ interface OwnedPiece {
   serialNumber: number | null;
   thumbnailUrl: string | null;
   topshotUrl: string;
+  isLocked?: boolean;
+  momentId?: string;
 }
 
 interface MissingPiece {
@@ -51,6 +56,10 @@ interface MissingPiece {
   lowestAsk: number | null;
   thumbnailUrl: string | null;
   topshotUrl: string;
+  fmv?: number | null;
+  fmvConfidence?: string | null;
+  hasBadge?: boolean;
+  badgeSlugs?: string[];
 }
 
 interface SetProgress {
@@ -69,6 +78,10 @@ interface SetProgress {
   owned: OwnedPiece[];
   missing: MissingPiece[];
   asksEnriched: boolean;
+  costConfidence?: "high" | "mixed" | "low";
+  lockedOwnedCount?: number;
+  tradeableOwnedCount?: number;
+  tradeableCompletionPct?: number;
 }
 
 interface SetsResponse {
@@ -94,6 +107,94 @@ function toNum(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+async function enrichMissingWithFmvAndBadges(
+  setId: string,
+  missing: MissingPiece[]
+): Promise<MissingPiece[]> {
+  if (!missing.length) return missing;
+  const editionKeys = missing.map((m) => `${setId}:${m.playId}`);
+  try {
+    const { data: editions } = await (supabaseAdmin as any)
+      .from("editions")
+      .select("id, external_id")
+      .in("external_id", editionKeys)
+      .eq("collection_id", TOPSHOT_COLLECTION_ID);
+    const editionByKey = new Map<string, string>();
+    for (const e of editions ?? []) editionByKey.set(e.external_id, e.id);
+
+    const editionIds = Array.from(editionByKey.values());
+    const fmvByEdition = new Map<string, { fmv: number | null; confidence: string | null }>();
+    if (editionIds.length > 0) {
+      const { data: fmvs } = await (supabaseAdmin as any)
+        .from("fmv_snapshots")
+        .select("edition_id, fmv_usd, confidence, computed_at")
+        .in("edition_id", editionIds)
+        .order("computed_at", { ascending: false });
+      for (const f of fmvs ?? []) {
+        if (!fmvByEdition.has(f.edition_id)) {
+          fmvByEdition.set(f.edition_id, {
+            fmv: f.fmv_usd != null ? Number(f.fmv_usd) : null,
+            confidence: f.confidence ?? null,
+          });
+        }
+      }
+    }
+
+    // Badge detection: badge_editions.id has format "setId+playId" in its prefix
+    const badgePrefixes = missing.map((m) => `${setId}+${m.playId}`);
+    const { data: badges } = await (supabaseAdmin as any)
+      .from("badge_editions")
+      .select("id, badge_type")
+      .or(badgePrefixes.map((p) => `id.like.${p}%`).join(","));
+    const badgesByKey = new Map<string, string[]>();
+    for (const b of badges ?? []) {
+      const parts = String(b.id).split("+");
+      if (parts.length >= 2) {
+        const key = `${parts[0]}:${parts[1]}`;
+        if (!badgesByKey.has(key)) badgesByKey.set(key, []);
+        if (b.badge_type) badgesByKey.get(key)!.push(b.badge_type);
+      }
+    }
+
+    return missing.map((mp) => {
+      const key = `${setId}:${mp.playId}`;
+      const edId = editionByKey.get(key);
+      const fmvEntry = edId ? fmvByEdition.get(edId) : undefined;
+      const badgeList = badgesByKey.get(key) ?? [];
+      return {
+        ...mp,
+        fmv: fmvEntry?.fmv ?? null,
+        fmvConfidence: fmvEntry?.confidence ?? null,
+        hasBadge: badgeList.length > 0,
+        badgeSlugs: badgeList,
+      };
+    });
+  } catch (err) {
+    console.log("[sets] enrichMissingWithFmvAndBadges failed:", err instanceof Error ? err.message : String(err));
+    return missing;
+  }
+}
+
+async function fetchLockedMomentIds(wallet: string, momentIds: string[]): Promise<Set<string>> {
+  const locked = new Set<string>();
+  if (!momentIds.length) return locked;
+  try {
+    const { data } = await (supabaseAdmin as any)
+      .from("wallet_moments_cache")
+      .select("moment_id")
+      .eq("wallet_address", wallet)
+      .eq("collection_id", TOPSHOT_COLLECTION_ID)
+      .eq("is_locked", true)
+      .in("moment_id", momentIds);
+    for (const r of data ?? []) {
+      if (r.moment_id) locked.add(String(r.moment_id));
+    }
+  } catch (err) {
+    console.log("[sets] fetchLockedMomentIds failed:", err instanceof Error ? err.message : String(err));
+  }
+  return locked;
 }
 
 function formatTier(value: string | null): string {
@@ -525,6 +626,7 @@ export async function GET(req: NextRequest) {
             topshotUrl: best.flowId
               ? "https://nbatopshot.com/listings/moment/" + best.flowId
               : "https://nbatopshot.com/search?query=" + encodeURIComponent(best.playerName),
+            momentId: best.momentId,
           });
         } else {
           missingPlayIds.push(pid);
@@ -583,16 +685,36 @@ export async function GET(req: NextRequest) {
         enrichedMissing = await enrichMissingPlaysWithGQL(missingPieces, setId);
       }
 
+      // Supabase enrichment: FMV + badge detection on missing pieces
+      enrichedMissing = await enrichMissingWithFmvAndBadges(setId, enrichedMissing);
+
+      // Compute cost per missing piece: prefer FMV when present, else lowestAsk
+      const costs = enrichedMissing.map((mp) => {
+        if (mp.fmv != null && mp.fmv > 0) return mp.fmv;
+        return mp.lowestAsk;
+      });
+
       const asksWithValues = enrichedMissing
         .map((mp) => mp.lowestAsk)
         .filter((v): v is number => v !== null);
 
       const listedCount = asksWithValues.length;
 
-      const totalMissingCost =
-        listedCount === enrichedMissing.length && enrichedMissing.length > 0
-          ? asksWithValues.reduce((a, b) => a + b, 0)
-          : null;
+      const knownCosts = costs.filter((v): v is number => v !== null && v > 0);
+      const totalMissingCost = enrichedMissing.length > 0 && knownCosts.length === enrichedMissing.length
+        ? knownCosts.reduce((a, b) => a + b, 0)
+        : (knownCosts.length > 0 ? knownCosts.reduce((a, b) => a + b, 0) : null);
+
+      // costConfidence: high if all known FMV are HIGH/MEDIUM, mixed otherwise, low if mostly NO_DATA/ASK_ONLY
+      let costConfidence: "high" | "mixed" | "low" = "low";
+      if (enrichedMissing.length > 0) {
+        const confLevels = enrichedMissing.map((mp) => (mp.fmvConfidence ?? "").toUpperCase());
+        const strong = confLevels.filter((c) => c === "HIGH" || c === "MEDIUM").length;
+        const weak = confLevels.filter((c) => c === "NO_DATA" || c === "ASK_ONLY" || c === "" || c === "STALE").length;
+        if (strong === enrichedMissing.length) costConfidence = "high";
+        else if (weak > enrichedMissing.length / 2) costConfidence = "low";
+        else costConfidence = "mixed";
+      }
 
       const lowestSingleAsk = asksWithValues.length > 0 ? Math.min(...asksWithValues) : null;
       const completionPct = allPlayIds.length > 0
@@ -602,6 +724,20 @@ export async function GET(req: NextRequest) {
       const { tier, bottleneck } = classifySet(
         enrichedMissing, enrichedMissing.length, completionPct, totalMissingCost, shouldFetchAsks
       );
+
+      // Locked owned calc — hydrate from wallet_moments_cache
+      const ownedMomentIds = owned.map((o) => o.momentId).filter((v): v is string => !!v);
+      const lockedSet = await fetchLockedMomentIds(flowAddress, ownedMomentIds);
+      let lockedOwnedCount = 0;
+      const ownedWithLock = owned.map((o) => {
+        const isLocked = o.momentId ? lockedSet.has(o.momentId) : false;
+        if (isLocked) lockedOwnedCount++;
+        return { ...o, isLocked };
+      });
+      const tradeableOwnedCount = owned.length - lockedOwnedCount;
+      const tradeableCompletionPct = allPlayIds.length > 0
+        ? Math.round((tradeableOwnedCount / allPlayIds.length) * 100)
+        : 0;
 
       const entry: SetProgress = {
         setId, setName,
@@ -615,9 +751,13 @@ export async function GET(req: NextRequest) {
         bottleneckPrice: bottleneck?.lowestAsk ?? null,
         bottleneckPlayerName: bottleneck?.playerName ?? null,
         tier,
-        owned,
+        owned: ownedWithLock,
         missing: enrichedMissing,
         asksEnriched: shouldFetchAsks,
+        costConfidence,
+        lockedOwnedCount,
+        tradeableOwnedCount,
+        tradeableCompletionPct,
       };
 
       setProgressList.push(entry);

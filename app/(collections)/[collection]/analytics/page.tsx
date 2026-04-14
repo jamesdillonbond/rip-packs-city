@@ -1,332 +1,261 @@
 "use client"
 
-import { useParams } from "next/navigation"
-import { useState, useEffect } from "react"
-import {
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
+import { Suspense, useCallback, useEffect, useState } from "react"
 
-// ── Constants ────────────────────────────────────────────────────────────────
-
-const PERIODS = [
-  { key: "7d", label: "7D" },
-  { key: "30d", label: "30D" },
-  { key: "90d", label: "90D" },
-  { key: "ytd", label: "YTD" },
-  { key: "all", label: "ALL" },
-] as const
-
-const MP_COLORS: Record<string, string> = {
-  topshot: "#E03A2F",
-  flowty: "#4F94D4",
-  primary: "#22C55E",
-  other: "#A855F7",
-  unknown: "#A855F7",
+type AnalyticsResponse = {
+  wallet: string
+  acquisition: {
+    pack_pull_count: number
+    marketplace_count: number
+    challenge_reward_count: number
+    gift_count: number
+    total_tracked: number
+  }
+  locked: {
+    locked_count: number
+    unlocked_count: number
+    locked_fmv: number
+    unlocked_fmv: number
+  }
+  tiers: Array<{ tier: string; count: number; fmv: number }>
+  series: Array<{ label: string; seriesNumber: number; count: number; fmv: number }>
+  confidence: Record<string, number>
+  total_fmv: number
+  total_moments: number
+  portfolio_clarity_score: number
 }
 
-function mpColor(mp: string): string {
-  return MP_COLORS[mp] || "#A855F7"
+const TIER_COLOR: Record<string, string> = {
+  ULTIMATE: "var(--tier-ultimate)",
+  LEGENDARY: "var(--tier-legendary)",
+  RARE: "var(--tier-rare)",
+  FANDOM: "var(--tier-fandom)",
+  COMMON: "var(--tier-common)",
 }
 
-function formatVolume(v: number): string {
-  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`
-  if (v >= 1_000) return `$${(v / 1_000).toFixed(1)}k`
-  return `$${v.toFixed(0)}`
+function fmt(n: number): string {
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`
+  return `$${n.toFixed(2)}`
 }
 
-function formatNumber(n: number): string {
-  return n.toLocaleString("en-US")
-}
-
-// ── Types ────────────────────────────────────────────────────────────────────
-
-interface DailyRow {
-  date: string
-  marketplace: string
-  saleCount: number
-  volume: number
-}
-
-interface ApiResponse {
-  period: string
-  startDate: string
-  endDate: string
-  totals: { totalSales: number; totalVolume: number }
-  daily: DailyRow[]
-}
-
-// ── Page ─────────────────────────────────────────────────────────────────────
-
-export default function AnalyticsPage() {
+function AnalyticsInner() {
   const params = useParams()
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const collection = params?.collection as string
-  const [period, setPeriod] = useState("30d")
-  const [data, setData] = useState<ApiResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+  const urlWallet = searchParams.get("wallet") || ""
+
+  const [input, setInput] = useState(urlWallet)
+  const [activeWallet, setActiveWallet] = useState(urlWallet)
+  const [data, setData] = useState<AnalyticsResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const runSearch = useCallback(async (q: string) => {
+    const trimmed = q.trim()
+    if (!trimmed) return
+    setLoading(true)
+    setError(null)
+    setData(null)
+    setActiveWallet(trimmed)
+    try { router.replace(`?wallet=${encodeURIComponent(trimmed)}`, { scroll: false }) } catch {}
+    try {
+      const res = await fetch(`/api/analytics?wallet=${encodeURIComponent(trimmed)}`)
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || "Failed to load analytics")
+      setData(json)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load analytics")
+    } finally {
+      setLoading(false)
+    }
+  }, [router])
 
   useEffect(() => {
-    setLoading(true)
-    fetch(`/api/market-analytics?collection=${collection}&period=${period}`)
-      .then((r) => r.json())
-      .then((json) => {
-        setData(json.error ? null : json)
-        setLoading(false)
-      })
-      .catch(() => {
-        setData(null)
-        setLoading(false)
-      })
-  }, [collection, period])
+    if (urlWallet && !data && !loading) runSearch(urlWallet)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlWallet])
 
-  // Derive chart data
-  const marketplaces = data
-    ? [...new Set(data.daily.map((d) => d.marketplace))]
-    : []
-
-  // Pivot daily data: { date, topshot_volume, flowty_volume, ... }
-  const volumeByDate = new Map<string, Record<string, number | string>>()
-  const salesByDate = new Map<string, Record<string, number | string>>()
-
-  if (data) {
-    for (const row of data.daily) {
-      // Volume
-      const vEntry: Record<string, number | string> = volumeByDate.get(row.date) || { date: row.date }
-      vEntry[row.marketplace] = (Number(vEntry[row.marketplace]) || 0) + row.volume
-      volumeByDate.set(row.date, vEntry)
-
-      // Sales
-      const sEntry: Record<string, number | string> = salesByDate.get(row.date) || { date: row.date }
-      sEntry[row.marketplace] = (Number(sEntry[row.marketplace]) || 0) + row.saleCount
-      salesByDate.set(row.date, sEntry)
-    }
-  }
-
-  const volumeChartData = Array.from(volumeByDate.values())
-  const salesChartData = Array.from(salesByDate.values())
-
-  // Pie data: volume share by marketplace
-  const pieData = marketplaces.map((mp) => {
-    const vol = data!?.daily
-      .filter((d) => d.marketplace === mp)
-      .reduce((sum, d) => sum + d.volume, 0)
-    return { name: mp, value: Math.round((vol || 0) * 100) / 100 }
-  }).filter((d) => d.value > 0)
-
-  const avgSale =
-    data && data.totals.totalSales > 0
-      ? data.totals.totalVolume / data.totals.totalSales
-      : 0
-
-  // Collection accent color for active period button
-  const accentMap: Record<string, string> = {
-    "nba-top-shot": "#E03A2F",
-    "nfl-all-day": "#4F94D4",
-    "disney-pinnacle": "#A855F7",
-    "laliga-golazos": "#22C55E",
-    "ufc": "#EF4444",
-  }
-  const accent = accentMap[collection] || "#E03A2F"
+  const acq = data?.acquisition
+  const acqTotal = acq ? (acq.pack_pull_count + acq.marketplace_count + acq.challenge_reward_count + acq.gift_count) : 0
+  const pctPack = acq && acqTotal > 0 ? (acq.pack_pull_count / acqTotal) * 100 : 0
+  const pctMarket = acq && acqTotal > 0 ? (acq.marketplace_count / acqTotal) * 100 : 0
+  const pctReward = acq && acqTotal > 0 ? (acq.challenge_reward_count / acqTotal) * 100 : 0
+  const pctGift = acq && acqTotal > 0 ? (acq.gift_count / acqTotal) * 100 : 0
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white px-4 py-6 max-w-6xl mx-auto">
-      {/* Period toggle */}
-      <div className="flex gap-2 mb-6">
-        {PERIODS.map((p) => (
-          <button
-            key={p.key}
-            onClick={() => setPeriod(p.key)}
-            className="px-4 py-2 rounded text-sm font-semibold transition-colors"
-            style={
-              period === p.key
-                ? { backgroundColor: accent, color: "#fff" }
-                : { backgroundColor: "#27272a", color: "#a1a1aa" }
-            }
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
+    <div className="mx-auto max-w-6xl px-4 py-6">
+      <form
+        onSubmit={(e) => { e.preventDefault(); runSearch(input) }}
+        className="mb-6 flex flex-col gap-2 sm:flex-row"
+      >
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Wallet address or username"
+          className="flex-1 rounded-lg border border-zinc-800 bg-black px-4 py-2 text-white placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none font-mono"
+        />
+        <button
+          type="submit"
+          disabled={loading || !input.trim()}
+          className="rounded-lg border border-zinc-700 bg-zinc-900 px-5 py-2 font-semibold text-white hover:bg-zinc-800 disabled:opacity-50"
+        >
+          {loading ? "Analyzing..." : "Analyze"}
+        </button>
+      </form>
 
-      {/* Loading skeleton */}
-      {loading && (
-        <div className="space-y-4">
-          <div className="flex gap-4">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="flex-1 h-24 bg-zinc-900 rounded animate-pulse" />
-            ))}
-          </div>
-          <div className="h-64 bg-zinc-900 rounded animate-pulse" />
-          <div className="h-64 bg-zinc-900 rounded animate-pulse" />
+      {error && <div className="mb-4 rounded-lg border border-red-900/40 bg-red-950/20 p-3 text-sm text-red-300">{error}</div>}
+
+      {!data && !loading && !error && (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-8 text-center text-zinc-500">
+          Enter a wallet address or Top Shot username to see portfolio analytics.
         </div>
       )}
 
-      {/* No data */}
-      {!loading && !data && (
-        <div className="text-center text-zinc-500 py-20">
-          No sales data available for this collection and period.
+      {data && (
+        <div className="space-y-6">
+          {/* Section 1 — Portfolio Origin Story */}
+          <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+            <div className="mb-3 text-[11px] uppercase tracking-widest text-zinc-500">Portfolio Origin Story</div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Packs Pulled</div>
+                <div className="font-mono text-3xl font-black" style={{ color: "rgb(20,184,166)" }}>{acq?.pack_pull_count.toLocaleString() ?? "—"}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Marketplace Buys</div>
+                <div className="font-mono text-3xl font-black text-zinc-300">{acq?.marketplace_count.toLocaleString() ?? "—"}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Challenge Rewards</div>
+                <div className="font-mono text-3xl font-black" style={{ color: "rgb(245,158,11)" }}>{acq?.challenge_reward_count.toLocaleString() ?? "—"}</div>
+              </div>
+            </div>
+            {acqTotal > 0 && (
+              <div className="mt-4">
+                <div className="flex h-3 w-full overflow-hidden rounded-full border border-zinc-800">
+                  {pctPack > 0 && <div style={{ width: `${pctPack}%`, background: "rgb(20,184,166)" }} />}
+                  {pctMarket > 0 && <div style={{ width: `${pctMarket}%`, background: "rgb(161,161,170)" }} />}
+                  {pctReward > 0 && <div style={{ width: `${pctReward}%`, background: "rgb(245,158,11)" }} />}
+                  {pctGift > 0 && <div style={{ width: `${pctGift}%`, background: "rgb(96,165,250)" }} />}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-4 font-mono text-[11px] text-zinc-500">
+                  <span>Pack {pctPack.toFixed(0)}%</span>
+                  <span>Market {pctMarket.toFixed(0)}%</span>
+                  <span>Reward {pctReward.toFixed(0)}%</span>
+                  {pctGift > 0 && <span>Gift {pctGift.toFixed(0)}%</span>}
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* Section 2 — Liquid vs Locked */}
+          <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+            <div className="mb-3 text-[11px] uppercase tracking-widest text-zinc-500">Liquid vs Locked</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg border border-zinc-800 bg-black p-3">
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Unlocked FMV</div>
+                <div className="font-mono text-2xl font-black text-white">{fmt(data.locked.unlocked_fmv)}</div>
+                <div className="mt-1 text-[11px] text-zinc-500">{data.locked.unlocked_count.toLocaleString()} moments</div>
+              </div>
+              <div className="rounded-lg border border-zinc-800 bg-black p-3">
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Locked FMV</div>
+                <div className="font-mono text-2xl font-black text-white">{fmt(data.locked.locked_fmv)}</div>
+                <div className="mt-1 text-[11px] text-zinc-500">{data.locked.locked_count.toLocaleString()} moments</div>
+              </div>
+            </div>
+            <div className="mt-2 text-[11px] text-zinc-600">Locked moments cannot be listed or traded.</div>
+          </section>
+
+          {/* Section 3 — Tier Breakdown */}
+          <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+            <div className="mb-3 text-[11px] uppercase tracking-widest text-zinc-500">Tier Breakdown</div>
+            <div className="space-y-2">
+              {data.tiers.map((t) => {
+                const maxFmv = data.tiers.reduce((m, x) => Math.max(m, x.fmv), 0)
+                const w = maxFmv > 0 ? (t.fmv / maxFmv) * 100 : 0
+                const color = TIER_COLOR[t.tier] ?? "var(--tier-common)"
+                return (
+                  <div key={t.tier} className="flex items-center gap-3">
+                    <div className="w-28 shrink-0 font-mono text-xs font-bold" style={{ color }}>{t.tier}</div>
+                    <div className="relative flex-1 h-5 rounded bg-zinc-900 overflow-hidden">
+                      <div className="absolute inset-y-0 left-0" style={{ width: `${w}%`, background: color, opacity: 0.35 }} />
+                      <div className="absolute inset-0 flex items-center px-2 font-mono text-[11px] text-zinc-300">
+                        {t.count.toLocaleString()} · {fmt(t.fmv)}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+              {data.tiers.length === 0 && <div className="text-sm text-zinc-500">No tier data.</div>}
+            </div>
+          </section>
+
+          {/* Section 4 — Series Breakdown */}
+          <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+            <div className="mb-3 text-[11px] uppercase tracking-widest text-zinc-500">Series Breakdown</div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-800 text-left text-[10px] uppercase tracking-widest text-zinc-500">
+                  <th className="pb-2">Series</th>
+                  <th className="pb-2 text-right">Moments</th>
+                  <th className="pb-2 text-right">Total FMV</th>
+                </tr>
+              </thead>
+              <tbody className="font-mono">
+                {data.series.map((s) => (
+                  <tr key={s.label} className="border-b border-zinc-900">
+                    <td className="py-1.5 text-zinc-300">{s.label}</td>
+                    <td className="py-1.5 text-right text-zinc-400">{s.count.toLocaleString()}</td>
+                    <td className="py-1.5 text-right text-white">{fmt(s.fmv)}</td>
+                  </tr>
+                ))}
+                {data.series.length === 0 && (
+                  <tr><td colSpan={3} className="py-3 text-center text-zinc-500">No series data.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </section>
+
+          {/* Section 5 — Portfolio Clarity Score */}
+          <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+            <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-widest text-zinc-500">
+              <span>Portfolio Clarity Score</span>
+              <span className="text-zinc-600" title="Share of moments with HIGH or MEDIUM FMV confidence. Higher = more reliable total portfolio FMV.">ⓘ</span>
+            </div>
+            <div className="font-mono text-5xl font-black text-white">{data.portfolio_clarity_score.toFixed(1)}%</div>
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-xs">
+              <div className="rounded border border-zinc-800 bg-black p-2">
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500">HIGH</div>
+                <div className="text-green-400">{(data.confidence.HIGH ?? 0).toLocaleString()}</div>
+              </div>
+              <div className="rounded border border-zinc-800 bg-black p-2">
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500">MEDIUM</div>
+                <div className="text-yellow-400">{(data.confidence.MEDIUM ?? 0).toLocaleString()}</div>
+              </div>
+              <div className="rounded border border-zinc-800 bg-black p-2">
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500">LOW</div>
+                <div className="text-orange-400">{(data.confidence.LOW ?? 0).toLocaleString()}</div>
+              </div>
+              <div className="rounded border border-zinc-800 bg-black p-2">
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500">NO DATA</div>
+                <div className="text-zinc-500">{(data.confidence.NO_DATA ?? 0).toLocaleString()}</div>
+              </div>
+            </div>
+            <div className="mt-3 text-[11px] text-zinc-600">How reliably we know this portfolio's FMV. Higher means most moments have HIGH or MEDIUM confidence pricing.</div>
+          </section>
         </div>
-      )}
-
-      {/* Dashboard */}
-      {!loading && data && (
-        <>
-          {/* KPI cards */}
-          <div className="flex gap-4 mb-8">
-            <div className="flex-1 bg-zinc-900 rounded-lg p-4">
-              <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1" style={{ fontFamily: "var(--font-barlow, 'Barlow Condensed', sans-serif)" }}>
-                Total Volume
-              </div>
-              <div className="text-2xl font-bold" style={{ fontFamily: "var(--font-share-tech, 'Share Tech Mono', monospace)" }}>
-                {formatVolume(data.totals.totalVolume)}
-              </div>
-            </div>
-            <div className="flex-1 bg-zinc-900 rounded-lg p-4">
-              <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1" style={{ fontFamily: "var(--font-barlow, 'Barlow Condensed', sans-serif)" }}>
-                Total Sales
-              </div>
-              <div className="text-2xl font-bold" style={{ fontFamily: "var(--font-share-tech, 'Share Tech Mono', monospace)" }}>
-                {formatNumber(data.totals.totalSales)}
-              </div>
-            </div>
-            <div className="flex-1 bg-zinc-900 rounded-lg p-4">
-              <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1" style={{ fontFamily: "var(--font-barlow, 'Barlow Condensed', sans-serif)" }}>
-                Avg Sale Price
-              </div>
-              <div className="text-2xl font-bold" style={{ fontFamily: "var(--font-share-tech, 'Share Tech Mono', monospace)" }}>
-                ${avgSale.toFixed(2)}
-              </div>
-            </div>
-          </div>
-
-          {/* Daily Volume chart */}
-          <div className="mb-8">
-            <h2
-              className="text-lg uppercase tracking-wider mb-3"
-              style={{ fontFamily: "var(--font-barlow, 'Barlow Condensed', sans-serif)" }}
-            >
-              Daily Volume
-            </h2>
-            <div className="bg-zinc-900 rounded-lg p-4">
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={volumeChartData}>
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fill: "#71717a", fontSize: 11 }}
-                    tickFormatter={(v: string) => v.slice(5)}
-                  />
-                  <YAxis
-                    tick={{ fill: "#71717a", fontSize: 11 }}
-                    tickFormatter={(v: number) => formatVolume(v)}
-                  />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: "#18181b", border: "1px solid #3f3f46", borderRadius: 8 }}
-                    labelStyle={{ color: "#a1a1aa" }}
-                  />
-                  <Legend />
-                  {marketplaces.map((mp) => (
-                    <Line
-                      key={mp}
-                      type="monotone"
-                      dataKey={mp}
-                      stroke={mpColor(mp)}
-                      strokeWidth={2}
-                      dot={false}
-                      name={mp}
-                    />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Daily Sales chart */}
-          <div className="mb-8">
-            <h2
-              className="text-lg uppercase tracking-wider mb-3"
-              style={{ fontFamily: "var(--font-barlow, 'Barlow Condensed', sans-serif)" }}
-            >
-              Daily Sales
-            </h2>
-            <div className="bg-zinc-900 rounded-lg p-4">
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={salesChartData}>
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fill: "#71717a", fontSize: 11 }}
-                    tickFormatter={(v: string) => v.slice(5)}
-                  />
-                  <YAxis tick={{ fill: "#71717a", fontSize: 11 }} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: "#18181b", border: "1px solid #3f3f46", borderRadius: 8 }}
-                    labelStyle={{ color: "#a1a1aa" }}
-                  />
-                  <Legend />
-                  {marketplaces.map((mp) => (
-                    <Line
-                      key={mp}
-                      type="monotone"
-                      dataKey={mp}
-                      stroke={mpColor(mp)}
-                      strokeWidth={2}
-                      dot={false}
-                      name={mp}
-                    />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Market Share pie */}
-          <div className="mb-8">
-            <h2
-              className="text-lg uppercase tracking-wider mb-3"
-              style={{ fontFamily: "var(--font-barlow, 'Barlow Condensed', sans-serif)" }}
-            >
-              Market Share
-            </h2>
-            <div className="bg-zinc-900 rounded-lg p-4 flex justify-center">
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={110}
-                    label={(props: any) =>
-                      `${props.name ?? ""} ${((props.percent ?? 0) * 100).toFixed(0)}%`
-                    }
-                  >
-                    {pieData.map((entry) => (
-                      <Cell key={entry.name} fill={mpColor(entry.name)} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{ backgroundColor: "#18181b", border: "1px solid #3f3f46", borderRadius: 8 }}
-                    formatter={(value: any) => formatVolume(Number(value) || 0)}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Footer note */}
-          <p className="text-xs text-zinc-600 text-center">
-            Data sourced from on-chain sales indexed by RPC. Updates every 20 minutes.
-          </p>
-        </>
       )}
     </div>
+  )
+}
+
+export default function AnalyticsPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-6xl px-4 py-6 text-zinc-500">Loading…</div>}>
+      <AnalyticsInner />
+    </Suspense>
   )
 }
