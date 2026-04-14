@@ -138,7 +138,6 @@ export async function POST(req: NextRequest) {
 
   const now = new Date().toISOString()
   const rows = Array.from(groups.values())
-    .filter((g) => g.listedCount > 0)
     .map((g) => {
       const packName = `${g.setName} — ${g.tier}`
       return {
