@@ -541,7 +541,8 @@ export async function POST(req: NextRequest) {
 
     for (const item of allItems) {
       try {
-        const order = item.orders?.find((o) => (o.salePrice ?? 0) > 0)
+        const orders = asArray<FlowtyOrder>(item?.orders)
+        const order = orders.find((o) => (o?.salePrice ?? 0) > 0)
         if (!order) continue
 
         const price = order.salePrice
