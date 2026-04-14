@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 
@@ -130,8 +130,6 @@ function escalateConfidence(
 }
 
 export async function POST(req: NextRequest) {
-  const startTime = Date.now()
-  const now = new Date()
   const chain = req.nextUrl.searchParams.get("chain") === "true"
 
   const authHeader = req.headers.get("authorization")
@@ -153,10 +151,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  try {
-    const body = await req.json().catch(() => ({}))
-    const limit = Math.min(Number(body.limit ?? DEFAULT_LIMIT), 2000)
-    const offset = Number(body.offset ?? 0)
+  const body = await req.json().catch(() => ({}))
+  const limit = Math.min(Number(body.limit ?? DEFAULT_LIMIT), 2000)
+  const offset = Number(body.offset ?? 0)
+
+  // Recalc pages can exceed cron-job.org's 30s timeout. Run the heavy work
+  // after the response is sent so callers get an immediate ack.
+  after(async () => {
+    const startTime = Date.now()
+    const now = new Date()
+    try {
 
     const windowStart = new Date(
       Date.now() - WINDOW_DAYS * 24 * 60 * 60 * 1000
@@ -179,7 +183,7 @@ export async function POST(req: NextRequest) {
 
     if (pageError) {
       console.error("[FMV-RECALC] Sales page fetch error:", pageError.message)
-      return NextResponse.json({ ok: false, error: pageError.message }, { status: 500 })
+      return
     }
 
     if (!salesPage || salesPage.length === 0) {
@@ -199,16 +203,11 @@ export async function POST(req: NextRequest) {
         console.warn("[FMV-RECALC] Integer bridge error:", err instanceof Error ? err.message : err)
       }
 
-      console.log("[FMV-RECALC] No sales found in window — done")
+      console.log(
+        `[FMV-RECALC] No sales found in window — integerBridge=${integerBridgeCount} durationMs=${Date.now() - startTime}`
+      )
       await fireNextPipelineStep("/api/listing-cache", chain)
-      return NextResponse.json({
-        ok: true,
-        editionsProcessed: 0,
-        snapshotsUpdated: 0,
-        integerBridgeCovered: integerBridgeCount,
-        hasMore: false,
-        durationMs: Date.now() - startTime,
-      })
+      return
     }
 
     // ── Step 2: Group sales by edition ────────────────────────────────────────
@@ -426,7 +425,7 @@ export async function POST(req: NextRequest) {
 
     if (deleteError) {
       console.error("DB write failed:", deleteError, { status: delStatus })
-      return NextResponse.json({ ok: false, error: deleteError.message }, { status: 500 })
+      return
     }
 
     // ── Step 4: Build and insert fresh snapshots ──────────────────────────────
@@ -732,27 +731,19 @@ export async function POST(req: NextRequest) {
     )
 
     await fireNextPipelineStep("/api/listing-cache", chain)
-    return NextResponse.json({
-      ok: true,
-      editionsProcessed: editionIds.length,
-      snapshotsUpdated,
-      flowtyFmvBlended: blendedCount,
-      askProxyApplied: askProxyCount,
-      washTradeFiltered: washTradeEditionCount,
-      backfillCovered: backfillCount,
-      historicalFallbackCovered: historicalBackfillCount,
-      integerBridgeCovered: integerBridgeCount,
-      hasMore,
-      nextOffset: hasMore ? offset + limit : null,
-      durationMs: duration,
-    })
-  } catch (e) {
-    console.error("[FMV-RECALC] Fatal error:", e)
-    return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : "Recalc failed" },
-      { status: 500 }
+    console.log(
+      `[FMV-RECALC] Summary — editionsProcessed=${editionIds.length} snapshotsUpdated=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} integerBridge=${integerBridgeCount} hasMore=${hasMore} nextOffset=${hasMore ? offset + limit : "null"} durationMs=${duration}`
     )
-  }
+    } catch (e) {
+      console.error("[FMV-RECALC] Fatal error:", e instanceof Error ? e.message : String(e))
+    }
+  })
+
+  return NextResponse.json({
+    ok: true,
+    message: "FMV recalc triggered",
+    triggeredAt: new Date().toISOString(),
+  })
 }
 
 // Allow GET for browser testing
