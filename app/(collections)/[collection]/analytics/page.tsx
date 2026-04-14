@@ -1,7 +1,12 @@
 "use client"
 
 import { useParams, useRouter, useSearchParams } from "next/navigation"
-import { Suspense, useCallback, useEffect, useState } from "react"
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
+import {
+  PieChart, Pie, Cell, Tooltip as ReTooltip, Legend, ResponsiveContainer,
+  LineChart, Line, XAxis, YAxis, CartesianGrid,
+  AreaChart, Area,
+} from "recharts"
 
 type MarketplaceBreakdown = {
   topshot?: { count: number; total_spent: number; avg_price: number } | null
@@ -41,6 +46,108 @@ const TIER_COLOR: Record<string, string> = {
   COMMON: "var(--tier-common)",
 }
 
+// Explicit hex tier colors for recharts (Tailwind vars can't be read by SVG)
+const TIER_HEX: Record<string, string> = {
+  ULTIMATE: "#FFD700",
+  LEGENDARY: "#A855F7",
+  RARE: "#3B82F6",
+  FANDOM: "#22C55E",
+  COMMON: "#6B7280",
+}
+
+type TopSale = {
+  price_usd: number
+  sold_at: string
+  serial_number: number | null
+  marketplace: string | null
+  player_name: string | null
+  set_name: string | null
+  tier: string | null
+  circulation_count: number | null
+}
+
+type TierAnalyticsRow = {
+  tier: string
+  sale_count: number
+  volume: number
+  avg_price: number
+  min_price: number
+  max_price: number
+}
+
+type TopEditionRow = {
+  player_name: string | null
+  set_name: string | null
+  tier: string | null
+  circulation_count: number | null
+  sale_count: number
+  volume: number
+  avg_price: number
+}
+
+type DailyTierRow = {
+  date: string
+  tier: string
+  sale_count: number
+  volume: number
+  avg_price: number
+}
+
+type MarketAnalyticsResponse = {
+  period: string
+  startDate: string
+  endDate: string
+  totals: { totalSales: number; totalVolume: number }
+  daily: Array<{ date: string; marketplace: string; saleCount: number; volume: number }>
+  topSales?: TopSale[]
+  tierAnalytics?: TierAnalyticsRow[]
+  topEditions?: TopEditionRow[]
+  dailyTierVolume?: DailyTierRow[]
+}
+
+function pivotDailyTier<T extends "sale_count" | "volume" | "avg_price">(
+  rows: DailyTierRow[] | undefined,
+  field: T
+): { data: Array<Record<string, string | number>>; tiers: string[] } {
+  if (!rows || rows.length === 0) return { data: [], tiers: [] }
+  const byDate = new Map<string, Record<string, string | number>>()
+  const tierSet = new Set<string>()
+  for (const r of rows) {
+    if (!r.tier || r.tier === "UNKNOWN") continue
+    tierSet.add(r.tier)
+    const bucket = byDate.get(r.date) ?? { date: r.date }
+    bucket[r.tier] = Number(r[field] ?? 0)
+    byDate.set(r.date, bucket)
+  }
+  const data = Array.from(byDate.values()).sort((a, b) =>
+    String(a.date).localeCompare(String(b.date))
+  )
+  // Fill missing tier keys with 0 so charts render cleanly.
+  const tiers = Array.from(tierSet)
+  for (const row of data) {
+    for (const t of tiers) if (row[t] === undefined) row[t] = 0
+  }
+  return { data, tiers }
+}
+
+function relativeDate(iso: string): string {
+  const t = new Date(iso).getTime()
+  if (!Number.isFinite(t)) return ""
+  const diff = Date.now() - t
+  const d = Math.floor(diff / 86400000)
+  if (d < 1) {
+    const h = Math.floor(diff / 3600000)
+    if (h < 1) return "just now"
+    return `${h}h ago`
+  }
+  if (d < 30) return `${d}d ago`
+  return new Date(iso).toISOString().slice(0, 10)
+}
+
+function fmtUsd(n: number): string {
+  return `$${(Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
 function fmt(n: number): string {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`
@@ -60,6 +167,36 @@ function AnalyticsInner() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [mpBreakdown, setMpBreakdown] = useState<MarketplaceBreakdown | null>(null)
+  const [marketData, setMarketData] = useState<MarketAnalyticsResponse | null>(null)
+  const [marketLoading, setMarketLoading] = useState(false)
+
+  useEffect(() => {
+    if (!collection) return
+    let cancelled = false
+    setMarketLoading(true)
+    fetch(`/api/market-analytics?collection=${encodeURIComponent(collection)}&period=30d&detail=full`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (!cancelled && j && !j.error) setMarketData(j as MarketAnalyticsResponse) })
+      .catch(() => { /* swallow */ })
+      .finally(() => { if (!cancelled) setMarketLoading(false) })
+    return () => { cancelled = true }
+  }, [collection])
+
+  const volumeByTier = useMemo(() => {
+    if (!marketData?.tierAnalytics) return []
+    return marketData.tierAnalytics
+      .filter((t) => t.tier && t.tier !== "UNKNOWN" && Number(t.volume) > 0)
+      .map((t) => ({ name: t.tier, value: Math.round(Number(t.volume) * 100) / 100 }))
+  }, [marketData?.tierAnalytics])
+
+  const avgPricePivot = useMemo(
+    () => pivotDailyTier(marketData?.dailyTierVolume, "avg_price"),
+    [marketData?.dailyTierVolume]
+  )
+  const saleCountPivot = useMemo(
+    () => pivotDailyTier(marketData?.dailyTierVolume, "sale_count"),
+    [marketData?.dailyTierVolume]
+  )
 
   const runSearch = useCallback(async (q: string) => {
     const trimmed = q.trim()
@@ -317,6 +454,228 @@ function AnalyticsInner() {
           </section>
         </div>
       )}
+
+      {/* ── Market analytics sections (collection-wide, not wallet-specific) ── */}
+      <div className="mt-8 space-y-6">
+        {/* Section A — Volume by Tier */}
+        <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+          <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+            Volume by Tier
+          </h2>
+          {marketLoading && !marketData ? (
+            <div className="h-64 animate-pulse rounded bg-zinc-900" />
+          ) : volumeByTier.length === 0 ? (
+            <div className="py-8 text-center text-sm text-zinc-500">No data</div>
+          ) : (
+            <div className="h-72 w-full" style={{ fontFamily: "'Share Tech Mono', monospace" }}>
+              <ResponsiveContainer>
+                <PieChart>
+                  <Pie
+                    data={volumeByTier}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={100}
+                    stroke="#18181b"
+                  >
+                    {volumeByTier.map((entry, i) => (
+                      <Cell key={i} fill={TIER_HEX[entry.name] ?? "#6B7280"} />
+                    ))}
+                  </Pie>
+                  <ReTooltip
+                    contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "'Share Tech Mono', monospace" }}
+                    formatter={(v, n) => [fmtUsd(Number(v) || 0), String(n)]}
+                  />
+                  <Legend
+                    formatter={(value: string, entry: any) => {
+                      const v = entry?.payload?.value ?? 0
+                      return <span style={{ color: "#e4e4e7" }}>{value} — {fmtUsd(v)}</span>
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </section>
+
+        {/* Section B — Top Sales */}
+        <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+          <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+            Top Sales
+          </h2>
+          {marketLoading && !marketData ? (
+            <div className="h-64 animate-pulse rounded bg-zinc-900" />
+          ) : !marketData?.topSales || marketData.topSales.length === 0 ? (
+            <div className="py-8 text-center text-sm text-zinc-500">No data</div>
+          ) : (
+            <table className="w-full text-sm" style={{ fontFamily: "'Share Tech Mono', monospace" }}>
+              <thead>
+                <tr className="border-b border-zinc-800 text-left text-[10px] uppercase tracking-widest text-zinc-500">
+                  <th className="py-2 pr-2">#</th>
+                  <th className="py-2 pr-2">Player</th>
+                  <th className="py-2 pr-2">Set</th>
+                  <th className="py-2 pr-2">Tier</th>
+                  <th className="py-2 pr-2 text-right">Serial</th>
+                  <th className="py-2 pr-2 text-right">Price</th>
+                  <th className="py-2 text-right">Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {marketData.topSales.map((s, i) => {
+                  const tier = (s.tier ?? "").toUpperCase()
+                  const dot = TIER_HEX[tier] ?? "#6B7280"
+                  return (
+                    <tr key={i} className="border-b border-zinc-900">
+                      <td className="py-1.5 pr-2 text-zinc-500">{i + 1}</td>
+                      <td className="py-1.5 pr-2 text-zinc-200">{s.player_name ?? "—"}</td>
+                      <td className="py-1.5 pr-2 text-zinc-400">{s.set_name ?? "—"}</td>
+                      <td className="py-1.5 pr-2 text-zinc-300">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="inline-block h-2 w-2 rounded-full" style={{ background: dot }} />
+                          {tier || "—"}
+                        </span>
+                      </td>
+                      <td className="py-1.5 pr-2 text-right text-zinc-400">
+                        {s.serial_number ? `#${s.serial_number}${s.circulation_count ? `/${s.circulation_count}` : ""}` : "—"}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right text-white">{fmtUsd(s.price_usd)}</td>
+                      <td className="py-1.5 text-right text-zinc-500">{relativeDate(s.sold_at)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </section>
+
+        {/* Section C — Hottest Editions */}
+        <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+          <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+            Hottest Editions
+          </h2>
+          {marketLoading && !marketData ? (
+            <div className="h-64 animate-pulse rounded bg-zinc-900" />
+          ) : !marketData?.topEditions || marketData.topEditions.length === 0 ? (
+            <div className="py-8 text-center text-sm text-zinc-500">No data</div>
+          ) : (
+            <table className="w-full text-sm" style={{ fontFamily: "'Share Tech Mono', monospace" }}>
+              <thead>
+                <tr className="border-b border-zinc-800 text-left text-[10px] uppercase tracking-widest text-zinc-500">
+                  <th className="py-2 pr-2">Player</th>
+                  <th className="py-2 pr-2">Set</th>
+                  <th className="py-2 pr-2">Tier</th>
+                  <th className="py-2 pr-2 text-right">Sales</th>
+                  <th className="py-2 pr-2 text-right">Volume</th>
+                  <th className="py-2 text-right">Avg Price</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...marketData.topEditions]
+                  .sort((a, b) => Number(b.volume) - Number(a.volume))
+                  .map((e, i) => {
+                    const tier = (e.tier ?? "").toUpperCase()
+                    const dot = TIER_HEX[tier] ?? "#6B7280"
+                    return (
+                      <tr key={i} className="border-b border-zinc-900">
+                        <td className="py-1.5 pr-2 text-zinc-200">{e.player_name ?? "—"}</td>
+                        <td className="py-1.5 pr-2 text-zinc-400">{e.set_name ?? "—"}</td>
+                        <td className="py-1.5 pr-2 text-zinc-300">
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="inline-block h-2 w-2 rounded-full" style={{ background: dot }} />
+                            {tier || "—"}
+                          </span>
+                        </td>
+                        <td className="py-1.5 pr-2 text-right text-zinc-400">{Number(e.sale_count).toLocaleString()}</td>
+                        <td className="py-1.5 pr-2 text-right text-white">{fmtUsd(e.volume)}</td>
+                        <td className="py-1.5 text-right text-zinc-300">{fmtUsd(e.avg_price)}</td>
+                      </tr>
+                    )
+                  })}
+              </tbody>
+            </table>
+          )}
+        </section>
+
+        {/* Section D — Average Price by Tier */}
+        <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+          <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+            Average Price by Tier
+          </h2>
+          {marketLoading && !marketData ? (
+            <div className="h-64 animate-pulse rounded bg-zinc-900" />
+          ) : avgPricePivot.tiers.length === 0 ? (
+            <div className="py-8 text-center text-sm text-zinc-500">No data</div>
+          ) : (
+            <div className="h-72 w-full" style={{ fontFamily: "'Share Tech Mono', monospace" }}>
+              <ResponsiveContainer>
+                <LineChart data={avgPricePivot.data}>
+                  <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
+                  <XAxis dataKey="date" stroke="#71717a" tick={{ fontSize: 10 }} />
+                  <YAxis stroke="#71717a" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${Number(v).toLocaleString()}`} />
+                  <ReTooltip
+                    contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "'Share Tech Mono', monospace" }}
+                    formatter={(v, n) => [fmtUsd(Number(v) || 0), String(n)]}
+                  />
+                  <Legend />
+                  {avgPricePivot.tiers.map((t) => (
+                    <Line
+                      key={t}
+                      type="monotone"
+                      dataKey={t}
+                      stroke={TIER_HEX[t] ?? "#6B7280"}
+                      strokeWidth={2}
+                      dot={false}
+                      connectNulls
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </section>
+
+        {/* Section E — Daily Sales by Tier */}
+        <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+          <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+            Daily Sales by Tier
+          </h2>
+          {marketLoading && !marketData ? (
+            <div className="h-64 animate-pulse rounded bg-zinc-900" />
+          ) : saleCountPivot.tiers.length === 0 ? (
+            <div className="py-8 text-center text-sm text-zinc-500">No data</div>
+          ) : (
+            <div className="h-72 w-full" style={{ fontFamily: "'Share Tech Mono', monospace" }}>
+              <ResponsiveContainer>
+                <AreaChart data={saleCountPivot.data}>
+                  <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
+                  <XAxis dataKey="date" stroke="#71717a" tick={{ fontSize: 10 }} />
+                  <YAxis stroke="#71717a" tick={{ fontSize: 10 }} />
+                  <ReTooltip
+                    contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "'Share Tech Mono', monospace" }}
+                  />
+                  <Legend />
+                  {saleCountPivot.tiers.map((t) => {
+                    const hex = TIER_HEX[t] ?? "#6B7280"
+                    return (
+                      <Area
+                        key={t}
+                        type="monotone"
+                        dataKey={t}
+                        stackId="1"
+                        stroke={hex}
+                        fill={hex}
+                        fillOpacity={0.6}
+                      />
+                    )
+                  })}
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   )
 }

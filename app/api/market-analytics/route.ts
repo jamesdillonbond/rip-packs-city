@@ -29,6 +29,7 @@ function getStartDate(period: string): string {
 export async function GET(req: NextRequest) {
   const collectionSlug = req.nextUrl.searchParams.get("collection") || "nba-top-shot"
   const period = req.nextUrl.searchParams.get("period") || "30d"
+  const detail = req.nextUrl.searchParams.get("detail") || "basic"
 
   const collectionId = COLLECTION_UUID_MAP[collectionSlug]
   if (!collectionId) {
@@ -36,6 +37,7 @@ export async function GET(req: NextRequest) {
   }
 
   const startDate = getStartDate(period)
+  const startIso = `${startDate}T00:00:00Z`
   const endDate = new Date().toISOString().slice(0, 10)
 
   try {
@@ -87,7 +89,7 @@ export async function GET(req: NextRequest) {
       }
     })
 
-    const response = NextResponse.json({
+    const body: Record<string, unknown> = {
       period,
       startDate,
       endDate,
@@ -96,7 +98,42 @@ export async function GET(req: NextRequest) {
         totalVolume: Math.round(totalVolume * 100) / 100,
       },
       daily,
-    })
+    }
+
+    if (detail === "full") {
+      const [topSalesRes, tierRes, topEdRes, dailyTierRes] = await Promise.all([
+        (supabaseAdmin as any).rpc("get_top_sales", {
+          p_collection_id: collectionId,
+          p_since: startIso,
+          p_limit: 10,
+        }),
+        (supabaseAdmin as any).rpc("get_tier_analytics", {
+          p_collection_id: collectionId,
+          p_since: startIso,
+        }),
+        (supabaseAdmin as any).rpc("get_top_editions", {
+          p_collection_id: collectionId,
+          p_since: startIso,
+          p_limit: 10,
+        }),
+        (supabaseAdmin as any).rpc("get_daily_tier_volume", {
+          p_collection_id: collectionId,
+          p_since: startIso,
+        }),
+      ])
+
+      if (topSalesRes.error) console.log("[market-analytics] get_top_sales:", topSalesRes.error.message)
+      if (tierRes.error) console.log("[market-analytics] get_tier_analytics:", tierRes.error.message)
+      if (topEdRes.error) console.log("[market-analytics] get_top_editions:", topEdRes.error.message)
+      if (dailyTierRes.error) console.log("[market-analytics] get_daily_tier_volume:", dailyTierRes.error.message)
+
+      body.topSales = topSalesRes.data ?? []
+      body.tierAnalytics = tierRes.data ?? []
+      body.topEditions = topEdRes.data ?? []
+      body.dailyTierVolume = dailyTierRes.data ?? []
+    }
+
+    const response = NextResponse.json(body)
 
     response.headers.set(
       "Cache-Control",
