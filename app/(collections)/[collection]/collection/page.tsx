@@ -1036,6 +1036,14 @@ export default function WalletPage() {
         }
       }
       const momentCount = resultSummary?.totalMoments ?? resultRows.length
+      const TIER_PRIORITY = ["ULTIMATE", "LEGENDARY", "RARE", "FANDOM", "COMMON"]
+      let cachedTopTier: string | null = null
+      for (const t of TIER_PRIORITY) {
+        if (resultRows.some(function(r) { return (r.tier ?? "").toUpperCase() === t })) {
+          cachedTopTier = t
+          break
+        }
+      }
       await fetch("/api/profile/saved-wallets", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1044,6 +1052,7 @@ export default function WalletPage() {
           walletAddr: matched.wallet_addr,
           cachedFmv: totalFmv,
           cachedMomentCount: momentCount,
+          cachedTopTier: cachedTopTier,
         }),
       })
     } catch {}

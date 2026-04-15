@@ -37,10 +37,13 @@ export async function GET(req: NextRequest) {
 // POST { ownerKey, walletAddr, username, displayName, accentColor }
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { ownerKey, walletAddr, username, displayName, accentColor } = body;
+  let { ownerKey, walletAddr } = body;
+  const { username, displayName, accentColor } = body;
   if (!ownerKey || !walletAddr) {
     return NextResponse.json({ error: "ownerKey and walletAddr required" }, { status: 400 });
   }
+  ownerKey = String(ownerKey).toLowerCase();
+  walletAddr = String(walletAddr).toLowerCase();
 
   try {
     const { data, error } = await supabase
@@ -69,10 +72,12 @@ export async function POST(req: NextRequest) {
 // DELETE { ownerKey, walletAddr }
 export async function DELETE(req: NextRequest) {
   const body = await req.json();
-  const { ownerKey, walletAddr } = body;
+  let { ownerKey, walletAddr } = body;
   if (!ownerKey || !walletAddr) {
     return NextResponse.json({ error: "ownerKey and walletAddr required" }, { status: 400 });
   }
+  ownerKey = String(ownerKey).toLowerCase();
+  walletAddr = String(walletAddr).toLowerCase();
 
   try {
     const { error } = await supabase
@@ -103,9 +108,11 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const {
+  let {
     ownerKey,
     walletAddr,
+  } = body;
+  const {
     cachedFmv,
     cachedMomentCount,
     cachedTopTier,
@@ -120,6 +127,8 @@ export async function PATCH(req: NextRequest) {
   if (!walletAddr || typeof walletAddr !== "string") {
     return NextResponse.json({ error: "walletAddr is required and must be a string" }, { status: 400 });
   }
+  ownerKey = ownerKey.toLowerCase();
+  walletAddr = walletAddr.toLowerCase();
 
   try {
     const updatePayload: Record<string, unknown> = {
