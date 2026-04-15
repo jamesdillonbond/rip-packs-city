@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   try {
     const { data: wallets, error: walletsError } = await supabase
       .from("saved_wallets")
-      .select("wallet_address, cached_fmv_usd")
+      .select("wallet_addr, cached_fmv_usd")
       .eq("owner_key", ownerKey);
 
     if (walletsError) {
@@ -40,12 +40,12 @@ export async function GET(req: NextRequest) {
     let totalPurchases = 0;
     let totalFmv = 0;
 
-    for (const w of wallets as Array<{ wallet_address: string; cached_fmv_usd: number | null }>) {
+    for (const w of wallets as Array<{ wallet_addr: string; cached_fmv_usd: number | null }>) {
       totalFmv += Number(w.cached_fmv_usd ?? 0) || 0;
 
-      const addr = w.wallet_address?.startsWith("0x")
-        ? w.wallet_address
-        : "0x" + (w.wallet_address ?? "");
+      const addr = w.wallet_addr?.startsWith("0x")
+        ? w.wallet_addr
+        : "0x" + (w.wallet_addr ?? "");
       if (!addr || addr === "0x") continue;
 
       const { data: cb, error: cbError } = await (supabase as any).rpc(
