@@ -12,8 +12,12 @@ import { supabaseAdmin } from "@/lib/supabase"
 // Designed to be called repeatedly (cron or manual) until the backlog clears.
 
 const INGEST_TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
-const TS_GQL = process.env.TS_PROXY_URL || "https://public-api.nbatopshot.com/graphql"
-const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET || ""
+// Default to deployed Supabase edge function — Vercel IPs are Cloudflare-blocked
+// against public-api.nbatopshot.com, so direct GQL fails 100% from this runtime.
+const TS_GQL =
+  process.env.TS_PROXY_URL ||
+  "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/topshot-proxy"
+const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET || "rippackscity2026"
 const BATCH_SIZE = 50
 const TREVOR_WALLET = "0xbd94cade097e50ac"
 const TS_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
@@ -26,7 +30,11 @@ const GET_MINTED_MOMENT = `
   }
 `
 
-async function fetchMoment(momentId: string): Promise<{ price: number | null; createdAt: string | null } | null> {
+type FetchResult =
+  | { ok: true; price: number | null; createdAt: string | null }
+  | { ok: false; reason: string }
+
+async function fetchMoment(momentId: string, debug = false): Promise<FetchResult> {
   const headers: Record<string, string> = { "Content-Type": "application/json" }
   if (TS_PROXY_SECRET) headers["x-proxy-secret"] = TS_PROXY_SECRET
   try {
@@ -36,16 +44,27 @@ async function fetchMoment(momentId: string): Promise<{ price: number | null; cr
       body: JSON.stringify({ query: GET_MINTED_MOMENT, variables: { momentId } }),
       signal: AbortSignal.timeout(6000),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      if (debug) console.log(`[classify-unknowns] ${momentId} http=${res.status}`)
+      return { ok: false, reason: `http_${res.status}` }
+    }
     const json = await res.json()
     const d = json?.data?.getMintedMoment?.data
-    if (!d) return null
+    if (debug) {
+      console.log(
+        `[classify-unknowns] ${momentId} status=${res.status} lastPurchasePrice=${JSON.stringify(d?.lastPurchasePrice)} (${typeof d?.lastPurchasePrice}) hasData=${!!d}`
+      )
+    }
+    if (!d) return { ok: false, reason: "no_data" }
     return {
+      ok: true,
       price: d.lastPurchasePrice != null ? Number(d.lastPurchasePrice) : null,
       createdAt: d.createdAt ?? null,
     }
-  } catch {
-    return null
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (debug) console.log(`[classify-unknowns] ${momentId} threw=${msg}`)
+    return { ok: false, reason: `throw_${msg}` }
   }
 }
 
@@ -78,13 +97,17 @@ export async function GET(req: NextRequest) {
   let pack_pull = 0
   let unchanged = 0
 
+  let idx = 0
   for (const row of batch as Array<{ id: string; nft_id: string }>) {
-    const gql = await fetchMoment(row.nft_id)
-    if (!gql) {
+    const gql = await fetchMoment(row.nft_id, idx < 3)
+    idx++
+    if (!gql.ok) {
       unchanged++
       continue
     }
 
+    // price > 0  → marketplace purchase on Top Shot
+    // price = 0 / null → no TS sale + no Flowty sale (checked_no_flowty) → pack pull
     const isMarketplace = gql.price !== null && gql.price > 0
     const update: Record<string, unknown> = isMarketplace
       ? {
