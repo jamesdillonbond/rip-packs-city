@@ -30,7 +30,7 @@ export const rootMetadata: Metadata = {
     type: 'website',
     locale: 'en_US',
     siteName: 'Rip Packs City',
-    images: [{ url: '/og-default.png', width: 1200, height: 630 }],
+    images: [{ url: '/api/og/default', width: 1200, height: 630 }],
   },
   twitter: {
     card: 'summary_large_image',
@@ -208,14 +208,14 @@ export function collectionLayoutMetadata(collectionId: string): Metadata {
       url: canonical,
       siteName: 'Rip Packs City',
       type: 'website',
-      images: [{ url: '/og-default.png', width: 1200, height: 630 }],
+      images: [{ url: '/api/og/default', width: 1200, height: 630 }],
     },
     twitter: {
       card: 'summary_large_image',
       title: meta.title,
       description: meta.description,
       site: '@rippackscity',
-      images: ['/og-default.png'],
+      images: ['/api/og/default'],
     },
   }
 }
