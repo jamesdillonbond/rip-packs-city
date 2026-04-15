@@ -48,7 +48,7 @@ export async function generateMetadata(
     }
   }
 
-  const ogUrl = "/api/og/profile/" + encodeURIComponent(key)
+  const ogUrl = "https://rip-packs-city.vercel.app/api/og/profile/" + encodeURIComponent(key)
   const description =
     "Portfolio: " + fmtDollars(totalFmv) + " FMV across " + momentCount + " moments"
   const title = displayName + "'s Collection | Rip Packs City"
