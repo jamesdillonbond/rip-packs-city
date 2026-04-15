@@ -7,12 +7,13 @@ const supabase: any = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const FLOWTY_HEADERS = {
-  "Content-Type": "application/json",
-  Origin: "https://www.flowty.io",
-  Referer: "https://www.flowty.io/",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146 Safari/537.36",
-};
+// Flowty fetches are routed through the Supabase flowty-proxy edge function:
+// Vercel egress IPs are intermittently blocked by Flowty, while Deno Deploy
+// IPs are not. AD + Golazos listing-cache routes use the same proxy.
+const FLOWTY_PROXY_URL =
+  (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://bxcqstmqfzmuolpuynti.supabase.co") +
+  "/functions/v1/flowty-proxy";
+const FLOWTY_PROXY_TOKEN = "rippackscity2026";
 
 const PAGE_SIZE = 24;
 
@@ -107,24 +108,42 @@ function getTraitMulti(traits: any[], ...names: string[]): string {
   return "";
 }
 
+// Parse "0x0b2a3299cc857e29.TopShot" → { contractAddress, contractName }
+function parseCollectionFilter(filter: string): { contractAddress: string; contractName: string } {
+  const dot = filter.indexOf(".");
+  return dot > 0
+    ? { contractAddress: filter.slice(0, dot), contractName: filter.slice(dot + 1) }
+    : { contractAddress: "", contractName: "" };
+}
+
 async function fetchFlowtyPage(from: number, config: CollectionConfig): Promise<any[]> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(function() { controller.abort(); }, 8000);
-    const res = await fetch(config.flowtyEndpoint, {
-      method: "POST", headers: FLOWTY_HEADERS,
-      body: JSON.stringify(flowtyBody(from, config)), signal: controller.signal,
+    const timeout = setTimeout(function() { controller.abort(); }, 12000);
+    const { contractAddress, contractName } = parseCollectionFilter(config.flowtyCollectionFilter);
+    const res = await fetch(FLOWTY_PROXY_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + FLOWTY_PROXY_TOKEN,
+      },
+      body: JSON.stringify({
+        contractAddress,
+        contractName,
+        payload: flowtyBody(from, config),
+      }),
+      signal: controller.signal,
     });
     clearTimeout(timeout);
     if (!res.ok) {
-      console.log("[listing-cache] Flowty page " + from + " HTTP " + res.status);
+      console.log("[listing-cache] flowty-proxy page " + from + " HTTP " + res.status);
       return [];
     }
     const json = await res.json();
     const items = json.data || json.nfts || [];
     return Array.isArray(items) ? items : [];
   } catch (e: any) {
-    console.log("[listing-cache] Flowty page " + from + " error: " + (e.message || "unknown"));
+    console.log("[listing-cache] flowty-proxy page " + from + " error: " + (e.message || "unknown"));
     return [];
   }
 }
