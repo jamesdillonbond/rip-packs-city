@@ -1334,11 +1334,23 @@ function ProfilePageInner() {
     if (!input.startsWith("0x")) {
       try { const r = await fetch("/api/user-resolve?username=" + encodeURIComponent(input)); if (r.ok) { const d = await r.json(); if (d.address) { walletAddr = d.address; username = input; } } } catch {}
     }
-    const r = await fetch("/api/profile/saved-wallets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ownerKey, walletAddr, username, accentColor: pickAccent(savedWallets.length) }) });
-    if (!r.ok) return;
-    const d = await r.json();
-    if (d.wallet) setSavedWallets(function(prev) { return [d.wallet, ...prev.filter(function(w) { return w.wallet_addr !== walletAddr; })]; });
-    setShowAddWallet(false);
+    try {
+      const r = await fetch("/api/profile/saved-wallets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ownerKey, walletAddr, username, accentColor: pickAccent(savedWallets.length) }) });
+      if (!r.ok) {
+        let msg = "Failed to save wallet (HTTP " + r.status + ")";
+        try { const err = await r.json(); if (err?.error) msg = err.error; } catch {}
+        console.error("[saved-wallets POST]", msg);
+        alert("Could not save wallet: " + msg);
+        return;
+      }
+      const d = await r.json();
+      if (d.wallet) setSavedWallets(function(prev) { return [d.wallet, ...prev.filter(function(w) { return w.wallet_addr !== walletAddr; })]; });
+      else { console.error("[saved-wallets POST] unexpected response", d); alert("Wallet save returned no record."); return; }
+      setShowAddWallet(false);
+    } catch (err: any) {
+      console.error("[saved-wallets POST] network error", err);
+      alert("Network error while saving wallet. Check console.");
+    }
   }
 
   async function handleRemoveWallet(walletAddr: string) {
