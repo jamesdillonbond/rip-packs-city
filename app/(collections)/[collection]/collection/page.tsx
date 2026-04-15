@@ -1908,6 +1908,15 @@ export default function WalletPage() {
                           {row.tier}
                         </span>
                       )}
+                      <a
+                        href={"/profile?pin=" + row.momentId}
+                        onClick={function(e) { e.stopPropagation(); }}
+                        title="Pin to Trophy Case"
+                        className="shrink-0 rounded hover:bg-zinc-900"
+                        style={{ fontSize: 11, padding: "2px 6px", color: "#F59E0B", opacity: 0.5, transition: "opacity 0.15s", textDecoration: "none", lineHeight: 1 }}
+                        onMouseEnter={function(e) { e.currentTarget.style.opacity = "1"; }}
+                        onMouseLeave={function(e) { e.currentTarget.style.opacity = "0.5"; }}
+                      >📌</a>
                       <span className="text-zinc-500 text-xs shrink-0">{expanded ? "▾" : "›"}</span>
                     </div>
                   </div>

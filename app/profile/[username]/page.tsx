@@ -38,7 +38,6 @@ interface ProfileBio {
 }
 
 interface SavedWalletPublic {
-  wallet_addr: string;
   username: string | null;
   display_name: string | null;
   cached_fmv: number | null;
@@ -280,7 +279,7 @@ export default function PublicProfilePage() {
       .catch(function() {});
 
     // Fetch saved wallets (for stats)
-    const walletsP = fetch("/api/profile/saved-wallets?ownerKey=" + enc)
+    const walletsP = fetch("/api/profile/saved-wallets?ownerKey=" + enc + "&public=1")
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(data) {
         if (data?.wallets) setWallets(data.wallets);
@@ -490,7 +489,7 @@ export default function PublicProfilePage() {
             <div style={{ ...labelStyle, marginBottom: 12 }}>SAVED WALLETS</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {wallets.map(function(w, i) {
-                const label = w.display_name || w.username || (w.wallet_addr ? w.wallet_addr.slice(0, 12) + "…" : "Wallet " + (i + 1));
+                const label = w.display_name || w.username || ("Wallet " + (i + 1));
                 return (
                   <div key={i} style={{ ...cardStyle, display: "flex", alignItems: "center", gap: 16, padding: "12px 16px" }}>
                     <div style={{ width: 4, height: 28, borderRadius: 2, background: w.accent_color || "#E03A2F", flexShrink: 0 }} />
@@ -506,13 +505,15 @@ export default function PublicProfilePage() {
                         <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)" }}>{w.cached_moment_count ?? 0} MOMENTS</div>
                       </div>
                     )}
-                    <Link
-                      href={"/nba-top-shot/collection?q=" + encodeURIComponent(w.username ?? w.wallet_addr)}
-                      className="rpc-chip"
-                      style={{ textDecoration: "none", flexShrink: 0 }}
-                    >
-                      LOAD →
-                    </Link>
+                    {w.username && (
+                      <Link
+                        href={"/nba-top-shot/collection?q=" + encodeURIComponent(w.username)}
+                        className="rpc-chip"
+                        style={{ textDecoration: "none", flexShrink: 0 }}
+                      >
+                        LOAD →
+                      </Link>
+                    )}
                   </div>
                 );
               })}
