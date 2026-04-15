@@ -303,16 +303,40 @@ const BADGE_SLUG_COLORS: Record<string, string> = {
   number_one: "bg-amber-500/15 text-amber-400 border-amber-500/25",
 };
 
-function BadgePills({ slugs }: { slugs: string[] }) {
+function BadgeIcon({ slug, size = 18 }: { slug: string; size?: number }) {
+  const [errored, setErrored] = useState(false);
+  const label = BADGE_SLUG_LABELS[slug] ?? slug;
+  const url = `https://nbatopshot.com/img/momentTags/static/${slug}.svg`;
+  if (errored) {
+    return (
+      <span
+        className={`px-1 py-0.5 rounded text-[10px] border ${BADGE_SLUG_COLORS[slug] ?? "bg-yellow-500/15 text-yellow-400 border-yellow-500/25"}`}
+      >
+        {label}
+      </span>
+    );
+  }
   return (
-    <div className="flex gap-1 mt-1 flex-wrap">
-      {slugs.map((slug) => (
-        <span
-          key={slug}
-          className={`px-1 py-0.5 rounded text-xs border ${BADGE_SLUG_COLORS[slug] ?? "bg-yellow-500/15 text-yellow-400 border-yellow-500/25"}`}
-        >
-          {BADGE_SLUG_LABELS[slug] ?? slug}
-        </span>
+    <img
+      src={url}
+      alt={label}
+      title={label}
+      width={size}
+      height={size}
+      loading="lazy"
+      onError={() => setErrored(true)}
+      style={{ width: size, height: size, display: "inline-block", verticalAlign: "middle" }}
+    />
+  );
+}
+
+function BadgePills({ slugs }: { slugs: string[] }) {
+  // Dedupe slugs to avoid double-rendered badges when upstream data repeats entries.
+  const unique = Array.from(new Set(slugs));
+  return (
+    <div className="flex gap-1 mt-1 flex-wrap items-center">
+      {unique.map((slug) => (
+        <BadgeIcon key={slug} slug={slug} />
       ))}
     </div>
   );
@@ -1396,11 +1420,9 @@ export default function SniperPage() {
                   <div className="flex items-center justify-between gap-2">
                     <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)" }}>Adj. FMV ${fmt(deal.adjustedFmv)}</span>
                     {!isPinnacle && deal.hasBadge && deal.badgeSlugs.length > 0 && (
-                      <div className="flex gap-1 flex-wrap">
-                        {deal.badgeSlugs.slice(0, 2).map((slug) => (
-                          <span key={slug} className={`px-1 py-0.5 rounded text-[10px] border ${BADGE_SLUG_COLORS[slug] ?? "bg-yellow-500/15 text-yellow-400 border-yellow-500/25"}`}>
-                            {BADGE_SLUG_LABELS[slug] ?? slug}
-                          </span>
+                      <div className="flex gap-1 flex-wrap items-center">
+                        {Array.from(new Set(deal.badgeSlugs)).slice(0, 3).map((slug) => (
+                          <BadgeIcon key={slug} slug={slug} />
                         ))}
                       </div>
                     )}

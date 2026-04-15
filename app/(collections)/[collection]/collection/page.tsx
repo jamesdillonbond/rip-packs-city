@@ -254,8 +254,9 @@ function getThumbnailUrl(row: MomentRow, collectionSlug?: string): string | null
     }
   }
   // Final fallback: moment flow ID media URL (reliable for all Top Shot moments)
-  if (row.momentId) {
-    return `https://assets.nbatopshot.com/media/${row.momentId}?width=256`
+  const flowId = row.flowId ?? row.momentId
+  if (flowId) {
+    return `https://assets.nbatopshot.com/media/${flowId}/image?width=180`
   }
   return null
 }
@@ -320,6 +321,29 @@ function SerialBadge({ serial, mintSize, jerseyNumber }: { serial: number | unde
 function BadgePill({ title }: { title: string }) {
   const shortLabel = BADGE_SHORT_LABELS[title] ?? title
   return <span title={title} className={"rounded px-1.5 py-0.5 text-[10px] font-semibold " + supadgePillClass(title)}>{shortLabel}</span>
+}
+
+function badgeSlug(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")
+}
+
+function BadgeIcon({ title, size = 18 }: { title: string; size?: number }) {
+  const [errored, setErrored] = useState(false)
+  const slug = badgeSlug(title)
+  const url = "https://nbatopshot.com/img/momentTags/static/" + slug + ".svg"
+  if (errored) return <BadgePill title={title} />
+  return (
+    <img
+      src={url}
+      alt={title}
+      title={title}
+      width={size}
+      height={size}
+      loading="lazy"
+      onError={function() { setErrored(true) }}
+      style={{ width: size, height: size, display: "inline-block", verticalAlign: "middle" }}
+    />
+  )
 }
 
 function debugReasonLabel(reason?: string | null) {
@@ -1931,10 +1955,11 @@ export default function WalletPage() {
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs font-mono text-white">#{getSerial(row) ?? "-"}<span className="text-zinc-500">/{getMint(row) ?? "-"}</span></span>
+                      {getLocked(row) && <span title="Locked" style={{ opacity: 0.6, fontSize: 11 }} aria-label="Locked">🔒</span>}
                       <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} />
                     </div>
                     <div className="flex items-center gap-1 flex-wrap justify-center">
-                      {supaBadges.map(function(title) { return <BadgePill key={"m-" + title} title={title} /> })}
+                      {supaBadges.map(function(title) { return <BadgeIcon key={"m-" + title} title={title} /> })}
                     </div>
                   </div>
                   {/* Row 4: FMV, Low Ask, Cost/P&L */}
@@ -2041,7 +2066,7 @@ export default function WalletPage() {
 
                 return (
                   <Fragment key={row.momentId}>
-                    <tr onClick={function(e) { const t = e.target as HTMLElement; if (t.closest("a,button,input,svg,video")) return; setSelectedMoment(row) }} className={"group border-b border-zinc-800 align-top cursor-pointer " + (isLocked ? "opacity-60" : "") + (row.tier?.toUpperCase() === "LEGENDARY" ? " rpc-holo-legendary" : row.tier?.toUpperCase() === "ULTIMATE" ? " rpc-holo-ultimate" : row.tier?.toUpperCase() === "RARE" ? " rpc-holo-rare" : "")}>
+                    <tr onClick={function(e) { const t = e.target as HTMLElement; if (t.closest("a,button,input,svg,video")) return; setSelectedMoment(row) }} className={"group border-b border-zinc-800 align-top cursor-pointer " + (row.tier?.toUpperCase() === "LEGENDARY" ? " rpc-holo-legendary" : row.tier?.toUpperCase() === "ULTIMATE" ? " rpc-holo-ultimate" : row.tier?.toUpperCase() === "RARE" ? " rpc-holo-rare" : "")}>
                       <td className="p-3 min-w-[160px]">
                         <div className="flex items-center gap-2">
                           {(() => {
@@ -2075,36 +2100,33 @@ export default function WalletPage() {
                             )
                           })()}
                           <div>
-                            <div className="font-semibold text-white text-sm flex items-center gap-1">
+                            <div className="font-semibold text-white text-sm">
                               <span>{row.playerName}</span>
-                              {isLocked && (
-                                <span title="This moment is locked on Dapper" style={{ opacity: 0.5, fontSize: 10 }} aria-label="Locked">🔒</span>
-                              )}
                             </div>
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {officialBadges.map(function(title) { return <BadgePill key={"official-" + title} title={title} /> })}
-                              {supaBadges.map(function(title) { return <BadgePill key={"supa-" + title} title={title} /> })}
+                            <div className="mt-1 flex flex-wrap gap-1 items-center">
+                              {officialBadges.map(function(title) { return <BadgeIcon key={"official-" + title} title={title} /> })}
+                              {supaBadges.map(function(title) { return <BadgeIcon key={"supa-" + title} title={title} /> })}
                               {row.badgeInfo?.is_three_star_rookie && row.badgeInfo?.has_rookie_mint && (
-                                <BadgePill title="Three-Star Rookie" />
+                                <BadgeIcon title="Three-Star Rookie" />
                               )}
                             </div>
                             {row.acquisitionMethod && (() => {
-                                const acqConfig: Record<string, { label: string; icon: string; color: string }> = {
+                                const acqConfig: Record<string, { label: string; icon: string; prefix?: string; color: string }> = {
                                   pack_pull: { label: "PACK", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4", color: "20,184,166" },
-                                  marketplace: { label: "BUY", icon: "M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.3 2.3c-.5.5-.2 1.4.5 1.4H17m0 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-8 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4z", color: "161,161,170" },
+                                  marketplace: { label: "MKT", icon: "", color: "161,161,170" },
                                   challenge_reward: { label: "REWARD", icon: "M12 15l-2 5h4l-2-5zm-4-3a4 4 0 0 1 8 0H8zm-2-2h12l1-2H5l1 2zm3-4h6V3H9v3z", color: "245,158,11" },
-                                  gift: { label: "GIFT", icon: "", color: "96,165,250" },
-                                  loan_default: { label: "LOAN", icon: "", color: "239,68,68" },
+                                  gift: { label: "GIFT", icon: "", prefix: "🎁 ", color: "168,85,247" },
+                                  loan_default: { label: "LOAN", icon: "", color: "245,158,11" },
+                                  airdrop: { label: "AIRDROP", icon: "", color: "52,211,153" },
                                   unknown: { label: "? UNVERIFIED", icon: "", color: "113,113,122" },
                                 }
                                 const cfg = acqConfig[row.acquisitionMethod!]
                                 if (!cfg) return null
-                                const priceSuffix = row.acquisitionMethod === "marketplace" && (row.buyPrice ?? row.costBasis) ? " " + formatCurrency(row.buyPrice ?? row.costBasis ?? 0) : ""
                                 return (
                                   <div className="mt-1">
-                                    <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ background: "rgba(" + cfg.color + ",0.1)", color: "rgba(" + cfg.color + ",0.8)", border: "1px solid rgba(" + cfg.color + ",0.15)" }}>
+                                    <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ background: "rgba(" + cfg.color + ",0.12)", color: "rgba(" + cfg.color + ",0.9)", border: "1px solid rgba(" + cfg.color + ",0.3)" }}>
                                       {cfg.icon && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={cfg.icon}/></svg>}
-                                      {cfg.label}{priceSuffix}
+                                      {cfg.prefix ?? ""}{cfg.label}
                                     </span>
                                   </div>
                                 )
@@ -2119,7 +2141,12 @@ export default function WalletPage() {
                       <td className="p-3 hidden sm:table-cell">
                         <div className={"inline-flex min-w-[80px] flex-col rounded-lg border px-2 py-1 " + (primaryBadge ? "" : "border-zinc-800 bg-black")} style={primaryBadge ? { borderColor: accent, backgroundColor: accent + "1A" } : undefined}>
                           <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} />
-                          <div className={"text-sm font-black " + (primaryBadge ? "" : "text-white")} style={primaryBadge ? { color: accent } : undefined}>{"#" + (getSerial(row) ?? "-")}</div>
+                          <div className={"text-sm font-black flex items-center gap-1 " + (primaryBadge ? "" : "text-white")} style={primaryBadge ? { color: accent } : undefined}>
+                            <span>{"#" + (getSerial(row) ?? "-")}</span>
+                            {isLocked && (
+                              <span title="This moment is locked on Dapper" style={{ opacity: 0.6, fontSize: 11 }} aria-label="Locked">🔒</span>
+                            )}
+                          </div>
                           <div className="text-xs text-zinc-400">{"/ " + (getMint(row) ?? "-")}</div>
                           {primaryBadge ? <div className="mt-1 rounded bg-white px-1 py-0.5 text-[9px] font-bold text-black">{primaryBadge}</div> : null}
                         </div>
@@ -2264,10 +2291,12 @@ export default function WalletPage() {
                         <div>{formatAcquiredAt(row.acquiredAt)}</div>
                         {(() => {
                           const acqPillMap: Record<string, { label: string; cls: string }> = {
-                            pack_pull:        { label: "PACK", cls: "bg-green-950 text-green-300 border border-green-800" },
-                            marketplace:      { label: "MKT",  cls: "bg-zinc-800 text-zinc-400 border border-zinc-700" },
-                            challenge_reward: { label: "CHAL", cls: "bg-purple-950 text-purple-300 border border-purple-800" },
-                            gift:             { label: "GIFT", cls: "bg-blue-950 text-blue-300 border border-blue-800" },
+                            pack_pull:        { label: "PACK",    cls: "bg-green-950 text-green-300 border border-green-800" },
+                            marketplace:      { label: "MKT",     cls: "bg-zinc-800 text-zinc-400 border border-zinc-700" },
+                            challenge_reward: { label: "REWARD",  cls: "bg-amber-950 text-amber-300 border border-amber-800" },
+                            gift:             { label: "🎁 GIFT", cls: "bg-purple-950 text-purple-300 border border-purple-700" },
+                            loan_default:     { label: "LOAN",    cls: "bg-orange-950 text-orange-300 border border-orange-800" },
+                            airdrop:          { label: "AIRDROP", cls: "bg-emerald-950 text-emerald-300 border border-emerald-800" },
                           }
                           const cfg = row.acquisitionMethod ? acqPillMap[row.acquisitionMethod] : null
                           if (!cfg) return null
@@ -2410,7 +2439,7 @@ export default function WalletPage() {
                                     {(row.badgeInfo.badge_titles ?? [])
                                       .filter(function(t) { return BADGE_PILL_TITLES.has(t) })
                                       .filter(function(t) { return !row.badgeInfo?.is_three_star_rookie || !ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR.has(t) })
-                                      .map(function(title) { return <BadgePill key={title} title={title} /> })}
+                                      .map(function(title) { return <BadgeIcon key={title} title={title} /> })}
                                   </div>
                                   <div className="pt-1 text-xs text-zinc-500">
                                     <div>Burn rate: {row.badgeInfo.burn_rate_pct.toFixed(1)}%</div>
