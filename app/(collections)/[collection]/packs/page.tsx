@@ -143,6 +143,42 @@ function canAnalyzeEV(packType: PackType): boolean {
   return packType !== "bundle"
 }
 
+type AllDayDistribution = {
+  dist_id: string
+  title: string
+  nft_type: string
+  metadata: {
+    tier?: string
+    distributionUUID?: string
+    description?: string
+    thumbnail?: string
+    productID?: string
+  } | null
+}
+
+const ALLDAY_TIER_ORDER = ["ULTIMATE", "LEGENDARY", "RARE", "PREMIUM", "STANDARD", "COMMON"] as const
+
+const ALLDAY_TIER_STYLES: Record<string, { color: string; bg: string; border: string; label: string }> = {
+  ULTIMATE: { color: "#fbbf24", bg: "rgba(251,191,36,0.10)", border: "rgba(251,191,36,0.45)", label: "Ultimate" },
+  LEGENDARY: { color: "#c084fc", bg: "rgba(192,132,252,0.10)", border: "rgba(192,132,252,0.45)", label: "Legendary" },
+  RARE: { color: "#818cf8", bg: "rgba(129,140,248,0.10)", border: "rgba(129,140,248,0.45)", label: "Rare" },
+  PREMIUM: { color: "#2dd4bf", bg: "rgba(45,212,191,0.10)", border: "rgba(45,212,191,0.45)", label: "Premium" },
+  STANDARD: { color: "#94a3b8", bg: "rgba(148,163,184,0.10)", border: "rgba(148,163,184,0.45)", label: "Standard" },
+  COMMON: { color: "#a1a1aa", bg: "rgba(161,161,170,0.10)", border: "rgba(161,161,170,0.40)", label: "Common" },
+}
+
+function normalizeAllDayTier(raw: string | undefined | null): string {
+  const t = (raw ?? "").toUpperCase().trim()
+  if (ALLDAY_TIER_ORDER.includes(t as any)) return t
+  if (t.includes("ULTIMATE")) return "ULTIMATE"
+  if (t.includes("LEGEND")) return "LEGENDARY"
+  if (t.includes("RARE")) return "RARE"
+  if (t.includes("PREMIUM")) return "PREMIUM"
+  if (t.includes("STANDARD")) return "STANDARD"
+  if (t.includes("COMMON")) return "COMMON"
+  return "COMMON"
+}
+
 type SortKey = "tier" | "lowestAsk" | "retailPrice" | "momentsPerPack" | "title" | "owned" | "grossEV" | "valueRatio"
 type PackTypeFilter = "all" | PackType
 
@@ -202,7 +238,10 @@ export default function PacksPage() {
   const [pullSubmitting, setPullSubmitting] = useState(false)
   const [pullSubmitSuccess, setPullSubmitSuccess] = useState(false)
   const [pullSubmitError, setPullSubmitError] = useState("")
-  const [alldaySort, setAlldaySort] = useState<"lowestAsk" | "totalListed">("lowestAsk")
+  const [alldayDists, setAlldayDists] = useState<AllDayDistribution[]>([])
+  const [alldayDistsLoading, setAlldayDistsLoading] = useState(true)
+  const [alldayDistsError, setAlldayDistsError] = useState("")
+  const [alldayTierFilter, setAlldayTierFilter] = useState<string>("all")
   const [calcAllProgress, setCalcAllProgress] = useState<{ done: number; total: number } | null>(null)
   const calcAllAbortRef = useRef(false)
 
@@ -286,6 +325,28 @@ export default function PacksPage() {
   }, [])
 
   useEffect(() => {
+    if (!isAllDay) return
+    let cancelled = false
+    async function fetchAllDay() {
+      try {
+        setAlldayDistsLoading(true)
+        const res = await fetch("/api/allday-packs")
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || "Failed to load All Day packs")
+        if (cancelled) return
+        setAlldayDists(json.distributions ?? [])
+      } catch (err) {
+        if (!cancelled) setAlldayDistsError(err instanceof Error ? err.message : "Failed to load All Day packs")
+      } finally {
+        if (!cancelled) setAlldayDistsLoading(false)
+      }
+    }
+    fetchAllDay()
+    return () => { cancelled = true }
+  }, [isAllDay])
+
+  useEffect(() => {
+    if (isAllDay) { setListingsLoading(false); return }
     async function fetchListings() {
       try {
         const res = await fetch(packListingsEndpoint)
@@ -670,92 +731,185 @@ export default function PacksPage() {
     { key: "bundle", label: "Bundles" },
   ]
 
-  // ── All Day packs view — synthetic Flowty-grouped packs, no EV yet ──────
+  // ── All Day packs view — full distribution catalog from pack_distributions ──
   if (isAllDay) {
-    const alldayListings = [...listings].sort((a, b) => {
-      if (alldaySort === "lowestAsk") return (a.lowestAsk || Infinity) - (b.lowestAsk || Infinity)
-      return (b.listingCount || 0) - (a.listingCount || 0)
-    })
+    const grouped: Record<string, AllDayDistribution[]> = {}
+    for (const t of ALLDAY_TIER_ORDER) grouped[t] = []
+    for (const d of alldayDists) {
+      const tier = normalizeAllDayTier(d.metadata?.tier)
+      if (!grouped[tier]) grouped[tier] = []
+      grouped[tier].push(d)
+    }
+    const total = alldayDists.length
+    const activeTiers = ALLDAY_TIER_ORDER.filter((t) => grouped[t] && grouped[t].length > 0)
+    const visibleTiers = alldayTierFilter === "all" ? activeTiers : activeTiers.filter((t) => t === alldayTierFilter)
+
     return (
       <div className="min-h-screen bg-black text-zinc-100">
         <div className="mx-auto max-w-[1400px] px-3 py-4 md:px-6">
           <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-            <div className="text-sm font-semibold text-white mb-1">NFL All Day — Secondary Market Packs</div>
-            <div className="text-xs text-zinc-400 leading-relaxed">
-              Packs below are grouped by set and tier from Flowty secondary market listings.
-              Official pack odds are not published by NFL All Day, so EV calculation is not
-              yet available for this collection.
-            </div>
-          </div>
-
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="text-[10px] uppercase tracking-wide text-zinc-500">Sort</span>
-            <button
-              onClick={() => setAlldaySort("lowestAsk")}
-              className={"rounded-lg px-3 py-1 text-xs font-semibold transition " + (alldaySort === "lowestAsk" ? "text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}
-              style={alldaySort === "lowestAsk" ? { backgroundColor: accent } : undefined}
-            >
-              Lowest Ask ↑
-            </button>
-            <button
-              onClick={() => setAlldaySort("totalListed")}
-              className={"rounded-lg px-3 py-1 text-xs font-semibold transition " + (alldaySort === "totalListed" ? "text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}
-              style={alldaySort === "totalListed" ? { backgroundColor: accent } : undefined}
-            >
-              Total Listed ↓
-            </button>
-          </div>
-
-          {listingsLoading && (
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-10 text-center text-sm text-zinc-500">
-              Loading All Day packs…
-            </div>
-          )}
-          {listingsError && (
-            <div className="rounded-xl border border-red-900 bg-red-950/30 p-4 text-sm text-red-300">{listingsError}</div>
-          )}
-          {!listingsLoading && !listingsError && alldayListings.length === 0 && (
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-10 text-center">
-              <div className="text-3xl mb-2 opacity-40">🏈</div>
-              <div className="text-sm font-semibold text-zinc-300 mb-1">No cached All Day packs yet</div>
-              <div className="text-xs text-zinc-500">
-                The listing cache runs on a schedule. Check back shortly, or trigger
-                <span className="font-mono text-zinc-400"> /api/allday-pack-listings </span>
-                with Bearer auth to seed it now.
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <div>
+                <div className="text-sm font-semibold text-white mb-1">NFL All Day — Pack Distributions</div>
+                <div className="text-xs text-zinc-400 leading-relaxed">
+                  Full catalog of on-chain pack distributions, grouped by tier. Marketplace buying
+                  happens at <span className="font-mono text-zinc-300">nflallday.com/marketplace</span>.
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-[10px] uppercase tracking-wide text-zinc-500">Distributions</div>
+                <div className="text-2xl font-black text-white">{total.toLocaleString()}</div>
               </div>
             </div>
-          )}
-          {!listingsLoading && alldayListings.length > 0 && (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {alldayListings.map((pack) => (
-                <div
-                  key={pack.packListingId}
-                  className="rounded-xl border border-zinc-800 bg-zinc-950 overflow-hidden"
+          </div>
+
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <span className="text-[10px] uppercase tracking-wide text-zinc-500">Tier</span>
+            <button
+              onClick={() => setAlldayTierFilter("all")}
+              className={"rounded-full px-3 py-1 text-xs font-semibold transition " + (alldayTierFilter === "all" ? "text-white" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-900")}
+              style={alldayTierFilter === "all" ? { backgroundColor: accent } : undefined}
+            >
+              All · {total}
+            </button>
+            {activeTiers.map((t) => {
+              const style = ALLDAY_TIER_STYLES[t]
+              const active = alldayTierFilter === t
+              return (
+                <button
+                  key={t}
+                  onClick={() => setAlldayTierFilter(t)}
+                  className="rounded-full px-3 py-1 text-xs font-semibold transition border"
+                  style={
+                    active
+                      ? { backgroundColor: style.color, color: "#0a0a0a", borderColor: style.color }
+                      : { backgroundColor: style.bg, color: style.color, borderColor: style.border }
+                  }
                 >
-                  {pack.imageUrl && (
-                    <div className="aspect-video overflow-hidden bg-zinc-900">
-                      <img src={pack.imageUrl} alt={pack.title} className="h-full w-full object-cover" />
-                    </div>
-                  )}
-                  <div className="p-3 space-y-2">
-                    <div className="text-sm font-semibold text-white leading-snug line-clamp-2">{pack.title}</div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className={"rounded border px-2 py-0.5 text-[10px] font-semibold capitalize " + tierBadge(pack.tier)}>{pack.tier}</span>
-                      <span className="text-[10px] text-zinc-500">{pack.listingCount} listed</span>
-                    </div>
-                    <div className="flex items-end justify-between">
-                      <div>
-                        <div className="text-[10px] uppercase tracking-wide text-zinc-500">Lowest Ask</div>
-                        <div className="text-lg font-black text-white">{pack.lowestAsk > 0 ? fmt(pack.lowestAsk) : "—"}</div>
+                  {style.label} · {grouped[t].length}
+                </button>
+              )
+            })}
+          </div>
+
+          {alldayDistsLoading && (
+            <div className="space-y-6">
+              {[0, 1].map((s) => (
+                <div key={s}>
+                  <div className="mb-3 h-5 w-40 rounded bg-zinc-900 animate-pulse" />
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <div key={i} className="rounded-xl border border-zinc-800 bg-zinc-950 overflow-hidden">
+                        <div className="aspect-square bg-zinc-900 animate-pulse" />
+                        <div className="p-3 space-y-2">
+                          <div className="h-4 w-3/4 rounded bg-zinc-900 animate-pulse" />
+                          <div className="h-3 w-full rounded bg-zinc-900 animate-pulse" />
+                          <div className="h-3 w-1/2 rounded bg-zinc-900 animate-pulse" />
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-[10px] uppercase tracking-wide text-zinc-500">EV</div>
-                        <div className="text-[10px] text-zinc-500 italic">coming soon</div>
-                      </div>
-                    </div>
+                    ))}
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {alldayDistsError && (
+            <div className="rounded-xl border border-red-900 bg-red-950/30 p-4 text-sm text-red-300">{alldayDistsError}</div>
+          )}
+
+          {!alldayDistsLoading && !alldayDistsError && total === 0 && (
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-10 text-center">
+              <div className="text-3xl mb-2 opacity-40">🏈</div>
+              <div className="text-sm font-semibold text-zinc-300 mb-1">No distributions cached</div>
+              <div className="text-xs text-zinc-500">Run the pack distribution ingest to populate <span className="font-mono text-zinc-400">pack_distributions</span>.</div>
+            </div>
+          )}
+
+          {!alldayDistsLoading && !alldayDistsError && total > 0 && (
+            <div className="space-y-8">
+              {visibleTiers.map((tier) => {
+                const dists = grouped[tier]
+                const style = ALLDAY_TIER_STYLES[tier]
+                return (
+                  <section key={tier}>
+                    <div className="mb-3 flex items-baseline gap-3">
+                      <h2 className="text-lg font-black tracking-tight" style={{ color: style.color }}>
+                        {style.label}
+                      </h2>
+                      <span
+                        className="rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+                        style={{ backgroundColor: style.bg, color: style.color, borderColor: style.border }}
+                      >
+                        {dists.length} {dists.length === 1 ? "distribution" : "distributions"}
+                      </span>
+                    </div>
+                    <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                      {dists.map((d) => {
+                        const thumb = d.metadata?.thumbnail
+                        const desc = d.metadata?.description ?? ""
+                        return (
+                          <div
+                            key={d.dist_id}
+                            className="group rounded-xl border border-zinc-800 bg-zinc-950 overflow-hidden flex flex-col transition hover:border-zinc-700"
+                          >
+                            <div className="aspect-square overflow-hidden bg-zinc-900 relative">
+                              {thumb ? (
+                                <img
+                                  src={thumb}
+                                  alt={d.title}
+                                  loading="lazy"
+                                  className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                                />
+                              ) : (
+                                <div className="h-full w-full flex items-center justify-center text-zinc-700 text-4xl">🏈</div>
+                              )}
+                              <span
+                                className="absolute top-2 left-2 rounded-full border px-2 py-0.5 text-[10px] font-semibold backdrop-blur"
+                                style={{ backgroundColor: style.bg, color: style.color, borderColor: style.border }}
+                              >
+                                {style.label}
+                              </span>
+                            </div>
+                            <div className="p-3 space-y-1.5 flex-1 flex flex-col">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="text-sm font-bold text-white leading-snug line-clamp-2" title={d.title}>
+                                  {d.title}
+                                </div>
+                                <a
+                                  href="https://nflallday.com/marketplace"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="shrink-0 text-zinc-500 hover:text-zinc-200 transition"
+                                  title="Open NFL All Day marketplace"
+                                  aria-label="Open marketplace"
+                                >
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                    <polyline points="15 3 21 3 21 9" />
+                                    <line x1="10" y1="14" x2="21" y2="3" />
+                                  </svg>
+                                </a>
+                              </div>
+                              {desc && (
+                                <div
+                                  className="text-[11px] text-zinc-400 leading-relaxed line-clamp-2 group-hover:line-clamp-none transition-all"
+                                  title={desc}
+                                >
+                                  {desc}
+                                </div>
+                              )}
+                              <div className="mt-auto pt-1 text-[9px] uppercase tracking-wide text-zinc-600 font-mono">
+                                #{d.dist_id}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </section>
+                )
+              })}
             </div>
           )}
         </div>
