@@ -47,11 +47,11 @@ export async function POST(req: NextRequest) {
       .from("saved_wallets")
       .upsert({
         owner_key: ownerKey,
-        wallet_address: walletAddr,
+        wallet_addr: walletAddr,
         username: username ?? null,
         nickname: displayName ?? null,
         accent_color: accentColor ?? "#E03A2F",
-      }, { onConflict: "owner_key,wallet_address" })
+      }, { onConflict: "owner_key,wallet_addr" })
       .select()
       .single();
 
@@ -79,7 +79,7 @@ export async function DELETE(req: NextRequest) {
       .from("saved_wallets")
       .delete()
       .eq("owner_key", ownerKey)
-      .eq("wallet_address", walletAddr);
+      .eq("wallet_addr", walletAddr);
 
     if (error) {
       console.error("[saved-wallets DELETE]", error.message, error.details, error.hint);
@@ -141,7 +141,7 @@ export async function PATCH(req: NextRequest) {
       .from("saved_wallets")
       .update(updatePayload)
       .eq("owner_key", ownerKey)
-      .eq("wallet_address", walletAddr)
+      .eq("wallet_addr", walletAddr)
       .select();
 
     if (error) {

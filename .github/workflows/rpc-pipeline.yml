@@ -112,6 +112,14 @@ jobs:
           if [ "$STATUS" != "200" ]; then
             echo "::warning::Listing cache returned $STATUS"
           fi
+      - name: Top Shot Listing Cache — Refresh via flowty-proxy edge fn (background)
+        continue-on-error: true
+        run: |
+          STATUS=$(curl -s -o /tmp/ts-cache.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            https://rip-packs-city.vercel.app/api/topshot-listing-cache)
+          echo "TopShot listing cache status: $STATUS"
+          cat /tmp/ts-cache.json
       - name: All Day Listing Cache — Refresh via flowty-proxy edge fn
         continue-on-error: true
         run: |
