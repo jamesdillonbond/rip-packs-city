@@ -1,64 +1,72 @@
 # Rip Packs City
 
 ## Overview
-Rip Packs City (RPC) is a collector intelligence platform for digital collectibles on the Flow blockchain. Founded by Trevor Dillon-Bond, an official Portland Trail Blazers Team Captain on NBA Top Shot. Five collections are supported: NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, and UFC Strike.
+Rip Packs City (RPC) is a collector intelligence platform for Flow blockchain NFT collectibles. Founded by Trevor Dillon-Bond, an Official Portland Trail Blazers Team Captain on NBA Top Shot.
 
-## Collections
+## Supported Collections
 
-### NBA Top Shot — /nba-top-shot
+### NBA Top Shot
 - Contract: 0x0b2a3299cc857e29 (TopShot)
 - Tiers: Common, Fandom, Rare, Legendary, Ultimate
-- Series: S1, S2, Summer 2021, S3, S4, 2023-24, 2024-25, 2025-26
-- Features: Overview, Collection (wallet analytics), Packs (EV calculator), Sniper, Market, Sets, Analytics
-- Edition keys formatted setID:playID
+- Features: Wallet analytics, FMV, sniper deals, badge tracker, set completion, pack EV
+- Badges: Rookie Year, Top Shot Debut, Rookie Premiere, Rookie of the Year, Rookie Mint, Championship Year, #1 Serial, Jersey Match, Perfect Mint
+- Series: Series 1, Series 2, Summer 2021, Series 3, Series 4, Series 2023-24, Series 2024-25, Series 2025-26
+- URLs: /nba-top-shot/collection, /nba-top-shot/sniper, /nba-top-shot/packs, /nba-top-shot/badges, /nba-top-shot/sets
 
-### NFL All Day — /nfl-all-day
+### NFL All Day
 - Contract: 0xe4cf4bdc1751c65d (AllDay)
-- Tiers: Common, Rare, Legendary, Ultimate
-- Features: Overview, Collection, Packs, Sniper, Sets, Badges (Rookie, Playoffs, Super Bowl, Pro Bowl, First Touchdown), Analytics
+- Tiers: Common, Uncommon, Rare, Legendary, Ultimate
+- Features: Wallet analytics, FMV, sniper deals, set completion, pack browser
+- URLs: /nfl-all-day/collection, /nfl-all-day/sniper, /nfl-all-day/packs, /nfl-all-day/sets
 
-### LaLiga Golazos — /laliga-golazos
+### LaLiga Golazos
 - Contract: 0x87ca73a41bb50ad5 (Golazos)
-- Tiers: Common, Rare, Legendary, Ultimate
-- Badges: El Clásico, Eterno Rival, Ídolos, Estrellas, Team Europa, Tiki Taka
-- Features: Overview, Collection, Packs, Sniper, Sets, Analytics
+- Tiers: Common, Fandom, Rare, Legendary
+- Features: Wallet analytics, FMV, sniper deals, set completion
+- URLs: /laliga-golazos/collection, /laliga-golazos/sniper, /laliga-golazos/sets
 
-### Disney Pinnacle — /disney-pinnacle
-- Contract: 0xedf9df96c92f4595 (Pinnacle)
-- Variants: Standard, Limited, Special, Premium, Elite, Legendary
-- Features: Overview, Collection, Sniper, Analytics
+### Disney Pinnacle
+- Contract: Pinnacle (Flow)
+- Tiers: Common, Uncommon, Rare, Legendary
+- Features: Wallet analytics, FMV, sniper deals
+- Marketplace: disneypinnacle.com (not Flowty)
+- URLs: /disney-pinnacle/collection, /disney-pinnacle/sniper
 
-### UFC Strike — /ufc
-- Contract: 0x329feb3ab062d289 (UFC_NFT) — original Flow contract; collection migrated to Aptos
-- 247 NFTs indexed on RPC
-- Features: Overview, Collection, Sniper
+### UFC Strike
+- Contract: 0x329feb3ab062d289 (UFC_NFT)
+- Tiers: Challenger, Contender, Fandom
+- Features: Wallet analytics, FMV, sniper deals
+- Note: UFC Strike migrated to Aptos in July 2025; RPC supports the remaining Flow collector base
+- URLs: /ufc/collection, /ufc/sniper
 
-## What RPC Does
-- **Wallet Analytics**: Real-time FMV, badge detection, serial premiums, Flowty asks
-- **Sniper Feed**: Deal finder comparing live listings against FMV across NBA Top Shot and Flowty
-- **Pack Tools**: Expected value calculator with pull odds
-- **Badge Tracker**: Rookie Year, Top Shot Debut, Championship, Fresh, computed serial badges
-- **Set Intelligence**: Completion tracking and bottleneck moments
-- **Analytics**: Acquisition origin, tier breakdown, series breakdown, liquid vs locked FMV, clarity score
-- **Public Profiles**: Shareable trophy cases at /share/[wallet]
+## Platform Features
+- **FMV Engine (v1.5.1)**: Outlier-filtered weighted average price, recency decay, liquidity rating (0–5), serial multiplier, deal rating (0–1), lowest ask flag. Refreshed every 20 minutes.
+- **Sniper Feed**: Real-time listings below FMV from Top Shot marketplace and Flowty. Deduped, sorted by recency.
+- **Wallet Analytics**: Any Flow wallet — moment inventory, FMV totals, cost basis, P&L, acquisition history, badge detection.
+- **Badge Tracker**: Browse all badge-eligible editions with premiums and FMV context.
+- **Set Completion**: Track owned vs needed, bottleneck finder, cheapest completion path.
+- **Pack Tools**: Pack browser with EV calculator, tier breakdown, buy/skip signal.
+- **AI Concierge**: Claude Sonnet-powered assistant on every page. Understands FMV, deals, badges, edition history, and cost basis.
+- **Public Profiles**: Shareable collector profiles with trophy cases and portfolio analytics.
 
-## FMV Methodology (v1.5.0)
-Weighted average price (WAP) with days_since_sale recency decay and sales_count_30d volume weighting. Refreshed every 20 minutes. Three confidence tiers: HIGH, MEDIUM, LOW. Illiquid editions use ask_proxy fallback (floor ask × 0.90).
+## FMV Methodology
+Weighted average price from recent on-chain sales with recency decay. Confidence tiers: HIGH (multiple recent sales), MEDIUM (sparse data), LOW (single sale or stale). Serial premiums applied for #1, jersey match, and perfect mint serials. Badge premiums are market-baked and not applied as multipliers.
 
-## Technical Details
-- Next.js 16 App Router with server-side rendering
-- Supabase (PostgreSQL) for storage
-- Flow Client Library (@onflow/fcl) for chain integration
-- On-chain sales indexer for NFTStorefrontV2.ListingCompleted and TopShotMarketV3.MomentPurchased
-- Public FMV API at /api/fmv (single + batch)
+## Technical Stack
+- Next.js 16 App Router, React 19, TypeScript 5, Tailwind 4
+- Supabase (PostgreSQL) — editions, FMV snapshots, listings cache, wallet cache
+- Flow blockchain via FCL — on-chain reads, cart/purchase via Dapper
+- Vercel Pro deployment
+- Data pipelines via cron-job.org (every 20 minutes)
 
 ## URL Structure
 - Homepage: /
-- Per-collection prefix: /{collection-id}/{page}
-  Example pages: /overview, /collection, /packs, /sniper, /badges, /sets, /market, /analytics
-- Shareable wallet cards: /share/[wallet]
+- About: /about
+- Collection pages: /{collection-id}/{page}
 - Profiles: /profile/[username]
+- API: /api/sniper-feed, /api/wallet-search, /api/edition-history, /api/market-analytics
 
 ## Contact
+- Site: https://rip-packs-city.vercel.app
+- Email: rippackscity@gmail.com
 - Twitter: @RipPacksCity
-- Website: https://rip-packs-city.vercel.app
