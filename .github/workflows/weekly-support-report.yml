@@ -1,5 +1,7 @@
 name: Weekly Support Report
 on:
+  push:
+    branches: []  # never trigger on push — schedule/manual only
   schedule:
     - cron: '0 14 * * 1'  # Every Monday 2pm UTC (9am ET)
   workflow_dispatch: # Manual trigger
