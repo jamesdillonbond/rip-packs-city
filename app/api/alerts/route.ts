@@ -1,7 +1,8 @@
 // app/api/alerts/route.ts
-// GET    /api/alerts?owner_key=X — fetch active alerts with live FMV/low_ask data
+// GET    /api/alerts?owner_key=X[&include_inactive=1] — fetch alerts with live FMV/low_ask data
 // POST   /api/alerts — upsert an alert
-// DELETE /api/alerts — deactivate alert(s)
+// PATCH  /api/alerts — toggle active state by id
+// DELETE /api/alerts — deactivate alert(s) by edition_key (body) OR by id (query)
 
 export const maxDuration = 10;
 
@@ -71,17 +72,21 @@ async function fetchMarketData(editionKeys: string[]) {
 
 export async function GET(req: NextRequest) {
   const owner_key = req.nextUrl.searchParams.get("owner_key");
+  const include_inactive = req.nextUrl.searchParams.get("include_inactive");
   if (!owner_key) {
     return NextResponse.json({ error: "Missing required parameter: owner_key" }, { status: 400 });
   }
 
   try {
-    const { data: alerts, error } = await supabase
+    let q = supabase
       .from("fmv_alerts")
       .select("*")
       .eq("owner_key", owner_key)
-      .eq("active", true)
       .order("created_at", { ascending: false });
+    if (!include_inactive || include_inactive === "0" || include_inactive === "false") {
+      q = q.eq("active", true);
+    }
+    const { data: alerts, error } = await q;
 
     if (error) throw new Error(error.message);
     if (!alerts || alerts.length === 0) return NextResponse.json([]);
@@ -175,8 +180,58 @@ export async function POST(req: NextRequest) {
   }
 }
 
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { id, owner_key, active } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: "Missing required field: id" }, { status: 400 });
+    }
+    if (!owner_key) {
+      return NextResponse.json({ error: "Missing required field: owner_key" }, { status: 400 });
+    }
+    if (typeof active !== "boolean") {
+      return NextResponse.json({ error: "active must be a boolean" }, { status: 400 });
+    }
+
+    const { data, error } = await supabase
+      .from("fmv_alerts")
+      .update({ active })
+      .eq("id", id)
+      .eq("owner_key", owner_key)
+      .select()
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (!data) return NextResponse.json({ error: "Alert not found" }, { status: 404 });
+
+    return NextResponse.json(data);
+  } catch (err: any) {
+    console.error("[alerts PATCH]", err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
 export async function DELETE(req: NextRequest) {
   try {
+    // Support id-based deletion via query string: DELETE /api/alerts?id=X&owner_key=Y
+    const qsId = req.nextUrl.searchParams.get("id");
+    const qsOwner = req.nextUrl.searchParams.get("owner_key");
+    if (qsId && qsOwner) {
+      const { data, error } = await supabase
+        .from("fmv_alerts")
+        .delete()
+        .eq("id", qsId)
+        .eq("owner_key", qsOwner)
+        .select();
+      if (error) throw new Error(error.message);
+      if (!data || data.length === 0) {
+        return NextResponse.json({ error: "Alert not found" }, { status: 404 });
+      }
+      return NextResponse.json({ success: true, deleted: data.length });
+    }
+
     const body = await req.json();
     const { owner_key, edition_key, alert_type } = body;
 

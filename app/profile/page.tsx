@@ -13,6 +13,7 @@ import WatchlistCard from "@/components/profile/WatchlistCard";
 import AchievementsCard from "@/components/profile/AchievementsCard";
 import CrossCollectionPortfolio from "@/components/profile/CrossCollectionPortfolio";
 import EmailDigestSubscribe from "@/components/profile/EmailDigestSubscribe";
+import PriceAlertsCard from "@/components/profile/PriceAlertsCard";
 
 // ─── TYPES ────────────────────────────────────────────────────
 interface SavedWallet {
@@ -1304,6 +1305,9 @@ function ProfilePageInner() {
 
         {/* EMAIL DIGEST */}
         <EmailDigestSubscribe walletAddress={savedWallets[0]?.wallet_addr ?? null} />
+
+        {/* PRICE ALERTS */}
+        {ownerKey && <PriceAlertsCard ownerKey={ownerKey} />}
 
         {ownerKey && <PortfolioSparkline ownerKey={ownerKey} currentFmv={totalFmv} onChange={setSparkChangePct} />}
 
