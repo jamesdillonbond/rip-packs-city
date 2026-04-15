@@ -306,7 +306,7 @@ const BADGE_SLUG_COLORS: Record<string, string> = {
 function BadgeIcon({ slug, size = 18 }: { slug: string; size?: number }) {
   const [errored, setErrored] = useState(false);
   const label = BADGE_SLUG_LABELS[slug] ?? slug;
-  const url = `https://nbatopshot.com/img/momentTags/static/${slug}.svg`;
+  const url = `/api/badge-image?name=${encodeURIComponent(slug)}`;
   if (errored) {
     return (
       <span

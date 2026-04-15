@@ -241,8 +241,17 @@ function getMint(row: MomentRow) { return row.mintCount ?? row.mintSize ?? null 
 function getTraits(row: MomentRow) { return row.specialSerialTraits ?? row.traits ?? [] }
 function getLocked(row: MomentRow) { return Boolean(row.isLocked ?? row.locked) }
 
+function proxyTopShotThumb(url: string): string {
+  // Rewrite direct Top Shot CDN URLs through our proxy to bypass hotlink blocks.
+  const m = url.match(/^https:\/\/assets\.nbatopshot\.com\/media\/([a-zA-Z0-9_-]+)(?:\/image)?(?:\?.*width=(\d+))?/)
+  if (!m) return url
+  const flowId = m[1]
+  const width = m[2] ? parseInt(m[2], 10) : 180
+  return `/api/moment-thumbnail?flowId=${encodeURIComponent(flowId)}&width=${width}`
+}
+
 function getThumbnailUrl(row: MomentRow, collectionSlug?: string): string | null {
-  if (row.thumbnailUrl) return row.thumbnailUrl
+  if (row.thumbnailUrl) return proxyTopShotThumb(row.thumbnailUrl)
   // UFC moments have IPFS thumbnail URLs stored on the edition; never fall back
   // to the NBA Top Shot CDN for non-Top-Shot collections.
   if (collectionSlug === "ufc") return null
@@ -253,10 +262,11 @@ function getThumbnailUrl(row: MomentRow, collectionSlug?: string): string | null
       return `https://assets.nbatopshot.com/resize/editions/${setID}_${playID}/play${playID}_capture_Hero_Black_2880_2880_default.jpg?width=100&quality=80`
     }
   }
-  // Final fallback: moment flow ID media URL (reliable for all Top Shot moments)
+  // Final fallback: moment flow ID media URL proxied through our API to avoid
+  // hotlink blocks from the Top Shot CDN.
   const flowId = row.flowId ?? row.momentId
   if (flowId) {
-    return `https://assets.nbatopshot.com/media/${flowId}/image?width=180`
+    return `/api/moment-thumbnail?flowId=${encodeURIComponent(flowId)}&width=180`
   }
   return null
 }
@@ -330,7 +340,7 @@ function badgeSlug(title: string): string {
 function BadgeIcon({ title, size = 18 }: { title: string; size?: number }) {
   const [errored, setErrored] = useState(false)
   const slug = badgeSlug(title)
-  const url = "https://nbatopshot.com/img/momentTags/static/" + slug + ".svg"
+  const url = "/api/badge-image?name=" + encodeURIComponent(slug)
   if (errored) return <BadgePill title={title} />
   return (
     <img
