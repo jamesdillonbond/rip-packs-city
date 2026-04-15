@@ -84,7 +84,7 @@ export default function MomentDetailModal({ moment, onClose }: MomentDetailModal
   const tierColor = TIER_COLORS[tierKey] || "#9ca3af";
   const imgUrl =
     getImageUrl(moment.imageUrlPrefix) ||
-    (moment.flowId ? `https://assets.nbatopshot.com/media/${moment.flowId}/image?width=600` : null);
+    (moment.flowId ? `/api/moment-thumbnail?flowId=${encodeURIComponent(moment.flowId)}&width=600` : null);
   const videoUrl = getVideoUrl(moment.imageUrlPrefix);
   const dealRating = typeof moment.dealRating === "number" ? Math.max(0, Math.min(1, moment.dealRating)) : null;
   const dealColor =

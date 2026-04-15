@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
       const normalized: any = {
         ...row,
         wallet_addr: row.wallet_address ?? row.wallet_addr,
-        display_name: row.nickname ?? row.display_name ?? null,
+        display_name: row.display_name ?? null,
         cached_fmv: row.cached_fmv_usd ?? row.cached_fmv ?? null,
         pinned_at: row.created_at ?? row.pinned_at ?? new Date().toISOString(),
       };
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
         owner_key: ownerKey,
         wallet_addr: walletAddr,
         username: username ?? null,
-        nickname: displayName ?? null,
+        display_name: displayName ?? null,
         accent_color: accentColor ?? "#E03A2F",
       }, { onConflict: "owner_key,wallet_addr" })
       .select()
