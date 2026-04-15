@@ -103,13 +103,55 @@ function FeedbackButtons({ messageId, sessionId, dbId, feedback: initialFeedback
   );
 }
 
-/* ── Default quick suggestions by page ─────────────────────────── */
+/* ── Default quick suggestions by page + collection ────────────── */
 const PAGE_DEFAULTS: Record<string, string[]> = {
-  sniper: ["Best deals right now", "Rare moments under $20", "Find me a LeBron deal", "What badges are hot?"],
-  badges: ["Most valuable badges?", "Rookie Year moments under $15", "Check badges for Wembanyama", "What is Top Shot Debut?"],
-  wallet: ["Analyze my portfolio", "What should I sell?", "My most undervalued moment?", "Sets I'm close to completing?"],
-  sets: ["Cheapest set to complete?", "What's in Run It Back?", "Best investment sets?", "Show me S8 sets"],
-  packs: ["Are packs worth buying?", "How does Pack EV work?", "Best value pack right now?", "What's inside the latest drop?"],
+  // NBA Top Shot
+  "sniper (nba-top-shot)": ["Best deals right now", "Rare moments under $20", "Find me a LeBron deal", "What badges are hot?"],
+  "badges (nba-top-shot)": ["Most valuable badges?", "Rookie Year moments under $15", "Check badges for Wembanyama", "What is Top Shot Debut?"],
+  "collection (nba-top-shot)": ["Analyze my portfolio", "What should I sell?", "My most undervalued moment?", "Sets I'm close to completing?"],
+  "sets (nba-top-shot)": ["Cheapest set to complete?", "What's in Run It Back?", "Best investment sets?", "Show me S8 sets"],
+  "packs (nba-top-shot)": ["Are packs worth buying?", "How does Pack EV work?", "Best value pack right now?", "What's inside the latest drop?"],
+  "overview (nba-top-shot)": ["Top sales today", "Hottest editions", "Market pulse", "Where do I start?"],
+  "market (nba-top-shot)": ["Show top discounts", "Lookup an edition", "Liquidity leaderboard", "Cheapest legendaries"],
+  "analytics (nba-top-shot)": ["What's my clarity score?", "Liquid vs locked breakdown", "Acquisition origin breakdown", "Tier breakdown"],
+
+  // NFL All Day
+  "sniper (nfl-all-day)": ["Best All Day deals", "Cheap legendaries", "Find me a Mahomes deal", "Rookie moments under $10"],
+  "collection (nfl-all-day)": ["Analyze my All Day wallet", "What should I sell?", "My best moments", "Set completion progress"],
+  "packs (nfl-all-day)": ["All Day pack EV", "Best value pack", "What tiers drop in this pack?", "Skip or buy?"],
+  "sets (nfl-all-day)": ["Cheapest All Day set", "Set bottlenecks", "Series 4 sets", "Playoffs sets"],
+  "badges (nfl-all-day)": ["Rookie badges", "Super Bowl badges", "Pro Bowl premiums", "First Touchdown moments"],
+  "overview (nfl-all-day)": ["Top All Day sales", "Market pulse", "Hottest editions", "Where do I start?"],
+  "analytics (nfl-all-day)": ["My All Day clarity score", "Liquid vs locked", "Tier breakdown", "Acquisition origin"],
+
+  // LaLiga Golazos
+  "sniper (laliga-golazos)": ["Best Golazos deals", "Cheap legendaries", "Find me a Messi moment", "El Clásico badges"],
+  "collection (laliga-golazos)": ["Analyze my Golazos wallet", "What should I sell?", "My best moments", "Set completion"],
+  "packs (laliga-golazos)": ["Golazos pack EV", "Best value pack", "Tier odds", "Skip or buy?"],
+  "sets (laliga-golazos)": ["Cheapest Golazos set", "Set bottlenecks", "Ídolos sets", "Estrellas sets"],
+  "overview (laliga-golazos)": ["Top Golazos sales", "Market pulse", "Hottest editions", "Where do I start?"],
+  "analytics (laliga-golazos)": ["My clarity score", "Liquid vs locked", "Tier breakdown", "Acquisition origin"],
+
+  // Disney Pinnacle
+  "sniper (disney-pinnacle)": ["Best Pinnacle deals", "Cheap variant pins", "Star Wars pins under $10", "Pixar pins"],
+  "collection (disney-pinnacle)": ["Analyze my Pinnacle wallet", "What should I sell?", "Variant breakdown", "My best pins"],
+  "overview (disney-pinnacle)": ["Top Pinnacle sales", "Hottest pins", "What is Pinnacle?", "Where do I start?"],
+  "analytics (disney-pinnacle)": ["My clarity score", "Variant breakdown", "Liquid vs locked", "Acquisition origin"],
+
+  // UFC Strike
+  "sniper (ufc)": ["Best UFC deals", "Cheap moments", "Find me a McGregor moment", "Title fights"],
+  "collection (ufc)": ["Analyze my UFC wallet", "My best moments", "What about the Aptos migration?"],
+  "overview (ufc)": ["UFC Strike status", "Aptos migration", "Hottest moments", "Where do I start?"],
+
+  // Generic fallbacks (page only)
+  sniper: ["Best deals right now", "Rare moments under $20", "Find me a deal", "What badges are hot?"],
+  badges: ["Most valuable badges?", "Rookie moments under $15", "Badge premiums", "What is Top Shot Debut?"],
+  collection: ["Analyze my portfolio", "What should I sell?", "My most undervalued moment?", "Set progress"],
+  sets: ["Cheapest set to complete?", "Best investment sets?", "Set bottlenecks", "Latest sets"],
+  packs: ["Are packs worth buying?", "How does Pack EV work?", "Best value pack right now?", "Tier odds"],
+  overview: ["Top sales today", "Hottest editions", "Market pulse", "Where do I start?"],
+  market: ["Show top discounts", "Lookup an edition", "Liquidity leaderboard", "Cheapest by tier"],
+  analytics: ["What's my clarity score?", "Liquid vs locked", "Tier breakdown", "Acquisition origin"],
 };
 const DEFAULT_SUGGESTIONS = ["Find me deals under $10", "How does FMV work?", "What are badges?", "Show me top discounts"];
 
@@ -165,9 +207,10 @@ export default function SupportChat({ pageContext, userWallet, walletConnected, 
     if (!isOpen || contextLoaded || messages.length > 0) return;
     setContextLoaded(true);
 
-    // Extract page name for defaults
-    const pageName = (pageContext || "").split("(")[0].trim().toLowerCase();
-    const defaultSuggestions = PAGE_DEFAULTS[pageName] || DEFAULT_SUGGESTIONS;
+    // Try full "page (collection)" key first, then fall back to page-only
+    const fullKey = (pageContext || "").trim().toLowerCase();
+    const pageName = fullKey.split("(")[0].trim();
+    const defaultSuggestions = PAGE_DEFAULTS[fullKey] || PAGE_DEFAULTS[pageName] || DEFAULT_SUGGESTIONS;
     setQuickSuggestions(defaultSuggestions);
 
     // Show instant static welcome — no waiting

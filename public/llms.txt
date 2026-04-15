@@ -1,29 +1,62 @@
 # Rip Packs City
 
 ## Overview
-Rip Packs City (RPC) is a collector intelligence platform for NBA Top Shot, NFL All Day, and Disney Pinnacle digital collectibles on the Flow blockchain. Founded by Trevor Dillon-Bond, an official Portland Trail Blazers Team Captain on NBA Top Shot.
+Rip Packs City (RPC) is a collector intelligence platform for digital collectibles on the Flow blockchain. Founded by Trevor Dillon-Bond, an official Portland Trail Blazers Team Captain on NBA Top Shot. Five collections are supported: NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, and UFC Strike.
+
+## Collections
+
+### NBA Top Shot — /nba-top-shot
+- Contract: 0x0b2a3299cc857e29 (TopShot)
+- Tiers: Common, Fandom, Rare, Legendary, Ultimate
+- Series: S1, S2, Summer 2021, S3, S4, 2023-24, 2024-25, 2025-26
+- Features: Overview, Collection (wallet analytics), Packs (EV calculator), Sniper, Market, Sets, Analytics
+- Edition keys formatted setID:playID
+
+### NFL All Day — /nfl-all-day
+- Contract: 0xe4cf4bdc1751c65d (AllDay)
+- Tiers: Common, Rare, Legendary, Ultimate
+- Features: Overview, Collection, Packs, Sniper, Sets, Badges (Rookie, Playoffs, Super Bowl, Pro Bowl, First Touchdown), Analytics
+
+### LaLiga Golazos — /laliga-golazos
+- Contract: 0x87ca73a41bb50ad5 (Golazos)
+- Tiers: Common, Rare, Legendary, Ultimate
+- Badges: El Clásico, Eterno Rival, Ídolos, Estrellas, Team Europa, Tiki Taka
+- Features: Overview, Collection, Packs, Sniper, Sets, Analytics
+
+### Disney Pinnacle — /disney-pinnacle
+- Contract: 0xedf9df96c92f4595 (Pinnacle)
+- Variants: Standard, Limited, Special, Premium, Elite, Legendary
+- Features: Overview, Collection, Sniper, Analytics
+
+### UFC Strike — /ufc
+- Contract: 0x329feb3ab062d289 (UFC_NFT) — original Flow contract; collection migrated to Aptos
+- 247 NFTs indexed on RPC
+- Features: Overview, Collection, Sniper
 
 ## What RPC Does
-- **Wallet Analytics**: Analyze any collector's wallet with real-time Fair Market Value (FMV), badge detection, serial premium calculations, and Flowty marketplace ask prices
-- **Sniper Feed**: Real-time deal finder that compares listings from both NBA Top Shot and Flowty marketplaces against FMV to surface undervalued moments
-- **Pack Tools**: Expected value calculator for NBA Top Shot pack drops with pull odds analysis
-- **Badge Tracker**: Explore badge editions including Top Shot Debut, Rookie Year, Championship, and computed serial badges
-- **Set Intelligence**: Track set completion progress, identify bottleneck moments, and find the cheapest completion path
-- **Public Profiles**: Shareable collector profiles with trophy cases and portfolio analytics
+- **Wallet Analytics**: Real-time FMV, badge detection, serial premiums, Flowty asks
+- **Sniper Feed**: Deal finder comparing live listings against FMV across NBA Top Shot and Flowty
+- **Pack Tools**: Expected value calculator with pull odds
+- **Badge Tracker**: Rookie Year, Top Shot Debut, Championship, Fresh, computed serial badges
+- **Set Intelligence**: Completion tracking and bottleneck moments
+- **Analytics**: Acquisition origin, tier breakdown, series breakdown, liquid vs locked FMV, clarity score
+- **Public Profiles**: Shareable trophy cases at /share/[wallet]
 
-## FMV Methodology
-RPC calculates Fair Market Value using a proprietary pipeline: weighted average price from recent sales, recency decay, sales volume confidence scoring, and serial/badge premium adjustments. FMV data is refreshed every 20 minutes via automated ingestion.
+## FMV Methodology (v1.5.0)
+Weighted average price (WAP) with days_since_sale recency decay and sales_count_30d volume weighting. Refreshed every 20 minutes. Three confidence tiers: HIGH, MEDIUM, LOW. Illiquid editions use ask_proxy fallback (floor ask × 0.90).
 
 ## Technical Details
-- Built on Next.js with server-side rendering
-- Data stored in Supabase (PostgreSQL)
-- Flow blockchain integration via FCL (Flow Client Library)
-- Aggregates listings from NBA Top Shot marketplace and Flowty
-- Public FMV API available for partner integrations
+- Next.js 16 App Router with server-side rendering
+- Supabase (PostgreSQL) for storage
+- Flow Client Library (@onflow/fcl) for chain integration
+- On-chain sales indexer for NFTStorefrontV2.ListingCompleted and TopShotMarketV3.MomentPurchased
+- Public FMV API at /api/fmv (single + batch)
 
 ## URL Structure
 - Homepage: /
-- Collection pages: /nba-top-shot/collection, /nba-top-shot/packs, /nba-top-shot/sniper, /nba-top-shot/badges, /nba-top-shot/sets
+- Per-collection prefix: /{collection-id}/{page}
+  Example pages: /overview, /collection, /packs, /sniper, /badges, /sets, /market, /analytics
+- Shareable wallet cards: /share/[wallet]
 - Profiles: /profile/[username]
 
 ## Contact
