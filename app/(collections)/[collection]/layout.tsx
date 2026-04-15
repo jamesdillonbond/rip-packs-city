@@ -2,75 +2,15 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { getCollection, publishedCollections, type Collection } from "@/lib/collections"
 import { CollectionTabBar } from "@/components/collection-tab-bar"
+import { collectionLayoutMetadata } from "@/lib/seo"
 import ActiveCollectionSync from "./ActiveCollectionSync"
 import CollectionSwitcher from "@/components/CollectionSwitcher"
-
-// ── Per-collection SEO metadata ────────────────────────────────────────────────
-const COLLECTION_META: Record<string, { title: string; description: string }> = {
-  "nba-top-shot": {
-    title: "NBA Top Shot Analytics — Rip Packs City",
-    description:
-      "Real-time FMV pricing, deal sniper, pack EV calculator, and collection analytics for NBA Top Shot collectors on Flow blockchain.",
-  },
-  "nfl-all-day": {
-    title: "NFL All Day Analytics — Rip Packs City",
-    description:
-      "Wallet analysis, FMV pricing, and marketplace intelligence for NFL All Day collectors on the Flow blockchain.",
-  },
-  "laliga-golazos": {
-    title: "LaLiga Golazos Analytics — Rip Packs City",
-    description:
-      "Wallet analysis, FMV pricing, and marketplace intelligence for LaLiga Golazos collectors on the Flow blockchain.",
-  },
-  "disney-pinnacle": {
-    title: "Disney Pinnacle Analytics — Rip Packs City",
-    description:
-      "Digital pin analytics, variant tracking, FMV pricing, and marketplace intelligence for Disney Pinnacle collectors on the Flow blockchain.",
-  },
-  "panini-blockchain": {
-    title: "Panini Blockchain — Collector Intelligence on Rip Packs City",
-    description:
-      "Live OpenSea market data and bridged card listings for Panini Blockchain digital trading cards. Ethereum bridge opened March 2026.",
-  },
-}
-
-const DEFAULT_META = {
-  title: "Rip Packs City — Collector Intelligence",
-  description:
-    "The smartest analytics platform for NBA Top Shot and NFL All Day collectors. FMV pricing, set intelligence, pack EV, and a live marketplace sniper.",
-}
 
 export async function generateMetadata(
   props: { params: Promise<{ collection: string }> }
 ): Promise<Metadata> {
   const params = await props.params
-  const collection = getCollection(params.collection)
-  if (!collection) return {}
-
-  const meta = COLLECTION_META[collection.id] ?? DEFAULT_META
-  const canonical = `https://rip-packs-city.vercel.app/${collection.id}`
-
-  return {
-    title: meta.title,
-    description: meta.description,
-    alternates: { canonical },
-    keywords: [collection.label, collection.sport, "FMV", "moment value", "collector tools", "sniper deals", "Flow blockchain"],
-    openGraph: {
-      title: meta.title,
-      description: meta.description,
-      url: canonical,
-      siteName: "Rip Packs City",
-      type: "website",
-      images: [{ url: "/og-default.png", width: 1200, height: 630 }],
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: meta.title,
-      description: meta.description,
-      site: "@rippackscity",
-      images: ["/og-default.png"],
-    },
-  }
+  return collectionLayoutMetadata(params.collection)
 }
 
 // ── Layout — renders ticker, breadcrumb, collection header, tabs ──────────────

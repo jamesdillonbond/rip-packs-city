@@ -151,9 +151,79 @@ export function pageMetadata(page: string, collectionLabel: string, collectionId
   }
 }
 
-// Back-compat wrapper — defaults to NBA Top Shot.
-export function collectionPageMetadata(page: string, collectionLabel = 'NBA Top Shot'): Metadata {
-  return pageMetadata(page, collectionLabel, 'nba-top-shot')
+// Per-collection layout metadata (used by [collection]/layout.tsx).
+const COLLECTION_LAYOUT_META: Record<string, PageMeta> = {
+  'nba-top-shot': {
+    title: 'NBA Top Shot Analytics — Rip Packs City',
+    description:
+      'Real-time FMV pricing, deal sniper, pack EV calculator, and collection analytics for NBA Top Shot collectors on Flow blockchain.',
+  },
+  'nfl-all-day': {
+    title: 'NFL All Day Analytics — Rip Packs City',
+    description:
+      'Wallet analysis, FMV pricing, set tracking, and marketplace intelligence for NFL All Day collectors on Flow blockchain.',
+  },
+  'laliga-golazos': {
+    title: 'LaLiga Golazos Analytics — Rip Packs City',
+    description:
+      'Wallet analysis, FMV pricing, set tracking, and marketplace intelligence for LaLiga Golazos collectors on Flow blockchain.',
+  },
+  'disney-pinnacle': {
+    title: 'Disney Pinnacle Analytics — Rip Packs City',
+    description:
+      'Digital pin analytics, variant tracking, FMV pricing, and marketplace intelligence for Disney Pinnacle collectors on Flow blockchain.',
+  },
+  'ufc': {
+    title: 'UFC Strike Analytics — Rip Packs City',
+    description:
+      'Wallet analysis and marketplace intelligence for UFC Strike moments. Collection migrated to Aptos; 247 NFTs indexed.',
+  },
+}
+
+const COLLECTION_LABELS: Record<string, string> = {
+  'nba-top-shot': 'NBA Top Shot',
+  'nfl-all-day': 'NFL All Day',
+  'laliga-golazos': 'LaLiga Golazos',
+  'disney-pinnacle': 'Disney Pinnacle',
+  'ufc': 'UFC Strike',
+  'panini-blockchain': 'Panini Blockchain',
+}
+
+export function collectionLayoutMetadata(collectionId: string): Metadata {
+  const meta = COLLECTION_LAYOUT_META[collectionId] ?? {
+    title: 'Rip Packs City — Collector Intelligence',
+    description:
+      'The smartest analytics platform for NBA Top Shot and NFL All Day collectors. FMV pricing, set intelligence, pack EV, and a live marketplace sniper.',
+  }
+  const canonical = `${BASE_URL}/${collectionId}`
+  const label = COLLECTION_LABELS[collectionId] ?? 'Flow'
+  return {
+    title: meta.title,
+    description: meta.description,
+    alternates: { canonical },
+    keywords: [label, 'FMV', 'moment value', 'collector tools', 'sniper deals', 'Flow blockchain'],
+    openGraph: {
+      title: meta.title,
+      description: meta.description,
+      url: canonical,
+      siteName: 'Rip Packs City',
+      type: 'website',
+      images: [{ url: '/og-default.png', width: 1200, height: 630 }],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: meta.title,
+      description: meta.description,
+      site: '@rippackscity',
+      images: ['/og-default.png'],
+    },
+  }
+}
+
+// Multi-collection page metadata. Accepts a collection ID and resolves the label.
+export function collectionPageMetadata(page: string, collectionId = 'nba-top-shot'): Metadata {
+  const label = COLLECTION_LABELS[collectionId] ?? 'Flow'
+  return pageMetadata(page, label, collectionId)
 }
 
 export function profilePageMetadata(username: string): Metadata {

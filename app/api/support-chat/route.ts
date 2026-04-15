@@ -201,8 +201,24 @@ Use this context naturally in welcome messages and recommendations.`
     ? `\n## User Context\n- User has a wallet connected but address not yet provided.`
     : "";
 
+  // Detect active collection from pageContext (e.g. "sniper (nfl-all-day)")
+  const ctxLower = (pageContext || "").toLowerCase();
+  let activeCollection: "nba-top-shot" | "nfl-all-day" | "laliga-golazos" | "disney-pinnacle" | "ufc" = "nba-top-shot";
+  if (ctxLower.includes("nfl-all-day") || ctxLower.includes("all day")) activeCollection = "nfl-all-day";
+  else if (ctxLower.includes("laliga") || ctxLower.includes("golazos")) activeCollection = "laliga-golazos";
+  else if (ctxLower.includes("pinnacle") || ctxLower.includes("disney")) activeCollection = "disney-pinnacle";
+  else if (ctxLower.includes("ufc")) activeCollection = "ufc";
+
+  const collectionFocus: Record<string, string> = {
+    "nba-top-shot": "User is browsing NBA Top Shot. Default to TopShot context (tiers Common/Fandom/Rare/Legendary/Ultimate, badges like Top Shot Debut/Rookie Year, series S1-S8). Use NBA player names and sets.",
+    "nfl-all-day": "User is browsing NFL All Day (contract 0xe4cf4bdc1751c65d). Default to All Day context — NFL players, Rookie/Playoffs/Super Bowl/Pro Bowl/First Touchdown badges. Do NOT default to Top Shot terminology.",
+    "laliga-golazos": "User is browsing LaLiga Golazos (contract 0x87ca73a41bb50ad5). Default to soccer context — Spanish/European players, El Clásico/Eterno Rival/Ídolos/Estrellas/Team Europa/Tiki Taka badges. Do NOT default to Top Shot terminology.",
+    "disney-pinnacle": "User is browsing Disney Pinnacle (contract 0xedf9df96c92f4595). Default to Disney/Pixar/Star Wars pin context — variants (Standard/Limited/Special/Premium/Elite/Legendary). No badges, no NBA players.",
+    "ufc": "User is browsing UFC Strike. The collection migrated from Flow (contract 0x329feb3ab062d289) to Aptos in late 2025; RPC has 247 NFTs indexed from the Flow side. Be honest if asked about the migration.",
+  };
+
   const pageSection = pageContext
-    ? `\n## Current Page\nUser is on: ${pageContext}\nTailor your responses to this context — e.g., on Sniper, focus on deals; on Market, focus on browsing and filtering; on Collection, focus on portfolio insights.`
+    ? `\n## Current Page\nUser is on: ${pageContext}\nActive collection: ${activeCollection}\n${collectionFocus[activeCollection]}\nTailor responses to this context — on Sniper, focus on deals; on Market, focus on browsing/filtering; on Collection, focus on portfolio insights.`
     : "";
 
   return `You are the RPC Assistant — the official AI concierge for Rip Packs City, the sharpest collector intelligence platform for Flow blockchain digital collectibles.
