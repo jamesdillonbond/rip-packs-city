@@ -10,6 +10,7 @@ import {
 import { buildEditionSeedCandidate } from "@/lib/edition-market-seed"
 import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key"
 import { getCollection } from "@/lib/collections"
+import ExplainButton from "@/components/ExplainButton"
 import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
 
 const COLLECTION_UUID_BY_SLUG: Record<string, string> = {
@@ -1542,6 +1543,7 @@ export default function WalletPage() {
                 <div className="text-[10px] uppercase tracking-widest text-zinc-500 flex items-center gap-2">
                   <span>Wallet FMV</span>
                   {walletSummaryLoading && <span className="inline-block h-1.5 w-1.5 rounded-full bg-zinc-600 animate-pulse" />}
+                  <ExplainButton context={`Wallet ${connectedWallet || ownerKey || input.trim()} on ${collectionSlug}`} question="How is my total portfolio FMV calculated?" />
                 </div>
                 <div className="text-xl font-black text-white">
                   {(function() {
@@ -1919,8 +1921,8 @@ export default function WalletPage() {
                           <div className="space-y-1 text-sm">
                             <div>Low Ask: {formatCurrency(row.lowAsk ?? getBestAsk(row))}</div>
                             <div>Best Offer: {formatCurrency(row.bestOffer ?? row.editionBestOffer)}</div>
-                            <div>FMV: {fmv.text}</div>
-                            <div>Confidence: {confidenceLabel(row.marketConfidence).label}</div>
+                            <div>FMV: {fmv.text} <ExplainButton context={`${row.playerName ?? ""} — ${row.setName ?? ""} (${row.editionKey ?? ""}) FMV ${fmv.text}`} question="How is this FMV calculated?" /></div>
+                            <div>Confidence: {confidenceLabel(row.marketConfidence).label} <ExplainButton context={`${row.playerName ?? ""} — confidence ${confidenceLabel(row.marketConfidence).label}`} question="What does this confidence level mean?" /></div>
                             <div>Held: {editionCounts.owned} / Locked: {editionCounts.locked}</div>
                           </div>
                         </div>

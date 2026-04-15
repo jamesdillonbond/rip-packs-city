@@ -908,6 +908,7 @@ export async function POST(req: NextRequest) {
       conversationHistory = [],
       marketPulse,
       dailyDeal,
+      stream: useStream = false,
     } = body;
 
     if (!message?.trim()) {
@@ -936,15 +937,54 @@ export async function POST(req: NextRequest) {
     let iterations = 0;
     const MAX_ITERATIONS = 5;
 
-    while (iterations < MAX_ITERATIONS) {
-      iterations++;
-      const response = await anthropic.messages.create({
+    // Streaming setup — when useStream, we own a TransformStream and forward
+    // text deltas as they arrive. Tool-use iterations don't push text; the UI
+    // sees a natural pause and keeps the assistant message growing.
+    let streamWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
+    let streamResponse: Response | null = null;
+    const encoder = new TextEncoder();
+    if (useStream) {
+      const ts = new TransformStream<Uint8Array, Uint8Array>();
+      streamWriter = ts.writable.getWriter();
+      streamResponse = new Response(ts.readable, {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          "X-RPC-Stream": "1",
+          "X-Accel-Buffering": "no",
+        },
+      });
+    }
+
+    const runIterationStreaming = async () => {
+      const stream = anthropic.messages.stream({
         model: "claude-sonnet-4-20250514",
         max_tokens: 1024,
         system: systemPrompt,
         tools: TOOLS,
         messages: currentMessages,
       });
+      stream.on("text", (text: string) => {
+        if (streamWriter) {
+          streamWriter.write(encoder.encode(text)).catch(() => {});
+        }
+      });
+      return await stream.finalMessage();
+    };
+
+    // Background task that runs the tool loop and writes the final metadata.
+    const runLoop = async () => {
+     while (iterations < MAX_ITERATIONS) {
+      iterations++;
+      const response = useStream
+        ? await runIterationStreaming()
+        : await anthropic.messages.create({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 1024,
+            system: systemPrompt,
+            tools: TOOLS,
+            messages: currentMessages,
+          });
 
       if (response.stop_reason === "end_turn") {
         finalResponse = response.content
@@ -993,41 +1033,65 @@ export async function POST(req: NextRequest) {
         .join("\n")
         .trim();
       break;
+     }
+    };
+
+    const finalize = async () => {
+      if (!finalResponse) {
+        finalResponse = "That query was too complex for me to handle in time. Try breaking it down — for example, ask me for 'Blazers deals' first, then ask about specific badges. You can also check the Sniper page directly at /nba-top-shot/sniper for the full live feed.";
+      }
+      if (escalated) {
+        finalResponse += "\n\nYou can also DM us directly at https://twitter.com/RipPacksCity for a faster response.";
+      }
+
+      const playerSearched =
+        usedTools.includes("search_catalog_deals") || usedTools.includes("search_live_deals")
+          ? body.message.match(/\b([A-Z][a-z]+ [A-Z][a-z]+)\b/)?.[0] ?? undefined
+          : undefined;
+
+      const category = classifyCategory(message);
+
+      let messageId: number | null = null;
+      try {
+        const { data: ins } = await supabase.from("support_conversations").insert({
+          session_id: sessionId,
+          user_message: message,
+          bot_response: finalResponse,
+          escalated,
+          escalation_reason: escalationReason ?? null,
+          category,
+          resolved: !escalated,
+          user_wallet: userWallet ?? null,
+          page_context: pageContext ?? null,
+        }).select("id").single();
+        messageId = ins?.id ?? null;
+      } catch { /* non-fatal */ }
+
+      updateSession(sessionId, category, message, playerSearched).catch(() => {});
+
+      return { response: finalResponse, escalated, escalationReason, category, messageId };
+    };
+
+    if (useStream && streamResponse && streamWriter) {
+      // Run loop + finalize in the background and close the stream when done.
+      (async () => {
+        try {
+          await runLoop();
+        } catch (err) {
+          try { await streamWriter!.write(encoder.encode("\n\n[stream error]")); } catch {}
+        }
+        const meta = await finalize();
+        try {
+          await streamWriter!.write(encoder.encode("\x1e" + JSON.stringify(meta)));
+        } catch {}
+        try { await streamWriter!.close(); } catch {}
+      })();
+      return streamResponse;
     }
 
-    if (!finalResponse) {
-      finalResponse = "That query was too complex for me to handle in time. Try breaking it down — for example, ask me for 'Blazers deals' first, then ask about specific badges. You can also check the Sniper page directly at /nba-top-shot/sniper for the full live feed.";
-    }
-
-    if (escalated) {
-      finalResponse += "\n\nYou can also DM us directly at https://twitter.com/RipPacksCity for a faster response.";
-    }
-
-    const playerSearched =
-      usedTools.includes("search_catalog_deals") || usedTools.includes("search_live_deals")
-        ? body.message.match(/\b([A-Z][a-z]+ [A-Z][a-z]+)\b/)?.[0] ?? undefined
-        : undefined;
-
-    const category = classifyCategory(message);
-
-    try {
-      await supabase.from("support_conversations").insert({
-        session_id: sessionId,
-        user_message: message,
-        bot_response: finalResponse,
-        escalated,
-        escalation_reason: escalationReason ?? null,
-        category,
-        resolved: !escalated,
-        user_wallet: userWallet ?? null,
-        page_context: pageContext ?? null,
-      });
-    } catch { /* non-fatal */ }
-
-    // Fire-and-forget session memory write-back — must not block the response
-    updateSession(sessionId, category, message, playerSearched).catch(() => {})
-
-    return NextResponse.json({ response: finalResponse, escalated, escalationReason, category });
+    await runLoop();
+    const meta = await finalize();
+    return NextResponse.json(meta);
   } catch (err: any) {
     console.error("[support-chat] Error:", err);
     return NextResponse.json(

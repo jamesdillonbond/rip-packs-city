@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import { CartProvider } from "@/lib/cart/CartContext"
 import { rootMetadata, organizationJsonLd } from "@/lib/seo"
 import WalletPreloader from "@/components/WalletPreloader"
+import OnboardingModal from "@/components/OnboardingModal"
 
 export const metadata: Metadata = rootMetadata
 
@@ -24,6 +25,7 @@ export default function RootLayout({
         />
         <CartProvider>
           <WalletPreloader />
+          <OnboardingModal />
           {children}
         </CartProvider>
       </body>
