@@ -35,6 +35,36 @@ interface TrophyRow {
   tier: string | null;
 }
 
+interface AchievementRow {
+  achievement_key: string;
+  tier: string;
+}
+
+const ACH_EMOJI: Record<string, string> = {
+  pack_hunter: "🎒",
+  diamond_hands: "💎",
+  serial_sniper: "🎯",
+  trophy_curator: "🏆",
+  challenge_accepted: "⚡",
+  series_collector: "📚",
+  big_spender: "💰",
+};
+
+function achTierColor(tier: string): string {
+  switch ((tier || "").toLowerCase()) {
+    case "bronze":
+      return "#CD7F32";
+    case "silver":
+      return "#C0C0C0";
+    case "gold":
+      return "#F59E0B";
+    case "platinum":
+      return "#E0E0FF";
+    default:
+      return "#FFFFFF";
+  }
+}
+
 function fmtDollars(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "$0";
   if (n >= 1_000_000) return "$" + (n / 1_000_000).toFixed(1) + "M";
@@ -128,7 +158,7 @@ export async function GET(
     if (!username || !SUPABASE_URL || !SERVICE_KEY) return renderFallback();
 
     const enc = encodeURIComponent(username);
-    const [bios, wallets, trophies] = await Promise.all([
+    const [bios, wallets, trophies, achievements] = await Promise.all([
       fetchJson<BioRow>(
         `${SUPABASE_URL}/rest/v1/profile_bio?owner_key=eq.${enc}&select=display_name,tagline,accent_color,avatar_url,favorite_team&limit=1`,
       ),
@@ -137,6 +167,9 @@ export async function GET(
       ),
       fetchJson<TrophyRow>(
         `${SUPABASE_URL}/rest/v1/trophy_moments?owner_key=eq.${enc}&select=slot,player_name,thumbnail_url,tier&order=slot.asc&limit=6`,
+      ),
+      fetchJson<AchievementRow>(
+        `${SUPABASE_URL}/rest/v1/profile_achievements?owner_key=eq.${enc}&select=achievement_key,tier&order=unlocked_at.asc`,
       ),
     ]);
 
@@ -372,6 +405,53 @@ export async function GET(
                   </div>
                 ))}
               </div>
+
+              {/* Achievement badges row */}
+              {achievements.length > 0 && (
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 14,
+                    marginTop: 18,
+                    alignItems: "center",
+                  }}
+                >
+                  {achievements.slice(0, 6).map((a, i) => {
+                    const emoji = ACH_EMOJI[a.achievement_key] ?? "★";
+                    const dot = achTierColor(a.tier);
+                    return (
+                      <div
+                        key={i}
+                        style={{
+                          position: "relative",
+                          display: "flex",
+                          width: 28,
+                          height: 28,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <span style={{ fontSize: 20, lineHeight: 1, display: "flex" }}>
+                          {emoji}
+                        </span>
+                        <div
+                          style={{
+                            position: "absolute",
+                            right: -2,
+                            bottom: -2,
+                            width: 6,
+                            height: 6,
+                            borderRadius: 999,
+                            background: dot,
+                            border: "1px solid #0a0a0d",
+                            display: "flex",
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* RIGHT: trophy fan */}
