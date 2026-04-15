@@ -102,7 +102,7 @@ jobs:
             https://rip-packs-city.vercel.app/api/backfill-player-names)
           echo "Player names backfill status: $STATUS"
           cat /tmp/player-names.json
-      - name: Listing Cache — Refresh Flowty listings
+      - name: Listing Cache — Refresh Flowty listings (Top Shot)
         run: |
           STATUS=$(curl -s -o /tmp/cache.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
@@ -112,6 +112,22 @@ jobs:
           if [ "$STATUS" != "200" ]; then
             echo "::warning::Listing cache returned $STATUS"
           fi
+      - name: All Day Listing Cache — Refresh via flowty-proxy edge fn
+        continue-on-error: true
+        run: |
+          STATUS=$(curl -s -o /tmp/ad-cache.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            https://rip-packs-city.vercel.app/api/allday-listing-cache)
+          echo "AllDay listing cache status: $STATUS"
+          cat /tmp/ad-cache.json
+      - name: Golazos Listing Cache — Refresh via flowty-proxy edge fn
+        continue-on-error: true
+        run: |
+          STATUS=$(curl -s -o /tmp/gz-cache.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            https://rip-packs-city.vercel.app/api/golazos-listing-cache)
+          echo "Golazos listing cache status: $STATUS"
+          cat /tmp/gz-cache.json
       - name: Backfill — Ingest historical sales
         run: |
           STATUS=$(curl -s -o /tmp/backfill.json -w "%{http_code}" -X POST \
