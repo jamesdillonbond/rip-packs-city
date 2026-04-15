@@ -1016,7 +1016,7 @@ export default function WalletPage() {
     return { momentRows: withFmv, totalCount: json.total_count ?? 0 }
   }
 
-  async function maybePatchProfileStats(query: string, resultRows: MomentRow[], resultSummary: WalletSearchResponse["summary"]) {
+  async function maybePatchProfileStats(query: string, resultRows: MomentRow[], resultSummary: WalletSearchResponse["summary"], resolvedAddress?: string | null) {
     const key = getOwnerKey()
     if (!key) return
     try {
@@ -1025,8 +1025,11 @@ export default function WalletPage() {
       const d = await res.json()
       const wallets: any[] = d.wallets ?? []
       const q = query.toLowerCase().trim()
+      const ra = resolvedAddress ? resolvedAddress.toLowerCase() : null
       const matched = wallets.find(function(w) {
-        return (w.username ?? "").toLowerCase() === q || (w.wallet_addr ?? "").toLowerCase() === q
+        const addr = (w.wallet_addr ?? "").toLowerCase()
+        const user = (w.username ?? "").toLowerCase()
+        return addr === q || user === q || (ra != null && addr === ra)
       })
       if (!matched) return
       let totalFmv = walletTotalFmv ?? 0
@@ -1186,7 +1189,7 @@ export default function WalletPage() {
                 }),
               }).catch(function() {})
             }
-            maybePatchProfileStats(trimmed, liveRows, json.summary).catch(function() {})
+            maybePatchProfileStats(trimmed, liveRows, json.summary, (json as any).resolvedAddress ?? null).catch(function() {})
           })
           .catch(function() {})
       }
