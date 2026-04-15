@@ -407,13 +407,13 @@ export async function POST(req: NextRequest) {
     let insertErrors = 0;
     for (let i = 0; i < listings.length; i += 25) {
       const chunk = listings.slice(i, i + 25);
-      const result = await supabase.from("cached_listings").upsert(chunk, { onConflict: "id" });
+      const result = await supabase.from("cached_listings").upsert(chunk, { onConflict: "flow_id" });
       if (result.error) {
         console.log("[listing-cache] Upsert chunk " + i + " error: " + result.error.message);
         insertErrors++;
         // Try one by one to pinpoint bad rows
         for (let j = 0; j < chunk.length; j++) {
-          const single = await supabase.from("cached_listings").upsert([chunk[j]], { onConflict: "id" });
+          const single = await supabase.from("cached_listings").upsert([chunk[j]], { onConflict: "flow_id" });
           if (single.error) {
             console.log("[listing-cache] Bad row " + (i + j) + " id=" + chunk[j].id + ": " + single.error.message);
           } else {

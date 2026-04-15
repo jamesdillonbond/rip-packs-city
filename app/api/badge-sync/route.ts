@@ -381,12 +381,30 @@ export async function POST(req: NextRequest) {
     if (i + BATCH_SIZE < rows.length) await sleep(BATCH_DELAY_MS)
   }
 
+  // Refresh AD + Golazos badges via their seed endpoints (pattern-based
+  // classification over editions.set_name — no GQL sweep required).
+  const baseUrl = req.nextUrl.origin
+  const token = process.env.INGEST_SECRET_TOKEN ?? ""
+  const seedResults: Record<string, unknown> = {}
+  for (const slug of ["seed-allday-badges", "seed-golazos-badges"] as const) {
+    try {
+      const res = await fetch(`${baseUrl}/api/${slug}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      seedResults[slug] = res.ok ? await res.json() : { status: res.status }
+    } catch (err) {
+      seedResults[slug] = { error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     collected: rows.length,
     upserted,
     upsertErrors,
     sweepCounts,
+    seedResults,
     durationMs: Date.now() - startedAt,
   })
 }
