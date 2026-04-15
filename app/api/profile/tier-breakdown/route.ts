@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   try {
     const { data: wallets, error: walletsError } = await supabase
       .from("saved_wallets")
-      .select("wallet_address")
+      .select("wallet_addr")
       .eq("owner_key", ownerKey);
 
     if (walletsError) {
@@ -30,10 +30,10 @@ export async function GET(req: NextRequest) {
     const aggregate: Record<string, number> = {};
     let total = 0;
 
-    for (const w of (wallets ?? []) as Array<{ wallet_address: string }>) {
-      const addr = w.wallet_address?.startsWith("0x")
-        ? w.wallet_address
-        : "0x" + (w.wallet_address ?? "");
+    for (const w of (wallets ?? []) as Array<{ wallet_addr: string }>) {
+      const addr = w.wallet_addr?.startsWith("0x")
+        ? w.wallet_addr
+        : "0x" + (w.wallet_addr ?? "");
       if (!addr || addr === "0x") continue;
 
       const { data, error } = await (supabase as any).rpc("get_wallet_tier_counts", {

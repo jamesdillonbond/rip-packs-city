@@ -27,14 +27,14 @@ export async function GET(req: NextRequest) {
   try {
     const { data: wallets, error: walletsErr } = await supabase
       .from("saved_wallets")
-      .select("wallet_address")
+      .select("wallet_addr")
       .eq("owner_key", ownerKey)
     if (walletsErr) {
       return NextResponse.json({ error: walletsErr.message }, { status: 500 })
     }
 
     const addrs = (wallets ?? [])
-      .map((w: any) => w.wallet_address)
+      .map((w: any) => w.wallet_addr)
       .filter((a: any): a is string => typeof a === "string" && a.length > 0)
 
     const merged = new Map<
