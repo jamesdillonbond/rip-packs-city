@@ -1224,85 +1224,57 @@ export default function PacksPage() {
             </div>
           )}
           {!listingsLoading && filteredListings.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[750px] border-collapse text-sm">
-                <thead className="bg-zinc-900">
-                  <tr className="border-b border-zinc-800 text-left text-[11px] uppercase tracking-wide text-zinc-500">
-                    <th className="p-3"><button onClick={() => toggleSort("title")} className="hover:text-white">{"Pack" + sortIndicator("title")}</button></th>
-                    <th className="p-3"><button onClick={() => toggleSort("tier")} className="hover:text-white">{"Tier" + sortIndicator("tier")}</button></th>
-                    <th className="p-3">Series</th>
-                    <th className="p-3"><button onClick={() => toggleSort("momentsPerPack")} className="hover:text-white">{"Slots" + sortIndicator("momentsPerPack")}</button></th>
-                    <th className="p-3"><button onClick={() => toggleSort("retailPrice")} className="hover:text-white">{"Retail" + sortIndicator("retailPrice")}</button></th>
-                    <th className="p-3"><button onClick={() => toggleSort("lowestAsk")} className="hover:text-white">{"Lowest Ask" + sortIndicator("lowestAsk")}</button></th>
-                    <th className="p-3"><button onClick={() => toggleSort("grossEV")} className="hover:text-white">{"Gross EV" + sortIndicator("grossEV")}</button></th>
-                    <th className="p-3">
-                      <button onClick={() => toggleSort("valueRatio")} className="hover:text-white">{"Value" + sortIndicator("valueRatio")}</button>
-                      <div className="text-[9px] text-zinc-600 font-normal normal-case">ratio / bundle Δ</div>
-                    </th>
-                    {hasWalletData && <th className="p-3"><button onClick={() => toggleSort("owned")} className="hover:text-white">{"Owned" + sortIndicator("owned")}</button></th>}
-                    <th className="p-3"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredListings.map((listing) => {
-                    const ownedCount = ownedPacks[listing.distId] ?? 0
-                    const isSelected = selectedPack?.packListingId === listing.packListingId
-                    const ptBadge = packTypeBadge(listing.packType)
-                    const isBundle = listing.packType === "bundle"
-                    const arb = isBundle ? bundleArbitrage[listing.distId] : null
-                    const ev = evCache[listing.packListingId]
-                    const ratio = ev && !ev.loading && !ev.error ? ev.valueRatio : null
-                    const evTint = ratio != null && ratio >= 1.0 ? "border-l-2 border-l-green-500/60 bg-green-950/10" : ratio != null && ratio < 0.8 ? "border-l-2 border-l-red-500/40 bg-red-950/10" : ""
-                    return (
-                      <tr key={listing.packListingId}
-                        className={"border-b border-zinc-800 " + evTint + " " + (canAnalyzeEV(listing.packType) ? "hover:bg-zinc-900/50 cursor-pointer" : "opacity-75") + " " + (isSelected ? "bg-zinc-900/70" : "")}
-                        onClick={() => canAnalyzeEV(listing.packType) ? openEvModal(listing) : undefined}>
-                        <td className="p-3">
-                          <div className="flex items-center gap-3">
-                            {listing.imageUrl && <img src={listing.imageUrl} alt={listing.title} className="h-10 w-10 rounded object-cover flex-shrink-0" />}
-                            <div>
-                              <div className="font-medium text-white">{listing.title}</div>
-                              <div className="flex items-center gap-1 mt-0.5">
-                                <span className={"rounded border px-1.5 py-0 text-[9px] font-semibold " + ptBadge.className}>{ptBadge.label}</span>
-                                {isBundle && arb !== null && arb !== undefined && (
-                                  <span className={"text-[9px] " + (arb.premium > 0 ? "text-red-400" : "text-green-400")}>
-                                    {arb.premium > 0 ? "+" + fmt(arb.premium) + " vs parts" : fmt(Math.abs(arb.premium)) + " below parts"}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="p-3"><span className={"rounded border px-2 py-0.5 text-[11px] font-semibold capitalize " + tierBadge(listing.tier)}>{listing.tier}</span></td>
-                        <td className="p-3 text-zinc-400 text-xs">{listing.seriesLabel ?? "—"}</td>
-                        <td className="p-3 text-zinc-400">{listing.momentsPerPack}</td>
-                        <td className="p-3 text-zinc-400">{listing.retailPrice > 0 ? fmt(listing.retailPrice) : "—"}</td>
-                        <td className="p-3 font-semibold text-white">{listing.lowestAsk > 0 ? fmt(listing.lowestAsk) : "—"}</td>
-                        <td className="p-3">{renderEVCell(listing)}</td>
-                        <td className="p-3">{renderRatioCell(listing)}</td>
-                        {hasWalletData && (
-                          <td className="p-3">
-                            {ownedCount > 0
-                              ? <span className="rounded bg-green-950 px-2 py-0.5 text-xs font-semibold text-green-400">{ownedCount}</span>
-                              : <span className="text-zinc-600">—</span>}
-                          </td>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 }}>
+              {filteredListings.map((listing) => {
+                const ownedCount = ownedPacks[listing.distId] ?? 0
+                const isSelected = selectedPack?.packListingId === listing.packListingId
+                const ptBadge = packTypeBadge(listing.packType)
+                const ev = evCache[listing.packListingId]
+                const ratio = ev && !ev.loading && !ev.error ? ev.valueRatio : null
+                const ratioTintBorder = ratio != null && ratio >= 1.0 ? "rgba(34,197,94,0.55)" : ratio != null && ratio < 0.8 ? "rgba(239,68,68,0.45)" : "var(--rpc-border)"
+                const canAnalyze = canAnalyzeEV(listing.packType)
+                return (
+                  <div key={listing.packListingId}
+                    onClick={() => canAnalyze ? openEvModal(listing) : undefined}
+                    style={{ background: "var(--rpc-surface)", border: `1px solid ${ratioTintBorder}`, borderRadius: 8, overflow: "hidden", cursor: canAnalyze ? "pointer" : "default", opacity: canAnalyze ? 1 : 0.75, display: "flex", flexDirection: "column" }}>
+                    <div style={{ height: 160, background: "#111", position: "relative", overflow: "hidden" }}>
+                      {listing.imageUrl ? (
+                        <img src={listing.imageUrl} alt={listing.title} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      ) : (
+                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.25)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em" }}>{listing.tier}</div>
+                      )}
+                      <span className={"absolute top-2 left-2 rounded border px-1.5 py-0.5 text-[10px] font-semibold capitalize " + tierBadge(listing.tier)} style={{ position: "absolute", top: 8, left: 8 }}>{listing.tier}</span>
+                      {ownedCount > 0 && (
+                        <span style={{ position: "absolute", top: 8, right: 8, background: "rgba(20,83,45,0.9)", color: "#4ade80", padding: "2px 6px", borderRadius: 3, fontSize: 10, fontWeight: 700 }}>OWN {ownedCount}</span>
+                      )}
+                    </div>
+                    <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
+                      <div style={{ fontWeight: 700, color: "#fff", fontSize: 13, lineHeight: 1.2 }} title={listing.title}>{listing.title}</div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <span className={"rounded border px-1.5 py-0 text-[9px] font-semibold " + ptBadge.className}>{ptBadge.label}</span>
+                        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.4)" }}>{listing.momentsPerPack} slots</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "rgba(255,255,255,0.7)" }}>
+                        <span>Ask {listing.lowestAsk > 0 ? fmt(listing.lowestAsk) : "—"}</span>
+                        {ratio != null && (
+                          <span style={{ color: ratio >= 1 ? "#4ade80" : ratio < 0.8 ? "#f87171" : "#facc15", fontWeight: 700 }}>{(ratio * 100).toFixed(0)}%</span>
                         )}
-                        <td className="p-3">
-                          {canAnalyzeEV(listing.packType) ? (
-                            <button onClick={(e) => { e.stopPropagation(); handleAnalyze(listing) }}
-                              className={"rounded-lg px-3 py-1 text-xs font-semibold text-white transition " + (isSelected ? "bg-zinc-600" : "")}
-                              style={!isSelected ? { backgroundColor: accent } : undefined}>
-                              {isSelected && loading ? "..." : "Analyze"}
-                            </button>
-                          ) : (
-                            <span className="text-[10px] text-zinc-600">N/A</span>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+                      </div>
+                      <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, paddingTop: 4 }}>
+                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "rgba(255,255,255,0.35)" }}>#{listing.distId}</span>
+                        {canAnalyze ? (
+                          <button onClick={(e) => { e.stopPropagation(); handleAnalyze(listing) }}
+                            style={{ background: isSelected ? "#52525b" : accent, color: "#fff", padding: "3px 10px", borderRadius: 4, fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer" }}>
+                            {isSelected && loading ? "..." : "ANALYZE"}
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)" }}>N/A</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>

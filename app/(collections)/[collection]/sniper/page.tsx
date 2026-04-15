@@ -8,6 +8,33 @@ import { useCart } from "@/lib/cart/CartContext";
 import { getCollection } from "@/lib/collections";
 import { getOwnerKey } from "@/lib/owner-key";
 import { PINNACLE_VARIANT_COLORS, PINNACLE_VARIANT_LABELS } from "@/lib/pinnacle/pinnacleTypes";
+import MomentDetailModal from "@/components/MomentDetailModal";
+
+function SniperThumbnailPreview({ thumbUrl, playerName, tierColor, children }: { thumbUrl: string | null; playerName: string; tierColor: string; children: React.ReactNode }) {
+  const [hovered, setHovered] = useState(false);
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const previewUrl = thumbUrl ? thumbUrl.replace(/width=\d+/, "width=400") : null;
+  function onEnter() {
+    if (!ref.current) return;
+    const r = ref.current.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - 240, r.right + 12);
+    const y = Math.max(12, r.top - 40);
+    setPos({ x, y });
+    setHovered(true);
+  }
+  return (
+    <div ref={ref} onMouseEnter={onEnter} onMouseLeave={() => setHovered(false)} style={{ display: "inline-block" }}>
+      {children}
+      {hovered && previewUrl && pos && (
+        <div style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 500, pointerEvents: "none", background: "#000", border: `2px solid ${tierColor}`, borderRadius: 6, padding: 6, boxShadow: "0 8px 24px rgba(0,0,0,0.6)" }}>
+          <img src={previewUrl} alt={playerName} width={200} height={200} style={{ width: 200, height: 200, objectFit: "contain", display: "block" }} />
+          <div style={{ color: "#fff", fontSize: 11, marginTop: 4, textAlign: "center", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>{playerName}</div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const COMMISSION_RECIPIENT = "0xc1e4f4f4c4257510";
@@ -549,6 +576,7 @@ export default function SniperPage() {
   // ── Task 2: Edition depth panel ─────────────────────────────────────────────
   const [expandedEditionKey, setExpandedEditionKey] = useState<string | null>(null);
   const [expandedFlowId, setExpandedFlowId] = useState<string | null>(null);
+  const [selectedDeal, setSelectedDeal] = useState<SniperDeal | null>(null);
   const [depthDeals, setDepthDeals] = useState<SniperDeal[]>([]);
   const [depthLoading, setDepthLoading] = useState(false);
   const [depthFloor, setDepthFloor] = useState<{
@@ -1330,7 +1358,7 @@ export default function SniperPage() {
                 (!!deal.intEditionKey && ownedIds.has(deal.intEditionKey)) ||
                 (!!deal.editionKey && ownedIds.has(deal.editionKey));
               return (
-                <div key={`m-${deal.source}-${deal.flowId}`} className="rpc-card p-3 flex flex-col gap-1.5">
+                <div key={`m-${deal.source}-${deal.flowId}`} onClick={(e) => { const t = e.target as HTMLElement; if (t.closest("a,button")) return; setSelectedDeal(deal); }} className="rpc-card p-3 flex flex-col gap-1.5 cursor-pointer">
                   {/* Row 1: Player + Tier + Source */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 min-w-0">
@@ -1459,17 +1487,20 @@ export default function SniperPage() {
                     <td style={{ padding: "8px 12px" }}>
                       <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
                         {deal.thumbnailUrl ? (
-                          <img
-                            src={deal.thumbnailUrl}
-                            alt={deal.playerName}
-                            style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 4, flexShrink: 0, background: "#1a1a1a" }}
-                            loading="lazy"
-                            onError={(e) => {
-                              const img = e.currentTarget as HTMLImageElement;
-                              img.onerror = null;
-                              img.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
-                            }}
-                          />
+                          <SniperThumbnailPreview thumbUrl={deal.thumbnailUrl} playerName={deal.playerName} tierColor={tierColor(deal.tier)}>
+                            <img
+                              src={deal.thumbnailUrl}
+                              alt={deal.playerName}
+                              style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 4, flexShrink: 0, background: "#1a1a1a", cursor: "pointer" }}
+                              loading="lazy"
+                              onClick={(e) => { e.stopPropagation(); setSelectedDeal(deal); }}
+                              onError={(e) => {
+                                const img = e.currentTarget as HTMLImageElement;
+                                img.onerror = null;
+                                img.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+                              }}
+                            />
+                          </SniperThumbnailPreview>
                         ) : (
                           <div style={{ width: 36, height: 36, borderRadius: 4, background: "var(--rpc-surface-raised)", flexShrink: 0 }} />
                         )}
@@ -1826,6 +1857,25 @@ export default function SniperPage() {
           )}
         </div>
       )}
+      <MomentDetailModal
+        moment={selectedDeal ? {
+          flowId: selectedDeal.flowId,
+          playerName: selectedDeal.playerName,
+          setName: selectedDeal.setName,
+          tier: selectedDeal.tier,
+          serialNumber: selectedDeal.serial,
+          mintSize: selectedDeal.circulationCount,
+          fmv: selectedDeal.adjustedFmv,
+          dealRating: selectedDeal.dealRating ?? (selectedDeal.discount > 0 ? Math.min(1, selectedDeal.discount / 50) : null),
+          listingPrice: selectedDeal.askPrice,
+          marketConfidence: selectedDeal.confidence ?? null,
+          badgeTitles: selectedDeal.badgeLabels ?? [],
+          officialBadges: [],
+          imageUrlPrefix: null,
+          buyUrl: selectedDeal.buyUrl,
+        } : null}
+        onClose={() => setSelectedDeal(null)}
+      />
     </div>
   );
 }

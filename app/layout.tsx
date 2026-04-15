@@ -16,6 +16,7 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <head>
         <meta name="theme-color" content="#f97316" />
+        <link rel="icon" href="/rip-packs-city-logo.png" />
         <link rel="apple-touch-icon" href="/rip-packs-city-logo.png" />
       </head>
       <body className="min-h-screen bg-black text-zinc-100 antialiased">
