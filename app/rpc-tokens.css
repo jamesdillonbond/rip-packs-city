@@ -52,6 +52,19 @@
   --tier-common-bg: rgba(148, 163, 184, 0.08);
   --tier-common-border: rgba(148, 163, 184, 0.20);
 
+  /* UFC Strike tiers */
+  --tier-champion: #F59E0B;
+  --tier-champion-bg: rgba(245, 158, 11, 0.10);
+  --tier-champion-border: rgba(245, 158, 11, 0.30);
+
+  --tier-challenger: #9CA3AF;
+  --tier-challenger-bg: rgba(156, 163, 175, 0.10);
+  --tier-challenger-border: rgba(156, 163, 175, 0.30);
+
+  --tier-contender: #94A3B8;
+  --tier-contender-bg: rgba(148, 163, 184, 0.08);
+  --tier-contender-border: rgba(148, 163, 184, 0.20);
+
   /* ── Status Colors ────────────────────────────────────── */
   --rpc-success: #34D399;
   --rpc-warning: #F59E0B;

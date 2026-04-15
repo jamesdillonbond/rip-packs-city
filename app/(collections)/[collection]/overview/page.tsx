@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
+import { getCollection } from "@/lib/collections"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -78,6 +79,9 @@ const TIER_COLORS: Record<string, string> = {
   fandom:    "var(--tier-fandom)",
   common:    "var(--tier-common)",
   ultimate:  "var(--tier-ultimate)",
+  champion:  "var(--tier-champion)",
+  challenger:"var(--tier-challenger)",
+  contender: "var(--tier-contender)",
 }
 function tierColor(tier: string) {
   return TIER_COLORS[tier?.toLowerCase()] ?? "var(--tier-common)"
@@ -114,6 +118,9 @@ export default function OverviewPage() {
   const params = useParams()
   const router = useRouter()
   const collection = (params?.collection as string) ?? "nba-top-shot"
+  const collectionObj = getCollection(collection)
+  const enabledPages = new Set(collectionObj?.pages ?? [])
+  const isUfc = collection === "ufc"
 
   const [walletInput, setWalletInput] = useState("")
   const [hasWallet, setHasWallet] = useState(false)
@@ -176,7 +183,8 @@ export default function OverviewPage() {
   // Fetch top 5 sniper deals with minDiscount=15
   const fetchSniper = useCallback(async () => {
     try {
-      const res = await fetch("/api/sniper-feed?limit=5&minDiscount=15&collection=" + encodeURIComponent(collection), { cache: "no-store" })
+      const sniperEndpoint = collection === "ufc" ? "/api/ufc-sniper-feed" : "/api/sniper-feed"
+      const res = await fetch(sniperEndpoint + "?limit=5&minDiscount=15&collection=" + encodeURIComponent(collection), { cache: "no-store" })
       if (!res.ok) return
       const data = await res.json()
       if (Array.isArray(data.deals)) setSniperDeals(data.deals.slice(0, 5))
@@ -318,6 +326,38 @@ export default function OverviewPage() {
             </section>
           ))}
         </div>
+      )}
+
+      {/* ── UFC Strike Section ── */}
+      {isUfc && (
+        <>
+          <section className="rpc-card" style={{ padding: "20px 24px" }}>
+            <div className="rpc-heading" style={{ fontSize: "var(--text-2xl)", color: "#EF4444", marginBottom: 6 }}>
+              {"\u{1F94A}"} UFC Strike
+            </div>
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "baseline" }}>
+              <div className="rpc-heading" style={{ fontSize: "var(--text-lg)", color: "#EF4444" }}>147 Editions</div>
+              <span style={{ color: "var(--rpc-text-ghost)" }}>·</span>
+              <div className="rpc-heading" style={{ fontSize: "var(--text-lg)" }}>
+                <span style={{ color: "var(--tier-challenger)" }}>8 CHALLENGER</span>
+              </div>
+              <span style={{ color: "var(--rpc-text-ghost)" }}>·</span>
+              <div className="rpc-heading" style={{ fontSize: "var(--text-lg)" }}>
+                <span style={{ color: "var(--tier-contender)" }}>137 CONTENDER</span>
+              </div>
+              <span style={{ color: "var(--rpc-text-ghost)" }}>·</span>
+              <div className="rpc-heading" style={{ fontSize: "var(--text-lg)" }}>
+                <span style={{ color: "var(--tier-fandom)" }}>2 FANDOM</span>
+              </div>
+            </div>
+          </section>
+
+          <section className="rpc-card" style={{ padding: "14px 18px", borderLeft: "3px solid #EF4444" }}>
+            <div className="rpc-mono" style={{ fontSize: "var(--text-sm)", color: "var(--rpc-text-primary)", lineHeight: 1.6 }}>
+              UFC Strike migrated to Aptos in July 2025. RPC supports the Flow collector base with marketplace data from Flowty.
+            </div>
+          </section>
+        </>
       )}
 
       {/* ── Golazos Section ── */}
@@ -625,7 +665,7 @@ export default function OverviewPage() {
             { label: "Sets",         desc: "Completion + bottleneck finder",              icon: "\u25C9", color: "#F472B6", page: "sets" },
             { label: "Analytics",    desc: "Portfolio breakdown + clarity",               icon: "\u25CE", color: "#A78BFA", page: "analytics" },
             { label: "Market",       desc: "Edition lookup + leaderboards",               icon: "\u25C8", color: "var(--tier-rare)", page: "market" },
-          ].map(({ label, desc, icon, color, page }) => (
+          ].filter((t) => enabledPages.has(t.page as any)).map(({ label, desc, icon, color, page }) => (
             <Link key={page} href={basePath + "/" + page} style={{ textDecoration: "none" }}>
               <div className="rpc-card" style={{ padding: "14px 16px", cursor: "pointer", position: "relative", overflow: "hidden" }}>
                 <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 2, background: color, opacity: 0.5 }} />
