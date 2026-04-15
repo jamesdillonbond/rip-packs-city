@@ -137,6 +137,9 @@ function tierColor(tier: string): string {
     case "UNCOMMON":  return "var(--tier-uncommon)";
     case "LEGENDARY": return "var(--tier-legendary)";
     case "ULTIMATE":  return "var(--tier-ultimate)";
+    case "CHAMPION":   return "var(--tier-champion)";
+    case "CHALLENGER": return "var(--tier-challenger)";
+    case "CONTENDER":  return "var(--tier-contender)";
     default:          return "var(--tier-common)";
   }
 }
@@ -491,10 +494,13 @@ export default function SniperPage() {
   const isAllDay = collectionSlug === "nfl-all-day";
   const isPinnacle = collectionSlug === "pinnacle" || collectionSlug === "disney-pinnacle";
   const isGolazos = collectionSlug === "laliga-golazos";
+  const isUfc = collectionSlug === "ufc";
   const feedEndpoint = isPinnacle
     ? "/api/pinnacle-sniper"
     : isGolazos
     ? "/api/golazos-sniper-feed"
+    : isUfc
+    ? "/api/ufc-sniper-feed"
     : "/api/sniper-feed";
   const feedCollection = isPinnacle ? "nba-top-shot" : collectionSlug;
   const brandLabel = isPinnacle ? "Pinnacle" : collectionObj?.shortLabel ?? "Top Shot";

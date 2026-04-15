@@ -16,6 +16,7 @@ const COLLECTION_UUID_BY_SLUG: Record<string, string> = {
   "nba-top-shot": "95f28a17-224a-4025-96ad-adf8a4c63bfd",
   "nfl-all-day": "dee28451-5d62-409e-a1ad-a83f763ac070",
   "disney-pinnacle": "7dd9dd11-e8b6-45c4-ac99-71331f959714",
+  "ufc": "9b4824a8-736d-4a96-b450-8dcc0c46b023",
 }
 const ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR = new Set(["Rookie Year", "Rookie Premiere", "Rookie Mint"])
 
@@ -1059,7 +1060,8 @@ export default function WalletPage() {
       // Fetch accurate wallet-wide totals (FMV, locked/unlocked, cost basis, pnl)
       // via get_wallet_summary RPC — covers ALL moments, not just the loaded page.
       setWalletSummaryLoading(true)
-      fetch("/api/wallet-summary?wallet=" + encodeURIComponent(trimmed) + "&collection=" + encodeURIComponent(collectionSlug))
+      const summaryCollectionId = COLLECTION_UUID_BY_SLUG[collectionSlug] ?? ""
+      fetch("/api/wallet-summary?wallet=" + encodeURIComponent(trimmed) + "&collection=" + encodeURIComponent(collectionSlug) + (summaryCollectionId ? "&collection_id=" + encodeURIComponent(summaryCollectionId) : ""))
         .then(function(r) { return r.ok ? r.json() : null })
         .then(function(json) {
           if (!json || json.error) return
@@ -1086,7 +1088,8 @@ export default function WalletPage() {
 
       // Secondary: call wallet-search for summary stats only (total FMV, locked/unlocked counts)
       // This runs in parallel as a background fetch — does NOT block the moment display.
-      if (trimmed) {
+      // Skipped for UFC: wallet-search is driven by Top Shot GQL and has no UFC path.
+      if (trimmed && collectionSlug !== "ufc") {
         fetch("/api/wallet-search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
