@@ -15,7 +15,7 @@ const FLOWTY_PROXY_URL =
   "/functions/v1/flowty-proxy";
 const FLOWTY_PROXY_TOKEN = "rippackscity2026";
 
-const PAGE_SIZE = 24;
+const PAGE_SIZE = 50;
 
 // ── Collection configs ──────────────────────────────────────────────────────
 // Each collection defines its Flowty endpoint, filter, series labels, buy URL,
@@ -46,7 +46,7 @@ const COLLECTIONS: Record<string, CollectionConfig> = {
       5: "Series 4", 6: "Series 2023-24", 7: "Series 2024-25", 8: "Series 2025-26",
     },
     buyUrlBase: "https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/NFT/",
-    pagesToFetch: 22,
+    pagesToFetch: 12,
     chainNext: "nfl-all-day",
     askOnlyFmv: false,
   },
@@ -59,7 +59,7 @@ const COLLECTIONS: Record<string, CollectionConfig> = {
       0: "Series 1", 1: "Series 2", 2: "Series 3", 3: "Series 4", 4: "Series 5",
     },
     buyUrlBase: "https://www.flowty.io/asset/0xe4cf4bdc1751c65d/AllDay/NFT/",
-    pagesToFetch: 100,
+    pagesToFetch: 50,
     chainNext: "laliga-golazos",
     askOnlyFmv: true,
   },
@@ -74,7 +74,7 @@ const COLLECTIONS: Record<string, CollectionConfig> = {
       0: "Series 1 (2022-23)", 1: "Series 2 (2023-24)", 2: "Series 3 (2024-25)",
     },
     buyUrlBase: "https://www.flowty.io/asset/0x87ca73a41bb50ad5/Golazos/NFT/",
-    pagesToFetch: 60,
+    pagesToFetch: 30,
     chainNext: null,
     askOnlyFmv: true,
   },
@@ -85,14 +85,13 @@ function getCollectionConfig(slug: string | null): CollectionConfig {
   return COLLECTIONS["nba-top-shot"];
 }
 
-function flowtyBody(from: number, config: CollectionConfig) {
-  return {
-    address: null, addresses: [],
-    collectionFilters: [{ collection: config.flowtyCollectionFilter, traits: [] }],
-    from, includeAllListings: true, limit: PAGE_SIZE, onlyUnlisted: false,
-    orderFilters: [{ conditions: [], kind: "storefront", paymentTokens: [] }],
-    sort: { direction: "desc", listingKind: "storefront", path: "blockTimestamp" },
-  };
+function flowtyBody(offset: number, _config: CollectionConfig) {
+  // Matches the shape used by allday-listing-cache + golazos-listing-cache,
+  // which the flowty-proxy edge function successfully forwards to
+  // api2.flowty.io/collection/{addr}/{name}. The previous shape
+  // ({ collectionFilters, from, ... }) returned no usable rows when routed
+  // through the proxy — aligned TS with the proven payload.
+  return { filters: {}, offset, limit: PAGE_SIZE };
 }
 
 // Multi-variant trait lookup — tries each name in order (case-sensitive match
@@ -116,7 +115,7 @@ function parseCollectionFilter(filter: string): { contractAddress: string; contr
     : { contractAddress: "", contractName: "" };
 }
 
-async function fetchFlowtyPage(from: number, config: CollectionConfig): Promise<any[]> {
+async function fetchFlowtyPage(offset: number, config: CollectionConfig): Promise<any[]> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(function() { controller.abort(); }, 12000);
@@ -130,20 +129,20 @@ async function fetchFlowtyPage(from: number, config: CollectionConfig): Promise<
       body: JSON.stringify({
         contractAddress,
         contractName,
-        payload: flowtyBody(from, config),
+        payload: flowtyBody(offset, config),
       }),
       signal: controller.signal,
     });
     clearTimeout(timeout);
     if (!res.ok) {
-      console.log("[listing-cache] flowty-proxy page " + from + " HTTP " + res.status);
+      console.log("[listing-cache] flowty-proxy offset " + offset + " HTTP " + res.status);
       return [];
     }
     const json = await res.json();
-    const items = json.data || json.nfts || [];
+    const items = json.nfts || json.data || [];
     return Array.isArray(items) ? items : [];
   } catch (e: any) {
-    console.log("[listing-cache] flowty-proxy page " + from + " error: " + (e.message || "unknown"));
+    console.log("[listing-cache] flowty-proxy offset " + offset + " error: " + (e.message || "unknown"));
     return [];
   }
 }
