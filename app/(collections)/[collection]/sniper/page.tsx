@@ -313,15 +313,28 @@ const BADGE_SLUG_CAMEL: Record<string, string> = {
   three_star_rookie: "threeStars",
 };
 
+function normalizeBadgeSlug(slug: string): string {
+  // Accept SCREAMING_SNAKE (ROOKIE_YEAR), snake_case, "Title Case" → snake_case lower.
+  return slug.replace(/[\s-]+/g, "_").replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+}
+
+function slugToCamel(slug: string): string {
+  const snake = normalizeBadgeSlug(slug);
+  const parts = snake.split("_").filter(Boolean);
+  if (!parts.length) return slug;
+  return parts[0] + parts.slice(1).map(p => p[0].toUpperCase() + p.slice(1)).join("");
+}
+
 function BadgeIcon({ slug, size = 18 }: { slug: string; size?: number }) {
   const [errored, setErrored] = useState(false);
-  const label = BADGE_SLUG_LABELS[slug] ?? slug;
-  const camel = BADGE_SLUG_CAMEL[slug] ?? slug;
+  const snake = normalizeBadgeSlug(slug);
+  const label = BADGE_SLUG_LABELS[snake] ?? BADGE_SLUG_LABELS[slug] ?? slug;
+  const camel = BADGE_SLUG_CAMEL[snake] ?? BADGE_SLUG_CAMEL[slug] ?? slugToCamel(slug);
   const url = `/api/badge-image?name=${encodeURIComponent(camel)}`;
   if (errored) {
     return (
       <span
-        className={`px-1 py-0.5 rounded text-[10px] border ${BADGE_SLUG_COLORS[slug] ?? "bg-yellow-500/15 text-yellow-400 border-yellow-500/25"}`}
+        className={`px-1 py-0.5 rounded text-[10px] border ${BADGE_SLUG_COLORS[snake] ?? BADGE_SLUG_COLORS[slug] ?? "bg-yellow-500/15 text-yellow-400 border-yellow-500/25"}`}
       >
         {label}
       </span>
