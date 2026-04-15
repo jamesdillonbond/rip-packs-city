@@ -5,6 +5,7 @@ import Link from "next/link";
 import SiteFooter from "@/components/SiteFooter";
 import MobileNav from "@/components/MobileNav";
 import SupportChatConnected from "@/components/SupportChatConnected";
+import RpcLogo from "@/components/RpcLogo";
 
 const condensedFont = "'Barlow Condensed', sans-serif";
 const monoFont = "'Share Tech Mono', monospace";
@@ -164,21 +165,7 @@ export default function HomePage() {
       <header style={{ background: "rgba(8,8,8,0.97)", borderBottom: "1px solid rgba(255,255,255,0.06)", position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(20px)" }}>
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 20px", height: 56, display: "flex", alignItems: "center", gap: 16 }}>
           <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, textDecoration: "none" }}>
-            <svg width="28" height="28" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="46" fill="none" stroke="#E03A2F" strokeWidth="4" />
-              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(0 50 50)" />
-              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(72 50 50)" />
-              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(144 50 50)" />
-              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(216 50 50)" />
-              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(288 50 50)" />
-              <circle cx="50" cy="50" r="7" fill="#080808" />
-            </svg>
-            <div>
-              <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 17, letterSpacing: "0.06em", color: "#F1F1F1", lineHeight: 1, textTransform: "uppercase" }}>
-                Rip Packs <span style={{ color: RED }}>City</span>
-              </div>
-              <div style={{ fontSize: 7, fontFamily: monoFont, letterSpacing: "0.2em", color: "rgba(224,58,47,0.5)" }}>@RIPPACKSCITY</div>
-            </div>
+            <RpcLogo size={32} />
           </Link>
           <div style={{ flex: 1 }} />
           <Link href="/profile" style={{ background: "rgba(224,58,47,0.15)", border: "1px solid rgba(224,58,47,0.4)", color: RED, padding: "4px 10px", borderRadius: 4, fontSize: 10, fontFamily: condensedFont, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}>
@@ -191,9 +178,9 @@ export default function HomePage() {
 
         {/* Hero */}
         <section style={{ textAlign: "center", marginBottom: 40, paddingTop: 24 }}>
-          <h1 style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 42, letterSpacing: "0.04em", textTransform: "uppercase", lineHeight: 1.1, marginBottom: 10 }}>
-            Rip Packs <span style={{ color: RED }}>City</span>
-          </h1>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
+            <RpcLogo size={100} />
+          </div>
           <p style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.45)", letterSpacing: "0.06em", maxWidth: 480, margin: "0 auto" }}>
             Collector intelligence for NBA Top Shot, NFL All Day, LaLiga Golazos &amp; Disney Pinnacle. FMV pricing, sniper deals, badge tracking, and portfolio analytics.
           </p>
@@ -237,6 +224,19 @@ export default function HomePage() {
                     <span style={{ fontSize: 18 }}>{meta.icon}</span>
                     <span style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, letterSpacing: "0.04em", textTransform: "uppercase" }}>{meta.label}</span>
                   </div>
+                  {(() => {
+                    const listings = Number(row.listings_count ?? row.active_listings ?? row.listing_count ?? 0) || 0;
+                    return hasActivity ? null : (
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                        <span style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", letterSpacing: "0.06em" }}>No recent sales</span>
+                        {listings > 0 && (
+                          <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.08em" }}>
+                            &middot; {listings.toLocaleString()} listings
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {hasActivity ? (
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
                       <div>
@@ -252,9 +252,7 @@ export default function HomePage() {
                         <div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 800 }}>{fmtUsd0(topSale)}</div>
                       </div>
                     </div>
-                  ) : (
-                    <div style={{ fontSize: 11, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", letterSpacing: "0.08em", textTransform: "uppercase" }}>No activity</div>
-                  )}
+                  ) : null}
                 </Link>
               );
             })}
@@ -346,8 +344,10 @@ function CrossCollectionDeals({ data, loading }: { data: CrossDealsResponse | nu
           ))}
         </div>
       ) : deals.length === 0 ? (
-        <div style={{ padding: "28px 18px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, textAlign: "center", fontSize: 12, fontFamily: monoFont, color: "rgba(255,255,255,0.45)", letterSpacing: "0.06em" }}>
-          No cross-collection deals found. Check individual collection snipers.
+        <div style={{ padding: "20px 18px", display: "flex", alignItems: "center", justifyContent: "center", gap: 12, fontSize: 12, fontFamily: monoFont, color: "rgba(255,255,255,0.45)", letterSpacing: "0.06em" }}>
+          <span style={{ width: 12, height: 12, border: "2px solid rgba(255,255,255,0.15)", borderTopColor: RED, borderRadius: "50%", display: "inline-block", animation: "rpcSpin 0.9s linear infinite" }} />
+          <span>No cross-collection deals right now &mdash; Top Shot deals loading&hellip;</span>
+          <style>{`@keyframes rpcSpin { to { transform: rotate(360deg); } }`}</style>
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>

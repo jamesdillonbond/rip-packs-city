@@ -107,7 +107,7 @@ export default function SiteFooter() {
       >
         <span>&copy; 2026 RIP PACKS CITY</span>
         <div style={{ display: "flex", gap: 16 }}>
-          <Link href="/" style={{ color: "var(--rpc-text-ghost)", textDecoration: "none" }}>ABOUT</Link>
+          <Link href="/about" style={{ color: "var(--rpc-text-ghost)", textDecoration: "none" }}>ABOUT</Link>
           <Link href="/terms" style={{ color: "var(--rpc-text-ghost)", textDecoration: "none" }}>TERMS</Link>
           <Link href="/privacy" style={{ color: "var(--rpc-text-ghost)", textDecoration: "none" }}>PRIVACY</Link>
         </div>

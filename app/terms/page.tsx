@@ -1,10 +1,23 @@
+import Link from "next/link";
+import RpcLogo from "@/components/RpcLogo";
+import SiteFooter from "@/components/SiteFooter";
+
 export default function TermsPage() {
   return (
+    <div style={{ background: "#080808", color: "#F1F1F1", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      <header style={{ background: "rgba(8,8,8,0.97)", borderBottom: "1px solid rgba(255,255,255,0.06)", position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(20px)" }}>
+        <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 20px", height: 56, display: "flex", alignItems: "center", gap: 16 }}>
+          <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
+            <RpcLogo size={32} />
+          </Link>
+          <Link href="/" style={{ marginLeft: "auto", fontFamily: "'Share Tech Mono', monospace", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", textDecoration: "none" }}>
+            &larr; Back
+          </Link>
+        </div>
+      </header>
     <main
       style={{
-        background: "#080808",
-        color: "#F1F1F1",
-        minHeight: "100vh",
+        flex: 1,
         padding: "48px 24px 80px",
       }}
     >
@@ -100,6 +113,8 @@ export default function TermsPage() {
         </div>
       </div>
     </main>
+      <SiteFooter />
+    </div>
   );
 }
 
