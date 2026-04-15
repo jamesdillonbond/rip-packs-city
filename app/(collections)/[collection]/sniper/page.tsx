@@ -303,10 +303,21 @@ const BADGE_SLUG_COLORS: Record<string, string> = {
   number_one: "bg-amber-500/15 text-amber-400 border-amber-500/25",
 };
 
+const BADGE_SLUG_CAMEL: Record<string, string> = {
+  rookie_year: "rookieYear",
+  top_shot_debut: "topShotDebut",
+  rookie_premiere: "rookiePremiere",
+  rookie_of_the_year: "rookieOfTheYear",
+  rookie_mint: "rookieMint",
+  championship_year: "championshipYear",
+  three_star_rookie: "threeStars",
+};
+
 function BadgeIcon({ slug, size = 18 }: { slug: string; size?: number }) {
   const [errored, setErrored] = useState(false);
   const label = BADGE_SLUG_LABELS[slug] ?? slug;
-  const url = `/api/badge-image?name=${encodeURIComponent(slug)}`;
+  const camel = BADGE_SLUG_CAMEL[slug] ?? slug;
+  const url = `/api/badge-image?name=${encodeURIComponent(camel)}`;
   if (errored) {
     return (
       <span

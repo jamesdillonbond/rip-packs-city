@@ -337,10 +337,21 @@ function badgeSlug(title: string): string {
   return title.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")
 }
 
+const BADGE_TITLE_CAMEL: Record<string, string> = {
+  "rookie year": "rookieYear",
+  "top shot debut": "topShotDebut",
+  "rookie premiere": "rookiePremiere",
+  "rookie of the year": "rookieOfTheYear",
+  "rookie mint": "rookieMint",
+  "championship year": "championshipYear",
+  "three-star rookie": "threeStars",
+  "three star rookie": "threeStars",
+}
+
 function BadgeIcon({ title, size = 18 }: { title: string; size?: number }) {
   const [errored, setErrored] = useState(false)
-  const slug = badgeSlug(title)
-  const url = "/api/badge-image?name=" + encodeURIComponent(slug)
+  const camel = BADGE_TITLE_CAMEL[title.toLowerCase()] ?? badgeSlug(title)
+  const url = "/api/badge-image?name=" + encodeURIComponent(camel)
   if (errored) return <BadgePill title={title} />
   return (
     <img
