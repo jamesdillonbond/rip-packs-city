@@ -13,6 +13,7 @@ import WatchlistCard from "@/components/profile/WatchlistCard";
 import AchievementsCard from "@/components/profile/AchievementsCard";
 import CrossCollectionPortfolio from "@/components/profile/CrossCollectionPortfolio";
 import EmailDigestSubscribe from "@/components/profile/EmailDigestSubscribe";
+import RpcLogo from "@/components/RpcLogo";
 import PriceAlertsCard from "@/components/profile/PriceAlertsCard";
 
 // ─── TYPES ────────────────────────────────────────────────────
@@ -1224,17 +1225,8 @@ function ProfilePageInner() {
       <header style={{ background: "rgba(8,8,8,0.97)", borderBottom: "1px solid var(--rpc-border)", position: "sticky", top: 0, zIndex: "var(--z-sticky)" as any, backdropFilter: "blur(20px)" }}>
         <div style={{ maxWidth: "var(--max-width)" as any, margin: "0 auto", padding: "0 20px", height: 56, display: "flex", alignItems: "center", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, cursor: "pointer" }} onClick={function() { router.push("/"); }}>
-            <svg width="28" height="28" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="46" fill="none" stroke="#E03A2F" strokeWidth="4" />
-              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(0 50 50)" />
-              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(72 50 50)" />
-              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(144 50 50)" />
-              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(216 50 50)" />
-              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(288 50 50)" />
-              <circle cx="50" cy="50" r="7" fill="#080808" />
-            </svg>
+            <RpcLogo size={32} />
             <div>
-              <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 17, letterSpacing: "0.06em", color: "var(--rpc-text-primary)", lineHeight: 1, textTransform: "uppercase" }}>{"Rip Packs "}<span style={{ color: "var(--rpc-red)" }}>City</span></div>
               <div style={{ fontSize: 7, fontFamily: monoFont, letterSpacing: "0.2em", color: "var(--rpc-red-muted)" }}>@RIPPACKSCITY</div>
             </div>
           </div>

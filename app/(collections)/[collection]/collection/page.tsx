@@ -12,6 +12,36 @@ import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key"
 import { getCollection } from "@/lib/collections"
 import ExplainButton from "@/components/ExplainButton"
 import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
+import MomentDetailModal from "@/components/MomentDetailModal"
+
+function ThumbnailPreview({ thumbUrl, playerName, tierColor, children }: { thumbUrl: string | null; playerName: string; tierColor: string; children: React.ReactNode }) {
+  const [hovered, setHovered] = useState(false)
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  const ref = useRef<HTMLDivElement | null>(null)
+  const previewUrl = thumbUrl ? thumbUrl.replace(/width=\d+/, "width=400") : null
+
+  function onEnter() {
+    if (!ref.current) return
+    const r = ref.current.getBoundingClientRect()
+    const x = Math.min(window.innerWidth - 240, r.right + 12)
+    const y = Math.max(12, r.top - 40)
+    setPos({ x, y })
+    setHovered(true)
+  }
+  function onLeave() { setHovered(false) }
+
+  return (
+    <div ref={ref} onMouseEnter={onEnter} onMouseLeave={onLeave} style={{ display: "inline-block" }}>
+      {children}
+      {hovered && previewUrl && pos && (
+        <div style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 500, pointerEvents: "none", background: "#000", border: `2px solid ${tierColor}`, borderRadius: 6, padding: 6, boxShadow: "0 8px 24px rgba(0,0,0,0.6)" }}>
+          <img src={previewUrl} alt={playerName} width={200} height={200} style={{ width: 200, height: 200, objectFit: "contain", display: "block" }} />
+          <div style={{ color: "#fff", fontSize: 11, marginTop: 4, textAlign: "center", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>{playerName}</div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 const COLLECTION_UUID_BY_SLUG: Record<string, string> = {
   "nba-top-shot": "95f28a17-224a-4025-96ad-adf8a4c63bfd",
@@ -427,6 +457,7 @@ export default function WalletPage() {
   const [error, setError] = useState("")
   const [summary, setSummary] = useState<WalletSearchResponse["summary"]>()
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
+  const [selectedMoment, setSelectedMoment] = useState<MomentRow | null>(null)
   const [showDebug, setShowDebug] = useState(false)
   const [badgeFilter, setBadgeFilter] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
@@ -1989,24 +2020,28 @@ export default function WalletPage() {
 
                 return (
                   <Fragment key={row.momentId}>
-                    <tr className={"group border-b border-zinc-800 align-top " + (isLocked ? "opacity-60" : "") + (row.tier?.toUpperCase() === "LEGENDARY" ? " rpc-holo-legendary" : row.tier?.toUpperCase() === "ULTIMATE" ? " rpc-holo-ultimate" : row.tier?.toUpperCase() === "RARE" ? " rpc-holo-rare" : "")}>
+                    <tr onClick={function(e) { const t = e.target as HTMLElement; if (t.closest("a,button,input,svg,video")) return; setSelectedMoment(row) }} className={"group border-b border-zinc-800 align-top cursor-pointer " + (isLocked ? "opacity-60" : "") + (row.tier?.toUpperCase() === "LEGENDARY" ? " rpc-holo-legendary" : row.tier?.toUpperCase() === "ULTIMATE" ? " rpc-holo-ultimate" : row.tier?.toUpperCase() === "RARE" ? " rpc-holo-rare" : "")}>
                       <td className="p-3 min-w-[160px]">
                         <div className="flex items-center gap-2">
                           {(() => {
                             const thumbUrl = getThumbnailUrl(row, collectionSlug)
+                            const tierColorForPrev = ({ COMMON: "#9ca3af", UNCOMMON: "#14b8a6", FANDOM: "#60a5fa", RARE: "#38bdf8", LEGENDARY: "#fbbf24", ULTIMATE: "#c084fc" } as Record<string, string>)[(row.tier ?? "").toUpperCase()] ?? "#9ca3af"
                             return (
                               <div className="relative shrink-0" style={{ width: 48, height: 64 }}>
                                 {thumbUrl ? (
-                                  <img
-                                    src={thumbUrl}
-                                    alt={row.playerName}
-                                    width={48}
-                                    height={64}
-                                    loading="lazy"
-                                    className="rounded object-cover bg-zinc-900"
-                                    style={{ width: 48, height: 64 }}
-                                    onError={function(e) { (e.target as HTMLImageElement).style.display = "none" }}
-                                  />
+                                  <ThumbnailPreview thumbUrl={thumbUrl} playerName={row.playerName} tierColor={tierColorForPrev}>
+                                    <img
+                                      src={thumbUrl}
+                                      alt={row.playerName}
+                                      width={48}
+                                      height={64}
+                                      loading="lazy"
+                                      className="rounded object-cover bg-zinc-900 cursor-pointer"
+                                      style={{ width: 48, height: 64 }}
+                                      onClick={function(e) { e.stopPropagation(); setSelectedMoment(row) }}
+                                      onError={function(e) { (e.target as HTMLImageElement).style.display = "none" }}
+                                    />
+                                  </ThumbnailPreview>
                                 ) : (
                                   <div className="rounded bg-zinc-900" style={{ width: 48, height: 64 }} />
                                 )}
@@ -2484,6 +2519,24 @@ export default function WalletPage() {
           </div>
         )}
       </div>
+      <MomentDetailModal
+        moment={selectedMoment ? {
+          flowId: selectedMoment.flowId ?? selectedMoment.momentId,
+          playerName: selectedMoment.playerName,
+          setName: selectedMoment.setName,
+          tier: selectedMoment.tier ?? null,
+          serialNumber: getSerial(selectedMoment) ?? null,
+          mintSize: getMint(selectedMoment) ?? null,
+          fmv: selectedMoment.fmv ?? null,
+          listingPrice: selectedMoment.lowAsk ?? null,
+          marketConfidence: selectedMoment.marketConfidence ?? null,
+          badgeTitles: selectedMoment.badgeInfo?.badge_titles ?? [],
+          officialBadges: (selectedMoment.officialBadges ?? []).map(function(b) { return BADGE_TYPE_TO_TITLE[b] ?? b }),
+          imageUrlPrefix: null,
+          buyUrl: selectedMoment.momentId ? "https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/" + selectedMoment.momentId : null,
+        } : null}
+        onClose={function() { setSelectedMoment(null) }}
+      />
     </div>
   )
 }

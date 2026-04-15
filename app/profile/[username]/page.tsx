@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
+import RpcLogo from "@/components/RpcLogo";
 import CostBasisCard from "@/components/profile/CostBasisCard";
 import TierBreakdownCard from "@/components/profile/TierBreakdownCard";
 import TopMoversCard from "@/components/profile/TopMoversCard";
@@ -334,18 +335,7 @@ export default function PublicProfilePage() {
       <header style={{ background: "rgba(8,8,8,0.97)", borderBottom: "1px solid var(--rpc-border)", position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(20px)" }}>
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 24px", height: 56, display: "flex", alignItems: "center", gap: 20 }}>
           <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
-            <svg width="28" height="28" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="46" fill="none" stroke="#E03A2F" strokeWidth="4" />
-              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(0 50 50)" />
-              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(72 50 50)" />
-              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(144 50 50)" />
-              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(216 50 50)" />
-              <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill="#E03A2F" transform="rotate(288 50 50)" />
-              <circle cx="50" cy="50" r="7" fill="#080808" />
-            </svg>
-            <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 17, letterSpacing: "0.06em", color: "#F1F1F1", lineHeight: 1, textTransform: "uppercase" }}>
-              {"Rip Packs "}<span style={{ color: "#E03A2F" }}>City</span>
-            </div>
+            <RpcLogo size={32} />
           </Link>
           <div style={{ flex: 1 }} />
           <Link href={"/nba-top-shot/collection?q=" + encodeURIComponent(username)} className="rpc-btn-ghost" style={{ textDecoration: "none", fontSize: 10 }}>
