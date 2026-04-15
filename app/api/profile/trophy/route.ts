@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 
-// GET ?ownerKey=xxx  → all 3 trophy slots for this owner
+// GET ?ownerKey=xxx  → all 6 trophy slots for this owner
 // GET ?username=xxx  → same but by username (for public profile page)
 export async function GET(req: NextRequest) {
   const ownerKey = req.nextUrl.searchParams.get("ownerKey");
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   const {
     ownerKey, slot, momentId, editionId,
     playerName, setName, serialNumber, circulationCount,
-    tier, thumbnailUrl, videoUrl, fmv, badges,
+    tier, thumbnailUrl, videoUrl, fmv, badges, note,
   } = body;
 
   if (!ownerKey || !slot || !momentId) {
@@ -40,8 +40,8 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
-  if (slot < 1 || slot > 3) {
-    return NextResponse.json({ error: "slot must be 1, 2, or 3" }, { status: 400 });
+  if (slot < 1 || slot > 6) {
+    return NextResponse.json({ error: "slot must be between 1 and 6" }, { status: 400 });
   }
 
   const { data, error } = await supabase
@@ -61,6 +61,7 @@ export async function POST(req: NextRequest) {
         video_url: videoUrl ?? null,
         fmv: fmv ?? null,
         badges: badges ?? null,
+        note: note ?? null,
         pinned_at: new Date().toISOString(),
       },
       { onConflict: "owner_key,slot" }

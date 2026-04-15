@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { monoFont, condensedFont, fmtDollars, fmtDate, PortfolioSnapshot } from "./_shared";
 
-export default function PortfolioSparkline(props: { ownerKey: string; currentFmv: number; onChange?: (pct: number | null) => void }) {
+export default function PortfolioSparkline(props: { ownerKey: string; currentFmv: number; onChange?: (pct: number | null) => void; lineColor?: string }) {
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -37,7 +37,7 @@ export default function PortfolioSparkline(props: { ownerKey: string; currentFmv
     else props.onChange(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [changePct, points.length]);
-  const changeColor = change >= 0 ? "var(--rpc-success)" : "var(--rpc-danger)";
+  const changeColor = props.lineColor ?? (change >= 0 ? "var(--rpc-success)" : "var(--rpc-danger)");
   const changeSign = change >= 0 ? "+" : "";
   const W = 360; const H = 56; const PAD = 4;
 

@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await supabase
     .from("profile_bio")
-    .select("display_name, tagline, favorite_team, twitter, discord, avatar_url")
+    .select("display_name, tagline, favorite_team, twitter, discord, avatar_url, accent_color")
     .eq("owner_key", ownerKey)
     .maybeSingle();
 
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
 // POST { ownerKey, displayName, tagline, bio, favoriteTeam, twitter, discord, avatarUrl }
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { ownerKey, displayName, tagline, bio, favoriteTeam, twitter, discord, avatarUrl } = body;
+  const { ownerKey, displayName, tagline, bio, favoriteTeam, twitter, discord, avatarUrl, accentColor } = body;
 
   if (!ownerKey) return NextResponse.json({ error: "ownerKey required" }, { status: 400 });
 
@@ -37,9 +37,10 @@ export async function POST(req: NextRequest) {
       twitter: twitter ?? null,
       discord: discord ?? null,
       avatar_url: avatarUrl ?? null,
+      accent_color: accentColor ?? "#E03A2F",
       updated_at: new Date().toISOString(),
     }, { onConflict: "owner_key" })
-    .select("display_name, tagline, favorite_team, twitter, discord, avatar_url")
+    .select("display_name, tagline, favorite_team, twitter, discord, avatar_url, accent_color")
     .single();
 
   if (error) {
