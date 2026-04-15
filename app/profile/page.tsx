@@ -54,6 +54,7 @@ interface TrophyMoment {
   video_url: string | null;
   fmv: number | null;
   badges: string[] | null;
+  note?: string | null;
 }
 
 interface SniperRow {
@@ -80,6 +81,7 @@ interface ProfileBio {
   twitter: string | null;
   discord: string | null;
   avatar_url: string | null;
+  accent_color?: string | null;
 }
 
 interface SetProgress {
@@ -505,7 +507,7 @@ function MarketPulseWidget(props: { pulse: MarketPulse | null; loading: boolean 
 // ─── BIO WIDGET ───────────────────────────────────────────────
 function BioWidget(props: { ownerKey: string; bio: ProfileBio | null; onSave: (bio: ProfileBio) => void }) {
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState<ProfileBio>({ display_name: "", tagline: "", favorite_team: "", twitter: "", discord: "", avatar_url: "" });
+  const [form, setForm] = useState<ProfileBio>({ display_name: "", tagline: "", favorite_team: "", twitter: "", discord: "", avatar_url: "", accent_color: "#E03A2F" });
   const [saving, setSaving] = useState(false);
 
   useEffect(function() {
@@ -516,6 +518,7 @@ function BioWidget(props: { ownerKey: string; bio: ProfileBio | null; onSave: (b
       twitter: props.bio?.twitter ?? "",
       discord: props.bio?.discord ?? "",
       avatar_url: props.bio?.avatar_url ?? "",
+      accent_color: props.bio?.accent_color ?? "#E03A2F",
     });
   }, [props.bio]);
 
@@ -533,6 +536,7 @@ function BioWidget(props: { ownerKey: string; bio: ProfileBio | null; onSave: (b
           twitter: form.twitter,
           discord: form.discord,
           avatarUrl: form.avatar_url,
+          accentColor: form.accent_color,
         }),
       });
       if (res.ok) { const d = await res.json(); props.onSave(d.bio); setEditing(false); }
@@ -579,6 +583,14 @@ function BioWidget(props: { ownerKey: string; bio: ProfileBio | null; onSave: (b
             </div>
           );
         })}
+        <div style={{ gridColumn: "1 / -1" }}>
+          <div style={Object.assign({}, labelStyle, { marginBottom: 4 })}>Accent Color</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 5, padding: "6px 10px" }}>
+            <div style={{ width: 16, height: 16, borderRadius: "50%", background: form.accent_color ?? "#E03A2F", border: "1px solid rgba(255,255,255,0.25)", flexShrink: 0 }} />
+            <input type="color" value={form.accent_color ?? "#E03A2F"} onChange={function(e) { setForm(function(prev) { return Object.assign({}, prev, { accent_color: e.target.value }); }); }} style={{ background: "transparent", border: "none", padding: 0, width: 32, height: 22, cursor: "pointer" }} />
+            <span style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.7)", letterSpacing: "0.06em" }}>{form.accent_color ?? "#E03A2F"}</span>
+          </div>
+        </div>
       </div>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <button onClick={function() { setEditing(false); }} className="rpc-btn-ghost" style={{ padding: "6px 14px", fontSize: 11 }}>Cancel</button>
@@ -639,6 +651,11 @@ function TrophySlot(props: { slot: number; trophy: TrophyMoment | null; ownerKey
             {(t.badges ?? []).slice(0, 3).map(function(b, i) { return <span key={i} style={{ fontSize: 10 }}>{b}</span>; })}
           </div>
         )}
+        {t.note && (
+          <div style={{ marginTop: 5, fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.75)", fontStyle: "italic", lineHeight: 1.3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", textOverflow: "ellipsis" }}>
+            &ldquo;{t.note}&rdquo;
+          </div>
+        )}
       </div>
     </div>
   );
@@ -663,6 +680,7 @@ function PinModal(props: { slot: number; ownerKey: string; prefilled: PinPreview
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<PinPreview | null>(props.prefilled);
+  const [note, setNote] = useState("");
 
   // Collection tab state
   const [moments, setMoments] = useState<CollectionMoment[]>([]);
@@ -727,7 +745,7 @@ function PinModal(props: { slot: number; ownerKey: string; prefilled: PinPreview
     if (!pinData) return;
     setLoading(true);
     try {
-      const res = await fetch("/api/profile/trophy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ownerKey: props.ownerKey, slot: props.slot, momentId: pinData.momentId, playerName: pinData.playerName, setName: pinData.setName, serialNumber: pinData.serialNumber, circulationCount: pinData.circulationCount, tier: pinData.tier, thumbnailUrl: pinData.thumbnailUrl, videoUrl: pinData.videoUrl, fmv: pinData.fmv, badges: pinData.badges }) });
+      const res = await fetch("/api/profile/trophy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ownerKey: props.ownerKey, slot: props.slot, momentId: pinData.momentId, playerName: pinData.playerName, setName: pinData.setName, serialNumber: pinData.serialNumber, circulationCount: pinData.circulationCount, tier: pinData.tier, thumbnailUrl: pinData.thumbnailUrl, videoUrl: pinData.videoUrl, fmv: pinData.fmv, badges: pinData.badges, note: note.trim() || null }) });
       if (!res.ok) throw new Error("Failed");
       const d = await res.json();
       props.onPinned(d.trophy);
@@ -790,6 +808,10 @@ function PinModal(props: { slot: number; ownerKey: string; prefilled: PinPreview
                   </div>
                 </div>
               </div>
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <div style={Object.assign({}, labelStyle, { marginBottom: 4 })}>Caption (optional)</div>
+              <input value={note} onChange={function(e) { setNote(e.target.value.slice(0, 120)); }} maxLength={120} placeholder="Add a short caption for this trophy…" style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, padding: "8px 12px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none" }} />
             </div>
             {error && <div style={{ fontSize: 10, fontFamily: monoFont, color: "#F87171", marginBottom: 10 }}>{error}</div>}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -888,6 +910,12 @@ function PinModal(props: { slot: number; ownerKey: string; prefilled: PinPreview
                       {preview.tier && <div><div style={Object.assign({}, labelStyle, { marginBottom: 1 })}>Tier</div><div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: tc }}>{preview.tier}</div></div>}
                       {preview.fmv != null && <div><div style={Object.assign({}, labelStyle, { marginBottom: 1 })}>FMV</div><div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: "#34D399" }}>{fmtDollars(preview.fmv)}</div></div>}
                     </div>
+                  </div>
+                )}
+                {preview && (
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={Object.assign({}, labelStyle, { marginBottom: 4 })}>Caption (optional)</div>
+                    <input value={note} onChange={function(e) { setNote(e.target.value.slice(0, 120)); }} maxLength={120} placeholder="Add a short caption for this trophy…" style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, padding: "8px 12px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none" }} />
                   </div>
                 )}
                 {error && <div style={{ fontSize: 10, fontFamily: monoFont, color: "#F87171", marginBottom: 10 }}>{error}</div>}

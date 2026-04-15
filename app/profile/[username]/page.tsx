@@ -26,6 +26,7 @@ interface TrophyMoment {
   video_url: string | null;
   fmv: number | null;
   badges: string[] | null;
+  note?: string | null;
 }
 
 interface ProfileBio {
@@ -35,6 +36,7 @@ interface ProfileBio {
   twitter: string | null;
   discord: string | null;
   avatar_url: string | null;
+  accent_color?: string | null;
 }
 
 interface SavedWalletPublic {
@@ -192,19 +194,36 @@ function PublicTrophySlot(props: { slot: number; trophy: TrophyMoment | null }) 
             {(t.badges ?? []).slice(0, 3).map(function(b, i) { return <span key={i} style={{ fontSize: 10 }}>{b}</span>; })}
           </div>
         )}
+        {t.note && (
+          <div style={{ marginTop: 5, fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.75)", fontStyle: "italic", lineHeight: 1.3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", textOverflow: "ellipsis" }}>
+            &ldquo;{t.note}&rdquo;
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 // ── Avatar ────────────────────────────────────────────────────────
-function Avatar(props: { username: string; bio: ProfileBio | null; size?: number }) {
+function hexToRgba(hex: string, alpha: number): string {
+  const clean = (hex || "").replace("#", "");
+  if (clean.length !== 6) return "rgba(224,58,47," + alpha + ")";
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
+}
+
+function Avatar(props: { username: string; bio: ProfileBio | null; size?: number; accent?: string }) {
   const { username, bio, size = 64 } = props;
+  const accent = props.accent ?? "#E03A2F";
+  const accentBorder = hexToRgba(accent, 0.4);
+  const accentBg = hexToRgba(accent, 0.15);
   const initials = username ? username.slice(0, 2).toUpperCase() : "?";
 
   if (bio?.avatar_url) {
     return (
-      <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", border: "2px solid rgba(224,58,47,0.4)", flexShrink: 0 }}>
+      <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", border: "2px solid " + accentBorder, flexShrink: 0 }}>
         <img
           src={bio.avatar_url}
           alt={username}
@@ -214,14 +233,14 @@ function Avatar(props: { username: string; bio: ProfileBio | null; size?: number
             if (e.currentTarget.parentElement) {
               e.currentTarget.parentElement.innerHTML = initials;
               Object.assign(e.currentTarget.parentElement.style, {
-                background: "rgba(224,58,47,0.15)",
+                background: accentBg,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 fontFamily: condensedFont,
                 fontWeight: "800",
                 fontSize: (size * 0.35) + "px",
-                color: "#E03A2F",
+                color: accent,
               });
             }
           }}
@@ -231,7 +250,7 @@ function Avatar(props: { username: string; bio: ProfileBio | null; size?: number
   }
 
   return (
-    <div style={{ width: size, height: size, borderRadius: "50%", background: "rgba(224,58,47,0.15)", border: "2px solid rgba(224,58,47,0.4)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.35, fontWeight: 800, color: "#E03A2F", fontFamily: condensedFont, flexShrink: 0 }}>
+    <div style={{ width: size, height: size, borderRadius: "50%", background: accentBg, border: "2px solid " + accentBorder, display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.35, fontWeight: 800, color: accent, fontFamily: condensedFont, flexShrink: 0 }}>
       {initials}
     </div>
   );
@@ -309,6 +328,9 @@ export default function PublicProfilePage() {
   }, []);
 
   // Derived stats
+  const accentColor = bio?.accent_color ?? "#E03A2F";
+  const accentBg = hexToRgba(accentColor, 0.15);
+  const accentBorder = hexToRgba(accentColor, 0.4);
   const filledCount = trophies.filter(Boolean).length;
   const totalFmv = wallets.reduce(function(sum, w) { return sum + (w.cached_fmv ?? 0); }, 0);
   const totalMoments = wallets.reduce(function(sum, w) { return sum + (w.cached_moment_count ?? 0); }, 0);
@@ -337,7 +359,7 @@ export default function PublicProfilePage() {
             <RpcLogo size={32} />
           </Link>
           <div style={{ flex: 1 }} />
-          <Link href={"/nba-top-shot/collection?q=" + encodeURIComponent(username)} className="rpc-btn-ghost" style={{ textDecoration: "none", fontSize: 10 }}>
+          <Link href={"/nba-top-shot/collection?q=" + encodeURIComponent(username)} className="rpc-btn-ghost" style={{ textDecoration: "none", fontSize: 10, color: accentColor, borderColor: accentBorder }}>
             {"ANALYZE " + username.toUpperCase() + "'S WALLET →"}
           </Link>
         </div>
@@ -348,7 +370,7 @@ export default function PublicProfilePage() {
         {/* ── Profile Header + Bio ── */}
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
-            <Avatar username={username} bio={bio} size={72} />
+            <Avatar username={username} bio={bio} size={72} accent={accentColor} />
           </div>
           <h1 style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 32, letterSpacing: "0.06em", color: "var(--rpc-text-primary)", textTransform: "uppercase", lineHeight: 1, marginBottom: 6 }}>
             {bio?.display_name ?? username}
@@ -362,7 +384,7 @@ export default function PublicProfilePage() {
             {"NBA TOP SHOT COLLECTOR · " + filledCount + " / " + MAX_SLOTS + " TROPHY MOMENTS"}
           </div>
           {isTeamCaptain && (
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 10, padding: "4px 12px", background: "var(--rpc-red-bg)", border: "1px solid var(--rpc-red-border)", borderRadius: "var(--radius-sm)", fontSize: 9, fontFamily: monoFont, letterSpacing: "0.1em", color: "var(--rpc-red)" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 10, padding: "4px 12px", background: accentBg, border: "1px solid " + accentBorder, borderRadius: "var(--radius-sm)", fontSize: 9, fontFamily: monoFont, letterSpacing: "0.1em", color: accentColor }}>
               <span style={{ color: "var(--rpc-success)" }}>✓</span> PORTLAND TRAIL BLAZERS TEAM CAPTAIN
             </div>
           )}
@@ -394,7 +416,7 @@ export default function PublicProfilePage() {
           {/* RPC Score */}
           {rpcScore != null && (
             <div style={{ ...cardStyle, textAlign: "center", position: "relative", overflow: "hidden" }}>
-              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: scoreColor(rpcScore), opacity: 0.7 }} />
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: accentColor, opacity: 0.7 }} />
               <div style={labelStyle}>RPC SCORE</div>
               <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 28, color: scoreColor(rpcScore), lineHeight: 1, margin: "8px 0 4px" }}>{rpcScore}</div>
               <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em" }}>POWERED BY TOP SHOT SCORE</div>
@@ -440,7 +462,7 @@ export default function PublicProfilePage() {
         {/* ── Portfolio Sparkline ── */}
         {username && (
           <div style={{ marginBottom: 16 }}>
-            <PortfolioSparkline ownerKey={username} currentFmv={totalFmv} />
+            <PortfolioSparkline ownerKey={username} currentFmv={totalFmv} lineColor={accentColor} />
           </div>
         )}
 
@@ -585,7 +607,7 @@ export default function PublicProfilePage() {
         {/* ── CTA Footer ── */}
         <div style={{ textAlign: "center", paddingTop: 32, borderTop: "1px solid var(--rpc-border)" }}>
           <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.15em", marginBottom: 12 }}>POWERED BY RIP PACKS CITY</div>
-          <Link href="/profile" className="rpc-btn-primary" style={{ textDecoration: "none", display: "inline-block", fontSize: 13, padding: "10px 24px" }}>
+          <Link href="/profile" className="rpc-btn-primary" style={{ textDecoration: "none", display: "inline-block", fontSize: 13, padding: "10px 24px", background: accentColor, borderColor: accentColor }}>
             BUILD YOUR OWN PROFILE →
           </Link>
         </div>
