@@ -4,6 +4,7 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 // GET ?ownerKey=xxx
 export async function GET(req: NextRequest) {
   const ownerKey = req.nextUrl.searchParams.get("ownerKey");
+  const isPublic = req.nextUrl.searchParams.get("public") === "1";
   if (!ownerKey) return NextResponse.json({ error: "ownerKey required" }, { status: 400 });
 
   try {
@@ -19,13 +20,31 @@ export async function GET(req: NextRequest) {
 
     // Normalize DB column names to client-expected shape
     const wallets = (data ?? []).map(function(row: any) {
-      return {
+      const normalized: any = {
         ...row,
         wallet_addr: row.wallet_address ?? row.wallet_addr,
         display_name: row.nickname ?? row.display_name ?? null,
         cached_fmv: row.cached_fmv_usd ?? row.cached_fmv ?? null,
         pinned_at: row.created_at ?? row.pinned_at ?? new Date().toISOString(),
       };
+      if (isPublic) {
+        // Strip any address-like field from the public response.
+        delete normalized.wallet_addr;
+        delete normalized.wallet_address;
+        delete normalized.address;
+        return {
+          display_name: normalized.display_name ?? null,
+          username: normalized.username ?? null,
+          cached_fmv: normalized.cached_fmv ?? null,
+          cached_moment_count: normalized.cached_moment_count ?? null,
+          cached_top_tier: normalized.cached_top_tier ?? null,
+          cached_badges: normalized.cached_badges ?? null,
+          accent_color: normalized.accent_color ?? "#E03A2F",
+          cached_rpc_score: normalized.cached_rpc_score ?? null,
+          cached_change_24h: normalized.cached_change_24h ?? null,
+        };
+      }
+      return normalized;
     });
     return NextResponse.json({ wallets });
   } catch (err: any) {

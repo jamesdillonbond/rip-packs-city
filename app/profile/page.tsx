@@ -645,13 +645,70 @@ function TrophySlot(props: { slot: number; trophy: TrophyMoment | null; ownerKey
 }
 
 // ─── PIN MODAL ────────────────────────────────────────────────
-function PinModal(props: { slot: number; ownerKey: string; prefilled: PinPreview | null; onClose: () => void; onPinned: (t: TrophyMoment) => void }) {
+interface CollectionMoment {
+  momentId: string;
+  playerName: string;
+  setName: string;
+  serialNumber: number | null;
+  circulationCount: number | null;
+  tier: string;
+  thumbnailUrl: string | null;
+  videoUrl: string | null;
+  fmv: number | null;
+}
+
+function PinModal(props: { slot: number; ownerKey: string; prefilled: PinPreview | null; savedWallets: SavedWallet[]; onClose: () => void; onPinned: (t: TrophyMoment) => void }) {
+  const [tab, setTab] = useState<"collection" | "byid">(props.prefilled ? "collection" : "collection");
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<PinPreview | null>(props.prefilled);
 
+  // Collection tab state
+  const [moments, setMoments] = useState<CollectionMoment[]>([]);
+  const [momentsLoading, setMomentsLoading] = useState(false);
+  const [momentsError, setMomentsError] = useState("");
+  const [search, setSearch] = useState("");
+  const [tierFilter, setTierFilter] = useState<string>("All");
+
+  const firstWalletAddr = props.savedWallets.length > 0 ? props.savedWallets[0].wallet_addr : null;
+
   useEffect(function() { if (props.prefilled) setPreview(props.prefilled); }, [props.prefilled]);
+
+  // Fetch moments from first saved wallet when Collection tab is active
+  useEffect(function() {
+    if (props.prefilled) return;
+    if (tab !== "collection") return;
+    if (!firstWalletAddr) return;
+    setMomentsLoading(true);
+    setMomentsError("");
+    fetch("/api/wallet-search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input: firstWalletAddr, offset: 0, limit: 100 }),
+    })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) {
+        if (!d) { setMomentsError("Could not load moments."); return; }
+        const rows: any[] = d.rows ?? d.moments ?? d.data ?? [];
+        const mapped: CollectionMoment[] = rows.map(function(r: any) {
+          return {
+            momentId: String(r.momentId ?? r.moment_id ?? r.id ?? ""),
+            playerName: r.playerName ?? r.player_name ?? "Unknown",
+            setName: r.setName ?? r.set_name ?? "",
+            serialNumber: r.serialNumber ?? r.serial_number ?? r.serial ?? null,
+            circulationCount: r.circulationCount ?? r.circulation_count ?? r.mintSize ?? null,
+            tier: r.tier ?? "Common",
+            thumbnailUrl: r.thumbnailUrl ?? r.thumbnail_url ?? null,
+            videoUrl: r.videoUrl ?? r.video_url ?? null,
+            fmv: (typeof r.fmv === "number" ? r.fmv : (typeof r.fmv_usd === "number" ? r.fmv_usd : null)),
+          };
+        }).filter(function(m: CollectionMoment) { return !!m.momentId; });
+        setMoments(mapped);
+      })
+      .catch(function() { setMomentsError("Could not load moments."); })
+      .finally(function() { setMomentsLoading(false); });
+  }, [tab, firstWalletAddr, props.prefilled]);
 
   async function handleLookup() {
     if (!input.trim()) return;
@@ -665,11 +722,12 @@ function PinModal(props: { slot: number; ownerKey: string; prefilled: PinPreview
     finally { setLoading(false); }
   }
 
-  async function handlePin() {
-    if (!preview) return;
+  async function handlePin(target?: PinPreview) {
+    const pinData = target ?? preview;
+    if (!pinData) return;
     setLoading(true);
     try {
-      const res = await fetch("/api/profile/trophy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ownerKey: props.ownerKey, slot: props.slot, momentId: preview.momentId, playerName: preview.playerName, setName: preview.setName, serialNumber: preview.serialNumber, circulationCount: preview.circulationCount, tier: preview.tier, thumbnailUrl: preview.thumbnailUrl, videoUrl: preview.videoUrl, fmv: preview.fmv, badges: preview.badges }) });
+      const res = await fetch("/api/profile/trophy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ownerKey: props.ownerKey, slot: props.slot, momentId: pinData.momentId, playerName: pinData.playerName, setName: pinData.setName, serialNumber: pinData.serialNumber, circulationCount: pinData.circulationCount, tier: pinData.tier, thumbnailUrl: pinData.thumbnailUrl, videoUrl: pinData.videoUrl, fmv: pinData.fmv, badges: pinData.badges }) });
       if (!res.ok) throw new Error("Failed");
       const d = await res.json();
       props.onPinned(d.trophy);
@@ -678,57 +736,172 @@ function PinModal(props: { slot: number; ownerKey: string; prefilled: PinPreview
     finally { setLoading(false); }
   }
 
+  function handleCardClick(m: CollectionMoment) {
+    const pinData: PinPreview = {
+      momentId: m.momentId,
+      playerName: m.playerName,
+      setName: m.setName,
+      serialNumber: m.serialNumber,
+      circulationCount: m.circulationCount,
+      tier: m.tier,
+      thumbnailUrl: m.thumbnailUrl,
+      videoUrl: m.videoUrl,
+      fmv: m.fmv,
+      badges: null,
+    };
+    handlePin(pinData);
+  }
+
   const tc = tierColor(preview?.tier ?? null);
+
+  // Client-side filter
+  const filteredMoments = moments.filter(function(m) {
+    if (tierFilter !== "All" && (m.tier ?? "").toLowerCase() !== tierFilter.toLowerCase()) return false;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      if (!(m.playerName ?? "").toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
+  const tierPills = ["All", "Legendary", "Rare", "Common"];
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: "var(--z-modal)" as any, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-lg)" as any, padding: 24, width: "100%", maxWidth: 460, animation: "fadeIn 0.2s ease both", boxShadow: "var(--shadow-elevated)" }}>
+      <div style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-lg)" as any, padding: 24, width: "100%", maxWidth: 560, animation: "fadeIn 0.2s ease both", boxShadow: "var(--shadow-elevated)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div className="rpc-heading" style={{ fontSize: 17 }}>{"Pin to Slot " + props.slot}</div>
           <button onClick={props.onClose} style={Object.assign({}, btnBase, { padding: "3px 8px" })}>✕</button>
         </div>
+
         {props.prefilled && preview ? (
-          <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: 14, marginBottom: 14 }}>
-            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-              {preview.thumbnailUrl && <img src={preview.thumbnailUrl} alt={preview.playerName} style={{ width: 56, height: 56, borderRadius: 6, objectFit: "cover", border: "1px solid " + tc + "44" }} onError={function(e) { e.currentTarget.style.display = "none"; }} />}
-              <div style={{ flex: 1 }}>
-                <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 16, color: "#fff", marginBottom: 2 }}>{preview.playerName}</div>
-                <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", marginBottom: 8 }}>{preview.setName}</div>
-                <div style={{ display: "flex", gap: 12 }}>
-                  {preview.serialNumber != null && <div><div style={Object.assign({}, labelStyle, { marginBottom: 1 })}>Serial</div><div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: tc }}>{"#" + preview.serialNumber}</div></div>}
-                  {preview.tier && <div><div style={Object.assign({}, labelStyle, { marginBottom: 1 })}>Tier</div><div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: tc }}>{preview.tier}</div></div>}
-                  {preview.fmv != null && <div><div style={Object.assign({}, labelStyle, { marginBottom: 1 })}>FMV</div><div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: "#34D399" }}>{fmtDollars(preview.fmv)}</div></div>}
+          /* Prefilled path: straight-to-confirm */
+          <>
+            <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: 14, marginBottom: 14 }}>
+              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                {preview.thumbnailUrl && <img src={preview.thumbnailUrl} alt={preview.playerName} style={{ width: 56, height: 56, borderRadius: 6, objectFit: "cover", border: "1px solid " + tc + "44" }} onError={function(e) { e.currentTarget.style.display = "none"; }} />}
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 16, color: "#fff", marginBottom: 2 }}>{preview.playerName}</div>
+                  <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", marginBottom: 8 }}>{preview.setName}</div>
+                  <div style={{ display: "flex", gap: 12 }}>
+                    {preview.serialNumber != null && <div><div style={Object.assign({}, labelStyle, { marginBottom: 1 })}>Serial</div><div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: tc }}>{"#" + preview.serialNumber}</div></div>}
+                    {preview.tier && <div><div style={Object.assign({}, labelStyle, { marginBottom: 1 })}>Tier</div><div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: tc }}>{preview.tier}</div></div>}
+                    {preview.fmv != null && <div><div style={Object.assign({}, labelStyle, { marginBottom: 1 })}>FMV</div><div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: "#34D399" }}>{fmtDollars(preview.fmv)}</div></div>}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+            {error && <div style={{ fontSize: 10, fontFamily: monoFont, color: "#F87171", marginBottom: 10 }}>{error}</div>}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={props.onClose} style={Object.assign({}, btnBase, { padding: "7px 14px" })}>Cancel</button>
+              <button onClick={function() { handlePin(); }} disabled={loading} style={Object.assign({}, btnBase, { background: "#E03A2F", color: "#fff", borderColor: "#E03A2F", padding: "7px 14px", opacity: loading ? 0.6 : 1 })}>
+                {loading ? "Saving…" : "Pin to Trophy Case"}
+              </button>
+            </div>
+          </>
         ) : (
           <>
-            <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", marginBottom: 12, lineHeight: 1.6 }}>Enter a moment ID from the Top Shot URL: nbatopshot.com/moment/XXXXXXXX</div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-              <input value={input} onChange={function(e) { setInput(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter") handleLookup(); }} placeholder="Moment ID…" style={{ flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, padding: "8px 12px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none" }} />
-              <button onClick={handleLookup} disabled={loading} style={Object.assign({}, btnBase, { background: "#E03A2F", color: "#fff", borderColor: "#E03A2F", padding: "8px 14px", opacity: loading ? 0.6 : 1 })}>{loading ? "…" : "Look Up"}</button>
+            {/* Tabs */}
+            <div style={{ display: "flex", gap: 4, marginBottom: 14, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+              {([
+                { id: "collection", label: "My Collection" },
+                { id: "byid", label: "By ID" },
+              ] as const).map(function(t) {
+                const active = tab === t.id;
+                return (
+                  <button key={t.id} onClick={function() { setTab(t.id); }} style={{ background: "transparent", border: "none", borderBottom: active ? "2px solid #E03A2F" : "2px solid transparent", color: active ? "#fff" : "rgba(255,255,255,0.45)", padding: "8px 14px", fontFamily: condensedFont, fontWeight: 800, fontSize: 12, letterSpacing: "0.08em", cursor: "pointer", textTransform: "uppercase" }}>{t.label}</button>
+                );
+              })}
             </div>
-            {preview && (
-              <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: 12, marginBottom: 14 }}>
-                <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 15, color: "#fff", marginBottom: 3 }}>{preview.playerName}</div>
-                <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", marginBottom: 8 }}>{preview.setName}</div>
-                <div style={{ display: "flex", gap: 14 }}>
-                  {preview.serialNumber != null && <div><div style={Object.assign({}, labelStyle, { marginBottom: 1 })}>Serial</div><div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: tc }}>{"#" + preview.serialNumber}</div></div>}
-                  {preview.tier && <div><div style={Object.assign({}, labelStyle, { marginBottom: 1 })}>Tier</div><div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: tc }}>{preview.tier}</div></div>}
-                  {preview.fmv != null && <div><div style={Object.assign({}, labelStyle, { marginBottom: 1 })}>FMV</div><div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: "#34D399" }}>{fmtDollars(preview.fmv)}</div></div>}
+
+            {tab === "collection" ? (
+              !firstWalletAddr ? (
+                <div style={{ fontSize: 11, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", padding: "20px 12px", lineHeight: 1.7, textAlign: "center", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 8 }}>
+                  Add a wallet to your profile first, then you can browse and pin moments from here.
                 </div>
-              </div>
+              ) : (
+                <>
+                  {/* Search + tier pills */}
+                  <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+                    <input value={search} onChange={function(e) { setSearch(e.target.value); }} placeholder="Search by player…" style={{ flex: 1, minWidth: 160, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, padding: "7px 12px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none" }} />
+                    <div style={{ display: "flex", gap: 4 }}>
+                      {tierPills.map(function(p) {
+                        const active = tierFilter === p;
+                        return <button key={p} onClick={function() { setTierFilter(p); }} style={Object.assign({}, btnBase, { fontSize: 9, background: active ? "rgba(224,58,47,0.18)" : "transparent", color: active ? "#E03A2F" : "rgba(255,255,255,0.5)", borderColor: active ? "rgba(224,58,47,0.4)" : "rgba(255,255,255,0.1)" })}>{p}</button>;
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Grid */}
+                  <div style={{ maxHeight: 420, overflowY: "auto", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, padding: 10, background: "rgba(0,0,0,0.3)" }}>
+                    {momentsLoading ? (
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                        {[0,1,2,3,4,5].map(function(i) {
+                          return <div key={i} style={{ aspectRatio: "3/4", background: "rgba(255,255,255,0.04)", borderRadius: 6, animation: "pulse 1.6s ease-in-out infinite" }} />;
+                        })}
+                      </div>
+                    ) : momentsError ? (
+                      <div style={{ fontSize: 10, fontFamily: monoFont, color: "#F87171", padding: 16, textAlign: "center" }}>{momentsError}</div>
+                    ) : filteredMoments.length === 0 ? (
+                      <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", padding: 16, textAlign: "center" }}>No moments match these filters.</div>
+                    ) : (
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                        {filteredMoments.map(function(m) {
+                          const mtc = tierColor(m.tier);
+                          return (
+                            <button key={m.momentId} onClick={function() { handleCardClick(m); }} disabled={loading} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid " + mtc + "44", borderRadius: 6, padding: 0, cursor: "pointer", overflow: "hidden", textAlign: "left", transition: "transform 0.12s, border-color 0.12s", opacity: loading ? 0.5 : 1 }} onMouseEnter={function(e) { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.borderColor = mtc; }} onMouseLeave={function(e) { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.borderColor = mtc + "44"; }}>
+                              <div style={{ aspectRatio: "1 / 1", background: "#111", overflow: "hidden" }}>
+                                {m.thumbnailUrl ? (
+                                  <img src={m.thumbnailUrl} alt={m.playerName} style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={function(e) { e.currentTarget.style.opacity = "0.2"; }} />
+                                ) : (
+                                  <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, color: mtc }}>◈</div>
+                                )}
+                              </div>
+                              <div style={{ padding: "6px 8px 8px" }}>
+                                <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 11, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.playerName}</div>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 2 }}>
+                                  <span style={{ fontSize: 9, fontFamily: monoFont, color: mtc }}>{m.serialNumber != null ? "#" + m.serialNumber : ""}</span>
+                                  {m.fmv != null && <span style={{ fontSize: 9, fontFamily: monoFont, color: "#34D399" }}>{fmtDollars(m.fmv)}</span>}
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )
+            ) : (
+              <>
+                <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", marginBottom: 12, lineHeight: 1.6 }}>Enter a moment ID from the Top Shot URL: nbatopshot.com/moment/XXXXXXXX</div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                  <input value={input} onChange={function(e) { setInput(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter") handleLookup(); }} placeholder="Moment ID…" style={{ flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, padding: "8px 12px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none" }} />
+                  <button onClick={handleLookup} disabled={loading} style={Object.assign({}, btnBase, { background: "#E03A2F", color: "#fff", borderColor: "#E03A2F", padding: "8px 14px", opacity: loading ? 0.6 : 1 })}>{loading ? "…" : "Look Up"}</button>
+                </div>
+                {preview && (
+                  <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: 12, marginBottom: 14 }}>
+                    <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 15, color: "#fff", marginBottom: 3 }}>{preview.playerName}</div>
+                    <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", marginBottom: 8 }}>{preview.setName}</div>
+                    <div style={{ display: "flex", gap: 14 }}>
+                      {preview.serialNumber != null && <div><div style={Object.assign({}, labelStyle, { marginBottom: 1 })}>Serial</div><div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: tc }}>{"#" + preview.serialNumber}</div></div>}
+                      {preview.tier && <div><div style={Object.assign({}, labelStyle, { marginBottom: 1 })}>Tier</div><div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: tc }}>{preview.tier}</div></div>}
+                      {preview.fmv != null && <div><div style={Object.assign({}, labelStyle, { marginBottom: 1 })}>FMV</div><div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: "#34D399" }}>{fmtDollars(preview.fmv)}</div></div>}
+                    </div>
+                  </div>
+                )}
+                {error && <div style={{ fontSize: 10, fontFamily: monoFont, color: "#F87171", marginBottom: 10 }}>{error}</div>}
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button onClick={props.onClose} style={Object.assign({}, btnBase, { padding: "7px 14px" })}>Cancel</button>
+                  <button onClick={function() { handlePin(); }} disabled={!preview || loading} style={Object.assign({}, btnBase, { background: preview ? "#E03A2F" : "rgba(255,255,255,0.05)", color: preview ? "#fff" : "rgba(255,255,255,0.3)", borderColor: preview ? "#E03A2F" : "rgba(255,255,255,0.1)", padding: "7px 14px", opacity: loading ? 0.6 : 1 })}>
+                    {loading ? "Saving…" : "Pin to Trophy Case"}
+                  </button>
+                </div>
+              </>
             )}
+            {tab === "collection" && error && <div style={{ fontSize: 10, fontFamily: monoFont, color: "#F87171", marginTop: 10 }}>{error}</div>}
           </>
         )}
-        {error && <div style={{ fontSize: 10, fontFamily: monoFont, color: "#F87171", marginBottom: 10 }}>{error}</div>}
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button onClick={props.onClose} style={Object.assign({}, btnBase, { padding: "7px 14px" })}>Cancel</button>
-          <button onClick={handlePin} disabled={!preview || loading} style={Object.assign({}, btnBase, { background: preview ? "#E03A2F" : "rgba(255,255,255,0.05)", color: preview ? "#fff" : "rgba(255,255,255,0.3)", borderColor: preview ? "#E03A2F" : "rgba(255,255,255,0.1)", padding: "7px 14px", opacity: loading ? 0.6 : 1 })}>
-            {loading ? "Saving…" : "Pin to Trophy Case"}
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -873,8 +1046,9 @@ function WalletCard(props: { wallet: SavedWallet; onLoad: (addr: string, user?: 
   const [hovered, setHovered] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showAddr, setShowAddr] = useState(false);
   const w = props.wallet;
-  const label = w.display_name || w.username || (w.wallet_addr.slice(0, 10) + "…");
+  const label = w.display_name || w.username || ("Wallet " + (w.id ?? ""));
   const initials = label.slice(0, 2).toUpperCase();
   const changeColor = (w.cached_change_24h != null && w.cached_change_24h >= 0) ? "#34D399" : "#F87171";
   const changeStr = w.cached_change_24h != null ? ((w.cached_change_24h > 0 ? "+" : "") + w.cached_change_24h + "%") : "—";
@@ -897,8 +1071,15 @@ function WalletCard(props: { wallet: SavedWallet; onLoad: (addr: string, user?: 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 14, color: "#fff", letterSpacing: "0.04em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.3)" }}>{w.wallet_addr.slice(0, 14) + "…"}</div>
-            <button onClick={handleCopyAddr} title="Copy full address" style={{ background: copied ? "rgba(52,211,153,0.18)" : "rgba(255,255,255,0.04)", border: "1px solid " + (copied ? "rgba(52,211,153,0.4)" : "rgba(255,255,255,0.1)"), borderRadius: 3, padding: "1px 6px", fontSize: 8, fontFamily: monoFont, color: copied ? "#34D399" : "rgba(255,255,255,0.5)", cursor: "pointer", letterSpacing: "0.08em", lineHeight: 1.2 }}>{copied ? "COPIED!" : "COPY"}</button>
+            {showAddr ? (
+              <>
+                <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.55)" }}>{w.wallet_addr}</div>
+                <button onClick={handleCopyAddr} title="Copy full address" style={{ background: copied ? "rgba(52,211,153,0.18)" : "rgba(255,255,255,0.04)", border: "1px solid " + (copied ? "rgba(52,211,153,0.4)" : "rgba(255,255,255,0.1)"), borderRadius: 3, padding: "1px 6px", fontSize: 8, fontFamily: monoFont, color: copied ? "#34D399" : "rgba(255,255,255,0.5)", cursor: "pointer", letterSpacing: "0.08em", lineHeight: 1.2 }}>{copied ? "COPIED!" : "⧉"}</button>
+                <button onClick={function(e) { e.stopPropagation(); setShowAddr(false); }} title="Hide address" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 3, padding: "1px 6px", fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", cursor: "pointer", lineHeight: 1.2 }}>✕</button>
+              </>
+            ) : (
+              <button onClick={function(e) { e.stopPropagation(); setShowAddr(true); }} title="Reveal wallet address" style={{ background: "transparent", border: "none", padding: 0, fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", cursor: "pointer", letterSpacing: "0.12em" }}>0x••••••••</button>
+            )}
           </div>
         </div>
         {(w.cached_badges ?? []).slice(0, 3).map(function(b, i) { return <span key={i} style={{ fontSize: 11 }}>{b}</span>; })}
@@ -1216,7 +1397,7 @@ function ProfilePageInner() {
       </Suspense>
 
       {pinModal !== null && (
-        <PinModal slot={pinModal.slot} ownerKey={ownerKey} prefilled={pinModal.prefilled} onClose={function() { setPinModal(null); }} onPinned={handleTrophyPinned} />
+        <PinModal slot={pinModal.slot} ownerKey={ownerKey} prefilled={pinModal.prefilled} savedWallets={savedWallets} onClose={function() { setPinModal(null); }} onPinned={handleTrophyPinned} />
       )}
 
       <Ticker />
