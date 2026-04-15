@@ -138,10 +138,15 @@ export default function SetsPage() {
       setError(null);
       setData(null);
       try {
-        const endpoint = isAllDay ? "/api/allday-sets" : "/api/sets";
-        const res = await fetch(
-          endpoint + "?wallet=" + encodeURIComponent(w) + "&skipAsks=1"
-        );
+        const isTopShot = collectionSlug === "nba-top-shot";
+        const endpoint =
+          isAllDay ? "/api/allday-sets"
+          : isTopShot ? "/api/sets"
+          : `/api/sets-db?collection=${encodeURIComponent(collectionSlug)}&`;
+        const url = endpoint.includes("?")
+          ? endpoint + "wallet=" + encodeURIComponent(w)
+          : endpoint + "?wallet=" + encodeURIComponent(w) + "&skipAsks=1";
+        const res = await fetch(url);
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           throw new Error(body.error ?? "Request failed (" + res.status + ")");
