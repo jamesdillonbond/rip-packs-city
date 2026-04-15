@@ -43,8 +43,20 @@ type WalletRow = {
   marketConfidence?: string | null
   fmvComputedAt?: string | null
   acquisitionMethod?: string | null
+  buyPrice?: number | null
+  acquisitionConfidence?: string | null
   costBasis?: number | null
   costBasisLabel?: string | null
+}
+
+type AcquisitionStats = {
+  pack_pull_count: number
+  marketplace_count: number
+  challenge_reward_count: number
+  gift_count: number
+  total_count: number
+  locked_count: number
+  total_spent: number
 }
 
 type WalletSearchResponse = {
@@ -56,6 +68,7 @@ type WalletSearchResponse = {
     remainingMoments: number
     totalTssPoints?: number
   }
+  acquisitionStats?: AcquisitionStats | null
   error?: string
 }
 
@@ -449,6 +462,32 @@ async function getCollectionId(): Promise<string | null> {
   }
 }
 
+const SLUG_TO_DB_SLUG: Record<string, string> = {
+  "nba-top-shot": "nba_top_shot",
+  "nfl-all-day": "nfl_all_day",
+  "laliga-golazos": "laliga_golazos",
+  "disney-pinnacle": "disney_pinnacle",
+  "ufc": "ufc",
+}
+
+const COLLECTION_ID_CACHE = new Map<string, string | null>()
+async function getCollectionIdForSlug(slug?: string): Promise<string | null> {
+  const dbSlug = SLUG_TO_DB_SLUG[slug ?? ""] ?? "nba_top_shot"
+  if (COLLECTION_ID_CACHE.has(dbSlug)) return COLLECTION_ID_CACHE.get(dbSlug) ?? null
+  try {
+    const { data } = await supabaseAdmin
+      .from("collections")
+      .select("id")
+      .eq("slug", dbSlug)
+      .single()
+    const id = data?.id ?? null
+    COLLECTION_ID_CACHE.set(dbSlug, id)
+    return id
+  } catch {
+    return null
+  }
+}
+
 // ── Batch FMV + Ask Enrichment ────────────────────────────────────
 // Resolves integer editionKeys → Supabase edition UUIDs → fmv_snapshots
 // Upserts missing editions so integer-format keys always resolve.
@@ -726,6 +765,7 @@ async function enrichWithAcquisitionData(rows: WalletRow[], wallet: string): Pro
       return {
         ...row,
         acquisitionMethod: method,
+        buyPrice: acq.buy_price != null ? Number(acq.buy_price) : null,
         costBasis,
         costBasisLabel: ACQUISITION_LABELS[method] ?? null,
       }
@@ -1120,6 +1160,34 @@ export async function POST(req: NextRequest) {
       })()
     }
 
+    // Acquisition stats (non-blocking — fail silently if missing)
+    let acquisitionStats: AcquisitionStats | null = null
+    try {
+      const walletAddrForStats = wallet.startsWith("0x") ? wallet : "0x" + wallet
+      const acqParams: Record<string, any> = { p_wallet: walletAddrForStats }
+      const collectionUuid = await getCollectionIdForSlug(collection)
+      if (collectionUuid) acqParams.p_collection_id = collectionUuid
+      const { data: acqRaw, error: acqErr } = await (supabaseAdmin as any).rpc("get_acquisition_stats", acqParams)
+      if (!acqErr && acqRaw) {
+        const result = (Array.isArray(acqRaw) ? acqRaw[0] : acqRaw) as { breakdown?: Array<{ method: string; count: number; total_spent?: number }>; total_moments?: number; total_spent?: number; locked_count?: number }
+        const counts: Record<string, number> = { pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0 }
+        for (const b of result?.breakdown ?? []) {
+          if (b?.method && counts[b.method] !== undefined) counts[b.method] = Number(b.count) || 0
+        }
+        acquisitionStats = {
+          pack_pull_count: counts.pack_pull,
+          marketplace_count: counts.marketplace,
+          challenge_reward_count: counts.challenge_reward,
+          gift_count: counts.gift,
+          total_count: Number(result?.total_moments ?? 0),
+          locked_count: Number(result?.locked_count ?? 0),
+          total_spent: Number(result?.total_spent ?? 0),
+        }
+      }
+    } catch (err) {
+      console.log("[wallet-search] acquisition-stats lookup failed:", err instanceof Error ? err.message : String(err))
+    }
+
     return NextResponse.json({
       rows,
       walletAddress: wallet,
@@ -1129,6 +1197,7 @@ export async function POST(req: NextRequest) {
         remainingMoments: Math.max(0, ids.length - (offset + rows.length)),
         totalTssPoints,
       },
+      acquisitionStats,
     } satisfies WalletSearchResponse)
   } catch (e) {
     const message = cleanErrorMessage(e)

@@ -99,6 +99,7 @@ type MomentRow = {
   acquisitionMethod?: string | null
   acquisitionSource?: string | null
   acquisitionConfidence?: string | null
+  buyPrice?: number | null
   costBasis?: number | null
   costBasisLabel?: string | null
 }
@@ -2005,7 +2006,12 @@ export default function WalletPage() {
                             )
                           })()}
                           <div>
-                            <div className="font-semibold text-white text-sm">{row.playerName}</div>
+                            <div className="font-semibold text-white text-sm flex items-center gap-1">
+                              <span>{row.playerName}</span>
+                              {isLocked && (
+                                <span title="This moment is locked on Dapper" style={{ opacity: 0.5, fontSize: 10 }} aria-label="Locked">🔒</span>
+                              )}
+                            </div>
                             <div className="mt-1 flex flex-wrap gap-1">
                               {officialBadges.map(function(title) { return <BadgePill key={"official-" + title} title={title} /> })}
                               {supaBadges.map(function(title) { return <BadgePill key={"supa-" + title} title={title} /> })}
@@ -2024,11 +2030,12 @@ export default function WalletPage() {
                                 }
                                 const cfg = acqConfig[row.acquisitionMethod!]
                                 if (!cfg) return null
+                                const priceSuffix = row.acquisitionMethod === "marketplace" && (row.buyPrice ?? row.costBasis) ? " " + formatCurrency(row.buyPrice ?? row.costBasis ?? 0) : ""
                                 return (
                                   <div className="mt-1">
                                     <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ background: "rgba(" + cfg.color + ",0.1)", color: "rgba(" + cfg.color + ",0.8)", border: "1px solid rgba(" + cfg.color + ",0.15)" }}>
                                       {cfg.icon && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={cfg.icon}/></svg>}
-                                      {cfg.label}
+                                      {cfg.label}{priceSuffix}
                                     </span>
                                   </div>
                                 )
