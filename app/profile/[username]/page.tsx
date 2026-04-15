@@ -10,7 +10,7 @@ import TopMoversCard from "@/components/profile/TopMoversCard";
 import CollectionBreakdownCard from "@/components/profile/CollectionBreakdownCard";
 import PortfolioSparkline from "@/components/profile/PortfolioSparkline";
 import PublicTrophyCase from "@/components/profile/PublicTrophyCase";
-import AchievementsCard from "@/components/profile/AchievementsCard";
+import PublicAchievements from "@/components/profile/PublicAchievements";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface TrophyMoment {
@@ -405,11 +405,7 @@ export default function PublicProfilePage() {
         </div>
 
         {/* ── Achievements ── */}
-        {username && (
-          <div style={{ marginBottom: 24 }}>
-            <AchievementsCard ownerKey={username} />
-          </div>
-        )}
+        {username && <PublicAchievements ownerKey={username} />}
 
         {/* ── Stat Tiles ── */}
         <div style={{ display: "grid", gridTemplateColumns: rpcScore != null ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 24 }}>
