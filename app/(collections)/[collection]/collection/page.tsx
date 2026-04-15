@@ -263,10 +263,10 @@ function getThumbnailUrl(row: MomentRow, collectionSlug?: string): string | null
     }
   }
   // Final fallback: moment flow ID media URL proxied through our API to avoid
-  // hotlink blocks from the Top Shot CDN.
-  const flowId = row.flowId ?? row.momentId
-  if (flowId) {
-    return `/api/moment-thumbnail?flowId=${encodeURIComponent(flowId)}&width=180`
+  // hotlink blocks from the Top Shot CDN. wallet_moments_cache stores only
+  // moment_id (no flowId column); for NBA Top Shot, moment_id IS the flowId.
+  if (row.momentId) {
+    return `/api/moment-thumbnail?flowId=${encodeURIComponent(row.momentId)}&width=180`
   }
   return null
 }

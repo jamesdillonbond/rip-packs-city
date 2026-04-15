@@ -700,15 +700,16 @@ function PinModal(props: { slot: number; ownerKey: string; prefilled: PinPreview
     if (!firstWalletAddr) return;
     setMomentsLoading(true);
     setMomentsError("");
-    fetch("/api/wallet-search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ input: firstWalletAddr, offset: 0, limit: 100 }),
-    })
+    // Pull directly from wallet_moments_cache (wallet_address column) via
+    // /api/collection-moments rather than triggering a fresh on-chain
+    // wallet-search — the cache is already populated from the user's most
+    // recent collection load and avoids the Flow/GQL timeout that was
+    // surfacing as "Could not load moments."
+    fetch("/api/collection-moments?wallet=" + encodeURIComponent(firstWalletAddr) + "&limit=200&sortBy=fmv_desc")
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(d) {
         if (!d) { setMomentsError("Could not load moments."); return; }
-        const rows: any[] = d.rows ?? d.moments ?? d.data ?? [];
+        const rows: any[] = d.moments ?? d.rows ?? d.data ?? [];
         const mapped: CollectionMoment[] = rows.map(function(r: any) {
           return {
             momentId: String(r.momentId ?? r.moment_id ?? r.id ?? ""),
@@ -722,6 +723,7 @@ function PinModal(props: { slot: number; ownerKey: string; prefilled: PinPreview
             fmv: (typeof r.fmv === "number" ? r.fmv : (typeof r.fmv_usd === "number" ? r.fmv_usd : null)),
           };
         }).filter(function(m: CollectionMoment) { return !!m.momentId; });
+        if (mapped.length === 0) { setMomentsError("No moments in cache yet — load your collection first."); }
         setMoments(mapped);
       })
       .catch(function() { setMomentsError("Could not load moments."); })
