@@ -1,303 +1,167 @@
-"use client";
+'use client'
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { getOwnerKey, setOwnerKey } from "@/lib/owner-key";
-import { COLLECTIONS } from "@/lib/collections";
-import { getTrackedCollections, setTrackedCollections } from "@/lib/tracked-collections";
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { publishedCollections } from '@/lib/collections'
 
-const condensedFont = "'Barlow Condensed', sans-serif";
-const monoFont = "'Share Tech Mono', monospace";
-const RED = "#E03A2F";
+const STORAGE_KEY = 'rpc_onboarding_complete'
+const monoFont = "'Share Tech Mono', monospace"
+const condensedFont = "'Barlow Condensed', sans-serif"
 
-interface OnboardingModalProps {
-  onClose: () => void;
-}
+export default function OnboardingModal() {
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const [step, setStep] = useState(1)
+  const [walletInput, setWalletInput] = useState('')
 
-export default function OnboardingModal({ onClose }: OnboardingModalProps) {
-  const router = useRouter();
-  const [step, setStep] = useState(1);
-  const [address, setAddress] = useState("");
-  const [selected, setSelected] = useState<string[]>(["nba-top-shot"]);
-
-  // Pre-populate address from localStorage
   useEffect(() => {
-    const saved = getOwnerKey();
-    if (saved) setAddress(saved);
-  }, []);
-
-  function handleStep1Continue() {
-    if (address.trim()) {
-      setOwnerKey(address.trim());
+    if (typeof window === 'undefined') return
+    if (!localStorage.getItem(STORAGE_KEY)) {
+      const t = setTimeout(() => setOpen(true), 600)
+      return () => clearTimeout(t)
     }
-    setStep(2);
+  }, [])
+
+  function complete() {
+    if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEY, '1')
+    setOpen(false)
   }
 
-  function handleStep2Continue() {
-    setTrackedCollections(selected);
-    setStep(3);
+  function pickCollection(slug: string) {
+    complete()
+    router.push(`/${slug}/overview`)
   }
 
-  // Mark onboarded when step 3 renders
-  useEffect(() => {
-    if (step === 3) {
-      try { localStorage.setItem("rpc_onboarded", "1"); } catch {}
-    }
-  }, [step]);
-
-  function toggleCollection(id: string) {
-    setSelected(prev =>
-      prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
-    );
+  function searchWallet() {
+    if (!walletInput.trim()) return
+    complete()
+    router.push(`/nba-top-shot/collection?q=${encodeURIComponent(walletInput.trim())}`)
   }
 
-  const firstTracked = selected[0] || "nba-top-shot";
-  const ownerKey = address.trim();
+  if (!open) return null
+  const collections = publishedCollections().slice(0, 5)
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
       style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1000,
-        background: "rgba(0,0,0,0.85)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
+        position: 'fixed', inset: 0, zIndex: 10000,
+        background: 'rgba(0,0,0,0.78)', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 16, animation: 'rpc-onb-fade 220ms ease-out',
       }}
+      onClick={complete}
     >
+      <style>{`
+        @keyframes rpc-onb-fade { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes rpc-onb-slide { from { opacity: 0; transform: translateY(12px) } to { opacity: 1; transform: translateY(0) } }
+      `}</style>
       <div
+        onClick={e => e.stopPropagation()}
         style={{
-          background: "#0d0d0d",
-          border: "1px solid rgba(255,255,255,0.1)",
-          borderRadius: 12,
-          padding: 32,
-          maxWidth: 480,
-          width: "100%",
-          position: "relative",
-          maxHeight: "90vh",
-          overflowY: "auto",
+          width: '100%', maxWidth: 480, background: '#0d0d0d',
+          border: '1px solid rgba(224,58,47,0.35)', borderRadius: 14,
+          padding: 24, color: '#fff', animation: 'rpc-onb-slide 260ms ease-out',
+          boxShadow: '0 30px 80px rgba(0,0,0,0.6)',
         }}
       >
-        {/* Close button */}
-        <button
-          onClick={onClose}
-          style={{
-            position: "absolute",
-            top: 12,
-            right: 12,
-            background: "none",
-            border: "none",
-            color: "rgba(255,255,255,0.4)",
-            fontSize: 20,
-            cursor: "pointer",
-            lineHeight: 1,
-          }}
-        >
-          ✕
-        </button>
-
-        {/* Step indicator */}
-        <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 24 }}>
-          {[1, 2, 3].map(n => (
-            <div
-              key={n}
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: n === step ? RED : "rgba(255,255,255,0.15)",
-                transition: "background 0.2s",
-              }}
-            />
-          ))}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+          <span style={{ fontSize: 9, fontFamily: monoFont, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.18em', textTransform: 'uppercase' }}>
+            Step {step} of 3
+          </span>
+          <button onClick={complete} aria-label="Skip" style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 11, fontFamily: monoFont, letterSpacing: '0.1em' }}>SKIP</button>
         </div>
 
-        {/* Step 1 */}
         {step === 1 && (
-          <div>
-            <h2 style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 28, textTransform: "uppercase", color: "#fff", textAlign: "center", marginBottom: 8 }}>
-              Welcome to Rip Packs City
+          <>
+            <h2 style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 26, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 8 }}>
+              Welcome to Rip Packs <span style={{ color: '#E03A2F' }}>City</span>
             </h2>
-            <p style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.5)", textAlign: "center", lineHeight: 1.6, marginBottom: 24, letterSpacing: "0.04em" }}>
-              The collector intelligence platform for digital sports and entertainment collectibles.
+            <p style={{ fontFamily: monoFont, fontSize: 12, color: 'rgba(255,255,255,0.6)', lineHeight: 1.65, marginBottom: 20 }}>
+              The smartest analytics platform for digital collectibles on Flow blockchain.
             </p>
-            <label style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", display: "block", marginBottom: 8 }}>
-              ENTER YOUR DAPPER USERNAME OR WALLET ADDRESS
-            </label>
-            <input
-              value={address}
-              onChange={e => setAddress(e.target.value)}
-              placeholder="Dapper username or 0x address…"
-              style={{
-                width: "100%",
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.12)",
-                borderRadius: 6,
-                padding: "10px 14px",
-                color: "#fff",
-                fontFamily: monoFont,
-                fontSize: 12,
-                outline: "none",
-                marginBottom: 20,
-              }}
-            />
-            <button
-              onClick={handleStep1Continue}
-              style={{
-                width: "100%",
-                background: RED,
-                border: "none",
-                borderRadius: 6,
-                padding: "10px 0",
-                color: "#fff",
-                fontFamily: condensedFont,
-                fontWeight: 700,
-                fontSize: 14,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                cursor: "pointer",
-                marginBottom: 12,
-              }}
-            >
-              Continue →
-            </button>
-            <div style={{ textAlign: "center" }}>
-              <button
-                onClick={() => setStep(2)}
-                style={{ background: "none", border: "none", color: "rgba(255,255,255,0.35)", fontFamily: monoFont, fontSize: 10, cursor: "pointer", letterSpacing: "0.08em" }}
-              >
-                Skip for now
-              </button>
+            <div style={{ display: 'flex', gap: 12, marginBottom: 22, flexWrap: 'wrap' }}>
+              {collections.map(c => (
+                <div key={c.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 60 }}>
+                  <span style={{ fontSize: 26 }}>{c.icon}</span>
+                  <span style={{ fontSize: 8, fontFamily: monoFont, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{c.shortLabel}</span>
+                </div>
+              ))}
             </div>
-          </div>
+            <button onClick={() => setStep(2)} style={primaryBtn}>Get Started →</button>
+          </>
         )}
 
-        {/* Step 2 */}
         {step === 2 && (
-          <div>
-            <h2 style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 24, textTransform: "uppercase", color: "#fff", textAlign: "center", marginBottom: 20 }}>
-              Which Collections Do You Collect?
-            </h2>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 24 }}>
-              {COLLECTIONS.map(col => {
-                const isSelected = selected.includes(col.id);
-                const dimmed = !col.published;
-                return (
-                  <button
-                    key={col.id}
-                    onClick={() => toggleCollection(col.id)}
-                    style={{
-                      background: isSelected ? `${col.accent}15` : "rgba(255,255,255,0.03)",
-                      border: isSelected ? `1px solid ${col.accent}66` : "1px solid rgba(255,255,255,0.08)",
-                      borderRadius: 8,
-                      padding: "12px 10px",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      opacity: dimmed && !isSelected ? 0.5 : 1,
-                      transition: "all 0.15s ease",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                      <span style={{ fontSize: 16 }}>{col.icon}</span>
-                      <span style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, color: isSelected ? col.accent : "rgba(255,255,255,0.7)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                        {col.shortLabel}
-                      </span>
-                    </div>
-                    <div style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: "0.08em" }}>
-                      {col.published ? col.sport : "COMING SOON"}
-                    </div>
-                    {isSelected && (
-                      <div style={{ color: col.accent, fontSize: 10, marginTop: 4 }}>✓</div>
-                    )}
-                  </button>
-                );
-              })}
+          <>
+            <h2 style={titleStyle}>Pick Your Collection</h2>
+            <p style={subStyle}>Jump into the analytics for any collection.</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(140px,1fr))', gap: 10, marginBottom: 18 }}>
+              {collections.map(c => (
+                <button
+                  key={c.id}
+                  onClick={() => pickCollection(c.id)}
+                  style={{
+                    background: 'rgba(13,13,13,0.85)', border: `1px solid ${c.accent}44`,
+                    borderRadius: 10, padding: 14, color: '#fff', cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                    transition: 'border-color 120ms',
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = c.accent }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = `${c.accent}44` }}
+                >
+                  <span style={{ fontSize: 22 }}>{c.icon}</span>
+                  <span style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase' }}>{c.shortLabel}</span>
+                </button>
+              ))}
             </div>
-            <button
-              onClick={handleStep2Continue}
-              style={{
-                width: "100%",
-                background: RED,
-                border: "none",
-                borderRadius: 6,
-                padding: "10px 0",
-                color: "#fff",
-                fontFamily: condensedFont,
-                fontWeight: 700,
-                fontSize: 14,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                cursor: "pointer",
-              }}
-            >
-              Continue →
-            </button>
-          </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <button onClick={() => setStep(3)} style={linkBtn}>Or browse all →</button>
+              <button onClick={() => setStep(3)} style={primaryBtn}>Next →</button>
+            </div>
+          </>
         )}
 
-        {/* Step 3 */}
         {step === 3 && (
-          <div style={{ textAlign: "center" }}>
-            <h2 style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 28, textTransform: "uppercase", color: "#fff", marginBottom: 12 }}>
-              You&apos;re All Set
-            </h2>
-            <p style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.5)", lineHeight: 1.6, marginBottom: 28, letterSpacing: "0.04em" }}>
-              Your profile is configured. Head to your collection to see your portfolio, or explore the sniper feed for live deals.
-            </p>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button
-                onClick={() => {
-                  const url = ownerKey
-                    ? `/${firstTracked}/collection?address=${encodeURIComponent(ownerKey)}`
-                    : `/${firstTracked}/collection`;
-                  router.push(url);
-                  onClose();
-                }}
+          <>
+            <h2 style={titleStyle}>Connect Your Wallet</h2>
+            <p style={subStyle}>Search any wallet or username to see full analytics — no signup required.</p>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              <input
+                type="text"
+                value={walletInput}
+                onChange={e => setWalletInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && searchWallet()}
+                placeholder="0x… or @username"
                 style={{
-                  flex: 1,
-                  background: RED,
-                  border: "none",
-                  borderRadius: 6,
-                  padding: "10px 0",
-                  color: "#fff",
-                  fontFamily: condensedFont,
-                  fontWeight: 700,
-                  fontSize: 12,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  cursor: "pointer",
+                  flex: 1, background: 'rgba(13,13,13,0.85)', border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: 6, padding: '10px 12px', color: '#fff', fontFamily: monoFont, fontSize: 12, outline: 'none',
                 }}
-              >
-                View My Collection
-              </button>
-              <button
-                onClick={() => {
-                  router.push(`/${firstTracked}/sniper`);
-                  onClose();
-                }}
-                style={{
-                  flex: 1,
-                  background: "transparent",
-                  border: `1px solid ${RED}`,
-                  borderRadius: 6,
-                  padding: "10px 0",
-                  color: RED,
-                  fontFamily: condensedFont,
-                  fontWeight: 700,
-                  fontSize: 12,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  cursor: "pointer",
-                }}
-              >
-                Explore Sniper
-              </button>
+              />
+              <button onClick={searchWallet} style={primaryBtn}>Search</button>
             </div>
-          </div>
+            <button onClick={complete} style={{ ...linkBtn, width: '100%', textAlign: 'center' }}>I&apos;ll do this later</button>
+          </>
         )}
       </div>
     </div>
-  );
+  )
+}
+
+const titleStyle: React.CSSProperties = {
+  fontFamily: condensedFont, fontWeight: 900, fontSize: 22,
+  letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 8, color: '#fff',
+}
+const subStyle: React.CSSProperties = {
+  fontFamily: monoFont, fontSize: 12, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6, marginBottom: 18,
+}
+const primaryBtn: React.CSSProperties = {
+  background: 'linear-gradient(135deg, #E03A2F, #B91C1C)', color: '#fff', border: 'none',
+  borderRadius: 6, padding: '10px 18px', fontFamily: condensedFont, fontWeight: 800,
+  fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer',
+}
+const linkBtn: React.CSSProperties = {
+  background: 'transparent', color: 'rgba(255,255,255,0.6)', border: 'none',
+  fontFamily: monoFont, fontSize: 11, letterSpacing: '0.08em', cursor: 'pointer',
 }
