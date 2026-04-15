@@ -11,6 +11,8 @@ import TopMoversCard from "@/components/profile/TopMoversCard";
 import CollectionBreakdownCard from "@/components/profile/CollectionBreakdownCard";
 import WatchlistCard from "@/components/profile/WatchlistCard";
 import AchievementsCard from "@/components/profile/AchievementsCard";
+import CrossCollectionPortfolio from "@/components/profile/CrossCollectionPortfolio";
+import EmailDigestSubscribe from "@/components/profile/EmailDigestSubscribe";
 
 // ─── TYPES ────────────────────────────────────────────────────
 interface SavedWallet {
@@ -1285,12 +1287,23 @@ function ProfilePageInner() {
           </div>
         )}
 
+        {/* CROSS-COLLECTION PORTFOLIO */}
+        {savedWallets.length > 0 && (
+          <CrossCollectionPortfolio
+            wallet={savedWallets[0].wallet_addr}
+            walletQuery={savedWallets[0].username ?? savedWallets[0].wallet_addr}
+          />
+        )}
+
         {/* STAT TILES */}
         <section style={{ marginBottom: 14 }}>
           <div className="rpc-grid-4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
             {tiles.map(function(t, i) { return <StatTile key={t.label} label={t.label} value={t.value} sub={t.sub} change={t.change} up={t.up} icon={t.icon} color={t.color} delay={i * 70} />; })}
           </div>
         </section>
+
+        {/* EMAIL DIGEST */}
+        <EmailDigestSubscribe walletAddress={savedWallets[0]?.wallet_addr ?? null} />
 
         {ownerKey && <PortfolioSparkline ownerKey={ownerKey} currentFmv={totalFmv} onChange={setSparkChangePct} />}
 
