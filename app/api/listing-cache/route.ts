@@ -380,24 +380,22 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Delete existing cached listings for this collection + source only
-    const delResult = await supabase.from("cached_listings").delete()
-      .eq("source", "flowty").eq("collection_id", config.collectionId);
-    if (delResult.error) {
-      console.log("[listing-cache] Delete error: " + delResult.error.message);
-    }
+    // Upsert first, then purge stale rows — avoids wiping the cache when all
+    // inserts fail (previously: delete-then-insert left the cache at 0 if every
+    // chunk errored, which is how LaLiga Golazos ended up with 0 rows).
+    const runStartedAt = new Date().toISOString();
 
     let inserted = 0;
     let insertErrors = 0;
     for (let i = 0; i < listings.length; i += 25) {
       const chunk = listings.slice(i, i + 25);
-      const result = await supabase.from("cached_listings").insert(chunk);
+      const result = await supabase.from("cached_listings").upsert(chunk, { onConflict: "id" });
       if (result.error) {
-        console.log("[listing-cache] Insert chunk " + i + " error: " + result.error.message);
+        console.log("[listing-cache] Upsert chunk " + i + " error: " + result.error.message);
         insertErrors++;
-        // Try inserting one by one to find the bad row
+        // Try one by one to pinpoint bad rows
         for (let j = 0; j < chunk.length; j++) {
-          const single = await supabase.from("cached_listings").insert([chunk[j]]);
+          const single = await supabase.from("cached_listings").upsert([chunk[j]], { onConflict: "id" });
           if (single.error) {
             console.log("[listing-cache] Bad row " + (i + j) + " id=" + chunk[j].id + ": " + single.error.message);
           } else {
@@ -409,7 +407,22 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    console.log("[listing-cache] Done: " + inserted + " inserted, " + insertErrors + " chunk errors");
+    // Only purge stale rows if at least one new row was successfully upserted.
+    // This preserves the previous snapshot when the entire Flowty fetch fails
+    // to materialize any valid listings (e.g., schema drift, transient API error).
+    if (inserted > 0) {
+      const delResult = await supabase.from("cached_listings").delete()
+        .eq("source", "flowty")
+        .eq("collection_id", config.collectionId)
+        .lt("cached_at", runStartedAt);
+      if (delResult.error) {
+        console.log("[listing-cache] Stale purge error: " + delResult.error.message);
+      }
+    } else {
+      console.log("[listing-cache] 0 rows upserted — skipping stale purge to preserve existing cache");
+    }
+
+    console.log("[listing-cache] Done: " + inserted + " upserted, " + insertErrors + " chunk errors");
 
     // ASK_ONLY FMV for collections without sales-based FMV (e.g. All Day)
     let askOnlyFmvCount = 0;
