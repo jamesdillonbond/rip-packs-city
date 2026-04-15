@@ -209,8 +209,11 @@ function getMint(row: MomentRow) { return row.mintCount ?? row.mintSize ?? null 
 function getTraits(row: MomentRow) { return row.specialSerialTraits ?? row.traits ?? [] }
 function getLocked(row: MomentRow) { return Boolean(row.isLocked ?? row.locked) }
 
-function getThumbnailUrl(row: MomentRow): string | null {
+function getThumbnailUrl(row: MomentRow, collectionSlug?: string): string | null {
   if (row.thumbnailUrl) return row.thumbnailUrl
+  // UFC moments have IPFS thumbnail URLs stored on the edition; never fall back
+  // to the NBA Top Shot CDN for non-Top-Shot collections.
+  if (collectionSlug === "ufc") return null
   if (row.editionKey) {
     const parts = row.editionKey.split(":")
     if (parts.length === 2) {
@@ -1051,8 +1054,36 @@ export default function WalletPage() {
       const sort = sortKeyToServerSort(sortKey, sortDirection)
       setServerSortBy(sort)
 
+      // UFC: scan + first enrich chunk on the Flow blockchain before reading
+      // from the wallet_moments_cache. Background chunks continue server-side.
+      let ufcEnrichPending = false
+      if (collectionSlug === "ufc" && trimmed.startsWith("0x")) {
+        try {
+          setError("Scanning Flow blockchain for UFC moments...")
+          const scanRes = await fetch("/api/ufc-wallet-scan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ wallet: trimmed }),
+          })
+          if (scanRes.ok) {
+            const scanJson = await scanRes.json()
+            ufcEnrichPending = scanJson?.done === false
+          }
+          setError("")
+        } catch {
+          setError("")
+        }
+      }
+
       // Primary: fetch paginated moments from Supabase cache (fast ~200ms)
       const { totalCount } = await fetchPaginatedMoments(trimmed, 1, sort, false)
+
+      // UFC background enrichment is still running — re-fetch in 30s to pick up newly enriched moments.
+      if (ufcEnrichPending) {
+        setTimeout(function() {
+          fetchPaginatedMoments(trimmed, 1, sort, false).catch(function() {})
+        }, 30000)
+      }
       setHasSearched(true)
       try { localStorage.setItem("rpc_last_wallet", trimmed) } catch {}
       console.log("[collection] paginated API returned page 1, total_count=" + totalCount)
@@ -1948,7 +1979,7 @@ export default function WalletPage() {
                       <td className="p-3 min-w-[160px]">
                         <div className="flex items-center gap-2">
                           {(() => {
-                            const thumbUrl = getThumbnailUrl(row)
+                            const thumbUrl = getThumbnailUrl(row, collectionSlug)
                             return (
                               <div className="relative shrink-0" style={{ width: 48, height: 64 }}>
                                 {thumbUrl ? (
