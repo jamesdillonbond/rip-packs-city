@@ -165,6 +165,36 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "search_all_collections",
+    description: "Search for moments across ALL collections (Top Shot, All Day, Golazos, Pinnacle, UFC). Use when the user doesn't specify a collection, asks about cross-collection deals, or asks about a player who might appear in multiple collections.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        player: { type: "string", description: "Player name to filter by (partial match)" },
+        team: { type: "string", description: "Team name (partial match)" },
+        tier: { type: "string", enum: ["common", "uncommon", "rare", "legendary", "ultimate", "fandom", "challenger", "contender"] },
+        maxPrice: { type: "number", description: "Maximum price in USD" },
+        minDiscount: { type: "number", description: "Minimum % below FMV (0-100)" },
+        collection: { type: "string", description: "Collection slug (nba_top_shot, nfl_all_day, laliga_golazos, ufc_strike, disney_pinnacle)" },
+        hasBadge: { type: "boolean", description: "Only return moments with badges" },
+        limit: { type: "number", description: "Number of results, default 8" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "cross_collection_deals",
+    description: "Get the best deals across ALL collections right now, sorted by discount percentage. Use when user asks 'what are the best deals', 'find me deals across everything', or wants to compare deals between collections.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        limit: { type: "number", description: "Number of results, default 10" },
+        minDiscount: { type: "number", description: "Minimum % below FMV (default 10)" },
+      },
+      required: [],
+    },
+  },
+  {
     name: "explain_fmv",
     description: "Get a detailed FMV breakdown for a specific edition, including confidence, methodology, and a plain-English explanation. Use when a user asks why a moment is priced a certain way, or asks about FMV confidence or methodology.",
     input_schema: {
@@ -299,6 +329,11 @@ Use get_collection_snapshot when a user asks about their portfolio value, total 
 
 ## FMV Deep Dive
 Use explain_fmv when a user asks why a moment is priced a certain way, or asks about FMV confidence or methodology. It returns a full breakdown with plain-English explanation.
+
+### Cross-Collection Queries
+- Use search_all_collections when the user asks about a player without specifying a collection, or when browsing across all collections
+- Use cross_collection_deals when the user wants the best deals regardless of collection
+- Always mention which collection a result comes from in your response
 
 ## Common Questions (no tools needed)
 - "How is FMV calculated?" \u2192 WAP model, 20-min refresh, confidence levels
@@ -752,6 +787,38 @@ async function executeTool(
       })
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: err.message })
+    }
+  }
+
+  if (toolName === "search_all_collections") {
+    try {
+      const { data, error } = await supabase.rpc("search_catalog_all", {
+        p_player: toolInput.player || null,
+        p_team: toolInput.team || null,
+        p_tier: toolInput.tier || null,
+        p_max_price: toolInput.maxPrice || null,
+        p_min_discount: toolInput.minDiscount || 0,
+        p_collection_slug: toolInput.collection || null,
+        p_has_badge: toolInput.hasBadge || false,
+        p_limit: toolInput.limit || 8,
+      });
+      if (error) return JSON.stringify({ status: "error", message: error.message });
+      return JSON.stringify({ status: "ok", ...(data ?? {}) });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: err?.message ?? "search_all_collections failed" });
+    }
+  }
+
+  if (toolName === "cross_collection_deals") {
+    try {
+      const { data, error } = await supabase.rpc("get_cross_collection_deals", {
+        p_limit: toolInput.limit || 10,
+        p_min_discount: toolInput.minDiscount || 10,
+      });
+      if (error) return JSON.stringify({ status: "error", message: error.message });
+      return JSON.stringify({ status: "ok", ...(data ?? {}) });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: err?.message ?? "cross_collection_deals failed" });
     }
   }
 
