@@ -1,32 +1,30 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from 'next/server'
 
-export const runtime = "edge";
+export const runtime = 'edge'
 
-const ALLOWED = /^[a-zA-Z0-9_-]{1,64}$/;
+const VALID_SLUGS = new Set([
+  'rookieYear','topShotDebut','rookiePremiere','rookieOfTheYear',
+  'rookieMint','championshipYear','threeStars'
+])
 
-export async function GET(req: NextRequest) {
-  const name = req.nextUrl.searchParams.get("name");
-  if (!name || !ALLOWED.test(name)) {
-    return NextResponse.json({ error: "invalid name" }, { status: 400 });
+export async function GET(request: NextRequest) {
+  const name = request.nextUrl.searchParams.get('name') ?? ''
+  console.log('[badge-image] url=', request.url, 'name=', name)
+  if (!name || !VALID_SLUGS.has(name)) {
+    return new NextResponse(null, { status: 400 })
   }
-  const upstream = `https://nbatopshot.com/img/momentTags/static/${name}.svg`;
-  try {
-    const r = await fetch(upstream, {
-      headers: { Accept: "image/svg+xml,image/*" },
-      cache: "no-store",
-    });
-    if (!r.ok) {
-      return NextResponse.json({ error: "not found" }, { status: r.status });
-    }
-    const body = await r.arrayBuffer();
-    return new NextResponse(body, {
-      status: 200,
-      headers: {
-        "Content-Type": "image/svg+xml",
-        "Cache-Control": "public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800",
-      },
-    });
-  } catch {
-    return NextResponse.json({ error: "fetch failed" }, { status: 502 });
+  const upstream = await fetch(
+    `https://nbatopshot.com/img/momentTags/static/${name}.svg`,
+    { headers: { 'User-Agent': 'Mozilla/5.0' } }
+  )
+  if (!upstream.ok) {
+    return new NextResponse(null, { status: upstream.status })
   }
+  const svg = await upstream.text()
+  return new NextResponse(svg, {
+    headers: {
+      'Content-Type': 'image/svg+xml',
+      'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800',
+    },
+  })
 }
