@@ -1776,6 +1776,17 @@ export default function WalletPage() {
               Export CSV
             </button>
           )}
+          {filteredRows.length > 0 && (
+            <a
+              href={"/api/portfolio-export?wallet=" + encodeURIComponent(connectedWallet || ownerKey || input.trim()) + "&collection=" + encodeURIComponent(collectionSlug)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900 inline-flex items-center gap-1 font-mono"
+              title="Download all moments as CSV"
+            >
+              ⬇ Full CSV
+            </a>
+          )}
           <button onClick={function() { setShowDebug(function(prev) { return !prev }) }} className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">{showDebug ? "Hide Debug" : "Debug"}</button>
           <button onClick={copySeedCandidates} className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">Copy Seeds</button>
         </div>
