@@ -27,6 +27,58 @@ interface CollectionPulseRow {
   [k: string]: unknown;
 }
 
+interface CrossDeal {
+  collection_slug?: string;
+  collection?: string;
+  player_name?: string;
+  set_name?: string;
+  tier?: string;
+  ask_price?: number;
+  fmv?: number;
+  discount?: number;
+  discount_pct?: number;
+  buy_url?: string;
+  thumbnail_url?: string | null;
+  [k: string]: unknown;
+}
+
+interface CrossDealsResponse {
+  deals?: CrossDeal[];
+  per_collection?: Record<string, number>;
+  total?: number;
+  [k: string]: unknown;
+}
+
+const DEAL_COLLECTION_META: Record<string, { label: string; icon: string; accent: string; sniperPath: string }> = {
+  "nba-top-shot":    { label: "Top Shot",    icon: "\u{1F3C0}", accent: "#E03A2F", sniperPath: "/nba-top-shot/sniper" },
+  "nba_top_shot":    { label: "Top Shot",    icon: "\u{1F3C0}", accent: "#E03A2F", sniperPath: "/nba-top-shot/sniper" },
+  "nfl-all-day":     { label: "All Day",     icon: "\u{1F3C8}", accent: "#4F94D4", sniperPath: "/nfl-all-day/sniper" },
+  "nfl_all_day":     { label: "All Day",     icon: "\u{1F3C8}", accent: "#4F94D4", sniperPath: "/nfl-all-day/sniper" },
+  "laliga-golazos":  { label: "Golazos",     icon: "\u26BD",    accent: "#22C55E", sniperPath: "/laliga-golazos/sniper" },
+  "laliga_golazos":  { label: "Golazos",     icon: "\u26BD",    accent: "#22C55E", sniperPath: "/laliga-golazos/sniper" },
+  "disney-pinnacle": { label: "Pinnacle",    icon: "\u2728",    accent: "#A855F7", sniperPath: "/disney-pinnacle/sniper" },
+  "disney_pinnacle": { label: "Pinnacle",    icon: "\u2728",    accent: "#A855F7", sniperPath: "/disney-pinnacle/sniper" },
+  "ufc":             { label: "UFC Strike",  icon: "\u{1F94A}", accent: "#EF4444", sniperPath: "/ufc/sniper" },
+  "ufc_strike":      { label: "UFC Strike",  icon: "\u{1F94A}", accent: "#EF4444", sniperPath: "/ufc/sniper" },
+};
+
+function tierColor(tier?: string): string {
+  switch ((tier || "").toLowerCase()) {
+    case "ultimate":   return "#EC4899";
+    case "legendary":  return "#F59E0B";
+    case "rare":       return "#818CF8";
+    case "uncommon":   return "#14B8A6";
+    case "fandom":     return "#9CA3AF";
+    default:           return "#6B7280";
+  }
+}
+
+function discountColor(pct: number): string {
+  if (pct >= 30) return "#22C55E";
+  if (pct >= 15) return "#F59E0B";
+  return "#9CA3AF";
+}
+
 function fmtDollars(n: number): string {
   if (n >= 1000) return "$" + (n / 1000).toFixed(1) + "K";
   return "$" + n.toFixed(2);
@@ -62,6 +114,8 @@ export default function HomePage() {
   const [pulseLoading, setPulseLoading] = useState(false);
   const [crossPulse, setCrossPulse] = useState<CollectionPulseRow[] | null>(null);
   const [crossPulseLoading, setCrossPulseLoading] = useState(true);
+  const [crossDeals, setCrossDeals] = useState<CrossDealsResponse | null>(null);
+  const [crossDealsLoading, setCrossDealsLoading] = useState(true);
 
   useEffect(() => {
     setPulseLoading(true);
@@ -81,6 +135,15 @@ export default function HomePage() {
       })
       .catch(() => {})
       .finally(() => setCrossPulseLoading(false));
+  }, []);
+
+  useEffect(() => {
+    setCrossDealsLoading(true);
+    fetch("/api/cross-collection-deals?limit=12&minDiscount=10")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && typeof d === "object") setCrossDeals(d as CrossDealsResponse); })
+      .catch(() => {})
+      .finally(() => setCrossDealsLoading(false));
   }, []);
 
   return (
@@ -198,6 +261,9 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* Cross-collection deals */}
+        <CrossCollectionDeals data={crossDeals} loading={crossDealsLoading} />
+
         {/* Collection quick-access grid */}
         <section style={{ marginBottom: 32 }}>
           <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)", marginBottom: 12 }}>
@@ -245,6 +311,121 @@ export default function HomePage() {
       <MobileNav />
       <SupportChatConnected />
     </div>
+  );
+}
+
+function CrossCollectionDeals({ data, loading }: { data: CrossDealsResponse | null; loading: boolean }) {
+  const deals = data?.deals ?? [];
+  const perCollection = data?.per_collection ?? {};
+  const total = data?.total ?? deals.length;
+
+  const summaryParts: string[] = [];
+  for (const [slug, count] of Object.entries(perCollection)) {
+    const meta = DEAL_COLLECTION_META[slug];
+    if (!meta || !count) continue;
+    summaryParts.push(`${count} ${meta.label}`);
+  }
+
+  return (
+    <section style={{ marginBottom: 32 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.7)" }}>
+          Best Deals · All Collections
+        </div>
+        {!loading && total > 0 && (
+          <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", letterSpacing: "0.08em" }}>
+            {total} deals{summaryParts.length > 0 ? ` — ${summaryParts.join(", ")}` : ""}
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <div key={i} style={{ height: 128, background: "#18181b", border: "1px solid #27272a", borderRadius: 10, opacity: 0.5 }} />
+          ))}
+        </div>
+      ) : deals.length === 0 ? (
+        <div style={{ padding: "28px 18px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, textAlign: "center", fontSize: 12, fontFamily: monoFont, color: "rgba(255,255,255,0.45)", letterSpacing: "0.06em" }}>
+          No cross-collection deals found. Check individual collection snipers.
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+          {deals.map((d, i) => {
+            const slug = String(d.collection_slug ?? d.collection ?? "");
+            const meta = DEAL_COLLECTION_META[slug] ?? { label: slug, icon: "\u{1F4CA}", accent: "#9CA3AF", sniperPath: "/" };
+            const ask = Number(d.ask_price ?? 0) || 0;
+            const fmv = Number(d.fmv ?? 0) || 0;
+            const pct = Number(d.discount_pct ?? d.discount ?? 0) || 0;
+            const tc = tierColor(d.tier);
+            const dc = discountColor(pct);
+            return (
+              <a
+                key={`${slug}-${d.buy_url ?? i}`}
+                href={d.buy_url ?? "#"}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: "block",
+                  background: "#18181b",
+                  border: "1px solid #27272a",
+                  borderLeft: `3px solid ${meta.accent}`,
+                  borderRadius: 10,
+                  padding: "12px 14px",
+                  textDecoration: "none",
+                  color: "#fff",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <span style={{ fontSize: 14 }}>{meta.icon}</span>
+                  <span style={{ fontSize: 9, fontFamily: monoFont, letterSpacing: "0.12em", textTransform: "uppercase", color: meta.accent }}>{meta.label}</span>
+                  <span style={{ marginLeft: "auto", fontSize: 10, fontFamily: condensedFont, fontWeight: 800, letterSpacing: "0.05em", color: dc, background: `${dc}22`, border: `1px solid ${dc}55`, padding: "2px 6px", borderRadius: 4 }}>
+                    -{pct.toFixed(0)}%
+                  </span>
+                </div>
+                <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 16, letterSpacing: "0.02em", lineHeight: 1.15, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {d.player_name ?? "Unknown"}
+                </div>
+                <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.45)", letterSpacing: "0.04em", marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {d.set_name ?? ""}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {d.tier && (
+                    <span style={{ fontSize: 9, fontFamily: condensedFont, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: tc, background: `${tc}22`, border: `1px solid ${tc}55`, padding: "2px 6px", borderRadius: 3 }}>
+                      {d.tier}
+                    </span>
+                  )}
+                  <div style={{ marginLeft: "auto", textAlign: "right" }}>
+                    <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 17, color: "#fff", lineHeight: 1 }}>
+                      {fmtDollars(ask)}
+                    </div>
+                    {fmv > 0 && (
+                      <div style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.35)", textDecoration: "line-through", marginTop: 2 }}>
+                        {fmtDollars(fmv)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      )}
+
+      {!loading && deals.length > 0 && (
+        <div style={{ marginTop: 12, display: "flex", gap: 12, flexWrap: "wrap" }}>
+          {QUICK_COLLECTIONS.map((col) => (
+            <Link
+              key={col.id}
+              href={`/${col.id}/sniper`}
+              style={{ fontSize: 10, fontFamily: monoFont, letterSpacing: "0.08em", textTransform: "uppercase", color: col.accent, textDecoration: "none", border: `1px solid ${col.accent}55`, borderRadius: 4, padding: "4px 10px" }}
+            >
+              {col.icon} {col.label} Sniper
+            </Link>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
