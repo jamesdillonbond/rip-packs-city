@@ -251,23 +251,14 @@ function proxyTopShotThumb(url: string): string {
 }
 
 function getThumbnailUrl(row: MomentRow, collectionSlug?: string): string | null {
-  if (row.thumbnailUrl) return proxyTopShotThumb(row.thumbnailUrl)
-  // UFC moments have IPFS thumbnail URLs stored on the edition; never fall back
-  // to the NBA Top Shot CDN for non-Top-Shot collections.
-  if (collectionSlug === "ufc") return null
-  if (row.editionKey) {
-    const parts = row.editionKey.split(":")
-    if (parts.length === 2) {
-      const [setID, playID] = parts
-      return `https://assets.nbatopshot.com/resize/editions/${setID}_${playID}/play${playID}_capture_Hero_Black_2880_2880_default.jpg?width=100&quality=80`
-    }
-  }
-  // Final fallback: moment flow ID media URL proxied through our API to avoid
-  // hotlink blocks from the Top Shot CDN. wallet_moments_cache stores only
-  // moment_id (no flowId column); for NBA Top Shot, moment_id IS the flowId.
+  // UFC moments have IPFS thumbnail URLs stored on the edition; keep direct.
+  if (collectionSlug === "ufc") return row.thumbnailUrl ?? null
+  // Always route through the proxy — the CDN returns non-error responses for
+  // hotlink blocks, so <img onError> fallbacks never fire.
   if (row.momentId) {
     return `/api/moment-thumbnail?flowId=${encodeURIComponent(row.momentId)}&width=180`
   }
+  if (row.thumbnailUrl) return proxyTopShotThumb(row.thumbnailUrl)
   return null
 }
 
