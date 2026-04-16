@@ -6,10 +6,14 @@ import crypto from "crypto"
 // ── On-chain LaLiga Golazos sales indexer ────────────────────────────────────
 // Mirrors the All Day version: scans NFTStorefrontV2.ListingCompleted,
 // filters to Golazos NFT type, resolves nftID → edition via
-// wallet_moments_cache (with a Cadence borrow fallback), writes dedup'd sales.
+// wallet_moments_cache (with a Cadence borrow fallback), writes dedup'd sales,
+// and sidelines unresolved events into `unmapped_sales` so nothing is dropped
+// silently. Every run is logged via `log_pipeline_run`.
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const GOLAZOS_COLLECTION_ID = "06248cc4-b85f-47cd-af67-1855d14acd75"
+const COLLECTION_SLUG = "laliga_golazos"
+const PIPELINE_NAME = "golazos-sales-indexer"
 const STOREFRONT_EVENT = "A.4eb8a10cb9f87357.NFTStorefrontV2.ListingCompleted"
 const FLOW_REST = "https://rest-mainnet.onflow.org"
 const CHUNK_SIZE = 250
@@ -134,6 +138,7 @@ async function runScript(code: string, args: Array<{ type: string; value: unknow
 
 export async function POST(req: NextRequest) {
   const start = Date.now()
+  const startedAt = new Date().toISOString()
 
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
@@ -145,242 +150,293 @@ export async function POST(req: NextRequest) {
   const maxRange = Math.min(Math.max(rangeParam || DEFAULT_SCAN_RANGE, CHUNK_SIZE), MAX_SCAN_RANGE)
 
   after(async () => {
-   try {
-    const { data: cursorRow, error: cursorErr } = await (supabaseAdmin as any)
-      .from("event_cursor")
-      .select("last_processed_block")
-      .eq("id", "golazos_sales")
-      .single()
+    let rowsFound = 0
+    let rowsWritten = 0
+    let rowsSkipped = 0
+    let cursorBefore: string | null = null
+    let cursorAfter: string | null = null
+    let ok = true
+    let errorMsg: string | null = null
+    const extra: Record<string, unknown> = {}
 
-    if (cursorErr) {
-      console.log("[golazos-sales-indexer] cursor read error:", cursorErr.message)
-      return NextResponse.json({ error: "Failed to read cursor" }, { status: 500 })
-    }
+    try {
+      const { data: cursorRow, error: cursorErr } = await (supabaseAdmin as any)
+        .from("event_cursor")
+        .select("last_processed_block")
+        .eq("id", "golazos_sales")
+        .single()
 
-    let lastBlock = Number(cursorRow?.last_processed_block ?? 0)
-    const currentHeight = await getLatestSealedHeight()
+      if (cursorErr) {
+        throw new Error(`cursor read error: ${cursorErr.message}`)
+      }
 
-    if (lastBlock === 0) {
-      lastBlock = Math.max(currentHeight - maxRange, 0)
-      console.log(`[golazos-sales-indexer] first run, starting from block ${lastBlock}`)
-    }
+      let lastBlock = Number(cursorRow?.last_processed_block ?? 0)
+      const currentHeight = await getLatestSealedHeight()
 
-    const targetHeight = Math.min(lastBlock + maxRange, currentHeight)
+      if (lastBlock === 0) {
+        lastBlock = Math.max(currentHeight - maxRange, 0)
+        console.log(`[golazos-sales-indexer] first run, starting from block ${lastBlock}`)
+      }
 
-    if (lastBlock >= currentHeight) {
-      await fireNextPipelineStep("/api/fmv-recalc", chain)
-      return NextResponse.json({
-        ok: true,
-        message: "already up to date",
-        cursor: lastBlock,
-        elapsed: Date.now() - start,
-      })
-    }
+      cursorBefore = String(lastBlock)
+      const targetHeight = Math.min(lastBlock + maxRange, currentHeight)
+      cursorAfter = String(lastBlock)
 
-    console.log(`[golazos-sales-indexer] scanning ${lastBlock + 1} → ${targetHeight} (${targetHeight - lastBlock} blocks)`)
+      if (lastBlock >= currentHeight) {
+        await fireNextPipelineStep("/api/fmv-recalc", chain)
+        extra.message = "already up to date"
+        return
+      }
 
-    interface Sale {
-      blockHeight: number
-      blockTimestamp: string
-      transactionId: string
-      nftID: string
-      salePrice: string
-      storefrontResourceID?: string
-      commissionReceiver?: string | null
-    }
+      console.log(`[golazos-sales-indexer] scanning ${lastBlock + 1} → ${targetHeight} (${targetHeight - lastBlock} blocks)`)
 
-    const sales: Sale[] = []
+      interface Sale {
+        blockHeight: number
+        blockTimestamp: string
+        transactionId: string
+        nftID: string
+        salePrice: string
+        storefrontResourceID?: string
+        commissionReceiver?: string | null
+      }
 
-    for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
-      const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
-      try {
-        const blocks = await fetchEventRange(STOREFRONT_EVENT, s, e)
-        for (const blk of blocks) {
-          const bh = Number(blk.block_height)
-          const bts = blk.block_timestamp
-          for (const evt of blk.events ?? []) {
-            try {
-              const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
-              const payload = unwrapCdc(raw) as Record<string, any>
-              const typeID: string | undefined = payload?.nftType?.staticType?.typeID
-              if (!typeID || !typeID.includes("Golazos")) continue
-              if (payload.purchased !== true) continue
+      const sales: Sale[] = []
 
-              sales.push({
-                blockHeight: bh,
-                blockTimestamp: bts,
-                transactionId: evt.transaction_id,
-                nftID: String(payload.nftID),
-                salePrice: String(payload.salePrice ?? "0"),
-                storefrontResourceID: payload.storefrontResourceID
-                  ? String(payload.storefrontResourceID)
-                  : undefined,
-                commissionReceiver: payload.commissionReceiver ?? null,
-              })
-            } catch (err) {
-              console.log(
-                "[golazos-sales-indexer] decode err:",
-                err instanceof Error ? err.message : String(err)
-              )
+      for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
+        const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
+        try {
+          const blocks = await fetchEventRange(STOREFRONT_EVENT, s, e)
+          for (const blk of blocks) {
+            const bh = Number(blk.block_height)
+            const bts = blk.block_timestamp
+            for (const evt of blk.events ?? []) {
+              try {
+                const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
+                const payload = unwrapCdc(raw) as Record<string, any>
+                const typeID: string | undefined = payload?.nftType?.staticType?.typeID
+                if (!typeID || !typeID.includes("Golazos")) continue
+                if (payload.purchased !== true) continue
+
+                sales.push({
+                  blockHeight: bh,
+                  blockTimestamp: bts,
+                  transactionId: evt.transaction_id,
+                  nftID: String(payload.nftID),
+                  salePrice: String(payload.salePrice ?? "0"),
+                  storefrontResourceID: payload.storefrontResourceID
+                    ? String(payload.storefrontResourceID)
+                    : undefined,
+                  commissionReceiver: payload.commissionReceiver ?? null,
+                })
+              } catch (err) {
+                console.log(
+                  "[golazos-sales-indexer] decode err:",
+                  err instanceof Error ? err.message : String(err)
+                )
+              }
             }
           }
+        } catch (err) {
+          console.log(
+            `[golazos-sales-indexer] chunk ${s}-${e} error:`,
+            err instanceof Error ? err.message : String(err)
+          )
         }
-      } catch (err) {
-        console.log(
-          `[golazos-sales-indexer] chunk ${s}-${e} error:`,
-          err instanceof Error ? err.message : String(err)
-        )
+        if (s + CHUNK_SIZE <= targetHeight) await delay(INTER_CHUNK_DELAY_MS)
       }
-      if (s + CHUNK_SIZE <= targetHeight) await delay(INTER_CHUNK_DELAY_MS)
-    }
 
-    console.log(`[golazos-sales-indexer] found ${sales.length} Golazos sales`)
+      rowsFound = sales.length
+      console.log(`[golazos-sales-indexer] found ${sales.length} Golazos sales`)
 
-    if (sales.length === 0) {
+      const uniqueNftIds = [...new Set(sales.map((s) => s.nftID))]
+      const nftToEditionKey = new Map<string, string>()
+      if (uniqueNftIds.length > 0) {
+        for (let i = 0; i < uniqueNftIds.length; i += 500) {
+          const batch = uniqueNftIds.slice(i, i + 500)
+          const { data } = await (supabaseAdmin as any)
+            .from("wallet_moments_cache")
+            .select("moment_id, edition_key")
+            .eq("collection_id", GOLAZOS_COLLECTION_ID)
+            .in("moment_id", batch)
+          for (const row of data ?? []) {
+            if (row.edition_key) nftToEditionKey.set(row.moment_id, row.edition_key)
+          }
+        }
+      }
+
+      const unresolvedSales = sales.filter((s) => !nftToEditionKey.has(s.nftID))
+      let cadenceResolved = 0
+      const seen = new Set<string>()
+      for (const sale of unresolvedSales) {
+        if (cadenceResolved >= CADENCE_FALLBACK_MAX) break
+        if (seen.has(sale.nftID) || nftToEditionKey.has(sale.nftID)) continue
+        seen.add(sale.nftID)
+        try {
+          const payer = await getTxPayer(sale.transactionId)
+          if (!payer) continue
+          const editionID = await runScript(BORROW_EDITION_SCRIPT, [
+            { type: "Address", value: payer },
+            { type: "UInt64", value: sale.nftID },
+          ])
+          if (editionID !== null && editionID !== undefined) {
+            nftToEditionKey.set(sale.nftID, String(editionID))
+            cadenceResolved++
+          }
+        } catch (err) {
+          console.log(
+            `[golazos-sales-indexer] cadence fallback err nft=${sale.nftID}:`,
+            err instanceof Error ? err.message : String(err)
+          )
+        }
+        await delay(CADENCE_DELAY_MS)
+      }
+
+      const editionKeys = [...new Set(nftToEditionKey.values())]
+      const editionKeyToId = new Map<string, string>()
+      if (editionKeys.length > 0) {
+        for (let i = 0; i < editionKeys.length; i += 500) {
+          const batch = editionKeys.slice(i, i + 500)
+          const { data } = await (supabaseAdmin as any)
+            .from("editions")
+            .select("id, external_id")
+            .eq("collection_id", GOLAZOS_COLLECTION_ID)
+            .in("external_id", batch)
+          for (const row of data ?? []) editionKeyToId.set(row.external_id, row.id)
+        }
+      }
+
+      const salesRows: any[] = []
+      const unmappedRows: any[] = []
+      const unresolvedNftIds: string[] = []
+      for (const s of sales) {
+        const editionKey = nftToEditionKey.get(s.nftID) ?? null
+        const editionId = editionKey ? editionKeyToId.get(editionKey) : null
+        const price = parseFloat(s.salePrice) || 0
+        if (editionId) {
+          salesRows.push({
+            id: crypto.randomUUID(),
+            edition_id: editionId,
+            collection_id: GOLAZOS_COLLECTION_ID,
+            collection: COLLECTION_SLUG,
+            nft_id: s.nftID,
+            price_usd: price,
+            serial_number: 0,
+            sold_at: s.blockTimestamp,
+            marketplace: "flowty",
+            source: "onchain",
+            block_height: s.blockHeight,
+            transaction_hash: s.transactionId,
+            buyer_address: s.commissionReceiver ?? null,
+            seller_address: null,
+            ingested_at: new Date().toISOString(),
+          })
+        } else {
+          unresolvedNftIds.push(s.nftID)
+          const hint: Record<string, unknown> = { nft_id: s.nftID }
+          if (editionKey) hint.edition_id = editionKey
+          unmappedRows.push({
+            id: crypto.randomUUID(),
+            collection_id: GOLAZOS_COLLECTION_ID,
+            nft_id: s.nftID,
+            serial_number: 0,
+            price_usd: price,
+            marketplace: "flowty",
+            transaction_hash: s.transactionId,
+            block_height: s.blockHeight,
+            sold_at: s.blockTimestamp,
+            ingested_at: new Date().toISOString(),
+            source: "onchain",
+            buyer_address: s.commissionReceiver ?? null,
+            seller_address: null,
+            resolution_hint: hint,
+          })
+        }
+      }
+
+      for (let i = 0; i < salesRows.length; i += 100) {
+        const batch = salesRows.slice(i, i + 100)
+        const { error } = await (supabaseAdmin as any).from("sales").insert(batch)
+        if (error) {
+          if (error.code === "23505") {
+            // dupes
+          } else {
+            console.log("[golazos-sales-indexer] sales batch insert err:", error.message)
+            for (const row of batch) {
+              const { error: se } = await (supabaseAdmin as any).from("sales").insert(row)
+              if (!se) rowsWritten++
+            }
+          }
+        } else {
+          rowsWritten += batch.length
+        }
+      }
+
+      for (let i = 0; i < unmappedRows.length; i += 100) {
+        const batch = unmappedRows.slice(i, i + 100)
+        const { error } = await (supabaseAdmin as any).from("unmapped_sales").insert(batch)
+        if (error) {
+          if (error.code === "23505") {
+            // dupes
+          } else {
+            console.log("[golazos-sales-indexer] unmapped batch insert err:", error.message)
+            for (const row of batch) {
+              const { error: se } = await (supabaseAdmin as any).from("unmapped_sales").insert(row)
+              if (!se) rowsSkipped++
+            }
+          }
+        } else {
+          rowsSkipped += batch.length
+        }
+      }
+
       await (supabaseAdmin as any)
         .from("event_cursor")
         .update({ last_processed_block: targetHeight, updated_at: new Date().toISOString() })
         .eq("id", "golazos_sales")
+      cursorAfter = String(targetHeight)
+
+      extra.blocks_scanned = targetHeight - lastBlock
+      extra.cadence_resolved = cadenceResolved
+      extra.unresolved_sample = unresolvedNftIds.slice(0, 20)
+      extra.elapsed_ms = Date.now() - start
+
       await fireNextPipelineStep("/api/fmv-recalc", chain)
-      return NextResponse.json({
-        ok: true,
-        blocksScanned: targetHeight - lastBlock,
-        eventsFound: 0,
-        salesInserted: 0,
-        cursor: targetHeight,
-        elapsed: Date.now() - start,
-      })
-    }
-
-    const uniqueNftIds = [...new Set(sales.map((s) => s.nftID))]
-    const nftToEditionKey = new Map<string, string>()
-    for (let i = 0; i < uniqueNftIds.length; i += 500) {
-      const batch = uniqueNftIds.slice(i, i + 500)
-      const { data } = await (supabaseAdmin as any)
-        .from("wallet_moments_cache")
-        .select("moment_id, edition_key")
-        .eq("collection_id", GOLAZOS_COLLECTION_ID)
-        .in("moment_id", batch)
-      for (const row of data ?? []) {
-        if (row.edition_key) nftToEditionKey.set(row.moment_id, row.edition_key)
-      }
-    }
-
-    const unresolvedSales = sales.filter((s) => !nftToEditionKey.has(s.nftID))
-    let cadenceResolved = 0
-    const seen = new Set<string>()
-    for (const sale of unresolvedSales) {
-      if (cadenceResolved >= CADENCE_FALLBACK_MAX) break
-      if (seen.has(sale.nftID) || nftToEditionKey.has(sale.nftID)) continue
-      seen.add(sale.nftID)
+    } catch (err) {
+      ok = false
+      errorMsg = err instanceof Error ? err.message : String(err)
+      console.log(`[golazos-sales-indexer] fatal:`, errorMsg)
+    } finally {
       try {
-        const payer = await getTxPayer(sale.transactionId)
-        if (!payer) continue
-        const editionID = await runScript(BORROW_EDITION_SCRIPT, [
-          { type: "Address", value: payer },
-          { type: "UInt64", value: sale.nftID },
-        ])
-        if (editionID !== null && editionID !== undefined) {
-          nftToEditionKey.set(sale.nftID, String(editionID))
-          cadenceResolved++
-        }
-      } catch (err) {
+        await (supabaseAdmin as any).rpc("promote_unmapped_sales", {
+          p_collection_id: GOLAZOS_COLLECTION_ID,
+        })
+      } catch (e) {
         console.log(
-          `[golazos-sales-indexer] cadence fallback err nft=${sale.nftID}:`,
-          err instanceof Error ? err.message : String(err)
+          `[golazos-sales-indexer] promote_unmapped_sales err:`,
+          e instanceof Error ? e.message : String(e)
         )
       }
-      await delay(CADENCE_DELAY_MS)
-    }
-
-    const editionKeys = [...new Set(nftToEditionKey.values())]
-    const editionKeyToId = new Map<string, string>()
-    for (let i = 0; i < editionKeys.length; i += 500) {
-      const batch = editionKeys.slice(i, i + 500)
-      const { data } = await (supabaseAdmin as any)
-        .from("editions")
-        .select("id, external_id")
-        .eq("collection_id", GOLAZOS_COLLECTION_ID)
-        .in("external_id", batch)
-      for (const row of data ?? []) editionKeyToId.set(row.external_id, row.id)
-    }
-
-    const rows: any[] = []
-    const unresolvedIds: string[] = []
-    for (const s of sales) {
-      const editionKey = nftToEditionKey.get(s.nftID)
-      const editionId = editionKey ? editionKeyToId.get(editionKey) : null
-      if (!editionId) {
-        unresolvedIds.push(s.nftID)
-        continue
-      }
-      rows.push({
-        id: crypto.randomUUID(),
-        edition_id: editionId,
-        collection_id: GOLAZOS_COLLECTION_ID,
-        collection: "laliga_golazos",
-        nft_id: s.nftID,
-        price_usd: parseFloat(s.salePrice) || 0,
-        serial_number: 0,
-        sold_at: s.blockTimestamp,
-        marketplace: "flowty",
-        source: "onchain",
-        block_height: s.blockHeight,
-        transaction_hash: s.transactionId,
-        buyer_address: s.commissionReceiver ?? null,
-        seller_address: null,
-        ingested_at: new Date().toISOString(),
-      })
-    }
-
-    let inserted = 0
-    let duped = 0
-    for (let i = 0; i < rows.length; i += 100) {
-      const batch = rows.slice(i, i + 100)
-      const { error } = await (supabaseAdmin as any).from("sales").insert(batch)
-      if (error) {
-        if (error.code === "23505") {
-          duped += batch.length
-        } else {
-          console.log("[golazos-sales-indexer] batch insert err:", error.message)
-          for (const row of batch) {
-            const { error: se } = await (supabaseAdmin as any).from("sales").insert(row)
-            if (se) duped++
-            else inserted++
-          }
-        }
-      } else {
-        inserted += batch.length
+      try {
+        await (supabaseAdmin as any).rpc("log_pipeline_run", {
+          p_pipeline: PIPELINE_NAME,
+          p_started_at: startedAt,
+          p_rows_found: rowsFound,
+          p_rows_written: rowsWritten,
+          p_rows_skipped: rowsSkipped,
+          p_ok: ok,
+          p_error: errorMsg,
+          p_collection_slug: COLLECTION_SLUG,
+          p_cursor_before: cursorBefore,
+          p_cursor_after: cursorAfter,
+          p_extra: Object.keys(extra).length > 0 ? extra : null,
+        })
+      } catch (e) {
+        console.log(
+          `[golazos-sales-indexer] log_pipeline_run err:`,
+          e instanceof Error ? e.message : String(e)
+        )
       }
     }
-
-    await (supabaseAdmin as any)
-      .from("event_cursor")
-      .update({ last_processed_block: targetHeight, updated_at: new Date().toISOString() })
-      .eq("id", "golazos_sales")
-
-    await fireNextPipelineStep("/api/fmv-recalc", chain)
-
-    return NextResponse.json({
-      ok: true,
-      blocksScanned: targetHeight - lastBlock,
-      eventsFound: sales.length,
-      cadenceResolved,
-      salesResolved: rows.length,
-      salesInserted: inserted,
-      salesDuped: duped,
-      unresolved: unresolvedIds.slice(0, 50),
-      unresolvedCount: unresolvedIds.length,
-      cursor: targetHeight,
-      elapsed: Date.now() - start,
-    })
-   } catch (err) {
-    console.log("[golazos-sales-indexer] fatal:", err instanceof Error ? err.message : String(err))
-    return NextResponse.json(
-      { error: "Internal server error", details: err instanceof Error ? err.message : String(err) },
-      { status: 500 }
-    )
-   }
   })
 
   return NextResponse.json({ ok: true, message: "indexing started" })

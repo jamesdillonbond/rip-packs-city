@@ -5,10 +5,14 @@ import crypto from "crypto"
 // ── On-chain UFC Strike sales indexer ────────────────────────────────────────
 // Scans Flow NFTStorefrontV2.ListingCompleted events, filters to UFC_NFT
 // purchases, resolves nftID → edition via wallet_moments_cache, and writes
-// dedup'd rows into the partitioned `sales` table.
+// dedup'd rows into the partitioned `sales` table. Events that cannot be
+// mapped to an edition are written to `unmapped_sales` for later promotion,
+// and every run is logged via `log_pipeline_run` so silent failures surface.
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const UFC_COLLECTION_ID = "9b4824a8-736d-4a96-b450-8dcc0c46b023"
+const COLLECTION_SLUG = "ufc_strike"
+const PIPELINE_NAME = "ufc-sales-indexer"
 const STOREFRONT_EVENT = "A.4eb8a10cb9f87357.NFTStorefrontV2.ListingCompleted"
 const UFC_TYPE_MATCH = "UFC_NFT"
 const FLOW_REST = "https://rest-mainnet.onflow.org"
@@ -83,6 +87,7 @@ async function getLatestSealedHeight(): Promise<number> {
 
 async function runIndexer(req: NextRequest) {
   const started = Date.now()
+  const startedAt = new Date().toISOString()
 
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
@@ -92,6 +97,16 @@ async function runIndexer(req: NextRequest) {
   const rangeParam = Number(req.nextUrl.searchParams.get("range") ?? DEFAULT_SCAN_RANGE)
   const maxRange = Math.min(Math.max(rangeParam || DEFAULT_SCAN_RANGE, CHUNK_SIZE), MAX_SCAN_RANGE)
 
+  let rowsFound = 0
+  let rowsWritten = 0
+  let rowsSkipped = 0
+  let cursorBefore: string | null = null
+  let cursorAfter: string | null = null
+  let ok = true
+  let errorMsg: string | null = null
+  let response: NextResponse | null = null
+  const extra: Record<string, unknown> = {}
+
   try {
     const { data: cursorRow, error: cursorErr } = await (supabaseAdmin as any)
       .from("event_cursor")
@@ -100,8 +115,7 @@ async function runIndexer(req: NextRequest) {
       .single()
 
     if (cursorErr) {
-      console.log("[ufc-sales-indexer] cursor read error:", cursorErr.message)
-      return NextResponse.json({ error: "Failed to read cursor" }, { status: 500 })
+      throw new Error(`cursor read error: ${cursorErr.message}`)
     }
 
     let lastBlock = Number(cursorRow?.last_processed_block ?? 0)
@@ -112,13 +126,18 @@ async function runIndexer(req: NextRequest) {
       console.log(`[ufc-sales-indexer] first run, starting from block ${lastBlock}`)
     }
 
+    cursorBefore = String(lastBlock)
+    cursorAfter = String(lastBlock)
+
     if (lastBlock >= currentHeight) {
-      return NextResponse.json({
+      extra.message = "already up to date"
+      response = NextResponse.json({
         ok: true,
         message: "already up to date",
         cursor: lastBlock,
         elapsed: Date.now() - started,
       })
+      return response
     }
 
     const targetHeight = Math.min(lastBlock + maxRange, currentHeight)
@@ -169,119 +188,188 @@ async function runIndexer(req: NextRequest) {
           .from("event_cursor")
           .update({ last_processed_block: lastChunkEnd, updated_at: new Date().toISOString() })
           .eq("id", "ufc_sales")
+        cursorAfter = String(lastChunkEnd)
       } catch (err) {
         console.log(`[ufc-sales-indexer] chunk ${s}-${e} error:`, err instanceof Error ? err.message : String(err))
       }
       if (s + CHUNK_SIZE <= targetHeight) await delay(INTER_CHUNK_DELAY_MS)
     }
 
+    rowsFound = sales.length
     console.log(`[ufc-sales-indexer] found ${sales.length} UFC sales`)
-
-    if (sales.length === 0) {
-      return NextResponse.json({
-        ok: true,
-        blocksScanned: targetHeight - lastBlock,
-        eventsFound: 0,
-        salesInserted: 0,
-        cursor: lastChunkEnd,
-        elapsed: Date.now() - started,
-      })
-    }
 
     const uniqueNftIds = [...new Set(sales.map((s) => s.nftID))]
     const nftToEditionKey = new Map<string, string>()
-    for (let i = 0; i < uniqueNftIds.length; i += 500) {
-      const batch = uniqueNftIds.slice(i, i + 500)
-      const { data } = await (supabaseAdmin as any)
-        .from("wallet_moments_cache")
-        .select("moment_id, edition_key")
-        .eq("collection_id", UFC_COLLECTION_ID)
-        .in("moment_id", batch)
-      for (const row of data ?? []) {
-        if (row.edition_key) nftToEditionKey.set(row.moment_id, row.edition_key)
+    if (uniqueNftIds.length > 0) {
+      for (let i = 0; i < uniqueNftIds.length; i += 500) {
+        const batch = uniqueNftIds.slice(i, i + 500)
+        const { data } = await (supabaseAdmin as any)
+          .from("wallet_moments_cache")
+          .select("moment_id, edition_key")
+          .eq("collection_id", UFC_COLLECTION_ID)
+          .in("moment_id", batch)
+        for (const row of data ?? []) {
+          if (row.edition_key) nftToEditionKey.set(row.moment_id, row.edition_key)
+        }
       }
     }
 
     const editionKeys = [...new Set(nftToEditionKey.values())]
     const editionKeyToId = new Map<string, string>()
-    for (let i = 0; i < editionKeys.length; i += 500) {
-      const batch = editionKeys.slice(i, i + 500)
-      const { data } = await (supabaseAdmin as any)
-        .from("editions")
-        .select("id, external_id")
-        .eq("collection_id", UFC_COLLECTION_ID)
-        .in("external_id", batch)
-      for (const row of data ?? []) editionKeyToId.set(row.external_id, row.id)
-    }
-
-    const rows: any[] = []
-    const unresolvedIds: string[] = []
-    for (const s of sales) {
-      const editionKey = nftToEditionKey.get(s.nftID)
-      const editionId = editionKey ? editionKeyToId.get(editionKey) : null
-      if (!editionId) {
-        unresolvedIds.push(s.nftID)
-        continue
+    if (editionKeys.length > 0) {
+      for (let i = 0; i < editionKeys.length; i += 500) {
+        const batch = editionKeys.slice(i, i + 500)
+        const { data } = await (supabaseAdmin as any)
+          .from("editions")
+          .select("id, external_id")
+          .eq("collection_id", UFC_COLLECTION_ID)
+          .in("external_id", batch)
+        for (const row of data ?? []) editionKeyToId.set(row.external_id, row.id)
       }
-      rows.push({
-        id: crypto.randomUUID(),
-        edition_id: editionId,
-        collection_id: UFC_COLLECTION_ID,
-        collection: "ufc",
-        nft_id: s.nftID,
-        price_usd: parseFloat(s.salePrice) || 0,
-        serial_number: 0,
-        sold_at: s.blockTimestamp,
-        marketplace: "flowty",
-        source: "onchain",
-        block_height: s.blockHeight,
-        transaction_hash: s.transactionId,
-        buyer_address: s.commissionReceiver ?? null,
-        seller_address: null,
-        ingested_at: new Date().toISOString(),
-      })
     }
 
-    let inserted = 0
-    let duped = 0
-    for (let i = 0; i < rows.length; i += 100) {
-      const batch = rows.slice(i, i + 100)
+    const salesRows: any[] = []
+    const unmappedRows: any[] = []
+    const unresolvedNftIds: string[] = []
+    for (const s of sales) {
+      const editionKey = nftToEditionKey.get(s.nftID) ?? null
+      const editionId = editionKey ? editionKeyToId.get(editionKey) : null
+      const price = parseFloat(s.salePrice) || 0
+      if (editionId) {
+        salesRows.push({
+          id: crypto.randomUUID(),
+          edition_id: editionId,
+          collection_id: UFC_COLLECTION_ID,
+          collection: "ufc",
+          nft_id: s.nftID,
+          price_usd: price,
+          serial_number: 0,
+          sold_at: s.blockTimestamp,
+          marketplace: "flowty",
+          source: "onchain",
+          block_height: s.blockHeight,
+          transaction_hash: s.transactionId,
+          buyer_address: s.commissionReceiver ?? null,
+          seller_address: null,
+          ingested_at: new Date().toISOString(),
+        })
+      } else {
+        unresolvedNftIds.push(s.nftID)
+        const hint: Record<string, unknown> = { nft_id: s.nftID }
+        if (editionKey) hint.edition_id = editionKey
+        unmappedRows.push({
+          id: crypto.randomUUID(),
+          collection_id: UFC_COLLECTION_ID,
+          nft_id: s.nftID,
+          serial_number: 0,
+          price_usd: price,
+          marketplace: "flowty",
+          transaction_hash: s.transactionId,
+          block_height: s.blockHeight,
+          sold_at: s.blockTimestamp,
+          ingested_at: new Date().toISOString(),
+          source: "onchain",
+          buyer_address: s.commissionReceiver ?? null,
+          seller_address: null,
+          resolution_hint: hint,
+        })
+      }
+    }
+
+    for (let i = 0; i < salesRows.length; i += 100) {
+      const batch = salesRows.slice(i, i + 100)
       const { error } = await (supabaseAdmin as any).from("sales").insert(batch)
       if (error) {
         if (error.code === "23505") {
-          duped += batch.length
+          // dupes
         } else {
-          console.log("[ufc-sales-indexer] batch insert err:", error.message)
+          console.log("[ufc-sales-indexer] sales batch insert err:", error.message)
           for (const row of batch) {
             const { error: se } = await (supabaseAdmin as any).from("sales").insert(row)
-            if (se) duped++
-            else inserted++
+            if (!se) rowsWritten++
           }
         }
       } else {
-        inserted += batch.length
+        rowsWritten += batch.length
       }
     }
 
-    return NextResponse.json({
+    for (let i = 0; i < unmappedRows.length; i += 100) {
+      const batch = unmappedRows.slice(i, i + 100)
+      const { error } = await (supabaseAdmin as any).from("unmapped_sales").insert(batch)
+      if (error) {
+        if (error.code === "23505") {
+          // dupes
+        } else {
+          console.log("[ufc-sales-indexer] unmapped batch insert err:", error.message)
+          for (const row of batch) {
+            const { error: se } = await (supabaseAdmin as any).from("unmapped_sales").insert(row)
+            if (!se) rowsSkipped++
+          }
+        }
+      } else {
+        rowsSkipped += batch.length
+      }
+    }
+
+    extra.blocks_scanned = targetHeight - lastBlock
+    extra.unresolved_sample = unresolvedNftIds.slice(0, 20)
+    extra.elapsed_ms = Date.now() - started
+
+    response = NextResponse.json({
       ok: true,
       blocksScanned: targetHeight - lastBlock,
       eventsFound: sales.length,
-      salesResolved: rows.length,
-      salesInserted: inserted,
-      salesDuped: duped,
-      unresolved: unresolvedIds.slice(0, 50),
-      unresolvedCount: unresolvedIds.length,
+      salesResolved: salesRows.length,
+      salesInserted: rowsWritten,
+      unmappedInserted: rowsSkipped,
+      unresolved: unresolvedNftIds.slice(0, 50),
+      unresolvedCount: unresolvedNftIds.length,
       cursor: lastChunkEnd,
       elapsed: Date.now() - started,
     })
   } catch (err) {
-    console.log("[ufc-sales-indexer] fatal:", err instanceof Error ? err.message : String(err))
-    return NextResponse.json(
-      { error: "Internal server error", details: err instanceof Error ? err.message : String(err) },
+    ok = false
+    errorMsg = err instanceof Error ? err.message : String(err)
+    console.log("[ufc-sales-indexer] fatal:", errorMsg)
+    response = NextResponse.json(
+      { error: "Internal server error", details: errorMsg },
       { status: 500 }
     )
+  } finally {
+    try {
+      await (supabaseAdmin as any).rpc("promote_unmapped_sales", {
+        p_collection_id: UFC_COLLECTION_ID,
+      })
+    } catch (e) {
+      console.log(
+        "[ufc-sales-indexer] promote_unmapped_sales err:",
+        e instanceof Error ? e.message : String(e)
+      )
+    }
+    try {
+      await (supabaseAdmin as any).rpc("log_pipeline_run", {
+        p_pipeline: PIPELINE_NAME,
+        p_started_at: startedAt,
+        p_rows_found: rowsFound,
+        p_rows_written: rowsWritten,
+        p_rows_skipped: rowsSkipped,
+        p_ok: ok,
+        p_error: errorMsg,
+        p_collection_slug: COLLECTION_SLUG,
+        p_cursor_before: cursorBefore,
+        p_cursor_after: cursorAfter,
+        p_extra: Object.keys(extra).length > 0 ? extra : null,
+      })
+    } catch (e) {
+      console.log(
+        "[ufc-sales-indexer] log_pipeline_run err:",
+        e instanceof Error ? e.message : String(e)
+      )
+    }
   }
+
+  return response ?? NextResponse.json({ ok: false, error: "no response" }, { status: 500 })
 }
 
 export async function GET(req: NextRequest) { return runIndexer(req) }
