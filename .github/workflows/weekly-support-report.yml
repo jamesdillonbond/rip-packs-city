@@ -23,25 +23,17 @@ jobs:
             -d "$(jq -n \
               --arg from "RPC Support <onboarding@resend.dev>" \
               --arg to "${{ secrets.ALERT_EMAIL }}" \
-              --arg subject "🏙️ RPC Support Report — Week of $(date -u +%Y-%m-%d)" \
+              --arg subject "RPC Support Report - Week of $(date -u +%Y-%m-%d)" \
               --arg html "$REPORT_HTML" \
               '{from: $from, to: [$to], subject: $subject, html: $html}')"
           echo "Email sent"
       - name: Send Telegram summary
         continue-on-error: true
-        continue-on-error: true
         run: |
           REPORT=$(curl -sf "https://rip-packs-city.vercel.app/api/support-report?token=${{ secrets.INGEST_SECRET_TOKEN }}&format=json&days=7")
           TOTAL=$(echo "$REPORT" | jq -r '.summary.totalMessages')
-          SESSIONS=$(echo "$REPORT" | jq -r '.summary.uniqueSessions')
           DEFLECTION=$(echo "$REPORT" | jq -r '.summary.deflectionRate')
           ESCALATED=$(echo "$REPORT" | jq -r '.summary.escalatedCount')
-          MSG="📊 <b>RPC Weekly Support Report</b>
-          Messages: <b>${TOTAL}</b>
-          Sessions: <b>${SESSIONS}</b>
-          Deflection: <b>${DEFLECTION}</b>
-          Escalated: <b>${ESCALATED}</b>
-          Full report emailed to you."
           curl -sf -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -H "Content-Type: application/json" \
-            -d "$(jq -n --arg chat_id "${{ secrets.TELEGRAM_CHAT_ID }}" --arg text "$MSG" '{chat_id: $chat_id, text: $text, parse_mode: "HTML"}')"
+            -d "$(jq -n --arg chat_id "${{ secrets.TELEGRAM_CHAT_ID }}" --arg text "Support: ${TOTAL} msgs, ${DEFLECTION} deflected, ${ESCALATED} escalated" '{chat_id: $chat_id, text: $text}')"
