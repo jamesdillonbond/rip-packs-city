@@ -101,8 +101,9 @@ export async function GET(req: NextRequest) {
     escalatedDetails,
   };
 
-  if (format === "html") {
-    const html = `<!DOCTYPE html>
+  const send = req.nextUrl.searchParams.get("send") === "true";
+
+  const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>RPC Support Report</title></head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:640px;margin:0 auto;padding:20px;color:#e0e0e0;background:#111;">
   <h1 style="color:#E03A2F;font-size:22px;">🏙️ RPC Support Report</h1>
@@ -136,6 +137,34 @@ export async function GET(req: NextRequest) {
     <div style="font-size:13px;color:#aaa;"><strong>Reason:</strong> ${e.escalationReason}</div>
   </div>`).join("")}` : "<p style='color:#4ade80;'>No escalations this period</p>"}
 </body></html>`;
+
+  if (format === "html" || send) {
+    if (process.env.RESEND_API_KEY) {
+      try {
+        const weekOf = new Date().toISOString().slice(0, 10);
+        await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            from: "RPC Support <onboarding@resend.dev>",
+            to: [process.env.ALERT_EMAIL],
+            subject: `RPC Support Report — Week of ${weekOf}`,
+            html,
+          }),
+        });
+        console.log("[support-report] email sent");
+      } catch (err) {
+        console.log("[support-report] email send failed", err);
+      }
+    } else {
+      console.log("[support-report] email skipped (no key)");
+    }
+  }
+
+  if (format === "html") {
     return new NextResponse(html, {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
