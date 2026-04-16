@@ -1,11 +1,10 @@
 name: Weekly Support Report
 on:
   push:
-    branches: []  # never trigger on push — schedule/manual only
+    branches: []
   schedule:
-    - cron: '0 14 * * 1'  # Every Monday 2pm UTC (9am ET)
-  workflow_dispatch: # Manual trigger
-
+    - cron: '0 14 * * 1'
+  workflow_dispatch:
 jobs:
   report:
     runs-on: ubuntu-latest
@@ -15,7 +14,6 @@ jobs:
           curl -sf "https://rip-packs-city.vercel.app/api/support-report?token=${{ secrets.INGEST_SECRET_TOKEN }}&format=html&days=7" \
             -o report.html
           echo "Report fetched: $(wc -c < report.html) bytes"
-
       - name: Send email via Resend
         run: |
           REPORT_HTML=$(cat report.html)
@@ -29,26 +27,21 @@ jobs:
               --arg html "$REPORT_HTML" \
               '{from: $from, to: [$to], subject: $subject, html: $html}')"
           echo "Email sent"
-
       - name: Send Telegram summary
-        if: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}
+        continue-on-error: true
+        continue-on-error: true
         run: |
-          # Fetch JSON report for Telegram summary
           REPORT=$(curl -sf "https://rip-packs-city.vercel.app/api/support-report?token=${{ secrets.INGEST_SECRET_TOKEN }}&format=json&days=7")
           TOTAL=$(echo "$REPORT" | jq -r '.summary.totalMessages')
           SESSIONS=$(echo "$REPORT" | jq -r '.summary.uniqueSessions')
           DEFLECTION=$(echo "$REPORT" | jq -r '.summary.deflectionRate')
           ESCALATED=$(echo "$REPORT" | jq -r '.summary.escalatedCount')
-
           MSG="📊 <b>RPC Weekly Support Report</b>
-          
           Messages: <b>${TOTAL}</b>
           Sessions: <b>${SESSIONS}</b>
           Deflection: <b>${DEFLECTION}</b>
           Escalated: <b>${ESCALATED}</b>
-
           Full report emailed to you."
-
           curl -sf -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -H "Content-Type: application/json" \
             -d "$(jq -n --arg chat_id "${{ secrets.TELEGRAM_CHAT_ID }}" --arg text "$MSG" '{chat_id: $chat_id, text: $text, parse_mode: "HTML"}')"
