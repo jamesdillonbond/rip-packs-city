@@ -837,9 +837,11 @@ async function progressivelyClassify(rows: WalletRow[], wallet: string) {
 
 async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
   try {
+    // Always use the resolved 0x address, never a raw username
+    const resolvedAddress = isWalletAddress(wallet) ? wallet : ensureFlowPrefix(wallet)
     const now = new Date().toISOString()
     const baseRow = (r: WalletRow) => ({
-      wallet_address: wallet,
+      wallet_address: resolvedAddress,
       moment_id: r.momentId,
       fmv_usd: r.fmv ?? null,
       serial_number: r.serialNumber ?? (r.serial != null ? r.serial : null),
@@ -873,7 +875,7 @@ async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
         .from("wallet_moments_cache")
         .upsert(chunk, { onConflict: "wallet_address,moment_id" })
     }
-    console.log(`[wallet-search] Cached ${resolvedRows.length + unresolvedRows.length} moments for ${wallet} (${resolvedRows.length} with edition_key)`)
+    console.log(`[wallet-search] Cached ${resolvedRows.length + unresolvedRows.length} moments for ${resolvedAddress} (${resolvedRows.length} with edition_key)`)
   } catch (err) {
     console.warn("[wallet-search] Cache upsert failed:", err instanceof Error ? err.message : String(err))
   }

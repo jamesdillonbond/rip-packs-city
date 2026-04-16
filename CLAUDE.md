@@ -19,7 +19,7 @@ Shipped (16+ commits)
 
 - On-chain sales indexer: NFTStorefrontV2.ListingCompleted + TopShotMarketV3.MomentPurchased events, 250-block chunks, GQL fallback via Cloudflare proxy for unknown nftIDs, dedup via transaction_hash
 - Pipeline trigger endpoint: GET /api/pipeline-trigger?token= runs ingest→sales-indexer→fmv-recalc→listing-cache sequentially
-- Seeded wallet pre-cache: GET /api/seed-wallet-refresh?token= — refreshes up to 10 stale (>2h) seeded_wallets via wallet-search, writes resolved address + cached stats. Add to cron-job.org at `0 */2 * * *` (every 2 hours): https://rip-packs-city.vercel.app/api/seed-wallet-refresh?token=rippackscity2026
+- Seeded wallet pre-cache: GET /api/seed-wallet-refresh?token= — sequential cache-first refresh of all active seeded_wallets (300ms throttle, RPC-based cache count bypasses PostgREST cap, username→0x resolution). Cron-job.org schedule: every 6h (`0 */6 * * *`): https://rip-packs-city.vercel.app/api/seed-wallet-refresh?token=rippackscity2026
 - Public seeded-wallets list: GET /api/seeded-wallets (optional ?tag=power_user, ?username=jamesdillonbond)
 - Historical sales backfill script: scripts/sales-backfill.mjs
 - Edition metadata backfill script: scripts/backfill-edition-metadata.mjs (team_name + stub names via GQL)
