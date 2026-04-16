@@ -504,6 +504,7 @@ export default function WalletPage() {
   const [salesLoading, setSalesLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [connectedWallet, setConnectedWallet] = useState<string | null>(null);
+  const [isSeededPreloaded, setIsSeededPreloaded] = useState(false);
 
   // Server-paginated moments API state
   const [paginatedPage, setPaginatedPage] = useState(1)
@@ -1265,6 +1266,18 @@ export default function WalletPage() {
       if (seed) {
         setInput(seed)
         runSearch(seed)
+        // Check if this query matches a seeded (pre-cached) wallet.
+        if (!seed.startsWith("0x")) {
+          fetch("/api/seeded-wallets?username=" + encodeURIComponent(seed))
+            .then(function(r) { return r.ok ? r.json() : null })
+            .then(function(json) {
+              const hit = json && Array.isArray(json.wallets) && json.wallets[0]
+              if (!hit || !hit.last_refreshed_at) return
+              const ageMs = Date.now() - new Date(hit.last_refreshed_at).getTime()
+              if (ageMs < 2 * 60 * 60 * 1000) setIsSeededPreloaded(true)
+            })
+            .catch(function() {})
+        }
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1595,6 +1608,14 @@ export default function WalletPage() {
             onFocus={function(e) { e.currentTarget.style.borderColor = accent }}
             onBlur={function(e) { e.currentTarget.style.borderColor = "" }}
           />
+          {isSeededPreloaded && (
+            <span
+              title="This wallet is refreshed every 2 hours so it loads instantly"
+              className="inline-flex items-center gap-1 self-start rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-amber-300"
+            >
+              <span aria-hidden>⚡</span> Pre-loaded
+            </span>
+          )}
           <div className="flex gap-2">
             <button
               onClick={handleSearch}
