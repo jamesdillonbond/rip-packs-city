@@ -1166,7 +1166,6 @@ export default function WalletPage() {
         }, 30000)
       }
       setHasSearched(true)
-      try { localStorage.setItem("rpc_last_wallet", trimmed) } catch {}
       console.log("[collection] paginated API returned page 1, total_count=" + totalCount)
 
       // Fetch accurate wallet-wide totals (FMV, locked/unlocked, cost basis, pnl)
@@ -1256,11 +1255,17 @@ export default function WalletPage() {
     }
   }, [router, collectionSlug, sortKey, sortDirection, playerFilter, seriesFilter, rarityFilter])
 
-  // Auto-search when ownerKey is available and no results loaded yet
+  // Auto-search on mount: prefer the raw input the user last typed
+  // (rpc_last_wallet — username or address) over the resolved 0x ownerKey.
   useEffect(function() {
-    if (ownerKey && rows.length === 0 && !loading && !lastSearchedRef.current) {
-      setInput(ownerKey)
-      runSearch(ownerKey)
+    if (rows.length === 0 && !loading && !lastSearchedRef.current) {
+      let saved = ""
+      try { saved = localStorage.getItem("rpc_last_wallet") || "" } catch {}
+      const seed = saved || ownerKey
+      if (seed) {
+        setInput(seed)
+        runSearch(seed)
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownerKey])
@@ -1329,7 +1334,11 @@ export default function WalletPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasSearched, activeWallet, paginatedTotalPages])
 
-  async function handleSearch() { await runSearch(input) }
+  async function handleSearch() {
+    const raw = input.trim()
+    if (raw) { try { localStorage.setItem("rpc_last_wallet", raw) } catch {} }
+    await runSearch(input)
+  }
 
   async function handleLoadMore() {
     if (!activeWallet) return

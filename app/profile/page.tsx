@@ -1168,6 +1168,7 @@ function ProfilePageInner() {
 
   const [ownerKey, setOwnerKeyState] = useState("");
   const [ownerInput, setOwnerInput] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [savedWallets, setSavedWallets] = useState<SavedWallet[]>([]);
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
   const [sniperRows, setSniperRows] = useState<SniperRow[]>([]);
@@ -1209,6 +1210,7 @@ function ProfilePageInner() {
       return;
     }
     setOwnerKeyState(getOwnerKey());
+    try { setDisplayName(localStorage.getItem("rpc_last_wallet") || ""); } catch {}
     return onOwnerKeyChange(function(key) {
       setOwnerKeyState(key);
       if (key) loadProfile(key);
@@ -1726,7 +1728,7 @@ function ProfilePageInner() {
             <div>
               <span className="rpc-label">Set Up Your Rip Packs City Profile</span>
               <div style={{ fontSize: 10, fontFamily: monoFont, color: "var(--rpc-text-muted)", marginTop: 4 }}>
-                {ownerKey ? ("Signed in as: " + ownerKey + "  ·  Public: rip-packs-city.vercel.app/profile/" + ownerKey) : "Enter your Top Shot username to unlock the full profile experience."}
+                {ownerKey ? ("Signed in as: " + (displayName || ownerKey) + "  ·  Public: rip-packs-city.vercel.app/profile/" + ownerKey) : "Enter your Top Shot username to unlock the full profile experience."}
               </div>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -1735,7 +1737,7 @@ function ProfilePageInner() {
                 {bottomResolving ? "Resolving..." : ownerKey ? "Update" : "Sign In"}
               </button>
               {ownerKey && (
-                <button onClick={function() { saveOwnerKey(""); setOwnerKeyState(""); setSavedWallets([]); setRecentSearches([]); setTrophies([null, null, null, null, null, null]); setBio(null); router.replace("/profile"); }} className="rpc-btn-ghost" style={{ padding: "4px 10px", fontSize: 9 }}>Sign Out</button>
+                <button onClick={function() { saveOwnerKey(""); setOwnerKeyState(""); setDisplayName(""); try { localStorage.removeItem("rpc_last_wallet"); } catch {} setSavedWallets([]); setRecentSearches([]); setTrophies([null, null, null, null, null, null]); setBio(null); router.replace("/profile"); }} className="rpc-btn-ghost" style={{ padding: "4px 10px", fontSize: 9 }}>Sign Out</button>
               )}
             </div>
           </div>
