@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
 export const maxDuration = 300
@@ -71,149 +71,155 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   }
 
-  const supabase = getSupabase()
   const origin = new URL(req.url).origin
 
-  // Fetch all active seeded wallets (no stale filter — we decide freshness via cache count)
-  const { data, error } = await supabase
-    .from("seeded_wallets")
-    .select("id, username, wallet_address, display_name, tags, priority, last_refreshed_at")
-    .eq("is_active", true)
+  after(async () => {
+    const supabase = getSupabase()
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
+    // Fetch all active seeded wallets (no stale filter — we decide freshness via cache count)
+    const { data, error } = await supabase
+      .from("seeded_wallets")
+      .select("id, username, wallet_address, display_name, tags, priority, last_refreshed_at")
+      .eq("is_active", true)
 
-  const rows = (data as SeededRow[] | null) ?? []
+    if (error) {
+      console.log(`[seed-wallet-refresh] fetch error: ${error.message}`)
+      return
+    }
 
-  // Split into two groups
-  const walletsWithAddress = rows.filter((r) => r.wallet_address != null)
-  const walletsWithoutAddress = rows.filter((r) => r.wallet_address == null)
+    const rows = (data as SeededRow[] | null) ?? []
 
-  const errors: string[] = []
-  let cacheRefreshed = 0
-  let newlySeeded = 0
-  let usernameResolved = 0
-  let resolutionFailed = 0
+    // Split into two groups
+    const walletsWithAddress = rows.filter((r) => r.wallet_address != null)
+    const walletsWithoutAddress = rows.filter((r) => r.wallet_address == null)
 
-  // ── Process wallets that already have a 0x address ──────────────
-  for (const row of walletsWithAddress) {
-    try {
-      const addr = row.wallet_address!
+    const errors: string[] = []
+    let cacheRefreshed = 0
+    let newlySeeded = 0
+    let usernameResolved = 0
+    let resolutionFailed = 0
 
-      // Check cache count via RPC (bypasses PostgREST 1000-row cap)
-      const { data: countData, error: countErr } = await (supabase as any).rpc(
-        "get_wallet_cache_count",
-        { p_wallet_address: addr }
-      )
+    // ── Process wallets that already have a 0x address ──────────────
+    for (const row of walletsWithAddress) {
+      try {
+        const addr = row.wallet_address!
 
-      const cacheCount =
-        !countErr && countData != null ? Number(countData) : 0
-
-      if (cacheCount > 0) {
-        // Cache exists — just refresh stats from existing cache rows
-        await (supabase as any).rpc("refresh_seeded_wallet_stats", {
-          p_wallet_address: addr,
-        })
-        cacheRefreshed++
-        console.log(
-          `[seed-wallet-refresh] cache-hit ${row.username} (${addr}): ${cacheCount} cached moments, stats refreshed`
+        // Check cache count via RPC (bypasses PostgREST 1000-row cap)
+        const { data: countData, error: countErr } = await (supabase as any).rpc(
+          "get_wallet_cache_count",
+          { p_wallet_address: addr }
         )
-      } else {
-        // Cache empty — call wallet-search to populate it
-        const ok = await refreshViaWalletSearch(origin, addr)
-        if (ok) {
+
+        const cacheCount =
+          !countErr && countData != null ? Number(countData) : 0
+
+        if (cacheCount > 0) {
+          // Cache exists — just refresh stats from existing cache rows
           await (supabase as any).rpc("refresh_seeded_wallet_stats", {
             p_wallet_address: addr,
           })
-          newlySeeded++
+          cacheRefreshed++
           console.log(
-            `[seed-wallet-refresh] newly-seeded ${row.username} (${addr})`
+            `[seed-wallet-refresh] cache-hit ${row.username} (${addr}): ${cacheCount} cached moments, stats refreshed`
           )
         } else {
-          errors.push(`wallet-search failed for ${row.username}`)
-          console.log(
-            `[seed-wallet-refresh] wallet-search failed for ${row.username} (${addr})`
-          )
+          // Cache empty — call wallet-search to populate it
+          const ok = await refreshViaWalletSearch(origin, addr)
+          if (ok) {
+            await (supabase as any).rpc("refresh_seeded_wallet_stats", {
+              p_wallet_address: addr,
+            })
+            newlySeeded++
+            console.log(
+              `[seed-wallet-refresh] newly-seeded ${row.username} (${addr})`
+            )
+          } else {
+            errors.push(`wallet-search failed for ${row.username}`)
+            console.log(
+              `[seed-wallet-refresh] wallet-search failed for ${row.username} (${addr})`
+            )
+          }
         }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        errors.push(`${row.username}: ${msg}`)
+        console.log(`[seed-wallet-refresh] error for ${row.username}: ${msg}`)
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      errors.push(`${row.username}: ${msg}`)
-      console.log(`[seed-wallet-refresh] error for ${row.username}: ${msg}`)
+
+      // Sequential throttle — avoid hammering wallet-search / TS GQL
+      await sleep(300)
     }
 
-    // Sequential throttle — avoid hammering wallet-search / TS GQL
-    await sleep(300)
-  }
+    // ── Resolve wallets that only have a username ───────────────────
+    for (const row of walletsWithoutAddress) {
+      try {
+        const resolved = await resolveUsernameToAddress(row.username)
 
-  // ── Resolve wallets that only have a username ───────────────────
-  for (const row of walletsWithoutAddress) {
-    try {
-      const resolved = await resolveUsernameToAddress(row.username)
+        if (!resolved) {
+          resolutionFailed++
+          console.log(
+            `[seed-wallet-refresh] username resolution failed for ${row.username}`
+          )
+          await sleep(300)
+          continue
+        }
 
-      if (!resolved) {
-        resolutionFailed++
+        // Persist the resolved address
+        await supabase
+          .from("seeded_wallets")
+          .update({ wallet_address: resolved })
+          .eq("id", row.id)
+
+        usernameResolved++
         console.log(
-          `[seed-wallet-refresh] username resolution failed for ${row.username}`
+          `[seed-wallet-refresh] resolved ${row.username} → ${resolved}`
         )
-        await sleep(300)
-        continue
-      }
 
-      // Persist the resolved address
-      await supabase
-        .from("seeded_wallets")
-        .update({ wallet_address: resolved })
-        .eq("id", row.id)
+        // Now run cache-first logic with the resolved address
+        const { data: countData, error: countErr } = await (supabase as any).rpc(
+          "get_wallet_cache_count",
+          { p_wallet_address: resolved }
+        )
 
-      usernameResolved++
-      console.log(
-        `[seed-wallet-refresh] resolved ${row.username} → ${resolved}`
-      )
+        const cacheCount =
+          !countErr && countData != null ? Number(countData) : 0
 
-      // Now run cache-first logic with the resolved address
-      const { data: countData, error: countErr } = await (supabase as any).rpc(
-        "get_wallet_cache_count",
-        { p_wallet_address: resolved }
-      )
-
-      const cacheCount =
-        !countErr && countData != null ? Number(countData) : 0
-
-      if (cacheCount > 0) {
-        await (supabase as any).rpc("refresh_seeded_wallet_stats", {
-          p_wallet_address: resolved,
-        })
-        cacheRefreshed++
-      } else {
-        const ok = await refreshViaWalletSearch(origin, resolved)
-        if (ok) {
+        if (cacheCount > 0) {
           await (supabase as any).rpc("refresh_seeded_wallet_stats", {
             p_wallet_address: resolved,
           })
-          newlySeeded++
+          cacheRefreshed++
         } else {
-          errors.push(`wallet-search failed for ${row.username} (resolved)`)
+          const ok = await refreshViaWalletSearch(origin, resolved)
+          if (ok) {
+            await (supabase as any).rpc("refresh_seeded_wallet_stats", {
+              p_wallet_address: resolved,
+            })
+            newlySeeded++
+          } else {
+            errors.push(`wallet-search failed for ${row.username} (resolved)`)
+          }
         }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        errors.push(`${row.username}: ${msg}`)
+        console.log(
+          `[seed-wallet-refresh] error resolving ${row.username}: ${msg}`
+        )
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      errors.push(`${row.username}: ${msg}`)
-      console.log(
-        `[seed-wallet-refresh] error resolving ${row.username}: ${msg}`
-      )
+
+      await sleep(300)
     }
 
-    await sleep(300)
-  }
-
-  return NextResponse.json({
-    processed: walletsWithAddress.length + walletsWithoutAddress.length,
-    cache_refreshed: cacheRefreshed,
-    newly_seeded: newlySeeded,
-    username_resolved: usernameResolved,
-    resolution_failed: resolutionFailed,
-    errors,
+    console.log(
+      `[seed-wallet-refresh] done — processed=${
+        walletsWithAddress.length + walletsWithoutAddress.length
+      } cache_refreshed=${cacheRefreshed} newly_seeded=${newlySeeded} username_resolved=${usernameResolved} resolution_failed=${resolutionFailed} errors=${errors.length}`
+    )
   })
+
+  return NextResponse.json(
+    { accepted: true, started_at: new Date().toISOString() },
+    { status: 202 }
+  )
 }
