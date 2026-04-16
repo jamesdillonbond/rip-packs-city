@@ -13,7 +13,11 @@ const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const UFC_COLLECTION_ID = "9b4824a8-736d-4a96-b450-8dcc0c46b023"
 const COLLECTION_SLUG = "ufc_strike"
 const PIPELINE_NAME = "ufc-sales-indexer"
-const STOREFRONT_EVENT = "A.4eb8a10cb9f87357.NFTStorefrontV2.ListingCompleted"
+// Flowty's NFTStorefrontV2 fork (0x3cdbb3d569211ff3) is where UFC Strike moments
+// trade when they move on Flow. (UFC Strike is migrating to Aptos — residual
+// Flow volume is very low but we keep watching.) `nftType` here is a plain
+// String, not a Type value.
+const STOREFRONT_EVENT = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted"
 const UFC_TYPE_MATCH = "UFC_NFT"
 const FLOW_REST = "https://rest-mainnet.onflow.org"
 const CHUNK_SIZE = 250
@@ -154,6 +158,7 @@ async function runIndexer(req: NextRequest) {
 
     const sales: Sale[] = []
     let lastChunkEnd = lastBlock
+    let rawEventsSeen = 0
 
     for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
       const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
@@ -163,10 +168,19 @@ async function runIndexer(req: NextRequest) {
           const bh = Number(blk.block_height)
           const bts = blk.block_timestamp
           for (const evt of blk.events ?? []) {
+            rawEventsSeen++
             try {
               const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
               const payload = unwrapCdc(raw) as Record<string, any>
-              const typeID: string | undefined = payload?.nftType?.staticType?.typeID
+              const nftTypeField = payload?.nftType
+              let typeID: string | undefined
+              if (typeof nftTypeField === "string") typeID = nftTypeField
+              else if (nftTypeField && typeof nftTypeField === "object") {
+                const st = (nftTypeField as Record<string, unknown>).staticType
+                if (typeof st === "string") typeID = st
+                else if (st && typeof st === "object")
+                  typeID = (st as Record<string, unknown>).typeID as string | undefined
+              }
               if (!typeID || !typeID.includes(UFC_TYPE_MATCH)) continue
               if (payload.purchased !== true) continue
 
@@ -196,7 +210,9 @@ async function runIndexer(req: NextRequest) {
     }
 
     rowsFound = sales.length
-    console.log(`[ufc-sales-indexer] found ${sales.length} UFC sales`)
+    console.log(
+      `[ufc-sales-indexer] contract=${STOREFRONT_EVENT} range=${lastBlock + 1}-${targetHeight} rawEvents=${rawEventsSeen} found=${sales.length}`
+    )
 
     const uniqueNftIds = [...new Set(sales.map((s) => s.nftID))]
     const nftToEditionKey = new Map<string, string>()

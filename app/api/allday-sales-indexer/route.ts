@@ -17,7 +17,11 @@ const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const COLLECTION_SLUG = "nfl_all_day"
 const PIPELINE_NAME = "allday-sales-indexer"
-const STOREFRONT_EVENT = "A.4eb8a10cb9f87357.NFTStorefrontV2.ListingCompleted"
+// Flowty's NFTStorefrontV2 fork (0x3cdbb3d569211ff3) is where AllDay moments
+// actually trade — the Dapper StorefrontV2 (0x4eb8a10cb9f87357) only carries
+// TopShot PackNFT / Pinnacle / MFL packs. Flowty's fork also emits `nftType`
+// as a plain String (not a Type), so payload parsing differs.
+const STOREFRONT_EVENT = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted"
 const FLOW_REST = "https://rest-mainnet.onflow.org"
 const CHUNK_SIZE = 250
 const DEFAULT_SCAN_RANGE = 50_000
@@ -232,6 +236,7 @@ export async function POST(req: NextRequest) {
 
       const sales: Sale[] = []
 
+      let rawEventsSeen = 0
       for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
         const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
         try {
@@ -240,10 +245,19 @@ export async function POST(req: NextRequest) {
             const bh = Number(blk.block_height)
             const bts = blk.block_timestamp
             for (const evt of blk.events ?? []) {
+              rawEventsSeen++
               try {
                 const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
                 const payload = unwrapCdc(raw) as Record<string, any>
-                const typeID: string | undefined = payload?.nftType?.staticType?.typeID
+                const nftTypeField = payload?.nftType
+                let typeID: string | undefined
+                if (typeof nftTypeField === "string") typeID = nftTypeField
+                else if (nftTypeField && typeof nftTypeField === "object") {
+                  const st = (nftTypeField as Record<string, unknown>).staticType
+                  if (typeof st === "string") typeID = st
+                  else if (st && typeof st === "object")
+                    typeID = (st as Record<string, unknown>).typeID as string | undefined
+                }
                 if (!typeID || !typeID.includes("AllDay")) continue
                 if (payload.purchased !== true) continue
 
@@ -276,7 +290,9 @@ export async function POST(req: NextRequest) {
       }
 
       rowsFound = sales.length
-      console.log(`[allday-sales-indexer] found ${sales.length} AllDay sales`)
+      console.log(
+        `[allday-sales-indexer] contract=${STOREFRONT_EVENT} range=${lastBlock + 1}-${targetHeight} rawEvents=${rawEventsSeen} found=${sales.length}`
+      )
 
       // Resolve nftID → edition_key via wallet_moments_cache
       const uniqueNftIds = [...new Set(sales.map((s) => s.nftID))]
