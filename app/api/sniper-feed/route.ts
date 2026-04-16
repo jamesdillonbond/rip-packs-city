@@ -391,25 +391,14 @@ async function resolveEditionKeys(
 
   if (!tuples.size) return result;
 
-  // Fetch all editions — PostgREST caps at 1000 per request, so paginate
-  const editionRows: Array<{ external_id: string; name: string | null; series: number }> = [];
-  let page = 0;
-  const PAGE_SIZE = 1000;
-  while (true) {
-    const { data: batch, error: batchErr } = await (supabase as any)
-      .from("editions")
-      .select("external_id, name, series")
-      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-    if (batchErr) {
-      console.error("[sniper-feed] edition fetch page error:", batchErr.message);
-      break;
-    }
-    if (!batch?.length) break;
-    editionRows.push(...batch);
-    if (batch.length < PAGE_SIZE) break;
-    page++;
+  const { data: editionRows, error } = await (supabase as any)
+    .rpc("get_editions_for_sniper", { p_collection_id: null });
+
+  if (error) {
+    console.error("[sniper-feed] edition RPC error:", error.message);
+    return result;
   }
-  if (!editionRows.length) {
+  if (!editionRows?.length) {
     console.log("[sniper-feed] edition key resolve: 0 editions in DB");
     return result;
   }
