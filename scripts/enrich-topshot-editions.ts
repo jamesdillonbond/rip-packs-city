@@ -49,30 +49,30 @@ function sleep(ms: number): Promise<void> {
 }
 
 const SEARCH_QUERY = `
-  query SearchMintedMoment($setID: ID!, $playID: ID!) {
-    searchMintedMoments(input: {
-      filters: { bySetIDs: [$setID], byPlayIDs: [$playID] },
-      sortBy: ACQUIRED_AT_DESC,
-      limit: 1
-    }) {
-      data {
-        searchSummary {
-          data {
+  query EnrichEdition($input: SearchEditionsInput!) {
+    searchEditions(input: $input) {
+      searchSummary {
+        data {
+          ... on Editions {
             data {
-              play {
-                stats {
-                  playerName
-                  teamAtMoment
-                  playCategory
-                  dateOfMoment
+              ... on Edition {
+                tier
+                assetPathPrefix
+                set {
+                  flowId
+                  flowName
+                  flowSeriesNumber
+                }
+                play {
+                  flowID
+                  stats {
+                    playerName
+                    teamAtMoment
+                    playCategory
+                    dateOfMoment
+                  }
                 }
               }
-              set {
-                flowName
-                flowSeriesNumber
-              }
-              tier
-              assetPathPrefix
             }
           }
         }
@@ -81,8 +81,9 @@ const SEARCH_QUERY = `
   }
 `.trim()
 
-interface GqlMoment {
+interface GqlEdition {
   play?: {
+    flowID?: string | null
     stats?: {
       playerName?: string | null
       teamAtMoment?: string | null
@@ -90,7 +91,7 @@ interface GqlMoment {
       dateOfMoment?: string | null
     } | null
   } | null
-  set?: { flowName?: string | null; flowSeriesNumber?: number | null } | null
+  set?: { flowId?: string | null; flowName?: string | null; flowSeriesNumber?: number | null } | null
   tier?: string | null
   assetPathPrefix?: string | null
 }
@@ -174,8 +175,10 @@ async function main() {
     let data: Record<string, unknown> | null = null
     try {
       data = await topshotGql(SEARCH_QUERY, {
-        setID: setUuid,
-        playID: playUuid,
+        input: {
+          filters: { bySetIDs: [setUuid], byPlayIDs: [playUuid] },
+          searchInput: { pagination: { cursor: "", direction: "RIGHT", limit: 1 } },
+        },
       })
     } catch (e) {
       errs++
@@ -184,10 +187,10 @@ async function main() {
       continue
     }
 
-    // Path: data.searchMintedMoments.data.searchSummary.data.data[]
-    const nodes = (data as any)?.searchMintedMoments?.data?.searchSummary?.data?.data as GqlMoment[] | undefined
-    const moment: GqlMoment | null = Array.isArray(nodes) && nodes.length > 0 ? nodes[0] : null
-    if (!moment) {
+    // Path: data.searchEditions.searchSummary.data.data[]
+    const nodes = (data as any)?.searchEditions?.searchSummary?.data?.data as GqlEdition[] | undefined
+    const edition: GqlEdition | null = Array.isArray(nodes) && nodes.length > 0 ? nodes[0] : null
+    if (!edition) {
       noMeta++
       await sleep(DELAY_MS)
       continue
@@ -202,21 +205,23 @@ async function main() {
       series?: number
     } = {}
 
-    if (!ed.thumbnail_url && moment.assetPathPrefix) {
-      patch.thumbnail_url = `${moment.assetPathPrefix}image`.replace(
+    if (!ed.thumbnail_url && edition.assetPathPrefix) {
+      patch.thumbnail_url = `${edition.assetPathPrefix}image`.replace(
         /\/?image$/,
         "/image"
       )
     }
-    if (!ed.tier && moment.tier) patch.tier = String(moment.tier).toUpperCase()
+    if (!ed.tier && edition.tier) {
+      patch.tier = String(edition.tier).replace(/^MOMENT_TIER_/, "").toUpperCase()
+    }
 
-    const playCategory = moment.play?.stats?.playCategory ?? null
+    const playCategory = edition.play?.stats?.playCategory ?? null
     if (playCategory) patch.play_type = playCategory
-    const gameDate = normDate(moment.play?.stats?.dateOfMoment ?? null)
+    const gameDate = normDate(edition.play?.stats?.dateOfMoment ?? null)
     if (gameDate) patch.game_date = gameDate
-    const team = moment.play?.stats?.teamAtMoment ?? null
+    const team = edition.play?.stats?.teamAtMoment ?? null
     if (team) patch.team_name = team
-    const seriesNum = moment.set?.flowSeriesNumber
+    const seriesNum = edition.set?.flowSeriesNumber
     if (seriesNum != null && Number.isFinite(Number(seriesNum))) {
       patch.series = Number(seriesNum)
     }
