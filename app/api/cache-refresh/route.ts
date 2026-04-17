@@ -289,10 +289,35 @@ export async function GET(req: NextRequest) {
       " onChain=" + onChainIds.length + " cached=" + cachedIds.size +
       " new=" + newIds.length + " removed=" + removedCount)
 
+    // Bump last_seen_at for every cached row whose moment is still on-chain.
+    // Without this, a refresh cycle on a wallet with no new moments would
+    // leave last_seen_at frozen at the original seed date, making the
+    // collection page show stale "Last updated N days ago" timestamps.
+    const touchedAt = new Date().toISOString()
+    let lastSeenTouched = 0
+    if (cachedIds.size > 0) {
+      const cachedIdArr = Array.from(cachedIds)
+      for (let i = 0; i < cachedIdArr.length; i += 500) {
+        const chunk = cachedIdArr.slice(i, i + 500)
+        const { error, count } = await supabase
+          .from("wallet_moments_cache")
+          .update({ last_seen_at: touchedAt }, { count: "exact" })
+          .eq("wallet_address", wallet)
+          .eq("collection_id", collectionId)
+          .in("moment_id", chunk)
+        if (error) {
+          console.log("[cache-refresh] last_seen_at update err: " + error.message)
+        } else if (count != null) {
+          lastSeenTouched += count
+        }
+      }
+    }
+
     if (newIds.length === 0 && sp.get("refreshLocked") !== "1") {
       return NextResponse.json({
         ok: true, total_on_chain: onChainIds.length, total_cached: cachedIds.size,
         new_stubs_inserted: 0, enriched: 0, removed_count: removedCount,
+        last_seen_touched: lastSeenTouched,
         elapsed: Date.now() - startTime,
       })
     }
@@ -471,6 +496,7 @@ export async function GET(req: NextRequest) {
       new_stubs_inserted: stubsInserted,
       enriched,
       removed_count: removedCount,
+      last_seen_touched: lastSeenTouched,
       locked_backfill: refreshLocked ? { total: lockedBackfillTotal, locked: lockedBackfillCount, remaining: lockedBackfillRemaining } : undefined,
       elapsed: Date.now() - startTime,
     })

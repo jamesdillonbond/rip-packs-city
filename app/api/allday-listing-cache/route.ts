@@ -107,8 +107,25 @@ export async function GET(req: NextRequest) {
   })
 }
 
+const PIPELINE_NAME = "allday-listing-cache"
+const COLLECTION_SLUG = "nfl_all_day"
+
 async function runListingCache() {
   const startedAt = Date.now()
+  const startedAtIso = new Date(startedAt).toISOString()
+  const stats = {
+    ok: true,
+    errorMsg: null as string | null,
+    totalFetched: 0,
+    totalListed: 0,
+    upserted: 0,
+    upsertErrors: 0,
+    editionsMapped: 0,
+    fmvRpcCalled: false,
+    fmvSalesCalled: false,
+  }
+
+  try {
 
   type Row = {
     id: string
@@ -137,7 +154,6 @@ async function runListingCache() {
 
   const rows: Row[] = []
   const seenFlowIds = new Set<string>()
-  let totalFetched = 0
   let offset = 0
 
   while (true) {
@@ -147,7 +163,7 @@ async function runListingCache() {
     })
     if (!page) break
     const nfts = Array.isArray(page.nfts) ? page.nfts : []
-    totalFetched += nfts.length
+    stats.totalFetched += nfts.length
     const reportedTotal = typeof page.total === "number" ? page.total : null
     const prevSeenSize = seenFlowIds.size
 
@@ -229,7 +245,7 @@ async function runListingCache() {
     await delay(INTER_PAGE_DELAY_MS)
   }
 
-  const totalListed = rows.length
+  stats.totalListed = rows.length
 
   // Batch-lookup edition UUIDs (currently unused in writes; cached_listings has
   // no edition_id column, but we expose mapped count in the summary).
@@ -252,7 +268,7 @@ async function runListingCache() {
       if (row.external_id && row.id) editionMap.set(row.external_id, row.id)
     }
   }
-  const editionsMapped = editionMap.size
+  stats.editionsMapped = editionMap.size
 
   // Wipe existing AD cached listings.
   const { error: delErr } = await supabaseAdmin
@@ -261,12 +277,10 @@ async function runListingCache() {
     .eq("collection_id", AD_COLLECTION_ID)
   if (delErr) {
     console.log(`[allday-listing-cache] Delete failed: ${delErr.message}`)
-    return
+    throw new Error(`delete failed: ${delErr.message}`)
   }
 
   // Upsert in batches.
-  let upserted = 0
-  let upsertErrors = 0
   for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
     const batch = rows.slice(i, i + UPSERT_CHUNK).map((r) => {
       const { edition_external_id: _drop, ...rest } = r
@@ -279,16 +293,15 @@ async function runListingCache() {
       console.log(
         `[allday-listing-cache] upsert batch ${i} failed: ${error.message}`
       )
-      upsertErrors += batch.length
+      stats.upsertErrors += batch.length
     } else {
-      upserted += count ?? batch.length
+      stats.upserted += count ?? batch.length
     }
   }
 
   // Regenerate ASK_ONLY FMV snapshots from cached listings, then refresh
   // sales-based FMV so editions with sales get SALES_ONLY / HIGH upgrades
   // alongside the listing-based ASK_ONLY rows created above.
-  let fmvRpcCalled = false
   try {
     const { error } = await supabaseAdmin.rpc("fmv_from_cached_listings", {
       p_collection_id: AD_COLLECTION_ID,
@@ -296,13 +309,12 @@ async function runListingCache() {
     if (error) {
       console.log(`[allday-listing-cache] fmv rpc error: ${error.message}`)
     } else {
-      fmvRpcCalled = true
+      stats.fmvRpcCalled = true
     }
   } catch (err) {
     console.log(`[allday-listing-cache] fmv rpc threw: ${String(err)}`)
   }
 
-  let fmvSalesCalled = false
   try {
     const { error } = await supabaseAdmin.rpc("fmv_from_sales", {
       p_collection_id: AD_COLLECTION_ID,
@@ -310,22 +322,49 @@ async function runListingCache() {
     if (error) {
       console.log(`[allday-listing-cache] fmv_from_sales error: ${error.message}`)
     } else {
-      fmvSalesCalled = true
+      stats.fmvSalesCalled = true
     }
   } catch (err) {
     console.log(`[allday-listing-cache] fmv_from_sales threw: ${String(err)}`)
   }
 
-  console.log(
-    `[allday-listing-cache] done: ${JSON.stringify({
-      totalFetched,
-      totalListed,
-      upserted,
-      upsertErrors,
-      editionsMapped,
-      fmvRpcCalled,
-      fmvSalesCalled,
-      durationMs: Date.now() - startedAt,
-    })}`
-  )
+  } catch (err) {
+    stats.ok = false
+    stats.errorMsg = err instanceof Error ? err.message : String(err)
+    console.log(`[allday-listing-cache] fatal: ${stats.errorMsg}`)
+  } finally {
+    try {
+      await (supabaseAdmin as any).rpc("log_pipeline_run", {
+        p_pipeline: PIPELINE_NAME,
+        p_started_at: startedAtIso,
+        p_rows_found: stats.totalListed,
+        p_rows_written: stats.upserted,
+        p_rows_skipped: stats.upsertErrors,
+        p_ok: stats.ok,
+        p_error: stats.errorMsg,
+        p_collection_slug: COLLECTION_SLUG,
+        p_cursor_before: null,
+        p_cursor_after: null,
+        p_extra: {
+          total_fetched: stats.totalFetched,
+          editions_mapped: stats.editionsMapped,
+          fmv_rpc_called: stats.fmvRpcCalled,
+          fmv_sales_called: stats.fmvSalesCalled,
+          duration_ms: Date.now() - startedAt,
+        },
+      })
+    } catch (e) {
+      console.log(
+        `[allday-listing-cache] log_pipeline_run err: ${
+          e instanceof Error ? e.message : String(e)
+        }`
+      )
+    }
+    console.log(
+      `[allday-listing-cache] done: ${JSON.stringify({
+        ...stats,
+        durationMs: Date.now() - startedAt,
+      })}`
+    )
+  }
 }

@@ -101,8 +101,23 @@ export async function GET(req: NextRequest) {
   })
 }
 
+const PIPELINE_NAME = "topshot-listing-cache"
+const COLLECTION_SLUG = "nba_top_shot"
+
 async function runListingCache() {
   const startedAt = Date.now()
+  const startedAtIso = new Date(startedAt).toISOString()
+  const stats = {
+    ok: true,
+    errorMsg: null as string | null,
+    totalFetched: 0,
+    totalListed: 0,
+    upserted: 0,
+    upsertErrors: 0,
+    fmvRecalcCalled: false,
+  }
+
+  try {
 
   type Row = {
     id: string
@@ -130,7 +145,6 @@ async function runListingCache() {
 
   const rows: Row[] = []
   const seenFlowIds = new Set<string>()
-  let totalFetched = 0
 
   for (let page = 0; page < MAX_PAGES; page++) {
     const offset = page * PAGE_LIMIT
@@ -140,7 +154,7 @@ async function runListingCache() {
     })
     if (!pageResp) break
     const nfts = Array.isArray(pageResp.nfts) ? pageResp.nfts : []
-    totalFetched += nfts.length
+    stats.totalFetched += nfts.length
     const reportedTotal = typeof pageResp.total === "number" ? pageResp.total : null
     const prevSeenSize = seenFlowIds.size
 
@@ -239,10 +253,8 @@ async function runListingCache() {
     await delay(INTER_PAGE_DELAY_MS)
   }
 
-  const totalListed = rows.length
+  stats.totalListed = rows.length
 
-  let upserted = 0
-  let upsertErrors = 0
   const runStartedAt = new Date().toISOString()
 
   for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
@@ -252,15 +264,15 @@ async function runListingCache() {
       .upsert(batch, { onConflict: "flow_id", count: "exact" })
     if (error) {
       console.log(`[topshot-listing-cache] upsert batch ${i} failed: ${error.message}`)
-      upsertErrors += batch.length
+      stats.upsertErrors += batch.length
     } else {
-      upserted += count ?? batch.length
+      stats.upserted += count ?? batch.length
     }
   }
 
   // Only purge stale rows if at least one new row was successfully upserted,
   // so a failed Flowty fetch doesn't wipe the existing cache.
-  if (upserted > 0) {
+  if (stats.upserted > 0) {
     const { error: delErr } = await supabaseAdmin
       .from("cached_listings")
       .delete()
@@ -272,14 +284,13 @@ async function runListingCache() {
     }
   }
 
-  let fmvRecalcCalled = false
   try {
     const recalcUrl = `https://rip-packs-city.vercel.app/api/fmv-recalc`
     const res = await fetch(recalcUrl, {
       method: "POST",
       headers: { Authorization: `Bearer ${TOKEN}` },
     })
-    fmvRecalcCalled = res.ok
+    stats.fmvRecalcCalled = res.ok
     if (!res.ok) {
       console.log(`[topshot-listing-cache] fmv-recalc HTTP ${res.status}`)
     }
@@ -287,14 +298,41 @@ async function runListingCache() {
     console.log(`[topshot-listing-cache] fmv-recalc threw: ${String(err)}`)
   }
 
-  console.log(
-    `[topshot-listing-cache] done: ${JSON.stringify({
-      totalFetched,
-      totalListed,
-      upserted,
-      upsertErrors,
-      fmvRecalcCalled,
-      durationMs: Date.now() - startedAt,
-    })}`
-  )
+  } catch (err) {
+    stats.ok = false
+    stats.errorMsg = err instanceof Error ? err.message : String(err)
+    console.log(`[topshot-listing-cache] fatal: ${stats.errorMsg}`)
+  } finally {
+    try {
+      await (supabaseAdmin as any).rpc("log_pipeline_run", {
+        p_pipeline: PIPELINE_NAME,
+        p_started_at: startedAtIso,
+        p_rows_found: stats.totalListed,
+        p_rows_written: stats.upserted,
+        p_rows_skipped: stats.upsertErrors,
+        p_ok: stats.ok,
+        p_error: stats.errorMsg,
+        p_collection_slug: COLLECTION_SLUG,
+        p_cursor_before: null,
+        p_cursor_after: null,
+        p_extra: {
+          total_fetched: stats.totalFetched,
+          fmv_recalc_called: stats.fmvRecalcCalled,
+          duration_ms: Date.now() - startedAt,
+        },
+      })
+    } catch (e) {
+      console.log(
+        `[topshot-listing-cache] log_pipeline_run err: ${
+          e instanceof Error ? e.message : String(e)
+        }`
+      )
+    }
+    console.log(
+      `[topshot-listing-cache] done: ${JSON.stringify({
+        ...stats,
+        durationMs: Date.now() - startedAt,
+      })}`
+    )
+  }
 }
