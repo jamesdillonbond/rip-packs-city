@@ -19,10 +19,17 @@ const AD_CONTRACT_NAME = "AllDay"
 const FLOWTY_PROXY_URL =
   "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/flowty-proxy"
 const FLOWTY_PROXY_TOKEN = "rippackscity2026"
-const PAGE_LIMIT = 50
+// Dual-sort sweep constants. We fetch three pages sorted salePrice asc
+// (captures the cheap/floor listings) and three sorted salePrice desc
+// (captures the expensive tail that price-asc pagination never reaches).
+// 3 × 24 × 2 = up to 144 listings per run after dedup by listing_resource_id.
+const PAGE_LIMIT = 24
+const SWEEP_OFFSETS = [0, 24, 48]
 const INTER_PAGE_DELAY_MS = 200
 const UPSERT_CHUNK = 50
 const EDITION_LOOKUP_CHUNK = 100
+
+type FlowtySort = { direction: "asc" | "desc"; path: "salePrice" }
 
 type Trait = { name?: string; value?: unknown }
 
@@ -70,7 +77,7 @@ function toNumber(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-async function fetchPage(offset: number) {
+async function fetchPage(offset: number, sort: FlowtySort) {
   const res = await fetch(FLOWTY_PROXY_URL, {
     method: "POST",
     headers: {
@@ -80,7 +87,9 @@ async function fetchPage(offset: number) {
     body: JSON.stringify({
       contractAddress: AD_CONTRACT_ADDRESS,
       contractName: AD_CONTRACT_NAME,
-      payload: { filters: {}, offset, limit: PAGE_LIMIT },
+      // Flowty's collection endpoint accepts sort inside the payload; the
+      // flowty-proxy edge function forwards the payload unchanged.
+      payload: { filters: {}, offset, limit: PAGE_LIMIT, sort },
     }),
   })
   if (!res.ok) {
@@ -153,96 +162,102 @@ async function runListingCache() {
   }
 
   const rows: Row[] = []
-  const seenFlowIds = new Set<string>()
-  let offset = 0
+  // Dedup by listing_resource_id (primary) — the same NFT can appear in both
+  // sorts if it's mid-range, and using listing_resource_id is safer than
+  // flow_id because the same flow_id could theoretically have two active
+  // listings under rare conditions.
+  const seenListingIds = new Set<string>()
 
-  while (true) {
-    const page = await fetchPage(offset).catch((err) => {
-      console.log(`[allday-listing-cache] Page offset=${offset} failed: ${String(err)}`)
-      return null
-    })
-    if (!page) break
-    const nfts = Array.isArray(page.nfts) ? page.nfts : []
-    stats.totalFetched += nfts.length
-    const reportedTotal = typeof page.total === "number" ? page.total : null
-    const prevSeenSize = seenFlowIds.size
+  const sweeps: Array<{ label: string; sort: FlowtySort }> = [
+    { label: "asc",  sort: { direction: "asc",  path: "salePrice" } },
+    { label: "desc", sort: { direction: "desc", path: "salePrice" } },
+  ]
 
-    for (const nft of nfts) {
-      const orders = Array.isArray(nft.orders) ? nft.orders : []
-      const listedOrder = orders.find((o) => o?.state === "LISTED")
-      if (!listedOrder) continue
-      const nftIdRaw = nft.nftId ?? nft.id
-      if (nftIdRaw === undefined || nftIdRaw === null) continue
-      const nftIdStr = String(nftIdRaw)
-      if (seenFlowIds.has(nftIdStr)) continue
-      const listingResourceID = listedOrder.listingResourceID
-      if (!listingResourceID) continue
-
-      const traits = nft.nftView?.traits?.traits
-      const editionId = traitValue(traits, "editionID")
-      const serialNumber =
-        toNumber(traitValue(traits, "serialNumber")) ??
-        toNumber(nft.nftView?.serial)
-      const editionTier = traitValue(traits, "editionTier")
-      const setName = traitValue(traits, "setName")
-      const seriesName = traitValue(traits, "seriesName")
-      const teamName = traitValue(traits, "teamName")
-      let playerName = traitValue(traits, "Player Name")
-      if (!playerName) {
-        const first = traitValue(traits, "playerFirstName")
-        const last = traitValue(traits, "playerLastName")
-        const joined = [first, last].filter(Boolean).join(" ").trim()
-        playerName = joined || null
-      }
-
-      const circulation =
-        toNumber(nft.nftView?.editions?.infoList?.[0]?.max) ?? null
-      const thumbnail = nft.card?.images?.[0]?.url ?? null
-      const askPrice = toNumber(listedOrder.usdValue)
-      const rawFmv = toNumber(listedOrder.valuations?.blended?.usdValue)
-      const fmv = rawFmv && rawFmv > 0 ? rawFmv : null
-      const storefrontAddress =
-        listedOrder.storefrontAddress ?? listedOrder.providerAddress ?? null
-      const ts = listedOrder.blockTimestamp
-      let listedAt: string | null = null
-      if (ts !== null && ts !== undefined) {
-        const ms = typeof ts === "number" ? ts : parseFloat(String(ts))
-        if (Number.isFinite(ms)) listedAt = new Date(ms).toISOString()
-      }
-      const buyUrl = `https://www.flowty.io/asset/${AD_CONTRACT_ADDRESS}/${AD_CONTRACT_NAME}/NFT/${nftIdStr}?listingResourceID=${listingResourceID}`
-
-      seenFlowIds.add(nftIdStr)
-      rows.push({
-        id: String(listingResourceID),
-        flow_id: nftIdStr,
-        moment_id: editionId ?? null,
-        player_name: playerName,
-        team_name: teamName,
-        set_name: setName,
-        series_name: seriesName,
-        tier: editionTier,
-        serial_number: serialNumber,
-        circulation_count: circulation,
-        ask_price: askPrice,
-        fmv,
-        source: "flowty",
-        buy_url: buyUrl,
-        thumbnail_url: thumbnail,
-        listing_resource_id: String(listingResourceID),
-        storefront_address: storefrontAddress,
-        is_locked: false,
-        listed_at: listedAt,
-        cached_at: new Date().toISOString(),
-        collection_id: AD_COLLECTION_ID,
-        edition_external_id: editionId,
+  for (const sweep of sweeps) {
+    for (const offset of SWEEP_OFFSETS) {
+      const page = await fetchPage(offset, sweep.sort).catch((err) => {
+        console.log(`[allday-listing-cache] Page sweep=${sweep.label} offset=${offset} failed: ${String(err)}`)
+        return null
       })
-    }
+      if (!page) continue
+      const nfts = Array.isArray(page.nfts) ? page.nfts : []
+      stats.totalFetched += nfts.length
 
-    if (nfts.length < PAGE_LIMIT) break
-    if (seenFlowIds.size === prevSeenSize) break
-    offset += PAGE_LIMIT
-    if (reportedTotal !== null && offset >= reportedTotal) break
-    await delay(INTER_PAGE_DELAY_MS)
+      for (const nft of nfts) {
+        const orders = Array.isArray(nft.orders) ? nft.orders : []
+        const listedOrder = orders.find((o) => o?.state === "LISTED")
+        if (!listedOrder) continue
+        const listingResourceID = listedOrder.listingResourceID
+        if (!listingResourceID) continue
+        const listingKey = String(listingResourceID)
+        if (seenListingIds.has(listingKey)) continue
+
+        const nftIdRaw = nft.nftId ?? nft.id
+        if (nftIdRaw === undefined || nftIdRaw === null) continue
+        const nftIdStr = String(nftIdRaw)
+
+        const traits = nft.nftView?.traits?.traits
+        const editionId = traitValue(traits, "editionID")
+        const serialNumber =
+          toNumber(traitValue(traits, "serialNumber")) ??
+          toNumber(nft.nftView?.serial)
+        const editionTier = traitValue(traits, "editionTier")
+        const setName = traitValue(traits, "setName")
+        const seriesName = traitValue(traits, "seriesName")
+        const teamName = traitValue(traits, "teamName")
+        let playerName = traitValue(traits, "Player Name")
+        if (!playerName) {
+          const first = traitValue(traits, "playerFirstName")
+          const last = traitValue(traits, "playerLastName")
+          const joined = [first, last].filter(Boolean).join(" ").trim()
+          playerName = joined || null
+        }
+
+        const circulation =
+          toNumber(nft.nftView?.editions?.infoList?.[0]?.max) ?? null
+        const thumbnail = nft.card?.images?.[0]?.url ?? null
+        const askPrice = toNumber(listedOrder.usdValue)
+        const rawFmv = toNumber(listedOrder.valuations?.blended?.usdValue)
+        const fmv = rawFmv && rawFmv > 0 ? rawFmv : null
+        const storefrontAddress =
+          listedOrder.storefrontAddress ?? listedOrder.providerAddress ?? null
+        const ts = listedOrder.blockTimestamp
+        let listedAt: string | null = null
+        if (ts !== null && ts !== undefined) {
+          const ms = typeof ts === "number" ? ts : parseFloat(String(ts))
+          if (Number.isFinite(ms)) listedAt = new Date(ms).toISOString()
+        }
+        const buyUrl = `https://www.flowty.io/asset/${AD_CONTRACT_ADDRESS}/${AD_CONTRACT_NAME}/NFT/${nftIdStr}?listingResourceID=${listingResourceID}`
+
+        seenListingIds.add(listingKey)
+        rows.push({
+          id: listingKey,
+          flow_id: nftIdStr,
+          moment_id: editionId ?? null,
+          player_name: playerName,
+          team_name: teamName,
+          set_name: setName,
+          series_name: seriesName,
+          tier: editionTier,
+          serial_number: serialNumber,
+          circulation_count: circulation,
+          ask_price: askPrice,
+          fmv,
+          source: "flowty",
+          buy_url: buyUrl,
+          thumbnail_url: thumbnail,
+          listing_resource_id: listingKey,
+          storefront_address: storefrontAddress,
+          is_locked: false,
+          listed_at: listedAt,
+          cached_at: new Date().toISOString(),
+          collection_id: AD_COLLECTION_ID,
+          edition_external_id: editionId,
+        })
+      }
+
+      await delay(INTER_PAGE_DELAY_MS)
+    }
   }
 
   stats.totalListed = rows.length
@@ -270,17 +285,10 @@ async function runListingCache() {
   }
   stats.editionsMapped = editionMap.size
 
-  // Wipe existing AD cached listings.
-  const { error: delErr } = await supabaseAdmin
-    .from("cached_listings")
-    .delete()
-    .eq("collection_id", AD_COLLECTION_ID)
-  if (delErr) {
-    console.log(`[allday-listing-cache] Delete failed: ${delErr.message}`)
-    throw new Error(`delete failed: ${delErr.message}`)
-  }
-
-  // Upsert in batches.
+  // Upsert first, then conditionally purge stale rows. Matches the Top Shot /
+  // Golazos pattern — a failed Flowty sweep no longer wipes the entire cache
+  // to 0 before the upsert runs.
+  const runStartedAt = new Date(startedAt).toISOString()
   for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
     const batch = rows.slice(i, i + UPSERT_CHUNK).map((r) => {
       const { edition_external_id: _drop, ...rest } = r
@@ -297,6 +305,22 @@ async function runListingCache() {
     } else {
       stats.upserted += count ?? batch.length
     }
+  }
+
+  // Only purge stale AllDay rows if at least one new row was upserted; that
+  // way a Flowty outage leaves the prior cache intact instead of wiping it.
+  if (stats.upserted > 0) {
+    const { error: delErr } = await supabaseAdmin
+      .from("cached_listings")
+      .delete()
+      .eq("collection_id", AD_COLLECTION_ID)
+      .eq("source", "flowty")
+      .lt("cached_at", runStartedAt)
+    if (delErr) {
+      console.log(`[allday-listing-cache] stale purge error: ${delErr.message}`)
+    }
+  } else {
+    console.log("[allday-listing-cache] 0 rows upserted — preserving prior cache")
   }
 
   // Regenerate ASK_ONLY FMV snapshots from cached listings, then refresh

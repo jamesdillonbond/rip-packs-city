@@ -897,7 +897,12 @@ export async function GET(req: Request) {
   const CACHE_TTL = 25_000;
 
   try {
-    const computeFn = collection !== "nba-top-shot"
+    // All Day gets the dedicated RPC path — cached_listings + fmv_snapshots
+    // join + discount computation all server-side. Top Shot is unchanged.
+    // Other non-TS collections still use the generic cached-listings path.
+    const computeFn = collection === "nfl-all-day"
+      ? () => computeAllDaySniperFeed({ minDiscount, rarity: effectiveRarity, team, maxPrice, sortBy })
+      : collection !== "nba-top-shot"
       ? () => computeCachedSniperFeed({ collection, minDiscount, rarity: effectiveRarity, team, maxPrice, sortBy, serialFilter })
       : () => computeSniperFeed({ minDiscount, rarity: effectiveRarity, team, badgeOnly, serialFilter, maxPrice, sortBy });
 
@@ -1014,6 +1019,111 @@ function resolveCollectionUuid(slug: string): string | null {
 }
 
 const ALLDAY_THUMBNAIL_BASE = "https://media.nflallday.com/editions/";
+
+// ── All Day sniper feed via get_allday_sniper_deals() RPC ──────────────────
+// The RPC joins cached_listings → editions → fmv_snapshots and computes the
+// discount% server-side, so there's nothing to resolve client-side. We just
+// map the wide SQL row into the SniperDeal shape the existing UI expects.
+// Top Shot stays on computeSniperFeed(); everything else (Golazos, UFC) stays
+// on computeCachedSniperFeed(). This branch is All Day-only.
+async function computeAllDaySniperFeed(opts: {
+  minDiscount: number; rarity: string; team: string; maxPrice: number; sortBy: string;
+}) {
+  const { minDiscount, rarity, team, maxPrice, sortBy } = opts;
+  const supabase = supabaseAdmin;
+
+  const { data: rows, error } = await (supabase as any).rpc("get_allday_sniper_deals", {
+    p_min_discount: minDiscount,
+    p_max_price: maxPrice,
+    p_rarity: rarity === "all" ? "all" : rarity,
+    p_team: team === "all" ? "all" : team,
+    p_sort_by: sortBy,
+    p_limit: 200,
+  });
+
+  if (error) {
+    console.error("[sniper-feed] get_allday_sniper_deals error:", error.message);
+    return { count: 0, tsCount: 0, flowtyCount: 0, lastRefreshed: new Date().toISOString(), deals: [] };
+  }
+
+  const deals: SniperDeal[] = (rows ?? []).map((r: any) => {
+    const tier = String(r.tier ?? "COMMON").replace("MOMENT_TIER_", "");
+    const confidence = String(r.confidence ?? "ASK_ONLY");
+    const momentId = r.moment_id ? String(r.moment_id) : "";
+    const thumbnailUrl = r.thumbnail_url ?? (momentId
+      ? ALLDAY_THUMBNAIL_BASE + momentId + "/media/image?width=512&format=webp&quality=90"
+      : null);
+    return {
+      flowId: r.flow_id ?? "",
+      momentId,
+      editionKey: "",
+      intEditionKey: null,
+      playerName: r.player_name ?? "",
+      teamName: r.team_name ?? "",
+      setName: r.set_name ?? "",
+      seriesName: r.series_name ?? "",
+      tier,
+      parallel: "Base",
+      parallelId: 0,
+      serial: r.serial_number ?? 0,
+      circulationCount: r.circulation_count ?? 0,
+      askPrice: Number(r.ask_price) || 0,
+      baseFmv: Number(r.fmv_usd) || 0,
+      adjustedFmv: Number(r.fmv_usd) || 0,
+      wapUsd: null,
+      daysSinceSale: null,
+      salesCount30d: null,
+      discount: Number(r.discount_pct) || 0,
+      confidence: confidence.toLowerCase(),
+      confidenceSource: confidence === "ASK_ONLY" ? "ask_fallback" : "fmv_snapshots",
+      hasBadge: false,
+      badgeSlugs: [],
+      badgeLabels: [],
+      badgePremiumPct: 0,
+      serialMult: 1,
+      isSpecialSerial: false,
+      isJersey: false,
+      serialSignal: null,
+      thumbnailUrl,
+      isLocked: false,
+      updatedAt: r.listed_at ?? null,
+      packListingId: null,
+      packName: null,
+      packEv: null,
+      packEvRatio: null,
+      buyUrl: r.buy_url ?? "",
+      listingResourceID: r.listing_resource_id ?? null,
+      listingOrderID: null,
+      storefrontAddress: null,
+      source: "flowty",
+      paymentToken: "FLOW",
+      offerAmount: null,
+      offerFmvPct: null,
+      dealRating: (Number(r.discount_pct) || 0) / 100,
+      isLowestAsk: false,
+    };
+  });
+
+  // Mark lowest ask per moment — keeps parity with the other paths.
+  const lowestAskByMoment = new Map<string, number>();
+  for (const d of deals) {
+    const key = d.momentId || d.flowId;
+    const current = lowestAskByMoment.get(key);
+    if (current === undefined || d.askPrice < current) lowestAskByMoment.set(key, d.askPrice);
+  }
+  for (const d of deals) {
+    const key = d.momentId || d.flowId;
+    d.isLowestAsk = d.askPrice === lowestAskByMoment.get(key);
+  }
+
+  return {
+    count: deals.length,
+    tsCount: 0,
+    flowtyCount: deals.length,
+    lastRefreshed: new Date().toISOString(),
+    deals,
+  };
+}
 
 async function computeCachedSniperFeed(opts: {
   collection: string; minDiscount: number; rarity: string; team: string;
