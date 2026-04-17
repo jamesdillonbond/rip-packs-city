@@ -161,68 +161,150 @@ async function runSalesFmvRecalc(): Promise<number> {
   }
 }
 
+const PIPELINE_NAME = "pinnacle-listing-cache"
+const COLLECTION_SLUG = "disney_pinnacle"
+
+async function logRun(args: {
+  startedAtIso: string
+  ok: boolean
+  errorMsg: string | null
+  rowsFound: number
+  rowsWritten: number
+  rowsSkipped: number
+  extra: Record<string, unknown>
+}) {
+  try {
+    await supabase.rpc("log_pipeline_run", {
+      p_pipeline: PIPELINE_NAME,
+      p_started_at: args.startedAtIso,
+      p_rows_found: args.rowsFound,
+      p_rows_written: args.rowsWritten,
+      p_rows_skipped: args.rowsSkipped,
+      p_ok: args.ok,
+      p_error: args.errorMsg,
+      p_collection_slug: COLLECTION_SLUG,
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: args.extra,
+    })
+  } catch (e: any) {
+    console.log(`[pinnacle-listing-cache] log_pipeline_run err: ${e?.message ?? "unknown"}`)
+  }
+}
+
 async function run(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   if (auth !== `Bearer ${process.env.INGEST_SECRET_TOKEN}`) return unauthorized()
 
   const started = Date.now()
-  const raw: FlowtyNft[] = []
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const offset = page * PAGE_SIZE
-    const items = await fetchFlowtyPage(offset)
-    raw.push(...items)
-    if (items.length < PAGE_SIZE) break
-  }
-  console.log(`[pinnacle-listing-cache] Fetched ${raw.length} raw NFTs from Flowty`)
-
-  const rows: any[] = []
-  const seen = new Set<string>()
-  for (const nft of raw) {
-    const mapped = mapNft(nft)
-    if (!mapped) continue
-    if (seen.has(mapped.id)) continue
-    seen.add(mapped.id)
-    rows.push(mapped)
-  }
-  console.log(`[pinnacle-listing-cache] Mapped ${rows.length} valid listings`)
-
-  if (rows.length === 0) {
-    return NextResponse.json({
-      ok: true,
-      message: "Flowty returned 0 mapped listings — preserving existing cache",
-      fetched: raw.length,
-      cached: 0,
-      elapsed: Date.now() - started,
-    })
-  }
-
-  const del = await supabase.from("pinnacle_cached_listings").delete().not("id", "is", null)
-  if (del.error) console.log(`[pinnacle-listing-cache] delete error: ${del.error.message}`)
-
+  const startedAtIso = new Date(started).toISOString()
+  let ok = true
+  let errorMsg: string | null = null
+  let fetchedCount = 0
+  let mappedCount = 0
   let inserted = 0
   let errors = 0
-  for (let i = 0; i < rows.length; i += 100) {
-    const chunk = rows.slice(i, i + 100)
-    const { error } = await supabase.from("pinnacle_cached_listings").insert(chunk)
-    if (error) {
-      console.log(`[pinnacle-listing-cache] insert chunk ${i} error: ${error.message}`)
-      errors++
-      for (const single of chunk) {
-        const { error: se } = await supabase.from("pinnacle_cached_listings").insert([single])
-        if (!se) inserted++
-      }
-    } else {
-      inserted += chunk.length
+  let askOnlyFmvCount = 0
+  let salesFmvCount = 0
+
+  try {
+    const raw: FlowtyNft[] = []
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const offset = page * PAGE_SIZE
+      const items = await fetchFlowtyPage(offset)
+      raw.push(...items)
+      if (items.length < PAGE_SIZE) break
     }
+    fetchedCount = raw.length
+    console.log(`[pinnacle-listing-cache] Fetched ${raw.length} raw NFTs from Flowty`)
+
+    const rows: any[] = []
+    const seen = new Set<string>()
+    for (const nft of raw) {
+      const mapped = mapNft(nft)
+      if (!mapped) continue
+      if (seen.has(mapped.id)) continue
+      seen.add(mapped.id)
+      rows.push(mapped)
+    }
+    mappedCount = rows.length
+    console.log(`[pinnacle-listing-cache] Mapped ${rows.length} valid listings`)
+
+    if (rows.length === 0) {
+      await logRun({
+        startedAtIso,
+        ok: true,
+        errorMsg: null,
+        rowsFound: mappedCount,
+        rowsWritten: 0,
+        rowsSkipped: 0,
+        extra: {
+          fetched: fetchedCount,
+          note: "0 mapped — preserving existing cache",
+          duration_ms: Date.now() - started,
+        },
+      })
+      return NextResponse.json({
+        ok: true,
+        message: "Flowty returned 0 mapped listings — preserving existing cache",
+        fetched: raw.length,
+        cached: 0,
+        elapsed: Date.now() - started,
+      })
+    }
+
+    const del = await supabase.from("pinnacle_cached_listings").delete().not("id", "is", null)
+    if (del.error) console.log(`[pinnacle-listing-cache] delete error: ${del.error.message}`)
+
+    for (let i = 0; i < rows.length; i += 100) {
+      const chunk = rows.slice(i, i + 100)
+      const { error } = await supabase.from("pinnacle_cached_listings").insert(chunk)
+      if (error) {
+        console.log(`[pinnacle-listing-cache] insert chunk ${i} error: ${error.message}`)
+        errors++
+        for (const single of chunk) {
+          const { error: se } = await supabase.from("pinnacle_cached_listings").insert([single])
+          if (!se) inserted++
+        }
+      } else {
+        inserted += chunk.length
+      }
+    }
+
+    askOnlyFmvCount = await runAskOnlyFmv()
+    salesFmvCount = await runSalesFmvRecalc()
+  } catch (err) {
+    ok = false
+    errorMsg = err instanceof Error ? err.message : String(err)
+    console.log(`[pinnacle-listing-cache] fatal: ${errorMsg}`)
   }
 
-  const askOnlyFmvCount = await runAskOnlyFmv()
-  const salesFmvCount = await runSalesFmvRecalc()
+  await logRun({
+    startedAtIso,
+    ok,
+    errorMsg,
+    rowsFound: mappedCount,
+    rowsWritten: inserted,
+    rowsSkipped: errors,
+    extra: {
+      fetched: fetchedCount,
+      ask_only_fmv_count: askOnlyFmvCount,
+      sales_fmv_count: salesFmvCount,
+      duration_ms: Date.now() - started,
+    },
+  })
+
+  if (!ok) {
+    return NextResponse.json(
+      { ok: false, error: errorMsg, fetched: fetchedCount, cached: inserted, elapsed: Date.now() - started },
+      { status: 500 }
+    )
+  }
 
   return NextResponse.json({
     ok: true,
-    fetched: raw.length,
-    mapped: rows.length,
+    fetched: fetchedCount,
+    mapped: mappedCount,
     cached: inserted,
     errors,
     askOnlyFmvCount,

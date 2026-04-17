@@ -58,6 +58,28 @@ async function refreshViaWalletSearch(
   return res.ok
 }
 
+// Bump last_seen_at on every cache row for a wallet. The cache-hit path below
+// never re-runs the on-chain sweep (wallet-search / cache-refresh only touch
+// last_seen_at on the rows they upsert), so without this the timestamp
+// silently goes stale on seeded wallets even though we just verified them.
+async function touchCacheLastSeen(
+  supabase: any,
+  walletAddress: string
+): Promise<number> {
+  const now = new Date().toISOString()
+  const { error, count } = await supabase
+    .from("wallet_moments_cache")
+    .update({ last_seen_at: now }, { count: "exact" })
+    .eq("wallet_address", walletAddress)
+  if (error) {
+    console.log(
+      `[seed-wallet-refresh] touch last_seen_at failed for ${walletAddress}: ${error.message}`
+    )
+    return 0
+  }
+  return count ?? 0
+}
+
 export async function GET(req: NextRequest) {
   // Support both ?token= query param and Authorization: Bearer header
   const queryToken = req.nextUrl.searchParams.get("token")
@@ -118,9 +140,10 @@ export async function GET(req: NextRequest) {
           await (supabase as any).rpc("refresh_seeded_wallet_stats", {
             p_wallet_address: addr,
           })
+          const touched = await touchCacheLastSeen(supabase, addr)
           cacheRefreshed++
           console.log(
-            `[seed-wallet-refresh] cache-hit ${row.username} (${addr}): ${cacheCount} cached moments, stats refreshed`
+            `[seed-wallet-refresh] cache-hit ${row.username} (${addr}): ${cacheCount} cached moments, stats refreshed, last_seen_at bumped on ${touched} rows`
           )
         } else {
           // Cache empty — call wallet-search to populate it
@@ -188,6 +211,7 @@ export async function GET(req: NextRequest) {
           await (supabase as any).rpc("refresh_seeded_wallet_stats", {
             p_wallet_address: resolved,
           })
+          await touchCacheLastSeen(supabase, resolved)
           cacheRefreshed++
         } else {
           const ok = await refreshViaWalletSearch(origin, resolved)
