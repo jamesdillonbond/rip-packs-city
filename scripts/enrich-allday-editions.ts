@@ -37,11 +37,10 @@ const supabase = createClient(SUPABASE_URL, SERVICE_KEY)
 
 const METADATA_SCRIPT = `
 import AllDay from 0xe4cf4bdc1751c65d
-
-access(all) fun main(id: UInt64): {String: String} {
-  let ed = AllDay.getEditionData(id: id)
-  if ed == nil { return {} }
-  return ed!.metadata
+access(all) fun main(id: UInt64): AnyStruct {
+  let ed = AllDay.getEditionData(id: id)!
+  let play = AllDay.getPlayData(id: ed.playID)!
+  return play.metadata
 }
 `.trim()
 
@@ -120,8 +119,8 @@ function buildPatch(meta: MetaDict) {
   const first = (meta.playerFirstName ?? "").trim()
   const last = (meta.playerLastName ?? "").trim()
   const fullFromParts = [first, last].filter(Boolean).join(" ").trim()
-  const playerName =
-    fullFromParts || (meta.playerFullName ?? "").trim() || null
+  const teamNameRaw = (meta.teamName ?? "").trim()
+  const playerName = fullFromParts || teamNameRaw || null
 
   const patch: {
     player_name?: string
@@ -130,8 +129,7 @@ function buildPatch(meta: MetaDict) {
     game_date?: string
   } = {}
   if (playerName) patch.player_name = playerName
-  const teamName = (meta.teamName ?? meta.playerPosition ?? "").trim()
-  if (teamName && meta.teamName) patch.team_name = meta.teamName.trim()
+  if (teamNameRaw) patch.team_name = teamNameRaw
   const playType = (meta.playType ?? "").trim()
   if (playType) patch.play_type = playType
   const gameDate = normDate(meta.gameDate ?? meta.playDate ?? meta.mintingDate)
