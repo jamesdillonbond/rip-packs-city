@@ -318,7 +318,9 @@ async function runListingCache() {
     console.log("[golazos-listing-cache] 0 rows upserted — preserving prior cache")
   }
 
-  // Regenerate ASK_ONLY FMV snapshots for Golazos.
+  // Regenerate ASK_ONLY FMV snapshots for Golazos, then refresh sales-based
+  // FMV so editions with sales get SALES_ONLY / HIGH upgrades alongside the
+  // listing-based ASK_ONLY rows created above.
   let fmvRpcCalled = false
   try {
     const { error } = await supabaseAdmin.rpc("fmv_from_cached_listings", {
@@ -333,6 +335,20 @@ async function runListingCache() {
     console.log(`[golazos-listing-cache] fmv rpc threw: ${String(err)}`)
   }
 
+  let fmvSalesCalled = false
+  try {
+    const { error } = await supabaseAdmin.rpc("fmv_from_sales", {
+      p_collection_id: GZ_COLLECTION_ID,
+    })
+    if (error) {
+      console.log(`[golazos-listing-cache] fmv_from_sales error: ${error.message}`)
+    } else {
+      fmvSalesCalled = true
+    }
+  } catch (err) {
+    console.log(`[golazos-listing-cache] fmv_from_sales threw: ${String(err)}`)
+  }
+
   console.log(
     `[golazos-listing-cache] done: ${JSON.stringify({
       totalFetched,
@@ -341,6 +357,7 @@ async function runListingCache() {
       upsertErrors,
       editionsMapped,
       fmvRpcCalled,
+      fmvSalesCalled,
       durationMs: Date.now() - startedAt,
     })}`
   )

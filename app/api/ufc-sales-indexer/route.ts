@@ -24,9 +24,33 @@ const CHUNK_SIZE = 250
 const DEFAULT_SCAN_RANGE = 50_000
 const MAX_SCAN_RANGE = 100_000
 const INTER_CHUNK_DELAY_MS = 75
+const CADENCE_FALLBACK_MAX = 30
+const CADENCE_DELAY_MS = 150
+
+const EXCLUDED_ADDRESSES = new Set<string>([
+  "0x3cdbb3d569211ff3", // Flowty storefront escrow / seller
+  "0x18eb4ee6b3c026d2", // Flowty fee payer
+  "0xead892083b3e2c6c", // Dapper DUC co-signer
+])
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+}
+
+function normalizeAddress(raw: string): string {
+  const hex = raw.trim().toLowerCase().replace(/^0x/, "")
+  return `0x${hex.padStart(16, "0")}`
+}
+
+// UFC editions are keyed by slug(editionName, max) — the same derivation used
+// by seed-ufc-editions, scan-ufc-wallet, and ufc-listing-cache — so inline
+// resolution has to return the upstream name/max/serial and slug client-side.
+function slugifyUfcEdition(name: string, max: number | null): string {
+  const clean = name
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+  return max !== null ? `${clean}-${max}` : clean
 }
 
 function delay(ms: number) {
@@ -87,6 +111,74 @@ async function getLatestSealedHeight(): Promise<number> {
   if (!res.ok) throw new Error(`blocks sealed HTTP ${res.status}`)
   const json = (await res.json()) as Array<{ header: { height: string } }>
   return Number(json[0]?.header?.height ?? 0)
+}
+
+async function fetchTxBuyers(txId: string): Promise<string[]> {
+  try {
+    const clean = txId.replace(/^0x/, "")
+    const res = await fetch(`${FLOW_REST}/v1/transactions/${clean}`, {
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!res.ok) return []
+    const json = (await res.json()) as {
+      proposal_key?: { address?: string }
+      authorizers?: string[]
+      payer?: string
+    }
+    const candidates = new Set<string>()
+    if (json.proposal_key?.address) candidates.add(normalizeAddress(json.proposal_key.address))
+    for (const a of json.authorizers ?? []) candidates.add(normalizeAddress(a))
+    if (json.payer) candidates.add(normalizeAddress(json.payer))
+    return Array.from(candidates).filter((a) => !EXCLUDED_ADDRESSES.has(a))
+  } catch {
+    return []
+  }
+}
+
+// UFC_NFT exposes edition metadata via MetadataViews.Editions rather than a
+// bare editionID field, so the borrow returns (name, max, serial) as strings
+// and we slug client-side. Returns [] on miss.
+const BORROW_EDITION_SCRIPT = `
+import UFC_NFT from 0x329feb3ab062d289
+import MetadataViews from 0x1d7e57aa55817448
+access(all) fun main(owners: [Address], id: UInt64): [String] {
+  for owner in owners {
+    let col = getAccount(owner).capabilities
+      .borrow<&{UFC_NFT.MomentNFTCollectionPublic}>(/public/UFC_NFTCollection)
+    if col == nil { continue }
+    let nft = col!.borrowMomentNFT(id: id)
+    if nft == nil { continue }
+    if let editions = nft!.resolveView(Type<MetadataViews.Editions>()) {
+      let e = editions as! MetadataViews.Editions
+      if e.infoList.length > 0 {
+        let info = e.infoList[0]
+        let name = info.name ?? ""
+        let serial = info.number.toString()
+        let maxStr = info.max != nil ? info.max!.toString() : ""
+        return [name, maxStr, serial]
+      }
+    }
+  }
+  return []
+}
+`
+
+async function runScript(code: string, args: Array<{ type: string; value: unknown }>): Promise<unknown> {
+  const body = {
+    script: Buffer.from(code).toString("base64"),
+    arguments: args.map((a) => Buffer.from(JSON.stringify(a)).toString("base64")),
+  }
+  const res = await fetch(`${FLOW_REST}/v1/scripts?block_height=sealed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(10000),
+  })
+  if (!res.ok) throw new Error(`script HTTP ${res.status}`)
+  const json = (await res.json()) as string | { value: string }
+  const b64 = typeof json === "string" ? json : json.value
+  const decoded = JSON.parse(Buffer.from(b64, "base64").toString("utf8"))
+  return unwrapCdc(decoded)
 }
 
 async function runIndexer(req: NextRequest) {
@@ -230,6 +322,70 @@ async function runIndexer(req: NextRequest) {
       }
     }
 
+    // Inline edition resolution: for sales that missed wallet_moments_cache,
+    // look up the real buyer via the tx's proposer/authorizers/payer, borrow
+    // the NFT from that wallet to read edition name/max/serial, and slug it
+    // into the same external_id format used by the rest of the pipeline.
+    const unresolvedSales = sales.filter((s) => !nftToEditionKey.has(s.nftID))
+    const nftToSerial = new Map<string, number>()
+    const newlyResolved: Array<{
+      nft_id: string
+      edition_external_id: string
+      serial_number: number
+    }> = []
+    let cadenceResolved = 0
+    const seenNft = new Set<string>()
+    for (const sale of unresolvedSales) {
+      if (cadenceResolved >= CADENCE_FALLBACK_MAX) break
+      if (seenNft.has(sale.nftID) || nftToEditionKey.has(sale.nftID)) continue
+      seenNft.add(sale.nftID)
+      try {
+        const buyers = await fetchTxBuyers(sale.transactionId)
+        if (buyers.length === 0) continue
+        const result = (await runScript(BORROW_EDITION_SCRIPT, [
+          {
+            type: "Array",
+            value: buyers.map((a) => ({ type: "Address", value: a })),
+          },
+          { type: "UInt64", value: sale.nftID },
+        ])) as unknown[] | null
+        if (Array.isArray(result) && result.length >= 3) {
+          const name = String(result[0] ?? "")
+          const maxStr = String(result[1] ?? "")
+          const serial = Number(result[2])
+          if (!name) continue
+          const max = maxStr === "" ? null : Number(maxStr)
+          const editionKey = slugifyUfcEdition(name, Number.isFinite(max as number) ? (max as number) : null)
+          nftToEditionKey.set(sale.nftID, editionKey)
+          if (Number.isFinite(serial)) nftToSerial.set(sale.nftID, serial)
+          newlyResolved.push({
+            nft_id: sale.nftID,
+            edition_external_id: editionKey,
+            serial_number: Number.isFinite(serial) ? serial : 0,
+          })
+          cadenceResolved++
+        }
+      } catch (err) {
+        console.log(
+          `[ufc-sales-indexer] cadence fallback err nft=${sale.nftID}:`,
+          err instanceof Error ? err.message : String(err)
+        )
+      }
+      await delay(CADENCE_DELAY_MS)
+    }
+
+    if (newlyResolved.length > 0) {
+      const { error: mapErr } = await (supabaseAdmin as any)
+        .from("nft_edition_map")
+        .upsert(
+          newlyResolved.map((r) => ({ collection_id: UFC_COLLECTION_ID, ...r })),
+          { onConflict: "collection_id,nft_id", ignoreDuplicates: true }
+        )
+      if (mapErr) {
+        console.log(`[ufc-sales-indexer] nft_edition_map upsert err: ${mapErr.message}`)
+      }
+    }
+
     const editionKeys = [...new Set(nftToEditionKey.values())]
     const editionKeyToId = new Map<string, string>()
     if (editionKeys.length > 0) {
@@ -259,7 +415,7 @@ async function runIndexer(req: NextRequest) {
           collection: "ufc",
           nft_id: s.nftID,
           price_usd: price,
-          serial_number: 0,
+          serial_number: nftToSerial.get(s.nftID) ?? 0,
           sold_at: s.blockTimestamp,
           marketplace: "flowty",
           source: "onchain",
@@ -329,6 +485,7 @@ async function runIndexer(req: NextRequest) {
     }
 
     extra.blocks_scanned = targetHeight - lastBlock
+    extra.cadence_resolved = cadenceResolved
     extra.unresolved_sample = unresolvedNftIds.slice(0, 20)
     extra.elapsed_ms = Date.now() - started
 

@@ -285,7 +285,9 @@ async function runListingCache() {
     }
   }
 
-  // Regenerate ASK_ONLY FMV snapshots.
+  // Regenerate ASK_ONLY FMV snapshots from cached listings, then refresh
+  // sales-based FMV so editions with sales get SALES_ONLY / HIGH upgrades
+  // alongside the listing-based ASK_ONLY rows created above.
   let fmvRpcCalled = false
   try {
     const { error } = await supabaseAdmin.rpc("fmv_from_cached_listings", {
@@ -300,6 +302,20 @@ async function runListingCache() {
     console.log(`[allday-listing-cache] fmv rpc threw: ${String(err)}`)
   }
 
+  let fmvSalesCalled = false
+  try {
+    const { error } = await supabaseAdmin.rpc("fmv_from_sales", {
+      p_collection_id: AD_COLLECTION_ID,
+    })
+    if (error) {
+      console.log(`[allday-listing-cache] fmv_from_sales error: ${error.message}`)
+    } else {
+      fmvSalesCalled = true
+    }
+  } catch (err) {
+    console.log(`[allday-listing-cache] fmv_from_sales threw: ${String(err)}`)
+  }
+
   console.log(
     `[allday-listing-cache] done: ${JSON.stringify({
       totalFetched,
@@ -308,6 +324,7 @@ async function runListingCache() {
       upsertErrors,
       editionsMapped,
       fmvRpcCalled,
+      fmvSalesCalled,
       durationMs: Date.now() - startedAt,
     })}`
   )
