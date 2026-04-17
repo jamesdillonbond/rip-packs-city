@@ -592,7 +592,7 @@ export default function SniperPage() {
   const [ownedIds, setOwnedIds] = useState<Set<string>>(new Set());
 
   const [tierTab, setTierTab] = useState<TierTab>("all");
-  const [sortBy, setSortBy] = useState<SortOption>("listed_desc");
+  const [sortBy, setSortBy] = useState<SortOption>(isAllDay ? "price_asc" : "listed_desc");
   const [minDiscount, setMinDiscount] = useState(0);
   const [maxPrice, setMaxPrice] = useState(0);
   const [serialFilter, setSerialFilter] = useState("all");
@@ -1158,6 +1158,7 @@ export default function SniperPage() {
                 style={{ width: isMobile ? "100%" : 160, background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 12px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", outline: "none" }}
               />
             </label>
+            {!isAllDay && (
             <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
               <span>MIN DISC.</span>
               <input
@@ -1170,6 +1171,7 @@ export default function SniperPage() {
               />
               <span>%</span>
             </label>
+            )}
           </div>
           )}
 
