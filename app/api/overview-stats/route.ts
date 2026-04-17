@@ -1,70 +1,107 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-import { getCollection } from "@/lib/collections"
+import { supabaseAdmin } from "@/lib/supabase"
+import {
+  getCollectionUuid,
+  toDbSlug,
+} from "@/lib/collections"
 
-const supabase: any = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+// Per-collection overview stats for the overview page KPI cards.
+// Returns: totalEditions, highConfCount (HIGH-confidence FMV coverage),
+// volume24h, and up to 5 FMV movers. All queries are filtered by the
+// resolved collection UUID. Disney Pinnacle is routed to its dedicated
+// tables (pinnacle_editions, pinnacle_fmv_snapshots, pinnacle_sales);
+// all other collections hit the shared editions / fmv_snapshots / sales
+// tables via collection_id.
 
-async function resolveCollectionId(slug: string | null): Promise<string | null> {
-  if (!slug) return null
-  const collectionObj = getCollection(slug)
-  const contractName = collectionObj?.flowContractName
-  if (!contractName) return null
-  const { data } = await supabase
-    .from("collection_config")
-    .select("collection_id")
-    .eq("flow_contract_name", contractName)
-    .single()
-  return data?.collection_id ?? null
+type MarketPulseRow = {
+  slug: string
+  sales_24h: number | null
+  volume_24h: number | null
+}
+
+async function getVolume24hFromPulse(dbSlug: string | null): Promise<number> {
+  if (!dbSlug) return 0
+  try {
+    const { data, error } = await (supabaseAdmin as any).rpc(
+      "get_market_pulse_all"
+    )
+    if (error) return 0
+    const rows = (data ?? []) as MarketPulseRow[]
+    const hit = rows.find((r) => r.slug === dbSlug)
+    return Number(hit?.volume_24h ?? 0)
+  } catch {
+    return 0
+  }
+}
+
+async function pinnacleStats() {
+  const [editionsRes, highConfRes] = await Promise.all([
+    (supabaseAdmin as any)
+      .from("pinnacle_editions")
+      .select("id", { count: "exact", head: true }),
+    (supabaseAdmin as any)
+      .from("pinnacle_fmv_snapshots")
+      .select("edition_id", { count: "exact", head: true })
+      .eq("confidence", "HIGH"),
+  ])
+  return {
+    totalEditions: editionsRes.count ?? 0,
+    highConfCount: highConfRes.count ?? 0,
+  }
+}
+
+async function standardStats(collectionId: string) {
+  const [editionsRes, highConfRes] = await Promise.all([
+    (supabaseAdmin as any)
+      .from("editions")
+      .select("id", { count: "exact", head: true })
+      .eq("collection_id", collectionId),
+    (supabaseAdmin as any)
+      .from("fmv_snapshots")
+      .select("edition_id", { count: "exact", head: true })
+      .eq("collection_id", collectionId)
+      .eq("confidence", "HIGH"),
+  ])
+  return {
+    totalEditions: editionsRes.count ?? 0,
+    highConfCount: highConfRes.count ?? 0,
+  }
 }
 
 export async function GET(req: NextRequest) {
   try {
-    const collectionSlug = req.nextUrl.searchParams.get("collection")?.trim() || null
-    const collectionId = await resolveCollectionId(collectionSlug)
+    const slug = req.nextUrl.searchParams.get("collection")?.trim() || "nba-top-shot"
+    const collectionId = getCollectionUuid(slug)
+    const dbSlug = toDbSlug(slug)
 
-    const moversParams: Record<string, any> = {
-      lookback_interval: "24 hours",
-      min_fmv: 1,
-      limit_count: 5,
+    if (!collectionId) {
+      return NextResponse.json(
+        { totalEditions: 0, highConfCount: 0, volume24h: 0, movers: [] },
+        { status: 200 }
+      )
     }
-    if (collectionId) moversParams.p_collection_id = collectionId
 
-    const [editionsRes, highConfRes, volumeRes, moversRes] = await Promise.all([
-      // (a) Count distinct editions in fmv_snapshots
-      supabase
-        .from("fmv_snapshots")
-        .select("edition_id", { count: "exact", head: true }),
-      // (b) Count HIGH confidence rows
-      supabase
-        .from("fmv_snapshots")
-        .select("edition_id", { count: "exact", head: true })
-        .eq("confidence", "HIGH"),
-      // (d) 24h sales volume from sales_2026
-      supabase
-        .from("sales_2026")
-        .select("price_usd")
-        .gte("sold_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()),
-      // (c) Top movers via RPC
-      supabase.rpc("get_fmv_movers", moversParams),
+    const isPinnacle = slug === "disney-pinnacle"
+
+    const [stats, volume24h, moversRes] = await Promise.all([
+      isPinnacle ? pinnacleStats() : standardStats(collectionId),
+      getVolume24hFromPulse(dbSlug),
+      // get_fmv_movers accepts p_collection_id but currently only walks
+      // fmv_snapshots, so it naturally returns [] for Pinnacle — fine.
+      (supabaseAdmin as any).rpc("get_fmv_movers", {
+        lookback_interval: "24 hours",
+        min_fmv: 1,
+        limit_count: 5,
+        p_collection_id: collectionId,
+      }),
     ])
-
-    const totalEditions = editionsRes.count ?? 0
-    const highConfCount = highConfRes.count ?? 0
-    const volume24h = (volumeRes.data ?? []).reduce(
-      (sum: number, r: { price_usd: number }) => sum + (Number(r.price_usd) || 0),
-      0
-    )
-    const movers = moversRes.data ?? []
 
     return NextResponse.json(
       {
-        totalEditions,
-        highConfCount,
+        totalEditions: stats.totalEditions,
+        highConfCount: stats.highConfCount,
         volume24h,
-        movers,
+        movers: moversRes.data ?? [],
       },
       {
         headers: {
