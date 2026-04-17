@@ -30,7 +30,7 @@ export default function CollectionSwitcher({ activeCollectionId }: CollectionSwi
           return (
             <Link
               key={col.id}
-              href={`/${col.id}/overview`}
+              href={`/${col.id}/collection`}
               style={{
                 display: "flex",
                 alignItems: "center",

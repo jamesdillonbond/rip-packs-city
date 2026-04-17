@@ -2,24 +2,17 @@
 // scripts/enrich-pinnacle-cadence.ts
 //
 // Replace placeholder rows in pinnacle_editions ("Unknown (Edition N)")
-// with real metadata sourced from Cadence on the Pinnacle contract at
-// 0xedf9df96c92f4595. The Pinnacle GQL is Cloudflare-blocked even from
-// Workers, so this is the only non-Flowty path to resolve edition
-// metadata for editions with no active Flowty listings.
+// with real metadata from Cadence on the Pinnacle contract at
+// 0xedf9df96c92f4595.
 //
-// Dapper-hosted NFT contracts expose their edition data through one
-// of a small set of well-known getters (e.g. Pinnacle.getEditionData,
-// Pinnacle.getEdition, …). We don't know Pinnacle's exact ABI ahead of
-// time, so the script:
+// Pinnacle exposes two getters we need:
+//   1. Pinnacle.getEdition(id: Int)  → edition struct (variant, isChaser, shapeID…)
+//   2. Pinnacle.getShape(id: Int)    → shape struct (name, editionType, metadata)
+// shapeID from #1 feeds into #2 — so enrichment is two calls per edition.
 //
-//   1. With --probe <editionId> — runs a discovery Cadence script that
-//      reflects on a sample edition and logs the first signature that
-//      works. Use the output to tune the PRODUCTION_SCRIPT below.
-//   2. Without --probe — executes the production script against
-//      placeholder rows in batches and upserts whatever keys it returns.
+// Pinnacle IDs are Int (not UInt64). Argument shape: {"type":"Int","value":"1896"}.
 //
-// Usage:  npx tsx scripts/enrich-pinnacle-cadence.ts --probe 1896
-//         npx tsx scripts/enrich-pinnacle-cadence.ts [--limit=50] [--dry-run]
+// Usage:  npx tsx scripts/enrich-pinnacle-cadence.ts [--limit=50] [--dry-run]
 // Env:    SUPABASE_URL (optional), SUPABASE_SERVICE_ROLE_KEY (required)
 
 import { createClient } from "@supabase/supabase-js"
@@ -30,9 +23,6 @@ const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
 const FLOW_REST = "https://rest-mainnet.onflow.org"
 
 const DRY_RUN = process.argv.includes("--dry-run")
-const PROBE_IDX = process.argv.findIndex((a) => a === "--probe")
-const PROBE_ID: string | null =
-  PROBE_IDX >= 0 ? process.argv[PROBE_IDX + 1] ?? null : null
 const LIMIT = (() => {
   const hit = process.argv.find((a) => a.startsWith("--limit="))
   const n = hit ? Number(hit.slice("--limit=".length)) : 50
@@ -47,53 +37,17 @@ if (!SERVICE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY)
 
-// Probe script — tries three common Dapper patterns and returns whichever
-// returns non-nil first, along with a tag so we can see which one worked.
-const PROBE_SCRIPT = `
+const EDITION_SCRIPT = `
 import Pinnacle from 0xedf9df96c92f4595
-
-access(all) fun main(id: UInt64): {String: String} {
-  var out: {String: String} = {}
-  // 1. getEditionData(id:) → returns a struct with .metadata or direct fields.
-  //    We can't runtime-reflect in Cadence, so the caller iterates these.
-  //    We just return a marker so the probe knows which ABI is live.
-  out["probed"] = id.toString()
-  return out
+access(all) fun main(id: Int): AnyStruct {
+  return Pinnacle.getEdition(id: id)
 }
 `.trim()
 
-// Production script — assumes Pinnacle exposes a struct-returning
-// getEditionData(id: UInt64) whose fields can be stringified into the
-// metadata dict we map into pinnacle_editions. If this shape doesn't
-// match Pinnacle's real ABI, --probe first and adjust below. The script
-// is intentionally conservative: it returns an empty dict on miss so
-// the caller can tell the difference between "no edition" and
-// "script error".
-const PRODUCTION_SCRIPT = `
+const SHAPE_SCRIPT = `
 import Pinnacle from 0xedf9df96c92f4595
-
-access(all) fun main(ids: [UInt64]): {UInt64: {String: String}} {
-  let out: {UInt64: {String: String}} = {}
-  for id in ids {
-    // NOTE: this call signature is speculative. If Pinnacle exposes the
-    // data under a different name (e.g. getEdition or getEditionByID),
-    // adjust here after probing.
-    let dataOpt = Pinnacle.getEditionData(id: id)
-    if dataOpt == nil {
-      out[id] = {}
-      continue
-    }
-    let ed = dataOpt!
-    let meta: {String: String} = {}
-    meta["characterName"] = ed.characterName
-    meta["franchise"] = ed.franchise
-    meta["setName"] = ed.setName
-    meta["variantType"] = ed.variantType
-    meta["editionType"] = ed.editionType
-    meta["royaltyCode"] = ed.royaltyCode
-    out[id] = meta
-  }
-  return out
+access(all) fun main(id: Int): AnyStruct {
+  return Pinnacle.getShape(id: id)
 }
 `.trim()
 
@@ -113,19 +67,17 @@ async function loadPlaceholders(): Promise<PlaceholderRow[]> {
     .order("id", { ascending: true })
     .limit(LIMIT)
   if (error) throw new Error(`load placeholders: ${error.message}`)
-  // Only integer edition IDs can be cast to UInt64 for Cadence.
   return ((data ?? []) as PlaceholderRow[]).filter((r) => /^\d+$/.test(r.id))
 }
 
-async function runScript<T>(
-  script: string,
-  args: Array<{ type: string; value: unknown }>
-): Promise<T> {
+async function runScript(script: string, id: string): Promise<CdcValue> {
   const body = {
     script: Buffer.from(script, "utf8").toString("base64"),
-    arguments: args.map((a) =>
-      Buffer.from(JSON.stringify(a)).toString("base64")
-    ),
+    arguments: [
+      Buffer.from(JSON.stringify({ type: "Int", value: String(id) })).toString(
+        "base64"
+      ),
+    ],
   }
   const res = await fetch(`${FLOW_REST}/v1/scripts?block_height=sealed`, {
     method: "POST",
@@ -138,68 +90,132 @@ async function runScript<T>(
     throw new Error(`script HTTP ${res.status}: ${text.slice(0, 400)}`)
   }
   const raw = (await res.text()).trim().replace(/^"|"$/g, "")
-  return JSON.parse(Buffer.from(raw, "base64").toString("utf8")) as T
+  return JSON.parse(Buffer.from(raw, "base64").toString("utf8")) as CdcValue
 }
 
-async function probe(sampleId: string): Promise<void> {
-  console.log(`[enrich-pinnacle-cadence] probing edition ${sampleId} …`)
-  try {
-    const decoded = await runScript<{ type: string; value: unknown }>(
-      PROBE_SCRIPT,
-      [{ type: "UInt64", value: String(sampleId) }]
-    )
-    console.log("probe response:", JSON.stringify(decoded, null, 2))
-  } catch (e) {
-    console.log(`probe failed: ${(e as Error).message}`)
-    console.log(
-      "  → the Pinnacle contract likely doesn't expose getEditionData; edit PRODUCTION_SCRIPT with the correct getter name before running without --probe."
-    )
-  }
+// ── Cadence JSON decoding ────────────────────────────────────────────────────
+// Flow REST returns values wrapped as { type, value } recursively. For an
+// Optional<Struct>, the wrapper is value.value. For a non-Optional Struct,
+// fields live at value.fields[]. We normalize by unwrapping Optional first.
 
-  try {
-    const decoded = await runScript<{ type: string; value: unknown }>(
-      PRODUCTION_SCRIPT,
-      [
-        {
-          type: "Array",
-          value: [{ type: "UInt64", value: String(sampleId) }],
-        },
-      ]
-    )
-    console.log("production script response:", JSON.stringify(decoded, null, 2))
-  } catch (e) {
-    console.log(`production script failed: ${(e as Error).message}`)
-  }
+interface CdcValue {
+  type?: string
+  value?: unknown
+  fields?: CdcField[]
+}
+interface CdcField {
+  name: string
+  value: CdcValue
+}
+interface CdcDictEntry {
+  key: CdcValue
+  value: CdcValue
 }
 
-interface CdcValue { type?: string; value?: unknown }
-interface CdcKeyValue { key: CdcValue; value: CdcValue }
+function unwrapOptional(v: CdcValue | undefined | null): CdcValue | null {
+  if (!v) return null
+  if (v.type === "Optional") {
+    if (v.value == null) return null
+    return v.value as CdcValue
+  }
+  return v
+}
 
-function decodeResult(
-  decoded: CdcValue
-): Map<string, Record<string, string>> {
-  const out = new Map<string, Record<string, string>>()
-  const entries = (decoded?.value as CdcKeyValue[] | undefined) ?? []
-  for (const entry of entries) {
-    const id = String(entry.key?.value ?? "")
-    const inner = (entry.value?.value as CdcKeyValue[] | undefined) ?? []
-    const meta: Record<string, string> = {}
-    for (const kv of inner) {
-      const k = String(kv.key?.value ?? "")
-      const v = String(kv.value?.value ?? "")
-      if (k) meta[k] = v
-    }
-    if (id) out.set(id, meta)
+function getStructFields(v: CdcValue | null): Record<string, CdcValue> {
+  const out: Record<string, CdcValue> = {}
+  if (!v) return out
+  // Flow REST may put fields at v.value.fields (wrapped) or v.fields (unwrapped).
+  const inner =
+    (v.value as { fields?: CdcField[] } | undefined)?.fields ??
+    v.fields ??
+    []
+  for (const f of inner) {
+    out[f.name] = f.value
   }
   return out
 }
 
-async function main() {
-  if (PROBE_ID) {
-    await probe(PROBE_ID)
-    return
+function scalarString(v: CdcValue | null | undefined): string | null {
+  const u = unwrapOptional(v ?? null)
+  if (!u) return null
+  const val = u.value
+  return val == null ? null : String(val)
+}
+
+function scalarBool(v: CdcValue | null | undefined): boolean | null {
+  const u = unwrapOptional(v ?? null)
+  if (!u) return null
+  if (typeof u.value === "boolean") return u.value
+  if (u.value === "true") return true
+  if (u.value === "false") return false
+  return null
+}
+
+function dictEntries(v: CdcValue | null | undefined): CdcDictEntry[] {
+  const u = unwrapOptional(v ?? null)
+  if (!u) return []
+  return (u.value as CdcDictEntry[] | undefined) ?? []
+}
+
+function arrayValues(v: CdcValue | null | undefined): CdcValue[] {
+  const u = unwrapOptional(v ?? null)
+  if (!u) return []
+  return (u.value as CdcValue[] | undefined) ?? []
+}
+
+interface EditionData {
+  shapeID: string | null
+  variant: string | null
+  isChaser: boolean | null
+  description: string | null
+}
+
+function parseEdition(decoded: CdcValue): EditionData | null {
+  const unwrapped = unwrapOptional(decoded)
+  if (!unwrapped) return null
+  const fields = getStructFields(unwrapped)
+  return {
+    shapeID: scalarString(fields.shapeID),
+    variant: scalarString(fields.variant),
+    isChaser: scalarBool(fields.isChaser),
+    description: scalarString(fields.description),
+  }
+}
+
+interface ShapeData {
+  name: string | null
+  editionType: string | null
+  franchise: string | null
+  studio: string | null
+}
+
+function parseShape(decoded: CdcValue): ShapeData | null {
+  const unwrapped = unwrapOptional(decoded)
+  if (!unwrapped) return null
+  const fields = getStructFields(unwrapped)
+
+  const metaDict = dictEntries(fields.metadata)
+  const lookup = new Map<string, CdcValue>()
+  for (const entry of metaDict) {
+    const k = scalarString(entry.key)
+    if (k) lookup.set(k, entry.value)
   }
 
+  const firstArrayString = (key: string): string | null => {
+    const arr = arrayValues(lookup.get(key))
+    if (arr.length === 0) return null
+    return scalarString(arr[0])
+  }
+
+  return {
+    name: scalarString(fields.name),
+    editionType: scalarString(fields.editionType),
+    franchise: firstArrayString("Franchises"),
+    studio: firstArrayString("Categories"),
+  }
+}
+
+async function main() {
   console.log(
     `[enrich-pinnacle-cadence] starting limit=${LIMIT}${DRY_RUN ? " (dry run)" : ""}`
   )
@@ -213,89 +229,77 @@ async function main() {
     return
   }
 
-  let resolved = 0
+  let updated = 0
   let empty = 0
   let errs = 0
-  const BATCH_SIZE = 25
 
-  for (let i = 0; i < targets.length; i += BATCH_SIZE) {
-    const batch = targets.slice(i, i + BATCH_SIZE)
-    const ids = batch.map((r) => r.id)
-
-    let decoded: CdcValue
+  for (const row of targets) {
     try {
-      decoded = await runScript<CdcValue>(PRODUCTION_SCRIPT, [
-        {
-          type: "Array",
-          value: ids.map((v) => ({ type: "UInt64", value: String(v) })),
-        },
-      ])
-    } catch (e) {
-      errs += batch.length
-      console.log(
-        `  ✗ batch ${i}-${i + batch.length}: ${(e as Error).message}`
-      )
-      console.log(
-        "  → If every batch errors with a 'cannot find field getEditionData' style message, run with --probe <id> and adjust PRODUCTION_SCRIPT."
-      )
-      await sleep(500)
-      continue
-    }
-
-    const matches = decodeResult(decoded)
-
-    for (const row of batch) {
-      const meta = matches.get(row.id)
-      if (!meta || !meta.characterName || meta.characterName === "") {
+      const edDecoded = await runScript(EDITION_SCRIPT, row.id)
+      const edition = parseEdition(edDecoded)
+      if (!edition || !edition.shapeID) {
         empty++
+        console.log(`  · ${row.id}: edition returned nil or no shapeID`)
+        await sleep(DELAY_MS)
         continue
       }
-      const patch = {
-        character_name: meta.characterName,
-        franchise: meta.franchise || "Unknown",
-        set_name: meta.setName || "Unknown",
-        variant_type: meta.variantType || "Standard",
-        edition_type: meta.editionType || "Open Edition",
-        royalty_code: meta.royaltyCode || "",
+
+      await sleep(DELAY_MS)
+
+      const shDecoded = await runScript(SHAPE_SCRIPT, edition.shapeID)
+      const shape = parseShape(shDecoded)
+      if (!shape || !shape.name) {
+        empty++
+        console.log(
+          `  · ${row.id}: shape ${edition.shapeID} returned nil or no name`
+        )
+        await sleep(DELAY_MS)
+        continue
+      }
+
+      const patch: Record<string, unknown> = {
+        character_name: shape.name,
+        franchise: shape.franchise ?? "Unknown",
+        edition_type: shape.editionType ?? "Open Edition",
+        variant_type: edition.variant ?? "Standard",
         updated_at: new Date().toISOString(),
       }
+      if (shape.studio) patch.studio = shape.studio
+      if (edition.isChaser !== null) patch.is_chaser = edition.isChaser
 
       if (DRY_RUN) {
         console.log(`  · ${row.id} → ${JSON.stringify(patch)}`)
-        resolved++
-        continue
-      }
-
-      const { error } = await supabase
-        .from("pinnacle_editions")
-        .update(patch)
-        .eq("id", row.id)
-      if (error) {
-        errs++
-        console.log(`  ✗ update ${row.id}: ${error.message}`)
+        updated++
       } else {
-        resolved++
+        const { error } = await supabase
+          .from("pinnacle_editions")
+          .update(patch)
+          .eq("id", row.id)
+        if (error) {
+          errs++
+          console.log(`  ✗ update ${row.id}: ${error.message}`)
+        } else {
+          updated++
+          console.log(
+            `  ✓ ${row.id}: ${shape.name}${edition.variant ? ` (${edition.variant})` : ""}`
+          )
+        }
       }
+    } catch (e) {
+      errs++
+      console.log(`  ✗ ${row.id}: ${(e as Error).message}`)
     }
 
-    console.log(
-      `[enrich-pinnacle-cadence] batch ${i}-${i + batch.length}: totals resolved=${resolved} empty=${empty} errs=${errs}`
-    )
     await sleep(DELAY_MS)
   }
 
   console.log("")
   console.log("═══ enrich-pinnacle-cadence summary ═══")
   console.log(`  processed: ${targets.length}`)
-  console.log(`  resolved:  ${resolved}`)
+  console.log(`  updated:   ${updated}`)
   console.log(`  empty:     ${empty}`)
   console.log(`  errors:    ${errs}`)
   console.log("════════════════════════════════════════")
-  if (errs > 0 && resolved === 0) {
-    console.log(
-      "tip: run `npx tsx scripts/enrich-pinnacle-cadence.ts --probe 1896` to test the Cadence ABI against a real edition."
-    )
-  }
 }
 
 main().catch((err) => {

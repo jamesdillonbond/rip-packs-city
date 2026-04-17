@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 // scripts/resolve-pinnacle-sales.ts
 //
-// Resolves pinnacle_sales rows where edition_id IS NULL by borrowing the
-// NFT from the Pinnacle contract's own collection (the contract itself,
-// 0xedf9df96c92f4595, acts as custodian for Dapper-held Pinnacle NFTs),
-// reading the NFT's editionKey, and writing the map into pinnacle_nft_map.
-// After each batch we call backfill_pinnacle_sale_editions() to promote
-// any newly-mapped nft_ids onto sales.
+// Resolves pinnacle_sales rows where edition_id IS NULL by borrowing each
+// NFT from the Pinnacle contract's own collection (0xedf9df96c92f4595 acts
+// as custodian for Dapper-held Pinnacle NFTs) via the contract-exposed
+// public path `Pinnacle.CollectionPublicPath`, then reading the NFT's
+// editionID field.
 //
-// The public collection path isn't definitively known, so the script
-// tries a list of candidate paths and candidate owner addresses.
+// On Pinnacle, NFT IDs are UInt64 but edition IDs are Int. We match each
+// on-chain editionID against pinnacle_editions.id (text) and update
+// pinnacle_sales.edition_id directly. The pinnacle_nft_map cache table is
+// also upserted so repeat runs short-circuit the Cadence call.
 //
 // Usage:  npx tsx scripts/resolve-pinnacle-sales.ts [--limit=100] [--dry-run]
 // Env:    SUPABASE_URL (optional), SUPABASE_SERVICE_ROLE_KEY (required)
-//         PINNACLE_OWNER_ADDRESSES (comma-separated, extends candidate list)
 
 import { createClient } from "@supabase/supabase-js"
 
@@ -21,7 +21,6 @@ const SUPABASE_URL =
   process.env.SUPABASE_URL || "https://bxcqstmqfzmuolpuynti.supabase.co"
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
 const FLOW_REST = "https://rest-mainnet.onflow.org"
-const PINNACLE_CONTRACT = "0xedf9df96c92f4595"
 
 const DRY_RUN = process.argv.includes("--dry-run")
 const LIMIT = (() => {
@@ -32,15 +31,6 @@ const LIMIT = (() => {
 const BATCH_SIZE = 25
 const DELAY_MS = 150
 
-const CANDIDATE_OWNERS: string[] = (() => {
-  const base = [PINNACLE_CONTRACT]
-  const extra = (process.env.PINNACLE_OWNER_ADDRESSES ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
-  return Array.from(new Set([...base, ...extra]))
-})()
-
 if (!SERVICE_KEY) {
   console.error("SUPABASE_SERVICE_ROLE_KEY not set")
   process.exit(1)
@@ -48,48 +38,29 @@ if (!SERVICE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY)
 
-// Cadence script that iterates candidate owners × candidate public paths
-// and the first successful borrow wins. Returns {nft_id: editionKey}.
-// Pinnacle.NFT's on-chain edition identifier has historically been exposed
-// as `editionKey` (the `royalty:variant:printing` triple); we fall back
-// to `editionID`/`edition` if the first field doesn't exist so the script
-// is robust to contract ABI variations.
+// Batches NFT borrows through the contract's own public collection.
+// First tries Pinnacle.CollectionPublicPath (contract-exposed constant);
+// falls back to the legacy /public/PinnacleCollection literal.
 const BORROW_SCRIPT = `
 import Pinnacle from 0xedf9df96c92f4595
 import NonFungibleToken from 0x1d7e57aa55817448
 
-access(all) fun main(owners: [Address], paths: [String], ids: [UInt64]): {UInt64: String} {
-  let out: {UInt64: String} = {}
+access(all) fun main(ids: [UInt64]): {UInt64: Int} {
+  let out: {UInt64: Int} = {}
+  let acct = getAccount(0xedf9df96c92f4595)
+  let ref = acct.capabilities.borrow<&{NonFungibleToken.CollectionPublic}>(Pinnacle.CollectionPublicPath)
+    ?? acct.capabilities.borrow<&{NonFungibleToken.CollectionPublic}>(/public/PinnacleCollection)
+    ?? panic("cannot borrow Pinnacle collection")
+
   for id in ids {
-    var resolved = false
-    for owner in owners {
-      if resolved { break }
-      for p in paths {
-        let capPath = PublicPath(identifier: p)
-          ?? panic("bad path: ".concat(p))
-        let ref = getAccount(owner).capabilities
-          .borrow<&{NonFungibleToken.Collection}>(capPath)
-        if ref == nil { continue }
-        let nft = ref!.borrowNFT(id)
-        if nft == nil { continue }
-        let casted = nft! as! &Pinnacle.NFT
-        out[id] = casted.editionKey
-        resolved = true
-        break
-      }
-    }
+    let nftOpt = ref.borrowNFT(id)
+    if nftOpt == nil { continue }
+    let casted = nftOpt! as! &Pinnacle.NFT
+    out[id] = casted.editionID
   }
   return out
 }
 `.trim()
-
-const CANDIDATE_PATHS = [
-  "PinnacleCollection",
-  "PinnacleNFTCollection",
-  "DapperDisneyPinnacleCollection",
-  "DisneyPinnacleCollection",
-  "PinnaclePublicCollection",
-]
 
 interface SaleRow {
   id: string
@@ -129,26 +100,10 @@ interface CdcKeyValue {
   value: CdcValue
 }
 
-async function runBorrow(
-  owners: string[],
-  paths: string[],
-  ids: string[]
-): Promise<Map<string, string>> {
+async function runBorrow(ids: string[]): Promise<Map<string, string>> {
   const body = {
     script: Buffer.from(BORROW_SCRIPT, "utf8").toString("base64"),
     arguments: [
-      Buffer.from(
-        JSON.stringify({
-          type: "Array",
-          value: owners.map((a) => ({ type: "Address", value: a })),
-        })
-      ).toString("base64"),
-      Buffer.from(
-        JSON.stringify({
-          type: "Array",
-          value: paths.map((p) => ({ type: "String", value: p })),
-        })
-      ).toString("base64"),
       Buffer.from(
         JSON.stringify({
           type: "Array",
@@ -166,50 +121,70 @@ async function runBorrow(
   })
   if (!res.ok) {
     const text = await res.text().catch(() => "")
-    throw new Error(`script HTTP ${res.status}: ${text.slice(0, 200)}`)
+    throw new Error(`script HTTP ${res.status}: ${text.slice(0, 300)}`)
   }
 
   const raw = (await res.text()).trim().replace(/^"|"$/g, "")
-  const decoded = JSON.parse(Buffer.from(raw, "base64").toString("utf8")) as CdcValue
+  const decoded = JSON.parse(
+    Buffer.from(raw, "base64").toString("utf8")
+  ) as CdcValue
 
   const out = new Map<string, string>()
   const entries = (decoded?.value as CdcKeyValue[] | undefined) ?? []
   for (const entry of entries) {
     const nftId = String(entry.key?.value ?? "")
-    const editionKey = String(entry.value?.value ?? "")
-    if (!nftId || !editionKey) continue
-    out.set(nftId, editionKey)
+    const editionId = String(entry.value?.value ?? "")
+    if (!nftId || !editionId) continue
+    out.set(nftId, editionId)
   }
   return out
 }
 
+async function verifyEditionIds(
+  editionIds: string[]
+): Promise<Set<string>> {
+  if (editionIds.length === 0) return new Set()
+  const { data, error } = await supabase
+    .from("pinnacle_editions")
+    .select("id")
+    .in("id", editionIds)
+  if (error) {
+    console.log(`[resolve-pinnacle] verify err: ${error.message}`)
+    return new Set()
+  }
+  return new Set((data ?? []).map((r) => String((r as { id: string }).id)))
+}
+
 async function upsertMap(
   rows: Array<{ nft_id: string; edition_key: string }>
-): Promise<number> {
-  if (rows.length === 0) return 0
-  if (DRY_RUN) {
-    for (const r of rows.slice(0, 10)) {
-      console.log(`  · ${r.nft_id} → ${r.edition_key}`)
-    }
-    if (rows.length > 10) console.log(`  · … ${rows.length - 10} more`)
-    return 0
-  }
+): Promise<void> {
+  if (DRY_RUN || rows.length === 0) return
   const { error } = await supabase
     .from("pinnacle_nft_map")
     .upsert(rows, { onConflict: "nft_id", ignoreDuplicates: true })
+  if (error) console.log(`[resolve-pinnacle] map upsert err: ${error.message}`)
+}
+
+async function updateSales(nftId: string, editionId: string): Promise<number> {
+  if (DRY_RUN) return 0
+  const { error, count } = await supabase
+    .from("pinnacle_sales")
+    .update({ edition_id: editionId }, { count: "exact" })
+    .eq("nft_id", nftId)
+    .is("edition_id", null)
   if (error) {
-    console.log(`[resolve-pinnacle] upsert err: ${error.message}`)
+    console.log(
+      `[resolve-pinnacle] sales update nft=${nftId}: ${error.message}`
+    )
     return 0
   }
-  return rows.length
+  return count ?? 0
 }
 
 async function main() {
   console.log(
     `[resolve-pinnacle] starting limit=${LIMIT}${DRY_RUN ? " (dry run)" : ""}`
   )
-  console.log(`[resolve-pinnacle] owners: ${CANDIDATE_OWNERS.join(", ")}`)
-  console.log(`[resolve-pinnacle] paths:  ${CANDIDATE_PATHS.join(", ")}`)
 
   const targets = await loadTargets()
   console.log(`[resolve-pinnacle] ${targets.length} distinct unresolved nft_ids`)
@@ -220,8 +195,9 @@ async function main() {
 
   let queried = 0
   let resolved = 0
+  let missingEdition = 0
+  let salesUpdated = 0
   let failed = 0
-  let mapInserted = 0
 
   for (let i = 0; i < targets.length; i += BATCH_SIZE) {
     const batch = targets.slice(i, i + BATCH_SIZE)
@@ -230,7 +206,7 @@ async function main() {
 
     let matches: Map<string, string>
     try {
-      matches = await runBorrow(CANDIDATE_OWNERS, CANDIDATE_PATHS, batchIds)
+      matches = await runBorrow(batchIds)
     } catch (e) {
       console.log(
         `[resolve-pinnacle] batch ${i}-${i + batch.length} err: ${(e as Error).message}`
@@ -240,38 +216,52 @@ async function main() {
       continue
     }
 
-    const rows: Array<{ nft_id: string; edition_key: string }> = []
+    const editionIds = Array.from(new Set(Array.from(matches.values())))
+    const existingEditions = await verifyEditionIds(editionIds)
+
+    const mapRows: Array<{ nft_id: string; edition_key: string }> = []
     for (const id of batchIds) {
-      const key = matches.get(id)
-      if (!key) {
+      const editionId = matches.get(id)
+      if (!editionId) {
         failed++
         continue
       }
-      rows.push({ nft_id: id, edition_key: key })
       resolved++
+      mapRows.push({ nft_id: id, edition_key: editionId })
+
+      if (!existingEditions.has(editionId)) {
+        missingEdition++
+        if (DRY_RUN) {
+          console.log(
+            `  · ${id} → edition ${editionId} (not in pinnacle_editions yet)`
+          )
+        }
+        continue
+      }
+
+      if (DRY_RUN) {
+        console.log(`  · ${id} → edition ${editionId}`)
+        continue
+      }
+
+      salesUpdated += await updateSales(id, editionId)
     }
 
-    mapInserted += await upsertMap(rows)
+    await upsertMap(mapRows)
 
     console.log(
-      `[resolve-pinnacle] batch ${i}-${i + batch.length}: resolved=${rows.length} totals queried=${queried} resolved=${resolved} failed=${failed}`
+      `[resolve-pinnacle] batch ${i}-${i + batch.length}: resolved=${mapRows.length} totals queried=${queried} resolved=${resolved} failed=${failed} missingEdition=${missingEdition} salesUpdated=${salesUpdated}`
     )
     await sleep(DELAY_MS)
   }
 
-  if (!DRY_RUN && mapInserted > 0) {
-    console.log(`[resolve-pinnacle] calling backfill_pinnacle_sale_editions() …`)
-    const { data, error } = await supabase.rpc("backfill_pinnacle_sale_editions")
-    if (error) console.log(`[resolve-pinnacle] rpc err: ${error.message}`)
-    else console.log(`[resolve-pinnacle] rpc result: ${JSON.stringify(data)}`)
-  }
-
   console.log("")
   console.log("═══ resolve-pinnacle summary ═══")
-  console.log(`  queried:      ${queried}`)
-  console.log(`  resolved:     ${resolved}`)
-  console.log(`  failed:       ${failed}`)
-  console.log(`  map upserted: ${mapInserted}`)
+  console.log(`  queried:        ${queried}`)
+  console.log(`  resolved:       ${resolved}`)
+  console.log(`  failed:         ${failed}`)
+  console.log(`  missingEdition: ${missingEdition}`)
+  console.log(`  salesUpdated:   ${salesUpdated}`)
   console.log("═════════════════════════════════")
 }
 
