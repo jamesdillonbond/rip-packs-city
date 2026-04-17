@@ -764,7 +764,7 @@ export default function SniperPage() {
 
   const buildFeedUrl = useCallback(() => {
     const params = new URLSearchParams();
-    if (!isPinnacle) params.set("collection", feedCollection);
+    params.set("collection", collectionSlug);
     if (tierTab !== "all") params.set("tier", tierTab);
     if (minDiscount > 0) params.set("minDiscount", String(minDiscount));
     if (maxPrice > 0) params.set("maxPrice", String(maxPrice));
@@ -774,7 +774,7 @@ export default function SniperPage() {
     if (flowWalletOnly) params.set("flowWalletOnly", "true");
     params.set("sortBy", sortBy);
     return `${feedEndpoint}?${params}`;
-  }, [tierTab, minDiscount, maxPrice, playerFilter, serialFilter, badgeOnly, flowWalletOnly, sortBy, feedEndpoint, feedCollection, isPinnacle]);
+  }, [tierTab, minDiscount, maxPrice, playerFilter, serialFilter, badgeOnly, flowWalletOnly, sortBy, feedEndpoint, collectionSlug]);
 
   const fetchFeed = useCallback(async () => {
     abortControllerRef.current?.abort();
@@ -1269,7 +1269,7 @@ export default function SniperPage() {
                 VERIFIED FMV ONLY
               </span>
             </label>
-            {ownedIds.size > 0 && (
+            {!isAllDay && ownedIds.size > 0 && (
               <select
                 value={ownedFilter}
                 onChange={(e) => setOwnedFilter(e.target.value as "all" | "owned" | "not-owned")}
@@ -1359,7 +1359,7 @@ export default function SniperPage() {
             <span><span style={{ color: "#c084fc", fontWeight: 600 }}>{stats.special}</span> special serials</span>
           )}
           <span>avg <span style={{ color: "var(--rpc-text-primary)", fontWeight: 600 }}>{fmt(stats.avgDiscount, 1)}%</span> off</span>
-          {ownedIds.size > 0 && (
+          {!isAllDay && ownedIds.size > 0 && (
             <span style={{ color: "var(--rpc-text-ghost)" }}>{ownedIds.size} owned editions tracked</span>
           )}
           {data?.lastRefreshed && (
@@ -1574,7 +1574,7 @@ export default function SniperPage() {
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1">
                       <span style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)", fontSize: "var(--text-sm)" }}>#{deal.serial}</span>
-                      {isOwned && <span style={{ color: "var(--rpc-success)", fontSize: 10 }}>✓</span>}
+                      {!isAllDay && isOwned && <span style={{ color: "var(--rpc-success)", fontSize: 10 }}>✓</span>}
                       <SerialBadge deal={deal} />
                       {deal.isJersey && (
                         <span className="rpc-chip" style={{ background: "rgba(20,184,166,0.15)", borderColor: "rgba(20,184,166,0.3)", color: "#5eead4", fontSize: 9, padding: "1px 5px" }}>Jersey</span>
@@ -1680,8 +1680,10 @@ export default function SniperPage() {
                         {deal.thumbnailUrl ? (
                           <SniperThumbnailPreview thumbUrl={deal.thumbnailUrl} playerName={deal.playerName} tierColor={tierColor(deal.tier)}>
                             <img
-                              src={deal.thumbnailUrl}
+                              src={isAllDay ? deal.thumbnailUrl.replace("width=256", "width=512") : deal.thumbnailUrl}
                               alt={deal.playerName}
+                              width={36}
+                              height={36}
                               style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 4, flexShrink: 0, background: "#1a1a1a", cursor: "pointer" }}
                               loading="lazy"
                               onClick={(e) => { e.stopPropagation(); setSelectedDeal(deal); }}
@@ -1745,7 +1747,7 @@ export default function SniperPage() {
                           </>
                         )}
                       </div>
-                      {(ownedCountByEdition.get(deal.editionKey || deal.momentId) ?? 0) > 0 && (
+                      {!isAllDay && (ownedCountByEdition.get(deal.editionKey || deal.momentId) ?? 0) > 0 && (
                         <div className="mt-1">
                           <span
                             className="inline-flex items-center gap-1 rounded-full px-2 py-0.5"
@@ -1836,7 +1838,7 @@ export default function SniperPage() {
                     {/* Own / Lock */}
                     <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>
                       {(() => {
-                        if (ownedIds.size === 0) return "—";
+                        if (isAllDay || ownedIds.size === 0) return "—";
                         // Use edition-level stats (editionKey match) for accurate own/lock counts
                         const eStats = editionStats.get(deal.editionKey);
                         if (eStats && eStats.owned > 0) {
