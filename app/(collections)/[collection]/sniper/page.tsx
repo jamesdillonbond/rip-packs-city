@@ -638,6 +638,34 @@ export default function SniperPage() {
   // ── Task 5: Save search ─────────────────────────────────────────────────────
   const [saveSearchMsg, setSaveSearchMsg] = useState<string | null>(null);
 
+  // ── Relative deals fallback (ASK_ONLY collections) ────────────────────────
+  // When the sniper feed is empty on an ASK_ONLY collection (Golazos, UFC),
+  // fall back to /api/relative-deals which ranks listings against tier
+  // median instead of the circular "ask vs FMV" discount.
+  interface RelativeDeal {
+    player_name: string | null
+    set_name: string | null
+    tier: string | null
+    ask_price: number | string | null
+    tier_median: number | string | null
+    discount_pct: number | string | null
+    fmv_usd: number | string | null
+    confidence: string | null
+    serial_number: number | null
+    buy_url: string | null
+  }
+  interface TierBenchmark {
+    count: number
+    floor: number | string | null
+    p25: number | string | null
+    median: number | string | null
+    avg: number | string | null
+    p75: number | string | null
+  }
+  const [relativeDeals, setRelativeDeals] = useState<RelativeDeal[] | null>(null);
+  const [benchmarks, setBenchmarks] = useState<Record<string, TierBenchmark> | null>(null);
+  const [relativeLoading, setRelativeLoading] = useState(false);
+
   // Highlight detection on page load
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("highlight");
@@ -796,6 +824,29 @@ export default function SniperPage() {
 
       setData(json);
       setError(null);
+
+      // ── ASK_ONLY fallback: when the feed comes back empty for Golazos or
+      // UFC (whose FMV is just ask = circular), load tier-median-based deals
+      // + benchmark reference so the page isn't blank.
+      if ((isGolazos || isUfc) && json.deals.length === 0) {
+        setRelativeLoading(true);
+        try {
+          const [rel, bench] = await Promise.all([
+            fetch(`/api/relative-deals?collection=${encodeURIComponent(collectionSlug)}&minDiscount=10&limit=50`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)),
+            fetch(`/api/tier-pricing-benchmarks?collection=${encodeURIComponent(collectionSlug)}`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)),
+          ]);
+          setRelativeDeals(Array.isArray(rel?.deals) ? rel.deals : []);
+          setBenchmarks(bench?.benchmarks && typeof bench.benchmarks === "object" ? bench.benchmarks : {});
+        } catch {
+          setRelativeDeals([]);
+          setBenchmarks({});
+        } finally {
+          setRelativeLoading(false);
+        }
+      } else {
+        setRelativeDeals(null);
+        setBenchmarks(null);
+      }
     } catch (e: any) {
       if (e?.name === "AbortError") return;
       setError(String(e));
@@ -1370,6 +1421,96 @@ export default function SniperPage() {
               <div key={i} className="rpc-skeleton" style={{ width: `${w}%`, height: 14, opacity: 1 - i * 0.15 }} />
             ))}
             <p className="rpc-label" style={{ marginTop: 12 }}>SCANNING THE MARKETPLACE…</p>
+          </div>
+        )}
+
+        {/* ── Relative-deals fallback for ASK_ONLY collections ─────────────── */}
+        {(isGolazos || isUfc) && !loading && relativeDeals !== null && (
+          <div style={{ marginBottom: 24 }}>
+            <div className="rpc-hud" style={{ marginBottom: 12, borderColor: `${accent}66`, color: accent, fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)" }}>
+              DEALS BASED ON TIER MEDIAN PRICING (LIMITED SALES DATA)
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 260px", gap: 16 }}>
+              <div className="rpc-card" style={{ padding: 12, overflow: "auto" }}>
+                <div className="rpc-label" style={{ marginBottom: 8 }}>RELATIVE DEALS · TIER MEDIAN</div>
+                {relativeLoading ? (
+                  <div className="rpc-skeleton" style={{ width: "100%", height: 80 }} />
+                ) : relativeDeals.length === 0 ? (
+                  <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-sm)" }}>
+                    No relative deals right now. Benchmark data may be too thin.
+                  </p>
+                ) : (
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
+                    <thead>
+                      <tr style={{ color: "var(--rpc-text-muted)", textAlign: "left" }}>
+                        <th style={{ padding: "6px 8px" }}>PLAYER</th>
+                        <th style={{ padding: "6px 8px" }}>SET</th>
+                        <th style={{ padding: "6px 8px" }}>TIER</th>
+                        <th style={{ padding: "6px 8px", textAlign: "right" }}>ASK</th>
+                        <th style={{ padding: "6px 8px", textAlign: "right" }}>TIER MED</th>
+                        <th style={{ padding: "6px 8px", textAlign: "right" }}>Δ</th>
+                        <th style={{ padding: "6px 8px" }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {relativeDeals.map((d, idx) => {
+                        const ask = Number(d.ask_price ?? 0);
+                        const med = Number(d.tier_median ?? 0);
+                        const disc = Number(d.discount_pct ?? 0);
+                        return (
+                          <tr key={idx} style={{ borderTop: "1px solid var(--rpc-border)" }}>
+                            <td style={{ padding: "6px 8px", color: "var(--rpc-text-primary)" }}>
+                              {d.player_name ?? "—"}
+                              {d.serial_number ? <span style={{ color: "var(--rpc-text-muted)" }}> #{d.serial_number}</span> : null}
+                            </td>
+                            <td style={{ padding: "6px 8px", color: "var(--rpc-text-muted)" }}>{d.set_name ?? "—"}</td>
+                            <td style={{ padding: "6px 8px", color: accent, textTransform: "uppercase" }}>{d.tier ?? "—"}</td>
+                            <td style={{ padding: "6px 8px", textAlign: "right" }}>${ask.toFixed(2)}</td>
+                            <td style={{ padding: "6px 8px", textAlign: "right", color: "var(--rpc-text-muted)" }}>${med.toFixed(2)}</td>
+                            <td style={{ padding: "6px 8px", textAlign: "right", color: "#00e882" }}>{disc}%</td>
+                            <td style={{ padding: "6px 8px" }}>
+                              {d.buy_url ? (
+                                <a href={d.buy_url} target="_blank" rel="noreferrer" className="rpc-chip" style={{ borderColor: `${accent}66`, color: accent, padding: "2px 8px", fontSize: "var(--text-xs)" }}>
+                                  BUY
+                                </a>
+                              ) : null}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div className="rpc-card" style={{ padding: 12 }}>
+                <div className="rpc-label" style={{ marginBottom: 8 }}>TIER BENCHMARKS</div>
+                {benchmarks && Object.keys(benchmarks).length > 0 ? (
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" }}>
+                    <thead>
+                      <tr style={{ color: "var(--rpc-text-muted)" }}>
+                        <th style={{ padding: "4px 6px", textAlign: "left" }}>TIER</th>
+                        <th style={{ padding: "4px 6px", textAlign: "right" }}>N</th>
+                        <th style={{ padding: "4px 6px", textAlign: "right" }}>FLOOR</th>
+                        <th style={{ padding: "4px 6px", textAlign: "right" }}>MEDIAN</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(benchmarks).map(([tier, s]) => (
+                        <tr key={tier} style={{ borderTop: "1px solid var(--rpc-border)" }}>
+                          <td style={{ padding: "4px 6px", color: accent, textTransform: "uppercase" }}>{tier}</td>
+                          <td style={{ padding: "4px 6px", textAlign: "right" }}>{s.count}</td>
+                          <td style={{ padding: "4px 6px", textAlign: "right" }}>${Number(s.floor ?? 0).toFixed(2)}</td>
+                          <td style={{ padding: "4px 6px", textAlign: "right" }}>${Number(s.median ?? 0).toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-xs)" }}>No benchmarks available.</p>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

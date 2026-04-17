@@ -23,9 +23,16 @@ const FLOWTY_PROXY_URL =
   "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/flowty-proxy"
 const FLOWTY_PROXY_TOKEN = "rippackscity2026"
 const PAGE_LIMIT = 50
+// Dual-sort sweep: cheap listings dominate the floor when sorted salePrice asc,
+// which is why pre-sweep Golazos was pinned at the $0.14–$1 band with zero
+// RARE/LEGENDARY representation. A parallel salePrice desc sweep pulls the
+// expensive tail; dedup by listing_resource_id across both passes.
+const SWEEP_OFFSETS = [0, 50, 100]
 const INTER_PAGE_DELAY_MS = 200
 const UPSERT_CHUNK = 50
 const EDITION_LOOKUP_CHUNK = 100
+
+type FlowtySort = { direction: "asc" | "desc"; path: "salePrice" }
 
 type Trait = { name?: string; value?: unknown }
 
@@ -77,7 +84,7 @@ function toNumber(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-async function fetchPage(offset: number) {
+async function fetchPage(offset: number, sort?: FlowtySort) {
   const res = await fetch(FLOWTY_PROXY_URL, {
     method: "POST",
     headers: {
@@ -87,7 +94,9 @@ async function fetchPage(offset: number) {
     body: JSON.stringify({
       contractAddress: GZ_CONTRACT_ADDRESS,
       contractName: GZ_CONTRACT_NAME,
-      payload: { filters: {}, offset, limit: PAGE_LIMIT },
+      payload: sort
+        ? { filters: {}, offset, limit: PAGE_LIMIT, sort }
+        : { filters: {}, offset, limit: PAGE_LIMIT },
     }),
   })
   if (!res.ok) {
@@ -164,30 +173,42 @@ async function runListingCache() {
   }
 
   const rows: Row[] = []
+  // Dedup by listing_resource_id — the same NFT can appear in both the asc
+  // and desc sweeps if it sits mid-range, and listing_resource_id is safer
+  // than nft_id because the same flow_id could theoretically back two
+  // simultaneous listings.
+  const seenListingIds = new Set<string>()
   const seenFlowIds = new Set<string>()
-  let offset = 0
 
-  while (true) {
-    const page = await fetchPage(offset).catch((err) => {
-      console.log(`[golazos-listing-cache] page offset=${offset} failed: ${String(err)}`)
-      return null
-    })
-    if (!page) break
-    const nfts = Array.isArray(page.nfts) ? page.nfts : []
-    stats.totalFetched += nfts.length
-    const reportedTotal = typeof page.total === "number" ? page.total : null
-    const prevSeenSize = seenFlowIds.size
+  const sweeps: Array<{ label: string; sort: FlowtySort }> = [
+    { label: "asc",  sort: { direction: "asc",  path: "salePrice" } },
+    { label: "desc", sort: { direction: "desc", path: "salePrice" } },
+  ]
 
-    for (const nft of nfts) {
-      const orders = Array.isArray(nft.orders) ? nft.orders : []
-      const listedOrder = orders.find((o) => o?.state === "LISTED")
-      if (!listedOrder) continue
-      const nftIdRaw = nft.nftId ?? nft.id
-      if (nftIdRaw === undefined || nftIdRaw === null) continue
-      const nftIdStr = String(nftIdRaw)
-      if (seenFlowIds.has(nftIdStr)) continue
-      const listingResourceID = listedOrder.listingResourceID
-      if (!listingResourceID) continue
+  for (const sweep of sweeps) {
+    for (const offset of SWEEP_OFFSETS) {
+      const page = await fetchPage(offset, sweep.sort).catch((err) => {
+        console.log(
+          `[golazos-listing-cache] sweep=${sweep.label} offset=${offset} failed: ${String(err)}`
+        )
+        return null
+      })
+      if (!page) continue
+      const nfts = Array.isArray(page.nfts) ? page.nfts : []
+      stats.totalFetched += nfts.length
+
+      for (const nft of nfts) {
+        const orders = Array.isArray(nft.orders) ? nft.orders : []
+        const listedOrder = orders.find((o) => o?.state === "LISTED")
+        if (!listedOrder) continue
+        const listingResourceID = listedOrder.listingResourceID
+        if (!listingResourceID) continue
+        const listingKey = String(listingResourceID)
+        if (seenListingIds.has(listingKey)) continue
+        const nftIdRaw = nft.nftId ?? nft.id
+        if (nftIdRaw === undefined || nftIdRaw === null) continue
+        const nftIdStr = String(nftIdRaw)
+        if (seenFlowIds.has(nftIdStr)) continue
 
       // Normalize traits — Golazos uses nftView.traits.traits like AllDay
       let traits: Trait[] | undefined
@@ -243,6 +264,7 @@ async function runListingCache() {
       const buyUrl = `https://www.flowty.io/asset/${GZ_CONTRACT_ADDRESS}/${GZ_CONTRACT_NAME}/NFT/${nftIdStr}?listingResourceID=${listingResourceID}`
 
       seenFlowIds.add(nftIdStr)
+      seenListingIds.add(listingKey)
       rows.push({
         id: String(listingResourceID),
         flow_id: nftIdStr,
@@ -267,13 +289,10 @@ async function runListingCache() {
         collection_id: GZ_COLLECTION_ID,
         edition_external_id: editionId,
       })
-    }
+      }
 
-    if (nfts.length < PAGE_LIMIT) break
-    if (seenFlowIds.size === prevSeenSize) break
-    offset += PAGE_LIMIT
-    if (reportedTotal !== null && offset >= reportedTotal) break
-    await delay(INTER_PAGE_DELAY_MS)
+      await delay(INTER_PAGE_DELAY_MS)
+    }
   }
 
   stats.totalListed = rows.length
