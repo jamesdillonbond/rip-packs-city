@@ -312,6 +312,20 @@ async function runListingCache() {
     console.log(`[ufc-listing-cache] fmv rpc threw: ${String(err)}`)
   }
 
+  let fmvSalesCalled = false
+  try {
+    const { error } = await supabaseAdmin.rpc("fmv_from_sales", {
+      p_collection_id: UFC_COLLECTION_ID,
+    })
+    if (error) {
+      console.log(`[ufc-listing-cache] fmv_from_sales error: ${error.message}`)
+    } else {
+      fmvSalesCalled = true
+    }
+  } catch (err) {
+    console.log(`[ufc-listing-cache] fmv_from_sales threw: ${String(err)}`)
+  }
+
   console.log(
     `[ufc-listing-cache] done: ${JSON.stringify({
       totalFetched,
@@ -320,6 +334,7 @@ async function runListingCache() {
       upsertErrors,
       editionsMapped,
       fmvRpcCalled,
+      fmvSalesCalled,
       durationMs: Date.now() - startedAt,
     })}`
   )

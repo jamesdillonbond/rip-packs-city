@@ -26,8 +26,19 @@ const INTER_CHUNK_DELAY_MS = 75
 const CADENCE_FALLBACK_MAX = 30
 const CADENCE_DELAY_MS = 150
 
+const EXCLUDED_ADDRESSES = new Set<string>([
+  "0x3cdbb3d569211ff3", // Flowty storefront escrow / seller
+  "0x18eb4ee6b3c026d2", // Flowty fee payer
+  "0xead892083b3e2c6c", // Dapper DUC co-signer
+])
+
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+}
+
+function normalizeAddress(raw: string): string {
+  const hex = raw.trim().toLowerCase().replace(/^0x/, "")
+  return `0x${hex.padStart(16, "0")}`
 }
 
 function delay(ms: number) {
@@ -96,28 +107,41 @@ async function getLatestSealedHeight(): Promise<number> {
   return Number(json[0]?.header?.height ?? 0)
 }
 
-async function getTxPayer(txId: string): Promise<string | null> {
+async function fetchTxBuyers(txId: string): Promise<string[]> {
   try {
-    const res = await fetch(`${FLOW_REST}/v1/transactions/${txId}`, { signal: AbortSignal.timeout(8000) })
-    if (!res.ok) return null
-    const json = (await res.json()) as { payer?: string }
-    if (!json.payer) return null
-    return json.payer.startsWith("0x") ? json.payer : `0x${json.payer}`
+    const clean = txId.replace(/^0x/, "")
+    const res = await fetch(`${FLOW_REST}/v1/transactions/${clean}`, {
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!res.ok) return []
+    const json = (await res.json()) as {
+      proposal_key?: { address?: string }
+      authorizers?: string[]
+      payer?: string
+    }
+    const candidates = new Set<string>()
+    if (json.proposal_key?.address) candidates.add(normalizeAddress(json.proposal_key.address))
+    for (const a of json.authorizers ?? []) candidates.add(normalizeAddress(a))
+    if (json.payer) candidates.add(normalizeAddress(json.payer))
+    return Array.from(candidates).filter((a) => !EXCLUDED_ADDRESSES.has(a))
   } catch {
-    return null
+    return []
   }
 }
 
 const BORROW_EDITION_SCRIPT = `
 import Golazos from 0x87ca73a41bb50ad5
 import NonFungibleToken from 0x1d7e57aa55817448
-access(all) fun main(addr: Address, id: UInt64): UInt64? {
-  let ref = getAccount(addr).capabilities.borrow<&{NonFungibleToken.Collection}>(Golazos.CollectionPublicPath)
-  if ref == nil { return nil }
-  let nft = ref!.borrowNFT(id)
-  if nft == nil { return nil }
-  let g = nft! as! &Golazos.NFT
-  return g.editionID
+access(all) fun main(owners: [Address], id: UInt64): [UInt64] {
+  for owner in owners {
+    let ref = getAccount(owner).capabilities.borrow<&{NonFungibleToken.Collection}>(Golazos.CollectionPublicPath)
+    if ref == nil { continue }
+    let nft = ref!.borrowNFT(id)
+    if nft == nil { continue }
+    let g = nft! as! &Golazos.NFT
+    return [g.editionID, g.serialNumber]
+  }
+  return []
 }
 `
 
@@ -280,6 +304,12 @@ export async function POST(req: NextRequest) {
       }
 
       const unresolvedSales = sales.filter((s) => !nftToEditionKey.has(s.nftID))
+      const nftToSerial = new Map<string, number>()
+      const newlyResolved: Array<{
+        nft_id: string
+        edition_external_id: string
+        serial_number: number
+      }> = []
       let cadenceResolved = 0
       const seen = new Set<string>()
       for (const sale of unresolvedSales) {
@@ -287,14 +317,25 @@ export async function POST(req: NextRequest) {
         if (seen.has(sale.nftID) || nftToEditionKey.has(sale.nftID)) continue
         seen.add(sale.nftID)
         try {
-          const payer = await getTxPayer(sale.transactionId)
-          if (!payer) continue
-          const editionID = await runScript(BORROW_EDITION_SCRIPT, [
-            { type: "Address", value: payer },
+          const buyers = await fetchTxBuyers(sale.transactionId)
+          if (buyers.length === 0) continue
+          const result = (await runScript(BORROW_EDITION_SCRIPT, [
+            {
+              type: "Array",
+              value: buyers.map((a) => ({ type: "Address", value: a })),
+            },
             { type: "UInt64", value: sale.nftID },
-          ])
-          if (editionID !== null && editionID !== undefined) {
-            nftToEditionKey.set(sale.nftID, String(editionID))
+          ])) as unknown[] | null
+          if (Array.isArray(result) && result.length >= 2) {
+            const editionID = String(result[0])
+            const serial = Number(result[1])
+            nftToEditionKey.set(sale.nftID, editionID)
+            if (Number.isFinite(serial)) nftToSerial.set(sale.nftID, serial)
+            newlyResolved.push({
+              nft_id: sale.nftID,
+              edition_external_id: editionID,
+              serial_number: Number.isFinite(serial) ? serial : 0,
+            })
             cadenceResolved++
           }
         } catch (err) {
@@ -304,6 +345,18 @@ export async function POST(req: NextRequest) {
           )
         }
         await delay(CADENCE_DELAY_MS)
+      }
+
+      if (newlyResolved.length > 0) {
+        const { error: mapErr } = await (supabaseAdmin as any)
+          .from("nft_edition_map")
+          .upsert(
+            newlyResolved.map((r) => ({ collection_id: GOLAZOS_COLLECTION_ID, ...r })),
+            { onConflict: "collection_id,nft_id", ignoreDuplicates: true }
+          )
+        if (mapErr) {
+          console.log(`[golazos-sales-indexer] nft_edition_map upsert err: ${mapErr.message}`)
+        }
       }
 
       const editionKeys = [...new Set(nftToEditionKey.values())]
@@ -335,7 +388,7 @@ export async function POST(req: NextRequest) {
             collection: COLLECTION_SLUG,
             nft_id: s.nftID,
             price_usd: price,
-            serial_number: 0,
+            serial_number: nftToSerial.get(s.nftID) ?? 0,
             sold_at: s.blockTimestamp,
             marketplace: "flowty",
             source: "onchain",
