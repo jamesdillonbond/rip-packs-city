@@ -179,6 +179,43 @@ export function getPublishedCollection(id: string): Collection | undefined {
   return publishedCollections().find(c => c.id === id)
 }
 
+// ── DB bridges ──────────────────────────────────────────────────────────────
+// The frontend uses hyphen slugs ("nba-top-shot"); Postgres functions and
+// `collections` rows use underscore slugs ("nba_top_shot", "ufc_strike").
+// Centralise the mapping so routes and components don't drift.
+
+export const SLUG_TO_DB_SLUG: Record<string, string> = {
+  "nba-top-shot":    "nba_top_shot",
+  "nfl-all-day":     "nfl_all_day",
+  "laliga-golazos":  "laliga_golazos",
+  "ufc":             "ufc_strike",
+  "disney-pinnacle": "disney_pinnacle",
+}
+
+export const DB_SLUG_TO_SLUG: Record<string, string> = Object.fromEntries(
+  Object.entries(SLUG_TO_DB_SLUG).map(([a, b]) => [b, a])
+)
+
+export const COLLECTION_UUID_BY_SLUG: Record<string, string> = {
+  "nba-top-shot":    "95f28a17-224a-4025-96ad-adf8a4c63bfd",
+  "nfl-all-day":     "dee28451-5d62-409e-a1ad-a83f763ac070",
+  "laliga-golazos":  "06248cc4-b85f-47cd-af67-1855d14acd75",
+  "ufc":             "9b4824a8-736d-4a96-b450-8dcc0c46b023",
+  "disney-pinnacle": "7dd9dd11-e8b6-45c4-ac99-71331f959714",
+}
+
+export function toDbSlug(slug: string): string | null {
+  return SLUG_TO_DB_SLUG[slug] ?? null
+}
+
+export function fromDbSlug(dbSlug: string): string | null {
+  return DB_SLUG_TO_SLUG[dbSlug] ?? null
+}
+
+export function getCollectionUuid(slug: string): string | null {
+  return COLLECTION_UUID_BY_SLUG[slug] ?? null
+}
+
 export const PAGE_LABELS: Record<CollectionPage, string> = {
   overview:   "Overview",
   collection: "Collection",

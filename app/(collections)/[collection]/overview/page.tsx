@@ -3,9 +3,29 @@
 import { useEffect, useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { getCollection } from "@/lib/collections"
+import { getCollection, toDbSlug } from "@/lib/collections"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+interface CollectionReadiness {
+  overview: boolean
+  analytics: boolean
+  sniper: boolean
+  wallet: boolean
+  collection: boolean
+  sets: boolean
+  packs: boolean
+  badges: boolean
+}
+
+interface PulseRow {
+  slug: string
+  collection_name: string
+  sales_24h: number
+  volume_24h: number
+  top_sale_24h: number | null
+  avg_price_24h: number
+}
 
 interface MarketPulseData {
   marketPulse: string | null
@@ -137,10 +157,14 @@ export default function OverviewPage() {
   const [sniperDeals, setSniperDeals] = useState<SniperDealPreview[]>([])
   const [health, setHealth] = useState<HealthData | null>(null)
   const [overviewStats, setOverviewStats] = useState<OverviewStats | null>(null)
+  const [readiness, setReadiness] = useState<CollectionReadiness | null>(null)
   const [statsLoading, setStatsLoading] = useState(true)
   const [pulseLoading, setPulseLoading] = useState(true)
   const [salesLoading, setSalesLoading] = useState(true)
   const [sniperLoading, setSniperLoading] = useState(true)
+
+  // Resolve DB slug once for readiness lookups ("nba-top-shot" → "nba_top_shot")
+  const dbSlug = toDbSlug(collection)
 
   // Fetch overview stats (FMV coverage, volume, movers)
   const fetchStats = useCallback(async () => {
@@ -170,7 +194,7 @@ export default function OverviewPage() {
 
   const fetchSales = useCallback(async () => {
     try {
-      const res = await fetch("/api/edition-sales?limit=5&collection=" + encodeURIComponent(collection))
+      const res = await fetch("/api/top-sales?limit=5&collection=" + encodeURIComponent(collection))
       if (!res.ok) return
       const data = await res.json()
       if (Array.isArray(data.sales)) setTopSales(data.sales)
@@ -179,6 +203,18 @@ export default function OverviewPage() {
       setSalesLoading(false)
     }
   }, [collection])
+
+  // Per-collection readiness (collection_readiness RPC); decides whether each
+  // section renders real data or a "Coming soon" placeholder. Cheap enough to
+  // refetch every mount (5-min server cache).
+  const fetchReadiness = useCallback(async () => {
+    try {
+      const res = await fetch("/api/collection-readiness", { cache: "no-store" })
+      if (!res.ok) return
+      const data = await res.json()
+      if (dbSlug && data[dbSlug]) setReadiness(data[dbSlug] as CollectionReadiness)
+    } catch { /* swallow */ }
+  }, [dbSlug])
 
   // Fetch top 5 sniper deals with minDiscount=15
   const fetchSniper = useCallback(async () => {
@@ -203,12 +239,16 @@ export default function OverviewPage() {
   }, [])
 
   useEffect(() => {
+    fetchReadiness()
     fetchStats()
     fetchPulse()
     fetchSales()
     fetchSniper()
     fetchHealth()
-  }, [fetchStats, fetchPulse, fetchSales, fetchSniper, fetchHealth])
+  }, [fetchReadiness, fetchStats, fetchPulse, fetchSales, fetchSniper, fetchHealth])
+
+  const overviewReady = readiness?.overview ?? false
+  const sniperReady = readiness?.sniper ?? false
 
   // Derive pipeline freshness
   const fmvMinutes = health?.fmv_pipeline?.minutes_since_last_fmv ?? null
@@ -279,54 +319,68 @@ export default function OverviewPage() {
         </section>
       )}
 
-      {/* ── Live Stats ── */}
-      {collection === "nba-top-shot" ? (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
-          <section className="rpc-card" style={{ padding: "16px 20px", position: "relative", overflow: "hidden" }}>
-            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "var(--rpc-red)", opacity: 0.7 }} />
-            <div className="rpc-label" style={{ marginBottom: 4 }}>Total Moments Tracked</div>
-            {statsLoading ? (
-              <div className="rpc-skeleton" style={{ width: "50%", height: 20 }} />
-            ) : (
-              <div className="rpc-heading" style={{ fontSize: "var(--text-xl)", color: "var(--rpc-text-primary)" }}>
-                {(overviewStats?.totalEditions ?? 0).toLocaleString()}
-              </div>
-            )}
-          </section>
-          <section className="rpc-card" style={{ padding: "16px 20px", position: "relative", overflow: "hidden" }}>
-            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "var(--rpc-success)", opacity: 0.7 }} />
-            <div className="rpc-label" style={{ marginBottom: 4 }}>Verified FMV Coverage</div>
-            {statsLoading ? (
-              <div className="rpc-skeleton" style={{ width: "50%", height: 20 }} />
-            ) : (
-              <div className="rpc-heading" style={{ fontSize: "var(--text-xl)", color: "var(--rpc-success)" }}>
-                {(overviewStats?.highConfCount ?? 0).toLocaleString()}
-              </div>
-            )}
-          </section>
-          <section className="rpc-card" style={{ padding: "16px 20px", position: "relative", overflow: "hidden" }}>
-            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "var(--tier-legendary)", opacity: 0.7 }} />
-            <div className="rpc-label" style={{ marginBottom: 4 }}>24h Sales Volume</div>
-            {statsLoading ? (
-              <div className="rpc-skeleton" style={{ width: "50%", height: 20 }} />
-            ) : (
-              <div className="rpc-heading" style={{ fontSize: "var(--text-xl)", color: "var(--tier-legendary)" }}>
-                {fmtDollars(overviewStats?.volume24h ?? 0)}
-              </div>
-            )}
-          </section>
-        </div>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
-          {["Total Moments Tracked", "FMV Coverage", "24h Sales Volume"].map((label) => (
-            <section key={label} className="rpc-card" style={{ padding: "16px 20px", position: "relative", overflow: "hidden" }}>
-              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "var(--rpc-text-ghost)", opacity: 0.4 }} />
-              <div className="rpc-label" style={{ marginBottom: 4 }}>{label}</div>
-              <div className="rpc-heading" style={{ fontSize: "var(--text-xl)", color: "var(--rpc-text-ghost)" }}>Coming soon</div>
+      {/* ── Live Stats ──
+           KPI cards render real data whenever collection_readiness.overview
+           is true OR the overview-stats API returned non-zero counts. This
+           lets collections like Pinnacle (readiness.overview = true, counts
+           from pinnacle_* tables) and AllDay (counts from shared editions)
+           surface actual data, and only fully un-seeded collections fall
+           back to the placeholder. */}
+      {(() => {
+        const hasData =
+          overviewReady ||
+          (overviewStats != null &&
+            ((overviewStats.totalEditions ?? 0) > 0 ||
+              (overviewStats.highConfCount ?? 0) > 0 ||
+              (overviewStats.volume24h ?? 0) > 0))
+        return hasData ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
+            <section className="rpc-card" style={{ padding: "16px 20px", position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "var(--rpc-red)", opacity: 0.7 }} />
+              <div className="rpc-label" style={{ marginBottom: 4 }}>Total Editions</div>
+              {statsLoading ? (
+                <div className="rpc-skeleton" style={{ width: "50%", height: 20 }} />
+              ) : (
+                <div className="rpc-heading" style={{ fontSize: "var(--text-xl)", color: "var(--rpc-text-primary)" }}>
+                  {(overviewStats?.totalEditions ?? 0).toLocaleString()}
+                </div>
+              )}
             </section>
-          ))}
-        </div>
-      )}
+            <section className="rpc-card" style={{ padding: "16px 20px", position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "var(--rpc-success)", opacity: 0.7 }} />
+              <div className="rpc-label" style={{ marginBottom: 4 }}>Verified FMV Coverage</div>
+              {statsLoading ? (
+                <div className="rpc-skeleton" style={{ width: "50%", height: 20 }} />
+              ) : (
+                <div className="rpc-heading" style={{ fontSize: "var(--text-xl)", color: "var(--rpc-success)" }}>
+                  {(overviewStats?.highConfCount ?? 0).toLocaleString()}
+                </div>
+              )}
+            </section>
+            <section className="rpc-card" style={{ padding: "16px 20px", position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "var(--tier-legendary)", opacity: 0.7 }} />
+              <div className="rpc-label" style={{ marginBottom: 4 }}>24h Sales Volume</div>
+              {statsLoading ? (
+                <div className="rpc-skeleton" style={{ width: "50%", height: 20 }} />
+              ) : (
+                <div className="rpc-heading" style={{ fontSize: "var(--text-xl)", color: "var(--tier-legendary)" }}>
+                  {fmtDollars(overviewStats?.volume24h ?? 0)}
+                </div>
+              )}
+            </section>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
+            {["Total Editions", "FMV Coverage", "24h Sales Volume"].map((label) => (
+              <section key={label} className="rpc-card" style={{ padding: "16px 20px", position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "var(--rpc-text-ghost)", opacity: 0.4 }} />
+                <div className="rpc-label" style={{ marginBottom: 4 }}>{label}</div>
+                <div className="rpc-heading" style={{ fontSize: "var(--text-xl)", color: "var(--rpc-text-ghost)" }}>Coming soon</div>
+              </section>
+            ))}
+          </div>
+        )
+      })()}
 
       {/* ── UFC Strike Section ── */}
       {isUfc && (
