@@ -40,15 +40,15 @@ const AD_GQL_QUERY = `query SearchMarketplaceEditions($first: Int!, $after: Stri
   }
 }`
 
-type MarketRow = {
-  edition_flow_id: string
-  lowest_price: string
-  average_sale: string
-  total_listings: number
+type RawNode = {
+  editionFlowID?: string | null
+  lowestPrice?: string | number | null
+  averageSale?: string | number | null
+  totalListings?: string | number | null
 }
 
 type PageResult = {
-  rows: MarketRow[]
+  nodes: RawNode[]
   endCursor: string | null
   hasNextPage: boolean
 }
@@ -103,27 +103,12 @@ async function fetchPage(cursor: string | null): Promise<PageResult> {
 
   const edges = Array.isArray(data.edges) ? data.edges : []
   console.log('[allday-fmv-populate] raw edges:', edges.length, 'sample edge keys:', Object.keys(edges[0] ?? {}))
-  const rows: MarketRow[] = []
-  for (const edge of edges) {
-    const node = edge?.node
-    if (!node?.editionFlowID) continue
-    const totalListingsRaw = node.totalListings
-    const totalListings =
-      typeof totalListingsRaw === "number"
-        ? totalListingsRaw
-        : parseInt(String(totalListingsRaw ?? 0), 10) || 0
-    rows.push({
-      edition_flow_id: String(node.editionFlowID),
-      lowest_price: node.lowestPrice != null ? String(node.lowestPrice) : "",
-      average_sale: node.averageSale != null ? String(node.averageSale) : "",
-      total_listings: totalListings,
-    })
-  }
+  const nodes: RawNode[] = edges.map((edge: any) => edge?.node)
 
   const endCursor = data.pageInfo?.endCursor ?? null
   const hasNextPage = !!data.pageInfo?.hasNextPage
 
-  return { rows, endCursor: endCursor ? String(endCursor) : null, hasNextPage }
+  return { nodes, endCursor: endCursor ? String(endCursor) : null, hasNextPage }
 }
 
 export async function GET(req: NextRequest) {
@@ -156,13 +141,13 @@ export async function GET(req: NextRequest) {
 
   let cursor: string | null = cursorBefore
   let hasNextPage = true
-  const allRows: MarketRow[] = []
+  const nodes: RawNode[] = []
   let lastError: string | null = null
 
   for (let pageNum = 0; pageNum < PAGES_PER_RUN; pageNum++) {
     try {
       const page = await fetchPage(cursor)
-      allRows.push(...page.rows)
+      nodes.push(...page.nodes)
       cursor = page.endCursor
       hasNextPage = page.hasNextPage
       if (!hasNextPage) break
@@ -181,12 +166,12 @@ export async function GET(req: NextRequest) {
   let skipped = 0
   let no_edition = 0
 
-  console.log('[allday-fmv-populate] batch size:', allRows.length, 'sample:', JSON.stringify(allRows[0] ?? null))
+  console.log('[allday-fmv-populate] batch size:', nodes.length, 'sample:', JSON.stringify(nodes[0] ?? null))
 
-  if (allRows.length > 0) {
+  if (nodes.length > 0) {
     const { data, error } = await supabaseAdmin.rpc(
       "upsert_allday_marketplace_fmv",
-      { p_rows: JSON.stringify(allRows) as any }
+      { p_rows: JSON.stringify(nodes) as any }
     )
     if (error) {
       console.log(`[allday-fmv-populate] upsert rpc error: ${error.message}`)
@@ -222,7 +207,7 @@ export async function GET(req: NextRequest) {
     await (supabaseAdmin as any).rpc("log_pipeline_run", {
       p_pipeline: PIPELINE_NAME,
       p_started_at: startedAtIso,
-      p_rows_found: allRows.length,
+      p_rows_found: nodes.length,
       p_rows_written: upserted,
       p_rows_skipped: skipped,
       p_ok: true,
@@ -231,7 +216,7 @@ export async function GET(req: NextRequest) {
       p_cursor_before: cursorBefore,
       p_cursor_after: cursorAfter,
       p_extra: {
-        editions_fetched: allRows.length,
+        editions_fetched: nodes.length,
         upserted,
         skipped,
         no_edition,
@@ -250,7 +235,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    editions_fetched: allRows.length,
+    editions_fetched: nodes.length,
     upserted,
     skipped,
     no_edition,
