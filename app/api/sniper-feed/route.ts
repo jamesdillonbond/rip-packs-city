@@ -165,6 +165,43 @@ const GQL_HEADERS: Record<string, string> = {
 const TS_PROXY_URL = process.env.TS_PROXY_URL ?? "";
 const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET ?? "";
 
+const AD_PROXY_URL = process.env.AD_PROXY_URL ?? "";
+const AD_PROXY_SECRET = process.env.AD_PROXY_SECRET ?? "";
+
+const ALLDAY_MARKETPLACE_QUERY = `
+  query searchMarketplaceEditions($after: String, $first: Int, $sortBy: MarketplaceEditionSortType) {
+    searchMarketplaceEditions(input: { after: $after, first: $first, sortBy: $sortBy, filters: {} }) {
+      totalCount
+      pageInfo { endCursor hasNextPage }
+      edges {
+        node {
+          editionFlowID
+          lowestPrice
+          averageSale
+          totalListings
+          numberOneSerial {
+            id flowID
+            momentNFTListing { id priceV2 { value } }
+          }
+          jerseySerial {
+            id flowID
+            momentNFTListing { id priceV2 { value } }
+          }
+          edition {
+            id flowID tier
+            maxMintSize currentMintSize numMomentsBurned
+            badges { id slug title }
+            play { metadata { playerFullName teamName } }
+            set { name }
+            series { name }
+            parallel
+          }
+        }
+      }
+    }
+  }
+`;
+
 const FLOWTY_ENDPOINT = "https://api2.flowty.io/collection/0x0b2a3299cc857e29/TopShot";
 const FLOWTY_HEADERS = {
   "Content-Type": "application/json",
@@ -607,6 +644,83 @@ async function fetchAllFlowtyListings(): Promise<FlowtyListing[]> {
   return pages.flat();
 }
 
+// ─── NFL All Day marketplace GQL ──────────────────────────────────────────────
+// searchMarketplaceEditions is the public marketplace feed. It can be fetched
+// directly from Vercel (no Cloudflare block) or via a Worker proxy when
+// AD_PROXY_URL is set. Returns edition-level floor data plus optional
+// numberOneSerial / jerseySerial hooks for the #1 and Jersey-Serial specials.
+
+interface AlldayGqlPage {
+  edges: unknown[];
+  endCursor: string | null;
+  hasNextPage: boolean;
+}
+
+async function fetchAlldayGqlPage(after: string | null): Promise<AlldayGqlPage> {
+  try {
+    const url = AD_PROXY_URL || "https://nflallday.com/consumer/graphql";
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (AD_PROXY_URL && AD_PROXY_SECRET) headers["X-Proxy-Secret"] = AD_PROXY_SECRET;
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        operationName: "searchMarketplaceEditions",
+        query: ALLDAY_MARKETPLACE_QUERY,
+        variables: { after, first: 100, sortBy: "LISTED_DATE_DESC" },
+      }),
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      console.error(`[sniper-feed] AD GQL FAILED: HTTP ${res.status} ${txt.slice(0, 200)}`);
+      return { edges: [], endCursor: null, hasNextPage: false };
+    }
+    const json = await res.json() as {
+      data?: { searchMarketplaceEditions?: {
+        edges?: unknown[];
+        pageInfo?: { endCursor?: string | null; hasNextPage?: boolean };
+      } };
+      errors?: Array<{ message?: string }>;
+    };
+    if (json.errors && json.errors.length) {
+      console.error(`[sniper-feed] AD GQL FAILED: ${json.errors[0].message ?? "unknown GQL error"}`);
+      return { edges: [], endCursor: null, hasNextPage: false };
+    }
+    const search = json.data?.searchMarketplaceEditions;
+    if (!search) {
+      console.error(`[sniper-feed] AD GQL FAILED: missing searchMarketplaceEditions`);
+      return { edges: [], endCursor: null, hasNextPage: false };
+    }
+    return {
+      edges: search.edges ?? [],
+      endCursor: search.pageInfo?.endCursor ?? null,
+      hasNextPage: !!search.pageInfo?.hasNextPage,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[sniper-feed] AD GQL FAILED: ${msg}`);
+    return { edges: [], endCursor: null, hasNextPage: false };
+  }
+}
+
+async function fetchAlldayPool(): Promise<Array<Record<string, unknown>>> {
+  const page1 = await fetchAlldayGqlPage(null);
+  let page2Edges: unknown[] = [];
+  if (page1.hasNextPage && page1.endCursor) {
+    const page2 = await fetchAlldayGqlPage(page1.endCursor);
+    page2Edges = page2.edges;
+  }
+  const allEdges = [...page1.edges, ...page2Edges].slice(0, 200);
+  const nodes: Array<Record<string, unknown>> = [];
+  for (const edge of allEdges) {
+    const node = (edge as { node?: Record<string, unknown> } | null)?.node;
+    if (node && typeof node === "object") nodes.push(node);
+  }
+  console.log(`[sniper-feed] AD pool: page1=${page1.edges.length} page2=${page2Edges.length} total=${nodes.length}`);
+  return nodes;
+}
+
 // ─── Flowty metadata enrichment from badge_editions ──────────────────────────
 // Flowty trait extraction for setName/teamName/seriesNumber has been unreliable.
 // Instead, enrich from badge_editions which has player_name, set_name, team,
@@ -1020,108 +1134,331 @@ function resolveCollectionUuid(slug: string): string | null {
 
 const ALLDAY_THUMBNAIL_BASE = "https://media.nflallday.com/editions/";
 
-// ── All Day sniper feed via get_allday_sniper_deals() RPC ──────────────────
-// The RPC joins cached_listings → editions → fmv_snapshots and computes the
-// discount% server-side, so there's nothing to resolve client-side. We just
-// map the wide SQL row into the SniperDeal shape the existing UI expects.
-// Top Shot stays on computeSniperFeed(); everything else (Golazos, UFC) stays
-// on computeCachedSniperFeed(). This branch is All Day-only.
+// ── All Day sniper feed via live marketplace GQL + fmv_snapshots join ─────
+// Pulls the public searchMarketplaceEditions feed (two pages, up to 200 edges),
+// cross-references an in-memory FMV map built from fmv_snapshots for the
+// AllDay collection, and emits a SniperDeal per edition plus specials for
+// #1 and Jersey Serial listings when present. Falls back to the RPC-based
+// path when the live feed returns zero edges (proxy down, CF block, etc.).
 async function computeAllDaySniperFeed(opts: {
   minDiscount: number; rarity: string; team: string; maxPrice: number; sortBy: string;
 }) {
-  const { minDiscount, rarity, team, maxPrice, sortBy } = opts;
+  const { minDiscount, rarity, team, maxPrice } = opts;
   const supabase = supabaseAdmin;
+  const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070";
 
-  const { data: rows, error } = await (supabase as any).rpc("get_allday_sniper_deals", {
-    p_min_discount: minDiscount,
-    p_max_price: maxPrice,
-    p_rarity: rarity === "all" ? "all" : rarity,
-    p_team: team === "all" ? "all" : team,
-    p_sort_by: sortBy,
-    p_limit: 200,
-  });
+  // 1. Build FMV map keyed on external_id (integer edition flow ID as string).
+  //    fmv_snapshots is small for AllDay (~341 rows) so we pull the full set
+  //    and dedupe to the newest per edition. supabase-js can't express the
+  //    join-then-project shape we want, so it's two queries.
+  const fmvMap = new Map<string, { fmv: number; confidence: string }>();
+  try {
+    const { data: fmvRows, error: fmvErr } = await (supabase as any)
+      .from("fmv_snapshots")
+      .select("edition_id, fmv_usd, confidence, computed_at")
+      .eq("collection_id", ALLDAY_COLLECTION_ID)
+      .order("computed_at", { ascending: false });
+    if (fmvErr) {
+      console.error(`[sniper-feed] AD fmv_snapshots error: ${fmvErr.message}`);
+    }
+    const byEditionId = new Map<string, { fmv: number; confidence: string }>();
+    for (const row of (fmvRows ?? []) as Array<{ edition_id: string; fmv_usd: number; confidence: string }>) {
+      if (!byEditionId.has(row.edition_id)) {
+        byEditionId.set(row.edition_id, {
+          fmv: Number(row.fmv_usd) || 0,
+          confidence: String(row.confidence ?? "LOW"),
+        });
+      }
+    }
+    if (byEditionId.size > 0) {
+      const editionIds = Array.from(byEditionId.keys());
+      // Chunk IN() to stay well under PostgREST URL limits.
+      for (let i = 0; i < editionIds.length; i += 500) {
+        const chunk = editionIds.slice(i, i + 500);
+        const { data: editionRows } = await (supabase as any)
+          .from("editions")
+          .select("id, external_id")
+          .in("id", chunk);
+        for (const e of (editionRows ?? []) as Array<{ id: string; external_id: string | null }>) {
+          const entry = byEditionId.get(e.id);
+          if (entry && e.external_id) fmvMap.set(String(e.external_id), entry);
+        }
+      }
+    }
+  } catch (err) {
+    console.error(`[sniper-feed] AD FMV map build failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  console.log(`[sniper-feed] AD FMV map size: ${fmvMap.size}`);
 
-  if (error) {
-    console.error("[sniper-feed] get_allday_sniper_deals error:", error.message);
-    return { count: 0, tsCount: 0, flowtyCount: 0, lastRefreshed: new Date().toISOString(), deals: [] };
+  // 2. Pull the live marketplace pool from NFL All Day public GQL.
+  const nodes = await fetchAlldayPool();
+
+  // 3. Fallback to the RPC path when the live feed is empty — preserves the
+  //    behavior that was shipping before this rewrite.
+  if (nodes.length === 0) {
+    console.log(`[sniper-feed] AD GQL empty — falling back to get_allday_sniper_deals RPC`);
+    const { data: rows, error } = await (supabase as any).rpc("get_allday_sniper_deals", {
+      p_min_discount: minDiscount,
+      p_max_price: maxPrice,
+      p_rarity: rarity === "all" ? "all" : rarity,
+      p_team: team === "all" ? "all" : team,
+      p_sort_by: opts.sortBy,
+      p_limit: 200,
+    });
+    if (error) {
+      console.error(`[sniper-feed] get_allday_sniper_deals error: ${error.message}`);
+      return { count: 0, tsCount: 0, flowtyCount: 0, lastRefreshed: new Date().toISOString(), deals: [] };
+    }
+    const fallback: SniperDeal[] = (rows ?? []).map((r: any) => {
+      const tier = String(r.tier ?? "COMMON").replace("MOMENT_TIER_", "");
+      const confidence = String(r.confidence ?? "ASK_ONLY");
+      const momentId = r.moment_id ? String(r.moment_id) : "";
+      const thumbnailUrl = r.thumbnail_url ?? (momentId
+        ? ALLDAY_THUMBNAIL_BASE + momentId + "/media/image?width=512&format=webp&quality=90"
+        : null);
+      return {
+        flowId: r.flow_id ?? "",
+        momentId,
+        editionKey: "",
+        intEditionKey: null,
+        playerName: r.player_name ?? "",
+        teamName: r.team_name ?? "",
+        setName: r.set_name ?? "",
+        seriesName: r.series_name ?? "",
+        tier,
+        parallel: "Base",
+        parallelId: 0,
+        serial: r.serial_number ?? 0,
+        circulationCount: r.circulation_count ?? 0,
+        askPrice: Number(r.ask_price) || 0,
+        baseFmv: Number(r.fmv_usd) || 0,
+        adjustedFmv: Number(r.fmv_usd) || 0,
+        wapUsd: null,
+        daysSinceSale: null,
+        salesCount30d: null,
+        discount: Number(r.discount_pct) || 0,
+        confidence: confidence.toLowerCase(),
+        confidenceSource: confidence === "ASK_ONLY" ? "ask_fallback" : "fmv_snapshots",
+        hasBadge: false,
+        badgeSlugs: [],
+        badgeLabels: [],
+        badgePremiumPct: 0,
+        serialMult: 1,
+        isSpecialSerial: false,
+        isJersey: false,
+        serialSignal: null,
+        thumbnailUrl,
+        isLocked: false,
+        updatedAt: r.listed_at ?? null,
+        packListingId: null,
+        packName: null,
+        packEv: null,
+        packEvRatio: null,
+        buyUrl: r.buy_url ?? "",
+        listingResourceID: r.listing_resource_id ?? null,
+        listingOrderID: null,
+        storefrontAddress: null,
+        source: "flowty",
+        paymentToken: "FLOW",
+        offerAmount: null,
+        offerFmvPct: null,
+        dealRating: (Number(r.discount_pct) || 0) / 100,
+        isLowestAsk: false,
+      };
+    });
+    return {
+      count: fallback.length,
+      tsCount: 0,
+      flowtyCount: fallback.length,
+      lastRefreshed: new Date().toISOString(),
+      deals: fallback,
+    };
   }
 
-  const deals: SniperDeal[] = (rows ?? []).map((r: any) => {
-    const tier = String(r.tier ?? "COMMON").replace("MOMENT_TIER_", "");
-    const confidence = String(r.confidence ?? "ASK_ONLY");
-    const momentId = r.moment_id ? String(r.moment_id) : "";
-    const thumbnailUrl = r.thumbnail_url ?? (momentId
-      ? ALLDAY_THUMBNAIL_BASE + momentId + "/media/image?width=512&format=webp&quality=90"
-      : null);
+  // 4. Shape GQL node → SniperDeal. buildDeal is reused for floor + specials.
+  type EditionNode = {
+    editionFlowID?: number | string;
+    lowestPrice?: number | string | null;
+    numberOneSerial?: { flowID?: number | string; momentNFTListing?: { priceV2?: { value?: string | number | null } } } | null;
+    jerseySerial?: { flowID?: number | string; momentNFTListing?: { priceV2?: { value?: string | number | null } } } | null;
+    edition?: {
+      tier?: string | null;
+      maxMintSize?: number | null;
+      currentMintSize?: number | null;
+      badges?: Array<{ id?: string; slug?: string; title?: string }> | null;
+      play?: { metadata?: { playerFullName?: string | null; teamName?: string | null } | null } | null;
+      set?: { name?: string | null } | null;
+      series?: { name?: string | null } | null;
+      parallel?: string | null;
+    } | null;
+  };
+
+  interface DealOverrides {
+    askPrice?: number;
+    serial?: number;
+    isSpecialSerial?: boolean;
+    serialSignal?: string | null;
+    flowId?: string;
+    buyUrl?: string;
+  }
+
+  const buildDeal = (raw: Record<string, unknown>, overrides?: DealOverrides): SniperDeal | null => {
+    const node = raw as EditionNode;
+    const editionFlowID = String(node.editionFlowID ?? "");
+    if (!editionFlowID) return null;
+    const floorPrice = parseFloat(String(node.lowestPrice ?? "")) || 0;
+    const askPrice = overrides?.askPrice ?? floorPrice;
+    if (!askPrice || askPrice <= 0) return null;
+
+    const tier = String(node.edition?.tier ?? "COMMON").replace("MOMENT_TIER_", "").toUpperCase();
+    const fmvEntry = fmvMap.get(editionFlowID);
+    const baseFmv = fmvEntry?.fmv || askPrice;
+    const adjustedFmv = baseFmv;
+    const confidence = fmvEntry?.confidence?.toLowerCase() ?? "ask_only";
+    const confidenceSource = fmvEntry ? "fmv_snapshots" : "ask_fallback";
+    const discount = askPrice < adjustedFmv
+      ? Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10
+      : 0;
+
+    const badges = node.edition?.badges ?? [];
+    const badgeSlugs = badges.map((b) => String(b?.slug ?? "")).filter(Boolean);
+    const badgeLabels = badges.map((b) => String(b?.title ?? "")).filter(Boolean);
+    const hasBadge = badgeSlugs.length > 0;
+
+    const playerName = String(node.edition?.play?.metadata?.playerFullName ?? "");
+    const teamName = String(node.edition?.play?.metadata?.teamName ?? "");
+    const setName = String(node.edition?.set?.name ?? "");
+    const seriesName = String(node.edition?.series?.name ?? "");
+    const parallel = String(node.edition?.parallel ?? "Base");
+    const circulationCount = Number(node.edition?.currentMintSize)
+      || Number(node.edition?.maxMintSize)
+      || 0;
+
+    const thumbnailUrl = `https://media.nflallday.com/editions/${editionFlowID}/media/image?format=jpeg&width=512`;
+    const buyUrl = overrides?.buyUrl
+      ?? `https://nflallday.com/marketplace?filters=editionID:${editionFlowID}`;
+
     return {
-      flowId: r.flow_id ?? "",
-      momentId,
-      editionKey: "",
+      flowId: overrides?.flowId ?? editionFlowID,
+      momentId: editionFlowID,
+      editionKey: editionFlowID,
       intEditionKey: null,
-      playerName: r.player_name ?? "",
-      teamName: r.team_name ?? "",
-      setName: r.set_name ?? "",
-      seriesName: r.series_name ?? "",
+      playerName,
+      teamName,
+      setName,
+      seriesName,
       tier,
-      parallel: "Base",
+      parallel,
       parallelId: 0,
-      serial: r.serial_number ?? 0,
-      circulationCount: r.circulation_count ?? 0,
-      askPrice: Number(r.ask_price) || 0,
-      baseFmv: Number(r.fmv_usd) || 0,
-      adjustedFmv: Number(r.fmv_usd) || 0,
+      serial: overrides?.serial ?? 0,
+      circulationCount,
+      askPrice,
+      baseFmv,
+      adjustedFmv,
       wapUsd: null,
       daysSinceSale: null,
       salesCount30d: null,
-      discount: Number(r.discount_pct) || 0,
-      confidence: confidence.toLowerCase(),
-      confidenceSource: confidence === "ASK_ONLY" ? "ask_fallback" : "fmv_snapshots",
-      hasBadge: false,
-      badgeSlugs: [],
-      badgeLabels: [],
+      discount,
+      confidence,
+      confidenceSource,
+      hasBadge,
+      badgeSlugs,
+      badgeLabels,
       badgePremiumPct: 0,
       serialMult: 1,
-      isSpecialSerial: false,
+      isSpecialSerial: overrides?.isSpecialSerial ?? false,
       isJersey: false,
-      serialSignal: null,
+      serialSignal: overrides?.serialSignal ?? null,
       thumbnailUrl,
       isLocked: false,
-      updatedAt: r.listed_at ?? null,
+      updatedAt: null,
       packListingId: null,
       packName: null,
       packEv: null,
       packEvRatio: null,
-      buyUrl: r.buy_url ?? "",
-      listingResourceID: r.listing_resource_id ?? null,
+      buyUrl,
+      listingResourceID: null,
       listingOrderID: null,
       storefrontAddress: null,
       source: "flowty",
       paymentToken: "FLOW",
       offerAmount: null,
       offerFmvPct: null,
-      dealRating: (Number(r.discount_pct) || 0) / 100,
+      dealRating: adjustedFmv > 0 ? Math.max(0, Number((1 - askPrice / adjustedFmv).toFixed(4))) : 0,
       isLowestAsk: false,
     };
-  });
+  };
 
-  // Mark lowest ask per moment — keeps parity with the other paths.
-  const lowestAskByMoment = new Map<string, number>();
-  for (const d of deals) {
-    const key = d.momentId || d.flowId;
-    const current = lowestAskByMoment.get(key);
-    if (current === undefined || d.askPrice < current) lowestAskByMoment.set(key, d.askPrice);
+  const deals: SniperDeal[] = [];
+  for (const raw of nodes) {
+    const floor = buildDeal(raw);
+    if (floor) deals.push(floor);
+
+    const n1 = (raw as { numberOneSerial?: { flowID?: number | string; momentNFTListing?: { priceV2?: { value?: string | number | null } } } | null }).numberOneSerial;
+    const n1Price = parseFloat(String(n1?.momentNFTListing?.priceV2?.value ?? ""));
+    if (n1 && Number.isFinite(n1Price) && n1Price > 0) {
+      const n1Flow = n1.flowID ? String(n1.flowID) : null;
+      const d = buildDeal(raw, {
+        askPrice: n1Price,
+        serial: 1,
+        isSpecialSerial: true,
+        serialSignal: "#1",
+        flowId: n1Flow ?? `${raw.editionFlowID}-1`,
+        buyUrl: n1Flow ? `https://nflallday.com/moment/${n1Flow}` : undefined,
+      });
+      if (d) deals.push(d);
+    }
+
+    const js = (raw as { jerseySerial?: { flowID?: number | string; momentNFTListing?: { priceV2?: { value?: string | number | null } } } | null }).jerseySerial;
+    const jsPrice = parseFloat(String(js?.momentNFTListing?.priceV2?.value ?? ""));
+    if (js && Number.isFinite(jsPrice) && jsPrice > 0) {
+      const jsFlow = js.flowID ? String(js.flowID) : null;
+      const d = buildDeal(raw, {
+        askPrice: jsPrice,
+        isSpecialSerial: true,
+        serialSignal: "Jersey Serial",
+        flowId: jsFlow ?? `${raw.editionFlowID}-jersey`,
+        buyUrl: jsFlow ? `https://nflallday.com/moment/${jsFlow}` : undefined,
+      });
+      if (d) deals.push(d);
+    }
   }
-  for (const d of deals) {
-    const key = d.momentId || d.flowId;
-    d.isLowestAsk = d.askPrice === lowestAskByMoment.get(key);
+
+  // 5. Filters — minDiscount, maxPrice, rarity, team.
+  let filtered = deals;
+  if (maxPrice > 0) filtered = filtered.filter((d) => d.askPrice <= maxPrice);
+  if (rarity && rarity !== "all") {
+    const want = rarity.toUpperCase();
+    filtered = filtered.filter((d) => d.tier.toUpperCase() === want);
   }
+  if (team && team !== "all") {
+    filtered = filtered.filter((d) => d.teamName === team);
+  }
+  if (minDiscount > 0) filtered = filtered.filter((d) => d.discount >= minDiscount);
+
+  // 6. Hard-coded price_asc sort — AllDay's API doesn't support LOW_ASK
+  //    server-side, so we override whatever sortBy the UI sent.
+  filtered.sort((a, b) => a.askPrice - b.askPrice);
+
+  // 7. Mark lowest ask per edition so the UI can flag the floor listing.
+  const lowestAskByEdition = new Map<string, number>();
+  for (const d of filtered) {
+    const current = lowestAskByEdition.get(d.editionKey);
+    if (current === undefined || d.askPrice < current) lowestAskByEdition.set(d.editionKey, d.askPrice);
+  }
+  for (const d of filtered) {
+    d.isLowestAsk = d.askPrice === lowestAskByEdition.get(d.editionKey);
+  }
+
+  const withFmv = filtered.filter((d) => d.confidenceSource === "fmv_snapshots").length;
+  console.log(`[sniper-feed] AD DONE: total=${filtered.length} fmv_hits=${withFmv} fmv_map=${fmvMap.size}`);
 
   return {
-    count: deals.length,
+    count: filtered.length,
     tsCount: 0,
-    flowtyCount: deals.length,
+    flowtyCount: filtered.length,
     lastRefreshed: new Date().toISOString(),
-    deals,
+    deals: filtered,
   };
 }
 
