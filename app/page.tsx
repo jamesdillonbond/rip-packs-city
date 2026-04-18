@@ -193,6 +193,8 @@ export default function HomePage() {
         ::-webkit-scrollbar-thumb{background:rgba(224,58,47,0.3);border-radius:2px}
         @media(max-width:768px){
           .rpc-main{padding:16px 16px 80px!important;}
+          .rpc-kpi-row{grid-template-columns:repeat(2,1fr)!important;}
+          .rpc-collection-grid{grid-template-columns:1fr!important;}
         }
       `}</style>
 
@@ -232,13 +234,14 @@ export default function HomePage() {
 
         {/* Aggregate KPIs */}
         <section style={{ marginBottom: 24 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+          <div className="rpc-kpi-row" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
             {(() => {
               const total = kpis?.totalEditions ?? null;
               const high = kpis?.highConfCount ?? null;
               const coverage = total && total > 0 ? Math.round(((high ?? 0) / total) * 100) : null;
               const vol = kpis?.volume24h ?? null;
               const stats: Array<{ label: string; value: string; color: string }> = [
+                { label: "Collections", value: QUICK_COLLECTIONS.length.toString(), color: "#A855F7" },
                 { label: "Total Editions", value: total != null ? total.toLocaleString() : "…", color: "#fff" },
                 { label: "FMV Coverage", value: coverage != null ? `${coverage}%` : "…", color: "#34D399" },
                 { label: "24h Volume", value: vol != null ? fmtDollars(vol) : "…", color: RED },
@@ -334,7 +337,7 @@ export default function HomePage() {
           <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)", marginBottom: 12 }}>
             &#9670; COLLECTIONS &#9670;
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
+          <div className="rpc-collection-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
             {QUICK_COLLECTIONS.map((col) => (
               <Link
                 key={col.id}
@@ -382,6 +385,19 @@ export default function HomePage() {
 
         {/* Market Pulse */}
         <MarketPulseWidget pulse={pulse} loading={pulseLoading} />
+
+        {/* About */}
+        <section style={{ marginTop: 32, marginBottom: 32, padding: "18px 20px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10 }}>
+          <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.7)", marginBottom: 10 }}>
+            About Rip Packs City
+          </div>
+          <p style={{ fontFamily: monoFont, fontSize: 12, lineHeight: 1.7, color: "rgba(255,255,255,0.6)", letterSpacing: "0.02em" }}>
+            RPC is a collector intelligence platform for Flow blockchain sports NFTs — analytics, deal-finding, sniper tools, FMV pricing, and badge tracking across NBA Top Shot, NFL All Day, Disney Pinnacle, and LaLiga Golazos.
+          </p>
+          <p style={{ fontFamily: monoFont, fontSize: 11, lineHeight: 1.7, color: "rgba(255,255,255,0.45)", letterSpacing: "0.02em", marginTop: 10 }}>
+            Founded by Trevor, official Portland Trail Blazers Team Captain on NBA Top Shot.
+          </p>
+        </section>
 
       </main>
 
