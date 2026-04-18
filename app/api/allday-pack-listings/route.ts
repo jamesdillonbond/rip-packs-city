@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { after } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
 const supabase: any = createClient(
@@ -32,6 +33,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
+  after(runPackListings())
+
+  return NextResponse.json({
+    status: "accepted",
+    startedAt: new Date().toISOString(),
+  })
+}
+
+async function runPackListings() {
   const started = Date.now()
 
   // 1. Fetch editions
