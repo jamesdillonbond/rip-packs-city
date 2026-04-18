@@ -171,6 +171,25 @@ function tierColor(tier: string): string {
   }
 }
 
+// AllDay uses a distinct palette from Top Shot's CSS tokens — green UNCOMMON,
+// blue RARE, amber LEGENDARY, purple ULTIMATE — picked for better contrast
+// against AllDay's blue accent.
+const ALLDAY_TIER_COLORS: Record<string, string> = {
+  COMMON: "#94A3B8",
+  UNCOMMON: "#22C55E",
+  RARE: "#3B82F6",
+  LEGENDARY: "#F59E0B",
+  ULTIMATE: "#A855F7",
+};
+
+function allDayTierColor(tier: string): string {
+  return ALLDAY_TIER_COLORS[tier?.toUpperCase()] ?? "#94A3B8";
+}
+
+function resolveTierColor(tier: string, isAllDay: boolean): string {
+  return isAllDay ? allDayTierColor(tier) : tierColor(tier);
+}
+
 function variantColor(variant: string): string {
   return PINNACLE_VARIANT_COLORS[variant] ?? "#9CA3AF";
 }
@@ -1561,7 +1580,7 @@ export default function SniperPage() {
                           {deal.tier}
                         </span>
                       ) : (
-                        <span style={{ color: tierColor(deal.tier), fontWeight: 600, fontSize: "var(--text-xs)" }}>
+                        <span style={{ color: resolveTierColor(deal.tier, isAllDay), fontWeight: 600, fontSize: "var(--text-xs)" }}>
                           {deal.tier.charAt(0) + deal.tier.slice(1).toLowerCase()}
                         </span>
                       )}
@@ -1678,7 +1697,7 @@ export default function SniperPage() {
                     <td style={{ padding: "8px 12px" }}>
                       <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
                         {deal.thumbnailUrl ? (
-                          <SniperThumbnailPreview thumbUrl={deal.thumbnailUrl} playerName={deal.playerName} tierColor={tierColor(deal.tier)}>
+                          <SniperThumbnailPreview thumbUrl={deal.thumbnailUrl} playerName={deal.playerName} tierColor={resolveTierColor(deal.tier, isAllDay)}>
                             <img
                               src={isAllDay ? deal.thumbnailUrl.replace("width=256", "width=512") : deal.thumbnailUrl}
                               alt={deal.playerName}
@@ -1714,7 +1733,7 @@ export default function SniperPage() {
                             {deal.tier}
                           </span>
                         ) : (
-                          <span className={deal.tier.toUpperCase() === "LEGENDARY" ? "rpc-tier-glow-legendary" : deal.tier.toUpperCase() === "ULTIMATE" ? "rpc-tier-glow-ultimate" : deal.tier.toUpperCase() === "RARE" ? "rpc-tier-glow-rare" : ""} style={{ color: tierColor(deal.tier), fontWeight: 600 }}>
+                          <span className={deal.tier.toUpperCase() === "LEGENDARY" ? "rpc-tier-glow-legendary" : deal.tier.toUpperCase() === "ULTIMATE" ? "rpc-tier-glow-ultimate" : deal.tier.toUpperCase() === "RARE" ? "rpc-tier-glow-rare" : ""} style={{ color: resolveTierColor(deal.tier, isAllDay), fontWeight: 600 }}>
                             {deal.tier.charAt(0) + deal.tier.slice(1).toLowerCase()}
                           </span>
                         )}

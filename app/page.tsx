@@ -6,6 +6,7 @@ import SiteFooter from "@/components/SiteFooter";
 import MobileNav from "@/components/MobileNav";
 import SupportChatConnected from "@/components/SupportChatConnected";
 import RpcLogo from "@/components/RpcLogo";
+import { publishedCollections } from "@/lib/collections";
 
 const condensedFont = "'Barlow Condensed', sans-serif";
 const monoFont = "'Share Tech Mono', monospace";
@@ -103,12 +104,22 @@ const PULSE_COLLECTION_META: Record<string, { label: string; icon: string; accen
   "disney-pinnacle": { label: "Disney Pinnacle", icon: "\u2728", accent: "#A855F7" },
 };
 
-const QUICK_COLLECTIONS = [
-  { id: "nba-top-shot", label: "NBA Top Shot", icon: "\u{1F3C0}", accent: "#E03A2F" },
-  { id: "nfl-all-day", label: "NFL All Day", icon: "\u{1F3C8}", accent: "#4F94D4" },
-  { id: "laliga-golazos", label: "LaLiga Golazos", icon: "\u26BD", accent: "#22C55E" },
-  { id: "disney-pinnacle", label: "Disney Pinnacle", icon: "\u2728", accent: "#A855F7" },
-];
+const QUICK_COLLECTIONS = publishedCollections().map((c) => ({
+  id: c.id,
+  label: c.label,
+  icon: c.icon,
+  accent: c.accent,
+}));
+
+interface OverviewSummary {
+  totalEditions: number;
+  highConfCount: number;
+  volume24h: number;
+}
+
+interface PerCollectionStat extends OverviewSummary {
+  id: string;
+}
 
 export default function HomePage() {
   const [pulse, setPulse] = useState<MarketPulse | null>(null);
@@ -117,6 +128,7 @@ export default function HomePage() {
   const [crossPulseLoading, setCrossPulseLoading] = useState(true);
   const [crossDeals, setCrossDeals] = useState<CrossDealsResponse | null>(null);
   const [crossDealsLoading, setCrossDealsLoading] = useState(true);
+  const [kpis, setKpis] = useState<OverviewSummary | null>(null);
 
   useEffect(() => {
     setPulseLoading(true);
@@ -147,6 +159,30 @@ export default function HomePage() {
       .finally(() => setCrossDealsLoading(false));
   }, []);
 
+  useEffect(() => {
+    // Aggregate per-collection overview-stats into a single KPI block.
+    // /api/overview-stats is per-collection, so fan out and sum.
+    let cancelled = false;
+    Promise.all(
+      QUICK_COLLECTIONS.map((c) =>
+        fetch(`/api/overview-stats?collection=${encodeURIComponent(c.id)}`, { cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null)
+      )
+    ).then((results) => {
+      if (cancelled) return;
+      const agg: OverviewSummary = { totalEditions: 0, highConfCount: 0, volume24h: 0 };
+      for (const r of results) {
+        if (!r || typeof r !== "object") continue;
+        agg.totalEditions += Number(r.totalEditions ?? 0) || 0;
+        agg.highConfCount += Number(r.highConfCount ?? 0) || 0;
+        agg.volume24h += Number(r.volume24h ?? 0) || 0;
+      }
+      setKpis(agg);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <div style={{ minHeight: "100vh", background: "#080808", color: "#fff" }}>
       <style>{`
@@ -158,7 +194,6 @@ export default function HomePage() {
         @media(max-width:768px){
           .rpc-main{padding:16px 16px 80px!important;}
         }
-        .rpc-coll-card:hover .rpc-coll-glow{box-shadow:0 0 12px var(--glow-color)!important;border-color:var(--glow-color)!important;}
       `}</style>
 
       {/* Header */}
@@ -177,13 +212,45 @@ export default function HomePage() {
       <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
 
         {/* Hero */}
-        <section style={{ textAlign: "center", marginBottom: 40, paddingTop: 24 }}>
+        <section style={{ textAlign: "center", marginBottom: 32, paddingTop: 24 }}>
           <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
-            <RpcLogo size={100} />
+            <RpcLogo size={92} />
           </div>
-          <p style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.45)", letterSpacing: "0.06em", maxWidth: 480, margin: "0 auto" }}>
-            Collector intelligence for NBA Top Shot, NFL All Day, LaLiga Golazos &amp; Disney Pinnacle. FMV pricing, sniper deals, badge tracking, and portfolio analytics.
+          <h1 style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 34, letterSpacing: "0.04em", textTransform: "uppercase", color: "#fff", lineHeight: 1.05, marginBottom: 8 }}>
+            Rip Packs City
+          </h1>
+          <p style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.55)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 14 }}>
+            Multi-Collection Sports NFT Intelligence
           </p>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 12px", border: "1px solid rgba(224,58,47,0.45)", borderRadius: 999, background: "rgba(224,58,47,0.10)" }}>
+            <span style={{ fontSize: 14 }}>{"\u{1F3C0}"}</span>
+            <span style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: RED }}>
+              {"Portland Trail Blazers \u00B7 Team Captain"}
+            </span>
+          </div>
+        </section>
+
+        {/* Aggregate KPIs */}
+        <section style={{ marginBottom: 24 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+            {(() => {
+              const total = kpis?.totalEditions ?? null;
+              const high = kpis?.highConfCount ?? null;
+              const coverage = total && total > 0 ? Math.round(((high ?? 0) / total) * 100) : null;
+              const vol = kpis?.volume24h ?? null;
+              const stats: Array<{ label: string; value: string; color: string }> = [
+                { label: "Total Editions", value: total != null ? total.toLocaleString() : "…", color: "#fff" },
+                { label: "FMV Coverage", value: coverage != null ? `${coverage}%` : "…", color: "#34D399" },
+                { label: "24h Volume", value: vol != null ? fmtDollars(vol) : "…", color: RED },
+              ];
+              return stats.map((s) => (
+                <div key={s.label} style={{ background: "#18181b", border: "1px solid #27272a", borderRadius: 8, padding: "10px 12px" }}>
+                  <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 }}>{s.label}</div>
+                  <div style={{ fontSize: 20, fontFamily: condensedFont, fontWeight: 800, color: s.color, lineHeight: 1 }}>{s.value}</div>
+                </div>
+              ));
+            })()}
+          </div>
         </section>
 
         {/* Cross-collection Market Pulse */}
@@ -267,34 +334,47 @@ export default function HomePage() {
           <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)", marginBottom: 12 }}>
             &#9670; COLLECTIONS &#9670;
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
             {QUICK_COLLECTIONS.map((col) => (
               <Link
                 key={col.id}
-                href={`/${col.id}/overview`}
-                className="rpc-coll-card"
+                href={`/${col.id}/collection`}
                 style={{
                   background: "rgba(255,255,255,0.03)",
                   border: "1px solid rgba(255,255,255,0.08)",
                   borderRadius: 8,
-                  padding: "16px 14px 12px",
-                  position: "relative",
+                  padding: "16px 14px 14px",
                   borderBottom: `2px solid ${col.accent}`,
-                  transition: "all 0.2s ease",
                   textDecoration: "none",
                   color: "#fff",
-                  display: "block",
-                  // @ts-expect-error CSS custom property
-                  "--glow-color": `${col.accent}66`,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
                 }}
               >
-                <div className="rpc-coll-glow" style={{ position: "absolute", inset: 0, borderRadius: 8, border: "1px solid transparent", transition: "all 0.2s ease", pointerEvents: "none" }} />
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 24 }}>{col.icon}</span>
                   <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 14, textTransform: "uppercase", letterSpacing: "0.04em", lineHeight: 1.2 }}>
                     {col.label}
                   </div>
                 </div>
+                <span
+                  style={{
+                    alignSelf: "flex-start",
+                    fontFamily: condensedFont,
+                    fontWeight: 700,
+                    fontSize: 10,
+                    letterSpacing: "0.14em",
+                    textTransform: "uppercase",
+                    color: col.accent,
+                    border: `1px solid ${col.accent}55`,
+                    background: `${col.accent}14`,
+                    borderRadius: 4,
+                    padding: "3px 8px",
+                  }}
+                >
+                  Browse
+                </span>
               </Link>
             ))}
           </div>
@@ -344,10 +424,8 @@ function CrossCollectionDeals({ data, loading }: { data: CrossDealsResponse | nu
           ))}
         </div>
       ) : deals.length === 0 ? (
-        <div style={{ padding: "20px 18px", display: "flex", alignItems: "center", justifyContent: "center", gap: 12, fontSize: 12, fontFamily: monoFont, color: "rgba(255,255,255,0.45)", letterSpacing: "0.06em" }}>
-          <span style={{ width: 12, height: 12, border: "2px solid rgba(255,255,255,0.15)", borderTopColor: RED, borderRadius: "50%", display: "inline-block", animation: "rpcSpin 0.9s linear infinite" }} />
-          <span>No cross-collection deals right now &mdash; Top Shot deals loading&hellip;</span>
-          <style>{`@keyframes rpcSpin { to { transform: rotate(360deg); } }`}</style>
+        <div style={{ padding: "20px 18px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontFamily: monoFont, color: "rgba(255,255,255,0.45)", letterSpacing: "0.06em" }}>
+          <span>No cross-collection deals right now.</span>
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
@@ -439,7 +517,7 @@ function MarketPulseWidget(props: { pulse: MarketPulse | null; loading: boolean 
   return (
     <section style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "14px 18px", marginBottom: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#34D399", animation: "pulse 2s infinite" }} />
+        <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#34D399" }} />
         <span style={{ fontSize: 9, fontFamily: monoFont, letterSpacing: "0.2em", color: "rgba(255,255,255,0.45)", textTransform: "uppercase" }}>Market Pulse</span>
         <span style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.2)", letterSpacing: "0.1em", marginLeft: "auto" }}>60s cache</span>
       </div>
