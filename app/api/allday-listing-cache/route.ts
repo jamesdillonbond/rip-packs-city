@@ -19,6 +19,13 @@ const AD_CONTRACT_NAME = "AllDay"
 const FLOWTY_PROXY_URL =
   "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/flowty-proxy"
 const FLOWTY_PROXY_TOKEN = "rippackscity2026"
+const AD_GQL_PROXY = process.env.AD_PROXY_URL ?? ""
+const AD_GQL_SECRET = process.env.AD_PROXY_SECRET ?? ""
+const AD_GQL_FALLBACK = "https://nflallday.com/consumer/graphql"
+const AD_GQL_PAGE_SIZE = 100
+const AD_GQL_MAX_PAGES = 70
+const AD_GQL_PAGE_TIMEOUT_MS = 8000
+const FMV_UPSERT_CHUNK = 500
 // Dual-sort sweep constants. We fetch three pages sorted salePrice asc
 // (captures the cheap/floor listings) and three sorted salePrice desc
 // (captures the expensive tail that price-asc pagination never reaches).
@@ -57,6 +64,108 @@ type NFT = {
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+}
+
+type AlldayMarketRow = {
+  edition_flow_id: string
+  lowest_price: string
+  average_sale: string
+  total_listings: number
+}
+
+const AD_GQL_QUERY = `query SearchMarketplaceEditions($first: Int!, $after: String, $sortBy: EditionSortBy) {
+  searchMarketplaceEditions(input: { first: $first, after: $after, sortBy: $sortBy }) {
+    totalCount
+    pageInfo { endCursor hasNextPage }
+    edges {
+      node {
+        editionFlowID
+        lowestPrice
+        averageSale
+        totalListings
+      }
+    }
+  }
+}`
+
+async function fetchAlldayMarketplaceAllPages(): Promise<AlldayMarketRow[]> {
+  const url = AD_GQL_PROXY || AD_GQL_FALLBACK
+  const useProxy = !!AD_GQL_PROXY
+  const rows: AlldayMarketRow[] = []
+  let cursor: string | null = null
+
+  for (let pageNum = 0; pageNum < AD_GQL_MAX_PAGES; pageNum++) {
+    const headers: Record<string, string> = { "Content-Type": "application/json" }
+    if (useProxy && AD_GQL_SECRET) headers["X-Proxy-Secret"] = AD_GQL_SECRET
+
+    const controller = new AbortController()
+    const to = setTimeout(() => controller.abort(), AD_GQL_PAGE_TIMEOUT_MS)
+
+    let body: any
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          query: AD_GQL_QUERY,
+          variables: {
+            first: AD_GQL_PAGE_SIZE,
+            after: cursor,
+            sortBy: "LISTED_DATE_DESC",
+          },
+        }),
+        signal: controller.signal,
+      })
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "")
+        console.log(
+          `[allday-listing-cache] GQL page ${pageNum} http ${res.status}: ${txt.slice(0, 200)}`
+        )
+        break
+      }
+      body = await res.json()
+    } catch (err) {
+      console.log(
+        `[allday-listing-cache] GQL page ${pageNum} fetch error: ${String(err)}`
+      )
+      break
+    } finally {
+      clearTimeout(to)
+    }
+
+    const data = body?.data?.searchMarketplaceEditions
+    if (!data) {
+      const errs = body?.errors ? JSON.stringify(body.errors).slice(0, 200) : ""
+      console.log(
+        `[allday-listing-cache] GQL page ${pageNum} missing data ${errs}`
+      )
+      break
+    }
+
+    const edges = Array.isArray(data.edges) ? data.edges : []
+    for (const edge of edges) {
+      const node = edge?.node
+      if (!node?.editionFlowID) continue
+      const totalListingsRaw = node.totalListings
+      const totalListings =
+        typeof totalListingsRaw === "number"
+          ? totalListingsRaw
+          : parseInt(String(totalListingsRaw ?? 0), 10) || 0
+      rows.push({
+        edition_flow_id: String(node.editionFlowID),
+        lowest_price: node.lowestPrice != null ? String(node.lowestPrice) : "",
+        average_sale: node.averageSale != null ? String(node.averageSale) : "",
+        total_listings: totalListings,
+      })
+    }
+
+    if (!data.pageInfo?.hasNextPage) break
+    const next = data.pageInfo.endCursor
+    if (!next) break
+    cursor = String(next)
+  }
+
+  return rows
 }
 
 function delay(ms: number) {
@@ -132,6 +241,12 @@ async function runListingCache() {
     editionsMapped: 0,
     fmvRpcCalled: false,
     fmvSalesCalled: false,
+    fmv_populated: {
+      upserted: 0,
+      skipped: 0,
+      no_edition: 0,
+      editions_fetched: 0,
+    },
   }
 
   try {
@@ -323,6 +438,47 @@ async function runListingCache() {
     console.log("[allday-listing-cache] 0 rows upserted — preserving prior cache")
   }
 
+  // Phase 2: populate marketplace FMV snapshots from the AllDay GQL marketplace
+  // endpoint. Best-effort — failures here must not fail the overall pipeline.
+  try {
+    const marketRows = await fetchAlldayMarketplaceAllPages()
+    stats.fmv_populated.editions_fetched = marketRows.length
+    if (marketRows.length > 0) {
+      for (let i = 0; i < marketRows.length; i += FMV_UPSERT_CHUNK) {
+        const chunk = marketRows.slice(i, i + FMV_UPSERT_CHUNK)
+        const { data, error } = await supabaseAdmin.rpc(
+          "upsert_allday_marketplace_fmv",
+          { p_rows: JSON.stringify(chunk) as any }
+        )
+        if (error) {
+          console.log(
+            `[allday-listing-cache] upsert_allday_marketplace_fmv chunk ${i} error: ${error.message}`
+          )
+          continue
+        }
+        const row = Array.isArray(data) ? data[0] : data
+        if (row && typeof row === "object") {
+          stats.fmv_populated.upserted += Number(row.upserted ?? 0) || 0
+          stats.fmv_populated.skipped += Number(row.skipped ?? 0) || 0
+          stats.fmv_populated.no_edition += Number(row.no_edition ?? 0) || 0
+        }
+      }
+      console.log(
+        `[allday-listing-cache] marketplace fmv populated: ${JSON.stringify(
+          stats.fmv_populated
+        )}`
+      )
+    } else {
+      console.log("[allday-listing-cache] marketplace fetch returned 0 rows")
+    }
+  } catch (err) {
+    console.log(
+      `[allday-listing-cache] marketplace fmv phase threw (non-fatal): ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    )
+  }
+
   // Regenerate ASK_ONLY FMV snapshots from cached listings, then refresh
   // sales-based FMV so editions with sales get SALES_ONLY / HIGH upgrades
   // alongside the listing-based ASK_ONLY rows created above.
@@ -374,6 +530,7 @@ async function runListingCache() {
           editions_mapped: stats.editionsMapped,
           fmv_rpc_called: stats.fmvRpcCalled,
           fmv_sales_called: stats.fmvSalesCalled,
+          fmv_populated: stats.fmv_populated,
           duration_ms: Date.now() - startedAt,
         },
       })
@@ -391,4 +548,16 @@ async function runListingCache() {
       })}`
     )
   }
+
+  return { ...stats, durationMs: Date.now() - startedAt, startedAt: startedAtIso }
+}
+
+export async function POST(req: NextRequest) {
+  const auth = req.headers.get("authorization") ?? ""
+  const bearer = auth.replace(/^Bearer\s+/i, "")
+  const urlToken = req.nextUrl.searchParams.get("token") ?? ""
+  if (!TOKEN || (bearer !== TOKEN && urlToken !== TOKEN)) return unauthorized()
+
+  const result = await runListingCache()
+  return NextResponse.json(result)
 }
