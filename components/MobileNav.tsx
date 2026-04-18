@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { getLastCollection } from "@/lib/active-collection";
+import { getCollection } from "@/lib/collections";
 
 const ICON_SIZE = 22;
 
@@ -50,6 +51,25 @@ function IconSets({ color }: { color: string }) {
   );
 }
 
+function IconBadges({ color }: { color: string }) {
+  return (
+    <svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="12 2 15 9 22 9.5 17 14.5 18.5 22 12 18 5.5 22 7 14.5 2 9.5 9 9 12 2" />
+    </svg>
+  );
+}
+
+function IconAnalytics({ color }: { color: string }) {
+  return (
+    <svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <line x1="3" y1="21" x2="21" y2="21" />
+      <rect x="5" y="12" width="3" height="7" />
+      <rect x="10.5" y="7" width="3" height="12" />
+      <rect x="16" y="14" width="3" height="5" />
+    </svg>
+  );
+}
+
 function IconProfile({ color }: { color: string }) {
   return (
     <svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -64,34 +84,43 @@ const ICON_COMPONENTS = {
   wallet: IconWallet,
   sniper: IconSniper,
   sets: IconSets,
+  badges: IconBadges,
+  analytics: IconAnalytics,
   profile: IconProfile,
 } as const;
 
+type IconKey = keyof typeof ICON_COMPONENTS;
+
+function thirdTabFor(collection: string): { label: string; iconKey: IconKey; href: string } {
+  if (collection === "nfl-all-day") {
+    return { label: "BADGES", iconKey: "badges", href: `/${collection}/badges` };
+  }
+  if (collection === "disney-pinnacle" || collection === "laliga-golazos" || collection === "ufc") {
+    return { label: "ANALYTICS", iconKey: "analytics", href: `/${collection}/analytics` };
+  }
+  return { label: "SETS", iconKey: "sets", href: `/${collection}/sets` };
+}
+
 export default function MobileNav() {
-  const pathname = usePathname();
-  const [collectionId, setCollectionId] = useState("nba-top-shot");
-  const [walletHref, setWalletHref] = useState("/" + "nba-top-shot" + "/collection");
+  const pathname = usePathname() ?? "/";
+  const [fallbackCollection, setFallbackCollection] = useState("nba-top-shot");
 
   useEffect(() => {
-    const cid = getLastCollection();
-    setCollectionId(cid);
-    try {
-      const savedAddress = localStorage.getItem("rpc_last_wallet");
-      if (savedAddress) {
-        setWalletHref("/" + cid + "/collection?address=" + encodeURIComponent(savedAddress));
-      } else {
-        setWalletHref("/" + cid + "/collection");
-      }
-    } catch {
-      setWalletHref("/" + cid + "/collection");
-    }
+    setFallbackCollection(getLastCollection());
   }, []);
 
-  const tabs: { label: string; iconKey: keyof typeof ICON_COMPONENTS; href: string }[] = [
+  const collection = useMemo(() => {
+    const seg = pathname.split("/").filter(Boolean)[0] ?? "";
+    return getCollection(seg) ? seg : fallbackCollection;
+  }, [pathname, fallbackCollection]);
+
+  const accent = getCollection(collection)?.accent ?? "#E03A2F";
+
+  const tabs: { label: string; iconKey: IconKey; href: string }[] = [
     { label: "HOME", iconKey: "home", href: "/" },
-    { label: "COLLECTION", iconKey: "wallet", href: walletHref },
-    { label: "SNIPER", iconKey: "sniper", href: `/${collectionId}/sniper` },
-    { label: "SETS", iconKey: "sets", href: `/${collectionId}/sets` },
+    { label: "COLLECTION", iconKey: "wallet", href: `/${collection}/collection` },
+    { label: "SNIPER", iconKey: "sniper", href: `/${collection}/sniper` },
+    thirdTabFor(collection),
     { label: "PROFILE", iconKey: "profile", href: "/profile" },
   ];
 
@@ -114,8 +143,11 @@ export default function MobileNav() {
       className="rpc-mobile-nav"
     >
       {tabs.map((tab) => {
-        const isActive = pathname === tab.href || pathname.startsWith(tab.href.split("?")[0] + "/");
-        const color = isActive ? "#E03A2F" : "var(--rpc-text-ghost)";
+        const isActive =
+          tab.href === "/"
+            ? pathname === "/"
+            : pathname === tab.href || pathname.startsWith(tab.href + "/");
+        const color = isActive ? accent : "var(--rpc-text-ghost)";
         const Icon = ICON_COMPONENTS[tab.iconKey];
         return (
           <Link
