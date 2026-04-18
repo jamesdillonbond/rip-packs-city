@@ -16,6 +16,7 @@ const RED = "#E03A2F";
 
 interface PlatformPerCollection {
   slug: string;
+  frontend_slug?: string | null;
   edition_count?: number | null;
   fmv_pct?: number | null;
   volume_24h?: number | null;
@@ -71,19 +72,13 @@ function fmtUsd0(n: number): string {
   return "$" + Math.round(n).toLocaleString();
 }
 
-function normalizeSlug(slug: string): string {
-  return slug.replace(/_/g, "-");
-}
-
-// Build a slug → { label, icon, accent } lookup covering hyphen *and* underscore
-// variants, so rows from /api/platform-stats (which uses DB slugs) resolve.
-const COLLECTION_REGISTRY = (() => {
-  const all = publishedCollections();
+// Registry keyed by collection.id (the frontend slug — "nba-top-shot", "ufc",
+// etc.). /api/platform-stats emits `frontend_slug` on every row, so we use
+// that directly and no longer need to coerce DB slugs client-side.
+const COLLECTION_REGISTRY: Record<string, { id: string; label: string; shortLabel: string; icon: string; accent: string }> = (() => {
   const out: Record<string, { id: string; label: string; shortLabel: string; icon: string; accent: string }> = {};
-  for (const c of all) {
-    const entry = { id: c.id, label: c.label, shortLabel: c.shortLabel, icon: c.icon, accent: c.accent };
-    out[c.id] = entry;
-    out[c.id.replace(/-/g, "_")] = entry;
+  for (const c of publishedCollections()) {
+    out[c.id] = { id: c.id, label: c.label, shortLabel: c.shortLabel, icon: c.icon, accent: c.accent };
   }
   return out;
 })();
@@ -224,15 +219,14 @@ export default function HomePage() {
               <div key={i} style={{ flex: "1 1 220px", minWidth: 220, height: 96, background: "#18181b", border: "1px solid #27272a", borderRadius: 8, opacity: 0.6 }} />
             ))}
             {!platformLoading && perCollection.map((row) => {
-              const rawSlug = String(row.slug ?? "");
-              const hyphenSlug = normalizeSlug(rawSlug);
-              const meta = COLLECTION_REGISTRY[rawSlug] ?? COLLECTION_REGISTRY[hyphenSlug] ?? { id: hyphenSlug, label: hyphenSlug, shortLabel: hyphenSlug, icon: "\u{1F4CA}", accent: "#9CA3AF" };
+              const frontendSlug = String(row.frontend_slug ?? row.slug ?? "");
+              const meta = COLLECTION_REGISTRY[frontendSlug] ?? { id: frontendSlug, label: frontendSlug, shortLabel: frontendSlug, icon: "\u{1F4CA}", accent: "#9CA3AF" };
               const editions = Number(row.edition_count ?? 0) || 0;
               const fmvCoverage = Number(row.fmv_pct ?? 0) || 0;
               const volume = Number(row.volume_24h ?? 0) || 0;
               return (
                 <Link
-                  key={hyphenSlug}
+                  key={meta.id}
                   href={`/${meta.id}/overview`}
                   style={{
                     flex: "1 1 220px",
