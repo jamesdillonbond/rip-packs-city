@@ -28,14 +28,31 @@ export default function WalletHydrator() {
       return;
     }
 
-    if (!ownerKey || !walletAddress) return;
+    if (!ownerKey) return;
 
     const now = Date.now();
     const last = lastHydrated ? Number(lastHydrated) : 0;
-    if (last && now - last < HYDRATION_TTL_MS) return;
+    // Only apply the TTL guard when we already have a wallet address cached.
+    // Pre-rewrite users have rpc_owner_key but no rpc_wallet_address — they
+    // need to hit /api/wallet/profile once to backfill the localStorage key.
+    if (walletAddress && last && now - last < HYDRATION_TTL_MS) return;
 
-    fetch(`/api/wallet/profile?ownerKey=${encodeURIComponent(ownerKey)}`)
-      .catch(() => { /* silent */ });
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/wallet/profile?ownerKey=${encodeURIComponent(ownerKey!)}`
+        );
+        if (res.ok) {
+          const data = await res.json().catch(() => null);
+          const serverWallet = data?.wallet_address;
+          if (typeof serverWallet === "string" && serverWallet) {
+            try {
+              localStorage.setItem("rpc_wallet_address", serverWallet);
+            } catch { /* ignore */ }
+          }
+        }
+      } catch { /* silent */ }
+    })();
 
     try {
       localStorage.setItem("rpc_last_hydrated", now.toString());

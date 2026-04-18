@@ -9,22 +9,44 @@ export async function GET(req: NextRequest) {
 
   const normalized = collection.replace(/-/g, "_")
 
-  const { data, error } = await (supabaseAdmin as any).rpc("get_collection_stats", {
-    p_slug: normalized,
-  })
+  try {
+    const { data, error } = await (supabaseAdmin as any).rpc("get_collection_stats", {
+      p_slug: normalized,
+    })
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      return NextResponse.json(
+        { error: "stats_unavailable" },
+        {
+          status: 200,
+          headers: {
+            "Cache-Control": "no-store",
+            "Access-Control-Allow-Origin": "*",
+          },
+        }
+      )
+    }
+
+    if (data && typeof data === "object" && !Array.isArray(data) && (data as any).error) {
+      return NextResponse.json(data, { status: 404 })
+    }
+
+    return NextResponse.json(data, {
+      headers: {
+        "Cache-Control": "s-maxage=300, stale-while-revalidate=60",
+        "Access-Control-Allow-Origin": "*",
+      },
+    })
+  } catch {
+    return NextResponse.json(
+      { error: "stats_unavailable" },
+      {
+        status: 200,
+        headers: {
+          "Cache-Control": "no-store",
+          "Access-Control-Allow-Origin": "*",
+        },
+      }
+    )
   }
-
-  if (data && typeof data === "object" && !Array.isArray(data) && (data as any).error) {
-    return NextResponse.json(data, { status: 404 })
-  }
-
-  return NextResponse.json(data, {
-    headers: {
-      "Cache-Control": "s-maxage=300, stale-while-revalidate=60",
-      "Access-Control-Allow-Origin": "*",
-    },
-  })
 }

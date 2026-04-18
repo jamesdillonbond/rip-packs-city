@@ -154,6 +154,11 @@ async function runListingCache() {
     })
     if (!pageResp) break
     const nfts = Array.isArray(pageResp.nfts) ? pageResp.nfts : []
+    if (page === 0 && nfts.length > 0) {
+      console.log(
+        `[topshot-listing-cache] sample_row ${JSON.stringify(nfts[0]).slice(0, 2000)}`
+      )
+    }
     stats.totalFetched += nfts.length
     const reportedTotal = typeof pageResp.total === "number" ? pageResp.total : null
     const prevSeenSize = seenFlowIds.size
