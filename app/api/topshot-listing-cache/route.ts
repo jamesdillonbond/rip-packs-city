@@ -64,7 +64,9 @@ function toNumber(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-async function fetchPage(offset: number) {
+async function fetchPage(
+  offset: number
+): Promise<{ status: number; nfts?: any[]; total?: number; errorText?: string }> {
   const res = await fetch(FLOWTY_PROXY_URL, {
     method: "POST",
     headers: {
@@ -79,9 +81,10 @@ async function fetchPage(offset: number) {
   })
   if (!res.ok) {
     const text = await res.text().catch(() => "")
-    throw new Error(`flowty-proxy ${res.status}: ${text.slice(0, 200)}`)
+    return { status: res.status, errorText: text.slice(0, 200) }
   }
-  return (await res.json()) as { nfts?: any[]; total?: number }
+  const body = (await res.json()) as { nfts?: any[]; total?: number }
+  return { status: res.status, nfts: body?.nfts, total: body?.total }
 }
 
 export async function GET(req: NextRequest) {
@@ -148,17 +151,36 @@ async function runListingCache() {
 
   for (let page = 0; page < MAX_PAGES; page++) {
     const offset = page * PAGE_LIMIT
+    console.log(
+      "[topshot-listing-cache] request_params",
+      JSON.stringify({
+        contractAddress: TS_CONTRACT_ADDRESS,
+        contractName: TS_CONTRACT_NAME,
+        page,
+        offset,
+      })
+    )
     const pageResp = await fetchPage(offset).catch((err) => {
       console.log(`[topshot-listing-cache] Page offset=${offset} failed: ${String(err)}`)
       return null
     })
     if (!pageResp) break
-    const nfts = Array.isArray(pageResp.nfts) ? pageResp.nfts : []
-    if (page === 0 && nfts.length > 0) {
+    const rawRows = pageResp.nfts
+    console.log(
+      "[topshot-listing-cache] fetch_result",
+      JSON.stringify({
+        status: pageResp.status,
+        count: rawRows?.length ?? "undefined",
+        sample: rawRows?.[0] ? JSON.stringify(rawRows[0]).slice(0, 500) : "EMPTY",
+      })
+    )
+    if (pageResp.status >= 400) {
       console.log(
-        `[topshot-listing-cache] sample_row ${JSON.stringify(nfts[0]).slice(0, 2000)}`
+        `[topshot-listing-cache] non_ok_status status=${pageResp.status} errorText=${pageResp.errorText ?? ""}`
       )
+      break
     }
+    const nfts = Array.isArray(rawRows) ? rawRows : []
     stats.totalFetched += nfts.length
     const reportedTotal = typeof pageResp.total === "number" ? pageResp.total : null
     const prevSeenSize = seenFlowIds.size
