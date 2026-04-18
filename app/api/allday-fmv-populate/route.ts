@@ -59,6 +59,8 @@ async function fetchPage(cursor: string | null): Promise<PageResult> {
   const headers: Record<string, string> = { "Content-Type": "application/json" }
   if (useProxy && AD_GQL_SECRET) headers["X-Proxy-Secret"] = AD_GQL_SECRET
 
+  console.log('[allday-fmv-populate] endpoint:', url.slice(0, 30))
+
   const res = await fetch(url, {
     method: "POST",
     headers,
@@ -75,10 +77,18 @@ async function fetchPage(cursor: string | null): Promise<PageResult> {
 
   if (!res.ok) {
     const txt = await res.text().catch(() => "")
+    console.error('[allday-fmv-populate] page HTTP', res.status, txt.slice(0, 200))
     throw new Error(`GQL http ${res.status}: ${txt.slice(0, 200)}`)
   }
 
-  const body: any = await res.json()
+  const rawText = await res.text()
+  let body: any
+  try {
+    body = JSON.parse(rawText)
+  } catch (e) {
+    console.error('[allday-fmv-populate] JSON parse failed, raw:', rawText.slice(0, 500))
+    throw e
+  }
   const data = body?.data?.searchMarketplaceEditions
   if (!data) {
     const errs = body?.errors ? JSON.stringify(body.errors).slice(0, 200) : ""
@@ -114,6 +124,8 @@ export async function GET(req: NextRequest) {
   if (!TOKEN || urlToken !== TOKEN) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
+
+  console.log('[allday-fmv-populate] start, proxy=', (process.env.AD_PROXY_URL ?? '').slice(0, 30))
 
   const startedAt = new Date()
   const startedAtIso = startedAt.toISOString()
@@ -151,8 +163,7 @@ export async function GET(req: NextRequest) {
         break
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.log(`[allday-fmv-populate] page ${pageNum} error: ${msg}`)
+      console.error('[allday-fmv-populate] page FAILED:', err instanceof Error ? err.message : String(err))
       break
     }
   }
