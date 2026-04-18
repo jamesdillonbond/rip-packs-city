@@ -156,6 +156,7 @@ export async function GET(req: NextRequest) {
   let cursor: string | null = cursorBefore
   let hasNextPage = true
   const allRows: MarketRow[] = []
+  let lastError: string | null = null
 
   for (let pageNum = 0; pageNum < PAGES_PER_RUN; pageNum++) {
     try {
@@ -169,7 +170,8 @@ export async function GET(req: NextRequest) {
         break
       }
     } catch (err) {
-      console.error('[allday-fmv-populate] page FAILED:', err instanceof Error ? err.message : String(err))
+      lastError = err instanceof Error ? err.message : String(err)
+      console.error('[allday-fmv-populate] page FAILED:', lastError)
       break
     }
   }
@@ -251,5 +253,6 @@ export async function GET(req: NextRequest) {
     no_edition,
     cursor_after: cursorAfter,
     sweep_complete: sweepComplete,
+    debug_last_error: lastError ?? null,
   })
 }
