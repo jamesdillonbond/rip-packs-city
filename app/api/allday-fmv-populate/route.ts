@@ -51,6 +51,7 @@ type PageResult = {
   nodes: RawNode[]
   endCursor: string | null
   hasNextPage: boolean
+  nodeSample: any
 }
 
 async function fetchPage(cursor: string | null): Promise<PageResult> {
@@ -107,8 +108,9 @@ async function fetchPage(cursor: string | null): Promise<PageResult> {
 
   const endCursor = data.pageInfo?.endCursor ?? null
   const hasNextPage = !!data.pageInfo?.hasNextPage
+  const nodeSample = edges[0]?.node ?? null
 
-  return { nodes, endCursor: endCursor ? String(endCursor) : null, hasNextPage }
+  return { nodes, endCursor: endCursor ? String(endCursor) : null, hasNextPage, nodeSample }
 }
 
 export async function GET(req: NextRequest) {
@@ -143,10 +145,12 @@ export async function GET(req: NextRequest) {
   let hasNextPage = true
   const nodes: RawNode[] = []
   let lastError: string | null = null
+  let nodeSample: any = null
 
   for (let pageNum = 0; pageNum < PAGES_PER_RUN; pageNum++) {
     try {
       const page = await fetchPage(cursor)
+      if (nodeSample === null && page.nodeSample) nodeSample = page.nodeSample
       nodes.push(...page.nodes)
       cursor = page.endCursor
       hasNextPage = page.hasNextPage
@@ -242,5 +246,7 @@ export async function GET(req: NextRequest) {
     cursor_after: cursorAfter,
     sweep_complete: sweepComplete,
     debug_last_error: lastError ?? null,
+    debug_batch_size: nodes.length,
+    debug_node_sample: JSON.stringify(nodeSample ?? null),
   })
 }
