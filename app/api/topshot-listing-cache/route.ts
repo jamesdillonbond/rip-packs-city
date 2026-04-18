@@ -94,7 +94,15 @@ export async function GET(req: NextRequest) {
   if (!TOKEN || (bearer !== TOKEN && urlToken !== TOKEN)) return unauthorized()
 
   after(async () => {
-    await runListingCache()
+    try {
+      await runListingCache()
+    } catch (err) {
+      console.log(
+        `[topshot-listing-cache] after_unhandled: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      )
+    }
   })
 
   return NextResponse.json({
