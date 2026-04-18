@@ -1,1758 +1,617 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { getOwnerKey, setOwnerKey as saveOwnerKey, onOwnerKeyChange } from "@/lib/owner-key";
-import StatTile from "@/components/profile/StatTile";
-import PortfolioSparkline from "@/components/profile/PortfolioSparkline";
-import CostBasisCard from "@/components/profile/CostBasisCard";
-import TierBreakdownCard from "@/components/profile/TierBreakdownCard";
-import TopMoversCard from "@/components/profile/TopMoversCard";
-import CollectionBreakdownCard from "@/components/profile/CollectionBreakdownCard";
-import WatchlistCard from "@/components/profile/WatchlistCard";
-import AchievementsCard from "@/components/profile/AchievementsCard";
-import CrossCollectionPortfolio from "@/components/profile/CrossCollectionPortfolio";
-import EmailDigestSubscribe from "@/components/profile/EmailDigestSubscribe";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import MobileNav from "@/components/MobileNav";
+import SupportChatConnected from "@/components/SupportChatConnected";
 import RpcLogo from "@/components/RpcLogo";
-import PriceAlertsCard from "@/components/profile/PriceAlertsCard";
+import { publishedCollections } from "@/lib/collections";
 
-// ─── TYPES ────────────────────────────────────────────────────
-interface SavedWallet {
-  id: number;
-  owner_key: string;
-  wallet_addr: string;
-  username: string | null;
-  display_name: string | null;
-  accent_color: string;
-  pinned_at: string;
-  last_viewed: string | null;
-  cached_fmv: number | null;
-  cached_moment_count: number | null;
-  cached_top_tier: string | null;
-  cached_change_24h: number | null;
-  cached_badges: string[] | null;
-  cached_rpc_score?: number | null;
+const condensedFont = "'Barlow Condensed', sans-serif";
+const monoFont = "'Share Tech Mono', monospace";
+const ACCENT_RED = "#E03A2F";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface PerCollection {
+  collection_slug: string;
+  moment_count: number;
+  total_fmv_usd?: number | null;
+  fmv_usd?: number | null;
 }
 
-interface RecentSearch {
-  id: number;
-  query: string;
-  query_type: string;
-  searched_at: string;
+interface TopMoment {
+  moment_id?: string | null;
+  edition_name?: string | null;
+  player_name?: string | null;
+  character_name?: string | null;
+  tier?: string | null;
+  collection_slug?: string | null;
+  fmv_usd?: number | null;
 }
 
-interface TrophyMoment {
-  id?: number;
-  slot: number;
-  moment_id: string;
-  player_name: string | null;
-  set_name: string | null;
-  serial_number: number | null;
-  circulation_count: number | null;
-  tier: string | null;
-  thumbnail_url: string | null;
-  video_url: string | null;
-  fmv: number | null;
-  badges: string[] | null;
-  note?: string | null;
+interface Portfolio {
+  total_moments?: number;
+  total_fmv_usd?: number;
+  per_collection?: PerCollection[];
+  top_moments?: TopMoment[];
+  updated_at?: string | null;
 }
 
-interface SniperRow {
-  player: string;
-  set: string;
-  serial: string;
-  price: number;
-  fmv: number;
-  pct: number;
-  tier: string;
+interface ProfileResponse {
+  has_wallet: boolean;
+  wallet_address?: string | null;
+  topshot_username?: string | null;
+  display_name?: string | null;
+  portfolio?: Portfolio | null;
+  updated_at?: string | null;
 }
 
-interface MarketPulse {
-  commonFloor: number | null;
-  rareFloor: number | null;
-  legendaryFloor: number | null;
-  indexedEditions: number;
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function fmtUsd0(n: number): string {
+  return "$" + Math.round(n).toLocaleString();
 }
 
-interface ProfileBio {
-  display_name: string | null;
-  tagline: string | null;
-  favorite_team: string | null;
-  twitter: string | null;
-  discord: string | null;
-  avatar_url: string | null;
-  accent_color?: string | null;
+function truncateAddress(addr: string): string {
+  if (!addr) return "";
+  const clean = addr.startsWith("0x") ? addr : "0x" + addr;
+  if (clean.length <= 12) return clean;
+  return clean.slice(0, 6) + "\u2026" + clean.slice(-4);
 }
 
-interface SetProgress {
-  setId: string;
-  setName: string;
-  totalEditions: number;
-  ownedCount: number;
-  missingCount: number;
-  completionPct: number;
-  totalMissingCost: number | null;
-  lowestSingleAsk: number | null;
-}
-
-interface ActivityItem {
-  walletUsername: string;
-  walletAccent: string;
-  playerName: string;
-  setName: string;
-  serialNumber: number | null;
-  tier: string;
-  price: number;
-  soldAt: string;
-}
-
-interface PinPreview {
-  momentId: string;
-  playerName: string;
-  setName: string;
-  serialNumber: number | null;
-  circulationCount: number | null;
-  tier: string;
-  thumbnailUrl: string | null;
-  videoUrl: string | null;
-  fmv: number | null;
-  badges: string[] | null;
-}
-
-
-interface SuggestedMoment {
-  momentId: string;
-  playerName: string;
-  setName: string;
-  serialNumber: number | null;
-  circulationCount: number | null;
-  tier: string;
-  thumbnailUrl: string | null;
-  videoUrl: string | null;
-  fmv: number | null;
-}
-
-// ─── CONSTANTS ────────────────────────────────────────────────
-const ACCENT_CYCLE = ["#E03A2F", "#3B82F6", "#10B981", "#F59E0B", "#818CF8", "#F472B6"];
-const MAX_SLOTS = 6;
-
-// ─── HELPERS ──────────────────────────────────────────────────
-function fmtDollars(n: number): string {
-  if (n >= 1000) return "$" + (n / 1000).toFixed(1) + "K";
-  return "$" + n.toFixed(2);
-}
-
-function relTime(iso: string | null): string {
-  if (!iso) return "Never";
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 2) return "Just now";
-  if (mins < 60) return mins + "m ago";
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return hrs + "h ago";
-  return Math.floor(hrs / 24) + "d ago";
-}
-
-function tierColor(t: string | null): string {
-  if (t === "Legendary") return "#FFD700";
-  if (t === "Ultimate") return "#FF6B35";
-  if (t === "Rare") return "#818CF8";
-  if (t === "Uncommon") return "#14B8A6";
-  if (t === "Fandom") return "#34D399";
-  return "#94A3B8";
-}
-
-function typeColor(t: string): string {
-  if (t === "wallet") return "#E03A2F";
-  if (t === "moment") return "#F59E0B";
-  if (t === "edition") return "#818CF8";
-  if (t === "player") return "#34D399";
-  return "#3B82F6";
-}
-
-function pickAccent(index: number): string {
-  return ACCENT_CYCLE[index % ACCENT_CYCLE.length];
-}
-
-
-// ─── STYLE TOKENS (referencing rpc-tokens.css custom properties) ──
-const monoFont = "var(--font-mono)";
-const condensedFont = "var(--font-display)";
-
-const labelStyle: React.CSSProperties = {
-  fontSize: "var(--text-xs)" as any,
-  fontFamily: monoFont,
-  letterSpacing: "0.2em",
-  color: "var(--rpc-text-muted)",
-  textTransform: "uppercase",
-};
-
-const btnBase: React.CSSProperties = {
-  background: "var(--rpc-surface-raised)",
-  border: "1px solid var(--rpc-border)",
-  borderRadius: "var(--radius-sm)" as any,
-  padding: "4px 10px",
-  color: "var(--rpc-text-secondary)",
-  fontFamily: condensedFont,
-  fontWeight: 700,
-  fontSize: 10,
-  letterSpacing: "0.08em",
-  cursor: "pointer",
-  textTransform: "uppercase",
-  transition: "all var(--transition-fast)",
-};
-
-// ─── AVATAR COMPONENT ─────────────────────────────────────────
-function Avatar(props: { ownerKey: string; bio: ProfileBio | null; size?: number; fontSize?: number }) {
-  const size = props.size ?? 44;
-  const fontSize = props.fontSize ?? 16;
-  const initials = props.ownerKey ? props.ownerKey.slice(0, 2).toUpperCase() : "?";
-
-  if (props.bio?.avatar_url) {
-    return (
-      <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", border: "2px solid var(--rpc-red-border)", flexShrink: 0 }}>
-        <img
-          src={props.bio.avatar_url}
-          alt={props.ownerKey}
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          onError={function(e) {
-            // Fall back to initials on image error
-            e.currentTarget.style.display = "none";
-            if (e.currentTarget.parentElement) {
-              e.currentTarget.parentElement.innerHTML = initials;
-              Object.assign(e.currentTarget.parentElement.style, {
-                background: "var(--rpc-red-bg)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontFamily: "'Barlow Condensed', sans-serif",
-                fontWeight: 800,
-                fontSize: fontSize + "px",
-                color: "#E03A2F",
-              });
-            }
-          }}
-        />
-      </div>
-    );
+function tierColor(tier?: string | null): string {
+  switch ((tier || "").toLowerCase()) {
+    case "ultimate":   return "#EC4899";
+    case "legendary":  return "#F59E0B";
+    case "rare":       return "#818CF8";
+    case "challenger": return "#818CF8";
+    case "uncommon":   return "#14B8A6";
+    case "fandom":     return "#34D399";
+    case "common":     return "#9CA3AF";
+    case "contender":  return "#9CA3AF";
+    default:           return "#6B7280";
   }
-
-  return (
-    <div style={{ width: size, height: size, borderRadius: "50%", background: "var(--rpc-red-bg)", border: "1px solid var(--rpc-red-border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize, fontWeight: 800, color: "var(--rpc-red)", fontFamily: condensedFont, flexShrink: 0 }}>
-      {initials}
-    </div>
-  );
 }
 
-// ─── PIN PARAM READER ─────────────────────────────────────────
-function PinParamReader(props: {
-  trophies: (TrophyMoment | null)[];
-  onPinRequest: (slot: number, momentId: string) => void;
-}) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-
-  useEffect(function() {
-    const momentId = searchParams.get("pin");
-    if (!momentId) return;
-    router.replace("/profile");
-    const firstEmpty = props.trophies.findIndex(function(t) { return t === null; });
-    const slot = firstEmpty >= 0 ? firstEmpty + 1 : 1;
-    props.onPinRequest(slot, momentId);
-  }, [searchParams, props.trophies, props.onPinRequest, router]);
-
-  return null;
+// Normalize DB slugs (nba_top_shot, ufc_strike) → frontend registry ids
+// (nba-top-shot, ufc). Everything else: underscores → hyphens.
+function normalizeCollectionSlug(raw: string): string {
+  if (raw === "ufc_strike") return "ufc";
+  return raw.replace(/_/g, "-");
 }
 
-// ─── SIGN IN BANNER ───────────────────────────────────────────
-async function resolveOwnerKeyToUsername(input: string): Promise<string> {
-  if (/^0x[a-fA-F0-9]{16}$/.test(input)) {
-    try {
-      const r = await fetch("/api/wallet-search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ input, offset: 0, limit: 1 }) });
-      if (r.ok) {
-        const json = await r.json();
-        if (json?.summary?.username) return json.summary.username;
-      }
-    } catch {}
+const REGISTRY_BY_ID = (() => {
+  const out: Record<string, { id: string; label: string; shortLabel: string; icon: string; accent: string }> = {};
+  for (const c of publishedCollections()) {
+    out[c.id] = { id: c.id, label: c.label, shortLabel: c.shortLabel, icon: c.icon, accent: c.accent };
   }
-  return input;
+  return out;
+})();
+
+function metaForSlug(rawSlug: string | null | undefined) {
+  const id = normalizeCollectionSlug(rawSlug ?? "");
+  return REGISTRY_BY_ID[id] ?? { id, label: id || "Collection", shortLabel: id || "—", icon: "\u{1F4CA}", accent: "#9CA3AF" };
 }
 
-function SignInBanner(props: { onSetKey: (key: string) => void }) {
-  const [val, setVal] = useState("");
-  const [focused, setFocused] = useState(false);
-  const [resolving, setResolving] = useState(false);
+// ── Component ─────────────────────────────────────────────────────────────────
 
-  async function handleSignIn() {
-    const trimmed = val.trim();
-    if (!trimmed) return;
-    setResolving(true);
-    try {
-      const resolved = await resolveOwnerKeyToUsername(trimmed);
-      props.onSetKey(resolved);
-    } finally {
-      setResolving(false);
-    }
-  }
+export default function ProfilePage() {
+  const [ownerKey, setOwnerKey] = useState<string | null>(null);
+  const [initializing, setInitializing] = useState(true);
 
-  return (
-    <div className="rpc-hud" style={{ borderRadius: "var(--radius-lg)" as any, padding: "22px 28px", marginBottom: 16, animation: "fadeIn 0.4s ease both" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
-        <div style={{ width: 52, height: 52, borderRadius: "50%", background: "var(--rpc-red-bg)", border: "1px solid var(--rpc-red-border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>
-          👤
-        </div>
-        <div style={{ flex: 1, minWidth: 200 }}>
-          <div className="rpc-heading" style={{ fontSize: 18, marginBottom: 4 }}>
-            Set Up Your Rip Packs City Profile
-          </div>
-          <div style={{ fontSize: 10, fontFamily: monoFont, color: "var(--rpc-text-muted)", lineHeight: 1.7 }}>
-            Save wallets · track searches · pin trophy moments · build your FMV sparkline.
-            <br />Just your Top Shot username — no account, no password. Stays signed in everywhere.
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0, flexWrap: "wrap" }}>
-          <input
-            value={val}
-            onChange={function(e) { setVal(e.target.value); }}
-            onKeyDown={function(e) { if (e.key === "Enter" && val.trim()) handleSignIn(); }}
-            onFocus={function() { setFocused(true); }}
-            onBlur={function() { setFocused(false); }}
-            placeholder="your Top Shot username…"
-            style={{ background: "var(--rpc-surface-hover)", border: "1px solid " + (focused ? "var(--rpc-red)" : "var(--rpc-red-border)"), borderRadius: 7, padding: "9px 16px", color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 11, outline: "none", width: 220, transition: "border-color var(--transition-fast)" }}
-          />
-          <button
-            onClick={handleSignIn}
-            disabled={resolving}
-            className="rpc-btn-primary"
-            style={{ borderRadius: 7, padding: "9px 20px", fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", flexShrink: 0, opacity: resolving ? 0.6 : 1 }}
-          >
-            {resolving ? "Resolving..." : "Sign In"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+  const [profile, setProfile] = useState<ProfileResponse | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
-// ─── TICKER ───────────────────────────────────────────────────
-function Ticker() {
-  const items = [
-    "WALLET ANALYZER — FMV + Flowty asks + badge intel",
-    "PACK EV CALCULATOR — expected value vs price",
-    "SNIPER — real-time deals below FMV",
-    "BADGE TRACKER — Top Shot Debut · Fresh · Rookie Year",
-    "PROFILE — trophy case · sets tracker · activity feed · sparkline",
-  ];
-  const doubled = [...items, ...items];
-  return (
-    <div style={{ background: "var(--rpc-surface)", borderBottom: "1px solid var(--rpc-red-border)", overflow: "hidden", height: 28, display: "flex", alignItems: "center" }}>
-      <div style={{ background: "var(--rpc-red)", padding: "0 12px", fontSize: 9, fontFamily: monoFont, letterSpacing: "0.15em", color: "#fff", height: "100%", display: "flex", alignItems: "center", flexShrink: 0, fontWeight: 700 }}>LIVE</div>
-      <div style={{ overflow: "hidden", flex: 1 }}>
-        <div style={{ display: "flex", gap: 64, animation: "ticker 38s linear infinite", whiteSpace: "nowrap", paddingLeft: 24 }}>
-          {doubled.map(function(item, i) { return <span key={i} style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.45)", letterSpacing: "0.07em" }}>{"⚡ " + item}</span>; })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-
-
-// ─── ACQUISITION BREAKDOWN CARD ──────────────────────────────
-const ACQ_COLORS: Record<string, string> = {
-  pack_pull: "#3B82F6",
-  marketplace: "#10B981",
-  challenge_reward: "#F59E0B",
-  loan_default: "#F87171",
-  gift: "#818CF8",
-  airdrop: "#34D399",
-};
-const ACQ_LABELS: Record<string, string> = {
-  pack_pull: "Pack Pulls",
-  marketplace: "Marketplace",
-  challenge_reward: "Rewards",
-  loan_default: "Loan Default",
-  gift: "Gifts",
-  airdrop: "Airdrops",
-};
-
-interface AcqBreakdownItem {
-  method: string;
-  count: number;
-  total_spent: number;
-}
-
-function AcquisitionBreakdownCard(props: { ownerKey: string }) {
-  const [data, setData] = useState<{ breakdown: AcqBreakdownItem[]; total_moments: number; total_spent: number; locked_count: number } | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(function() {
-    if (!props.ownerKey) return;
-    setLoading(true);
-    // Resolve wallet addresses from saved_wallets, then call acquisition-stats for each
-    fetch("/api/profile/saved-wallets?ownerKey=" + encodeURIComponent(props.ownerKey))
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(walletData) {
-        const wallets: Array<{ wallet_addr: string }> = walletData?.wallets ?? [];
-        if (wallets.length === 0) { setLoading(false); return; }
-        // Use first wallet for now
-        const addr = wallets[0].wallet_addr;
-        const walletHex = addr.startsWith("0x") ? addr : "0x" + addr;
-        return fetch("/api/acquisition-stats?wallet=" + encodeURIComponent(walletHex))
-          .then(function(r) { return r.ok ? r.json() : null; })
-          .then(function(d) { if (d && Array.isArray(d.breakdown)) setData(d); });
-      })
-      .catch(function() {})
-      .finally(function() { setLoading(false); });
-  }, [props.ownerKey]);
-
-  const breakdown = data?.breakdown ?? [];
-  const total = data?.total_moments ?? 0;
-  const totalSpent = data?.total_spent ?? 0;
-
-  return (
-    <section className="rpc-card" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "16px 18px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-        <span style={labelStyle}>◉ Acquisition Breakdown</span>
-        {total > 0 && <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.3)" }}>{total.toLocaleString() + " moments"}</span>}
-      </div>
-      {loading ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {[80, 60].map(function(w, i) { return <div key={i} style={{ width: w + "%", height: 18, background: "rgba(255,255,255,0.04)", borderRadius: 4, animation: "pulse 1.6s ease-in-out infinite" }} />; })}
-        </div>
-      ) : !data || breakdown.length === 0 ? (
-        <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", padding: "6px 0" }}>No acquisition data yet.</div>
-      ) : (
-        <>
-          {/* Stacked horizontal bar */}
-          <div style={{ display: "flex", height: 20, borderRadius: 6, overflow: "hidden", marginBottom: 14 }}>
-            {breakdown.map(function(item) {
-              const pct = total > 0 ? (item.count / total) * 100 : 0;
-              if (pct < 0.5) return null;
-              const color = ACQ_COLORS[item.method] ?? "#6B7280";
-              return (
-                <div
-                  key={item.method}
-                  title={ACQ_LABELS[item.method] ?? item.method}
-                  style={{ width: pct + "%", background: color, minWidth: pct > 2 ? 8 : 2, transition: "width 0.3s ease" }}
-                />
-              );
-            })}
-          </div>
-          {/* Legend rows */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {breakdown.map(function(item) {
-              const color = ACQ_COLORS[item.method] ?? "#6B7280";
-              const label = ACQ_LABELS[item.method] ?? item.method;
-              const pct = total > 0 ? ((item.count / total) * 100).toFixed(1) : "0";
-              return (
-                <div key={item.method} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
-                    <span style={{ fontSize: 11, fontFamily: condensedFont, fontWeight: 700, color: "rgba(255,255,255,0.7)" }}>{label}</span>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontSize: 11, fontFamily: monoFont, color: "rgba(255,255,255,0.5)" }}>{item.count.toLocaleString()}</span>
-                    <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", width: 40, textAlign: "right" }}>{pct + "%"}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {/* Total spent */}
-          {totalSpent > 0 && (
-            <div style={{ paddingTop: 10, marginTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-              <span style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.15em", textTransform: "uppercase" }}>Total Spent</span>
-              <span style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 18, color: "#fff" }}>{fmtDollars(totalSpent)}</span>
-            </div>
-          )}
-        </>
-      )}
-    </section>
-  );
-}
-
-
-
-// ─── MARKET PULSE ─────────────────────────────────────────────
-function MarketPulseWidget(props: { pulse: MarketPulse | null; loading: boolean }) {
-  const stats = [
-    { label: "Common Floor", value: props.pulse?.commonFloor != null ? fmtDollars(props.pulse.commonFloor) : "—", color: "#6B7280" },
-    { label: "Rare Floor", value: props.pulse?.rareFloor != null ? fmtDollars(props.pulse.rareFloor) : "—", color: "#818CF8" },
-    { label: "Legendary Floor", value: props.pulse?.legendaryFloor != null ? fmtDollars(props.pulse.legendaryFloor) : "—", color: "#F59E0B" },
-    { label: "Indexed Editions", value: props.pulse?.indexedEditions ? props.pulse.indexedEditions.toLocaleString() : "—", color: "#34D399" },
-  ];
-  return (
-    <section className="rpc-card" style={{ borderRadius: "var(--radius-lg)" as any, padding: "14px 18px", marginBottom: 14 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--rpc-success)", animation: "pulse 2s infinite" }} />
-        <span style={labelStyle}>Market Pulse</span>
-        <span style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.2)", letterSpacing: "0.1em", marginLeft: "auto" }}>60s cache · from RPC index</span>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12 }}>
-        {stats.map(function(s) {
-          return (
-            <div key={s.label}>
-              <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.1em", marginBottom: 4, textTransform: "uppercase" }}>{s.label}</div>
-              <div style={{ fontSize: 18, fontFamily: condensedFont, fontWeight: 800, color: props.loading ? "rgba(255,255,255,0.2)" : s.color }}>{props.loading ? "…" : s.value}</div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-// ─── BIO WIDGET ───────────────────────────────────────────────
-function BioWidget(props: { ownerKey: string; bio: ProfileBio | null; onSave: (bio: ProfileBio) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState<ProfileBio>({ display_name: "", tagline: "", favorite_team: "", twitter: "", discord: "", avatar_url: "", accent_color: "#E03A2F" });
+  const [walletInput, setWalletInput] = useState("");
+  const [usernameInput, setUsernameInput] = useState("");
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  useEffect(function() {
-    setForm({
-      display_name: props.bio?.display_name ?? "",
-      tagline: props.bio?.tagline ?? "",
-      favorite_team: props.bio?.favorite_team ?? "",
-      twitter: props.bio?.twitter ?? "",
-      discord: props.bio?.discord ?? "",
-      avatar_url: props.bio?.avatar_url ?? "",
-      accent_color: props.bio?.accent_color ?? "#E03A2F",
-    });
-  }, [props.bio]);
-
-  async function handleSave() {
-    setSaving(true);
+  // Initialize owner key + pre-fill wallet from ?wallet= query
+  useEffect(() => {
     try {
-      const res = await fetch("/api/profile/bio", {
+      let key = localStorage.getItem("rpc_owner_key");
+      if (!key) {
+        key = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `rpc-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        localStorage.setItem("rpc_owner_key", key);
+      }
+      setOwnerKey(key);
+
+      const prefill = new URLSearchParams(window.location.search).get("wallet");
+      if (prefill) setWalletInput(prefill);
+    } catch {
+      // localStorage blocked — create a volatile key so the flow still works
+      setOwnerKey(`rpc-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    } finally {
+      setInitializing(false);
+    }
+  }, []);
+
+  const loadProfile = useCallback(async (key: string) => {
+    setProfileLoading(true);
+    setProfileError(null);
+    try {
+      const res = await fetch(`/api/wallet/profile?ownerKey=${encodeURIComponent(key)}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: ProfileResponse = await res.json();
+      setProfile(data);
+    } catch (err) {
+      setProfileError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setProfileLoading(false);
+    }
+  }, []);
+
+  // Fetch profile once we have an owner key
+  useEffect(() => {
+    if (!ownerKey) return;
+    loadProfile(ownerKey);
+  }, [ownerKey, loadProfile]);
+
+  const handleSave = useCallback(async () => {
+    if (!ownerKey) return;
+    const address = walletInput.trim().toLowerCase();
+    if (!address) {
+      setSaveError("Wallet address required");
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const res = await fetch("/api/wallet/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ownerKey: props.ownerKey,
-          displayName: form.display_name,
-          tagline: form.tagline,
-          favoriteTeam: form.favorite_team,
-          twitter: form.twitter,
-          discord: form.discord,
-          avatarUrl: form.avatar_url,
-          accentColor: form.accent_color,
+          ownerKey,
+          walletAddress: address,
+          topshotUsername: usernameInput.trim() || undefined,
         }),
       });
-      if (res.ok) { const d = await res.json(); props.onSave(d.bio); setEditing(false); }
-    } finally { setSaving(false); }
-  }
-
-  if (!editing) {
-    return (
-      <div className="rpc-card" style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 18px", borderRadius: "var(--radius-lg)" as any, marginBottom: 14 }}>
-        <Avatar ownerKey={props.ownerKey} bio={props.bio} size={48} fontSize={17} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="rpc-heading" style={{ fontSize: 17 }}>{props.bio?.display_name || props.ownerKey}</div>
-          <div style={{ fontSize: 10, fontFamily: monoFont, color: "var(--rpc-text-muted)", marginTop: 2 }}>{props.bio?.tagline || "NBA Top Shot Collector"}</div>
-          {(props.bio?.twitter || props.bio?.favorite_team || props.bio?.discord) && (
-            <div style={{ display: "flex", gap: 10, marginTop: 5, flexWrap: "wrap" }}>
-              {props.bio?.favorite_team && <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)" }}>{"🏀 " + props.bio.favorite_team}</span>}
-              {props.bio?.twitter && <span style={{ fontSize: 9, fontFamily: monoFont, color: "#1DA1F2" }}>{"𝕏 @" + props.bio.twitter}</span>}
-              {props.bio?.discord && <span style={{ fontSize: 9, fontFamily: monoFont, color: "#7289DA" }}>{"⌘ " + props.bio.discord}</span>}
-            </div>
-          )}
-        </div>
-        <button onClick={function() { setEditing(true); }} style={Object.assign({}, btnBase, { fontSize: 9, flexShrink: 0 })}>{props.bio?.display_name ? "Edit" : "Set Bio"}</button>
-      </div>
-    );
-  }
-
-  const fields = [
-    { key: "display_name", label: "Display Name", placeholder: "e.g. Trevor D." },
-    { key: "tagline", label: "Tagline", placeholder: "e.g. Chasing Legendaries since 2020", wide: true },
-    { key: "avatar_url", label: "Profile Picture URL", placeholder: "https://… (any image URL)", wide: true },
-    { key: "favorite_team", label: "Favorite Team", placeholder: "e.g. Los Angeles Lakers" },
-    { key: "twitter", label: "𝕏 / Twitter", placeholder: "username (no @)" },
-    { key: "discord", label: "Discord", placeholder: "username" },
-  ];
-
-  return (
-    <div className="rpc-hud" style={{ padding: "16px 18px", borderRadius: "var(--radius-lg)" as any, marginBottom: 14 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-        {fields.map(function(f) {
-          return (
-            <div key={f.key} style={(f as any).wide ? { gridColumn: "1 / -1" } : {}}>
-              <div style={Object.assign({}, labelStyle, { marginBottom: 4 })}>{f.label}</div>
-              <input value={(form as any)[f.key] ?? ""} onChange={function(e) { setForm(function(prev) { return Object.assign({}, prev, { [f.key]: e.target.value }); }); }} placeholder={f.placeholder} style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 5, padding: "6px 10px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none", letterSpacing: "0.04em" }} />
-            </div>
-          );
-        })}
-        <div style={{ gridColumn: "1 / -1" }}>
-          <div style={Object.assign({}, labelStyle, { marginBottom: 4 })}>Accent Color</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 5, padding: "6px 10px" }}>
-            <div style={{ width: 16, height: 16, borderRadius: "50%", background: form.accent_color ?? "#E03A2F", border: "1px solid rgba(255,255,255,0.25)", flexShrink: 0 }} />
-            <input type="color" value={form.accent_color ?? "#E03A2F"} onChange={function(e) { setForm(function(prev) { return Object.assign({}, prev, { accent_color: e.target.value }); }); }} style={{ background: "transparent", border: "none", padding: 0, width: 32, height: 22, cursor: "pointer" }} />
-            <span style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.7)", letterSpacing: "0.06em" }}>{form.accent_color ?? "#E03A2F"}</span>
-          </div>
-        </div>
-      </div>
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-        <button onClick={function() { setEditing(false); }} className="rpc-btn-ghost" style={{ padding: "6px 14px", fontSize: 11 }}>Cancel</button>
-        <button onClick={handleSave} disabled={saving} className="rpc-btn-primary" style={{ padding: "6px 14px", fontSize: 11, opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : "Save Profile"}</button>
-      </div>
-    </div>
-  );
-}
-
-// ─── TROPHY SLOT ──────────────────────────────────────────────
-function TrophySlot(props: { slot: number; trophy: TrophyMoment | null; ownerKey: string; onPin: (slot: number) => void; onRemove: (slot: number) => void }) {
-  const [hovered, setHovered] = useState(false);
-  const [videoError, setVideoError] = useState(false);
-  const t = props.trophy;
-  const tc = tierColor(t?.tier ?? null);
-  const slotLabels = ["", "🥇 SLOT 1", "🥈 SLOT 2", "🥉 SLOT 3", "⭐ SLOT 4", "⭐ SLOT 5", "⭐ SLOT 6"];
-
-  if (!t) {
-    return (
-      <div style={{ background: "rgba(255,255,255,0.02)", border: "1px dashed rgba(255,255,255,0.12)", borderRadius: 10, aspectRatio: "3/4", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, cursor: props.ownerKey ? "pointer" : "default", transition: "all 0.2s" }}
-        onMouseEnter={function(e) { if (props.ownerKey) e.currentTarget.style.borderColor = "rgba(224,58,47,0.4)"; }}
-        onMouseLeave={function(e) { e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)"; }}
-        onClick={function() { if (props.ownerKey) props.onPin(props.slot); }}>
-        <div style={{ fontSize: 28, opacity: 0.2 }}>🏆</div>
-        <div style={Object.assign({}, labelStyle, { textAlign: "center" })}>{slotLabels[props.slot]}</div>
-        {props.ownerKey && <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.2)", textAlign: "center", padding: "0 12px" }}>Click to pin · or use ⭐ Pin in Wallet</div>}
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ position: "relative", borderRadius: 10, overflow: "hidden", aspectRatio: "3/4", border: "1px solid " + tc + "44", cursor: "pointer", transition: "all 0.2s", transform: hovered ? "translateY(-3px)" : "translateY(0)", boxShadow: hovered ? "0 12px 40px " + tc + "22" : "none" }}
-      onMouseEnter={function() { setHovered(true); }}
-      onMouseLeave={function() { setHovered(false); }}>
-      <div style={{ position: "absolute", inset: 0, background: "#111" }}>
-        {t.video_url && !videoError && hovered ? (
-          <video src={t.video_url} autoPlay muted loop playsInline onError={function() { setVideoError(true); }} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-        ) : (
-          <img src={t.thumbnail_url ?? ""} alt={t.player_name ?? "Moment"} style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={function(e) { e.currentTarget.style.opacity = "0.3"; }} />
-        )}
-      </div>
-      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.3) 50%, transparent 100%)" }} />
-      <div style={{ position: "absolute", top: 10, left: 10 }}>
-        <span style={{ fontSize: 8, fontFamily: monoFont, color: tc, background: tc + "22", border: "1px solid " + tc + "44", padding: "2px 6px", borderRadius: 3, letterSpacing: "0.1em" }}>{(t.tier ?? "COMMON").toUpperCase()}</span>
-      </div>
-      {props.ownerKey && hovered && (
-        <button onClick={function(e) { e.stopPropagation(); props.onRemove(props.slot); }} style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.7)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "50%", width: 24, height: 24, color: "rgba(255,255,255,0.6)", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
-      )}
-      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "12px 12px 14px" }}>
-        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 15, color: "#fff", letterSpacing: "0.04em", lineHeight: 1.1, marginBottom: 4 }}>{t.player_name ?? "Unknown"}</div>
-        <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", marginBottom: 6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.set_name ?? ""}</div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: 11, fontFamily: condensedFont, fontWeight: 700, color: tc }}>{t.serial_number != null ? ("#" + t.serial_number + " / " + (t.circulation_count ?? "?")) : ""}</span>
-          {t.fmv != null && <span style={{ fontSize: 10, fontFamily: monoFont, color: "#34D399" }}>{fmtDollars(t.fmv)}</span>}
-        </div>
-        {(t.badges ?? []).length > 0 && (
-          <div style={{ display: "flex", gap: 3, marginTop: 5 }}>
-            {(t.badges ?? []).slice(0, 3).map(function(b, i) { return <span key={i} style={{ fontSize: 10 }}>{b}</span>; })}
-          </div>
-        )}
-        {t.note && (
-          <div style={{ marginTop: 5, fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.75)", fontStyle: "italic", lineHeight: 1.3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", textOverflow: "ellipsis" }}>
-            &ldquo;{t.note}&rdquo;
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── PIN MODAL ────────────────────────────────────────────────
-interface CollectionMoment {
-  momentId: string;
-  playerName: string;
-  setName: string;
-  serialNumber: number | null;
-  circulationCount: number | null;
-  tier: string;
-  thumbnailUrl: string | null;
-  videoUrl: string | null;
-  fmv: number | null;
-}
-
-function PinModal(props: { slot: number; ownerKey: string; prefilled: PinPreview | null; savedWallets: SavedWallet[]; onClose: () => void; onPinned: (t: TrophyMoment) => void }) {
-  const [tab, setTab] = useState<"collection" | "byid">(props.prefilled ? "collection" : "collection");
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [preview, setPreview] = useState<PinPreview | null>(props.prefilled);
-  const [note, setNote] = useState("");
-
-  // Collection tab state
-  const [moments, setMoments] = useState<CollectionMoment[]>([]);
-  const [momentsLoading, setMomentsLoading] = useState(false);
-  const [momentsError, setMomentsError] = useState("");
-  const [search, setSearch] = useState("");
-  const [tierFilter, setTierFilter] = useState<string>("All");
-
-  const firstWalletAddr = props.savedWallets.length > 0 ? props.savedWallets[0].wallet_addr : null;
-
-  useEffect(function() { if (props.prefilled) setPreview(props.prefilled); }, [props.prefilled]);
-
-  // Fetch moments from first saved wallet when Collection tab is active
-  useEffect(function() {
-    if (props.prefilled) return;
-    if (tab !== "collection") return;
-    if (!firstWalletAddr) return;
-    setMomentsLoading(true);
-    setMomentsError("");
-    // Pull directly from wallet_moments_cache (wallet_address column) via
-    // /api/collection-moments rather than triggering a fresh on-chain
-    // wallet-search — the cache is already populated from the user's most
-    // recent collection load and avoids the Flow/GQL timeout that was
-    // surfacing as "Could not load moments."
-    fetch("/api/collection-moments?wallet=" + encodeURIComponent(firstWalletAddr) + "&limit=200&sortBy=fmv_desc")
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(d) {
-        if (!d) { setMomentsError("Could not load moments."); return; }
-        const rows: any[] = d.moments ?? d.rows ?? d.data ?? [];
-        const mapped: CollectionMoment[] = rows.map(function(r: any) {
-          return {
-            momentId: String(r.momentId ?? r.moment_id ?? r.id ?? ""),
-            playerName: r.playerName ?? r.player_name ?? "Unknown",
-            setName: r.setName ?? r.set_name ?? "",
-            serialNumber: r.serialNumber ?? r.serial_number ?? r.serial ?? null,
-            circulationCount: r.circulationCount ?? r.circulation_count ?? r.mintSize ?? null,
-            tier: r.tier ?? "Common",
-            thumbnailUrl: r.thumbnailUrl ?? r.thumbnail_url ?? null,
-            videoUrl: r.videoUrl ?? r.video_url ?? null,
-            fmv: (typeof r.fmv === "number" ? r.fmv : (typeof r.fmv_usd === "number" ? r.fmv_usd : null)),
-          };
-        }).filter(function(m: CollectionMoment) { return !!m.momentId; });
-        if (mapped.length === 0) { setMomentsError("No moments in cache yet — load your collection first."); }
-        setMoments(mapped);
-      })
-      .catch(function() { setMomentsError("Could not load moments."); })
-      .finally(function() { setMomentsLoading(false); });
-  }, [tab, firstWalletAddr, props.prefilled]);
-
-  async function handleLookup() {
-    if (!input.trim()) return;
-    setLoading(true); setError(""); setPreview(null);
-    try {
-      const res = await fetch("/api/market-snapshot?momentId=" + encodeURIComponent(input.trim()));
-      if (!res.ok) throw new Error("Not found");
-      const d = await res.json();
-      setPreview({ momentId: input.trim(), playerName: d.playerName ?? "Unknown", setName: d.setName ?? "", serialNumber: d.serialNumber ?? null, circulationCount: d.circulationCount ?? null, tier: d.tier ?? "Common", thumbnailUrl: d.thumbnailUrl ?? null, videoUrl: d.videoUrl ?? null, fmv: d.fmv ?? null, badges: d.badges ?? null });
-    } catch { setError("Could not find that moment. Check the ID and try again."); }
-    finally { setLoading(false); }
-  }
-
-  async function handlePin(target?: PinPreview) {
-    const pinData = target ?? preview;
-    if (!pinData) return;
-    setLoading(true);
-    try {
-      const res = await fetch("/api/profile/trophy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ownerKey: props.ownerKey, slot: props.slot, momentId: pinData.momentId, playerName: pinData.playerName, setName: pinData.setName, serialNumber: pinData.serialNumber, circulationCount: pinData.circulationCount, tier: pinData.tier, thumbnailUrl: pinData.thumbnailUrl, videoUrl: pinData.videoUrl, fmv: pinData.fmv, badges: pinData.badges, note: note.trim() || null }) });
-      if (!res.ok) throw new Error("Failed");
-      const d = await res.json();
-      props.onPinned(d.trophy);
-      props.onClose();
-    } catch { setError("Failed to save. Try again."); }
-    finally { setLoading(false); }
-  }
-
-  function handleCardClick(m: CollectionMoment) {
-    const pinData: PinPreview = {
-      momentId: m.momentId,
-      playerName: m.playerName,
-      setName: m.setName,
-      serialNumber: m.serialNumber,
-      circulationCount: m.circulationCount,
-      tier: m.tier,
-      thumbnailUrl: m.thumbnailUrl,
-      videoUrl: m.videoUrl,
-      fmv: m.fmv,
-      badges: null,
-    };
-    handlePin(pinData);
-  }
-
-  const tc = tierColor(preview?.tier ?? null);
-
-  // Client-side filter
-  const filteredMoments = moments.filter(function(m) {
-    if (tierFilter !== "All" && (m.tier ?? "").toLowerCase() !== tierFilter.toLowerCase()) return false;
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      if (!(m.playerName ?? "").toLowerCase().includes(q)) return false;
-    }
-    return true;
-  });
-
-  const tierPills = ["All", "Legendary", "Rare", "Common"];
-
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: "var(--z-modal)" as any, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-lg)" as any, padding: 24, width: "100%", maxWidth: 560, animation: "fadeIn 0.2s ease both", boxShadow: "var(--shadow-elevated)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <div className="rpc-heading" style={{ fontSize: 17 }}>{"Pin to Slot " + props.slot}</div>
-          <button onClick={props.onClose} style={Object.assign({}, btnBase, { padding: "3px 8px" })}>✕</button>
-        </div>
-
-        {props.prefilled && preview ? (
-          /* Prefilled path: straight-to-confirm */
-          <>
-            <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: 14, marginBottom: 14 }}>
-              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                {preview.thumbnailUrl && <img src={preview.thumbnailUrl} alt={preview.playerName} style={{ width: 56, height: 56, borderRadius: 6, objectFit: "cover", border: "1px solid " + tc + "44" }} onError={function(e) { e.currentTarget.style.display = "none"; }} />}
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 16, color: "#fff", marginBottom: 2 }}>{preview.playerName}</div>
-                  <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", marginBottom: 8 }}>{preview.setName}</div>
-                  <div style={{ display: "flex", gap: 12 }}>
-                    {preview.serialNumber != null && <div><div style={Object.assign({}, labelStyle, { marginBottom: 1 })}>Serial</div><div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: tc }}>{"#" + preview.serialNumber}</div></div>}
-                    {preview.tier && <div><div style={Object.assign({}, labelStyle, { marginBottom: 1 })}>Tier</div><div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: tc }}>{preview.tier}</div></div>}
-                    {preview.fmv != null && <div><div style={Object.assign({}, labelStyle, { marginBottom: 1 })}>FMV</div><div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: "#34D399" }}>{fmtDollars(preview.fmv)}</div></div>}
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <div style={Object.assign({}, labelStyle, { marginBottom: 4 })}>Caption (optional)</div>
-              <input value={note} onChange={function(e) { setNote(e.target.value.slice(0, 120)); }} maxLength={120} placeholder="Add a short caption for this trophy…" style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, padding: "8px 12px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none" }} />
-            </div>
-            {error && <div style={{ fontSize: 10, fontFamily: monoFont, color: "#F87171", marginBottom: 10 }}>{error}</div>}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={props.onClose} style={Object.assign({}, btnBase, { padding: "7px 14px" })}>Cancel</button>
-              <button onClick={function() { handlePin(); }} disabled={loading} style={Object.assign({}, btnBase, { background: "#E03A2F", color: "#fff", borderColor: "#E03A2F", padding: "7px 14px", opacity: loading ? 0.6 : 1 })}>
-                {loading ? "Saving…" : "Pin to Trophy Case"}
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            {/* Tabs */}
-            <div style={{ display: "flex", gap: 4, marginBottom: 14, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-              {([
-                { id: "collection", label: "My Collection" },
-                { id: "byid", label: "By ID" },
-              ] as const).map(function(t) {
-                const active = tab === t.id;
-                return (
-                  <button key={t.id} onClick={function() { setTab(t.id); }} style={{ background: "transparent", border: "none", borderBottom: active ? "2px solid #E03A2F" : "2px solid transparent", color: active ? "#fff" : "rgba(255,255,255,0.45)", padding: "8px 14px", fontFamily: condensedFont, fontWeight: 800, fontSize: 12, letterSpacing: "0.08em", cursor: "pointer", textTransform: "uppercase" }}>{t.label}</button>
-                );
-              })}
-            </div>
-
-            {tab === "collection" ? (
-              !firstWalletAddr ? (
-                <div style={{ fontSize: 11, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", padding: "20px 12px", lineHeight: 1.7, textAlign: "center", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 8 }}>
-                  Add a wallet to your profile first, then you can browse and pin moments from here.
-                </div>
-              ) : (
-                <>
-                  {/* Search + tier pills */}
-                  <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-                    <input value={search} onChange={function(e) { setSearch(e.target.value); }} placeholder="Search by player…" style={{ flex: 1, minWidth: 160, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, padding: "7px 12px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none" }} />
-                    <div style={{ display: "flex", gap: 4 }}>
-                      {tierPills.map(function(p) {
-                        const active = tierFilter === p;
-                        return <button key={p} onClick={function() { setTierFilter(p); }} style={Object.assign({}, btnBase, { fontSize: 9, background: active ? "rgba(224,58,47,0.18)" : "transparent", color: active ? "#E03A2F" : "rgba(255,255,255,0.5)", borderColor: active ? "rgba(224,58,47,0.4)" : "rgba(255,255,255,0.1)" })}>{p}</button>;
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Grid */}
-                  <div style={{ maxHeight: 420, overflowY: "auto", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, padding: 10, background: "rgba(0,0,0,0.3)" }}>
-                    {momentsLoading ? (
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-                        {[0,1,2,3,4,5].map(function(i) {
-                          return <div key={i} style={{ aspectRatio: "3/4", background: "rgba(255,255,255,0.04)", borderRadius: 6, animation: "pulse 1.6s ease-in-out infinite" }} />;
-                        })}
-                      </div>
-                    ) : momentsError ? (
-                      <div style={{ fontSize: 10, fontFamily: monoFont, color: "#F87171", padding: 16, textAlign: "center" }}>{momentsError}</div>
-                    ) : filteredMoments.length === 0 ? (
-                      <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", padding: 16, textAlign: "center" }}>No moments match these filters.</div>
-                    ) : (
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-                        {filteredMoments.map(function(m) {
-                          const mtc = tierColor(m.tier);
-                          return (
-                            <button key={m.momentId} onClick={function() { handleCardClick(m); }} disabled={loading} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid " + mtc + "44", borderRadius: 6, padding: 0, cursor: "pointer", overflow: "hidden", textAlign: "left", transition: "transform 0.12s, border-color 0.12s", opacity: loading ? 0.5 : 1 }} onMouseEnter={function(e) { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.borderColor = mtc; }} onMouseLeave={function(e) { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.borderColor = mtc + "44"; }}>
-                              <div style={{ aspectRatio: "1 / 1", background: "#111", overflow: "hidden" }}>
-                                {m.thumbnailUrl ? (
-                                  <img src={m.thumbnailUrl} alt={m.playerName} style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={function(e) { e.currentTarget.style.opacity = "0.2"; }} />
-                                ) : (
-                                  <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, color: mtc }}>◈</div>
-                                )}
-                              </div>
-                              <div style={{ padding: "6px 8px 8px" }}>
-                                <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 11, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.playerName}</div>
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 2 }}>
-                                  <span style={{ fontSize: 9, fontFamily: monoFont, color: mtc }}>{m.serialNumber != null ? "#" + m.serialNumber : ""}</span>
-                                  {m.fmv != null && <span style={{ fontSize: 9, fontFamily: monoFont, color: "#34D399" }}>{fmtDollars(m.fmv)}</span>}
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </>
-              )
-            ) : (
-              <>
-                <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", marginBottom: 12, lineHeight: 1.6 }}>Enter a moment ID from the Top Shot URL: nbatopshot.com/moment/XXXXXXXX</div>
-                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                  <input value={input} onChange={function(e) { setInput(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter") handleLookup(); }} placeholder="Moment ID…" style={{ flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, padding: "8px 12px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none" }} />
-                  <button onClick={handleLookup} disabled={loading} style={Object.assign({}, btnBase, { background: "#E03A2F", color: "#fff", borderColor: "#E03A2F", padding: "8px 14px", opacity: loading ? 0.6 : 1 })}>{loading ? "…" : "Look Up"}</button>
-                </div>
-                {preview && (
-                  <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: 12, marginBottom: 14 }}>
-                    <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 15, color: "#fff", marginBottom: 3 }}>{preview.playerName}</div>
-                    <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", marginBottom: 8 }}>{preview.setName}</div>
-                    <div style={{ display: "flex", gap: 14 }}>
-                      {preview.serialNumber != null && <div><div style={Object.assign({}, labelStyle, { marginBottom: 1 })}>Serial</div><div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: tc }}>{"#" + preview.serialNumber}</div></div>}
-                      {preview.tier && <div><div style={Object.assign({}, labelStyle, { marginBottom: 1 })}>Tier</div><div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: tc }}>{preview.tier}</div></div>}
-                      {preview.fmv != null && <div><div style={Object.assign({}, labelStyle, { marginBottom: 1 })}>FMV</div><div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: "#34D399" }}>{fmtDollars(preview.fmv)}</div></div>}
-                    </div>
-                  </div>
-                )}
-                {preview && (
-                  <div style={{ marginBottom: 14 }}>
-                    <div style={Object.assign({}, labelStyle, { marginBottom: 4 })}>Caption (optional)</div>
-                    <input value={note} onChange={function(e) { setNote(e.target.value.slice(0, 120)); }} maxLength={120} placeholder="Add a short caption for this trophy…" style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, padding: "8px 12px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none" }} />
-                  </div>
-                )}
-                {error && <div style={{ fontSize: 10, fontFamily: monoFont, color: "#F87171", marginBottom: 10 }}>{error}</div>}
-                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                  <button onClick={props.onClose} style={Object.assign({}, btnBase, { padding: "7px 14px" })}>Cancel</button>
-                  <button onClick={function() { handlePin(); }} disabled={!preview || loading} style={Object.assign({}, btnBase, { background: preview ? "#E03A2F" : "rgba(255,255,255,0.05)", color: preview ? "#fff" : "rgba(255,255,255,0.3)", borderColor: preview ? "#E03A2F" : "rgba(255,255,255,0.1)", padding: "7px 14px", opacity: loading ? 0.6 : 1 })}>
-                    {loading ? "Saving…" : "Pin to Trophy Case"}
-                  </button>
-                </div>
-              </>
-            )}
-            {tab === "collection" && error && <div style={{ fontSize: 10, fontFamily: monoFont, color: "#F87171", marginTop: 10 }}>{error}</div>}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── SETS PROGRESS ────────────────────────────────────────────
-function SetsProgressWidget(props: { savedWallets: SavedWallet[] }) {
-  const [sets, setSets] = useState<SetProgress[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const router = useRouter();
-
-  async function loadSets() {
-    if (!props.savedWallets.length) return;
-    setLoading(true);
-    try {
-      const w = props.savedWallets[0];
-      const q = w.username ?? w.wallet_addr;
-      const res = await fetch("/api/sets?wallet=" + encodeURIComponent(q) + "&skipAsks=1");
-      if (!res.ok) return;
-      const d = await res.json();
-      const inProgress: SetProgress[] = (d.sets ?? [])
-        .filter(function(s: SetProgress) { return s.completionPct > 0 && s.completionPct < 100; })
-        .sort(function(a: SetProgress, b: SetProgress) { return b.completionPct - a.completionPct; })
-        .slice(0, 3);
-      setSets(inProgress);
-      setLoaded(true);
-    } catch {} finally { setLoading(false); }
-  }
-
-  return (
-    <section className="rpc-card" style={{ borderRadius: "var(--radius-lg)" as any, padding: "14px 16px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: loaded && sets.length > 0 ? 12 : 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span className="rpc-label">◉ Sets Progress</span>
-          {props.savedWallets[0]?.username && <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.25)" }}>{"— " + props.savedWallets[0].username}</span>}
-        </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {loaded && <button onClick={function() { router.push("/nba-top-shot/sets?wallet=" + encodeURIComponent(props.savedWallets[0].username ?? props.savedWallets[0].wallet_addr)); }} style={Object.assign({}, btnBase, { fontSize: 9, color: "#F472B6", borderColor: "rgba(244,114,182,0.3)", background: "rgba(244,114,182,0.1)" })}>{"Full Sets →"}</button>}
-          {!loaded && <button onClick={loadSets} disabled={loading} style={Object.assign({}, btnBase, { fontSize: 9, opacity: loading ? 0.6 : 1 })}>{loading ? "Loading…" : "Load Sets"}</button>}
-        </div>
-      </div>
-      {loaded && sets.length === 0 && <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", padding: "8px 0" }}>No sets in progress found.</div>}
-      {sets.map(function(s) {
-        const pct = Math.round(s.completionPct);
-        const isClose = s.missingCount <= 3;
-        const barColor = isClose ? "#34D399" : "#E03A2F";
-        return (
-          <div key={s.setId} style={{ marginBottom: 8, padding: "10px 12px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-              <div style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
-                <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, color: "#fff", letterSpacing: "0.03em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.setName}</div>
-                <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", marginTop: 2 }}>
-                  {s.ownedCount + " / " + s.totalEditions + " owned"}
-                  {isClose && <span style={{ color: "#34D399", marginLeft: 6 }}>{"⚡ " + s.missingCount + " away"}</span>}
-                </div>
-              </div>
-              <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <div style={{ fontSize: 16, fontFamily: condensedFont, fontWeight: 800, color: barColor }}>{pct + "%"}</div>
-                {s.totalMissingCost != null && s.totalMissingCost > 0 && <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.3)" }}>{fmtDollars(s.totalMissingCost) + " to complete"}</div>}
-              </div>
-            </div>
-            <div style={{ height: 4, background: "rgba(255,255,255,0.07)", borderRadius: 2, overflow: "hidden" }}>
-              <div style={{ width: pct + "%", height: "100%", background: barColor, borderRadius: 2, transition: "width 0.6s ease" }} />
-            </div>
-            {isClose && (
-              <a
-                href="/nba-top-shot/sniper"
-                style={{ display: "inline-block", marginTop: 4, fontSize: 9, fontFamily: monoFont, color: "#34D399", textDecoration: "none" }}
-              >
-                → Find missing moments
-              </a>
-            )}
-          </div>
-        );
-      })}
-    </section>
-  );
-}
-
-// ─── ACTIVITY FEED ────────────────────────────────────────────
-function ActivityFeed(props: { savedWallets: SavedWallet[] }) {
-  const [items, setItems] = useState<ActivityItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-
-  async function loadActivity() {
-    if (!props.savedWallets.length) return;
-    setLoading(true);
-    try {
-      const results: ActivityItem[] = [];
-      for (const w of props.savedWallets.slice(0, 2)) {
-        try {
-          const res = await fetch("/api/edition-sales?wallet=" + encodeURIComponent(w.username ?? w.wallet_addr) + "&limit=5");
-          if (!res.ok) continue;
-          const d = await res.json();
-          (d.sales ?? d.rows ?? d.data ?? []).slice(0, 5).forEach(function(sale: any) {
-            results.push({ walletUsername: w.username ?? w.wallet_addr.slice(0, 10) + "…", walletAccent: w.accent_color, playerName: sale.playerName ?? sale.player ?? "Unknown", setName: sale.setName ?? sale.set ?? "", serialNumber: sale.serialNumber ?? null, tier: sale.tier ?? "Common", price: sale.price ?? sale.salePrice ?? 0, soldAt: sale.soldAt ?? sale.timestamp ?? new Date().toISOString() });
-          });
-        } catch {}
-      }
-      results.sort(function(a, b) { return new Date(b.soldAt).getTime() - new Date(a.soldAt).getTime(); });
-      setItems(results.slice(0, 10));
-      setLoaded(true);
-    } finally { setLoading(false); }
-  }
-
-  return (
-    <section className="rpc-card" style={{ borderRadius: "var(--radius-lg)" as any, overflow: "hidden" }}>
-      <div style={{ padding: "12px 16px", borderBottom: loaded && items.length > 0 ? "1px solid var(--rpc-border)" : "none", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span className="rpc-label">📈 Activity Feed</span>
-        {!loaded && <button onClick={loadActivity} disabled={loading} style={Object.assign({}, btnBase, { fontSize: 9, opacity: loading ? 0.6 : 1 })}>{loading ? "Loading…" : "Load Activity"}</button>}
-      </div>
-      {loaded && items.length === 0 && <div style={{ padding: "16px", fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", textAlign: "center" }}>No recent sales found.</div>}
-      {items.map(function(item, i) {
-        const tc = tierColor(item.tier);
-        return (
-          <div key={i} style={{ display: "grid", gridTemplateColumns: "auto 1fr auto auto", alignItems: "center", gap: 10, padding: "9px 16px", borderBottom: "1px solid rgba(255,255,255,0.04)", transition: "background 0.15s" }}
-            onMouseEnter={function(e) { e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
-            onMouseLeave={function(e) { e.currentTarget.style.background = "transparent"; }}>
-            <div style={{ width: 24, height: 24, borderRadius: "50%", background: item.walletAccent + "22", border: "1px solid " + item.walletAccent + "44", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 800, color: item.walletAccent, fontFamily: condensedFont }}>
-              {item.walletUsername.slice(0, 2).toUpperCase()}
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.playerName}</div>
-              <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)" }}>{item.setName + (item.serialNumber ? " · #" + item.serialNumber : "")}</div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <span style={{ fontSize: 8, fontFamily: monoFont, color: tc, background: tc + "18", border: "1px solid " + tc + "33", padding: "1px 5px", borderRadius: 3, display: "block", marginBottom: 3 }}>{item.tier.toUpperCase()}</span>
-              <span style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: "#fff" }}>{fmtDollars(item.price)}</span>
-            </div>
-            <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", textAlign: "right" }}>{relTime(item.soldAt)}</div>
-          </div>
-        );
-      })}
-    </section>
-  );
-}
-
-// ─── WALLET CARD ──────────────────────────────────────────────
-function WalletCard(props: { wallet: SavedWallet; onLoad: (addr: string, user?: string) => void; onRemove: (addr: string) => void }) {
-  const [hovered, setHovered] = useState(false);
-  const [confirm, setConfirm] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [showAddr, setShowAddr] = useState(false);
-  const w = props.wallet;
-  const label = w.display_name || w.username || ("Wallet " + (w.id ?? ""));
-  const initials = label.slice(0, 2).toUpperCase();
-  const changeColor = (w.cached_change_24h != null && w.cached_change_24h >= 0) ? "#34D399" : "#F87171";
-  const changeStr = w.cached_change_24h != null ? ((w.cached_change_24h > 0 ? "+" : "") + w.cached_change_24h + "%") : "—";
-
-  function handleCopyAddr(e: React.MouseEvent) {
-    e.stopPropagation();
-    navigator.clipboard.writeText(w.wallet_addr).then(function() {
-      setCopied(true);
-      setTimeout(function() { setCopied(false); }, 1400);
-    }).catch(function() {});
-  }
-
-  return (
-    <div style={{ background: hovered ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.025)", border: "1px solid " + (hovered ? w.accent_color + "55" : "rgba(255,255,255,0.07)"), borderRadius: 10, padding: "14px 16px", cursor: "pointer", transition: "all 0.2s", position: "relative", overflow: "hidden" }}
-      onMouseEnter={function() { setHovered(true); }}
-      onMouseLeave={function() { setHovered(false); setConfirm(false); }}>
-      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, background: w.accent_color, borderRadius: "10px 0 0 10px", opacity: hovered ? 1 : 0.4, transition: "opacity 0.2s" }} />
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-        <div style={{ width: 36, height: 36, borderRadius: "50%", background: w.accent_color + "22", border: "1px solid " + w.accent_color + "44", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: w.accent_color, fontFamily: condensedFont, flexShrink: 0 }}>{initials}</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 14, color: "#fff", letterSpacing: "0.04em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            {showAddr ? (
-              <>
-                <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.55)" }}>{w.wallet_addr}</div>
-                <button onClick={handleCopyAddr} title="Copy full address" style={{ background: copied ? "rgba(52,211,153,0.18)" : "rgba(255,255,255,0.04)", border: "1px solid " + (copied ? "rgba(52,211,153,0.4)" : "rgba(255,255,255,0.1)"), borderRadius: 3, padding: "1px 6px", fontSize: 8, fontFamily: monoFont, color: copied ? "#34D399" : "rgba(255,255,255,0.5)", cursor: "pointer", letterSpacing: "0.08em", lineHeight: 1.2 }}>{copied ? "COPIED!" : "⧉"}</button>
-                <button onClick={function(e) { e.stopPropagation(); setShowAddr(false); }} title="Hide address" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 3, padding: "1px 6px", fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", cursor: "pointer", lineHeight: 1.2 }}>✕</button>
-              </>
-            ) : (
-              <button onClick={function(e) { e.stopPropagation(); setShowAddr(true); }} title="Reveal wallet address" style={{ background: "transparent", border: "none", padding: 0, fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", cursor: "pointer", letterSpacing: "0.12em" }}>0x••••••••</button>
-            )}
-          </div>
-        </div>
-        {(w.cached_badges ?? []).slice(0, 3).map(function(b, i) { return <span key={i} style={{ fontSize: 11 }}>{b}</span>; })}
-      </div>
-      {w.cached_fmv != null ? (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 10 }}>
-          <div><div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", marginBottom: 2 }}>FMV</div><div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 700, color: "#fff" }}>{fmtDollars(w.cached_fmv ?? 0)}</div></div>
-          <div><div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", marginBottom: 2 }}>MOMENTS</div><div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 700, color: "#fff" }}>{w.cached_moment_count ?? "—"}</div></div>
-          <div><div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", marginBottom: 2 }}>24H</div><div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 700, color: changeColor }}>{changeStr}</div></div>
-        </div>
-      ) : (
-        <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", marginBottom: 10 }}>Load wallet to populate stats</div>
-      )}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-        <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.25)" }}>{w.last_viewed ? "Viewed " + relTime(w.last_viewed) : "Never loaded"}</span>
-        <div style={{ display: "flex", gap: 6 }}>
-          {confirm ? (
-            <>
-              <button onClick={function(e) { e.stopPropagation(); setConfirm(false); }} style={Object.assign({}, btnBase, { fontSize: 9 })}>Cancel</button>
-              <button onClick={function(e) { e.stopPropagation(); props.onRemove(w.wallet_addr); }} style={Object.assign({}, btnBase, { background: "rgba(239,68,68,0.15)", color: "#F87171", borderColor: "rgba(239,68,68,0.35)", fontSize: 9 })}>Remove</button>
-            </>
-          ) : (
-            <>
-              <button onClick={function(e) { e.stopPropagation(); setConfirm(true); }} style={Object.assign({}, btnBase, { background: "transparent", border: "none", opacity: hovered ? 0.5 : 0, transition: "opacity 0.15s", fontSize: 9 })}>✕</button>
-              <button onClick={function(e) { e.stopPropagation(); props.onLoad(w.wallet_addr, w.username ?? undefined); }} style={Object.assign({}, btnBase, { background: w.accent_color + "22", color: w.accent_color, borderColor: w.accent_color + "44", opacity: hovered ? 1 : 0.6, fontSize: 9 })}>{"Load →"}</button>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AddWalletForm(props: { onAdd: (val: string) => void; onCancel: () => void }) {
-  const [val, setVal] = useState("");
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ display: "flex", gap: 8 }}>
-        <input autoFocus value={val} onChange={function(e) { setVal(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && val.trim()) props.onAdd(val.trim()); }} placeholder="Top Shot username or 0x address" style={{ flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(224,58,47,0.35)", borderRadius: 6, padding: "7px 12px", color: "#fff", fontFamily: monoFont, fontSize: 11, outline: "none" }} />
-        <button onClick={function() { if (val.trim()) props.onAdd(val.trim()); }} style={Object.assign({}, btnBase, { background: "#E03A2F", color: "#fff", borderColor: "#E03A2F", fontSize: 11 })}>Save</button>
-        <button onClick={props.onCancel} style={Object.assign({}, btnBase, { fontSize: 11 })}>✕</button>
-      </div>
-      <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", marginTop: 6, letterSpacing: "0.04em" }}>
-        Tip: Your Top Shot username works best
-      </div>
-    </div>
-  );
-}
-
-
-
-// ─── MAIN PAGE ────────────────────────────────────────────────
-function ProfilePageInner() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-
-  const [ownerKey, setOwnerKeyState] = useState("");
-  const [ownerInput, setOwnerInput] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [savedWallets, setSavedWallets] = useState<SavedWallet[]>([]);
-  const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
-  const [sniperRows, setSniperRows] = useState<SniperRow[]>([]);
-  const [trophies, setTrophies] = useState<(TrophyMoment | null)[]>([null, null, null, null, null, null]);
-  const [pulse, setPulse] = useState<MarketPulse | null>(null);
-  const [bio, setBio] = useState<ProfileBio | null>(null);
-  const [profileLoading, setProfileLoading] = useState(false);
-  const [sniperLoading, setSniperLoading] = useState(false);
-  const [pulseLoading, setPulseLoading] = useState(false);
-  const [heroSearch, setHeroSearch] = useState("");
-  const [showAddWallet, setShowAddWallet] = useState(false);
-  const [pinModal, setPinModal] = useState<{ slot: number; prefilled: PinPreview | null } | null>(null);
-  const [sparkChangePct, setSparkChangePct] = useState<number | null>(null);
-  const [suggestedMoments, setSuggestedMoments] = useState<SuggestedMoment[]>([]);
-  const [bottomResolving, setBottomResolving] = useState(false);
-
-  async function handleBottomSignIn() {
-    const trimmed = ownerInput.trim();
-    if (!trimmed) return;
-    setBottomResolving(true);
-    try {
-      const resolved = await resolveOwnerKeyToUsername(trimmed);
-      setOwnerKey(resolved);
-      loadProfile(resolved);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await loadProfile(ownerKey);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Could not save wallet");
     } finally {
-      setBottomResolving(false);
+      setSaving(false);
     }
-  }
+  }, [ownerKey, walletInput, usernameInput, loadProfile]);
 
-  // Read from localStorage + listen for cross-tab changes
-  useEffect(function() {
-    // Support ?address= URL param (same pattern as collection page)
-    const addressParam = searchParams.get("address");
-    if (addressParam && addressParam.trim()) {
-      const key = addressParam.trim();
-      setOwnerKeyState(key);
-      saveOwnerKey(key);
-      loadProfile(key);
-      return;
-    }
-    setOwnerKeyState(getOwnerKey());
-    try { setDisplayName(localStorage.getItem("rpc_last_wallet") || ""); } catch {}
-    return onOwnerKeyChange(function(key) {
-      setOwnerKeyState(key);
-      if (key) loadProfile(key);
-    });
-  }, [searchParams]);
-
-  function setOwnerKey(key: string) {
-    setOwnerKeyState(key);
-    saveOwnerKey(key);
-    // Persist in URL for shareable links
-    router.replace("/profile?address=" + encodeURIComponent(key));
-  }
-
-  const handlePinRequest = useCallback(async function(slot: number, momentId: string) {
+  const handleDisconnect = useCallback(() => {
     try {
-      const res = await fetch("/api/market-snapshot?momentId=" + encodeURIComponent(momentId));
-      if (!res.ok) { setPinModal({ slot, prefilled: null }); return; }
-      const d = await res.json();
-      setPinModal({ slot, prefilled: { momentId, playerName: d.playerName ?? "Unknown", setName: d.setName ?? "", serialNumber: d.serialNumber ?? null, circulationCount: d.circulationCount ?? null, tier: d.tier ?? "Common", thumbnailUrl: d.thumbnailUrl ?? null, videoUrl: d.videoUrl ?? null, fmv: d.fmv ?? null, badges: d.badges ?? null } });
-    } catch { setPinModal({ slot, prefilled: null }); }
+      localStorage.removeItem("rpc_owner_key");
+      localStorage.removeItem("rpc_last_wallet");
+      localStorage.removeItem("rpc_collection_last_wallet");
+    } catch { /* ignore */ }
+    const fresh = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `rpc-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try { localStorage.setItem("rpc_owner_key", fresh); } catch { /* ignore */ }
+    setOwnerKey(fresh);
+    setProfile(null);
+    setWalletInput("");
+    setUsernameInput("");
   }, []);
 
-  const loadProfile = useCallback(async function(key: string) {
-    if (!key) return;
-    setProfileLoading(true);
-    try {
-      const enc = encodeURIComponent(key);
-      const [wRes, sRes, tRes, bRes] = await Promise.all([
-        fetch("/api/profile/saved-wallets?ownerKey=" + enc),
-        fetch("/api/profile/recent-searches?ownerKey=" + enc),
-        fetch("/api/profile/trophy?ownerKey=" + enc),
-        fetch("/api/profile/bio?ownerKey=" + enc),
-      ]);
-      if (wRes.ok) { const d = await wRes.json(); setSavedWallets(d.wallets ?? []); }
-      if (sRes.ok) { const d = await sRes.json(); setRecentSearches(d.searches ?? []); }
-      if (tRes.ok) {
-        const d = await tRes.json();
-        const slots: (TrophyMoment | null)[] = [null, null, null, null, null, null];
-        (d.trophies ?? []).forEach(function(t: TrophyMoment) { if (t.slot >= 1 && t.slot <= MAX_SLOTS) slots[t.slot - 1] = t; });
-        setTrophies(slots);
-      }
-      if (bRes.ok) { const d = await bRes.json(); setBio(d.bio); }
-    } catch (err) { console.error("[profile load]", err); }
-    finally { setProfileLoading(false); }
-  }, []);
+  const handleRefresh = useCallback(() => {
+    if (ownerKey) loadProfile(ownerKey);
+  }, [ownerKey, loadProfile]);
 
-  useEffect(function() { if (ownerKey) loadProfile(ownerKey); }, [ownerKey, loadProfile]);
-
-  useEffect(function() {
-    setPulseLoading(true);
-    fetch("/api/profile/market-pulse").then(function(r) { return r.ok ? r.json() : null; }).then(function(d) { if (d) setPulse(d); }).catch(function() {}).finally(function() { setPulseLoading(false); });
-  }, []);
-
-  useEffect(function() {
-    setSniperLoading(true);
-    fetch("/api/sniper-feed?limit=5")
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(data) {
-        if (!data) return;
-        const raw: any[] = data.deals ?? [];
-        setSniperRows(raw.slice(0, 5).map(function(r: any) {
-          const price = r.askPrice ?? 0;
-          const fmv = r.adjustedFmv ?? 0;
-          const pct = fmv > 0 && price > 0 ? Math.round(((fmv - price) / fmv) * 100) : 0;
-          return { player: r.playerName ?? "Unknown", set: r.setName ?? "", serial: r.serial ? "#" + r.serial : "", price, fmv, pct, tier: r.tier ?? "Common" };
-        }));
-      })
-      .catch(function() {}).finally(function() { setSniperLoading(false); });
-  }, []);
-
-  // Auto-suggest top FMV moments to pin when trophy slots are empty
-  useEffect(function() {
-    const emptyCount = trophies.filter(function(t) { return t === null; }).length;
-    if (emptyCount === 0) { setSuggestedMoments([]); return; }
-    if (savedWallets.length === 0) { setSuggestedMoments([]); return; }
-    const wallet = savedWallets.find(function(w) { return (w.cached_fmv ?? 0) > 0; }) ?? savedWallets[0];
-    if (!wallet?.wallet_addr) return;
-    const addr = wallet.wallet_addr.startsWith("0x") ? wallet.wallet_addr : "0x" + wallet.wallet_addr;
-    fetch("/api/wallet-cache?wallet=" + encodeURIComponent(addr))
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(d) {
-        if (!d || !Array.isArray(d.moments)) return;
-        const pinned = new Set<string>();
-        trophies.forEach(function(t) { if (t?.moment_id) pinned.add(t.moment_id); });
-        const suggestions: SuggestedMoment[] = d.moments
-          .filter(function(m: any) { return m && Number(m.fmv_usd ?? 0) > 0 && !pinned.has(String(m.moment_id)); })
-          .sort(function(a: any, b: any) { return Number(b.fmv_usd ?? 0) - Number(a.fmv_usd ?? 0); })
-          .slice(0, 3)
-          .map(function(m: any) {
-            return {
-              momentId: String(m.moment_id),
-              playerName: m.player_name ?? "Unknown",
-              setName: m.set_name ?? "",
-              serialNumber: m.serial_number ?? null,
-              circulationCount: null,
-              tier: m.tier ?? "Common",
-              thumbnailUrl: null,
-              videoUrl: null,
-              fmv: Number(m.fmv_usd ?? 0) || null,
-            };
-          });
-        setSuggestedMoments(suggestions);
-      })
-      .catch(function() {});
-  }, [savedWallets, trophies]);
-
-  function recordSearch(query: string, queryType?: string) {
-    if (!ownerKey || !query.trim()) return;
-    fetch("/api/profile/recent-searches", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ownerKey, query: query.trim(), queryType }) })
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(d) { if (!d?.search) return; setRecentSearches(function(prev) { return [d.search, ...prev.filter(function(s) { return s.query !== query.trim(); })].slice(0, 20); }); })
-      .catch(function() {});
-  }
-
-  function handleSearch(val: string) {
-    const q = val.trim();
-    if (!q) return;
-    recordSearch(q);
-    router.push("/nba-top-shot/collection?address=" + encodeURIComponent(q));
-  }
-
-  async function handleAddWallet(input: string) {
-    if (!ownerKey) { alert("Set your Profile Key first."); return; }
-    let walletAddr = input; let username: string | undefined;
-    if (!input.startsWith("0x")) {
-      try { const r = await fetch("/api/user-resolve?username=" + encodeURIComponent(input)); if (r.ok) { const d = await r.json(); if (d.address) { walletAddr = d.address; username = input; } } } catch {}
-    }
-    try {
-      const r = await fetch("/api/profile/saved-wallets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ownerKey, walletAddr, username, accentColor: pickAccent(savedWallets.length) }) });
-      if (!r.ok) {
-        let msg = "Failed to save wallet (HTTP " + r.status + ")";
-        try { const err = await r.json(); if (err?.error) msg = err.error; } catch {}
-        console.error("[saved-wallets POST]", msg);
-        alert("Could not save wallet: " + msg);
-        return;
-      }
-      const d = await r.json();
-      if (d.wallet) setSavedWallets(function(prev) { return [d.wallet, ...prev.filter(function(w) { return w.wallet_addr !== walletAddr; })]; });
-      else { console.error("[saved-wallets POST] unexpected response", d); alert("Wallet save returned no record."); return; }
-      setShowAddWallet(false);
-    } catch (err: any) {
-      console.error("[saved-wallets POST] network error", err);
-      alert("Network error while saving wallet. Check console.");
-    }
-  }
-
-  async function handleRemoveWallet(walletAddr: string) {
-    if (!ownerKey) return;
-    await fetch("/api/profile/saved-wallets", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ownerKey, walletAddr }) });
-    setSavedWallets(function(prev) { return prev.filter(function(w) { return w.wallet_addr !== walletAddr; }); });
-  }
-
-  function handleLoadWallet(addr: string, username?: string) {
-    const q = username ?? addr;
-    recordSearch(q, "wallet");
-    router.push("/nba-top-shot/collection?address=" + encodeURIComponent(q));
-  }
-
-  async function handleRemoveTrophy(slot: number) {
-    if (!ownerKey) return;
-    await fetch("/api/profile/trophy", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ownerKey, slot }) });
-    setTrophies(function(prev) { const next = [...prev]; next[slot - 1] = null; return next; });
-  }
-
-  function handleTrophyPinned(trophy: TrophyMoment) {
-    setTrophies(function(prev) { const next = [...prev]; next[trophy.slot - 1] = trophy; return next; });
-  }
-
-  const totalFmv = useMemo(function() { return savedWallets.reduce(function(sum, w) { return sum + (w.cached_fmv ?? 0); }, 0); }, [savedWallets]);
-
-  const fmvTileChange = sparkChangePct != null
-    ? (sparkChangePct >= 0 ? "+" : "") + sparkChangePct.toFixed(1) + "% / 30D"
-    : "Updated";
-  const fmvTileUp = sparkChangePct == null ? true : sparkChangePct >= 0;
-
-  const tiles = [
-    { label: "Portfolio FMV", value: totalFmv > 0 ? fmtDollars(totalFmv) : "—", sub: savedWallets.length + " wallet" + (savedWallets.length !== 1 ? "s" : ""), change: fmvTileChange, up: fmvTileUp, icon: "◈", color: "#E03A2F" },
-    { label: "Trophy Case", value: trophies.filter(Boolean).length + " / " + MAX_SLOTS, sub: "pinned moments", change: "Your best", up: true, icon: "🏆", color: "#F59E0B" },
-    { label: "Live Deals", value: sniperLoading ? "…" : (sniperRows.length + " below FMV"), sub: "sniper preview", change: "Live", up: true, icon: "⚡", color: "#34D399" },
-    { label: "Searches", value: String(recentSearches.length), sub: "saved queries", change: "Synced", up: true, icon: "⌕", color: "#3B82F6" },
-    { label: "RPC Score", value: savedWallets[0]?.cached_rpc_score != null ? String(savedWallets[0].cached_rpc_score) : "—", sub: "collector rank", change: "Beta", up: true, icon: "○", color: "#E03A2F" },
-  ];
-
-  const navItems = [
-    { label: "Wallet", href: "/nba-top-shot/collection" },
-    { label: "Packs", href: "/nba-top-shot/packs" },
-    { label: "Sniper", href: "/nba-top-shot/sniper" },
-    { label: "Badges", href: "/nba-top-shot/badges" },
-    { label: "Sets", href: "/nba-top-shot/sets" },
-    { label: "Profile", href: "/profile", active: true },
-  ];
-
-  const quickLinks = [
-    { label: "Wallet Analyzer", desc: "FMV · Flowty asks · badge intel", icon: "◈", href: "/nba-top-shot/collection", color: "#E03A2F" },
-    { label: "Pack EV", desc: "Expected value vs price", icon: "▣", href: "/nba-top-shot/packs", color: "#F59E0B" },
-    { label: "Sniper", desc: "Real-time deals below FMV", icon: "⚡", href: "/nba-top-shot/sniper", color: "#34D399" },
-    { label: "Badge Tracker", desc: "Debut · Fresh · Rookie Year", icon: "⭐", href: "/nba-top-shot/badges", color: "#818CF8" },
-    { label: "Set Tracker", desc: "Completion + bottleneck finder", icon: "◉", href: "/nba-top-shot/sets", color: "#F472B6" },
-  ];
+  // Derive display state
+  const state: "init" | "form" | "portfolio" | "error" = useMemo(() => {
+    if (initializing || (profileLoading && !profile)) return "init";
+    if (profileError && !profile) return "error";
+    if (profile?.has_wallet) return "portfolio";
+    return "form";
+  }, [initializing, profileLoading, profile, profileError]);
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
+    <div style={{ minHeight: "100vh", background: "#080808", color: "#fff", paddingBottom: 80 }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Share+Tech+Mono&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
-        @keyframes ticker{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-        @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.35}}
-        input::placeholder{color:rgba(255,255,255,0.25)!important;}
-        ::-webkit-scrollbar{width:4px}
-        ::-webkit-scrollbar-track{background:#111}
-        ::-webkit-scrollbar-thumb{background:rgba(224,58,47,0.3);border-radius:2px}
         @media(max-width:768px){
-          .rpc-main{padding:16px 16px 60px!important;}
-          .rpc-nav-links{display:none!important;}
-          .rpc-hero h1{font-size:26px!important;}
-          .rpc-grid-4{grid-template-columns:1fr 1fr!important;}
-          .rpc-grid-5{grid-template-columns:1fr 1fr!important;}
-          .rpc-layout{grid-template-columns:1fr!important;}
-          .rpc-trophy-grid{grid-template-columns:1fr 1fr 1fr!important;}
-          .rpc-sets-activity{grid-template-columns:1fr!important;}
-          .rpc-quick-links{grid-template-columns:1fr 1fr!important;}
+          .rpc-profile-main{padding:16px 16px 80px!important;}
+          .rpc-profile-grid{grid-template-columns:1fr!important;}
+          .rpc-profile-summary{grid-template-columns:repeat(1,1fr)!important;}
         }
       `}</style>
 
-      <Suspense fallback={null}>
-        <PinParamReader trophies={trophies} onPinRequest={handlePinRequest} />
-      </Suspense>
+      <main className="rpc-profile-main" style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 24px 60px" }}>
 
-      {pinModal !== null && (
-        <PinModal slot={pinModal.slot} ownerKey={ownerKey} prefilled={pinModal.prefilled} savedWallets={savedWallets} onClose={function() { setPinModal(null); }} onPinned={handleTrophyPinned} />
-      )}
+        {state === "init" && <InitState />}
 
-      <Ticker />
-
-      {/* NAV */}
-      <header style={{ background: "rgba(8,8,8,0.97)", borderBottom: "1px solid var(--rpc-border)", position: "sticky", top: 0, zIndex: "var(--z-sticky)" as any, backdropFilter: "blur(20px)" }}>
-        <div style={{ maxWidth: "var(--max-width)" as any, margin: "0 auto", padding: "0 20px", height: 56, display: "flex", alignItems: "center", gap: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, cursor: "pointer" }} onClick={function() { router.push("/"); }}>
-            <RpcLogo size={32} />
-            <div>
-              <div style={{ fontSize: 7, fontFamily: monoFont, letterSpacing: "0.2em", color: "var(--rpc-red-muted)" }}>@RIPPACKSCITY</div>
-            </div>
-          </div>
-          <div style={{ flex: 1, position: "relative", maxWidth: 440 }}>
-            <input value={heroSearch} onChange={function(e) { setHeroSearch(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && heroSearch.trim()) handleSearch(heroSearch); }} placeholder="Search wallet, player, edition…" style={{ width: "100%", background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: 6, padding: "7px 34px 7px 14px", color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 11, outline: "none" }} onFocus={function(e) { e.target.style.borderColor = "var(--rpc-red-muted)"; }} onBlur={function(e) { e.target.style.borderColor = "var(--rpc-border)"; }} />
-            <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.3)", fontSize: 14, pointerEvents: "none" }}>⌕</span>
-          </div>
-          {/* Avatar in nav when signed in */}
-          {ownerKey && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-              <Avatar ownerKey={ownerKey} bio={bio} size={30} fontSize={11} />
-              <span style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", display: "none" }}>{ownerKey}</span>
-            </div>
-          )}
-          <nav className="rpc-nav-links" style={{ display: "flex", gap: 3, flexShrink: 0 }}>
-            {navItems.map(function(item) {
-              const active = item.active ?? false;
-              return <button key={item.label} onClick={function() { router.push(item.href); }} style={{ background: active ? "var(--rpc-red-bg)" : "transparent", border: active ? "1px solid var(--rpc-red-border)" : "1px solid transparent", color: active ? "var(--rpc-red)" : "var(--rpc-text-secondary)", padding: "4px 10px", borderRadius: "var(--radius-sm)" as any, fontSize: 10, fontFamily: condensedFont, fontWeight: 700, letterSpacing: "0.08em", cursor: "pointer", textTransform: "uppercase", transition: "all var(--transition-fast)" }}>{item.label}</button>;
-            })}
-          </nav>
-        </div>
-      </header>
-
-      <main className="rpc-main" style={{ maxWidth: "var(--max-width)" as any, margin: "0 auto", padding: "24px 24px 60px" }}>
-
-        {/* HERO */}
-        <section className="rpc-hero" style={{ marginBottom: 20, textAlign: "center" }}>
-          <div style={{ maxWidth: 560, margin: "0 auto" }}>
-            <div style={Object.assign({}, labelStyle, { marginBottom: 8 })}>◈ COLLECTOR INTELLIGENCE PLATFORM ◈</div>
-            <h1 className="rpc-heading" style={{ fontSize: "var(--text-3xl)" as any, fontWeight: 900, marginBottom: 16 }}>
-              {"Rip Packs "}<span style={{ color: "var(--rpc-red)" }}>City</span>
-            </h1>
-            <div style={{ display: "flex", gap: 8, background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-lg)" as any, padding: "8px 8px 8px 16px", alignItems: "center" }}>
-              <input value={heroSearch} onChange={function(e) { setHeroSearch(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && heroSearch.trim()) handleSearch(heroSearch); }} placeholder="Enter any Top Shot username or wallet address…" style={{ flex: 1, background: "transparent", border: "none", color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 12, outline: "none" }} />
-              <button onClick={function() { if (heroSearch.trim()) handleSearch(heroSearch); }} className="rpc-btn-primary" style={{ borderRadius: 7, padding: "8px 20px", fontFamily: condensedFont, fontWeight: 800, fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", flexShrink: 0 }}>Search</button>
-            </div>
-          </div>
-        </section>
-
-        {/* SIGN IN BANNER */}
-        {!ownerKey && (
-          <SignInBanner onSetKey={function(key) { setOwnerKey(key); loadProfile(key); }} />
+        {state === "error" && (
+          <ErrorState onRetry={handleRefresh} />
         )}
 
-        <MarketPulseWidget pulse={pulse} loading={pulseLoading} />
-        {ownerKey && <BioWidget ownerKey={ownerKey} bio={bio} onSave={setBio} />}
-
-        {ownerKey && (
-          <div style={{ marginBottom: 14 }}>
-            <AchievementsCard ownerKey={ownerKey} />
-          </div>
-        )}
-
-        {/* CROSS-COLLECTION PORTFOLIO */}
-        {savedWallets.length > 0 && (
-          <CrossCollectionPortfolio
-            wallet={savedWallets[0].wallet_addr}
-            walletQuery={savedWallets[0].username ?? savedWallets[0].wallet_addr}
+        {state === "form" && (
+          <ConnectForm
+            walletInput={walletInput}
+            setWalletInput={setWalletInput}
+            usernameInput={usernameInput}
+            setUsernameInput={setUsernameInput}
+            saving={saving}
+            saveError={saveError}
+            onSave={handleSave}
           />
         )}
 
-        {/* STAT TILES */}
-        <section style={{ marginBottom: 14 }}>
-          <div className="rpc-grid-4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
-            {tiles.map(function(t, i) { return <StatTile key={t.label} label={t.label} value={t.value} sub={t.sub} change={t.change} up={t.up} icon={t.icon} color={t.color} delay={i * 70} />; })}
-          </div>
-        </section>
-
-        {/* EMAIL DIGEST */}
-        <EmailDigestSubscribe walletAddress={savedWallets[0]?.wallet_addr ?? null} />
-
-        {/* PRICE ALERTS */}
-        {ownerKey && <PriceAlertsCard ownerKey={ownerKey} />}
-
-        {ownerKey && <PortfolioSparkline ownerKey={ownerKey} currentFmv={totalFmv} onChange={setSparkChangePct} />}
-
-        {/* COST BASIS + TIER BREAKDOWN */}
-        {ownerKey && (
-          <div className="rpc-sets-activity" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
-            <CostBasisCard ownerKey={ownerKey} />
-            <TierBreakdownCard ownerKey={ownerKey} />
-          </div>
+        {state === "portfolio" && profile && (
+          <PortfolioView
+            profile={profile}
+            loading={profileLoading}
+            onDisconnect={handleDisconnect}
+            onRefresh={handleRefresh}
+          />
         )}
-
-        {/* ACQUISITION BREAKDOWN */}
-        {ownerKey && (
-          <div style={{ marginBottom: 14 }}>
-            <AcquisitionBreakdownCard ownerKey={ownerKey} />
-          </div>
-        )}
-
-        {/* COLLECTION BREAKDOWN */}
-        {ownerKey && (
-          <div style={{ marginBottom: 14 }}>
-            <CollectionBreakdownCard ownerKey={ownerKey} />
-          </div>
-        )}
-
-        {/* TOP MOVERS */}
-        {ownerKey && (
-          <div style={{ marginBottom: 14 }}>
-            <TopMoversCard ownerKey={ownerKey} />
-          </div>
-        )}
-
-        {/* WATCHLIST */}
-        {ownerKey && (
-          <div style={{ marginBottom: 14 }}>
-            <WatchlistCard ownerKey={ownerKey} />
-          </div>
-        )}
-
-        {/* TROPHY CASE */}
-        <section style={{ marginBottom: 18 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={labelStyle}>🏆 Trophy Case</span>
-              {ownerKey && (
-                <button onClick={function() { navigator.clipboard.writeText(window.location.origin + "/profile/" + ownerKey).then(function() { alert("Profile link copied!"); }); }} style={Object.assign({}, btnBase, { fontSize: 9, background: "rgba(245,158,11,0.1)", color: "#F59E0B", borderColor: "rgba(245,158,11,0.3)" })}>
-                  🔗 Share Profile
-                </button>
-              )}
-              {ownerKey && (
-                <a href={"/api/profile/export-csv?ownerKey=" + encodeURIComponent(ownerKey)} target="_blank" rel="noopener noreferrer" style={Object.assign({}, btnBase, { fontSize: 9, background: "rgba(224,58,47,0.1)", color: "#E03A2F", borderColor: "rgba(224,58,47,0.3)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 })}>
-                  ⬇ Export CSV
-                </a>
-              )}
-            </div>
-            <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.25)" }}>
-              {trophies.filter(Boolean).length + " / " + MAX_SLOTS}
-            </span>
-          </div>
-          <div className="rpc-trophy-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14 }}>
-            {trophies.map(function(trophy, i) {
-              return <TrophySlot key={i} slot={i + 1} trophy={trophy} ownerKey={ownerKey} onPin={function(slot) { setPinModal({ slot, prefilled: null }); }} onRemove={handleRemoveTrophy} />;
-            })}
-          </div>
-          {ownerKey && suggestedMoments.length > 0 && trophies.some(function(t) { return t === null; }) && (
-            <div style={{ marginTop: 12, padding: "12px 14px", background: "rgba(245,158,11,0.05)", border: "1px solid rgba(245,158,11,0.18)", borderRadius: 8 }}>
-              <div style={{ fontSize: 9, fontFamily: monoFont, color: "#F59E0B", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 8, fontWeight: 700 }}>⭐ Suggested Pins</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {suggestedMoments.map(function(s) {
-                  return (
-                    <div key={s.momentId} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ flex: 1, minWidth: 0, fontSize: 11, fontFamily: monoFont, color: "rgba(255,255,255,0.7)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        Pin your <span style={{ color: "#fff", fontWeight: 700 }}>{s.playerName}</span>
-                        {s.setName ? " " + s.setName : ""}
-                        {s.fmv != null ? " (" + fmtDollars(s.fmv) + ")" : ""}
-                      </div>
-                      <button onClick={function() {
-                        const firstEmpty = trophies.findIndex(function(t) { return t === null; });
-                        const slot = firstEmpty >= 0 ? firstEmpty + 1 : 1;
-                        setPinModal({ slot, prefilled: { momentId: s.momentId, playerName: s.playerName, setName: s.setName, serialNumber: s.serialNumber, circulationCount: s.circulationCount, tier: s.tier, thumbnailUrl: s.thumbnailUrl, videoUrl: s.videoUrl, fmv: s.fmv, badges: null } });
-                      }} style={Object.assign({}, btnBase, { background: "rgba(245,158,11,0.18)", color: "#F59E0B", borderColor: "rgba(245,158,11,0.4)", fontSize: 9 })}>Pin it</button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </section>
-
-        {/* SETS + ACTIVITY */}
-        {savedWallets.length > 0 && (
-          <div className="rpc-sets-activity" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
-            <SetsProgressWidget savedWallets={savedWallets} />
-            <ActivityFeed savedWallets={savedWallets} />
-          </div>
-        )}
-
-        {/* SAVED WALLETS + SNIPER */}
-        <div className="rpc-layout" style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 14, marginBottom: 14 }}>
-          <section>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={labelStyle}>Saved Wallets</span>
-                <span style={{ background: "rgba(224,58,47,0.15)", border: "1px solid rgba(224,58,47,0.3)", color: "#E03A2F", fontSize: 9, fontFamily: monoFont, padding: "1px 6px", borderRadius: 3 }}>{savedWallets.length}</span>
-              </div>
-              <button onClick={function() { setShowAddWallet(function(v) { return !v; }); }} style={Object.assign({}, btnBase, showAddWallet ? { background: "rgba(224,58,47,0.15)", color: "#E03A2F", borderColor: "rgba(224,58,47,0.4)" } : {})}>
-                {showAddWallet ? "Cancel" : "+ Add"}
-              </button>
-            </div>
-            {showAddWallet && <AddWalletForm onAdd={handleAddWallet} onCancel={function() { setShowAddWallet(false); }} />}
-            {!ownerKey ? (
-              <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", textAlign: "center", padding: "28px 16px", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 8, lineHeight: 1.7 }}>Sign in above to save wallets across sessions.</div>
-            ) : profileLoading ? (
-              <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", textAlign: "center", padding: "24px 0" }}>Loading…</div>
-            ) : savedWallets.length === 0 ? (
-              <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", textAlign: "center", padding: "28px 16px", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 8, lineHeight: 1.7 }}>No saved wallets yet.<br />Click + Add to pin one.</div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {savedWallets.map(function(w) { return <WalletCard key={w.id} wallet={w} onLoad={handleLoadWallet} onRemove={handleRemoveWallet} />; })}
-              </div>
-            )}
-          </section>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {/* Sniper */}
-            <section className="rpc-card" style={{ borderRadius: "var(--radius-lg)" as any, overflow: "hidden" }}>
-              <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--rpc-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <div style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--rpc-success)", animation: "pulse 2s infinite" }} />
-                  <span className="rpc-label">Live Sniper — Below FMV</span>
-                </div>
-                <button onClick={function() { router.push("/nba-top-shot/sniper"); }} style={Object.assign({}, btnBase, { background: "rgba(52,211,153,0.1)", color: "#34D399", borderColor: "rgba(52,211,153,0.25)", fontSize: 9 })}>{"Full Sniper →"}</button>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px 60px 62px", padding: "7px 14px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                {["Moment", "Tier", "Ask", "FMV", "Disc%"].map(function(h, i) { return <span key={h} style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", letterSpacing: "0.15em", textAlign: i === 0 ? "left" : "right" }}>{h}</span>; })}
-              </div>
-              {sniperLoading ? (
-                <div style={{ padding: "20px", fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", textAlign: "center" }}>Loading…</div>
-              ) : sniperRows.length === 0 ? (
-                <div style={{ padding: "20px", fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", textAlign: "center" }}>No deals loaded.</div>
-              ) : sniperRows.map(function(row, i) {
-                const tc = tierColor(row.tier);
-                return (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px 60px 62px", alignItems: "center", padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)", cursor: "pointer", transition: "background 0.15s" }} onMouseEnter={function(e) { e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }} onMouseLeave={function(e) { e.currentTarget.style.background = "transparent"; }} onClick={function() { router.push("/nba-top-shot/sniper"); }}>
-                    <div>
-                      <div style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: "#fff" }}>{row.player}</div>
-                      <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)" }}>{row.set + " · " + row.serial}</div>
-                    </div>
-                    <span style={{ fontSize: 8, fontFamily: monoFont, color: tc, background: tc + "18", border: "1px solid " + tc + "33", padding: "2px 5px", borderRadius: 3, textAlign: "center" }}>{row.tier.toUpperCase()}</span>
-                    <span style={{ fontSize: 12, fontFamily: condensedFont, fontWeight: 700, color: "#fff", textAlign: "right" }}>{fmtDollars(row.price)}</span>
-                    <span style={{ fontSize: 11, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", textAlign: "right" }}>{fmtDollars(row.fmv)}</span>
-                    <span style={{ fontSize: 11, fontFamily: monoFont, fontWeight: 700, color: "#34D399", textAlign: "right" }}>{row.pct + "%"}</span>
-                  </div>
-                );
-              })}
-            </section>
-
-            {/* Recent Searches */}
-            <section className="rpc-card" style={{ borderRadius: "var(--radius-lg)" as any, padding: "14px 16px" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <span className="rpc-label">Recent Searches</span>
-                {recentSearches.length > 0 && <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.25)" }}>{recentSearches.length + " / 20"}</span>}
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
-                {recentSearches.length === 0 ? (
-                  <span style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)" }}>{ownerKey ? "No searches yet" : "Sign in above to track searches"}</span>
-                ) : recentSearches.map(function(s, i) {
-                  const tc = typeColor(s.query_type);
-                  return (
-                    <button key={i} onClick={function() { handleSearch(s.query); }} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 5, padding: "5px 10px", color: "rgba(255,255,255,0.65)", fontFamily: monoFont, fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 7, transition: "all 0.15s" }} onMouseEnter={function(e) { e.currentTarget.style.background = "rgba(224,58,47,0.1)"; e.currentTarget.style.borderColor = "rgba(224,58,47,0.3)"; e.currentTarget.style.color = "#fff"; }} onMouseLeave={function(e) { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "rgba(255,255,255,0.65)"; }}>
-                      <span style={{ fontSize: 8, color: tc, fontWeight: 700, textTransform: "uppercase" }}>{s.query_type}</span>
-                      {s.query}
-                      <span style={{ color: "rgba(255,255,255,0.25)", fontSize: 9 }}>{relTime(s.searched_at)}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          </div>
-        </div>
-
-        {/* QUICK LINKS */}
-        <section style={{ marginBottom: 20 }}>
-          <div className="rpc-quick-links" style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
-            {quickLinks.map(function(link) {
-              return (
-                <button key={link.label} onClick={function() { router.push(link.href); }} className="rpc-card" style={{ padding: "14px 16px", textAlign: "left", cursor: "pointer", transition: "all var(--transition-normal)", position: "relative", overflow: "hidden" }} onMouseEnter={function(e) { e.currentTarget.style.borderColor = link.color + "44"; e.currentTarget.style.transform = "translateY(-2px)"; }} onMouseLeave={function(e) { e.currentTarget.style.borderColor = ""; e.currentTarget.style.transform = "translateY(0)"; }}>
-                  <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 2, background: link.color, opacity: 0.5 }} />
-                  <div style={{ fontSize: 18, marginBottom: 7, color: link.color }}>{link.icon}</div>
-                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 13, color: "#fff", letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 3 }}>{link.label}</div>
-                  <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)" }}>{link.desc}</div>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* PROFILE KEY — secondary */}
-        <section className="rpc-card" style={{ borderRadius: "var(--radius-lg)" as any, padding: "16px 20px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-            <div>
-              <span className="rpc-label">Set Up Your Rip Packs City Profile</span>
-              <div style={{ fontSize: 10, fontFamily: monoFont, color: "var(--rpc-text-muted)", marginTop: 4 }}>
-                {ownerKey ? ("Signed in as: " + (displayName || ownerKey) + "  ·  Public: rip-packs-city.vercel.app/profile/" + ownerKey) : "Enter your Top Shot username to unlock the full profile experience."}
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input value={ownerInput} onChange={function(e) { setOwnerInput(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && ownerInput.trim()) handleBottomSignIn(); }} placeholder={ownerKey ? ownerKey : "your username…"} style={{ background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border-hover)", borderRadius: 6, padding: "6px 12px", color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 11, outline: "none", width: 200 }} />
-              <button onClick={handleBottomSignIn} disabled={bottomResolving} className="rpc-btn-primary" style={{ padding: "6px 14px", opacity: bottomResolving ? 0.6 : 1 }}>
-                {bottomResolving ? "Resolving..." : ownerKey ? "Update" : "Sign In"}
-              </button>
-              {ownerKey && (
-                <button onClick={function() { saveOwnerKey(""); setOwnerKeyState(""); setDisplayName(""); try { localStorage.removeItem("rpc_last_wallet"); } catch {} setSavedWallets([]); setRecentSearches([]); setTrophies([null, null, null, null, null, null]); setBio(null); router.replace("/profile"); }} className="rpc-btn-ghost" style={{ padding: "4px 10px", fontSize: 9 }}>Sign Out</button>
-              )}
-            </div>
-          </div>
-        </section>
 
       </main>
+
+      <MobileNav />
+      <SupportChatConnected />
     </div>
   );
 }
 
-// Wrap in Suspense for useSearchParams
-export default function ProfilePage() {
+// ── States ────────────────────────────────────────────────────────────────────
+
+function InitState() {
   return (
-    <Suspense fallback={null}>
-      <ProfilePageInner />
-    </Suspense>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 20px", gap: 16 }}>
+      <RpcLogo size={56} />
+      <div style={{ fontSize: 11, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", letterSpacing: "0.14em", textTransform: "uppercase" }}>
+        Loading profile…
+      </div>
+      <div className="rpc-skeleton" style={{ width: 240, height: 14, borderRadius: 4, background: "rgba(255,255,255,0.06)" }} />
+      <div className="rpc-skeleton" style={{ width: 180, height: 14, borderRadius: 4, background: "rgba(255,255,255,0.06)" }} />
+    </div>
   );
 }
+
+function ErrorState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 20px", gap: 16 }}>
+      <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 18, letterSpacing: "0.06em", textTransform: "uppercase", color: "#fff" }}>
+        Could not load profile
+      </div>
+      <div style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.5)", letterSpacing: "0.04em" }}>
+        Try refreshing.
+      </div>
+      <button onClick={onRetry} style={buttonPrimaryStyle}>
+        {"Retry \u2192"}
+      </button>
+    </div>
+  );
+}
+
+function ConnectForm({
+  walletInput,
+  setWalletInput,
+  usernameInput,
+  setUsernameInput,
+  saving,
+  saveError,
+  onSave,
+}: {
+  walletInput: string;
+  setWalletInput: (v: string) => void;
+  usernameInput: string;
+  setUsernameInput: (v: string) => void;
+  saving: boolean;
+  saveError: string | null;
+  onSave: () => void;
+}) {
+  return (
+    <div style={{ maxWidth: 520, margin: "40px auto", background: "#18181b", border: "1px solid #27272a", borderRadius: 12, padding: "32px 28px", textAlign: "center" }}>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
+        <RpcLogo size={72} />
+      </div>
+      <h1 style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 24, letterSpacing: "0.04em", textTransform: "uppercase", color: "#fff", marginBottom: 10 }}>
+        Connect Your Dapper Wallet
+      </h1>
+      <p style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.55)", letterSpacing: "0.04em", lineHeight: 1.6, marginBottom: 24 }}>
+        Enter your Flow wallet address to see your moments across all 5 collections — Top Shot, All Day, Pinnacle, Golazos, and UFC Strike.
+      </p>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!saving) onSave();
+        }}
+        style={{ display: "flex", flexDirection: "column", gap: 12 }}
+      >
+        <input
+          type="text"
+          value={walletInput}
+          onChange={(e) => setWalletInput(e.target.value)}
+          placeholder="0x…"
+          autoComplete="off"
+          spellCheck={false}
+          disabled={saving}
+          style={{
+            width: "100%",
+            padding: "12px 14px",
+            background: "#0D0D0D",
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: 6,
+            color: "#fff",
+            fontFamily: monoFont,
+            fontSize: 13,
+            letterSpacing: "0.04em",
+            outline: "none",
+          }}
+        />
+        <input
+          type="text"
+          value={usernameInput}
+          onChange={(e) => setUsernameInput(e.target.value)}
+          placeholder="Top Shot username (optional, for display)"
+          autoComplete="off"
+          disabled={saving}
+          style={{
+            width: "100%",
+            padding: "12px 14px",
+            background: "#0D0D0D",
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: 6,
+            color: "#fff",
+            fontFamily: condensedFont,
+            fontSize: 13,
+            letterSpacing: "0.04em",
+            outline: "none",
+          }}
+        />
+        <button type="submit" disabled={saving} style={{ ...buttonPrimaryStyle, width: "100%", marginTop: 6, opacity: saving ? 0.7 : 1 }}>
+          {saving ? "Saving\u2026" : <>Save &amp; Analyze {"\u2192"}</>}
+        </button>
+      </form>
+
+      {saving && (
+        <div style={{ marginTop: 14, fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: "0.04em" }}>
+          {"Fetching your moments across all 5 networks\u2026"}
+        </div>
+      )}
+      {saveError && !saving && (
+        <div style={{ marginTop: 14, fontFamily: monoFont, fontSize: 11, color: "#F87171", letterSpacing: "0.04em" }}>
+          {saveError}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PortfolioView({
+  profile,
+  loading,
+  onDisconnect,
+  onRefresh,
+}: {
+  profile: ProfileResponse;
+  loading: boolean;
+  onDisconnect: () => void;
+  onRefresh: () => void;
+}) {
+  const walletAddress = profile.wallet_address ?? "";
+  const username = profile.topshot_username ?? null;
+  const portfolio = profile.portfolio ?? null;
+
+  const perCollection = portfolio?.per_collection ?? [];
+  const totalMoments = portfolio?.total_moments ?? perCollection.reduce((sum, c) => sum + (c.moment_count ?? 0), 0);
+  const totalFmv = portfolio?.total_fmv_usd ?? 0;
+  const activeCollections = perCollection.filter((c) => (c.moment_count ?? 0) > 0).length;
+
+  const topMoments = (portfolio?.top_moments ?? [])
+    .slice()
+    .sort((a, b) => (b.fmv_usd ?? 0) - (a.fmv_usd ?? 0))
+    .slice(0, 10);
+
+  const lastUpdated = portfolio?.updated_at ?? profile.updated_at ?? null;
+  const lastUpdatedStr = lastUpdated ? new Date(lastUpdated).toLocaleString() : null;
+
+  const showFetchingCallout = profile.has_wallet && totalMoments === 0;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+
+      {/* Header bar */}
+      <section style={{ background: "#18181b", border: "1px solid #27272a", borderRadius: 10, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ fontFamily: monoFont, fontSize: 13, letterSpacing: "0.04em", color: "#fff" }}>
+            {truncateAddress(walletAddress)}
+          </div>
+          {username && (
+            <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, letterSpacing: "0.06em", color: ACCENT_RED }}>
+              @{username}
+            </div>
+          )}
+        </div>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          {lastUpdatedStr && (
+            <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: "0.08em" }}>
+              Updated {lastUpdatedStr}
+            </div>
+          )}
+          <button onClick={onRefresh} disabled={loading} style={{ ...buttonGhostStyle, opacity: loading ? 0.5 : 1 }}>
+            {loading ? "Refreshing\u2026" : "Refresh"}
+          </button>
+          <button onClick={onDisconnect} style={{ ...linkButtonStyle }}>
+            Disconnect
+          </button>
+        </div>
+      </section>
+
+      {showFetchingCallout && (
+        <section style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.4)", borderRadius: 10, padding: "12px 16px", fontFamily: monoFont, fontSize: 12, color: "#F59E0B", letterSpacing: "0.04em" }}>
+          Your wallet was saved — fetching moments in the background. Refresh in a moment.
+        </section>
+      )}
+
+      {/* Platform summary */}
+      <section className="rpc-profile-summary" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+        <SummaryCard label="Total Moments" value={totalMoments.toLocaleString()} color="#fff" />
+        <SummaryCard label="Total FMV" value={fmtUsd0(totalFmv)} color="#34D399" />
+        <SummaryCard label="Collections Active" value={`${activeCollections} / ${perCollection.length || 0}`} color="#A855F7" />
+      </section>
+
+      {/* Per-collection grid */}
+      <section>
+        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.7)", marginBottom: 10 }}>
+          Per Collection
+        </div>
+        <div className="rpc-profile-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
+          {perCollection.length === 0 ? (
+            <div style={{ gridColumn: "1 / -1", padding: "20px 18px", background: "#18181b", border: "1px solid #27272a", borderRadius: 10, fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.45)", letterSpacing: "0.04em", textAlign: "center" }}>
+              No collection data yet.
+            </div>
+          ) : (
+            perCollection.map((row) => {
+              const meta = metaForSlug(row.collection_slug);
+              const count = row.moment_count ?? 0;
+              const fmv = row.total_fmv_usd ?? row.fmv_usd ?? 0;
+              const isEmpty = count === 0;
+              return (
+                <Link
+                  key={row.collection_slug}
+                  href={`/${meta.id}/collection`}
+                  style={{
+                    display: "block",
+                    background: "#18181b",
+                    border: "1px solid #27272a",
+                    borderBottom: `2px solid ${isEmpty ? "rgba(255,255,255,0.15)" : meta.accent}`,
+                    borderRadius: 10,
+                    padding: "14px 16px",
+                    color: "#fff",
+                    textDecoration: "none",
+                    opacity: isEmpty ? 0.5 : 1,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                    <span style={{ fontSize: 20 }}>{meta.icon}</span>
+                    <span style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                      {meta.label}
+                    </span>
+                  </div>
+                  {isEmpty ? (
+                    <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.4)", letterSpacing: "0.08em" }}>
+                      No moments
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Moments</div>
+                        <div style={{ fontSize: 16, fontFamily: condensedFont, fontWeight: 800 }}>{count.toLocaleString()}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>FMV</div>
+                        <div style={{ fontSize: 16, fontFamily: condensedFont, fontWeight: 800, color: "#34D399" }}>{fmtUsd0(fmv)}</div>
+                      </div>
+                    </div>
+                  )}
+                </Link>
+              );
+            })
+          )}
+        </div>
+      </section>
+
+      {/* Top Moments */}
+      <section>
+        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.7)", marginBottom: 10 }}>
+          Top Moments
+        </div>
+        {topMoments.length === 0 ? (
+          <div style={{ padding: "20px 18px", background: "#18181b", border: "1px solid #27272a", borderRadius: 10, fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.45)", letterSpacing: "0.04em", textAlign: "center" }}>
+            No moments with FMV data yet — refresh to fetch your collection.
+          </div>
+        ) : (
+          <div style={{ background: "#18181b", border: "1px solid #27272a", borderRadius: 10, overflow: "hidden" }}>
+            {topMoments.map((m, i) => {
+              const name = m.edition_name || m.player_name || m.character_name || "\u2014";
+              const meta = metaForSlug(m.collection_slug ?? "");
+              const tc = tierColor(m.tier);
+              return (
+                <div key={`${m.moment_id ?? i}`} style={{
+                  display: "grid",
+                  gridTemplateColumns: "1.5fr auto auto auto",
+                  gap: 12,
+                  alignItems: "center",
+                  padding: "10px 14px",
+                  borderBottom: i < topMoments.length - 1 ? "1px solid #27272a" : "none",
+                }}>
+                  <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {name}
+                  </div>
+                  {m.tier ? (
+                    <span style={{ fontSize: 9, fontFamily: condensedFont, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: tc, background: `${tc}22`, border: `1px solid ${tc}55`, padding: "2px 6px", borderRadius: 3 }}>
+                      {m.tier}
+                    </span>
+                  ) : (
+                    <span />
+                  )}
+                  <span style={{ fontSize: 10, fontFamily: monoFont, letterSpacing: "0.08em", color: meta.accent, textTransform: "uppercase" }}>
+                    {meta.shortLabel}
+                  </span>
+                  <span style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "#34D399", textAlign: "right" }}>
+                    {typeof m.fmv_usd === "number" ? fmtUsd0(m.fmv_usd) : "\u2014"}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function SummaryCard({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{ background: "#18181b", border: "1px solid #27272a", borderRadius: 10, padding: "12px 16px" }}>
+      <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 22, fontFamily: condensedFont, fontWeight: 800, color, lineHeight: 1 }}>{value}</div>
+    </div>
+  );
+}
+
+const buttonPrimaryStyle = {
+  background: ACCENT_RED,
+  border: "none",
+  color: "#fff",
+  padding: "10px 20px",
+  borderRadius: 6,
+  fontFamily: condensedFont,
+  fontWeight: 700,
+  fontSize: 13,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase" as const,
+  cursor: "pointer",
+};
+
+const buttonGhostStyle = {
+  background: "transparent",
+  border: "1px solid rgba(255,255,255,0.15)",
+  color: "#fff",
+  padding: "6px 14px",
+  borderRadius: 6,
+  fontFamily: condensedFont,
+  fontWeight: 700,
+  fontSize: 11,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase" as const,
+  cursor: "pointer",
+};
+
+const linkButtonStyle = {
+  background: "transparent",
+  border: "none",
+  color: "rgba(255,255,255,0.5)",
+  padding: 0,
+  fontFamily: monoFont,
+  fontSize: 10,
+  letterSpacing: "0.1em",
+  textTransform: "uppercase" as const,
+  cursor: "pointer",
+  textDecoration: "underline",
+};
