@@ -2,16 +2,25 @@
 // scripts/enrich-topshot-editions.ts
 //
 // Fills in thumbnail_url / tier / play_type / game_date / team_name / series
-// on Top Shot editions whose external_id is the UUID pair (setUUID:playUUID).
-// Goes through the Cloudflare proxy when TS_PROXY_URL is set; falls back to
-// the public GQL (will hit the Cloudflare wall from most Vercel IPs, but
-// works fine locally).
+// on Top Shot editions.
 //
-// Usage:  npx tsx scripts/enrich-topshot-editions.ts [--limit=50] [--dry-run]
+// UUID mode (default): external_id is the UUID pair (setUUID:playUUID). Uses
+// the TopShot public GraphQL, optionally via the Cloudflare proxy when
+// TS_PROXY_URL is set.
+//
+// --integer mode: external_id is integer setID:playID (e.g. 218:8207). The
+// TopShot GQL resolver rejects raw integer IDs, so this path goes straight
+// to Cadence: TopShot.getPlayMetaData + TopShot.getSetSeries. Cadence can't
+// return thumbnail_url or tier (not on-chain) — those have to be resolved
+// another way for integer rows.
+//
+// Usage:  npx tsx scripts/enrich-topshot-editions.ts [--limit=50] [--dry-run] [--integer]
 // Env:    SUPABASE_URL (optional), SUPABASE_SERVICE_ROLE_KEY (required)
 //         TS_PROXY_URL (optional), TS_PROXY_SECRET (optional)
 
 import { createClient } from "@supabase/supabase-js"
+import * as fcl from "@onflow/fcl"
+import * as t from "@onflow/types"
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || "https://bxcqstmqfzmuolpuynti.supabase.co"
@@ -22,17 +31,19 @@ const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET || ""
 const GQL_ENDPOINT = TS_PROXY_URL || "https://public-api.nbatopshot.com/graphql"
 
 const DRY_RUN = process.argv.includes("--dry-run")
-// UUID-format external_ids (setUUID:playUUID) are the default path. Pass
+// UUID-format external_ids (setUUID:playUUID) use the GQL path. Pass
 // --integer to instead target rows with integer setID:playID (e.g. 218:8207);
-// the same searchEditions GQL query handles both — TS's API accepts either
-// UUIDs or integer on-chain IDs in bySetIDs/byPlayIDs.
+// integer IDs can't go through the GQL resolver, so that mode uses Cadence.
 const INTEGER_MODE = process.argv.includes("--integer")
 const LIMIT = (() => {
   const hit = process.argv.find((a) => a.startsWith("--limit="))
   const n = hit ? Number(hit.slice("--limit=".length)) : 50
   return Number.isFinite(n) && n > 0 ? n : 50
 })()
-const DELAY_MS = 500
+// Cadence path is cheaper than GQL (access node with short RPC), so a tighter
+// throttle is safe. GQL path keeps the prior 500ms to avoid tripping rate
+// limits on the proxy / TopShot API.
+const DELAY_MS = INTEGER_MODE ? 150 : 500
 
 if (!SERVICE_KEY) {
   console.error("SUPABASE_SERVICE_ROLE_KEY not set")
@@ -41,12 +52,47 @@ if (!SERVICE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY)
 
+// On-chain Series UInt32 → display name (series=1 does not exist on chain).
+const SERIES_MAP: Record<number, string> = {
+  0: "Series 1",
+  2: "Series 2",
+  3: "Summer 2021",
+  4: "Series 3",
+  5: "Series 4",
+  6: "Series 2023-24",
+  7: "Series 2024-25",
+  8: "Series 2025-26",
+}
+
+if (INTEGER_MODE) {
+  fcl.config()
+    .put("flow.network", "mainnet")
+    .put("accessNode.api", "https://rest-mainnet.onflow.org")
+}
+
+const CADENCE_GET_PLAY_META = `
+import TopShot from 0x0b2a3299cc857e29
+
+access(all) fun main(playID: UInt32): {String: String} {
+    return TopShot.getPlayMetaData(playID: playID) ?? {}
+}
+`.trim()
+
+const CADENCE_GET_SET_SERIES = `
+import TopShot from 0x0b2a3299cc857e29
+
+access(all) fun main(setID: UInt32): UInt32? {
+    return TopShot.getSetSeries(setID: setID)
+}
+`.trim()
+
 interface EditionRow {
   id: string
   external_id: string | null
   name: string | null
   thumbnail_url: string | null
   tier: string | null
+  player_name: string | null
 }
 
 function sleep(ms: number): Promise<void> {
@@ -81,37 +127,6 @@ const SEARCH_QUERY_UUID = `
                 }
               }
             }
-          }
-        }
-      }
-    }
-  }
-`.trim()
-
-// Integer path: uses the simpler setID/playID direct-input shape that the TS
-// GQL resolver accepts for integer on-chain IDs passed as strings. The complex
-// bySetIDs shape routes through an internal searchSetPlays resolver that
-// rejects raw integers. Response path is searchEditions.data[].
-const SEARCH_QUERY_INTEGER = `
-  query EnrichEditionInt($setID: ID, $playID: ID, $first: Int!) {
-    searchEditions(input: { setID: $setID, playID: $playID, first: $first }) {
-      data {
-        tier
-        assetPathPrefix
-        set {
-          id
-          flowId
-          flowName
-          flowSeriesNumber
-        }
-        play {
-          id
-          flowID
-          stats {
-            playerName
-            teamAtMoment
-            playCategory
-            dateOfMoment
           }
         }
       }
@@ -159,24 +174,28 @@ async function topshotGql(
 
 async function loadTargets(): Promise<EditionRow[]> {
   // Skip rows like "locked_<nftid>" created by the lock-refresh flow — they
-  // can't be resolved through the Play/Set GQL path regardless of mode.
+  // can't be resolved through the Play/Set path regardless of mode.
   let query = supabase
     .from("editions")
-    .select("id, external_id, name, thumbnail_url, tier")
+    .select("id, external_id, name, thumbnail_url, tier, player_name")
     .eq("collection_id", TOPSHOT_COLLECTION_ID)
-    .or("thumbnail_url.is.null,tier.is.null")
 
   if (INTEGER_MODE) {
     // Integer on-chain IDs: setID:playID (e.g. 218:8207). These have a colon
     // but no dashes and don't start with the "locked_" prefix. PostgREST has
     // no regex operator via supabase-js, so we combine positive/negative LIKE.
+    // Cadence fills the on-chain-resolvable columns only: play_type, game_date,
+    // team_name, series, player_name — thumbnail_url/tier aren't on-chain.
     query = query
       .like("external_id", "%:%")
       .not("external_id", "like", "%-%")
       .not("external_id", "like", "locked%")
+      .or("play_type.is.null,game_date.is.null,team_name.is.null,series.is.null,player_name.is.null")
   } else {
     // UUID pair: setUUID:playUUID — both contain dashes, colon in the middle.
-    query = query.like("external_id", "%-%:%-%")
+    query = query
+      .like("external_id", "%-%:%-%")
+      .or("thumbnail_url.is.null,tier.is.null")
   }
 
   const { data, error } = await query
@@ -184,6 +203,49 @@ async function loadTargets(): Promise<EditionRow[]> {
     .limit(LIMIT)
   if (error) throw new Error(`load targets: ${error.message}`)
   return (data ?? []) as EditionRow[]
+}
+
+type CadencePatch = {
+  play_type?: string
+  game_date?: string
+  team_name?: string
+  series?: number
+  player_name?: string
+}
+
+async function enrichViaCadence(
+  ed: EditionRow,
+  setId: string,
+  playId: string
+): Promise<CadencePatch> {
+  const patch: CadencePatch = {}
+
+  // Call 1: play metadata
+  const meta = (await fcl.query({
+    cadence: CADENCE_GET_PLAY_META,
+    args: (arg: any) => [arg(String(playId), t.UInt32)],
+  })) as Record<string, string> | null
+
+  if (meta) {
+    if (meta.PlayCategory) patch.play_type = meta.PlayCategory
+    const gd = normDate(meta.DateOfMoment)
+    if (gd) patch.game_date = gd
+    if (meta.TeamAtMoment) patch.team_name = meta.TeamAtMoment
+    if (!ed.player_name && meta.FullName) patch.player_name = meta.FullName
+  }
+
+  // Call 2: set series (nullable UInt32)
+  const seriesRaw = (await fcl.query({
+    cadence: CADENCE_GET_SET_SERIES,
+    args: (arg: any) => [arg(String(setId), t.UInt32)],
+  })) as string | number | null
+
+  if (seriesRaw != null) {
+    const seriesNum = Number(seriesRaw)
+    if (Number.isFinite(seriesNum)) patch.series = seriesNum
+  }
+
+  return patch
 }
 
 function normDate(raw: string | null | undefined): string | null {
@@ -196,11 +258,15 @@ function normDate(raw: string | null | undefined): string | null {
 
 async function main() {
   console.log(
-    `[enrich-topshot] starting limit=${LIMIT} mode=${INTEGER_MODE ? "integer" : "uuid"}${DRY_RUN ? " (dry run)" : ""}`
+    `[enrich-topshot] starting limit=${LIMIT} mode=${INTEGER_MODE ? "integer-cadence" : "uuid-gql"}${DRY_RUN ? " (dry run)" : ""}`
   )
-  console.log(
-    `[enrich-topshot] GQL endpoint: ${GQL_ENDPOINT === TS_PROXY_URL ? "via proxy" : "direct (may be Cloudflare-blocked)"}`
-  )
+  if (!INTEGER_MODE) {
+    console.log(
+      `[enrich-topshot] GQL endpoint: ${GQL_ENDPOINT === TS_PROXY_URL ? "via proxy" : "direct (may be Cloudflare-blocked)"}`
+    )
+  } else {
+    console.log(`[enrich-topshot] Flow access node: https://rest-mainnet.onflow.org`)
+  }
 
   const targets = await loadTargets()
   console.log(
@@ -225,41 +291,6 @@ async function main() {
       continue
     }
 
-    let data: Record<string, unknown> | null = null
-    try {
-      if (INTEGER_MODE) {
-        data = await topshotGql(SEARCH_QUERY_INTEGER, {
-          setID: setId,
-          playID: playId,
-          first: 1,
-        })
-      } else {
-        data = await topshotGql(SEARCH_QUERY_UUID, {
-          input: {
-            filters: { bySetIDs: [setId], byPlayIDs: [playId] },
-            searchInput: { pagination: { cursor: "", direction: "RIGHT", limit: 1 } },
-          },
-        })
-      }
-    } catch (e) {
-      errs++
-      console.log(`  ✗ ${extId}: ${(e as Error).message}`)
-      await sleep(DELAY_MS * 2)
-      continue
-    }
-
-    // Integer path: data.searchEditions.data[]
-    // UUID path:    data.searchEditions.searchSummary.data.data[]
-    const nodes = INTEGER_MODE
-      ? ((data as any)?.searchEditions?.data as GqlEdition[] | undefined)
-      : ((data as any)?.searchEditions?.searchSummary?.data?.data as GqlEdition[] | undefined)
-    const edition: GqlEdition | null = Array.isArray(nodes) && nodes.length > 0 ? nodes[0] : null
-    if (!edition) {
-      noMeta++
-      await sleep(DELAY_MS)
-      continue
-    }
-
     const patch: {
       thumbnail_url?: string
       tier?: string
@@ -267,27 +298,63 @@ async function main() {
       game_date?: string
       team_name?: string
       series?: number
+      player_name?: string
     } = {}
 
-    if (!ed.thumbnail_url && edition.assetPathPrefix) {
-      patch.thumbnail_url = `${edition.assetPathPrefix}image`.replace(
-        /\/?image$/,
-        "/image"
-      )
-    }
-    if (!ed.tier && edition.tier) {
-      patch.tier = String(edition.tier).replace(/^MOMENT_TIER_/, "").toUpperCase()
-    }
+    if (INTEGER_MODE) {
+      try {
+        const cadencePatch = await enrichViaCadence(ed, setId, playId)
+        Object.assign(patch, cadencePatch)
+      } catch (e) {
+        errs++
+        console.log(`  ✗ ${extId}: ${(e as Error).message}`)
+        await sleep(DELAY_MS * 2)
+        continue
+      }
+    } else {
+      let data: Record<string, unknown> | null = null
+      try {
+        data = await topshotGql(SEARCH_QUERY_UUID, {
+          input: {
+            filters: { bySetIDs: [setId], byPlayIDs: [playId] },
+            searchInput: { pagination: { cursor: "", direction: "RIGHT", limit: 1 } },
+          },
+        })
+      } catch (e) {
+        errs++
+        console.log(`  ✗ ${extId}: ${(e as Error).message}`)
+        await sleep(DELAY_MS * 2)
+        continue
+      }
 
-    const playCategory = edition.play?.stats?.playCategory ?? null
-    if (playCategory) patch.play_type = playCategory
-    const gameDate = normDate(edition.play?.stats?.dateOfMoment ?? null)
-    if (gameDate) patch.game_date = gameDate
-    const team = edition.play?.stats?.teamAtMoment ?? null
-    if (team) patch.team_name = team
-    const seriesNum = edition.set?.flowSeriesNumber
-    if (seriesNum != null && Number.isFinite(Number(seriesNum))) {
-      patch.series = Number(seriesNum)
+      const nodes = (data as any)?.searchEditions?.searchSummary?.data?.data as GqlEdition[] | undefined
+      const edition: GqlEdition | null = Array.isArray(nodes) && nodes.length > 0 ? nodes[0] : null
+      if (!edition) {
+        noMeta++
+        await sleep(DELAY_MS)
+        continue
+      }
+
+      if (!ed.thumbnail_url && edition.assetPathPrefix) {
+        patch.thumbnail_url = `${edition.assetPathPrefix}image`.replace(
+          /\/?image$/,
+          "/image"
+        )
+      }
+      if (!ed.tier && edition.tier) {
+        patch.tier = String(edition.tier).replace(/^MOMENT_TIER_/, "").toUpperCase()
+      }
+
+      const playCategory = edition.play?.stats?.playCategory ?? null
+      if (playCategory) patch.play_type = playCategory
+      const gameDate = normDate(edition.play?.stats?.dateOfMoment ?? null)
+      if (gameDate) patch.game_date = gameDate
+      const team = edition.play?.stats?.teamAtMoment ?? null
+      if (team) patch.team_name = team
+      const seriesNum = edition.set?.flowSeriesNumber
+      if (seriesNum != null && Number.isFinite(Number(seriesNum))) {
+        patch.series = Number(seriesNum)
+      }
     }
 
     if (Object.keys(patch).length === 0) {
@@ -297,7 +364,9 @@ async function main() {
     }
 
     if (DRY_RUN) {
-      console.log(`  · ${extId} → ${JSON.stringify(patch)}`)
+      const seriesLabel =
+        patch.series != null ? ` (${SERIES_MAP[patch.series] ?? `series ${patch.series}`})` : ""
+      console.log(`  · ${extId} → ${JSON.stringify(patch)}${seriesLabel}`)
       updated++
     } else {
       const { error } = await supabase
