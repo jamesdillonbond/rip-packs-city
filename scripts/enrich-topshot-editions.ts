@@ -53,7 +53,9 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
 }
 
-const SEARCH_QUERY = `
+// UUID path: uses the complex filters.bySetIDs/byPlayIDs shape that returns
+// data under searchEditions.searchSummary.data.data.
+const SEARCH_QUERY_UUID = `
   query EnrichEdition($input: SearchEditionsInput!) {
     searchEditions(input: $input) {
       searchSummary {
@@ -79,6 +81,37 @@ const SEARCH_QUERY = `
                 }
               }
             }
+          }
+        }
+      }
+    }
+  }
+`.trim()
+
+// Integer path: uses the simpler setID/playID direct-input shape that the TS
+// GQL resolver accepts for integer on-chain IDs passed as strings. The complex
+// bySetIDs shape routes through an internal searchSetPlays resolver that
+// rejects raw integers. Response path is searchEditions.data[].
+const SEARCH_QUERY_INTEGER = `
+  query EnrichEditionInt($setID: ID, $playID: ID, $first: Int!) {
+    searchEditions(input: { setID: $setID, playID: $playID, first: $first }) {
+      data {
+        tier
+        assetPathPrefix
+        set {
+          id
+          flowId
+          flowName
+          flowSeriesNumber
+        }
+        play {
+          id
+          flowID
+          stats {
+            playerName
+            teamAtMoment
+            playCategory
+            dateOfMoment
           }
         }
       }
@@ -134,8 +167,13 @@ async function loadTargets(): Promise<EditionRow[]> {
     .or("thumbnail_url.is.null,tier.is.null")
 
   if (INTEGER_MODE) {
-    // Integer on-chain IDs: setID:playID (e.g. 218:8207).
-    query = query.filter("external_id", "match", "^[0-9]+:[0-9]+$")
+    // Integer on-chain IDs: setID:playID (e.g. 218:8207). These have a colon
+    // but no dashes and don't start with the "locked_" prefix. PostgREST has
+    // no regex operator via supabase-js, so we combine positive/negative LIKE.
+    query = query
+      .like("external_id", "%:%")
+      .not("external_id", "like", "%-%")
+      .not("external_id", "like", "locked%")
   } else {
     // UUID pair: setUUID:playUUID — both contain dashes, colon in the middle.
     query = query.like("external_id", "%-%:%-%")
@@ -189,12 +227,20 @@ async function main() {
 
     let data: Record<string, unknown> | null = null
     try {
-      data = await topshotGql(SEARCH_QUERY, {
-        input: {
-          filters: { bySetIDs: [setId], byPlayIDs: [playId] },
-          searchInput: { pagination: { cursor: "", direction: "RIGHT", limit: 1 } },
-        },
-      })
+      if (INTEGER_MODE) {
+        data = await topshotGql(SEARCH_QUERY_INTEGER, {
+          setID: setId,
+          playID: playId,
+          first: 1,
+        })
+      } else {
+        data = await topshotGql(SEARCH_QUERY_UUID, {
+          input: {
+            filters: { bySetIDs: [setId], byPlayIDs: [playId] },
+            searchInput: { pagination: { cursor: "", direction: "RIGHT", limit: 1 } },
+          },
+        })
+      }
     } catch (e) {
       errs++
       console.log(`  ✗ ${extId}: ${(e as Error).message}`)
@@ -202,8 +248,11 @@ async function main() {
       continue
     }
 
-    // Path: data.searchEditions.searchSummary.data.data[]
-    const nodes = (data as any)?.searchEditions?.searchSummary?.data?.data as GqlEdition[] | undefined
+    // Integer path: data.searchEditions.data[]
+    // UUID path:    data.searchEditions.searchSummary.data.data[]
+    const nodes = INTEGER_MODE
+      ? ((data as any)?.searchEditions?.data as GqlEdition[] | undefined)
+      : ((data as any)?.searchEditions?.searchSummary?.data?.data as GqlEdition[] | undefined)
     const edition: GqlEdition | null = Array.isArray(nodes) && nodes.length > 0 ? nodes[0] : null
     if (!edition) {
       noMeta++
