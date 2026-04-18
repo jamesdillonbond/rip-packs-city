@@ -102,6 +102,7 @@ async function fetchPage(cursor: string | null): Promise<PageResult> {
   }
 
   const edges = Array.isArray(data.edges) ? data.edges : []
+  console.log('[allday-fmv-populate] raw edges:', edges.length, 'sample edge keys:', Object.keys(edges[0] ?? {}))
   const rows: MarketRow[] = []
   for (const edge of edges) {
     const node = edge?.node
@@ -179,6 +180,8 @@ export async function GET(req: NextRequest) {
   let upserted = 0
   let skipped = 0
   let no_edition = 0
+
+  console.log('[allday-fmv-populate] batch size:', allRows.length, 'sample:', JSON.stringify(allRows[0] ?? null))
 
   if (allRows.length > 0) {
     const { data, error } = await supabaseAdmin.rpc(
