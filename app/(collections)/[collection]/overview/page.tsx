@@ -10,6 +10,8 @@ import { getCollection } from "@/lib/collections"
 interface TopSale {
   edition_name?: string | null
   player_name?: string | null
+  character_name?: string | null
+  set_name?: string | null
   tier?: string | null
   price: number
   serial_number?: number | null
@@ -20,18 +22,25 @@ interface TopSale {
 interface SniperDeal {
   player_name?: string | null
   character_name?: string | null
+  set_name?: string | null
   tier?: string | null
   ask_price: number
-  discount_pct: number
+  fmv?: number | null
+  discount?: number | null
   buy_url?: string | null
-  flow_id?: string | null
+  thumbnail_url?: string | null
+  badge_slugs?: string[] | null
+  serial_number?: number | null
 }
 
 interface CollectionStats {
   edition_count: number
+  fmv_covered?: number
   fmv_pct: number
-  volume_24h: number
   fmv_age_minutes: number | null
+  volume_24h: number
+  sales_24h?: number
+  listing_count?: number
   top_sales: TopSale[]
   sniper_deals: SniperDeal[]
   error?: string
@@ -159,8 +168,19 @@ const TIER_COLORS: Record<string, string> = {
   challenger: "var(--tier-challenger)",
   contender: "var(--tier-contender)",
 }
-function tierColor(tier?: string | null) {
+function tierColor(tier: string | null | undefined, collection: string) {
+  // Pinnacle uses edition_type labels (Open Edition, Limited Edition, …)
+  // which don't map to the TopShot/AllDay tier colour enum — render neutral.
+  if (collection === "disney-pinnacle") return "var(--rpc-text-muted)"
   return TIER_COLORS[tier?.toLowerCase() ?? ""] ?? "var(--tier-common)"
+}
+
+const EM_DASH = "\u2014"
+function nameOrDash(...candidates: Array<string | null | undefined>): string {
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim()) return c
+  }
+  return EM_DASH
 }
 
 function fmtPrice(n: number) {
@@ -351,7 +371,9 @@ export default function OverviewPage() {
         <section className="rpc-card" style={{ padding: "16px 20px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: accent }} />
-            <span className="rpc-label">Top 5 Sniper Deals</span>
+            <span className="rpc-label">
+              {collection === "disney-pinnacle" ? "Cheapest Available Asks" : "Top 5 Sniper Deals"}
+            </span>
             <Link href={basePath + "/sniper"} className="rpc-mono" style={{ marginLeft: "auto", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", textDecoration: "none" }}>
               View all {"\u2192"}
             </Link>
@@ -360,29 +382,38 @@ export default function OverviewPage() {
             <SkeletonRows />
           ) : (stats?.sniper_deals?.length ?? 0) === 0 ? (
             <div className="rpc-mono" style={{ color: "var(--rpc-text-ghost)", padding: "16px 0", textAlign: "center" }}>
-              No deals {"\u2265"}15% off right now
+              {collection === "disney-pinnacle"
+                ? "No active listings right now"
+                : <>No deals {"\u2265"}15% off right now</>}
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {(stats?.sniper_deals ?? []).slice(0, 5).map((deal, i) => {
-                const name = deal.player_name ?? deal.character_name ?? "Unknown"
+                const name = nameOrDash(deal.player_name, deal.character_name)
+                const hasDiscount = typeof deal.discount === "number" && deal.discount > 0
+                const gridCols = hasDiscount ? "1fr auto auto" : "1fr auto"
                 const content = (
                   <>
                     <div>
                       <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: "var(--text-base)", color: "var(--rpc-text-primary)" }}>{name}</div>
-                      <div className="rpc-mono" style={{ color: tierColor(deal.tier), fontSize: "var(--text-xs)" }}>{deal.tier ?? ""}</div>
+                      <div className="rpc-mono" style={{ color: tierColor(deal.tier, collection), fontSize: "var(--text-xs)" }}>
+                        {deal.tier ?? ""}
+                        {deal.set_name ? <> &middot; <span style={{ color: "var(--rpc-text-muted)" }}>{deal.set_name}</span></> : null}
+                      </div>
                     </div>
                     <div className="rpc-mono" style={{ color: "var(--rpc-text-secondary)" }}>{fmtPrice(deal.ask_price)}</div>
-                    <div className="rpc-mono" style={{ color: "#E03A2F", fontWeight: 700 }}>-{Math.round(deal.discount_pct)}%</div>
+                    {hasDiscount && (
+                      <div className="rpc-mono" style={{ color: "#E03A2F", fontWeight: 700 }}>-{Math.round(deal.discount as number)}%</div>
+                    )}
                   </>
                 )
-                const rowStyle = { display: "grid", gridTemplateColumns: "1fr auto auto", gap: 12, padding: "8px 12px", background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", alignItems: "center", textDecoration: "none" } as const
+                const rowStyle = { display: "grid", gridTemplateColumns: gridCols, gap: 12, padding: "8px 12px", background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", alignItems: "center", textDecoration: "none" } as const
                 return deal.buy_url ? (
-                  <a key={deal.flow_id ?? i} href={deal.buy_url} target="_blank" rel="noopener noreferrer" style={rowStyle}>
+                  <a key={i} href={deal.buy_url} target="_blank" rel="noopener noreferrer" style={rowStyle}>
                     {content}
                   </a>
                 ) : (
-                  <div key={deal.flow_id ?? i} style={rowStyle}>{content}</div>
+                  <div key={i} style={rowStyle}>{content}</div>
                 )
               })}
             </div>
@@ -447,7 +478,7 @@ export default function OverviewPage() {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {(stats?.top_sales ?? []).slice(0, 5).map((sale, i) => {
-                const name = sale.edition_name ?? sale.player_name ?? "Unknown"
+                const name = nameOrDash(sale.edition_name, sale.player_name, sale.character_name)
                 const ageMin = minutesSince(sale.sold_at)
                 const serialDisplay = sale.serial_number != null
                   ? (sale.circulation_count != null ? `#${sale.serial_number}/${sale.circulation_count}` : `#${sale.serial_number}`)
@@ -457,7 +488,8 @@ export default function OverviewPage() {
                     <div>
                       <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: "var(--text-base)", color: "var(--rpc-text-primary)" }}>{name}</div>
                       <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", marginTop: 2 }}>
-                        <span style={{ color: tierColor(sale.tier) }}>{sale.tier ?? ""}</span>
+                        {sale.tier && <span style={{ color: tierColor(sale.tier, collection) }}>{sale.tier}</span>}
+                        {sale.set_name && <>{sale.tier ? " \u00B7 " : ""}{sale.set_name}</>}
                         {serialDisplay && <> &middot; {serialDisplay}</>}
                         {ageMin != null && <> &middot; {fmtAge(ageMin)}</>}
                       </div>
