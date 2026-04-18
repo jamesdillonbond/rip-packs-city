@@ -176,7 +176,7 @@ export async function GET(req: NextRequest) {
   if (nodes.length > 0) {
     const { data, error } = await supabaseAdmin.rpc(
       "upsert_allday_marketplace_fmv",
-      { p_rows: JSON.stringify(nodes) as any }
+      { p_rows: nodes as any }
     )
     if (error) {
       rpcError = error.message
