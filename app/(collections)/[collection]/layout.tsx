@@ -81,6 +81,28 @@ const TICKER_ITEMS: Record<string, string[]> = {
     "⚡ BADGE TRACKER — Top Shot Debut · Fresh · Rookie Year",
     "⚡ SET TRACKER — completion + bottleneck finder",
   ],
+  "nfl-all-day": [
+    "⚡ COLLECTION ANALYZER — FMV + marketplace asks + badge intel",
+    "⚡ PACK EV CALCULATOR — expected value vs drop price",
+    "⚡ SNIPER — live deals below FMV",
+    "⚡ BADGE TRACKER — Debut · Fresh · Rookie Year premiums",
+    "⚡ SET TRACKER — completion progress + bottleneck finder",
+  ],
+  "disney-pinnacle": [
+    "⚡ COLLECTION ANALYZER — FMV + active listing prices",
+    "⚡ SNIPER — pins priced below market",
+    "⚡ ANALYTICS — portfolio value + deal history",
+  ],
+  "laliga-golazos": [
+    "⚡ COLLECTION ANALYZER — relative deal scoring + FMV",
+    "⚡ SNIPER — floor deals with outlier filter",
+    "⚡ FMV COVERAGE — growing from real sales data",
+  ],
+  "ufc": [
+    "⚡ COLLECTION ANALYZER — FMV + active listing prices",
+    "⚡ SNIPER — fight moments below market",
+    "⚡ ANALYTICS — portfolio tracking",
+  ],
   "panini-blockchain": [
     "🃏 ETHEREUM BRIDGE LIVE — Panini cards now on-chain",
     "⚡ MARKET SNIPER — live OpenSea floor + listings",
@@ -90,7 +112,7 @@ const TICKER_ITEMS: Record<string, string[]> = {
 }
 
 function CollectionTicker({ collection }: { collection: Collection }) {
-  const items = TICKER_ITEMS[collection.id] ?? [`⚡ ${collection.label.toUpperCase()} — COLLECTOR INTELLIGENCE`]
+  const items = TICKER_ITEMS[collection.id] ?? TICKER_ITEMS["nba-top-shot"] ?? [`⚡ ${collection.label.toUpperCase()} — COLLECTOR INTELLIGENCE`]
   const doubled = [...items, ...items]
   return (
     <div style={{ background: "#0D0D0D", borderBottom: "1px solid rgba(224,58,47,0.2)", overflow: "hidden", height: 28, display: "flex", alignItems: "center" }}>
