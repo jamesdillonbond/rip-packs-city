@@ -325,19 +325,22 @@ export async function POST(req: NextRequest) {
         `[allday-sales-indexer] contract=${STOREFRONT_EVENT} range=${lastBlock + 1}-${targetHeight} rawEvents=${rawEventsSeen} found=${sales.length}`
       )
 
-      // Resolve nftID → edition_key via wallet_moments_cache
+      // Resolve nftID → edition_key (+ serial_number) via wallet_moments_cache
       const uniqueNftIds = [...new Set(sales.map((s) => s.nftID))]
       const nftToEditionKey = new Map<string, string>()
+      const nftToSerial = new Map<string, number>()
       if (uniqueNftIds.length > 0) {
         for (let i = 0; i < uniqueNftIds.length; i += 500) {
           const batch = uniqueNftIds.slice(i, i + 500)
           const { data } = await (supabaseAdmin as any)
             .from("wallet_moments_cache")
-            .select("moment_id, edition_key")
+            .select("moment_id, edition_key, serial_number")
             .eq("collection_id", ALLDAY_COLLECTION_ID)
             .in("moment_id", batch)
           for (const row of data ?? []) {
             if (row.edition_key) nftToEditionKey.set(row.moment_id, row.edition_key)
+            const serial = Number(row.serial_number)
+            if (Number.isFinite(serial) && serial > 0) nftToSerial.set(row.moment_id, serial)
           }
         }
       }
@@ -348,7 +351,6 @@ export async function POST(req: NextRequest) {
       // Hits get upserted into nft_edition_map so promote_unmapped_sales and
       // future runs don't have to redo the work.
       const unresolvedSales = sales.filter((s) => !nftToEditionKey.has(s.nftID))
-      const nftToSerial = new Map<string, number>()
       const newlyResolved: Array<{
         nft_id: string
         edition_external_id: string
