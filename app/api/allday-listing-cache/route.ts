@@ -377,10 +377,29 @@ async function runListingCache() {
 
   stats.totalListed = rows.length
 
+  // Dedup by flow_id before upsert. onConflict: 'flow_id' rejects the whole
+  // batch when two VALUES rows share the conflict key, and the dual-sort
+  // sweep can produce the same nftId under different listing_resource_ids.
+  // Keep the row with the lower ask_price per flow_id.
+  const byFlowId = new Map<string, Row>()
+  for (const row of rows) {
+    const prev = byFlowId.get(row.flow_id)
+    if (!prev) {
+      byFlowId.set(row.flow_id, row)
+      continue
+    }
+    const prevAsk = prev.ask_price
+    const nextAsk = row.ask_price
+    if (nextAsk != null && (prevAsk == null || nextAsk < prevAsk)) {
+      byFlowId.set(row.flow_id, row)
+    }
+  }
+  const dedupedRows = Array.from(byFlowId.values())
+
   // Batch-lookup edition UUIDs (currently unused in writes; cached_listings has
   // no edition_id column, but we expose mapped count in the summary).
   const editionIds = Array.from(
-    new Set(rows.map((r) => r.edition_external_id).filter((x): x is string => !!x))
+    new Set(dedupedRows.map((r) => r.edition_external_id).filter((x): x is string => !!x))
   )
   const editionMap = new Map<string, string>()
   for (let i = 0; i < editionIds.length; i += EDITION_LOOKUP_CHUNK) {
@@ -404,8 +423,8 @@ async function runListingCache() {
   // Golazos pattern — a failed Flowty sweep no longer wipes the entire cache
   // to 0 before the upsert runs.
   const runStartedAt = new Date(startedAt).toISOString()
-  for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
-    const batch = rows.slice(i, i + UPSERT_CHUNK).map((r) => {
+  for (let i = 0; i < dedupedRows.length; i += UPSERT_CHUNK) {
+    const batch = dedupedRows.slice(i, i + UPSERT_CHUNK).map((r) => {
       const { edition_external_id: _drop, ...rest } = r
       return rest
     })
