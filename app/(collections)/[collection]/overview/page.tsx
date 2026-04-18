@@ -413,7 +413,9 @@ export default function OverviewPage() {
                     {content}
                   </a>
                 ) : (
-                  <div key={i} style={rowStyle}>{content}</div>
+                  <Link key={i} href={basePath + "/sniper"} style={rowStyle}>
+                    {content}
+                  </Link>
                 )
               })}
             </div>
