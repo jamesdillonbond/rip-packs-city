@@ -170,6 +170,7 @@ export default function ProfilePage() {
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      try { localStorage.setItem("rpc_wallet_address", address); } catch { /* ignore */ }
       await loadProfile(ownerKey);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Could not save wallet");
@@ -181,8 +182,10 @@ export default function ProfilePage() {
   const handleDisconnect = useCallback(() => {
     try {
       localStorage.removeItem("rpc_owner_key");
+      localStorage.removeItem("rpc_wallet_address");
       localStorage.removeItem("rpc_last_wallet");
       localStorage.removeItem("rpc_collection_last_wallet");
+      localStorage.removeItem("rpc_last_hydrated");
     } catch { /* ignore */ }
     const fresh = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `rpc-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     try { localStorage.setItem("rpc_owner_key", fresh); } catch { /* ignore */ }
