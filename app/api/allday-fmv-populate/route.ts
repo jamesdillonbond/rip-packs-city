@@ -25,6 +25,7 @@ const COLLECTION_SLUG = "nfl_all_day"
 const PAGES_PER_RUN = 5
 const PAGE_SIZE = 100
 const PAGE_TIMEOUT_MS = 6000
+const CONCURRENCY_LOCK_MS = 3 * 60 * 1000
 
 const AD_GQL_QUERY = `query SearchMarketplaceEditions($first: Int!, $after: String, $sortBy: MarketplaceEditionSortType) {
   searchMarketplaceEditions(input: { first: $first, after: $after, sortBy: $sortBy }) {
@@ -126,7 +127,7 @@ export async function GET(req: NextRequest) {
 
   const { data: stateRow, error: stateErr } = await supabaseAdmin
     .from("backfill_state")
-    .select("cursor, total_ingested")
+    .select("cursor, total_ingested, status, last_run_at")
     .eq("id", SWEEP_ID)
     .single()
 
@@ -138,8 +139,29 @@ export async function GET(req: NextRequest) {
     )
   }
 
+  const statusBefore: string | null = (stateRow as any)?.status ?? null
+  const lastRunAtRaw: string | null = (stateRow as any)?.last_run_at ?? null
+  const lastRunMs = lastRunAtRaw ? new Date(lastRunAtRaw).getTime() : 0
+  const lockAgeMs = lastRunMs > 0 ? startedAt.getTime() - lastRunMs : Number.POSITIVE_INFINITY
+  if (statusBefore === "running" && lockAgeMs < CONCURRENCY_LOCK_MS) {
+    console.log(`[allday-fmv-populate] concurrency guard: lock_age_ms=${lockAgeMs}`)
+    return NextResponse.json({
+      ok: false,
+      reason: "concurrency_guard",
+      lock_age_ms: lockAgeMs,
+    })
+  }
+
   const cursorBefore: string | null = stateRow?.cursor ?? null
   const totalIngestedBefore: number = stateRow?.total_ingested ?? 0
+
+  const { error: lockErr } = await supabaseAdmin
+    .from("backfill_state")
+    .update({ status: "running", last_run_at: startedAtIso })
+    .eq("id", SWEEP_ID)
+  if (lockErr) {
+    console.log(`[allday-fmv-populate] lock update err: ${lockErr.message}`)
+  }
 
   let cursor: string | null = cursorBefore
   let hasNextPage = true
@@ -193,7 +215,7 @@ export async function GET(req: NextRequest) {
 
   const sweepComplete = !hasNextPage
   const cursorAfter = sweepComplete ? null : cursor
-  const nextStatus = sweepComplete ? "complete" : "running"
+  const nextStatus = sweepComplete ? "complete" : "pending"
 
   const { error: updateErr } = await supabaseAdmin
     .from("backfill_state")
