@@ -61,17 +61,22 @@ async function fetchPage(cursor: string | null): Promise<PageResult> {
 
   console.log('[allday-fmv-populate] endpoint:', url.slice(0, 30))
 
+  const variables = {
+    first: PAGE_SIZE,
+    after: cursor,
+    sortBy: "LISTED_DATE_DESC",
+  }
+  const body: { query: string; variables: typeof variables; operationName?: string } = {
+    query: AD_GQL_QUERY,
+    variables,
+  }
+
+  console.log('[allday-fmv-populate] sending query for op:', body.operationName ?? 'none', 'vars:', JSON.stringify(variables ?? {}).slice(0, 100))
+
   const res = await fetch(url, {
     method: "POST",
     headers,
-    body: JSON.stringify({
-      query: AD_GQL_QUERY,
-      variables: {
-        first: PAGE_SIZE,
-        after: cursor,
-        sortBy: "LISTED_DATE_DESC",
-      },
-    }),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(PAGE_TIMEOUT_MS),
   })
 
@@ -82,16 +87,17 @@ async function fetchPage(cursor: string | null): Promise<PageResult> {
   }
 
   const rawText = await res.text()
-  let body: any
+  let json: any
   try {
-    body = JSON.parse(rawText)
+    json = JSON.parse(rawText)
   } catch (e) {
     console.error('[allday-fmv-populate] JSON parse failed, raw:', rawText.slice(0, 500))
     throw e
   }
-  const data = body?.data?.searchMarketplaceEditions
+  console.log('[allday-fmv-populate] page1-raw:', JSON.stringify(json).slice(0, 400))
+  const data = json?.data?.searchMarketplaceEditions
   if (!data) {
-    const errs = body?.errors ? JSON.stringify(body.errors).slice(0, 200) : ""
+    const errs = json?.errors ? JSON.stringify(json.errors).slice(0, 200) : ""
     throw new Error(`GQL missing data ${errs}`)
   }
 
