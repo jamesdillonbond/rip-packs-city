@@ -22,6 +22,11 @@ const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET || ""
 const GQL_ENDPOINT = TS_PROXY_URL || "https://public-api.nbatopshot.com/graphql"
 
 const DRY_RUN = process.argv.includes("--dry-run")
+// UUID-format external_ids (setUUID:playUUID) are the default path. Pass
+// --integer to instead target rows with integer setID:playID (e.g. 218:8207);
+// the same searchEditions GQL query handles both — TS's API accepts either
+// UUIDs or integer on-chain IDs in bySetIDs/byPlayIDs.
+const INTEGER_MODE = process.argv.includes("--integer")
 const LIMIT = (() => {
   const hit = process.argv.find((a) => a.startsWith("--limit="))
   const n = hit ? Number(hit.slice("--limit=".length)) : 50
@@ -120,15 +125,23 @@ async function topshotGql(
 }
 
 async function loadTargets(): Promise<EditionRow[]> {
-  // We only enrich UUID-format external_ids (setUUID:playUUID). Rows like
-  // "locked_<nftid>" were created by the lock-refresh flow and can't be
-  // resolved through the Play/Set GQL path.
-  const { data, error } = await supabase
+  // Skip rows like "locked_<nftid>" created by the lock-refresh flow — they
+  // can't be resolved through the Play/Set GQL path regardless of mode.
+  let query = supabase
     .from("editions")
     .select("id, external_id, name, thumbnail_url, tier")
     .eq("collection_id", TOPSHOT_COLLECTION_ID)
     .or("thumbnail_url.is.null,tier.is.null")
-    .like("external_id", "%-%:%-%")
+
+  if (INTEGER_MODE) {
+    // Integer on-chain IDs: setID:playID (e.g. 218:8207).
+    query = query.filter("external_id", "match", "^[0-9]+:[0-9]+$")
+  } else {
+    // UUID pair: setUUID:playUUID — both contain dashes, colon in the middle.
+    query = query.like("external_id", "%-%:%-%")
+  }
+
+  const { data, error } = await query
     .order("external_id", { ascending: true })
     .limit(LIMIT)
   if (error) throw new Error(`load targets: ${error.message}`)
@@ -145,14 +158,16 @@ function normDate(raw: string | null | undefined): string | null {
 
 async function main() {
   console.log(
-    `[enrich-topshot] starting limit=${LIMIT}${DRY_RUN ? " (dry run)" : ""}`
+    `[enrich-topshot] starting limit=${LIMIT} mode=${INTEGER_MODE ? "integer" : "uuid"}${DRY_RUN ? " (dry run)" : ""}`
   )
   console.log(
     `[enrich-topshot] GQL endpoint: ${GQL_ENDPOINT === TS_PROXY_URL ? "via proxy" : "direct (may be Cloudflare-blocked)"}`
   )
 
   const targets = await loadTargets()
-  console.log(`[enrich-topshot] ${targets.length} UUID editions missing data`)
+  console.log(
+    `[enrich-topshot] ${targets.length} ${INTEGER_MODE ? "integer" : "UUID"} editions missing data`
+  )
   if (targets.length === 0) {
     console.log("nothing to do.")
     return
@@ -166,8 +181,8 @@ async function main() {
     const ed = targets[i]
     const extId = ed.external_id
     if (!extId) continue
-    const [setUuid, playUuid] = extId.split(":")
-    if (!setUuid || !playUuid) {
+    const [setId, playId] = extId.split(":")
+    if (!setId || !playId) {
       noMeta++
       continue
     }
@@ -176,7 +191,7 @@ async function main() {
     try {
       data = await topshotGql(SEARCH_QUERY, {
         input: {
-          filters: { bySetIDs: [setUuid], byPlayIDs: [playUuid] },
+          filters: { bySetIDs: [setId], byPlayIDs: [playId] },
           searchInput: { pagination: { cursor: "", direction: "RIGHT", limit: 1 } },
         },
       })
