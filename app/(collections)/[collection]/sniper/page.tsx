@@ -10,7 +10,7 @@ import { getOwnerKey } from "@/lib/owner-key";
 import { PINNACLE_VARIANT_COLORS, PINNACLE_VARIANT_LABELS } from "@/lib/pinnacle/pinnacleTypes";
 import MomentDetailModal from "@/components/MomentDetailModal";
 
-function SniperThumbnailPreview({ thumbUrl, playerName, tierColor, children }: { thumbUrl: string | null; playerName: string; tierColor: string; children: React.ReactNode }) {
+function SniperThumbnailPreview({ thumbUrl, playerName, tierColor, backgroundColor, children }: { thumbUrl: string | null; playerName: string; tierColor: string; backgroundColor?: string; children: React.ReactNode }) {
   const [hovered, setHovered] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -24,7 +24,7 @@ function SniperThumbnailPreview({ thumbUrl, playerName, tierColor, children }: {
     setHovered(true);
   }
   return (
-    <div ref={ref} onMouseEnter={onEnter} onMouseLeave={() => setHovered(false)} style={{ display: "inline-block" }}>
+    <div ref={ref} onMouseEnter={onEnter} onMouseLeave={() => setHovered(false)} style={{ display: "inline-block", backgroundColor, borderRadius: backgroundColor ? 4 : undefined }}>
       {children}
       {hovered && previewUrl && pos && (
         <div style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 500, pointerEvents: "none", background: "#000", border: `2px solid ${tierColor}`, borderRadius: 6, padding: 6, boxShadow: "0 8px 24px rgba(0,0,0,0.6)" }}>
@@ -310,6 +310,12 @@ const BADGE_SLUG_LABELS: Record<string, string> = {
   jersey_match: "#Jersey",
   perfect_mint: "PM",
   number_one: "#1",
+  // NFL All Day
+  all_day_debut: "AD Debut",
+  rookie_mint: "Rookie Mint",
+  hall_of_fame: "HOF",
+  challenge_reward: "Challenge",
+  crafted_reward: "Crafted",
 };
 
 const BADGE_SLUG_COLORS: Record<string, string> = {
@@ -344,13 +350,15 @@ function slugToCamel(slug: string): string {
   return parts[0] + parts.slice(1).map(p => p[0].toUpperCase() + p.slice(1)).join("");
 }
 
-function BadgeIcon({ slug, size = 18 }: { slug: string; size?: number }) {
+function BadgeIcon({ slug, size = 18, isAllDay = false }: { slug: string; size?: number; isAllDay?: boolean }) {
   const [errored, setErrored] = useState(false);
   const snake = normalizeBadgeSlug(slug);
   const label = BADGE_SLUG_LABELS[snake] ?? BADGE_SLUG_LABELS[slug] ?? slug;
   const camel = BADGE_SLUG_CAMEL[snake] ?? BADGE_SLUG_CAMEL[slug] ?? slugToCamel(slug);
   const url = `/api/badge-image?name=${encodeURIComponent(camel)}`;
-  if (errored) {
+  // All Day badges don't have Top Shot icon assets — always render as a plain
+  // text chip so we don't pull an incorrect Top Shot graphic for an AD slug.
+  if (errored || isAllDay) {
     return (
       <span
         className={`px-1 py-0.5 rounded text-[10px] border ${BADGE_SLUG_COLORS[snake] ?? BADGE_SLUG_COLORS[slug] ?? "bg-yellow-500/15 text-yellow-400 border-yellow-500/25"}`}
@@ -373,13 +381,13 @@ function BadgeIcon({ slug, size = 18 }: { slug: string; size?: number }) {
   );
 }
 
-function BadgePills({ slugs }: { slugs: string[] }) {
+function BadgePills({ slugs, isAllDay = false }: { slugs: string[]; isAllDay?: boolean }) {
   // Dedupe slugs to avoid double-rendered badges when upstream data repeats entries.
   const unique = Array.from(new Set(slugs));
   return (
     <div className="flex gap-1 mt-1 flex-wrap items-center">
       {unique.map((slug) => (
-        <BadgeIcon key={slug} slug={slug} />
+        <BadgeIcon key={slug} slug={slug} isAllDay={isAllDay} />
       ))}
     </div>
   );
@@ -1068,7 +1076,7 @@ export default function SniperPage() {
             </div>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                {!isPinnacle && (
+                {!isPinnacle && !isAllDay && (
                 <span className={`rpc-chip ${stats.tsCached ? "text-amber-400 border-amber-500/30 bg-amber-500/10" : ""}`} style={stats.tsLive
                   ? { background: "rgba(52,211,153,0.08)", borderColor: "rgba(52,211,153,0.3)", color: "var(--rpc-success)" }
                   : stats.tsCached
@@ -1076,7 +1084,7 @@ export default function SniperPage() {
                   : { background: "rgba(248,113,113,0.08)", borderColor: "rgba(248,113,113,0.2)", color: "var(--rpc-danger)" }
                 }>
                   <span className={`inline-block w-1.5 h-1.5 rounded-full ${stats.tsLive ? "bg-emerald-400 animate-pulse" : stats.tsCached ? "bg-amber-400 animate-pulse" : "bg-red-400/50"}`} style={{ marginRight: 4 }} />
-                  {isAllDay ? "AD" : "TS"} {stats.tsLive ? `(${data?.tsCount})` : stats.tsCached ? "CACHED" : "OFFLINE"}
+                  TS {stats.tsLive ? `(${data?.tsCount})` : stats.tsCached ? "CACHED" : "OFFLINE"}
                 </span>
                 )}
                 <span className="rpc-chip" style={stats.flowtyLive
@@ -1084,7 +1092,7 @@ export default function SniperPage() {
                   : { background: "rgba(248,113,113,0.08)", borderColor: "rgba(248,113,113,0.2)", color: "var(--rpc-danger)" }
                 }>
                   <span className={`inline-block w-1.5 h-1.5 rounded-full ${stats.flowtyLive ? "bg-blue-400 animate-pulse" : "bg-red-400/50"}`} style={{ marginRight: 4 }} />
-                  FLOWTY {stats.flowtyLive ? `(${data?.flowtyCount})` : "OFFLINE"}
+                  {isAllDay ? "AD MARKETPLACE" : "FLOWTY"} {stats.flowtyLive ? `(${data?.flowtyCount})` : "OFFLINE"}
                 </span>
               </div>
               {/* Task 10: Resumed indicator */}
@@ -1592,7 +1600,7 @@ export default function SniperPage() {
                   {/* Row 3: Serial + Ask + Discount */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1">
-                      <span style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)", fontSize: "var(--text-sm)" }}>#{deal.serial}</span>
+                      <span style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)", fontSize: "var(--text-sm)" }}>{deal.serial === 0 ? "Floor" : `#${deal.serial}`}</span>
                       {!isAllDay && isOwned && <span style={{ color: "var(--rpc-success)", fontSize: 10 }}>✓</span>}
                       <SerialBadge deal={deal} />
                       {deal.isJersey && (
@@ -1610,7 +1618,7 @@ export default function SniperPage() {
                     {!isPinnacle && deal.hasBadge && deal.badgeSlugs.length > 0 && (
                       <div className="flex gap-1 flex-wrap items-center">
                         {Array.from(new Set(deal.badgeSlugs)).slice(0, 3).map((slug) => (
-                          <BadgeIcon key={slug} slug={slug} />
+                          <BadgeIcon key={slug} slug={slug} isAllDay={isAllDay} />
                         ))}
                       </div>
                     )}
@@ -1697,7 +1705,7 @@ export default function SniperPage() {
                     <td style={{ padding: "8px 12px" }}>
                       <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
                         {deal.thumbnailUrl ? (
-                          <SniperThumbnailPreview thumbUrl={deal.thumbnailUrl} playerName={deal.playerName} tierColor={resolveTierColor(deal.tier, isAllDay)}>
+                          <SniperThumbnailPreview thumbUrl={deal.thumbnailUrl} playerName={deal.playerName} tierColor={resolveTierColor(deal.tier, isAllDay)} backgroundColor={isAllDay ? "#1a1a1a" : undefined}>
                             <img
                               src={isAllDay ? deal.thumbnailUrl.replace("width=256", "width=512") : deal.thumbnailUrl}
                               alt={deal.playerName}
@@ -1784,7 +1792,7 @@ export default function SniperPage() {
                         </div>
                       )}
                       {!isPinnacle && deal.hasBadge && deal.badgeSlugs.length > 0 && (
-                        <BadgePills slugs={deal.badgeSlugs} />
+                        <BadgePills slugs={deal.badgeSlugs} isAllDay={isAllDay} />
                       )}
                       {/* Task 4: Pack-linked listing tag */}
                       {!isPinnacle && deal.packName && (
@@ -1816,7 +1824,7 @@ export default function SniperPage() {
 
                     {/* Serial — Task 3: serial intelligence chips */}
                     <td style={{ padding: "8px 12px", textAlign: "right" }}>
-                      <div style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)" }}>#{deal.serial}</div>
+                      <div style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)" }}>{deal.serial === 0 ? "Floor" : `#${deal.serial}`}</div>
                       {deal.circulationCount > 0 && (
                         <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>/ {deal.circulationCount.toLocaleString()}</div>
                       )}
