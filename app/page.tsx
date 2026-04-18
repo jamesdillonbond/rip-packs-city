@@ -12,73 +12,54 @@ const condensedFont = "'Barlow Condensed', sans-serif";
 const monoFont = "'Share Tech Mono', monospace";
 const RED = "#E03A2F";
 
-interface MarketPulse {
-  commonFloor: number | null;
-  rareFloor: number | null;
-  legendaryFloor: number | null;
-  indexedEditions: number;
-}
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-interface CollectionPulseRow {
-  collection_slug?: string;
-  collection?: string;
-  slug?: string;
+interface PlatformPerCollection {
+  slug: string;
+  edition_count?: number | null;
+  fmv_pct?: number | null;
   volume_24h?: number | null;
-  sales_24h?: number | null;
-  top_sale_24h?: number | null;
-  [k: string]: unknown;
+  display_order?: number | null;
 }
 
-interface CrossDeal {
-  collection_slug?: string;
-  collection?: string;
-  player_name?: string;
-  set_name?: string;
-  tier?: string;
-  ask_price?: number;
-  fmv?: number;
-  discount?: number;
-  discount_pct?: number;
-  buy_url?: string;
+interface PlatformStats {
+  collection_count?: number;
+  total_editions?: number;
+  total_fmv_pct?: number;
+  volume_24h?: number;
+  per_collection?: PlatformPerCollection[];
+}
+
+interface SniperDeal {
+  player_name?: string | null;
+  set_name?: string | null;
+  tier?: string | null;
+  ask_price: number;
+  fmv?: number | null;
+  discount?: number | null;
+  buy_url?: string | null;
   thumbnail_url?: string | null;
-  [k: string]: unknown;
+  serial_number?: number | null;
 }
 
-interface CrossDealsResponse {
-  deals?: CrossDeal[];
-  per_collection?: Record<string, number>;
-  total?: number;
-  [k: string]: unknown;
+interface CollectionStatsResp {
+  sniper_deals?: SniperDeal[];
 }
 
-const DEAL_COLLECTION_META: Record<string, { label: string; icon: string; accent: string; sniperPath: string }> = {
-  "nba-top-shot":    { label: "Top Shot",    icon: "\u{1F3C0}", accent: "#E03A2F", sniperPath: "/nba-top-shot/sniper" },
-  "nba_top_shot":    { label: "Top Shot",    icon: "\u{1F3C0}", accent: "#E03A2F", sniperPath: "/nba-top-shot/sniper" },
-  "nfl-all-day":     { label: "All Day",     icon: "\u{1F3C8}", accent: "#4F94D4", sniperPath: "/nfl-all-day/sniper" },
-  "nfl_all_day":     { label: "All Day",     icon: "\u{1F3C8}", accent: "#4F94D4", sniperPath: "/nfl-all-day/sniper" },
-  "laliga-golazos":  { label: "Golazos",     icon: "\u26BD",    accent: "#22C55E", sniperPath: "/laliga-golazos/sniper" },
-  "laliga_golazos":  { label: "Golazos",     icon: "\u26BD",    accent: "#22C55E", sniperPath: "/laliga-golazos/sniper" },
-  "disney-pinnacle": { label: "Pinnacle",    icon: "\u2728",    accent: "#A855F7", sniperPath: "/disney-pinnacle/sniper" },
-  "disney_pinnacle": { label: "Pinnacle",    icon: "\u2728",    accent: "#A855F7", sniperPath: "/disney-pinnacle/sniper" },
-  "ufc":             { label: "UFC Strike",  icon: "\u{1F94A}", accent: "#EF4444", sniperPath: "/ufc/sniper" },
-  "ufc_strike":      { label: "UFC Strike",  icon: "\u{1F94A}", accent: "#EF4444", sniperPath: "/ufc/sniper" },
-};
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function tierColor(tier?: string): string {
+function tierColor(tier?: string | null): string {
   switch ((tier || "").toLowerCase()) {
     case "ultimate":   return "#EC4899";
     case "legendary":  return "#F59E0B";
     case "rare":       return "#818CF8";
+    case "challenger": return "#818CF8";
     case "uncommon":   return "#14B8A6";
-    case "fandom":     return "#9CA3AF";
+    case "fandom":     return "#34D399";
+    case "common":     return "#9CA3AF";
+    case "contender":  return "#9CA3AF";
     default:           return "#6B7280";
   }
-}
-
-function discountColor(pct: number): string {
-  if (pct >= 30) return "#22C55E";
-  if (pct >= 15) return "#F59E0B";
-  return "#9CA3AF";
 }
 
 function fmtDollars(n: number): string {
@@ -90,19 +71,22 @@ function fmtUsd0(n: number): string {
   return "$" + Math.round(n).toLocaleString();
 }
 
-const PULSE_SLUG_MAP: Record<string, string> = {
-  nba_top_shot: "nba-top-shot",
-  nfl_all_day: "nfl-all-day",
-  laliga_golazos: "laliga-golazos",
-  disney_pinnacle: "disney-pinnacle",
-};
+function normalizeSlug(slug: string): string {
+  return slug.replace(/_/g, "-");
+}
 
-const PULSE_COLLECTION_META: Record<string, { label: string; icon: string; accent: string }> = {
-  "nba-top-shot": { label: "NBA Top Shot", icon: "\u{1F3C0}", accent: "#E03A2F" },
-  "nfl-all-day": { label: "NFL All Day", icon: "\u{1F3C8}", accent: "#4F94D4" },
-  "laliga-golazos": { label: "LaLiga Golazos", icon: "\u26BD", accent: "#22C55E" },
-  "disney-pinnacle": { label: "Disney Pinnacle", icon: "\u2728", accent: "#A855F7" },
-};
+// Build a slug → { label, icon, accent } lookup covering hyphen *and* underscore
+// variants, so rows from /api/platform-stats (which uses DB slugs) resolve.
+const COLLECTION_REGISTRY = (() => {
+  const all = publishedCollections();
+  const out: Record<string, { id: string; label: string; shortLabel: string; icon: string; accent: string }> = {};
+  for (const c of all) {
+    const entry = { id: c.id, label: c.label, shortLabel: c.shortLabel, icon: c.icon, accent: c.accent };
+    out[c.id] = entry;
+    out[c.id.replace(/-/g, "_")] = entry;
+  }
+  return out;
+})();
 
 const QUICK_COLLECTIONS = publishedCollections().map((c) => ({
   id: c.id,
@@ -111,77 +95,53 @@ const QUICK_COLLECTIONS = publishedCollections().map((c) => ({
   accent: c.accent,
 }));
 
-interface OverviewSummary {
-  totalEditions: number;
-  highConfCount: number;
-  volume24h: number;
-}
-
-interface PerCollectionStat extends OverviewSummary {
-  id: string;
-}
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
-  const [pulse, setPulse] = useState<MarketPulse | null>(null);
-  const [pulseLoading, setPulseLoading] = useState(false);
-  const [crossPulse, setCrossPulse] = useState<CollectionPulseRow[] | null>(null);
-  const [crossPulseLoading, setCrossPulseLoading] = useState(true);
-  const [crossDeals, setCrossDeals] = useState<CrossDealsResponse | null>(null);
-  const [crossDealsLoading, setCrossDealsLoading] = useState(true);
-  const [kpis, setKpis] = useState<OverviewSummary | null>(null);
+  const [platform, setPlatform] = useState<PlatformStats | null>(null);
+  const [platformLoading, setPlatformLoading] = useState(true);
+  const [alldaySniper, setAlldaySniper] = useState<SniperDeal[] | null>(null);
+  const [alldayError, setAlldayError] = useState(false);
+  const [alldayLoading, setAlldayLoading] = useState(true);
 
   useEffect(() => {
-    setPulseLoading(true);
-    fetch("/api/profile/market-pulse")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) setPulse(d); })
-      .catch(() => {})
-      .finally(() => setPulseLoading(false));
-  }, []);
-
-  useEffect(() => {
-    setCrossPulseLoading(true);
-    fetch("/api/market-pulse")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (Array.isArray(d)) setCrossPulse(d as CollectionPulseRow[]);
-      })
-      .catch(() => {})
-      .finally(() => setCrossPulseLoading(false));
-  }, []);
-
-  useEffect(() => {
-    setCrossDealsLoading(true);
-    fetch("/api/cross-collection-deals?limit=12&minDiscount=10")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d && typeof d === "object") setCrossDeals(d as CrossDealsResponse); })
-      .catch(() => {})
-      .finally(() => setCrossDealsLoading(false));
-  }, []);
-
-  useEffect(() => {
-    // Aggregate per-collection overview-stats into a single KPI block.
-    // /api/overview-stats is per-collection, so fan out and sum.
     let cancelled = false;
-    Promise.all(
-      QUICK_COLLECTIONS.map((c) =>
-        fetch(`/api/overview-stats?collection=${encodeURIComponent(c.id)}`, { cache: "no-store" })
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null)
-      )
-    ).then((results) => {
-      if (cancelled) return;
-      const agg: OverviewSummary = { totalEditions: 0, highConfCount: 0, volume24h: 0 };
-      for (const r of results) {
-        if (!r || typeof r !== "object") continue;
-        agg.totalEditions += Number(r.totalEditions ?? 0) || 0;
-        agg.highConfCount += Number(r.highConfCount ?? 0) || 0;
-        agg.volume24h += Number(r.volume24h ?? 0) || 0;
-      }
-      setKpis(agg);
-    });
+    setPlatformLoading(true);
+    fetch("/api/platform-stats")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled && d && typeof d === "object") setPlatform(d as PlatformStats); })
+      .catch(() => { /* swallow */ })
+      .finally(() => { if (!cancelled) setPlatformLoading(false); });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAlldayLoading(true);
+    fetch("/api/collection-stats?collection=nfl-all-day")
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json() as Promise<CollectionStatsResp>;
+      })
+      .then((d) => {
+        if (cancelled) return;
+        setAlldaySniper(Array.isArray(d?.sniper_deals) ? d.sniper_deals : []);
+      })
+      .catch(() => { if (!cancelled) setAlldayError(true); })
+      .finally(() => { if (!cancelled) setAlldayLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const collectionCount = platform?.collection_count ?? null;
+  const totalEditions = platform?.total_editions ?? null;
+  const fmvPct = platform?.total_fmv_pct ?? null;
+  const volume24h = platform?.volume_24h ?? null;
+
+  const perCollection = (platform?.per_collection ?? []).slice().sort((a, b) => {
+    const ao = a.display_order ?? 999;
+    const bo = b.display_order ?? 999;
+    return ao - bo;
+  });
 
   return (
     <div style={{ minHeight: "100vh", background: "#080808", color: "#fff" }}>
@@ -232,57 +192,54 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Aggregate KPIs */}
+        {/* Platform KPIs */}
         <section style={{ marginBottom: 24 }}>
           <div className="rpc-kpi-row" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
             {(() => {
-              const total = kpis?.totalEditions ?? null;
-              const high = kpis?.highConfCount ?? null;
-              const coverage = total && total > 0 ? Math.round(((high ?? 0) / total) * 100) : null;
-              const vol = kpis?.volume24h ?? null;
               const stats: Array<{ label: string; value: string; color: string }> = [
-                { label: "Collections", value: QUICK_COLLECTIONS.length.toString(), color: "#A855F7" },
-                { label: "Total Editions", value: total != null ? total.toLocaleString() : "…", color: "#fff" },
-                { label: "FMV Coverage", value: coverage != null ? `${coverage}%` : "…", color: "#34D399" },
-                { label: "24h Volume", value: vol != null ? fmtDollars(vol) : "…", color: RED },
+                { label: "Collections",    value: collectionCount != null ? String(collectionCount) : "\u2014", color: "#A855F7" },
+                { label: "Total Editions", value: totalEditions != null ? totalEditions.toLocaleString() : "\u2014", color: "#fff" },
+                { label: "FMV Coverage",   value: fmvPct != null ? `${Math.round(fmvPct)}%` : "\u2014", color: "#34D399" },
+                { label: "24h Volume",     value: volume24h != null ? fmtUsd0(volume24h) : "\u2014", color: RED },
               ];
               return stats.map((s) => (
                 <div key={s.label} style={{ background: "#18181b", border: "1px solid #27272a", borderRadius: 8, padding: "10px 12px" }}>
                   <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 }}>{s.label}</div>
-                  <div style={{ fontSize: 20, fontFamily: condensedFont, fontWeight: 800, color: s.color, lineHeight: 1 }}>{s.value}</div>
+                  <div style={{ fontSize: 20, fontFamily: condensedFont, fontWeight: 800, color: platformLoading ? "rgba(255,255,255,0.25)" : s.color, lineHeight: 1 }}>
+                    {platformLoading ? "\u2014" : s.value}
+                  </div>
                 </div>
               ));
             })()}
           </div>
         </section>
 
-        {/* Cross-collection Market Pulse */}
+        {/* Per-collection Market Pulse */}
         <section style={{ marginBottom: 24 }}>
           <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.7)", marginBottom: 10 }}>
             Market Pulse
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-            {crossPulseLoading && !crossPulse && [0, 1, 2, 3].map((i) => (
-              <div key={i} style={{ flex: "1 1 220px", minWidth: 220, height: 92, background: "#18181b", border: "1px solid #27272a", borderRadius: 8, opacity: 0.6 }} />
+            {platformLoading && perCollection.length === 0 && [0, 1, 2, 3, 4].map((i) => (
+              <div key={i} style={{ flex: "1 1 220px", minWidth: 220, height: 96, background: "#18181b", border: "1px solid #27272a", borderRadius: 8, opacity: 0.6 }} />
             ))}
-            {!crossPulseLoading && crossPulse && crossPulse.map((row, i) => {
-              const rawSlug = String(row.collection_slug ?? row.collection ?? row.slug ?? "");
-              const slug = PULSE_SLUG_MAP[rawSlug] ?? rawSlug.replace(/_/g, "-");
-              const meta = PULSE_COLLECTION_META[slug] ?? { label: slug, icon: "\u{1F4CA}", accent: "#9CA3AF" };
+            {!platformLoading && perCollection.map((row) => {
+              const rawSlug = String(row.slug ?? "");
+              const hyphenSlug = normalizeSlug(rawSlug);
+              const meta = COLLECTION_REGISTRY[rawSlug] ?? COLLECTION_REGISTRY[hyphenSlug] ?? { id: hyphenSlug, label: hyphenSlug, shortLabel: hyphenSlug, icon: "\u{1F4CA}", accent: "#9CA3AF" };
+              const editions = Number(row.edition_count ?? 0) || 0;
+              const fmvCoverage = Number(row.fmv_pct ?? 0) || 0;
               const volume = Number(row.volume_24h ?? 0) || 0;
-              const sales = Number(row.sales_24h ?? 0) || 0;
-              const topSale = Number(row.top_sale_24h ?? 0) || 0;
-              const hasActivity = volume > 0 || sales > 0;
               return (
                 <Link
-                  key={slug + i}
-                  href={`/${slug}/analytics`}
+                  key={hyphenSlug}
+                  href={`/${meta.id}/overview`}
                   style={{
                     flex: "1 1 220px",
                     minWidth: 220,
                     background: "#18181b",
                     border: "1px solid #27272a",
-                    borderLeft: `3px solid ${meta.accent}`,
+                    borderBottom: `2px solid ${meta.accent}`,
                     borderRadius: 8,
                     padding: "12px 14px",
                     textDecoration: "none",
@@ -290,47 +247,34 @@ export default function HomePage() {
                     display: "block",
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                     <span style={{ fontSize: 18 }}>{meta.icon}</span>
-                    <span style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, letterSpacing: "0.04em", textTransform: "uppercase" }}>{meta.label}</span>
+                    <span style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, letterSpacing: "0.04em", textTransform: "uppercase" }}>{meta.shortLabel}</span>
                   </div>
-                  {(() => {
-                    const listings = Number(row.listings_count ?? row.active_listings ?? row.listing_count ?? 0) || 0;
-                    return hasActivity ? null : (
-                      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                        <span style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", letterSpacing: "0.06em" }}>No recent sales</span>
-                        {listings > 0 && (
-                          <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.08em" }}>
-                            &middot; {listings.toLocaleString()} listings
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })()}
-                  {hasActivity ? (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                      <div>
-                        <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>24h Vol</div>
-                        <div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 800, color: meta.accent }}>{fmtDollars(volume)}</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Sales</div>
-                        <div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 800 }}>{sales.toLocaleString()}</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Top Sale</div>
-                        <div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 800 }}>{fmtUsd0(topSale)}</div>
-                      </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Editions</div>
+                      <div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 800 }}>{editions.toLocaleString()}</div>
                     </div>
-                  ) : null}
+                    <div>
+                      <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>FMV %</div>
+                      <div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 800, color: "#34D399" }}>{Math.round(fmvCoverage)}%</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>24h Vol</div>
+                      <div style={{ fontSize: 13, fontFamily: condensedFont, fontWeight: 800, color: meta.accent }}>{fmtUsd0(volume)}</div>
+                    </div>
+                  </div>
                 </Link>
               );
             })}
           </div>
         </section>
 
-        {/* Cross-collection deals */}
-        <CrossCollectionDeals data={crossDeals} loading={crossDealsLoading} />
+        {/* Live Sniper Deals (NFL All Day) */}
+        {!alldayError && (
+          <LiveSniperDeals deals={alldaySniper} loading={alldayLoading} />
+        )}
 
         {/* Collection quick-access grid */}
         <section style={{ marginBottom: 32 }}>
@@ -341,7 +285,7 @@ export default function HomePage() {
             {QUICK_COLLECTIONS.map((col) => (
               <Link
                 key={col.id}
-                href={`/${col.id}/collection`}
+                href={`/${col.id}/overview`}
                 style={{
                   background: "rgba(255,255,255,0.03)",
                   border: "1px solid rgba(255,255,255,0.08)",
@@ -383,16 +327,13 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Market Pulse */}
-        <MarketPulseWidget pulse={pulse} loading={pulseLoading} />
-
         {/* About */}
         <section style={{ marginTop: 32, marginBottom: 32, padding: "18px 20px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10 }}>
           <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.7)", marginBottom: 10 }}>
             About Rip Packs City
           </div>
           <p style={{ fontFamily: monoFont, fontSize: 12, lineHeight: 1.7, color: "rgba(255,255,255,0.6)", letterSpacing: "0.02em" }}>
-            RPC is a collector intelligence platform for Flow blockchain sports NFTs — analytics, deal-finding, sniper tools, FMV pricing, and badge tracking across NBA Top Shot, NFL All Day, Disney Pinnacle, and LaLiga Golazos.
+            RPC is a collector intelligence platform for Flow blockchain sports NFTs — analytics, deal-finding, sniper tools, FMV pricing, and badge tracking across NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike.
           </p>
           <p style={{ fontFamily: monoFont, fontSize: 11, lineHeight: 1.7, color: "rgba(255,255,255,0.45)", letterSpacing: "0.02em", marginTop: 10 }}>
             Founded by Trevor, official Portland Trail Blazers Team Captain on NBA Top Shot.
@@ -408,29 +349,23 @@ export default function HomePage() {
   );
 }
 
-function CrossCollectionDeals({ data, loading }: { data: CrossDealsResponse | null; loading: boolean }) {
-  const deals = data?.deals ?? [];
-  const perCollection = data?.per_collection ?? {};
-  const total = data?.total ?? deals.length;
+// ── Live Sniper Deals (AllDay) ────────────────────────────────────────────────
 
-  const summaryParts: string[] = [];
-  for (const [slug, count] of Object.entries(perCollection)) {
-    const meta = DEAL_COLLECTION_META[slug];
-    if (!meta || !count) continue;
-    summaryParts.push(`${count} ${meta.label}`);
-  }
+function LiveSniperDeals({ deals, loading }: { deals: SniperDeal[] | null; loading: boolean }) {
+  const list = deals ?? [];
 
   return (
     <section style={{ marginBottom: 32 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
         <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.7)" }}>
-          Best Deals · All Collections
+          {"Live Sniper Deals \u00B7 NFL All Day"}
         </div>
-        {!loading && total > 0 && (
-          <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", letterSpacing: "0.08em" }}>
-            {total} deals{summaryParts.length > 0 ? ` — ${summaryParts.join(", ")}` : ""}
-          </div>
-        )}
+        <Link
+          href="/nfl-all-day/sniper"
+          style={{ marginLeft: "auto", fontSize: 10, fontFamily: monoFont, letterSpacing: "0.08em", textTransform: "uppercase", color: "#4F94D4", textDecoration: "none", border: "1px solid rgba(79,148,212,0.4)", borderRadius: 4, padding: "4px 10px" }}
+        >
+          {"All Day Sniper \u2192"}
+        </Link>
       </div>
 
       {loading ? (
@@ -439,23 +374,21 @@ function CrossCollectionDeals({ data, loading }: { data: CrossDealsResponse | nu
             <div key={i} style={{ height: 128, background: "#18181b", border: "1px solid #27272a", borderRadius: 10, opacity: 0.5 }} />
           ))}
         </div>
-      ) : deals.length === 0 ? (
-        <div style={{ padding: "20px 18px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontFamily: monoFont, color: "rgba(255,255,255,0.45)", letterSpacing: "0.06em" }}>
-          <span>No cross-collection deals right now.</span>
+      ) : list.length === 0 ? (
+        <div style={{ padding: "20px 18px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: 12, fontFamily: monoFont, color: "rgba(255,255,255,0.45)", letterSpacing: "0.06em", background: "#18181b", border: "1px solid #27272a", borderRadius: 10, flexWrap: "wrap", textAlign: "center" }}>
+          <span>No live deals right now — check the</span>
+          <Link href="/nfl-all-day/sniper" style={{ color: "#4F94D4", textDecoration: "none" }}>Sniper</Link>
+          <span>for fresh listings.</span>
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
-          {deals.map((d, i) => {
-            const slug = String(d.collection_slug ?? d.collection ?? "");
-            const meta = DEAL_COLLECTION_META[slug] ?? { label: slug, icon: "\u{1F4CA}", accent: "#9CA3AF", sniperPath: "/" };
+          {list.slice(0, 12).map((d, i) => {
             const ask = Number(d.ask_price ?? 0) || 0;
-            const fmv = Number(d.fmv ?? 0) || 0;
-            const pct = Number(d.discount_pct ?? d.discount ?? 0) || 0;
+            const pct = typeof d.discount === "number" ? d.discount : null;
             const tc = tierColor(d.tier);
-            const dc = discountColor(pct);
             return (
               <a
-                key={`${slug}-${d.buy_url ?? i}`}
+                key={`${d.buy_url ?? i}`}
                 href={d.buy_url ?? "#"}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -463,7 +396,7 @@ function CrossCollectionDeals({ data, loading }: { data: CrossDealsResponse | nu
                   display: "block",
                   background: "#18181b",
                   border: "1px solid #27272a",
-                  borderLeft: `3px solid ${meta.accent}`,
+                  borderLeft: "3px solid #4F94D4",
                   borderRadius: 10,
                   padding: "12px 14px",
                   textDecoration: "none",
@@ -471,80 +404,36 @@ function CrossCollectionDeals({ data, loading }: { data: CrossDealsResponse | nu
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                  <span style={{ fontSize: 14 }}>{meta.icon}</span>
-                  <span style={{ fontSize: 9, fontFamily: monoFont, letterSpacing: "0.12em", textTransform: "uppercase", color: meta.accent }}>{meta.label}</span>
-                  <span style={{ marginLeft: "auto", fontSize: 10, fontFamily: condensedFont, fontWeight: 800, letterSpacing: "0.05em", color: dc, background: `${dc}22`, border: `1px solid ${dc}55`, padding: "2px 6px", borderRadius: 4 }}>
-                    -{pct.toFixed(0)}%
-                  </span>
-                </div>
-                <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 16, letterSpacing: "0.02em", lineHeight: 1.15, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {d.player_name ?? "Unknown"}
-                </div>
-                <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.45)", letterSpacing: "0.04em", marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {d.set_name ?? ""}
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {d.tier && (
                     <span style={{ fontSize: 9, fontFamily: condensedFont, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: tc, background: `${tc}22`, border: `1px solid ${tc}55`, padding: "2px 6px", borderRadius: 3 }}>
                       {d.tier}
                     </span>
                   )}
-                  <div style={{ marginLeft: "auto", textAlign: "right" }}>
-                    <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 17, color: "#fff", lineHeight: 1 }}>
-                      {fmtDollars(ask)}
-                    </div>
-                    {fmv > 0 && (
-                      <div style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.35)", textDecoration: "line-through", marginTop: 2 }}>
-                        {fmtDollars(fmv)}
-                      </div>
-                    )}
+                  {pct != null && pct > 0 && (
+                    <span style={{ marginLeft: "auto", fontSize: 10, fontFamily: condensedFont, fontWeight: 800, letterSpacing: "0.05em", color: "#E03A2F", background: "rgba(224,58,47,0.18)", border: "1px solid rgba(224,58,47,0.4)", padding: "2px 6px", borderRadius: 4 }}>
+                      -{Math.round(pct)}%
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 16, letterSpacing: "0.02em", lineHeight: 1.15, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {d.player_name ?? "\u2014"}
+                </div>
+                <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.45)", letterSpacing: "0.04em", marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {d.set_name ?? ""}
+                </div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                  <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 18, color: "#34D399", lineHeight: 1 }}>
+                    {fmtDollars(ask)}
                   </div>
+                  <span style={{ marginLeft: "auto", fontSize: 10, fontFamily: condensedFont, fontWeight: 700, letterSpacing: "0.08em", color: "#4F94D4", border: "1px solid rgba(79,148,212,0.45)", borderRadius: 4, padding: "3px 8px", textTransform: "uppercase" }}>
+                    Buy
+                  </span>
                 </div>
               </a>
             );
           })}
         </div>
       )}
-
-      {!loading && deals.length > 0 && (
-        <div style={{ marginTop: 12, display: "flex", gap: 12, flexWrap: "wrap" }}>
-          {QUICK_COLLECTIONS.map((col) => (
-            <Link
-              key={col.id}
-              href={`/${col.id}/sniper`}
-              style={{ fontSize: 10, fontFamily: monoFont, letterSpacing: "0.08em", textTransform: "uppercase", color: col.accent, textDecoration: "none", border: `1px solid ${col.accent}55`, borderRadius: 4, padding: "4px 10px" }}
-            >
-              {col.icon} {col.label} Sniper
-            </Link>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function MarketPulseWidget(props: { pulse: MarketPulse | null; loading: boolean }) {
-  const stats = [
-    { label: "Common Floor", value: props.pulse?.commonFloor != null ? fmtDollars(props.pulse.commonFloor) : "\u2014", color: "#6B7280" },
-    { label: "Rare Floor", value: props.pulse?.rareFloor != null ? fmtDollars(props.pulse.rareFloor) : "\u2014", color: "#818CF8" },
-    { label: "Legendary Floor", value: props.pulse?.legendaryFloor != null ? fmtDollars(props.pulse.legendaryFloor) : "\u2014", color: "#F59E0B" },
-    { label: "Indexed Editions", value: props.pulse?.indexedEditions ? props.pulse.indexedEditions.toLocaleString() : "\u2014", color: "#34D399" },
-  ];
-  return (
-    <section style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "14px 18px", marginBottom: 14 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#34D399" }} />
-        <span style={{ fontSize: 9, fontFamily: monoFont, letterSpacing: "0.2em", color: "rgba(255,255,255,0.45)", textTransform: "uppercase" }}>Market Pulse</span>
-        <span style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.2)", letterSpacing: "0.1em", marginLeft: "auto" }}>60s cache</span>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12 }}>
-        {stats.map((s) => (
-          <div key={s.label}>
-            <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.1em", marginBottom: 4, textTransform: "uppercase" }}>{s.label}</div>
-            <div style={{ fontSize: 18, fontFamily: condensedFont, fontWeight: 800, color: props.loading ? "rgba(255,255,255,0.2)" : s.color }}>{props.loading ? "\u2026" : s.value}</div>
-          </div>
-        ))}
-      </div>
     </section>
   );
 }
