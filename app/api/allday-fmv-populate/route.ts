@@ -169,6 +169,7 @@ export async function GET(req: NextRequest) {
   let upserted = 0
   let skipped = 0
   let no_edition = 0
+  let rpcError: string | null = null
 
   console.log('[allday-fmv-populate] batch size:', nodes.length, 'sample:', JSON.stringify(nodes[0] ?? null))
 
@@ -178,6 +179,7 @@ export async function GET(req: NextRequest) {
       { p_rows: JSON.stringify(nodes) as any }
     )
     if (error) {
+      rpcError = error.message
       console.log(`[allday-fmv-populate] upsert rpc error: ${error.message}`)
     } else {
       const row = Array.isArray(data) ? data[0] : data
@@ -248,5 +250,6 @@ export async function GET(req: NextRequest) {
     debug_last_error: lastError ?? null,
     debug_batch_size: nodes.length,
     debug_node_sample: JSON.stringify(nodeSample ?? null),
+    debug_rpc_error: rpcError ?? null,
   })
 }
