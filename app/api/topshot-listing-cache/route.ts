@@ -309,7 +309,7 @@ async function runListingCache() {
   }
   const dedupedRows = Array.from(byFlowId.values())
 
-  const runStartedAt = new Date().toISOString()
+  const runStartedAt = new Date(startedAt).toISOString()
 
   for (let i = 0; i < dedupedRows.length; i += UPSERT_CHUNK) {
     const batch = dedupedRows.slice(i, i + UPSERT_CHUNK)
