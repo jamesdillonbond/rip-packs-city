@@ -255,10 +255,29 @@ async function runListingCache() {
 
   stats.totalListed = rows.length
 
+  // Dedup by flow_id before upsert. onConflict: 'flow_id' rejects the whole
+  // batch when two VALUES rows share the conflict key, and the Flowty sweep
+  // can surface the same nftId under different listing_resource_ids across
+  // sorted pages. Keep the row with the lower ask_price per flow_id.
+  const byFlowId = new Map<string, Row>()
+  for (const row of rows) {
+    const prev = byFlowId.get(row.flow_id)
+    if (!prev) {
+      byFlowId.set(row.flow_id, row)
+      continue
+    }
+    const prevAsk = prev.ask_price
+    const nextAsk = row.ask_price
+    if (nextAsk != null && (prevAsk == null || nextAsk < prevAsk)) {
+      byFlowId.set(row.flow_id, row)
+    }
+  }
+  const dedupedRows = Array.from(byFlowId.values())
+
   const runStartedAt = new Date().toISOString()
 
-  for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
-    const batch = rows.slice(i, i + UPSERT_CHUNK)
+  for (let i = 0; i < dedupedRows.length; i += UPSERT_CHUNK) {
+    const batch = dedupedRows.slice(i, i + UPSERT_CHUNK)
     const { error, count } = await supabaseAdmin
       .from("cached_listings")
       .upsert(batch, { onConflict: "flow_id", count: "exact" })

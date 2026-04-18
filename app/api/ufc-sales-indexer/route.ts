@@ -135,18 +135,22 @@ async function fetchTxBuyers(txId: string): Promise<string[]> {
   }
 }
 
-// UFC_NFT exposes edition metadata via MetadataViews.Editions rather than a
-// bare editionID field, so the borrow returns (name, max, serial) as strings
-// and we slug client-side. Returns [] on miss.
+// Borrow via the standard NonFungibleToken.Collection interface + borrowNFT
+// (mirrors the AllDay indexer). The narrower `{UFC_NFT.MomentNFTCollectionPublic}`
+// + `borrowMomentNFT` form fails on wallets that publish only the generic
+// capability, which left nft_edition_map empty and pushed every sale to
+// unmapped_sales. UFC_NFT exposes edition metadata via MetadataViews.Editions,
+// so the borrow still returns (name, max, serial) as strings and we slug
+// client-side into the editions.external_id format.
 const BORROW_EDITION_SCRIPT = `
-import UFC_NFT from 0x329feb3ab062d289
+import NonFungibleToken from 0x1d7e57aa55817448
 import MetadataViews from 0x1d7e57aa55817448
 access(all) fun main(owners: [Address], id: UInt64): [String] {
   for owner in owners {
     let col = getAccount(owner).capabilities
-      .borrow<&{UFC_NFT.MomentNFTCollectionPublic}>(/public/UFC_NFTCollection)
+      .borrow<&{NonFungibleToken.Collection}>(/public/UFC_NFTCollection)
     if col == nil { continue }
-    let nft = col!.borrowMomentNFT(id: id)
+    let nft = col!.borrowNFT(id)
     if nft == nil { continue }
     if let editions = nft!.resolveView(Type<MetadataViews.Editions>()) {
       let e = editions as! MetadataViews.Editions
