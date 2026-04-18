@@ -26,7 +26,7 @@ const PAGES_PER_RUN = 5
 const PAGE_SIZE = 100
 const PAGE_TIMEOUT_MS = 6000
 
-const AD_GQL_QUERY = `query SearchMarketplaceEditions($first: Int!, $after: String, $sortBy: EditionSortBy) {
+const AD_GQL_QUERY = `query SearchMarketplaceEditions($first: Int!, $after: String, $sortBy: MarketplaceEditionSortType) {
   searchMarketplaceEditions(input: { first: $first, after: $after, sortBy: $sortBy }) {
     pageInfo { endCursor hasNextPage }
     edges {
