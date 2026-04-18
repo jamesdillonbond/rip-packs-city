@@ -5,6 +5,7 @@ import { CollectionTabBar } from "@/components/collection-tab-bar"
 import { collectionLayoutMetadata } from "@/lib/seo"
 import ActiveCollectionSync from "./ActiveCollectionSync"
 import CollectionSwitcher from "@/components/CollectionSwitcher"
+import WalletHydrator from "@/components/WalletHydrator"
 
 export async function generateMetadata(
   props: { params: Promise<{ collection: string }> }
@@ -63,6 +64,7 @@ export default async function CollectionSegmentLayout(props: any) {
   return (
     <>
       <ActiveCollectionSync collectionId={collection.id} />
+      <WalletHydrator />
       <CollectionTicker collection={collection} />
       <CollectionBanner collection={collection} />
       <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>

@@ -3,19 +3,25 @@ import type { Metadata } from 'next'
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://rip-packs-city.vercel.app'
 
 // Root layout metadata — import into app/layout.tsx as: export const metadata = rootMetadata
+const ROOT_TITLE = 'Rip Packs City \u2014 Flow Blockchain Collector Intelligence'
+const ROOT_DESCRIPTION =
+  'NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike collector intelligence on Flow blockchain.'
+
 export const rootMetadata: Metadata = {
   metadataBase: new URL(BASE_URL),
   title: {
-    default: 'Rip Packs City — NBA Top Shot, NFL All Day & Disney Pinnacle Collector Intelligence',
+    default: ROOT_TITLE,
     template: '%s | Rip Packs City',
   },
-  description:
-    'NBA Top Shot, NFL All Day, LaLiga Golazos, and Disney Pinnacle collectors on Flow blockchain.',
+  description: ROOT_DESCRIPTION,
   keywords: [
     'NBA Top Shot',
     'NFL All Day',
     'LaLiga Golazos',
     'Disney Pinnacle',
+    'UFC Strike',
+    'UFC NFT',
+    'soccer NFT',
     'digital pins',
     'FMV',
     'moment value',
@@ -30,11 +36,15 @@ export const rootMetadata: Metadata = {
     type: 'website',
     locale: 'en_US',
     siteName: 'Rip Packs City',
+    title: ROOT_TITLE,
+    description: ROOT_DESCRIPTION,
     images: [{ url: '/api/og/default', width: 1200, height: 630 }],
   },
   twitter: {
     card: 'summary_large_image',
     creator: '@RipPacksCity',
+    title: ROOT_TITLE,
+    description: ROOT_DESCRIPTION,
   },
   robots: {
     index: true,
@@ -50,7 +60,7 @@ export const organizationJsonLd = {
   name: 'Rip Packs City',
   url: BASE_URL,
   description:
-    'Collector intelligence platform for NBA Top Shot and NFL All Day on Flow blockchain.',
+    'Collector intelligence platform for NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike on Flow blockchain.',
   applicationCategory: 'FinanceApplication',
   operatingSystem: 'Web',
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
