@@ -71,7 +71,7 @@ interface BatchRow {
   id: string
   nft_id: string
   acquired_date: string
-  acquisition_confidence: string
+  current_confidence: string
 }
 
 interface FlowEvent {
@@ -415,9 +415,23 @@ async function drain(requestId: string): Promise<void> {
       console.log(`[ts-verify ${requestId}] batch rpc err:`, errMsg)
       return
     }
-    const batch = (batchData ?? []) as BatchRow[]
-    // Hard-filter to inferred_no_signal — never touch inferred_pre_flowty.
-    const rows = batch.filter((r) => r.acquisition_confidence === "inferred_no_signal")
+    // RPC returns { total_inferred, batch_size, offset, acquisitions: [...] }.
+    // Older callers assumed an array directly; reach into .acquisitions and
+    // guard against null / non-object responses.
+    let batch: BatchRow[] = []
+    if (Array.isArray(batchData)) {
+      batch = batchData as BatchRow[]
+    } else if (batchData && typeof batchData === "object") {
+      const acq = (batchData as { acquisitions?: unknown }).acquisitions
+      batch = Array.isArray(acq) ? (acq as BatchRow[]) : []
+    }
+    // Belt-and-suspenders: the migrated RPC already filters to
+    // inferred_no_signal, but keep the client-side guard so no drift in the
+    // RPC can ever touch inferred_pre_flowty. RPC aliases the column as
+    // current_confidence.
+    const rows = batch.filter(
+      (r) => r.current_confidence === "inferred_no_signal",
+    )
     rowsFound = rows.length
 
     if (rows.length === 0) {
