@@ -7,7 +7,7 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-type TestResult = { name: string; passed: boolean; detail?: string };
+type TestResult = { name: string; passed: boolean; detail?: string; soft?: boolean };
 
 async function checkUrl(name: string, url: string, expectJson = true): Promise<TestResult> {
   try {
@@ -60,12 +60,17 @@ async function runSmokeTests() {
 
   // ── Run all independent tests in parallel ──────────────────
   const settled = await Promise.allSettled([
-    // 1. Sniper feed returns deals
+    // 1. Sniper feed returns deals (soft-fail — depends on Flowty + Top Shot GQL)
     (async (): Promise<TestResult> => {
-      const res = await fetch(`${BASE_URL}/api/sniper-feed`, { cache: "no-store", signal: AbortSignal.timeout(4000) });
-      const data = await res.json();
-      const deals = data?.deals ?? data ?? [];
-      return { name: "sniper-feed returns deals", passed: Array.isArray(deals) && deals.length > 0, detail: `${deals.length} deals` };
+      const name = "sniper-feed returns deals (external: Flowty/TS GQL)";
+      try {
+        const res = await fetch(`${BASE_URL}/api/sniper-feed`, { cache: "no-store", signal: AbortSignal.timeout(15000) });
+        const data = await res.json();
+        const deals = data?.deals ?? data ?? [];
+        return { name, soft: true, passed: Array.isArray(deals) && deals.length > 0, detail: `${deals.length} deals` };
+      } catch (e: any) {
+        return { name, soft: true, passed: false, detail: e?.message ?? String(e) };
+      }
     })(),
 
     // 2. FMV API responds
@@ -94,14 +99,19 @@ async function runSmokeTests() {
       return { name: "cached_listings has rows", passed: (count ?? 0) > 0, detail: `${count} rows` };
     })(),
 
-    // 6. Wallet search responds
+    // 6. Wallet search responds (soft-fail — depends on Top Shot GQL + Flow blockchain via FCL)
     (async (): Promise<TestResult> => {
-      const res = await fetch(`${BASE_URL}/api/wallet-search`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: "0xbd94cade097e50ac" }),
-        cache: "no-store", signal: AbortSignal.timeout(4000),
-      });
-      return { name: "wallet-search responds", passed: res.ok, detail: `HTTP ${res.status}` };
+      const name = "wallet-search responds (external: TS GQL/Flow)";
+      try {
+        const res = await fetch(`${BASE_URL}/api/wallet-search`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ input: "0xbd94cade097e50ac" }),
+          cache: "no-store", signal: AbortSignal.timeout(20000),
+        });
+        return { name, soft: true, passed: res.ok, detail: `HTTP ${res.status}` };
+      } catch (e: any) {
+        return { name, soft: true, passed: false, detail: e?.message ?? String(e) };
+      }
     })(),
 
     // 7. Pack listings responds
@@ -147,19 +157,37 @@ async function runSmokeTests() {
   }
 
   // ── Summary ────────────────────────────────────────────────
+  // allPassed reflects platform health only — soft tests (external API
+  // dependencies like Flowty / Top Shot GQL / Flow RPC) are informational
+  // and must not gate the overall smoke result.
   const passed = results.filter((r) => r.passed).length;
   const total = results.length;
-  const allPassed = passed === total;
-  const failures = results.filter((r) => !r.passed);
+  const hardResults = results.filter((r) => !r.soft);
+  const hardPassed = hardResults.filter((r) => r.passed).length;
+  const hardTotal = hardResults.length;
+  const allPassed = hardPassed === hardTotal;
+  const failures = results.filter((r) => !r.passed && !r.soft);
+  const softFailures = results.filter((r) => !r.passed && r.soft);
 
-  console.log(`SMOKE-TEST ${allPassed ? "ALL PASSED" : "FAILURES DETECTED"} (${passed}/${total})`);
+  console.log(`SMOKE-TEST ${allPassed ? "ALL PASSED" : "FAILURES DETECTED"} (hard ${hardPassed}/${hardTotal}, overall ${passed}/${total})`);
   if (failures.length > 0) {
-    console.error("SMOKE-TEST FAILURES:", JSON.stringify(failures, null, 2));
+    console.error("SMOKE-TEST HARD FAILURES:", JSON.stringify(failures, null, 2));
+  }
+  if (softFailures.length > 0) {
+    console.warn("SMOKE-TEST SOFT FAILURES (external deps, informational):", JSON.stringify(softFailures, null, 2));
   }
 
   // Always return 200 — smoke test route must never 500.
   // Individual test failures are reported in the results array.
-  return NextResponse.json({ passed, total, allPassed, results }, { status: 200 });
+  return NextResponse.json({
+    passed,
+    total,
+    allPassed,
+    hardPassed,
+    hardTotal,
+    softFailures: softFailures.length,
+    results,
+  }, { status: 200 });
 }
 
 export async function POST() {
