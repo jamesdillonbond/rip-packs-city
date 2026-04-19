@@ -1,5 +1,13 @@
 # Rip Packs City — Claude Code AI Assistant Configuration
 
+## Development workflow (READ FIRST)
+
+- Work directly on the `main` branch. Do NOT create `claude/*` or other feature branches.
+- Commit and push directly to `main`. Do NOT open pull requests.
+- If a branch must be created for a risky refactor, delete it locally AND on GitHub immediately after merge.
+- Always run the smoke test after deploying changes.
+- Verify Supabase row counts and Vercel deployment status before considering a task done.
+
 ## Project overview
 
 Rip Packs City (RPC) is a production-grade NBA Top Shot collector intelligence platform competing directly with LiveToken. It targets serious collectors with analytics, deal-finding, sniper tools, FMV pricing, and badge tracking. Trevor (founder) holds an official Portland Trail Blazers Team Captain designation on NBA Top Shot — a key brand differentiator.
