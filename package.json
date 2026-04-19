@@ -10,7 +10,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "classify:dapper": "node scripts/dapper-csv-classify.mjs"
+    "classify:dapper": "node scripts/dapper-csv-classify.mjs",
+    "classify:ts-livetoken": "node scripts/classify-ts-livetoken.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.81.0",
@@ -21,7 +22,7 @@
     "@supabase/supabase-js": "^2.99.3",
     "@tanstack/react-query": "^5.95.0",
     "@vercel/og": "^0.11.1",
-    "csv-parse": "^6.2.1",
+    "csv-parse": "^5.6.0",
     "next": "16.1.6",
     "oauth-1.0a": "^2.2.6",
     "react": "19.2.3",

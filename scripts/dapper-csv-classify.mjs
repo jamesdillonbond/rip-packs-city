@@ -1,5 +1,12 @@
 #!/usr/bin/env node
 /**
+ * DEPRECATED. This classifier produced incorrect results in production —
+ * Dapper CSV lacks nft_id and timestamp pairing fails for pack reveals
+ * which fire minutes to hours after payment. Use classify-ts-livetoken.mjs
+ * instead. Kept as a reference tombstone.
+ *
+ * ─────────────────────────────────────────────────────────────────────
+ *
  * dapper-csv-classify.mjs
  *
  * Drains the inferred_no_signal rows in moment_acquisitions for NBA Top Shot
