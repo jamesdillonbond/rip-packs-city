@@ -63,5 +63,8 @@ supabase/.temp/
 scripts/allday-moments.json
 scripts/*.json
 
+# local CSV data (wallet exports, PII) — NEVER COMMIT
+scripts/data/
+
 # local log dumps (one-off Supabase Logs API exports etc.)
 logs/
