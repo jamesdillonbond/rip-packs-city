@@ -1,5 +1,6 @@
 // app/api/smoke-test/route.ts
 import { NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { createClient } from "@supabase/supabase-js";
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://rip-packs-city.vercel.app";
@@ -156,6 +157,19 @@ async function runSmokeTests() {
     if (r.name.startsWith("RLS")) console.log(`[smoke-test] ${r.name}: ${r.passed} ${r.detail}`);
   }
 
+  // Push hard failures to Sentry so Trevor gets notified instead of needing
+  // to poll this endpoint. Soft failures (external API deps) stay out of Sentry.
+  for (const r of results) {
+    if (!r.passed && !r.soft) {
+      Sentry.withScope((scope) => {
+        scope.setTag("smoke_test", r.name);
+        scope.setTag("route", "smoke-test");
+        scope.setExtra("detail", r.detail ?? "");
+        Sentry.captureMessage("smoke test failed: " + r.name, "error");
+      });
+    }
+  }
+
   // ── Summary ────────────────────────────────────────────────
   // allPassed reflects platform health only — soft tests (external API
   // dependencies like Flowty / Top Shot GQL / Flow RPC) are informational
@@ -195,6 +209,11 @@ export async function POST() {
     return await runSmokeTests();
   } catch (err: any) {
     // Top-level safety net — smoke test must NEVER return 500
+    Sentry.withScope((scope) => {
+      scope.setTag("route", "smoke-test");
+      scope.setTag("smoke_test", "top-level-crash");
+      Sentry.captureException(err);
+    });
     console.error("[smoke-test] Top-level crash:", err);
     return NextResponse.json({
       passed: 0,
@@ -209,6 +228,11 @@ export async function GET() {
   try {
     return await runSmokeTests();
   } catch (err: any) {
+    Sentry.withScope((scope) => {
+      scope.setTag("route", "smoke-test");
+      scope.setTag("smoke_test", "top-level-crash");
+      Sentry.captureException(err);
+    });
     console.error("[smoke-test] Top-level crash:", err);
     return NextResponse.json({
       passed: 0,

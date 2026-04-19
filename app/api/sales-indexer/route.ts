@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import * as Sentry from "@sentry/nextjs"
 import fcl from "@/lib/flow"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
@@ -528,6 +529,11 @@ export async function POST(req: NextRequest) {
       elapsed: Date.now() - start,
     })
   } catch (err) {
+    Sentry.withScope((scope) => {
+      scope.setTag("route", "sales-indexer")
+      scope.setTag("collection", "nba-top-shot")
+      Sentry.captureException(err)
+    })
     console.log("[sales-indexer] fatal error:", err instanceof Error ? err.message : String(err))
     return NextResponse.json(
       { error: "Internal server error", details: err instanceof Error ? err.message : String(err) },
