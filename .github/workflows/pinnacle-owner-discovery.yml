@@ -1,0 +1,62 @@
+name: Pinnacle Owner Discovery + Edition Resolver
+
+# Two Supabase edge functions run on a */20 cron:
+#   1. pinnacle-owner-discovery scans A.edf9df96c92f4595.Pinnacle.Deposit
+#      events backward in 2000-block windows and upserts nft_id → owner pairs
+#      into pinnacle_ownership_snapshots.
+#   2. pinnacle-nft-resolver drains pinnacle_sales rows with edition_id IS NULL
+#      whose nft_id has a matching ownership snapshot, calls
+#      resolve-pinnacle-nft.cdc at the Flow Access API, and promotes the
+#      resolved edition_key into pinnacle_nft_map + pinnacle_sales.
+#
+# Both functions are idempotent and authenticated with Bearer rippackscity2026,
+# matching the convention used by the other RPC edge functions.
+
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+    inputs:
+      blocks_per_run:
+        description: "Blocks per run for owner discovery"
+        required: false
+        default: "2000"
+      resolver_batch_size:
+        description: "Batch size for the NFT resolver"
+        required: false
+        default: "25"
+
+concurrency:
+  group: pinnacle-owner-discovery
+  cancel-in-progress: false
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Owner Discovery — scan Pinnacle.Deposit events backward
+        run: |
+          BLOCKS="${{ github.event.inputs.blocks_per_run || '2000' }}"
+          STATUS=$(curl -s -o /tmp/owner-discovery.json -w "%{http_code}" \
+            -H "Authorization: Bearer rippackscity2026" \
+            "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/pinnacle-owner-discovery?blocks=${BLOCKS}" \
+            --max-time 300)
+          echo "Owner discovery status: $STATUS"
+          cat /tmp/owner-discovery.json
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::Owner discovery returned $STATUS"
+          fi
+
+      - name: NFT Resolver — resolve (nft_id, owner) pairs into edition_keys
+        run: |
+          BATCH="${{ github.event.inputs.resolver_batch_size || '25' }}"
+          STATUS=$(curl -s -o /tmp/nft-resolver.json -w "%{http_code}" \
+            -H "Authorization: Bearer rippackscity2026" \
+            "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/pinnacle-nft-resolver?batch=${BATCH}" \
+            --max-time 300)
+          echo "NFT resolver status: $STATUS"
+          cat /tmp/nft-resolver.json
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::NFT resolver returned $STATUS"
+          fi
