@@ -20,7 +20,11 @@ const TS_CONTRACT_NAME = "TopShot"
 const FLOWTY_PROXY_URL =
   "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/flowty-proxy"
 const FLOWTY_PROXY_TOKEN = "rippackscity2026"
-const PAGE_LIMIT = 50
+// Match the Pinnacle pattern: page size 100 + listingKind:sale filter so each
+// Flowty page returns 100 actively-listed NFTs (not 100 raw NFTs that we then
+// have to filter for state==='LISTED' client-side, which is what was capping
+// the previous PAGE_LIMIT=50 runs at ~56 listings/run).
+const PAGE_LIMIT = 100
 const MAX_PAGES = 20
 const INTER_PAGE_DELAY_MS = 200
 const UPSERT_CHUNK = 50
@@ -76,7 +80,10 @@ async function fetchPage(
     body: JSON.stringify({
       contractAddress: TS_CONTRACT_ADDRESS,
       contractName: TS_CONTRACT_NAME,
-      payload: { filters: {}, offset, limit: PAGE_LIMIT },
+      // listingKind: "sale" forces Flowty to return only NFTs with active sale
+      // listings; without it, the proxy was returning a mix of listed/unlisted
+      // NFTs and the loop hit the "no new flow_ids" early-break after 1-2 pages.
+      payload: { filters: { listingKind: "sale" }, offset, limit: PAGE_LIMIT },
     }),
   })
   if (!res.ok) {
@@ -146,6 +153,10 @@ async function runListingCache() {
 
   const rows: Row[] = []
   const seenFlowIds = new Set<string>()
+  // Tolerate a single page where every flow_id was already seen (can happen if
+  // Flowty briefly returns overlapping windows); only abort after two such
+  // pages in a row. Bare empty pages still break immediately.
+  let consecutiveStaleSeenPages = 0
 
   for (let page = 0; page < MAX_PAGES; page++) {
     const offset = page * PAGE_LIMIT
@@ -163,6 +174,7 @@ async function runListingCache() {
     }
     const nfts = Array.isArray(rawRows) ? rawRows : []
     stats.totalFetched += nfts.length
+    if (nfts.length === 0) break
     const reportedTotal = typeof pageResp.total === "number" ? pageResp.total : null
     const prevSeenSize = seenFlowIds.size
 
@@ -256,7 +268,12 @@ async function runListingCache() {
     }
 
     if (nfts.length < PAGE_LIMIT) break
-    if (seenFlowIds.size === prevSeenSize) break
+    if (seenFlowIds.size === prevSeenSize) {
+      consecutiveStaleSeenPages++
+      if (consecutiveStaleSeenPages >= 2) break
+    } else {
+      consecutiveStaleSeenPages = 0
+    }
     if (reportedTotal !== null && offset + PAGE_LIMIT >= reportedTotal) break
     await delay(INTER_PAGE_DELAY_MS)
   }
