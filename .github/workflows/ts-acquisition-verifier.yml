@@ -1,0 +1,26 @@
+name: TS Acquisition Verifier
+# Drains 20 inferred_no_signal rows per run from moment_acquisitions for
+# Trevor's Top Shot wallet by scanning on-chain Flow events. Full backlog of
+# 907 rows completes in ~11 days at this cadence.
+on:
+  schedule:
+    - cron: '*/20 * * * *'
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Trigger ts-acquisition-verifier edge function
+        run: |
+          STATUS=$(curl -s -o /tmp/ts-verify.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/ts-acquisition-verifier)
+          BODY=$(cat /tmp/ts-verify.json)
+          echo "Status: $STATUS"
+          echo "$BODY"
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::ts-acquisition-verifier returned $STATUS"
+            exit 1
+          fi
