@@ -37,8 +37,6 @@ const nextConfig: NextConfig = {
 }
 
 export default withSentryConfig(nextConfig, {
-  // Suppresses source map upload logs during build
   silent: true,
-  // Upload source maps for better stack traces (requires SENTRY_AUTH_TOKEN)
   widenClientFileUpload: true,
 })
