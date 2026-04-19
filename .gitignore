@@ -1,23 +1,59 @@
-node_modules
-.next
-out
-.env.local
-.env*.local
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-.DS_Store
-*.tsbuildinfo
-.mcp.json
-.vercel/
+﻿# dependencies
+node_modules/
+/.pnp
+.pnp.js
 
-# Local credentials and data dumps
+# next.js
+/.next/
+/out/
+app/out/
+
+# production
+/build
+
+# local env files — NEVER COMMIT
+.env
+.env*.local
+.env.local
+.env.development.local
+.env.production.local
+
+# credentials — NEVER COMMIT
 creds.json
-scripts/ts-creds.json
-settings.local.json
-allday-moments.json
+*creds*.json
+*-creds.json
+scripts/*creds*.json
 flowty-locker-test.json
 nftlocker-contract.json
 nftlocker-full.json
+
+# vercel
+.vercel/
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# editor / IDE
+.vscode/
+.idea/
+.cursorignore
+
+# Claude / AI tooling
 .claude/
+.mcp.json
+
+# Flow CLI
+emulator-account.pkey
+imports/
+README_flow.md
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# misc
+.DS_Store
+*.pem
+Thumbs.db
