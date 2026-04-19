@@ -10,9 +10,11 @@
  * Default behavior is DRY-RUN. Pass --apply to perform DB writes.
  *
  * Usage:
- *   node scripts/classify-ts-livetoken.mjs                # dry run
- *   node scripts/classify-ts-livetoken.mjs --apply        # write to DB
- *   node scripts/classify-ts-livetoken.mjs --csv path.csv # override path
+ *   node scripts/classify-ts-livetoken.mjs                                          # dry run
+ *   node scripts/classify-ts-livetoken.mjs --apply                                  # write to DB
+ *   node scripts/classify-ts-livetoken.mjs --csv path.csv                           # override path
+ *   node scripts/classify-ts-livetoken.mjs --confidence inferred_pre_flowty         # drain pre_flowty bucket
+ *   node scripts/classify-ts-livetoken.mjs --confidence inferred_no_signal,inferred_pre_flowty
  */
 
 import { readFileSync, writeFileSync, createReadStream } from "fs"
@@ -73,17 +75,51 @@ const ACQ_METHOD_MAP = new Map([
 
 const METHODS = ["pack_pull", "marketplace", "gift", "challenge_reward"]
 
+const VALID_CONFIDENCE_VALUES = new Set(["inferred_no_signal", "inferred_pre_flowty"])
+const DEFAULT_CONFIDENCE_LIST = ["inferred_no_signal"]
+
 /* ── CLI ──────────────────────────────────────────────────────────── */
 
 function parseArgs() {
   const argv = process.argv.slice(2)
   let csvPath = "scripts/data/livetoken-activity.csv"
   let apply = false
+  let confidenceList = DEFAULT_CONFIDENCE_LIST
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--csv" && argv[i + 1]) csvPath = argv[++i]
     else if (argv[i] === "--apply") apply = true
+    else if (argv[i] === "--confidence" && argv[i + 1]) {
+      const raw = argv[++i]
+      const parts = raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+      const invalid = parts.filter((p) => !VALID_CONFIDENCE_VALUES.has(p))
+      if (invalid.length > 0) {
+        console.error(
+          `[ts-livetoken] invalid --confidence value(s): ${invalid.join(", ")}. Valid: ${[...VALID_CONFIDENCE_VALUES].join(", ")}`
+        )
+        process.exit(1)
+      }
+      if (parts.length === 0) {
+        console.error("[ts-livetoken] --confidence requires at least one value")
+        process.exit(1)
+      }
+      confidenceList = parts
+    }
   }
-  return { csvPath: resolve(process.cwd(), csvPath), apply }
+  return { csvPath: resolve(process.cwd(), csvPath), apply, confidenceList }
+}
+
+function isDefaultConfidence(confidenceList) {
+  return (
+    confidenceList.length === DEFAULT_CONFIDENCE_LIST.length &&
+    confidenceList.every((v, i) => v === DEFAULT_CONFIDENCE_LIST[i])
+  )
+}
+
+function suffixForConfidence(confidenceList) {
+  return isDefaultConfidence(confidenceList) ? "" : `-${confidenceList.join("-")}`
 }
 
 /* ── CSV parse ────────────────────────────────────────────────────── */
@@ -163,7 +199,7 @@ async function parseLivetokenCsv(csvPath) {
 
 /* ── DB fetch ─────────────────────────────────────────────────────── */
 
-async function fetchInferredRows() {
+async function fetchInferredRows(confidenceList) {
   const all = []
   const PAGE = 1000
   let from = 0
@@ -171,7 +207,7 @@ async function fetchInferredRows() {
     const { data, error } = await supabase
       .from("moment_acquisitions")
       .select("id, nft_id, acquired_date, buy_price, source_wallet, transaction_hash")
-      .eq("acquisition_confidence", "inferred_no_signal")
+      .in("acquisition_confidence", confidenceList)
       .eq("collection_id", COLLECTION_ID)
       .order("acquired_date", { ascending: true })
       .range(from, from + PAGE - 1)
@@ -317,6 +353,7 @@ function printDryRunPreview({
   matched,
   unmatched,
   suspicious,
+  confidenceList,
 }) {
   const breakdown = methodBreakdown(matched)
   const deltaStats = computeDeltaStats(matched)
@@ -330,10 +367,11 @@ function printDryRunPreview({
 
   console.log("")
   console.log("=== LIVETOKEN CLASSIFIER — DRY RUN ===")
+  console.log(`confidence filter:             ${confidenceList.join(", ")}`)
   console.log(`parsed CSV rows:               ${totalParsed}`)
   console.log(`inbound acquisition rows:      ${inboundRows}`)
   console.log(`unique nft_ids with activity:  ${activitiesByMoment.size}`)
-  console.log(`db inferred_no_signal rows:    ${dbRows.length}`)
+  console.log(`db rows (filtered):            ${dbRows.length}`)
   console.log(`matched:                       ${matched.length}`)
   console.log(`unmatched:                     ${unmatched.length}`)
   console.log(`suspicious (delta > 5 min):    ${suspicious.length}`)
@@ -386,9 +424,10 @@ function printDryRunPreview({
 
 async function main() {
   const t0 = Date.now()
-  const { csvPath, apply } = parseArgs()
+  const { csvPath, apply, confidenceList } = parseArgs()
   console.log(`[ts-livetoken] mode: ${apply ? "APPLY (live writes)" : "DRY RUN (no writes)"}`)
   console.log(`[ts-livetoken] csv:  ${csvPath}`)
+  console.log(`[ts-livetoken] confidence filter: ${confidenceList.join(", ")}`)
 
   const { activitiesByMoment, totalParsed, inboundRows, skippedByActivity } =
     await parseLivetokenCsv(csvPath)
@@ -396,19 +435,22 @@ async function main() {
     `[ts-livetoken] parsed ${totalParsed} rows → ${inboundRows} inbound across ${activitiesByMoment.size} nft_ids`
   )
 
-  const dbRows = await fetchInferredRows()
-  console.log(`[ts-livetoken] fetched ${dbRows.length} inferred_no_signal DB rows`)
+  const dbRows = await fetchInferredRows(confidenceList)
+  console.log(
+    `[ts-livetoken] fetched ${dbRows.length} DB rows (confidence: ${confidenceList.join(", ")})`
+  )
 
   const { matched, unmatched, suspicious } = matchRows(dbRows, activitiesByMoment)
 
   // Always write diagnostic files.
   const outDir = resolve(process.cwd(), "scripts/data")
-  const unmatchedPath = resolve(outDir, "classify-ts-livetoken-unmatched.json")
+  const suffix = suffixForConfidence(confidenceList)
+  const unmatchedPath = resolve(outDir, `classify-ts-livetoken-unmatched${suffix}.json`)
   writeFileSync(unmatchedPath, JSON.stringify(unmatched, null, 2), "utf-8")
   console.log(`[ts-livetoken] wrote ${unmatched.length} unmatched rows → ${unmatchedPath}`)
 
   if (suspicious.length > 0) {
-    const suspiciousPath = resolve(outDir, "classify-ts-livetoken-suspicious.json")
+    const suspiciousPath = resolve(outDir, `classify-ts-livetoken-suspicious${suffix}.json`)
     writeFileSync(suspiciousPath, JSON.stringify(suspicious, null, 2), "utf-8")
     console.log(`[ts-livetoken] wrote ${suspicious.length} suspicious rows → ${suspiciousPath}`)
   }
@@ -422,6 +464,7 @@ async function main() {
       matched,
       unmatched,
       suspicious,
+      confidenceList,
     })
     return
   }
@@ -430,6 +473,7 @@ async function main() {
   const { updated, buyPricePopulated, sourceWalletPopulated } = await applyUpdates(matched)
 
   const summary = {
+    confidenceFilter: confidenceList,
     rowsUpdated: updated,
     methodBreakdown: methodBreakdown(matched),
     buyPricePopulated,
@@ -438,6 +482,7 @@ async function main() {
   }
   console.log("")
   console.log("=== APPLY COMPLETE ===")
+  console.log(`confidence filter: ${confidenceList.join(", ")}`)
   console.log(JSON.stringify(summary, null, 2))
 }
 
