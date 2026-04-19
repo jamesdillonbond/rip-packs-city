@@ -353,11 +353,51 @@ function classifyFromTx(events: FlowEvent[], nftId: string): Classification {
 
 // ─── Main drain ─────────────────────────────────────────────────────────────
 
+async function logPipelineRun(args: {
+  pipeline: string
+  startedAt: string
+  rowsFound?: number
+  rowsWritten?: number
+  rowsSkipped?: number
+  ok: boolean
+  error?: string | null
+  collectionSlug?: string | null
+  cursorBefore?: string | null
+  cursorAfter?: string | null
+  extra?: Record<string, unknown>
+}): Promise<void> {
+  try {
+    await (supabase as any).rpc("log_pipeline_run", {
+      p_pipeline: args.pipeline,
+      p_started_at: args.startedAt,
+      p_rows_found: args.rowsFound ?? 0,
+      p_rows_written: args.rowsWritten ?? 0,
+      p_rows_skipped: args.rowsSkipped ?? 0,
+      p_ok: args.ok,
+      p_error: args.error ?? null,
+      p_collection_slug: args.collectionSlug ?? null,
+      p_cursor_before: args.cursorBefore ?? null,
+      p_cursor_after: args.cursorAfter ?? null,
+      p_extra: args.extra ?? null,
+    })
+  } catch (e) {
+    console.log(
+      `[${args.pipeline}] log_pipeline_run err: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    )
+  }
+}
+
 async function drain(requestId: string): Promise<void> {
   const started = Date.now()
+  const startedAtIso = new Date(started).toISOString()
   const deadline = started + BUDGET_MS
 
   let counts = { resolved: 0, failed: 0, pack_pull: 0, marketplace: 0, gift: 0 }
+  let rowsFound = 0
+  let ok = true
+  let errMsg: string | null = null
 
   try {
     const { data: batchData, error: batchErr } = await (supabase as any).rpc(
@@ -370,12 +410,15 @@ async function drain(requestId: string): Promise<void> {
       },
     )
     if (batchErr) {
-      console.log(`[ts-verify ${requestId}] batch rpc err:`, batchErr.message)
+      ok = false
+      errMsg = batchErr.message ?? String(batchErr)
+      console.log(`[ts-verify ${requestId}] batch rpc err:`, errMsg)
       return
     }
     const batch = (batchData ?? []) as BatchRow[]
     // Hard-filter to inferred_no_signal — never touch inferred_pre_flowty.
     const rows = batch.filter((r) => r.acquisition_confidence === "inferred_no_signal")
+    rowsFound = rows.length
 
     if (rows.length === 0) {
       console.log(`[ts-verify ${requestId}] no inferred_no_signal rows to process`)
@@ -459,12 +502,34 @@ async function drain(requestId: string): Promise<void> {
       counts[cls.method]++
     }
   } catch (err) {
-    console.log(`[ts-verify ${requestId}] fatal:`, (err as Error).message)
+    ok = false
+    errMsg = err instanceof Error ? err.message : String(err)
+    console.log(`[ts-verify ${requestId}] fatal:`, errMsg)
   } finally {
     const elapsed = Date.now() - started
     console.log(
       `[ts-verify ${requestId}] done elapsed=${elapsed}ms resolved=${counts.resolved} failed=${counts.failed} pack_pull=${counts.pack_pull} marketplace=${counts.marketplace} gift=${counts.gift}`,
     )
+
+    await logPipelineRun({
+      pipeline: "ts-acquisition-verifier",
+      startedAt: startedAtIso,
+      rowsFound,
+      rowsWritten: counts.resolved,
+      rowsSkipped: counts.failed,
+      ok,
+      error: errMsg,
+      collectionSlug: "nba-top-shot",
+      extra: {
+        request_id: requestId,
+        elapsed_ms: elapsed,
+        pack_pull: counts.pack_pull,
+        marketplace: counts.marketplace,
+        gift: counts.gift,
+        wallet: TREVOR_WALLET,
+        flow_rpc: USING_PUBLIC_ACCESS ? "public" : "private",
+      },
+    })
   }
 }
 

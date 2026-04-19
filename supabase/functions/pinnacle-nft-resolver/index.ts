@@ -193,6 +193,42 @@ function extractEditionKey(raw: unknown): string | null {
   return null
 }
 
+async function logPipelineRun(args: {
+  pipeline: string
+  startedAt: string
+  rowsFound?: number
+  rowsWritten?: number
+  rowsSkipped?: number
+  ok: boolean
+  error?: string | null
+  collectionSlug?: string | null
+  cursorBefore?: string | null
+  cursorAfter?: string | null
+  extra?: Record<string, unknown>
+}): Promise<void> {
+  try {
+    await (supabase as any).rpc("log_pipeline_run", {
+      p_pipeline: args.pipeline,
+      p_started_at: args.startedAt,
+      p_rows_found: args.rowsFound ?? 0,
+      p_rows_written: args.rowsWritten ?? 0,
+      p_rows_skipped: args.rowsSkipped ?? 0,
+      p_ok: args.ok,
+      p_error: args.error ?? null,
+      p_collection_slug: args.collectionSlug ?? null,
+      p_cursor_before: args.cursorBefore ?? null,
+      p_cursor_after: args.cursorAfter ?? null,
+      p_extra: args.extra ?? null,
+    })
+  } catch (e) {
+    console.log(
+      `[${args.pipeline}] log_pipeline_run err: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    )
+  }
+}
+
 async function resolveOne(nftId: string, owner: string): Promise<string | null> {
   const body = {
     script: btoa(RESOLVE_SCRIPT),
@@ -230,9 +266,20 @@ Deno.serve(async (req: Request) => {
   )
 
   const started = Date.now()
+  const startedAtIso = new Date(started).toISOString()
   try {
     const targets = await loadBatch(batchSize)
     if (targets.length === 0) {
+      await logPipelineRun({
+        pipeline: "pinnacle-nft-resolver",
+        startedAt: startedAtIso,
+        ok: true,
+        collectionSlug: "disney-pinnacle",
+        extra: {
+          message: "no unresolved (nft_id, owner) pairs",
+          elapsed_ms: Date.now() - started,
+        },
+      })
       return new Response(
         JSON.stringify({
           ok: true,
@@ -293,6 +340,26 @@ Deno.serve(async (req: Request) => {
       )
     }
 
+    const elapsed = Date.now() - started
+
+    await logPipelineRun({
+      pipeline: "pinnacle-nft-resolver",
+      startedAt: startedAtIso,
+      rowsFound: queried,
+      rowsWritten: resolved,
+      rowsSkipped: nullEdition + failed,
+      ok: true,
+      collectionSlug: "disney-pinnacle",
+      extra: {
+        null_edition: nullEdition,
+        failed,
+        promoted: promoted ?? null,
+        promote_err: promoteErr ? promoteErr.message : null,
+        elapsed_ms: elapsed,
+        batch_size: batchSize,
+      },
+    })
+
     return new Response(
       JSON.stringify({
         ok: true,
@@ -301,13 +368,21 @@ Deno.serve(async (req: Request) => {
         nullEdition,
         failed,
         promoted: promoted ?? null,
-        elapsed: Date.now() - started,
+        elapsed,
       }),
       { headers: { "Content-Type": "application/json; charset=utf-8" } }
     )
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.log(`[pinnacle-nft-resolver] fatal: ${msg}`)
+    await logPipelineRun({
+      pipeline: "pinnacle-nft-resolver",
+      startedAt: startedAtIso,
+      ok: false,
+      error: msg,
+      collectionSlug: "disney-pinnacle",
+      extra: { elapsed_ms: Date.now() - started },
+    })
     return new Response(
       JSON.stringify({ ok: false, error: msg }),
       { status: 500, headers: { "Content-Type": "application/json; charset=utf-8" } }
