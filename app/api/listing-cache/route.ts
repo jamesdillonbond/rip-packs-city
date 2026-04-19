@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { createClient } from "@supabase/supabase-js";
 import { fireNextPipelineStep } from "@/lib/pipeline-chain";
 
@@ -477,6 +478,11 @@ export async function POST(req: NextRequest) {
       elapsed: Date.now() - startTime,
     });
   } catch (e: any) {
+    Sentry.withScope((scope) => {
+      scope.setTag("route", "listing-cache");
+      scope.setTag("collection", req.nextUrl.searchParams.get("collection") ?? "nba-top-shot");
+      Sentry.captureException(e);
+    });
     console.error("[listing-cache] FATAL: " + (e.message || "unknown"), e.stack || "");
     return NextResponse.json({ ok: false, error: e.message || "Unknown error" }, { status: 500 });
   }
