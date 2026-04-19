@@ -62,3 +62,6 @@ supabase/.temp/
 
 scripts/allday-moments.json
 scripts/*.json
+
+# local log dumps (one-off Supabase Logs API exports etc.)
+logs/

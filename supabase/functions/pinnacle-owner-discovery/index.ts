@@ -170,6 +170,42 @@ async function saveState(patch: ScanState): Promise<void> {
   if (error) console.log(`[pinnacle-owner-discovery] save state err: ${error.message}`)
 }
 
+async function logPipelineRun(args: {
+  pipeline: string
+  startedAt: string
+  rowsFound?: number
+  rowsWritten?: number
+  rowsSkipped?: number
+  ok: boolean
+  error?: string | null
+  collectionSlug?: string | null
+  cursorBefore?: string | null
+  cursorAfter?: string | null
+  extra?: Record<string, unknown>
+}): Promise<void> {
+  try {
+    await (supabase as any).rpc("log_pipeline_run", {
+      p_pipeline: args.pipeline,
+      p_started_at: args.startedAt,
+      p_rows_found: args.rowsFound ?? 0,
+      p_rows_written: args.rowsWritten ?? 0,
+      p_rows_skipped: args.rowsSkipped ?? 0,
+      p_ok: args.ok,
+      p_error: args.error ?? null,
+      p_collection_slug: args.collectionSlug ?? null,
+      p_cursor_before: args.cursorBefore ?? null,
+      p_cursor_after: args.cursorAfter ?? null,
+      p_extra: args.extra ?? null,
+    })
+  } catch (e) {
+    console.log(
+      `[${args.pipeline}] log_pipeline_run err: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    )
+  }
+}
+
 Deno.serve(async (req: Request) => {
   const auth = req.headers.get("Authorization") ?? ""
   if (auth !== "Bearer rippackscity2026") {
@@ -186,6 +222,7 @@ Deno.serve(async (req: Request) => {
   )
 
   const started = Date.now()
+  const startedAtIso = new Date(started).toISOString()
   try {
     const state = await loadState()
     let cursor = state.last_processed_height
@@ -197,6 +234,15 @@ Deno.serve(async (req: Request) => {
     }
 
     if (cursor <= 0) {
+      await logPipelineRun({
+        pipeline: "pinnacle-owner-discovery",
+        startedAt: startedAtIso,
+        ok: true,
+        collectionSlug: "disney-pinnacle",
+        cursorBefore: String(state.last_processed_height),
+        cursorAfter: "0",
+        extra: { message: "no history left to scan", elapsed_ms: Date.now() - started },
+      })
       return new Response(
         JSON.stringify({ ok: true, message: "no history left to scan", cursor }),
         { headers: { "Content-Type": "application/json; charset=utf-8" } }
@@ -299,6 +345,26 @@ Deno.serve(async (req: Request) => {
       total_skipped: state.total_skipped + skipped,
     })
 
+    const elapsed = Date.now() - started
+
+    await logPipelineRun({
+      pipeline: "pinnacle-owner-discovery",
+      startedAt: startedAtIso,
+      rowsFound: eventsFound,
+      rowsWritten: inserted,
+      rowsSkipped: skipped,
+      ok: true,
+      collectionSlug: "disney-pinnacle",
+      cursorBefore: String(cursor),
+      cursorAfter: String(nextCursor),
+      extra: {
+        window_start: windowStart,
+        window_end: windowEnd,
+        blocks_scanned: windowEnd - lowestScanned + 1,
+        elapsed_ms: elapsed,
+      },
+    })
+
     return new Response(
       JSON.stringify({
         ok: true,
@@ -309,13 +375,21 @@ Deno.serve(async (req: Request) => {
         inserted,
         skipped,
         cursor: nextCursor,
-        elapsed: Date.now() - started,
+        elapsed,
       }),
       { headers: { "Content-Type": "application/json; charset=utf-8" } }
     )
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.log(`[pinnacle-owner-discovery] fatal: ${msg}`)
+    await logPipelineRun({
+      pipeline: "pinnacle-owner-discovery",
+      startedAt: startedAtIso,
+      ok: false,
+      error: msg,
+      collectionSlug: "disney-pinnacle",
+      extra: { elapsed_ms: Date.now() - started },
+    })
     return new Response(
       JSON.stringify({ ok: false, error: msg }),
       { status: 500, headers: { "Content-Type": "application/json; charset=utf-8" } }
