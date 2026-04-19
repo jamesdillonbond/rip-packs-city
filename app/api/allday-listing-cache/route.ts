@@ -26,12 +26,19 @@ const AD_GQL_PAGE_SIZE = 100
 const AD_GQL_MAX_PAGES = 70
 const AD_GQL_PAGE_TIMEOUT_MS = 8000
 const FMV_UPSERT_CHUNK = 500
-// Dual-sort sweep constants. We fetch three pages sorted salePrice asc
-// (captures the cheap/floor listings) and three sorted salePrice desc
-// (captures the expensive tail that price-asc pagination never reaches).
-// 3 × 24 × 2 = up to 144 listings per run after dedup by listing_resource_id.
-const PAGE_LIMIT = 24
-const SWEEP_OFFSETS = [0, 24, 48]
+// Dual-sort sweep constants. We fetch up to 10 pages sorted salePrice asc
+// (captures the cheap/floor listings) and 10 sorted salePrice desc (captures
+// the expensive tail that price-asc pagination never reaches), at 50 listings
+// per page. 10 × 50 × 2 = up to 1000 listings per run before dedup; in
+// practice dedup collapses overlap to a few hundred unique listings. The
+// previous PAGE_LIMIT=24 with only 3 offsets was capping runs at ~48
+// listings, well below the actual AllDay marketplace depth.
+//
+// Each sweep breaks early as soon as a page returns < PAGE_LIMIT rows
+// (signals end-of-data for that sort direction), so smaller marketplaces
+// don't pay the full 20-page cost.
+const PAGE_LIMIT = 50
+const SWEEP_OFFSETS = [0, 50, 100, 150, 200, 250, 300, 350, 400, 450]
 const INTER_PAGE_DELAY_MS = 200
 const UPSERT_CHUNK = 50
 const EDITION_LOOKUP_CHUNK = 100
@@ -198,7 +205,11 @@ async function fetchPage(offset: number, sort: FlowtySort) {
       contractName: AD_CONTRACT_NAME,
       // Flowty's collection endpoint accepts sort inside the payload; the
       // flowty-proxy edge function forwards the payload unchanged.
-      payload: { filters: {}, offset, limit: PAGE_LIMIT, sort },
+      // listingKind:"sale" matches the Pinnacle pattern — every returned NFT
+      // is guaranteed to have an active sale order, so PAGE_LIMIT rows
+      // translate ~1:1 to listings instead of being filtered down by the
+      // state==="LISTED" check below.
+      payload: { filters: { listingKind: "sale" }, offset, limit: PAGE_LIMIT, sort },
     }),
   })
   if (!res.ok) {
@@ -297,6 +308,10 @@ async function runListingCache() {
       if (!page) continue
       const nfts = Array.isArray(page.nfts) ? page.nfts : []
       stats.totalFetched += nfts.length
+      // Stop walking deeper into this sort direction once a page returns no
+      // NFTs at all — the marketplace doesn't have any more listings under
+      // this sort, and further offsets will also be empty.
+      if (nfts.length === 0) break
 
       for (const nft of nfts) {
         const orders = Array.isArray(nft.orders) ? nft.orders : []
@@ -370,6 +385,9 @@ async function runListingCache() {
           edition_external_id: editionId,
         })
       }
+
+      // Short page = end of data for this sort direction; stop paginating it.
+      if (nfts.length < PAGE_LIMIT) break
 
       await delay(INTER_PAGE_DELAY_MS)
     }
