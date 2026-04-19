@@ -93,17 +93,7 @@ export async function GET(req: NextRequest) {
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
   if (!TOKEN || (bearer !== TOKEN && urlToken !== TOKEN)) return unauthorized()
 
-  after(async () => {
-    try {
-      await runListingCache()
-    } catch (err) {
-      console.log(
-        `[topshot-listing-cache] after_unhandled: ${
-          err instanceof Error ? err.message : String(err)
-        }`
-      )
-    }
-  })
+  after(() => runListingCache())
 
   return NextResponse.json({
     status: "accepted",
@@ -159,29 +149,12 @@ async function runListingCache() {
 
   for (let page = 0; page < MAX_PAGES; page++) {
     const offset = page * PAGE_LIMIT
-    console.log(
-      "[topshot-listing-cache] request_params",
-      JSON.stringify({
-        contractAddress: TS_CONTRACT_ADDRESS,
-        contractName: TS_CONTRACT_NAME,
-        page,
-        offset,
-      })
-    )
     const pageResp = await fetchPage(offset).catch((err) => {
       console.log(`[topshot-listing-cache] Page offset=${offset} failed: ${String(err)}`)
       return null
     })
     if (!pageResp) break
     const rawRows = pageResp.nfts
-    console.log(
-      "[topshot-listing-cache] fetch_result",
-      JSON.stringify({
-        status: pageResp.status,
-        count: rawRows?.length ?? "undefined",
-        sample: rawRows?.[0] ? JSON.stringify(rawRows[0]).slice(0, 500) : "EMPTY",
-      })
-    )
     if (pageResp.status >= 400) {
       console.log(
         `[topshot-listing-cache] non_ok_status status=${pageResp.status} errorText=${pageResp.errorText ?? ""}`
