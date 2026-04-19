@@ -229,13 +229,22 @@ async function findDepositHit(
 
   // Process ranges in concurrent waves so one slow request doesn't stall.
   const targetWallet = normalizeAddress(TREVOR_WALLET)!
+  let sporkCutoffChunks = 0
+  let totalChunks = 0
   for (let i = 0; i < ranges.length; i += CHUNK_CONCURRENCY) {
     if (Date.now() > deadline) return null
     const wave = ranges.slice(i, i + CHUNK_CONCURRENCY)
+    totalChunks += wave.length
     const results = await Promise.all(
       wave.map(([s, e]) =>
         fetchEvents(TOPSHOT_DEPOSIT, s, e).catch((err) => {
-          console.log(`[ts-verify] events ${s}-${e} err:`, (err as Error).message)
+          const msg = (err as Error).message ?? ""
+          // Flow public Access API serves only post-spork data. Older heights
+          // return HTTP 404 with "spork root block height" in the body. That's
+          // a data-source blocker, not a scan miss — count it so drain() can
+          // distinguish "scanned, no hit" from "range unreachable".
+          if (msg.includes("spork root")) sporkCutoffChunks++
+          console.log(`[ts-verify] events ${s}-${e} err:`, msg)
           return [] as FlowBlockEvents[]
         }),
       ),
@@ -257,6 +266,15 @@ async function findDepositHit(
         }
       }
     }
+  }
+  // If (nearly) every chunk returned a spork-cutoff 404, the scan window
+  // sits entirely outside the Flow RPC's historical retention. Surface as
+  // an error so drain() can separate "scanned, no deposit" from "range
+  // unreachable — need archive RPC."
+  if (totalChunks > 0 && sporkCutoffChunks >= Math.ceil(totalChunks * 0.9)) {
+    throw new Error(
+      `spork_cutoff: ${sporkCutoffChunks}/${totalChunks} chunks pre-spork; set FLOW_RPC_URL to archive endpoint`,
+    )
   }
   return null
 }
@@ -395,6 +413,7 @@ async function drain(requestId: string): Promise<void> {
   const deadline = started + BUDGET_MS
 
   let counts = { resolved: 0, failed: 0, pack_pull: 0, marketplace: 0, gift: 0 }
+  let sporkCutoffNfts = 0
   let rowsFound = 0
   let ok = true
   let errMsg: string | null = null
@@ -451,9 +470,11 @@ async function drain(requestId: string): Promise<void> {
       try {
         hit = await findDepositHit(row.nft_id, startHeight, endHeight, deadline)
       } catch (err) {
+        const msg = (err as Error).message ?? ""
+        if (msg.includes("spork_cutoff")) sporkCutoffNfts++
         console.log(
           `[ts-verify ${requestId}] nft=${row.nft_id} scan err:`,
-          (err as Error).message,
+          msg,
         )
       }
 
@@ -506,9 +527,23 @@ async function drain(requestId: string): Promise<void> {
     errMsg = err instanceof Error ? err.message : String(err)
     console.log(`[ts-verify ${requestId}] fatal:`, errMsg)
   } finally {
+    // If every NFT we could even attempt hit a spork cutoff, the run did no
+    // useful work and the cause is structural (no archive RPC). Mark ok=false
+    // with a clear error so pipeline_runs surfaces the blocker instead of
+    // reporting ok=true / written=0 every 20 minutes in perpetuity.
+    if (
+      ok &&
+      counts.resolved === 0 &&
+      sporkCutoffNfts > 0 &&
+      sporkCutoffNfts >= counts.failed
+    ) {
+      ok = false
+      errMsg = `flow_rpc_historical_cutoff: ${sporkCutoffNfts}/${counts.failed} NFTs have acquired_date before the Flow Access API's spork root. Set FLOW_RPC_URL to an archive endpoint.`
+    }
+
     const elapsed = Date.now() - started
     console.log(
-      `[ts-verify ${requestId}] done elapsed=${elapsed}ms resolved=${counts.resolved} failed=${counts.failed} pack_pull=${counts.pack_pull} marketplace=${counts.marketplace} gift=${counts.gift}`,
+      `[ts-verify ${requestId}] done elapsed=${elapsed}ms resolved=${counts.resolved} failed=${counts.failed} spork_cutoff=${sporkCutoffNfts} pack_pull=${counts.pack_pull} marketplace=${counts.marketplace} gift=${counts.gift}`,
     )
 
     await logPipelineRun({
@@ -526,6 +561,7 @@ async function drain(requestId: string): Promise<void> {
         pack_pull: counts.pack_pull,
         marketplace: counts.marketplace,
         gift: counts.gift,
+        spork_cutoff_nfts: sporkCutoffNfts,
         wallet: TREVOR_WALLET,
         flow_rpc: USING_PUBLIC_ACCESS ? "public" : "private",
       },
