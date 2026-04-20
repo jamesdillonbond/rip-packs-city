@@ -20,9 +20,14 @@
 // oldest block we've scanned — when it reaches 0 we've run out of history.
 // On the very first run we seed it to the current sealed head.
 //
-// Auth: Bearer rippackscity2026 (matches the rest of the RPC infra).
+// Auth: Bearer ${INGEST_SECRET_TOKEN} (matches the rest of the RPC infra).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
+
+const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN")
+if (!INGEST_SECRET_TOKEN) {
+  throw new Error("INGEST_SECRET_TOKEN env var is required")
+}
 
 const FLOW_REST = "https://rest-mainnet.onflow.org"
 const DEPOSIT_EVENT = "A.edf9df96c92f4595.Pinnacle.Deposit"
@@ -208,7 +213,7 @@ async function logPipelineRun(args: {
 
 Deno.serve(async (req: Request) => {
   const auth = req.headers.get("Authorization") ?? ""
-  if (auth !== "Bearer rippackscity2026") {
+  if (auth !== `Bearer ${INGEST_SECRET_TOKEN}`) {
     return new Response("Unauthorized", { status: 401 })
   }
 

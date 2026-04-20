@@ -9,8 +9,8 @@ name: Pinnacle Owner Discovery + Edition Resolver
 #      resolve-pinnacle-nft.cdc at the Flow Access API, and promotes the
 #      resolved edition_key into pinnacle_nft_map + pinnacle_sales.
 #
-# Both functions are idempotent and authenticated with Bearer rippackscity2026,
-# matching the convention used by the other RPC edge functions.
+# Both functions are idempotent and authenticated with the INGEST_SECRET_TOKEN
+# Bearer token, matching the convention used by the other RPC edge functions.
 
 on:
   schedule:
@@ -39,7 +39,7 @@ jobs:
         run: |
           BLOCKS="${{ github.event.inputs.blocks_per_run || '2000' }}"
           STATUS=$(curl -s -o /tmp/owner-discovery.json -w "%{http_code}" \
-            -H "Authorization: Bearer rippackscity2026" \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/pinnacle-owner-discovery?blocks=${BLOCKS}" \
             --max-time 300)
           echo "Owner discovery status: $STATUS"
@@ -52,7 +52,7 @@ jobs:
         run: |
           BATCH="${{ github.event.inputs.resolver_batch_size || '25' }}"
           STATUS=$(curl -s -o /tmp/nft-resolver.json -w "%{http_code}" \
-            -H "Authorization: Bearer rippackscity2026" \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/pinnacle-nft-resolver?batch=${BATCH}" \
             --max-time 300)
           echo "NFT resolver status: $STATUS"

@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from "next/server"
 
 const EDGE_FN_URL = "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/backfill-player-names"
-const EDGE_FN_TOKEN = "rippackscity2026"
 
 export async function POST(req: NextRequest) {
+  const ingestToken = process.env.INGEST_SECRET_TOKEN
+  if (!ingestToken) {
+    return NextResponse.json(
+      { error: "Server misconfigured: INGEST_SECRET_TOKEN not set" },
+      { status: 500 }
+    )
+  }
+
   // Verify ingest token
   const auth = req.headers.get("authorization") ?? ""
   const token = auth.replace(/^Bearer\s+/i, "")
-  if (!token || token !== process.env.INGEST_SECRET_TOKEN) {
+  if (!token || token !== ingestToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
@@ -15,7 +22,7 @@ export async function POST(req: NextRequest) {
     const res = await fetch(EDGE_FN_URL, {
       method: "POST",
       headers: {
-        "Authorization": "Bearer " + EDGE_FN_TOKEN,
+        "Authorization": "Bearer " + ingestToken,
         "Content-Type": "application/json",
       },
       signal: AbortSignal.timeout(55000),

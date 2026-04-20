@@ -2,9 +2,14 @@
 # Run from project root: bash scripts/backfill-cost-basis.sh
 # Processes all owned moments in chunks of 50, looping until done.
 
+if [ -z "$INGEST_SECRET_TOKEN" ]; then
+  echo "ERROR: INGEST_SECRET_TOKEN env var is required" >&2
+  exit 1
+fi
+
 WALLET="0xbd94cade097e50ac"
 BASE_URL="https://rip-packs-city.vercel.app/api/cost-basis-gql-backfill"
-TOKEN="rippackscity2026"
+TOKEN="$INGEST_SECRET_TOKEN"
 
 OFFSET=0
 LIMIT=50

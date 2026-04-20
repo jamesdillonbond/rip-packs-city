@@ -130,11 +130,18 @@ function escalateConfidence(
 }
 
 export async function POST(req: NextRequest) {
+  const ingestToken = process.env.INGEST_SECRET_TOKEN
+  if (!ingestToken) {
+    return NextResponse.json(
+      { error: "Server misconfigured: INGEST_SECRET_TOKEN not set" },
+      { status: 500 }
+    )
+  }
+
   const chain = req.nextUrl.searchParams.get("chain") === "true"
 
   const authHeader = req.headers.get("authorization")
   const receivedToken = authHeader?.replace("Bearer ", "") ?? ""
-  const ingestToken = process.env.INGEST_SECRET_TOKEN ?? "rippackscity2026"
   const cronSecret = process.env.CRON_SECRET
 
   console.log(

@@ -153,9 +153,16 @@ function buildEditionKey(ed: GqlEdition): string | null {
 }
 
 export async function POST(req: NextRequest) {
+  const expected = process.env.INGEST_SECRET_TOKEN
+  if (!expected) {
+    return NextResponse.json(
+      { error: "Server misconfigured: INGEST_SECRET_TOKEN not set" },
+      { status: 500 }
+    )
+  }
+
   const auth = req.headers.get("authorization")
   const token = auth?.replace("Bearer ", "") ?? ""
-  const expected = process.env.INGEST_SECRET_TOKEN ?? "rippackscity2026"
   if (token !== expected) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
