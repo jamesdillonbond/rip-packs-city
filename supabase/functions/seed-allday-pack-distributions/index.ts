@@ -19,7 +19,10 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // for the active target. This lets a cron-job.org schedule call once per
 // target on separate schedules without the buckets trampling each other.
 
-const INGEST_TOKEN = "rippackscity2026";
+const INGEST_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN");
+if (!INGEST_TOKEN) {
+  throw new Error("INGEST_SECRET_TOKEN env var is required");
+}
 const FLOW_REST = "https://rest-mainnet.onflow.org/v1";
 const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070";
 const GOLAZOS_COLLECTION_ID = "06248cc4-b85f-47cd-af67-1855d14acd75";

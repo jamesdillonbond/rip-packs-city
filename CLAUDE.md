@@ -27,7 +27,7 @@ Shipped (16+ commits)
 
 - On-chain sales indexer: NFTStorefrontV2.ListingCompleted + TopShotMarketV3.MomentPurchased events, 250-block chunks, GQL fallback via Cloudflare proxy for unknown nftIDs, dedup via transaction_hash
 - Pipeline trigger endpoint: GET /api/pipeline-trigger?token= runs ingest→sales-indexer→fmv-recalc→listing-cache sequentially
-- Seeded wallet pre-cache: GET /api/seed-wallet-refresh?token= — sequential cache-first refresh of all active seeded_wallets (300ms throttle, RPC-based cache count bypasses PostgREST cap, username→0x resolution). Cron-job.org schedule: every 6h (`0 */6 * * *`): https://rip-packs-city.vercel.app/api/seed-wallet-refresh?token=rippackscity2026
+- Seeded wallet pre-cache: GET /api/seed-wallet-refresh?token= — sequential cache-first refresh of all active seeded_wallets (300ms throttle, RPC-based cache count bypasses PostgREST cap, username→0x resolution). Cron-job.org schedule: every 6h (`0 */6 * * *`): https://rip-packs-city.vercel.app/api/seed-wallet-refresh?token=$INGEST_SECRET_TOKEN
 - Public seeded-wallets list: GET /api/seeded-wallets (optional ?tag=power_user, ?username=jamesdillonbond)
 - Historical sales backfill script: scripts/sales-backfill.mjs
 - Edition metadata backfill script: scripts/backfill-edition-metadata.mjs (team_name + stub names via GQL)
@@ -307,7 +307,7 @@ Main branch is the canonical clean branch. Latest production deploy: commit f6ca
 ## Architecture notes
 
 - FMV recalc v1.5.0 live (WAP + days_since_sale + sales_count_30d)
-- GitHub Actions cron every 20min calling /api/ingest with INGEST_SECRET_TOKEN=rippackscity2026
+- GitHub Actions cron every 20min calling /api/ingest with INGEST_SECRET_TOKEN sourced from repo secrets
 - Watchlist + FMV Alerts: tables applied, API routes written, concierge tools added
 - Collection sharing: /api/collection-snapshot + /share/[wallet] with OG image generation
 - unique index on transaction_hash in sales_2026 (prevents duplicate wallet-seed rows)

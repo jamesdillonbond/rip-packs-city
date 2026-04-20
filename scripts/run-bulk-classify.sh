@@ -2,12 +2,17 @@
 # Repeatedly calls /api/bulk-classify until all unknown moments are classified.
 # Each call processes up to ~55 seconds of work; this script loops until done.
 
+if [ -z "$INGEST_SECRET_TOKEN" ]; then
+  echo "ERROR: INGEST_SECRET_TOKEN env var is required" >&2
+  exit 1
+fi
+
 OFFSET=0
 TOTAL=99999
 
 while [ $OFFSET -lt $TOTAL ]; do
   echo "Processing from offset $OFFSET..."
-  RESULT=$(curl -s "https://rip-packs-city.vercel.app/api/bulk-classify?wallet=0xbd94cade097e50ac&token=rippackscity2026&offset=$OFFSET")
+  RESULT=$(curl -s "https://rip-packs-city.vercel.app/api/bulk-classify?wallet=0xbd94cade097e50ac&token=$INGEST_SECRET_TOKEN&offset=$OFFSET")
   echo "$RESULT"
   # Extract nextOffset from the last JSON line in the stream
   LAST_LINE=$(echo "$RESULT" | tail -1)

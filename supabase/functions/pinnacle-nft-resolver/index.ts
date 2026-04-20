@@ -15,9 +15,14 @@
 //   4. At the end of the batch, call backfill_pinnacle_sale_editions() to
 //      propagate any new mappings into pinnacle_sales.edition_id.
 //
-// Auth: Bearer rippackscity2026.
+// Auth: Bearer ${INGEST_SECRET_TOKEN}.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
+
+const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN")
+if (!INGEST_SECRET_TOKEN) {
+  throw new Error("INGEST_SECRET_TOKEN env var is required")
+}
 
 const FLOW_REST = "https://rest-mainnet.onflow.org"
 const DEFAULT_BATCH_SIZE = 25
@@ -254,7 +259,7 @@ async function resolveOne(nftId: string, owner: string): Promise<string | null> 
 
 Deno.serve(async (req: Request) => {
   const auth = req.headers.get("Authorization") ?? ""
-  if (auth !== "Bearer rippackscity2026") {
+  if (auth !== `Bearer ${INGEST_SECRET_TOKEN}`) {
     return new Response("Unauthorized", { status: 401 })
   }
 

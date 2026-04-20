@@ -1,9 +1,14 @@
 # Run from project root: .\scripts\backfill-cost-basis.ps1
 # Processes all owned moments in chunks of 50, looping until done.
 
+if (-not $env:INGEST_SECRET_TOKEN) {
+    Write-Error "INGEST_SECRET_TOKEN env var is required"
+    exit 1
+}
+
 $wallet = "0xbd94cade097e50ac"
 $baseUrl = "https://rip-packs-city.vercel.app/api/cost-basis-gql-backfill"
-$token = "rippackscity2026"
+$token = $env:INGEST_SECRET_TOKEN
 
 $offset = 0
 $limit = 50

@@ -26,6 +26,13 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const token = process.env.INGEST_SECRET_TOKEN;
+  if (!token) {
+    return NextResponse.json(
+      { error: "Server misconfigured: INGEST_SECRET_TOKEN not set" },
+      { status: 500 }
+    );
+  }
   try {
     const body = await req.json().catch(() => ({}));
     const ownerKey: string | undefined = body?.ownerKey;
@@ -33,7 +40,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ triggered: false, error: "ownerKey required" }, { status: 400 });
     }
     const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/$/, "");
-    const token = process.env.INGEST_SECRET_TOKEN ?? "rippackscity2026";
     const r = await fetch(`${url}/functions/v1/compute-achievements`, {
       method: "POST",
       headers: {

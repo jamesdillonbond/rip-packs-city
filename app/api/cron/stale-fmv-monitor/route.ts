@@ -12,13 +12,17 @@ export const maxDuration = 10;
 const STALE_THRESHOLD_MINUTES = 45;
 
 export async function GET(request: NextRequest) {
+  const ingestToken = process.env.INGEST_SECRET_TOKEN;
+  if (!ingestToken) {
+    return NextResponse.json(
+      { error: "Server misconfigured: INGEST_SECRET_TOKEN not set" },
+      { status: 500 }
+    );
+  }
+
   const auth = request.headers.get("authorization");
   const token = auth?.replace(/^Bearer\s+/i, "") ?? "";
-  const allowed = [
-    process.env.INGEST_SECRET_TOKEN,
-    process.env.CRON_SECRET,
-    "rippackscity2026",
-  ].filter(Boolean);
+  const allowed = [ingestToken, process.env.CRON_SECRET].filter(Boolean);
   if (!allowed.includes(token)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
