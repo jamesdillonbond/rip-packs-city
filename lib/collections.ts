@@ -45,10 +45,6 @@ export interface Collection {
   cadenceCollectionPath?: string
   /** Supabase collections.id — canonical UUID for multi-collection queries. */
   supabaseCollectionId?: string
-  /** Template for building a moment URL on the native marketplace. */
-  marketplaceMomentUrl?: (flowId: string) => string
-  /** Template for building a wallet URL on the native marketplace. */
-  marketplaceWalletUrl?: (address: string) => string
   /** Short plain-English pitch used by SEO + empty states. */
   pitch?: string
   /** Per-collection news feed — rendered on overview. Keep 3-6 items. */
@@ -78,8 +74,6 @@ export const COLLECTIONS: Collection[] = [
     mediaCdnBase: "https://assets.nbatopshot.com",
     cadenceCollectionPath: "/public/MomentCollection",
     supabaseCollectionId: "95f28a17-224a-4025-96ad-adf8a4c63bfd",
-    marketplaceMomentUrl: (id) => `https://nbatopshot.com/moment/${id}`,
-    marketplaceWalletUrl: (addr) => `https://nbatopshot.com/user/${addr}`,
     pitch: "Wallet analysis, FMV pricing, set completion, pack EV, and live sniper deals for NBA Top Shot collectors.",
     news: [
       { title: "2025-26: Scarcity-first drops & new parallel system", date: "2026-01-15", summary: "Dapper shifts to lower-print-run releases with redesigned parallels. LAVA tools integration live for FMV transparency.", url: "https://blog.nbatopshot.com" },
@@ -107,8 +101,6 @@ export const COLLECTIONS: Collection[] = [
     mediaCdnBase: "https://assets.nflallday.com",
     cadenceCollectionPath: "/public/AllDayNFTCollection",
     supabaseCollectionId: "dee28451-5d62-409e-a1ad-a83f763ac070",
-    marketplaceMomentUrl: (id) => `https://nflallday.com/moment/${id}`,
-    marketplaceWalletUrl: (addr) => `https://nflallday.com/collection/${addr}`,
     pitch: "Wallet analytics, pack EV, and live marketplace intelligence for NFL All Day collectors on Flow.",
     news: [
       { title: "2025-26 base set live — weekly drops active", date: "2026-01-08", summary: "New moments minting every game week. AllDay sales indexer now tracking ~158 events/day across Flowty + AllDay native.", url: "https://nflallday.com" },
@@ -132,8 +124,6 @@ export const COLLECTIONS: Collection[] = [
     flowtyCollectionFilter: "0xedf9df96c92f4595/Pinnacle",
     cadenceCollectionPath: "/public/PinnacleCollection",
     supabaseCollectionId: "7dd9dd11-e8b6-45c4-ac99-71331f959714",
-    marketplaceMomentUrl: (id) => `https://disneypinnacle.com/pin/${id}`,
-    marketplaceWalletUrl: (addr) => `https://disneypinnacle.com/collection/${addr}`,
     pitch: "Wallet analytics and marketplace intelligence for Disney Pinnacle — 231 editions enriched, 97 FMV live.",
     news: [
       { title: "Pinnacle on Flow — 231 editions tracked, block-event sales backfill in progress", date: "2026-03-28", summary: "653 historical sales being resolved via Cadence block event scan.", url: "https://disneypinnacle.com" },
@@ -160,8 +150,6 @@ export const COLLECTIONS: Collection[] = [
     cadenceCollectionPath: "/public/GolazosNFTCollection",
     mediaCdnBase: "https://assets.laligagolazos.com",
     supabaseCollectionId: "06248cc4-b85f-47cd-af67-1855d14acd75",
-    marketplaceMomentUrl: (id) => `https://laligagolazos.com/moment/${id}`,
-    marketplaceWalletUrl: (addr) => `https://laligagolazos.com/collection/${addr}`,
     pitch: "Wallet analytics and FMV intelligence for LaLiga Golazos on Flow — 581 editions tracked, dual-source listing sweep.",
     news: [
       { title: "2025-26 LaLiga season underway — thin-volume alert model live", date: "2026-01-02", summary: "Relative-deals RPC with 100x-floor outlier filter now active to surface genuine deals in a low-volume ecosystem.", url: "https://laligagolazos.com" },
@@ -251,6 +239,36 @@ export function requirePublishedCollection(id: string): Collection {
 export function collectionHasPage(id: string, page: CollectionPage): boolean {
   const c = getCollection(id)
   return !!c && c.pages.includes(page)
+}
+
+// ── Marketplace URL builders ────────────────────────────────────────────────
+// Standalone helpers (not methods on Collection) so Collection objects stay
+// serializable across the RSC boundary — server components can freely pass
+// a Collection to client components without triggering "Functions cannot be
+// passed directly to Client Components".
+
+const MARKETPLACE_MOMENT_URL_TEMPLATES: Record<string, (id: string) => string> = {
+  "nba-top-shot":    (id) => `https://nbatopshot.com/moment/${id}`,
+  "nfl-all-day":     (id) => `https://nflallday.com/moment/${id}`,
+  "laliga-golazos":  (id) => `https://laligagolazos.com/moment/${id}`,
+  "disney-pinnacle": (id) => `https://disneypinnacle.com/pin/${id}`,
+}
+
+const MARKETPLACE_WALLET_URL_TEMPLATES: Record<string, (addr: string) => string> = {
+  "nba-top-shot":    (addr) => `https://nbatopshot.com/user/${addr}`,
+  "nfl-all-day":     (addr) => `https://nflallday.com/collection/${addr}`,
+  "laliga-golazos":  (addr) => `https://laligagolazos.com/collection/${addr}`,
+  "disney-pinnacle": (addr) => `https://disneypinnacle.com/collection/${addr}`,
+}
+
+export function marketplaceMomentUrl(collectionId: string, flowId: string): string | null {
+  const f = MARKETPLACE_MOMENT_URL_TEMPLATES[collectionId]
+  return f ? f(flowId) : null
+}
+
+export function marketplaceWalletUrl(collectionId: string, address: string): string | null {
+  const f = MARKETPLACE_WALLET_URL_TEMPLATES[collectionId]
+  return f ? f(address) : null
 }
 
 // ── DB bridges ──────────────────────────────────────────────────────────────
