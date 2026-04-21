@@ -123,7 +123,8 @@ async function runSmokeTests() {
 
     // 9–20. Page HTTP status checks. Auth-gated pages 307 -> /login -> 200
     // and fetch follows redirects, so res.ok is true either way. Phase 2
-    // added the 4 cross-collection page checks below the original 8.
+    // added 4 cross-collection page checks; Phase 3 adds the 8 market +
+    // analytics pages below.
     ...([
       "/nba-top-shot/sniper", "/nba-top-shot/collection", "/nba-top-shot/sets",
       "/nba-top-shot/badges", "/nba-top-shot/packs", "/profile",
@@ -131,10 +132,30 @@ async function runSmokeTests() {
       // Phase 2 additions (multi-collection coverage):
       "/nfl-all-day/overview", "/laliga-golazos/collection",
       "/disney-pinnacle/collection", "/disney-pinnacle/overview",
+      // Phase 3 additions — market + analytics on every published collection:
+      "/nba-top-shot/market", "/nfl-all-day/market",
+      "/laliga-golazos/market", "/disney-pinnacle/market",
+      "/nba-top-shot/analytics", "/nfl-all-day/analytics",
+      "/laliga-golazos/analytics", "/disney-pinnacle/analytics",
     ].map(async (page): Promise<TestResult> => {
       const res = await fetch(`${BASE_URL}${page}`, { cache: "no-store", signal: AbortSignal.timeout(4000) });
       return { name: `page ${page} returns 200`, passed: res.ok, detail: `HTTP ${res.status}` };
     })),
+
+    // Phase 3 — market API returns listings for Top Shot
+    (async (): Promise<TestResult> => {
+      const name = "market API returns Top Shot listings";
+      try {
+        const url = `${BASE_URL}/api/market?collectionId=95f28a17-224a-4025-96ad-adf8a4c63bfd&limit=10`;
+        const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(6000) });
+        if (!res.ok) return { name, passed: false, detail: `HTTP ${res.status}` };
+        const body = await res.json();
+        const listings = Array.isArray(body?.listings) ? body.listings : [];
+        return { name, passed: listings.length > 0, detail: `${listings.length} listings` };
+      } catch (e: any) {
+        return { name, passed: false, detail: e?.message ?? String(e) };
+      }
+    })(),
 
     // 15–18. RLS Write-Block Tests
     checkRlsBlocked("RLS blocks saved_wallets unauthorized write", "saved_wallets", {

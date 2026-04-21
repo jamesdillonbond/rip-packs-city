@@ -1,371 +1,264 @@
 // app/api/market/route.ts
 //
-// Serves the Market page browse layer.
-// Queries badge_editions with full filter/sort support:
-//   player, set_name, series, tier, team, parallel,
-//   badge_filter, min/max price, min/max fmv,
-//   min/max serial (filters on low_ask_serial range — approximated via supply),
-//   min_discount_pct, jersey_serial, last_mint
+// Phase 3 — Market browser API.
 //
-// The owned/not-owned filter is applied client-side (wallet-based).
+// Collection-aware listing feed pulled from cached_listings (which is already
+// fully denormalized — player_name, team_name, set_name, tier, serial_number,
+// ask_price, fmv, thumbnail_url, badge_slugs live on the row). Replaces the
+// old NBA-only badge_editions version.
+//
+// Outlier clamp:
+//   cached_listings on thin-volume collections (notably LaLiga Golazos) gets
+//   polluted by $1M sentinel ask prices — real user listings priced against
+//   an unattainable floor to troll or reserve. We apply hard tier-based
+//   ceilings server-side to every collection, not just Golazos, since these
+//   leak into every feed. Ceilings follow the Phase 3 spec: Common < $500,
+//   Rare < $50K, Legendary < $250K, Ultimate < $1M. Fandom/Uncommon/Contender
+//   follow their nearest analog (< $500 / < $50K).
+//
+// Discount + fmv joins:
+//   cached_listings has fmv on-row but confidence is NULL today (the ingester
+//   doesn't populate it). For the Market browse shape that's fine — we compute
+//   discount here and let the client render a LOW confidence chip when fmv is
+//   null or missing. fmv_current is not joined — cached_listings.fmv is the
+//   snapshot that was live when the listing was cached, which is what you
+//   want in the marketplace view anyway.
+//
+// Pagination:
+//   Server-side via range(). Max 1000 rows per query, default page size 50.
+//   Response includes { total, page, hasMore } so the client doesn't have to
+//   eat a 1000-row payload for UI-side paging.
+//
+// Sort:
+//   price_asc / price_desc / discount_asc / discount_desc / fmv_asc / fmv_desc
+//   / recent (listed_at desc, default). discount sorts fall back to in-memory
+//   sort of the current page since PostgREST can't order by a cross-column
+//   expression.
 
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-import { getTopShotMarketTruth } from "@/lib/topshot-market-truth"
+import { supabaseAdmin } from "@/lib/supabase"
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+export const dynamic = "force-dynamic"
+export const maxDuration = 10
 
-const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
-
-async function handleSearchMode(editionKey: string) {
-  const parts = editionKey.split(":")
-  if (parts.length !== 2) return NextResponse.json({ error: "edition must be SETID:PLAYID" }, { status: 400 })
-  const [setId, playId] = parts
-
-  const [probe, editionRow] = await Promise.all([
-    getTopShotMarketTruth({ editionKey, bestAsk: null, lastPurchasePrice: null }).catch(() => null),
-    supabase.from("editions").select("id, external_id").eq("external_id", editionKey).eq("collection_id", TOPSHOT_COLLECTION_ID).maybeSingle(),
-  ])
-
-  const editionUuid = editionRow?.data?.id ?? null
-  let fmv: number | null = null
-  let fmvConfidence: string | null = null
-  let recentSales: Array<{ price: number; date: string }> = []
-
-  if (editionUuid) {
-    const [{ data: fmvData }, { data: salesData }] = await Promise.all([
-      supabase.from("fmv_snapshots")
-        .select("fmv_usd, confidence, computed_at")
-        .eq("edition_id", editionUuid)
-        .order("computed_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabase.from("sales")
-        .select("price_usd, sold_at")
-        .eq("edition_id", editionUuid)
-        .gte("sold_at", new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString())
-        .order("sold_at", { ascending: false })
-        .limit(60),
-    ])
-    if (fmvData) {
-      fmv = fmvData.fmv_usd != null ? Number(fmvData.fmv_usd) : null
-      fmvConfidence = fmvData.confidence ?? null
-    }
-    recentSales = (salesData ?? []).map((s: any) => ({ price: Number(s.price_usd), date: s.sold_at }))
-  }
-
-  // Badge editions lookup by id prefix (set_uuid+play_uuid+0) — we match on player_name via editions join
-  let be: any = null
-  if (editionRow?.data?.id) {
-    const { data: beRow } = await supabase
-      .from("badge_editions")
-      .select("avg_sale_price, low_ask, highest_offer, player_name, set_name, tier, lock_rate_pct, burn_rate_pct, circulation_count")
-      .eq("id", `${editionRow.data.id}+0`)
-      .maybeSingle()
-    be = beRow
-  }
-
-  const lowAsk = be?.low_ask != null ? Number(be.low_ask) : (probe?.editionListingFloor ?? null)
-  const highestOffer = be?.highest_offer != null ? Number(be.highest_offer) : (probe?.editionOfferMax ?? null)
-
-  const recentPrices = recentSales.slice(0, 10).map((s) => s.price).filter((p) => p > 0)
-  const avg = recentPrices.length > 0 ? recentPrices.reduce((a, b) => a + b, 0) / recentPrices.length : (be?.avg_sale_price != null ? Number(be.avg_sale_price) : null)
-  const salesCount30d = recentSales.length
-  const liquidityRating = salesCount30d >= 30 ? "high" : salesCount30d >= 10 ? "medium" : salesCount30d >= 1 ? "low" : "none"
-  const dealRating = (fmv != null && lowAsk != null && fmv > 0)
-    ? (lowAsk <= fmv * 0.8 ? "great" : lowAsk <= fmv * 0.95 ? "good" : lowAsk <= fmv ? "fair" : "premium")
-    : "unknown"
-
-  const isLowestAsk = lowAsk != null && fmv != null && fmv > 0 && lowAsk <= fmv * 0.9
-
-  return NextResponse.json({
-    mode: "search",
-    editionKey,
-    playerName: be?.player_name ?? null,
-    setName: be?.set_name ?? null,
-    tier: be?.tier ?? null,
-    fmv,
-    fmvConfidence,
-    lowAsk,
-    highestOffer,
-    editionListingCount: probe?.editionListingCount ?? null,
-    averageSaleData: {
-      average: avg,
-      sampleSize: recentPrices.length,
-      window: "30d",
-    },
-    recentSales: recentSales.slice(0, 10),
-    liquidityRating,
-    dealRating,
-    salesCount30d,
-    isLowestAsk,
-    buyUrl: editionRow?.data?.id
-      ? `https://nbatopshot.com/listings/p2p/${editionRow.data.id}+0`
-      : null,
-  })
+// Tier ceilings — ask prices above these are treated as sentinels and dropped.
+// Keys are upper-cased raw tier strings as stored in cached_listings.tier.
+const TIER_CEILING: Record<string, number> = {
+  COMMON:     500,
+  FANDOM:     500,
+  UNCOMMON:   500,
+  CONTENDER:  500,
+  RARE:       50_000,
+  CHALLENGER: 50_000,
+  LEGENDARY:  250_000,
+  CHAMPION:   250_000,
+  ULTIMATE:   1_000_000,
 }
 
-async function handleLeaderboardMode(sortBy: string, limit: number) {
-  // We don't have sales_count_30d or liquidity_rating columns on badge_editions.
-  // For volume/liquidity, approximate via burn_rate / lock_rate inversion or fallback to avg_sale_price presence.
-  // For discount, server pre-filters on avg_sale_price presence and computes client-side.
+// Absolute maximum across all tiers. Anything past this is always a sentinel.
+const ABSOLUTE_CEILING = 1_000_000
 
-  let q = supabase
-    .from("badge_editions")
-    .select("id, player_name, set_name, tier, low_ask, avg_sale_price, highest_offer, burn_rate_pct, lock_rate_pct, circulation_count")
-    .eq("parallel_id", 0)
-    .eq("flow_retired", false)
-    .not("low_ask", "is", null)
+const MAX_LIMIT = 1000
+const DEFAULT_LIMIT = 50
 
-  if (sortBy === "volume") {
-    q = q.not("avg_sale_price", "is", null).order("avg_sale_price", { ascending: false }).limit(limit * 4)
-  } else if (sortBy === "liquidity") {
-    q = q.order("burn_rate_pct", { ascending: true, nullsFirst: false }).limit(limit)
-  } else {
-    q = q.not("avg_sale_price", "is", null).order("avg_sale_price", { ascending: false }).limit(limit * 4)
-  }
+type SortKey =
+  | "price_asc" | "price_desc"
+  | "discount_asc" | "discount_desc"
+  | "fmv_asc" | "fmv_desc"
+  | "recent"
 
-  const { data, error } = await q
-  if (error) throw error
-
-  // Map editions.id uuid → external_id (SETID:PLAYID) for links
-  const ids = (data ?? []).map((e: any) => String(e.id).split("+").slice(0, 2).join("+"))
-  const uniqueUuids = Array.from(new Set((data ?? []).flatMap((e: any) => String(e.id).split("+").slice(0, 2))))
-  // editions table uses uuid id and external_id "setID:playID" — we can't map without joining. Skip external mapping — use editions.id prefix as buyUrl.
-
-  const rows = (data ?? []).map((e: any) => {
-    const fmv = e.avg_sale_price != null ? Number(e.avg_sale_price) : null
-    const ask = e.low_ask != null ? Number(e.low_ask) : null
-    const discountPct = fmv && ask && fmv > 0 ? Math.round((1 - ask / fmv) * 100) : null
-    const circ = e.circulation_count != null ? Number(e.circulation_count) : 0
-    return {
-      badgeEditionId: e.id,
-      playerName: e.player_name,
-      setName: e.set_name,
-      tier: e.tier,
-      fmv,
-      lowAsk: ask,
-      highestOffer: e.highest_offer != null ? Number(e.highest_offer) : null,
-      liquidityRating: e.burn_rate_pct != null && e.burn_rate_pct < 10 ? "high" : "medium",
-      dealRating: discountPct != null && discountPct >= 20 ? "great" : discountPct != null && discountPct >= 10 ? "good" : "fair",
-      salesCount30d: null,
-      circulationCount: circ,
-      discountPct,
-    }
-  })
-
-  let sorted = rows
-  if (sortBy === "discount") {
-    sorted = rows.filter((r) => r.discountPct != null).sort((a, b) => (b.discountPct ?? -999) - (a.discountPct ?? -999)).slice(0, limit)
-  } else if (sortBy === "volume") {
-    sorted = rows.sort((a, b) => (b.fmv ?? 0) - (a.fmv ?? 0)).slice(0, limit)
-  }
-
-  return NextResponse.json({ mode: "leaderboard", sortBy, rows: sorted })
-}
-
-// Badge filter → play_tag IDs (same as badges route)
-const BADGE_TAG_IDS: Record<string, string> = {
-  ts:   "a75e247a-ecbf-45a6-b1be-58bb07a1b651", // Top Shot Debut
-  ry:   "2dbd4eef-4417-451b-b645-90f02574a401", // Rookie Year
-  rm:   "24d515af-e967-45f5-a30e-11fc96dc2b62", // Rookie Mint (set tag)
-  rp:   "",                                      // Rookie Premiere — badge_score heuristic
-  cy:   "",                                      // Championship Year — badge_score heuristic
-  cr:   "",
-  roty: "34fe8d3f-681a-42df-856a-e98624f95b11", // ROTY
-}
-
-const ALLOWED_SORTS = new Set([
-  "badge_score", "burn_rate_pct", "lock_rate_pct",
-  "low_ask", "avg_sale_price", "player_name", "circulation_count",
+const ALLOWED_SORTS: Set<SortKey> = new Set([
+  "price_asc", "price_desc",
+  "discount_asc", "discount_desc",
+  "fmv_asc", "fmv_desc",
+  "recent",
 ])
+
+function computeDiscount(ask: number | null, fmv: number | null): number | null {
+  if (ask == null || fmv == null || fmv <= 0) return null
+  return Math.round(((fmv - ask) / fmv) * 1000) / 10
+}
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
 
-  const mode = sp.get("mode")
-  if (mode === "search") {
-    const edition = sp.get("edition") ?? ""
-    if (!edition) return NextResponse.json({ error: "edition param required" }, { status: 400 })
-    try {
-      return await handleSearchMode(edition)
-    } catch (err) {
-      return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 })
-    }
-  }
-  if (mode === "leaderboard") {
-    const sortBy = sp.get("sortBy") ?? "volume"
-    const lbLimit = Math.min(200, parseInt(sp.get("limit") ?? "50", 10))
-    try {
-      return await handleLeaderboardMode(sortBy, lbLimit)
-    } catch (err) {
-      return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 })
-    }
+  const collectionId = sp.get("collectionId") || sp.get("collection_id") || ""
+  if (!collectionId) {
+    return NextResponse.json(
+      { error: "collectionId is required" },
+      { status: 400 }
+    )
   }
 
-  const player      = sp.get("player")          ?? ""
-  const setName     = sp.get("set_name")         ?? ""
-  const series      = sp.get("series")           ?? ""
-  const tier        = sp.get("tier")             ?? ""
-  const team        = sp.get("team")             ?? ""
-  const parallel    = sp.get("parallel")         ?? ""
-  const badgeFilter = sp.get("badge_filter")     ?? ""
-  const minPrice    = parseFloat(sp.get("min_price") ?? "")
-  const maxPrice    = parseFloat(sp.get("max_price") ?? "")
-  const minFmv      = parseFloat(sp.get("min_fmv")   ?? "")
-  const maxFmv      = parseFloat(sp.get("max_fmv")   ?? "")
-  const minDiscount = parseFloat(sp.get("min_discount_pct") ?? "")
-  const jerseySerial = sp.get("jersey_serial") === "true"
-  const lastMint     = sp.get("last_mint")     === "true"
-  const sortRaw      = sp.get("sort")           ?? "low_ask"
-  const dir          = sp.get("dir")            ?? "asc"
-  const limit        = Math.min(200, parseInt(sp.get("limit") ?? "50", 10))
-  const offset       = parseInt(sp.get("offset") ?? "0", 10)
+  // ── Filters ─────────────────────────────────────────────────────────────
+  const tierRaw = sp.get("tier") || ""
+  const tiers = tierRaw
+    ? tierRaw.split(",").map(t => t.trim().toUpperCase()).filter(Boolean)
+    : []
 
-  const sortCol = ALLOWED_SORTS.has(sortRaw) ? sortRaw : "low_ask"
-  const ascending = dir === "asc"
+  const minPrice = parseFloat(sp.get("minPrice") || "")
+  const maxPrice = parseFloat(sp.get("maxPrice") || "")
+  const minDiscount = parseFloat(sp.get("minDiscount") || "")
+  const maxDiscount = parseFloat(sp.get("maxDiscount") || "")
+  const player = (sp.get("player") || "").trim()
+  const setRaw = sp.get("set") || ""
+  const sets = setRaw
+    ? setRaw.split(",").map(s => s.trim()).filter(Boolean)
+    : []
+  const seriesRaw = sp.get("series") || ""
+  const seriesList = seriesRaw
+    ? seriesRaw.split(",").map(s => s.trim()).filter(Boolean)
+    : []
+  const hasBadges = sp.get("hasBadges") === "true"
+  const parallel = (sp.get("parallel") || "").trim()
+
+  // ── Pagination + sort ──────────────────────────────────────────────────
+  const rawLimit = parseInt(sp.get("limit") || `${DEFAULT_LIMIT}`, 10)
+  const limit = Math.max(1, Math.min(MAX_LIMIT, Number.isFinite(rawLimit) ? rawLimit : DEFAULT_LIMIT))
+  const rawPage = parseInt(sp.get("page") || "1", 10)
+  const page = Math.max(1, Number.isFinite(rawPage) ? rawPage : 1)
+  const offset = (page - 1) * limit
+
+  const sortRaw = (sp.get("sort") || "recent") as SortKey
+  const sort: SortKey = ALLOWED_SORTS.has(sortRaw) ? sortRaw : "recent"
 
   try {
-    function applyFilters(q: any): any {
-      // Only return editions that have at least one active listing (low_ask is not null)
-      q = q.not("low_ask", "is", null)
+    // Primary query — pull up to MAX_LIMIT rows for this collection with
+    // filters applied. We then compute discount in app code, apply the
+    // discount filter + discount sort, and slice for pagination.
+    let q = supabaseAdmin
+      .from("cached_listings")
+      .select("*", { count: "exact" })
+      .eq("collection_id", collectionId)
+      .not("ask_price", "is", null)
+      .lte("ask_price", ABSOLUTE_CEILING)
 
-      if (player)  q = q.ilike("player_name", `%${player}%`)
-      if (setName) q = q.ilike("set_name",    `%${setName}%`)
+    if (tiers.length > 0) q = q.in("tier", tiers)
+    if (Number.isFinite(minPrice) && minPrice > 0) q = q.gte("ask_price", minPrice)
+    if (Number.isFinite(maxPrice) && maxPrice > 0) q = q.lte("ask_price", maxPrice)
+    if (player) q = q.ilike("player_name", `%${player}%`)
+    if (sets.length > 0) q = q.in("set_name", sets)
+    if (seriesList.length > 0) q = q.in("series_name", seriesList)
+    if (hasBadges) q = q.not("badge_slugs", "is", null)
+    if (parallel) q = q.ilike("raw_data->>parallel", `%${parallel}%`)
 
-      if (series !== "") {
-        const sNum = parseInt(series, 10)
-        if (!isNaN(sNum)) q = q.eq("series_number", sNum)
-      }
-
-      if (tier) {
-        const tierVal = `MOMENT_TIER_${tier.toUpperCase()}`
-        q = q.eq("tier", tierVal)
-      }
-
-      if (team)    q = q.eq("team_nba_id", team)
-
-      if (parallel !== "") {
-        const pid = parseInt(parallel, 10)
-        if (!isNaN(pid)) q = q.eq("parallel_id", pid)
-      }
-
-      // Badge filters
-      if (badgeFilter) {
-        const tagId = BADGE_TAG_IDS[badgeFilter]
-        if (tagId) {
-          // play_tag or set_play_tag ID match
-          const badgeKey = badgeFilter === "rm"
-            ? q.contains("set_play_tags", JSON.stringify([{ id: tagId }]))
-            : q.contains("play_tags",     JSON.stringify([{ id: tagId }]))
-          q = badgeKey
-        } else if (badgeFilter === "rp") {
-          q = q.contains("badge_titles", ["Rookie Premiere"])
-        } else if (badgeFilter === "cy") {
-          q = q.contains("badge_titles", ["Championship Year"])
-        } else if (badgeFilter === "cr") {
-          q = q.contains("badge_titles", ["Championship Run"])
-        }
-      }
-
-      // Price filters on low_ask
-      if (!isNaN(minPrice) && minPrice > 0) q = q.gte("low_ask", minPrice)
-      if (!isNaN(maxPrice) && maxPrice > 0) q = q.lte("low_ask", maxPrice)
-
-      // FMV filters on avg_sale_price
-      if (!isNaN(minFmv) && minFmv > 0) q = q.gte("avg_sale_price", minFmv)
-      if (!isNaN(maxFmv) && maxFmv > 0) q = q.lte("avg_sale_price", maxFmv)
-
-      // Discount filter — low_ask must be at least minDiscount% below avg_sale_price
-      // Expressed as: low_ask <= avg_sale_price * (1 - minDiscount/100)
-      // Supabase can't do computed column filters directly, so we add this as a raw condition
-      // workaround: filter client-side for discount (small enough result sets)
-      // For large result sets this is an accepted tradeoff — discount is a soft signal anyway.
-
-      // Jersey serial toggle — approximation: serial #1 through jersey numbers
-      // We don't have jersey data in badge_editions; flag is passed through
-      // for future enhancement and ignored server-side here.
-
-      // Last mint: serial == circulation_count — approximated by low supply high lock
-      if (lastMint) {
-        q = q.gte("lock_rate_pct", 50)
-      }
-
-      // Exclude retired editions
-      q = q.eq("flow_retired", false)
-
-      return q
+    // DB-level sort only for columns PostgREST can order on directly.
+    // Discount sort happens in memory after discount + clamp filter.
+    const nullsLast = { nullsFirst: false } as const
+    switch (sort) {
+      case "price_asc":  q = q.order("ask_price", { ascending: true,  ...nullsLast }); break
+      case "price_desc": q = q.order("ask_price", { ascending: false, ...nullsLast }); break
+      case "fmv_asc":    q = q.order("fmv",       { ascending: true,  ...nullsLast }); break
+      case "fmv_desc":   q = q.order("fmv",       { ascending: false, ...nullsLast }); break
+      case "discount_asc":
+      case "discount_desc":
+      case "recent":
+      default:
+        q = q.order("listed_at", { ascending: false, ...nullsLast }); break
     }
 
-    const [countResult, dataResult] = await Promise.all([
-      applyFilters(
-        supabase.from("badge_editions").select("*", { count: "exact", head: true })
-      ),
-      applyFilters(
-        supabase.from("badge_editions")
-          .select("*")
-          .order(sortCol, { ascending })
-          .range(offset, offset + limit - 1)
-      ),
-    ])
+    // Fetch a larger window when discount sort is active so in-memory sort
+    // gives a stable ordering across pagination.
+    const fetchLimit = sort.startsWith("discount") ? MAX_LIMIT : Math.min(MAX_LIMIT, offset + limit + 100)
+    q = q.range(0, fetchLimit - 1)
 
-    if (dataResult.error) throw dataResult.error
-
-    const parallelNames: Record<number, string> = {
-      0: "Standard", 17: "Blockchain", 18: "Hardcourt", 19: "Hexwave", 20: "Jukebox",
+    const { data, error, count } = await q
+    if (error) {
+      console.log("[/api/market] query error:", error.message)
+      return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const editions = (dataResult.data ?? []).map((e: any) => {
-      const badgeTitles: string[] = [
-        ...(e.play_tags     ?? []).map((t: any) => t.title),
-        ...(e.set_play_tags ?? []).map((t: any) => t.title),
-      ]
+    // ── Tier-based outlier clamp + discount computation ──────────────────
+    const clamped = (data ?? []).filter((r: any) => {
+      const tier = typeof r.tier === "string" ? r.tier.toUpperCase() : null
+      const ceiling = tier ? TIER_CEILING[tier] : null
+      if (ceiling != null && Number(r.ask_price) >= ceiling) return false
+      return true
+    })
 
-      const fmv: number | null = e.avg_sale_price
-      const ask: number | null = e.low_ask
-      const discountPct = fmv && ask && fmv > 0
-        ? Math.round((1 - ask / fmv) * 100)
-        : null
-
+    const enriched = clamped.map((r: any) => {
+      const ask = r.ask_price != null ? Number(r.ask_price) : null
+      const fmv = r.fmv != null ? Number(r.fmv) : null
+      const discount = computeDiscount(ask, fmv)
       return {
-        ...e,
-        badge_titles:     badgeTitles,
-        parallel_display: parallelNames[e.parallel_id] ?? `Parallel ${e.parallel_id}`,
-        price_gap:        ask != null && e.highest_offer != null ? ask - e.highest_offer : null,
-        is_standard:      e.parallel_id === 0,
-        tier_display:     (e.tier ?? "").replace("MOMENT_TIER_", "").replace(/^\w/, (c: string) => c.toUpperCase()),
-        discount_pct:     discountPct,
+        id: r.id,
+        flowId: r.flow_id,
+        momentId: r.moment_id,
+        playerName: r.player_name,
+        teamName: r.team_name,
+        setName: r.set_name,
+        seriesName: r.series_name,
+        tier: r.tier,
+        serialNumber: r.serial_number,
+        circulationCount: r.circulation_count,
+        askPrice: ask,
+        fmv,
+        discount,
+        confidence: r.confidence,
+        source: r.source,
+        buyUrl: r.buy_url,
+        thumbnailUrl: r.thumbnail_url,
+        badgeSlugs: Array.isArray(r.badge_slugs) ? r.badge_slugs : [],
+        listingResourceId: r.listing_resource_id,
+        storefrontAddress: r.storefront_address,
+        isLocked: r.is_locked,
+        listedAt: r.listed_at,
+        cachedAt: r.cached_at,
+        collectionId: r.collection_id,
       }
     })
 
-    // Client-side discount filter (server-side computed columns unsupported)
-    const filtered = !isNaN(minDiscount) && minDiscount > 0
-      ? editions.filter((e: any) => e.discount_pct != null && e.discount_pct >= minDiscount)
-      : editions
+    // Discount filter happens after computation.
+    const hasMinDiscount = Number.isFinite(minDiscount)
+    const hasMaxDiscount = Number.isFinite(maxDiscount)
+    const discountFiltered = (hasMinDiscount || hasMaxDiscount)
+      ? enriched.filter(r => {
+          if (r.discount == null) return false
+          if (hasMinDiscount && r.discount < minDiscount) return false
+          if (hasMaxDiscount && r.discount > maxDiscount) return false
+          return true
+        })
+      : enriched
 
-    const { data: syncData } = await supabase
-      .from("badge_editions")
-      .select("updated_at")
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .single()
+    // Apply discount sort in memory.
+    if (sort === "discount_desc") {
+      discountFiltered.sort((a, b) => (b.discount ?? -Infinity) - (a.discount ?? -Infinity))
+    } else if (sort === "discount_asc") {
+      discountFiltered.sort((a, b) => (a.discount ?? Infinity) - (b.discount ?? Infinity))
+    }
+
+    const total = discountFiltered.length
+    const paged = discountFiltered.slice(offset, offset + limit)
+    const hasMore = offset + limit < total
 
     return NextResponse.json({
-      editions: filtered,
-      meta: {
-        total:   countResult.count ?? 0,
+      listings: paged,
+      pagination: {
+        total,
+        page,
         limit,
-        offset,
-        sort:    sortCol,
-        dir,
-        lastSync: syncData?.updated_at ?? null,
+        hasMore,
+      },
+      clamp: {
+        applied: true,
+        ceilings: TIER_CEILING,
+      },
+      // Diagnostic: count before clamp vs after, so the Market page can
+      // show a muted "N listings filtered as outliers" line when relevant.
+      diagnostics: {
+        rawCount: count ?? (data?.length ?? 0),
+        postClampCount: clamped.length,
+        postFilterCount: total,
+      },
+    }, {
+      headers: {
+        // Listing cache refreshes every few minutes — 30s CDN cache with
+        // 60s SWR keeps page loads snappy without serving badly stale data.
+        "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
       },
     })
   } catch (err) {
-    console.error("[/api/market]", err)
+    console.log("[/api/market] error:", err instanceof Error ? err.message : String(err))
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Unknown error" },
       { status: 500 }

@@ -291,6 +291,24 @@ function AnalyticsInner() {
   const collectionMeta = useMemo(() => getCollection(collection), [collection])
   const accent = collectionMeta?.accent ?? "#EF4444"
 
+  // Thin-volume notice — read /api/health's per_collection array and flag the
+  // active collection when its 24h sales drop below 10. Same signal the
+  // Market page uses, so messaging stays consistent across the ecosystem.
+  const [thinVolume, setThinVolume] = useState(false)
+  useEffect(() => {
+    if (!collection) return
+    let cancelled = false
+    fetch("/api/health", { cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (cancelled || !j?.per_collection) return
+        const row = (j.per_collection as Array<{ slug: string; sales_24h: number }>).find(r => r.slug === collection)
+        setThinVolume(row != null && (row.sales_24h ?? 0) < 10)
+      })
+      .catch(() => { /* swallow — not critical */ })
+    return () => { cancelled = true }
+  }, [collection])
+
   useEffect(() => {
     if (!collection) return
     let cancelled = false
@@ -420,6 +438,13 @@ function AnalyticsInner() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
+      {thinVolume && (
+        <div
+          className="mb-4 rounded border border-amber-500/30 bg-amber-500/10 px-4 py-2 font-mono text-[11px] uppercase tracking-widest text-amber-400"
+        >
+          Thin-volume ecosystem — analytics directional only.
+        </div>
+      )}
       <form
         onSubmit={(e) => { e.preventDefault(); runSearch(input) }}
         className="mb-6 flex flex-col gap-2 sm:flex-row"
