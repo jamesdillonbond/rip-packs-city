@@ -176,9 +176,24 @@ export default function ProfilePage() {
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
 
   const [loading, setLoading] = useState(true);
+
+  // Username-first wallet add. Advanced (hex-address) path is toggled per-user.
+  const [usernameInput, setUsernameInput] = useState("");
+  const [usernameSaving, setUsernameSaving] = useState(false);
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [walletForm, setWalletForm] = useState({ addr: "", nickname: "", collectionId: "nba-top-shot" });
   const [walletSaving, setWalletSaving] = useState(false);
   const [walletError, setWalletError] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<Array<{ id: number; text: string; tone: "success" | "info" }>>([]);
+
+  const pushToast = useCallback((text: string, tone: "success" | "info" = "success") => {
+    const id = Date.now() + Math.floor(Math.random() * 1000);
+    setToasts((prev) => [...prev, { id, text, tone }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 6000);
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -234,6 +249,37 @@ export default function ProfilePage() {
     refresh();
   }, [refresh]);
 
+  const resolveAndAssociate = useCallback(async () => {
+    const username = usernameInput.trim();
+    if (!username) {
+      setUsernameError("Dapper username required");
+      return;
+    }
+    setUsernameSaving(true);
+    setUsernameError(null);
+    try {
+      const res = await fetch("/api/profile/resolve-and-associate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      const addr = data.walletAddress as string;
+      const count = Array.isArray(data.associatedCollections) ? data.associatedCollections.length : 0;
+      pushToast(`Loaded wallet ${truncateAddress(addr)} across ${count} collections`, "success");
+      pushToast("Your moments are being indexed — refresh in a minute", "info");
+      setUsernameInput("");
+      await refresh();
+    } catch (err: any) {
+      setUsernameError(err.message || "Failed to resolve");
+    } finally {
+      setUsernameSaving(false);
+    }
+  }, [usernameInput, refresh, pushToast]);
+
   const addWallet = useCallback(async () => {
     const addr = walletForm.addr.trim().toLowerCase();
     if (!addr) {
@@ -258,13 +304,14 @@ export default function ProfilePage() {
         throw new Error(data.error || `HTTP ${res.status}`);
       }
       setWalletForm({ addr: "", nickname: "", collectionId: "nba-top-shot" });
+      pushToast(`Added ${truncateAddress(addr)}`, "success");
       await refresh();
     } catch (err: any) {
       setWalletError(err.message || "Failed to save");
     } finally {
       setWalletSaving(false);
     }
-  }, [walletForm, refresh]);
+  }, [walletForm, refresh, pushToast]);
 
   const removeWallet = useCallback(async (w: SavedWallet) => {
     await fetch("/api/profile/saved-wallets", {
@@ -349,8 +396,18 @@ export default function ProfilePage() {
           <SignOutButton />
         </section>
 
-        {/* ── Hero Holo Moment ── */}
-        <HeroMomentCard hero={hero} reason={heroReason} />
+        {/* ── Hero: onboarding CTA for empty state, otherwise Hero Holo Moment ── */}
+        {wallets.length === 0 ? (
+          <OnboardingCta
+            usernameInput={usernameInput}
+            setUsernameInput={setUsernameInput}
+            onSubmit={resolveAndAssociate}
+            saving={usernameSaving}
+            error={usernameError}
+          />
+        ) : (
+          <HeroMomentCard hero={hero} reason={heroReason} />
+        )}
 
         {/* ── Stats Tiles ── */}
         <section style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 10 }}>
@@ -397,33 +454,78 @@ export default function ProfilePage() {
         <section className="rpc-section">
           <div className="rpc-section-title">Saved Wallets</div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-            <select
-              value={walletForm.collectionId}
-              onChange={(e) => setWalletForm({ ...walletForm, collectionId: e.target.value })}
-              style={{ padding: "8px 10px", background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 6, color: "#fff", fontFamily: monoFont, fontSize: 12 }}
-            >
-              {publishedCollections().map((c) => (
-                <option key={c.id} value={c.id}>{c.icon} {c.shortLabel}</option>
-              ))}
-            </select>
+          <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)", marginBottom: 8, lineHeight: 1.5 }}>
+            Add a wallet by entering your Dapper username — we'll associate it with NBA Top Shot, NFL All Day, LaLiga Golazos, and Disney Pinnacle automatically.
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
             <input
-              value={walletForm.addr}
-              onChange={(e) => setWalletForm({ ...walletForm, addr: e.target.value })}
-              placeholder="0x… wallet address"
-              style={{ flex: 1, minWidth: 220, padding: "8px 10px", background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 6, color: "#fff", fontFamily: monoFont, fontSize: 12 }}
+              value={usernameInput}
+              onChange={(e) => setUsernameInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") resolveAndAssociate(); }}
+              placeholder="Dapper username"
+              style={{ flex: 1, minWidth: 220, padding: "10px 12px", background: "#0d0d0d", border: `1px solid ${ACCENT_RED}66`, borderRadius: 6, color: "#fff", fontFamily: monoFont, fontSize: 13 }}
             />
-            <input
-              value={walletForm.nickname}
-              onChange={(e) => setWalletForm({ ...walletForm, nickname: e.target.value })}
-              placeholder="Nickname (optional)"
-              style={{ width: 180, padding: "8px 10px", background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 6, color: "#fff", fontFamily: condensedFont, fontSize: 12 }}
-            />
-            <button onClick={addWallet} disabled={walletSaving} style={primaryBtnStyle}>
-              {walletSaving ? "Saving…" : "+ Add"}
+            <button onClick={resolveAndAssociate} disabled={usernameSaving} style={primaryBtnStyle}>
+              {usernameSaving ? "Loading…" : "Load my collection"}
             </button>
           </div>
-          {walletError && <div style={{ color: "#F87171", fontFamily: monoFont, fontSize: 11, marginBottom: 10 }}>{walletError}</div>}
+          {usernameError && (
+            <div style={{ color: "#F87171", fontFamily: monoFont, fontSize: 11, marginBottom: 10 }}>
+              {usernameError}{" "}
+              <button onClick={() => setShowAdvanced(true)} style={linkBtnStyle}>
+                Advanced: enter wallet address directly
+              </button>
+            </div>
+          )}
+
+          {!showAdvanced && !usernameError && (
+            <div style={{ marginBottom: 14 }}>
+              <button onClick={() => setShowAdvanced(true)} style={linkBtnStyle}>
+                Advanced: enter wallet address directly
+              </button>
+            </div>
+          )}
+
+          {showAdvanced && (
+            <div style={{ marginBottom: 14, padding: 12, background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.7)" }}>
+                  Advanced: wallet address
+                </div>
+                <button onClick={() => { setShowAdvanced(false); setWalletError(null); }} style={linkBtnStyle}>
+                  Hide
+                </button>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <select
+                  value={walletForm.collectionId}
+                  onChange={(e) => setWalletForm({ ...walletForm, collectionId: e.target.value })}
+                  style={{ padding: "8px 10px", background: "#080808", border: "1px solid #27272a", borderRadius: 6, color: "#fff", fontFamily: monoFont, fontSize: 12 }}
+                >
+                  {publishedCollections().map((c) => (
+                    <option key={c.id} value={c.id}>{c.icon} {c.shortLabel}</option>
+                  ))}
+                </select>
+                <input
+                  value={walletForm.addr}
+                  onChange={(e) => setWalletForm({ ...walletForm, addr: e.target.value })}
+                  placeholder="0x… wallet address"
+                  style={{ flex: 1, minWidth: 220, padding: "8px 10px", background: "#080808", border: "1px solid #27272a", borderRadius: 6, color: "#fff", fontFamily: monoFont, fontSize: 12 }}
+                />
+                <input
+                  value={walletForm.nickname}
+                  onChange={(e) => setWalletForm({ ...walletForm, nickname: e.target.value })}
+                  placeholder="Nickname (optional)"
+                  style={{ width: 180, padding: "8px 10px", background: "#080808", border: "1px solid #27272a", borderRadius: 6, color: "#fff", fontFamily: condensedFont, fontSize: 12 }}
+                />
+                <button onClick={addWallet} disabled={walletSaving} style={primaryBtnStyle}>
+                  {walletSaving ? "Saving…" : "+ Add"}
+                </button>
+              </div>
+              {walletError && <div style={{ color: "#F87171", fontFamily: monoFont, fontSize: 11, marginTop: 8 }}>{walletError}</div>}
+            </div>
+          )}
 
           {wallets.length === 0 ? (
             <div style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.45)", padding: "12px 0" }}>
@@ -574,9 +676,131 @@ export default function ProfilePage() {
 
       </main>
 
+      {/* ── Toasts ── */}
+      {toasts.length > 0 && (
+        <div style={{ position: "fixed", bottom: 80, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, pointerEvents: "none", zIndex: 10000 }}>
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              style={{
+                pointerEvents: "auto",
+                padding: "10px 16px",
+                background: t.tone === "success" ? "#0d1a10" : "#0d0d15",
+                border: `1px solid ${t.tone === "success" ? "#34D39966" : "#4F94D466"}`,
+                color: t.tone === "success" ? "#34D399" : "#4F94D4",
+                borderRadius: 8,
+                fontFamily: monoFont,
+                fontSize: 12,
+                letterSpacing: "0.02em",
+                boxShadow: "0 6px 20px rgba(0,0,0,0.5)",
+                maxWidth: 520,
+              }}
+            >
+              {t.text}
+            </div>
+          ))}
+        </div>
+      )}
+
       <MobileNav />
       <SupportChatConnected />
     </div>
+  );
+}
+
+function OnboardingCta({
+  usernameInput,
+  setUsernameInput,
+  onSubmit,
+  saving,
+  error,
+}: {
+  usernameInput: string;
+  setUsernameInput: (v: string) => void;
+  onSubmit: () => void;
+  saving: boolean;
+  error: string | null;
+}) {
+  return (
+    <section
+      className="rpc-card-neon rpc-scanlines"
+      style={{ position: "relative", padding: "28px 24px", overflow: "hidden" }}
+    >
+      <div style={{ fontFamily: monoFont, fontSize: 10, color: ACCENT_RED, letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 8 }}>
+        Welcome to Rip Packs City
+      </div>
+      <div
+        style={{
+          fontFamily: condensedFont,
+          fontWeight: 900,
+          fontSize: 44,
+          letterSpacing: "0.04em",
+          textTransform: "uppercase",
+          lineHeight: 0.95,
+          color: "#fff",
+          marginBottom: 10,
+        }}
+      >
+        Get Started
+      </div>
+      <div style={{ fontFamily: monoFont, fontSize: 13, color: "rgba(255,255,255,0.7)", lineHeight: 1.5, marginBottom: 16, maxWidth: 620 }}>
+        Enter your Dapper username to instantly load your collection across NBA Top Shot, NFL All Day, LaLiga Golazos, and Disney Pinnacle.
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+        <input
+          value={usernameInput}
+          onChange={(e) => setUsernameInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") onSubmit(); }}
+          placeholder="Dapper username"
+          autoFocus
+          style={{
+            flex: 1,
+            minWidth: 260,
+            padding: "14px 16px",
+            background: "#0a0a0a",
+            border: `1.5px solid ${ACCENT_RED}`,
+            borderRadius: 8,
+            color: "#fff",
+            fontFamily: monoFont,
+            fontSize: 15,
+            letterSpacing: "0.02em",
+            outline: "none",
+          }}
+        />
+        <button
+          onClick={onSubmit}
+          disabled={saving}
+          style={{
+            background: ACCENT_RED,
+            border: "none",
+            color: "#fff",
+            padding: "14px 28px",
+            borderRadius: 8,
+            fontFamily: condensedFont,
+            fontWeight: 800,
+            fontSize: 15,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            cursor: saving ? "default" : "pointer",
+            opacity: saving ? 0.7 : 1,
+            boxShadow: `0 0 24px ${ACCENT_RED}55`,
+          }}
+        >
+          {saving ? "Loading…" : "Load my collection"}
+        </button>
+      </div>
+
+      {error && (
+        <div style={{ color: "#F87171", fontFamily: monoFont, fontSize: 12, marginBottom: 10 }}>
+          {error}
+        </div>
+      )}
+
+      <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.45)", lineHeight: 1.5, maxWidth: 620 }}>
+        Dapper uses one username across all four marketplaces — we'll find your wallet and associate it with every collection automatically.
+      </div>
+    </section>
   );
 }
 
@@ -638,5 +862,17 @@ const primaryBtnStyle: React.CSSProperties = {
   fontSize: 12,
   letterSpacing: "0.08em",
   textTransform: "uppercase",
+  cursor: "pointer",
+};
+
+const linkBtnStyle: React.CSSProperties = {
+  background: "transparent",
+  border: "none",
+  padding: 0,
+  color: "rgba(255,255,255,0.55)",
+  fontFamily: monoFont,
+  fontSize: 11,
+  letterSpacing: "0.04em",
+  textDecoration: "underline",
   cursor: "pointer",
 };

@@ -207,6 +207,41 @@ async function runSmokeTests() {
       }
     })(),
 
+    // Phase 4.1: /api/profile/resolve-and-associate — username-based multi-collection
+    // wallet auto-association. When unauthenticated, returns 401. If the smoke test
+    // runs with a session (via SMOKE_TEST_SESSION_TOKEN), a known-good username
+    // should return 200 with a 4-entry associatedCollections array.
+    (async (): Promise<TestResult> => {
+      const name = "/api/profile/resolve-and-associate responds (200 or 401)";
+      try {
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        const token = process.env.SMOKE_TEST_SESSION_TOKEN;
+        if (token) headers.cookie = `sb-auth-token=${token}`;
+        const res = await fetch(`${BASE_URL}/api/profile/resolve-and-associate`, {
+          method: "POST",
+          cache: "no-store",
+          headers,
+          body: JSON.stringify({ username: "jamesdillonbond" }),
+          signal: AbortSignal.timeout(8000),
+        });
+        if (res.status === 401) {
+          return { name, passed: true, detail: "401 (unauthenticated, expected without session)" };
+        }
+        if (res.status !== 200) {
+          return { name, passed: false, detail: `HTTP ${res.status}` };
+        }
+        const body = await res.json().catch(() => null);
+        const ok =
+          body != null &&
+          typeof body.walletAddress === "string" &&
+          Array.isArray(body.associatedCollections) &&
+          body.associatedCollections.length === 4;
+        return { name, passed: ok, detail: ok ? `${body.walletAddress} x4` : "malformed 200 body" };
+      } catch (e: any) {
+        return { name, passed: false, detail: e?.message ?? String(e) };
+      }
+    })(),
+
     // Phase 4 (opt-in): attach a smoke-test user session cookie and probe the
     // auth-gated /nba-top-shot/collection page. If SMOKE_TEST_SESSION_TOKEN is
     // unset, skip without failing. To generate the token:
