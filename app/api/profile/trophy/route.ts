@@ -1,20 +1,32 @@
+// app/api/profile/trophy/route.ts
+//
+// Phase 4: auth.uid()-keyed trophy moments. Supports up to 6 pinned slots
+// across all published collections. The collection_id defaults to NBA Top
+// Shot when not supplied, so older clients still work.
+//
+// Public /profile/[username] lookups go through /api/public/profile/[username]
+// (service-role read). This handler is strictly authenticated.
+
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { requireUser } from "@/lib/auth/supabase-server";
 
-// GET ?ownerKey=xxx  → all 6 trophy slots for this owner
-// GET ?username=xxx  → same but by username (for public profile page)
-export async function GET(req: NextRequest) {
-  const ownerKey = req.nextUrl.searchParams.get("ownerKey");
-  const username = req.nextUrl.searchParams.get("username");
-  const key = ownerKey ?? username;
-  if (!key) {
-    return NextResponse.json({ error: "ownerKey or username required" }, { status: 400 });
+const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
+
+export async function GET() {
+  let user;
+  try {
+    user = await requireUser();
+  } catch (res) {
+    return res as Response;
   }
+
   const { data, error } = await supabase
     .from("trophy_moments")
     .select("*")
-    .eq("owner_key", key)
+    .eq("user_id", user.id)
     .order("slot", { ascending: true });
+
   if (error) {
     console.error("[trophy GET]", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -22,21 +34,35 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ trophies: data ?? [] });
 }
 
-// POST { ownerKey, slot, momentId, editionId?, playerName?, setName?,
-//        serialNumber?, circulationCount?, tier?, thumbnailUrl?,
-//        videoUrl?, fmv?, badges? }
-// → upsert into the given slot (replaces existing)
 export async function POST(req: NextRequest) {
+  let user;
+  try {
+    user = await requireUser();
+  } catch (res) {
+    return res as Response;
+  }
+
   const body = await req.json();
   const {
-    ownerKey, slot, momentId, editionId,
-    playerName, setName, serialNumber, circulationCount,
-    tier, thumbnailUrl, videoUrl, fmv, badges, note,
+    slot,
+    momentId,
+    collectionId,
+    editionId,
+    playerName,
+    setName,
+    serialNumber,
+    circulationCount,
+    tier,
+    thumbnailUrl,
+    videoUrl,
+    fmv,
+    badges,
+    note,
   } = body;
 
-  if (!ownerKey || !slot || !momentId) {
+  if (!slot || !momentId) {
     return NextResponse.json(
-      { error: "ownerKey, slot, and momentId required" },
+      { error: "slot and momentId required" },
       { status: 400 }
     );
   }
@@ -48,9 +74,10 @@ export async function POST(req: NextRequest) {
     .from("trophy_moments")
     .upsert(
       {
-        owner_key: ownerKey,
+        user_id: user.id,
         slot,
         moment_id: momentId,
+        collection_id: collectionId ?? NBA_TOP_SHOT_UUID,
         edition_id: editionId ?? null,
         player_name: playerName ?? null,
         set_name: setName ?? null,
@@ -64,7 +91,7 @@ export async function POST(req: NextRequest) {
         note: note ?? null,
         pinned_at: new Date().toISOString(),
       },
-      { onConflict: "owner_key,slot" }
+      { onConflict: "user_id,slot" }
     )
     .select()
     .single();
@@ -76,18 +103,26 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ trophy: data });
 }
 
-// DELETE { ownerKey, slot }  → clear that slot
 export async function DELETE(req: NextRequest) {
-  const body = await req.json();
-  const { ownerKey, slot } = body;
-  if (!ownerKey || !slot) {
-    return NextResponse.json({ error: "ownerKey and slot required" }, { status: 400 });
+  let user;
+  try {
+    user = await requireUser();
+  } catch (res) {
+    return res as Response;
   }
+
+  const body = await req.json();
+  const { slot } = body;
+  if (!slot) {
+    return NextResponse.json({ error: "slot required" }, { status: 400 });
+  }
+
   const { error } = await supabase
     .from("trophy_moments")
     .delete()
-    .eq("owner_key", ownerKey)
+    .eq("user_id", user.id)
     .eq("slot", slot);
+
   if (error) {
     console.error("[trophy DELETE]", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -43,12 +43,9 @@ async function checkRlsBlocked(
       // RLS blocked it — this is the expected success path
       return { name, passed: true, detail: `Blocked: ${error.code}` };
     }
-    // If no error, the write went through — RLS is NOT working
-    // Clean up the rogue row if possible using service role
-    const svcClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-    await (svcClient.from(table) as any)
-      .delete()
-      .eq("owner_key", "__rls_smoke_test__");
+    // If no error, the write went through — RLS is NOT working. Post-Phase 4
+    // there's no owner_key column to target; we can't cleanly delete the rogue
+    // row by value, so we flag it and leave cleanup to the operator.
     return { name, passed: false, detail: "RLS FAILED — unauthorized write succeeded" };
   } catch (e: any) {
     // Network/unexpected error — treat as blocked (safe side)
@@ -157,19 +154,87 @@ async function runSmokeTests() {
       }
     })(),
 
-    // 15–18. RLS Write-Block Tests
+    // 15–18. RLS Write-Block Tests. Post Phase 4: tables are now keyed on
+    // user_id UUID with DEFAULT auth.uid(). Anon writes still blocked.
     checkRlsBlocked("RLS blocks saved_wallets unauthorized write", "saved_wallets", {
-      owner_key: "__rls_smoke_test__", wallet_addr: "0x0000000000000000", username: "rls_test",
+      wallet_addr: "0x0000000000000000", username: "rls_test",
     }),
     checkRlsBlocked("RLS blocks profile_bio unauthorized write", "profile_bio", {
-      owner_key: "__rls_smoke_test__", display_name: "rls_test",
+      username: "rls_test", display_name: "rls_test",
     }),
     checkRlsBlocked("RLS blocks recent_searches unauthorized write", "recent_searches", {
-      owner_key: "__rls_smoke_test__", query: "rls_test", query_type: "wallet",
+      query: "rls_test", query_type: "wallet",
     }),
     checkRlsBlocked("RLS blocks trophy_moments unauthorized write", "trophy_moments", {
-      owner_key: "__rls_smoke_test__", slot: 1, moment_id: "rls_test_moment",
+      slot: 1, moment_id: "rls_test_moment",
     }),
+
+    // Phase 4: auth-gated profile routes accept or redirect. 2xx/3xx OR 401 all OK.
+    ...([
+      "/api/profile/activity",
+      "/api/profile/favorites",
+      "/api/profile/hero-moment",
+    ].map(async (path): Promise<TestResult> => {
+      const name = `${path} returns 200 or 401`;
+      try {
+        const res = await fetch(`${BASE_URL}${path}`, {
+          cache: "no-store",
+          redirect: "follow",
+          signal: AbortSignal.timeout(5000),
+        });
+        return { name, passed: res.status === 200 || res.status === 401, detail: `HTTP ${res.status}` };
+      } catch (e: any) {
+        return { name, passed: false, detail: e?.message ?? String(e) };
+      }
+    })),
+
+    // Phase 4: public profile route is unauthenticated — accepts 200 (user exists)
+    // or 404 (username not registered). Greenfield migration means 404 is
+    // expected until Trevor re-seeds the jamesdillonbond bio.
+    (async (): Promise<TestResult> => {
+      const name = "/api/public/profile/jamesdillonbond returns JSON";
+      try {
+        const res = await fetch(`${BASE_URL}/api/public/profile/jamesdillonbond`, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(5000),
+        });
+        const ok = res.status === 200 || res.status === 404;
+        if (!ok) return { name, passed: false, detail: `HTTP ${res.status}` };
+        const body = await res.json().catch(() => null);
+        return { name, passed: body != null, detail: body?.error ?? `HTTP ${res.status}` };
+      } catch (e: any) {
+        return { name, passed: false, detail: e?.message ?? String(e) };
+      }
+    })(),
+
+    // Phase 4 (opt-in): attach a smoke-test user session cookie and probe the
+    // auth-gated /nba-top-shot/collection page. If SMOKE_TEST_SESSION_TOKEN is
+    // unset, skip without failing. To generate the token:
+    //   1) Sign in as a test user in prod via /login magic link
+    //   2) Inspect cookies for `sb-*-auth-token` and paste its raw value
+    //      into Vercel env `SMOKE_TEST_SESSION_TOKEN`
+    //   3) Re-deploy so the smoke test can use it
+    (async (): Promise<TestResult> => {
+      const name = "authed /nba-top-shot/collection renders (opt-in via SMOKE_TEST_SESSION_TOKEN)";
+      const token = process.env.SMOKE_TEST_SESSION_TOKEN;
+      if (!token) return { name, passed: true, soft: true, detail: "skipped — no SMOKE_TEST_SESSION_TOKEN" };
+      try {
+        const res = await fetch(`${BASE_URL}/nba-top-shot/collection`, {
+          cache: "no-store",
+          redirect: "manual",
+          headers: { cookie: `sb-auth-token=${token}` },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (res.status !== 200) {
+          return { name, passed: false, soft: true, detail: `HTTP ${res.status}` };
+        }
+        const html = await res.text();
+        const hit = html.includes("COLLECTION ANALYZER") || html.toLowerCase().includes("nba top shot");
+        return { name, passed: hit, soft: true, detail: hit ? "auth render ok" : "content marker missing" };
+      } catch (e: any) {
+        return { name, passed: false, soft: true, detail: e?.message ?? String(e) };
+      }
+    })(),
   ]);
 
   // ── Collect results, converting rejected promises to failures ──

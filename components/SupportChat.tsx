@@ -112,8 +112,8 @@ const PAGE_DEFAULTS: Record<string, string[]> = {
   "sets (nba-top-shot)": ["Cheapest set to complete?", "What's in Run It Back?", "Best investment sets?", "Show me S8 sets"],
   "packs (nba-top-shot)": ["Are packs worth buying?", "How does Pack EV work?", "Best value pack right now?", "What's inside the latest drop?"],
   "overview (nba-top-shot)": ["Top sales today", "Hottest editions", "Market pulse", "Where do I start?"],
-  "market (nba-top-shot)": ["Show top discounts", "Lookup an edition", "Liquidity leaderboard", "Cheapest legendaries"],
-  "analytics (nba-top-shot)": ["What's my clarity score?", "Liquid vs locked breakdown", "Acquisition origin breakdown", "Tier breakdown"],
+  "market (nba-top-shot)": ["Show everything under $20", "Filter by legendary only", "Cheapest ultimate right now"],
+  "analytics (nba-top-shot)": ["Top sales this week", "Which tier is trending", "Hottest player this month"],
 
   // NFL All Day
   "sniper (nfl-all-day)": ["Best All Day deals", "Cheap legendaries", "Find me a Mahomes deal", "Rookie moments under $10"],
@@ -122,7 +122,8 @@ const PAGE_DEFAULTS: Record<string, string[]> = {
   "sets (nfl-all-day)": ["Cheapest All Day set", "Set bottlenecks", "Series 4 sets", "Playoffs sets"],
   "badges (nfl-all-day)": ["Rookie badges", "Super Bowl badges", "Pro Bowl premiums", "First Touchdown moments"],
   "overview (nfl-all-day)": ["Top All Day sales", "Market pulse", "Hottest editions", "Where do I start?"],
-  "analytics (nfl-all-day)": ["My All Day clarity score", "Liquid vs locked", "Tier breakdown", "Acquisition origin"],
+  "market (nfl-all-day)": ["Show everything under $20", "Filter by legendary only", "Cheapest ultimate right now"],
+  "analytics (nfl-all-day)": ["Top sales this week", "Which tier is trending", "Hottest player this month"],
 
   // LaLiga Golazos
   "sniper (laliga-golazos)": ["Best Golazos deals", "Cheap legendaries", "Find me a Messi moment", "El Clásico badges"],
@@ -130,13 +131,15 @@ const PAGE_DEFAULTS: Record<string, string[]> = {
   "packs (laliga-golazos)": ["Golazos pack EV", "Best value pack", "Tier odds", "Skip or buy?"],
   "sets (laliga-golazos)": ["Cheapest Golazos set", "Set bottlenecks", "Ídolos sets", "Estrellas sets"],
   "overview (laliga-golazos)": ["Top Golazos sales", "Market pulse", "Hottest editions", "Where do I start?"],
-  "analytics (laliga-golazos)": ["My clarity score", "Liquid vs locked", "Tier breakdown", "Acquisition origin"],
+  "market (laliga-golazos)": ["Show everything under $20", "Filter by legendary only", "Cheapest ultimate right now"],
+  "analytics (laliga-golazos)": ["Top sales this week", "Which tier is trending", "Hottest player this month"],
 
   // Disney Pinnacle
   "sniper (disney-pinnacle)": ["Best Pinnacle deals", "Cheap variant pins", "Star Wars pins under $10", "Pixar pins"],
   "collection (disney-pinnacle)": ["Analyze my Pinnacle wallet", "What should I sell?", "Variant breakdown", "My best pins"],
   "overview (disney-pinnacle)": ["Top Pinnacle sales", "Hottest pins", "What is Pinnacle?", "Where do I start?"],
-  "analytics (disney-pinnacle)": ["My clarity score", "Variant breakdown", "Liquid vs locked", "Acquisition origin"],
+  "market (disney-pinnacle)": ["Show everything under $20", "Filter by legendary only", "Cheapest ultimate right now"],
+  "analytics (disney-pinnacle)": ["Top sales this week", "Which tier is trending", "Hottest player this month"],
 
   // UFC Strike
   "sniper (ufc)": ["Best UFC deals", "Cheap moments", "Find me a McGregor moment", "Title fights"],
@@ -150,8 +153,8 @@ const PAGE_DEFAULTS: Record<string, string[]> = {
   sets: ["Cheapest set to complete?", "Best investment sets?", "Set bottlenecks", "Latest sets"],
   packs: ["Are packs worth buying?", "How does Pack EV work?", "Best value pack right now?", "Tier odds"],
   overview: ["Top sales today", "Hottest editions", "Market pulse", "Where do I start?"],
-  market: ["Show top discounts", "Lookup an edition", "Liquidity leaderboard", "Cheapest by tier"],
-  analytics: ["What's my clarity score?", "Liquid vs locked", "Tier breakdown", "Acquisition origin"],
+  market: ["Show everything under $20", "Filter by legendary only", "Cheapest ultimate right now"],
+  analytics: ["Top sales this week", "Which tier is trending", "Hottest player this month"],
 };
 const DEFAULT_SUGGESTIONS = ["Find me deals under $10", "How does FMV work?", "What are badges?", "Show me top discounts"];
 
@@ -159,8 +162,8 @@ const DEFAULT_SUGGESTIONS = ["Find me deals under $10", "How does FMV work?", "W
 /*  Main Component                                                     */
 /* ================================================================== */
 
-export default function SupportChat({ pageContext, collectionId, userWallet, walletConnected, onAddToCart }: {
-  pageContext?: string; collectionId?: string | null; userWallet?: string | null; walletConnected?: boolean; onAddToCart?: (moment: any) => void;
+export default function SupportChat({ pageContext, collectionId, userWallet, userEmail, walletConnected, onAddToCart }: {
+  pageContext?: string; collectionId?: string | null; userWallet?: string | null; userEmail?: string | null; walletConnected?: boolean; onAddToCart?: (moment: any) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -303,7 +306,7 @@ export default function SupportChat({ pageContext, collectionId, userWallet, wal
     try {
       const res = await fetch("/api/support-chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed, sessionId, userWallet: userWallet || null, pageContext: pageContext || null, collectionId: collectionId || null, walletConnected: !!walletConnected, conversationHistory: history, stream: true }),
+        body: JSON.stringify({ message: trimmed, sessionId, userWallet: userWallet || null, userEmail: userEmail || null, pageContext: pageContext || null, collectionId: collectionId || null, walletConnected: !!walletConnected, conversationHistory: history, stream: true }),
       });
       if (res.status === 429) {
         setMessages((prev) => prev.filter((m) => m.id !== "typing"));
