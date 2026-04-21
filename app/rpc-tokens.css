@@ -426,3 +426,204 @@
 .rpc-chip:active {
   border-color: var(--rpc-border-active);
 }
+
+/* ═══════════════════════════════════════════════════════════
+   v2 ADDITIONS — POR + video-game + trading-card binder
+   Brand direction: Portland Trail Blazers palette, CRT HUD feel,
+   9-up binder grid, per-collection accents keyed off data-collection.
+   v1 tokens + utilities above are preserved untouched.
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Portland Trail Blazers primary palette ── */
+  --por-red:     #E03A2F;
+  --por-black:   #0C0C0C;
+  --por-silver:  #BFC0BF;
+  --por-white:   #F1F1F1;
+  --por-pin:     #2A2A2A;
+
+  /* ── Per-collection accent registry (drives --rpc-accent below) ── */
+  --col-nba-top-shot:    #E03A2F;
+  --col-nfl-all-day:     #4F94D4;
+  --col-laliga-golazos:  #22C55E;
+  --col-disney-pinnacle: #A855F7;
+  --col-ufc:             #EF4444;
+
+  /* ── CRT / video-game effects ── */
+  --scan-line:        rgba(255, 255, 255, 0.015);
+  --scan-glow:        0 0 20px rgba(224, 58, 47, 0.15);
+  --scan-glow-strong: 0 0 32px rgba(224, 58, 47, 0.35);
+  --neon-text-glow:   0 0 6px rgba(224, 58, 47, 0.45);
+
+  /* ── Trading-card holo sheen gradients (v2 overlay system) ── */
+  --holo-base: linear-gradient(
+    135deg,
+    rgba(255,255,255,0.00) 0%,
+    rgba(255,255,255,0.08) 30%,
+    rgba(224,58,47,0.10) 50%,
+    rgba(255,255,255,0.08) 70%,
+    rgba(255,255,255,0.00) 100%
+  );
+  --holo-ultimate:  linear-gradient(135deg, rgba(255,107,53,0), rgba(255,107,53,0.18) 50%, rgba(255,215,0,0.12) 100%);
+  --holo-legendary: linear-gradient(135deg, rgba(255,215,0,0), rgba(255,215,0,0.22) 50%, rgba(255,165,0,0.15) 100%);
+  --holo-rare:      linear-gradient(135deg, rgba(129,140,248,0), rgba(129,140,248,0.18) 50%, rgba(167,139,250,0.12) 100%);
+  --holo-fandom:    linear-gradient(135deg, rgba(52,211,153,0), rgba(52,211,153,0.18) 50%, rgba(34,197,94,0.12) 100%);
+
+  /* ── Binder (trading-card grid) dimensions ── */
+  --binder-gap:         14px;
+  --binder-card-min:    180px;
+  --binder-card-max:    240px;
+  --binder-slot-ratio:  1.45;
+  --binder-sleeve-bg:   rgba(255,255,255,0.015);
+  --binder-sleeve-edge: rgba(255,255,255,0.05);
+}
+
+/* ── CRT scanline overlay — opt-in via class, isolates from existing scan pattern ── */
+.rpc-scan-crt {
+  position: relative;
+  isolation: isolate;
+}
+.rpc-scan-crt::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background-image: repeating-linear-gradient(
+    0deg,
+    var(--scan-line) 0,
+    var(--scan-line) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  opacity: 0.7;
+  mix-blend-mode: overlay;
+}
+
+/* ── Live pill (CRT flicker) ── */
+@keyframes rpc-crt-flicker {
+  0%, 100% { opacity: 1; }
+  92%      { opacity: 0.92; }
+  96%      { opacity: 1; }
+}
+.rpc-live-pill {
+  background: var(--por-red);
+  color: var(--por-white);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-weight: 700;
+  animation: rpc-crt-flicker 4.3s infinite;
+  text-shadow: var(--neon-text-glow);
+}
+
+/* ── Neon-edged card (hero stats, today's deal) ── */
+.rpc-card-neon {
+  background: var(--rpc-surface);
+  border: 1px solid var(--rpc-red-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--scan-glow), inset 0 1px 0 rgba(255,255,255,0.04);
+  position: relative;
+  transition: box-shadow var(--transition-fast);
+}
+.rpc-card-neon:hover {
+  box-shadow: var(--scan-glow-strong), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+/* ── Trading-card binder primitives ── */
+.rpc-binder {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--binder-card-min), 1fr));
+  gap: var(--binder-gap);
+}
+
+.rpc-binder-slot {
+  background: var(--binder-sleeve-bg);
+  border: 1px solid var(--binder-sleeve-edge);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  aspect-ratio: 1 / var(--binder-slot-ratio);
+  position: relative;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.rpc-binder-slot:hover {
+  border-color: var(--rpc-border-hover);
+  transform: translateY(-2px);
+}
+
+/* Tier-aware border (compose with .rpc-binder-slot) */
+.rpc-tier-legendary { border-color: var(--tier-legendary-border); }
+.rpc-tier-ultimate  { border-color: var(--tier-ultimate-border); }
+.rpc-tier-rare      { border-color: var(--tier-rare-border); }
+.rpc-tier-fandom    { border-color: var(--tier-fandom-border); }
+.rpc-tier-common    { border-color: var(--tier-common-border); }
+
+/* Holo overlay (v2) — renamed from v2-spec .rpc-holo* to .rpc-holo-overlay*
+   to avoid clobbering v1 .rpc-holo-legendary/-ultimate/-rare shimmers that
+   six existing pages depend on. Usage:
+     <div class="rpc-binder-slot rpc-tier-legendary">
+       <img ... />
+       <div class="rpc-holo-overlay rpc-holo-overlay-legendary" />
+     </div>
+*/
+.rpc-holo-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--holo-base);
+  mix-blend-mode: screen;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+.rpc-binder-slot:hover .rpc-holo-overlay { opacity: 1; }
+.rpc-holo-overlay-ultimate  { background: var(--holo-ultimate); }
+.rpc-holo-overlay-legendary { background: var(--holo-legendary); }
+.rpc-holo-overlay-rare      { background: var(--holo-rare); }
+.rpc-holo-overlay-fandom    { background: var(--holo-fandom); }
+
+/* Serial pill — monochrome, corner-mounted on card art */
+.rpc-serial-pill {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0,0,0,0.75);
+  border: 1px solid var(--por-silver);
+  color: var(--por-white);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+}
+
+/* ── Per-collection theming — data-collection attribute drives accent ── */
+[data-collection="nba-top-shot"]    { --rpc-accent: var(--col-nba-top-shot); }
+[data-collection="nfl-all-day"]     { --rpc-accent: var(--col-nfl-all-day); }
+[data-collection="laliga-golazos"]  { --rpc-accent: var(--col-laliga-golazos); }
+[data-collection="disney-pinnacle"] { --rpc-accent: var(--col-disney-pinnacle); }
+[data-collection="ufc"]             { --rpc-accent: var(--col-ufc); }
+
+:root { --rpc-accent: var(--por-red); }
+
+.rpc-accent-bg     { background: var(--rpc-accent); }
+.rpc-accent-border { border-color: var(--rpc-accent); }
+.rpc-accent-text   { color: var(--rpc-accent); }
+.rpc-accent-glow   { box-shadow: 0 0 0 1px var(--rpc-accent); }
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .rpc-live-pill,
+  .rpc-binder-slot,
+  .rpc-card-neon { animation: none !important; transition: none !important; }
+  .rpc-scan-crt::before { display: none; }
+}
+
+/* ── Mobile tweaks for binder grid ── */
+@media (max-width: 640px) {
+  :root {
+    --binder-gap: 10px;
+    --binder-card-min: 140px;
+  }
+}

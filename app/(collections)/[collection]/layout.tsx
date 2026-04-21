@@ -25,21 +25,21 @@ export default async function CollectionSegmentLayout(props: any) {
   if (!collection) {
     const fallback = publishedCollections()[0]
     return (
-      <>
+      <div data-collection={fallback.id}>
         <ActiveCollectionSync collectionId={fallback.id} />
         <CollectionTicker collection={fallback} />
         <CollectionBanner collection={fallback} />
         <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
           {props.children}
         </main>
-      </>
+      </div>
     )
   }
 
   // Unpublished collection → show "Coming Soon" in the layout shell
   if (!collection.published) {
     return (
-      <>
+      <div data-collection={collection.id}>
         <ActiveCollectionSync collectionId={collection.id} />
         <CollectionTicker collection={collection} />
         <CollectionBanner collection={collection} />
@@ -57,12 +57,12 @@ export default async function CollectionSegmentLayout(props: any) {
             </Link>
           </div>
         </main>
-      </>
+      </div>
     )
   }
 
   return (
-    <>
+    <div data-collection={collection.id}>
       <ActiveCollectionSync collectionId={collection.id} />
       <WalletHydrator />
       <CollectionTicker collection={collection} />
@@ -70,7 +70,7 @@ export default async function CollectionSegmentLayout(props: any) {
       <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
         {props.children}
       </main>
-    </>
+    </div>
   )
 }
 
