@@ -527,6 +527,39 @@ export default function OverviewPage() {
         </section>
       </div>
 
+      {/* ── Per-collection News (from lib/collections.ts news[]) ── */}
+      {collectionObj?.news && collectionObj.news.length > 0 && (
+        <section className="rpc-card" style={{ padding: "16px 20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <div style={{ width: 6, height: 6, borderRadius: "50%", background: accent }} />
+            <span className="rpc-label">News &amp; Updates</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {collectionObj.news.map((n, i) => (
+              <a
+                key={i}
+                href={n.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ display: "block", padding: "12px 14px", background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", textDecoration: "none" }}
+              >
+                <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
+                  <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "var(--text-base)", color: "var(--rpc-text-primary)" }}>
+                    {n.title}
+                  </div>
+                  <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", marginLeft: "auto" }}>
+                    {n.date}
+                  </div>
+                </div>
+                <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>
+                  {n.summary}
+                </div>
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* ── Tools ── */}
       <section className="rpc-card" style={{ padding: "16px 20px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>

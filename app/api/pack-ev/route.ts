@@ -403,13 +403,40 @@ export async function POST(req: NextRequest) {
   let packListingId = ""
 
   try {
-    const body = await req.json().catch(() => ({})) as { packListingId?: string; packPrice?: number; packName?: string }
+    const body = await req.json().catch(() => ({})) as { packListingId?: string; packPrice?: number; packName?: string; collectionId?: string }
     packListingId = body.packListingId ?? ""
     const packPrice: number = body.packPrice ?? 0
     const packName: string | null = body.packName ?? null
+    const collectionId: string = typeof body.collectionId === "string" ? body.collectionId : "nba-top-shot"
 
     if (!packListingId) {
       return NextResponse.json({ error: "packListingId is required" }, { status: 400 })
+    }
+
+    // ── Phase 2: dispatch by collectionId ─────────────────────────────────────
+    // Top Shot keeps the in-file logic below. AllDay forwards to
+    // /api/allday-pack-ev which has a parallel implementation. Other
+    // collections don't support pack EV yet — return a 404 with a clear
+    // message so the UI can render a graceful empty state.
+    if (collectionId === "nfl-all-day") {
+      const forwardUrl = new URL("/api/allday-pack-ev", req.url)
+      const forwardRes = await fetch(forwardUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ packListingId, packPrice, packName }),
+        cache: "no-store",
+      })
+      const forwardBody = await forwardRes.text()
+      return new NextResponse(forwardBody, {
+        status: forwardRes.status,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+    if (collectionId !== "nba-top-shot") {
+      return NextResponse.json(
+        { error: "Packs not available for this collection", collectionId },
+        { status: 404 }
+      )
     }
 
     console.log(`[pack-ev] Request for ${packListingId} price=${packPrice}`)

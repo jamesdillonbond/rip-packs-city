@@ -159,8 +159,8 @@ const DEFAULT_SUGGESTIONS = ["Find me deals under $10", "How does FMV work?", "W
 /*  Main Component                                                     */
 /* ================================================================== */
 
-export default function SupportChat({ pageContext, userWallet, walletConnected, onAddToCart }: {
-  pageContext?: string; userWallet?: string | null; walletConnected?: boolean; onAddToCart?: (moment: any) => void;
+export default function SupportChat({ pageContext, collectionId, userWallet, walletConnected, onAddToCart }: {
+  pageContext?: string; collectionId?: string | null; userWallet?: string | null; walletConnected?: boolean; onAddToCart?: (moment: any) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -225,6 +225,7 @@ export default function SupportChat({ pageContext, userWallet, walletConnected, 
       try {
         const params = new URLSearchParams({ sessionId });
         if (pageContext) params.set("pageContext", pageContext);
+        if (collectionId) params.set("collectionId", collectionId);
         const res = await fetch(`/api/support-chat/context?${params}`);
         if (!res.ok) return;
         const ctx = await res.json();
@@ -302,7 +303,7 @@ export default function SupportChat({ pageContext, userWallet, walletConnected, 
     try {
       const res = await fetch("/api/support-chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed, sessionId, userWallet: userWallet || null, pageContext: pageContext || null, walletConnected: !!walletConnected, conversationHistory: history, stream: true }),
+        body: JSON.stringify({ message: trimmed, sessionId, userWallet: userWallet || null, pageContext: pageContext || null, collectionId: collectionId || null, walletConnected: !!walletConnected, conversationHistory: history, stream: true }),
       });
       if (res.status === 429) {
         setMessages((prev) => prev.filter((m) => m.id !== "typing"));
