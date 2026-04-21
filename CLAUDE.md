@@ -31,9 +31,9 @@ Shipped
   - `audit-storefront-wallets` Supabase Edge Function: processes 50 unaudited wallets per run, reads on-chain storefront state, flags rows with `expired_listings >= 20` as `cleanup_status = 'pending'`.
   - `scripts/cleanup-storefront-wallets.mjs`: reads pending wallets from `storefront_audit_wallets`, signs and sends `cleanupExpiredListings` via Flow CLI (`flow transactions send cleanup.cdc ...`), then updates `cleanup_status` to `cleaned` / `error` with `cleanup_tx_id`. Uses the standard `readFileSync` `.env.local` loader pattern; run with `node --env-file=.env.local scripts/cleanup-storefront-wallets.mjs --dry-run` to preview, drop `--dry-run` to execute.
 - Hot wallet for cleanup signing: `0x3aa11c84d776838f` (Key 0, ECDSA_secp256k1, SHA2_256, throwaway, **no HybridCustody / account linking**). `flow.json` lives in repo root, is gitignored (added to `.gitignore` under the Flow CLI section alongside `flow.json` and the bare `flow` filename), and must be populated manually with the private key before running cleanup.
-- Two cron-job.org jobs needed to drive the pipeline — **not yet created**:
-  - `scan-storefront-events`: POST `https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/scan-storefront-events` with `Authorization: Bearer $INGEST_SECRET_TOKEN`, empty JSON body, every 3 minutes. Becomes a no-op once caught up to chain tip.
-  - `audit-storefront-wallets`: POST `https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/audit-storefront-wallets`, same auth, empty body, every 5 minutes.
+- Two cron-job.org jobs driving the pipeline:
+  - `scan-storefront-events` (job ID `7511616`, schedule `*/3 * * * *`): POST `https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/scan-storefront-events` with `Authorization: Bearer $INGEST_SECRET_TOKEN`, empty JSON body, every 3 minutes. Becomes a no-op once caught up to chain tip.
+  - `audit-storefront-wallets` (job ID `7511621`, schedule `*/5 * * * *`): POST `https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/audit-storefront-wallets`, same auth, empty body, every 5 minutes.
 
 Key constants (Storefront audit)
 
