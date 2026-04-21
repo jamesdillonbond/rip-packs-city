@@ -1,10 +1,9 @@
 // app/api/user-resolve/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { topshotGraphql } from "@/lib/topshot";
-
-function isWalletAddress(value: string): boolean {
-  return /^0x[a-fA-F0-9]{16}$/.test(value.trim());
-}
+import {
+  isWalletAddress,
+  resolveTopShotUsername,
+} from "@/lib/topshot-username-resolve";
 
 type ResolveResponse = {
   input: string;
@@ -13,37 +12,6 @@ type ResolveResponse = {
   username: string | null;
   dapperId: string | null;
 };
-
-type TopShotUserProfileResponse = {
-  getUserProfileByUsername?: {
-    publicInfo?: {
-      flowAddress?: string | null;
-      username?: string | null;
-      dapperID?: string | null;
-    } | null;
-  } | null;
-};
-
-async function tryResolveUsername(username: string) {
-  // FIXED: schema requires `input: { username }` wrapper, not bare `username` arg
-  const query = `
-    query ResolveUserByUsername($username: String!) {
-      getUserProfileByUsername(input: { username: $username }) {
-        publicInfo {
-          flowAddress
-          username
-          dapperID
-        }
-      }
-    }
-  `;
-
-  const data = await topshotGraphql<TopShotUserProfileResponse>(query, {
-    username,
-  });
-
-  return data.getUserProfileByUsername?.publicInfo ?? null;
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -65,25 +33,12 @@ export async function POST(request: NextRequest) {
         username: null,
         dapperId: null,
       };
-
       return NextResponse.json(result);
     }
 
-    const cleanedUsername = rawInput.replace(/^@+/, "").trim();
+    const resolved = await resolveTopShotUsername(rawInput);
 
-    let publicInfo = await tryResolveUsername(cleanedUsername);
-
-    if (!publicInfo?.flowAddress && cleanedUsername.toLowerCase() !== cleanedUsername) {
-      publicInfo = await tryResolveUsername(cleanedUsername.toLowerCase());
-    }
-
-    console.log("[USER_RESOLVE_DEBUG]", {
-      input: rawInput,
-      cleanedUsername,
-      publicInfo,
-    });
-
-    if (!publicInfo?.flowAddress) {
+    if (!resolved) {
       return NextResponse.json(
         {
           error:
@@ -96,15 +51,14 @@ export async function POST(request: NextRequest) {
     const result: ResolveResponse = {
       input: rawInput,
       inputType: "username",
-      walletAddress: publicInfo.flowAddress ?? null,
-      username: publicInfo.username ?? cleanedUsername,
-      dapperId: publicInfo.dapperID ?? null,
+      walletAddress: resolved.walletAddress,
+      username: resolved.username,
+      dapperId: resolved.dapperId,
     };
 
     return NextResponse.json(result);
   } catch (error) {
     console.error("[USER_RESOLVE_ERROR]", error);
-
     return NextResponse.json(
       {
         error:
