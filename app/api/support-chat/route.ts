@@ -1,13 +1,20 @@
 // app/api/support-chat/route.ts
 // POST /api/support-chat
-// Body: { message, sessionId, userWallet?, pageContext?, walletConnected?, conversationHistory?, marketPulse?, dailyDeal? }
+// Body: { message, sessionId, userWallet?, userEmail?, pageContext?, collectionId?,
+//         walletConnected?, conversationHistory?, marketPulse?, dailyDeal?, stream? }
 // Returns: { response, escalated, escalationReason?, category }
+//
+// Phase 4: concierge is multi-collection aware. The v2 system prompt consumes
+// `collectionId` + `userEmail` so the model knows which collection the user is
+// browsing and who they are. Tool calls thread collectionId into downstream
+// API calls where it's meaningful.
 
 export const maxDuration = 30;
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
+import { getCollection, publishedCollections, COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -40,12 +47,13 @@ function siteUrl() {
 const TOOLS: Anthropic.Tool[] = [
   {
     name: "search_live_deals",
-    description: "Search for live NBA Top Shot deals from the RPC sniper feed. Use this first for any shopping query. Returns real listings with prices, FMV discounts, and buy links.",
+    description: "Search for live deals from the RPC sniper feed for the active collection. Use this first for any shopping query. Returns real listings with prices, FMV discounts, and buy links. Defaults to the page's active collection when collectionId is omitted.",
     input_schema: {
       type: "object" as const,
       properties: {
-        player: { type: "string", description: "Player name to filter by (partial match ok)" },
-        tier: { type: "string", enum: ["common", "rare", "legendary", "ultimate", "fandom"] },
+        collectionId: { type: "string", description: "Collection id (nba-top-shot, nfl-all-day, laliga-golazos, disney-pinnacle). Defaults to the active page's collection." },
+        player: { type: "string", description: "Player/subject name to filter by (partial match ok)" },
+        tier: { type: "string", description: "Tier filter (collection-dependent labels)" },
         maxPrice: { type: "number", description: "Maximum price in USD" },
         minDiscount: { type: "number", description: "Minimum % below FMV (0-100). Use 15 for 'good deals'." },
         limit: { type: "number", description: "Number of results, default 5" },
@@ -55,53 +63,68 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "search_catalog_deals",
-    description: "Search the RPC moment catalog using Supabase data — player names, tiers, prices, badges, FMV. Use as fallback when live feed is unavailable, or to find moments with specific badges, from specific teams, or under a price ceiling.",
+    description: "Search the RPC moment catalog via Supabase — player, tier, price, badges, FMV. Use as fallback when live feed is unavailable, or for badge-specific queries.",
     input_schema: {
       type: "object" as const,
       properties: {
-        player: { type: "string", description: "Player name (partial match)" },
-        team: { type: "string", description: "Team name (partial match)" },
-        tier: { type: "string", enum: ["common", "rare", "legendary", "ultimate", "fandom"] },
-        maxPrice: { type: "number", description: "Max low_ask price in USD" },
-        minDiscount: { type: "number", description: "Min % below FMV (0 = any)" },
-        hasBadge: { type: "boolean", description: "Only return moments with badges" },
-        limit: { type: "number", description: "Results to return (default 8)" },
+        collectionId: { type: "string", description: "Collection id. Defaults to the active page's collection." },
+        player: { type: "string" },
+        team: { type: "string" },
+        tier: { type: "string" },
+        maxPrice: { type: "number" },
+        minDiscount: { type: "number" },
+        hasBadge: { type: "boolean" },
+        limit: { type: "number", description: "Default 8" },
       },
       required: [],
     },
   },
   {
     name: "get_fmv",
-    description: "Get the Fair Market Value (FMV) for a specific moment edition. Provide either a player name + set name, or an edition key in setID:playID format.",
+    description: "Get Fair Market Value for a specific edition. Provide editionKey (setID:playID) or playerName + setName.",
     input_schema: {
       type: "object" as const,
       properties: {
-        editionKey: { type: "string", description: "Edition key in setID:playID format (e.g. '92:3459')" },
-        playerName: { type: "string", description: "Player name to look up" },
-        setName: { type: "string", description: "Set name (optional, narrows search)" },
+        collectionId: { type: "string", description: "Collection id. Defaults to the active page's collection." },
+        editionKey: { type: "string" },
+        playerName: { type: "string" },
+        setName: { type: "string" },
       },
       required: [],
     },
   },
   {
     name: "check_wallet",
-    description: "Look up a collector's wallet to see their moments, portfolio value, and collection stats. Use when user asks about their own collection or mentions a username.",
+    description: "Look up a collector's wallet to see their moments, portfolio value, and stats for the active collection. Use when the user asks about their own collection or mentions a username.",
     input_schema: {
       type: "object" as const,
       properties: {
-        walletAddress: { type: "string", description: "Flow wallet address (0x...) or Top Shot username" },
+        collectionId: { type: "string", description: "Collection id. Defaults to the active page's collection." },
+        walletAddress: { type: "string", description: "Flow wallet address (0x...) or marketplace username" },
       },
       required: ["walletAddress"],
     },
   },
   {
+    name: "search_across_collections",
+    description: "Search for a player or subject across ALL published collections simultaneously. Use when the user asks 'does RPC have [player]' without specifying a collection, or when comparing a name across collections.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        name: { type: "string", description: "Player or subject name (partial match)" },
+        limit: { type: "number", description: "Max results per collection, default 3" },
+      },
+      required: ["name"],
+    },
+  },
+  {
     name: "manage_watchlist",
-    description: "Add, remove, or list moments on the user's watchlist. Use when the user says 'watch this', 'add to my watchlist', 'what am I watching', or 'remove from watchlist'. Requires owner_key from the session.",
+    description: "Add, remove, or list moments on the user's watchlist. Requires owner_key (userWallet) from session.",
     input_schema: {
       type: "object" as const,
       properties: {
         action: { type: "string", enum: ["add", "remove", "list"] },
-        edition_key: { type: "string", description: "setID:playID format — use from a prior search result" },
+        edition_key: { type: "string" },
         player_name: { type: "string" },
         set_name: { type: "string" },
         tier: { type: "string" },
@@ -112,7 +135,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "manage_alerts",
-    description: "Set, remove, or list FMV price alerts for moments. Use when user says 'alert me when', 'notify me if', 'set an alert', 'what alerts do I have', or 'turn off alert'. Requires owner_key.",
+    description: "Set, remove, or list FMV price alerts. Requires owner_key.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -120,7 +143,7 @@ const TOOLS: Anthropic.Tool[] = [
         edition_key: { type: "string" },
         player_name: { type: "string" },
         alert_type: { type: "string", enum: ["below_fmv_pct", "below_price"] },
-        threshold: { type: "number", description: "Percent (0-100) for below_fmv_pct, dollar amount for below_price" },
+        threshold: { type: "number" },
         channel: { type: "string", enum: ["email", "telegram", "both"] },
       },
       required: ["action"],
@@ -128,245 +151,173 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "escalate_to_human",
-    description: "Escalate to Trevor (RPC creator) when the user has an account-specific problem, bug, or issue the bot cannot resolve. Only use after already trying to help.",
+    description: "Escalate to Trevor (RPC creator) for account-specific problems the bot cannot resolve. Only use after trying to help.",
     input_schema: {
       type: "object" as const,
       properties: {
-        reason: { type: "string", description: "Clear description of what the user needs help with" },
+        reason: { type: "string" },
         category: { type: "string", enum: ["bug", "account", "billing", "feature_request", "other"] },
-        urgency: { type: "string", enum: ["low", "medium", "high"], description: "High = user can't use the platform at all" },
+        urgency: { type: "string", enum: ["low", "medium", "high"] },
       },
       required: ["reason", "category"],
     },
   },
   {
     name: "get_collection_snapshot",
-    description: "Get a shareable summary of a collector's portfolio including total moments, total FMV, top moments by value, badge count, and series breakdown. Use when a user asks about their portfolio value, total collection worth, or wants to share their collection.",
+    description: "Get a shareable portfolio summary for a wallet. Use when user asks about their portfolio value or wants to share their collection.",
     input_schema: {
       type: "object" as const,
       properties: {
-        walletAddress: { type: "string", description: "Flow wallet address (0x...) or Top Shot username" },
+        walletAddress: { type: "string" },
       },
       required: ["walletAddress"],
     },
   },
   {
-    name: "add_to_watchlist",
-    description: "Add a moment to the user's watchlist with optional price alert criteria. Use when a user says things like 'let me know when X drops below $Y' or 'alert me for deals on [player]'. Confirm the alert was set and describe what will trigger it.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        player_name: { type: "string", description: "Player name to watch for" },
-        tier: { type: "string", description: "Optional tier filter (e.g. rare, legendary)" },
-        max_price: { type: "number", description: "Maximum price to alert on" },
-        min_discount: { type: "number", description: "Minimum discount % below FMV to alert on, default 15" },
-      },
-      required: ["player_name"],
-    },
-  },
-  {
-    name: "search_all_collections",
-    description: "Search for moments across ALL collections (Top Shot, All Day, Golazos, Pinnacle, UFC). Use when the user doesn't specify a collection, asks about cross-collection deals, or asks about a player who might appear in multiple collections.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        player: { type: "string", description: "Player name to filter by (partial match)" },
-        team: { type: "string", description: "Team name (partial match)" },
-        tier: { type: "string", enum: ["common", "uncommon", "rare", "legendary", "ultimate", "fandom", "challenger", "contender"] },
-        maxPrice: { type: "number", description: "Maximum price in USD" },
-        minDiscount: { type: "number", description: "Minimum % below FMV (0-100)" },
-        collection: { type: "string", description: "Collection slug (nba_top_shot, nfl_all_day, laliga_golazos, ufc_strike, disney_pinnacle)" },
-        hasBadge: { type: "boolean", description: "Only return moments with badges" },
-        limit: { type: "number", description: "Number of results, default 8" },
-      },
-      required: [],
-    },
-  },
-  {
-    name: "cross_collection_deals",
-    description: "Get the best deals across ALL collections right now, sorted by discount percentage. Use when user asks 'what are the best deals', 'find me deals across everything', or wants to compare deals between collections.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        limit: { type: "number", description: "Number of results, default 10" },
-        minDiscount: { type: "number", description: "Minimum % below FMV (default 10)" },
-      },
-      required: [],
-    },
-  },
-  {
     name: "explain_fmv",
-    description: "Get a detailed FMV breakdown for a specific edition, including confidence, methodology, and a plain-English explanation. Use when a user asks why a moment is priced a certain way, or asks about FMV confidence or methodology.",
+    description: "Detailed FMV breakdown with confidence and methodology for a specific edition.",
     input_schema: {
       type: "object" as const,
       properties: {
-        editionKey: { type: "string", description: "Edition identifier in setID:playID format (e.g. '92:3459')" },
+        editionKey: { type: "string" },
       },
       required: ["editionKey"],
     },
   },
 ];
 
-// ── System prompt ─────────────────────────────────────────────────────────────
+// ── System prompt (v2: multi-collection aware) ────────────────────────────────
 function buildSystemPrompt(ctx: {
   pageContext?: string;
+  collectionId?: string;
   userWallet?: string;
+  userEmail?: string;
   walletConnected?: boolean;
   marketPulse?: string;
   dailyDeal?: any;
 }): string {
-  const { pageContext, userWallet, walletConnected, marketPulse, dailyDeal } = ctx;
+  const { pageContext, collectionId, userWallet, userEmail, walletConnected, marketPulse, dailyDeal } = ctx;
+
+  const activeCollection = collectionId ? getCollection(collectionId) : null;
+  const published = publishedCollections();
+  const publishedLabels = published.map((c) => `${c.icon} ${c.label}`).join(", ");
+
+  const collectionBlurb = activeCollection
+    ? `\n## Active Collection
+The user is currently browsing **${activeCollection.label}** (${activeCollection.sport}, ${activeCollection.partner}, ${activeCollection.chain.toUpperCase()} chain).
+Treat THIS collection as the default scope for any query the user asks without naming a collection. If they ask about a different published collection, switch scope naturally.
+When linking to pages, use ${activeCollection.id} paths, e.g. /${activeCollection.id}/sniper, /${activeCollection.id}/packs.`
+    : `\n## Active Collection
+The user is not on a collection-scoped page. Treat all published collections equally.`;
 
   const marketSection =
     marketPulse || dailyDeal
-      ? `\n## Live Market Context (as of right now)
+      ? `\n## Live Market Context (active collection, right now)
 ${marketPulse ? `- Market pulse: ${marketPulse}` : ""}
-${dailyDeal ? `- Today's featured deal: ${dailyDeal.player_name} ${dailyDeal.set_name} (${dailyDeal.series}), $${dailyDeal.low_ask} ask, FMV $${dailyDeal.fmv}, ${dailyDeal.discount_pct}% below FMV${dailyDeal.badges?.length ? `, badges: ${dailyDeal.badges.join(", ")}` : ""}` : ""}
+${dailyDeal ? `- Today's featured deal: ${dailyDeal.player_name ?? dailyDeal.playerName} ${dailyDeal.set_name ?? dailyDeal.setName ?? ""}, $${dailyDeal.low_ask ?? dailyDeal.askPrice} ask, FMV $${dailyDeal.fmv ?? dailyDeal.adjustedFmv}, ${dailyDeal.discount_pct ?? dailyDeal.discount}% below FMV${dailyDeal.badges?.length ? `, badges: ${dailyDeal.badges.join(", ")}` : ""}` : ""}
 Use this context naturally in welcome messages and recommendations.`
       : "";
 
   const walletSection = userWallet
-    ? `\n## User Context\n- Wallet connected: ${userWallet}\n- Use check_wallet to surface personalized insights when relevant.`
+    ? `\n## User Context
+- Signed in via email: ${userEmail ?? "(email on file)"}
+- Wallet linked: ${userWallet}
+- Call check_wallet with collectionId="${activeCollection?.id ?? ""}" when the user asks about their own collection.`
+    : userEmail
+    ? `\n## User Context
+- Signed in via email: ${userEmail}
+- No wallet linked yet. If they want portfolio analysis, prompt them to add a Top Shot / AllDay / Golazos / Pinnacle wallet on their Profile page.`
     : walletConnected
-    ? `\n## User Context\n- User has a wallet connected but address not yet provided.`
+    ? `\n## User Context
+- User has a wallet connected but address not yet provided.`
     : "";
-
-  // Detect active collection from pageContext (e.g. "sniper (nfl-all-day)")
-  const ctxLower = (pageContext || "").toLowerCase();
-  let activeCollection: "nba-top-shot" | "nfl-all-day" | "laliga-golazos" | "disney-pinnacle" | "ufc" = "nba-top-shot";
-  if (ctxLower.includes("nfl-all-day") || ctxLower.includes("all day")) activeCollection = "nfl-all-day";
-  else if (ctxLower.includes("laliga") || ctxLower.includes("golazos")) activeCollection = "laliga-golazos";
-  else if (ctxLower.includes("pinnacle") || ctxLower.includes("disney")) activeCollection = "disney-pinnacle";
-  else if (ctxLower.includes("ufc")) activeCollection = "ufc";
-
-  const collectionFocus: Record<string, string> = {
-    "nba-top-shot": "User is browsing NBA Top Shot. Default to TopShot context (tiers Common/Fandom/Rare/Legendary/Ultimate, badges like Top Shot Debut/Rookie Year, series S1-S8). Use NBA player names and sets.",
-    "nfl-all-day": "User is browsing NFL All Day (contract 0xe4cf4bdc1751c65d). Default to All Day context — NFL players, Rookie/Playoffs/Super Bowl/Pro Bowl/First Touchdown badges. Do NOT default to Top Shot terminology.",
-    "laliga-golazos": "User is browsing LaLiga Golazos (contract 0x87ca73a41bb50ad5). Default to soccer context — Spanish/European players, El Clásico/Eterno Rival/Ídolos/Estrellas/Team Europa/Tiki Taka badges. Do NOT default to Top Shot terminology.",
-    "disney-pinnacle": "User is browsing Disney Pinnacle (contract 0xedf9df96c92f4595). Default to Disney/Pixar/Star Wars pin context — variants (Standard/Limited/Special/Premium/Elite/Legendary). No badges, no NBA players.",
-    "ufc": "User is browsing UFC Strike. The collection migrated from Flow (contract 0x329feb3ab062d289) to Aptos in late 2025; RPC has 247 NFTs indexed from the Flow side. Be honest if asked about the migration.",
-  };
 
   const pageSection = pageContext
-    ? `\n## Current Page\nUser is on: ${pageContext}\nActive collection: ${activeCollection}\n${collectionFocus[activeCollection]}\nTailor responses to this context — on Sniper, focus on deals; on Market, focus on browsing/filtering; on Collection, focus on portfolio insights.`
+    ? `\n## Current Page
+User is on: ${pageContext}.
+Tailor responses to this page's purpose:
+- **overview**: ecosystem state — news, floor prices, pipeline health
+- **collection**: the user's own moments — FMV, badges, acquisition history, holdings value
+- **market**: sortable/filterable marketplace — help refine filters, recommend sort orders
+- **packs**: pack EV — identify packs where EV > retail, highlight special serial alerts
+- **sniper**: real-time deals — surface the best discounts, explain why each is a deal
+- **badges**: badge editions — premiums, rarity, strategy
+- **sets**: completion tracking — bottlenecks, cheapest path to finish a set
+- **analytics**: ecosystem intelligence — top sales, tier trends, player analytics, series volume`
     : "";
 
-  return `You are the RPC Assistant — the official AI concierge for Rip Packs City, the sharpest collector intelligence platform for Flow blockchain digital collectibles.
+  return `You are the RPC Concierge — the official AI assistant for Rip Packs City, a multi-collection intelligence platform for Flow blockchain digital collectibles.
 
 ## Your Persona
-You are part personal shopper, part portfolio advisor, part collector expert. You speak fluent collector — moments, serials, FMV, floor, badges, rips, mints, Low Asks, parallel editions, set bottlenecks. You are direct, helpful, and genuinely excited about finding good deals. You never pad responses with corporate fluff.
+Part personal shopper, part portfolio advisor, part collector expert. You speak fluent collector across every collection RPC covers — moments, serials, FMV, floor, badges, rips, mints, Low Asks, parallel editions, set bottlenecks, pack EV. You are direct, helpful, and genuinely excited about finding good deals. You never pad responses with corporate fluff.
 
-Keep responses concise — most users are on mobile. Use short paragraphs over bullet-heavy walls of text.
+Keep responses concise — most users are on mobile. Short paragraphs, not bullet-heavy walls.
 
 ## What RPC Is
-Rip Packs City (rippackscity.com) is a collector intelligence platform built by Trevor Dillon-Bond, an official Portland Trail Blazers Team Captain on NBA Top Shot. Features:
+Rip Packs City (rippackscity.com) is a collector intelligence platform built by Trevor Dillon-Bond, an official Portland Trail Blazers Team Captain on NBA Top Shot. It covers these currently published collections: ${publishedLabels}. UFC Strike is tracked for catalog purposes only (near-zero on-chain volume; UFC migrated to Aptos — full coverage planned as a future layer).
 
-### NBA Top Shot
-- **Collection Analyzer** (/nba-top-shot/collection) — full wallet analytics: FMV per moment, best offers with edition/serial labels, series column, default sort FMV descending, quick-filter pills (Badges Only, Has Offer, Listed), Flowty ask fallback in Low Ask column, portfolio summary cards (Wallet/Unlocked/Locked/Best Offer FMV), near-complete sets callout, background parallel page loading, share button
-- **Sniper** (/nba-top-shot/sniper) — real-time deal feed from NBA Top Shot + Flowty marketplaces; shows Deals (below FMV) and Offers; filter by tier, min discount, max price; TS CACHED badge when Top Shot data is from cache; share button on each deal; Flow Wallet filter for FLOW/USDC.e deals; Flowty covers when Top Shot feed is blocked
-- **Packs** (/nba-top-shot/packs) — secondary market pack browser with EV calculator, tier/type filters, wallet ownership lookup, best-value EV ratio sort, EV breakdown modal
-- **Market** (/nba-top-shot/market) — full marketplace browser with badge and discount filtering, player search, tier tabs
-- **Sets** (/nba-top-shot/sets) — set browser with completion tracking and bottleneck detection
-- **Profile** (/nba-top-shot/profile/[username]) — public collector profile with trophy case
+Every published collection offers the same toolset where data supports it: Overview, Collection Analyzer, Market browser, Sniper feed, Sets tracker, Pack EV calculator, Badge tracker (NBA Top Shot only — badges are a Top Shot native concept), and Analytics. Users sign in with an email address to save wallets, pin trophy moments, and build their profile. Profile pages are public and shareable.
 
-### NFL All Day
-- **Overview** (/nfl-all-day/overview) — collection overview and stats
-- **Wallet Analytics** (/nfl-all-day/collection) — wallet search and moment analytics for NFL All Day moments on Flow blockchain (contract: 0xe4cf4bdc1751c65d)
-- **Sniper Feed** (/nfl-all-day/sniper) — real-time deal feed for NFL All Day moments from Flowty listings
-- **Sets Tracker** (/nfl-all-day/sets) — set completion tracking for NFL All Day
+## FMV Methodology (v1.4.0 — be accurate)
+- Recalculated every 20 minutes per collection via an automated pipeline
+- Weighted average of recent sales with 7-day half-life decay
+- Adjusted for sales volume (low-volume editions get wider confidence intervals)
+- Confidence levels: HIGH (5+ sales, stable), MEDIUM (2+), LOW (1 sale, directional only)
+- Caveat pricing when confidence is LOW, especially for Golazos / Pinnacle (thin volume)
+- Top Shot has the deepest data. AllDay is shallower. Golazos and Pinnacle are thin — use relative-deals logic (100x floor outlier filter)
 
-### Disney Pinnacle
-- **Overview** (/disney-pinnacle/overview) — Disney/Pixar/Star Wars pin NFTs via the OpenSea bridge
-- **Sniper Feed** (/disney-pinnacle/sniper) — Flowty listings for Disney Pinnacle pins
+## Sniper Data Sources by Collection
+- **NBA Top Shot**: Top Shot native marketplace GQL (primary) + Flowty.io (backup when Cloudflare blocks). Listings priced in DUC.
+- **NFL All Day**: AllDay native GQL + Flowty. ~158 sales/day indexed.
+- **LaLiga Golazos**: Flowty primary (native marketplace is Cloudflare-blocked from server IPs; requires proxy).
+- **Disney Pinnacle**: Pinnacle native GQL (via Cloudflare Worker proxy) + Flowty.
+- **UFC Strike**: Catalog only — near-zero volume.
+If a feed is temporarily blocked, explain it and suggest Flowty's cross-marketplace coverage.
 
-### Cart (built, activation pending)
-- Flow Wallet cart supports FLOW and USDC.e purchases
-- Offer mode for submitting USDC.e bids via FlowtyOffers
-- Dapper Wallet cart ready pending WalletConnect ID registration
-- **Watchlist & Alerts** — save moments to your watchlist and set FMV or price-drop alerts delivered by email or Telegram
+## What Makes Moments Valuable (varies by collection)
+- **NBA Top Shot**: tier (Ultimate > Legendary > Rare > Fandom > Common), badges (Rookie Year, Top Shot Debut, Rookie Premiere, Rookie Mint, Three Stars, Championship Year), serial premium (#1, jersey serial, last mint), set completion demand, circulation, burn rate
+- **NFL All Day**: tier, player position scarcity, team scarcity, set design, parallel (chase/rainbow), serial
+- **LaLiga Golazos**: tier, club demand, player stardom, goal significance, parallel
+- **Disney Pinnacle**: shape/variant, IP demand, serial, set completion
+- **UFC Strike**: tier, fighter demand — but note on-chain volume is near zero post-Aptos migration
 
-## FMV Methodology (v1.3.0 — be accurate about this)
-RPC's FMV is a weighted average price (WAP) model:
-- Recalculated every 20 minutes via automated pipeline
-- Weights recent sales more heavily than older ones using days_since_sale decay
-- Adjusted for sales volume (sales_count_30d) — low-volume editions get wider confidence intervals
-- Three confidence levels: HIGH (many recent sales, stable price — reliable), MEDIUM (some data — directional), LOW (sparse or stale data — use with caution)
-- When FMV confidence is LOW, caveat pricing suggestions
-- For illiquid editions with no sales data, an ask_proxy fallback (floor ask × 0.90) provides a usable signal
+## Shopping & Recommendations (all collections)
+1. Scope the query to the active collection by default. If the user names a different collection, switch.
+2. Call search_live_deals first with collectionId set.
+3. If live feed empty or erroring, fall back to search_catalog_deals.
+4. Surface 3–5 concrete options with: player/subject name, tier, price, FMV, discount%, badges/parallel.
+5. Give a clear buy/watch/pass recommendation when asked about a single item.
+6. For budget queries ("I have $50"), optimize for value: badge presence, discount %, confidence. In thin-volume collections, weight toward floor proximity over FMV discount %.
+7. Never invent prices — always use tool results.
 
-## Sniper Feed Data Sources
-- Primary: NBA Top Shot marketplace GraphQL (public API)
-- Backup: Flowty.io (covers when Top Shot's Cloudflare blocks our server IPs)
-- When Top Shot feed is unavailable, Flowty listings still show — expected behavior, not a bug
-- All current Top Shot listings use DUC (Dapper Utility Coin)
+## Cross-Collection Queries
+- Use search_across_collections when the user asks about a player/subject without naming a collection, or when comparing availability across collections.
+- Always mention which collection a result comes from in your response.
 
-## What Makes Moments Valuable
-- **Player tier** (Ultimate > Legendary > Rare > Fandom > Common)
-- **Badges**: Rookie Year (first season), Top Shot Debut (first TS moment), Rookie Premiere, Rookie Mint, Three Stars (3x All-Star), Championship Year — badges add significant premium
-- **Serial numbers**: #1 is rarest; jersey serials carry premium; low serials more valuable
-- **Set completion** — moments completing a set worth more to set-chasers
-- **Circulation count** — lower = higher scarcity
-- **Burn rate** — high burn rate = shrinking effective supply
-
-## Series Reference
-S1 (on-chain 0), S2 (on-chain 2), Summer 2021 (on-chain 3), S3 (on-chain 4), S4 (on-chain 5), Series 2023-24 (on-chain 6), Series 2024-25 (on-chain 7), Series 2025-26 (on-chain 8)
-
-## Shopping & Recommendations
-When a user wants to find or buy moments:
-1. ALWAYS try search_live_deals first — it now auto-falls back to Supabase catalog if the live feed is empty or times out
-2. If both fail, use search_catalog_deals explicitly
-3. For badge-specific queries (e.g. 'Rookie Debut', 'Top Shot Debut', 'Championship Year'), go DIRECTLY to search_catalog_deals with hasBadge=true. Do NOT try search_live_deals first — the live feed cannot filter by badge type and you'll waste time.
-4. Surface 3-5 concrete options with: player name, series, set name, price, FMV, discount%, any badges
-5. Give a clear buy/watch/pass recommendation on individual moments when asked
-6. For budget queries ("I have $50"), optimize for value: badge presence, discount %, confidence
-7. Never make up prices — always use tool results
-8. ALWAYS include the buy URL for every deal you mention in your response text. Users will ask for links in follow-up messages, and tool results are NOT carried across messages — only your text responses persist in conversation history. If you don't put the URL in your text, you won't be able to reference it later.
-9. You can check a user's wallet for near-complete sets and surface the cheapest missing moments
-10. When a tool call fails or returns no results, ONLY reference moments you found from actual tool results. NEVER suggest specific players, sets, or prices from your training knowledge — your data is stale and may be wrong. Instead, suggest the user try the Sniper page directly or refine their search.
-
-## Collection Snapshot
-Use get_collection_snapshot when a user asks about their portfolio value, total collection worth, or wants to share their collection. It returns a full summary with top moments and a shareable link.
-
-## FMV Deep Dive
-Use explain_fmv when a user asks why a moment is priced a certain way, or asks about FMV confidence or methodology. It returns a full breakdown with plain-English explanation.
-
-### Cross-Collection Queries
-- Use search_all_collections when the user asks about a player without specifying a collection, or when browsing across all collections
-- Use cross_collection_deals when the user wants the best deals regardless of collection
-- Always mention which collection a result comes from in your response
+## Profile + Email Sign-In (2026-04)
+RPC requires email sign-in to access any collection tool. Users sign in on /login with a magic link. Once signed in:
+- They can save multiple wallets across collections from their /profile page
+- Trophy case (up to 6 pinned moments) is shared across collections
+- Their public profile at /profile/[username] remains shareable without auth
+If a user says they can't access a page, first check if they're signed in. Escalation to Trevor is reserved for verified bugs, not sign-in friction.
 
 ## Common Questions (no tools needed)
-- "How is FMV calculated?" \u2192 WAP model, 20-min refresh, confidence levels
-- "What are badges?" \u2192 play tags, list main ones, explain premium
-- "Why is the sniper feed empty?" \u2192 Cloudflare sometimes blocks Top Shot; Flowty backup covers it; refresh or check back
-- "What does confidence mean?" \u2192 HIGH = reliable, MEDIUM = some data, LOW = sparse/directional
-- "How do I buy a moment?" \u2192 Connect Dapper wallet on Top Shot or Flowty; RPC links directly
-- "How do I connect my wallet?" \u2192 Flow/Dapper wallet; connect at top of any collection page
-
-## Quick Watchlist (add_to_watchlist)
-- Use add_to_watchlist when a user says things like "let me know when X drops below $Y" or "alert me for deals on [player]". Confirm the alert was set and describe what will trigger it.
-- This creates a search-type watchlist entry that fires when matching deals appear.
-
-## Watchlist & Alerts
-- User says "watch this" or "add to watchlist" → call manage_watchlist with action="add" using the most recent moment from the conversation
-- User says "what's on my watchlist" or "show my watchlist" → call manage_watchlist with action="list"
-- User says "alert me when [X] drops below [Y]%" → call manage_alerts with action="set", alert_type="below_fmv_pct", threshold=Y
-- User says "alert me if [X] goes under $[Y]" → call manage_alerts with action="set", alert_type="below_price", threshold=Y
-- User says "what alerts do I have" → call manage_alerts with action="list"
-- If owner_key (userWallet) is not in session and user tries to use watchlist/alerts, respond: "To save watchlists and alerts, enter your Top Shot username in the RPC profile tab first — it only takes a second."
-- After adding to watchlist, always offer: "Want me to set a price alert for this one too?"
-- After setting an alert, confirm: the moment name, threshold, and delivery channel${marketSection}${walletSection}${pageSection}
+- "How is FMV calculated?" → v1.4.0 WAP model, 20-min refresh, confidence levels
+- "What are badges?" → Top Shot play tags; list the major ones; explain premium. Badges are a NBA Top Shot concept — AllDay/Golazos/Pinnacle have parallel editions instead.
+- "Why is the sniper feed empty?" → explain per-collection proxy model (Cloudflare blocking is transient)
+- "How do I buy a moment?" → Connect Dapper wallet on the native marketplace or Flowty; RPC deep-links directly
+- "Does RPC support X collection?" → list published collections; confirm or mention a future layer${collectionBlurb}${marketSection}${walletSection}${pageSection}
 
 ## Escalation Rules
 Escalate ONLY when you've tried to help and cannot resolve it:
-- User's moments missing after purchase
+- Moments missing after purchase
 - Transaction completed but NFT not in wallet
+- Email magic-link not arriving (after user has checked spam)
 - Account-specific bugs you cannot diagnose
-- Billing or Dapper account issues
-DO NOT escalate for: how-to questions, FMV questions, sniper feed timing, feature requests
+DO NOT escalate for: how-to, FMV questions, sniper timing, feature requests, or sign-in walkthroughs.
 
 ## Tone
-Good: "That LeBron S4 Hustle and Show is a solid buy at $18 \u2014 FMV is $26, so you're getting it 31% below. The Rookie Premiere badge makes it stickier to hold."
+Good: "That LeBron Rare is a solid buy at $18 — FMV is $26, so you're 31% below. Rookie Premiere badge makes it stickier to hold."
 Bad: "That's a great question! I'd be happy to help you analyze that moment's value. Let me break it down for you..."
 
 Respond in whatever language the user writes in.`;
@@ -376,13 +327,19 @@ Respond in whatever language the user writes in.`;
 async function executeTool(
   toolName: string,
   toolInput: any,
-  ctx: { sessionId: string; userWallet?: string }
+  ctx: { sessionId: string; userWallet?: string; collectionId?: string }
 ): Promise<string> {
   const base = siteUrl();
+  // Fall back to the active page's collection when the model didn't set one.
+  const effectiveCollectionId: string | undefined = toolInput.collectionId ?? ctx.collectionId ?? undefined;
+  const effectiveCollectionUuid: string | null = effectiveCollectionId
+    ? (COLLECTION_UUID_BY_SLUG[effectiveCollectionId] ?? null)
+    : null;
 
   if (toolName === "search_live_deals") {
     try {
       const params = new URLSearchParams();
+      if (effectiveCollectionId) params.set("collectionId", effectiveCollectionId);
       if (toolInput.tier) params.set("tier", toolInput.tier);
       if (toolInput.maxPrice) params.set("maxPrice", String(toolInput.maxPrice));
       if (toolInput.minDiscount) params.set("minDiscount", String(toolInput.minDiscount));
@@ -404,29 +361,29 @@ async function executeTool(
           fmv: d.adjustedFmv,
           discount_pct: d.discount,
           source: d.source,
-          buy_url: d.buyUrl || `https://www.nbatopshot.com`,
+          buy_url: d.buyUrl || "",
         }));
-        return JSON.stringify({ status: "ok", results, total: deals.length });
+        return JSON.stringify({ status: "ok", results, total: deals.length, collectionId: effectiveCollectionId ?? null });
       }
     } catch {
-      // Fall through to Supabase fallback
+      // fall through to catalog
     }
 
-    // Supabase cached_listings fallback when sniper-feed returns 0 or errors
     try {
       let query = supabase
         .from("cached_listings")
-        .select("player_name, set_name, tier, serial_number, circulation_count, ask_price, fmv, discount, badge_slugs, buy_url")
+        .select("player_name, set_name, tier, serial_number, circulation_count, ask_price, fmv, discount, badge_slugs, buy_url, collection_id")
         .gt("discount", 0)
         .order("discount", { ascending: false })
         .limit(toolInput.limit || 10);
+      if (effectiveCollectionUuid) query = query.eq("collection_id", effectiveCollectionUuid);
       if (toolInput.player) query = query.ilike("player_name", `%${toolInput.player}%`);
       if (toolInput.tier) query = query.ilike("tier", `%${toolInput.tier}%`);
       if (toolInput.maxPrice) query = query.lte("ask_price", toolInput.maxPrice);
       if (toolInput.minDiscount) query = query.gte("discount", toolInput.minDiscount);
-      const { data: fallbackRows } = await query;
-      if (fallbackRows && fallbackRows.length > 0) {
-        const results = fallbackRows.map((d: any) => ({
+      const { data: rows } = await query;
+      if (rows && rows.length > 0) {
+        const results = rows.map((d: any) => ({
           player: d.player_name,
           tier: d.tier,
           serial: d.serial_number,
@@ -434,7 +391,7 @@ async function executeTool(
           fmv: Number(d.fmv),
           discount_pct: Number(d.discount),
           source: "catalog",
-          buy_url: d.buy_url || "https://www.nbatopshot.com",
+          buy_url: d.buy_url || "",
         }));
         return JSON.stringify({ status: "ok", results, total: results.length, source: "catalog_fallback" });
       }
@@ -445,17 +402,39 @@ async function executeTool(
 
   if (toolName === "search_catalog_deals") {
     try {
-      const res = await fetch(`${base}/api/support-chat/search-deals`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(toolInput),
-        signal: AbortSignal.timeout(10000),
-      });
-      const data = await res.json();
-      if (!data.deals || data.deals.length === 0) {
-        return JSON.stringify({ status: "no_results", message: "No moments found matching those criteria in the catalog." });
+      let query = supabase
+        .from("cached_listings")
+        .select("player_name, set_name, tier, serial_number, circulation_count, ask_price, fmv, discount, badge_slugs, buy_url, collection_id")
+        .order("discount", { ascending: false })
+        .limit(toolInput.limit || 8);
+      if (effectiveCollectionUuid) query = query.eq("collection_id", effectiveCollectionUuid);
+      if (toolInput.player) query = query.ilike("player_name", `%${toolInput.player}%`);
+      if (toolInput.team) query = query.ilike("team_name", `%${toolInput.team}%`);
+      if (toolInput.tier) query = query.ilike("tier", `%${toolInput.tier}%`);
+      if (toolInput.maxPrice) query = query.lte("ask_price", toolInput.maxPrice);
+      if (toolInput.minDiscount) query = query.gte("discount", toolInput.minDiscount);
+      if (toolInput.hasBadge) query = query.not("badge_slugs", "is", null);
+
+      const { data, error } = await query;
+      if (error) return JSON.stringify({ status: "error", message: error.message });
+      if (!data || data.length === 0) {
+        return JSON.stringify({ status: "no_results", message: "No moments found matching those criteria." });
       }
-      return JSON.stringify({ status: "ok", results: data.deals, total: data.deals.length });
+      return JSON.stringify({
+        status: "ok",
+        results: data.map((d: any) => ({
+          player: d.player_name,
+          set: d.set_name,
+          tier: d.tier,
+          serial: d.serial_number,
+          price: Number(d.ask_price),
+          fmv: Number(d.fmv),
+          discount_pct: Number(d.discount),
+          badges: d.badge_slugs,
+          buy_url: d.buy_url,
+        })),
+        total: data.length,
+      });
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: err.message });
     }
@@ -464,32 +443,34 @@ async function executeTool(
   if (toolName === "get_fmv") {
     try {
       if (toolInput.editionKey) {
-        const res = await fetch(`${base}/api/fmv?edition=${encodeURIComponent(toolInput.editionKey)}`, {
-          signal: AbortSignal.timeout(8000),
-        });
+        const url = new URL(`${base}/api/fmv`);
+        url.searchParams.set("edition", toolInput.editionKey);
+        if (effectiveCollectionId) url.searchParams.set("collectionId", effectiveCollectionId);
+        const res = await fetch(url.toString(), { signal: AbortSignal.timeout(8000) });
         return JSON.stringify(await res.json());
       }
       if (toolInput.playerName) {
-        const { data, error } = await supabase
-          .from("badge_editions")
-          .select(`player_name, tier, set_name, series_number, low_ask, editions!inner(external_id, fmv_snapshots!inner(fmv_usd, confidence))`)
-          .eq("parallel_id", 0)
+        let query = supabase
+          .from("cached_listings")
+          .select("player_name, set_name, tier, serial_number, ask_price, fmv, discount, collection_id")
           .ilike("player_name", `%${toolInput.playerName}%`)
-          .not("low_ask", "is", null)
+          .not("fmv", "is", null)
           .limit(5);
+        if (effectiveCollectionUuid) query = query.eq("collection_id", effectiveCollectionUuid);
+        const { data, error } = await query;
         if (error || !data?.length) {
           return JSON.stringify({ status: "not_found", message: "No FMV data found for that player." });
         }
-        const results = data.map((be: any) => ({
-          player: be.player_name,
-          tier: be.tier?.replace("MOMENT_TIER_", ""),
-          set: be.set_name,
-          low_ask: be.low_ask,
-          fmv: be.editions?.[0]?.fmv_snapshots?.[0]?.fmv_usd,
-          confidence: be.editions?.[0]?.fmv_snapshots?.[0]?.confidence,
-          edition_key: be.editions?.[0]?.external_id,
-        }));
-        return JSON.stringify({ status: "ok", results });
+        return JSON.stringify({
+          status: "ok",
+          results: data.map((r: any) => ({
+            player: r.player_name,
+            set: r.set_name,
+            tier: r.tier,
+            low_ask: Number(r.ask_price),
+            fmv: Number(r.fmv),
+          })),
+        });
       }
       return JSON.stringify({ status: "error", message: "Provide editionKey or playerName." });
     } catch (err: any) {
@@ -502,85 +483,90 @@ async function executeTool(
       const res = await fetch(`${base}/api/wallet-search`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: toolInput.walletAddress }),
+        body: JSON.stringify({
+          input: toolInput.walletAddress,
+          collectionId: effectiveCollectionId ?? undefined,
+        }),
         signal: AbortSignal.timeout(12000),
       });
       const data = await res.json();
       const moments = data.moments || data.rows || [];
       const totalFmv = moments.reduce((s: number, m: any) => s + (m.fmv ?? 0), 0);
-
-      // Fetch near-complete sets for actionable intel
-      let nearCompleteSets: string[] = [];
-      try {
-        const setsRes = await fetch(
-          `${base}/api/sets?wallet=${encodeURIComponent(toolInput.walletAddress)}&skipAsks=1`,
-          { signal: AbortSignal.timeout(8000) }
-        );
-        if (setsRes.ok) {
-          const setsData = await setsRes.json();
-          const sets = (setsData.sets ?? [])
-            .filter((s: any) => s.missingCount >= 1 && s.missingCount <= 3)
-            .slice(0, 5);
-          nearCompleteSets = sets.map((s: any) =>
-            `${s.setName} (${s.missingCount} missing${s.totalMissingCost != null ? `, est. $${Number(s.totalMissingCost).toFixed(2)} to finish` : ""})`
-          );
-        }
-      } catch { /* non-fatal */ }
-
-      const result: any = {
+      return JSON.stringify({
         status: "ok",
         wallet: toolInput.walletAddress,
+        collection: effectiveCollectionId ?? null,
         total_moments: moments.length,
         portfolio_fmv: totalFmv.toFixed(2),
         top_moments: moments.slice(0, 5).map((m: any) => ({
           player: m.playerName, set: m.setName, tier: m.tier, serial: m.serialNumber, fmv: m.fmv,
         })),
-      };
-      if (nearCompleteSets.length > 0) {
-        result.near_complete_sets = nearCompleteSets;
-      }
-      return JSON.stringify(result);
+      });
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: err.message });
     }
   }
 
-  if (toolName === "manage_watchlist") {
-    if (!ctx.userWallet) {
-      return JSON.stringify({ status: "error", message: "owner_key_missing" });
+  if (toolName === "search_across_collections") {
+    try {
+      const name = String(toolInput.name || "").trim();
+      if (!name) return JSON.stringify({ status: "error", message: "name required" });
+      const perCollection = Math.min(Math.max(toolInput.limit || 3, 1), 10);
+
+      const published = publishedCollections();
+      const queries = published.map(async (col) => {
+        const uuid = col.supabaseCollectionId;
+        if (!uuid) return { collection: col.label, collectionId: col.id, results: [] };
+        const { data } = await supabase
+          .from("cached_listings")
+          .select("player_name, set_name, tier, serial_number, ask_price, fmv, discount, buy_url")
+          .eq("collection_id", uuid)
+          .ilike("player_name", `%${name}%`)
+          .order("discount", { ascending: false })
+          .limit(perCollection);
+        return {
+          collection: col.label,
+          collectionId: col.id,
+          results: (data ?? []).map((r: any) => ({
+            player: r.player_name,
+            set: r.set_name,
+            tier: r.tier,
+            serial: r.serial_number,
+            price: Number(r.ask_price),
+            fmv: r.fmv != null ? Number(r.fmv) : null,
+            discount_pct: r.discount != null ? Number(r.discount) : null,
+            buy_url: r.buy_url,
+          })),
+        };
+      });
+      const grouped = await Promise.all(queries);
+      const total = grouped.reduce((sum, g) => sum + g.results.length, 0);
+      return JSON.stringify({ status: "ok", total, groups: grouped });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: err?.message ?? "search_across_collections failed" });
     }
+  }
+
+  if (toolName === "manage_watchlist") {
+    if (!ctx.userWallet) return JSON.stringify({ status: "error", message: "owner_key_missing" });
     try {
       if (toolInput.action === "list") {
-        const res = await fetch(`${base}/api/watchlist?owner_key=${encodeURIComponent(ctx.userWallet)}`, {
-          signal: AbortSignal.timeout(8000),
-        });
+        const res = await fetch(`${base}/api/watchlist?owner_key=${encodeURIComponent(ctx.userWallet)}`, { signal: AbortSignal.timeout(8000) });
         const data = await res.json();
         const items = data.watchlist || data.items || data || [];
         if (!Array.isArray(items) || items.length === 0) {
           return JSON.stringify({ status: "ok", message: "Your watchlist is empty.", results: [] });
         }
-        const results = items.map((item: any) => ({
-          player: item.player_name,
-          set: item.set_name,
-          tier: item.tier,
-          edition_key: item.edition_key,
-          low_ask: item.low_ask,
-          fmv: item.fmv,
-          discount_pct: item.fmv && item.low_ask ? Math.round((1 - item.low_ask / item.fmv) * 100) : null,
-        }));
-        return JSON.stringify({ status: "ok", results });
+        return JSON.stringify({ status: "ok", results: items });
       }
       if (toolInput.action === "add") {
         const res = await fetch(`${base}/api/watchlist`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            owner_key: ctx.userWallet,
-            edition_key: toolInput.edition_key,
-            player_name: toolInput.player_name,
-            set_name: toolInput.set_name,
-            tier: toolInput.tier,
-            thumbnail_url: toolInput.thumbnail_url,
+            owner_key: ctx.userWallet, edition_key: toolInput.edition_key,
+            player_name: toolInput.player_name, set_name: toolInput.set_name,
+            tier: toolInput.tier, thumbnail_url: toolInput.thumbnail_url,
           }),
           signal: AbortSignal.timeout(8000),
         });
@@ -591,56 +577,38 @@ async function executeTool(
         const res = await fetch(`${base}/api/watchlist`, {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            owner_key: ctx.userWallet,
-            edition_key: toolInput.edition_key,
-          }),
+          body: JSON.stringify({ owner_key: ctx.userWallet, edition_key: toolInput.edition_key }),
           signal: AbortSignal.timeout(8000),
         });
-        const data = await res.json();
-        return JSON.stringify({ status: "ok", message: `Removed from your watchlist.`, data });
+        await res.json();
+        return JSON.stringify({ status: "ok", message: "Removed from your watchlist." });
       }
-      return JSON.stringify({ status: "error", message: "Invalid action. Use add, remove, or list." });
+      return JSON.stringify({ status: "error", message: "Invalid action." });
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: err.message });
     }
   }
 
   if (toolName === "manage_alerts") {
-    if (!ctx.userWallet) {
-      return JSON.stringify({ status: "error", message: "owner_key_missing" });
-    }
+    if (!ctx.userWallet) return JSON.stringify({ status: "error", message: "owner_key_missing" });
     try {
       if (toolInput.action === "list") {
-        const res = await fetch(`${base}/api/alerts?owner_key=${encodeURIComponent(ctx.userWallet)}`, {
-          signal: AbortSignal.timeout(8000),
-        });
+        const res = await fetch(`${base}/api/alerts?owner_key=${encodeURIComponent(ctx.userWallet)}`, { signal: AbortSignal.timeout(8000) });
         const data = await res.json();
         const alerts = data.alerts || data.items || data || [];
         if (!Array.isArray(alerts) || alerts.length === 0) {
           return JSON.stringify({ status: "ok", message: "You have no active alerts.", results: [] });
         }
-        const results = alerts.map((a: any) => ({
-          player: a.player_name,
-          edition_key: a.edition_key,
-          alert_type: a.alert_type,
-          threshold: a.threshold,
-          channel: a.channel,
-          triggered: a.triggered ?? false,
-        }));
-        return JSON.stringify({ status: "ok", results });
+        return JSON.stringify({ status: "ok", results: alerts });
       }
       if (toolInput.action === "set") {
         const res = await fetch(`${base}/api/alerts`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            owner_key: ctx.userWallet,
-            edition_key: toolInput.edition_key,
-            player_name: toolInput.player_name,
-            alert_type: toolInput.alert_type,
-            threshold: toolInput.threshold,
-            channel: toolInput.channel,
+            owner_key: ctx.userWallet, edition_key: toolInput.edition_key,
+            player_name: toolInput.player_name, alert_type: toolInput.alert_type,
+            threshold: toolInput.threshold, channel: toolInput.channel,
           }),
           signal: AbortSignal.timeout(8000),
         });
@@ -648,19 +616,15 @@ async function executeTool(
         return JSON.stringify({ status: "ok", message: `Alert set for ${toolInput.player_name || "moment"}.`, data });
       }
       if (toolInput.action === "remove") {
-        const res = await fetch(`${base}/api/alerts`, {
+        await fetch(`${base}/api/alerts`, {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            owner_key: ctx.userWallet,
-            edition_key: toolInput.edition_key,
-          }),
+          body: JSON.stringify({ owner_key: ctx.userWallet, edition_key: toolInput.edition_key }),
           signal: AbortSignal.timeout(8000),
         });
-        const data = await res.json();
-        return JSON.stringify({ status: "ok", message: `Alert removed.`, data });
+        return JSON.stringify({ status: "ok", message: "Alert removed." });
       }
-      return JSON.stringify({ status: "error", message: "Invalid action. Use set, remove, or list." });
+      return JSON.stringify({ status: "error", message: "Invalid action." });
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: err.message });
     }
@@ -687,138 +651,51 @@ async function executeTool(
     }
   }
 
-  if (toolName === "add_to_watchlist") {
-    if (!ctx.userWallet) {
-      return JSON.stringify({ status: "error", message: "owner_key_missing" });
-    }
-    try {
-      const res = await fetch(`${base}/api/watchlist`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          owner_key: ctx.userWallet,
-          type: "search",
-          player_name: toolInput.player_name,
-          tier: toolInput.tier ?? null,
-          max_price: toolInput.max_price ?? null,
-          min_discount: toolInput.min_discount ?? 15,
-        }),
-        signal: AbortSignal.timeout(8000),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        return JSON.stringify({ status: "error", message: data.error ?? "Failed to add to watchlist" });
-      }
-      const criteria: string[] = [];
-      if (toolInput.max_price) criteria.push(`price drops below $${toolInput.max_price}`);
-      if (toolInput.min_discount) criteria.push(`${toolInput.min_discount}%+ below FMV`);
-      if (toolInput.tier) criteria.push(`tier: ${toolInput.tier}`);
-      const triggerDesc = criteria.length > 0 ? criteria.join(", ") : "any deal appears";
-      return JSON.stringify({
-        status: "ok",
-        message: `Watchlist alert set for ${toolInput.player_name}. You'll be notified when ${triggerDesc}.`,
-        data,
-      });
-    } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err.message });
-    }
-  }
-
   if (toolName === "explain_fmv") {
     try {
-      const editionKey = toolInput.editionKey
-      if (!editionKey) {
-        return JSON.stringify({ status: "error", message: "editionKey is required" })
-      }
+      const editionKey = toolInput.editionKey;
+      if (!editionKey) return JSON.stringify({ status: "error", message: "editionKey is required" });
 
-      // Resolve edition_id
       const { data: edition } = await supabase
         .from("editions")
-        .select("id")
+        .select("id, player_name, set_name, tier")
         .eq("external_id", editionKey)
-        .single()
+        .single();
 
       if (!edition?.id) {
-        return JSON.stringify({ status: "not_found", message: "Edition not found for that key." })
+        return JSON.stringify({ status: "not_found", message: "Edition not found for that key." });
       }
 
-      // Get most recent fmv_snapshot
       const { data: snapshot } = await supabase
         .from("fmv_snapshots")
         .select("fmv_usd, confidence, wap_usd, floor_price_usd, computed_at, sales_count_30d, days_since_sale, ask_proxy_fmv, algo_version")
         .eq("edition_id", edition.id)
         .order("computed_at", { ascending: false })
         .limit(1)
-        .single()
+        .single();
 
-      // Get badge_editions info for player/set context
-      const { data: badgeInfo } = await supabase
-        .from("badge_editions")
-        .select("player_name, set_name, tier")
-        .eq("edition_id", editionKey)
-        .limit(1)
-        .single()
+      if (!snapshot) return JSON.stringify({ status: "no_data", message: "No FMV snapshot yet." });
 
-      if (!snapshot) {
-        return JSON.stringify({ status: "no_data", message: "No FMV snapshot exists for this edition yet." })
-      }
-
-      // Build plain-English explanation
       const computedAgo = snapshot.computed_at
-        ? `${Math.round((Date.now() - new Date(snapshot.computed_at).getTime()) / (1000 * 60))} minutes ago`
-        : "unknown"
-      const salesNote = snapshot.sales_count_30d
-        ? `across ${snapshot.sales_count_30d} recent sales`
-        : "with limited sales data"
-
-      const explanation = `FMV is $${Number(snapshot.fmv_usd).toFixed(2)} (${snapshot.confidence} confidence) based on a 30-day WAP of $${Number(snapshot.wap_usd || 0).toFixed(2)} ${salesNote}. Floor price is $${Number(snapshot.floor_price_usd || 0).toFixed(2)}. Last computed ${computedAgo}.${snapshot.ask_proxy_fmv ? ` Ask proxy FMV: $${Number(snapshot.ask_proxy_fmv).toFixed(2)}.` : ""}`
+        ? `${Math.round((Date.now() - new Date(snapshot.computed_at).getTime()) / 60000)} minutes ago`
+        : "unknown";
+      const salesNote = snapshot.sales_count_30d ? `across ${snapshot.sales_count_30d} recent sales` : "with limited sales data";
+      const explanation = `FMV is $${Number(snapshot.fmv_usd).toFixed(2)} (${snapshot.confidence} confidence) based on a 30-day WAP of $${Number(snapshot.wap_usd || 0).toFixed(2)} ${salesNote}. Floor price is $${Number(snapshot.floor_price_usd || 0).toFixed(2)}. Last computed ${computedAgo}.${snapshot.ask_proxy_fmv ? ` Ask proxy FMV: $${Number(snapshot.ask_proxy_fmv).toFixed(2)}.` : ""}`;
 
       return JSON.stringify({
         status: "ok",
-        player_name: badgeInfo?.player_name ?? null,
-        set_name: badgeInfo?.set_name ?? null,
-        tier: badgeInfo?.tier ?? null,
+        player_name: edition.player_name ?? null,
+        set_name: edition.set_name ?? null,
+        tier: edition.tier ?? null,
         fmv_usd: snapshot.fmv_usd,
         confidence: snapshot.confidence,
         wap_usd: snapshot.wap_usd,
         floor_price_usd: snapshot.floor_price_usd,
         computed_at: snapshot.computed_at,
         explanation,
-      })
-    } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err.message })
-    }
-  }
-
-  if (toolName === "search_all_collections") {
-    try {
-      const { data, error } = await supabase.rpc("search_catalog_all", {
-        p_player: toolInput.player || null,
-        p_team: toolInput.team || null,
-        p_tier: toolInput.tier || null,
-        p_max_price: toolInput.maxPrice || null,
-        p_min_discount: toolInput.minDiscount || 0,
-        p_collection_slug: toolInput.collection || null,
-        p_has_badge: toolInput.hasBadge || false,
-        p_limit: toolInput.limit || 8,
       });
-      if (error) return JSON.stringify({ status: "error", message: error.message });
-      return JSON.stringify({ status: "ok", ...(data ?? {}) });
     } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err?.message ?? "search_all_collections failed" });
-    }
-  }
-
-  if (toolName === "cross_collection_deals") {
-    try {
-      const { data, error } = await supabase.rpc("get_cross_collection_deals", {
-        p_limit: toolInput.limit || 10,
-        p_min_discount: toolInput.minDiscount || 10,
-      });
-      if (error) return JSON.stringify({ status: "error", message: error.message });
-      return JSON.stringify({ status: "ok", ...(data ?? {}) });
-    } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err?.message ?? "cross_collection_deals failed" });
+      return JSON.stringify({ status: "error", message: err.message });
     }
   }
 
@@ -845,7 +722,7 @@ async function executeTool(
           body: JSON.stringify({
             from: "rpc-support@rippackscity.com",
             to: process.env.ALERT_EMAIL,
-            subject: `[RPC Support] ${category} \u2014 ${urgency ?? "medium"} urgency`,
+            subject: `[RPC Support] ${category} — ${urgency ?? "medium"} urgency`,
             text: `Session: ${ctx.sessionId}\nCategory: ${category}\nUrgency: ${urgency ?? "medium"}\n\nIssue:\n${reason}`,
           }),
         });
@@ -857,7 +734,6 @@ async function executeTool(
   return JSON.stringify({ status: "error", message: `Unknown tool: ${toolName}` });
 }
 
-// ── Classify category ─────────────────────────────────────────────────────────
 function classifyCategory(message: string): string {
   const m = message.toLowerCase();
   if (m.includes("buy") || m.includes("deal") || m.includes("find") || m.includes("recommend")) return "shopping";
@@ -870,7 +746,6 @@ function classifyCategory(message: string): string {
   return "general";
 }
 
-// ── Update session ─────────────────────────────────────────────────────────────
 async function updateSession(sessionId: string, category: string, userMessage: string, playerSearched?: string) {
   try {
     const { data: existing } = await supabase
@@ -895,7 +770,6 @@ async function updateSession(sessionId: string, category: string, userMessage: s
   } catch { /* non-fatal */ }
 }
 
-// ── Main handler ──────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -903,7 +777,9 @@ export async function POST(req: NextRequest) {
       message,
       sessionId = `anon-${Date.now()}`,
       userWallet,
+      userEmail,
       pageContext,
+      collectionId,
       walletConnected,
       conversationHistory = [],
       marketPulse,
@@ -922,7 +798,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const systemPrompt = buildSystemPrompt({ pageContext, userWallet, walletConnected, marketPulse, dailyDeal });
+    const systemPrompt = buildSystemPrompt({ pageContext, collectionId, userWallet, userEmail, walletConnected, marketPulse, dailyDeal });
     const recentHistory = conversationHistory.slice(-10);
     const messages: Anthropic.MessageParam[] = [
       ...recentHistory,
@@ -932,14 +808,11 @@ export async function POST(req: NextRequest) {
     let finalResponse = "";
     let escalated = false;
     let escalationReason: string | undefined;
-    let usedTools: string[] = [];
+    const usedTools: string[] = [];
     let currentMessages = messages;
     let iterations = 0;
     const MAX_ITERATIONS = 5;
 
-    // Streaming setup — when useStream, we own a TransformStream and forward
-    // text deltas as they arrive. Tool-use iterations don't push text; the UI
-    // sees a natural pause and keeps the assistant message growing.
     let streamWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
     let streamResponse: Response | null = null;
     const encoder = new TextEncoder();
@@ -972,21 +845,60 @@ export async function POST(req: NextRequest) {
       return await stream.finalMessage();
     };
 
-    // Background task that runs the tool loop and writes the final metadata.
     const runLoop = async () => {
-     while (iterations < MAX_ITERATIONS) {
-      iterations++;
-      const response = useStream
-        ? await runIterationStreaming()
-        : await anthropic.messages.create({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 1024,
-            system: systemPrompt,
-            tools: TOOLS,
-            messages: currentMessages,
-          });
+      while (iterations < MAX_ITERATIONS) {
+        iterations++;
+        const response = useStream
+          ? await runIterationStreaming()
+          : await anthropic.messages.create({
+              model: "claude-sonnet-4-20250514",
+              max_tokens: 1024,
+              system: systemPrompt,
+              tools: TOOLS,
+              messages: currentMessages,
+            });
 
-      if (response.stop_reason === "end_turn") {
+        if (response.stop_reason === "end_turn") {
+          finalResponse = response.content
+            .filter((b: any) => b.type === "text")
+            .map((b: any) => b.text)
+            .join("\n")
+            .trim();
+          break;
+        }
+
+        if (response.stop_reason === "tool_use") {
+          const toolUseBlocks = response.content.filter((b: any) => b.type === "tool_use");
+          const toolResults: Anthropic.MessageParam = { role: "user", content: [] };
+
+          for (const block of toolUseBlocks) {
+            const tb = block as Anthropic.ToolUseBlock;
+            usedTools.push(tb.name);
+            if (tb.name === "escalate_to_human") {
+              escalated = true;
+              escalationReason = (tb.input as any).reason;
+            }
+            const result = await Promise.race([
+              executeTool(tb.name, tb.input, { sessionId, userWallet, collectionId }),
+              new Promise<string>((resolve) =>
+                setTimeout(() => resolve(JSON.stringify({ status: "timeout", message: "Tool timed out — try a simpler query" })), 6000)
+              ),
+            ]);
+            (toolResults.content as Anthropic.ToolResultBlockParam[]).push({
+              type: "tool_result",
+              tool_use_id: tb.id,
+              content: result,
+            });
+          }
+
+          currentMessages = [
+            ...currentMessages,
+            { role: "assistant" as const, content: response.content },
+            toolResults,
+          ];
+          continue;
+        }
+
         finalResponse = response.content
           .filter((b: any) => b.type === "text")
           .map((b: any) => b.text)
@@ -994,58 +906,18 @@ export async function POST(req: NextRequest) {
           .trim();
         break;
       }
-
-      if (response.stop_reason === "tool_use") {
-        const toolUseBlocks = response.content.filter((b: any) => b.type === "tool_use");
-        const toolResults: Anthropic.MessageParam = { role: "user", content: [] };
-
-        for (const block of toolUseBlocks) {
-          const tb = block as Anthropic.ToolUseBlock;
-          usedTools.push(tb.name);
-          if (tb.name === "escalate_to_human") {
-            escalated = true;
-            escalationReason = (tb.input as any).reason;
-          }
-          const result = await Promise.race([
-            executeTool(tb.name, tb.input, { sessionId, userWallet }),
-            new Promise<string>((resolve) =>
-              setTimeout(() => resolve(JSON.stringify({ status: "timeout", message: "Tool timed out — try a simpler query" })), 6000)
-            ),
-          ]);
-          (toolResults.content as Anthropic.ToolResultBlockParam[]).push({
-            type: "tool_result",
-            tool_use_id: tb.id,
-            content: result,
-          });
-        }
-
-        currentMessages = [
-          ...currentMessages,
-          { role: "assistant" as const, content: response.content },
-          toolResults,
-        ];
-        continue;
-      }
-
-      finalResponse = response.content
-        .filter((b: any) => b.type === "text")
-        .map((b: any) => b.text)
-        .join("\n")
-        .trim();
-      break;
-     }
     };
 
     const finalize = async () => {
       if (!finalResponse) {
-        finalResponse = "That query was too complex for me to handle in time. Try breaking it down — for example, ask me for 'Blazers deals' first, then ask about specific badges. You can also check the Sniper page directly at /nba-top-shot/sniper for the full live feed.";
+        finalResponse = "That query was too complex for me to handle in time. Try breaking it down. You can also check the Sniper page directly for the full live feed.";
       }
       if (escalated) {
         finalResponse += "\n\nYou can also DM us directly at https://twitter.com/RipPacksCity for a faster response.";
       }
 
       const playerSearched =
-        usedTools.includes("search_catalog_deals") || usedTools.includes("search_live_deals")
+        usedTools.includes("search_catalog_deals") || usedTools.includes("search_live_deals") || usedTools.includes("search_across_collections")
           ? body.message.match(/\b([A-Z][a-z]+ [A-Z][a-z]+)\b/)?.[0] ?? undefined
           : undefined;
 
@@ -1073,11 +945,10 @@ export async function POST(req: NextRequest) {
     };
 
     if (useStream && streamResponse && streamWriter) {
-      // Run loop + finalize in the background and close the stream when done.
       (async () => {
         try {
           await runLoop();
-        } catch (err) {
+        } catch {
           try { await streamWriter!.write(encoder.encode("\n\n[stream error]")); } catch {}
         }
         const meta = await finalize();

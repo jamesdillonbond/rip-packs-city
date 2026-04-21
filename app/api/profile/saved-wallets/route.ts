@@ -1,51 +1,41 @@
+// app/api/profile/saved-wallets/route.ts
+//
+// Phase 4: auth.uid()-keyed saved wallets with per-collection scoping.
+// Every wallet belongs to a specific collection (defaults to NBA Top Shot
+// when callers omit collectionId). Users can pin the same address under
+// multiple collections.
+
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { requireUser } from "@/lib/auth/supabase-server";
 
-// GET ?ownerKey=xxx
-export async function GET(req: NextRequest) {
-  const ownerKey = req.nextUrl.searchParams.get("ownerKey");
-  const isPublic = req.nextUrl.searchParams.get("public") === "1";
-  if (!ownerKey) return NextResponse.json({ error: "ownerKey required" }, { status: 400 });
+const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
+
+export async function GET() {
+  let user;
+  try {
+    user = await requireUser();
+  } catch (res) {
+    return res as Response;
+  }
 
   try {
     const { data, error } = await supabase
       .from("saved_wallets")
       .select("*")
-      .eq("owner_key", ownerKey);
+      .eq("user_id", user.id)
+      .order("pinned_at", { ascending: false });
 
     if (error) {
-      console.error("[saved-wallets GET]", error.message, error.details, error.hint);
+      console.error("[saved-wallets GET]", error.message);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Normalize DB column names to client-expected shape
-    const wallets = (data ?? []).map(function(row: any) {
-      const normalized: any = {
-        ...row,
-        wallet_addr: row.wallet_address ?? row.wallet_addr,
-        display_name: row.display_name ?? null,
-        cached_fmv: row.cached_fmv_usd ?? row.cached_fmv ?? null,
-        pinned_at: row.created_at ?? row.pinned_at ?? new Date().toISOString(),
-      };
-      if (isPublic) {
-        // Strip any address-like field from the public response.
-        delete normalized.wallet_addr;
-        delete normalized.wallet_address;
-        delete normalized.address;
-        return {
-          display_name: normalized.display_name ?? null,
-          username: normalized.username ?? null,
-          cached_fmv: normalized.cached_fmv ?? null,
-          cached_moment_count: normalized.cached_moment_count ?? null,
-          cached_top_tier: normalized.cached_top_tier ?? null,
-          cached_badges: normalized.cached_badges ?? null,
-          accent_color: normalized.accent_color ?? "#E03A2F",
-          cached_rpc_score: normalized.cached_rpc_score ?? null,
-          cached_change_24h: normalized.cached_change_24h ?? null,
-        };
-      }
-      return normalized;
-    });
+    const wallets = (data ?? []).map((row: any) => ({
+      ...row,
+      cached_fmv: row.cached_fmv_usd ?? row.cached_fmv ?? null,
+      pinned_at: row.pinned_at ?? new Date().toISOString(),
+    }));
     return NextResponse.json({ wallets });
   } catch (err: any) {
     console.error("[saved-wallets GET] unexpected:", err?.message);
@@ -53,32 +43,43 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST { ownerKey, walletAddr, username, displayName, accentColor }
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  let { ownerKey, walletAddr } = body;
-  const { username, displayName, accentColor } = body;
-  if (!ownerKey || !walletAddr) {
-    return NextResponse.json({ error: "ownerKey and walletAddr required" }, { status: 400 });
+  let user;
+  try {
+    user = await requireUser();
+  } catch (res) {
+    return res as Response;
   }
-  ownerKey = String(ownerKey).toLowerCase();
+
+  const body = await req.json();
+  let { walletAddr } = body;
+  const { username, displayName, nickname, accentColor, collectionId } = body;
+  if (!walletAddr) {
+    return NextResponse.json({ error: "walletAddr required" }, { status: 400 });
+  }
   walletAddr = String(walletAddr).toLowerCase();
+  const resolvedCollectionId = collectionId ?? NBA_TOP_SHOT_UUID;
 
   try {
     const { data, error } = await supabase
       .from("saved_wallets")
-      .upsert({
-        owner_key: ownerKey,
-        wallet_addr: walletAddr,
-        username: username ?? null,
-        display_name: displayName ?? null,
-        accent_color: accentColor ?? "#E03A2F",
-      }, { onConflict: "owner_key,wallet_addr" })
+      .upsert(
+        {
+          user_id: user.id,
+          wallet_addr: walletAddr,
+          collection_id: resolvedCollectionId,
+          username: username ?? null,
+          display_name: displayName ?? null,
+          nickname: nickname ?? null,
+          accent_color: accentColor ?? "#E03A2F",
+        },
+        { onConflict: "user_id,wallet_addr,collection_id" }
+      )
       .select()
       .single();
 
     if (error) {
-      console.error("[saved-wallets POST]", error.message, error.details, error.hint);
+      console.error("[saved-wallets POST]", error.message);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
     return NextResponse.json({ wallet: data });
@@ -88,25 +89,34 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// DELETE { ownerKey, walletAddr }
 export async function DELETE(req: NextRequest) {
-  const body = await req.json();
-  let { ownerKey, walletAddr } = body;
-  if (!ownerKey || !walletAddr) {
-    return NextResponse.json({ error: "ownerKey and walletAddr required" }, { status: 400 });
+  let user;
+  try {
+    user = await requireUser();
+  } catch (res) {
+    return res as Response;
   }
-  ownerKey = String(ownerKey).toLowerCase();
+
+  const body = await req.json();
+  let { walletAddr } = body;
+  const { collectionId } = body;
+  if (!walletAddr) {
+    return NextResponse.json({ error: "walletAddr required" }, { status: 400 });
+  }
   walletAddr = String(walletAddr).toLowerCase();
 
   try {
-    const { error } = await supabase
+    let query = supabase
       .from("saved_wallets")
       .delete()
-      .eq("owner_key", ownerKey)
+      .eq("user_id", user.id)
       .eq("wallet_addr", walletAddr);
 
+    if (collectionId) query = query.eq("collection_id", collectionId);
+
+    const { error } = await query;
     if (error) {
-      console.error("[saved-wallets DELETE]", error.message, error.details, error.hint);
+      console.error("[saved-wallets DELETE]", error.message);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
     return NextResponse.json({ ok: true });
@@ -116,10 +126,14 @@ export async function DELETE(req: NextRequest) {
   }
 }
 
-// PATCH { ownerKey, walletAddr, cachedFmv, cachedMomentCount, cachedTopTier,
-//         cachedChange24h, cachedBadges, cachedRpcScore }
-// Updates cached stats and fires portfolio snapshot write.
 export async function PATCH(req: NextRequest) {
+  let user;
+  try {
+    user = await requireUser();
+  } catch (res) {
+    return res as Response;
+  }
+
   let body: any;
   try {
     body = await req.json();
@@ -127,11 +141,9 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  let {
-    ownerKey,
-    walletAddr,
-  } = body;
+  let { walletAddr } = body;
   const {
+    collectionId,
     cachedFmv,
     cachedMomentCount,
     cachedTopTier,
@@ -140,40 +152,37 @@ export async function PATCH(req: NextRequest) {
     cachedRpcScore,
   } = body;
 
-  if (!ownerKey || typeof ownerKey !== "string") {
-    return NextResponse.json({ error: "ownerKey is required and must be a string" }, { status: 400 });
-  }
   if (!walletAddr || typeof walletAddr !== "string") {
-    return NextResponse.json({ error: "walletAddr is required and must be a string" }, { status: 400 });
+    return NextResponse.json({ error: "walletAddr is required" }, { status: 400 });
   }
-  ownerKey = ownerKey.toLowerCase();
   walletAddr = walletAddr.toLowerCase();
 
+  const updatePayload: Record<string, unknown> = {
+    cached_fmv_usd: cachedFmv ?? null,
+    cached_moment_count: cachedMomentCount ?? null,
+    cached_top_tier: cachedTopTier ?? null,
+    cached_change_24h: cachedChange24h ?? null,
+    cached_badges: cachedBadges ?? null,
+    cache_updated_at: new Date().toISOString(),
+    last_viewed: new Date().toISOString(),
+  };
+
+  if (typeof cachedRpcScore === "number" && cachedRpcScore > 0) {
+    updatePayload.cached_rpc_score = cachedRpcScore;
+  }
+
   try {
-    const updatePayload: Record<string, unknown> = {
-      cached_fmv_usd: cachedFmv ?? null,
-      cached_moment_count: cachedMomentCount ?? null,
-      cached_top_tier: cachedTopTier ?? null,
-      cached_change_24h: cachedChange24h ?? null,
-      cached_badges: cachedBadges ?? null,
-      cache_updated_at: new Date().toISOString(),
-      last_viewed: new Date().toISOString(),
-    };
-
-    // Only write rpc_score if we got a real value
-    if (typeof cachedRpcScore === "number" && cachedRpcScore > 0) {
-      updatePayload.cached_rpc_score = cachedRpcScore;
-    }
-
-    const { data, error } = await supabase
+    let query = supabase
       .from("saved_wallets")
       .update(updatePayload)
-      .eq("owner_key", ownerKey)
-      .eq("wallet_addr", walletAddr)
-      .select();
+      .eq("user_id", user.id)
+      .eq("wallet_addr", walletAddr);
+    if (collectionId) query = query.eq("collection_id", collectionId);
+
+    const { data, error } = await query.select();
 
     if (error) {
-      console.error("[saved-wallets PATCH]", error.message, error.details, error.hint);
+      console.error("[saved-wallets PATCH]", error.message);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
@@ -181,39 +190,9 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ ok: true, skipped: true });
     }
 
-    // Fire-and-forget: aggregate all wallets and write a daily portfolio snapshot
-    writePortfolioSnapshot(ownerKey).catch(function(err) {
-      console.error("[portfolio-snapshot write]", err);
-    });
-
     return NextResponse.json({ wallet: data[0] });
   } catch (err: any) {
-    console.error("[saved-wallets PATCH] error:", err?.message, err?.stack);
+    console.error("[saved-wallets PATCH] error:", err?.message);
     return NextResponse.json({ error: "Failed to update saved wallet" }, { status: 500 });
   }
-}
-
-// Aggregates all saved wallets for the owner and upserts today's portfolio snapshot.
-async function writePortfolioSnapshot(ownerKey: string) {
-  const { data: wallets, error: walletsError } = await supabase
-    .from("saved_wallets")
-    .select("cached_fmv_usd, cached_moment_count, cached_rpc_score")
-    .eq("owner_key", ownerKey);
-
-  if (walletsError || !wallets) return;
-
-  const totalFmv = wallets.reduce(function(sum: number, w: any) { return sum + (Number(w.cached_fmv_usd) || 0); }, 0);
-  const momentCount = wallets.reduce(function(sum: number, w: any) { return sum + (Number(w.cached_moment_count) || 0); }, 0);
-  const walletCount = wallets.length;
-  const today = new Date().toISOString().split("T")[0];
-
-  await supabase
-    .from("portfolio_snapshots")
-    .upsert({
-      owner_key: ownerKey,
-      snapshot_date: today,
-      total_fmv: totalFmv,
-      moment_count: momentCount,
-      wallet_count: walletCount,
-    }, { onConflict: "owner_key,snapshot_date" });
 }

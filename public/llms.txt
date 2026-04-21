@@ -40,14 +40,18 @@ Rip Packs City (RPC) is a collector intelligence platform for Flow blockchain NF
 - URLs: /ufc/collection, /ufc/sniper
 
 ## Platform Features
-- **FMV Engine (v1.5.1)**: Outlier-filtered weighted average price, recency decay, liquidity rating (0–5), serial multiplier, deal rating (0–1), lowest ask flag. Refreshed every 20 minutes.
-- **Sniper Feed**: Real-time listings below FMV from Top Shot marketplace and Flowty. Deduped, sorted by recency.
+- **FMV Engine (v1.5.1)**: Outlier-filtered weighted average price, recency decay, liquidity rating (0–5), serial multiplier, deal rating (0–1), lowest ask flag. Refreshed every 20 minutes per collection.
+- **Sniper Feed**: Real-time listings below FMV from native marketplaces and Flowty. Deduped, sorted by recency. Per-collection data sources.
+- **Market Browser (Phase 3)**: Sortable / filterable marketplace listings per collection — tier, price, discount, player. URL-synced filter state.
+- **Analytics (Phase 3)**: Ecosystem-wide tier trends, player momentum, top sales, weekly volume per collection.
 - **Wallet Analytics**: Any Flow wallet — moment inventory, FMV totals, cost basis, P&L, acquisition history, badge detection.
-- **Badge Tracker**: Browse all badge-eligible editions with premiums and FMV context.
+- **Badge Tracker**: Browse all badge-eligible editions with premiums and FMV context (NBA Top Shot only — badges are a Top Shot native concept).
 - **Set Completion**: Track owned vs needed, bottleneck finder, cheapest completion path.
 - **Pack Tools**: Pack browser with EV calculator, tier breakdown, buy/skip signal.
-- **AI Concierge**: Claude Sonnet-powered assistant on every page. Understands FMV, deals, badges, edition history, and cost basis.
-- **Public Profiles**: Shareable collector profiles with trophy cases and portfolio analytics.
+- **Email Sign-In (Phase 1)**: Magic-link authentication required for every collection tool. Users sign in at /login. Public /profile/[username] shareable pages remain open.
+- **Multi-Collection Profile (Phase 4)**: Hero Holo Moment card, saved wallets across collections, 6-slot trophy case, favorite collections (drives per-collection news feed), follows system, friend activity feed (last 20 sales over 7 days from followed users' wallets), recent searches.
+- **AI Concierge v2 (Phase 4)**: Claude Sonnet-powered, multi-collection aware. Knows which collection you're browsing from the URL and scopes queries accordingly. New search_across_collections tool handles cross-collection lookups (e.g. "does RPC have Messi?"). Tools: search_live_deals, search_catalog_deals, get_fmv, check_wallet, search_across_collections, plus watchlist/alerts/escalation.
+- **Public Profiles**: Shareable collector profiles at /profile/[username] with trophy case, bio, and privacy-stripped saved-wallet summaries. No auth required to view.
 
 ## FMV Methodology
 Weighted average price from recent on-chain sales with recency decay. Confidence tiers: HIGH (multiple recent sales), MEDIUM (sparse data), LOW (single sale or stale). Serial premiums applied for #1, jersey match, and perfect mint serials. Badge premiums are market-baked and not applied as multipliers.
