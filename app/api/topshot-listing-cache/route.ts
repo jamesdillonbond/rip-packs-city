@@ -19,7 +19,10 @@ const TS_CONTRACT_ADDRESS = "0x0b2a3299cc857e29"
 const TS_CONTRACT_NAME = "TopShot"
 const FLOWTY_PROXY_URL =
   "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/flowty-proxy"
-const FLOWTY_PROXY_TOKEN = "rippackscity2026"
+const FLOWTY_PROXY_TOKEN = process.env.FLOWTY_PROXY_TOKEN
+if (!FLOWTY_PROXY_TOKEN) {
+  throw new Error("FLOWTY_PROXY_TOKEN env var is required")
+}
 // Match the Pinnacle pattern: page size 100 + listingKind:sale filter so each
 // Flowty page returns 100 actively-listed NFTs (not 100 raw NFTs that we then
 // have to filter for state==='LISTED' client-side, which is what was capping

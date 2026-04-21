@@ -17,7 +17,10 @@ const INGEST_TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const TS_GQL =
   process.env.TS_PROXY_URL ||
   "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/topshot-proxy"
-const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET || "rippackscity2026"
+const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET
+if (!TS_PROXY_SECRET) {
+  throw new Error("TS_PROXY_SECRET env var is required")
+}
 const BATCH_SIZE = 50
 const TREVOR_WALLET = "0xbd94cade097e50ac"
 const TS_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
