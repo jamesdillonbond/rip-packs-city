@@ -38,6 +38,7 @@ export default function SupportChatConnected() {
   return (
     <SupportChat
       pageContext={pageLabel}
+      collectionId={collectionId || null}
       walletConnected={false}
       onAddToCart={handleAddToCart}
     />

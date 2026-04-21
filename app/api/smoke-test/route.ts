@@ -121,11 +121,16 @@ async function runSmokeTests() {
     // 8. Badges API responds
     checkUrl("badges API responds", `${BASE_URL}/api/badges`),
 
-    // 9–14. Page HTTP status checks
+    // 9–20. Page HTTP status checks. Auth-gated pages 307 -> /login -> 200
+    // and fetch follows redirects, so res.ok is true either way. Phase 2
+    // added the 4 cross-collection page checks below the original 8.
     ...([
       "/nba-top-shot/sniper", "/nba-top-shot/collection", "/nba-top-shot/sets",
       "/nba-top-shot/badges", "/nba-top-shot/packs", "/profile",
       "/nfl-all-day/collection", "/nfl-all-day/badges",
+      // Phase 2 additions (multi-collection coverage):
+      "/nfl-all-day/overview", "/laliga-golazos/collection",
+      "/disney-pinnacle/collection", "/disney-pinnacle/overview",
     ].map(async (page): Promise<TestResult> => {
       const res = await fetch(`${BASE_URL}${page}`, { cache: "no-store", signal: AbortSignal.timeout(4000) });
       return { name: `page ${page} returns 200`, passed: res.ok, detail: `HTTP ${res.status}` };

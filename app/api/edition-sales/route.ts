@@ -1,3 +1,11 @@
+// app/api/edition-sales/route.ts
+//
+// Per-edition sales stats. Phase 2: accepts an optional collectionId in the
+// POST body. Only Top Shot has a live GraphQL stats source today — other
+// collections return parsed:false results rather than invented numbers. We
+// deliberately don't invent FMV for AllDay/Golazos/Pinnacle here; the
+// collection pages should fall back to Supabase fmv_snapshots for those.
+
 import { NextRequest, NextResponse } from "next/server"
 import { fetchEditionStats, parseEditionKey } from "@/lib/topshot-graphql"
 
@@ -7,14 +15,14 @@ type EditionSalesResult = {
   averagePrice: number | null
   salesCount: number
   listingCount: number
-  /** True if the edition key could be parsed into setID/playID */
   parsed: boolean
-  source: "topshot-graphql" | "unparseable"
+  source: "topshot-graphql" | "unparseable" | "collection-not-supported"
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
+    const collectionId: string = typeof body?.collectionId === "string" ? body.collectionId : "nba-top-shot"
     const editionKeys: string[] = Array.isArray(body.editionKeys)
       ? ([
           ...new Set(
@@ -27,18 +35,32 @@ export async function POST(req: NextRequest) {
       : []
 
     if (!editionKeys.length) {
-      return NextResponse.json({ results: [] })
+      return NextResponse.json({ results: [], collectionId })
     }
 
-    // Separate parseable from unparseable keys
+    // Only Top Shot has the GraphQL edition stats path today. For other
+    // collections, return unparseable-ish results so the UI can fall back to
+    // Supabase fmv_snapshots + cached_listings without blowing up.
+    if (collectionId !== "nba-top-shot") {
+      const results: EditionSalesResult[] = editionKeys.map((key) => ({
+        editionKey: key,
+        lowestAsk: null,
+        averagePrice: null,
+        salesCount: 0,
+        listingCount: 0,
+        parsed: false,
+        source: "collection-not-supported",
+      }))
+      return NextResponse.json({ results, collectionId })
+    }
+
+    // Top Shot path (unchanged).
     const parseable = editionKeys.filter((k) => parseEditionKey(k) !== null)
     const unparseable = editionKeys.filter((k) => parseEditionKey(k) === null)
 
-    // Fetch real data from Top Shot GraphQL
     const statsMap = await fetchEditionStats(parseable)
 
     const results: EditionSalesResult[] = [
-      // Real data for parseable keys
       ...editionKeys
         .filter((k) => parseEditionKey(k) !== null)
         .map((key) => {
@@ -53,7 +75,6 @@ export async function POST(req: NextRequest) {
             source: "topshot-graphql" as const,
           }
         }),
-      // Null results for unparseable keys (can't query GraphQL without setID/playID)
       ...unparseable.map((key) => ({
         editionKey: key,
         lowestAsk: null,
@@ -65,7 +86,7 @@ export async function POST(req: NextRequest) {
       })),
     ]
 
-    return NextResponse.json({ results })
+    return NextResponse.json({ results, collectionId })
   } catch (e) {
     return NextResponse.json(
       {

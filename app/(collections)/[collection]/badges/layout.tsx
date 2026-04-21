@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import type { ReactNode } from "react"
-import { getCollection } from "@/lib/collections"
+import { redirect } from "next/navigation"
+import { collectionHasPage, getCollection } from "@/lib/collections"
 import { pageMetadata } from "@/lib/seo"
 
 export async function generateMetadata(
@@ -12,7 +13,16 @@ export async function generateMetadata(
   return pageMetadata("badges", collection.label, collection.id)
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export default function BadgesLayout({ children }: { children: ReactNode; params: Promise<{ collection: string }> }) {
-  return <>{children}</>
+// Server-side guard: badges are a Top Shot-native concept (Rookie Year,
+// Top Shot Debut, Championship). AllDay has parallels but not the same
+// badge taxonomy; Golazos and Pinnacle don't have badges at all. The tab
+// bar hides the tab for collections without badges, but a user pasting a
+// /nfl-all-day/badges URL still lands here — redirect them to overview
+// rather than render a half-broken page.
+export default async function BadgesLayout(props: { children: ReactNode; params: Promise<{ collection: string }> }) {
+  const { collection: id } = await props.params
+  if (!collectionHasPage(id, "badges")) {
+    redirect(`/${id || "nba-top-shot"}/overview`)
+  }
+  return <>{props.children}</>
 }

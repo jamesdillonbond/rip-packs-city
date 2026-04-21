@@ -1,5 +1,13 @@
+// app/api/recent-sales/route.ts
+//
+// Recent sales feed. Phase 2: accepts ?collectionId=<slug> and scopes the
+// sales query to that collection via edition_id → editions.collection_id.
+// Defaults to nba-top-shot if collectionId is omitted (back-compat for the
+// existing /profile page that doesn't yet know about collections).
+
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getCollection, COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,43 +20,40 @@ export async function GET(req: NextRequest) {
     50
   );
   const editionKeyParam = req.nextUrl.searchParams.get("editionKey");
+  const collectionId = req.nextUrl.searchParams.get("collectionId") ?? "nba-top-shot";
+  const collection = getCollection(collectionId);
+  const collectionUuid =
+    collection?.supabaseCollectionId ?? COLLECTION_UUID_BY_SLUG[collectionId] ?? null;
 
-  // If editionKey is provided, resolve to edition_id first
+  // If editionKey is provided, resolve to edition_id first (scoped to collection when possible).
   let editionIdFilter: string | null = null;
   if (editionKeyParam) {
-    const { data: editionRow } = await supabase
+    let q = supabase
       .from("editions")
       .select("id")
       .eq("external_id", editionKeyParam)
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+    if (collectionUuid) q = q.eq("collection_id", collectionUuid);
+    const { data: editionRow } = await q.maybeSingle();
     if (editionRow) editionIdFilter = editionRow.id;
   }
 
+  // If no explicit editionKey filter, scope by collection via an editions join.
   let query = supabase
     .from("sales")
-    .select("serial_number, price_usd, sold_at, marketplace, nft_id, edition_id")
+    .select("serial_number, price_usd, sold_at, marketplace, nft_id, edition_id, editions!inner(collection_id, external_id)")
     .order("sold_at", { ascending: false })
     .limit(limit);
 
   if (editionIdFilter) {
     query = query.eq("edition_id", editionIdFilter);
+  } else if (collectionUuid) {
+    query = query.eq("editions.collection_id", collectionUuid);
   }
 
   const { data, error } = await query;
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  // Pull edition external_ids in one batch query
-  const editionIds = [...new Set((data ?? []).map((r: any) => r.edition_id).filter(Boolean))];
-  const editionMap = new Map<string, string>();
-  if (editionIds.length > 0) {
-    const { data: editions } = await supabase
-      .from("editions")
-      .select("id, external_id")
-      .in("id", editionIds);
-    for (const e of editions ?? []) editionMap.set(e.id, e.external_id);
-  }
 
   const sales = (data ?? []).map((row: any) => ({
     serialNumber: row.serial_number,
@@ -56,14 +61,14 @@ export async function GET(req: NextRequest) {
     soldAt: row.sold_at,
     marketplace: row.marketplace,
     nftId: row.nft_id,
-    editionKey: editionMap.get(row.edition_id) ?? null,
+    editionKey: row.editions?.external_id ?? null,
     playerName: null,
     setName: null,
     fmv: null,
   }));
 
   return NextResponse.json(
-    { sales },
+    { sales, collectionId },
     { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=30" } }
   );
 }

@@ -987,6 +987,9 @@ const feedParamsSchema = z.object({
   flowWalletOnly: z.enum(["true", "false"]).default("false"),
   editionKey: z.string().default(""), // edition depth filter (e.g. "26:504")
   collection: z.string().default("nba-top-shot"), // collection slug — nba-top-shot or nfl-all-day
+  // Phase 2 alias: callers may pass collectionId instead of collection.
+  // Handled below by overriding `collection` when collectionId is set.
+  collectionId: z.string().optional(),
 });
 
 // ─── Route handler ────────────────────────────────────────────────────────────
@@ -1004,7 +1007,8 @@ export async function GET(req: Request) {
   const badgeOnly = params.badgeOnly === "true";
   const serialFilter = params.serial;
 
-  const collection = params.collection;
+  // Phase 2: collectionId takes precedence over legacy `collection` param.
+  const collection = params.collectionId ?? params.collection;
 
   // Cache key based on all query params — same params = same response for 25s
   const cacheKey = `sniper-feed:${JSON.stringify(params)}`;

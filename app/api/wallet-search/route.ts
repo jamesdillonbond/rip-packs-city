@@ -886,6 +886,8 @@ const walletSearchSchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(60).default(24),
   collection: z.string().optional(),
+  // Phase 2 alias — callers can send either collection or collectionId.
+  collectionId: z.string().optional(),
 })
 
 export async function POST(req: NextRequest) {
@@ -930,8 +932,52 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { input, offset, limit, collection } = parsed.data
+    const { input, offset, limit } = parsed.data
+    // Phase 2: collectionId takes precedence over the legacy collection alias.
+    const collection = parsed.data.collectionId ?? parsed.data.collection
     const isAllDay = collection === "nfl-all-day"
+
+    // Collections with their own dedicated wallet routes shouldn't flow
+    // through here — the response shapes differ. Return an informative
+    // error that tells the UI which route to use instead. (This keeps
+    // wallet-search focused on Top Shot + AllDay without introducing
+    // shape drift for Pinnacle / Golazos / UFC.)
+    if (collection === "disney-pinnacle") {
+      return NextResponse.json(
+        {
+          rows: [],
+          summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+          error: "Use /api/pinnacle-wallet for Disney Pinnacle wallet lookups.",
+          redirect: "/api/pinnacle-wallet",
+        } satisfies WalletSearchResponse & { redirect?: string },
+        { status: 400 }
+      )
+    }
+    if (collection === "ufc") {
+      return NextResponse.json(
+        {
+          rows: [],
+          summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+          error: "Use /api/ufc-wallet-scan for UFC Strike wallet scans.",
+          redirect: "/api/ufc-wallet-scan",
+        } satisfies WalletSearchResponse & { redirect?: string },
+        { status: 400 }
+      )
+    }
+    if (collection === "laliga-golazos") {
+      // Golazos wallet lookups are not yet indexed server-side — the
+      // Flowty-only listing pipeline doesn't populate wallet_moments_cache
+      // with golazos rows. Return an empty-but-valid response so the UI
+      // can render a graceful "limited support" state.
+      return NextResponse.json(
+        {
+          rows: [],
+          summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+          error: "Golazos wallet analysis is coming soon. Floor and FMV data are live on the sniper and overview pages.",
+        } satisfies WalletSearchResponse,
+        { status: 200 }
+      )
+    }
 
     let wallet: string
     let ids: number[]
