@@ -19,9 +19,20 @@ export function getSupabaseBrowser() {
 }
 
 // Send a magic-link sign-in email. Caller shows a "check your email" confirmation.
+//
+// Supabase bakes `emailRedirectTo` into the link it mails out. If a user
+// clicks "Send magic link" from a Vercel preview deployment URL, that preview
+// host ends up in the email — and since the session cookie set by our
+// /api/auth/callback is tied to the production host, Supabase bounces the
+// user back to /login without exchanging the code. Fix: when
+// NEXT_PUBLIC_SITE_URL is set (production only), use it in preference to
+// window.location.origin. Leave the env unset on preview + local dev so
+// those environments keep sending correct host-local callbacks.
 export async function sendMagicLink(email: string, redirectTo?: string): Promise<{ error: string | null }> {
   const supabase = getSupabaseBrowser()
-  const origin = typeof window !== "undefined" ? window.location.origin : ""
+  const envOrigin = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? ""
+  const windowOrigin = typeof window !== "undefined" ? window.location.origin : ""
+  const origin = envOrigin || windowOrigin
   const callbackUrl = `${origin}/api/auth/callback${redirectTo ? `?redirect=${encodeURIComponent(redirectTo)}` : ""}`
   const { error } = await supabase.auth.signInWithOtp({
     email,
