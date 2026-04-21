@@ -21,6 +21,28 @@ Repo: github.com/jamesdillonbond/rip-packs-city (public)
 
 ## Recent sessions
 
+### April 21, 2026 — Storefront Audit Pipeline Session (Flowty ecosystem health)
+
+Shipped
+
+- Diagnosed wallet `0xf77bf547fccf6656` bulk-listing failure: 148 expired listings clogging the NFTStorefrontV2 storefront against the 174/200 cap. Cleared on-chain via `cleanupExpiredListings(fromIndex: 0, toIndex: 173)` signed by the hot wallet — tx `3c2a42bc`.
+- Built end-to-end ecosystem scan + cleanup pipeline:
+  - `scan-storefront-events` Supabase Edge Function: auto-resumes from block `85000000`, processes 49,800 blocks per invocation, upserts wallet addresses extracted from `NFTStorefrontV2.ListingAvailable` events into `storefront_audit_wallets`.
+  - `audit-storefront-wallets` Supabase Edge Function: processes 50 unaudited wallets per run, reads on-chain storefront state, flags rows with `expired_listings >= 20` as `cleanup_status = 'pending'`.
+  - `scripts/cleanup-storefront-wallets.mjs`: reads pending wallets from `storefront_audit_wallets`, signs and sends `cleanupExpiredListings` via Flow CLI (`flow transactions send cleanup.cdc ...`), then updates `cleanup_status` to `cleaned` / `error` with `cleanup_tx_id`. Uses the standard `readFileSync` `.env.local` loader pattern; run with `node --env-file=.env.local scripts/cleanup-storefront-wallets.mjs --dry-run` to preview, drop `--dry-run` to execute.
+- Hot wallet for cleanup signing: `0x3aa11c84d776838f` (Key 0, ECDSA_secp256k1, SHA2_256, throwaway, **no HybridCustody / account linking**). `flow.json` lives in repo root, is gitignored (added to `.gitignore` under the Flow CLI section alongside `flow.json` and the bare `flow` filename), and must be populated manually with the private key before running cleanup.
+- Two cron-job.org jobs needed to drive the pipeline — **not yet created**:
+  - `scan-storefront-events`: POST `https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/scan-storefront-events` with `Authorization: Bearer $INGEST_SECRET_TOKEN`, empty JSON body, every 3 minutes. Becomes a no-op once caught up to chain tip.
+  - `audit-storefront-wallets`: POST `https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/audit-storefront-wallets`, same auth, empty body, every 5 minutes.
+
+Key constants (Storefront audit)
+
+- `storefront_audit_wallets` table: columns include `address`, `expired_listings`, `cleanup_status` (`pending | cleaned | error`), `cleanup_tx_id`, `cleaned_at`. Scan function is the writer for `address` + listing-count fields; audit function writes `cleanup_status`.
+- Scan starting block: `85000000`. Per-invocation span: 49,800 blocks.
+- Audit threshold: `expired_listings >= 20` → `cleanup_status = 'pending'`.
+- Never use a wallet with HybridCustody / account linking as the hot wallet for automated Flow CLI signing — linking complicates key-path resolution and risks signing against a child account. Use a fresh, unlinked account (current: `0x3aa11c84d776838f`).
+- `flow.json` is gitignored — every new machine or clone must paste the private key locally before cleanup can run.
+
 ### April 21, 2026 — Phase 4 Session (multi-collection concierge + auth-keyed profile)
 
 Shipped
