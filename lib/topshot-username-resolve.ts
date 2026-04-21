@@ -56,8 +56,11 @@ export async function resolveTopShotUsername(
 
   if (!info?.flowAddress) return null;
 
+  const raw = info.flowAddress.toLowerCase();
+  const walletAddress = raw.startsWith("0x") ? raw : `0x${raw}`;
+
   return {
-    walletAddress: info.flowAddress.toLowerCase(),
+    walletAddress,
     username: info.username ?? cleaned,
     dapperId: info.dapperID ?? null,
   };
