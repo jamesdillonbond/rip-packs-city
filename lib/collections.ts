@@ -1,3 +1,14 @@
+// lib/collections.ts
+// Single source of truth for every collection RPC supports.
+//
+// Publish state as of 2026-04-20:
+//   NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle — published
+//   UFC Strike — unpublished (Aptos migration; near-zero on-chain volume)
+//
+// "market" and "analytics" pages are in the enum so every collection
+// can expose a sortable marketplace browser and an ecosystem analytics
+// tab distinct from overview.
+
 export type CollectionPage =
   | "overview"
   | "collection"
@@ -17,6 +28,8 @@ export interface Collection {
   chain: "flow" | "evm" | "panini" | "candy" | "rwa"
   partner: string
   accent: string
+  /** Secondary accent for hover states + tier chips. Defaults to accent. */
+  accentSoft?: string
   icon: string
   pages: CollectionPage[]
   published: boolean
@@ -30,6 +43,16 @@ export interface Collection {
   gqlProxyPath?: string
   mediaCdnBase?: string
   cadenceCollectionPath?: string
+  /** Supabase collections.id — canonical UUID for multi-collection queries. */
+  supabaseCollectionId?: string
+  /** Template for building a moment URL on the native marketplace. */
+  marketplaceMomentUrl?: (flowId: string) => string
+  /** Template for building a wallet URL on the native marketplace. */
+  marketplaceWalletUrl?: (address: string) => string
+  /** Short plain-English pitch used by SEO + empty states. */
+  pitch?: string
+  /** Per-collection news feed — rendered on overview. Keep 3-6 items. */
+  news?: Array<{ title: string; date: string; summary: string; url: string }>
 }
 
 export const COLLECTIONS: Collection[] = [
@@ -41,8 +64,9 @@ export const COLLECTIONS: Collection[] = [
     chain: "flow",
     partner: "Dapper Labs",
     accent: "#E03A2F",
+    accentSoft: "#FF4D40",
     icon: "\u{1F3C0}",
-    pages: ["overview", "collection", "packs", "sniper", "market", "sets", "analytics"],
+    pages: ["overview", "collection", "packs", "sniper", "market", "sets", "analytics", "badges"],
     published: true,
     graphqlUrl: "https://public-api.nbatopshot.com/graphql",
     flowContractName: "TopShot",
@@ -53,6 +77,14 @@ export const COLLECTIONS: Collection[] = [
     gqlProxyPath: "/topshot",
     mediaCdnBase: "https://assets.nbatopshot.com",
     cadenceCollectionPath: "/public/MomentCollection",
+    supabaseCollectionId: "95f28a17-224a-4025-96ad-adf8a4c63bfd",
+    marketplaceMomentUrl: (id) => `https://nbatopshot.com/moment/${id}`,
+    marketplaceWalletUrl: (addr) => `https://nbatopshot.com/user/${addr}`,
+    pitch: "Wallet analysis, FMV pricing, set completion, pack EV, and live sniper deals for NBA Top Shot collectors.",
+    news: [
+      { title: "2025-26: Scarcity-first drops & new parallel system", date: "2026-01-15", summary: "Dapper shifts to lower-print-run releases with redesigned parallels. LAVA tools integration live for FMV transparency.", url: "https://blog.nbatopshot.com" },
+      { title: "Top Shot This (TST) — real-time minting from live games", date: "2026-01-10", summary: "Best dunks and moments minted within 24 hours and delivered directly to fans after each game.", url: "https://blog.nbatopshot.com" },
+    ],
   },
   {
     id: "nfl-all-day",
@@ -62,8 +94,9 @@ export const COLLECTIONS: Collection[] = [
     chain: "flow",
     partner: "Dapper Labs",
     accent: "#4F94D4",
+    accentSoft: "#6FAEF0",
     icon: "\u{1F3C8}",
-    pages: ["overview", "collection", "packs", "sniper", "sets", "badges", "analytics"],
+    pages: ["overview", "collection", "market", "packs", "sniper", "sets", "analytics", "badges"],
     published: true,
     graphqlUrl: "https://public-api.nflallday.com/graphql",
     flowContractName: "AllDay",
@@ -73,6 +106,13 @@ export const COLLECTIONS: Collection[] = [
     gqlEndpoint: "https://public-api.nflallday.com/graphql",
     mediaCdnBase: "https://assets.nflallday.com",
     cadenceCollectionPath: "/public/AllDayNFTCollection",
+    supabaseCollectionId: "dee28451-5d62-409e-a1ad-a83f763ac070",
+    marketplaceMomentUrl: (id) => `https://nflallday.com/moment/${id}`,
+    marketplaceWalletUrl: (addr) => `https://nflallday.com/collection/${addr}`,
+    pitch: "Wallet analytics, pack EV, and live marketplace intelligence for NFL All Day collectors on Flow.",
+    news: [
+      { title: "2025-26 base set live — weekly drops active", date: "2026-01-08", summary: "New moments minting every game week. AllDay sales indexer now tracking ~158 events/day across Flowty + AllDay native.", url: "https://nflallday.com" },
+    ],
   },
   {
     id: "disney-pinnacle",
@@ -82,14 +122,22 @@ export const COLLECTIONS: Collection[] = [
     chain: "flow",
     partner: "Dapper Labs",
     accent: "#A855F7",
-    icon: "\u2728",
-    pages: ["overview", "collection", "sniper", "analytics"],
+    accentSoft: "#C084FC",
+    icon: "✨",
+    pages: ["overview", "collection", "market", "sniper", "analytics"],
     published: true,
     flowContractName: "Pinnacle",
     contractAddress: "0xedf9df96c92f4595",
     contractName: "Pinnacle",
     flowtyCollectionFilter: "0xedf9df96c92f4595/Pinnacle",
     cadenceCollectionPath: "/public/PinnacleCollection",
+    supabaseCollectionId: "7dd9dd11-e8b6-45c4-ac99-71331f959714",
+    marketplaceMomentUrl: (id) => `https://disneypinnacle.com/pin/${id}`,
+    marketplaceWalletUrl: (addr) => `https://disneypinnacle.com/collection/${addr}`,
+    pitch: "Wallet analytics and marketplace intelligence for Disney Pinnacle — 231 editions enriched, 97 FMV live.",
+    news: [
+      { title: "Pinnacle on Flow — 231 editions tracked, block-event sales backfill in progress", date: "2026-03-28", summary: "653 historical sales being resolved via Cadence block event scan.", url: "https://disneypinnacle.com" },
+    ],
   },
   {
     id: "laliga-golazos",
@@ -99,8 +147,9 @@ export const COLLECTIONS: Collection[] = [
     chain: "flow",
     partner: "Dapper Labs",
     accent: "#22C55E",
-    icon: "\u26BD",
-    pages: ["overview", "collection", "packs", "sniper", "sets", "analytics"],
+    accentSoft: "#4ADE80",
+    icon: "⚽",
+    pages: ["overview", "collection", "market", "packs", "sniper", "sets", "analytics"],
     published: true,
     graphqlUrl: "https://public-api.laligagolazos.com/graphql",
     flowContractName: "Golazos",
@@ -110,6 +159,13 @@ export const COLLECTIONS: Collection[] = [
     gqlEndpoint: "https://public-api.laligagolazos.com/graphql",
     cadenceCollectionPath: "/public/GolazosNFTCollection",
     mediaCdnBase: "https://assets.laligagolazos.com",
+    supabaseCollectionId: "06248cc4-b85f-47cd-af67-1855d14acd75",
+    marketplaceMomentUrl: (id) => `https://laligagolazos.com/moment/${id}`,
+    marketplaceWalletUrl: (addr) => `https://laligagolazos.com/collection/${addr}`,
+    pitch: "Wallet analytics and FMV intelligence for LaLiga Golazos on Flow — 581 editions tracked, dual-source listing sweep.",
+    news: [
+      { title: "2025-26 LaLiga season underway — thin-volume alert model live", date: "2026-01-02", summary: "Relative-deals RPC with 100x-floor outlier filter now active to surface genuine deals in a low-volume ecosystem.", url: "https://laligagolazos.com" },
+    ],
   },
   {
     id: "ufc",
@@ -121,12 +177,14 @@ export const COLLECTIONS: Collection[] = [
     accent: "#EF4444",
     icon: "\u{1F94A}",
     pages: ["overview", "collection", "sniper", "analytics"],
-    published: true,
+    published: false,
     flowContractName: "UFC_NFT",
     contractAddress: "0x329feb3ab062d289",
     contractName: "UFC_NFT",
     flowtyCollectionFilter: "0x329feb3ab062d289/UFC_NFT",
     cadenceCollectionPath: "/public/UFC_NFTCollection",
+    supabaseCollectionId: "9b4824a8-736d-4a96-b450-8dcc0c46b023",
+    pitch: "Catalog browser for UFC Strike on Flow. Near-zero on-chain volume — post-Aptos migration coverage planned.",
   },
   {
     id: "panini-blockchain",
@@ -140,6 +198,7 @@ export const COLLECTIONS: Collection[] = [
     pages: ["overview", "sniper"],
     published: false,
     openSeaSlug: "paniniblockchain",
+    pitch: "Reserved for Panini Blockchain integration.",
   },
   {
     id: "candy-mlb",
@@ -149,9 +208,10 @@ export const COLLECTIONS: Collection[] = [
     chain: "candy",
     partner: "Futureverse",
     accent: "#FB923C",
-    icon: "\u26BE",
+    icon: "⚾",
     pages: ["overview", "collection", "packs", "sniper"],
     published: false,
+    pitch: "Reserved for Candy MLB integration on the Root Network.",
   },
   {
     id: "rwa",
@@ -164,8 +224,11 @@ export const COLLECTIONS: Collection[] = [
     icon: "\u{1F3C5}",
     pages: ["overview", "collection", "sniper", "vault"],
     published: false,
+    pitch: "Reserved for real-world-asset vaulted card coverage.",
   },
 ]
+
+// ── Helpers ────────────────────────────────────────────────────────────────
 
 export function publishedCollections(): Collection[] {
   return COLLECTIONS.filter(c => c.published)
@@ -177,6 +240,17 @@ export function getCollection(id: string): Collection | undefined {
 
 export function getPublishedCollection(id: string): Collection | undefined {
   return publishedCollections().find(c => c.id === id)
+}
+
+export function requirePublishedCollection(id: string): Collection {
+  const c = getPublishedCollection(id)
+  if (!c) throw new Error(`Collection not published or not found: ${id}`)
+  return c
+}
+
+export function collectionHasPage(id: string, page: CollectionPage): boolean {
+  const c = getCollection(id)
+  return !!c && c.pages.includes(page)
 }
 
 // ── DB bridges ──────────────────────────────────────────────────────────────
@@ -216,6 +290,8 @@ export function getCollectionUuid(slug: string): string | null {
   return COLLECTION_UUID_BY_SLUG[slug] ?? null
 }
 
+// ── Page labels + pitches ───────────────────────────────────────────────────
+
 export const PAGE_LABELS: Record<CollectionPage, string> = {
   overview:   "Overview",
   collection: "Collection",
@@ -227,4 +303,16 @@ export const PAGE_LABELS: Record<CollectionPage, string> = {
   market:     "Market",
   analytics:  "Analytics",
 }
-// cache-bust
+
+// One-line page pitches — rendered under tab hovers and in empty states.
+export const PAGE_PITCHES: Record<CollectionPage, string> = {
+  overview:   "Ecosystem snapshot, news, pipeline health",
+  collection: "Your moments — FMV, badges, acquisition history",
+  market:     "Sort and filter every listing in the ecosystem",
+  packs:      "Pack EV calculator — find drops where EV > retail",
+  sniper:     "Real-time deals below FMV",
+  badges:     "Top Shot Debut, Rookie Year, Championship, and more",
+  sets:       "Completion tracking and bottleneck finder",
+  analytics:  "Sortable ecosystem-wide intelligence",
+  vault:      "Real-world-asset vaulted cards",
+}

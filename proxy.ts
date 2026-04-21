@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
 
 const ALLOWED_ORIGINS = [
   "https://rip-packs-city.vercel.app",
@@ -8,6 +9,18 @@ const ALLOWED_ORIGINS = [
 ];
 
 const CORS_API_PATHS = ["/api/fmv", "/api/sniper-feed", "/api/health"];
+
+// Published collection slugs — kept in sync with lib/collections.ts.
+// Any path whose first segment is one of these requires a Supabase session.
+// Unpublished collections render a "coming soon" shell in the layout, so
+// they're gated too (sign-in still required to see the placeholder).
+const COLLECTION_SLUGS = new Set<string>([
+  "nba-top-shot",
+  "nfl-all-day",
+  "laliga-golazos",
+  "disney-pinnacle",
+  "ufc",
+]);
 
 // ── Rate limiting (in-memory, per-IP) ────────────────────────────────────────
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -76,8 +89,46 @@ function applySecurityHeaders(response: NextResponse) {
   return response;
 }
 
-export function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+// ── Route gating — does this path require a signed-in user? ──────────────────
+// Gate:
+//   • /profile (exact, the editor — not /profile/[username] which is public)
+//   • /[collection]/* where collection is a known slug (nba-top-shot, etc.)
+// Everything else (homepage, share pages, API routes, _next, auth callback,
+// public profile pages) is open. API handlers that need a user call
+// requireUser() themselves — this keeps latency off public API hot paths.
+function requiresAuth(pathname: string): boolean {
+  // /profile editor (exact match or trailing slash only). /profile/[username] passes through.
+  if (pathname === "/profile" || pathname === "/profile/") return true;
+
+  // Collection-scoped pages: first path segment must match a known collection slug.
+  const seg = pathname.split("/")[1] ?? "";
+  if (COLLECTION_SLUGS.has(seg)) return true;
+
+  return false;
+}
+
+// ── Supabase SSR client factory (used only on gated paths) ──────────────────
+function makeSupabase(req: NextRequest, res: NextResponse) {
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return req.cookies.getAll().map((c) => ({ name: c.name, value: c.value }));
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            res.cookies.set({ name, value, ...options });
+          });
+        },
+      },
+    }
+  );
+}
+
+export async function proxy(request: NextRequest) {
+  const { pathname, search } = request.nextUrl;
 
   // Periodic cleanup
   if (Date.now() - lastCleanup > 300_000) {
@@ -139,6 +190,18 @@ export function proxy(request: NextRequest) {
     if (isAllowed && origin) {
       response.headers.set("Access-Control-Allow-Origin", origin);
       response.headers.set("Vary", "Origin");
+    }
+  }
+
+  // ── Auth gate for collection tools + /profile editor ─────────────────────
+  if (requiresAuth(pathname)) {
+    const supabase = makeSupabase(request, response);
+    const { data } = await supabase.auth.getUser();
+
+    if (!data?.user) {
+      const loginUrl = new URL("/login", request.url);
+      loginUrl.searchParams.set("redirect", pathname + search);
+      return applySecurityHeaders(NextResponse.redirect(loginUrl));
     }
   }
 

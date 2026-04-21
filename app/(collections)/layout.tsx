@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { CartButton } from "@/components/cart/CartButton"
 import { ProBadge } from "@/components/auth/ProBadge"
+import SignOutButton from "@/components/auth/SignOutButton"
 import SupportChatConnected from "@/components/SupportChatConnected"
 import SiteFooter from "@/components/SiteFooter"
 import MobileNav from "@/components/MobileNav"
@@ -55,9 +56,7 @@ function SiteHeader() {
         <div style={{ flex: 1 }} />
         <ProBadge />
         <CartButton />
-        <Link href="/profile" style={{ background: "rgba(224,58,47,0.15)", border: "1px solid rgba(224,58,47,0.4)", color: "#E03A2F", padding: "4px 10px", borderRadius: 4, fontSize: 10, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none", flexShrink: 0, maxWidth: 80 }}>
-          Profile
-        </Link>
+        <SignOutButton />
       </div>
     </header>
   )
