@@ -14,7 +14,10 @@ const supabase: any = createClient(
 const FLOWTY_PROXY_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://bxcqstmqfzmuolpuynti.supabase.co") +
   "/functions/v1/flowty-proxy";
-const FLOWTY_PROXY_TOKEN = "rippackscity2026";
+const FLOWTY_PROXY_TOKEN = process.env.FLOWTY_PROXY_TOKEN;
+if (!FLOWTY_PROXY_TOKEN) {
+  throw new Error("FLOWTY_PROXY_TOKEN env var is required");
+}
 
 const PAGE_SIZE = 50;
 

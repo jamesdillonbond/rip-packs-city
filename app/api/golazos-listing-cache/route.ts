@@ -21,7 +21,10 @@ const GZ_CONTRACT_ADDRESS = "0x87ca73a41bb50ad5"
 const GZ_CONTRACT_NAME = "Golazos"
 const FLOWTY_PROXY_URL =
   "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/flowty-proxy"
-const FLOWTY_PROXY_TOKEN = "rippackscity2026"
+const FLOWTY_PROXY_TOKEN = process.env.FLOWTY_PROXY_TOKEN
+if (!FLOWTY_PROXY_TOKEN) {
+  throw new Error("FLOWTY_PROXY_TOKEN env var is required")
+}
 const PAGE_LIMIT = 50
 // Dual-sort sweep: cheap listings dominate the floor when sorted salePrice asc,
 // which is why pre-sweep Golazos was pinned at the $0.14–$1 band with zero

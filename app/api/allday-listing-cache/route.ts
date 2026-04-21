@@ -18,7 +18,10 @@ const AD_CONTRACT_ADDRESS = "0xe4cf4bdc1751c65d"
 const AD_CONTRACT_NAME = "AllDay"
 const FLOWTY_PROXY_URL =
   "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/flowty-proxy"
-const FLOWTY_PROXY_TOKEN = "rippackscity2026"
+const FLOWTY_PROXY_TOKEN = process.env.FLOWTY_PROXY_TOKEN
+if (!FLOWTY_PROXY_TOKEN) {
+  throw new Error("FLOWTY_PROXY_TOKEN env var is required")
+}
 const AD_GQL_PROXY = process.env.AD_PROXY_URL ?? ""
 const AD_GQL_SECRET = process.env.AD_PROXY_SECRET ?? ""
 const AD_GQL_FALLBACK = "https://nflallday.com/consumer/graphql"
