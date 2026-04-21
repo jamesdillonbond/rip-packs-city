@@ -47,6 +47,8 @@ next-env.d.ts
 emulator-account.pkey
 imports/
 README_flow.md
+flow.json
+flow
 
 # debug
 npm-debug.log*
