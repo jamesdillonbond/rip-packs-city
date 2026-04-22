@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { getCollection } from "@/lib/collections";
 import { getOwnerKey } from "@/lib/owner-key";
+import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection";
 
 // ── Types (mirrors API response) ─────────────────────────────────────────────
 
@@ -113,20 +114,30 @@ export default function SetsPage() {
 
   const autoLoadFired = useRef(false);
 
-  // Read wallet from URL params on mount, or auto-load from owner key
+  // Read wallet from URL params on mount; fall back to owner key; then to the
+  // signed-in user's saved wallet for this collection.
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     const w = p.get("wallet") || p.get("address") || null;
     if (w && w.trim()) {
       setWallet(w.trim());
-    } else if (!autoLoadFired.current) {
-      const key = getOwnerKey();
-      if (key) {
-        autoLoadFired.current = true;
-        setWallet(key);
-      }
+      return;
     }
-  }, []);
+    if (autoLoadFired.current) return;
+    const key = getOwnerKey();
+    if (key) {
+      autoLoadFired.current = true;
+      setWallet(key);
+      return;
+    }
+    let cancelled = false;
+    fetchSavedWalletForCollection(collectionSlug).then((addr) => {
+      if (cancelled || autoLoadFired.current || !addr) return;
+      autoLoadFired.current = true;
+      setWallet(addr);
+    });
+    return () => { cancelled = true; };
+  }, [collectionSlug]);
 
   // Fetch sets when wallet is set
   useEffect(() => {

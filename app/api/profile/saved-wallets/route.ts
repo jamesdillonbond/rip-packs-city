@@ -11,7 +11,7 @@ import { requireUser } from "@/lib/auth/supabase-server";
 
 const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   let user;
   try {
     user = await requireUser();
@@ -19,12 +19,21 @@ export async function GET() {
     return res as Response;
   }
 
+  // Optional ?collectionId=<uuid> filter so collection-aware pages can fetch
+  // just their own saved wallet without loading (and iterating) the full set.
+  const collectionIdFilter = req.nextUrl.searchParams.get("collectionId");
+
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from("saved_wallets")
       .select("*")
-      .eq("user_id", user.id)
-      .order("pinned_at", { ascending: false });
+      .eq("user_id", user.id);
+
+    if (collectionIdFilter) {
+      query = query.eq("collection_id", collectionIdFilter);
+    }
+
+    const { data, error } = await query.order("pinned_at", { ascending: false });
 
     if (error) {
       console.error("[saved-wallets GET]", error.message);
