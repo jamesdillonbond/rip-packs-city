@@ -6,8 +6,15 @@
 //
 // Dapper SSO enforces one username per wallet across all four marketplaces,
 // so a Top Shot resolution is authoritative for the whole family.
+//
+// After the saved_wallets rows are upserted, we fire 4 parallel wallet-search
+// POSTs via `after()` so wallet_moments_cache starts populating immediately
+// — the user shouldn't need to navigate to each collection page to trigger
+// indexing. Each completed wallet-search response is summarised and written
+// back to saved_wallets (cached_moment_count, cached_fmv_usd) so the
+// /profile cards and the HeroMoment card populate without a manual refresh.
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { resolveTopShotUsername } from "@/lib/topshot-username-resolve";
@@ -22,6 +29,13 @@ const DAPPER_SSO_SLUGS = new Set([
   "laliga-golazos",
   "disney-pinnacle",
 ]);
+
+function siteUrl() {
+  return (
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://rip-packs-city.vercel.app")
+  );
+}
 
 export async function POST(req: NextRequest) {
   let user;
@@ -92,6 +106,65 @@ export async function POST(req: NextRequest) {
     console.error("[resolve-and-associate] upsert error:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // Fire-and-forget: kick off wallet-search for every associated collection so
+  // wallet_moments_cache populates without requiring the user to navigate.
+  // after() runs the callback after the response is flushed, so the client
+  // gets its 200 immediately. Each wallet-search result is also written back
+  // to saved_wallets (cached_moment_count + cached_fmv_usd) so the /profile
+  // cards show real values as soon as the background work finishes.
+  const userId = user.id;
+  after(async () => {
+    const base = siteUrl();
+    await Promise.allSettled(
+      targets.map(async (c) => {
+        const slug = c.id;
+        const uuid = c.supabaseCollectionId!;
+        try {
+          const res = await fetch(`${base}/api/wallet-search`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ input: walletAddress, collectionId: slug, limit: 50 }),
+          });
+          if (!res.ok) {
+            console.warn(`[resolve-and-associate after] ${slug} wallet-search HTTP ${res.status}`);
+            return;
+          }
+          const payload: any = await res.json().catch(() => null);
+          if (!payload) return;
+
+          const totalMoments = Number(payload?.summary?.totalMoments ?? 0) || 0;
+          let totalFmv = 0;
+          for (const r of payload?.rows ?? []) {
+            if (typeof r?.fmv === "number") totalFmv += r.fmv;
+          }
+
+          const TIER_PRIORITY = ["ULTIMATE", "LEGENDARY", "RARE", "FANDOM", "COMMON"];
+          let cachedTopTier: string | null = null;
+          for (const t of TIER_PRIORITY) {
+            if ((payload.rows ?? []).some((r: any) => (r?.tier ?? "").toUpperCase() === t)) {
+              cachedTopTier = t;
+              break;
+            }
+          }
+
+          await supabase
+            .from("saved_wallets")
+            .update({
+              cached_moment_count: totalMoments,
+              cached_fmv_usd: totalFmv > 0 ? totalFmv : null,
+              cached_top_tier: cachedTopTier,
+              cache_updated_at: new Date().toISOString(),
+            })
+            .eq("user_id", userId)
+            .eq("wallet_addr", walletAddress)
+            .eq("collection_id", uuid);
+        } catch (err: any) {
+          console.warn(`[resolve-and-associate after] ${slug} failed:`, err?.message);
+        }
+      })
+    );
+  });
 
   return NextResponse.json({
     username,

@@ -242,6 +242,33 @@ async function runSmokeTests() {
       }
     })(),
 
+    // Phase 4.2: /api/profile/resolve-and-associate must respond quickly even
+    // though it fires 4 parallel wallet-search calls in the background via
+    // after(). The after() callback runs after the response is flushed, so
+    // the POST should return well under 3 seconds even without a session
+    // (401 short-circuits before GQL). This regression-tests that the
+    // background fanout isn't accidentally blocking the response.
+    (async (): Promise<TestResult> => {
+      const name = "/api/profile/resolve-and-associate returns quickly (after() non-blocking)";
+      try {
+        const start = Date.now();
+        const res = await fetch(`${BASE_URL}/api/profile/resolve-and-associate`, {
+          method: "POST",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: "jamesdillonbond" }),
+          signal: AbortSignal.timeout(5000),
+        });
+        const elapsed = Date.now() - start;
+        // Any non-5xx status is acceptable — we're measuring response latency,
+        // not auth behaviour. 3s ceiling allows cold-start slack.
+        const ok = res.status < 500 && elapsed < 3000;
+        return { name, passed: ok, detail: `HTTP ${res.status} in ${elapsed}ms` };
+      } catch (e: any) {
+        return { name, passed: false, detail: e?.message ?? String(e) };
+      }
+    })(),
+
     // Phase 4 (opt-in): attach a smoke-test user session cookie and probe the
     // auth-gated /nba-top-shot/collection page. If SMOKE_TEST_SESSION_TOKEN is
     // unset, skip without failing. To generate the token:

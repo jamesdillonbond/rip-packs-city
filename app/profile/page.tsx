@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import MobileNav from "@/components/MobileNav";
 import SupportChatConnected from "@/components/SupportChatConnected";
@@ -181,6 +181,9 @@ export default function ProfilePage() {
   const [usernameInput, setUsernameInput] = useState("");
   const [usernameSaving, setUsernameSaving] = useState(false);
   const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [indexing, setIndexing] = useState(false);
+  const indexingPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const indexingStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [walletForm, setWalletForm] = useState({ addr: "", nickname: "", collectionId: "nba-top-shot" });
   const [walletSaving, setWalletSaving] = useState(false);
@@ -249,6 +252,52 @@ export default function ProfilePage() {
     refresh();
   }, [refresh]);
 
+  // Cleanup any polling timers on unmount.
+  useEffect(() => {
+    return () => {
+      if (indexingPollRef.current) clearInterval(indexingPollRef.current);
+      if (indexingStopRef.current) clearTimeout(indexingStopRef.current);
+    };
+  }, []);
+
+  const stopIndexingPoll = useCallback(() => {
+    if (indexingPollRef.current) {
+      clearInterval(indexingPollRef.current);
+      indexingPollRef.current = null;
+    }
+    if (indexingStopRef.current) {
+      clearTimeout(indexingStopRef.current);
+      indexingStopRef.current = null;
+    }
+    setIndexing(false);
+  }, []);
+
+  const startIndexingPoll = useCallback(() => {
+    if (indexingPollRef.current) clearInterval(indexingPollRef.current);
+    if (indexingStopRef.current) clearTimeout(indexingStopRef.current);
+    setIndexing(true);
+    indexingPollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch("/api/profile/saved-wallets", { cache: "no-store" });
+        if (!res.ok) return;
+        const d = await res.json();
+        const ws: SavedWallet[] = d?.wallets ?? [];
+        setWallets(ws);
+        if (ws.length >= 4 && ws.every((w) => (w.cached_moment_count ?? 0) > 0)) {
+          stopIndexingPoll();
+          // Pick up the newly-populated HeroMoment + trophies once cached.
+          refresh();
+        }
+      } catch {
+        // Keep polling quietly on transient errors.
+      }
+    }, 10000);
+    indexingStopRef.current = setTimeout(() => {
+      stopIndexingPoll();
+      refresh();
+    }, 60000);
+  }, [refresh, stopIndexingPoll]);
+
   const resolveAndAssociate = useCallback(async () => {
     const username = usernameInput.trim();
     if (!username) {
@@ -270,15 +319,19 @@ export default function ProfilePage() {
       const addr = data.walletAddress as string;
       const count = Array.isArray(data.associatedCollections) ? data.associatedCollections.length : 0;
       pushToast(`Loaded wallet ${truncateAddress(addr)} across ${count} collections`, "success");
-      pushToast("Your moments are being indexed — refresh in a minute", "info");
+      pushToast(
+        `Indexing your moments across ${count} collections — this usually takes 30-60 seconds`,
+        "info"
+      );
       setUsernameInput("");
       await refresh();
+      startIndexingPoll();
     } catch (err: any) {
       setUsernameError(err.message || "Failed to resolve");
     } finally {
       setUsernameSaving(false);
     }
-  }, [usernameInput, refresh, pushToast]);
+  }, [usernameInput, refresh, pushToast, startIndexingPoll]);
 
   const addWallet = useCallback(async () => {
     const addr = walletForm.addr.trim().toLowerCase();
@@ -375,6 +428,11 @@ export default function ProfilePage() {
         *{box-sizing:border-box;margin:0;padding:0;}
         .rpc-section { background:#18181b; border:1px solid #27272a; border-radius:10px; padding:16px 18px; }
         .rpc-section-title { font-family:${condensedFont}; font-weight:800; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:rgba(255,255,255,0.7); margin-bottom:12px; }
+        .rpc-wallet-card { transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease; cursor: pointer; }
+        .rpc-wallet-card:hover { border-color: var(--rpc-accent, #555); transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.55); }
+        .rpc-spinner { width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.2); border-top-color: #fff; border-radius: 50%; display: inline-block; animation: rpc-spin 900ms linear infinite; }
+        .rpc-spinner-sm { width: 9px; height: 9px; border: 1.5px solid rgba(255,255,255,0.2); border-top-color: #fff; border-radius: 50%; display: inline-block; animation: rpc-spin 900ms linear infinite; }
+        @keyframes rpc-spin { to { transform: rotate(360deg); } }
         @media (max-width: 768px){ .rpc-profile-main { padding: 14px 14px 80px !important; } }
       `}</style>
 
@@ -406,7 +464,7 @@ export default function ProfilePage() {
             error={usernameError}
           />
         ) : (
-          <HeroMomentCard hero={hero} reason={heroReason} />
+          <HeroMomentCard hero={hero} reason={heroReason} wallets={wallets} indexing={indexing} />
         )}
 
         {/* ── Stats Tiles ── */}
@@ -535,13 +593,38 @@ export default function ProfilePage() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }}>
               {wallets.map((w) => {
                 const cMeta = collectionMetaByUuid(w.collection_id);
+                const slug = cMeta?.id ?? "nba-top-shot";
+                const href = `/${slug}/collection?address=${w.wallet_addr}`;
+                const isEmpty = !w.cached_moment_count;
+                const showSpinner = isEmpty && indexing;
                 return (
-                  <div key={`${w.wallet_addr}_${w.collection_id}`} style={{ background: "#0d0d0d", border: "1px solid #27272a", borderBottom: `2px solid ${cMeta?.accent ?? "#333"}`, borderRadius: 8, padding: "10px 12px" }}>
+                  <Link
+                    key={`${w.wallet_addr}_${w.collection_id}`}
+                    href={href}
+                    className="rpc-wallet-card"
+                    style={{
+                      background: "#0d0d0d",
+                      border: "1px solid #27272a",
+                      borderBottom: `2px solid ${cMeta?.accent ?? "#333"}`,
+                      borderRadius: 8,
+                      padding: "10px 12px",
+                      display: "block",
+                      textDecoration: "none",
+                      color: "inherit",
+                      ["--rpc-accent" as any]: cMeta?.accent ?? "#555",
+                    }}
+                  >
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
                       <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                         {cMeta?.icon} {cMeta?.shortLabel}
                       </div>
-                      <button onClick={() => removeWallet(w)} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 12, cursor: "pointer" }}>✕</button>
+                      <button
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeWallet(w); }}
+                        aria-label="Remove saved wallet"
+                        style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 12, cursor: "pointer" }}
+                      >
+                        ✕
+                      </button>
                     </div>
                     <div style={{ fontFamily: monoFont, fontSize: 11, color: "#fff", marginTop: 4 }}>
                       {w.nickname ? `${w.nickname} — ` : ""}{truncateAddress(w.wallet_addr)}
@@ -549,14 +632,17 @@ export default function ProfilePage() {
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
                       <div>
                         <div style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Moments</div>
-                        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14 }}>{(w.cached_moment_count ?? 0).toLocaleString()}</div>
+                        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
+                          {showSpinner && <span className="rpc-spinner-sm" aria-hidden />}
+                          {(w.cached_moment_count ?? 0).toLocaleString()}
+                        </div>
                       </div>
                       <div>
                         <div style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>FMV</div>
                         <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "#34D399" }}>{fmtUsd(Number(w.cached_fmv) || 0)}</div>
                       </div>
                     </div>
-                  </div>
+                  </Link>
                 );
               })}
             </div>
@@ -804,15 +890,39 @@ function OnboardingCta({
   );
 }
 
-function HeroMomentCard({ hero, reason }: { hero: HeroMoment | null; reason: string | null }) {
+function HeroMomentCard({
+  hero,
+  reason,
+  wallets,
+  indexing,
+}: {
+  hero: HeroMoment | null;
+  reason: string | null;
+  wallets: SavedWallet[];
+  indexing: boolean;
+}) {
   if (!hero) {
+    const hasWallets = wallets.length > 0;
+    const allEmpty = hasWallets && wallets.every((w) => !w.cached_moment_count);
+    const isIndexing = indexing || (hasWallets && allEmpty);
+    const heading = isIndexing
+      ? "Indexing your collection"
+      : "Add a wallet to reveal your hero moment";
+    const subcopy = isIndexing
+      ? "This usually takes 30-60 seconds. Refresh shortly."
+      : reason === "no_moments"
+        ? "We know your wallet but haven't ingested its moments yet."
+        : reason === "no_fmv_yet"
+          ? "Moments indexed — FMV pipeline catching up."
+          : "No wallets saved.";
     return (
       <section className="rpc-section rpc-binder-slot" style={{ padding: "28px 20px", textAlign: "center" }}>
-        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 16, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.85)" }}>
-          Add a wallet to reveal your hero moment
+        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 16, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.85)", display: "inline-flex", alignItems: "center", gap: 10 }}>
+          {isIndexing && <span className="rpc-spinner" aria-hidden />}
+          {heading}
         </div>
         <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 6, letterSpacing: "0.04em" }}>
-          {reason === "no_moments" ? "We know your wallet but haven't ingested its moments yet." : reason === "no_fmv_yet" ? "Moments indexed — FMV pipeline catching up." : "No wallets saved."}
+          {subcopy}
         </div>
       </section>
     );
