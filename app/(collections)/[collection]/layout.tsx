@@ -150,8 +150,6 @@ function CollectionBanner({ collection }: { collection: Collection }) {
           <span style={{ fontSize: 10, fontFamily: "'Share Tech Mono', monospace", color: "rgba(255,255,255,0.55)", letterSpacing: "0.1em" }}>{collection.label}</span>
         </div>
 
-        <CollectionSwitcher activeCollectionId={collection.id} />
-
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0 0" }}>
           <span style={{ fontSize: 22 }}>{collection.icon}</span>
           <div>
@@ -166,6 +164,8 @@ function CollectionBanner({ collection }: { collection: Collection }) {
             {chainLabel[collection.chain] ?? collection.chain}
           </div>
         </div>
+
+        <CollectionSwitcher activeCollectionId={collection.id} />
 
         <CollectionTabBar collection={collection} />
       </div>

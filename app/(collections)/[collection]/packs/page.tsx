@@ -6,6 +6,7 @@ import { useParams } from "next/navigation"
 import { LineChart, Line, ResponsiveContainer } from "recharts"
 import { getCollection } from "@/lib/collections"
 import { getOwnerKey } from "@/lib/owner-key"
+import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection"
 
 type EvHistoryPoint = { snapshotted_at: string; gross_ev: number; pack_ev: number; value_ratio: number | null }
 type PullStat = { pull_tier: string; pull_count: number; avg_fmv_usd: number | null; pct_of_total: number }
@@ -406,30 +407,52 @@ export default function PacksPage() {
     }
   }
 
-  // Auto-load wallet from owner key on mount
+  // Auto-load wallet: prefer localStorage owner key; otherwise fall back to
+  // the signed-in user's saved wallet for this collection. Fires exactly once
+  // on mount via autoWalletFired.
   useEffect(() => {
     if (autoWalletFired.current) return
-    const key = getOwnerKey()
-    if (key && !walletInput) {
+    let cancelled = false
+
+    async function autoLoad(source: string) {
       autoWalletFired.current = true
-      setWalletInput(key)
-      setWalletQuery(key)
+      setWalletInput(source)
+      setWalletQuery(source)
       setWalletLoading(true)
       setWalletError("")
       setOwnedPacks({})
       setWalletAddress("")
-      fetch("/api/wallet-packs?wallet=" + encodeURIComponent(key))
-        .then((r) => r.ok ? r.json() : r.json().then((j) => { throw new Error(j.error || "Failed") }))
-        .then((json) => {
-          setOwnedPacks(json.owned ?? {})
-          setWalletAddress(json.walletAddress ?? "")
-          setSortKey("owned")
-          setSortDir("desc")
-          if (json.totalSealedPacks === 0) setWalletError("No sealed packs found for this wallet.")
-        })
-        .catch((err) => setWalletError(err instanceof Error ? err.message : "Something went wrong"))
-        .finally(() => setWalletLoading(false))
+      try {
+        const res = await fetch("/api/wallet-packs?wallet=" + encodeURIComponent(source))
+        const json = await res.json().catch(() => ({}))
+        if (cancelled) return
+        if (!res.ok) throw new Error(json.error || "Failed")
+        setOwnedPacks(json.owned ?? {})
+        setWalletAddress(json.walletAddress ?? "")
+        setSortKey("owned")
+        setSortDir("desc")
+        if (json.totalSealedPacks === 0) setWalletError("No sealed packs found for this wallet.")
+      } catch (err) {
+        if (!cancelled) setWalletError(err instanceof Error ? err.message : "Something went wrong")
+      } finally {
+        if (!cancelled) setWalletLoading(false)
+      }
     }
+
+    const key = getOwnerKey()
+    if (key && !walletInput) {
+      autoLoad(key)
+      return () => { cancelled = true }
+    }
+
+    if (!walletInput) {
+      fetchSavedWalletForCollection(collection).then((addr) => {
+        if (cancelled || !addr || walletInput) return
+        autoLoad(addr)
+      })
+    }
+
+    return () => { cancelled = true }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   function toggleSort(key: SortKey) {
