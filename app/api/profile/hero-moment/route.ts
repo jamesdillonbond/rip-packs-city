@@ -2,10 +2,16 @@
 //
 // Returns the single highest-FMV moment across all of the current user's
 // saved wallets. Powers the Hero Holo Moment card on /profile.
+//
+// Reads from wallet_moments_cache (the table the wallet-search fanout +
+// Pinnacle/UFC indexers populate) — NOT the `moments` table, which is
+// only fed by the listings/sales ingest pipeline and is empty for
+// background-indexed wallets.
 
 import { NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
+import { COLLECTIONS } from "@/lib/collections";
 
 export async function GET() {
   let user;
@@ -17,7 +23,7 @@ export async function GET() {
 
   const { data: wallets } = await supabase
     .from("saved_wallets")
-    .select("wallet_addr, collection_id")
+    .select("wallet_addr")
     .eq("user_id", user.id);
 
   if (!wallets || wallets.length === 0) {
@@ -28,73 +34,45 @@ export async function GET() {
     new Set(wallets.map((w: any) => String(w.wallet_addr).toLowerCase()))
   );
 
-  // Pull candidate moments owned by the user's wallets
-  const { data: moments, error } = await supabase
-    .from("moments")
-    .select("id, edition_id, collection_id, serial_number, nft_id, owner_address")
-    .in("owner_address", addresses)
-    .limit(500);
+  const { data: top, error } = await supabase
+    .from("wallet_moments_cache")
+    .select(
+      "moment_id, edition_key, collection_id, player_name, set_name, tier, serial_number, image_url, fmv_usd, wallet_address"
+    )
+    .in("wallet_address", addresses)
+    .order("fmv_usd", { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle();
 
   if (error) {
-    console.error("[hero-moment moments]", error);
+    console.error("[hero-moment]", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  if (!moments || moments.length === 0) {
+
+  if (!top) {
     return NextResponse.json({ hero: null, reason: "no_moments" });
   }
 
-  // Pull latest FMV snapshot per edition
-  const editionIds = Array.from(new Set(moments.map((m: any) => m.edition_id).filter(Boolean)));
-  const { data: fmvRows } = editionIds.length
-    ? await supabase
-        .from("fmv_snapshots")
-        .select("edition_id, fmv_usd, computed_at")
-        .in("edition_id", editionIds)
-        .order("computed_at", { ascending: false })
-    : { data: [] as any[] };
-
-  const fmvMap = new Map<string, number>();
-  for (const row of fmvRows ?? []) {
-    if (!fmvMap.has(row.edition_id)) {
-      fmvMap.set(row.edition_id, Number(row.fmv_usd) || 0);
-    }
+  const fmv = Number(top.fmv_usd);
+  if (!top.fmv_usd || !Number.isFinite(fmv) || fmv <= 0) {
+    return NextResponse.json({ hero: null, reason: "no_fmv" });
   }
 
-  // Pick the moment with highest FMV
-  let bestMoment: any = null;
-  let bestFmv = -1;
-  for (const m of moments) {
-    const f = fmvMap.get(m.edition_id) ?? 0;
-    if (f > bestFmv) {
-      bestFmv = f;
-      bestMoment = m;
-    }
-  }
-
-  if (!bestMoment || bestFmv <= 0) {
-    return NextResponse.json({ hero: null, reason: "no_fmv_yet" });
-  }
-
-  const { data: edition } = await supabase
-    .from("editions")
-    .select("id, player_name, set_name, tier, thumbnail_url, video_url, circulation_count")
-    .eq("id", bestMoment.edition_id)
-    .maybeSingle();
+  const coll = COLLECTIONS.find((c) => c.supabaseCollectionId === top.collection_id);
 
   return NextResponse.json({
     hero: {
-      moment_id: bestMoment.id,
-      nft_id: bestMoment.nft_id,
-      collection_id: bestMoment.collection_id,
-      owner_address: bestMoment.owner_address,
-      serial_number: bestMoment.serial_number,
-      player_name: edition?.player_name ?? null,
-      set_name: edition?.set_name ?? null,
-      tier: edition?.tier ?? null,
-      circulation_count: edition?.circulation_count ?? null,
-      thumbnail_url: edition?.thumbnail_url ?? null,
-      video_url: edition?.video_url ?? null,
-      fmv_usd: bestFmv,
+      momentId: top.moment_id,
+      playerName: top.player_name,
+      setName: top.set_name,
+      tier: top.tier,
+      serialNumber: top.serial_number,
+      imageUrl: top.image_url,
+      editionKey: top.edition_key,
+      fmvUsd: fmv,
+      collectionId: coll?.id ?? null,
+      collectionLabel: coll?.label ?? null,
+      collectionAccent: coll?.accent ?? null,
     },
   });
 }

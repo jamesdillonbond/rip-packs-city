@@ -110,16 +110,20 @@ export async function POST(req: NextRequest) {
   // Fire-and-forget: kick off wallet-search for every associated collection so
   // wallet_moments_cache populates without requiring the user to navigate.
   // after() runs the callback after the response is flushed, so the client
-  // gets its 200 immediately. Each wallet-search result is also written back
-  // to saved_wallets (cached_moment_count + cached_fmv_usd) so the /profile
-  // cards show real values as soon as the background work finishes.
+  // gets its 200 immediately.
+  //
+  // Once all 4 wallet-searches settle, we call aggregate_saved_wallet_stats —
+  // a single Postgres RPC that reads directly from wallet_moments_cache
+  // (source of truth) and updates all saved_wallets rows for this wallet.
+  // Previously we derived counts from each wallet-search response body, but
+  // that path wrote zeros whenever the route short-circuited (Pinnacle/UFC/
+  // Golazos) or returned only a limited page of rows.
   const userId = user.id;
   after(async () => {
     const base = siteUrl();
     await Promise.allSettled(
       targets.map(async (c) => {
         const slug = c.id;
-        const uuid = c.supabaseCollectionId!;
         try {
           const res = await fetch(`${base}/api/wallet-search`, {
             method: "POST",
@@ -128,42 +132,26 @@ export async function POST(req: NextRequest) {
           });
           if (!res.ok) {
             console.warn(`[resolve-and-associate after] ${slug} wallet-search HTTP ${res.status}`);
-            return;
           }
-          const payload: any = await res.json().catch(() => null);
-          if (!payload) return;
-
-          const totalMoments = Number(payload?.summary?.totalMoments ?? 0) || 0;
-          let totalFmv = 0;
-          for (const r of payload?.rows ?? []) {
-            if (typeof r?.fmv === "number") totalFmv += r.fmv;
-          }
-
-          const TIER_PRIORITY = ["ULTIMATE", "LEGENDARY", "RARE", "FANDOM", "COMMON"];
-          let cachedTopTier: string | null = null;
-          for (const t of TIER_PRIORITY) {
-            if ((payload.rows ?? []).some((r: any) => (r?.tier ?? "").toUpperCase() === t)) {
-              cachedTopTier = t;
-              break;
-            }
-          }
-
-          await supabase
-            .from("saved_wallets")
-            .update({
-              cached_moment_count: totalMoments,
-              cached_fmv_usd: totalFmv > 0 ? totalFmv : null,
-              cached_top_tier: cachedTopTier,
-              cache_updated_at: new Date().toISOString(),
-            })
-            .eq("user_id", userId)
-            .eq("wallet_addr", walletAddress)
-            .eq("collection_id", uuid);
         } catch (err: any) {
-          console.warn(`[resolve-and-associate after] ${slug} failed:`, err?.message);
+          console.warn(`[resolve-and-associate after] ${slug} fetch failed:`, err?.message);
         }
       })
     );
+
+    try {
+      const { data, error } = await (supabase as any).rpc("aggregate_saved_wallet_stats", {
+        p_user_id: userId,
+        p_wallet_addr: walletAddress,
+      });
+      if (error) {
+        console.warn("[resolve-and-associate after] aggregate RPC error:", error.message);
+      } else {
+        console.log(`[resolve-and-associate after] aggregate RPC updated ${data ?? 0} saved_wallets rows`);
+      }
+    } catch (err: any) {
+      console.warn("[resolve-and-associate after] aggregate RPC threw:", err?.message);
+    }
   });
 
   return NextResponse.json({

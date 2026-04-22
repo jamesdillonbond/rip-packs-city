@@ -297,6 +297,45 @@ async function runSmokeTests() {
         return { name, passed: false, soft: true, detail: e?.message ?? String(e) };
       }
     })(),
+
+    // Phase 4.3 (opt-in): /api/profile/hero-moment must return a populated
+    // hero object for a test user whose wallet_moments_cache is already
+    // indexed. Regression test for the hero-moment ↔ wallet_moments_cache
+    // wiring (previously queried the empty `moments` table). Skip gracefully
+    // when SMOKE_TEST_SESSION_TOKEN is unset — the unauthed 401 probe above
+    // already covers the wiring-exists case.
+    (async (): Promise<TestResult> => {
+      const name = "/api/profile/hero-moment returns populated hero (opt-in via SMOKE_TEST_SESSION_TOKEN)";
+      const token = process.env.SMOKE_TEST_SESSION_TOKEN;
+      if (!token) return { name, passed: true, soft: true, detail: "skipped — no SMOKE_TEST_SESSION_TOKEN" };
+      try {
+        const res = await fetch(`${BASE_URL}/api/profile/hero-moment`, {
+          cache: "no-store",
+          redirect: "manual",
+          headers: { cookie: `sb-auth-token=${token}` },
+          signal: AbortSignal.timeout(6000),
+        });
+        if (res.status !== 200) {
+          return { name, passed: false, soft: true, detail: `HTTP ${res.status}` };
+        }
+        const body = await res.json().catch(() => null);
+        const ok =
+          body?.hero != null &&
+          typeof body.hero.momentId === "string" &&
+          typeof body.hero.fmvUsd === "number" &&
+          body.hero.fmvUsd > 0;
+        return {
+          name,
+          passed: !!ok,
+          soft: true,
+          detail: ok
+            ? `${body.hero.playerName ?? "?"} $${body.hero.fmvUsd.toFixed(2)}`
+            : body?.reason ?? "malformed body",
+        };
+      } catch (e: any) {
+        return { name, passed: false, soft: true, detail: e?.message ?? String(e) };
+      }
+    })(),
   ]);
 
   // ── Collect results, converting rejected promises to failures ──
