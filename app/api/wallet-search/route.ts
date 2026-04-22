@@ -999,11 +999,15 @@ export async function POST(req: NextRequest) {
 
     const baseRows = (await mapWithConcurrency(slice, 8, async (id) => {
       // INVARIANT_SAFE: catch per-moment errors so one bad moment doesn't crash the whole wallet
+      // `stage` tracks which sub-step failed so Vercel logs can identify
+      // whether GQL, Flow metadata, or row assembly blew up.
+      let stage: "enrich-gql" | "flow-metadata" | "assemble" = "enrich-gql"
       try {
       const [gql, meta] = await Promise.all([
-        fetchMomentGraphQL(String(id)),
-        getMomentMetadata(wallet, id),
+        fetchMomentGraphQL(String(id)).catch((e) => { stage = "enrich-gql"; throw e }),
+        getMomentMetadata(wallet, id).catch((e) => { stage = "flow-metadata"; throw e }),
       ])
+      stage = "assemble"
 
       const serial = toNum(meta.serial)
       const mint = toNum(meta.mint)
@@ -1042,7 +1046,14 @@ export async function POST(req: NextRequest) {
         tssPoints: gql.tssPoints,
       } as WalletRow
       } catch (momentErr: any) {
-        console.warn("[wallet-search] Moment " + id + " failed: " + (momentErr.message || "unknown").slice(0, 100));
+        const reason = ((momentErr?.message ?? "unknown") as string).slice(0, 80)
+        const walletShort = wallet ? wallet.slice(0, 10) : "none"
+        console.warn(
+          `[wallet-search] moment-fail momentId=${id} ` +
+            `wallet=${walletShort} ` +
+            `stage=${stage} ` +
+            `reason=${reason}`
+        );
         const [meta, gqlFallback] = await Promise.all([
           getMomentMetadata(wallet, id).catch(function() { return {} as Record<string,string>; }),
           fetchMomentGraphQL(String(id)).catch(function() {
