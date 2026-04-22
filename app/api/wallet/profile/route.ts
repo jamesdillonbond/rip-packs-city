@@ -11,14 +11,25 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    const rpcStart = Date.now()
     const { data, error } = await (supabaseAdmin as any).rpc("get_user_profile", {
       p_owner_key: rawOwnerKey,
     })
+    const rpcMs = Date.now() - rpcStart
     if (error) {
       console.error(
-        `[wallet/profile] RPC error: ${error.message} ownerKey=${rawOwnerKey}`
+        `[wallet/profile] RPC failed ownerKey=${rawOwnerKey} elapsed=${rpcMs}ms ` +
+          `code=${error.code ?? "none"} ` +
+          `hint=${(error.hint ?? "none").slice(0, 60)} ` +
+          `msg=${(error.message ?? "").slice(0, 120)}`
+      )
+      console.error(
+        `[wallet/profile] RPC details=${JSON.stringify(error.details ?? null).slice(0, 200)}`
       )
       return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    if (rpcMs > 3000) {
+      console.warn(`[wallet/profile] slow RPC ownerKey=${rawOwnerKey} elapsed=${rpcMs}ms`)
     }
     return NextResponse.json(data)
   } catch (err) {
