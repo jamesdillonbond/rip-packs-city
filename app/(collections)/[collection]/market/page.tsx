@@ -202,11 +202,13 @@ function MarketInner() {
     try { router.replace(qs ? `?${qs}` : "?", { scroll: false }) } catch { /* ignore */ }
   }, [tiersSel, minPrice, maxPrice, minDiscount, debouncedPlayer, hasBadges, sort, page, view, router])
 
-  // ── Thin-volume notice — reads /api/health's per_collection array ────
+  // ── Thin-volume notice — reads /api/ready's per_collection array ─────
+  // (/api/health is a minimal liveness probe; readiness telemetry lives at
+  // /api/ready.)
   const [healthRow, setHealthRow] = useState<HealthPerCollection | null>(null)
   useEffect(() => {
     let cancelled = false
-    fetch("/api/health", { cache: "no-store" })
+    fetch("/api/ready", { cache: "no-store" })
       .then(r => r.ok ? r.json() : null)
       .then(j => {
         if (cancelled || !j?.per_collection) return

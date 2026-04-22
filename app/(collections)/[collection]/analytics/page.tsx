@@ -291,14 +291,16 @@ function AnalyticsInner() {
   const collectionMeta = useMemo(() => getCollection(collection), [collection])
   const accent = collectionMeta?.accent ?? "#EF4444"
 
-  // Thin-volume notice — read /api/health's per_collection array and flag the
+  // Thin-volume notice — read /api/ready's per_collection array and flag the
   // active collection when its 24h sales drop below 10. Same signal the
   // Market page uses, so messaging stays consistent across the ecosystem.
+  // (/api/health is a minimal liveness probe; readiness telemetry lives at
+  // /api/ready.)
   const [thinVolume, setThinVolume] = useState(false)
   useEffect(() => {
     if (!collection) return
     let cancelled = false
-    fetch("/api/health", { cache: "no-store" })
+    fetch("/api/ready", { cache: "no-store" })
       .then(r => r.ok ? r.json() : null)
       .then(j => {
         if (cancelled || !j?.per_collection) return
