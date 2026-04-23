@@ -53,16 +53,22 @@ interface Trophy {
 }
 
 interface HeroMoment {
-  moment_id: string;
-  collection_id: string;
-  owner_address: string;
-  serial_number: number | null;
-  player_name: string | null;
-  set_name: string | null;
+  // Shape matches /api/profile/hero-moment response — camelCase on the
+  // wire even though wallet_moments_cache is snake_case. Keeping these
+  // names identical to the route's serializer is what fixes the "Unknown"
+  // HeroMoment regression (every snake_case field was falling through to
+  // the fallback in HeroMomentCard).
+  momentId: string;
+  collectionId: string | null;
+  collectionLabel: string | null;
+  collectionAccent: string | null;
+  editionKey: string | null;
+  serialNumber: number | null;
+  playerName: string | null;
+  setName: string | null;
   tier: string | null;
-  circulation_count: number | null;
-  thumbnail_url: string | null;
-  fmv_usd: number;
+  imageUrl: string | null;
+  fmvUsd: number;
 }
 
 interface Favorite {
@@ -933,19 +939,19 @@ function HeroMomentCard({
 
   return (
     <section className={`rpc-binder-slot ${holoClass}`} style={{ position: "relative", background: "#111", border: `2px solid ${tc}`, borderRadius: 14, padding: 14, overflow: "hidden", display: "flex", gap: 16, alignItems: "center" }}>
-      {hero.thumbnail_url && (
-        <img src={hero.thumbnail_url} alt={hero.player_name ?? ""} style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 10, border: `1px solid ${tc}66`, flexShrink: 0 }} />
+      {hero.imageUrl && (
+        <img src={hero.imageUrl} alt={hero.playerName ?? ""} style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 10, border: `1px solid ${tc}66`, flexShrink: 0 }} />
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontFamily: monoFont, fontSize: 10, color: tc, letterSpacing: "0.14em", textTransform: "uppercase" }}>Hero Moment</div>
         <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 26, letterSpacing: "0.02em", marginTop: 2, lineHeight: 1.1 }}>
-          {hero.player_name ?? "Unknown"}
+          {hero.playerName ?? "Unknown"}
         </div>
         <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)", marginTop: 4 }}>
-          {hero.set_name ?? ""}{hero.serial_number ? ` · #${hero.serial_number}${hero.circulation_count ? `/${hero.circulation_count}` : ""}` : ""}
+          {hero.setName ?? ""}{hero.serialNumber ? ` · #${hero.serialNumber}` : ""}
         </div>
         <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 22, color: "#34D399", marginTop: 8 }}>
-          {fmtUsd(hero.fmv_usd)}
+          {fmtUsd(hero.fmvUsd)}
         </div>
       </div>
     </section>
