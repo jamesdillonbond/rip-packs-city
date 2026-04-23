@@ -258,7 +258,7 @@ export default function PacksPage() {
       const res = await fetch(packEvEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ packListingId: id, packPrice: pack.lowestAsk, packName: pack.title }),
+        body: JSON.stringify({ packListingId: id, packPrice: pack.lowestAsk, packName: pack.title, distId: pack.distId }),
       })
       const json: PackEVResponse = await res.json()
       if (!res.ok || json.error) throw new Error(json.error ?? "failed")
@@ -618,7 +618,7 @@ export default function PacksPage() {
       const res = await fetch(packEvEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ packListingId: pack.packListingId, packPrice: pack.lowestAsk, packName: pack.title }),
+        body: JSON.stringify({ packListingId: pack.packListingId, packPrice: pack.lowestAsk, packName: pack.title, distId: pack.distId }),
       })
       const json: PackEVResponse = await res.json()
       if (!res.ok || json.error) throw new Error(json.error ?? "failed")

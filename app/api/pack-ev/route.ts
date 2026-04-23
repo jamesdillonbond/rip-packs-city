@@ -403,11 +403,12 @@ export async function POST(req: NextRequest) {
   let packListingId = ""
 
   try {
-    const body = await req.json().catch(() => ({})) as { packListingId?: string; packPrice?: number; packName?: string; collectionId?: string }
+    const body = await req.json().catch(() => ({})) as { packListingId?: string; packPrice?: number; packName?: string; collectionId?: string; distId?: string | null }
     packListingId = body.packListingId ?? ""
     const packPrice: number = body.packPrice ?? 0
     const packName: string | null = body.packName ?? null
     const collectionId: string = typeof body.collectionId === "string" ? body.collectionId : "nba-top-shot"
+    const distId: string | null = body.distId ? String(body.distId) : null
 
     if (!packListingId) {
       return NextResponse.json({ error: "packListingId is required" }, { status: 400 })
@@ -688,13 +689,21 @@ export async function POST(req: NextRequest) {
 
         const valueRatio = packPrice > 0 ? Math.round((grossEV / packPrice) * 1000) / 1000 : null
 
+        // Clamp pack_ev / gross_ev to the CHECK-constrained range so a bad
+        // FMV reading can't reject the whole insert. Anything outside this
+        // range is almost certainly a bug upstream.
+        const clamp = (v: number) => Math.max(-10000, Math.min(1000000, v))
+        const safeGrossEV = clamp(grossEV)
+        const safePackEV = clamp(packEV)
+
         const { error: insertErr } = await supabaseAdmin.from("pack_ev_history").insert({
           pack_listing_id: packListingId,
           collection_id: TOP_SHOT_COLLECTION_ID,
+          dist_id: distId,
           pack_name: packName,
           pack_price: packPrice,
-          gross_ev: grossEV,
-          pack_ev: packEV,
+          gross_ev: safeGrossEV,
+          pack_ev: safePackEV,
           is_positive_ev: isPositiveEV,
           value_ratio: valueRatio,
           fmv_coverage_pct: fmvCoverage,
