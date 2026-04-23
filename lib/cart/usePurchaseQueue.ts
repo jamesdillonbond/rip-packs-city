@@ -1,140 +1,139 @@
 import { useCallback } from 'react'
 import * as fcl from '@onflow/fcl'
 import { useCart, CartItem, PurchaseStatus } from './CartContext'
-import {
-  PURCHASE_MOMENT_FLOW_WALLET_CADENCE,
-  PAYMENT_TOKEN_TO_VAULT,
-} from '@/lib/cadence/purchase-moment-flow-wallet'
+import { PURCHASE_MOMENT_FLOW_WALLET_CADENCE } from '@/lib/cadence/purchase-moment-flow-wallet'
 import { MAKE_OFFER_FLOWTY_CADENCE } from '@/lib/cadence/make-offer-flowty'
 
-const DAPPER_MERCHANT_ADDRESS = '0xc1e4f4f4c4257510'
 const TX_DELAY_MS = 300
+const DAPPER_NOT_SUPPORTED_MESSAGE =
+  'Dapper cart coming soon — currently Flow Wallet only.'
 
-const PURCHASE_MOMENT_CADENCE = `
-import DapperUtilityCoin from 0xead892083b3e2c6c
-import FungibleToken from 0xf233dcee88fe0abe
-import NonFungibleToken from 0x1d7e57aa55817448
-import MetadataViews from 0x1d7e57aa55817448
-import NFTStorefrontV2 from 0x3cdbb3d569211ff3
-import TopShot from 0x0b2a3299cc857e29
+export type WalletProvider = 'flow_wallet' | 'dapper'
 
-transaction(
-  merchantAccountAddress: Address,
-  storefrontAddress: Address,
-  listingResourceID: UInt64,
-  expectedPrice: UFix64,
-  commissionRecipient: Address?
-) {
-  let paymentVault: @FungibleToken.Vault
-  let nftCollection: &TopShot.Collection{NonFungibleToken.Receiver}
-  let storefront: &NFTStorefrontV2.Storefront{NFTStorefrontV2.StorefrontPublic}
-  let listing: &NFTStorefrontV2.Listing{NFTStorefrontV2.ListingPublic}
-  let balanceBeforeTransfer: UFix64
-  let mainDUCVault: &DapperUtilityCoin.Vault
-  var commissionRecipientCap: Capability<&{FungibleToken.Receiver}>?
-
-  prepare(dapper: &Account, buyer: auth(BorrowValue) &Account) {
-    assert(
-      dapper.address == merchantAccountAddress,
-      message: "Signer is not the declared merchant account"
-    )
-
-    self.mainDUCVault = dapper.borrow<&DapperUtilityCoin.Vault>(
-      from: /storage/dapperUtilityCoinVault
-    ) ?? panic("Cannot borrow DapperUtilityCoin vault from Dapper account")
-
-    self.balanceBeforeTransfer = self.mainDUCVault.balance
-
-    self.storefront = getAccount(storefrontAddress)
-      .getCapability<&NFTStorefrontV2.Storefront{NFTStorefrontV2.StorefrontPublic}>(
-        NFTStorefrontV2.StorefrontPublicPath
-      )
-      .borrow()
-      ?? panic("Could not borrow storefront from address")
-
-    self.listing = self.storefront.borrowListing(listingResourceID: listingResourceID)
-      ?? panic("Listing not found — it may have already been purchased")
-
-    let listingDetails = self.listing.getDetails()
-    let salePrice = listingDetails.salePrice
-
-    assert(
-      salePrice == expectedPrice,
-      message: "Listing price has changed"
-    )
-
-    assert(
-      listingDetails.salePaymentVaultType == Type<@DapperUtilityCoin.Vault>(),
-      message: "Listing does not accept DUC payment"
-    )
-
-    self.paymentVault <- self.mainDUCVault.withdraw(amount: salePrice)
-
-    self.nftCollection = buyer.borrow<&TopShot.Collection{NonFungibleToken.Receiver}>(
-      from: /storage/MomentCollection
-    ) ?? panic("Buyer does not have a Top Shot collection")
-
-    self.commissionRecipientCap = nil
-    let commissionAmount = listingDetails.commissionAmount
-
-    if commissionRecipient != nil && commissionAmount != 0.0 {
-      let cap = getAccount(commissionRecipient!)
-        .getCapability<&{FungibleToken.Receiver}>(/public/dapperUtilityCoinReceiver)
-      assert(cap.check(), message: "Commission recipient does not have a valid DUC receiver")
-      self.commissionRecipientCap = cap
-    } else if commissionAmount != 0.0 {
-      panic("Commission recipient required when commission amount is non-zero")
-    }
-  }
-
-  execute {
-    let nft <- self.listing.purchase(
-      payment: <-self.paymentVault,
-      commissionRecipient: self.commissionRecipientCap
-    )
-    self.nftCollection.deposit(token: <-nft)
-  }
-
-  post {
-    self.mainDUCVault.balance == self.balanceBeforeTransfer - expectedPrice:
-      "DUC leak detected"
-  }
-}
-`
+export type ErrorClass =
+  | 'dapper_not_supported'
+  | 'sniped'
+  | 'price_changed'
+  | 'insufficient_balance'
+  | 'user_rejected'
+  | 'unknown'
 
 export interface PurchaseResult {
   item: CartItem
   status: PurchaseStatus
   txId?: string
   error?: string
+  errorClass?: ErrorClass
+  walletProvider: WalletProvider
+  batchId: string
 }
 
 export interface PurchaseQueueCallbacks {
   onItemStart?: (item: CartItem) => void
   onItemComplete?: (result: PurchaseResult) => void
   onQueueComplete?: (results: PurchaseResult[]) => void
+  /** Optional source page label (e.g. "sniper", "wallet", "sets") for logging. */
+  sourcePage?: string
 }
 
-function classifyError(err: unknown): PurchaseStatus {
+function classifyStatus(err: unknown): PurchaseStatus {
   const msg = err instanceof Error ? err.message : String(err)
   const lower = msg.toLowerCase()
   if (
     lower.includes('listing not found') ||
     lower.includes('could not borrow listing') ||
-    lower.includes('already been purchased')
+    lower.includes('already been purchased') ||
+    lower.includes('no listing with id')
   ) return 'sniped'
   if (lower.includes('price has changed')) return 'price_changed'
   return 'failed'
 }
 
-// Returns true if this cart item should use the Flow Wallet (single-signer) path
-function isFlowWalletItem(item: CartItem): boolean {
-  return item.paymentToken === 'FLOW' || item.paymentToken === 'USDC_E'
+function classifyErrorClass(err: unknown): ErrorClass {
+  const msg = err instanceof Error ? err.message : String(err)
+  const lower = msg.toLowerCase()
+  if (
+    lower.includes('listing not found') ||
+    lower.includes('could not borrow listing') ||
+    lower.includes('already been purchased') ||
+    lower.includes('no listing with id')
+  ) return 'sniped'
+  if (lower.includes('price has changed')) return 'price_changed'
+  if (lower.includes('insufficient') || lower.includes('not enough')) return 'insufficient_balance'
+  if (lower.includes('rejected') || lower.includes('declined') || lower.includes('cancelled')) {
+    return 'user_rejected'
+  }
+  return 'unknown'
 }
 
-// FCL's published types don't always match the actual runtime shape.
+/**
+ * Inspects fcl.currentUser services to determine which wallet is connected.
+ * Dapper publishes a service with provider.name matching /dapper/i. Everything
+ * else (Flow Wallet, Blocto configured against Flow Wallet, etc.) is treated
+ * as Flow Wallet for cart purposes.
+ */
+async function detectWalletProvider(): Promise<WalletProvider> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const snapshot = await (fcl.currentUser as any).snapshot()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const services: any[] = snapshot?.services ?? []
+    for (const svc of services) {
+      const name = svc?.provider?.name ?? svc?.provider?.title ?? ''
+      if (typeof name === 'string' && /dapper/i.test(name)) return 'dapper'
+    }
+    return 'flow_wallet'
+  } catch {
+    return 'flow_wallet'
+  }
+}
+
+/**
+ * Fire-and-forget POST to /api/cart/record. Never throws — purchase-logging
+ * errors must not block the UI path. Callers await only for ordering (so the
+ * recorder sees the row before the next purchase result overwrites state).
+ */
+async function recordPurchaseAttempt(payload: Record<string, unknown>): Promise<void> {
+  try {
+    await fetch('/api/cart/record', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      keepalive: true,
+    })
+  } catch {
+    // swallow — logging failures never block purchase UX
+  }
+}
+
+async function resolveBuyerAddress(): Promise<string | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const snapshot = await (fcl.currentUser as any).snapshot()
+    return snapshot?.addr ?? null
+  } catch {
+    return null
+  }
+}
+
+// FCL's published types don't match the actual runtime shape.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const fclAuthz = fcl.authz as any
+
+function newBatchId(): string {
+  try {
+    return crypto.randomUUID()
+  } catch {
+    return `batch-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  }
+}
+
+function collectionIdForItem(item: CartItem): string | null {
+  // best-effort: CartItem.source is 'sniper'|'wallet'|'sets'|'marketplace'.
+  // Collection-id defaults to NBA Top Shot for cart-eligible items. Downstream
+  // /api/cart/record will normalize this.
+  return '95f28a17-224a-4025-96ad-adf8a4c63bfd'
+}
 
 export function usePurchaseQueue() {
   const cart = useCart()
@@ -147,11 +146,59 @@ export function usePurchaseQueue() {
       if (items.length === 0) return []
       if (cart.isExecuting) return []
 
-      const { onItemStart, onItemComplete, onQueueComplete } = callbacks
+      const { onItemStart, onItemComplete, onQueueComplete, sourcePage } = callbacks
       const results: PurchaseResult[] = []
+      const batchId = newBatchId()
+      const cartSize = items.length
 
       cart.setExecuting(true)
       cart.resetStatuses()
+
+      const walletProvider = await detectWalletProvider()
+      const buyerAddress = await resolveBuyerAddress()
+
+      // Dapper is not supported yet — fail all items up-front with a clear reason.
+      if (walletProvider === 'dapper') {
+        for (const item of items) {
+          cart.setItemStatus(item.listingResourceID, 'failed')
+          onItemStart?.(item)
+          const result: PurchaseResult = {
+            item,
+            status: 'failed',
+            error: DAPPER_NOT_SUPPORTED_MESSAGE,
+            errorClass: 'dapper_not_supported',
+            walletProvider: 'dapper',
+            batchId,
+          }
+          results.push(result)
+          onItemComplete?.(result)
+          void recordPurchaseAttempt({
+            buyer_address: buyerAddress,
+            wallet_provider: 'dapper',
+            collection_id: collectionIdForItem(item),
+            moment_id: item.momentId,
+            listing_resource_id: item.listingResourceID,
+            storefront_address: item.storefrontAddress,
+            expected_price: item.expectedPrice,
+            fmv_at_purchase: item.fmv ?? null,
+            discount_pct:
+              item.fmv && item.expectedPrice
+                ? ((item.fmv - item.expectedPrice) / item.fmv) * 100
+                : null,
+            cart_size: cartSize,
+            batch_id: batchId,
+            status: 'failed',
+            tx_hash: null,
+            error_message: DAPPER_NOT_SUPPORTED_MESSAGE,
+            error_class: 'dapper_not_supported',
+            source_page: sourcePage ?? item.source ?? null,
+          })
+        }
+
+        cart.setExecuting(false)
+        onQueueComplete?.(results)
+        return results
+      }
 
       for (const item of items) {
         cart.setItemStatus(item.listingResourceID, 'pending')
@@ -162,67 +209,65 @@ export function usePurchaseQueue() {
         try {
           const priceFixed = item.expectedPrice.toFixed(8)
 
-          let txId: string
-
-          if (isFlowWalletItem(item)) {
-            // Flow Wallet path — single signer, FLOW or USDCFlow payment
-            const vaultType = PAYMENT_TOKEN_TO_VAULT[item.paymentToken]
-
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            txId = await (fcl.mutate as any)({
-              cadence: PURCHASE_MOMENT_FLOW_WALLET_CADENCE,
-              args: (arg: typeof fcl.arg, t: typeof fcl.t) => [
-                arg(item.storefrontAddress, t.Address),
-                arg(item.listingResourceID, t.UInt64),
-                arg(priceFixed, t.UFix64),
-                arg(vaultType, t.String),
-                arg(item.commissionRecipient, t.Optional(t.Address)),
-              ],
-              proposer: fclAuthz,
-              payer: fclAuthz,
-              authorizations: [fclAuthz],
-              limit: 1000,
-            })
-          } else {
-            // Dapper Wallet path — DUC / FUT payment with merchant co-signer
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            txId = await (fcl.mutate as any)({
-              cadence: PURCHASE_MOMENT_CADENCE,
-              args: (arg: typeof fcl.arg, t: typeof fcl.t) => [
-                arg(DAPPER_MERCHANT_ADDRESS, t.Address),
-                arg(item.storefrontAddress, t.Address),
-                arg(item.listingResourceID, t.UInt64),
-                arg(priceFixed, t.UFix64),
-                arg(item.commissionRecipient, t.Optional(t.Address)),
-              ],
-              proposer: fclAuthz,
-              payer: fclAuthz,
-              authorizations: [fclAuthz],
-              limit: 1000,
-            })
-          }
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const txId: string = await (fcl.mutate as any)({
+            cadence: PURCHASE_MOMENT_FLOW_WALLET_CADENCE,
+            args: (arg: typeof fcl.arg, t: typeof fcl.t) => [
+              arg(item.storefrontAddress, t.Address),
+              arg(item.listingResourceID, t.UInt64),
+              arg(priceFixed, t.UFix64),
+            ],
+            proposer: fclAuthz,
+            payer: fclAuthz,
+            authorizations: [fclAuthz],
+            limit: 1000,
+          })
 
           await fcl.tx(txId).onceExecuted()
 
-          result = { item, status: 'success', txId }
+          result = {
+            item,
+            status: 'success',
+            txId,
+            walletProvider,
+            batchId,
+          }
           cart.setItemStatus(item.listingResourceID, 'success')
         } catch (err) {
-          const status = classifyError(err)
+          const status = classifyStatus(err)
+          const errorClass = classifyErrorClass(err)
           const error = err instanceof Error ? err.message : String(err)
 
-          result = { item, status, error }
+          result = { item, status, error, errorClass, walletProvider, batchId }
           cart.setItemStatus(item.listingResourceID, status)
-
-          const lower = error.toLowerCase()
-          if (lower.includes('insufficient') || lower.includes('not enough')) {
-            results.push(result)
-            onItemComplete?.(result)
-            break
-          }
         }
+
+        void recordPurchaseAttempt({
+          buyer_address: buyerAddress,
+          wallet_provider: walletProvider,
+          collection_id: collectionIdForItem(item),
+          moment_id: item.momentId,
+          listing_resource_id: item.listingResourceID,
+          storefront_address: item.storefrontAddress,
+          expected_price: item.expectedPrice,
+          fmv_at_purchase: item.fmv ?? null,
+          discount_pct:
+            item.fmv && item.expectedPrice
+              ? ((item.fmv - item.expectedPrice) / item.fmv) * 100
+              : null,
+          cart_size: cartSize,
+          batch_id: batchId,
+          status: result.status,
+          tx_hash: result.txId ?? null,
+          error_message: result.error ?? null,
+          error_class: result.errorClass ?? null,
+          source_page: sourcePage ?? item.source ?? null,
+        })
 
         results.push(result)
         onItemComplete?.(result)
+
+        if (result.errorClass === 'insufficient_balance') break
 
         if (items.indexOf(item) < items.length - 1) {
           await new Promise((resolve) => setTimeout(resolve, TX_DELAY_MS))
@@ -236,13 +281,13 @@ export function usePurchaseQueue() {
     [cart]
   )
 
-  // Execute Flowty offers sequentially (offer-mode items only)
+  // Flowty offers run on a separate Cadence template and do not flow through the
+  // DUC purchase path. They stay on their existing wiring.
   const executeOffers = useCallback(
     async (
       items: CartItem[],
       callbacks: PurchaseQueueCallbacks = {}
     ): Promise<PurchaseResult[]> => {
-      // Filter to offer-mode items that have a valid offerAmount
       const offerItems = items.filter(
         (i) => i.cartMode === 'offer' && i.offerAmount && i.offerAmount > 0
       )
@@ -251,9 +296,12 @@ export function usePurchaseQueue() {
 
       const { onItemStart, onItemComplete, onQueueComplete } = callbacks
       const results: PurchaseResult[] = []
+      const batchId = newBatchId()
 
       cart.setExecuting(true)
       cart.resetStatuses()
+
+      const walletProvider = await detectWalletProvider()
 
       for (const item of offerItems) {
         cart.setItemStatus(item.listingResourceID, 'pending')
@@ -263,7 +311,9 @@ export function usePurchaseQueue() {
 
         try {
           const amountFixed = item.offerAmount!.toFixed(8)
-          const expiry = String(item.offerExpiry ?? Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60)
+          const expiry = String(
+            item.offerExpiry ?? Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60
+          )
 
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const txId: string = await (fcl.mutate as any)({
@@ -273,7 +323,7 @@ export function usePurchaseQueue() {
               arg(amountFixed, t.UFix64),
               arg(item.storefrontAddress, t.Address),
               arg(expiry, t.UInt64),
-              arg("1", t.UInt64),
+              arg('1', t.UInt64),
             ],
             proposer: fclAuthz,
             payer: fclAuthz,
@@ -283,18 +333,15 @@ export function usePurchaseQueue() {
 
           await fcl.tx(txId).onceExecuted()
 
-          result = { item, status: 'success', txId }
+          result = { item, status: 'success', txId, walletProvider, batchId }
           cart.setItemStatus(item.listingResourceID, 'success')
         } catch (err) {
-          const status = classifyError(err)
+          const status = classifyStatus(err)
+          const errorClass = classifyErrorClass(err)
           const error = err instanceof Error ? err.message : String(err)
-
-          result = { item, status, error }
+          result = { item, status, error, errorClass, walletProvider, batchId }
           cart.setItemStatus(item.listingResourceID, status)
-
-          // Stop on insufficient balance
-          const lower = error.toLowerCase()
-          if (lower.includes('insufficient') || lower.includes('not enough')) {
+          if (errorClass === 'insufficient_balance') {
             results.push(result)
             onItemComplete?.(result)
             break
