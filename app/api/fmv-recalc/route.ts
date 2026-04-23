@@ -139,6 +139,7 @@ export async function POST(req: NextRequest) {
   }
 
   const chain = req.nextUrl.searchParams.get("chain") === "true"
+  const forceStale = req.nextUrl.searchParams.get("force_stale") === "true"
 
   const authHeader = req.headers.get("authorization")
   const receivedToken = authHeader?.replace("Bearer ", "") ?? ""
@@ -730,11 +731,97 @@ export async function POST(req: NextRequest) {
       console.warn("[FMV-RECALC] Integer bridge error:", err instanceof Error ? err.message : err)
     }
 
+    // ── Step 7: Stale freshness touch (force_stale=true) ──────────────────────
+    // Editions whose most recent fmv_current row has not been touched in >24h
+    // and that didn't pick up new sales this run will otherwise show as stale
+    // indefinitely. Because WAP over a fixed window is idempotent, re-inserting
+    // the current values with a fresh computed_at is a safe way to signal
+    // liveness without changing any downstream consumer of FMV.
+    let staleTouchCount = 0
+    if (forceStale) {
+      try {
+        const { data: staleRows, error: staleErr } = await supabaseAdmin
+          .rpc("execute_sql", {
+            query: `
+              SELECT DISTINCT ON (fs.edition_id)
+                fs.edition_id,
+                fs.collection_id,
+                fs.fmv_usd,
+                fs.floor_price_usd,
+                fs.wap_usd,
+                fs.wap_without_outliers,
+                fs.liquidity_rating,
+                fs.confidence::text AS confidence,
+                fs.ask_proxy_fmv,
+                fs.sales_count_7d,
+                fs.sales_count_30d,
+                fs.days_since_sale
+              FROM fmv_snapshots fs
+              WHERE fs.computed_at < now() - interval '24 hours'
+              ORDER BY fs.edition_id, fs.computed_at DESC
+              LIMIT 1000
+            `,
+          })
+
+        if (staleErr) {
+          console.warn("[FMV-RECALC] Stale freshness query error:", staleErr.message)
+        } else {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const rows: any[] = (staleRows as any[]) ?? []
+          // Skip editions already written in this run to avoid duplicate today rows.
+          const skipSet = new Set<string>(insertRows.map((r) => String(r.edition_id)))
+          const touchRows = rows
+            .filter((r) => !skipSet.has(String(r.edition_id)))
+            .map((r) => ({
+              edition_id: r.edition_id,
+              collection_id: r.collection_id,
+              fmv_usd: r.fmv_usd,
+              floor_price_usd: r.floor_price_usd,
+              wap_usd: r.wap_usd,
+              wap_without_outliers: r.wap_without_outliers,
+              liquidity_rating: r.liquidity_rating,
+              confidence: r.confidence,
+              ask_proxy_fmv: r.ask_proxy_fmv,
+              sales_count_7d: r.sales_count_7d,
+              sales_count_30d: r.sales_count_30d,
+              days_since_sale: r.days_since_sale,
+              algo_version: ALGO_VERSION,
+            }))
+
+          if (touchRows.length > 0) {
+            const touchEditionIds = touchRows.map((r) => r.edition_id as string)
+            const DEL_CHUNK = 500
+            for (let i = 0; i < touchEditionIds.length; i += DEL_CHUNK) {
+              const slice = touchEditionIds.slice(i, i + DEL_CHUNK)
+              const { error: touchDelErr } = await supabaseAdmin
+                .from("fmv_snapshots")
+                .delete()
+                .in("edition_id", slice)
+                .gte("computed_at", todayStart.toISOString())
+              if (touchDelErr) console.warn("[FMV-RECALC] Stale touch delete error:", touchDelErr.message)
+            }
+
+            for (let i = 0; i < touchRows.length; i += CHUNK_SIZE) {
+              const chunk = touchRows.slice(i, i + CHUNK_SIZE)
+              const { error: touchInsertErr } = await supabaseAdmin
+                .from("fmv_snapshots")
+                .insert(chunk)
+              if (!touchInsertErr) staleTouchCount += chunk.length
+              else console.warn("[FMV-RECALC] Stale touch insert error:", touchInsertErr.message)
+            }
+            console.log(`[FMV-RECALC] Stale touch complete: ${staleTouchCount} editions refreshed`)
+          }
+        }
+      } catch (err) {
+        console.warn("[FMV-RECALC] Stale touch error:", err instanceof Error ? err.message : err)
+      }
+    }
+
     const hasMore = salesPage.length === limit
     const duration = Date.now() - startTime
 
     console.log(
-      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} integerBridge=${integerBridgeCount} hasMore=${hasMore} duration=${duration}ms`
+      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} integerBridge=${integerBridgeCount} staleTouch=${staleTouchCount} hasMore=${hasMore} duration=${duration}ms`
     )
 
     await fireNextPipelineStep("/api/listing-cache", chain)
