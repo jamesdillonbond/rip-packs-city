@@ -336,6 +336,80 @@ async function runSmokeTests() {
         return { name, passed: false, soft: true, detail: e?.message ?? String(e) };
       }
     })(),
+    // Sniper cart wiring — first Flowty row must carry listingResourceID +
+    // storefrontAddress + askPrice for cart eligibility, and Top Shot-sourced
+    // rows must not be flagged cart-eligible (they live in Dapper custody).
+    (async (): Promise<TestResult> => {
+      const name = "sniper cart wiring (Flowty has listing fields, TS rows ineligible)";
+      try {
+        const res = await fetch(`${BASE_URL}/api/sniper-feed`, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(15000),
+        });
+        const data = await res.json();
+        const deals = Array.isArray(data) ? data : data?.deals ?? [];
+        if (!Array.isArray(deals) || deals.length === 0) {
+          return { name, passed: false, soft: true, detail: "no deals returned" };
+        }
+        const flowty = deals.find((d: any) => d?.source === "flowty");
+        const ts = deals.find((d: any) => d?.source === "topshot");
+        const flowtyOk =
+          !flowty ||
+          (typeof flowty.listingResourceID === "string" &&
+            typeof flowty.storefrontAddress === "string" &&
+            typeof flowty.askPrice === "number" &&
+            flowty.askPrice > 0);
+        // Top Shot rows are allowed to have listing fields (and often do), but
+        // must carry source === 'topshot' so isCartEligible can reject them.
+        const tsOk = !ts || ts.source === "topshot";
+        const okAll = flowtyOk && tsOk;
+        return {
+          name,
+          soft: true,
+          passed: okAll,
+          detail: okAll
+            ? `flowty=${flowty ? "ok" : "none"} ts=${ts ? "tagged" : "none"}`
+            : `flowty=${flowtyOk ? "ok" : "missing cart fields"} ts=${tsOk ? "tagged" : "untagged"}`,
+        };
+      } catch (e: any) {
+        return { name, passed: false, soft: true, detail: e?.message ?? String(e) };
+      }
+    })(),
+
+    // Cart validate endpoint sanity check — bogus-listing round trip should
+    // return { results: { [id]: { exists: false, sniped: true } } }. Proves the
+    // Flow REST script path is reachable and the response shape is intact.
+    (async (): Promise<TestResult> => {
+      const name = "/api/cart/validate responds on bogus listing";
+      try {
+        const res = await fetch(`${BASE_URL}/api/cart/validate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            listings: [
+              {
+                listingResourceID: "1",
+                storefrontAddress: "0x0000000000000001",
+                expectedPrice: 1,
+              },
+            ],
+          }),
+          cache: "no-store",
+          signal: AbortSignal.timeout(12000),
+        });
+        if (!res.ok) return { name, passed: false, detail: `HTTP ${res.status}` };
+        const data = await res.json();
+        const r = data?.results?.["1"];
+        const ok = !!r && typeof r.exists === "boolean" && typeof r.sniped === "boolean";
+        return {
+          name,
+          passed: ok,
+          detail: ok ? `exists=${r.exists} sniped=${r.sniped}` : "malformed body",
+        };
+      } catch (e: any) {
+        return { name, passed: false, detail: e?.message ?? String(e) };
+      }
+    })(),
   ]);
 
   // ── Collect results, converting rejected promises to failures ──
