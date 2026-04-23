@@ -121,10 +121,14 @@ export async function GET(req: NextRequest) {
     if (dataResult.error) throw dataResult.error
 
     const editions = (dataResult.data ?? []).map((e: any) => {
-      const badgeTitles: string[] = [
-        ...(e.play_tags ?? []).map((t: any) => t.title),
-        ...(e.set_play_tags ?? []).map((t: any) => t.title),
+      // Unified badges array — mirrors what get_edition_badges_unified(edition_id)
+      // returns on the Postgres side: play_tags tagged with source 'play',
+      // set_play_tags tagged 'set_play'.
+      const unifiedBadges = [
+        ...(e.play_tags ?? []).map((t: any) => ({ id: t.id, title: t.title, source: "play" })),
+        ...(e.set_play_tags ?? []).map((t: any) => ({ id: t.id, title: t.title, source: "set_play" })),
       ]
+      const badgeTitles: string[] = unifiedBadges.map(b => b.title)
 
       const parallelNames: Record<number, string> = {
         0: "Standard", 17: "Blockchain", 18: "Hardcourt", 19: "Hexwave", 20: "Jukebox",
@@ -132,6 +136,7 @@ export async function GET(req: NextRequest) {
 
       return {
         ...e,
+        badges:           unifiedBadges,
         badge_titles:     badgeTitles,
         parallel_display: parallelNames[e.parallel_id] ?? `Parallel ${e.parallel_id}`,
         price_gap:        e.low_ask != null && e.highest_offer != null
