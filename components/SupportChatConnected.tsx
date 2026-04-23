@@ -2,6 +2,10 @@
 
 import SupportChat from "@/components/SupportChat";
 import { useCart } from "@/lib/cart/CartContext";
+import {
+  cartEligibilityReason,
+  cartIneligibleTooltip,
+} from "@/lib/cart/eligibility";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -42,6 +46,21 @@ export default function SupportChatConnected() {
 
   const handleAddToCart = (moment: any) => {
     try {
+      const reason = cartEligibilityReason({
+        listingResourceID: moment.listingResourceID,
+        storefrontAddress: moment.storefrontAddress,
+        expectedPrice: moment.expectedPrice,
+        source: moment.source,
+        paymentToken: moment.paymentToken,
+      });
+      if (reason !== "ok") {
+        console.warn(
+          "[concierge] skipping ineligible listing:",
+          cartIneligibleTooltip(reason),
+          moment
+        );
+        return;
+      }
       addToCart({ ...moment, thumbnailUrl: moment.thumbnailUrl || null });
     } catch (err) {
       console.error("Failed to add to cart from concierge:", err);

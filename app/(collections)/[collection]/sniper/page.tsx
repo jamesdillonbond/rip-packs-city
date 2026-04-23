@@ -5,6 +5,11 @@ import React from "react";
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { useCart } from "@/lib/cart/CartContext";
+import {
+  isCartEligible,
+  cartEligibilityReason,
+  cartIneligibleTooltip,
+} from "@/lib/cart/eligibility";
 import { getCollection } from "@/lib/collections";
 import { getOwnerKey } from "@/lib/owner-key";
 import { PINNACLE_VARIANT_COLORS, PINNACLE_VARIANT_LABELS } from "@/lib/pinnacle/pinnacleTypes";
@@ -441,8 +446,18 @@ function ActionCell({
     (!!deal.intEditionKey && ownedIds.has(deal.intEditionKey)) ||
     (!!deal.editionKey && ownedIds.has(deal.editionKey));
   const isPinnacleDeal = deal.source === "pinnacle";
-  const canCart = !!deal.listingResourceID && !!deal.storefrontAddress && !isPinnacleDeal;
   const isFlowty = (deal.source ?? "topshot") === "flowty";
+  const eligibilityReason = cartEligibilityReason({
+    listingResourceID: deal.listingResourceID,
+    storefrontAddress: deal.storefrontAddress,
+    expectedPrice: deal.askPrice,
+    source: deal.source ?? "topshot",
+    paymentToken: deal.paymentToken,
+  });
+  const canCart = eligibilityReason === "ok";
+  const showIneligibleCartChip =
+    !canCart && !isPinnacleDeal && !!deal.listingResourceID && !!deal.storefrontAddress;
+  const ineligibleTooltip = cartIneligibleTooltip(eligibilityReason);
 
   function handleCart() {
     if (!canCart) return;
@@ -537,6 +552,21 @@ function ActionCell({
           }
         >
           {inCart ? "✓ IN CART" : offerMode ? "+ OFFER" : "+ CART"}
+        </button>
+      )}
+      {showIneligibleCartChip && (
+        <button
+          disabled
+          title={ineligibleTooltip}
+          aria-label={ineligibleTooltip}
+          className="rpc-chip"
+          style={{
+            opacity: 0.45,
+            cursor: "not-allowed",
+            color: "var(--rpc-text-ghost)",
+          }}
+        >
+          + CART
         </button>
       )}
       <a
