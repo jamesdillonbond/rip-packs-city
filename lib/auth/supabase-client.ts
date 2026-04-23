@@ -28,20 +28,54 @@ export function getSupabaseBrowser() {
 // NEXT_PUBLIC_SITE_URL is set (production only), use it in preference to
 // window.location.origin. Leave the env unset on preview + local dev so
 // those environments keep sending correct host-local callbacks.
+// Normalize anything thrown or returned from Supabase into a readable string.
+// Supabase's JS client sometimes throws Error instances (fetch-level failures),
+// sometimes returns { error: AuthError }, and at the HTTP layer (504/503) may
+// surface errors without a readable .message — which stringify to "{}".
+function readableErrorMessage(err: unknown): string {
+  if (!err) return ""
+  if (typeof err === "string") return err
+  if (err instanceof Error) return err.message || ""
+  if (typeof err === "object") {
+    const anyErr = err as { message?: unknown; error_description?: unknown; msg?: unknown }
+    if (typeof anyErr.message === "string" && anyErr.message) return anyErr.message
+    if (typeof anyErr.error_description === "string" && anyErr.error_description) return anyErr.error_description
+    if (typeof anyErr.msg === "string" && anyErr.msg) return anyErr.msg
+  }
+  return ""
+}
+
+const UPSTREAM_UNAVAILABLE = "Sign-in service is temporarily unavailable. Please try again in a moment."
+
 export async function sendMagicLink(email: string, redirectTo?: string): Promise<{ error: string | null }> {
   const supabase = getSupabaseBrowser()
   const envOrigin = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? ""
   const windowOrigin = typeof window !== "undefined" ? window.location.origin : ""
   const origin = envOrigin || windowOrigin
   const callbackUrl = `${origin}/api/auth/callback${redirectTo ? `?redirect=${encodeURIComponent(redirectTo)}` : ""}`
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options: {
-      emailRedirectTo: callbackUrl,
-      shouldCreateUser: true,
-    },
-  })
-  return { error: error?.message ?? null }
+  try {
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: callbackUrl,
+        shouldCreateUser: true,
+      },
+    })
+    if (!error) return { error: null }
+    const msg = readableErrorMessage(error)
+    if (!msg) {
+      console.error("[sendMagicLink] unreadable Supabase error:", error)
+      return { error: UPSTREAM_UNAVAILABLE }
+    }
+    return { error: msg }
+  } catch (err) {
+    const msg = readableErrorMessage(err)
+    if (!msg) {
+      console.error("[sendMagicLink] threw without readable message:", err)
+      return { error: UPSTREAM_UNAVAILABLE }
+    }
+    return { error: msg }
+  }
 }
 
 export async function signOut(): Promise<void> {

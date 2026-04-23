@@ -170,7 +170,7 @@ function LoginInner() {
                 fontFamily: "var(--font-mono)",
                 fontSize: 11, color: "var(--rpc-danger)",
               }}>
-                {error}
+                {String(error).trim() || "Something went wrong — please try again."}
               </div>
             )}
           </form>
