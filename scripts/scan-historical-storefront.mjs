@@ -50,9 +50,11 @@ const CHECKPOINT_KEY = 'storefront_audit'
 const START_BLOCK = 85_000_000
 const FINAL_BLOCK = 137_390_145
 const FLUSH_EVERY_N_CHUNKS = 500
-const REQUEST_TIMEOUT_MS = 20_000
+const REQUEST_TIMEOUT_MS = 30_000
 
 const SPORKS = [
+  { id: 23, maxBlock: 65_264_618, url: 'http://access-001.mainnet23.nodes.onflow.org:8070' },
+  { id: 24, maxBlock: 85_981_134, url: 'http://access-001.mainnet24.nodes.onflow.org:8070' },
   { id: 25, maxBlock: 106_258_784, url: 'http://access-001.mainnet25.nodes.onflow.org:8070' },
   { id: 26, maxBlock: 137_390_145, url: 'http://access-001.mainnet26.nodes.onflow.org:8070' },
 ]
@@ -66,7 +68,7 @@ function nodeForBlock(block) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-/* ── Cadence payload unwrap (same shape as sales-indexer routes) ── */
+/* ── Cadence payload unwrap ─────────────────────────────────────── */
 
 function unwrapCdc(node) {
   if (node === null || node === undefined) return node
@@ -77,31 +79,11 @@ function unwrapCdc(node) {
     switch (type) {
       case 'Optional':
         return value === null ? null : unwrapCdc(value)
-      case 'Bool':
-      case 'String':
-      case 'Address':
-      case 'Path':
-      case 'Character':
-      case 'Int':
-      case 'UInt':
-      case 'Int8':
-      case 'Int16':
-      case 'Int32':
-      case 'Int64':
-      case 'Int128':
-      case 'Int256':
-      case 'UInt8':
-      case 'UInt16':
-      case 'UInt32':
-      case 'UInt64':
-      case 'UInt128':
-      case 'UInt256':
-      case 'Word8':
-      case 'Word16':
-      case 'Word32':
-      case 'Word64':
-      case 'Fix64':
-      case 'UFix64':
+      case 'Bool': case 'String': case 'Address': case 'Path': case 'Character':
+      case 'Int': case 'UInt': case 'Int8': case 'Int16': case 'Int32': case 'Int64':
+      case 'Int128': case 'Int256': case 'UInt8': case 'UInt16': case 'UInt32':
+      case 'UInt64': case 'UInt128': case 'UInt256': case 'Word8': case 'Word16':
+      case 'Word32': case 'Word64': case 'Fix64': case 'UFix64':
         return value
       case 'Array':
         return value.map(unwrapCdc)
@@ -110,14 +92,9 @@ function unwrapCdc(node) {
         for (const kv of value) out[String(unwrapCdc(kv.key))] = unwrapCdc(kv.value)
         return out
       }
-      case 'Struct':
-      case 'Resource':
-      case 'Event':
-      case 'Contract':
-      case 'Enum': {
+      case 'Struct': case 'Resource': case 'Event': case 'Contract': case 'Enum': {
         const out = {}
-        const fields = value.fields ?? []
-        for (const f of fields) out[f.name] = unwrapCdc(f.value)
+        for (const f of (value.fields ?? [])) out[f.name] = unwrapCdc(f.value)
         return out
       }
       case 'Type':
@@ -141,7 +118,7 @@ function extractStorefrontAddress(evt) {
   }
 }
 
-/* ── Flow events fetch with AbortController timeout ─────────────── */
+/* ── Flow events fetch ──────────────────────────────────────────── */
 
 async function fetchEvents(node, start, end) {
   const ac = new AbortController()
@@ -156,7 +133,7 @@ async function fetchEvents(node, start, end) {
   }
 }
 
-/* ── main ───────────────────────────────────────────────────────── */
+/* ── checkpoint ─────────────────────────────────────────────────── */
 
 async function writeCheckpoint(block) {
   const { error } = await supabase
@@ -167,6 +144,8 @@ async function writeCheckpoint(block) {
     )
   if (error) console.log(`[checkpoint] write error: ${error.message}`)
 }
+
+/* ── main ───────────────────────────────────────────────────────── */
 
 async function main() {
   console.log(`[scan-historical-storefront] DRY_RUN=${DRY_RUN}`)
@@ -246,21 +225,15 @@ async function main() {
         }
       }
     } catch (err) {
-      console.log(
-        `[chunk ${start}-${end} @ mainnet${node.id}] error: ${err?.message || err}`
-      )
+      console.log(`[chunk ${start}-${end} @ mainnet${node.id}] error: ${err?.message || err}`)
     }
 
     cursor = end
     chunksProcessed++
 
-    if (!DRY_RUN) {
-      await writeCheckpoint(cursor)
-    }
+    if (!DRY_RUN) await writeCheckpoint(cursor)
 
-    if (chunksProcessed % FLUSH_EVERY_N_CHUNKS === 0) {
-      await flush()
-    }
+    if (chunksProcessed % FLUSH_EVERY_N_CHUNKS === 0) await flush()
 
     await sleep(DELAY_MS)
   }
