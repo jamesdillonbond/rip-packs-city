@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from "react"
 import { useParams } from "next/navigation"
 import { ALLDAY_BADGE_COLORS } from "@/lib/allday-badges"
+import BadgeRow from "@/components/BadgeRow"
 
 const COLLECTION_UUID_BY_SLUG: Record<string, string> = {
   "nba-top-shot": "95f28a17-224a-4025-96ad-adf8a4c63bfd",
@@ -531,21 +532,11 @@ export default function BadgesPage() {
                     </div>
 
                     {/* Badges */}
-                    <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 4, marginBottom: 12 }}>
-                      {visibleBadges.map(t => {
-                        const cls = isAllDay
-                          ? (ALLDAY_BADGE_COLORS[t.title] ?? "border border-white/10 text-white/50 bg-white/3")
-                          : badgeStyle(t.title)
-                        return (
-                          <span
-                            key={t.id}
-                            className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${cls}`}
-                            style={{ fontFamily: "var(--font-mono)" }}
-                          >
-                            {t.title}
-                          </span>
-                        )
-                      })}
+                    <div style={{ marginBottom: 12 }}>
+                      <BadgeRow
+                        badges={visibleBadges.map(t => ({ id: t.id, title: t.title, source: "derived" }))}
+                        size="sm"
+                      />
                     </div>
 
                     {/* Stats grid */}
