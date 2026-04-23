@@ -34,15 +34,25 @@ export async function GET() {
     new Set(wallets.map((w: any) => String(w.wallet_addr).toLowerCase()))
   );
 
-  const { data: top, error } = await supabase
+  // Prefer a fully-hydrated moment over a higher-FMV but incomplete one.
+  // Without this, a top-FMV row with null player_name / image_url renders
+  // the HeroMomentCard with "Unknown" and a blank image. Pull the top
+  // several rows ordered by FMV desc, then pick the first one that has
+  // both player_name and image_url; if none are hydrated, fall back to
+  // the raw top-FMV row so the card can render its graceful fallback.
+  const { data: candidates, error } = await supabase
     .from("wallet_moments_cache")
     .select(
       "moment_id, edition_key, collection_id, player_name, set_name, tier, serial_number, image_url, fmv_usd, wallet_address"
     )
     .in("wallet_address", addresses)
     .order("fmv_usd", { ascending: false, nullsFirst: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(25);
+
+  const top =
+    (candidates ?? []).find((r: any) => r.player_name && r.image_url) ??
+    (candidates ?? [])[0] ??
+    null;
 
   if (error) {
     console.error("[hero-moment]", error.message);
