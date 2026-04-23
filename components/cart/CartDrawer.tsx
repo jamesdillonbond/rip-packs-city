@@ -1,10 +1,100 @@
 'use client'
 
-import React, { useEffect, useRef } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useCart, CartItem, PurchaseStatus } from '@/lib/cart/CartContext'
 import { usePurchaseQueue } from '@/lib/cart/usePurchaseQueue'
 import { useFlowUser, WalletProvider } from '@/lib/hooks/useFlowUser'
 import { useFlowWalletBalances } from '@/lib/hooks/useFlowWalletBalances'
+
+interface ValidationResult {
+  exists: boolean
+  currentPrice: number | null
+  sellerAddress: string | null
+  priceChanged: boolean
+  sniped: boolean
+  error?: string
+}
+
+type ValidationMap = Record<string, ValidationResult>
+
+const ValidationContext = React.createContext<{
+  results: ValidationMap
+  revalidate: (items: CartItem[]) => Promise<void>
+  isValidating: boolean
+}>({ results: {}, revalidate: async () => {}, isValidating: false })
+
+function useCartValidationProvider(items: CartItem[], open: boolean) {
+  const [results, setResults] = useState<ValidationMap>({})
+  const [isValidating, setIsValidating] = useState(false)
+
+  const revalidate = useCallback(async (toCheck: CartItem[]) => {
+    const filtered = toCheck.filter(
+      (i) => i.cartMode !== 'offer' && i.listingResourceID && i.storefrontAddress
+    )
+    if (filtered.length === 0) {
+      setResults({})
+      return
+    }
+    setIsValidating(true)
+    try {
+      const res = await fetch('/api/cart/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          listings: filtered.map((i) => ({
+            listingResourceID: i.listingResourceID,
+            storefrontAddress: i.storefrontAddress,
+            expectedPrice: i.expectedPrice,
+          })),
+        }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setResults(data?.results ?? {})
+      }
+    } catch {
+      // network failures leave existing results in place
+    } finally {
+      setIsValidating(false)
+    }
+  }, [])
+
+  // revalidate when the drawer opens
+  useEffect(() => {
+    if (open) void revalidate(items)
+    // We intentionally do not include items in deps — we don't want to thrash
+    // Flow REST on every cart mutation. revalidate explicitly runs on open and
+    // before Buy All.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, revalidate])
+
+  return { results, revalidate, isValidating }
+}
+
+function StaleWarningBadge({ result }: { result: ValidationResult | undefined }) {
+  if (!result) return null
+  if (result.sniped) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs bg-amber-500/20 text-amber-300 border border-amber-500/30"
+        title="This listing is no longer available on-chain."
+      >
+        ⚡ Sniped on-chain
+      </span>
+    )
+  }
+  if (result.priceChanged && result.currentPrice != null) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs bg-orange-500/20 text-orange-300 border border-orange-500/30"
+        title="The seller changed the price after you added this to your cart."
+      >
+        ⚠ Price now ${result.currentPrice.toFixed(2)}
+      </span>
+    )
+  }
+  return null
+}
 
 function formatPrice(n: number) {
   return `$${n.toFixed(2)}`
@@ -76,6 +166,8 @@ interface CartRowProps {
 function CartRow({ item, walletProvider }: CartRowProps) {
   const { removeFromCart, purchaseStatus, isExecuting } = useCart()
   const { buyOne } = usePurchaseQueue()
+  const { results: validationResults } = React.useContext(ValidationContext)
+  const validation = validationResults[item.listingResourceID]
   const status = purchaseStatus[item.listingResourceID] ?? 'idle'
 
   // If connected with Flow Wallet, Dapper-only items are incompatible
@@ -145,6 +237,12 @@ function CartRow({ item, walletProvider }: CartRowProps) {
           </div>
         )}
 
+        {status === 'idle' && (validation?.sniped || validation?.priceChanged) && (
+          <div className="mt-2">
+            <StaleWarningBadge result={validation} />
+          </div>
+        )}
+
         {/* Per-item Buy button for Flow Wallet compatible items */}
         {!isExecuting && status === 'idle' && !incompatible && isNonDapper && isFlowCompatible(item) && (
           <button
@@ -176,6 +274,7 @@ function CartSummary() {
   const { buyAll, executePurchase, executeOffers, isExecuting } = usePurchaseQueue()
   const { user, logIn } = useFlowUser()
   const { flowBalance, usdcBalance, isLoading: balancesLoading, refetch: refetchBalances } = useFlowWalletBalances()
+  const { revalidate } = React.useContext(ValidationContext)
 
   const successCount = Object.values(purchaseStatus).filter((s) => s === 'success').length
   const failedCount = Object.values(purchaseStatus).filter(
@@ -310,9 +409,12 @@ function CartSummary() {
 
       {flowCompatibleItems.length > 0 && !isExecuting && isConnected && (
         <button
-          onClick={() => {
+          onClick={async () => {
+            // Revalidate on-chain state before signing — users have seen the
+            // stale warnings; refresh them one last time in case a snipe
+            // happened while the drawer was open.
+            await revalidate(flowCompatibleItems)
             if (isNonDapper) {
-              // Only execute Flow-compatible buy items
               executePurchase(flowCompatibleItems, {
                 onItemComplete: (result) => {
                   console.log('[RPC Cart] item complete', result.status, result.item.momentId)
@@ -423,6 +525,7 @@ export function CartDrawer({ open, onClose }: CartDrawerProps) {
   const { items, clearCart, removeCompleted, purchaseStatus, isExecuting } = useCart()
   const { user } = useFlowUser()
   const drawerRef = useRef<HTMLDivElement>(null)
+  const validation = useCartValidationProvider(items, open)
 
   const hasCompletedItems = Object.values(purchaseStatus).some((s) => s === 'success')
 
@@ -439,7 +542,7 @@ export function CartDrawer({ open, onClose }: CartDrawerProps) {
   }, [open])
 
   return (
-    <>
+    <ValidationContext.Provider value={validation}>
       <div
         className={`fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-200 ${
           open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
@@ -533,6 +636,6 @@ export function CartDrawer({ open, onClose }: CartDrawerProps) {
 
         {items.length > 0 && <CartSummary />}
       </div>
-    </>
+    </ValidationContext.Provider>
   )
 }
