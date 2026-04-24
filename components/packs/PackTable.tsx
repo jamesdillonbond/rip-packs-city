@@ -27,6 +27,8 @@ export interface PackRow {
   fmvCoverage: number | null
   /** 0..1 share of the distribution opened so far. */
   depletionPct: number | null
+  /** True when the pack draws from a single ultra-rare edition rather than a probabilistic pool. */
+  isRareSinglePack?: boolean
   /** Callback to pass through to the action column. */
   onAction?: () => void
   /** Button label; default 'Analyze'. */
@@ -88,6 +90,9 @@ function coverageChipClass(cov: number | null): string {
   if (cov < 0.6) return 'bg-orange-950 text-orange-300 border-orange-800'
   return 'bg-emerald-950 text-emerald-300 border-emerald-900'
 }
+
+const RARE_SINGLE_TITLE =
+  'EV represents one specific ultra-rare moment rather than a probabilistic pull across a pool.'
 
 function SortArrow({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
   if (!active) return <span className="text-zinc-700 ml-1">↕</span>
@@ -184,7 +189,19 @@ export default function PackTable({
                 </td>
                 <td className="p-3 text-zinc-300">{r.slots}</td>
                 <td className="p-3 text-zinc-300 tabular-nums">{fmtPrice(r.price)}</td>
-                <td className="p-3 text-zinc-300 tabular-nums">{fmtPrice(r.grossEV)}</td>
+                <td className="p-3 text-zinc-300 tabular-nums">
+                  <div className="flex items-center gap-2">
+                    <span>{fmtPrice(r.grossEV)}</span>
+                    {r.isRareSinglePack && (
+                      <span
+                        title={RARE_SINGLE_TITLE}
+                        className="inline-block rounded border border-amber-900 bg-amber-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300"
+                      >
+                        Single rare edition
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td className={`p-3 font-semibold tabular-nums ${marginClass(r.evMarginPct)}`}>{fmtPct(r.evMarginPct)}</td>
                 <td className="p-3">
                   <span className={`inline-block rounded-full border px-2 py-0.5 text-[11px] font-semibold ${coverageChipClass(r.fmvCoverage)}`}>
@@ -230,6 +247,14 @@ export default function PackTable({
               <div className="text-right flex-shrink-0">
                 <div className={`text-xl font-black tabular-nums ${marginClass(r.evMarginPct)}`}>{fmtPct(r.evMarginPct)}</div>
                 <div className="text-[10px] uppercase tracking-wide text-zinc-500">EV margin</div>
+                {r.isRareSinglePack && (
+                  <div
+                    title={RARE_SINGLE_TITLE}
+                    className="mt-1 inline-block rounded border border-amber-900 bg-amber-950/40 px-1.5 py-0.5 text-[9px] font-semibold text-amber-300"
+                  >
+                    Single rare edition
+                  </div>
+                )}
               </div>
             </div>
             <div className="mt-2 flex items-center gap-3 text-xs text-zinc-400">

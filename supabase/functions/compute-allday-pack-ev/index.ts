@@ -1,354 +1,388 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+// compute-allday-pack-ev v7 — centralized EV math via compute_pack_ev_from_pool RPC.
+//
+// v6 computed EV inline in JS (raw mean × slots). That duplicated the math
+// that already exists in the compute_pack_ev_from_pool RPC, and meant the
+// top-10% trimmed-mean upgrade applied to the RPC didn't flow through to
+// future cron runs. v7 fixes that by calling the RPC per distribution after
+// the pool rows are written.
+//
+// Flow now:
+//   1. Resolve cursor from last successful pipeline_runs row
+//   2. Fetch one page of AllDay distributions from Studio Platform GQL
+//   3. Batch lookup editions (chunked .in) + FMV (via get_fmv_for_editions RPC)
+//   4. For each distribution: delete-then-insert pool rows
+//   5. After ALL pool writes complete: call compute_pack_ev_from_pool RPC per dist
+//   6. Collect evRows, bulk insert to pack_ev_history
+//
+// EV math is now owned entirely by the RPC — future tweaks (e.g. switching
+// to tier-weighted when Dapper populates packOdds) don't need edge redeploys.
+//
+// All v6 features retained: fire-and-forget via EdgeRuntime.waitUntil,
+// self-advancing cursor, 200-on-skip.
 
-// ── NFL All Day pack EV compute job ──────────────────────────────────────────
-//
-// Mirrors /api/pack-ev (Top Shot) but drives a batch of AllDay pack
-// distributions per invocation and writes each result to pack_ev_history so
-// the pack_ev_latest view (and downstream pack_table_rows) picks them up.
-//
-// Source of truth:
-//   • pack_distributions — collection_id = AllDay UUID, metadata includes
-//     distributionUUID, retail_price_usd, number_of_pack_slots, tier.
-//   • editions + fmv_current — edition pool lookup and FMV per edition.
-//
-// Pack edition pool resolution: we hit the AllDay GraphQL endpoint with
-// distributionUUID. The expected query shape is `packEntities` (per the
-// Unit 3 spec). If that query name doesn't match the live schema, the
-// function logs the error per-distribution and continues — the cron will
-// retry on the next invocation. Ship blockers are tracked in the batch
-// summary returned by the handler.
-//
-// Auth: Bearer $INGEST_SECRET_TOKEN.
-// Timeout target: 60s. Batch size: 25 distributions per invocation.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
 
-const INGEST_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN");
-if (!INGEST_TOKEN) throw new Error("INGEST_SECRET_TOKEN env var is required");
+const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN")
+if (!INGEST_SECRET_TOKEN) throw new Error("INGEST_SECRET_TOKEN env var required")
 
-const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070";
-const ALLDAY_GRAPHQL = "https://public-api.nflallday.com/graphql";
-const LOG_PREFIX = "[compute-allday-pack-ev]";
-const BATCH_SIZE = 25;
-const GQL_TIMEOUT_MS = 12000;
-const DEADLINE_MS = 55_000; // leave 5s runway before the 60s edge timeout
+const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
+const GQL_ENDPOINT = "https://api.production.studio-platform.dapperlabs.com/graphql"
+const EXTERNAL_ID_CHUNK = 500
 
 const supabase = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-);
+  Deno.env.get("SUPABASE_URL") ?? "",
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+)
 
-const GRAPHQL_HEADERS = {
+const H = {
   "Content-Type": "application/json",
   "User-Agent": "RipPacksCity/1.0 (rip-packs-city.vercel.app)",
   "Origin": "https://nflallday.com",
   "Referer": "https://nflallday.com/",
-};
+}
 
-// packEntities(distributionUUID): expected to return the pool of edition
-// probabilities for a given pack distribution. Shape mirrors packEditionsV3
-// in the existing /api/pack-ev logic. Fields kept minimal — only what we
-// need to key into `editions.external_id` and to weight by remaining.
-const PACK_ENTITIES_QUERY = `
-  query PackEntities($distributionUUID: ID!, $after: ID) {
-    packEntities(distributionUUID: $distributionUUID, after: $after) {
+const SEARCH_QUERY = `
+  query FetchAllDayDistributions($input: SearchDistributionsInput!) {
+    searchDistributions(input: $input) {
+      totalCount
       pageInfo { endCursor hasNextPage }
       edges {
         node {
-          count
-          remaining
-          edition {
-            id
-            tier
-            set { id }
-            play { id }
-          }
+          uuid id title
+          numberOfPackSlots
+          totalSupply availableSupply
+          price { value }
+          editionIds
+          packOdds { tier value displayValue }
         }
       }
     }
   }
-`;
+`
 
-interface PackDistRow {
-  dist_id: string;
-  title: string | null;
-  metadata: Record<string, unknown> | null;
+interface DistNode {
+  uuid: string; id: number; title: string | null
+  numberOfPackSlots: number | null
+  availableSupply: number | null; totalSupply: number | null
+  price: { value: string } | null
+  editionIds: number[] | null
+  packOdds: Array<{ tier: string; value: number; displayValue: string | null }> | null
 }
 
-interface EntityEdge {
-  count: number;
-  remaining: number;
-  edition: {
-    id: string;
-    tier: string;
-    set?: { id?: string };
-    play?: { id?: string };
-  };
+async function gqlCall(query: string, variables: Record<string, unknown>) {
+  const res = await fetch(GQL_ENDPOINT, {
+    method: "POST", headers: H,
+    body: JSON.stringify({ query, variables }),
+    signal: AbortSignal.timeout(25000),
+  })
+  if (!res.ok) return { ok: false as const, error: `HTTP ${res.status}` }
+  const json = await res.json().catch(() => null) as
+    | { data?: unknown; errors?: Array<{ message: string }> } | null
+  if (!json) return { ok: false as const, error: "not-json" }
+  if (json.errors?.length) return { ok: false as const, error: json.errors[0].message }
+  return { ok: true as const, data: json.data }
 }
 
-interface EntitiesResponse {
-  packEntities?: {
-    pageInfo: { endCursor: string | null; hasNextPage: boolean };
-    edges: Array<{ node: EntityEdge }>;
-  };
-}
-
-function normalizePackRetailPrice(raw: unknown): number {
-  const n = typeof raw === "number" ? raw : Number(raw ?? 0);
-  if (!Number.isFinite(n) || n <= 0) return 0;
-  return n >= 1_000_000 ? n / 1e8 : n;
-}
-
-async function alldayGraphql<T>(
-  query: string,
-  variables: Record<string, unknown>,
-): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), GQL_TIMEOUT_MS);
+async function logPipelineRun(args: {
+  startedAt: string; rowsFound: number; rowsWritten: number; rowsSkipped: number
+  ok: boolean; error?: string | null
+  extra: Record<string, unknown>
+  cursorBefore?: string | null; cursorAfter?: string | null
+}) {
   try {
-    const res = await fetch(ALLDAY_GRAPHQL, {
-      method: "POST",
-      headers: GRAPHQL_HEADERS,
-      body: JSON.stringify({ query, variables }),
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`AllDay GQL ${res.status}: ${body.slice(0, 200)}`);
-    }
-    const json = await res.json() as { data?: T; errors?: Array<{ message: string }> };
-    if (json.errors?.length) {
-      throw new Error(json.errors[0]?.message ?? "GraphQL error");
-    }
-    return json.data as T;
-  } finally {
-    clearTimeout(timer);
-  }
+    // deno-lint-ignore no-explicit-any
+    await (supabase as any).rpc("log_pipeline_run", {
+      p_pipeline: "compute-allday-pack-ev",
+      p_started_at: args.startedAt,
+      p_rows_found: args.rowsFound,
+      p_rows_written: args.rowsWritten,
+      p_rows_skipped: args.rowsSkipped,
+      p_ok: args.ok,
+      p_error: args.error ?? null,
+      p_collection_slug: "nfl-all-day",
+      p_cursor_before: args.cursorBefore ?? null,
+      p_cursor_after: args.cursorAfter ?? null,
+      p_extra: args.extra,
+    })
+  } catch { /* ignore */ }
 }
 
-async function fetchAllEntities(distributionUUID: string): Promise<EntityEdge[]> {
-  const all: EntityEdge[] = [];
-  let cursor: string | null = null;
-  for (let page = 0; page < 20; page++) {
-    const result = await alldayGraphql<EntitiesResponse>(PACK_ENTITIES_QUERY, {
-      distributionUUID,
-      after: cursor ?? undefined,
-    });
-    const conn = result?.packEntities;
-    if (!conn) break;
-    for (const e of conn.edges ?? []) if (e?.node) all.push(e.node);
-    if (!conn.pageInfo?.hasNextPage) break;
-    cursor = conn.pageInfo.endCursor ?? null;
-    if (!cursor) break;
-  }
-  return all;
-}
-
-async function fetchFmvForEditions(
-  externalIds: string[],
-): Promise<Map<string, number>> {
-  const fmv = new Map<string, number>();
-  if (externalIds.length === 0) return fmv;
-  // editions → id/external_id
-  const { data: editions, error: edErr } = await supabase
-    .from("editions")
-    .select("id, external_id")
-    .eq("collection_id", ALLDAY_COLLECTION_ID)
-    .in("external_id", externalIds);
-  if (edErr || !editions || editions.length === 0) return fmv;
-  const idToExt = new Map<string, string>();
-  for (const row of editions) idToExt.set(row.id, row.external_id);
-  // fmv_current → one row per edition
-  const { data: snaps, error: snapErr } = await supabase
-    .from("fmv_current")
-    .select("edition_id, fmv_usd")
-    .in("edition_id", Array.from(idToExt.keys()));
-  if (snapErr || !snaps) return fmv;
-  for (const s of snaps) {
-    const ext = idToExt.get(s.edition_id);
-    if (ext && typeof s.fmv_usd === "number" && s.fmv_usd > 0) {
-      fmv.set(ext, s.fmv_usd);
-    }
-  }
-  return fmv;
-}
-
-interface ComputeResult {
-  dist_id: string;
-  pack_listing_id: string;
-  pack_name: string | null;
-  pack_price: number;
-  gross_ev: number;
-  pack_ev: number;
-  value_ratio: number | null;
-  is_positive_ev: boolean;
-  fmv_coverage_pct: number;
-  edition_count: number;
-  total_unopened: number;
-  depletion_pct: number;
-}
-
-async function computeForDistribution(row: PackDistRow): Promise<ComputeResult | { skipped: true; reason: string }> {
-  const meta = row.metadata ?? {};
-  const distributionUUID = typeof meta.distributionUUID === "string" ? meta.distributionUUID : null;
-  if (!distributionUUID) return { skipped: true, reason: "no distributionUUID" };
-  const packPrice = normalizePackRetailPrice(meta.retail_price_usd);
-
-  let entities: EntityEdge[];
-  try {
-    entities = await fetchAllEntities(distributionUUID);
-  } catch (err) {
-    return { skipped: true, reason: "gql: " + (err instanceof Error ? err.message : String(err)) };
-  }
-  if (entities.length === 0) return { skipped: true, reason: "no entities" };
-
-  const totalRemaining = entities.reduce((s, n) => s + Math.max(n.remaining, 0), 0);
-  const totalCount = entities.reduce((s, n) => s + Math.max(n.count, 0), 0);
-  const unopened = totalRemaining > 0 ? totalRemaining : totalCount;
-  if (unopened === 0) return { skipped: true, reason: "zero unopened" };
-
-  const externalIds: string[] = [];
-  for (const n of entities) {
-    const setId = n.edition.set?.id;
-    const playId = n.edition.play?.id;
-    if (setId && playId) externalIds.push(`${setId}:${playId}`);
-  }
-  const unique = Array.from(new Set(externalIds));
-  const fmvMap = await fetchFmvForEditions(unique);
-
-  let fmvHits = 0;
-  let grossEV = 0;
-  for (const n of entities) {
-    const weight = (n.remaining > 0 ? n.remaining : n.count) / unopened;
-    if (weight <= 0) continue;
-    const ext = n.edition.set?.id && n.edition.play?.id ? `${n.edition.set.id}:${n.edition.play.id}` : null;
-    const fmv = ext ? (fmvMap.get(ext) ?? 0) : 0;
-    if (fmv > 0) fmvHits++;
-    grossEV += weight * fmv * 0.95;
-  }
-  const round2 = (v: number) => Math.round(v * 100) / 100;
-  const clamp = (v: number) => Math.max(-10000, Math.min(1_000_000, v));
-  const gross = clamp(round2(grossEV));
-  const pack = clamp(round2(grossEV - packPrice));
-  const valueRatio = packPrice > 0 ? Math.round((gross / packPrice) * 1000) / 1000 : null;
-  const depletionPct = totalCount > 0 ? Math.round(((totalCount - totalRemaining) / totalCount) * 100) : 0;
-  const coverage = entities.length > 0 ? Math.round((fmvHits / entities.length) * 100) : 0;
-
-  return {
-    dist_id: row.dist_id,
-    pack_listing_id: `allday:${distributionUUID}`,
-    pack_name: row.title,
-    pack_price: packPrice,
-    gross_ev: gross,
-    pack_ev: pack,
-    value_ratio: valueRatio,
-    is_positive_ev: pack > 0,
-    fmv_coverage_pct: coverage,
-    edition_count: entities.length,
-    total_unopened: unopened,
-    depletion_pct: depletionPct,
-  };
-}
-
-async function loadBatch(offsetCursor: number): Promise<PackDistRow[]> {
-  // Prioritize distributions with a retail price (priced packs show EV
-  // meaningfully). Unpriced distributions are skipped by
-  // computeForDistribution anyway; selecting them here would burn budget.
+async function resolveCursor(explicit: string | null): Promise<string | null> {
+  if (explicit === "reset") return null
+  if (explicit != null && explicit !== "") return explicit
   const { data, error } = await supabase
-    .from("pack_distributions")
-    .select("dist_id, title, metadata")
-    .eq("collection_id", ALLDAY_COLLECTION_ID)
-    .order("updated_at", { ascending: true, nullsFirst: true })
-    .range(offsetCursor, offsetCursor + BATCH_SIZE - 1);
-  if (error) throw new Error(error.message);
-  return (data ?? []) as PackDistRow[];
+    .from("pipeline_runs")
+    .select("cursor_after, extra")
+    .eq("pipeline", "compute-allday-pack-ev")
+    .eq("ok", true)
+    .order("started_at", { ascending: false })
+    .limit(1)
+  if (error || !data || data.length === 0) return null
+  // deno-lint-ignore no-explicit-any
+  const row = data[0] as any
+  const hasNext = row.extra?.has_next_page === true
+  if (!hasNext) return null
+  return row.cursor_after ?? null
 }
 
-export default async function handler(req: Request): Promise<Response> {
-  if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "POST only" }), {
-      status: 405,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-  if ((req.headers.get("authorization") ?? "") !== `Bearer ${INGEST_TOKEN}`) {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  const startedAt = Date.now();
-  const url = new URL(req.url);
-  const startOffset = parseInt(url.searchParams.get("offset") ?? "0", 10) || 0;
-
-  const summary = {
-    processed: 0,
-    written: 0,
-    skipped: 0,
-    skipReasons: {} as Record<string, number>,
-    lastOffset: startOffset,
-  };
-
-  let offset = startOffset;
+async function runBackgroundWork(startedAtIso: string, started: number, cursor: string | null) {
   try {
-    while (Date.now() - startedAt < DEADLINE_MS) {
-      const batch = await loadBatch(offset);
-      if (batch.length === 0) break;
-      for (const row of batch) {
-        if (Date.now() - startedAt > DEADLINE_MS) break;
-        summary.processed++;
-        try {
-          const result = await computeForDistribution(row);
-          if ("skipped" in result) {
-            summary.skipped++;
-            summary.skipReasons[result.reason] = (summary.skipReasons[result.reason] ?? 0) + 1;
-            continue;
-          }
-          const { error } = await supabase.from("pack_ev_history").insert({
-            pack_listing_id: result.pack_listing_id,
-            collection_id: ALLDAY_COLLECTION_ID,
-            dist_id: result.dist_id,
-            pack_name: result.pack_name,
-            pack_price: result.pack_price,
-            gross_ev: result.gross_ev,
-            pack_ev: result.pack_ev,
-            is_positive_ev: result.is_positive_ev,
-            value_ratio: result.value_ratio,
-            fmv_coverage_pct: result.fmv_coverage_pct,
-            edition_count: result.edition_count,
-            total_unopened: result.total_unopened,
-            depletion_pct: result.depletion_pct,
-          });
-          if (error) {
-            summary.skipped++;
-            summary.skipReasons["history_insert_error"] = (summary.skipReasons["history_insert_error"] ?? 0) + 1;
-            console.warn(`${LOG_PREFIX} insert ${row.dist_id}: ${error.message}`);
-          } else {
-            summary.written++;
-          }
-        } catch (err) {
-          summary.skipped++;
-          const msg = err instanceof Error ? err.message : String(err);
-          summary.skipReasons[msg.slice(0, 80)] = (summary.skipReasons[msg.slice(0, 80)] ?? 0) + 1;
-        }
-      }
-      offset += batch.length;
-      summary.lastOffset = offset;
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`${LOG_PREFIX} batch error: ${msg}`);
-    return new Response(JSON.stringify({ ok: false, error: msg, summary }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+    const gqlRes = await gqlCall(SEARCH_QUERY, {
+      input: {
+        first: 100,
+        after: cursor ?? null,
+        filters: { byProductID: "AllDay" },
+      },
+    })
 
-  console.log(`${LOG_PREFIX} processed=${summary.processed} written=${summary.written} skipped=${summary.skipped} in ${Date.now() - startedAt}ms`);
-  return new Response(
-    JSON.stringify({ ok: true, elapsed_ms: Date.now() - startedAt, ...summary }),
-    { headers: { "Content-Type": "application/json" } },
-  );
+    if (!gqlRes.ok) {
+      await logPipelineRun({
+        startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
+        ok: false, error: `gql: ${gqlRes.error}`,
+        extra: { elapsed_ms: Date.now() - started, function_version: 7 },
+        cursorBefore: cursor,
+      })
+      return
+    }
+
+    // deno-lint-ignore no-explicit-any
+    const data = gqlRes.data as any
+    const nodes: DistNode[] = (data?.searchDistributions?.edges ?? [])
+      // deno-lint-ignore no-explicit-any
+      .map((e: any) => e?.node).filter((n: DistNode | null) => n != null)
+    const pageInfo = data?.searchDistributions?.pageInfo
+    const endCursor: string | null = pageInfo?.endCursor ?? null
+    const hasNextPage: boolean = pageInfo?.hasNextPage === true
+
+    if (nodes.length === 0) {
+      await logPipelineRun({
+        startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
+        ok: true,
+        extra: { message: "empty page", elapsed_ms: Date.now() - started, function_version: 7, has_next_page: false },
+        cursorBefore: cursor, cursorAfter: endCursor,
+      })
+      return
+    }
+
+    // === Phase 1: bulk edition + FMV lookups ===
+    const allExternalIds = new Set<string>()
+    for (const n of nodes) for (const eid of n.editionIds ?? []) allExternalIds.add(String(eid))
+
+    const editionByExternalId = new Map<string, { id: string; tier: string | null }>()
+    const externalIdList = Array.from(allExternalIds)
+    for (let i = 0; i < externalIdList.length; i += EXTERNAL_ID_CHUNK) {
+      const chunk = externalIdList.slice(i, i + EXTERNAL_ID_CHUNK)
+      const { data: rows, error } = await supabase
+        .from("editions")
+        .select("id, external_id, tier")
+        .eq("collection_id", ALLDAY_COLLECTION_ID)
+        .in("external_id", chunk)
+      if (error) throw new Error(`editions chunk: ${error.message}`)
+      // deno-lint-ignore no-explicit-any
+      for (const r of (rows ?? []) as any[]) {
+        editionByExternalId.set(String(r.external_id), { id: r.id, tier: r.tier })
+      }
+    }
+
+    const editionUuids = Array.from(editionByExternalId.values()).map(v => v.id)
+    const fmvByEditionId = new Map<string, number>()
+    if (editionUuids.length > 0) {
+      const { data: fmvRows, error: fmvErr } = await supabase.rpc("get_fmv_for_editions", {
+        p_collection_id: ALLDAY_COLLECTION_ID,
+        p_edition_ids: editionUuids,
+      })
+      if (fmvErr) throw new Error(`get_fmv_for_editions: ${fmvErr.message}`)
+      // deno-lint-ignore no-explicit-any
+      for (const r of (fmvRows ?? []) as any[]) {
+        if (r.fmv_usd != null) fmvByEditionId.set(String(r.edition_id), Number(r.fmv_usd))
+      }
+    }
+
+    // === Phase 2: build pool rows per eligible distribution ===
+    const counters = {
+      nodes_processed: 0, nodes_no_editions: 0, nodes_no_fmv_coverage: 0,
+      pool_rows_written: 0, ev_rows_written: 0, single_edition_packs: 0,
+      rpc_not_ok: 0, rpc_errors: 0, trim_applied_count: 0,
+    }
+    const poolRowsByDist: Record<string, Array<Record<string, unknown>>> = {}
+    const distMeta: Record<string, { node: DistNode; editionsWithFmv: number; editionCount: number }> = {}
+    const oddsFoundSample: Record<string, unknown> = {}
+
+    for (const node of nodes) {
+      counters.nodes_processed++
+      const externalIds = (node.editionIds ?? []).map(String)
+      if (externalIds.length === 0) { counters.nodes_no_editions++; continue }
+
+      const pooledEditions: Array<{ external_id: string; edition_id: string; fmv: number | null }> = []
+      for (const ext of externalIds) {
+        const ed = editionByExternalId.get(ext)
+        if (!ed) continue
+        pooledEditions.push({
+          external_id: ext, edition_id: ed.id,
+          fmv: fmvByEditionId.get(ed.id) ?? null,
+        })
+      }
+
+      const editionCount = pooledEditions.length
+      const editionsWithFmv = pooledEditions.filter(p => p.fmv != null).length
+      if (editionCount === 0) { counters.nodes_no_editions++; continue }
+      if (editionsWithFmv === 0) { counters.nodes_no_fmv_coverage++; continue }
+      if (editionCount === 1) counters.single_edition_packs++
+
+      if (node.packOdds && node.packOdds.length > 0 && Object.keys(oddsFoundSample).length < 2) {
+        oddsFoundSample[node.uuid] = node.packOdds
+      }
+
+      const distId = String(node.id)
+      distMeta[distId] = { node, editionsWithFmv, editionCount }
+      poolRowsByDist[distId] = pooledEditions.map(p => ({
+        collection_id: ALLDAY_COLLECTION_ID,
+        dist_id: distId,
+        edition_id: p.edition_id,
+        edition_flow_id: p.external_id,
+        drop_weight: 1, slot_name: "default", pool_source: "gql",
+        last_refreshed_at: new Date().toISOString(),
+      }))
+    }
+
+    // === Phase 3: delete-then-insert pool rows per distribution ===
+    // Must complete before RPC calls since compute_pack_ev_from_pool reads
+    // from pack_drop_pool.
+    for (const [distId, rows] of Object.entries(poolRowsByDist)) {
+      await supabase.from("pack_drop_pool").delete()
+        .eq("collection_id", ALLDAY_COLLECTION_ID).eq("dist_id", distId)
+      for (let i = 0; i < rows.length; i += 500) {
+        const chunk = rows.slice(i, i + 500)
+        const { error: ie } = await supabase.from("pack_drop_pool").insert(chunk)
+        if (!ie) counters.pool_rows_written += chunk.length
+      }
+    }
+
+    // === Phase 4: compute EV per distribution via RPC, collect rows ===
+    const evRows: Array<Record<string, unknown>> = []
+    for (const [distId, meta] of Object.entries(distMeta)) {
+      const { node } = meta
+      const slots = Math.max(1, node.numberOfPackSlots ?? 1)
+      const packPrice = node.price?.value ? Number(node.price.value) : 0
+
+      const { data: rpcResult, error: rpcErr } = await supabase.rpc("compute_pack_ev_from_pool", {
+        p_collection_id: ALLDAY_COLLECTION_ID,
+        p_dist_id: distId,
+        p_pack_price: packPrice,
+        p_slots: slots,
+      })
+
+      if (rpcErr) {
+        counters.rpc_errors++
+        console.log(`[compute-allday-pack-ev] rpc err dist=${distId}: ${rpcErr.message}`)
+        continue
+      }
+      // deno-lint-ignore no-explicit-any
+      const ev = rpcResult as any
+      if (!ev || ev.ok !== true) {
+        counters.rpc_not_ok++
+        continue
+      }
+      if (ev.trim_applied === true) counters.trim_applied_count++
+
+      const total = node.totalSupply ?? 0
+      const available = node.availableSupply ?? 0
+      const depletionPct = total > 0
+        ? Math.min(100, Math.round(((total - available) / total) * 100))
+        : null
+
+      evRows.push({
+        pack_listing_id: node.uuid,
+        collection_id: ALLDAY_COLLECTION_ID,
+        dist_id: distId,
+        pack_name: node.title,
+        pack_price: packPrice,
+        gross_ev: Number(ev.gross_ev),
+        pack_ev: Number(ev.pack_ev),
+        is_positive_ev: Boolean(ev.is_positive_ev),
+        value_ratio: ev.value_ratio != null ? Number(ev.value_ratio) : null,
+        fmv_coverage_pct: Number(ev.fmv_coverage_pct),
+        edition_count: Math.min(Number(ev.edition_count), 32767),
+        total_unopened: available,
+        depletion_pct: depletionPct,
+      })
+    }
+
+    // === Phase 5: bulk insert EV history ===
+    if (evRows.length > 0) {
+      const { error: evErr } = await supabase.from("pack_ev_history").insert(evRows)
+      if (!evErr) counters.ev_rows_written = evRows.length
+      else {
+        await logPipelineRun({
+          startedAt: startedAtIso, rowsFound: nodes.length, rowsWritten: 0, rowsSkipped: nodes.length,
+          ok: false, error: `insert pack_ev_history: ${evErr.message}`,
+          extra: { counters, elapsed_ms: Date.now() - started, function_version: 7 },
+          cursorBefore: cursor, cursorAfter: endCursor,
+        })
+        return
+      }
+    }
+
+    const elapsed = Date.now() - started
+    await logPipelineRun({
+      startedAt: startedAtIso,
+      rowsFound: nodes.length,
+      rowsWritten: counters.ev_rows_written,
+      rowsSkipped: counters.nodes_no_editions + counters.nodes_no_fmv_coverage + counters.rpc_not_ok + counters.rpc_errors,
+      ok: true,
+      extra: {
+        ...counters,
+        editions_resolved: editionByExternalId.size,
+        editions_with_fmv: fmvByEditionId.size,
+        editions_requested: allExternalIds.size,
+        elapsed_ms: elapsed,
+        function_version: 7,
+        has_next_page: hasNextPage,
+        pack_odds_sample: oddsFoundSample,
+      },
+      cursorBefore: cursor, cursorAfter: endCursor,
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.log(`[compute-allday-pack-ev] bg fatal: ${msg}`)
+    await logPipelineRun({
+      startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
+      ok: false, error: msg,
+      extra: { elapsed_ms: Date.now() - started, function_version: 7 },
+      cursorBefore: cursor,
+    })
+  }
 }
 
-Deno.serve(handler);
+Deno.serve(async (req: Request) => {
+  const auth = req.headers.get("Authorization") ?? ""
+  if (auth !== `Bearer ${INGEST_SECRET_TOKEN}`) {
+    return new Response("Unauthorized", { status: 401 })
+  }
+
+  const url = new URL(req.url)
+  const explicitCursor = url.searchParams.get("cursor")
+  const cursor = await resolveCursor(explicitCursor)
+  const started = Date.now()
+  const startedAtIso = new Date(started).toISOString()
+
+  // deno-lint-ignore no-explicit-any
+  const edgeRuntime = (globalThis as any).EdgeRuntime
+  const workPromise = runBackgroundWork(startedAtIso, started, cursor)
+  if (edgeRuntime && typeof edgeRuntime.waitUntil === "function") {
+    edgeRuntime.waitUntil(workPromise)
+  } else {
+    workPromise.catch((e) => console.log(`waitUntil fallback err: ${e instanceof Error ? e.message : String(e)}`))
+  }
+
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      message: "queued",
+      cursor_before: cursor,
+      started_at: startedAtIso,
+      note: "Real results will appear in pipeline_runs within ~40s.",
+    }),
+    { headers: { "Content-Type": "application/json" } },
+  )
+})

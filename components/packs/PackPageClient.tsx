@@ -35,6 +35,7 @@ interface ApiRow {
   value_ratio: number | null
   fmv_coverage_pct: number | null
   depletion_pct: number | null
+  is_rare_single_pack?: boolean | null
 }
 
 interface ApiResponse {
@@ -74,6 +75,7 @@ function toPackRow(r: ApiRow): PackRow {
     evMarginPct: r.ev_margin_pct == null ? null : Number(r.ev_margin_pct),
     fmvCoverage: pctFraction(r.fmv_coverage_pct),
     depletionPct: pctFraction(r.depletion_pct),
+    isRareSinglePack: r.is_rare_single_pack === true,
   }
 }
 
