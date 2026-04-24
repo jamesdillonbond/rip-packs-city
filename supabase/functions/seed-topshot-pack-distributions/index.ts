@@ -131,15 +131,16 @@ async function fetchPage(cursor: string | null): Promise<{
   };
 }
 
-function buildRow(distId: string, node: PackNode, listingCount: number) {
+function buildRow(distId: string, node: PackNode) {
   const d = node.distribution ?? {};
   const now = new Date().toISOString();
 
   // The Studio Platform API does not surface total minted / opened counts
   // directly on the distribution. Seed with zeros and let downstream compute
-  // jobs update them if/when they come online. The only thing we know for
-  // sure here is how many sealed packs are currently listed, which we stash
-  // in metadata rather than overloading total_sealed.
+  // jobs update them if/when they come online. Live sealed-listing counts
+  // are queried from `cached_listings` at read-time (joined on dist_id /
+  // pack_type) — do NOT try to derive them here: searchPackNftAggregation
+  // returns one edge per distribution, so any per-edge counter is stuck at 1.
   return {
     collection_id: TOPSHOT_COLLECTION_ID,
     dist_id: distId,
@@ -158,8 +159,6 @@ function buildRow(distId: string, node: PackNode, listingCount: number) {
       retail_price_usd: d.price?.value ?? null,
       number_of_pack_slots: d.number_of_pack_slots?.value ? parseInt(d.number_of_pack_slots.value, 10) : null,
       start_time: d.start_time?.value ?? null,
-      sealed_listed_snapshot: listingCount,
-      sealed_listed_snapshot_at: now,
     },
     first_seen_at: now,
     updated_at: now,
@@ -184,7 +183,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   const startedAt = Date.now();
   try {
-    const nodesByDist = new Map<string, { node: PackNode; listingCount: number }>();
+    const nodesByDist = new Map<string, PackNode>();
     let cursor: string | null = null;
     let hasNext = true;
     let page = 0;
@@ -194,20 +193,15 @@ export default async function handler(req: Request): Promise<Response> {
       for (const n of nodes) {
         const distId = n?.dist_id?.value;
         if (!distId) continue;
-        const existing = nodesByDist.get(distId);
-        if (existing) {
-          existing.listingCount += 1;
-        } else {
-          nodesByDist.set(distId, { node: n, listingCount: 1 });
-        }
+        if (!nodesByDist.has(distId)) nodesByDist.set(distId, n);
       }
       hasNext = hasNextPage;
       cursor = endCursor;
       page++;
     }
 
-    const rows = Array.from(nodesByDist.entries()).map(([distId, { node, listingCount }]) =>
-      buildRow(distId, node, listingCount),
+    const rows = Array.from(nodesByDist.entries()).map(([distId, node]) =>
+      buildRow(distId, node),
     );
 
     if (rows.length === 0) {
