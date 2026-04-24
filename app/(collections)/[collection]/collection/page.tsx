@@ -14,6 +14,7 @@ import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-co
 import ExplainButton from "@/components/ExplainButton"
 import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
 import MomentDetailModal from "@/components/MomentDetailModal"
+import BadgeIcon from "@/components/BadgeIcon"
 
 function ThumbnailPreview({ thumbUrl, playerName, tierColor, children }: { thumbUrl: string | null; playerName: string; tierColor: string; children: React.ReactNode }) {
   const [hovered, setHovered] = useState(false)
@@ -144,15 +145,6 @@ type WalletSearchResponse = {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const BADGE_COLORS: Record<string, string> = {
-  "Rookie Year":        "bg-red-950 text-red-300 border border-red-800",
-  "Rookie Premiere":    "bg-orange-950 text-orange-300 border border-orange-800",
-  "Top Shot Debut":     "bg-zinc-100 text-zinc-900 border border-zinc-300",
-  "Rookie of the Year": "bg-yellow-950 text-yellow-300 border border-yellow-700",
-  "Rookie Mint":        "bg-blue-950 text-blue-300 border border-blue-800",
-  "Championship Year":  "bg-zinc-800 text-white border border-zinc-600",
-}
-
 const BADGE_PILL_TITLES = new Set([
   "Rookie Year", "Rookie Premiere", "Top Shot Debut",
   "Rookie of the Year", "Rookie Mint", "Championship Year",
@@ -278,28 +270,6 @@ function getPrimarySerialBadge(row: MomentRow) {
   return null
 }
 
-function badgeClass(name: string) {
-  const l = name.toLowerCase()
-  if (l.includes("rookie")) return "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
-  if (l.includes("debut")) return "bg-white text-black dark:bg-zinc-100 dark:text-black"
-  if (l.includes("champ")) return "bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-white"
-  return "bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
-}
-
-function supadgePillClass(title: string) {
-  return BADGE_COLORS[title] ?? "bg-zinc-800 text-zinc-300 border border-zinc-700"
-}
-
-const BADGE_SHORT_LABELS: Record<string, string> = {
-  "Rookie Year": "RY",
-  "Rookie Premiere": "RP",
-  "Top Shot Debut": "TSD",
-  "Rookie of the Year": "ROY",
-  "Rookie Mint": "RM",
-  "Championship Year": "Champ",
-  "Three-Star Rookie": "3★R",
-}
-
 function SerialBadge({ serial, mintSize, jerseyNumber }: { serial: number | undefined; mintSize: number | undefined; jerseyNumber: number | null | undefined }) {
   if (!serial) return null
   const tags: { label: string; title: string; color: string }[] = []
@@ -320,44 +290,9 @@ function SerialBadge({ serial, mintSize, jerseyNumber }: { serial: number | unde
     </span>
   )
 }
-function BadgePill({ title }: { title: string }) {
-  const shortLabel = BADGE_SHORT_LABELS[title] ?? title
-  return <span title={title} className={"rounded px-1.5 py-0.5 text-[10px] font-semibold " + supadgePillClass(title)}>{shortLabel}</span>
-}
-
-function badgeSlug(title: string): string {
-  return title.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")
-}
-
-const BADGE_TITLE_CAMEL: Record<string, string> = {
-  "rookie year": "rookieYear",
-  "top shot debut": "topShotDebut",
-  "rookie premiere": "rookiePremiere",
-  "rookie of the year": "rookieOfTheYear",
-  "rookie mint": "rookieMint",
-  "championship year": "championshipYear",
-  "three-star rookie": "threeStars",
-  "three star rookie": "threeStars",
-}
-
-function BadgeIcon({ title, size = 18 }: { title: string; size?: number }) {
-  const [errored, setErrored] = useState(false)
-  const camel = BADGE_TITLE_CAMEL[title.toLowerCase()] ?? badgeSlug(title)
-  const url = "/api/badge-image?name=" + encodeURIComponent(camel)
-  if (errored) return <BadgePill title={title} />
-  return (
-    <img
-      src={url}
-      alt={title}
-      title={title}
-      width={size}
-      height={size}
-      loading="lazy"
-      onError={function() { setErrored(true) }}
-      style={{ width: size, height: size, display: "inline-block", verticalAlign: "middle" }}
-    />
-  )
-}
+// BadgeIcon, BadgePill, and their slug/camel lookups used to live inline
+// here. They now ship as a single shared component that reads color /
+// icon_url / priority from the badge_taxonomy RPC — import above.
 
 function debugReasonLabel(reason?: string | null) {
   switch (reason) {

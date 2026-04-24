@@ -1,11 +1,19 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
+import {
+  classesForColorFamily,
+  lookupBadge,
+  useBadgeTaxonomy,
+  type BadgeMeta,
+} from '@/lib/badges/useBadgeTaxonomy'
 
 // BadgeRow — single source of truth for rendering badge pills across the
-// collection page, badges page, sniper rows, and wallet rows. Picks a color
-// family per title (championship / rookie / playoffs / play-tag) and clips to
-// maxVisible, with a "+N" pill that expands on tap to show the rest.
+// collection page, badges page, sniper rows, and wallet rows. Consumes the
+// badge_taxonomy RPC (via useBadgeTaxonomy) so color_family / priority /
+// category live in one Postgres table instead of being hand-classified here.
+// Priority sorts ascending (lower → first/largest). Titles not in the
+// taxonomy fall back to neutral styling and render at the tail.
 
 export type BadgeSource = 'sync' | 'derived' | 'play_tag' | 'set_play_tag' | string
 
@@ -20,51 +28,6 @@ export interface BadgeRowProps {
   maxVisible?: number
   size?: 'sm' | 'md'
   className?: string
-}
-
-const CHAMPIONSHIP_KEYWORDS = [
-  'championship',
-  'finals',
-  'super bowl',
-  'mvp',
-  'hall of fame',
-]
-
-const ROOKIE_KEYWORDS = [
-  'rookie debut',
-  'rookie premiere',
-  'rookie of the year',
-  'three-star rookie',
-  'three star rookie',
-  'rookie year',
-  'rookie mint',
-  'rookie',
-  'ts debut',
-  'top shot debut',
-]
-
-const PLAYOFFS_KEYWORDS = ['playoffs', 'all-star', 'all star', 'postseason']
-
-function classify(title: string): 'championship' | 'rookie' | 'playoffs' | 'play_tag' {
-  const t = title.toLowerCase()
-  for (const kw of CHAMPIONSHIP_KEYWORDS) if (t.includes(kw)) return 'championship'
-  for (const kw of ROOKIE_KEYWORDS) if (t.includes(kw)) return 'rookie'
-  for (const kw of PLAYOFFS_KEYWORDS) if (t.includes(kw)) return 'playoffs'
-  return 'play_tag'
-}
-
-function classesFor(category: ReturnType<typeof classify>): string {
-  switch (category) {
-    case 'championship':
-      return 'bg-amber-950 text-amber-300 border-amber-800'
-    case 'rookie':
-      return 'bg-red-950 text-red-300 border-red-800'
-    case 'playoffs':
-      return 'bg-indigo-950 text-indigo-300 border-indigo-800'
-    case 'play_tag':
-    default:
-      return 'bg-white/5 text-white/80 border-white/10'
-  }
 }
 
 function sizeClasses(size: 'sm' | 'md'): string {
@@ -102,25 +65,37 @@ export default function BadgeRow({
 }: BadgeRowProps) {
   const isMobile = useIsMobile()
   const [expanded, setExpanded] = useState(false)
+  const titles = useMemo(() => badges.map((b) => b.title), [badges])
+  const taxonomy = useBadgeTaxonomy(titles)
+
+  const sorted = useMemo(() => {
+    // Lower priority renders first. Unknown titles sink to the tail (Infinity).
+    const withMeta: { badge: BadgeItem; meta: BadgeMeta | null; priority: number }[] = badges.map((b) => {
+      const meta = lookupBadge(taxonomy, b.title)
+      return { badge: b, meta, priority: meta?.priority ?? Number.POSITIVE_INFINITY }
+    })
+    withMeta.sort((a, b) => a.priority - b.priority)
+    return withMeta
+  }, [badges, taxonomy])
 
   if (!badges || badges.length === 0) return null
 
   const cap = isMobile ? 2 : maxVisible
-  const visible = expanded ? badges : badges.slice(0, cap)
-  const hidden = expanded ? [] : badges.slice(cap)
+  const visible = expanded ? sorted : sorted.slice(0, cap)
+  const hidden = expanded ? [] : sorted.slice(cap)
 
   return (
     <div className={`flex flex-wrap items-center gap-1 ${className}`}>
-      {visible.map((b) => {
-        const cat = classify(b.title)
-        const tooltip = b.source ? `${b.title} (${b.source})` : b.title
+      {visible.map(({ badge, meta }) => {
+        const classes = classesForColorFamily(meta?.color_family)
+        const tooltip = badge.source ? `${meta?.title ?? badge.title} (${badge.source})` : (meta?.title ?? badge.title)
         return (
           <span
-            key={b.id}
+            key={badge.id}
             title={tooltip}
-            className={`inline-flex items-center rounded-full border font-medium ${sizeClasses(size)} ${classesFor(cat)}`}
+            className={`inline-flex items-center rounded-full border font-medium ${sizeClasses(size)} ${classes}`}
           >
-            {b.title}
+            {meta?.title ?? badge.title}
           </span>
         )
       })}
@@ -131,7 +106,7 @@ export default function BadgeRow({
             e.stopPropagation()
             setExpanded(true)
           }}
-          title={hidden.map((b) => b.title).join(', ')}
+          title={hidden.map(({ meta, badge }) => meta?.title ?? badge.title).join(', ')}
           className={`inline-flex items-center rounded-full border font-medium bg-white/5 text-white/60 border-white/10 hover:bg-white/10 transition-colors ${sizeClasses(size)}`}
         >
           +{hidden.length}
