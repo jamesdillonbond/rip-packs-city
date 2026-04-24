@@ -147,8 +147,9 @@ function buildRow(distId: string, node: PackNode, listingCount: number) {
     nft_type: "TopShot",
     total_minted: 0,
     total_opened: 0,
-    total_sealed: null,
-    depletion_pct: null,
+    // total_sealed and depletion_pct are GENERATED ALWAYS columns in
+    // pack_distributions — Postgres rejects any explicit value (even NULL)
+    // with "cannot insert a non-DEFAULT value into generated column".
     image_url: d.image_urls?.value?.[0] ?? null,
     metadata: {
       uuid: d.uuid?.value ?? null,
