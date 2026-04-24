@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { after } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { normalizePackRetailPrice } from "@/lib/packs/normalize-retail-price"
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -215,7 +216,7 @@ export async function GET() {
     tier: String(r.tier ?? "common").toLowerCase(),
     imageUrl: r.image_url ?? "",
     momentsPerPack: r.moments_per_pack ?? 1,
-    retailPrice: Number(r.retail_price_usd ?? 0),
+    retailPrice: normalizePackRetailPrice(r.retail_price_usd),
     lowestAsk: Number(r.lowest_ask_usd ?? 0),
     startTime: r.first_seen_at ?? r.cached_at ?? new Date().toISOString(),
     listingCount: Number(r.total_listed ?? 0),
