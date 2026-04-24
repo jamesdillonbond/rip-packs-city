@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { normalizePackRetailPrice } from "@/lib/packs/normalize-retail-price"
 
 const TOPSHOT_GRAPHQL = "https://api.production.studio-platform.dapperlabs.com/graphql"
 
@@ -196,8 +197,7 @@ export async function GET() {
 
     const listings: PackListing[] = Array.from(packMap.entries()).map(([distId, { node, count, lowestAsk }]) => {
       const d = node.distribution
-      const rawRetail = d.price.value ?? 0
-      const retailPrice = rawRetail > 0 && rawRetail <= 10000 ? rawRetail : 0
+      const retailPrice = normalizePackRetailPrice(d.price.value)
       const slots = parseInt(d.number_of_pack_slots.value, 10) || 1
       const packType = classifyPackType(d.title.value, slots, retailPrice)
       const startTime = d.start_time.value

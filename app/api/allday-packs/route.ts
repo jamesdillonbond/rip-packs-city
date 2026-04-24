@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { normalizePackRetailPrice } from "@/lib/packs/normalize-retail-price"
 
 const supabaseAdmin: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -28,6 +29,12 @@ export async function GET() {
     rows.push(...data)
     if (data.length < pageSize) break
     from += pageSize
+  }
+
+  for (const r of rows) {
+    if (r.metadata && r.metadata.retail_price_usd != null) {
+      r.metadata.retail_price_usd = normalizePackRetailPrice(r.metadata.retail_price_usd)
+    }
   }
 
   return NextResponse.json({ distributions: rows, count: rows.length })
