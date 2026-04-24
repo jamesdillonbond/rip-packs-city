@@ -206,12 +206,14 @@ export default function ProfilePage() {
 
   const refresh = useCallback(async () => {
     try {
-      const [meRes, bioRes, walletsRes, trophiesRes, heroRes, favRes, actRes, recRes] = await Promise.all([
+      // Trophy Case is the real curated flex. HeroMoment is a fallback for users
+      // with nothing pinned yet. Fetch trophies first so we can skip the hero
+      // round-trip entirely when trophies exist.
+      const [meRes, bioRes, walletsRes, trophiesRes, favRes, actRes, recRes] = await Promise.all([
         fetch("/api/profile/me", { cache: "no-store" }),
         fetch("/api/profile/bio", { cache: "no-store" }),
         fetch("/api/profile/saved-wallets", { cache: "no-store" }),
         fetch("/api/profile/trophy", { cache: "no-store" }),
-        fetch("/api/profile/hero-moment", { cache: "no-store" }),
         fetch("/api/profile/favorites", { cache: "no-store" }),
         fetch("/api/profile/activity", { cache: "no-store" }),
         fetch("/api/profile/recent-searches", { cache: "no-store" }),
@@ -228,14 +230,22 @@ export default function ProfilePage() {
         const w = await walletsRes.json();
         setWallets(w?.wallets ?? []);
       }
+      let trophyList: Trophy[] = [];
       if (trophiesRes.ok) {
         const t = await trophiesRes.json();
-        setTrophies(t?.trophies ?? []);
+        trophyList = t?.trophies ?? [];
+        setTrophies(trophyList);
       }
-      if (heroRes.ok) {
-        const h = await heroRes.json();
-        setHero(h?.hero ?? null);
-        setHeroReason(h?.reason ?? null);
+      if (trophyList.length === 0) {
+        const heroRes = await fetch("/api/profile/hero-moment", { cache: "no-store" });
+        if (heroRes.ok) {
+          const h = await heroRes.json();
+          setHero(h?.hero ?? null);
+          setHeroReason(h?.reason ?? null);
+        }
+      } else {
+        setHero(null);
+        setHeroReason(null);
       }
       if (favRes.ok) {
         const f = await favRes.json();
@@ -460,7 +470,7 @@ export default function ProfilePage() {
           <SignOutButton />
         </section>
 
-        {/* ── Hero: onboarding CTA for empty state, otherwise Hero Holo Moment ── */}
+        {/* ── Hero: onboarding CTA (no wallets) / HeroMoment (no trophies yet) / Trophy Case (trophies pinned) ── */}
         {wallets.length === 0 ? (
           <OnboardingCta
             usernameInput={usernameInput}
@@ -469,8 +479,10 @@ export default function ProfilePage() {
             saving={usernameSaving}
             error={usernameError}
           />
-        ) : (
+        ) : trophies.length === 0 ? (
           <HeroMomentCard hero={hero} reason={heroReason} wallets={wallets} indexing={indexing} />
+        ) : (
+          <TrophyCaseSection trophies={trophies} wallets={wallets} />
         )}
 
         {/* ── Stats Tiles ── */}
@@ -480,39 +492,10 @@ export default function ProfilePage() {
           <StatTile label="Collections" value={String(collectionCount)} color="#A855F7" />
         </section>
 
-        {/* ── Trophy Case ── */}
-        <section className="rpc-section">
-          <div className="rpc-section-title">Trophy Case</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
-            {[1, 2, 3, 4, 5, 6].map((slot) => {
-              const t = trophies.find((x) => x.slot === slot);
-              if (!t) {
-                return (
-                  <div key={slot} className="rpc-binder-slot" style={{ aspectRatio: "1/1", background: "#0d0d0d", border: "1px dashed #27272a", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.3)", letterSpacing: "0.08em" }}>
-                    SLOT {slot}
-                  </div>
-                );
-              }
-              const cMeta = collectionMetaByUuid(t.collection_id);
-              return (
-                <div key={slot} className={`rpc-binder-slot ${tierHoloClass(t.tier)}`} style={{ position: "relative", aspectRatio: "1/1", background: "#111", border: `1px solid ${tierColor(t.tier)}66`, borderRadius: 8, overflow: "hidden" }}>
-                  {t.thumbnail_url && (
-                    <img src={t.thumbnail_url} alt={t.player_name || ""} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                  )}
-                  <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "6px 8px", background: "linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0))", fontSize: 10, fontFamily: condensedFont, fontWeight: 700 }}>
-                    <div style={{ color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.player_name ?? t.moment_id}</div>
-                    <div style={{ display: "flex", gap: 6, marginTop: 2, alignItems: "center" }}>
-                      {cMeta && (
-                        <span style={{ fontSize: 9, letterSpacing: "0.08em", color: cMeta.accent, textTransform: "uppercase" }}>{cMeta.shortLabel}</span>
-                      )}
-                      <span style={{ fontSize: 9, color: "#34D399", marginLeft: "auto" }}>{t.fmv != null ? fmtUsd(Number(t.fmv)) : ""}</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
+        {/* ── Trophy Case (shown here only when not already hoisted to hero slot) ── */}
+        {trophies.length === 0 && wallets.length > 0 && (
+          <TrophyCaseSection trophies={trophies} wallets={wallets} />
+        )}
 
         {/* ── Saved Wallets ── */}
         <section className="rpc-section">
@@ -953,6 +936,75 @@ function HeroMomentCard({
         <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 22, color: "#34D399", marginTop: 8 }}>
           {fmtUsd(hero.fmvUsd)}
         </div>
+      </div>
+    </section>
+  );
+}
+
+function TrophyCaseSection({ trophies, wallets }: { trophies: Trophy[]; wallets: SavedWallet[] }) {
+  // Empty slots link to the user's first saved wallet so "pick a moment to pin"
+  // lands in a working collection view with the Pin CTA already on each row.
+  const firstWallet = wallets[0];
+  const firstWalletCollection = firstWallet ? collectionMetaByUuid(firstWallet.collection_id) : null;
+  const pinTargetHref = firstWallet && firstWalletCollection
+    ? `/${firstWalletCollection.id}/collection?address=${firstWallet.wallet_addr}`
+    : null;
+
+  const emptySlotStyle: React.CSSProperties = {
+    aspectRatio: "1/1",
+    background: "#0d0d0d",
+    border: "1px dashed #27272a",
+    borderRadius: 8,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontFamily: condensedFont,
+    fontWeight: 800,
+    fontSize: 36,
+    color: "rgba(255,255,255,0.3)",
+    textDecoration: "none",
+    cursor: pinTargetHref ? "pointer" : "default",
+  };
+
+  return (
+    <section className="rpc-section">
+      <div className="rpc-section-title">Trophy Case</div>
+      <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)", marginBottom: 12, letterSpacing: "0.02em", lineHeight: 1.5 }}>
+        Pin your 6 best moments across any collection — your permanent flex.
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
+        {[1, 2, 3, 4, 5, 6].map((slot) => {
+          const t = trophies.find((x) => x.slot === slot);
+          if (!t) {
+            if (pinTargetHref) {
+              return (
+                <Link key={slot} href={pinTargetHref} className="rpc-binder-slot" style={emptySlotStyle} aria-label={`Pin moment to slot ${slot}`}>
+                  +
+                </Link>
+              );
+            }
+            return (
+              <div key={slot} className="rpc-binder-slot" style={emptySlotStyle}>+</div>
+            );
+          }
+          const cMeta = collectionMetaByUuid(t.collection_id);
+          return (
+            <div key={slot} className={`rpc-binder-slot ${tierHoloClass(t.tier)}`} style={{ position: "relative", aspectRatio: "1/1", background: "#111", border: `1px solid ${tierColor(t.tier)}66`, borderRadius: 8, overflow: "hidden" }}>
+              {t.thumbnail_url && (
+                <img src={t.thumbnail_url} alt={t.player_name || ""} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              )}
+              <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "6px 8px", background: "linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0))", fontSize: 10, fontFamily: condensedFont, fontWeight: 700 }}>
+                <div style={{ color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.player_name ?? t.moment_id}</div>
+                <div style={{ display: "flex", gap: 6, marginTop: 2, alignItems: "center" }}>
+                  {cMeta && (
+                    <span style={{ fontSize: 9, letterSpacing: "0.08em", color: cMeta.accent, textTransform: "uppercase" }}>{cMeta.shortLabel}</span>
+                  )}
+                  <span style={{ fontSize: 9, color: "#34D399", marginLeft: "auto" }}>{t.fmv != null ? fmtUsd(Number(t.fmv)) : ""}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </section>
   );
