@@ -14,6 +14,8 @@ import { getCollection } from "@/lib/collections";
 import { getOwnerKey } from "@/lib/owner-key";
 import { PINNACLE_VARIANT_COLORS, PINNACLE_VARIANT_LABELS } from "@/lib/pinnacle/pinnacleTypes";
 import MomentDetailModal from "@/components/MomentDetailModal";
+import BadgeIcon from "@/components/BadgeIcon";
+import BadgePills from "@/components/BadgePills";
 
 function SniperThumbnailPreview({ thumbUrl, playerName, tierColor, backgroundColor, children }: { thumbUrl: string | null; playerName: string; tierColor: string; backgroundColor?: string; children: React.ReactNode }) {
   const [hovered, setHovered] = useState(false);
@@ -307,96 +309,11 @@ function SourceBadge({ source, isAllDay }: { source?: "topshot" | "flowty" | "pi
   );
 }
 
-const BADGE_SLUG_LABELS: Record<string, string> = {
-  rookie_year: "Rookie Year",
-  top_shot_debut: "TS Debut",
-  championship_year: "Champ Year",
-  three_star_rookie: "Three-Star",
-  jersey_match: "#Jersey",
-  perfect_mint: "PM",
-  number_one: "#1",
-  // NFL All Day
-  all_day_debut: "AD Debut",
-  rookie_mint: "Rookie Mint",
-  hall_of_fame: "HOF",
-  challenge_reward: "Challenge",
-  crafted_reward: "Crafted",
-};
-
-const BADGE_SLUG_COLORS: Record<string, string> = {
-  rookie_year: "bg-red-500/15 text-red-400 border-red-500/25",
-  top_shot_debut: "bg-white/10 text-black border-white/25",
-  championship_year: "bg-zinc-500/15 text-zinc-400 border-zinc-500/25",
-  three_star_rookie: "bg-yellow-500/15 text-yellow-400 border-yellow-500/25",
-  jersey_match: "bg-blue-500/15 text-blue-400 border-blue-500/25",
-  perfect_mint: "bg-green-500/15 text-green-400 border-green-500/25",
-  number_one: "bg-amber-500/15 text-amber-400 border-amber-500/25",
-};
-
-const BADGE_SLUG_CAMEL: Record<string, string> = {
-  rookie_year: "rookieYear",
-  top_shot_debut: "topShotDebut",
-  rookie_premiere: "rookiePremiere",
-  rookie_of_the_year: "rookieOfTheYear",
-  rookie_mint: "rookieMint",
-  championship_year: "championshipYear",
-  three_star_rookie: "threeStars",
-};
-
-function normalizeBadgeSlug(slug: string): string {
-  // Accept SCREAMING_SNAKE (ROOKIE_YEAR), snake_case, "Title Case" → snake_case lower.
-  return slug.replace(/[\s-]+/g, "_").replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
-}
-
-function slugToCamel(slug: string): string {
-  const snake = normalizeBadgeSlug(slug);
-  const parts = snake.split("_").filter(Boolean);
-  if (!parts.length) return slug;
-  return parts[0] + parts.slice(1).map(p => p[0].toUpperCase() + p.slice(1)).join("");
-}
-
-function BadgeIcon({ slug, size = 18, isAllDay = false }: { slug: string; size?: number; isAllDay?: boolean }) {
-  const [errored, setErrored] = useState(false);
-  const snake = normalizeBadgeSlug(slug);
-  const label = BADGE_SLUG_LABELS[snake] ?? BADGE_SLUG_LABELS[slug] ?? slug;
-  const camel = BADGE_SLUG_CAMEL[snake] ?? BADGE_SLUG_CAMEL[slug] ?? slugToCamel(slug);
-  const url = `/api/badge-image?name=${encodeURIComponent(camel)}`;
-  // All Day badges don't have Top Shot icon assets — always render as a plain
-  // text chip so we don't pull an incorrect Top Shot graphic for an AD slug.
-  if (errored || isAllDay) {
-    return (
-      <span
-        className={`px-1 py-0.5 rounded text-[10px] border ${BADGE_SLUG_COLORS[snake] ?? BADGE_SLUG_COLORS[slug] ?? "bg-yellow-500/15 text-yellow-400 border-yellow-500/25"}`}
-      >
-        {label}
-      </span>
-    );
-  }
-  return (
-    <img
-      src={url}
-      alt={label}
-      title={label}
-      width={size}
-      height={size}
-      loading="lazy"
-      onError={() => setErrored(true)}
-      style={{ width: size, height: size, display: "inline-block", verticalAlign: "middle" }}
-    />
-  );
-}
-
-function BadgePills({ slugs, isAllDay = false }: { slugs: string[]; isAllDay?: boolean }) {
-  // Dedupe slugs to avoid double-rendered badges when upstream data repeats entries.
-  const unique = Array.from(new Set(slugs));
-  return (
-    <div className="flex gap-1 mt-1 flex-wrap items-center">
-      {unique.map((slug) => (
-        <BadgeIcon key={slug} slug={slug} isAllDay={isAllDay} />
-      ))}
-    </div>
-  );
-}
+// BadgeIcon, BadgePills, and the slug → label / color / camelCase lookups
+// that used to live here are now shared components that read from the
+// badge_taxonomy RPC — imported above. Callers pass the raw slug (e.g.
+// "rookie_year"); the taxonomy normalizes that to "rookieyear" and resolves
+// canonical title, color_family, priority, and optional icon_url.
 
 function ShareButton({ deal }: { deal: SniperDeal }) {
   const [copied, setCopied] = useState(false);
@@ -1648,7 +1565,7 @@ export default function SniperPage() {
                     {!isPinnacle && deal.hasBadge && deal.badgeSlugs.length > 0 && (
                       <div className="flex gap-1 flex-wrap items-center">
                         {Array.from(new Set(deal.badgeSlugs)).slice(0, 3).map((slug) => (
-                          <BadgeIcon key={slug} slug={slug} isAllDay={isAllDay} />
+                          <BadgeIcon key={slug} title={slug} />
                         ))}
                       </div>
                     )}
@@ -1822,7 +1739,7 @@ export default function SniperPage() {
                         </div>
                       )}
                       {!isPinnacle && deal.hasBadge && deal.badgeSlugs.length > 0 && (
-                        <BadgePills slugs={deal.badgeSlugs} isAllDay={isAllDay} />
+                        <BadgePills titles={deal.badgeSlugs} />
                       )}
                       {/* Task 4: Pack-linked listing tag */}
                       {!isPinnacle && deal.packName && (
