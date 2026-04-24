@@ -851,6 +851,7 @@ async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
       player_name: r.playerName ?? null,
       set_name: r.setName ?? null,
       series_number: r.series != null ? Number(r.series) || null : null,
+      image_url: r.thumbnailUrl ?? null,
     })
 
     // Split rows by edition_key availability so that rows that failed to

@@ -920,11 +920,13 @@ function HeroMomentCard({
   const holoClass = tierHoloClass(hero.tier);
   const tc = tierColor(hero.tier);
 
+  // We intentionally do NOT add the `rpc-binder-slot` class to the outer
+  // section. That utility class enforces a 1 / var(--binder-slot-ratio)
+  // aspect-ratio, which made the hero banner eat ~90% of the viewport.
+  // The holo shimmer classes (rpc-holo-*) are compatible on their own.
   return (
-    <section className={`rpc-binder-slot ${holoClass}`} style={{ position: "relative", background: "#111", border: `2px solid ${tc}`, borderRadius: 14, padding: 14, overflow: "hidden", display: "flex", gap: 16, alignItems: "center" }}>
-      {hero.imageUrl && (
-        <img src={hero.imageUrl} alt={hero.playerName ?? ""} style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 10, border: `1px solid ${tc}66`, flexShrink: 0 }} />
-      )}
+    <section className={holoClass} style={{ position: "relative", background: "#111", border: `2px solid ${tc}`, borderRadius: 14, padding: 14, overflow: "hidden", display: "flex", gap: 16, alignItems: "center", maxHeight: 200 }}>
+      <HeroMomentImage imageUrl={hero.imageUrl} playerName={hero.playerName} tier={hero.tier} tc={tc} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontFamily: monoFont, fontSize: 10, color: tc, letterSpacing: "0.14em", textTransform: "uppercase" }}>Hero Moment</div>
         <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 26, letterSpacing: "0.02em", marginTop: 2, lineHeight: 1.1 }}>
@@ -938,6 +940,62 @@ function HeroMomentCard({
         </div>
       </div>
     </section>
+  );
+}
+
+function HeroMomentImage({
+  imageUrl,
+  playerName,
+  tier,
+  tc,
+}: {
+  imageUrl: string | null;
+  playerName: string | null;
+  tier: string | null;
+  tc: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  const placeholderGlyph = (tier || "").toLowerCase().includes("ultimate")
+    ? "◆"
+    : (tier || "").toLowerCase().includes("legendary")
+      ? "★"
+      : "●";
+  const commonStyle: React.CSSProperties = {
+    width: 120,
+    height: 120,
+    objectFit: "cover",
+    objectPosition: "center",
+    borderRadius: 10,
+    border: `1px solid ${tc}66`,
+    flexShrink: 0,
+  };
+  if (!imageUrl || failed) {
+    return (
+      <div
+        style={{
+          ...commonStyle,
+          background: `radial-gradient(circle at 30% 30%, ${tc}55, ${tc}11 70%, #111 100%)`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontFamily: condensedFont,
+          fontWeight: 900,
+          fontSize: 44,
+          color: tc,
+        }}
+        aria-label={playerName ? `${playerName} placeholder art` : "Hero moment placeholder"}
+      >
+        {placeholderGlyph}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={imageUrl}
+      alt={playerName ?? ""}
+      onError={() => setFailed(true)}
+      style={commonStyle}
+    />
   );
 }
 
