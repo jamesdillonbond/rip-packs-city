@@ -541,7 +541,7 @@ export async function POST(req: NextRequest) {
     try {
       // Log how many editions are still missing FMV
       const { data: missingCount } = await supabaseAdmin
-        .rpc("execute_sql", {
+        .rpc("query_sql", {
           query: `
             SELECT COUNT(*) AS cnt
             FROM editions e
@@ -549,11 +549,11 @@ export async function POST(req: NextRequest) {
             WHERE fs.edition_id IS NULL
           `,
         })
-      const missingEditions = (missingCount as { cnt: number }[])?.[0]?.cnt ?? "unknown"
+      const missingEditions = (missingCount as { cnt: number }[] | null)?.[0]?.cnt ?? "unknown"
       console.log(`[FMV-RECALC] Editions missing FMV snapshots: ${missingEditions}`)
 
       const { data: uncoveredEditions } = await supabaseAdmin
-        .rpc("execute_sql", {
+        .rpc("query_sql", {
           query: `
             SELECT e.id AS edition_id, e.collection_id, be.low_ask
             FROM editions e
@@ -566,7 +566,7 @@ export async function POST(req: NextRequest) {
           `,
         })
 
-      const rows = (uncoveredEditions as { edition_id: string; collection_id: string; low_ask: number }[]) ?? []
+      const rows = (uncoveredEditions as { edition_id: string; collection_id: string; low_ask: number }[] | null) ?? []
 
       if (rows.length > 0) {
         console.log(`[FMV-RECALC] Backfill: ${rows.length} editions with no snapshot`)
@@ -625,7 +625,7 @@ export async function POST(req: NextRequest) {
 
     try {
       const { data: histRows, error: histErr } = await supabaseAdmin
-        .rpc("execute_sql", {
+        .rpc("query_sql", {
           query: `
             SELECT
               e.id AS edition_id,
@@ -654,7 +654,7 @@ export async function POST(req: NextRequest) {
           min_price: number
           sales_count: number
           latest_sold_at: string
-        }>) ?? []
+        }> | null) ?? []
 
         if (rows.length > 0) {
           console.log(`[FMV-RECALC] Historical fallback: ${rows.length} editions with sales but no snapshot`)
@@ -741,7 +741,7 @@ export async function POST(req: NextRequest) {
     if (forceStale) {
       try {
         const { data: staleRows, error: staleErr } = await supabaseAdmin
-          .rpc("execute_sql", {
+          .rpc("query_sql", {
             query: `
               SELECT DISTINCT ON (fs.edition_id)
                 fs.edition_id,
@@ -767,7 +767,7 @@ export async function POST(req: NextRequest) {
           console.warn("[FMV-RECALC] Stale freshness query error:", staleErr.message)
         } else {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const rows: any[] = (staleRows as any[]) ?? []
+          const rows: any[] = (staleRows as any[] | null) ?? []
           // Skip editions already written in this run to avoid duplicate today rows.
           const skipSet = new Set<string>(insertRows.map((r) => String(r.edition_id)))
           const touchRows = rows
