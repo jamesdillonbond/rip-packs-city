@@ -91,7 +91,7 @@ interface FlowTxResult {
   status: string
   status_code: number
   error_message: string
-  events?: Array<{ type: string; transaction_id: string }>
+  events?: Array<{ type: string; transaction_id: string; payload?: string }>
   computation_used?: string
   execution: "Success" | "Failure"
 }
