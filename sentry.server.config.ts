@@ -1,30 +1,16 @@
-// sentry.server.config.ts — Server-side Sentry initialization
-// Docs: https://docs.sentry.io/platforms/javascript/guides/nextjs/
-import * as Sentry from "@sentry/nextjs"
+// This file configures the initialization of Sentry on the server.
+// The config you add here will be used whenever the server handles a request.
+// https://docs.sentry.io/platforms/javascript/guides/nextjs/
+
+import * as Sentry from "@sentry/nextjs";
 
 Sentry.init({
-  dsn: process.env.NEXT_PUBLIC_SENTRY_DSN || "",
+  dsn: "https://a3f2b01b1923ae3282262d55a793b051@o4511283179159552.ingest.us.sentry.io/4511283198623744",
 
-  enabled: process.env.NODE_ENV === "production",
+  // Define how likely traces are sampled. Adjust this value in production, or use tracesSampler for greater control.
+  tracesSampleRate: 1,
 
-  // Tie errors to environment + commit so Sentry can group by release.
-  environment: process.env.VERCEL_ENV || "development",
-  release: process.env.VERCEL_GIT_COMMIT_SHA,
-
-  // Performance: sample 10% of transactions.
-  tracesSampleRate: 0.1,
-  // Profiling disabled — not needed for error tracking and costs extra quota.
-  profilesSampleRate: 0,
-
-  // Filter out noise: expected 404s and request aborts are not actionable.
-  beforeSend(event, hint) {
-    const err = hint?.originalException as { name?: string; message?: string; status?: number } | undefined
-    if (err) {
-      if (err.name === "AbortError") return null
-      if (err.status === 404) return null
-      const msg = typeof err.message === "string" ? err.message : ""
-      if (msg.includes("ECONNRESET") || msg.includes("The operation was aborted")) return null
-    }
-    return event
-  },
-})
+  // Enable sending user PII (Personally Identifiable Information)
+  // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
+  sendDefaultPii: true,
+});
