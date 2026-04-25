@@ -1,21 +1,21 @@
-// compute-topshot-pack-ev v3 — parallelized fetch + larger batch.
+// compute-topshot-pack-ev v4 — seed via seed_topshot_editions RPC.
 //
-// v2 issue: sequential per-pack GraphQL meant 4 packs × up to 9 round-trips
-// each, all serial. Drove ~24s total runtime and forced batch=4 to fit in
-// EdgeRuntime.waitUntil's window. Drain rate ~24 dists/day vs 30-day target.
+// v3 used a plain editions.upsert for the seed-on-miss path, which left new
+// rows stranded without set_id_onchain or play_id_onchain. Those columns are
+// what bridge_integer_fmv joins on to flow FMV across dual-format pairs, so
+// stranded rows missed out on bridged FMV until they got onchain IDs filled
+// in by some other pipeline (which never happened for many of them).
 //
-// v3 fixes by fanning out per-pack fetches with Promise.allSettled. Within
-// a single pack, edition pagination stays sequential (cursor-dependent),
-// but across packs the work runs in parallel. With network-bound work and
-// ~6-9 sequential calls per pack, parallelism cuts total fetch time from
-// O(packs × calls) to O(maxCallsPerPack).
+// v4 swaps to the seed_topshot_editions RPC which parses the integer-pair
+// external_id at insert time and populates the onchain ID columns. Existing
+// stranded rows were backfilled in a one-shot UPDATE.
 //
-// Bumping BATCH_SIZE to 8: even pessimistic 12s parallel fetch + 4s DB
-// writes leaves room under TIME_BUDGET_MS. Expected drain rate ~48/day.
+// Other v3 features retained: parallel fetch via Promise.allSettled, fire-
+// and-forget background work via EdgeRuntime.waitUntil, BATCH_SIZE=8.
 //
-// Counter changes: dropped trim_applied_count (always 0 for this RPC —
-// per-edition weighting doesn't trim). Added fetch_phase_ms and
-// db_phase_ms for visibility into where time goes.
+// Counter rename: editions_seeded now reports the RPC's `inserted` count
+// (truly new rows) plus `updated` count (existing rows that gained onchain
+// IDs from this seed call). Better signal than v3's blind upsert count.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
 
@@ -130,8 +130,6 @@ interface TargetRow {
   retail_price_usd: string | number | null
 }
 
-// Per-pack outcome from the parallel fetch phase. Tagged union so we can
-// categorize each result deterministically when accumulating counters.
 type FetchOutcome =
   | { tag: "success"; target: TargetRow; totalUnopened: number; totalPackCount: number; editions: EditionNode[] }
   | { tag: "no_dynamic"; target: TargetRow }
@@ -186,8 +184,6 @@ async function fetchAllEditions(packListingId: string): Promise<{
   return { ok: true, editions: all }
 }
 
-// Fetches a single pack's full data (dynamic + editions). Independent of
-// other packs — safe to call N at a time via Promise.allSettled.
 async function fetchOnePack(target: TargetRow): Promise<FetchOutcome> {
   const dyn = await gqlCall<DynamicData>(DYNAMIC_QUERY, {
     input: { packListingId: target.pack_listing_uuid },
@@ -238,6 +234,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     fmv_resolved: 0,
     editions_resolved: 0,
     editions_seeded: 0,
+    editions_seed_updated: 0,
     ev_rows_written: 0,
     rpc_not_ok: 0,
     rpc_errors: 0,
@@ -254,7 +251,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: false, error: `targets: ${targetsErr.message}`,
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 3 },
+        extra: { counters, elapsed_ms: Date.now() - started, function_version: 4 },
       })
       return
     }
@@ -264,7 +261,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: true,
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 3, message: "no targets" },
+        extra: { counters, elapsed_ms: Date.now() - started, function_version: 4, message: "no targets" },
       })
       return
     }
@@ -276,12 +273,11 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         message: "heartbeat:started",
         target_count: targetRows.length,
         elapsed_ms: Date.now() - started,
-        function_version: 3,
+        function_version: 4,
         batch_size: BATCH_SIZE,
       },
     })
 
-    // === Phase 1: parallel fetch all packs ===
     const fetchStart = Date.now()
     const fetchResults = await Promise.allSettled(
       targetRows.map(t => fetchOnePack(t))
@@ -329,7 +325,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: targetRows.length, rowsWritten: 0,
         rowsSkipped: targetRows.length, ok: true,
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 3, fetch_phase_ms: fetchPhaseMs },
+        extra: { counters, elapsed_ms: Date.now() - started, function_version: 4, fetch_phase_ms: fetchPhaseMs },
       })
       return
     }
@@ -339,12 +335,11 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: targetRows.length, rowsWritten: 0,
         rowsSkipped: targetRows.length, ok: false, error: "time_budget_exceeded_after_fetch",
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 3, fetch_phase_ms: fetchPhaseMs },
+        extra: { counters, elapsed_ms: Date.now() - started, function_version: 4, fetch_phase_ms: fetchPhaseMs },
       })
       return
     }
 
-    // === Phase 2: bulk DB resolution (editions + FMV) ===
     const dbStart = Date.now()
     const externalIdList = Array.from(seenExternalIds)
     const editionByExternalId = new Map<string, { id: string; tier: string | null }>()
@@ -376,24 +371,28 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     }
     counters.fmv_resolved = fmvByEditionId.size
 
-    // Fire-and-forget seed any unseen externalIds for next cycle
+    // Seed any unseen externalIds via the RPC that populates onchain IDs.
+    // This replaces v3's plain editions.upsert which stranded rows without
+    // set_id_onchain / play_id_onchain.
     const unseededExternalIds: string[] = []
     for (const ext of externalIdList) {
       if (!editionByExternalId.has(ext)) unseededExternalIds.push(ext)
     }
     if (unseededExternalIds.length > 0) {
-      const seedRows = unseededExternalIds.map(ext => ({
-        external_id: ext,
-        collection_id: TOPSHOT_COLLECTION_ID,
-      }))
-      const { error: seedErr } = await supabase
-        .from("editions")
-        .upsert(seedRows, { onConflict: "external_id,collection_id", ignoreDuplicates: true })
-      if (!seedErr) counters.editions_seeded = seedRows.length
-      else console.log(`[compute-topshot-pack-ev] seed err: ${seedErr.message}`)
+      const { data: seedResult, error: seedErr } = await supabase.rpc(
+        "seed_topshot_editions",
+        { p_external_ids: unseededExternalIds },
+      )
+      if (seedErr) {
+        console.log(`[compute-topshot-pack-ev] seed err: ${seedErr.message}`)
+      } else if (seedResult) {
+        // deno-lint-ignore no-explicit-any
+        const sr = seedResult as any
+        counters.editions_seeded = Number(sr.inserted ?? 0)
+        counters.editions_seed_updated = Number(sr.updated ?? 0)
+      }
     }
 
-    // === Phase 3: pool writes (one delete-then-insert per dist) ===
     const nowIso = new Date().toISOString()
     for (const f of fetched) {
       const distId = f.target.dist_id
@@ -432,7 +431,6 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       }
     }
 
-    // === Phase 4: per-dist EV computation via RPC ===
     const evRows: Array<Record<string, unknown>> = []
     const clamp = (v: number) => Math.max(-10000, Math.min(1000000, v))
     for (const f of fetched) {
@@ -490,7 +488,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
           startedAt: startedAtIso, rowsFound: targetRows.length, rowsWritten: 0,
           rowsSkipped: targetRows.length, ok: false,
           error: `insert pack_ev_history: ${evErr.message}`,
-          extra: { counters, elapsed_ms: Date.now() - started, function_version: 3, fetch_phase_ms: fetchPhaseMs },
+          extra: { counters, elapsed_ms: Date.now() - started, function_version: 4, fetch_phase_ms: fetchPhaseMs },
         })
         return
       }
@@ -515,7 +513,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         elapsed_ms: elapsed,
         fetch_phase_ms: fetchPhaseMs,
         db_phase_ms: dbPhaseMs,
-        function_version: 3,
+        function_version: 4,
         batch_size: BATCH_SIZE,
       },
     })
@@ -525,7 +523,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     await logPipelineRun({
       startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: false, error: msg,
-      extra: { counters, elapsed_ms: Date.now() - started, function_version: 3 },
+      extra: { counters, elapsed_ms: Date.now() - started, function_version: 4 },
     })
   }
 }
