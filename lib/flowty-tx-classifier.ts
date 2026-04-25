@@ -140,6 +140,64 @@ export function inferCollection(script: string | null | undefined): Collection {
   return "unknown"
 }
 
+/**
+ * Infer collection from a transaction's emitted events. Flowty's ListingCompleted
+ * event carries an `nftType` field with the authoritative type string
+ * (e.g. "A.0b2a3299cc857e29.TopShot.NFT"). Used for successful purchases where
+ * the script imports the generic NFT interface and never references the
+ * collection contract directly.
+ *
+ * Returns "unknown" if no usable ListingCompleted event found.
+ */
+export function inferCollectionFromEvents(
+  events: Array<{ type: string; payload?: string }> | undefined | null,
+): Collection {
+  if (!events || events.length === 0) return "unknown"
+
+  for (const e of events) {
+    if (
+      !/^A\.(3cdbb3d569211ff3|4eb8a10cb9f87357)\.NFTStorefrontV2\.ListingCompleted$/i.test(
+        e.type,
+      )
+    ) {
+      continue
+    }
+    if (!e.payload) continue
+
+    try {
+      const decoded = JSON.parse(
+        Buffer.from(e.payload, "base64").toString("utf8"),
+      )
+      const fields = decoded?.value?.fields ?? []
+      const nftTypeField = fields.find(
+        (f: { name?: string }) => f?.name === "nftType",
+      )
+      if (!nftTypeField) continue
+
+      // Flowty fork emits nftType as plain String; Dapper emits as Type
+      const v = nftTypeField.value
+      let typeStr: string | null = null
+      if (v?.type === "String") {
+        typeStr = String(v.value ?? "")
+      } else if (v?.type === "Type") {
+        typeStr = String(v.value?.staticType?.typeID ?? "")
+      }
+      if (!typeStr) continue
+
+      // typeStr is like "A.0b2a3299cc857e29.TopShot.NFT"
+      const m = typeStr.match(/^A\.([0-9a-f]{16})\./i)
+      if (!m) continue
+      const addr = m[1].toLowerCase()
+      for (const known of COLLECTION_ADDRESSES) {
+        if (addr === known.addr) return known.collection
+      }
+    } catch {
+      // Continue to next event
+    }
+  }
+  return "unknown"
+}
+
 export const FLOWTY_STOREFRONT_ADDR = "3cdbb3d569211ff3"
 export const DAPPER_STOREFRONT_ADDR = "4eb8a10cb9f87357"
 

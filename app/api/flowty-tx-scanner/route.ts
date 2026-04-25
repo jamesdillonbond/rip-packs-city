@@ -15,6 +15,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import {
   classifyError,
   inferCollection,
+  inferCollectionFromEvents,
   detectStorefront,
   extractImportedAddresses,
 } from "@/lib/flowty-tx-classifier"
@@ -303,7 +304,10 @@ export async function POST(req: NextRequest) {
         authorizers: (tx.authorizers ?? []).map(normAddr),
         failure_category: classification.category,
         failure_subcategory: classification.subcategory,
-        collection: inferCollection(script),
+        collection:
+          inferCollectionFromEvents(result.events) !== "unknown"
+            ? inferCollectionFromEvents(result.events)
+            : inferCollection(script),
         storefront_addr: storefront,
         contracts_imported: extractImportedAddresses(script),
         computation_used: result.computation_used
