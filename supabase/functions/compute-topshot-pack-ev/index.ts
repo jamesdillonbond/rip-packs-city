@@ -1,21 +1,25 @@
-// compute-topshot-pack-ev v4 — seed via seed_topshot_editions RPC.
+// compute-topshot-pack-ev v5 — re-resolve after seed + larger batch.
 //
-// v3 used a plain editions.upsert for the seed-on-miss path, which left new
-// rows stranded without set_id_onchain or play_id_onchain. Those columns are
-// what bridge_integer_fmv joins on to flow FMV across dual-format pairs, so
-// stranded rows missed out on bridged FMV until they got onchain IDs filled
-// in by some other pipeline (which never happened for many of them).
+// v4 issue: when 100% of a pack's editions were unseen on a given run, they
+// got seeded but never made it into pack_drop_pool, because the pool-write
+// loop only included editions present in editionByExternalId (the lookup
+// map populated BEFORE the seed call). Net effect: the affected packs
+// returned rpc_not_ok=4 of 8 in the 20:23 v4 cron, with 4 packs writing
+// zero pool rows despite having full edition data from the public API.
 //
-// v4 swaps to the seed_topshot_editions RPC which parses the integer-pair
-// external_id at insert time and populates the onchain ID columns. Existing
-// stranded rows were backfilled in a one-shot UPDATE.
+// v5 fixes by re-calling get_topshot_editions_by_setplay on the unseededExternalIds
+// list AFTER seed_topshot_editions. The newly-seeded rows resolve via the
+// literal external_id match path on the second call, get merged into the
+// editionByExternalId map, and pool rows write correctly. Same-cycle catch-up
+// instead of waiting 4 hours for next cron.
 //
-// Other v3 features retained: parallel fetch via Promise.allSettled, fire-
-// and-forget background work via EdgeRuntime.waitUntil, BATCH_SIZE=8.
+// Bumped BATCH_SIZE to 12: parallel fetch typically completes in ~25-35s for
+// 8 packs, leaving headroom under the 110s background time budget. Going to
+// 12 increases per-cycle yield ~50% with no fetch-phase regression observed.
 //
-// Counter rename: editions_seeded now reports the RPC's `inserted` count
-// (truly new rows) plus `updated` count (existing rows that gained onchain
-// IDs from this seed call). Better signal than v3's blind upsert count.
+// New counter: editions_resolved_after_seed reports how many of the seeded
+// editions resolved on the second lookup. Should equal editions_seeded +
+// editions_seed_updated when seeds succeed.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
 
@@ -24,7 +28,7 @@ if (!INGEST_SECRET_TOKEN) throw new Error("INGEST_SECRET_TOKEN env var required"
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const TOPSHOT_GRAPHQL = "https://public-api.nbatopshot.com/graphql"
-const BATCH_SIZE = 8
+const BATCH_SIZE = 12
 const MAX_EDITION_PAGES = 8
 const TIME_BUDGET_MS = 110_000
 
@@ -235,6 +239,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     editions_resolved: 0,
     editions_seeded: 0,
     editions_seed_updated: 0,
+    editions_resolved_after_seed: 0,
     ev_rows_written: 0,
     rpc_not_ok: 0,
     rpc_errors: 0,
@@ -251,7 +256,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: false, error: `targets: ${targetsErr.message}`,
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 4 },
+        extra: { counters, elapsed_ms: Date.now() - started, function_version: 5 },
       })
       return
     }
@@ -261,7 +266,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: true,
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 4, message: "no targets" },
+        extra: { counters, elapsed_ms: Date.now() - started, function_version: 5, message: "no targets" },
       })
       return
     }
@@ -273,7 +278,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         message: "heartbeat:started",
         target_count: targetRows.length,
         elapsed_ms: Date.now() - started,
-        function_version: 4,
+        function_version: 5,
         batch_size: BATCH_SIZE,
       },
     })
@@ -325,7 +330,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: targetRows.length, rowsWritten: 0,
         rowsSkipped: targetRows.length, ok: true,
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 4, fetch_phase_ms: fetchPhaseMs },
+        extra: { counters, elapsed_ms: Date.now() - started, function_version: 5, fetch_phase_ms: fetchPhaseMs },
       })
       return
     }
@@ -335,7 +340,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: targetRows.length, rowsWritten: 0,
         rowsSkipped: targetRows.length, ok: false, error: "time_budget_exceeded_after_fetch",
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 4, fetch_phase_ms: fetchPhaseMs },
+        extra: { counters, elapsed_ms: Date.now() - started, function_version: 5, fetch_phase_ms: fetchPhaseMs },
       })
       return
     }
@@ -356,24 +361,8 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     }
     counters.editions_resolved = editionByExternalId.size
 
-    const editionUuids = Array.from(editionByExternalId.values()).map(v => v.id)
-    const fmvByEditionId = new Map<string, number>()
-    if (editionUuids.length > 0) {
-      const { data: fmvRows, error: fmvErr } = await supabase.rpc("get_fmv_for_editions", {
-        p_collection_id: TOPSHOT_COLLECTION_ID,
-        p_edition_ids: editionUuids,
-      })
-      if (fmvErr) throw new Error(`get_fmv_for_editions: ${fmvErr.message}`)
-      // deno-lint-ignore no-explicit-any
-      for (const r of (fmvRows ?? []) as any[]) {
-        if (r.fmv_usd != null) fmvByEditionId.set(String(r.edition_id), Number(r.fmv_usd))
-      }
-    }
-    counters.fmv_resolved = fmvByEditionId.size
-
-    // Seed any unseen externalIds via the RPC that populates onchain IDs.
-    // This replaces v3's plain editions.upsert which stranded rows without
-    // set_id_onchain / play_id_onchain.
+    // Seed any unseen externalIds. seed_topshot_editions parses integer-pair
+    // keys to populate set_id_onchain and play_id_onchain at insert time.
     const unseededExternalIds: string[] = []
     for (const ext of externalIdList) {
       if (!editionByExternalId.has(ext)) unseededExternalIds.push(ext)
@@ -391,7 +380,44 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         counters.editions_seeded = Number(sr.inserted ?? 0)
         counters.editions_seed_updated = Number(sr.updated ?? 0)
       }
+
+      // v5: re-resolve the just-seeded externalIds and merge into the lookup
+      // map. Without this, freshly-seeded editions get skipped during pool
+      // writes because they weren't in the map at first lookup time.
+      const { data: postSeedRows, error: postSeedErr } = await supabase.rpc(
+        "get_topshot_editions_by_setplay",
+        { p_keys: unseededExternalIds },
+      )
+      if (postSeedErr) {
+        console.log(`[compute-topshot-pack-ev] re-resolve err: ${postSeedErr.message}`)
+      } else {
+        // deno-lint-ignore no-explicit-any
+        for (const r of (postSeedRows ?? []) as any[]) {
+          if (!editionByExternalId.has(String(r.external_id))) {
+            editionByExternalId.set(String(r.external_id), { id: r.edition_id, tier: r.tier })
+            counters.editions_resolved_after_seed++
+          }
+        }
+      }
     }
+
+    // FMV lookup runs AFTER the re-resolve so newly-seeded editions get FMV
+    // checked too (most won't have FMV yet, but the bridge may have flowed
+    // some from dual-format twins).
+    const editionUuids = Array.from(editionByExternalId.values()).map(v => v.id)
+    const fmvByEditionId = new Map<string, number>()
+    if (editionUuids.length > 0) {
+      const { data: fmvRows, error: fmvErr } = await supabase.rpc("get_fmv_for_editions", {
+        p_collection_id: TOPSHOT_COLLECTION_ID,
+        p_edition_ids: editionUuids,
+      })
+      if (fmvErr) throw new Error(`get_fmv_for_editions: ${fmvErr.message}`)
+      // deno-lint-ignore no-explicit-any
+      for (const r of (fmvRows ?? []) as any[]) {
+        if (r.fmv_usd != null) fmvByEditionId.set(String(r.edition_id), Number(r.fmv_usd))
+      }
+    }
+    counters.fmv_resolved = fmvByEditionId.size
 
     const nowIso = new Date().toISOString()
     for (const f of fetched) {
@@ -488,7 +514,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
           startedAt: startedAtIso, rowsFound: targetRows.length, rowsWritten: 0,
           rowsSkipped: targetRows.length, ok: false,
           error: `insert pack_ev_history: ${evErr.message}`,
-          extra: { counters, elapsed_ms: Date.now() - started, function_version: 4, fetch_phase_ms: fetchPhaseMs },
+          extra: { counters, elapsed_ms: Date.now() - started, function_version: 5, fetch_phase_ms: fetchPhaseMs },
         })
         return
       }
@@ -513,7 +539,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         elapsed_ms: elapsed,
         fetch_phase_ms: fetchPhaseMs,
         db_phase_ms: dbPhaseMs,
-        function_version: 4,
+        function_version: 5,
         batch_size: BATCH_SIZE,
       },
     })
@@ -523,7 +549,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     await logPipelineRun({
       startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: false, error: msg,
-      extra: { counters, elapsed_ms: Date.now() - started, function_version: 4 },
+      extra: { counters, elapsed_ms: Date.now() - started, function_version: 5 },
     })
   }
 }
