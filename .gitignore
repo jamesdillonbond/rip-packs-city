@@ -70,3 +70,4 @@ scripts/data/
 
 # local log dumps (one-off Supabase Logs API exports etc.)
 logs/
+*.patch
