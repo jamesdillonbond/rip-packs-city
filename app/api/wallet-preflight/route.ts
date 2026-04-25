@@ -51,7 +51,7 @@ const COLLECTION_PATHS: Record<
 > = {
   topshot: { domain: "public", identifier: "MomentCollection" },
   allday:  { domain: "public", identifier: "AllDayNFTCollection" },
-  golazos: { domain: "public", identifier: "GolazosCollection" },
+  golazos: { domain: "public", identifier: "GolazosNFTCollection" },
   ufc:     { domain: "public", identifier: "UFC_NFTCollection" },
 };
 
