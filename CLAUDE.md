@@ -337,6 +337,8 @@ Main branch is the canonical clean branch. Latest production deploy: commit f6ca
 
 4. ~3,600 editions missing onchain IDs; 42 badge_editions rows with no player name
 
+5. Sentry error capture inactive — `@sentry/nextjs ^10.47.0` is wired (sentry.client/server/edge.config.ts all reference `NEXT_PUBLIC_SENTRY_DSN`) but no DSN set in Vercel env. SDK is current; only blocker is creating a Sentry project (or locating the existing one) and pasting its DSN as `NEXT_PUBLIC_SENTRY_DSN` for production/preview/development. `Sentry.init` is gated by `enabled: NODE_ENV === "production"` and falls back to `""` when DSN is absent, so prod is silently dropping events today.
+
 ---
 
 ## Prioritized next actions
