@@ -1,30 +1,21 @@
-// compute-topshot-pack-ev v1 — cron-driven Top Shot pack EV pipeline.
+// compute-topshot-pack-ev v3 — parallelized fetch + larger batch.
 //
-// Mirrors the operational pattern of compute-allday-pack-ev (auth, fire-and-
-// forget, log_pipeline_run, batch+RPC EV computation, bulk pack_ev_history
-// insert) but uses a fundamentally different data source.
+// v2 issue: sequential per-pack GraphQL meant 4 packs × up to 9 round-trips
+// each, all serial. Drove ~24s total runtime and forced batch=4 to fit in
+// EdgeRuntime.waitUntil's window. Drain rate ~24 dists/day vs 30-day target.
 //
-// AllDay pulls Studio Platform searchDistributions for editionIds + uniform
-// drop_weight=1. Top Shot's Studio Platform packOdds field is empty in
-// practice, so we use NBA Top Shot's *public* GraphQL API instead, which
-// surfaces per-edition `remaining` counts inside getPackListing's paginated
-// packEditionsV3. This gives us a real per-edition probability signal:
-//   drop_weight = remaining / totalUnopened
-// summed across editions in a distribution ≈ 1.0.
+// v3 fixes by fanning out per-pack fetches with Promise.allSettled. Within
+// a single pack, edition pagination stays sequential (cursor-dependent),
+// but across packs the work runs in parallel. With network-bound work and
+// ~6-9 sequential calls per pack, parallelism cuts total fetch time from
+// O(packs × calls) to O(maxCallsPerPack).
 //
-// Flow:
-//   1. Pull top 10 TS distributions from topshot_pack_ev_targets (oldest /
-//      never-scanned first).
-//   2. For each, dynamic query → totalUnopened + remainingByTier; paginated
-//      packEditionsV3 → full edition pool with `count`/`remaining`.
-//   3. Bulk resolve edition pool to internal edition_id via
-//      get_topshot_editions_by_setplay; seed missing editions for the next
-//      cycle to pick up.
-//   4. Bulk FMV via get_fmv_for_editions.
-//   5. Per dist: delete-then-insert pool rows with drop_weight = remaining/total.
-//   6. Per dist: call compute_pack_ev_per_edition_weighted RPC.
-//   7. Bulk insert pack_ev_history with all batch rows in one call.
-//   8. log_pipeline_run with full counters.
+// Bumping BATCH_SIZE to 8: even pessimistic 12s parallel fetch + 4s DB
+// writes leaves room under TIME_BUDGET_MS. Expected drain rate ~48/day.
+//
+// Counter changes: dropped trim_applied_count (always 0 for this RPC —
+// per-edition weighting doesn't trim). Added fetch_phase_ms and
+// db_phase_ms for visibility into where time goes.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
 
@@ -33,7 +24,7 @@ if (!INGEST_SECRET_TOKEN) throw new Error("INGEST_SECRET_TOKEN env var required"
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const TOPSHOT_GRAPHQL = "https://public-api.nbatopshot.com/graphql"
-const BATCH_SIZE = 4
+const BATCH_SIZE = 8
 const MAX_EDITION_PAGES = 8
 const TIME_BUDGET_MS = 110_000
 
@@ -139,6 +130,15 @@ interface TargetRow {
   retail_price_usd: string | number | null
 }
 
+// Per-pack outcome from the parallel fetch phase. Tagged union so we can
+// categorize each result deterministically when accumulating counters.
+type FetchOutcome =
+  | { tag: "success"; target: TargetRow; totalUnopened: number; totalPackCount: number; editions: EditionNode[] }
+  | { tag: "no_dynamic"; target: TargetRow }
+  | { tag: "no_editions"; target: TargetRow }
+  | { tag: "zero_unopened"; target: TargetRow }
+  | { tag: "gql_error"; target: TargetRow; error: string }
+
 async function gqlCall<T>(
   query: string,
   variables: Record<string, unknown>,
@@ -164,21 +164,18 @@ async function gqlCall<T>(
 }
 
 async function fetchAllEditions(packListingId: string): Promise<{
-  ok: true
-  editions: EditionNode[]
-  pages: number
-} | { ok: false; error: string; pages: number }> {
+  ok: true; editions: EditionNode[]
+} | { ok: false; error: string }> {
   const all: EditionNode[] = []
   let cursor: string | null = null
   let pages = 0
-
   while (pages < MAX_EDITION_PAGES) {
     pages++
     const r = await gqlCall<EditionsResponse>(EDITIONS_QUERY, {
       input: { packListingId },
       after: cursor ?? undefined,
     })
-    if (!r.ok) return { ok: false, error: r.error, pages }
+    if (!r.ok) return { ok: false, error: r.error }
     const conn = r.data?.getPackListing?.data?.packEditionsV3
     const edges = conn?.edges ?? []
     for (const e of edges) if (e?.node) all.push(e.node)
@@ -186,18 +183,33 @@ async function fetchAllEditions(packListingId: string): Promise<{
     cursor = conn.pageInfo.endCursor ?? null
     if (!cursor) break
   }
+  return { ok: true, editions: all }
+}
 
-  return { ok: true, editions: all, pages }
+// Fetches a single pack's full data (dynamic + editions). Independent of
+// other packs — safe to call N at a time via Promise.allSettled.
+async function fetchOnePack(target: TargetRow): Promise<FetchOutcome> {
+  const dyn = await gqlCall<DynamicData>(DYNAMIC_QUERY, {
+    input: { packListingId: target.pack_listing_uuid },
+  })
+  if (!dyn.ok) return { tag: "gql_error", target, error: `dyn: ${dyn.error}` }
+
+  const cr = dyn.data?.getPackListing?.data?.packListingContentRemaining
+  if (!cr) return { tag: "no_dynamic", target }
+  const totalUnopened = cr.unopened ?? 0
+  const totalPackCount = cr.totalPackCount ?? 0
+  if (totalUnopened === 0) return { tag: "zero_unopened", target }
+
+  const eds = await fetchAllEditions(target.pack_listing_uuid)
+  if (!eds.ok) return { tag: "gql_error", target, error: `eds: ${eds.error}` }
+  if (eds.editions.length === 0) return { tag: "no_editions", target }
+
+  return { tag: "success", target, totalUnopened, totalPackCount, editions: eds.editions }
 }
 
 async function logPipelineRun(args: {
-  startedAt: string
-  rowsFound: number
-  rowsWritten: number
-  rowsSkipped: number
-  ok: boolean
-  error?: string | null
-  extra: Record<string, unknown>
+  startedAt: string; rowsFound: number; rowsWritten: number; rowsSkipped: number
+  ok: boolean; error?: string | null; extra: Record<string, unknown>
 }) {
   try {
     // deno-lint-ignore no-explicit-any
@@ -210,8 +222,7 @@ async function logPipelineRun(args: {
       p_ok: args.ok,
       p_error: args.error ?? null,
       p_collection_slug: "nba-top-shot",
-      p_cursor_before: null,
-      p_cursor_after: null,
+      p_cursor_before: null, p_cursor_after: null,
       p_extra: args.extra,
     })
   } catch { /* ignore */ }
@@ -230,7 +241,6 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     ev_rows_written: 0,
     rpc_not_ok: 0,
     rpc_errors: 0,
-    trim_applied_count: 0,
     gql_errors: 0,
   }
 
@@ -244,7 +254,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: false, error: `targets: ${targetsErr.message}`,
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 2 },
+        extra: { counters, elapsed_ms: Date.now() - started, function_version: 3 },
       })
       return
     }
@@ -254,13 +264,11 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: true,
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 2, message: "no targets" },
+        extra: { counters, elapsed_ms: Date.now() - started, function_version: 3, message: "no targets" },
       })
       return
     }
 
-    // Heartbeat: log a "started" row before any GQL so we can tell apart
-    // "background never ran" from "background ran but errored mid-flight".
     await logPipelineRun({
       startedAt: startedAtIso, rowsFound: targetRows.length, rowsWritten: 0, rowsSkipped: 0,
       ok: true,
@@ -268,78 +276,76 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         message: "heartbeat:started",
         target_count: targetRows.length,
         elapsed_ms: Date.now() - started,
-        function_version: 2,
+        function_version: 3,
+        batch_size: BATCH_SIZE,
       },
     })
 
-    // === Phase 1: per-distribution GQL fetches (sequential to avoid rate limits) ===
-    type DistFetched = {
-      target: TargetRow
-      totalUnopened: number
-      totalPackCount: number
-      editions: EditionNode[]
-    }
-    const fetched: DistFetched[] = []
+    // === Phase 1: parallel fetch all packs ===
+    const fetchStart = Date.now()
+    const fetchResults = await Promise.allSettled(
+      targetRows.map(t => fetchOnePack(t))
+    )
+    const fetchPhaseMs = Date.now() - fetchStart
+
+    const fetched: Array<Extract<FetchOutcome, { tag: "success" }>> = []
     const seenExternalIds = new Set<string>()
 
-    for (const t of targetRows) {
-      if (Date.now() - started > TIME_BUDGET_MS) {
-        console.log(`[compute-topshot-pack-ev] time budget reached after ${counters.nodes_processed} dists — bailing`)
-        break
-      }
+    for (const r of fetchResults) {
       counters.nodes_processed++
-
-      const dyn = await gqlCall<DynamicData>(DYNAMIC_QUERY, { input: { packListingId: t.pack_listing_uuid } })
-      if (!dyn.ok) {
+      if (r.status === "rejected") {
         counters.gql_errors++
-        console.log(`[compute-topshot-pack-ev] dyn err dist=${t.dist_id}: ${dyn.error}`)
+        console.log(`[compute-topshot-pack-ev] settled-rejected: ${r.reason}`)
         continue
       }
-      const cr = dyn.data?.getPackListing?.data?.packListingContentRemaining
-      const totalUnopened = cr?.unopened ?? 0
-      const totalPackCount = cr?.totalPackCount ?? 0
-      if (!cr) {
-        counters.nodes_no_dynamic++
-        continue
+      const o = r.value
+      switch (o.tag) {
+        case "success":
+          fetched.push(o)
+          for (const node of o.editions) {
+            const setId = node.edition.set?.id
+            const playId = node.edition.play?.id
+            if (setId && playId) seenExternalIds.add(`${setId}:${playId}`)
+          }
+          break
+        case "no_dynamic":
+          counters.nodes_no_dynamic++
+          break
+        case "no_editions":
+          counters.nodes_no_editions++
+          console.log(`[compute-topshot-pack-ev] bundle dist=${o.target.dist_id} listing=${o.target.pack_listing_uuid}`)
+          break
+        case "zero_unopened":
+          counters.nodes_zero_unopened++
+          break
+        case "gql_error":
+          counters.gql_errors++
+          console.log(`[compute-topshot-pack-ev] gql err dist=${o.target.dist_id}: ${o.error}`)
+          break
       }
-      if (totalUnopened === 0) {
-        counters.nodes_zero_unopened++
-        continue
-      }
-
-      const eds = await fetchAllEditions(t.pack_listing_uuid)
-      if (!eds.ok) {
-        counters.gql_errors++
-        console.log(`[compute-topshot-pack-ev] eds err dist=${t.dist_id}: ${eds.error}`)
-        continue
-      }
-      if (eds.editions.length === 0) {
-        // Bundle / case pack — log and move on, no pool or EV row.
-        counters.nodes_no_editions++
-        console.log(`[compute-topshot-pack-ev] bundle dist=${t.dist_id} listing=${t.pack_listing_uuid}`)
-        continue
-      }
-
-      for (const node of eds.editions) {
-        const setId = node.edition.set?.id
-        const playId = node.edition.play?.id
-        if (setId && playId) seenExternalIds.add(`${setId}:${playId}`)
-      }
-
-      fetched.push({ target: t, totalUnopened, totalPackCount, editions: eds.editions })
     }
 
     if (fetched.length === 0) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: targetRows.length, rowsWritten: 0,
-        rowsSkipped: targetRows.length,
-        ok: true,
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 2 },
+        rowsSkipped: targetRows.length, ok: true,
+        extra: { counters, elapsed_ms: Date.now() - started, function_version: 3, fetch_phase_ms: fetchPhaseMs },
       })
       return
     }
 
-    // === Phase 2: bulk edition + FMV resolution ===
+    if (Date.now() - started > TIME_BUDGET_MS) {
+      console.log(`[compute-topshot-pack-ev] time budget exceeded after fetch phase`)
+      await logPipelineRun({
+        startedAt: startedAtIso, rowsFound: targetRows.length, rowsWritten: 0,
+        rowsSkipped: targetRows.length, ok: false, error: "time_budget_exceeded_after_fetch",
+        extra: { counters, elapsed_ms: Date.now() - started, function_version: 3, fetch_phase_ms: fetchPhaseMs },
+      })
+      return
+    }
+
+    // === Phase 2: bulk DB resolution (editions + FMV) ===
+    const dbStart = Date.now()
     const externalIdList = Array.from(seenExternalIds)
     const editionByExternalId = new Map<string, { id: string; tier: string | null }>()
     if (externalIdList.length > 0) {
@@ -370,7 +376,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     }
     counters.fmv_resolved = fmvByEditionId.size
 
-    // === Phase 3: seed unresolved editions (fire-and-forget for next cycle) ===
+    // Fire-and-forget seed any unseen externalIds for next cycle
     const unseededExternalIds: string[] = []
     for (const ext of externalIdList) {
       if (!editionByExternalId.has(ext)) unseededExternalIds.push(ext)
@@ -387,7 +393,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       else console.log(`[compute-topshot-pack-ev] seed err: ${seedErr.message}`)
     }
 
-    // === Phase 4: pool writes per distribution (delete-then-insert) ===
+    // === Phase 3: pool writes (one delete-then-insert per dist) ===
     const nowIso = new Date().toISOString()
     for (const f of fetched) {
       const distId = f.target.dist_id
@@ -426,7 +432,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       }
     }
 
-    // === Phase 5: EV RPC per distribution, collect rows ===
+    // === Phase 4: per-dist EV computation via RPC ===
     const evRows: Array<Record<string, unknown>> = []
     const clamp = (v: number) => Math.max(-10000, Math.min(1000000, v))
     for (const f of fetched) {
@@ -454,7 +460,6 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         counters.rpc_not_ok++
         continue
       }
-      if (ev.trim_applied === true) counters.trim_applied_count++
 
       const depletionPct = f.totalPackCount > 0
         ? Math.min(100, Math.max(0, Math.round(((f.totalPackCount - f.totalUnopened) / f.totalPackCount) * 100)))
@@ -477,24 +482,21 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       })
     }
 
-    // === Phase 6: bulk insert pack_ev_history ===
     if (evRows.length > 0) {
       const { error: evErr } = await supabase.from("pack_ev_history").insert(evRows)
       if (!evErr) counters.ev_rows_written = evRows.length
       else {
         await logPipelineRun({
-          startedAt: startedAtIso,
-          rowsFound: targetRows.length,
-          rowsWritten: 0,
-          rowsSkipped: targetRows.length,
-          ok: false,
+          startedAt: startedAtIso, rowsFound: targetRows.length, rowsWritten: 0,
+          rowsSkipped: targetRows.length, ok: false,
           error: `insert pack_ev_history: ${evErr.message}`,
-          extra: { counters, elapsed_ms: Date.now() - started, function_version: 2 },
+          extra: { counters, elapsed_ms: Date.now() - started, function_version: 3, fetch_phase_ms: fetchPhaseMs },
         })
         return
       }
     }
 
+    const dbPhaseMs = Date.now() - dbStart
     const elapsed = Date.now() - started
     await logPipelineRun({
       startedAt: startedAtIso,
@@ -511,7 +513,10 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         ...counters,
         editions_requested: seenExternalIds.size,
         elapsed_ms: elapsed,
-        function_version: 2,
+        fetch_phase_ms: fetchPhaseMs,
+        db_phase_ms: dbPhaseMs,
+        function_version: 3,
+        batch_size: BATCH_SIZE,
       },
     })
   } catch (err) {
@@ -520,7 +525,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     await logPipelineRun({
       startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: false, error: msg,
-      extra: { counters, elapsed_ms: Date.now() - started, function_version: 2 },
+      extra: { counters, elapsed_ms: Date.now() - started, function_version: 3 },
     })
   }
 }
@@ -550,7 +555,7 @@ Deno.serve(async (req: Request) => {
       ok: true,
       message: "queued",
       started_at: startedAtIso,
-      note: "Real results will appear in pipeline_runs within ~60-90s.",
+      note: "Real results will appear in pipeline_runs within ~30-60s.",
     }),
     { headers: { "Content-Type": "application/json" } },
   )
