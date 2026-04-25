@@ -1,19 +1,15 @@
-// pinnacle-owner-discovery-forward — forward-scanner for Pinnacle Deposit events.
+// pinnacle-owner-discovery-forward v2 — fire-and-forget background work.
 //
-// The original pinnacle-owner-discovery walks BACKWARD from the sealed head
-// at first-run, doing historical fill. Once its cursor moves below the
-// initial seed point, new Deposit events emitted at tip never get observed.
-// That's why 84 of 84 unresolved sales in the last 24h have no snapshot row
-// and the resolver hits 0 of 25 on every recent run.
+// v1 ran the full scan synchronously inside the request handler. With
+// MAX_BLOCKS_PER_RUN=5000, that's ~20 chunks x ~1.6s each = ~32s, which
+// exceeds cron-job.org's 30s timeout and produced a 503 on the test run.
 //
-// This companion function scans FORWARD from the highest block previously
-// forward-scanned (or sealed head on first run), up to current sealed head
-// minus a safety lag of 100 blocks. Same DEPOSIT event type, same upsert
-// target. Progress state lives under id = 'pinnacle-deposit-scan-forward'
-// so it doesn't conflict with the backward scanner.
+// v2 returns a 200 immediately after auth + cursor read, kicks the actual
+// scan into the background via EdgeRuntime.waitUntil. Same pattern as the
+// other long-running pipelines (compute-allday-pack-ev, compute-topshot-pack-ev).
+// Real progress shows up in pipeline_runs within ~30-60s after the response.
 //
-// Cron schedule: every 30 min. At ~1 block/sec on Flow, that's ~1,800 new
-// blocks to cover per run — well under the function's MAX_BLOCKS budget.
+// Same scan logic, same scoring, same cursor management as v1.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
 
@@ -22,9 +18,9 @@ if (!INGEST_SECRET_TOKEN) throw new Error("INGEST_SECRET_TOKEN env var is requir
 
 const FLOW_REST = "https://rest-mainnet.onflow.org"
 const DEPOSIT_EVENT = "A.edf9df96c92f4595.Pinnacle.Deposit"
-const CHUNK_SIZE = 250                  // Flow Access API max
-const MAX_BLOCKS_PER_RUN = 5000          // covers a 90-min gap with margin
-const SAFETY_LAG_BLOCKS = 100            // stay 100 blocks behind sealed head to avoid reorgs
+const CHUNK_SIZE = 250
+const MAX_BLOCKS_PER_RUN = 5000
+const SAFETY_LAG_BLOCKS = 100
 const INTER_CHUNK_DELAY_MS = 80
 const SCAN_STATE_ID = "pinnacle-deposit-scan-forward"
 
@@ -133,14 +129,8 @@ async function logPipelineRun(args: {
   }
 }
 
-Deno.serve(async (req: Request) => {
-  const auth = req.headers.get("Authorization") ?? ""
-  if (auth !== `Bearer ${INGEST_SECRET_TOKEN}`) return new Response("Unauthorized", { status: 401 })
-
-  const started = Date.now()
-  const startedAtIso = new Date(started).toISOString()
+async function runBackgroundScan(startedAtIso: string, started: number) {
   try {
-    // Load forward-scan state
     const { data: stateRow, error: stateErr } = await supabase
       .from("flow_backfill_progress")
       .select("last_processed_height, total_events_found, total_inserted, total_skipped")
@@ -155,8 +145,6 @@ Deno.serve(async (req: Request) => {
     const sealedHeight = await getSealedHeight()
     const safeTip = sealedHeight - SAFETY_LAG_BLOCKS
 
-    // First-run: seed the cursor near tip rather than scanning all of history.
-    // Backward scanner handles deep history; we just want to keep current.
     if (lastProcessed <= 0) {
       lastProcessed = safeTip - 1
       console.log(`[pinnacle-owner-discovery-forward] first-run seed: cursor=${lastProcessed}`)
@@ -168,11 +156,10 @@ Deno.serve(async (req: Request) => {
         ok: true, cursorBefore: String(lastProcessed), cursorAfter: String(lastProcessed),
         extra: {
           message: "already at tip", sealed_height: sealedHeight, safe_tip: safeTip,
-          elapsed_ms: Date.now() - started,
+          elapsed_ms: Date.now() - started, function_version: 2,
         },
       })
-      return new Response(JSON.stringify({ ok: true, message: "at tip", cursor: lastProcessed }),
-        { headers: { "Content-Type": "application/json" } })
+      return
     }
 
     const windowStart = lastProcessed + 1
@@ -192,7 +179,6 @@ Deno.serve(async (req: Request) => {
         blocks = await fetchDepositEvents(chunkStart, chunkEnd)
       } catch (err) {
         console.log(`[pinnacle-owner-discovery-forward] chunk ${chunkStart}-${chunkEnd} err: ${err instanceof Error ? err.message : String(err)}`)
-        // Bail; cursor stays at last completed chunk so we retry next run
         break
       }
 
@@ -207,16 +193,12 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      // For forward scan, LAST-seen-wins per nft_id within a chunk (most recent
-      // ownership). Sort by block height ASC, then dedup keeping last.
       rows.sort((a, b) => a.deposit_block_height - b.deposit_block_height)
       const latest = new Map<string, typeof rows[number]>()
       for (const r of rows) latest.set(r.nft_id, r)
       const dedup = Array.from(latest.values())
 
       if (dedup.length > 0) {
-        // Forward scan: we want the NEW owner to win, so use upsert with
-        // onConflict update (vs backward scanner's ignoreDuplicates).
         for (let i = 0; i < dedup.length; i += 200) {
           const batch = dedup.slice(i, i + 200)
           const { error } = await supabase
@@ -235,7 +217,6 @@ Deno.serve(async (req: Request) => {
       if (chunkEnd < windowEnd) await sleep(INTER_CHUNK_DELAY_MS)
     }
 
-    // Advance cursor to highest block fully scanned
     const nextCursor = lastChunkEndCompleted
 
     const { error: saveErr } = await supabase
@@ -257,29 +238,45 @@ Deno.serve(async (req: Request) => {
       extra: {
         window_start: windowStart, window_end: windowEnd,
         sealed_height: sealedHeight, blocks_scanned: nextCursor - lastProcessed,
-        elapsed_ms: elapsed,
+        elapsed_ms: elapsed, function_version: 2,
       },
     })
-
-    return new Response(
-      JSON.stringify({
-        ok: true, windowStart, windowEnd,
-        blocksScanned: nextCursor - lastProcessed,
-        eventsFound, inserted, skipped, cursor: nextCursor,
-        sealedHeight, elapsed,
-      }),
-      { headers: { "Content-Type": "application/json" } },
-    )
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.log(`[pinnacle-owner-discovery-forward] fatal: ${msg}`)
+    console.log(`[pinnacle-owner-discovery-forward] bg fatal: ${msg}`)
     await logPipelineRun({
       startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: false, error: msg,
-      extra: { elapsed_ms: Date.now() - started },
-    })
-    return new Response(JSON.stringify({ ok: false, error: msg }), {
-      status: 500, headers: { "Content-Type": "application/json" },
+      extra: { elapsed_ms: Date.now() - started, function_version: 2 },
     })
   }
+}
+
+Deno.serve(async (req: Request) => {
+  const auth = req.headers.get("Authorization") ?? ""
+  if (auth !== `Bearer ${INGEST_SECRET_TOKEN}`) return new Response("Unauthorized", { status: 401 })
+
+  const started = Date.now()
+  const startedAtIso = new Date(started).toISOString()
+
+  // deno-lint-ignore no-explicit-any
+  const edgeRuntime = (globalThis as any).EdgeRuntime
+  const workPromise = runBackgroundScan(startedAtIso, started)
+  if (edgeRuntime && typeof edgeRuntime.waitUntil === "function") {
+    edgeRuntime.waitUntil(workPromise)
+  } else {
+    workPromise.catch((e) =>
+      console.log(`waitUntil fallback err: ${e instanceof Error ? e.message : String(e)}`)
+    )
+  }
+
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      message: "queued",
+      started_at: startedAtIso,
+      note: "Scan running in background. Real results appear in pipeline_runs within ~30-60s.",
+    }),
+    { headers: { "Content-Type": "application/json" } },
+  )
 })
