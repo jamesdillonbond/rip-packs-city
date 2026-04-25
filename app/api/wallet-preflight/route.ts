@@ -101,8 +101,10 @@ export async function GET(req: NextRequest) {
   ];
 
   const body = {
-    script: btoa(WALLET_PREFLIGHT_CADENCE),
-    arguments: args.map((a) => btoa(JSON.stringify(a))),
+    script: Buffer.from(WALLET_PREFLIGHT_CADENCE, "utf8").toString("base64"),
+    arguments: args.map((a) =>
+      Buffer.from(JSON.stringify(a), "utf8").toString("base64")
+    ),
   };
 
   // ── Execute script against latest sealed block ─────────────────────────
@@ -139,7 +141,9 @@ export async function GET(req: NextRequest) {
   const raw = await res.text();
   let decoded: string;
   try {
-    decoded = atob(raw.trim().replace(/^"|"$/g, ""));
+    decoded = Buffer.from(raw.trim().replace(/^"|"$/g, ""), "base64").toString(
+      "utf8"
+    );
   } catch {
     return NextResponse.json(
       { error: "Failed to base64-decode Flow response", detail: raw.slice(0, 200) },
