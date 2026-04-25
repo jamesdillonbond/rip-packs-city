@@ -113,8 +113,13 @@ access(all) fun main(
         ? UFix64(used) * 100.0 / UFix64(capacity)
         : 0.0
 
-    // Conservative per-Listing byte estimate. Tune from real failure data.
-    let bytesPerListing: UInt64 = 350
+    // Per-Listing byte estimate, calibrated from on-chain ListingDetails struct
+    // (storefrontID, purchased, nftType, nftUUID, nftID, salePaymentVaultType,
+    // salePrice, saleCuts[], customID, commissionAmount, expiry, buyer) plus
+    // atree resource overhead, dict entry overhead, and capability registry
+    // growth. Field-level total ~442 bytes; bumped to 500 for safety margin.
+    // Recalibrate from real STORAGE_CAPACITY_EXCEEDED failures once indexer is live.
+    let bytesPerListing: UInt64 = 500
 
     let maxSafeRaw: UInt64 = headroom / bytesPerListing
     let maxSafeCount: UInt32 = maxSafeRaw > UInt64(UInt32.max)
