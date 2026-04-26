@@ -13,6 +13,13 @@ import {
 } from "lucide-react"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
 
+// The dashboard fans out to several Supabase-backed APIs at render time
+// and intermittently exceeds the 60s static-generation budget. Marking it
+// dynamic keeps the build deterministic; ISR-style revalidation keeps
+// repeat hits fast at the edge.
+export const dynamic = "force-dynamic"
+export const revalidate = 600
+
 export const metadata: Metadata = analyticsMetadata({
   title: "Analytics — On-chain Intelligence for Flow Collectibles",
   description:
