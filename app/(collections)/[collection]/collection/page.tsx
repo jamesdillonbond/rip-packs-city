@@ -11,6 +11,7 @@ import { buildEditionSeedCandidate } from "@/lib/edition-market-seed"
 import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key"
 import { getCollection } from "@/lib/collections"
 import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection"
+import { useWarmCache, usePrefetch } from "@/lib/warmup/WarmupContext"
 import ExplainButton from "@/components/ExplainButton"
 import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
 import MomentDetailModal from "@/components/MomentDetailModal"
@@ -569,6 +570,55 @@ export default function WalletPage() {
     setOwnerKey(getOwnerKey())
     return onOwnerKeyChange(function(key) { setOwnerKey(key) })
   }, [])
+
+  // ── Warm cache: saved wallets + per-wallet wallet-search prefetch ─────────
+  // Reads the user's saved wallets (5-min TTL) and fires background fetches
+  // for every saved wallet that isn't the currently-viewed address, so that
+  // clicking "Load" in the saved-wallets sidebar feels instant.
+  const savedWalletsKey = ownerKey ? "saved-wallets:" + ownerKey : "saved-wallets:none"
+  const savedWalletsFetcher = useCallback(async function() {
+    if (!ownerKey) return { wallets: [] as any[] }
+    const res = await fetch("/api/profile/saved-wallets?ownerKey=" + encodeURIComponent(ownerKey))
+    if (!res.ok) return { wallets: [] as any[] }
+    return await res.json()
+  }, [ownerKey])
+  const { data: savedWalletsData } = useWarmCache<{ wallets?: any[] }>(
+    savedWalletsKey,
+    savedWalletsFetcher,
+    { ttlMs: 5 * 60_000, enabled: !!ownerKey },
+  )
+  const prefetch = usePrefetch()
+  const prefetchFiredRef = useRef(false)
+  useEffect(function() {
+    if (prefetchFiredRef.current) return
+    if (!ownerKey) return
+    if (!savedWalletsData) return
+    const wallets = (savedWalletsData.wallets ?? []) as any[]
+    if (!wallets.length) return
+    prefetchFiredRef.current = true
+    const current = (activeWallet || "").trim().toLowerCase()
+    for (const w of wallets) {
+      const addr = (w.wallet_addr ?? "").trim()
+      const username = (w.username ?? "").trim()
+      const input = username || addr
+      if (!input) continue
+      if (current && (addr.toLowerCase() === current || username.toLowerCase() === current)) continue
+      const body = JSON.stringify({ input, offset: 0, limit: 50 })
+      prefetch(
+        "wallet-search:" + input,
+        async function() {
+          const res = await fetch("/api/wallet-search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body,
+          })
+          if (!res.ok) throw new Error("wallet-search " + res.status)
+          return await res.json()
+        },
+        90_000,
+      )
+    }
+  }, [ownerKey, savedWalletsData, activeWallet, prefetch])
 
   // ── Fetch real total FMV when wallet changes ──────────────────────────────
   useEffect(function() {

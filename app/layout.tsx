@@ -1,6 +1,7 @@
 ﻿import "./globals.css"
 import type { Metadata } from "next"
 import { CartProvider } from "@/lib/cart/CartContext"
+import WarmupProvider from "@/lib/warmup/WarmupContext"
 import { rootMetadata, organizationJsonLd } from "@/lib/seo"
 import WalletPreloader from "@/components/WalletPreloader"
 import OnboardingModal from "@/components/OnboardingModal"
@@ -24,11 +25,13 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
         />
-        <CartProvider>
-          <WalletPreloader />
-          <OnboardingModal />
-          {children}
-        </CartProvider>
+        <WarmupProvider>
+          <CartProvider>
+            <WalletPreloader />
+            <OnboardingModal />
+            {children}
+          </CartProvider>
+        </WarmupProvider>
       </body>
     </html>
   )

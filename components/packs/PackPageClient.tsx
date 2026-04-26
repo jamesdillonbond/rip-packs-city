@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import PackTable, { type PackRow, type SortKey as TableSortKey } from './PackTable'
 import { getOwnerKey } from '@/lib/owner-key'
 import { fetchSavedWalletForCollection } from '@/lib/profile/saved-wallet-for-collection'
+import { useWarmCache } from '@/lib/warmup/WarmupContext'
 
 // Shared client component for the two static pack pages (nba-top-shot,
 // nfl-all-day). Does three things:
@@ -80,10 +81,6 @@ function toPackRow(r: ApiRow): PackRow {
 }
 
 export default function PackPageClient({ collection, tiers, title, accent = '#E03A2F' }: Props) {
-  const [rows, setRows] = useState<ApiRow[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const [sort, setSort] = useState<SortKey>('value_ratio_desc')
   const [tier, setTier] = useState<string>('all')
   const [search, setSearch] = useState('')
@@ -103,26 +100,33 @@ export default function PackPageClient({ collection, tiers, title, accent = '#E0
     return () => clearTimeout(t)
   }, [searchInput])
 
-  const loadRows = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const params = new URLSearchParams({ collection, sort, limit: '500' })
-      if (tier !== 'all') params.set('tier', tier)
-      if (search) params.set('search', search)
-      const res = await fetch('/api/packs?' + params.toString())
-      const json = (await res.json()) as ApiResponse & { error?: string }
-      if (!res.ok) throw new Error(json.error || 'Failed to load packs')
-      setRows(json.rows ?? [])
-      setTotal(json.total ?? 0)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load packs')
-    } finally {
-      setLoading(false)
-    }
+  // Warm-cache key only includes the collection slug; the spec keys the
+  // global warmer on `pack-listings:<slug>` so the default sort/tier/search
+  // landing read is instant. Filter changes still re-fetch through the same
+  // cache under filter-specific keys.
+  const filterSuffix = (sort !== 'value_ratio_desc' || tier !== 'all' || search)
+    ? ':' + sort + ':' + tier + ':' + search
+    : ''
+  const packsKey = 'pack-listings:' + collection + filterSuffix
+  const packsFetcher = useCallback(async () => {
+    const params = new URLSearchParams({ collection, sort, limit: '500' })
+    if (tier !== 'all') params.set('tier', tier)
+    if (search) params.set('search', search)
+    const res = await fetch('/api/packs?' + params.toString())
+    const json = (await res.json()) as ApiResponse & { error?: string }
+    if (!res.ok) throw new Error(json.error || 'Failed to load packs')
+    return json
   }, [collection, sort, tier, search])
 
-  useEffect(() => { loadRows() }, [loadRows])
+  const { data: packsData, loading: packsLoading, error: packsError } = useWarmCache<ApiResponse>(
+    packsKey,
+    packsFetcher,
+    { ttlMs: 120_000 },
+  )
+  const rows: ApiRow[] = packsData?.rows ?? []
+  const total = packsData?.total ?? 0
+  const loading = packsLoading
+  const error = packsError ? (packsError instanceof Error ? packsError.message : String(packsError)) : ''
 
   const loadWallet = useCallback(async (source: string) => {
     setWalletQuery(source)

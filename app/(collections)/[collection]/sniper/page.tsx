@@ -5,6 +5,7 @@ import React from "react";
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { useCart } from "@/lib/cart/CartContext";
+import { useWarmCache } from "@/lib/warmup/WarmupContext";
 import {
   isCartEligible,
   cartEligibilityReason,
@@ -555,10 +556,7 @@ export default function SniperPage() {
   const brandLabel = isPinnacle ? "Pinnacle" : collectionObj?.shortLabel ?? "Top Shot";
 
   const isMobile = useMobile();
-  const [data, setData] = useState<FeedResult | null>(null);
   const [mode, setMode] = useState<"deals" | "offers">("deals");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(REFRESH_INTERVAL);
   const [paused, setPaused] = useState(false);
 
@@ -660,9 +658,7 @@ export default function SniperPage() {
   }, []);
 
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
-  const fetchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hasMountedRef = useRef(false);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const prevDataRef = useRef<FeedResult | null>(null);
 
   // Auto-load owned editions (setID:playID) from rpc_owner_key in localStorage
   // on mount. No FCL wallet connection required: the collection page resolves
@@ -750,113 +746,110 @@ export default function SniperPage() {
     return `${feedEndpoint}?${params}`;
   }, [tierTab, minDiscount, maxPrice, playerFilter, serialFilter, badgeOnly, flowWalletOnly, sortBy, feedEndpoint, collectionSlug]);
 
-  const fetchFeed = useCallback(async () => {
-    abortControllerRef.current?.abort();
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-    try {
-      setLoading(true);
-      const res = await fetch(buildFeedUrl(), { cache: "no-store", signal: controller.signal });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json: FeedResult = await res.json();
+  const feedKey = buildFeedUrl();
 
-      // ── Task 1: detect sold/delisted deals ──────────────────────────────
-      const newIds = new Set(json.deals.map((d) => d.flowId));
-      if (prevDealIdsRef.current.size > 0) {
-        const justSold: string[] = [];
-        prevDealIdsRef.current.forEach((id) => {
-          if (!newIds.has(id)) justSold.push(id);
-        });
-        if (justSold.length > 0) {
-          const prevDeals = data?.deals ?? [];
-          const soldMap = new Map(soldDeals);
+  const feedFetcher = useCallback(async () => {
+    const res = await fetch(feedKey, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return (await res.json()) as FeedResult;
+  }, [feedKey]);
+
+  const { data, loading, error: warmError, refresh } = useWarmCache<FeedResult>(
+    feedKey,
+    feedFetcher,
+    { ttlMs: 30_000 },
+  );
+  const error = warmError ? String(warmError) : null;
+
+  // ── Task 1: detect sold/delisted deals as data changes ────────────────────
+  useEffect(() => {
+    if (!data) return;
+    const newIds = new Set(data.deals.map((d) => d.flowId));
+    if (prevDealIdsRef.current.size > 0) {
+      const justSold: string[] = [];
+      prevDealIdsRef.current.forEach((id) => {
+        if (!newIds.has(id)) justSold.push(id);
+      });
+      if (justSold.length > 0) {
+        const prevDeals = prevDataRef.current?.deals ?? [];
+        setSoldDeals((prev) => {
+          const next = new Map(prev);
           for (const id of justSold) {
             const deal = prevDeals.find((d) => d.flowId === id);
-            if (deal) soldMap.set(id, deal);
+            if (deal) next.set(id, deal);
           }
-          setSoldDeals(soldMap);
+          return next;
+        });
+        setSoldIds((prev) => {
+          const next = new Set(prev);
+          justSold.forEach((id) => next.add(id));
+          return next;
+        });
+        setTimeout(() => {
           setSoldIds((prev) => {
             const next = new Set(prev);
-            justSold.forEach((id) => next.add(id));
+            justSold.forEach((id) => next.delete(id));
             return next;
           });
-          setTimeout(() => {
-            setSoldIds((prev) => {
-              const next = new Set(prev);
-              justSold.forEach((id) => next.delete(id));
-              return next;
-            });
-            setSoldDeals((prev) => {
-              const next = new Map(prev);
-              justSold.forEach((id) => next.delete(id));
-              return next;
-            });
-          }, 8000);
-        }
+          setSoldDeals((prev) => {
+            const next = new Map(prev);
+            justSold.forEach((id) => next.delete(id));
+            return next;
+          });
+        }, 8000);
       }
-      prevDealIdsRef.current = newIds;
-
-      setData(json);
-      setError(null);
-
-      // ── ASK_ONLY fallback: when the feed comes back empty for Golazos or
-      // UFC (whose FMV is just ask = circular), load tier-median-based deals
-      // + benchmark reference so the page isn't blank.
-      if ((isGolazos || isUfc) && json.deals.length === 0) {
-        setRelativeLoading(true);
-        try {
-          const [rel, bench] = await Promise.all([
-            fetch(`/api/relative-deals?collection=${encodeURIComponent(collectionSlug)}&minDiscount=10&limit=50`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)),
-            fetch(`/api/tier-pricing-benchmarks?collection=${encodeURIComponent(collectionSlug)}`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)),
-          ]);
-          setRelativeDeals(Array.isArray(rel?.deals) ? rel.deals : []);
-          setBenchmarks(bench?.benchmarks && typeof bench.benchmarks === "object" ? bench.benchmarks : {});
-        } catch {
-          setRelativeDeals([]);
-          setBenchmarks({});
-        } finally {
-          setRelativeLoading(false);
-        }
-      } else {
-        setRelativeDeals(null);
-        setBenchmarks(null);
-      }
-    } catch (e: any) {
-      if (e?.name === "AbortError") return;
-      setError(String(e));
-    } finally {
-      setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [buildFeedUrl]);
+    prevDealIdsRef.current = newIds;
+    prevDataRef.current = data;
+  }, [data]);
 
+  // ── ASK_ONLY fallback: when the feed comes back empty for Golazos or UFC
+  // (whose FMV is just ask = circular), load tier-median-based deals + a
+  // benchmark reference so the page isn't blank.
   useEffect(() => {
-    if (!hasMountedRef.current) {
-      hasMountedRef.current = true;
-      fetchFeed();
-      setCountdown(REFRESH_INTERVAL);
-    } else {
-      if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current);
-      fetchDebounceRef.current = setTimeout(() => {
-        fetchFeed();
-        setCountdown(REFRESH_INTERVAL);
-      }, 400);
+    if (!data) return;
+    if (!(isGolazos || isUfc) || data.deals.length !== 0) {
+      setRelativeDeals(null);
+      setBenchmarks(null);
+      return;
     }
-    return () => {
-      if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current);
-    };
-  }, [fetchFeed]);
+    let cancelled = false;
+    setRelativeLoading(true);
+    (async () => {
+      try {
+        const [rel, bench] = await Promise.all([
+          fetch(`/api/relative-deals?collection=${encodeURIComponent(collectionSlug)}&minDiscount=10&limit=50`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)),
+          fetch(`/api/tier-pricing-benchmarks?collection=${encodeURIComponent(collectionSlug)}`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)),
+        ]);
+        if (cancelled) return;
+        setRelativeDeals(Array.isArray(rel?.deals) ? rel.deals : []);
+        setBenchmarks(bench?.benchmarks && typeof bench.benchmarks === "object" ? bench.benchmarks : {});
+      } catch {
+        if (cancelled) return;
+        setRelativeDeals([]);
+        setBenchmarks({});
+      } finally {
+        if (!cancelled) setRelativeLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [data, isGolazos, isUfc, collectionSlug]);
+
+  // Reset countdown whenever the feed key (filters) changes.
+  useEffect(() => {
+    setCountdown(REFRESH_INTERVAL);
+  }, [feedKey]);
 
   useEffect(() => {
     if (paused || tabHidden) return;
     countdownRef.current = setInterval(() => {
       setCountdown((c) => {
-        if (c <= 1) { fetchFeed(); return REFRESH_INTERVAL; }
+        if (c <= 1) { refresh(); return REFRESH_INTERVAL; }
         return c - 1;
       });
     }, 1000);
     return () => clearInterval(countdownRef.current!);
-  }, [paused, tabHidden, fetchFeed]);
+  }, [paused, tabHidden, refresh]);
 
   // ── Task 10: Page Visibility API — pause polling when tab hidden
   useEffect(() => {
@@ -866,14 +859,14 @@ export default function SniperPage() {
       } else {
         setTabHidden(false);
         setResumedIndicator(true);
-        fetchFeed();
+        refresh();
         setCountdown(REFRESH_INTERVAL);
         setTimeout(() => setResumedIndicator(false), 2000);
       }
     }
     document.addEventListener("visibilitychange", handleVisibility);
     return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, [fetchFeed]);
+  }, [refresh]);
 
   // ── Task 2: Edition depth panel — Escape key handler ─────────────────────
   useEffect(() => {
@@ -1096,7 +1089,7 @@ export default function SniperPage() {
                 Listing Suggestions
               </button>
               <button
-                onClick={() => { fetchFeed(); setCountdown(REFRESH_INTERVAL); }}
+                onClick={() => { refresh(); setCountdown(REFRESH_INTERVAL); }}
                 disabled={loading}
                 className="rpc-btn-ghost"
                 style={{ opacity: loading ? 0.5 : 1, borderColor: `${accent}40`, color: accent }}
