@@ -195,7 +195,7 @@ async function loadTargets(): Promise<EditionRow[]> {
     // UUID pair: setUUID:playUUID — both contain dashes, colon in the middle.
     query = query
       .like("external_id", "%-%:%-%")
-      .or("thumbnail_url.is.null,tier.is.null")
+      .or("thumbnail_url.is.null,tier.is.null,set_id_onchain.is.null,play_id_onchain.is.null")
   }
 
   const { data, error } = await query
@@ -299,6 +299,8 @@ async function main() {
       team_name?: string
       series?: number
       player_name?: string
+      set_id_onchain?: number
+      play_id_onchain?: number
     } = {}
 
     if (INTEGER_MODE) {
@@ -354,6 +356,16 @@ async function main() {
       const seriesNum = edition.set?.flowSeriesNumber
       if (seriesNum != null && Number.isFinite(Number(seriesNum))) {
         patch.series = Number(seriesNum)
+      }
+      const setFlowId = edition.set?.flowId
+      if (setFlowId != null) {
+        const n = Number(setFlowId)
+        if (Number.isFinite(n)) patch.set_id_onchain = n
+      }
+      const playFlowId = edition.play?.flowID
+      if (playFlowId != null) {
+        const n = Number(playFlowId)
+        if (Number.isFinite(n)) patch.play_id_onchain = n
       }
     }
 
