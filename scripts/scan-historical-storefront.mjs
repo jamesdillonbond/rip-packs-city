@@ -180,6 +180,8 @@ async function main() {
   let totalEvents = 0
 
   async function flush() {
+    if (!DRY_RUN) await writeCheckpoint(cursor)
+
     if (addresses.size === 0) {
       const pct = (((cursor - START_BLOCK) / (FINAL_BLOCK - START_BLOCK)) * 100).toFixed(2)
       console.log(`[progress] ${pct}% cursor=${cursor} chunks=${chunksProcessed} (no new addrs)`)
@@ -195,7 +197,6 @@ async function main() {
         .from('storefront_audit_wallets')
         .upsert(rows, { onConflict: 'address', ignoreDuplicates: true })
       if (error) console.log(`[flush] upsert error: ${error.message}`)
-      await writeCheckpoint(cursor)
     }
 
     const pct = (((cursor - START_BLOCK) / (FINAL_BLOCK - START_BLOCK)) * 100).toFixed(2)
