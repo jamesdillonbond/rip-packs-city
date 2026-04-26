@@ -231,8 +231,6 @@ async function main() {
     cursor = end
     chunksProcessed++
 
-    if (!DRY_RUN) await writeCheckpoint(cursor)
-
     if (chunksProcessed % FLUSH_EVERY_N_CHUNKS === 0) await flush()
 
     await sleep(DELAY_MS)
