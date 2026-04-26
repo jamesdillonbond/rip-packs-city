@@ -6,6 +6,7 @@ import SupportChatConnected from "@/components/SupportChatConnected"
 import SiteFooter from "@/components/SiteFooter"
 import MobileNav from "@/components/MobileNav"
 import RpcLogo from "@/components/RpcLogo"
+import TopNav from "@/components/TopNav"
 
 // ── Layout ─────────────────────────────────────────────────────────────────────
 // This layout provides the outer shell (styles, sticky header, footer).
@@ -53,6 +54,7 @@ function SiteHeader() {
             <div style={{ fontSize: 7, fontFamily: "'Share Tech Mono', monospace", letterSpacing: "0.2em", color: "rgba(224,58,47,0.5)" }}>@RIPPACKSCITY</div>
           </div>
         </Link>
+        <TopNav />
         <div style={{ flex: 1 }} />
         <ProBadge />
         <CartButton />
