@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import MobileNav from "@/components/MobileNav";
 import SupportChatConnected from "@/components/SupportChatConnected";
 import RpcLogo from "@/components/RpcLogo";
 import SignOutButton from "@/components/auth/SignOutButton";
 import { ConnectButton } from "@/components/auth/ConnectButton";
+import SignInWithDapper from "@/components/SignInWithDapper";
 import { publishedCollections, getCollection } from "@/lib/collections";
 
 const condensedFont = "'Barlow Condensed', sans-serif";
@@ -24,6 +26,8 @@ interface Bio {
   discord: string | null;
   avatar_url: string | null;
   accent_color?: string | null;
+  hero_moment_id?: string | null;
+  hero_moment_collection_id?: string | null;
 }
 
 interface SavedWallet {
@@ -37,6 +41,8 @@ interface SavedWallet {
   cached_top_tier: string | null;
   accent_color: string | null;
   pinned_at: string;
+  verified_at: string | null;
+  verification_method: string | null;
 }
 
 interface Trophy {
@@ -53,22 +59,21 @@ interface Trophy {
 }
 
 interface HeroMoment {
-  // Shape matches /api/profile/hero-moment response — camelCase on the
-  // wire even though wallet_moments_cache is snake_case. Keeping these
-  // names identical to the route's serializer is what fixes the "Unknown"
-  // HeroMoment regression (every snake_case field was falling through to
-  // the fallback in HeroMomentCard).
   momentId: string;
   collectionId: string | null;
+  collectionUuid: string | null;
   collectionLabel: string | null;
   collectionAccent: string | null;
   editionKey: string | null;
   serialNumber: number | null;
+  mintCount?: number | null;
   playerName: string | null;
   setName: string | null;
   tier: string | null;
   imageUrl: string | null;
   fmvUsd: number;
+  isLocked?: boolean;
+  isManualOverride?: boolean;
 }
 
 interface Favorite {
@@ -98,6 +103,50 @@ interface RecentSearch {
   query_type: string;
   collection_id: string | null;
   searched_at: string;
+}
+
+interface CollectionStat {
+  collection_id: string;
+  collection_slug: string;
+  collection_label: string;
+  moment_count: number;
+  fmv_total: number;
+  fmv_max: number;
+  priced_count: number;
+  locked_count: number;
+  top_tier: string | null;
+}
+
+interface TopMoment {
+  moment_id: string;
+  collection_id: string;
+  collection_slug: string;
+  wallet_address: string;
+  player_name: string | null;
+  set_name: string | null;
+  tier: string | null;
+  serial_number: number | null;
+  mint_count: number | null;
+  fmv_usd: number | null;
+  image_url: string | null;
+  is_locked: boolean;
+  series_number: number | null;
+  edition_key: string | null;
+  character_name?: string | null;
+  edition_name?: string | null;
+}
+
+interface ChallengeRow {
+  id: string;
+  wallet_addr: string;
+  challenge_amount: number;
+  created_at: string;
+  expires_at: string;
+  resolved_at: string | null;
+  resolved_via: string | null;
+  matched_moment_id: string | null;
+  expired?: boolean;
+  msRemaining?: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -145,16 +194,17 @@ function tierHoloClass(tier?: string | null): string {
   return "";
 }
 
-function collectionMeta(id: string) {
-  const c = getCollection(id);
-  return c ? { id: c.id, label: c.label, shortLabel: c.shortLabel, icon: c.icon, accent: c.accent } : null;
-}
-
 function collectionMetaByUuid(uuid: string) {
   for (const c of publishedCollections()) {
     if (c.supabaseCollectionId === uuid) return c;
   }
   return null;
+}
+
+function collectionMetaBySlug(slug: string) {
+  // collection_slug from RPC may use underscores (e.g. "nba_top_shot")
+  const normalized = slug.replace(/_/g, "-");
+  return getCollection(normalized) ?? null;
 }
 
 function timeAgo(iso: string): string {
@@ -167,23 +217,40 @@ function timeAgo(iso: string): string {
   return `${days}d ago`;
 }
 
+function formatCountdown(ms: number): string {
+  if (ms <= 0) return "expired";
+  const mins = Math.floor(ms / 60000);
+  const secs = Math.floor((ms % 60000) / 1000);
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ProfilePage() {
+  // Next 16 requires a Suspense boundary above any tree that reads
+  // useSearchParams. The inner component handles its own loading state.
+  return (
+    <Suspense fallback={null}>
+      <ProfilePageInner />
+    </Suspense>
+  );
+}
+
+function ProfilePageInner() {
+  const search = useSearchParams();
   const [email, setEmail] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [bio, setBio] = useState<Bio | null>(null);
   const [wallets, setWallets] = useState<SavedWallet[]>([]);
   const [trophies, setTrophies] = useState<Trophy[]>([]);
   const [hero, setHero] = useState<HeroMoment | null>(null);
-  const [heroReason, setHeroReason] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
+  const [statsByWallet, setStatsByWallet] = useState<Record<string, CollectionStat[]>>({});
 
   const [loading, setLoading] = useState(true);
 
-  // Username-first wallet add. Advanced (hex-address) path is toggled per-user.
   const [usernameInput, setUsernameInput] = useState("");
   const [usernameSaving, setUsernameSaving] = useState(false);
   const [usernameError, setUsernameError] = useState<string | null>(null);
@@ -196,6 +263,13 @@ export default function ProfilePage() {
   const [walletError, setWalletError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Array<{ id: number; text: string; tone: "success" | "info" }>>([]);
 
+  // Pin flow: which slot is being filled, and whether the modal is open.
+  const [pinSlot, setPinSlot] = useState<number | null>(null);
+  // Hero edit flow: open the same picker but write to profile_bio instead of trophy_moments.
+  const [heroEditOpen, setHeroEditOpen] = useState(false);
+  // Verification: which wallet is currently in the verify-by-listing modal.
+  const [verifyWallet, setVerifyWallet] = useState<string | null>(null);
+
   const pushToast = useCallback((text: string, tone: "success" | "info" = "success") => {
     const id = Date.now() + Math.floor(Math.random() * 1000);
     setToasts((prev) => [...prev, { id, text, tone }]);
@@ -204,11 +278,42 @@ export default function ProfilePage() {
     }, 6000);
   }, []);
 
+  const refreshStats = useCallback(async (addrs: string[]) => {
+    if (addrs.length === 0) {
+      setStatsByWallet({});
+      return;
+    }
+    const out: Record<string, CollectionStat[]> = {};
+    await Promise.all(
+      addrs.map(async (addr) => {
+        try {
+          const res = await fetch(
+            "/api/profile/collection-stats?wallet_addr=" + encodeURIComponent(addr),
+            { cache: "no-store" }
+          );
+          if (!res.ok) return;
+          const d = await res.json();
+          out[addr] = (d?.stats ?? []).map((r: any) => ({
+            collection_id: r.collection_id,
+            collection_slug: r.collection_slug,
+            collection_label: r.collection_label,
+            moment_count: Number(r.moment_count) || 0,
+            fmv_total: Number(r.fmv_total) || 0,
+            fmv_max: Number(r.fmv_max) || 0,
+            priced_count: Number(r.priced_count) || 0,
+            locked_count: Number(r.locked_count) || 0,
+            top_tier: r.top_tier ?? null,
+          }));
+        } catch {
+          // swallow per-wallet errors so others still render
+        }
+      })
+    );
+    setStatsByWallet(out);
+  }, []);
+
   const refresh = useCallback(async () => {
     try {
-      // Trophy Case is the real curated flex. HeroMoment is a fallback for users
-      // with nothing pinned yet. Fetch trophies first so we can skip the hero
-      // round-trip entirely when trophies exist.
       const [meRes, bioRes, walletsRes, trophiesRes, favRes, actRes, recRes] = await Promise.all([
         fetch("/api/profile/me", { cache: "no-store" }),
         fetch("/api/profile/bio", { cache: "no-store" }),
@@ -226,9 +331,11 @@ export default function ProfilePage() {
         const b = await bioRes.json();
         setBio(b?.bio ?? null);
       }
+      let walletList: SavedWallet[] = [];
       if (walletsRes.ok) {
         const w = await walletsRes.json();
-        setWallets(w?.wallets ?? []);
+        walletList = w?.wallets ?? [];
+        setWallets(walletList);
       }
       let trophyList: Trophy[] = [];
       if (trophiesRes.ok) {
@@ -236,16 +343,16 @@ export default function ProfilePage() {
         trophyList = t?.trophies ?? [];
         setTrophies(trophyList);
       }
+      // Hero: only fetch when there are no trophies pinned. The card is gated
+      // by trophyList.length === 0 below, so skipping the round-trip is safe.
       if (trophyList.length === 0) {
         const heroRes = await fetch("/api/profile/hero-moment", { cache: "no-store" });
         if (heroRes.ok) {
           const h = await heroRes.json();
           setHero(h?.hero ?? null);
-          setHeroReason(h?.reason ?? null);
         }
       } else {
         setHero(null);
-        setHeroReason(null);
       }
       if (favRes.ok) {
         const f = await favRes.json();
@@ -259,16 +366,32 @@ export default function ProfilePage() {
         const r = await recRes.json();
         setRecentSearches(r?.searches ?? []);
       }
+
+      // Per-wallet collection stats (one fetch per unique wallet_addr).
+      const uniqueAddrs = Array.from(new Set(walletList.map((w) => w.wallet_addr.toLowerCase())));
+      refreshStats(uniqueAddrs);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [refreshStats]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  // Cleanup any polling timers on unmount.
+  // Open the pin modal when ?pin=<slot> is present in the URL. Kept around
+  // so any old links that still hit /profile?pin= land somewhere useful.
+  useEffect(() => {
+    const slotParam = search?.get("pin");
+    if (!slotParam) return;
+    const slot = Number(slotParam);
+    if (Number.isFinite(slot) && slot >= 1 && slot <= 6) {
+      setPinSlot(slot);
+    } else {
+      setPinSlot(1);
+    }
+  }, [search]);
+
   useEffect(() => {
     return () => {
       if (indexingPollRef.current) clearInterval(indexingPollRef.current);
@@ -299,20 +422,27 @@ export default function ProfilePage() {
         const d = await res.json();
         const ws: SavedWallet[] = d?.wallets ?? [];
         setWallets(ws);
-        if (ws.length >= 4 && ws.every((w) => (w.cached_moment_count ?? 0) > 0)) {
+        const uniqueAddrs = Array.from(new Set(ws.map((w) => w.wallet_addr.toLowerCase())));
+        // Refresh per-collection stats so the spinner numbers populate as the
+        // background indexer finishes each collection.
+        refreshStats(uniqueAddrs);
+        const allHaveStats = uniqueAddrs.every((a) => {
+          const stats = statsByWallet[a];
+          return stats && stats.some((s) => s.moment_count > 0);
+        });
+        if (allHaveStats && uniqueAddrs.length > 0) {
           stopIndexingPoll();
-          // Pick up the newly-populated HeroMoment + trophies once cached.
           refresh();
         }
       } catch {
-        // Keep polling quietly on transient errors.
+        // keep polling
       }
     }, 10000);
     indexingStopRef.current = setTimeout(() => {
       stopIndexingPoll();
       refresh();
     }, 60000);
-  }, [refresh, stopIndexingPoll]);
+  }, [refresh, refreshStats, statsByWallet, stopIndexingPoll]);
 
   const resolveAndAssociate = useCallback(async () => {
     const username = usernameInput.trim();
@@ -386,7 +516,7 @@ export default function ProfilePage() {
     await fetch("/api/profile/saved-wallets", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ walletAddr: w.wallet_addr, collectionId: w.collection_id }),
+      body: JSON.stringify({ walletAddr: w.wallet_addr }),
     });
     await refresh();
   }, [refresh]);
@@ -403,17 +533,28 @@ export default function ProfilePage() {
   // ── Derived ────────────────────────────────────────────────────────────────
 
   const totalMoments = useMemo(
-    () => wallets.reduce((s, w) => s + (w.cached_moment_count ?? 0), 0),
-    [wallets]
+    () =>
+      Object.values(statsByWallet)
+        .flat()
+        .reduce((s, r) => s + (r.moment_count ?? 0), 0),
+    [statsByWallet]
   );
   const totalFmv = useMemo(
-    () => wallets.reduce((s, w) => s + (Number(w.cached_fmv) || 0), 0),
-    [wallets]
+    () =>
+      Object.values(statsByWallet)
+        .flat()
+        .reduce((s, r) => s + (r.fmv_total ?? 0), 0),
+    [statsByWallet]
   );
-  const collectionCount = useMemo(
-    () => new Set(wallets.map((w) => w.collection_id)).size,
-    [wallets]
-  );
+  const collectionCount = useMemo(() => {
+    const ids = new Set<string>();
+    for (const stats of Object.values(statsByWallet)) {
+      for (const s of stats) {
+        if (s.moment_count > 0 && s.collection_id) ids.add(s.collection_id);
+      }
+    }
+    return ids.size;
+  }, [statsByWallet]);
 
   // News feed: flatten news from favorited collections, sort by date desc
   const newsItems = useMemo(() => {
@@ -429,6 +570,29 @@ export default function ProfilePage() {
     return out;
   }, [favorites]);
 
+  // Group saved_wallets by physical wallet address — one card per unique
+  // wallet, with sub-cards from collection-stats inside.
+  const groupedWallets = useMemo(() => {
+    const map = new Map<string, { addr: string; rows: SavedWallet[]; nickname: string | null; verifiedAt: string | null }>();
+    for (const w of wallets) {
+      const key = w.wallet_addr.toLowerCase();
+      const existing = map.get(key);
+      if (existing) {
+        existing.rows.push(w);
+        if (!existing.nickname && w.nickname) existing.nickname = w.nickname;
+        if (!existing.verifiedAt && w.verified_at) existing.verifiedAt = w.verified_at;
+      } else {
+        map.set(key, {
+          addr: w.wallet_addr,
+          rows: [w],
+          nickname: w.nickname ?? null,
+          verifiedAt: w.verified_at ?? null,
+        });
+      }
+    }
+    return Array.from(map.values());
+  }, [wallets]);
+
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", background: "#080808", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -437,6 +601,8 @@ export default function ProfilePage() {
     );
   }
 
+  const showHero = trophies.filter(Boolean).length === 0 && hero !== null;
+
   return (
     <div style={{ minHeight: "100vh", background: "#080808", color: "#fff", paddingBottom: 80 }}>
       <style>{`
@@ -444,11 +610,14 @@ export default function ProfilePage() {
         *{box-sizing:border-box;margin:0;padding:0;}
         .rpc-section { background:#18181b; border:1px solid #27272a; border-radius:10px; padding:16px 18px; }
         .rpc-section-title { font-family:${condensedFont}; font-weight:800; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:rgba(255,255,255,0.7); margin-bottom:12px; }
-        .rpc-wallet-card { transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease; cursor: pointer; }
-        .rpc-wallet-card:hover { border-color: var(--rpc-accent, #555); transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.55); }
+        .rpc-wallet-card { transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease; }
+        .rpc-wallet-subcard { transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease; cursor: pointer; text-decoration: none; color: inherit; }
+        .rpc-wallet-subcard:hover { border-color: var(--rpc-accent, #555); transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.55); }
         .rpc-spinner { width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.2); border-top-color: #fff; border-radius: 50%; display: inline-block; animation: rpc-spin 900ms linear infinite; }
         .rpc-spinner-sm { width: 9px; height: 9px; border: 1.5px solid rgba(255,255,255,0.2); border-top-color: #fff; border-radius: 50%; display: inline-block; animation: rpc-spin 900ms linear infinite; }
         @keyframes rpc-spin { to { transform: rotate(360deg); } }
+        .rpc-edit-pencil { opacity: 0; transition: opacity 150ms ease; }
+        .rpc-hero-section:hover .rpc-edit-pencil { opacity: 1; }
         @media (max-width: 768px){ .rpc-profile-main { padding: 14px 14px 80px !important; } }
       `}</style>
 
@@ -470,19 +639,24 @@ export default function ProfilePage() {
           <SignOutButton />
         </section>
 
-        {/* ── Hero: onboarding CTA (no wallets) / HeroMoment (no trophies yet) / Trophy Case (trophies pinned) ── */}
+        {/* ── Hero: onboarding CTA / HeroMoment / Trophy Case ── */}
         {wallets.length === 0 ? (
-          <OnboardingCta
+          <SignInBanner
             usernameInput={usernameInput}
             setUsernameInput={setUsernameInput}
-            onSubmit={resolveAndAssociate}
+            onUsernameSubmit={resolveAndAssociate}
             saving={usernameSaving}
             error={usernameError}
           />
-        ) : trophies.length === 0 ? (
-          <HeroMomentCard hero={hero} reason={heroReason} wallets={wallets} indexing={indexing} />
+        ) : showHero ? (
+          <HeroMomentCard
+            hero={hero!}
+            onEdit={() => setHeroEditOpen(true)}
+          />
+        ) : trophies.length > 0 ? (
+          <TrophyCaseSection trophies={trophies} onPickSlot={setPinSlot} />
         ) : (
-          <TrophyCaseSection trophies={trophies} wallets={wallets} />
+          <EmptyHeroState wallets={wallets} indexing={indexing} onPickSlot={setPinSlot} />
         )}
 
         {/* ── Stats Tiles ── */}
@@ -492,9 +666,11 @@ export default function ProfilePage() {
           <StatTile label="Collections" value={String(collectionCount)} color="#A855F7" />
         </section>
 
-        {/* ── Trophy Case (shown here only when not already hoisted to hero slot) ── */}
-        {trophies.length === 0 && wallets.length > 0 && (
-          <TrophyCaseSection trophies={trophies} wallets={wallets} />
+        {/* Trophy Case is the hero slot when trophies exist; render it again
+            below the stats only when the hero card occupied the top slot, so
+            users still get the 6-grid pin UI without scrolling past it. */}
+        {wallets.length > 0 && showHero && (
+          <TrophyCaseSection trophies={trophies} onPickSlot={setPinSlot} />
         )}
 
         {/* ── Saved Wallets ── */}
@@ -574,66 +750,22 @@ export default function ProfilePage() {
             </div>
           )}
 
-          {wallets.length === 0 ? (
+          {groupedWallets.length === 0 ? (
             <div style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.45)", padding: "12px 0" }}>
               Add a wallet to see your moments across collections.
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }}>
-              {wallets.map((w) => {
-                const cMeta = collectionMetaByUuid(w.collection_id);
-                const slug = cMeta?.id ?? "nba-top-shot";
-                const href = `/${slug}/collection?address=${w.wallet_addr}`;
-                const isEmpty = !w.cached_moment_count;
-                const showSpinner = isEmpty && indexing;
-                return (
-                  <Link
-                    key={`${w.wallet_addr}_${w.collection_id}`}
-                    href={href}
-                    className="rpc-wallet-card"
-                    style={{
-                      background: "#0d0d0d",
-                      border: "1px solid #27272a",
-                      borderBottom: `2px solid ${cMeta?.accent ?? "#333"}`,
-                      borderRadius: 8,
-                      padding: "10px 12px",
-                      display: "block",
-                      textDecoration: "none",
-                      color: "inherit",
-                      ["--rpc-accent" as any]: cMeta?.accent ?? "#555",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-                      <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                        {cMeta?.icon} {cMeta?.shortLabel}
-                      </div>
-                      <button
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeWallet(w); }}
-                        aria-label="Remove saved wallet"
-                        style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 12, cursor: "pointer" }}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    <div style={{ fontFamily: monoFont, fontSize: 11, color: "#fff", marginTop: 4 }}>
-                      {w.nickname ? `${w.nickname} — ` : ""}{truncateAddress(w.wallet_addr)}
-                    </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-                      <div>
-                        <div style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Moments</div>
-                        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
-                          {showSpinner && <span className="rpc-spinner-sm" aria-hidden />}
-                          {(w.cached_moment_count ?? 0).toLocaleString()}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>FMV</div>
-                        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "#34D399" }}>{fmtUsd(Number(w.cached_fmv) || 0)}</div>
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {groupedWallets.map((g) => (
+                <WalletGroupCard
+                  key={g.addr}
+                  group={g}
+                  stats={statsByWallet[g.addr.toLowerCase()] ?? []}
+                  indexing={indexing}
+                  onRemove={() => removeWallet(g.rows[0])}
+                  onVerify={() => setVerifyWallet(g.addr)}
+                />
+              ))}
             </div>
           )}
         </section>
@@ -751,6 +883,30 @@ export default function ProfilePage() {
 
       </main>
 
+      {/* ── Modals ── */}
+      {pinSlot != null && (
+        <PinModal
+          slot={pinSlot}
+          ownerKey={userId ? null : (wallets[0]?.wallet_addr ?? null)}
+          onClose={() => setPinSlot(null)}
+          onPinned={async () => { setPinSlot(null); await refresh(); pushToast("Trophy pinned", "success"); }}
+        />
+      )}
+      {heroEditOpen && (
+        <HeroEditModal
+          ownerKey={userId ? null : (wallets[0]?.wallet_addr ?? null)}
+          onClose={() => setHeroEditOpen(false)}
+          onPicked={async () => { setHeroEditOpen(false); await refresh(); pushToast("Hero updated", "success"); }}
+        />
+      )}
+      {verifyWallet && (
+        <VerifyByListingModal
+          walletAddr={verifyWallet}
+          onClose={() => setVerifyWallet(null)}
+          onVerified={async () => { setVerifyWallet(null); await refresh(); pushToast("Wallet verified", "success"); }}
+        />
+      )}
+
       {/* ── Toasts ── */}
       {toasts.length > 0 && (
         <div style={{ position: "fixed", bottom: 80, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, pointerEvents: "none", zIndex: 10000 }}>
@@ -783,16 +939,18 @@ export default function ProfilePage() {
   );
 }
 
-function OnboardingCta({
+// ── Sign-in Banner (no wallets yet) ─────────────────────────────────────────
+
+function SignInBanner({
   usernameInput,
   setUsernameInput,
-  onSubmit,
+  onUsernameSubmit,
   saving,
   error,
 }: {
   usernameInput: string;
   setUsernameInput: (v: string) => void;
-  onSubmit: () => void;
+  onUsernameSubmit: () => void;
   saving: boolean;
   error: string | null;
 }) {
@@ -819,50 +977,56 @@ function OnboardingCta({
         Get Started
       </div>
       <div style={{ fontFamily: monoFont, fontSize: 13, color: "rgba(255,255,255,0.7)", lineHeight: 1.5, marginBottom: 16, maxWidth: 620 }}>
-        Enter your Dapper username to instantly load your collection across NBA Top Shot, NFL All Day, LaLiga Golazos, and Disney Pinnacle.
+        Sign in with your Dapper wallet for verified ownership across NBA Top Shot, NFL All Day, LaLiga Golazos, and Disney Pinnacle.
+      </div>
+
+      <div style={{ marginBottom: 18 }}>
+        <SignInWithDapper variant="primary" />
+      </div>
+
+      <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 10 }}>
+        — or use a Top Shot username (unverified) —
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
         <input
           value={usernameInput}
           onChange={(e) => setUsernameInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") onSubmit(); }}
+          onKeyDown={(e) => { if (e.key === "Enter") onUsernameSubmit(); }}
           placeholder="Dapper username"
-          autoFocus
           style={{
             flex: 1,
             minWidth: 260,
-            padding: "14px 16px",
+            padding: "12px 16px",
             background: "#0a0a0a",
-            border: `1.5px solid ${ACCENT_RED}`,
+            border: `1.5px solid ${ACCENT_RED}88`,
             borderRadius: 8,
             color: "#fff",
             fontFamily: monoFont,
-            fontSize: 15,
+            fontSize: 14,
             letterSpacing: "0.02em",
             outline: "none",
           }}
         />
         <button
-          onClick={onSubmit}
+          onClick={onUsernameSubmit}
           disabled={saving}
           style={{
-            background: ACCENT_RED,
-            border: "none",
-            color: "#fff",
-            padding: "14px 28px",
+            background: "transparent",
+            border: `1.5px solid ${ACCENT_RED}`,
+            color: ACCENT_RED,
+            padding: "12px 24px",
             borderRadius: 8,
             fontFamily: condensedFont,
             fontWeight: 800,
-            fontSize: 15,
+            fontSize: 14,
             letterSpacing: "0.1em",
             textTransform: "uppercase",
             cursor: saving ? "default" : "pointer",
             opacity: saving ? 0.7 : 1,
-            boxShadow: `0 0 24px ${ACCENT_RED}55`,
           }}
         >
-          {saving ? "Loading…" : "Load my collection"}
+          {saving ? "Loading…" : "Load by username"}
         </button>
       </div>
 
@@ -873,67 +1037,46 @@ function OnboardingCta({
       )}
 
       <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.45)", lineHeight: 1.5, maxWidth: 620 }}>
-        Dapper uses one username across all four marketplaces — we'll find your wallet and associate it with every collection automatically.
+        Wallet sign-in proves ownership on-chain. Username lookups are read-only and unverified — anyone can load anyone's public collection that way.
       </div>
     </section>
   );
 }
 
-function HeroMomentCard({
-  hero,
-  reason,
-  wallets,
-  indexing,
-}: {
-  hero: HeroMoment | null;
-  reason: string | null;
-  wallets: SavedWallet[];
-  indexing: boolean;
-}) {
-  if (!hero) {
-    const hasWallets = wallets.length > 0;
-    const allEmpty = hasWallets && wallets.every((w) => !w.cached_moment_count);
-    const isIndexing = indexing || (hasWallets && allEmpty);
-    const heading = isIndexing
-      ? "Indexing your collection"
-      : "Add a wallet to reveal your hero moment";
-    const subcopy = isIndexing
-      ? "This usually takes 30-60 seconds. Refresh shortly."
-      : reason === "no_moments"
-        ? "We know your wallet but haven't ingested its moments yet."
-        : reason === "no_fmv_yet"
-          ? "Moments indexed — FMV pipeline catching up."
-          : "No wallets saved.";
-    return (
-      <section className="rpc-section rpc-binder-slot" style={{ padding: "28px 20px", textAlign: "center" }}>
-        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 16, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.85)", display: "inline-flex", alignItems: "center", gap: 10 }}>
-          {isIndexing && <span className="rpc-spinner" aria-hidden />}
-          {heading}
-        </div>
-        <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 6, letterSpacing: "0.04em" }}>
-          {subcopy}
-        </div>
-      </section>
-    );
-  }
+// ── Hero Moment ─────────────────────────────────────────────────────────────
 
+function HeroMomentCard({ hero, onEdit }: { hero: HeroMoment; onEdit: () => void }) {
   const holoClass = tierHoloClass(hero.tier);
   const tc = tierColor(hero.tier);
-
-  // We intentionally do NOT add the `rpc-binder-slot` class to the outer
-  // section. That utility class enforces a 1 / var(--binder-slot-ratio)
-  // aspect-ratio, which made the hero banner eat ~90% of the viewport.
-  // The holo shimmer classes (rpc-holo-*) are compatible on their own.
   return (
-    <section className={holoClass} style={{ position: "relative", background: "#111", border: `2px solid ${tc}`, borderRadius: 14, padding: 14, overflow: "hidden", display: "flex", gap: 16, alignItems: "center", maxHeight: 200 }}>
+    <section
+      className={`rpc-hero-section ${holoClass}`}
+      style={{ position: "relative", background: "#111", border: `2px solid ${tc}`, borderRadius: 14, padding: 14, overflow: "hidden", display: "flex", gap: 16, alignItems: "center", maxHeight: 200 }}
+    >
       <HeroMomentImage imageUrl={hero.imageUrl} playerName={hero.playerName} tier={hero.tier} tc={tc} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: monoFont, fontSize: 10, color: tc, letterSpacing: "0.14em", textTransform: "uppercase" }}>Hero Moment</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontFamily: monoFont, fontSize: 10, color: tc, letterSpacing: "0.14em", textTransform: "uppercase" }}>Hero Moment</span>
+          {hero.isManualOverride && (
+            <span style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.45)", letterSpacing: "0.1em", textTransform: "uppercase" }}>· pinned</span>
+          )}
+          <button
+            onClick={onEdit}
+            className="rpc-edit-pencil"
+            aria-label="Edit hero moment"
+            title="Edit hero moment"
+            style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.7)", cursor: "pointer", padding: 0, fontSize: 13 }}
+          >
+            ✎
+          </button>
+        </div>
         <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 26, letterSpacing: "0.02em", marginTop: 2, lineHeight: 1.1 }}>
           {hero.playerName ?? "Unknown"}
         </div>
         <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)", marginTop: 4 }}>
-          {hero.setName ?? ""}{hero.serialNumber ? ` · #${hero.serialNumber}` : ""}
+          {hero.setName ?? ""}
+          {hero.serialNumber ? ` · #${hero.serialNumber}` : ""}
+          {hero.mintCount ? `/${hero.mintCount}` : ""}
         </div>
         <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 22, color: "#34D399", marginTop: 8 }}>
           {fmtUsd(hero.fmvUsd)}
@@ -943,17 +1086,7 @@ function HeroMomentCard({
   );
 }
 
-function HeroMomentImage({
-  imageUrl,
-  playerName,
-  tier,
-  tc,
-}: {
-  imageUrl: string | null;
-  playerName: string | null;
-  tier: string | null;
-  tc: string;
-}) {
+function HeroMomentImage({ imageUrl, playerName, tier, tc }: { imageUrl: string | null; playerName: string | null; tier: string | null; tc: string; }) {
   const [failed, setFailed] = useState(false);
   const placeholderGlyph = (tier || "").toLowerCase().includes("ultimate")
     ? "◆"
@@ -989,25 +1122,32 @@ function HeroMomentImage({
       </div>
     );
   }
+  return <img src={imageUrl} alt={playerName ?? ""} onError={() => setFailed(true)} style={commonStyle} />;
+}
+
+function EmptyHeroState({ wallets, indexing, onPickSlot }: { wallets: SavedWallet[]; indexing: boolean; onPickSlot: (slot: number) => void }) {
+  const isIndexing = indexing && wallets.length > 0;
   return (
-    <img
-      src={imageUrl}
-      alt={playerName ?? ""}
-      onError={() => setFailed(true)}
-      style={commonStyle}
-    />
+    <section className="rpc-section rpc-binder-slot" style={{ padding: "28px 20px", textAlign: "center" }}>
+      <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 16, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.85)", display: "inline-flex", alignItems: "center", gap: 10 }}>
+        {isIndexing && <span className="rpc-spinner" aria-hidden />}
+        {isIndexing ? "Indexing your collection" : "Pin a moment to your trophy case"}
+      </div>
+      <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 6, letterSpacing: "0.04em" }}>
+        {isIndexing ? "This usually takes 30-60 seconds." : "Pick from your top-FMV moments to build your six-slot showcase."}
+      </div>
+      {!isIndexing && (
+        <button onClick={() => onPickSlot(1)} style={{ ...primaryBtnStyle, marginTop: 12 }}>
+          + Pick a moment
+        </button>
+      )}
+    </section>
   );
 }
 
-function TrophyCaseSection({ trophies, wallets }: { trophies: Trophy[]; wallets: SavedWallet[] }) {
-  // Empty slots link to the user's first saved wallet so "pick a moment to pin"
-  // lands in a working collection view with the Pin CTA already on each row.
-  const firstWallet = wallets[0];
-  const firstWalletCollection = firstWallet ? collectionMetaByUuid(firstWallet.collection_id) : null;
-  const pinTargetHref = firstWallet && firstWalletCollection
-    ? `/${firstWalletCollection.id}/collection?address=${firstWallet.wallet_addr}`
-    : null;
+// ── Trophy Case ─────────────────────────────────────────────────────────────
 
+function TrophyCaseSection({ trophies, onPickSlot }: { trophies: Trophy[]; onPickSlot: (slot: number) => void }) {
   const emptySlotStyle: React.CSSProperties = {
     aspectRatio: "1/1",
     background: "#0d0d0d",
@@ -1021,7 +1161,8 @@ function TrophyCaseSection({ trophies, wallets }: { trophies: Trophy[]; wallets:
     fontSize: 36,
     color: "rgba(255,255,255,0.3)",
     textDecoration: "none",
-    cursor: pinTargetHref ? "pointer" : "default",
+    cursor: "pointer",
+    width: "100%",
   };
 
   return (
@@ -1034,29 +1175,26 @@ function TrophyCaseSection({ trophies, wallets }: { trophies: Trophy[]; wallets:
         {[1, 2, 3, 4, 5, 6].map((slot) => {
           const t = trophies.find((x) => x.slot === slot);
           if (!t) {
-            if (pinTargetHref) {
-              return (
-                <Link key={slot} href={pinTargetHref} className="rpc-binder-slot" style={emptySlotStyle} aria-label={`Pin moment to slot ${slot}`}>
-                  +
-                </Link>
-              );
-            }
             return (
-              <div key={slot} className="rpc-binder-slot" style={emptySlotStyle}>+</div>
+              <button
+                key={slot}
+                onClick={() => onPickSlot(slot)}
+                className="rpc-binder-slot"
+                style={emptySlotStyle}
+                aria-label={`Pin moment to slot ${slot}`}
+              >
+                +
+              </button>
             );
           }
           const cMeta = collectionMetaByUuid(t.collection_id);
           return (
             <div key={slot} className={`rpc-binder-slot ${tierHoloClass(t.tier)}`} style={{ position: "relative", aspectRatio: "1/1", background: "#111", border: `1px solid ${tierColor(t.tier)}66`, borderRadius: 8, overflow: "hidden" }}>
-              {t.thumbnail_url && (
-                <img src={t.thumbnail_url} alt={t.player_name || ""} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              )}
+              {t.thumbnail_url && <img src={t.thumbnail_url} alt={t.player_name || ""} style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
               <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "6px 8px", background: "linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0))", fontSize: 10, fontFamily: condensedFont, fontWeight: 700 }}>
                 <div style={{ color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.player_name ?? t.moment_id}</div>
                 <div style={{ display: "flex", gap: 6, marginTop: 2, alignItems: "center" }}>
-                  {cMeta && (
-                    <span style={{ fontSize: 9, letterSpacing: "0.08em", color: cMeta.accent, textTransform: "uppercase" }}>{cMeta.shortLabel}</span>
-                  )}
+                  {cMeta && <span style={{ fontSize: 9, letterSpacing: "0.08em", color: cMeta.accent, textTransform: "uppercase" }}>{cMeta.shortLabel}</span>}
                   <span style={{ fontSize: 9, color: "#34D399", marginLeft: "auto" }}>{t.fmv != null ? fmtUsd(Number(t.fmv)) : ""}</span>
                 </div>
               </div>
@@ -1065,6 +1203,686 @@ function TrophyCaseSection({ trophies, wallets }: { trophies: Trophy[]; wallets:
         })}
       </div>
     </section>
+  );
+}
+
+// ── Wallet Group Card (one per physical wallet, sub-cards per collection) ──
+
+function WalletGroupCard({
+  group,
+  stats,
+  indexing,
+  onRemove,
+  onVerify,
+}: {
+  group: { addr: string; rows: SavedWallet[]; nickname: string | null; verifiedAt: string | null };
+  stats: CollectionStat[];
+  indexing: boolean;
+  onRemove: () => void;
+  onVerify: () => void;
+}) {
+  const verified = !!group.verifiedAt;
+  return (
+    <div
+      className="rpc-wallet-card"
+      style={{ background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 10, padding: "12px 14px" }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, letterSpacing: "0.02em", color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {group.nickname ? `${group.nickname} — ` : ""}{truncateAddress(group.addr)}
+          </div>
+          {verified ? (
+            <span
+              title={`Verified ${group.verifiedAt}`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "2px 8px",
+                background: "#0a1f15",
+                border: "1px solid #34D39966",
+                color: "#34D399",
+                fontFamily: monoFont,
+                fontSize: 9,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                borderRadius: 12,
+              }}
+            >
+              ✓ Verified
+            </span>
+          ) : (
+            <button
+              onClick={onVerify}
+              style={{
+                padding: "2px 10px",
+                background: "transparent",
+                border: "1px solid #F59E0B66",
+                color: "#F59E0B",
+                fontFamily: condensedFont,
+                fontWeight: 700,
+                fontSize: 10,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                borderRadius: 12,
+                cursor: "pointer",
+              }}
+            >
+              Verify by listing
+            </button>
+          )}
+        </div>
+        <button
+          onClick={onRemove}
+          aria-label="Remove saved wallet"
+          style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 13, cursor: "pointer" }}
+        >
+          ✕
+        </button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 8 }}>
+        {publishedCollections().map((col) => {
+          const stat = stats.find(
+            (s) => s.collection_id === col.supabaseCollectionId || s.collection_slug === col.id.replace(/-/g, "_")
+          );
+          const slug = col.id;
+          const href = `/${slug}/collection?q=${encodeURIComponent(group.addr)}`;
+          const moments = stat?.moment_count ?? 0;
+          const fmv = stat?.fmv_total ?? 0;
+          const locked = stat?.locked_count ?? 0;
+          const fmvMax = stat?.fmv_max ?? 0;
+          const showSpinner = moments === 0 && indexing;
+          return (
+            <Link
+              key={col.id}
+              href={href}
+              className="rpc-wallet-subcard"
+              style={{
+                background: "#080808",
+                border: "1px solid #1f1f23",
+                borderBottom: `2px solid ${col.accent}`,
+                borderRadius: 8,
+                padding: "8px 10px",
+                display: "block",
+                ["--rpc-accent" as any]: col.accent,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: col.accent }}>
+                  {col.icon} {col.shortLabel}
+                </div>
+                {showSpinner && <span className="rpc-spinner-sm" aria-hidden />}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
+                <div>
+                  <div style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Moments</div>
+                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "#fff" }}>{moments.toLocaleString()}</div>
+                </div>
+                <div>
+                  <div style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>FMV</div>
+                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "#34D399" }}>{fmtUsd(fmv)}</div>
+                </div>
+              </div>
+              {(fmvMax > 0 || locked > 0) && (
+                <div style={{ display: "flex", gap: 8, marginTop: 4, fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.5)" }}>
+                  {fmvMax > 0 && <span>Top {fmtUsd(fmvMax)}</span>}
+                  {locked > 0 && <span>🔒 {locked.toLocaleString()}</span>}
+                </div>
+              )}
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── PinModal: tabbed grid + manual ──────────────────────────────────────────
+
+function PinModal({
+  slot,
+  ownerKey,
+  onClose,
+  onPinned,
+}: {
+  slot: number;
+  ownerKey: string | null;
+  onClose: () => void;
+  onPinned: () => void;
+}) {
+  const [tab, setTab] = useState<"grid" | "manual">("grid");
+  const [moments, setMoments] = useState<TopMoment[] | null>(null);
+  const [pickError, setPickError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // Manual entry
+  const [manualId, setManualId] = useState("");
+  const [manualPreview, setManualPreview] = useState<TopMoment | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const url = "/api/profile/top-moments?limit=24" + (ownerKey ? `&ownerKey=${encodeURIComponent(ownerKey)}` : "");
+    fetch(url, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled) setMoments(d?.moments ?? []); })
+      .catch(() => { if (!cancelled) setMoments([]); });
+    return () => { cancelled = true; };
+  }, [ownerKey]);
+
+  const pin = useCallback(async (m: TopMoment) => {
+    setSaving(true);
+    setPickError(null);
+    try {
+      const res = await fetch("/api/profile/trophy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slot,
+          momentId: m.moment_id,
+          collectionId: m.collection_id,
+          editionId: m.edition_key,
+          playerName: m.player_name,
+          setName: m.set_name,
+          serialNumber: m.serial_number,
+          circulationCount: m.mint_count,
+          tier: m.tier,
+          thumbnailUrl: m.image_url,
+          fmv: m.fmv_usd,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      onPinned();
+    } catch (err: any) {
+      setPickError(err?.message ?? "Failed to pin");
+    } finally {
+      setSaving(false);
+    }
+  }, [slot, onPinned]);
+
+  return (
+    <ModalShell onClose={onClose} title={`Pin to slot ${slot}`}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: "1px solid #27272a" }}>
+        <TabBtn active={tab === "grid"} onClick={() => setTab("grid")}>Pick from collection</TabBtn>
+        <TabBtn active={tab === "manual"} onClick={() => setTab("manual")}>Enter ID manually</TabBtn>
+      </div>
+
+      {tab === "grid" && (
+        <>
+          {moments == null ? (
+            <div style={{ textAlign: "center", padding: 24 }}>
+              <span className="rpc-spinner" />
+            </div>
+          ) : moments.length === 0 ? (
+            <div style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.6)", padding: 16, textAlign: "center" }}>
+              No owned moments found yet — try the manual tab if you know the moment ID.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10, maxHeight: 480, overflowY: "auto", paddingRight: 4 }}>
+              {moments.map((m) => (
+                <PickerCard key={`${m.collection_id}-${m.moment_id}`} m={m} disabled={saving} onClick={() => pin(m)} />
+              ))}
+            </div>
+          )}
+          {pickError && <div style={{ color: "#F87171", fontFamily: monoFont, fontSize: 11, marginTop: 8 }}>{pickError}</div>}
+        </>
+      )}
+
+      {tab === "manual" && (
+        <ManualPinForm
+          slot={slot}
+          manualId={manualId}
+          setManualId={setManualId}
+          preview={manualPreview}
+          setPreview={setManualPreview}
+          saving={saving}
+          setSaving={setSaving}
+          onPinned={onPinned}
+        />
+      )}
+    </ModalShell>
+  );
+}
+
+function HeroEditModal({
+  ownerKey,
+  onClose,
+  onPicked,
+}: {
+  ownerKey: string | null;
+  onClose: () => void;
+  onPicked: () => void;
+}) {
+  const [moments, setMoments] = useState<TopMoment[] | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [pickError, setPickError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const url = "/api/profile/top-moments?limit=24" + (ownerKey ? `&ownerKey=${encodeURIComponent(ownerKey)}` : "");
+    fetch(url, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled) setMoments(d?.moments ?? []); })
+      .catch(() => { if (!cancelled) setMoments([]); });
+    return () => { cancelled = true; };
+  }, [ownerKey]);
+
+  const pick = useCallback(async (m: TopMoment) => {
+    setSaving(true);
+    setPickError(null);
+    try {
+      const res = await fetch("/api/profile/bio", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ heroMomentId: m.moment_id, heroMomentCollectionId: m.collection_id }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      onPicked();
+    } catch (err: any) {
+      setPickError(err?.message ?? "Failed to set hero");
+    } finally {
+      setSaving(false);
+    }
+  }, [onPicked]);
+
+  const clear = useCallback(async () => {
+    setSaving(true);
+    setPickError(null);
+    try {
+      await fetch("/api/profile/bio", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ heroMomentId: null, heroMomentCollectionId: null }),
+      });
+      onPicked();
+    } catch (err: any) {
+      setPickError(err?.message ?? "Failed to clear");
+    } finally {
+      setSaving(false);
+    }
+  }, [onPicked]);
+
+  return (
+    <ModalShell onClose={onClose} title="Set Hero Moment">
+      <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.6)", marginBottom: 10 }}>
+        Pick the moment you want featured in your Hero card. Clear to fall back to your top-FMV moment automatically.
+      </div>
+      {moments == null ? (
+        <div style={{ textAlign: "center", padding: 24 }}><span className="rpc-spinner" /></div>
+      ) : moments.length === 0 ? (
+        <div style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.6)", padding: 16, textAlign: "center" }}>
+          No owned moments found.
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10, maxHeight: 480, overflowY: "auto", paddingRight: 4 }}>
+          {moments.map((m) => (
+            <PickerCard key={`${m.collection_id}-${m.moment_id}`} m={m} disabled={saving} onClick={() => pick(m)} />
+          ))}
+        </div>
+      )}
+      {pickError && <div style={{ color: "#F87171", fontFamily: monoFont, fontSize: 11, marginTop: 8 }}>{pickError}</div>}
+      <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
+        <button onClick={clear} disabled={saving} style={{ ...linkBtnStyle, color: "#F59E0B" }}>
+          Clear manual override
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+function PickerCard({ m, disabled, onClick }: { m: TopMoment; disabled: boolean; onClick: () => void }) {
+  const tc = tierColor(m.tier);
+  const borderColor = m.is_locked ? "#F59E0B" : "#34D399";
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`rpc-binder-slot ${tierHoloClass(m.tier)}`}
+      style={{
+        background: "#111",
+        border: `2px solid ${borderColor}88`,
+        borderRadius: 10,
+        padding: 0,
+        cursor: disabled ? "wait" : "pointer",
+        position: "relative",
+        textAlign: "left",
+        overflow: "hidden",
+        opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      <div style={{ position: "relative", aspectRatio: "1/1", background: "#0a0a0a" }}>
+        {m.image_url ? (
+          <img src={m.image_url} alt={m.player_name ?? ""} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        ) : (
+          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: tc, fontSize: 32, fontFamily: condensedFont, fontWeight: 900 }}>●</div>
+        )}
+        {m.is_locked && (
+          <div style={{ position: "absolute", top: 6, right: 6, fontSize: 12, color: "#F59E0B", textShadow: "0 0 4px rgba(0,0,0,0.8)" }} aria-label="Locked">🔒</div>
+        )}
+      </div>
+      <div style={{ padding: "6px 8px" }}>
+        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 12, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {m.player_name ?? m.moment_id}
+        </div>
+        <div style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.6)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {(m.set_name ?? "—")}{m.serial_number ? ` #${m.serial_number}` : ""}{m.mint_count ? `/${m.mint_count}` : ""}
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4, fontFamily: condensedFont, fontWeight: 800 }}>
+          <span style={{ fontSize: 9, color: tc, letterSpacing: "0.1em", textTransform: "uppercase" }}>{m.tier ?? ""}</span>
+          <span style={{ fontSize: 12, color: "#34D399" }}>{m.fmv_usd != null ? fmtUsd(Number(m.fmv_usd)) : "—"}</span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function ManualPinForm({
+  slot,
+  manualId,
+  setManualId,
+  preview,
+  setPreview,
+  saving,
+  setSaving,
+  onPinned,
+}: {
+  slot: number;
+  manualId: string;
+  setManualId: (v: string) => void;
+  preview: TopMoment | null;
+  setPreview: (m: TopMoment | null) => void;
+  saving: boolean;
+  setSaving: (v: boolean) => void;
+  onPinned: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+
+  const lookup = useCallback(async () => {
+    const id = manualId.trim();
+    if (!id) return;
+    setError(null);
+    try {
+      // Lookup by raw moment ID against the user's own top-moments first;
+      // most users will pin from their own collection. If absent, FMV will
+      // be null but the trophy will still pin.
+      const res = await fetch("/api/profile/top-moments?limit=96", { cache: "no-store" });
+      if (res.ok) {
+        const d = await res.json();
+        const found = (d?.moments ?? []).find((m: TopMoment) => String(m.moment_id) === id);
+        if (found) {
+          setPreview(found);
+          return;
+        }
+      }
+      setPreview({
+        moment_id: id,
+        collection_id: "",
+        collection_slug: "",
+        wallet_address: "",
+        player_name: null,
+        set_name: null,
+        tier: null,
+        serial_number: null,
+        mint_count: null,
+        fmv_usd: null,
+        image_url: null,
+        is_locked: false,
+        series_number: null,
+        edition_key: null,
+      });
+    } catch (e: any) {
+      setError(e?.message ?? "Lookup failed");
+    }
+  }, [manualId, setPreview]);
+
+  const pin = useCallback(async () => {
+    if (!preview) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/profile/trophy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slot,
+          momentId: preview.moment_id,
+          collectionId: preview.collection_id || undefined,
+          editionId: preview.edition_key,
+          playerName: preview.player_name,
+          setName: preview.set_name,
+          serialNumber: preview.serial_number,
+          circulationCount: preview.mint_count,
+          tier: preview.tier,
+          thumbnailUrl: preview.image_url,
+          fmv: preview.fmv_usd,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      onPinned();
+    } catch (err: any) {
+      setError(err?.message ?? "Failed to pin");
+    } finally {
+      setSaving(false);
+    }
+  }, [preview, slot, setSaving, onPinned]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
+        Paste a moment ID to pin a trophy directly. Useful for moments outside your saved wallets (gifts, friends' moments you're holding).
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          value={manualId}
+          onChange={(e) => setManualId(e.target.value)}
+          placeholder="Moment ID"
+          style={{ flex: 1, padding: "10px 12px", background: "#0a0a0a", border: "1px solid #27272a", borderRadius: 6, color: "#fff", fontFamily: monoFont, fontSize: 13 }}
+        />
+        <button onClick={lookup} style={primaryBtnStyle}>Look up</button>
+      </div>
+      {preview && (
+        <div style={{ background: "#0a0a0a", border: "1px solid #27272a", borderRadius: 8, padding: 12, display: "flex", gap: 12 }}>
+          {preview.image_url && <img src={preview.image_url} alt="" style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 6 }} />}
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "#fff" }}>{preview.player_name ?? preview.moment_id}</div>
+            <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 4 }}>
+              {preview.set_name ?? "—"}{preview.serial_number ? ` #${preview.serial_number}` : ""}{preview.mint_count ? `/${preview.mint_count}` : ""}
+            </div>
+            <div style={{ marginTop: 6, fontFamily: condensedFont, fontWeight: 800, color: "#34D399" }}>
+              {preview.fmv_usd != null ? fmtUsd(Number(preview.fmv_usd)) : "FMV unknown"}
+            </div>
+          </div>
+          <button onClick={pin} disabled={saving} style={primaryBtnStyle}>
+            {saving ? "Pinning…" : "Pin"}
+          </button>
+        </div>
+      )}
+      {error && <div style={{ color: "#F87171", fontFamily: monoFont, fontSize: 11 }}>{error}</div>}
+    </div>
+  );
+}
+
+// ── Verify by Listing ──────────────────────────────────────────────────────
+
+function VerifyByListingModal({
+  walletAddr,
+  onClose,
+  onVerified,
+}: {
+  walletAddr: string;
+  onClose: () => void;
+  onVerified: () => void;
+}) {
+  const [challenge, setChallenge] = useState<ChallengeRow | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Load (or auto-mint) a challenge on open.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`/api/profile/verify-challenge?wallet_addr=${encodeURIComponent(walletAddr)}`, { cache: "no-store" });
+        if (res.ok) {
+          const d = await res.json();
+          if (cancelled) return;
+          if (d?.challenge && !d.challenge.resolved_at && !d.challenge.expired) {
+            setChallenge(d.challenge);
+            return;
+          }
+        }
+        // No active challenge — mint one.
+        const minted = await fetch("/api/profile/verify-challenge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_addr: walletAddr }),
+        });
+        const md = await minted.json();
+        if (!minted.ok) throw new Error(md?.error ?? `HTTP ${minted.status}`);
+        if (!cancelled) setChallenge(md.challenge);
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message ?? "Failed to start verification");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [walletAddr]);
+
+  const checkNow = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/profile/verify-challenge", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_addr: walletAddr }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d?.error ?? `HTTP ${res.status}`);
+      setChallenge(d.challenge);
+      if (d.challenge?.resolved_at) onVerified();
+    } catch (e: any) {
+      setError(e?.message ?? "Check failed");
+    } finally {
+      setLoading(false);
+    }
+  }, [walletAddr, onVerified]);
+
+  const expiresMs = challenge ? new Date(challenge.expires_at).getTime() - now : 0;
+
+  return (
+    <ModalShell onClose={onClose} title={`Verify ${truncateAddress(walletAddr)} by listing`}>
+      <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.7)", lineHeight: 1.6 }}>
+        We'll prove you own this wallet by asking you to list any moment at a unique price for a few minutes. Once we see the listing in our cache, the wallet flips to verified automatically.
+      </div>
+
+      {loading && !challenge && (
+        <div style={{ textAlign: "center", padding: 24 }}><span className="rpc-spinner" /></div>
+      )}
+
+      {challenge && (
+        <div style={{ marginTop: 16, padding: 14, background: "#0a0a0a", border: "1px solid #27272a", borderRadius: 10 }}>
+          <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6 }}>
+            List any moment at exactly
+          </div>
+          <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 38, color: "#34D399", lineHeight: 1 }}>
+            ${Number(challenge.challenge_amount).toFixed(2)}
+          </div>
+          <div style={{ marginTop: 8, fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
+            On Top Shot or Flowty. We'll detect it within ~20 minutes (or click the button below to check immediately).
+          </div>
+          <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <button onClick={checkNow} disabled={loading} style={primaryBtnStyle}>
+              {loading ? "Checking…" : "Check now"}
+            </button>
+            <span style={{ fontFamily: monoFont, fontSize: 11, color: expiresMs <= 0 ? "#F87171" : "rgba(255,255,255,0.6)" }}>
+              {challenge.resolved_at
+                ? "Verified ✓"
+                : `Expires in ${formatCountdown(expiresMs)}`}
+            </span>
+          </div>
+          {challenge.resolved_at && (
+            <div style={{ marginTop: 12, color: "#34D399", fontFamily: monoFont, fontSize: 12 }}>
+              ✓ Match found{challenge.matched_moment_id ? ` (moment ${challenge.matched_moment_id})` : ""}.
+            </div>
+          )}
+        </div>
+      )}
+
+      {error && <div style={{ color: "#F87171", fontFamily: monoFont, fontSize: 11, marginTop: 10 }}>{error}</div>}
+    </ModalShell>
+  );
+}
+
+// ── Modal shell ────────────────────────────────────────────────────────────
+
+function ModalShell({ onClose, title, children }: { onClose: () => void; title: string; children: React.ReactNode }) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16 }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ width: "100%", maxWidth: 720, maxHeight: "90vh", overflow: "auto", background: "#111", border: "1px solid #27272a", borderRadius: 12, padding: 20, color: "#fff", boxShadow: "0 30px 80px rgba(0,0,0,0.7)" }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 16, letterSpacing: "0.06em", textTransform: "uppercase" }}>{title}</div>
+          <button onClick={onClose} aria-label="Close" style={{ background: "transparent", border: "none", color: "#fff", fontSize: 18, cursor: "pointer" }}>✕</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: "transparent",
+        border: "none",
+        borderBottom: `2px solid ${active ? "#34D399" : "transparent"}`,
+        color: active ? "#fff" : "rgba(255,255,255,0.55)",
+        padding: "10px 14px",
+        fontFamily: condensedFont,
+        fontWeight: 800,
+        fontSize: 12,
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        cursor: "pointer",
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
