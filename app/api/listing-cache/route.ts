@@ -467,6 +467,24 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Wallet-verification fallback resolver — any open listing-amount
+    // challenge whose amount now appears in cached_listings for the claimed
+    // wallet flips to verified. Cheap, idempotent. Runs once per Flowty
+    // sweep so users get near-real-time confirmation without a separate cron.
+    try {
+      const { data: resolved, error: resolveErr } = await supabase.rpc(
+        "resolve_wallet_verification_challenges"
+      );
+      if (resolveErr) {
+        console.log("[listing-cache] verify resolver: " + resolveErr.message);
+      } else {
+        const count = Array.isArray(resolved) ? resolved.length : 0;
+        if (count > 0) console.log("[listing-cache] resolved " + count + " wallet challenges");
+      }
+    } catch (err) {
+      console.log("[listing-cache] verify resolver threw: " + String(err));
+    }
+
     // Chain to next collection if pipeline chaining is active
     if (config.chainNext && chain) {
       await fireNextPipelineStep("/api/listing-cache?collection=" + config.chainNext, chain);

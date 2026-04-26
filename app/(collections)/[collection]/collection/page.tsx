@@ -1050,51 +1050,6 @@ export default function WalletPage() {
     return { momentRows: withFmv, totalCount: json.total_count ?? 0 }
   }
 
-  async function maybePatchProfileStats(query: string, resultRows: MomentRow[], resultSummary: WalletSearchResponse["summary"], resolvedAddress?: string | null) {
-    const key = getOwnerKey()
-    if (!key) return
-    try {
-      const res = await fetch("/api/profile/saved-wallets?ownerKey=" + encodeURIComponent(key))
-      if (!res.ok) return
-      const d = await res.json()
-      const wallets: any[] = d.wallets ?? []
-      const q = query.toLowerCase().trim()
-      const ra = resolvedAddress ? resolvedAddress.toLowerCase() : null
-      const matched = wallets.find(function(w) {
-        const addr = (w.wallet_addr ?? "").toLowerCase()
-        const user = (w.username ?? "").toLowerCase()
-        return addr === q || user === q || (ra != null && addr === ra)
-      })
-      if (!matched) return
-      let totalFmv = walletTotalFmv ?? 0
-      if (!totalFmv) {
-        for (const row of resultRows) {
-          if (typeof row.fmv === "number") totalFmv += row.fmv
-        }
-      }
-      const momentCount = resultSummary?.totalMoments ?? resultRows.length
-      const TIER_PRIORITY = ["ULTIMATE", "LEGENDARY", "RARE", "FANDOM", "COMMON"]
-      let cachedTopTier: string | null = null
-      for (const t of TIER_PRIORITY) {
-        if (resultRows.some(function(r) { return (r.tier ?? "").toUpperCase() === t })) {
-          cachedTopTier = t
-          break
-        }
-      }
-      await fetch("/api/profile/saved-wallets", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ownerKey: key,
-          walletAddr: matched.wallet_addr,
-          cachedFmv: totalFmv,
-          cachedMomentCount: momentCount,
-          cachedTopTier: cachedTopTier,
-        }),
-      })
-    } catch {}
-  }
-
   const runSearch = useCallback(async function(query: string) {
     if (!query.trim()) return
     const trimmed = query.trim()
@@ -1222,7 +1177,9 @@ export default function WalletPage() {
                 }),
               }).catch(function() {})
             }
-            maybePatchProfileStats(trimmed, liveRows, json.summary, (json as any).resolvedAddress ?? null).catch(function() {})
+            // Note: cached_fmv_usd / cached_moment_count on saved_wallets are
+            // deprecated — /profile reads live per-collection numbers from
+            // get_wallet_collection_stats instead, so no patch is needed here.
           })
           .catch(function() {})
       }
@@ -1974,15 +1931,6 @@ export default function WalletPage() {
                           {row.tier}
                         </span>
                       )}
-                      <a
-                        href={"/profile?pin=" + row.momentId}
-                        onClick={function(e) { e.stopPropagation(); }}
-                        title="Pin to Trophy Case"
-                        className="shrink-0 rounded hover:bg-zinc-900"
-                        style={{ fontSize: 11, padding: "2px 6px", color: "#F59E0B", opacity: 0.5, transition: "opacity 0.15s", textDecoration: "none", lineHeight: 1 }}
-                        onMouseEnter={function(e) { e.currentTarget.style.opacity = "1"; }}
-                        onMouseLeave={function(e) { e.currentTarget.style.opacity = "0.5"; }}
-                      >📌</a>
                       <span className="text-zinc-500 text-xs shrink-0">{expanded ? "▾" : "›"}</span>
                     </div>
                   </div>
@@ -2448,7 +2396,6 @@ export default function WalletPage() {
                                 {summary && (
                                   <a href={"/nba-top-shot/sets?wallet=" + encodeURIComponent(input.trim())} className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-400 hover:bg-zinc-900">View Set Progress →</a>
                                 )}
-                                <a href={"/profile?pin=" + row.momentId} className="block rounded-lg border border-yellow-800 bg-yellow-950/30 px-3 py-1.5 text-center text-xs font-semibold text-yellow-400 hover:bg-yellow-950/60">⭐ Pin to Trophy Case</a>
                               </div>
                             </div>
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">

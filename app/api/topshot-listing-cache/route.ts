@@ -345,6 +345,23 @@ async function runListingCache() {
     console.log(`[topshot-listing-cache] fmv-recalc threw: ${String(err)}`)
   }
 
+  // Wallet-verification fallback: any unresolved listing-amount challenge
+  // whose challenge_amount now appears in cached_listings for the claimed
+  // wallet gets flipped to verified by this RPC. Cheap, idempotent.
+  try {
+    const { data: resolved, error: resolveErr } = await supabaseAdmin.rpc(
+      "resolve_wallet_verification_challenges"
+    )
+    if (resolveErr) {
+      console.log(`[topshot-listing-cache] verify resolver: ${resolveErr.message}`)
+    } else {
+      const count = Array.isArray(resolved) ? resolved.length : 0
+      if (count > 0) console.log(`[topshot-listing-cache] resolved ${count} wallet challenges`)
+    }
+  } catch (err) {
+    console.log(`[topshot-listing-cache] verify resolver threw: ${String(err)}`)
+  }
+
   } catch (err) {
     stats.ok = false
     stats.errorMsg = err instanceof Error ? err.message : String(err)
