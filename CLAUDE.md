@@ -183,7 +183,7 @@ git push origin <branch>
 - app/api/fmv/route.ts — FMV lookup endpoint
 - app/api/support-chat/route.ts — AI concierge (8 tools, Claude Sonnet)
 - workers/topshot-proxy/ — Cloudflare Worker (committed but NOT yet deployed)
-- .github/workflows/ — cron jobs (ingest, alerts, weekly report)
+- CI/CD: GitHub Actions workflows in .github/workflows/ — rpc-pipeline.yml, ops-monitor.yml, pipeline-sentinel.yml, alert-checker.yml, allday-ingest.yml, pinnacle-owner-discovery.yml, ts-listing-ingest.yml, smoke-tests.yml. Several other workflows (social-bot.yml, listing-alert-bot.yml, pack-drop-bot.yml, portfolio-digest.yml, rpc-report.yml, twitter-deal-bot.yml) exist as .disabled and are intentionally not running.
 
 ---
 
@@ -344,9 +344,9 @@ Telegram sentinel bot: @rpc_sentinel_bot, chat_id 1755958876
 
 Main branch is the canonical clean branch. Latest production deploy: commit f6ca38a.
 
-1. Top Shot proxy not deployed — workers/topshot-proxy/ committed but wrangler deploy never run
-   Missing env vars: TS_PROXY_URL, TS_PROXY_SECRET
-   Remediation: wrangler login && wrangler deploy → wrangler secret put PROXY_SECRET → set env vars via Vercel REST → redeploy
+1. Top Shot proxy deployed and live, but secret mismatch — worker is up; the value in `.env.local` (TS_PROXY_SECRET) does not match the worker's `AUTH_SECRET`.
+   Local dev appears to work via a direct (non-proxied) fallback path, masking the mismatch.
+   Remediation: align secrets before any CI/server run that can't take the fallback — pull the live worker secret (`wrangler secret list` / re-run `wrangler secret put AUTH_SECRET`) and update `TS_PROXY_SECRET` in `.env.local` and Vercel envs (production/preview/development) to match. Confirm `TS_PROXY_URL` points at the deployed worker URL.
 
 2. Cart execution blocked — needs NEXT_PUBLIC_WALLETCONNECT_ID (register at dashboard.reown.com) + Dapper co-signer registration
 

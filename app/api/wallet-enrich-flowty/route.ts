@@ -206,6 +206,19 @@ async function fetchFlowtyPage(from: number, sort: FlowtyPageSort): Promise<{ it
     console.log("[wallet-enrich] Flowty body: " + JSON.stringify(requestBody))
   }
 
+  // 429-aware single retry: if the upstream returns 429 or a rate-limit body,
+  // sleep 1500ms and try once more before giving up. Routed through the same
+  // error path the rest of the function uses so the retry actually fires
+  // before the debug-object-return swallows it.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    items.length = 0
+    debug.httpStatus = null
+    debug.error = null
+    debug.rawSample = null
+    debug.responseKeys = null
+    debug.itemCount = 0
+    debug.parsedCount = 0
+
   try {
     const controller = new AbortController()
     const timeout = setTimeout(function () { controller.abort() }, 10000)
@@ -221,6 +234,13 @@ async function fetchFlowtyPage(from: number, sort: FlowtyPageSort): Promise<{ it
 
     const rawText = await res.text()
     debug.rawSample = rawText.substring(0, 500)
+
+    const isRateLimited = res.status === 429 || /rate.?limit|too many requests/i.test(rawText)
+    if (isRateLimited && attempt === 0) {
+      console.log("[wallet-enrich] Flowty 429/rate-limit sort=" + sort.path + " from=" + from + " status=" + res.status + " — retrying after 1500ms")
+      await new Promise(function (r) { setTimeout(r, 1500) })
+      continue
+    }
 
     if (!res.ok) {
       debug.error = "HTTP " + res.status + " " + res.statusText
@@ -315,21 +335,34 @@ async function fetchFlowtyPage(from: number, sort: FlowtyPageSort): Promise<{ it
     debug.parsedCount = items.length
     return { items, debug }
   } catch (err) {
-    debug.error = "exception: " + (err instanceof Error ? err.message : String(err))
-    console.log("[wallet-enrich] Flowty sort=" + sort.path + " from=" + from + " exception: " + (err instanceof Error ? err.message : String(err)))
+    const msg = err instanceof Error ? err.message : String(err)
+    if (attempt === 0 && /rate.?limit|too many requests|429/i.test(msg)) {
+      console.log("[wallet-enrich] Flowty rate-limit exception sort=" + sort.path + " from=" + from + " — retrying after 1500ms")
+      await new Promise(function (r) { setTimeout(r, 1500) })
+      continue
+    }
+    debug.error = "exception: " + msg
+    console.log("[wallet-enrich] Flowty sort=" + sort.path + " from=" + from + " exception: " + msg)
     return { items, debug }
   }
+  }
+
+  if (!debug.error) debug.error = "retry exhausted with no terminal result"
+  return { items, debug }
 }
 
 type FlowtyDebugSummary = {
   totalItems: number
   uniqueEditions: number
   pagesFetched: number
+  pagesExpected: number
+  pagesSkipped: number
+  partial: boolean
   pageDebug: FlowtyPageDebug[]
   requestUrl: string
 }
 
-async function fetchAllFlowtyData(): Promise<{
+async function fetchAllFlowtyData(deadline: number): Promise<{
   editionKeyMap: Map<string, FlowtyEditionData>
   tierMatchMap: Map<string, FlowtyEditionData>
   fullMatchMap: Map<string, FlowtyEditionData>
@@ -355,9 +388,12 @@ async function fetchAllFlowtyData(): Promise<{
 
   let totalItems = 0
   let totalPagesFetched = 0
+  let partial = false
   const allPageDebug: FlowtyPageDebug[] = []
 
   for (const sort of sorts) {
+    if (partial) break
+
     console.log("[wallet-enrich] Starting Flowty pass: sort=" + sort.path + " direction=" + sort.direction + " pages=" + PAGES_PER_PASS)
 
     // Build all offsets for this pass
@@ -368,8 +404,24 @@ async function fetchAllFlowtyData(): Promise<{
 
     // Fetch in parallel batches of BATCH_SIZE
     for (let b = 0; b < offsets.length; b += BATCH_SIZE) {
+      // Wall-clock deadline guard. Returns partial results before the function
+      // timeout fires so retries don't pile up against the same slow upstream.
+      if (Date.now() > deadline) {
+        partial = true
+        console.log("[wallet-enrich] deadline tripped: sort=" + sort.path + " batch_offset=" + b + " — returning partial Flowty results")
+        break
+      }
       const batch = offsets.slice(b, b + BATCH_SIZE)
-      const results = await Promise.all(batch.map(function (o) { return fetchFlowtyPage(o, sort) }))
+      const settled = await Promise.allSettled(batch.map(function (o) { return fetchFlowtyPage(o, sort) }))
+      const results = settled.map(function (s, idx) {
+        if (s.status === "fulfilled") return s.value
+        const reason = s.reason instanceof Error ? s.reason.message : String(s.reason)
+        console.log("[wallet-enrich] Flowty page rejected unexpectedly sort=" + sort.path + " from=" + batch[idx] + " reason=" + reason)
+        return {
+          items: [] as Array<{ editionKey: string | null; matchKey: string; baseKey: string; fullMatchKey: string; tierMatchKey: string; data: FlowtyEditionData }>,
+          debug: { from: batch[idx], sortPath: sort.path, httpStatus: null, error: "unhandled rejection: " + reason, rawSample: null, responseKeys: null, itemCount: 0, parsedCount: 0 } as FlowtyPageDebug,
+        }
+      })
 
       let batchEmpty = true
       for (const page of results) {
@@ -431,6 +483,9 @@ async function fetchAllFlowtyData(): Promise<{
     console.log("[wallet-enrich] Pass sort=" + sort.path + " done: editionKeyMap=" + editionKeyMap.size + " tierMatchMap=" + tierMatchMap.size + " fullMatchMap=" + fullMatchMap.size + " nameMatchMap=" + nameMatchMap.size)
   }
 
+  const pagesExpected = PAGES_PER_PASS * sorts.length
+  const pagesSkipped = Math.max(0, pagesExpected - totalPagesFetched)
+
   return {
     editionKeyMap,
     tierMatchMap,
@@ -440,6 +495,9 @@ async function fetchAllFlowtyData(): Promise<{
       totalItems,
       uniqueEditions: editionKeyMap.size,
       pagesFetched: totalPagesFetched,
+      pagesExpected,
+      pagesSkipped,
+      partial,
       pageDebug: allPageDebug,
       requestUrl: FLOWTY_ENDPOINT,
     },
@@ -450,6 +508,11 @@ async function fetchAllFlowtyData(): Promise<{
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now()
+  // Wall-clock deadline. Vercel observed cap is somewhere ≤ 60s on this route
+  // even though maxDuration=120 is declared; 50s leaves headroom regardless of
+  // the real cap so partial results can return before the platform terminates
+  // the function.
+  const deadline = startTime + 50000
 
   let walletInput: string
   try {
@@ -628,7 +691,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Step 3: Fetch Flowty data (PRIMARY source) — 50 pages × 2 passes (blockTimestamp desc + salePrice asc)
-  const { editionKeyMap: flowtyByKey, tierMatchMap: flowtyByTier, fullMatchMap: flowtyByFull, nameMatchMap: flowtyByName, debugSummary: flowtyDebug } = await fetchAllFlowtyData()
+  const { editionKeyMap: flowtyByKey, tierMatchMap: flowtyByTier, fullMatchMap: flowtyByFull, nameMatchMap: flowtyByName, debugSummary: flowtyDebug } = await fetchAllFlowtyData(deadline)
   console.log("[wallet-enrich] flowty: " + flowtyDebug.totalItems + " items across " + flowtyDebug.pagesFetched + " pages, " + flowtyByKey.size + " by editionKey, " + flowtyByTier.size + " by tierMatch, " + flowtyByFull.size + " by fullMatch, " + flowtyByName.size + " by name")
 
   // Step 4: Match wallet editions to Flowty data
@@ -818,6 +881,7 @@ export async function POST(req: NextRequest) {
 
   const duration = Date.now() - startTime
   console.log("[wallet-enrich] DONE: enriched=" + enriched + " written=" + writeSucceeded + " tierUpdated=" + tierUpdated + " errors=" + writeErrors.length + " duration=" + duration + "ms")
+  console.log("[wallet-enrich] input=" + walletInput + " completed: ok=" + enriched + " pages=" + flowtyDebug.pagesFetched + "/" + flowtyDebug.pagesExpected + " elapsed=" + duration + "ms partial=" + flowtyDebug.partial)
 
   // Summarize Flowty page debug: only include first page rawSample + any error pages
   const flowtyPageSummary = flowtyDebug.pageDebug
@@ -843,8 +907,13 @@ export async function POST(req: NextRequest) {
     if (ek) sampleEditions.push({ editionKey: ek, fmv_usd: row.fmv_usd as number })
   }
 
+  const partialFields: { partial?: true; skippedCount?: number } = flowtyDebug.partial
+    ? { partial: true, skippedCount: flowtyDebug.pagesSkipped }
+    : {}
+
   const diagnostics = {
     ok: true,
+    ...partialFields,
     input: walletInput,
     wallet,
     unique_editions: uniqueKeys.length,
