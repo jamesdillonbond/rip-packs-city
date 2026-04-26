@@ -182,7 +182,7 @@ git push origin <branch>
 - app/api/sniper-feed/route.ts — merges Top Shot GQL + Flowty listings
 - app/api/fmv/route.ts — FMV lookup endpoint
 - app/api/support-chat/route.ts — AI concierge (8 tools, Claude Sonnet)
-- workers/topshot-proxy/ — Cloudflare Worker (committed but NOT yet deployed)
+- workers/topshot-proxy/ — Cloudflare Worker, live at https://topshot-proxy.tdillonbond.workers.dev. Routes: POST / or POST /topshot → public-api.nbatopshot.com/graphql, POST /allday → public-api.nflallday.com/graphql. Auth: X-Proxy-Secret header must match worker's PROXY_SECRET (synced with TS_PROXY_SECRET in .env.local). Sibling workers pinnacle-proxy and spork-proxy share the same workers/ directory but were not verified during the topshot-proxy fix — secret state for those is unknown but they are not currently blocking anything.
 - CI/CD: GitHub Actions workflows in .github/workflows/ — rpc-pipeline.yml, ops-monitor.yml, pipeline-sentinel.yml, alert-checker.yml, allday-ingest.yml, pinnacle-owner-discovery.yml, ts-listing-ingest.yml, smoke-tests.yml. Several other workflows (social-bot.yml, listing-alert-bot.yml, pack-drop-bot.yml, portfolio-digest.yml, rpc-report.yml, twitter-deal-bot.yml) exist as .disabled and are intentionally not running.
 
 ---
@@ -256,7 +256,7 @@ File: app/api/sniper-feed/route.ts
 - SniperDeal has source: "topshot" | "flowty"
 - Flowty FMV fallback to Supabase when LiveToken null/zero
 - Retired moments excluded
-- tsCount: 0 on every call = Top Shot proxy not yet deployed (Cloudflare blocks Vercel IPs)
+- tsCount: 0 on every call = Top Shot proxy returning empty/auth-rejected; check worker reachability and X-Proxy-Secret ↔ PROXY_SECRET alignment (Cloudflare blocks Vercel IPs from hitting public-api directly, so the proxy is the only path)
 
 ---
 
@@ -344,29 +344,24 @@ Telegram sentinel bot: @rpc_sentinel_bot, chat_id 1755958876
 
 Main branch is the canonical clean branch. Latest production deploy: commit f6ca38a.
 
-1. Top Shot proxy deployed and live, but secret mismatch — worker is up; the value in `.env.local` (TS_PROXY_SECRET) does not match the worker's `AUTH_SECRET`.
-   Local dev appears to work via a direct (non-proxied) fallback path, masking the mismatch.
-   Remediation: align secrets before any CI/server run that can't take the fallback — pull the live worker secret (`wrangler secret list` / re-run `wrangler secret put AUTH_SECRET`) and update `TS_PROXY_SECRET` in `.env.local` and Vercel envs (production/preview/development) to match. Confirm `TS_PROXY_URL` points at the deployed worker URL.
+1. Cart execution blocked — needs NEXT_PUBLIC_WALLETCONNECT_ID (register at dashboard.reown.com) + Dapper co-signer registration
 
-2. Cart execution blocked — needs NEXT_PUBLIC_WALLETCONNECT_ID (register at dashboard.reown.com) + Dapper co-signer registration
+2. Twitter deal bot — lib/twitter/post.ts shipped, posted_deals table exists, needs cron trigger
 
-3. Twitter deal bot — lib/twitter/post.ts shipped, posted_deals table exists, needs cron trigger
+3. ~3,600 editions missing onchain IDs; 42 badge_editions rows with no player name
 
-4. ~3,600 editions missing onchain IDs; 42 badge_editions rows with no player name
-
-5. Sentry error capture inactive — `@sentry/nextjs ^10.47.0` is wired (sentry.client/server/edge.config.ts all reference `NEXT_PUBLIC_SENTRY_DSN`) but no DSN set in Vercel env. SDK is current; only blocker is creating a Sentry project (or locating the existing one) and pasting its DSN as `NEXT_PUBLIC_SENTRY_DSN` for production/preview/development. `Sentry.init` is gated by `enabled: NODE_ENV === "production"` and falls back to `""` when DSN is absent, so prod is silently dropping events today.
+4. Sentry error capture inactive — `@sentry/nextjs ^10.47.0` is wired (sentry.client/server/edge.config.ts all reference `NEXT_PUBLIC_SENTRY_DSN`) but no DSN set in Vercel env. SDK is current; only blocker is creating a Sentry project (or locating the existing one) and pasting its DSN as `NEXT_PUBLIC_SENTRY_DSN` for production/preview/development. `Sentry.init` is gated by `enabled: NODE_ENV === "production"` and falls back to `""` when DSN is absent, so prod is silently dropping events today.
 
 ---
 
 ## Prioritized next actions
 
-1. Deploy Cloudflare Worker proxy (restore tsCount > 0)
-2. Cart execution (WalletConnect ID + Dapper registration)
-3. Austin Kline FMV API outreach (demo URL live)
-4. Twitter deal bot activation (add cron trigger)
-5. LLC formation (Oregon, Milwaukie)
-6. RPC Pro monetization ($9/month freemium gate)
-7. Custom domain rippackscity.com (affects Resend + Supabase auth redirects)
+1. Cart execution (WalletConnect ID + Dapper registration)
+2. Austin Kline FMV API outreach (demo URL live)
+3. Twitter deal bot activation (add cron trigger)
+4. LLC formation (Oregon, Milwaukie)
+5. RPC Pro monetization ($9/month freemium gate)
+6. Custom domain rippackscity.com (affects Resend + Supabase auth redirects)
 
 ---
 
