@@ -21,6 +21,19 @@ Repo: github.com/jamesdillonbond/rip-packs-city (public)
 
 ## Recent sessions
 
+### April 26, 2026 — Flowty failed-tx monitor
+
+**Flowty failed-tx monitor (Apr 26):**
+- `/api/flowty-tx-scanner` — block scanner running every 5 min via cron-job.org. Scans for txs touching Flowty's NFTStorefrontV2 fork (`0x3cdbb3d569211ff3`) or Dapper's NFTStorefrontV2 (`0x4eb8a10cb9f87357`). Captures successes (lightweight) and failures (full classified rows).
+- `/api/wallet-preflight?address=...&collection=...&count=N` — pre-flight diagnostic preventing `STORAGE_CAPACITY_EXCEEDED` and other readiness failures before bulk-list submission. Calibrated `bytesPerListing=500` from on-chain `ListingDetails` field-level analysis.
+- `/api/flowty-monitor/status` — unified JSON endpoint over the dashboard views; bearer-auth gated.
+- Tables: `flowty_transactions` (year-irrelevant, primary by `tx_hash`), `flowty_scanner_state` (single-row cron position).
+- Views: `flowty_scanner_health` (HEALTHY/LAGGING/STALE), `flowty_daily_summary`, `flowty_failure_summary` (with denominator + `failure_rate_pct`), `flowty_top_failing_wallets`, `flowty_storage_cap_cohort`, `flowty_gas_funds_cohort` (1118 errors, distinct from in-execution INSUFFICIENT_BALANCE).
+- Classifier: `lib/flowty-tx-classifier.ts` — 15 categories; collection inference is event-payload-first (authoritative `nftType`) with script-import fallback.
+- Known: failure rows often classify as `collection: unknown` because failed txs don't emit `ListingCompleted` events. Successes hit 100%.
+
+---
+
 ### April 21, 2026 — Storefront Audit Pipeline Session (Flowty ecosystem health)
 
 Shipped
@@ -194,6 +207,10 @@ Year-partitioned: sales_2020 through sales_2026.
 ### badge_editions table
 Has: player_name, badge_type, series_number.
 Use .or() with ilike for case-insensitive player name matching. Always .trim() player names.
+
+### flowty_transactions table
+- `flowty_transactions.failure_category` is unconstrained TEXT; valid values are the `FailureCategory` union in `lib/flowty-tx-classifier.ts`. Adding a new category requires updating both the type union and at least one regex rule. Order matters in the `RULES` array — first match wins, so put more specific patterns above broader ones (e.g. INSUFFICIENT_GAS_FUNDS before INSUFFICIENT_BALANCE).
+- Flow Error Code 1118 is a payer-gas error (pre-execution, transaction submission failure), distinct from in-execution Cadence errors. Categorized as `INSUFFICIENT_GAS_FUNDS`. Different remediation than DUC vault failures.
 
 ### General rules
 - apply_migration for DDL; execute_sql for reads/verification
