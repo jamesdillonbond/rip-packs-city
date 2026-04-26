@@ -13,6 +13,7 @@ export type FailureCategory =
   | "LISTING_ALREADY_PURCHASED"
   | "PRICE_DRIFT"
   | "INSUFFICIENT_BALANCE"
+  | "INSUFFICIENT_GAS_FUNDS"
   | "MISSING_DUC_VAULT"
   | "EXPIRED_LISTING"
   | "AUTH_FAILURE"
@@ -70,6 +71,16 @@ const RULES: Array<{ category: FailureCategory; pattern: RegExp }> = [
     pattern:
       /price.*(?:does not match|differs|changed)|expected price|price.*assertion.*failed|sale price.*mismatch/i,
   },
+  {
+    category: "INSUFFICIENT_GAS_FUNDS",
+    pattern:
+      /\[Error Code:\s*1118\]|payer\s+[0-9a-f]{16}\s+has\s+insufficient\s+balance\s+to\s+attempt\s+transaction\s+execution|insufficient\s+balance\s+to\s+attempt\s+transaction/i,
+  },
+  // INSUFFICIENT_BALANCE is for in-execution Cadence failures where a vault
+  // (typically DUC for purchases) is short. INSUFFICIENT_GAS_FUNDS above
+  // catches the pre-execution payer-gas error (code 1118). Order matters
+  // because the regex below would otherwise eat 1118 errors via "insufficient
+  // balance" substring.
   {
     category: "INSUFFICIENT_BALANCE",
     pattern:
