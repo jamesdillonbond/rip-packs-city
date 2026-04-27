@@ -83,7 +83,7 @@ type AlldayMarketRow = {
   total_listings: number
 }
 
-const AD_GQL_QUERY = `query SearchMarketplaceEditions($first: Int!, $after: String, $sortBy: EditionSortBy) {
+const AD_GQL_QUERY = `query SearchMarketplaceEditions($first: Int!, $after: String, $sortBy: MarketplaceEditionSortType) {
   searchMarketplaceEditions(input: { first: $first, after: $after, sortBy: $sortBy }) {
     totalCount
     pageInfo { endCursor hasNextPage }
@@ -525,6 +525,9 @@ async function runListingCache() {
             return { external_id: m.edition_flow_id, low_ask: lowAsk }
           })
           .filter((x): x is { external_id: string; low_ask: number } => x !== null)
+        console.log(
+          `[allday-badge-aggregator] payload size=${badgePayload.length} sample=${JSON.stringify(badgePayload.slice(0, 3))}`
+        )
         if (badgePayload.length > 0) {
           const { data, error } = await supabaseAdmin.rpc(
             "update_badge_low_ask_by_external",
