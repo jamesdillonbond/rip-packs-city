@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { getCollection, publishedCollections, type Collection } from "@/lib/collections"
 import { CollectionTabBar } from "@/components/collection-tab-bar"
-import { collectionLayoutMetadata } from "@/lib/seo"
+import { collectionLayoutMetadata, collectionPageJsonLd } from "@/lib/seo"
 import ActiveCollectionSync from "./ActiveCollectionSync"
 import CollectionSwitcher from "@/components/CollectionSwitcher"
 import WalletHydrator from "@/components/WalletHydrator"
@@ -61,8 +61,17 @@ export default async function CollectionSegmentLayout(props: any) {
     )
   }
 
+  // CollectionPage + BreadcrumbList JSON-LD for every page under
+  // /[collection]/*. Inlined as a <script> so search engines consume it on
+  // SSR — Google's Rich Results Test will validate against this exact block.
+  const jsonLd = collectionPageJsonLd(collection.id)
+
   return (
     <div data-collection={collection.id}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <ActiveCollectionSync collectionId={collection.id} />
       <WalletHydrator />
       <CollectionTicker collection={collection} />
