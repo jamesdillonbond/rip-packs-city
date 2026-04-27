@@ -98,11 +98,15 @@ const AD_GQL_QUERY = `query SearchMarketplaceEditions($first: Int!, $after: Stri
   }
 }`
 
-async function fetchAlldayMarketplaceAllPages(): Promise<AlldayMarketRow[]> {
+async function fetchAlldayMarketplaceAllPages(): Promise<{
+  rows: AlldayMarketRow[]
+  complete: boolean
+}> {
   const url = AD_GQL_PROXY || AD_GQL_FALLBACK
   const useProxy = !!AD_GQL_PROXY
   const rows: AlldayMarketRow[] = []
   let cursor: string | null = null
+  let complete = false
 
   for (let pageNum = 0; pageNum < AD_GQL_MAX_PAGES; pageNum++) {
     const headers: Record<string, string> = { "Content-Type": "application/json" }
@@ -169,13 +173,16 @@ async function fetchAlldayMarketplaceAllPages(): Promise<AlldayMarketRow[]> {
       })
     }
 
-    if (!data.pageInfo?.hasNextPage) break
+    if (!data.pageInfo?.hasNextPage) {
+      complete = true
+      break
+    }
     const next = data.pageInfo.endCursor
     if (!next) break
     cursor = String(next)
   }
 
-  return rows
+  return { rows, complete }
 }
 
 function delay(ms: number) {
@@ -262,6 +269,8 @@ async function runListingCache() {
       editions_fetched: 0,
     },
     badge_low_ask_updated: 0,
+    badge_low_ask_cleared: 0,
+    marketplace_complete: false,
   }
 
   try {
@@ -482,8 +491,10 @@ async function runListingCache() {
   // Phase 2: populate marketplace FMV snapshots from the AllDay GQL marketplace
   // endpoint. Best-effort — failures here must not fail the overall pipeline.
   try {
-    const marketRows = await fetchAlldayMarketplaceAllPages()
+    const { rows: marketRows, complete: marketComplete } =
+      await fetchAlldayMarketplaceAllPages()
     stats.fmv_populated.editions_fetched = marketRows.length
+    stats.marketplace_complete = marketComplete
     if (marketRows.length > 0) {
       for (let i = 0; i < marketRows.length; i += FMV_UPSERT_CHUNK) {
         const chunk = marketRows.slice(i, i + FMV_UPSERT_CHUNK)
@@ -546,6 +557,37 @@ async function runListingCache() {
               `[allday-listing-cache] badge_editions.low_ask updated: ${stats.badge_low_ask_updated} of ${badgePayload.length} candidates`
             )
           }
+        }
+
+        // Clear-stale path: rows whose external_id is not in the current
+        // marketplace fetch had their listings sold/pulled — clear low_ask
+        // back to NULL so the count reflects live market depth instead of
+        // staying frozen at first-seen values. Only safe when the upstream
+        // pagination exited cleanly; a partial fetch would wipe legitimate
+        // rows beyond the truncation point.
+        if (marketComplete) {
+          const presentIds = badgePayload.map((p) => p.external_id)
+          const { data: clearedData, error: clearErr } = await supabaseAdmin.rpc(
+            "clear_badge_low_ask_missing",
+            {
+              p_collection_id: AD_COLLECTION_ID,
+              p_present_external_ids: presentIds as any,
+            }
+          )
+          if (clearErr) {
+            console.log(
+              `[allday-listing-cache] clear_badge_low_ask_missing error: ${clearErr.message}`
+            )
+          } else {
+            stats.badge_low_ask_cleared = Number(clearedData ?? 0) || 0
+            console.log(
+              `[allday-listing-cache] badge_editions.low_ask cleared (stale): ${stats.badge_low_ask_cleared}`
+            )
+          }
+        } else {
+          console.log(
+            "[allday-listing-cache] marketplace fetch incomplete — skipping clear-stale to avoid wiping legitimate rows"
+          )
         }
       } catch (err) {
         console.log(
@@ -618,6 +660,8 @@ async function runListingCache() {
           fmv_sales_called: stats.fmvSalesCalled,
           fmv_populated: stats.fmv_populated,
           badge_low_ask_updated: stats.badge_low_ask_updated,
+          badge_low_ask_cleared: stats.badge_low_ask_cleared,
+          marketplace_complete: stats.marketplace_complete,
           duration_ms: Date.now() - startedAt,
         },
       })
