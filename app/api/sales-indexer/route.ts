@@ -75,15 +75,16 @@ async function writePipelineRun(args: {
   cursorAfter: number | null
   extra: Record<string, unknown>
 }): Promise<void> {
-  const finishedAtMs = Date.now()
-  const startedAtMs = new Date(args.startedAt).getTime()
+  // duration_ms is a GENERATED column — passing it on insert returns
+  // 428C9 "cannot insert a non-DEFAULT value into column duration_ms",
+  // which the previous version silently swallowed and lost the entire row.
+  // We let Postgres compute it from started_at + finished_at.
   try {
-    await (supabaseAdmin as any).from("pipeline_runs").insert({
+    const { error } = await (supabaseAdmin as any).from("pipeline_runs").insert({
       pipeline: PIPELINE_NAME,
       collection_slug: "nba-top-shot",
       started_at: args.startedAt,
-      finished_at: new Date(finishedAtMs).toISOString(),
-      duration_ms: Math.max(0, finishedAtMs - startedAtMs),
+      finished_at: new Date().toISOString(),
       rows_found: args.rowsFound,
       rows_written: args.rowsWritten,
       rows_skipped: args.rowsSkipped,
@@ -93,8 +94,11 @@ async function writePipelineRun(args: {
       error: args.error,
       extra: args.extra,
     })
+    if (error) {
+      console.log("[sales-indexer] pipeline_runs insert error: code=" + ((error as any).code ?? "?") + " msg=" + (error.message ?? "?").slice(0, 200))
+    }
   } catch (err) {
-    console.log("[sales-indexer] pipeline_runs insert failed: " + (err instanceof Error ? err.message : String(err)))
+    console.log("[sales-indexer] pipeline_runs insert threw: " + (err instanceof Error ? err.message : String(err)))
   }
 }
 
