@@ -473,8 +473,14 @@ async function runSmokeTests() {
       : { name: `test ${i + 1}`, passed: false, detail: (s.reason as Error)?.message ?? String(s.reason) }
   );
 
+  // Only log RLS results that actually failed — a passing RLS denial is the
+  // smoke test verifying intended behavior and shouldn't pollute the log feed.
+  // The error-level surface is reserved for actionable regressions (e.g. an
+  // anon write that succeeded when it should have been blocked).
   for (const r of results) {
-    if (r.name.startsWith("RLS")) console.log(`[smoke-test] ${r.name}: ${r.passed} ${r.detail}`);
+    if (r.name.startsWith("RLS") && !r.passed) {
+      console.error(`[smoke-test] ${r.name}: REGRESSION — ${r.detail}`);
+    }
   }
 
   // Push hard failures to Sentry so Trevor gets notified instead of needing
