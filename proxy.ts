@@ -10,17 +10,14 @@ const ALLOWED_ORIGINS = [
 
 const CORS_API_PATHS = ["/api/fmv", "/api/sniper-feed", "/api/health"];
 
-// Published collection slugs — kept in sync with lib/collections.ts.
-// Any path whose first segment is one of these requires a Supabase session.
-// Unpublished collections render a "coming soon" shell in the layout, so
-// they're gated too (sign-in still required to see the placeholder).
-const COLLECTION_SLUGS = new Set<string>([
-  "nba-top-shot",
-  "nfl-all-day",
-  "laliga-golazos",
-  "disney-pinnacle",
-  "ufc",
-]);
+// Collection-prefixed pages were previously auth-gated. Now they're public:
+// every browse/market/analytics/sniper/badges/sets/packs/overview/collection
+// page renders with full SSR data for anonymous traffic so search crawlers
+// (and humans without an account) can index + use them. Personalization
+// features inside those pages stay client-gated (e.g. Save-to-Watchlist,
+// Set-Alert, Buy buttons render "Sign in to save" CTAs when auth.uid() is
+// null). Profile editor, trophy management, and per-user write APIs remain
+// gated below via the requiresAuth check.
 
 // ── Rate limiting (in-memory, per-IP) ────────────────────────────────────────
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -91,19 +88,13 @@ function applySecurityHeaders(response: NextResponse) {
 
 // ── Route gating — does this path require a signed-in user? ──────────────────
 // Gate:
-//   • /profile (exact, the editor — not /profile/[username] which is public)
-//   • /[collection]/* where collection is a known slug (nba-top-shot, etc.)
-// Everything else (homepage, share pages, API routes, _next, auth callback,
-// public profile pages) is open. API handlers that need a user call
-// requireUser() themselves — this keeps latency off public API hot paths.
+//   • /profile (exact, the editor — /profile/[username] is the public profile page)
+// Everything else — collection browse/market/analytics/sniper/etc., public
+// profiles, share pages, API routes, _next, the auth callback — is open.
+// Auth-only API handlers call requireUser() themselves so latency stays off
+// the public API hot paths.
 function requiresAuth(pathname: string): boolean {
-  // /profile editor (exact match or trailing slash only). /profile/[username] passes through.
   if (pathname === "/profile" || pathname === "/profile/") return true;
-
-  // Collection-scoped pages: first path segment must match a known collection slug.
-  const seg = pathname.split("/")[1] ?? "";
-  if (COLLECTION_SLUGS.has(seg)) return true;
-
   return false;
 }
 
