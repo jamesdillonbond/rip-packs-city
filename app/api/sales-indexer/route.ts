@@ -60,10 +60,49 @@ function toIsoTimestamp(ts: string | number | Date): string {
   return new Date().toISOString()
 }
 
+// ── Pipeline observability ────────────────────────────────────────────────────
+
+const PIPELINE_NAME = "topshot-sales-indexer"
+
+async function writePipelineRun(args: {
+  startedAt: string
+  rowsFound: number
+  rowsWritten: number
+  rowsSkipped: number
+  ok: boolean
+  error: string | null
+  cursorBefore: number | null
+  cursorAfter: number | null
+  extra: Record<string, unknown>
+}): Promise<void> {
+  const finishedAtMs = Date.now()
+  const startedAtMs = new Date(args.startedAt).getTime()
+  try {
+    await (supabaseAdmin as any).from("pipeline_runs").insert({
+      pipeline: PIPELINE_NAME,
+      collection_slug: "nba-top-shot",
+      started_at: args.startedAt,
+      finished_at: new Date(finishedAtMs).toISOString(),
+      duration_ms: Math.max(0, finishedAtMs - startedAtMs),
+      rows_found: args.rowsFound,
+      rows_written: args.rowsWritten,
+      rows_skipped: args.rowsSkipped,
+      cursor_before: args.cursorBefore != null ? String(args.cursorBefore) : null,
+      cursor_after: args.cursorAfter != null ? String(args.cursorAfter) : null,
+      ok: args.ok,
+      error: args.error,
+      extra: args.extra,
+    })
+  } catch (err) {
+    console.log("[sales-indexer] pipeline_runs insert failed: " + (err instanceof Error ? err.message : String(err)))
+  }
+}
+
 // ── Route ─────────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   const start = Date.now()
+  const startedAtIso = new Date(start).toISOString()
   const debugMode = req.nextUrl.searchParams.get("debug") === "true"
   const chain = req.nextUrl.searchParams.get("chain") === "true"
 
@@ -104,6 +143,17 @@ export async function POST(req: NextRequest) {
     const targetHeight = Math.min(lastBlock + MAX_BLOCKS_PER_RUN, currentHeight)
 
     if (lastBlock >= currentHeight) {
+      await writePipelineRun({
+        startedAt: startedAtIso,
+        rowsFound: 0,
+        rowsWritten: 0,
+        rowsSkipped: 0,
+        ok: true,
+        error: null,
+        cursorBefore: lastBlock,
+        cursorAfter: lastBlock,
+        extra: { reason: "already_up_to_date", current_height: currentHeight },
+      })
       await fireNextPipelineStep("/api/fmv-recalc", chain)
       return NextResponse.json({
         ok: true,
@@ -233,6 +283,17 @@ export async function POST(req: NextRequest) {
         .update({ last_processed_block: targetHeight, updated_at: new Date().toISOString() })
         .eq("id", "topshot_sales")
 
+      await writePipelineRun({
+        startedAt: startedAtIso,
+        rowsFound: 0,
+        rowsWritten: 0,
+        rowsSkipped: 0,
+        ok: true,
+        error: null,
+        cursorBefore: lastBlock,
+        cursorAfter: targetHeight,
+        extra: { reason: "no_events", blocks_scanned: targetHeight - lastBlock },
+      })
       await fireNextPipelineStep("/api/fmv-recalc", chain)
       return NextResponse.json({
         ok: true,
@@ -514,6 +575,24 @@ export async function POST(req: NextRequest) {
       .update({ last_processed_block: targetHeight, updated_at: new Date().toISOString() })
       .eq("id", "topshot_sales")
 
+    await writePipelineRun({
+      startedAt: startedAtIso,
+      rowsFound: matchingEvents.length,
+      rowsWritten: inserted,
+      rowsSkipped: duped + unresolvedIds.length,
+      ok: true,
+      error: null,
+      cursorBefore: lastBlock,
+      cursorAfter: targetHeight,
+      extra: {
+        sales_resolved: salesBatch.length,
+        gql_resolved: gqlResolvedMap.size,
+        duped: duped,
+        unresolved_count: unresolvedIds.length,
+        blocks_scanned: targetHeight - lastBlock,
+      },
+    })
+
     // Step 8: Return summary
     await fireNextPipelineStep("/api/fmv-recalc", chain)
     return NextResponse.json({
@@ -534,9 +613,21 @@ export async function POST(req: NextRequest) {
       scope.setTag("collection", "nba-top-shot")
       Sentry.captureException(err)
     })
-    console.log("[sales-indexer] fatal error:", err instanceof Error ? err.message : String(err))
+    const msg = err instanceof Error ? err.message : String(err)
+    console.log("[sales-indexer] fatal error:", msg)
+    await writePipelineRun({
+      startedAt: startedAtIso,
+      rowsFound: 0,
+      rowsWritten: 0,
+      rowsSkipped: 0,
+      ok: false,
+      error: msg.slice(0, 500),
+      cursorBefore: null,
+      cursorAfter: null,
+      extra: { fatal: true },
+    })
     return NextResponse.json(
-      { error: "Internal server error", details: err instanceof Error ? err.message : String(err) },
+      { error: "Internal server error", details: msg },
       { status: 500 }
     )
   }

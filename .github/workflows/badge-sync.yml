@@ -1,0 +1,23 @@
+name: Badge Sync — Refresh badge_editions low_ask + tags
+on:
+  schedule:
+    # Every 6 hours (00:15, 06:15, 12:15, 18:15 UTC). The :15 offset keeps it
+    # off the busy :00/:20/:40 slots already used by rpc-pipeline + alerts.
+    - cron: "15 */6 * * *"
+  workflow_dispatch:
+jobs:
+  badge-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Top Shot badge sync (also chains AllDay + Golazos seed)
+        run: |
+          STATUS=$(curl -s -o /tmp/badge-sync.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            --max-time 600 \
+            https://rip-packs-city.vercel.app/api/badge-sync)
+          echo "Badge sync status: $STATUS"
+          cat /tmp/badge-sync.json
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::Badge sync returned $STATUS"
+          fi
