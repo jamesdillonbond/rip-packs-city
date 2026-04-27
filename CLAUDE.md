@@ -340,6 +340,16 @@ Telegram sentinel bot: @rpc_sentinel_bot, chat_id 1755958876
 
 ---
 
+## Deferred hardening
+
+Tracked but intentionally unfixed — revisit when adding a real consumer or a per-row write API.
+
+- `email_subscribers`, `outbound_clicks`, `portfolio_snapshots`, `support_conversations` each have an INSERT policy with `qual=true`/`with_check=true` for `roles=public`. Those enable legitimate anonymous logging (newsletter sign-up, click telemetry, anon support thread, etc.) so we kept them. Hardening to add when revisited: per-row size caps via CHECK constraints (e.g. `length(message) < 4000`), a `created_at`-based rate-limit column or trigger, a `bot_score` column populated from BotID, and possibly an unauthenticated rate-limiter at the edge.
+- `user_achievements` + `watchlist_items` were migrated 2026-04-27 to service-role-only writes (DROP'd the public `_any` policies). Both still use `owner_key` (text) instead of the user_id UUID pattern. Neither table is referenced by any /api route today — the live "watchlist" feature uses a different table also named `watchlist`. When a real consumer for these arrives, do the user_id+RLS migration like saved_wallets / trophy_moments / profile_bio (Phase 4).
+- AllDay + Golazos `badge_editions.low_ask` is always NULL — `seed-allday-badges` / `seed-golazos-badges` only classify badge tags from `set_name` patterns; neither queries a marketplace. To populate, add a cron that walks `cached_listings` for those collection_ids and upserts `min(ask_price) → badge_editions.low_ask` keyed on edition_key.
+
+---
+
 ## Known issues / active work
 
 Main branch is the canonical clean branch. Latest production deploy: commit f6ca38a.

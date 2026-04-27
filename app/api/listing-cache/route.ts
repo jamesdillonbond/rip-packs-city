@@ -373,23 +373,27 @@ async function writePipelineRun(args: {
   error: string | null;
   extra: Record<string, unknown>;
 }): Promise<void> {
-  const finishedAtMs = Date.now();
-  const startedAtMs = new Date(args.startedAt).getTime();
+  // duration_ms is a GENERATED column — passing it on insert returns
+  // 428C9 "cannot insert a non-DEFAULT value into column duration_ms",
+  // which the previous version silently swallowed and lost the entire row.
+  // We let Postgres compute it from started_at + finished_at.
   try {
-    await supabase.from("pipeline_runs").insert({
+    const { error } = await supabase.from("pipeline_runs").insert({
       pipeline: args.pipeline,
       collection_slug: args.collectionSlug,
       started_at: args.startedAt,
-      finished_at: new Date(finishedAtMs).toISOString(),
-      duration_ms: Math.max(0, finishedAtMs - startedAtMs),
+      finished_at: new Date().toISOString(),
       rows_found: args.rowsFound,
       rows_written: args.rowsWritten,
       ok: args.ok,
       error: args.error,
       extra: args.extra,
     });
+    if (error) {
+      console.log("[listing-cache] pipeline_runs insert error: code=" + (error.code ?? "?") + " msg=" + (error.message ?? "?").slice(0, 200) + " pipeline=" + args.pipeline);
+    }
   } catch (err: any) {
-    console.log("[listing-cache] pipeline_runs insert failed: " + (err?.message ?? "unknown"));
+    console.log("[listing-cache] pipeline_runs insert threw: " + (err?.message ?? "unknown") + " pipeline=" + args.pipeline);
   }
 }
 
