@@ -8,11 +8,22 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
+// Real browser User-Agent — internal smoke-test fetches were being 307'd
+// because the upstream gate doesn't recognize the default fetch UA. Using
+// a Chrome desktop UA matches what real browsers + crawlers send so the
+// smoke test verifies the actual public/anon experience.
+const BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
 type TestResult = { name: string; passed: boolean; detail?: string; soft?: boolean };
 
 async function checkUrl(name: string, url: string, expectJson = true): Promise<TestResult> {
   try {
-    const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(4000) });
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: { "User-Agent": BROWSER_UA },
+      signal: AbortSignal.timeout(4000),
+    });
     if (!res.ok) return { name, passed: false, detail: `HTTP ${res.status}` };
     if (expectJson) {
       const data = await res.json();
@@ -62,7 +73,11 @@ async function runSmokeTests() {
     (async (): Promise<TestResult> => {
       const name = "sniper-feed returns deals (external: Flowty/TS GQL)";
       try {
-        const res = await fetch(`${BASE_URL}/api/sniper-feed`, { cache: "no-store", signal: AbortSignal.timeout(15000) });
+        const res = await fetch(`${BASE_URL}/api/sniper-feed`, {
+          cache: "no-store",
+          headers: { "User-Agent": BROWSER_UA },
+          signal: AbortSignal.timeout(15000),
+        });
         const data = await res.json();
         const deals = data?.deals ?? data ?? [];
         return { name, soft: true, passed: Array.isArray(deals) && deals.length > 0, detail: `${deals.length} deals` };
@@ -102,7 +117,8 @@ async function runSmokeTests() {
       const name = "wallet-search responds (external: TS GQL/Flow)";
       try {
         const res = await fetch(`${BASE_URL}/api/wallet-search`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
+          method: "POST",
+          headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
           body: JSON.stringify({ input: "0xbd94cade097e50ac" }),
           cache: "no-store", signal: AbortSignal.timeout(20000),
         });
@@ -118,33 +134,65 @@ async function runSmokeTests() {
     // 8. Badges API responds
     checkUrl("badges API responds", `${BASE_URL}/api/badges`),
 
-    // 9–20. Page HTTP status checks. Auth-gated pages 307 -> /login -> 200
-    // and fetch follows redirects, so res.ok is true either way. Phase 2
-    // added 4 cross-collection page checks; Phase 3 adds the 8 market +
-    // analytics pages below.
+    // Public collection pages — must return 200 to anonymous browsers post the
+    // SEO open-gate change. Manual redirect + browser UA + explicit status===200
+    // assertion makes regression detectable: if the auth gate accidentally
+    // re-clamps a public path, the test fails instead of silently following
+    // the 307 to /login and reporting "200" downstream.
     ...([
       "/nba-top-shot/sniper", "/nba-top-shot/collection", "/nba-top-shot/sets",
-      "/nba-top-shot/badges", "/nba-top-shot/packs", "/profile",
-      "/nfl-all-day/collection", "/nfl-all-day/badges",
-      // Phase 2 additions (multi-collection coverage):
-      "/nfl-all-day/overview", "/laliga-golazos/collection",
-      "/disney-pinnacle/collection", "/disney-pinnacle/overview",
-      // Phase 3 additions — market + analytics on every published collection:
+      "/nba-top-shot/badges", "/nba-top-shot/packs",
+      "/nfl-all-day/collection", "/nfl-all-day/badges", "/nfl-all-day/overview",
+      "/laliga-golazos/collection", "/disney-pinnacle/collection",
+      "/disney-pinnacle/overview",
       "/nba-top-shot/market", "/nfl-all-day/market",
       "/laliga-golazos/market", "/disney-pinnacle/market",
       "/nba-top-shot/analytics", "/nfl-all-day/analytics",
       "/laliga-golazos/analytics", "/disney-pinnacle/analytics",
     ].map(async (page): Promise<TestResult> => {
-      const res = await fetch(`${BASE_URL}${page}`, { cache: "no-store", signal: AbortSignal.timeout(4000) });
-      return { name: `page ${page} returns 200`, passed: res.ok, detail: `HTTP ${res.status}` };
+      const res = await fetch(`${BASE_URL}${page}`, {
+        cache: "no-store",
+        redirect: "manual",
+        headers: { "User-Agent": BROWSER_UA },
+        signal: AbortSignal.timeout(6000),
+      });
+      return {
+        name: `public page ${page} returns 200`,
+        passed: res.status === 200,
+        detail: `HTTP ${res.status}`,
+      };
     })),
+
+    // Auth-gated /profile (the editor) — must 307 to /login for anonymous
+    // traffic. /profile/[username] is the public profile page (open) and
+    // is intentionally not probed here.
+    (async (): Promise<TestResult> => {
+      const name = "auth-gated /profile redirects (307)";
+      const res = await fetch(`${BASE_URL}/profile`, {
+        cache: "no-store",
+        redirect: "manual",
+        headers: { "User-Agent": BROWSER_UA },
+        signal: AbortSignal.timeout(6000),
+      });
+      const location = res.headers.get("location") ?? "";
+      const ok = res.status === 307 && location.includes("/login");
+      return {
+        name,
+        passed: ok,
+        detail: `HTTP ${res.status}${location ? ` → ${location}` : ""}`,
+      };
+    })(),
 
     // Phase 3 — market API returns listings for Top Shot
     (async (): Promise<TestResult> => {
       const name = "market API returns Top Shot listings";
       try {
         const url = `${BASE_URL}/api/market?collectionId=95f28a17-224a-4025-96ad-adf8a4c63bfd&limit=10`;
-        const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(6000) });
+        const res = await fetch(url, {
+          cache: "no-store",
+          headers: { "User-Agent": BROWSER_UA },
+          signal: AbortSignal.timeout(6000),
+        });
         if (!res.ok) return { name, passed: false, detail: `HTTP ${res.status}` };
         const body = await res.json();
         const listings = Array.isArray(body?.listings) ? body.listings : [];
@@ -180,6 +228,7 @@ async function runSmokeTests() {
         const res = await fetch(`${BASE_URL}${path}`, {
           cache: "no-store",
           redirect: "follow",
+          headers: { "User-Agent": BROWSER_UA },
           signal: AbortSignal.timeout(5000),
         });
         return { name, passed: res.status === 200 || res.status === 401, detail: `HTTP ${res.status}` };
@@ -196,6 +245,7 @@ async function runSmokeTests() {
       try {
         const res = await fetch(`${BASE_URL}/api/public/profile/jamesdillonbond`, {
           cache: "no-store",
+          headers: { "User-Agent": BROWSER_UA },
           signal: AbortSignal.timeout(5000),
         });
         const ok = res.status === 200 || res.status === 404;
@@ -214,7 +264,10 @@ async function runSmokeTests() {
     (async (): Promise<TestResult> => {
       const name = "/api/profile/resolve-and-associate responds (200 or 401)";
       try {
-        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+          "User-Agent": BROWSER_UA,
+        };
         const token = process.env.SMOKE_TEST_SESSION_TOKEN;
         if (token) headers.cookie = `sb-auth-token=${token}`;
         const res = await fetch(`${BASE_URL}/api/profile/resolve-and-associate`, {
@@ -255,7 +308,7 @@ async function runSmokeTests() {
         const res = await fetch(`${BASE_URL}/api/profile/resolve-and-associate`, {
           method: "POST",
           cache: "no-store",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
           body: JSON.stringify({ username: "jamesdillonbond" }),
           signal: AbortSignal.timeout(5000),
         });
@@ -284,7 +337,7 @@ async function runSmokeTests() {
         const res = await fetch(`${BASE_URL}/nba-top-shot/collection`, {
           cache: "no-store",
           redirect: "manual",
-          headers: { cookie: `sb-auth-token=${token}` },
+          headers: { cookie: `sb-auth-token=${token}`, "User-Agent": BROWSER_UA },
           signal: AbortSignal.timeout(8000),
         });
         if (res.status !== 200) {
@@ -312,7 +365,7 @@ async function runSmokeTests() {
         const res = await fetch(`${BASE_URL}/api/profile/hero-moment`, {
           cache: "no-store",
           redirect: "manual",
-          headers: { cookie: `sb-auth-token=${token}` },
+          headers: { cookie: `sb-auth-token=${token}`, "User-Agent": BROWSER_UA },
           signal: AbortSignal.timeout(6000),
         });
         if (res.status !== 200) {
@@ -344,6 +397,7 @@ async function runSmokeTests() {
       try {
         const res = await fetch(`${BASE_URL}/api/sniper-feed`, {
           cache: "no-store",
+          headers: { "User-Agent": BROWSER_UA },
           signal: AbortSignal.timeout(15000),
         });
         const data = await res.json();
@@ -384,7 +438,7 @@ async function runSmokeTests() {
       try {
         const res = await fetch(`${BASE_URL}/api/cart/validate`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
           body: JSON.stringify({
             listings: [
               {
