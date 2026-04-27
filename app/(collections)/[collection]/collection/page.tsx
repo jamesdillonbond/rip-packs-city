@@ -2320,12 +2320,32 @@ export default function WalletPage() {
                                 </div>
                               </div>
                               {alertStatus === "success" && <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#4ade80", marginBottom: 6 }}>Alert set!</div>}
-                              {alertStatus === "error" && <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#f87171", marginBottom: 6 }}>{alertError || "Failed"} <a href="mailto:trevor@rippackscity.com?subject=RPC%20Pro%20Early%20Access" style={{ color: accent, textDecoration: "underline" }}>Upgrade to Pro</a></div>}
+                              {alertStatus === "error" && (
+                                <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#f87171", marginBottom: 6 }}>
+                                  {alertError === "signed_out" ? (
+                                    <>
+                                      <a href={"/login?redirect=" + encodeURIComponent(typeof window !== "undefined" ? window.location.pathname + window.location.search : "/nba-top-shot/collection")} style={{ color: accent, textDecoration: "underline" }}>Sign in</a> to save price alerts
+                                    </>
+                                  ) : alertError === "not_pro" ? (
+                                    <>
+                                      Free tier alert limit reached.{" "}
+                                      <a href="mailto:trevor@rippackscity.com?subject=RPC%20Pro%20Early%20Access" style={{ color: accent, textDecoration: "underline" }}>Upgrade to Pro</a>
+                                    </>
+                                  ) : (
+                                    "Failed to set alert"
+                                  )}
+                                </div>
+                              )}
                               <button
                                 disabled={alertStatus === "saving"}
                                 onClick={function() {
-                                  setAlertStatus("saving")
                                   const ownerWallet = connectedWallet || ownerKey || input.trim()
+                                  if (!ownerWallet) {
+                                    setAlertStatus("error")
+                                    setAlertError("signed_out")
+                                    return
+                                  }
+                                  setAlertStatus("saving")
                                   fetch("/api/alerts", {
                                     method: "POST",
                                     headers: { "Content-Type": "application/json" },
@@ -2339,9 +2359,16 @@ export default function WalletPage() {
                                       channel: alertNotifType === "email" ? "email" : "telegram",
                                     }),
                                   })
-                                    .then(function(r) { if (!r.ok) throw new Error("not_pro"); return r.json() })
+                                    .then(function(r) {
+                                      if (r.status === 402) throw new Error("not_pro")
+                                      if (!r.ok) throw new Error("save_failed")
+                                      return r.json()
+                                    })
                                     .then(function() { setAlertStatus("success"); setTimeout(function() { setAlertOpenMomentId(null) }, 1500) })
-                                    .catch(function(err) { setAlertStatus("error"); setAlertError(err.message === "not_pro" ? "Upgrade to Pro to set unlimited alerts" : "Failed to set alert") })
+                                    .catch(function(err) {
+                                      setAlertStatus("error")
+                                      setAlertError(err.message)
+                                    })
                                 }}
                                 style={{ width: "100%", background: accent, color: "#fff", border: "none", borderRadius: 6, padding: "7px 0", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", cursor: "pointer", opacity: alertStatus === "saving" ? 0.5 : 1 }}
                               >
