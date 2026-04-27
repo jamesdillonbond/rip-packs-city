@@ -608,37 +608,30 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
 
     // 7b. Fallback: for edition keys that didn't resolve, try alternate format
     // Some editions.external_id use UUID format (setUUID:playUUID), while
-    // wallet moments use numeric format (setID:playID). If a numeric key
-    // didn't match, query the editions table by name pattern to find the UUID variant.
+    // wallet moments use numeric format (setID:playID). For unmatched numeric
+    // keys, look the edition up by play_id_onchain (typed integer column,
+    // backed by idx_editions_play_id_onchain). Replaces a previous leading-
+    // wildcard ILIKE on external_id that forced a Seq Scan over editions and
+    // was the source of statement-timeout cancellations under smoke-test load.
     const unmatchedKeys = editionKeys.filter(k => !editionFmvMap.has(k))
     if (unmatchedKeys.length > 0) {
       try {
-        // Look up editions that have an fmv_snapshot but whose external_id
-        // differs from the numeric key. We use the edition name which contains
-        // the player + set combo, or we query fmv_snapshots directly by
-        // joining through editions with a broader search.
-        const fallbackChunks: Promise<any>[] = []
-        for (let i = 0; i < unmatchedKeys.length; i += CHUNK) {
-          const chunk = unmatchedKeys.slice(i, i + CHUNK)
-          // Try to find editions where external_id contains the playID part
-          // (the second half of setID:playID) as a substring match
-          const orFilter = chunk
-            .map(k => {
-              const parts = k.split(":")
-              if (parts.length === 2) return `external_id.ilike.%:${parts[1]}`
-              return null
-            })
-            .filter(Boolean)
-            .join(",")
+        const playIds: number[] = []
+        for (const key of unmatchedKeys) {
+          const parts = key.split(":")
+          if (parts.length !== 2) continue
+          const n = parseInt(parts[1], 10)
+          if (Number.isFinite(n)) playIds.push(n)
+        }
 
-          if (orFilter) {
-            fallbackChunks.push(
-              (supabaseAdmin as any)
-                .from("editions")
-                .select("id, external_id")
-                .or(orFilter)
-            )
-          }
+        const fallbackChunks: Promise<any>[] = []
+        for (let i = 0; i < playIds.length; i += CHUNK) {
+          fallbackChunks.push(
+            (supabaseAdmin as any)
+              .from("editions")
+              .select("id, play_id_onchain")
+              .in("play_id_onchain", playIds.slice(i, i + CHUNK))
+          )
         }
 
         if (fallbackChunks.length > 0) {
@@ -647,9 +640,8 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
           const playIdToEdition = new Map<string, string>()
           for (const { data } of fallbackResults) {
             for (const row of (data ?? [])) {
-              const parts = (row.external_id as string).split(":")
-              if (parts.length === 2) {
-                playIdToEdition.set(parts[1], row.id)
+              if (row.play_id_onchain != null && row.id) {
+                playIdToEdition.set(String(row.play_id_onchain), row.id)
               }
             }
           }
