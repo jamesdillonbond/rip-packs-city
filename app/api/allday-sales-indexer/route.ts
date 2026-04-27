@@ -262,7 +262,8 @@ export async function POST(req: NextRequest) {
         nftID: string
         salePrice: string
         storefrontResourceID?: string
-        commissionReceiver?: string | null
+        seller: string | null
+        buyer: string | null
       }
 
       const sales: Sale[] = []
@@ -292,6 +293,13 @@ export async function POST(req: NextRequest) {
                 if (!typeID || !typeID.includes("AllDay")) continue
                 if (payload.purchased !== true) continue
 
+                // storefrontAddress and buyer are both Optional<Address> in the
+                // ListingCompleted payload — unwrapCdc resolves them to either
+                // the bare address string or null. These are the canonical
+                // seller/buyer for Flowty AllDay sales; commissionReceiver is
+                // the Flowty fee router (0x3cdbb3d569211ff3), not the buyer.
+                const sellerVal = payload.storefrontAddress
+                const buyerVal = payload.buyer
                 sales.push({
                   blockHeight: bh,
                   blockTimestamp: bts,
@@ -301,7 +309,8 @@ export async function POST(req: NextRequest) {
                   storefrontResourceID: payload.storefrontResourceID
                     ? String(payload.storefrontResourceID)
                     : undefined,
-                  commissionReceiver: payload.commissionReceiver ?? null,
+                  seller: typeof sellerVal === "string" ? sellerVal : null,
+                  buyer: typeof buyerVal === "string" ? buyerVal : null,
                 })
               } catch (err) {
                 console.log(
@@ -441,8 +450,8 @@ export async function POST(req: NextRequest) {
             source: "onchain",
             block_height: s.blockHeight,
             transaction_hash: s.transactionId,
-            buyer_address: s.commissionReceiver ?? null,
-            seller_address: null,
+            buyer_address: s.buyer,
+            seller_address: s.seller,
             ingested_at: new Date().toISOString(),
           })
         } else {
@@ -461,8 +470,8 @@ export async function POST(req: NextRequest) {
             sold_at: s.blockTimestamp,
             ingested_at: new Date().toISOString(),
             source: "onchain",
-            buyer_address: s.commissionReceiver ?? null,
-            seller_address: null,
+            buyer_address: s.buyer,
+            seller_address: s.seller,
             resolution_hint: hint,
           })
         }
