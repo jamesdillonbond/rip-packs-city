@@ -88,13 +88,15 @@ function applySecurityHeaders(response: NextResponse) {
 
 // ── Route gating — does this path require a signed-in user? ──────────────────
 // Gate:
-//   • /profile (exact, the editor — /profile/[username] is the public profile page)
+//   • /profile (exact, the dashboard — /profile/[username] is the public profile page)
+//   • /profile/edit (the bio editor that POSTs to /api/profile/bio)
 // Everything else — collection browse/market/analytics/sniper/etc., public
 // profiles, share pages, API routes, _next, the auth callback — is open.
 // Auth-only API handlers call requireUser() themselves so latency stays off
 // the public API hot paths.
 function requiresAuth(pathname: string): boolean {
   if (pathname === "/profile" || pathname === "/profile/") return true;
+  if (pathname === "/profile/edit" || pathname === "/profile/edit/") return true;
   return false;
 }
 

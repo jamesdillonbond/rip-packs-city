@@ -636,7 +636,26 @@ function ProfilePageInner() {
               </div>
             </div>
           </div>
-          <SignOutButton />
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Link
+              href="/profile/edit"
+              style={{
+                fontFamily: condensedFont,
+                fontWeight: 700,
+                fontSize: 11,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: "rgba(255,255,255,0.85)",
+                textDecoration: "none",
+                padding: "7px 12px",
+                border: `1px solid ${ACCENT_RED}66`,
+                borderRadius: 5,
+              }}
+            >
+              Edit profile
+            </Link>
+            <SignOutButton />
+          </div>
         </section>
 
         {/* ── Hero: onboarding CTA / HeroMoment / Trophy Case ── */}
