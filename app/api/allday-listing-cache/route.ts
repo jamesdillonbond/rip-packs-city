@@ -270,6 +270,8 @@ async function runListingCache() {
     },
     badge_low_ask_updated: 0,
     badge_low_ask_cleared: 0,
+    badge_low_ask_seen: 0,
+    badge_low_ask_stale_cleared: 0,
     marketplace_complete: false,
   }
 
@@ -559,12 +561,38 @@ async function runListingCache() {
           }
         }
 
-        // Clear-stale path: rows whose external_id is not in the current
-        // marketplace fetch had their listings sold/pulled — clear low_ask
-        // back to NULL so the count reflects live market depth instead of
-        // staying frozen at first-seen values. Only safe when the upstream
-        // pagination exited cleanly; a partial fetch would wipe legitimate
-        // rows beyond the truncation point.
+        // Mark every edition seen in this tick — regardless of whether its
+        // price changed — so the staleness clock resets for those rows.
+        // This is what gives the 100-minute clear_stale window its
+        // pagination-jitter slack: an edition bouncing between marketplace
+        // positions still gets touched every tick and stays populated.
+        const seenIds = marketRows
+          .map((m) => m.edition_flow_id)
+          .filter((id): id is string => !!id)
+        if (seenIds.length > 0) {
+          const { data: seenData, error: seenErr } = await supabaseAdmin.rpc(
+            "mark_badge_low_ask_seen",
+            {
+              p_collection_id: AD_COLLECTION_ID,
+              p_external_ids: seenIds as any,
+            }
+          )
+          if (seenErr) {
+            console.log(
+              `[allday-listing-cache] mark_badge_low_ask_seen error: ${seenErr.message}`
+            )
+          } else {
+            stats.badge_low_ask_seen = Number(seenData ?? 0) || 0
+            console.log(
+              `[allday-listing-cache] badge_editions seen-marked: ${stats.badge_low_ask_seen} of ${seenIds.length} candidates`
+            )
+          }
+        }
+
+        // Set-difference clear (db4f63e). Structurally a no-op since
+        // marketComplete is essentially never true given AllDay marketplace
+        // depth vs. the AD_GQL_MAX_PAGES cap — kept as a safety net in case
+        // pagination semantics change upstream.
         if (marketComplete) {
           const presentIds = badgePayload.map((p) => p.external_id)
           const { data: clearedData, error: clearErr } = await supabaseAdmin.rpc(
@@ -598,6 +626,40 @@ async function runListingCache() {
       }
     } else {
       console.log("[allday-listing-cache] marketplace fetch returned 0 rows")
+    }
+
+    // Unconditional staleness cleanup: any badge_editions row in the AllDay
+    // collection whose updated_at hasn't been touched in 100 minutes
+    // (~5 cron ticks) gets low_ask = NULL. This runs even when
+    // marketplace_complete is false; the 100-minute window absorbs
+    // pagination jitter so that an edition seen at position #1500 on tick
+    // N and #800 on tick N+5 stays populated. A single missed tick still
+    // refreshes everything seen in subsequent ticks before the threshold
+    // fires.
+    try {
+      const { data: staleData, error: staleErr } = await supabaseAdmin.rpc(
+        "clear_badge_low_ask_stale",
+        {
+          p_collection_id: AD_COLLECTION_ID,
+          p_stale_after: "100 minutes",
+        }
+      )
+      if (staleErr) {
+        console.log(
+          `[allday-listing-cache] clear_badge_low_ask_stale error: ${staleErr.message}`
+        )
+      } else {
+        stats.badge_low_ask_stale_cleared = Number(staleData ?? 0) || 0
+        console.log(
+          `[allday-listing-cache] badge_editions stale-cleared (>100min): ${stats.badge_low_ask_stale_cleared}`
+        )
+      }
+    } catch (err) {
+      console.log(
+        `[allday-listing-cache] clear_badge_low_ask_stale threw (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      )
     }
   } catch (err) {
     console.log(
@@ -661,6 +723,8 @@ async function runListingCache() {
           fmv_populated: stats.fmv_populated,
           badge_low_ask_updated: stats.badge_low_ask_updated,
           badge_low_ask_cleared: stats.badge_low_ask_cleared,
+          badge_low_ask_seen: stats.badge_low_ask_seen,
+          badge_low_ask_stale_cleared: stats.badge_low_ask_stale_cleared,
           marketplace_complete: stats.marketplace_complete,
           duration_ms: Date.now() - startedAt,
         },
