@@ -558,7 +558,7 @@ export async function POST(req: NextRequest) {
             SELECT e.id AS edition_id, e.collection_id, be.low_ask
             FROM editions e
             LEFT JOIN fmv_snapshots fs ON fs.edition_id = e.id
-            LEFT JOIN badge_editions be ON be.edition_id = e.external_id
+            LEFT JOIN badge_editions be ON be.external_id = e.external_id
             WHERE fs.edition_id IS NULL
               AND be.low_ask IS NOT NULL
               AND be.low_ask > 0
