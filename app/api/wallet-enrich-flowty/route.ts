@@ -206,11 +206,16 @@ async function fetchFlowtyPage(from: number, sort: FlowtyPageSort): Promise<{ it
     console.log("[wallet-enrich] Flowty body: " + JSON.stringify(requestBody))
   }
 
-  // 429-aware single retry: if the upstream returns 429 or a rate-limit body,
-  // sleep 1500ms and try once more before giving up. Routed through the same
-  // error path the rest of the function uses so the retry actually fires
-  // before the debug-object-return swallows it.
-  for (let attempt = 0; attempt < 2; attempt++) {
+  // Exponential-backoff retry on 5xx, timeout, and 429 from upstream.
+  // 3 attempts: delay 0ms → 500ms → 1500ms. Each attempt logs status,
+  // response snippet, elapsed ms. After 3 fails the last debug payload
+  // (with httpStatus + rawSample) is returned to the caller.
+  const BACKOFFS_MS = [0, 500, 1500]
+  let attempt = 0
+  for (attempt = 0; attempt < BACKOFFS_MS.length; attempt++) {
+    if (BACKOFFS_MS[attempt] > 0) {
+      await new Promise(function (r) { setTimeout(r, BACKOFFS_MS[attempt]) })
+    }
     items.length = 0
     debug.httpStatus = null
     debug.error = null
@@ -219,6 +224,7 @@ async function fetchFlowtyPage(from: number, sort: FlowtyPageSort): Promise<{ it
     debug.itemCount = 0
     debug.parsedCount = 0
 
+  const attemptStart = Date.now()
   try {
     const controller = new AbortController()
     const timeout = setTimeout(function () { controller.abort() }, 10000)
@@ -234,17 +240,20 @@ async function fetchFlowtyPage(from: number, sort: FlowtyPageSort): Promise<{ it
 
     const rawText = await res.text()
     debug.rawSample = rawText.substring(0, 500)
+    const elapsed = Date.now() - attemptStart
 
     const isRateLimited = res.status === 429 || /rate.?limit|too many requests/i.test(rawText)
-    if (isRateLimited && attempt === 0) {
-      console.log("[wallet-enrich] Flowty 429/rate-limit sort=" + sort.path + " from=" + from + " status=" + res.status + " — retrying after 1500ms")
-      await new Promise(function (r) { setTimeout(r, 1500) })
+    const isServerError = res.status >= 500 && res.status < 600
+    const isRetryable = isServerError || isRateLimited
+
+    if (isRetryable && attempt < BACKOFFS_MS.length - 1) {
+      console.log("[wallet-enrich] flowty retry status=" + res.status + " sort=" + sort.path + " from=" + from + " attempt=" + (attempt + 1) + "/" + BACKOFFS_MS.length + " elapsed_ms=" + elapsed + " snippet=" + rawText.substring(0, 120))
       continue
     }
 
     if (!res.ok) {
-      debug.error = "HTTP " + res.status + " " + res.statusText
-      console.log("[wallet-enrich] Flowty HTTP " + res.status + " sort=" + sort.path + " from=" + from + " body=" + rawText.substring(0, 200))
+      debug.error = "HTTP " + res.status + " " + res.statusText + " (after " + (attempt + 1) + " attempts)"
+      console.log("[wallet-enrich] flowty fail status=" + res.status + " sort=" + sort.path + " from=" + from + " attempts=" + (attempt + 1) + " elapsed_ms=" + elapsed + " snippet=" + rawText.substring(0, 200))
       return { items, debug }
     }
 
@@ -253,6 +262,7 @@ async function fetchFlowtyPage(from: number, sort: FlowtyPageSort): Promise<{ it
       json = JSON.parse(rawText)
     } catch (parseErr) {
       debug.error = "JSON parse failed: " + (parseErr instanceof Error ? parseErr.message : String(parseErr))
+      console.log("[wallet-enrich] flowty json-parse-fail sort=" + sort.path + " from=" + from + " elapsed_ms=" + elapsed + " snippet=" + rawText.substring(0, 200))
       return { items, debug }
     }
 
@@ -336,13 +346,15 @@ async function fetchFlowtyPage(from: number, sort: FlowtyPageSort): Promise<{ it
     return { items, debug }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    if (attempt === 0 && /rate.?limit|too many requests|429/i.test(msg)) {
-      console.log("[wallet-enrich] Flowty rate-limit exception sort=" + sort.path + " from=" + from + " — retrying after 1500ms")
-      await new Promise(function (r) { setTimeout(r, 1500) })
+    const elapsed = Date.now() - attemptStart
+    const isTimeout = /aborted|timeout|signal|AbortError/i.test(msg)
+    const isRetryable = isTimeout || /rate.?limit|too many requests|429|fetch failed|ECONNRESET|ETIMEDOUT/i.test(msg)
+    if (isRetryable && attempt < BACKOFFS_MS.length - 1) {
+      console.log("[wallet-enrich] flowty retry-exception sort=" + sort.path + " from=" + from + " attempt=" + (attempt + 1) + "/" + BACKOFFS_MS.length + " elapsed_ms=" + elapsed + " err=" + msg.substring(0, 120))
       continue
     }
-    debug.error = "exception: " + msg
-    console.log("[wallet-enrich] Flowty sort=" + sort.path + " from=" + from + " exception: " + msg)
+    debug.error = "exception: " + msg + " (after " + (attempt + 1) + " attempts)"
+    console.log("[wallet-enrich] flowty fatal-exception sort=" + sort.path + " from=" + from + " attempts=" + (attempt + 1) + " elapsed_ms=" + elapsed + " err=" + msg)
     return { items, debug }
   }
   }
@@ -524,6 +536,8 @@ export async function POST(req: NextRequest) {
   if (!walletInput) {
     return NextResponse.json({ error: "wallet required" }, { status: 400 })
   }
+
+  try {
 
   // Resolve username to Flow address
   const wallet = await resolveToFlowAddress(walletInput)
@@ -954,5 +968,40 @@ export async function POST(req: NextRequest) {
     .then(function () {})
     .catch(function () {})
 
+  // If every Flowty page failed and we matched zero editions, surface a
+  // structured 503 so callers can retry/back off instead of treating
+  // {ok:true, enriched:0} as success.
+  const allFlowtyFailed = flowtyDebug.pagesFetched > 0 && flowtyDebug.totalItems === 0 && totalFlowtyMatches === 0
+  const firstHttpStatus = flowtyDebug.pageDebug[0]?.httpStatus ?? null
+  const flowtyUpstreamDown = allFlowtyFailed && firstHttpStatus !== null && firstHttpStatus >= 500
+  if (flowtyUpstreamDown) {
+    console.log("[wallet-enrich] flowty-upstream-down input=" + walletInput + " status=" + firstHttpStatus + " elapsed_ms=" + duration + " — returning 503 after exhausted retries")
+    return NextResponse.json(
+      {
+        error: "flowty_upstream_unavailable",
+        retry: true,
+        upstream_status: firstHttpStatus,
+        upstream_snippet: (flowtyDebug.pageDebug[0]?.rawSample ?? "").substring(0, 200),
+        diagnostics,
+      },
+      { status: 503 }
+    )
+  }
+
   return NextResponse.json(diagnostics)
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    const stack = err instanceof Error ? (err.stack ?? "") : ""
+    const elapsed = Date.now() - startTime
+    console.log("[wallet-enrich] fatal input=" + walletInput + " elapsed_ms=" + elapsed + " err=" + msg + " stack_head=" + stack.substring(0, 300))
+    await (supabaseAdmin as any)
+      .from("debug_logs")
+      .insert({ route: "wallet-enrich-flowty", payload: { fatal: true, input: walletInput, error: msg, elapsed_ms: elapsed }, created_at: new Date().toISOString() })
+      .then(function () {})
+      .catch(function () {})
+    return NextResponse.json(
+      { error: "internal_error", retry: true, message: msg, elapsed_ms: elapsed },
+      { status: 503 }
+    )
+  }
 }

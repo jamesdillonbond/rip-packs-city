@@ -352,20 +352,64 @@ async function runAskOnlyFmv(collectionId: string): Promise<number> {
   }
 }
 
+// Pipeline-runs observability. Tags writes from this route as
+// `topshot-listing-cache-v2` (or `<slug>-listing-cache-v2`) so they don't
+// collide with the legacy `topshot-listing-cache` entries that the dedicated
+// /api/topshot-listing-cache route emits.
+function pipelineNameForSlug(slug: string): string {
+  if (slug === "nba-top-shot") return "topshot-listing-cache-v2";
+  if (slug === "nfl-all-day") return "allday-listing-cache-v2";
+  if (slug === "laliga-golazos") return "golazos-listing-cache-v2";
+  return slug + "-listing-cache-v2";
+}
+
+async function writePipelineRun(args: {
+  pipeline: string;
+  collectionSlug: string;
+  startedAt: string;
+  rowsFound: number;
+  rowsWritten: number;
+  ok: boolean;
+  error: string | null;
+  extra: Record<string, unknown>;
+}): Promise<void> {
+  const finishedAtMs = Date.now();
+  const startedAtMs = new Date(args.startedAt).getTime();
+  try {
+    await supabase.from("pipeline_runs").insert({
+      pipeline: args.pipeline,
+      collection_slug: args.collectionSlug,
+      started_at: args.startedAt,
+      finished_at: new Date(finishedAtMs).toISOString(),
+      duration_ms: Math.max(0, finishedAtMs - startedAtMs),
+      rows_found: args.rowsFound,
+      rows_written: args.rowsWritten,
+      ok: args.ok,
+      error: args.error,
+      extra: args.extra,
+    });
+  } catch (err: any) {
+    console.log("[listing-cache] pipeline_runs insert failed: " + (err?.message ?? "unknown"));
+  }
+}
+
 export async function POST(req: NextRequest) {
+  // Collection param + start time captured outside try{} so the catch handler
+  // can still write a pipeline_runs row tagged with the right slug.
+  const collectionSlug = req.nextUrl.searchParams.get("collection") ?? "nba-top-shot";
+  const config = getCollectionConfig(collectionSlug);
+  const startTime = Date.now();
+  const startedAtIso = new Date(startTime).toISOString();
+  const pipelineName = pipelineNameForSlug(config.slug);
+
   try {
     const auth = req.headers.get("authorization");
     if (auth !== ("Bearer " + process.env.INGEST_SECRET_TOKEN)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Collection param: ?collection=nfl-all-day or defaults to nba-top-shot
-    const collectionSlug = req.nextUrl.searchParams.get("collection") ?? "nba-top-shot";
     const chain = req.nextUrl.searchParams.get("chain") === "true";
-    const config = getCollectionConfig(collectionSlug);
     console.log("[listing-cache] Collection: " + config.slug + " (" + config.flowtyEndpoint + ")");
-
-    const startTime = Date.now();
     const pageOffsets: number[] = [];
     for (let i = 0; i < config.pagesToFetch; i++) pageOffsets.push(i * PAGE_SIZE);
     const pageResults = await Promise.all(pageOffsets.map(function(off) { return fetchFlowtyPage(off, config); }));
@@ -373,6 +417,16 @@ export async function POST(req: NextRequest) {
     console.log("[listing-cache] Fetched " + allNfts.length + " raw NFTs from Flowty (" + config.pagesToFetch + " pages)");
 
     if (allNfts.length === 0) {
+      await writePipelineRun({
+        pipeline: pipelineName,
+        collectionSlug: config.slug,
+        startedAt: startedAtIso,
+        rowsFound: 0,
+        rowsWritten: 0,
+        ok: true,
+        error: null,
+        extra: { reason: "flowty_empty", pages: config.pagesToFetch },
+      });
       // Chain to next collection even on empty result
       if (config.chainNext && chain) {
         await fireNextPipelineStep("/api/listing-cache?collection=" + config.chainNext, chain);
@@ -392,6 +446,16 @@ export async function POST(req: NextRequest) {
     console.log("[listing-cache] Mapped " + listings.length + " valid listings");
 
     if (listings.length === 0) {
+      await writePipelineRun({
+        pipeline: pipelineName,
+        collectionSlug: config.slug,
+        startedAt: startedAtIso,
+        rowsFound: allNfts.length,
+        rowsWritten: 0,
+        ok: true,
+        error: null,
+        extra: { reason: "all_filtered", fetched: allNfts.length },
+      });
       if (config.chainNext && chain) {
         await fireNextPipelineStep("/api/listing-cache?collection=" + config.chainNext, chain);
       }
@@ -485,6 +549,23 @@ export async function POST(req: NextRequest) {
       console.log("[listing-cache] verify resolver threw: " + String(err));
     }
 
+    await writePipelineRun({
+      pipeline: pipelineName,
+      collectionSlug: config.slug,
+      startedAt: startedAtIso,
+      rowsFound: allNfts.length,
+      rowsWritten: inserted,
+      ok: insertErrors === 0,
+      error: insertErrors > 0 ? insertErrors + " insert chunk error(s)" : null,
+      extra: {
+        mapped: listings.length,
+        insert_errors: insertErrors,
+        ask_proxy_created: askProxyCreated,
+        ask_proxy_considered: askProxyConsidered,
+        ask_only_fmv_count: askOnlyFmvCount,
+      },
+    });
+
     // Chain to next collection if pipeline chaining is active
     if (config.chainNext && chain) {
       await fireNextPipelineStep("/api/listing-cache?collection=" + config.chainNext, chain);
@@ -501,10 +582,20 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     Sentry.withScope((scope) => {
       scope.setTag("route", "listing-cache");
-      scope.setTag("collection", req.nextUrl.searchParams.get("collection") ?? "nba-top-shot");
+      scope.setTag("collection", config.slug);
       Sentry.captureException(e);
     });
     console.error("[listing-cache] FATAL: " + (e.message || "unknown"), e.stack || "");
+    await writePipelineRun({
+      pipeline: pipelineName,
+      collectionSlug: config.slug,
+      startedAt: startedAtIso,
+      rowsFound: 0,
+      rowsWritten: 0,
+      ok: false,
+      error: (e?.message ?? "unknown").toString().slice(0, 500),
+      extra: { fatal: true },
+    });
     return NextResponse.json({ ok: false, error: e.message || "Unknown error" }, { status: 500 });
   }
 }

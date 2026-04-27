@@ -499,19 +499,33 @@ export async function POST(req: NextRequest) {
     console.log(`[INGEST] Starting — batchSize=${batchSize} cursor=${cursor ?? "start"}`)
     console.log(`[INGEST] SUPABASE_SERVICE_ROLE_KEY set: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}, length: ${process.env.SUPABASE_SERVICE_ROLE_KEY?.length ?? 0}`)
 
-    // Get NBA Top Shot collection ID
-    const { data: collections } = await supabaseAdmin
-      .from("collections")
-      .select("id")
-      .eq("slug", "nba_top_shot")
-      .single()
-
-    if (!collections?.id) {
-      console.error("[INGEST] NBA Top Shot collection not found in DB")
-      return
+    // The NBA Top Shot collection UUID is a published constant (see
+    // CLAUDE.md). Treat the lookup as a fast-path — if PostgREST 504s or the
+    // row briefly disappears, fall back to the known ID instead of bailing
+    // out of the whole ingest. The 17:22:52 production incident hit this
+    // exact branch when the lookup failed transiently and silently dropped a
+    // 200-tx batch.
+    const TS_COLLECTION_ID_CONST = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+    let collectionId: string = TS_COLLECTION_ID_CONST
+    try {
+      const { data: collections, error: lookupErr } = await supabaseAdmin
+        .from("collections")
+        .select("id")
+        .eq("slug", "nba_top_shot")
+        .single()
+      if (lookupErr) {
+        console.warn(
+          `[INGEST] collections lookup error (using const fallback): code=${lookupErr.code} msg=${(lookupErr.message ?? "").slice(0, 200)}`
+        )
+      } else if (collections?.id) {
+        collectionId = collections.id
+      } else {
+        console.warn("[INGEST] collections row missing for slug=nba_top_shot — using const fallback")
+      }
+    } catch (lookupExc) {
+      const m = lookupExc instanceof Error ? lookupExc.message : String(lookupExc)
+      console.warn(`[INGEST] collections lookup threw (using const fallback): ${m.slice(0, 200)}`)
     }
-
-    const collectionId = collections.id
 
     // Fetch recent sales from Top Shot
     const { transactions, nextCursor } = await fetchRecentSales(batchSize, cursor)
