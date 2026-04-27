@@ -261,6 +261,7 @@ async function runListingCache() {
       no_edition: 0,
       editions_fetched: 0,
     },
+    badge_low_ask_updated: 0,
   }
 
   try {
@@ -508,6 +509,48 @@ async function runListingCache() {
           stats.fmv_populated
         )}`
       )
+
+      // Backfill badge_editions.low_ask using the same per-edition data we
+      // already have in hand. badge_editions.external_id == editionFlowID for
+      // AllDay, so the join is direct. Best-effort — failure here is not
+      // fatal to the pipeline.
+      try {
+        const badgePayload = marketRows
+          .map((m) => {
+            const lowAsk =
+              m.lowest_price && m.lowest_price.trim() !== ""
+                ? Number(m.lowest_price)
+                : null
+            if (lowAsk == null || !Number.isFinite(lowAsk) || lowAsk <= 0) return null
+            return { external_id: m.edition_flow_id, low_ask: lowAsk }
+          })
+          .filter((x): x is { external_id: string; low_ask: number } => x !== null)
+        if (badgePayload.length > 0) {
+          const { data, error } = await supabaseAdmin.rpc(
+            "update_badge_low_ask_by_external",
+            {
+              p_collection_id: AD_COLLECTION_ID,
+              p_data: badgePayload as any,
+            }
+          )
+          if (error) {
+            console.log(
+              `[allday-listing-cache] update_badge_low_ask_by_external error: ${error.message}`
+            )
+          } else {
+            stats.badge_low_ask_updated = Number(data ?? 0) || 0
+            console.log(
+              `[allday-listing-cache] badge_editions.low_ask updated: ${stats.badge_low_ask_updated} of ${badgePayload.length} candidates`
+            )
+          }
+        }
+      } catch (err) {
+        console.log(
+          `[allday-listing-cache] badge low_ask update threw (non-fatal): ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        )
+      }
     } else {
       console.log("[allday-listing-cache] marketplace fetch returned 0 rows")
     }
@@ -571,6 +614,7 @@ async function runListingCache() {
           fmv_rpc_called: stats.fmvRpcCalled,
           fmv_sales_called: stats.fmvSalesCalled,
           fmv_populated: stats.fmv_populated,
+          badge_low_ask_updated: stats.badge_low_ask_updated,
           duration_ms: Date.now() - startedAt,
         },
       })

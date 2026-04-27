@@ -146,6 +146,7 @@ async function runListingCache() {
     editionsMapped: 0,
     fmvRpcCalled: false,
     fmvSalesCalled: false,
+    badge_low_ask_updated: 0,
   }
 
   try {
@@ -383,6 +384,37 @@ async function runListingCache() {
     console.log(`[golazos-listing-cache] fmv_from_sales threw: ${String(err)}`)
   }
 
+  // Backfill badge_editions.low_ask from the cached_listings we just upserted.
+  // Golazos has no per-edition GQL marketplace endpoint plumbed yet, and the
+  // moment_id field in cached_listings is a compound trait string that does
+  // not match badge_editions.external_id, so we fall back to the
+  // (player_name, set_name, tier) compound key. Coverage is partial because
+  // cached_listings is a top-N snapshot — long-tail editions with only one
+  // expensive listing won't be captured. Tracking as a follow-up to plumb
+  // the LaLiga Golazos public-api marketplace query when one is identified.
+  try {
+    const { data, error } = await supabaseAdmin.rpc(
+      "update_badge_low_ask_from_cached_listings",
+      { p_collection_id: GZ_COLLECTION_ID }
+    )
+    if (error) {
+      console.log(
+        `[golazos-listing-cache] update_badge_low_ask_from_cached_listings error: ${error.message}`
+      )
+    } else {
+      stats.badge_low_ask_updated = Number(data ?? 0) || 0
+      console.log(
+        `[golazos-listing-cache] badge_editions.low_ask updated: ${stats.badge_low_ask_updated}`
+      )
+    }
+  } catch (err) {
+    console.log(
+      `[golazos-listing-cache] badge low_ask update threw (non-fatal): ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    )
+  }
+
   } catch (err) {
     stats.ok = false
     stats.errorMsg = err instanceof Error ? err.message : String(err)
@@ -405,6 +437,7 @@ async function runListingCache() {
           editions_mapped: stats.editionsMapped,
           fmv_rpc_called: stats.fmvRpcCalled,
           fmv_sales_called: stats.fmvSalesCalled,
+          badge_low_ask_updated: stats.badge_low_ask_updated,
           duration_ms: Date.now() - startedAt,
         },
       })
