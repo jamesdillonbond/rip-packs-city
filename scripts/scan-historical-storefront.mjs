@@ -50,7 +50,7 @@ const CHECKPOINT_KEY = 'storefront_audit_historical'
 const START_BLOCK = 85_000_000
 const FINAL_BLOCK = 137_390_145
 const FLUSH_EVERY_N_CHUNKS = 500
-const REQUEST_TIMEOUT_MS = 30_000
+const REQUEST_TIMEOUT_MS = 60_000
 
 const SPORKS = [
   { id: 23, maxBlock: 65_264_618, url: 'http://access-001.mainnet23.nodes.onflow.org:8070' },
