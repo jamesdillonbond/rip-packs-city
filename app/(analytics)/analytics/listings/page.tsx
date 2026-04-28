@@ -1,11 +1,11 @@
 import type { Metadata } from "next"
-import ComingSoon from "@/components/analytics/ComingSoon"
+import ListingsDashboard from "@/components/analytics/ListingsDashboard"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
 
 export const metadata: Metadata = analyticsMetadata({
-  title: "Listings Analytics — Marketplace Depth and Time-on-Market",
+  title: "Listings — Open Offers and Orderbook",
   description:
-    "Active listing depth, ask spread, and time-on-market for Flow collectibles marketplaces. See where supply is concentrated and how quickly inventory clears.",
+    "Active loan offers and a sample of the Top Shot orderbook. Marketplace ask data sourced from the Sniper deal feed across Top Shot, NFL All Day, Golazos, UFC, and Pinnacle.",
   path: "/analytics/listings",
 })
 
@@ -14,9 +14,21 @@ const datasetJsonLd = {
   "@type": "Dataset",
   name: "Rip Packs City Listings Analytics",
   description:
-    "Active listing depth and time-on-market for Flow digital collectibles marketplaces.",
+    "Open Flowty loan offers and a periodically-sampled snapshot of the Top Shot marketplace orderbook plus Sniper-feed asks across other Flow collectibles.",
   creator: { "@type": "Organization", name: "Rip Packs City" },
   url: `${ANALYTICS_BASE_URL}/analytics/listings`,
+  distribution: [
+    {
+      "@type": "DataDownload",
+      encodingFormat: "application/json",
+      contentUrl: `${ANALYTICS_BASE_URL}/api/analytics/listings/summary`,
+    },
+    {
+      "@type": "DataDownload",
+      encodingFormat: "application/json",
+      contentUrl: `${ANALYTICS_BASE_URL}/api/analytics/listings/loan-offers`,
+    },
+  ],
 }
 
 export default function ListingsPage() {
@@ -26,18 +38,7 @@ export default function ListingsPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
       />
-      <ComingSoon
-        section="Listings Analytics"
-        expected="Q3 2026"
-        description="A live view of every active listing across the Flow ecosystem. Track ask depth by edition, monitor how quickly listings convert to sales, and surface motivated sellers and capitulation events."
-        metrics={[
-          "Active listing count by collection and tier",
-          "Ask spread vs FMV — discount distribution",
-          "Average and median time-on-market by edition",
-          "Capitulation signal — sudden price-cut detection",
-          "Listing churn rate (created vs canceled vs sold)",
-        ]}
-      />
+      <ListingsDashboard />
     </>
   )
 }
