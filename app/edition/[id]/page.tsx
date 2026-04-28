@@ -187,6 +187,36 @@ function inferPlayerFromName(e: EditionRow): string | null {
   return head && head.length > 0 ? head : null
 }
 
+// Suppress dollar headlines when the snapshot is ask-derived (LOW confidence
+// + zero recent trades). Read by metadata, JSON-LD, and FmvCard so all three
+// surfaces gate consistently — public pages must never present an inflated
+// 1-of-1 ask as authoritative pricing.
+function isInflatedAskOnly(fmv: FmvRow | null): boolean {
+  return (
+    fmv != null &&
+    fmv.fmv_usd != null &&
+    (fmv.confidence ?? "").toUpperCase() === "LOW" &&
+    (fmv.sales_count_30d ?? 0) === 0 &&
+    (fmv.sales_count_7d ?? 0) === 0
+  )
+}
+
+// 522 residual editions have NULL player_name and either a NULL name or a
+// set-only name (e.g. "NFL Draft"). Render the collection-scoped fallback so
+// we surface 4 distinct h1 strings instead of 522 identical "Unknown player"
+// — honest about what we know.
+function heroPlayerDisplay(
+  edition: EditionRow,
+  collection: CollectionRow
+): string {
+  if (edition.player_name) return edition.player_name
+  if (edition.name && edition.name.includes("—")) {
+    const head = edition.name.split("—")[0]?.trim()
+    if (head) return head
+  }
+  return `${collection.name} Edition`
+}
+
 export async function generateMetadata(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Metadata> {
@@ -216,13 +246,32 @@ export async function generateMetadata(
   const circ = edition.circulation_count ?? null
   const sales30d = sales_30d_summary?.count ?? 0
   const fmvUsd = fmv?.fmv_usd ?? null
-  const lead = [kindLabel, player ?? collection.name].filter(Boolean).join(" ")
-  const descParts: string[] = [lead]
-  if (circ != null) descParts.push(`${circ.toLocaleString()} circulation`)
-  if (fmvUsd != null) descParts.push(`FMV ${fmtUsd(fmvUsd)}`)
-  if (sales30d > 0) descParts.push(`${sales30d} sale${sales30d === 1 ? "" : "s"} 30d`)
-  descParts.push(`live ${collection.name} pricing on Rip Packs City`)
-  let description = descParts.join(" · ")
+  const inflated = isInflatedAskOnly(fmv)
+
+  let description: string
+  if (inflated) {
+    // Ask-only inflated edition — never surface the dollar figure to crawlers
+    // or social previews. Compose from durable metadata only.
+    const kindStr = kindLabel ?? "Moment"
+    const tierStr = tier ? tier.toLowerCase() : ""
+    const subject = [kindStr, tierStr].filter(Boolean).join(" ")
+    const circStr =
+      circ != null ? `, ${circ.toLocaleString()} minted` : ""
+    description = `${subject} moment from ${collection.name}${circStr}.`
+      .replace(/\s+/g, " ")
+      .trim()
+  } else {
+    const lead = [kindLabel, player ?? collection.name]
+      .filter(Boolean)
+      .join(" ")
+    const descParts: string[] = [lead]
+    if (circ != null) descParts.push(`${circ.toLocaleString()} circulation`)
+    if (fmvUsd != null) descParts.push(`FMV ${fmtUsd(fmvUsd)}`)
+    if (sales30d > 0)
+      descParts.push(`${sales30d} sale${sales30d === 1 ? "" : "s"} 30d`)
+    descParts.push(`live ${collection.name} pricing on Rip Packs City`)
+    description = descParts.join(" · ")
+  }
   if (description.length > 160) description = description.slice(0, 157) + "…"
 
   const canonical = `${BASE_URL}/edition/${edition.id}`
@@ -265,7 +314,10 @@ function ProductJsonLd({ data }: { data: EditionPageData }) {
   if (edition.thumbnail_url) obj.image = edition.thumbnail_url
   if (edition.player_name) obj.description = `${edition.player_name} — ${collection.name}`
 
-  if (fmv && fmv.fmv_usd != null) {
+  // Omit offers entirely on ask-only inflated rows. Schema.org Product
+  // without offers is valid ("product exists, no current sale data") and
+  // honest. Substituting OutOfStock to preserve the price would be misleading.
+  if (fmv && fmv.fmv_usd != null && !isInflatedAskOnly(fmv)) {
     const listingCount = fmv.listing_count ?? 0
     obj.offers = {
       "@type": "Offer",
@@ -294,7 +346,7 @@ function HeroBlock({ data }: { data: EditionPageData }) {
   const tierBg = TIER_BG[tierKey] ?? "rgba(255,255,255,0.06)"
   const slug = frontendSlug(collection.slug)
   const editionLabel = describeEditionLabel(edition)
-  const player = edition.player_name ?? "Unknown player"
+  const player = heroPlayerDisplay(edition, collection)
 
   return (
     <header style={{ marginBottom: 32 }}>
@@ -543,21 +595,13 @@ function HeroBlock({ data }: { data: EditionPageData }) {
 }
 
 function FmvCard({ fmv }: { fmv: FmvRow | null }) {
-  // Suppress the dollar headline when the snapshot is ask-derived (LOW
-  // confidence + no recent trades). Showing $900K with a small "LOW" badge
-  // on a public page reads as authoritative pricing for an illiquid 1-of-1.
-  const isInflatedAskOnly =
-    fmv != null &&
-    fmv.fmv_usd != null &&
-    (fmv.confidence ?? "").toUpperCase() === "LOW" &&
-    (fmv.sales_count_30d ?? 0) === 0 &&
-    (fmv.sales_count_7d ?? 0) === 0
+  const inflated = isInflatedAskOnly(fmv)
 
-  if (!fmv || fmv.fmv_usd == null || isInflatedAskOnly) {
-    const subtext = isInflatedAskOnly
+  if (!fmv || fmv.fmv_usd == null || inflated) {
+    const subtext = inflated
       ? "No recent sales data — check back when this edition trades again."
       : "Insufficient sales history to compute a confidence-rated FMV."
-    const headline = isInflatedAskOnly ? "FMV pending" : "FMV coming soon"
+    const headline = inflated ? "FMV pending" : "FMV coming soon"
     return (
       <section
         aria-label="Fair market value"
