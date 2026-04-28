@@ -151,11 +151,11 @@ export default function CohortRetention({ rows }: CohortRetentionProps) {
         </table>
       </div>
 
-      <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-800/60">
+      <div className="flex flex-col gap-2 mt-4 pt-3 border-t border-slate-800/60 sm:flex-row sm:items-center">
         <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
-          Retention
+          % active in month
         </div>
-        <div className="flex items-center gap-1 ml-auto">
+        <div className="flex items-center gap-1 sm:ml-auto">
           {LEGEND.map((l) => {
             const { bg } = colorFor(l.pct)
             return (
@@ -170,6 +170,10 @@ export default function CohortRetention({ rows }: CohortRetentionProps) {
           })}
         </div>
       </div>
+      <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
+        M0 is the cohort&apos;s first month, M1 the next month, etc. Cells show the % of that
+        cohort active in month N — not strict retention; wallets can come back after a gap.
+      </p>
     </div>
   )
 }

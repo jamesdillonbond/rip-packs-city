@@ -7,6 +7,8 @@
 //     listed on that Collection (overview, collection, market, analytics,
 //     sniper, badges, sets, packs)
 //   • /analytics + /analytics/{section} including methodology
+//   • /analytics/loans/{collection} per-collection drill-downs
+//   • /analytics/wallets/{address} for every active Flowty wallet
 //   • /profile/{username} for each profile_bio row that has set a public
 //     username (Phase 4 public profile pages)
 //
@@ -26,6 +28,10 @@ import { METHODOLOGY_LIST } from '@/lib/analytics/methodology'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://rip-packs-city.vercel.app'
 
+// Wallet directory grows slowly — 6h cache keeps the build fast without
+// stale wallet entries lingering forever.
+export const revalidate = 21600
+
 const ANALYTICS_STUBS = [
   'pulse',
   'sales',
@@ -36,6 +42,8 @@ const ANALYTICS_STUBS = [
   'fmv',
   'api',
 ]
+
+const LOAN_COLLECTION_SLUGS = ['topshot', 'allday', 'golazos', 'pinnacle', 'ufc']
 
 // Per-page change frequency + priority. Market/analytics/sniper change
 // constantly; static pages are stable.
@@ -89,6 +97,33 @@ async function getPublicProfiles(): Promise<Array<{ username: string; updated_at
   }
 }
 
+interface DirectoryRow {
+  addr: string
+  last_active_at: string | null
+}
+
+async function getLoanWallets(): Promise<DirectoryRow[]> {
+  // Every wallet that's appeared on the Flowty loan book gets one
+  // /analytics/wallets/[address] entry. We use the canonical
+  // flowty_analytics_wallet_directory RPC — same source the directory
+  // page reads — so the sitemap can never disagree with the live UI.
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return []
+  try {
+    const sb: any = createClient(url, key)
+    const { data, error } = await sb.rpc('flowty_analytics_wallet_directory')
+    if (error) {
+      console.log('[sitemap] wallet_directory error: ' + error.message)
+      return []
+    }
+    return ((data ?? []) as DirectoryRow[]).filter((r) => /^0x[0-9a-f]{16}$/i.test(r.addr || ''))
+  } catch (err) {
+    console.log('[sitemap] wallet_directory threw: ' + (err instanceof Error ? err.message : String(err)))
+    return []
+  }
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date()
 
@@ -117,6 +152,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const analyticsPages: MetadataRoute.Sitemap = [
     { url: `${BASE_URL}/analytics`,       lastModified: now, changeFrequency: 'daily', priority: 0.9 },
     { url: `${BASE_URL}/analytics/loans`, lastModified: now, changeFrequency: 'daily', priority: 0.8 },
+    ...LOAN_COLLECTION_SLUGS.map((slug) => ({
+      url: `${BASE_URL}/analytics/loans/${slug}`,
+      lastModified: now,
+      changeFrequency: 'daily' as const,
+      priority: 0.7,
+    })),
     ...ANALYTICS_STUBS.map((slug) => ({
       url: `${BASE_URL}/analytics/${slug}`,
       lastModified: now,
@@ -137,6 +178,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })),
   ]
 
+  const loanWallets = await getLoanWallets()
+  const walletPages: MetadataRoute.Sitemap = loanWallets.map((w) => ({
+    url: `${BASE_URL}/analytics/wallets/${w.addr}`,
+    lastModified: w.last_active_at ? new Date(w.last_active_at) : now,
+    changeFrequency: 'weekly' as const,
+    priority: 0.6,
+  }))
+
   const profiles = await getPublicProfiles()
   const profilePages: MetadataRoute.Sitemap = profiles.map((p) => ({
     url: `${BASE_URL}/profile/${encodeURIComponent(p.username)}`,
@@ -145,5 +194,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.5,
   }))
 
-  return [...staticPages, ...featurePages, ...analyticsPages, ...profilePages]
+  return [
+    ...staticPages,
+    ...featurePages,
+    ...analyticsPages,
+    ...walletPages,
+    ...profilePages,
+  ]
 }

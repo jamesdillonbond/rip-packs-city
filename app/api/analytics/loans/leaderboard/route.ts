@@ -24,6 +24,16 @@ function parseLimit(raw: string | null): number {
   return Math.min(100, n)
 }
 
+function parseMinVolume(raw: string | null): number {
+  // Default to $100 to filter out the dust ranks (test/canceled rows that
+  // ended up with $0-$1 of principal). Callers can pass min_volume=0 to
+  // see everything, including the dust.
+  if (raw == null || raw === "") return 100
+  const n = parseFloat(raw)
+  if (!Number.isFinite(n) || n < 0) return 100
+  return n
+}
+
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url)
@@ -34,14 +44,16 @@ export async function GET(req: NextRequest) {
     const window = parseWindow(url.searchParams.get("window"))
     const collections = parseCollections(url.searchParams.get("collections"))
     const limit = parseLimit(url.searchParams.get("limit"))
+    const minVolume = parseMinVolume(url.searchParams.get("min_volume"))
     const range = windowRange(window)
 
-    const { data, error } = await supabaseAdmin.rpc("flowty_analytics_leaderboard", {
+    const { data, error } = await (supabaseAdmin.rpc as any)("flowty_analytics_leaderboard", {
       p_role: role,
       p_start_at: range.startISO,
       p_end_at: range.endISO,
       p_collections: collections,
       p_limit: limit,
+      p_min_volume: minVolume,
     })
 
     if (error) {
