@@ -352,16 +352,32 @@ export default function ListingsDashboard() {
                         {row.nft_id != null ? String(row.nft_id) : "—"}
                       </td>
                       <td className="py-2 pr-3">
-                        {isLinkableAddr(row.borrower_addr) ? (
-                          <Link
-                            href={`/analytics/wallets/${row.borrower_addr}`}
-                            className="font-mono text-xs text-slate-300 hover:text-emerald-400 transition-colors"
-                          >
-                            {truncateAddr(row.borrower_addr)}
-                          </Link>
+                        {row.borrower_addr ? (
+                          <div className="flex flex-col leading-tight">
+                            {isLinkableAddr(row.borrower_addr) ? (
+                              <Link
+                                href={`/analytics/wallets/${row.borrower_addr}`}
+                                className="font-mono text-xs text-slate-300 hover:text-emerald-400 transition-colors"
+                              >
+                                {truncateAddr(row.borrower_addr)}
+                              </Link>
+                            ) : (
+                              <span className="font-mono text-xs text-slate-500">
+                                {truncateAddr(row.borrower_addr)}
+                              </span>
+                            )}
+                            {row.borrower_inferred && row.storefront_address ? (
+                              <span className="font-mono text-[10px] italic text-slate-500 mt-0.5">
+                                via {truncateAddr(row.storefront_address)}
+                              </span>
+                            ) : null}
+                          </div>
                         ) : (
-                          <span className="font-mono text-xs text-slate-500">
-                            {truncateAddr(row.borrower_addr)}
+                          <span
+                            className="font-mono text-xs text-slate-500 cursor-help"
+                            title="Lister account hasn't been seen as a borrower elsewhere yet — wallet identity will resolve on first funded loan"
+                          >
+                            via {truncateAddr(row.storefront_address)}
                           </span>
                         )}
                       </td>

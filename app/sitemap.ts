@@ -41,7 +41,6 @@ const ANALYTICS_STUBS = [
   'wallets',
   'packs',
   'sets',
-  'fmv',
   'api',
 ]
 
@@ -213,6 +212,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })),
     { url: `${BASE_URL}/analytics/pulse`, lastModified: now, changeFrequency: 'always', priority: 0.9 },
     { url: `${BASE_URL}/analytics/listings`, lastModified: now, changeFrequency: 'hourly', priority: 0.8 },
+    { url: `${BASE_URL}/analytics/fmv`, lastModified: now, changeFrequency: 'daily', priority: 0.7 },
     ...ANALYTICS_STUBS.map((slug) => ({
       url: `${BASE_URL}/analytics/${slug}`,
       lastModified: now,
