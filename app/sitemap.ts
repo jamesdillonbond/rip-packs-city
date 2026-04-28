@@ -12,14 +12,19 @@
 //   • /profile/{username} for each profile_bio row that has set a public
 //     username (Phase 4 public profile pages)
 //
-// Deferred — these would 5x the sitemap size but require routes that
-// don't exist yet:
-//   • per-edition pages (~20K rows)
+// Deferred — these would multiply the sitemap size but require routes
+// that don't exist yet:
 //   • per-set pages (347 rows)
 //   • per-player pages (1,232 rows)
 //   • per-pack pages (5,149 rows in pack_distributions)
 // When those route segments are built, plug in the queries here. URLs
 // pointing to nonexistent pages would 404 and hurt SEO.
+//
+// Live as of 2026-04-27:
+//   • per-edition pages — every editions row in a published collection.
+//     ~20.5K URLs, well under Google's 50K-per-sitemap limit. When the
+//     other per-entity segments come online and the total exceeds 50K,
+//     split into per-segment sitemap children.
 
 import type { MetadataRoute } from 'next'
 import { createClient } from '@supabase/supabase-js'
@@ -100,6 +105,49 @@ async function getPublicProfiles(): Promise<Array<{ username: string; updated_at
 interface DirectoryRow {
   addr: string
   last_active_at: string | null
+}
+
+// DB slugs for the published collections — these match collections.slug
+// (underscore-separated) rather than the hyphenated frontend slugs.
+const EDITION_COLLECTION_DB_SLUGS = [
+  'nba_top_shot',
+  'nfl_all_day',
+  'laliga_golazos',
+  'disney_pinnacle',
+]
+
+interface EditionRow {
+  id: string
+  last_updated_at: string | null
+}
+
+async function getEditionRows(): Promise<EditionRow[]> {
+  // One sitemap entry per edition in a published collection. Service-role
+  // client bypasses RLS; the join is materialised by Supabase via the
+  // foreign-key relation. ~20.5K rows total today.
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return []
+  try {
+    const sb: any = createClient(url, key)
+    const { data, error } = await sb
+      .from('editions')
+      .select('id, last_updated_at, collections!inner(slug)')
+      .in('collections.slug', EDITION_COLLECTION_DB_SLUGS)
+      .order('last_updated_at', { ascending: false, nullsFirst: false })
+      .limit(50000)
+    if (error) {
+      console.log('[sitemap] editions query error: ' + error.message)
+      return []
+    }
+    return ((data ?? []) as Array<{ id: string; last_updated_at: string | null }>).map((r) => ({
+      id: r.id,
+      last_updated_at: r.last_updated_at,
+    }))
+  } catch (err) {
+    console.log('[sitemap] editions query threw: ' + (err instanceof Error ? err.message : String(err)))
+    return []
+  }
 }
 
 async function getLoanWallets(): Promise<DirectoryRow[]> {
@@ -201,11 +249,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.5,
   }))
 
+  const editions = await getEditionRows()
+  const editionPages: MetadataRoute.Sitemap = editions.map((e) => ({
+    url: `${BASE_URL}/edition/${e.id}`,
+    lastModified: e.last_updated_at ? new Date(e.last_updated_at) : now,
+    changeFrequency: 'daily' as const,
+    priority: 0.6,
+  }))
+
   return [
     ...staticPages,
     ...featurePages,
     ...analyticsPages,
     ...walletPages,
     ...profilePages,
+    ...editionPages,
   ]
 }
