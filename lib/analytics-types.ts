@@ -356,6 +356,14 @@ export interface ListingsOpenLoanOfferRow {
   listing_resource_id: string | number
   collection: string
   borrower_addr: string | null
+  // Always populated — the storefront resource (typically a child account in
+  // a HybridCustody hierarchy) that hosts the listing on-chain.
+  storefront_address: string
+  // True when borrower_addr was resolved via the historical HybridCustody
+  // parent map; false when the FUNDING_AVAILABLE event explicitly carried a
+  // borrower address. Null borrower_addr means the storefront is first-time
+  // and hasn't been seen on a funded loan elsewhere yet.
+  borrower_inferred: boolean
   principal_usd: number
   principal_currency: string | null
   interest_rate: number | null
@@ -364,4 +372,53 @@ export interface ListingsOpenLoanOfferRow {
   expires_at: string | null
   listed_at: string | null
   nft_id: string | number | null
+}
+
+// ── FMV RPC response shapes ────────────────────────────────────────────────
+// analytics_fmv_pipeline_health, analytics_fmv_top_movers, analytics_fmv_tier_pulse.
+
+export interface FmvPipelineCollectionStats {
+  editions_total: number
+  high_confidence: number
+  medium_confidence: number
+  low_confidence: number
+  ask_only: number
+  reliable_total_fmv_usd: number
+  reliable_avg_fmv_usd: number
+  last_refresh: string | null
+  minutes_since_refresh: number | null
+}
+
+export interface FmvPipelineHealthResponse {
+  collections: Record<string, FmvPipelineCollectionStats>
+  as_of: string
+  note?: string | null
+}
+
+export type FmvConfidence = "HIGH" | "MEDIUM" | "LOW" | "ASK_ONLY"
+
+export interface FmvTopMoverRow {
+  rank: number
+  collection: string
+  edition_id: string
+  player_name: string | null
+  set_name: string | null
+  current_fmv_usd: number
+  prior_fmv_usd: number | null
+  change_usd: number
+  change_pct: number
+  current_confidence: FmvConfidence
+  prior_confidence: FmvConfidence | null
+  sales_count_7d: number
+}
+
+export interface FmvTierPulseRow {
+  collection: string
+  tier: string | null
+  edition_count: number
+  total_fmv_usd: number
+  avg_fmv_usd: number | null
+  median_fmv_usd: number | null
+  high_conf_count: number
+  low_conf_count: number
 }

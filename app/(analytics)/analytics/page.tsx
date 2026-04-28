@@ -12,6 +12,7 @@ import {
   ArrowUpRight,
 } from "lucide-react"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
+import { supabaseAdmin } from "@/lib/supabase"
 
 // The dashboard fans out to several Supabase-backed APIs at render time
 // and intermittently exceeds the 60s static-generation budget. Marking it
@@ -49,6 +50,20 @@ interface Pulse24hResponse {
 
 interface ListingsSummaryCardResponse {
   loan_offers: { count: number; total_principal_usd: number }
+}
+
+interface FmvHealthCardResponse {
+  collections: Record<
+    string,
+    {
+      editions_total: number
+      reliable_total_fmv_usd: number
+    }
+  >
+}
+
+interface WalletDirectoryCardRow {
+  addr: string
 }
 
 async function loadLoansSummary(): Promise<LoansSummaryResponse | null> {
@@ -99,6 +114,29 @@ async function loadListingsSummary(): Promise<ListingsSummaryCardResponse | null
   }
 }
 
+async function loadFmvHealth(): Promise<FmvHealthCardResponse | null> {
+  try {
+    const res = await fetch(`${ANALYTICS_BASE_URL}/api/analytics/fmv/health`, {
+      next: { revalidate: 600 },
+    })
+    if (!res.ok) return null
+    return (await res.json()) as FmvHealthCardResponse
+  } catch {
+    return null
+  }
+}
+
+async function loadWalletDirectoryCount(): Promise<number | null> {
+  try {
+    const sb: any = supabaseAdmin
+    const { data, error } = await sb.rpc("flowty_analytics_wallet_directory")
+    if (error || !Array.isArray(data)) return null
+    return (data as WalletDirectoryCardRow[]).length
+  } catch {
+    return null
+  }
+}
+
 function formatUsd(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "$0"
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
@@ -142,12 +180,24 @@ const TIMELINE = [
 ]
 
 export default async function AnalyticsOverviewPage() {
-  const [summary, salesSummary, pulse, listings] = await Promise.all([
-    loadLoansSummary(),
-    loadSalesSummary(),
-    loadPulse24h(),
-    loadListingsSummary(),
-  ])
+  const [summary, salesSummary, pulse, listings, fmvHealth, walletCount] =
+    await Promise.all([
+      loadLoansSummary(),
+      loadSalesSummary(),
+      loadPulse24h(),
+      loadListingsSummary(),
+      loadFmvHealth(),
+      loadWalletDirectoryCount(),
+    ])
+
+  let fmvTotalUsd = 0
+  let fmvEditionTotal = 0
+  if (fmvHealth?.collections) {
+    for (const stats of Object.values(fmvHealth.collections)) {
+      fmvTotalUsd += stats?.reliable_total_fmv_usd ?? 0
+      fmvEditionTotal += stats?.editions_total ?? 0
+    }
+  }
 
   const cards: SectionCard[] = [
     {
@@ -211,9 +261,30 @@ export default async function AnalyticsOverviewPage() {
     {
       href: "/analytics/wallets",
       label: "Wallets",
-      description: "Wallet cohorts, holding patterns, accumulator vs flipper detection.",
+      description: "Every wallet active on the Flowty loan book — lenders, borrowers, and mixed-role power users.",
       icon: Users,
-      status: "soon",
+      status: "live",
+      metrics:
+        walletCount != null
+          ? [
+              { label: "Active wallets", value: formatCount(walletCount) },
+              { label: "Source", value: "Loan book" },
+            ]
+          : [{ label: "Status", value: "Live" }],
+    },
+    {
+      href: "/analytics/fmv",
+      label: "FMV Index",
+      description: "Algorithmic fair-market-value pricing across NBA Top Shot and NFL All Day editions.",
+      icon: Sparkles,
+      status: "live",
+      metrics:
+        fmvTotalUsd > 0
+          ? [
+              { label: "Reliable FMV", value: formatUsd(fmvTotalUsd) },
+              { label: "Editions", value: formatCount(fmvEditionTotal) },
+            ]
+          : [{ label: "Status", value: "Live" }],
     },
     {
       href: "/analytics/packs",
@@ -227,13 +298,6 @@ export default async function AnalyticsOverviewPage() {
       label: "Sets",
       description: "Set completion rates and bottleneck moments by tier.",
       icon: Layers,
-      status: "soon",
-    },
-    {
-      href: "/analytics/fmv",
-      label: "FMV Index",
-      description: "Composite FMV indexes across collections, edition tiers, and rarity bands.",
-      icon: Sparkles,
       status: "soon",
     },
   ]
@@ -261,36 +325,70 @@ export default async function AnalyticsOverviewPage() {
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {cards.map((c) => {
             const Icon = c.icon
+            const isLive = c.status === "live"
             return (
               <Link
                 key={c.href}
                 href={c.href}
-                className="group relative rounded-xl border border-slate-800 bg-slate-900/40 p-5 transition-all hover:border-emerald-500/40 hover:bg-slate-900/70"
+                className={
+                  "group relative rounded-xl border p-5 transition-all " +
+                  (isLive
+                    ? "border-slate-800 bg-slate-900/40 hover:border-emerald-500/40 hover:bg-slate-900/70"
+                    : "border-slate-800/60 bg-slate-900/20 opacity-60 hover:opacity-80 hover:border-slate-700")
+                }
               >
                 <div className="flex items-start gap-3 mb-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-md bg-emerald-500/10 border border-emerald-500/20">
-                    <Icon size={16} className="text-emerald-400" />
+                  <div
+                    className={
+                      "flex h-9 w-9 items-center justify-center rounded-md border " +
+                      (isLive
+                        ? "bg-emerald-500/10 border-emerald-500/20"
+                        : "bg-slate-800/40 border-slate-700/50")
+                    }
+                  >
+                    <Icon
+                      size={16}
+                      className={isLive ? "text-emerald-400" : "text-slate-500"}
+                    />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-slate-100">{c.label}</h3>
-                      {c.status === "live" ? (
+                      <h3
+                        className={
+                          "font-semibold " +
+                          (isLive ? "text-slate-100" : "text-slate-400")
+                        }
+                      >
+                        {c.label}
+                      </h3>
+                      {isLive ? (
                         <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-emerald-400 border border-emerald-500/30">
                           Live
                         </span>
                       ) : (
-                        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-slate-400 border border-slate-700">
-                          Soon
+                        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-slate-500 border border-slate-700/70">
+                          Coming Soon
                         </span>
                       )}
                     </div>
                   </div>
                   <ArrowUpRight
                     size={14}
-                    className="text-slate-600 group-hover:text-emerald-400 transition-colors"
+                    className={
+                      isLive
+                        ? "text-slate-600 group-hover:text-emerald-400 transition-colors"
+                        : "text-slate-700"
+                    }
                   />
                 </div>
-                <p className="text-sm text-slate-400 leading-relaxed mb-3">{c.description}</p>
+                <p
+                  className={
+                    "text-sm leading-relaxed mb-3 " +
+                    (isLive ? "text-slate-400" : "text-slate-500")
+                  }
+                >
+                  {c.description}
+                </p>
                 {c.metrics ? (
                   <div className="flex gap-4 pt-3 border-t border-slate-800/80">
                     {c.metrics.map((m) => (
@@ -298,7 +396,12 @@ export default async function AnalyticsOverviewPage() {
                         <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
                           {m.label}
                         </div>
-                        <div className="text-base font-semibold text-slate-100 tabular-nums">
+                        <div
+                          className={
+                            "text-base font-semibold tabular-nums " +
+                            (isLive ? "text-slate-100" : "text-slate-400")
+                          }
+                        >
                           {m.value}
                         </div>
                       </div>
