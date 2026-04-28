@@ -399,6 +399,135 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
           }
         }
       }
+
+      // Hydrate-at-insert (post-seed UPDATE pattern). seed_topshot_editions
+      // writes external_id + onchain IDs but leaves name/player_name/set_name/
+      // tier/series NULL — the historical "background hydrator catches it
+      // later" assumption broke (see lib/editions-hydrate.ts header). Now we
+      // fetch the metadata via TopShot GQL and UPDATE the just-seeded rows
+      // before this function returns. Pre-hydrate (vs modifying the RPC
+      // signature) is the lower-risk option since other callers still use the
+      // RPC's existing shape. Failures fall back to skeleton + warning.
+      const hydrateStartedAt = new Date().toISOString()
+      let hydrated = 0
+      let fallback = 0
+      const failed: string[] = []
+      try {
+        const proxyUrl = Deno.env.get("TS_PROXY_URL") ?? "https://public-api.nbatopshot.com/graphql"
+        const proxySecret = Deno.env.get("TS_PROXY_SECRET")
+        const ghHeaders: Record<string, string> = {
+          "Content-Type": "application/json",
+          "User-Agent": "rip-packs-city/edge-hydrate",
+        }
+        if (proxySecret) ghHeaders["X-Proxy-Secret"] = proxySecret
+
+        const setMetaCache = new Map<string, { setName: string | null; series: number | null } | null>()
+
+        async function gql<T>(query: string, variables: Record<string, unknown>): Promise<T | null> {
+          try {
+            const res = await fetch(proxyUrl, {
+              method: "POST",
+              headers: ghHeaders,
+              body: JSON.stringify({ query, variables }),
+              signal: AbortSignal.timeout(8_000),
+            })
+            if (!res.ok) return null
+            const json = await res.json() as { data?: T; errors?: unknown[] }
+            if (Array.isArray(json.errors) && json.errors.length > 0) return null
+            return json.data ?? null
+          } catch {
+            return null
+          }
+        }
+
+        for (const ext of unseededExternalIds) {
+          const parts = ext.split(":")
+          if (parts.length !== 2) {
+            fallback++
+            failed.push(ext)
+            continue
+          }
+          const [setID, playID] = parts
+
+          let setMeta = setMetaCache.get(setID) ?? null
+          if (!setMetaCache.has(setID)) {
+            const setData = await gql<{ getSet?: { set?: { flowName?: string | null; flowSeriesNumber?: number | null } | null } }>(
+              `query GetSet($setID: ID!) { getSet(input: { setID: $setID }) { set { flowName flowSeriesNumber } } }`,
+              { setID },
+            )
+            const set = setData?.getSet?.set
+            setMeta = set
+              ? {
+                  setName: set.flowName ? String(set.flowName).trim() : null,
+                  series: set.flowSeriesNumber != null ? Number(set.flowSeriesNumber) : null,
+                }
+              : null
+            setMetaCache.set(setID, setMeta)
+          }
+
+          const playData = await gql<{ getPlay?: { play?: { stats?: { playerName?: string | null; teamAtMoment?: string | null; playCategory?: string | null }; statsPlayerFullName?: string | null } | null } }>(
+            `query GetPlay($playID: ID!) { getPlay(input: { playID: $playID }) { play { stats { playerName teamAtMoment playCategory } statsPlayerFullName } } }`,
+            { playID },
+          )
+          const play = playData?.getPlay?.play
+          const playerName = play?.statsPlayerFullName ?? play?.stats?.playerName ?? null
+
+          if (!playerName) {
+            fallback++
+            failed.push(ext)
+            continue
+          }
+
+          const trimmedPlayer = String(playerName).trim()
+          const setName = setMeta?.setName ?? null
+          const name = setName ? `${trimmedPlayer} — ${setName}` : trimmedPlayer
+
+          const update: Record<string, unknown> = {
+            name,
+            player_name: trimmedPlayer,
+            set_name: setName,
+            team_name: play?.stats?.teamAtMoment ?? null,
+            series: setMeta?.series ?? null,
+            play_type: play?.stats?.playCategory ?? null,
+            updated_at: new Date().toISOString(),
+          }
+
+          // Only UPDATE rows still missing player_name — never overwrite real
+          // data that arrived from another path between seed and hydrate.
+          await supabase
+            .from("editions")
+            .update(update)
+            .eq("collection_id", TOPSHOT_COLLECTION_ID)
+            .eq("external_id", ext)
+            .is("player_name", null)
+          hydrated++
+        }
+      } catch (hydrateErr) {
+        console.log(`[compute-topshot-pack-ev] hydrate-at-insert err: ${hydrateErr instanceof Error ? hydrateErr.message : String(hydrateErr)}`)
+      }
+
+      try {
+        // deno-lint-ignore no-explicit-any
+        await (supabase as any).rpc("log_pipeline_run", {
+          p_pipeline: "editions-hydrate-at-insert",
+          p_started_at: hydrateStartedAt,
+          p_rows_found: unseededExternalIds.length,
+          p_rows_written: hydrated,
+          p_rows_skipped: fallback,
+          p_ok: true,
+          p_error: null,
+          p_collection_slug: "nba-top-shot",
+          p_cursor_before: null,
+          p_cursor_after: null,
+          p_extra: {
+            site: "compute-topshot-pack-ev",
+            candidates: unseededExternalIds.length,
+            hydrated,
+            fallback_skeleton: fallback,
+            failed_sample: failed.slice(0, 10),
+          },
+        })
+      } catch { /* best-effort */ }
     }
 
     // FMV lookup runs AFTER the re-resolve so newly-seeded editions get FMV
