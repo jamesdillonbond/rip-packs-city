@@ -1,8 +1,8 @@
-// GET /api/analytics/loans/summary
+// GET /api/analytics/sales/summary
 //
-// Thin wrapper over flowty_analytics_summary(p_start_at, p_end_at, p_collections).
-// The RPC is the single source of truth for funded-loan KPIs and prior-period
-// deltas. Returns the RPC payload verbatim.
+// Thin wrapper over analytics_sales_summary(p_start_at, p_end_at, p_collections).
+// Returns the jsonb response verbatim — totals, percentile spread, prior-period
+// deltas, and per-collection / per-marketplace roll-ups.
 //
 // Query params:
 //   window      l7 | l30 | l90 | ytd | y2026 | y2025 | all  (default all)
@@ -12,7 +12,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { parseWindow, windowRange, parseCollections } from "@/lib/analytics/window"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
-import type { AnalyticsSummaryResponse } from "@/lib/analytics-types"
+import type { SalesSummaryResponse } from "@/lib/analytics-types"
 
 export const revalidate = 600
 
@@ -25,12 +25,12 @@ export async function GET(req: NextRequest) {
     const range = windowRange(window)
 
     console.log(
-      `[analytics/loans/summary] start window=${window} collections=${collections?.join(",") ?? "all"}`
+      `[analytics/sales/summary] start window=${window} collections=${collections?.join(",") ?? "all"}`
     )
 
-    const { data, error } = await rpcWithRetry<AnalyticsSummaryResponse>(
+    const { data, error } = await rpcWithRetry<SalesSummaryResponse>(
       supabaseAdmin,
-      "flowty_analytics_summary",
+      "analytics_sales_summary",
       {
         p_start_at: range.startISO,
         p_end_at: range.endISO,
@@ -39,12 +39,12 @@ export async function GET(req: NextRequest) {
     )
 
     if (error) {
-      console.log("[analytics/loans/summary] rpc_error", error.message)
+      console.log("[analytics/sales/summary] rpc_error", error.message)
       return NextResponse.json({ error: "summary_failed" }, { status: 500 })
     }
 
     console.log(
-      `[analytics/loans/summary] ok elapsed=${Date.now() - t0}ms total_loans=${data?.total_loans ?? 0}`
+      `[analytics/sales/summary] ok elapsed=${Date.now() - t0}ms total_sales=${data?.total_sales ?? 0}`
     )
 
     return NextResponse.json(data, {
@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
       },
     })
   } catch (e: any) {
-    console.log("[analytics/loans/summary] error", e?.message || e, `elapsed=${Date.now() - t0}ms`)
+    console.log("[analytics/sales/summary] error", e?.message || e, `elapsed=${Date.now() - t0}ms`)
     return NextResponse.json({ error: "summary_failed" }, { status: 500 })
   }
 }

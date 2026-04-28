@@ -179,3 +179,71 @@ export interface WalletDirectoryRow {
   primary_role: "borrower" | "lender" | "mixed"
   last_active_at: string
 }
+
+// ── Sales analytics RPC response shapes ─────────────────────────────────────
+// analytics_sales_summary, analytics_sales_timeseries, analytics_sales_leaderboard,
+// analytics_sales_top_moves. Marketplace values are: "topshot" (centralized
+// Top Shot marketplace), "flowty" (Flowty's NFTStorefrontV2 fork), "on-chain"
+// or "pinnacle" (direct Pinnacle.Trade events).
+
+export interface SalesCollectionBreakdownEntry {
+  count: number
+  usd: number
+}
+
+export interface SalesMarketplaceBreakdownEntry {
+  count: number
+  usd: number
+}
+
+export interface SalesSummaryWindow {
+  total_sales: number
+  total_volume_usd: number
+  unique_buyers: number
+  unique_sellers: number
+  avg_price_usd: number | null
+  median_price_usd: number | null
+  p90_price_usd: number | null
+  max_price_usd: number | null
+  collection_breakdown?: Record<string, SalesCollectionBreakdownEntry>
+  marketplace_breakdown?: Record<string, SalesMarketplaceBreakdownEntry>
+}
+
+export interface SalesSummaryResponse extends SalesSummaryWindow {
+  prior_period: SalesSummaryWindow | null
+}
+
+export interface SalesTimeseriesRow {
+  bucket: string // YYYY-MM-DD
+  collection: string
+  sale_count: number
+  volume_usd: number
+  avg_price_usd: number | null
+}
+
+export interface SalesLeaderboardRow {
+  rank: number
+  addr: string
+  sale_count: number
+  total_volume_usd: number
+  avg_price_usd: number | null
+  is_returning: boolean
+  first_seen_at: string | null
+  last_seen_at: string | null
+}
+
+export interface SalesTopMoveRow {
+  rank: number
+  collection: string
+  serial_number: number | null
+  price_usd: number
+  buyer_address: string | null
+  seller_address: string | null
+  marketplace: string
+  sold_at: string
+  player_name: string | null
+  set_name: string | null
+  edition_id: string | null
+  moment_id: number | null
+  transaction_hash: string | null
+}

@@ -1,11 +1,11 @@
 import type { Metadata } from "next"
-import ComingSoon from "@/components/analytics/ComingSoon"
+import SalesDashboard from "@/components/analytics/SalesDashboard"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
 
 export const metadata: Metadata = analyticsMetadata({
   title: "Sales Analytics — On-chain Sales Across Flow Collectibles",
   description:
-    "Sales analytics for NBA Top Shot, NFL All Day, LaLiga Golazos, and Disney Pinnacle, indexed directly from on-chain NFTStorefrontV2 and TopShotMarketV3 events.",
+    "Live secondary-market sales across NBA Top Shot, NFL All Day, LaLiga Golazos, UFC Strike, and Disney Pinnacle. Volume, leaderboards, and biggest sales — refreshed every 10 minutes.",
   path: "/analytics/sales",
 })
 
@@ -14,9 +14,42 @@ const datasetJsonLd = {
   "@type": "Dataset",
   name: "Rip Packs City Sales Analytics",
   description:
-    "On-chain sales for Flow digital collectibles indexed from NFTStorefrontV2 and TopShotMarketV3.",
+    "On-chain sales for Flow digital collectibles indexed from NFTStorefrontV2, TopShotMarketV3, NFL All Day, Golazos, and Pinnacle Trade events.",
   creator: { "@type": "Organization", name: "Rip Packs City" },
   url: `${ANALYTICS_BASE_URL}/analytics/sales`,
+  distribution: [
+    {
+      "@type": "DataDownload",
+      encodingFormat: "application/json",
+      contentUrl: `${ANALYTICS_BASE_URL}/api/analytics/sales/summary`,
+    },
+    {
+      "@type": "DataDownload",
+      encodingFormat: "application/json",
+      contentUrl: `${ANALYTICS_BASE_URL}/api/analytics/sales/timeseries`,
+    },
+    {
+      "@type": "DataDownload",
+      encodingFormat: "application/json",
+      contentUrl: `${ANALYTICS_BASE_URL}/api/analytics/sales/leaderboard`,
+    },
+    {
+      "@type": "DataDownload",
+      encodingFormat: "application/json",
+      contentUrl: `${ANALYTICS_BASE_URL}/api/analytics/sales/top-moves`,
+    },
+  ],
+  variableMeasured: [
+    "Total sale volume (USD)",
+    "Sale count",
+    "Unique buyers (on-chain only)",
+    "Unique sellers (on-chain only)",
+    "Average sale price",
+    "Median sale price",
+    "Marketplace mix (Top Shot, Flowty, Pinnacle direct)",
+    "Top buyers and sellers by volume",
+    "Largest single sales",
+  ],
 }
 
 export default function SalesPage() {
@@ -26,18 +59,7 @@ export default function SalesPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
       />
-      <ComingSoon
-        section="Sales Analytics"
-        expected="Q3 2026"
-        description="Every sale across every Flow collectibles marketplace, indexed from chain events. Filter by collection, set, tier, and serial range; chart volume and average sale price over arbitrary windows; identify trending editions before the rest of the market notices."
-        metrics={[
-          "Total sale volume by collection, tier, and set",
-          "Average and median sale price per edition over time",
-          "Top sales leaderboards (24h, 7d, 30d)",
-          "Most-traded editions and largest single-sale highlights",
-          "Buyer/seller flow — net accumulation per wallet",
-        ]}
-      />
+      <SalesDashboard />
     </>
   )
 }
