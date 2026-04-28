@@ -177,6 +177,16 @@ function describeEditionLabel(e: EditionRow): string {
   return "Edition"
 }
 
+// Best-effort player display when editions.player_name is null but the
+// player name is folded into edition.name (e.g. "Kevin Porter Jr. — Holo
+// Icon"). Splits on em-dash / hyphen / colon.
+function inferPlayerFromName(e: EditionRow): string | null {
+  if (e.player_name) return e.player_name
+  if (!e.name) return null
+  const head = e.name.split(/[—–:|]|\s-\s/)[0]?.trim()
+  return head && head.length > 0 ? head : null
+}
+
 export async function generateMetadata(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Metadata> {
@@ -190,18 +200,24 @@ export async function generateMetadata(
   }
 
   const { edition, collection, fmv, sales_30d_summary } = data
-  const player = edition.player_name ?? "Edition"
+  const player = inferPlayerFromName(edition)
   const editionLabel = describeEditionLabel(edition)
   const tier = edition.tier ?? ""
-  const title = `${player} ${editionLabel} ${tier}`.replace(/\s+/g, " ").trim() +
-    ` | Rip Packs City`
+  // Root metadata template in lib/seo.ts auto-appends " | Rip Packs City"
+  // when title is a string — don't repeat it here.
+  const titleParts: string[] = []
+  if (player && !editionLabel.includes(player)) titleParts.push(player)
+  titleParts.push(editionLabel)
+  if (tier) titleParts.push(tier)
+  const title = titleParts.join(" ").replace(/\s+/g, " ").trim()
 
-  const kind = edition.edition_kind ?? "edition"
+  const kind = edition.edition_kind ?? null
+  const kindLabel = kind === "LE" ? "Limited Edition" : kind
   const circ = edition.circulation_count ?? null
   const sales30d = sales_30d_summary?.count ?? 0
   const fmvUsd = fmv?.fmv_usd ?? null
-  const descParts: string[] = []
-  descParts.push(`${kind === "LE" ? "Limited Edition" : kind} ${player}`)
+  const lead = [kindLabel, player ?? collection.name].filter(Boolean).join(" ")
+  const descParts: string[] = [lead]
   if (circ != null) descParts.push(`${circ.toLocaleString()} circulation`)
   if (fmvUsd != null) descParts.push(`FMV ${fmtUsd(fmvUsd)}`)
   if (sales30d > 0) descParts.push(`${sales30d} sale${sales30d === 1 ? "" : "s"} 30d`)
