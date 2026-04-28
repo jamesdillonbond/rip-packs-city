@@ -543,7 +543,21 @@ function HeroBlock({ data }: { data: EditionPageData }) {
 }
 
 function FmvCard({ fmv }: { fmv: FmvRow | null }) {
-  if (!fmv || fmv.fmv_usd == null) {
+  // Suppress the dollar headline when the snapshot is ask-derived (LOW
+  // confidence + no recent trades). Showing $900K with a small "LOW" badge
+  // on a public page reads as authoritative pricing for an illiquid 1-of-1.
+  const isInflatedAskOnly =
+    fmv != null &&
+    fmv.fmv_usd != null &&
+    (fmv.confidence ?? "").toUpperCase() === "LOW" &&
+    (fmv.sales_count_30d ?? 0) === 0 &&
+    (fmv.sales_count_7d ?? 0) === 0
+
+  if (!fmv || fmv.fmv_usd == null || isInflatedAskOnly) {
+    const subtext = isInflatedAskOnly
+      ? "No recent sales data — check back when this edition trades again."
+      : "Insufficient sales history to compute a confidence-rated FMV."
+    const headline = isInflatedAskOnly ? "FMV pending" : "FMV coming soon"
     return (
       <section
         aria-label="Fair market value"
@@ -566,7 +580,7 @@ function FmvCard({ fmv }: { fmv: FmvRow | null }) {
         >
           Fair Market Value
         </div>
-        <div style={{ fontSize: 24, color: "#9ca3af" }}>FMV coming soon</div>
+        <div style={{ fontSize: 24, color: "#9ca3af" }}>{headline}</div>
         <div
           style={{
             fontSize: 12,
@@ -575,7 +589,7 @@ function FmvCard({ fmv }: { fmv: FmvRow | null }) {
             fontFamily: "monospace",
           }}
         >
-          Insufficient sales history to compute a confidence-rated FMV.
+          {subtext}
         </div>
       </section>
     )

@@ -107,13 +107,13 @@ interface DirectoryRow {
   last_active_at: string | null
 }
 
-// DB slugs for the published collections — these match collections.slug
-// (underscore-separated) rather than the hyphenated frontend slugs.
+// DB slugs for collections that have a per-edition route in `editions`.
+// Pinnacle data lives in `pinnacle_editions` and has no /edition/[id]
+// route segment yet — re-add 'disney_pinnacle' here once that ships.
 const EDITION_COLLECTION_DB_SLUGS = [
   'nba_top_shot',
   'nfl_all_day',
   'laliga_golazos',
-  'disney_pinnacle',
 ]
 
 interface EditionRow {
