@@ -1,6 +1,6 @@
-// GET /api/analytics/loans/timeseries
+// GET /api/analytics/sales/timeseries
 //
-// Thin wrapper over flowty_analytics_timeseries(p_start_at, p_end_at,
+// Thin wrapper over analytics_sales_timeseries(p_start_at, p_end_at,
 // p_collections, p_bucket). Each row is one (bucket, collection) pair —
 // the client pivots them into stacked-area chart shape.
 //
@@ -13,7 +13,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { parseWindow, windowRange, parseCollections } from "@/lib/analytics/window"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
-import type { AnalyticsTimeseriesRow } from "@/lib/analytics-types"
+import type { SalesTimeseriesRow } from "@/lib/analytics-types"
 
 export const revalidate = 600
 
@@ -33,12 +33,12 @@ export async function GET(req: NextRequest) {
     const range = windowRange(window)
 
     console.log(
-      `[analytics/loans/timeseries] start window=${window} collections=${collections?.join(",") ?? "all"} bucket=${bucket}`
+      `[analytics/sales/timeseries] start window=${window} collections=${collections?.join(",") ?? "all"} bucket=${bucket}`
     )
 
-    const { data, error } = await rpcWithRetry<AnalyticsTimeseriesRow[]>(
+    const { data, error } = await rpcWithRetry<SalesTimeseriesRow[]>(
       supabaseAdmin,
-      "flowty_analytics_timeseries",
+      "analytics_sales_timeseries",
       {
         p_start_at: range.startISO,
         p_end_at: range.endISO,
@@ -48,13 +48,13 @@ export async function GET(req: NextRequest) {
     )
 
     if (error) {
-      console.log("[analytics/loans/timeseries] rpc_error", error.message)
+      console.log("[analytics/sales/timeseries] rpc_error", error.message)
       return NextResponse.json({ error: "timeseries_failed" }, { status: 500 })
     }
 
-    const rows = (data ?? []) as AnalyticsTimeseriesRow[]
+    const rows = (data ?? []) as SalesTimeseriesRow[]
     console.log(
-      `[analytics/loans/timeseries] ok elapsed=${Date.now() - t0}ms rows=${rows.length}`
+      `[analytics/sales/timeseries] ok elapsed=${Date.now() - t0}ms rows=${rows.length}`
     )
 
     return NextResponse.json(
@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
       }
     )
   } catch (e: any) {
-    console.log("[analytics/loans/timeseries] error", e?.message || e, `elapsed=${Date.now() - t0}ms`)
+    console.log("[analytics/sales/timeseries] error", e?.message || e, `elapsed=${Date.now() - t0}ms`)
     return NextResponse.json({ error: "timeseries_failed" }, { status: 500 })
   }
 }

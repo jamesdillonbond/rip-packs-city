@@ -34,7 +34,6 @@ export const revalidate = 21600
 
 const ANALYTICS_STUBS = [
   'pulse',
-  'sales',
   'listings',
   'wallets',
   'packs',
@@ -44,6 +43,7 @@ const ANALYTICS_STUBS = [
 ]
 
 const LOAN_COLLECTION_SLUGS = ['topshot', 'allday', 'golazos', 'pinnacle', 'ufc']
+const SALES_COLLECTION_SLUGS = ['topshot', 'allday', 'golazos', 'pinnacle', 'ufc']
 
 // Per-page change frequency + priority. Market/analytics/sniper change
 // constantly; static pages are stable.
@@ -154,6 +154,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE_URL}/analytics/loans`, lastModified: now, changeFrequency: 'daily', priority: 0.8 },
     ...LOAN_COLLECTION_SLUGS.map((slug) => ({
       url: `${BASE_URL}/analytics/loans/${slug}`,
+      lastModified: now,
+      changeFrequency: 'daily' as const,
+      priority: 0.7,
+    })),
+    { url: `${BASE_URL}/analytics/sales`, lastModified: now, changeFrequency: 'daily', priority: 0.8 },
+    ...SALES_COLLECTION_SLUGS.map((slug) => ({
+      url: `${BASE_URL}/analytics/sales/${slug}`,
       lastModified: now,
       changeFrequency: 'daily' as const,
       priority: 0.7,

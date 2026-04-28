@@ -1,21 +1,28 @@
-// GET /api/analytics/loans/leaderboard
+// GET /api/analytics/sales/leaderboard
 //
-// Thin wrapper over flowty_analytics_leaderboard(p_role, p_start_at, p_end_at,
-// p_collections, p_limit). Returns the RPC rows plus a resolved username
-// map so the client can render display names without an extra round-trip.
+// Thin wrapper over analytics_sales_leaderboard(p_role, p_start_at, p_end_at,
+// p_collections, p_limit, p_min_volume, p_include_contracts). Returns the
+// RPC rows plus a resolved username map so the client can render display
+// names without an extra round-trip.
 //
 // Query params:
-//   role        lender | borrower                            (required)
+//   role        buyer | seller                               (default buyer)
 //   window      l7 | l30 | l90 | ytd | y2026 | y2025 | all   (default all)
 //   collections comma-separated list                          (optional)
 //   limit       1..100                                        (default 25)
+//   min_volume  numeric                                       (default 100)
+//
+// Note: p_include_contracts is hardcoded to false. Platform contracts
+// (Flowty/Dapper/Pinnacle/lending escrow addresses) should never appear
+// on a buyer/seller leaderboard — they distort the ranks and confuse
+// readers. There is no query param to flip this.
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { parseWindow, windowRange, parseCollections } from "@/lib/analytics/window"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { resolveUsernames, displayName } from "@/lib/flowty-username"
-import type { AnalyticsLeaderboardRow } from "@/lib/analytics-types"
+import type { SalesLeaderboardRow } from "@/lib/analytics-types"
 
 export const revalidate = 600
 
@@ -26,9 +33,6 @@ function parseLimit(raw: string | null): number {
 }
 
 function parseMinVolume(raw: string | null): number {
-  // Default to $100 to filter out the dust ranks (test/canceled rows that
-  // ended up with $0-$1 of principal). Callers can pass min_volume=0 to
-  // see everything, including the dust.
   if (raw == null || raw === "") return 100
   const n = parseFloat(raw)
   if (!Number.isFinite(n) || n < 0) return 100
@@ -39,8 +43,8 @@ export async function GET(req: NextRequest) {
   const t0 = Date.now()
   try {
     const url = new URL(req.url)
-    const role = (url.searchParams.get("role") || "lender").toLowerCase()
-    if (role !== "lender" && role !== "borrower") {
+    const role = (url.searchParams.get("role") || "buyer").toLowerCase()
+    if (role !== "buyer" && role !== "seller") {
       return NextResponse.json({ error: "invalid_role" }, { status: 400 })
     }
     const window = parseWindow(url.searchParams.get("window"))
@@ -50,12 +54,12 @@ export async function GET(req: NextRequest) {
     const range = windowRange(window)
 
     console.log(
-      `[analytics/loans/leaderboard] start role=${role} window=${window} collections=${collections?.join(",") ?? "all"} limit=${limit} min_volume=${minVolume}`
+      `[analytics/sales/leaderboard] start role=${role} window=${window} collections=${collections?.join(",") ?? "all"} limit=${limit} min_volume=${minVolume}`
     )
 
-    const { data, error } = await rpcWithRetry<AnalyticsLeaderboardRow[]>(
+    const { data, error } = await rpcWithRetry<SalesLeaderboardRow[]>(
       supabaseAdmin,
-      "flowty_analytics_leaderboard",
+      "analytics_sales_leaderboard",
       {
         p_role: role,
         p_start_at: range.startISO,
@@ -63,15 +67,16 @@ export async function GET(req: NextRequest) {
         p_collections: collections,
         p_limit: limit,
         p_min_volume: minVolume,
+        p_include_contracts: false,
       }
     )
 
     if (error) {
-      console.log("[analytics/loans/leaderboard] rpc_error", error.message)
+      console.log("[analytics/sales/leaderboard] rpc_error", error.message)
       return NextResponse.json({ error: "leaderboard_failed" }, { status: 500 })
     }
 
-    const rows = (data ?? []) as AnalyticsLeaderboardRow[]
+    const rows = (data ?? []) as SalesLeaderboardRow[]
     const names = await resolveUsernames(rows.map((r) => r.addr))
     const enriched = rows.map((r) => ({
       ...r,
@@ -79,7 +84,7 @@ export async function GET(req: NextRequest) {
     }))
 
     console.log(
-      `[analytics/loans/leaderboard] ok elapsed=${Date.now() - t0}ms rows=${enriched.length}`
+      `[analytics/sales/leaderboard] ok elapsed=${Date.now() - t0}ms rows=${enriched.length}`
     )
 
     return NextResponse.json(
@@ -91,7 +96,7 @@ export async function GET(req: NextRequest) {
       }
     )
   } catch (e: any) {
-    console.log("[analytics/loans/leaderboard] error", e?.message || e, `elapsed=${Date.now() - t0}ms`)
+    console.log("[analytics/sales/leaderboard] error", e?.message || e, `elapsed=${Date.now() - t0}ms`)
     return NextResponse.json({ error: "leaderboard_failed" }, { status: 500 })
   }
 }

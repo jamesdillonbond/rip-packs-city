@@ -1,14 +1,22 @@
 "use client"
 
-import type { AnalyticsLeaderboardRow } from "@/lib/analytics-types"
+import type { AnalyticsLeaderboardRow, SalesLeaderboardRow } from "@/lib/analytics-types"
 
-export interface LeaderboardDisplayRow extends AnalyticsLeaderboardRow {
+// LeaderboardTable handles both loans (lender/borrower) and sales (buyer/seller)
+// leaderboards. The two RPCs return slightly different field names for the
+// activity-count + volume columns, so we accept either shape and fall back
+// between them at render time.
+export type LeaderboardDisplayRow = (
+  AnalyticsLeaderboardRow | SalesLeaderboardRow
+) & {
   username: string
 }
 
+export type LeaderboardRole = "lender" | "borrower" | "buyer" | "seller"
+
 interface LeaderboardTableProps {
   rows: LeaderboardDisplayRow[]
-  role: "lender" | "borrower"
+  role: LeaderboardRole
   window: string
 }
 
@@ -31,31 +39,66 @@ function identicon(addr: string): string {
   return `#${hex}`
 }
 
-export default function LeaderboardTable({ rows, role, window }: LeaderboardTableProps) {
-  const title = role === "lender" ? "Top Lenders" : "Top Borrowers"
-  const badge = role === "lender" ? "Capital deployed" : "Liquidity sourced"
-  const badgeColor =
-    role === "lender" ? "border-emerald-500/30 text-emerald-400" : "border-sky-500/30 text-sky-400"
+const TITLE: Record<LeaderboardRole, string> = {
+  lender: "Top Lenders",
+  borrower: "Top Borrowers",
+  buyer: "Top Buyers",
+  seller: "Top Sellers",
+}
 
+const BADGE: Record<LeaderboardRole, string> = {
+  lender: "Capital deployed",
+  borrower: "Liquidity sourced",
+  buyer: "Capital deployed",
+  seller: "Volume sold",
+}
+
+const COUNT_LABEL: Record<LeaderboardRole, string> = {
+  lender: "Loans",
+  borrower: "Loans",
+  buyer: "Sales",
+  seller: "Sales",
+}
+
+const ACCENT: Record<LeaderboardRole, string> = {
+  lender: "border-emerald-500/30 text-emerald-400",
+  borrower: "border-sky-500/30 text-sky-400",
+  buyer: "border-emerald-500/30 text-emerald-400",
+  seller: "border-amber-500/30 text-amber-400",
+}
+
+function activityCount(r: LeaderboardDisplayRow): number {
+  const loan = (r as AnalyticsLeaderboardRow).loan_count
+  const sale = (r as SalesLeaderboardRow).sale_count
+  return Number(loan ?? sale ?? 0)
+}
+
+function volumeUsd(r: LeaderboardDisplayRow): number {
+  const principal = (r as AnalyticsLeaderboardRow).total_principal_usd
+  const sales = (r as SalesLeaderboardRow).total_volume_usd
+  return Number(principal ?? sales ?? 0)
+}
+
+export default function LeaderboardTable({ rows, role, window }: LeaderboardTableProps) {
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/40 flex flex-col">
       <div className="flex items-center justify-between p-4 border-b border-slate-800">
         <div>
-          <h3 className="font-semibold text-slate-100">{title}</h3>
+          <h3 className="font-semibold text-slate-100">{TITLE[role]}</h3>
           <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mt-0.5">
             {window}
           </div>
         </div>
         <span
-          className={`rounded border px-2 py-0.5 text-[10px] uppercase tracking-wider font-semibold ${badgeColor}`}
+          className={`rounded border px-2 py-0.5 text-[10px] uppercase tracking-wider font-semibold ${ACCENT[role]}`}
         >
-          {badge}
+          {BADGE[role]}
         </span>
       </div>
       <div className="overflow-y-auto" style={{ maxHeight: 420 }}>
         {rows.length === 0 ? (
           <div className="p-6 text-center text-sm text-slate-500">
-            No {role === "lender" ? "lender" : "borrower"} activity in this window yet.
+            No {role} activity in this window yet.
           </div>
         ) : (
           <table className="w-full text-sm">
@@ -63,7 +106,7 @@ export default function LeaderboardTable({ rows, role, window }: LeaderboardTabl
               <tr className="text-[10px] uppercase tracking-widest text-slate-500 border-b border-slate-800">
                 <th className="py-2 px-3 text-left font-semibold w-8">#</th>
                 <th className="py-2 px-3 text-left font-semibold">Wallet</th>
-                <th className="py-2 px-3 text-right font-semibold">Loans</th>
+                <th className="py-2 px-3 text-right font-semibold">{COUNT_LABEL[role]}</th>
                 <th className="py-2 px-3 text-right font-semibold">Volume</th>
               </tr>
             </thead>
@@ -95,10 +138,10 @@ export default function LeaderboardTable({ rows, role, window }: LeaderboardTabl
                     </div>
                   </td>
                   <td className="py-2.5 px-3 text-right text-slate-300 tabular-nums">
-                    {r.loan_count}
+                    {activityCount(r)}
                   </td>
                   <td className="py-2.5 px-3 text-right text-slate-100 tabular-nums font-medium">
-                    {formatUsd(Number(r.total_principal_usd) || 0)}
+                    {formatUsd(volumeUsd(r))}
                   </td>
                 </tr>
               ))}

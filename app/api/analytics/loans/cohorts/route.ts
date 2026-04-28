@@ -11,12 +11,14 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { parseCollections } from "@/lib/analytics/loans-window"
+import { parseCollections } from "@/lib/analytics/window"
+import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import type { AnalyticsCohortRow } from "@/lib/analytics-types"
 
 export const revalidate = 600
 
 export async function GET(req: NextRequest) {
+  const t0 = Date.now()
   try {
     const url = new URL(req.url)
     const role = (url.searchParams.get("role") || "borrower").toLowerCase()
@@ -25,10 +27,18 @@ export async function GET(req: NextRequest) {
     }
     const collections = parseCollections(url.searchParams.get("collections"))
 
-    const { data, error } = await supabaseAdmin.rpc("flowty_analytics_cohorts", {
-      p_role: role,
-      p_collections: collections,
-    })
+    console.log(
+      `[analytics/loans/cohorts] start role=${role} collections=${collections?.join(",") ?? "all"}`
+    )
+
+    const { data, error } = await rpcWithRetry<AnalyticsCohortRow[]>(
+      supabaseAdmin,
+      "flowty_analytics_cohorts",
+      {
+        p_role: role,
+        p_collections: collections,
+      }
+    )
 
     if (error) {
       console.log("[analytics/loans/cohorts] rpc_error", error.message)
@@ -36,6 +46,7 @@ export async function GET(req: NextRequest) {
     }
 
     const rows = (data ?? []) as AnalyticsCohortRow[]
+    console.log(`[analytics/loans/cohorts] ok elapsed=${Date.now() - t0}ms rows=${rows.length}`)
 
     return NextResponse.json(
       { role, rows },
@@ -46,7 +57,7 @@ export async function GET(req: NextRequest) {
       }
     )
   } catch (e: any) {
-    console.log("[analytics/loans/cohorts] error", e?.message || e)
+    console.log("[analytics/loans/cohorts] error", e?.message || e, `elapsed=${Date.now() - t0}ms`)
     return NextResponse.json({ error: "cohorts_failed" }, { status: 500 })
   }
 }

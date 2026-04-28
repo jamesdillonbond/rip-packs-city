@@ -27,7 +27,7 @@ export const metadata: Metadata = analyticsMetadata({
   path: "/analytics",
 })
 
-interface SummaryResponse {
+interface LoansSummaryResponse {
   total_loans: number
   total_principal_usd: number
   unique_lenders: number
@@ -35,13 +35,32 @@ interface SummaryResponse {
   active_loans_count: number
 }
 
-async function loadLoansSummary(): Promise<SummaryResponse | null> {
+interface SalesSummaryResponse {
+  total_sales: number
+  total_volume_usd: number
+  unique_buyers: number
+  unique_sellers: number
+}
+
+async function loadLoansSummary(): Promise<LoansSummaryResponse | null> {
   try {
     const res = await fetch(`${ANALYTICS_BASE_URL}/api/analytics/loans/summary?window=all`, {
       next: { revalidate: 600 },
     })
     if (!res.ok) return null
-    return (await res.json()) as SummaryResponse
+    return (await res.json()) as LoansSummaryResponse
+  } catch {
+    return null
+  }
+}
+
+async function loadSalesSummary(): Promise<SalesSummaryResponse | null> {
+  try {
+    const res = await fetch(`${ANALYTICS_BASE_URL}/api/analytics/sales/summary?window=l30`, {
+      next: { revalidate: 600 },
+    })
+    if (!res.ok) return null
+    return (await res.json()) as SalesSummaryResponse
   } catch {
     return null
   }
@@ -90,7 +109,10 @@ const TIMELINE = [
 ]
 
 export default async function AnalyticsOverviewPage() {
-  const summary = await loadLoansSummary()
+  const [summary, salesSummary] = await Promise.all([
+    loadLoansSummary(),
+    loadSalesSummary(),
+  ])
 
   const cards: SectionCard[] = [
     {
@@ -116,9 +138,15 @@ export default async function AnalyticsOverviewPage() {
     {
       href: "/analytics/sales",
       label: "Sales",
-      description: "On-chain sales indexed across NFTStorefrontV2 and TopShotMarketV3.",
+      description: "On-chain sales indexed across NFTStorefrontV2, TopShotMarketV3, and Pinnacle.Trade.",
       icon: BarChart3,
-      status: "soon",
+      status: "live",
+      metrics: salesSummary
+        ? [
+            { label: "L30 volume", value: formatUsd(salesSummary.total_volume_usd) },
+            { label: "L30 sales", value: formatCount(salesSummary.total_sales) },
+          ]
+        : [{ label: "Status", value: "Live" }],
     },
     {
       href: "/analytics/listings",

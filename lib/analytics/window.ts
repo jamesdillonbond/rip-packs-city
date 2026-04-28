@@ -1,10 +1,14 @@
-// Time-window helpers for the loans analytics endpoints.
+// Time-window helpers for the analytics endpoints (loans + sales).
 //
-// The new RPCs (flowty_analytics_*) take p_start_at and p_end_at as timestamptz
-// (or NULL for lifetime). We accept both lowercase shorthand ("l7", "y2026")
-// and the legacy uppercase forms ("L7", "2026") so existing query strings keep
-// working. parseWindow normalizes; windowRange emits ISO timestamps the RPC
-// can ingest as timestamptz.
+// Was lib/analytics/loans-window.ts — renamed because the Sales RPCs use
+// the same window vocabulary, and there's no value in duplicating the
+// shared parser. The aliases (parseWindow, windowRange, parseCollections,
+// LoanWindow) keep their old names so existing call sites stay valid.
+//
+// All RPCs take p_start_at and p_end_at as timestamptz (or NULL for
+// lifetime). We accept both lowercase shorthand ("l7", "y2026") and the
+// legacy uppercase forms ("L7", "2026") so existing query strings keep
+// working.
 
 export type LoanWindow =
   | "l7"
@@ -14,6 +18,9 @@ export type LoanWindow =
   | "y2026"
   | "y2025"
   | "all"
+
+// Generic alias — Sales code reads this name; Loans still uses LoanWindow.
+export type AnalyticsWindow = LoanWindow
 
 export const ALLOWED_WINDOWS: readonly LoanWindow[] = [
   "l7",

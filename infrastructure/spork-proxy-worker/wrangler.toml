@@ -1,0 +1,8 @@
+name = "spork-proxy"
+main = "index.ts"
+compatibility_date = "2025-09-01"
+
+# No KV / R2 / Durable Objects — this is a pure pass-through proxy.
+# Set workers.dev = true so the worker is reachable at
+# https://spork-proxy.<account>.workers.dev without a custom domain.
+workers_dev = true
