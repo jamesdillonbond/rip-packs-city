@@ -1,20 +1,32 @@
 "use client"
 
-interface CohortRow {
-  cohort: string
-  cohortLabel: string
-  size: number
-  retention: Array<{ quarter: string; pct: number; count: number }>
-}
+import { useMemo } from "react"
+import type { AnalyticsCohortRow } from "@/lib/analytics-types"
 
 interface CohortRetentionProps {
-  cohorts: CohortRow[]
-  quarters: string[]
+  rows: AnalyticsCohortRow[]
 }
 
-function quarterLabel(q: string): string {
-  const [year, qNum] = q.split("Q")
-  return `Q${qNum} ${year.slice(2)}`
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+]
+
+function monthLabel(iso: string): string {
+  // iso = YYYY-MM-01
+  const [y, m] = iso.slice(0, 10).split("-")
+  const idx = Math.max(0, Math.min(11, parseInt(m, 10) - 1))
+  return `${MONTH_NAMES[idx]} ${y}`
 }
 
 function colorFor(pct: number): { bg: string; text: string } {
@@ -35,14 +47,57 @@ const LEGEND = [
   { range: "80%+", pct: 90 },
 ]
 
-export default function CohortRetention({ cohorts, quarters }: CohortRetentionProps) {
+interface PivotCohort {
+  cohort_month: string
+  size: number
+  cells: Map<number, { active_count: number; retention_pct: number }>
+}
+
+function pivot(rows: AnalyticsCohortRow[]): {
+  cohorts: PivotCohort[]
+  maxOffset: number
+} {
+  const byCohort = new Map<string, PivotCohort>()
+  let maxOffset = 0
+  for (const r of rows) {
+    const key = (r.cohort_month || "").slice(0, 10)
+    if (!key) continue
+    const offset = Number(r.month_offset) || 0
+    if (offset > maxOffset) maxOffset = offset
+    const existing = byCohort.get(key) ?? {
+      cohort_month: key,
+      size: Number(r.cohort_size) || 0,
+      cells: new Map<number, { active_count: number; retention_pct: number }>(),
+    }
+    // Cohort size is the same on every row of a given cohort, but trust the
+    // first non-zero value we see in case the RPC ever zero-fills.
+    if (!existing.size && r.cohort_size) existing.size = Number(r.cohort_size)
+    existing.cells.set(offset, {
+      active_count: Number(r.active_count) || 0,
+      retention_pct: Number(r.retention_pct) || 0,
+    })
+    byCohort.set(key, existing)
+  }
+  return {
+    cohorts: Array.from(byCohort.values()).sort((a, b) =>
+      a.cohort_month.localeCompare(b.cohort_month)
+    ),
+    maxOffset,
+  }
+}
+
+export default function CohortRetention({ rows }: CohortRetentionProps) {
+  const { cohorts, maxOffset } = useMemo(() => pivot(rows), [rows])
+
   if (!cohorts || cohorts.length === 0) {
     return (
       <div className="flex h-80 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-900/20 text-sm text-slate-500">
-        Cohort table populates after the first quarterly cohort completes.
+        Cohort table populates after the first monthly cohort completes.
       </div>
     )
   }
+
+  const offsets = Array.from({ length: maxOffset + 1 }, (_, i) => i)
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
@@ -52,49 +107,46 @@ export default function CohortRetention({ cohorts, quarters }: CohortRetentionPr
             <tr className="text-[10px] uppercase tracking-widest text-slate-500">
               <th className="pb-3 pr-4 text-left font-semibold">Cohort</th>
               <th className="pb-3 pr-3 text-right font-semibold">Size</th>
-              {quarters.map((q) => (
-                <th key={q} className="pb-3 px-1 text-center font-semibold">
-                  {quarterLabel(q)}
+              {offsets.map((o) => (
+                <th key={o} className="pb-3 px-1 text-center font-semibold">
+                  M{o}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {cohorts.map((c) => {
-              const map = new Map(c.retention.map((r) => [r.quarter, r]))
-              return (
-                <tr key={c.cohort} className="border-t border-slate-800/60">
-                  <td className="py-2 pr-4 text-slate-200 whitespace-nowrap">
-                    {c.cohortLabel}
-                  </td>
-                  <td className="py-2 pr-3 text-right text-slate-400 tabular-nums">
-                    {c.size.toLocaleString()}
-                  </td>
-                  {quarters.map((q) => {
-                    const cell = map.get(q)
-                    if (!cell || q < c.cohort) {
-                      return (
-                        <td key={q} className="py-2 px-1 text-center text-slate-700">
-                          ·
-                        </td>
-                      )
-                    }
-                    const { bg, text } = colorFor(cell.pct)
+            {cohorts.map((c) => (
+              <tr key={c.cohort_month} className="border-t border-slate-800/60">
+                <td className="py-2 pr-4 text-slate-200 whitespace-nowrap">
+                  {monthLabel(c.cohort_month)}
+                </td>
+                <td className="py-2 pr-3 text-right text-slate-400 tabular-nums">
+                  {c.size.toLocaleString()}
+                </td>
+                {offsets.map((o) => {
+                  const cell = c.cells.get(o)
+                  if (!cell) {
                     return (
-                      <td key={q} className="py-1 px-1 text-center">
-                        <div
-                          className="rounded px-1.5 py-1 tabular-nums font-medium"
-                          style={{ background: bg, color: text }}
-                          title={`${cell.count} of ${c.size}`}
-                        >
-                          {cell.pct.toFixed(0)}%
-                        </div>
+                      <td key={o} className="py-2 px-1 text-center text-slate-700">
+                        ·
                       </td>
                     )
-                  })}
-                </tr>
-              )
-            })}
+                  }
+                  const { bg, text } = colorFor(cell.retention_pct)
+                  return (
+                    <td key={o} className="py-1 px-1 text-center">
+                      <div
+                        className="rounded px-1.5 py-1 tabular-nums font-medium"
+                        style={{ background: bg, color: text }}
+                        title={`${cell.active_count} of ${c.size}`}
+                      >
+                        {cell.retention_pct.toFixed(0)}%
+                      </div>
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

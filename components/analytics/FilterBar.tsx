@@ -3,7 +3,7 @@
 import { ChevronDown } from "lucide-react"
 import { useState } from "react"
 
-export type LoanWindow = "L7" | "L30" | "L90" | "YTD" | "2026" | "2025" | "ALL"
+export type LoanWindow = "l7" | "l30" | "l90" | "ytd" | "y2026" | "y2025" | "all"
 
 interface CollectionChip {
   key: string
@@ -11,13 +11,13 @@ interface CollectionChip {
 }
 
 const WINDOW_OPTIONS: Array<{ value: LoanWindow; label: string }> = [
-  { value: "L7", label: "L7" },
-  { value: "L30", label: "L30" },
-  { value: "L90", label: "L90" },
-  { value: "YTD", label: "YTD" },
-  { value: "2026", label: "2026" },
-  { value: "2025", label: "2025" },
-  { value: "ALL", label: "All time" },
+  { value: "l7", label: "L7" },
+  { value: "l30", label: "L30" },
+  { value: "l90", label: "L90" },
+  { value: "ytd", label: "YTD" },
+  { value: "y2026", label: "2026" },
+  { value: "y2025", label: "2025" },
+  { value: "all", label: "All time" },
 ]
 
 interface FilterBarProps {

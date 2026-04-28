@@ -1,5 +1,6 @@
 "use client"
 
+import { useMemo } from "react"
 import {
   Area,
   AreaChart,
@@ -11,17 +12,12 @@ import {
   YAxis,
 } from "recharts"
 import { PLATFORM_EVENTS } from "./event-markers"
-
-export interface VolumePoint {
-  date: string
-  totalUsd: number
-  totalLoans: number
-  [collection: string]: string | number
-}
+import type { AnalyticsTimeseriesRow } from "@/lib/analytics-types"
 
 interface VolumeChartProps {
-  series: VolumePoint[]
-  collections: string[]
+  rows: AnalyticsTimeseriesRow[]
+  // Visible series whitelist; empty = render the total (sum of all collections).
+  activeCollections: string[]
   weekly?: boolean
 }
 
@@ -86,22 +82,61 @@ function CustomTooltip({
   )
 }
 
-export default function VolumeChart({ series, collections, weekly }: VolumeChartProps) {
-  if (!series || series.length === 0) {
+interface PivotPoint {
+  date: string
+  total: number
+  [collection: string]: string | number
+}
+
+function pivot(rows: AnalyticsTimeseriesRow[]): {
+  points: PivotPoint[]
+  collections: string[]
+} {
+  const byDate = new Map<string, PivotPoint>()
+  const collections = new Set<string>()
+  for (const r of rows) {
+    const date = (r.bucket || "").slice(0, 10)
+    if (!date) continue
+    const collection = (r.collection || "unknown").toLowerCase()
+    collections.add(collection)
+    const usd = Number(r.principal_usd) || 0
+    const point = byDate.get(date) ?? { date, total: 0 }
+    point[collection] = (Number(point[collection]) || 0) + usd
+    point.total = (Number(point.total) || 0) + usd
+    byDate.set(date, point)
+  }
+  return {
+    points: Array.from(byDate.values()).sort((a, b) =>
+      a.date.localeCompare(b.date)
+    ),
+    collections: Array.from(collections).sort(),
+  }
+}
+
+export default function VolumeChart({ rows, activeCollections, weekly }: VolumeChartProps) {
+  const { points, collections } = useMemo(() => pivot(rows), [rows])
+
+  if (!points || points.length === 0) {
     return (
       <div className="flex h-80 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-900/20 text-sm text-slate-500">
         Backfill in progress — chart populates as loan history arrives.
       </div>
     )
   }
-  const hasMarkers = series.length > 1
-  const visibleCollections = collections.length > 0 ? collections : ["totalUsd"]
+
+  const visible =
+    activeCollections.length > 0
+      ? activeCollections.filter((c) => collections.includes(c))
+      : collections
+  const stacked = visible.length > 0
+  const hasMarkers = points.length > 1
+
   return (
     <div style={{ width: "100%", height: 320 }}>
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={series} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+        <AreaChart data={points} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
           <defs>
-            {visibleCollections.map((c, i) => (
+            {(stacked ? visible : ["total"]).map((c, i) => (
               <linearGradient key={c} id={`grad-${c}`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={colorFor(c, i)} stopOpacity={0.5} />
                 <stop offset="100%" stopColor={colorFor(c, i)} stopOpacity={0.04} />
@@ -123,33 +158,32 @@ export default function VolumeChart({ series, collections, weekly }: VolumeChart
             width={56}
           />
           <Tooltip content={<CustomTooltip />} />
-          {visibleCollections.map((c, i) =>
-            collections.length > 0 ? (
-              <Area
-                key={c}
-                type="monotone"
-                dataKey={c}
-                stackId="1"
-                name={c}
-                stroke={colorFor(c, i)}
-                fill={`url(#grad-${c})`}
-                strokeWidth={1.5}
-              />
-            ) : (
-              <Area
-                key={c}
-                type="monotone"
-                dataKey="totalUsd"
-                name="Volume"
-                stroke="#10b981"
-                fill={`url(#grad-${c})`}
-                strokeWidth={1.5}
-              />
-            )
-          )}
+          {stacked
+            ? visible.map((c, i) => (
+                <Area
+                  key={c}
+                  type="monotone"
+                  dataKey={c}
+                  stackId="1"
+                  name={c}
+                  stroke={colorFor(c, i)}
+                  fill={`url(#grad-${c})`}
+                  strokeWidth={1.5}
+                />
+              ))
+            : (
+                <Area
+                  type="monotone"
+                  dataKey="total"
+                  name="Volume"
+                  stroke="#10b981"
+                  fill="url(#grad-total)"
+                  strokeWidth={1.5}
+                />
+              )}
           {hasMarkers
             ? PLATFORM_EVENTS.map((ev) => {
-                const exists = series.some((p) => p.date >= ev.date)
+                const exists = points.some((p) => p.date >= ev.date)
                 if (!exists) return null
                 return (
                   <ReferenceLine

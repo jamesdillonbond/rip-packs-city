@@ -1,16 +1,13 @@
 "use client"
 
-interface LeaderboardRow {
-  rank: number
-  address: string
+import type { AnalyticsLeaderboardRow } from "@/lib/analytics-types"
+
+export interface LeaderboardDisplayRow extends AnalyticsLeaderboardRow {
   username: string
-  loanCount: number
-  totalUsd: number
-  isReturning: boolean
 }
 
 interface LeaderboardTableProps {
-  rows: LeaderboardRow[]
+  rows: LeaderboardDisplayRow[]
   role: "lender" | "borrower"
   window: string
 }
@@ -30,7 +27,6 @@ function truncate(addr: string): string {
 }
 
 function identicon(addr: string): string {
-  // Pick deterministic emerald/sky/amber tints from the address.
   const hex = (addr || "").replace(/[^0-9a-f]/gi, "").slice(-6) || "10b981"
   return `#${hex}`
 }
@@ -73,25 +69,25 @@ export default function LeaderboardTable({ rows, role, window }: LeaderboardTabl
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.address} className="border-b border-slate-800/40 last:border-b-0">
+                <tr key={r.addr} className="border-b border-slate-800/40 last:border-b-0">
                   <td className="py-2.5 px-3 text-slate-500 tabular-nums">{r.rank}</td>
                   <td className="py-2.5 px-3">
                     <div className="flex items-center gap-2 min-w-0">
                       <span
                         className="h-5 w-5 rounded-full flex-shrink-0 ring-1 ring-slate-700"
-                        style={{ background: identicon(r.address) }}
+                        style={{ background: identicon(r.addr) }}
                       />
                       <div className="min-w-0">
-                        <div className="text-slate-200 truncate" title={r.address}>
+                        <div className="text-slate-200 truncate" title={r.addr}>
                           {r.username}
                         </div>
-                        {r.username !== truncate(r.address) ? (
+                        {r.username !== truncate(r.addr) ? (
                           <div className="text-[10px] text-slate-500 font-mono truncate">
-                            {truncate(r.address)}
+                            {truncate(r.addr)}
                           </div>
                         ) : null}
                       </div>
-                      {r.isReturning ? (
+                      {r.is_returning ? (
                         <span className="ml-auto rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-emerald-400 flex-shrink-0">
                           Repeat
                         </span>
@@ -99,10 +95,10 @@ export default function LeaderboardTable({ rows, role, window }: LeaderboardTabl
                     </div>
                   </td>
                   <td className="py-2.5 px-3 text-right text-slate-300 tabular-nums">
-                    {r.loanCount}
+                    {r.loan_count}
                   </td>
                   <td className="py-2.5 px-3 text-right text-slate-100 tabular-nums font-medium">
-                    {formatUsd(r.totalUsd)}
+                    {formatUsd(Number(r.total_principal_usd) || 0)}
                   </td>
                 </tr>
               ))}

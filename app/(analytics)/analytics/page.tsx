@@ -28,17 +28,16 @@ export const metadata: Metadata = analyticsMetadata({
 })
 
 interface SummaryResponse {
-  totalLoans: number
-  totalUsd: number
-  uniqueLenders: number
-  uniqueBorrowers: number
-  newWallets: number
-  activeCount: number
+  total_loans: number
+  total_principal_usd: number
+  unique_lenders: number
+  unique_borrowers: number
+  active_loans_count: number
 }
 
 async function loadLoansSummary(): Promise<SummaryResponse | null> {
   try {
-    const res = await fetch(`${ANALYTICS_BASE_URL}/api/analytics/loans/summary?window=ALL`, {
+    const res = await fetch(`${ANALYTICS_BASE_URL}/api/analytics/loans/summary?window=all`, {
       next: { revalidate: 600 },
     })
     if (!res.ok) return null
@@ -102,8 +101,8 @@ export default async function AnalyticsOverviewPage() {
       status: "live",
       metrics: summary
         ? [
-            { label: "Total volume", value: formatUsd(summary.totalUsd) },
-            { label: "Active loans", value: formatCount(summary.activeCount) },
+            { label: "Total volume", value: formatUsd(summary.total_principal_usd) },
+            { label: "Active loans", value: formatCount(summary.active_loans_count) },
           ]
         : [{ label: "Status", value: "Live" }],
     },

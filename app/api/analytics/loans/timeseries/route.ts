@@ -1,60 +1,25 @@
 // GET /api/analytics/loans/timeseries
 //
-// Daily (or weekly when span > 90 days) buckets of loan volume,
-// stacked by collection. Used by the volume area chart.
+// Thin wrapper over flowty_analytics_timeseries(p_start_at, p_end_at,
+// p_collections, p_bucket). Each row is one (bucket, collection) pair —
+// the client pivots them into stacked-area chart shape.
+//
+// Query params:
+//   window      l7 | l30 | l90 | ytd | y2026 | y2025 | all  (default all)
+//   collections comma-separated list                         (optional)
+//   bucket      auto | day | week                            (default auto)
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { parseWindow, windowRange, parseCollections } from "@/lib/analytics/loans-window"
+import type { AnalyticsTimeseriesRow } from "@/lib/analytics-types"
 
 export const revalidate = 600
 
-interface Row {
-  funded_at: string | null
-  collection: string | null
-  principal_usd: number | null
-  principal_amount: number | null
-}
-
-const PAGE_SIZE = 1000
-const DAY_MS = 24 * 60 * 60 * 1000
-
-async function fetchAll(
-  startISO: string | null,
-  endISO: string | null,
-  collections: string[] | null
-): Promise<Row[]> {
-  const out: Row[] = []
-  let from = 0
-  while (true) {
-    let q = supabaseAdmin
-      .from("flowty_loans")
-      .select("funded_at,collection,principal_usd,principal_amount")
-      .not("funded_at", "is", null)
-      .order("funded_at", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1)
-    if (collections && collections.length > 0) q = q.in("collection", collections)
-    if (startISO) q = q.gte("funded_at", startISO)
-    if (endISO) q = q.lt("funded_at", endISO)
-    const { data, error } = await q
-    if (error || !data) break
-    out.push(...(data as Row[]))
-    if (data.length < PAGE_SIZE) break
-    from += PAGE_SIZE
-  }
-  return out
-}
-
-function bucketKey(iso: string, weekly: boolean): string {
-  const d = new Date(iso)
-  if (weekly) {
-    // ISO week starting Monday — round down to start of week.
-    const day = d.getUTCDay() || 7
-    const start = new Date(d)
-    start.setUTCDate(d.getUTCDate() - day + 1)
-    return start.toISOString().slice(0, 10)
-  }
-  return iso.slice(0, 10)
+function parseBucket(raw: string | null): "auto" | "day" | "week" {
+  const v = (raw || "").toLowerCase()
+  if (v === "day" || v === "week") return v
+  return "auto"
 }
 
 export async function GET(req: NextRequest) {
@@ -62,68 +27,25 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url)
     const window = parseWindow(url.searchParams.get("window"))
     const collections = parseCollections(url.searchParams.get("collections"))
+    const bucket = parseBucket(url.searchParams.get("bucket"))
     const range = windowRange(window)
 
-    const rows = await fetchAll(range.startISO, range.endISO, collections)
+    const { data, error } = await supabaseAdmin.rpc("flowty_analytics_timeseries", {
+      p_start_at: range.startISO,
+      p_end_at: range.endISO,
+      p_collections: collections,
+      p_bucket: bucket,
+    })
 
-    if (rows.length === 0) {
-      return NextResponse.json(
-        { window, points: [], collections: [], weekly: false },
-        {
-          headers: {
-            "Cache-Control": "public, max-age=0, s-maxage=600, stale-while-revalidate=1200",
-          },
-        }
-      )
+    if (error) {
+      console.log("[analytics/loans/timeseries] rpc_error", error.message)
+      return NextResponse.json({ error: "timeseries_failed" }, { status: 500 })
     }
 
-    // Decide weekly vs daily based on span
-    const first = rows[0].funded_at as string
-    const last = rows[rows.length - 1].funded_at as string
-    const spanDays = (new Date(last).getTime() - new Date(first).getTime()) / DAY_MS
-    const weekly = spanDays > 90
-
-    const buckets = new Map<
-      string,
-      { date: string; totalUsd: number; totalLoans: number; perCol: Record<string, number> }
-    >()
-    const collectionsSeen = new Set<string>()
-    for (const r of rows) {
-      if (!r.funded_at) continue
-      const key = bucketKey(r.funded_at, weekly)
-      const usd = Number(r.principal_usd ?? r.principal_amount ?? 0) || 0
-      const col = (r.collection || "unknown").toLowerCase()
-      collectionsSeen.add(col)
-      const b = buckets.get(key) || {
-        date: key,
-        totalUsd: 0,
-        totalLoans: 0,
-        perCol: {},
-      }
-      b.totalUsd += usd
-      b.totalLoans += 1
-      b.perCol[col] = (b.perCol[col] || 0) + usd
-      buckets.set(key, b)
-    }
-
-    const points = Array.from(buckets.values())
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .map((b) => ({
-        date: b.date,
-        totalUsd: Math.round(b.totalUsd * 100) / 100,
-        totalLoans: b.totalLoans,
-        ...Object.fromEntries(
-          Array.from(collectionsSeen).map((c) => [c, Math.round((b.perCol[c] || 0) * 100) / 100])
-        ),
-      }))
+    const rows = (data ?? []) as AnalyticsTimeseriesRow[]
 
     return NextResponse.json(
-      {
-        window,
-        weekly,
-        collections: Array.from(collectionsSeen).sort(),
-        points,
-      },
+      { rows, bucket },
       {
         headers: {
           "Cache-Control": "public, max-age=0, s-maxage=600, stale-while-revalidate=1200",
@@ -132,9 +54,6 @@ export async function GET(req: NextRequest) {
     )
   } catch (e: any) {
     console.log("[analytics/loans/timeseries] error", e?.message || e)
-    return NextResponse.json(
-      { error: "timeseries_failed", message: String(e?.message || e) },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: "timeseries_failed" }, { status: 500 })
   }
 }
