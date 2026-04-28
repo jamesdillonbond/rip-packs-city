@@ -1,37 +1,51 @@
 // Time-window helpers for the loans analytics endpoints.
+//
+// The new RPCs (flowty_analytics_*) take p_start_at and p_end_at as timestamptz
+// (or NULL for lifetime). We accept both lowercase shorthand ("l7", "y2026")
+// and the legacy uppercase forms ("L7", "2026") so existing query strings keep
+// working. parseWindow normalizes; windowRange emits ISO timestamps the RPC
+// can ingest as timestamptz.
 
 export type LoanWindow =
-  | "L7"
-  | "L30"
-  | "L90"
-  | "YTD"
-  | "2026"
-  | "2025"
-  | "ALL"
+  | "l7"
+  | "l30"
+  | "l90"
+  | "ytd"
+  | "y2026"
+  | "y2025"
+  | "all"
 
 export const ALLOWED_WINDOWS: readonly LoanWindow[] = [
-  "L7",
-  "L30",
-  "L90",
-  "YTD",
-  "2026",
-  "2025",
-  "ALL",
+  "l7",
+  "l30",
+  "l90",
+  "ytd",
+  "y2026",
+  "y2025",
+  "all",
 ] as const
 
+const ALIASES: Record<string, LoanWindow> = {
+  l7: "l7",
+  l30: "l30",
+  l90: "l90",
+  ytd: "ytd",
+  y2026: "y2026",
+  y2025: "y2025",
+  all: "all",
+  "2026": "y2026",
+  "2025": "y2025",
+}
+
 export function parseWindow(raw: string | null | undefined): LoanWindow {
-  if (!raw) return "ALL"
-  const upper = raw.toUpperCase()
-  if ((ALLOWED_WINDOWS as readonly string[]).includes(upper)) return upper as LoanWindow
-  return "ALL"
+  if (!raw) return "all"
+  const lower = raw.toLowerCase()
+  return ALIASES[lower] ?? "all"
 }
 
 export interface WindowRange {
   startISO: string | null
   endISO: string | null
-  // The prior window of equal length, used for delta calculation.
-  prevStartISO: string | null
-  prevEndISO: string | null
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -41,49 +55,29 @@ function iso(d: Date): string {
 }
 
 export function windowRange(window: LoanWindow, now: Date = new Date()): WindowRange {
-  const end = new Date(now)
-  if (window === "ALL") {
-    return { startISO: null, endISO: null, prevStartISO: null, prevEndISO: null }
+  if (window === "all") {
+    return { startISO: null, endISO: null }
   }
-  if (window === "2025") {
+  if (window === "y2025") {
     return {
       startISO: "2025-01-01T00:00:00.000Z",
       endISO: "2026-01-01T00:00:00.000Z",
-      prevStartISO: "2024-01-01T00:00:00.000Z",
-      prevEndISO: "2025-01-01T00:00:00.000Z",
     }
   }
-  if (window === "2026") {
+  if (window === "y2026") {
     return {
       startISO: "2026-01-01T00:00:00.000Z",
       endISO: "2027-01-01T00:00:00.000Z",
-      prevStartISO: "2025-01-01T00:00:00.000Z",
-      prevEndISO: "2026-01-01T00:00:00.000Z",
     }
   }
-  if (window === "YTD") {
-    const year = end.getUTCFullYear()
+  if (window === "ytd") {
+    const year = now.getUTCFullYear()
     const start = new Date(Date.UTC(year, 0, 1))
-    const ms = end.getTime() - start.getTime()
-    const prevEnd = start
-    const prevStart = new Date(start.getTime() - ms)
-    return {
-      startISO: iso(start),
-      endISO: iso(end),
-      prevStartISO: iso(prevStart),
-      prevEndISO: iso(prevEnd),
-    }
+    return { startISO: iso(start), endISO: iso(now) }
   }
-  const days = window === "L7" ? 7 : window === "L30" ? 30 : 90
-  const start = new Date(end.getTime() - days * DAY_MS)
-  const prevEnd = start
-  const prevStart = new Date(start.getTime() - days * DAY_MS)
-  return {
-    startISO: iso(start),
-    endISO: iso(end),
-    prevStartISO: iso(prevStart),
-    prevEndISO: iso(prevEnd),
-  }
+  const days = window === "l7" ? 7 : window === "l30" ? 30 : 90
+  const start = new Date(now.getTime() - days * DAY_MS)
+  return { startISO: iso(start), endISO: iso(now) }
 }
 
 export function parseCollections(raw: string | null | undefined): string[] | null {

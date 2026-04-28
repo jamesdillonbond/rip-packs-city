@@ -12,16 +12,10 @@ import {
   YAxis,
 } from "recharts"
 import { PLATFORM_EVENTS } from "./event-markers"
-
-export interface NewWalletPoint {
-  week: string
-  newLenders: number
-  newBorrowers: number
-  cumulative: number
-}
+import type { AnalyticsNewWalletsRow } from "@/lib/analytics-types"
 
 interface NewWalletsChartProps {
-  series: NewWalletPoint[]
+  rows: AnalyticsNewWalletsRow[]
   height?: number
 }
 
@@ -65,18 +59,24 @@ function CustomTooltip({
   )
 }
 
-export default function NewWalletsChart({ series, height = 320 }: NewWalletsChartProps) {
-  if (!series || series.length === 0) {
+export default function NewWalletsChart({ rows, height = 320 }: NewWalletsChartProps) {
+  if (!rows || rows.length === 0) {
     return (
       <div className="flex h-80 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-900/20 text-sm text-slate-500">
         No new-wallet data yet — populating as loan history arrives.
       </div>
     )
   }
+  const data = rows.map((r) => ({
+    week: (r.week || "").slice(0, 10),
+    new_borrowers: Number(r.new_borrowers) || 0,
+    new_lenders: Number(r.new_lenders) || 0,
+    cumulative_total: Number(r.cumulative_total) || 0,
+  }))
   return (
     <div style={{ width: "100%", height }}>
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={series} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+        <ComposedChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
           <XAxis
             dataKey="week"
@@ -102,7 +102,7 @@ export default function NewWalletsChart({ series, height = 320 }: NewWalletsChar
           <Tooltip content={<CustomTooltip />} />
           <Bar
             yAxisId="left"
-            dataKey="newBorrowers"
+            dataKey="new_borrowers"
             stackId="users"
             name="New borrowers"
             fill="#10b981"
@@ -110,7 +110,7 @@ export default function NewWalletsChart({ series, height = 320 }: NewWalletsChar
           />
           <Bar
             yAxisId="left"
-            dataKey="newLenders"
+            dataKey="new_lenders"
             stackId="users"
             name="New lenders"
             fill="#38bdf8"
@@ -119,14 +119,14 @@ export default function NewWalletsChart({ series, height = 320 }: NewWalletsChar
           <Line
             yAxisId="right"
             type="monotone"
-            dataKey="cumulative"
+            dataKey="cumulative_total"
             name="Cumulative"
             stroke="#a78bfa"
             strokeWidth={2}
             dot={false}
           />
           {PLATFORM_EVENTS.map((ev) => {
-            const exists = series.some((p) => p.week >= ev.date)
+            const exists = data.some((p) => p.week >= ev.date)
             if (!exists) return null
             return (
               <ReferenceLine

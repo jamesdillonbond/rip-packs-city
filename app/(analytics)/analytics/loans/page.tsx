@@ -28,16 +28,23 @@ const datasetJsonLd = {
       encodingFormat: "application/json",
       contentUrl: `${ANALYTICS_BASE_URL}/api/analytics/loans/timeseries`,
     },
+    {
+      "@type": "DataDownload",
+      encodingFormat: "application/json",
+      contentUrl: `${ANALYTICS_BASE_URL}/api/analytics/loans/limbo-summary`,
+    },
   ],
   variableMeasured: [
     "Total loan volume (USD)",
     "Unique lenders",
     "Unique borrowers",
-    "New wallet acquisition",
     "Active loans",
     "Outstanding principal",
     "Average interest rate",
+    "Average term (days)",
+    "Open listings count",
     "Settled loans (default-rate proxy)",
+    "Limbo recovery cohort (pre-pause loans)",
   ],
 }
 

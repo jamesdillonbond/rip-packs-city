@@ -1,60 +1,27 @@
 // GET /api/analytics/loans/leaderboard
 //
-// Top 25 wallets by USD volume in the requested window for a given role.
+// Thin wrapper over flowty_analytics_leaderboard(p_role, p_start_at, p_end_at,
+// p_collections, p_limit). Returns the RPC rows plus a resolved username
+// map so the client can render display names without an extra round-trip.
 //
 // Query params:
-//   role        lender | borrower            (required)
-//   window      L7|L30|L90|YTD|2026|2025|ALL (default ALL)
-//   collections comma-separated list         (optional)
+//   role        lender | borrower                            (required)
+//   window      l7 | l30 | l90 | ytd | y2026 | y2025 | all   (default all)
+//   collections comma-separated list                          (optional)
+//   limit       1..100                                        (default 25)
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { parseWindow, windowRange, parseCollections } from "@/lib/analytics/loans-window"
 import { resolveUsernames, displayName } from "@/lib/flowty-username"
+import type { AnalyticsLeaderboardRow } from "@/lib/analytics-types"
 
 export const revalidate = 600
 
-interface Row {
-  funded_at: string | null
-  collection: string | null
-  principal_usd: number | null
-  principal_amount: number | null
-  borrower_addr: string | null
-  lender_addr: string | null
-}
-
-const PAGE_SIZE = 1000
-const TOP_N = 25
-
-async function fetchAll(
-  startISO: string | null,
-  endISO: string | null,
-  collections: string[] | null
-): Promise<Row[]> {
-  const out: Row[] = []
-  let from = 0
-  while (true) {
-    let q = supabaseAdmin
-      .from("flowty_loans")
-      .select(
-        "funded_at,collection,principal_usd,principal_amount,borrower_addr,lender_addr"
-      )
-      .order("funded_at", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1)
-    if (collections && collections.length > 0) q = q.in("collection", collections)
-    if (startISO) q = q.gte("funded_at", startISO)
-    if (endISO) q = q.lt("funded_at", endISO)
-    const { data, error } = await q
-    if (error || !data) break
-    out.push(...(data as Row[]))
-    if (data.length < PAGE_SIZE) break
-    from += PAGE_SIZE
-  }
-  return out
-}
-
-function loanUsd(r: Row): number {
-  return Number(r.principal_usd ?? r.principal_amount ?? 0) || 0
+function parseLimit(raw: string | null): number {
+  const n = parseInt(raw || "25", 10)
+  if (!Number.isFinite(n) || n <= 0) return 25
+  return Math.min(100, n)
 }
 
 export async function GET(req: NextRequest) {
@@ -66,50 +33,31 @@ export async function GET(req: NextRequest) {
     }
     const window = parseWindow(url.searchParams.get("window"))
     const collections = parseCollections(url.searchParams.get("collections"))
+    const limit = parseLimit(url.searchParams.get("limit"))
     const range = windowRange(window)
 
-    const inWindow = await fetchAll(range.startISO, range.endISO, collections)
-    const fullHistory =
-      window === "ALL" ? inWindow : await fetchAll(null, range.endISO, collections)
+    const { data, error } = await supabaseAdmin.rpc("flowty_analytics_leaderboard", {
+      p_role: role,
+      p_start_at: range.startISO,
+      p_end_at: range.endISO,
+      p_collections: collections,
+      p_limit: limit,
+    })
 
-    type Agg = { addr: string; loanCount: number; totalUsd: number }
-    const agg = new Map<string, Agg>()
-    for (const r of inWindow) {
-      const addr = (role === "lender" ? r.lender_addr : r.borrower_addr) || ""
-      if (!addr) continue
-      const key = addr.toLowerCase()
-      const a = agg.get(key) || { addr: key, loanCount: 0, totalUsd: 0 }
-      a.loanCount += 1
-      a.totalUsd += loanUsd(r)
-      agg.set(key, a)
+    if (error) {
+      console.log("[analytics/loans/leaderboard] rpc_error", error.message)
+      return NextResponse.json({ error: "leaderboard_failed" }, { status: 500 })
     }
 
-    const earlierAddrs = new Set<string>()
-    if (range.startISO) {
-      for (const r of fullHistory) {
-        if (!r.funded_at || r.funded_at >= range.startISO) continue
-        const addr = (role === "lender" ? r.lender_addr : r.borrower_addr) || ""
-        if (addr) earlierAddrs.add(addr.toLowerCase())
-      }
-    }
-
-    const ranked = Array.from(agg.values())
-      .sort((a, b) => b.totalUsd - a.totalUsd || b.loanCount - a.loanCount)
-      .slice(0, TOP_N)
-
-    const names = await resolveUsernames(ranked.map((r) => r.addr))
-
-    const rows = ranked.map((r, i) => ({
-      rank: i + 1,
-      address: r.addr,
+    const rows = (data ?? []) as AnalyticsLeaderboardRow[]
+    const names = await resolveUsernames(rows.map((r) => r.addr))
+    const enriched = rows.map((r) => ({
+      ...r,
       username: displayName(r.addr, names),
-      loanCount: r.loanCount,
-      totalUsd: Math.round(r.totalUsd * 100) / 100,
-      isReturning: earlierAddrs.has(r.addr),
     }))
 
     return NextResponse.json(
-      { role, window, rows },
+      { role, rows: enriched },
       {
         headers: {
           "Cache-Control": "public, max-age=0, s-maxage=600, stale-while-revalidate=1200",
@@ -118,9 +66,6 @@ export async function GET(req: NextRequest) {
     )
   } catch (e: any) {
     console.log("[analytics/loans/leaderboard] error", e?.message || e)
-    return NextResponse.json(
-      { error: "leaderboard_failed", message: String(e?.message || e) },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: "leaderboard_failed" }, { status: 500 })
   }
 }
