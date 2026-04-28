@@ -38,8 +38,6 @@ const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://rip-packs-city.ver
 export const revalidate = 21600
 
 const ANALYTICS_STUBS = [
-  'pulse',
-  'listings',
   'wallets',
   'packs',
   'sets',
@@ -213,6 +211,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'daily' as const,
       priority: 0.7,
     })),
+    { url: `${BASE_URL}/analytics/pulse`, lastModified: now, changeFrequency: 'always', priority: 0.9 },
+    { url: `${BASE_URL}/analytics/listings`, lastModified: now, changeFrequency: 'hourly', priority: 0.8 },
     ...ANALYTICS_STUBS.map((slug) => ({
       url: `${BASE_URL}/analytics/${slug}`,
       lastModified: now,

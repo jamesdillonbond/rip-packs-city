@@ -42,6 +42,15 @@ interface SalesSummaryResponse {
   unique_sellers: number
 }
 
+interface Pulse24hResponse {
+  loans: { originations: number; origination_volume_usd: number }
+  sales: { sales: number; volume_usd: number }
+}
+
+interface ListingsSummaryCardResponse {
+  loan_offers: { count: number; total_principal_usd: number }
+}
+
 async function loadLoansSummary(): Promise<LoansSummaryResponse | null> {
   try {
     const res = await fetch(`${ANALYTICS_BASE_URL}/api/analytics/loans/summary?window=all`, {
@@ -61,6 +70,30 @@ async function loadSalesSummary(): Promise<SalesSummaryResponse | null> {
     })
     if (!res.ok) return null
     return (await res.json()) as SalesSummaryResponse
+  } catch {
+    return null
+  }
+}
+
+async function loadPulse24h(): Promise<Pulse24hResponse | null> {
+  try {
+    const res = await fetch(`${ANALYTICS_BASE_URL}/api/analytics/pulse/24h`, {
+      next: { revalidate: 60 },
+    })
+    if (!res.ok) return null
+    return (await res.json()) as Pulse24hResponse
+  } catch {
+    return null
+  }
+}
+
+async function loadListingsSummary(): Promise<ListingsSummaryCardResponse | null> {
+  try {
+    const res = await fetch(`${ANALYTICS_BASE_URL}/api/analytics/listings/summary`, {
+      next: { revalidate: 300 },
+    })
+    if (!res.ok) return null
+    return (await res.json()) as ListingsSummaryCardResponse
   } catch {
     return null
   }
@@ -109,9 +142,11 @@ const TIMELINE = [
 ]
 
 export default async function AnalyticsOverviewPage() {
-  const [summary, salesSummary] = await Promise.all([
+  const [summary, salesSummary, pulse, listings] = await Promise.all([
     loadLoansSummary(),
     loadSalesSummary(),
+    loadPulse24h(),
+    loadListingsSummary(),
   ])
 
   const cards: SectionCard[] = [
@@ -131,9 +166,21 @@ export default async function AnalyticsOverviewPage() {
     {
       href: "/analytics/pulse",
       label: "Pulse",
-      description: "Cross-platform activity signal — sales, listings, holds, churn.",
+      description: "Live transaction stream — loans + sales across the Flow ecosystem, refreshing every 30s.",
       icon: Activity,
-      status: "soon",
+      status: "live",
+      metrics: pulse
+        ? [
+            {
+              label: "24h sales",
+              value: `${formatCount(pulse.sales?.sales ?? 0)} · ${formatUsd(pulse.sales?.volume_usd ?? 0)}`,
+            },
+            {
+              label: "24h loans",
+              value: `${formatCount(pulse.loans?.originations ?? 0)} · ${formatUsd(pulse.loans?.origination_volume_usd ?? 0)}`,
+            },
+          ]
+        : [{ label: "Status", value: "Live" }],
     },
     {
       href: "/analytics/sales",
@@ -151,9 +198,15 @@ export default async function AnalyticsOverviewPage() {
     {
       href: "/analytics/listings",
       label: "Listings",
-      description: "Active listing depth, ask spread, time-on-market.",
+      description: "Open Flowty loan offers and a sample of the Top Shot orderbook.",
       icon: List,
-      status: "soon",
+      status: "live",
+      metrics: listings
+        ? [
+            { label: "Open offers", value: formatCount(listings.loan_offers?.count ?? 0) },
+            { label: "Liquidity", value: formatUsd(listings.loan_offers?.total_principal_usd ?? 0) },
+          ]
+        : [{ label: "Status", value: "Live" }],
     },
     {
       href: "/analytics/wallets",

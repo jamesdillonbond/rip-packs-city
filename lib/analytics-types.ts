@@ -247,3 +247,121 @@ export interface SalesTopMoveRow {
   moment_id: number | null
   transaction_hash: string | null
 }
+
+// ── Pulse RPC response shapes ───────────────────────────────────────────────
+// analytics_pulse_24h, analytics_pulse_activity, analytics_pulse_hourly.
+// Pulse is the live activity stream — loan + sale events combined.
+
+export interface PulseLoansSection {
+  originations: number
+  repayments: number
+  settlements: number
+  origination_volume_usd: number
+}
+
+export interface PulseSalesSection {
+  sales: number
+  volume_usd: number
+  unique_buyers: number
+  avg_price_usd: number | null
+  max_price_usd: number | null
+}
+
+export interface PulsePriorLoans {
+  originations: number
+  origination_volume_usd: number
+}
+
+export interface PulsePriorSales {
+  sales: number
+  volume_usd: number
+}
+
+export interface Pulse24hResponse {
+  loans: PulseLoansSection
+  sales: PulseSalesSection
+  prior_loans: PulsePriorLoans
+  prior_sales: PulsePriorSales
+  as_of: string
+}
+
+// kind values: loan_originated | loan_repaid | loan_settled | sale.
+// details is a kind-specific jsonb blob — the dashboard knows the shape per kind.
+export type PulseActivityKind =
+  | "loan_originated"
+  | "loan_repaid"
+  | "loan_settled"
+  | "sale"
+
+export interface PulseActivityRow {
+  occurred_at: string
+  kind: PulseActivityKind
+  collection: string
+  primary_addr: string | null
+  counterparty: string | null
+  amount_usd: number | null
+  details: Record<string, unknown>
+}
+
+export interface PulseHourlyRow {
+  hour: string // ISO timestamp at hour boundary
+  loan_count: number
+  loan_volume_usd: number
+  sale_count: number
+  sale_volume_usd: number
+}
+
+// ── Listings RPC response shapes ────────────────────────────────────────────
+// analytics_listings_summary + analytics_listings_open_loan_offers.
+// "Listings" surfaces what's currently buyable / offered, not historical sales.
+
+export interface ListingsLoanOffersSection {
+  count: number
+  total_principal_usd: number
+  avg_principal_usd: number | null
+  avg_apr: number | null
+  avg_term_days: number | null
+  collections?: Record<string, { count: number; total_principal_usd: number }>
+}
+
+export interface ListingsTopShotOrderbookSection {
+  count: number
+  min_ask_usd: number | null
+  median_ask_usd: number | null
+  p90_ask_usd: number | null
+  max_ask_usd: number | null
+  avg_ask_usd: number | null
+  total_ask_usd: number | null
+  locked_count: number
+}
+
+export interface ListingsMarketplaceCollectionEntry {
+  collection: string
+  count: number
+  min_ask_usd: number | null
+  max_ask_usd: number | null
+  avg_ask_usd: number | null
+  median_ask_usd: number | null
+}
+
+export interface ListingsSummaryResponse {
+  loan_offers: ListingsLoanOffersSection
+  topshot_orderbook: ListingsTopShotOrderbookSection
+  marketplace_listings: ListingsMarketplaceCollectionEntry[]
+  data_caveats?: string[] | null
+  as_of: string
+}
+
+export interface ListingsOpenLoanOfferRow {
+  listing_resource_id: string | number
+  collection: string
+  borrower_addr: string | null
+  principal_usd: number
+  principal_currency: string | null
+  interest_rate: number | null
+  apr_pct: number | null
+  term_days: number | null
+  expires_at: string | null
+  listed_at: string | null
+  nft_id: string | number | null
+}
