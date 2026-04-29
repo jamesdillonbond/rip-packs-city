@@ -14,6 +14,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { hydrateTopShotEditions, toUpsertRow } from "@/lib/editions-hydrate";
 
 const FIRESTORE_BASE =
   "https://firestore.googleapis.com/v1/projects/flowty-prod/databases/(default)";
@@ -300,19 +301,59 @@ export async function GET(req: NextRequest) {
         if (row.external_id && row.id) editionByKey.set(row.external_id, row.id);
       }
 
-      // Insert stubs for unknown editions
+      // Hydrate-at-insert: fetch metadata via TopShot GQL before creating the
+      // row. Rows that fail GQL fall back to skeleton insert with a warning.
       const missingExternalIds = externalIds.filter((id) => !editionByKey.has(id));
       if (missingExternalIds.length > 0 && !dryRun) {
-        const stubRows = missingExternalIds.map((extId) => ({
-          external_id: extId,
-          collection_id: collectionId,
-        }));
+        const candidates = missingExternalIds.length;
+        let hydratedCount = 0;
+        let fallbackCount = 0;
+        const failed: string[] = [];
+
+        const hydratedRows = await hydrateTopShotEditions(missingExternalIds);
+        const upsertRows = hydratedRows.map((r) => {
+          const row = toUpsertRow(r);
+          if (r.ok) hydratedCount++;
+          else {
+            fallbackCount++;
+            failed.push(r.external_id);
+          }
+          return row;
+        });
+
         const { data: insertedEditions } = await supabase
           .from("editions")
-          .upsert(stubRows, { onConflict: "external_id,collection_id", ignoreDuplicates: false })
+          .upsert(upsertRows, { onConflict: "external_id,collection_id", ignoreDuplicates: false })
           .select("id, external_id");
         for (const row of insertedEditions ?? []) {
           if (row.external_id && row.id) editionByKey.set(row.external_id, row.id);
+        }
+        console.log(
+          `[flowty-listings] hydrate-at-insert: candidates=${candidates} hydrated=${hydratedCount} fallback=${fallbackCount}` +
+            (failed.length ? ` failed=${failed.slice(0, 5).join(",")}` : ""),
+        );
+
+        try {
+          await (supabase as any).from("pipeline_runs").insert({
+            pipeline: "editions-hydrate-at-insert",
+            collection_slug: "nba-top-shot",
+            started_at: new Date().toISOString(),
+            finished_at: new Date().toISOString(),
+            rows_found: candidates,
+            rows_written: hydratedCount,
+            rows_skipped: fallbackCount,
+            ok: true,
+            error: null,
+            extra: {
+              site: "flowty-listings",
+              candidates,
+              hydrated: hydratedCount,
+              fallback_skeleton: fallbackCount,
+              failed_sample: failed.slice(0, 10),
+            },
+          });
+        } catch {
+          // best-effort observability
         }
       }
 
