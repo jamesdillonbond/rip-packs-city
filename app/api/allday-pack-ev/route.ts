@@ -558,27 +558,104 @@ export async function POST(req: NextRequest) {
         ? "Partial FMV coverage (" + fmvCoverage + "%). Some editions use All Day marketplace prices instead of RPC FMV."
         : null
 
-    // ── Proactive edition seeding (fire-and-forget) ──────────────────────────
-    const unseeded = editions
+    // ── Proactive edition seeding (fire-and-forget, hydrate-at-insert) ───────
+    // Previous version wrote only { external_id, collection: "nfl_all_day" } —
+    // missing collection_id (so onConflict couldn't match) and missing every
+    // metadata field. This version pulls player_name/set_name/tier/series/
+    // circulation directly from the GraphQL response we already fetched, so the
+    // seeded row is fully hydrated at insert time. No second network round-trip.
+    const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
+    const nowIso = new Date().toISOString()
+
+    const unseededRows = editions
       .filter((n) => {
         const extId = n.edition.set?.id && n.edition.play?.id
           ? `${n.edition.set.id}:${n.edition.play.id}`
           : null
         return extId && !rpcFmvMap.has(extId)
       })
-      .map((n) => ({
-        external_id: `${n.edition.set.id}:${n.edition.play.id}`,
-        collection: "nfl_all_day",
-      }))
+      .map((n) => {
+        const setId = n.edition.set?.id
+        const playId = n.edition.play?.id
+        const extId = `${setId}:${playId}`
+        const playerName = n.edition.play?.stats?.playerName ?? null
+        const setName = n.edition.set?.flowName ?? null
+        const teamName = n.edition.play?.stats?.teamAtMoment ?? null
+        const tier = (() => {
+          const raw = n.edition.tier ? String(n.edition.tier).toUpperCase() : null
+          if (!raw) return null
+          if (raw.includes("ULTIMATE")) return "ULTIMATE"
+          if (raw.includes("LEGENDARY")) return "LEGENDARY"
+          if (raw.includes("RARE")) return "RARE"
+          if (raw.includes("COMMON")) return "COMMON"
+          return null
+        })()
+        return {
+          external_id: extId,
+          collection_id: ALLDAY_COLLECTION_ID,
+          collection: "nfl_all_day",
+          name: playerName && setName ? `${playerName} — ${setName}` : playerName ?? setName,
+          player_name: playerName,
+          set_name: setName,
+          team_name: teamName,
+          tier,
+          series: n.edition.set?.flowSeriesNumber ?? null,
+          circulation_count: n.edition.circulationCount ?? null,
+          play_type: n.edition.play?.stats?.playCategory ?? null,
+          updated_at: nowIso,
+          _ok: Boolean(playerName),
+        }
+      })
 
-    if (unseeded.length > 0) {
+    if (unseededRows.length > 0) {
+      const candidates = unseededRows.length
+      let hydratedCount = 0
+      let fallbackCount = 0
+      const failed: string[] = []
+      const cleaned = unseededRows.map((r) => {
+        if (r._ok) hydratedCount++
+        else {
+          fallbackCount++
+          failed.push(r.external_id)
+        }
+        const { _ok: _drop, ...rest } = r
+        return rest
+      })
+
       supabaseAdmin
         .from("editions")
-        .upsert(unseeded, { onConflict: "external_id,collection_id", ignoreDuplicates: true })
+        .upsert(cleaned, { onConflict: "external_id,collection_id", ignoreDuplicates: false })
         .then(({ error }: { error: any }) => {
           if (error) console.warn(`[allday-pack-ev] Edition seed error: ${error.message}`)
-          else console.log(`[allday-pack-ev] Seeded ${unseeded.length} new editions`)
+          else
+            console.log(
+              `[allday-pack-ev] hydrate-at-insert: candidates=${candidates} hydrated=${hydratedCount} fallback=${fallbackCount}` +
+                (failed.length ? ` failed=${failed.slice(0, 5).join(",")}` : ""),
+            )
         })
+
+      // Best-effort observability — won't block the response.
+      supabaseAdmin
+        .from("pipeline_runs")
+        .insert({
+          pipeline: "editions-hydrate-at-insert",
+          collection_slug: "nfl-all-day",
+          started_at: nowIso,
+          finished_at: new Date().toISOString(),
+          rows_found: candidates,
+          rows_written: hydratedCount,
+          rows_skipped: fallbackCount,
+          ok: true,
+          error: null,
+          extra: {
+            site: "allday-pack-ev",
+            candidates,
+            hydrated: hydratedCount,
+            fallback_skeleton: fallbackCount,
+            failed_sample: failed.slice(0, 10),
+          },
+        })
+        .then(() => undefined)
     }
 
     // ── Store in cache ──────────────────────────────────────────────────────
