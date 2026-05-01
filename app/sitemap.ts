@@ -40,7 +40,6 @@ export const revalidate = 21600
 const ANALYTICS_STUBS = [
   'wallets',
   'packs',
-  'sets',
   'api',
 ]
 
@@ -147,6 +146,40 @@ async function getEditionRows(): Promise<EditionRow[]> {
   }
 }
 
+interface TopSetRow {
+  set_id: string
+  total_fmv_robust_usd: number
+}
+
+async function getTopSets(): Promise<TopSetRow[]> {
+  // Pre-render-friendly URL list of the top-100 sets by robust total FMV.
+  // The /analytics/sets/[set_id] route uses ISR with revalidate=21600;
+  // sitemap entries here ensure the top sets are crawlable from the
+  // sitemap index.
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return []
+  try {
+    const sb: any = createClient(url, key)
+    const { data, error } = await sb.rpc('analytics_sets_directory', {
+      p_collections: null,
+      p_sort: 'value_desc',
+      p_min_coverage: 0,
+      p_limit: 100,
+    })
+    if (error || !Array.isArray(data)) {
+      if (error) console.log('[sitemap] sets_directory error: ' + error.message)
+      return []
+    }
+    return (data as TopSetRow[]).filter(
+      (r) => typeof r.set_id === 'string' && r.set_id.length === 36
+    )
+  } catch (err) {
+    console.log('[sitemap] sets_directory threw: ' + (err instanceof Error ? err.message : String(err)))
+    return []
+  }
+}
+
 async function getLoanWallets(): Promise<DirectoryRow[]> {
   // Every wallet that's appeared on the Flowty loan book gets one
   // /analytics/wallets/[address] entry. We use the canonical
@@ -213,6 +246,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE_URL}/analytics/pulse`, lastModified: now, changeFrequency: 'always', priority: 0.9 },
     { url: `${BASE_URL}/analytics/listings`, lastModified: now, changeFrequency: 'hourly', priority: 0.8 },
     { url: `${BASE_URL}/analytics/fmv`, lastModified: now, changeFrequency: 'daily', priority: 0.7 },
+    { url: `${BASE_URL}/analytics/sets`, lastModified: now, changeFrequency: 'weekly', priority: 0.7 },
     ...ANALYTICS_STUBS.map((slug) => ({
       url: `${BASE_URL}/analytics/${slug}`,
       lastModified: now,
@@ -257,6 +291,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }))
 
+  const topSets = await getTopSets()
+  const setPages: MetadataRoute.Sitemap = topSets.map((s) => ({
+    url: `${BASE_URL}/analytics/sets/${s.set_id}`,
+    lastModified: now,
+    changeFrequency: 'weekly' as const,
+    priority: 0.5,
+  }))
+
   return [
     ...staticPages,
     ...featurePages,
@@ -264,5 +306,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...walletPages,
     ...profilePages,
     ...editionPages,
+    ...setPages,
   ]
 }

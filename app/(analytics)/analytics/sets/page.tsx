@@ -1,22 +1,39 @@
 import type { Metadata } from "next"
-import ComingSoon from "@/components/analytics/ComingSoon"
+import SetsDashboard from "@/components/analytics/SetsDashboard"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
 
 export const metadata: Metadata = analyticsMetadata({
-  title: "Sets Analytics — Set Completion Rates and Bottleneck Moments",
+  title: "Sets — Catalog Across Flow NFT Collections",
   description:
-    "Set completion rates and bottleneck moments by tier for Flow collectibles. Discover which sets are achievable and where the price walls live.",
+    "Set-level rollups across NBA Top Shot, NFL All Day, LaLiga Golazos, and UFC Strike. Catalog summary, series eras, and a sortable directory of every set with FMV coverage and robust total value.",
   path: "/analytics/sets",
 })
 
 const datasetJsonLd = {
   "@context": "https://schema.org",
   "@type": "Dataset",
-  name: "Rip Packs City Sets Analytics",
+  name: "Rip Packs City Sets Catalog",
   description:
-    "Set completion rates and bottleneck moment analytics for Flow digital collectibles.",
+    "Set-level catalog rollups across NBA Top Shot, NFL All Day, LaLiga Golazos, and UFC Strike — set/edition counts, tier breakdowns, series eras, and per-set FMV totals.",
   creator: { "@type": "Organization", name: "Rip Packs City" },
   url: `${ANALYTICS_BASE_URL}/analytics/sets`,
+  distribution: [
+    {
+      "@type": "DataDownload",
+      encodingFormat: "application/json",
+      contentUrl: `${ANALYTICS_BASE_URL}/api/analytics/sets/summary`,
+    },
+    {
+      "@type": "DataDownload",
+      encodingFormat: "application/json",
+      contentUrl: `${ANALYTICS_BASE_URL}/api/analytics/sets/series`,
+    },
+    {
+      "@type": "DataDownload",
+      encodingFormat: "application/json",
+      contentUrl: `${ANALYTICS_BASE_URL}/api/analytics/sets/directory`,
+    },
+  ],
 }
 
 export default function SetsPage() {
@@ -26,18 +43,7 @@ export default function SetsPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
       />
-      <ComingSoon
-        section="Sets Analytics"
-        expected="Q4 2026"
-        description="A set-level view of the Flow collectibles ecosystem. See completion rates per set, identify the bottleneck moments that gate completion, and track the cheapest path to finishing any set you choose."
-        metrics={[
-          "Completion rate per set across all wallets",
-          "Bottleneck moments — lowest-supply edition gating completion",
-          "Cheapest path to set completion at current asks",
-          "Completed-set holders leaderboard",
-          "Set value index over time",
-        ]}
-      />
+      <SetsDashboard />
     </>
   )
 }
