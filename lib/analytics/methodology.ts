@@ -148,13 +148,35 @@ export const METHODOLOGY: Record<string, MethodologyEntry> = {
       "Primary role classification (lender / borrower / mixed) is determined by which role has more loan count. Mixed surfaces only when both sides have funded-window activity, since pre-window-only activity isn&apos;t a strong signal of intent.",
       "Wallets are crawlable — each profile is a standalone page in the sitemap with schema.org Person and Dataset markup. Recent loan rows include counterparty links to their own profile pages, so a crawler walking the directory can discover the entire graph. There is no opt-out for indexability today, since on-chain addresses are public; we can implement one if requested via the dashboard&apos;s feedback channel.",
       "Username resolution falls back through saved_wallets (display_name → username → truncated 0x...). As Trevor and other users save wallets with custom names, those propagate to the profile page&apos;s heading and to counterparty links across the dashboard.",
+      "The /analytics/wallets index is now a hub — above the per-wallet directory grid, the page renders a roll-up powered by analytics_wallets_overview. The KPI strip shows total wallets, active-7d, total volume, and average loans per active wallet. Volume-tier segments slice the directory four ways: Whales ($50K+ peak volume), Active ($5K+), Casual ($100+), and Dust (under $100). Role buckets and recency cohorts (24h / 7d / dormant 30d+) sit beside the segment bar. The borrowed-equals-lent invariant holds at the platform level: every dollar borrowed is a dollar lent, so total_borrowed_usd == total_lent_usd in the totals — the KPI strip surfaces the borrowed figure as &quot;Total volume&quot; with a sublabel calling out the invariant. Wallets that act as both borrower and lender count once in wallets_total but appear in both role buckets, so borrowers + lenders − both = wallets_total.",
     ],
     sources: [
       "flowty_analytics_wallet_detail (Supabase RPC) — per-wallet role-specific stats and recent loans",
       "flowty_analytics_wallet_directory (Supabase RPC) — directory index",
+      "analytics_wallets_overview (Supabase RPC) — hub-level totals, segments, recency cohorts",
       "saved_wallets (Supabase) — username resolution",
     ],
     refresh: "Every 10 minutes (ISR)",
+  },
+  sets: {
+    slug: "sets",
+    title: "Sets Methodology",
+    blurb: "How the catalog rollups, series eras, and per-set FMV totals are built.",
+    paragraphs: [
+      "Sets are the unit of organization above editions on Flow collectibles platforms — every edition belongs to one set, and sets in turn belong to a collection (NBA Top Shot, NFL All Day, LaLiga Golazos, UFC Strike). The /analytics/sets surface joins the canonical sets and editions tables to fmv_snapshots and exposes four roll-ups: a per-collection summary (set / edition counts plus a tier mix), a series overview (one row per series era with edition counts and total robust FMV), a per-set directory (sortable, filterable table of every set with FMV coverage), and a per-set detail page with the full editions list. All four are powered by the analytics_sets_* RPC family — analytics_sets_summary, analytics_sets_directory, analytics_sets_detail, and analytics_sets_series_overview.",
+      "Coverage is the percent of editions in a set that have a reliable FMV — i.e. an FMV snapshot at HIGH, MEDIUM, or LOW confidence. ASK_ONLY editions and editions with no snapshot don&apos;t count. The directory exposes a min-coverage filter (0% / 50% / 75% / 100%) so users can collapse the table to well-covered sets when they want to compare apples-to-apples, and surfaces the raw coverage as a small bar visualization next to each row.",
+      "The robust total caps each per-edition FMV at 20× the set median before summing. This is the headline number on every Sets surface — directory rows, series chart, per-set hero card. The cap exists because a small fraction of editions carry listing-reward farming asks orders of magnitude above true price, and including those raw figures makes set totals unreadable. We still expose the raw total alongside the robust total on the per-set detail page so users can see both figures, but the dashboard reaches for robust as the primary value (e.g. Genesis at $1.01M raw is much higher than the robust total — the difference is the outlier cap doing its job). The outlier_flag column is true on directory rows where any edition exceeds 20× the set median; the row gets a subtle amber tint and a warning icon with the explanation.",
+      "Pinnacle is excluded from /analytics/sets because Pinnacle&apos;s catalog has a different set structure — collection sets vs shape vs variant — that doesn&apos;t map cleanly onto the sets/editions schema the other four platforms share. Pinnacle has its own analytics surface elsewhere; folding it into Sets would require a separate adapter we haven&apos;t built. UFC Strike is included for completeness even though it migrated to Aptos in 2024 — the historical Flow catalog still has 3 sets / 147 editions and shows up here because users still hold those moments.",
+      "Top Shot series labels are canonical and ordered: Series 1 (on-chain series=0), Series 2 (=2), Summer 2021 (=3), Series 3 (=4), Series 4 (=5), Series 2023-24 (=6), Series 2024-25 (=7), Series 2025-26 (=8). Note that on-chain series=1 doesn&apos;t exist — series=0 IS Series 1. Editions tagged with series=1 in our catalog are anomalous (mostly UUID-imported rows that didn&apos;t carry a real series tag at hydrate time); they render under a &quot;Misc / Unmapped&quot; label with an info tooltip explaining the anomaly. The Misc bucket usually shows low or zero FMV because most of those editions don&apos;t have FMV computed yet. That&apos;s correct behavior — surface them but they shouldn&apos;t pollute the headline numbers, and the chart sorts them last.",
+      "Freshness: FMV refreshes approximately every 10 minutes via the standard pipeline; the set + edition catalog itself updates daily as new sets/editions land on chain. The per-set detail pages use ISR with a 6-hour revalidate; the top-100 most valuable sets are pre-rendered at build via generateStaticParams so the highest-traffic detail pages are fast on first request, and the rest fall through to ISR.",
+    ],
+    sources: [
+      "sets (Supabase) — one row per set across the four supported collections",
+      "editions (Supabase) — joined to sets for catalog roll-ups",
+      "fmv_snapshots (Supabase) — most recent reliable FMV per edition",
+      "analytics_sets_summary / analytics_sets_directory / analytics_sets_detail / analytics_sets_series_overview RPCs",
+    ],
+    refresh: "FMV every ~10 min · catalog daily · per-set detail ISR every 6h",
   },
 }
 

@@ -62,8 +62,21 @@ interface FmvHealthCardResponse {
   >
 }
 
-interface WalletDirectoryCardRow {
-  addr: string
+interface SetsSummaryCardResponse {
+  collections: Record<
+    string,
+    {
+      set_count: number
+      edition_count: number
+    }
+  >
+}
+
+interface WalletsOverviewCardResponse {
+  totals: {
+    wallets_total: number
+    last_active_within_7d: number
+  }
 }
 
 async function loadLoansSummary(): Promise<LoansSummaryResponse | null> {
@@ -126,12 +139,25 @@ async function loadFmvHealth(): Promise<FmvHealthCardResponse | null> {
   }
 }
 
-async function loadWalletDirectoryCount(): Promise<number | null> {
+async function loadWalletsOverview(): Promise<WalletsOverviewCardResponse | null> {
   try {
-    const sb: any = supabaseAdmin
-    const { data, error } = await sb.rpc("flowty_analytics_wallet_directory")
-    if (error || !Array.isArray(data)) return null
-    return (data as WalletDirectoryCardRow[]).length
+    const res = await fetch(`${ANALYTICS_BASE_URL}/api/analytics/wallets/overview`, {
+      next: { revalidate: 600 },
+    })
+    if (!res.ok) return null
+    return (await res.json()) as WalletsOverviewCardResponse
+  } catch {
+    return null
+  }
+}
+
+async function loadSetsSummary(): Promise<SetsSummaryCardResponse | null> {
+  try {
+    const res = await fetch(`${ANALYTICS_BASE_URL}/api/analytics/sets/summary`, {
+      next: { revalidate: 600 },
+    })
+    if (!res.ok) return null
+    return (await res.json()) as SetsSummaryCardResponse
   } catch {
     return null
   }
@@ -157,7 +183,7 @@ interface SectionCard {
   description: string
   icon: typeof Activity
   metrics?: Array<{ label: string; value: string }>
-  status: "live" | "soon"
+  status: "live"
 }
 
 const TIMELINE = [
@@ -180,15 +206,23 @@ const TIMELINE = [
 ]
 
 export default async function AnalyticsOverviewPage() {
-  const [summary, salesSummary, pulse, listings, fmvHealth, walletCount] =
-    await Promise.all([
-      loadLoansSummary(),
-      loadSalesSummary(),
-      loadPulse24h(),
-      loadListingsSummary(),
-      loadFmvHealth(),
-      loadWalletDirectoryCount(),
-    ])
+  const [
+    summary,
+    salesSummary,
+    pulse,
+    listings,
+    fmvHealth,
+    walletsOverview,
+    setsSummary,
+  ] = await Promise.all([
+    loadLoansSummary(),
+    loadSalesSummary(),
+    loadPulse24h(),
+    loadListingsSummary(),
+    loadFmvHealth(),
+    loadWalletsOverview(),
+    loadSetsSummary(),
+  ])
 
   let fmvTotalUsd = 0
   let fmvEditionTotal = 0
@@ -196,6 +230,15 @@ export default async function AnalyticsOverviewPage() {
     for (const stats of Object.values(fmvHealth.collections)) {
       fmvTotalUsd += stats?.reliable_total_fmv_usd ?? 0
       fmvEditionTotal += stats?.editions_total ?? 0
+    }
+  }
+
+  let setsTotalSets = 0
+  let setsTotalEditions = 0
+  if (setsSummary?.collections) {
+    for (const stats of Object.values(setsSummary.collections)) {
+      setsTotalSets += stats?.set_count ?? 0
+      setsTotalEditions += stats?.edition_count ?? 0
     }
   }
 
@@ -264,13 +307,18 @@ export default async function AnalyticsOverviewPage() {
       description: "Every wallet active on the Flowty loan book — lenders, borrowers, and mixed-role power users.",
       icon: Users,
       status: "live",
-      metrics:
-        walletCount != null
-          ? [
-              { label: "Active wallets", value: formatCount(walletCount) },
-              { label: "Source", value: "Loan book" },
-            ]
-          : [{ label: "Status", value: "Live" }],
+      metrics: walletsOverview?.totals
+        ? [
+            {
+              label: "Total wallets",
+              value: formatCount(walletsOverview.totals.wallets_total ?? 0),
+            },
+            {
+              label: "Active 7d",
+              value: formatCount(walletsOverview.totals.last_active_within_7d ?? 0),
+            },
+          ]
+        : [{ label: "Status", value: "Live" }],
     },
     {
       href: "/analytics/fmv",
@@ -289,16 +337,23 @@ export default async function AnalyticsOverviewPage() {
     {
       href: "/analytics/packs",
       label: "Packs",
-      description: "Pack drops, EV, pull odds, supply curves over time.",
+      description: "Pack listings ranked by expected value vs current ask, with FMV coverage and supply signals.",
       icon: Package,
-      status: "soon",
+      status: "live",
     },
     {
       href: "/analytics/sets",
       label: "Sets",
-      description: "Set completion rates and bottleneck moments by tier.",
+      description: "Catalog rollups across NBA Top Shot, NFL All Day, LaLiga Golazos, and UFC Strike — sets, editions, and series eras.",
       icon: Layers,
-      status: "soon",
+      status: "live",
+      metrics:
+        setsTotalSets > 0
+          ? [
+              { label: "Total sets", value: formatCount(setsTotalSets) },
+              { label: "Editions", value: formatCount(setsTotalEditions) },
+            ]
+          : [{ label: "Status", value: "Live" }],
     },
   ]
 
@@ -325,68 +380,30 @@ export default async function AnalyticsOverviewPage() {
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {cards.map((c) => {
             const Icon = c.icon
-            const isLive = c.status === "live"
             return (
               <Link
                 key={c.href}
                 href={c.href}
-                className={
-                  "group relative rounded-xl border p-5 transition-all " +
-                  (isLive
-                    ? "border-slate-800 bg-slate-900/40 hover:border-emerald-500/40 hover:bg-slate-900/70"
-                    : "border-slate-800/60 bg-slate-900/20 opacity-60 hover:opacity-80 hover:border-slate-700")
-                }
+                className="group relative rounded-xl border border-slate-800 bg-slate-900/40 p-5 transition-all hover:border-emerald-500/40 hover:bg-slate-900/70"
               >
                 <div className="flex items-start gap-3 mb-3">
-                  <div
-                    className={
-                      "flex h-9 w-9 items-center justify-center rounded-md border " +
-                      (isLive
-                        ? "bg-emerald-500/10 border-emerald-500/20"
-                        : "bg-slate-800/40 border-slate-700/50")
-                    }
-                  >
-                    <Icon
-                      size={16}
-                      className={isLive ? "text-emerald-400" : "text-slate-500"}
-                    />
+                  <div className="flex h-9 w-9 items-center justify-center rounded-md border bg-emerald-500/10 border-emerald-500/20">
+                    <Icon size={16} className="text-emerald-400" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <h3
-                        className={
-                          "font-semibold " +
-                          (isLive ? "text-slate-100" : "text-slate-400")
-                        }
-                      >
-                        {c.label}
-                      </h3>
-                      {isLive ? (
-                        <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-emerald-400 border border-emerald-500/30">
-                          Live
-                        </span>
-                      ) : (
-                        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-slate-500 border border-slate-700/70">
-                          Coming Soon
-                        </span>
-                      )}
+                      <h3 className="font-semibold text-slate-100">{c.label}</h3>
+                      <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-emerald-400 border border-emerald-500/30">
+                        Live
+                      </span>
                     </div>
                   </div>
                   <ArrowUpRight
                     size={14}
-                    className={
-                      isLive
-                        ? "text-slate-600 group-hover:text-emerald-400 transition-colors"
-                        : "text-slate-700"
-                    }
+                    className="text-slate-600 group-hover:text-emerald-400 transition-colors"
                   />
                 </div>
-                <p
-                  className={
-                    "text-sm leading-relaxed mb-3 " +
-                    (isLive ? "text-slate-400" : "text-slate-500")
-                  }
-                >
+                <p className="text-sm leading-relaxed mb-3 text-slate-400">
                   {c.description}
                 </p>
                 {c.metrics ? (
@@ -396,12 +413,7 @@ export default async function AnalyticsOverviewPage() {
                         <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
                           {m.label}
                         </div>
-                        <div
-                          className={
-                            "text-base font-semibold tabular-nums " +
-                            (isLive ? "text-slate-100" : "text-slate-400")
-                          }
-                        >
+                        <div className="text-base font-semibold tabular-nums text-slate-100">
                           {m.value}
                         </div>
                       </div>

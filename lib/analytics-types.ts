@@ -422,3 +422,126 @@ export interface FmvTierPulseRow {
   high_conf_count: number
   low_conf_count: number
 }
+
+// ── Sets RPC response shapes ───────────────────────────────────────────────
+// analytics_sets_summary, analytics_sets_directory, analytics_sets_detail,
+// analytics_sets_series_overview. The Sets surface is a catalog view —
+// rollups across sets/editions joined to FMV — and is intentionally
+// read-mostly (revalidate 600).
+
+export interface SetsTierBreakdown {
+  common: number
+  fandom: number
+  rare: number
+  legendary: number
+  ultimate: number
+}
+
+export interface SetsCollectionSummary {
+  set_count: number
+  edition_count: number
+  tier_breakdown: SetsTierBreakdown
+}
+
+export interface SetsSummaryResponse {
+  collections: {
+    topshot?: SetsCollectionSummary
+    allday?: SetsCollectionSummary
+    golazos?: SetsCollectionSummary
+    ufc?: SetsCollectionSummary
+  }
+  as_of: string
+  note?: string | null
+}
+
+export type SetsDirectorySort =
+  | "value_desc"
+  | "value_asc"
+  | "name_asc"
+  | "newest"
+  | "completion_desc"
+
+export interface SetsDirectoryRow {
+  collection: string
+  set_id: string
+  set_external_id: string | null
+  set_name: string
+  series: number | null
+  edition_count: number
+  edition_count_with_fmv: number
+  coverage_pct: number
+  median_fmv_usd: number | null
+  total_fmv_usd: number
+  total_fmv_robust_usd: number
+  avg_fmv_usd: number | null
+  max_edition_fmv_usd: number | null
+  outlier_flag: boolean
+  earliest_minted_at: string | null
+}
+
+export interface SetsDetailEdition {
+  edition_id: string
+  edition_external_id: string | null
+  name: string | null
+  tier: string | null
+  circulation_count: number | null
+  series: number | null
+  play_type: string | null
+  thumbnail_url: string | null
+  first_minted_at: string | null
+  fmv_usd: number | null
+  fmv_confidence: FmvConfidence | null
+}
+
+export interface SetsDetailResponse {
+  set_id: string
+  set_external_id: string | null
+  set_name: string
+  series: number | null
+  tier: string | null
+  collection: string
+  editions: SetsDetailEdition[]
+  as_of: string
+}
+
+export interface SetsSeriesOverviewRow {
+  collection: string
+  series: number | null
+  series_label: string
+  set_count: number
+  edition_count: number
+  edition_count_with_fmv: number
+  median_edition_fmv: number | null
+  total_series_fmv_robust: number
+}
+
+// ── Wallets overview RPC response ─────────────────────────────────────────
+// analytics_wallets_overview. Hub-level rollup over the loan-book wallet
+// directory — totals, segments by peak volume, and activity recency cohorts.
+
+export interface WalletsOverviewTotals {
+  wallets_total: number
+  borrowers: number
+  lenders: number
+  both_roles: number
+  total_borrowed_usd: number
+  total_lent_usd: number
+  avg_loans_per_borrower: number
+  avg_loans_per_lender: number
+  last_active_within_24h: number
+  last_active_within_7d: number
+  dormant_30d: number
+}
+
+export interface WalletsOverviewSegments {
+  whale: number
+  active: number
+  casual: number
+  dust: number
+}
+
+export interface WalletsOverviewResponse {
+  totals: WalletsOverviewTotals
+  segments: WalletsOverviewSegments
+  as_of: string
+}

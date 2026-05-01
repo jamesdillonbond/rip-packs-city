@@ -14,6 +14,7 @@ import { ArrowRight, Wallet } from "lucide-react"
 import { supabaseAdmin } from "@/lib/supabase"
 import { resolveUsernames, displayName } from "@/lib/flowty-username"
 import WalletIdenticon from "@/components/analytics/WalletIdenticon"
+import WalletsHubOverview from "@/components/analytics/WalletsHubOverview"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
 import type { WalletDirectoryRow } from "@/lib/analytics-types"
 
@@ -110,15 +111,30 @@ export default async function WalletsIndexPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
       />
-      <div className="space-y-6">
+      <div className="space-y-10">
         <header className="space-y-2">
-          <h1 className="text-2xl font-bold text-slate-100">Wallet directory</h1>
+          <h1 className="text-2xl font-bold text-slate-100">
+            Wallets — Loan-Book Lender &amp; Borrower Hub
+          </h1>
           <p className="text-sm text-slate-400 max-w-2xl">
-            Every wallet active on the Flowty NFT-collateralized loan book, sorted by
-            total volume. Each profile is a standalone page with role-specific stats
-            and recent loan activity.
+            Every wallet active on the Flowty NFT-collateralized loan book, with a
+            hub-level view of segments, role splits, and activity recency above
+            the per-wallet directory.
           </p>
         </header>
+
+        <WalletsHubOverview />
+
+        <div className="space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-100">
+              Wallet directory
+            </h2>
+            <p className="text-xs text-slate-500">
+              Per-wallet detail — sorted by total volume. Each profile is a
+              standalone page with role-specific stats and recent loan activity.
+            </p>
+          </div>
 
         <div className="rounded-xl border border-slate-800 bg-slate-900/40 overflow-hidden">
           <div className="flex items-center justify-between p-4 border-b border-slate-800">
@@ -219,6 +235,7 @@ export default async function WalletsIndexPage() {
               </table>
             </div>
           )}
+        </div>
         </div>
       </div>
     </>
