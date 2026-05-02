@@ -545,3 +545,143 @@ export interface WalletsOverviewResponse {
   segments: WalletsOverviewSegments
   as_of: string
 }
+
+// ── Position-transfer RPC response shapes ──────────────────────────────────
+// analytics_wallet_position_transfers + analytics_position_transfers_summary.
+// HybridCustody parent/child reassignment causes a small fraction of FULL
+// loans to settle to a lender address that differs from the origination
+// lender. These RPCs surface that delta on the wallet profile and the
+// loans dashboard.
+
+export type WalletPositionTransferStatus =
+  | "active"
+  | "repaid"
+  | "settled"
+  | "canceled"
+  | string
+
+export interface WalletPositionTransferOutgoingLoan {
+  listing_resource_id: string | number
+  collection: string
+  borrower_addr: string
+  recipient_addr: string
+  principal_usd: number
+  funded_at: string
+  settled_at: string | null
+  status: WalletPositionTransferStatus
+}
+
+export interface WalletPositionTransferIncomingLoan {
+  listing_resource_id: string | number
+  collection: string
+  borrower_addr: string
+  origin_addr: string
+  principal_usd: number
+  funded_at: string
+  settled_at: string | null
+  status: WalletPositionTransferStatus
+}
+
+export interface WalletPositionTransfersResponse {
+  addr: string
+  outgoing: {
+    count: number
+    principal_usd: number
+    unique_recipients: number
+    loans: WalletPositionTransferOutgoingLoan[]
+  }
+  incoming: {
+    count: number
+    principal_usd: number
+    unique_origins: number
+    loans: WalletPositionTransferIncomingLoan[]
+  }
+  has_activity: boolean
+  as_of: string
+}
+
+export interface PositionTransfersSummaryTotals {
+  total_transfers: number
+  total_principal_usd: number
+  unique_origin_lenders: number
+  unique_recipient_lenders: number
+  pct_of_full_loans: number
+}
+
+export interface PositionTransfersTopWallet {
+  addr: string
+  transfers: number
+  principal_usd: number
+}
+
+export interface PositionTransfersRecentRow {
+  listing_resource_id: string | number
+  collection: string
+  origin_addr: string
+  recipient_addr: string
+  principal_usd: number
+  funded_at: string
+  status: WalletPositionTransferStatus
+}
+
+export interface PositionTransfersSummaryResponse {
+  totals: PositionTransfersSummaryTotals
+  top_origins: PositionTransfersTopWallet[]
+  top_recipients: PositionTransfersTopWallet[]
+  recent: PositionTransfersRecentRow[]
+  as_of: string
+  note?: string | null
+}
+
+// ── Pipeline health RPC response shape ─────────────────────────────────────
+// analytics_pipeline_health. Summarizes lag for each upstream pipeline
+// powering the analytics surface.
+
+export type PipelineHealthStatus = "healthy" | "degraded" | "stale"
+
+export interface PipelineHealthRow {
+  lag_minutes: number
+  expected_max_lag_min: number
+  status: PipelineHealthStatus
+  cadence: string
+}
+
+export interface PipelineHealthResponse {
+  pipelines: {
+    loans: PipelineHealthRow
+    sales: PipelineHealthRow
+    fmv: PipelineHealthRow
+    pack_ev: PipelineHealthRow
+    listings: PipelineHealthRow
+  }
+  overall_status: PipelineHealthStatus
+  as_of: string
+}
+
+// ── Lender performance RPC response shape ──────────────────────────────────
+// analytics_lender_performance. Realized-yield ranking of lenders with
+// settled or repaid loans. Active loans are excluded.
+
+export interface LenderPerformanceRow {
+  rank: number
+  addr: string
+  total_loans: number
+  total_principal_usd: number
+  repaid_loans: number
+  repaid_principal_usd: number
+  repaid_collected_usd: number
+  interest_earned_usd: number
+  default_loans: number
+  default_principal_usd: number
+  realized_yield_pct: number | null
+  default_rate_pct: number | null
+  active_loans: number
+}
+
+// ── Username resolution responses ──────────────────────────────────────────
+// analytics_resolve_usernames + analytics_lookup_username. Public mapping
+// from wallet address to NBA Top Shot username (or other source).
+
+export interface ResolveUsernamesResponse {
+  usernames: Record<string, string>
+}

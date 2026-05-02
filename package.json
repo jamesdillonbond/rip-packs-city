@@ -11,7 +11,8 @@
     "start": "next start",
     "lint": "eslint",
     "classify:dapper": "node scripts/dapper-csv-classify.mjs",
-    "classify:ts-livetoken": "node scripts/classify-ts-livetoken.mjs"
+    "classify:ts-livetoken": "node scripts/classify-ts-livetoken.mjs",
+    "seed:usernames": "tsx scripts/seed-wallet-usernames.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.81.0",

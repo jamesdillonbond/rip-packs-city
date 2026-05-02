@@ -19,6 +19,8 @@ import VolumeChart from "./VolumeChart"
 import NewWalletsChart from "./NewWalletsChart"
 import CohortRetention from "./CohortRetention"
 import LeaderboardTable, { type LeaderboardDisplayRow } from "./LeaderboardTable"
+import LenderPerformanceTable from "./LenderPerformanceTable"
+import PositionTransfersCard from "./PositionTransfersCard"
 import FilterBar, { type LoanWindow } from "./FilterBar"
 import ExploreSection from "./ExploreSection"
 import type {
@@ -133,6 +135,7 @@ export default function LoansDashboard({
   const [activeCollections, setActiveCollections] = useState<string[]>(
     pinnedCollections
   )
+  const [lenderTab, setLenderTab] = useState<"volume" | "yield">("volume")
 
   // If the prop changes (e.g. via Next.js navigation between drill-downs),
   // reset the active set to match.
@@ -454,6 +457,8 @@ export default function LoansDashboard({
         </div>
       </section>
 
+      <PositionTransfersCard />
+
       <HealthBar
         title="Live loan book"
         metrics={[
@@ -515,11 +520,43 @@ export default function LoansDashboard({
       </section>
 
       <section className="grid gap-6 lg:grid-cols-2">
-        <LeaderboardTable
-          rows={topLenders?.rows ?? []}
-          role="lender"
-          window={windowLabel}
-        />
+        <div className="flex flex-col gap-3">
+          <div className="inline-flex self-start rounded-lg border border-slate-800 bg-slate-900/60 p-1 text-xs">
+            <button
+              type="button"
+              onClick={() => setLenderTab("volume")}
+              className={
+                "px-3 py-1.5 rounded-md transition-colors " +
+                (lenderTab === "volume"
+                  ? "bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-semibold"
+                  : "text-slate-400 hover:text-slate-200")
+              }
+            >
+              Volume
+            </button>
+            <button
+              type="button"
+              onClick={() => setLenderTab("yield")}
+              className={
+                "px-3 py-1.5 rounded-md transition-colors " +
+                (lenderTab === "yield"
+                  ? "bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-semibold"
+                  : "text-slate-400 hover:text-slate-200")
+              }
+            >
+              Realized yield
+            </button>
+          </div>
+          {lenderTab === "volume" ? (
+            <LeaderboardTable
+              rows={topLenders?.rows ?? []}
+              role="lender"
+              window={windowLabel}
+            />
+          ) : (
+            <LenderPerformanceTable collections={activeCollections} />
+          )}
+        </div>
         <LeaderboardTable
           rows={topBorrowers?.rows ?? []}
           role="borrower"

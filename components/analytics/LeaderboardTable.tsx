@@ -1,6 +1,9 @@
 "use client"
 
+import { useMemo } from "react"
+import Link from "next/link"
 import type { AnalyticsLeaderboardRow, SalesLeaderboardRow } from "@/lib/analytics-types"
+import { useResolveUsernames } from "@/lib/analytics/username-resolver"
 
 // LeaderboardTable handles both loans (lender/borrower) and sales (buyer/seller)
 // leaderboards. The two RPCs return slightly different field names for the
@@ -80,6 +83,9 @@ function volumeUsd(r: LeaderboardDisplayRow): number {
 }
 
 export default function LeaderboardTable({ rows, role, window }: LeaderboardTableProps) {
+  const addrs = useMemo(() => rows.map((r) => r.addr), [rows])
+  const resolved = useResolveUsernames(addrs)
+
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/40 flex flex-col">
       <div className="flex items-center justify-between p-4 border-b border-slate-800">
@@ -111,7 +117,17 @@ export default function LeaderboardTable({ rows, role, window }: LeaderboardTabl
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {rows.map((r) => {
+                const truncated = truncate(r.addr)
+                // Prefer the wallet_usernames mapping (NBA Top Shot canonical
+                // handle) over the saved_wallets nickname; both fall back to
+                // a truncated 0x display.
+                const resolvedName = resolved[r.addr.toLowerCase()]
+                const display =
+                  resolvedName ||
+                  (r.username && r.username !== truncated ? r.username : null) ||
+                  truncated
+                return (
                 <tr key={r.addr} className="border-b border-slate-800/40 last:border-b-0">
                   <td className="py-2.5 px-3 text-slate-500 tabular-nums">{r.rank}</td>
                   <td className="py-2.5 px-3">
@@ -121,12 +137,16 @@ export default function LeaderboardTable({ rows, role, window }: LeaderboardTabl
                         style={{ background: identicon(r.addr) }}
                       />
                       <div className="min-w-0">
-                        <div className="text-slate-200 truncate" title={r.addr}>
-                          {r.username}
-                        </div>
-                        {r.username !== truncate(r.addr) ? (
+                        <Link
+                          href={`/analytics/wallets/${r.addr}`}
+                          className="text-slate-200 truncate hover:text-emerald-400 transition-colors block"
+                          title={r.addr}
+                        >
+                          {display}
+                        </Link>
+                        {display !== truncated ? (
                           <div className="text-[10px] text-slate-500 font-mono truncate">
-                            {truncate(r.addr)}
+                            {truncated}
                           </div>
                         ) : null}
                       </div>
@@ -144,7 +164,8 @@ export default function LeaderboardTable({ rows, role, window }: LeaderboardTabl
                     {formatUsd(volumeUsd(r))}
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         )}

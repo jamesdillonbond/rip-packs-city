@@ -3,12 +3,16 @@
 import { useMemo, useState } from "react"
 import {
   Activity,
+  ArrowDownLeft,
+  ArrowUpRight,
   Calendar,
   Clock,
   Copy,
   ExternalLink,
   HandCoins,
+  HelpCircle,
   Percent,
+  Repeat,
   Users,
   Wallet,
 } from "lucide-react"
@@ -16,12 +20,20 @@ import Link from "next/link"
 import WalletIdenticon from "./WalletIdenticon"
 import type {
   WalletDetailResponse,
+  WalletPositionTransfersResponse,
+  WalletPositionTransferIncomingLoan,
+  WalletPositionTransferOutgoingLoan,
   WalletRecentLoan,
 } from "@/lib/analytics-types"
+import {
+  useResolveUsernames,
+  displayName as resolveDisplayName,
+} from "@/lib/analytics/username-resolver"
 
 interface WalletProfileProps {
   data: WalletDetailResponse
   username?: string | null
+  positionTransfers?: WalletPositionTransfersResponse | null
 }
 
 const COLLECTION_LABEL: Record<string, string> = {
@@ -165,11 +177,35 @@ function mergeLoans(
   return merged.sort((a, b) => (b.funded_at || "").localeCompare(a.funded_at || ""))
 }
 
-export default function WalletProfile({ data, username }: WalletProfileProps) {
+export default function WalletProfile({
+  data,
+  username,
+  positionTransfers,
+}: WalletProfileProps) {
   const [copied, setCopied] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
 
   const addr = data.addr
+
+  const counterpartyAddrs = useMemo(() => {
+    const out = new Set<string>()
+    for (const l of data.recent_as_borrower ?? []) if (l.counterparty_addr) out.add(l.counterparty_addr.toLowerCase())
+    for (const l of data.recent_as_lender ?? []) if (l.counterparty_addr) out.add(l.counterparty_addr.toLowerCase())
+    if (positionTransfers) {
+      for (const l of positionTransfers.outgoing?.loans ?? []) {
+        if (l.recipient_addr) out.add(l.recipient_addr.toLowerCase())
+        if (l.borrower_addr) out.add(l.borrower_addr.toLowerCase())
+      }
+      for (const l of positionTransfers.incoming?.loans ?? []) {
+        if (l.origin_addr) out.add(l.origin_addr.toLowerCase())
+        if (l.borrower_addr) out.add(l.borrower_addr.toLowerCase())
+      }
+    }
+    return Array.from(out)
+  }, [data.recent_as_borrower, data.recent_as_lender, positionTransfers])
+
+  const resolvedNames = useResolveUsernames(counterpartyAddrs)
+
   const display = username && username.trim() ? username : truncateAddress(addr)
 
   const borrowerCount = data.as_borrower?.loan_count ?? 0
@@ -311,6 +347,14 @@ export default function WalletProfile({ data, username }: WalletProfileProps) {
         ) : null}
       </section>
 
+      {positionTransfers && positionTransfers.has_activity ? (
+        <PositionTransfersSection
+          self={addr}
+          payload={positionTransfers}
+          names={resolvedNames}
+        />
+      ) : null}
+
       <section className="rounded-xl border border-slate-800 bg-slate-900/40 overflow-hidden">
         <div className="flex items-center justify-between p-4 border-b border-slate-800">
           <div>
@@ -356,6 +400,10 @@ export default function WalletProfile({ data, username }: WalletProfileProps) {
                       statusCls={sb.cls}
                       open={isOpen}
                       onToggle={() => setExpanded(isOpen ? null : key)}
+                      counterpartyDisplay={resolveDisplayName(
+                        loan.counterparty_addr,
+                        resolvedNames
+                      )}
                     />
                   )
                 })}
@@ -611,6 +659,7 @@ interface RowGroupProps {
   statusCls: string
   open: boolean
   onToggle: () => void
+  counterpartyDisplay: string
 }
 
 function RowGroup({
@@ -621,6 +670,7 @@ function RowGroup({
   statusCls,
   open,
   onToggle,
+  counterpartyDisplay,
 }: RowGroupProps) {
   const sideLabel = loan.side === "borrower" ? "Borrowed" : "Funded"
   const sideCls =
@@ -665,10 +715,19 @@ function RowGroup({
         <td className="py-2.5 px-3">
           <Link
             href={`/analytics/wallets/${loan.counterparty_addr}`}
-            className="text-slate-400 hover:text-emerald-400 transition-colors text-xs font-mono"
+            className="text-slate-400 hover:text-emerald-400 transition-colors text-xs"
             onClick={(e) => e.stopPropagation()}
+            title={loan.counterparty_addr}
           >
-            {truncateAddress(loan.counterparty_addr)}
+            <span
+              className={
+                counterpartyDisplay === truncateAddress(loan.counterparty_addr)
+                  ? "font-mono"
+                  : "font-medium text-slate-300"
+              }
+            >
+              {counterpartyDisplay}
+            </span>
           </Link>
         </td>
         <td className="py-2.5 px-3 text-right text-slate-100 tabular-nums">
@@ -705,6 +764,231 @@ function RowGroup({
         </tr>
       ) : null}
     </>
+  )
+}
+
+interface PositionTransfersSectionProps {
+  self: string
+  payload: WalletPositionTransfersResponse
+  names: Record<string, string>
+}
+
+function PositionTransfersSection({
+  self,
+  payload,
+  names,
+}: PositionTransfersSectionProps) {
+  const outgoing = payload.outgoing
+  const incoming = payload.incoming
+  const showOutgoing = (outgoing?.count ?? 0) > 0
+  const showIncoming = (incoming?.count ?? 0) > 0
+
+  const outgoingLoans = useMemo(
+    () =>
+      [...(outgoing?.loans ?? [])].sort((a, b) =>
+        (b.funded_at || "").localeCompare(a.funded_at || "")
+      ),
+    [outgoing]
+  )
+  const incomingLoans = useMemo(
+    () =>
+      [...(incoming?.loans ?? [])].sort((a, b) =>
+        (b.funded_at || "").localeCompare(a.funded_at || "")
+      ),
+    [incoming]
+  )
+
+  return (
+    <section className="rounded-xl border border-amber-900/40 bg-gradient-to-br from-amber-950/20 to-slate-950/40 overflow-hidden">
+      <div className="flex items-center justify-between p-4 border-b border-amber-900/30">
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-amber-500/10 border border-amber-500/20">
+            <Repeat size={14} className="text-amber-400" />
+          </div>
+          <div>
+            <div className="flex items-center gap-1.5">
+              <h2 className="text-lg font-semibold text-slate-100">Position transfers</h2>
+              <span
+                className="inline-flex items-center text-slate-500 hover:text-slate-300 cursor-help"
+                title="HybridCustody loans where this wallet was either the origination lender (transferred out) or settlement lender (transferred in). Reflects parent/child account reassignment within Flow's HybridCustody hierarchy."
+              >
+                <HelpCircle size={12} />
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Loans whose at-settlement lender differs from origination lender — almost always
+              HybridCustody parent/child reassignment.
+            </p>
+          </div>
+        </div>
+        <Link
+          href="/analytics/methodology/position-transfers"
+          className="text-[10px] uppercase tracking-widest text-amber-400 hover:text-amber-300 font-semibold"
+        >
+          Methodology →
+        </Link>
+      </div>
+
+      <div className="grid gap-4 p-4 md:grid-cols-2">
+        {showOutgoing ? (
+          <PositionTransferPanel
+            kind="outgoing"
+            count={outgoing.count}
+            principal={outgoing.principal_usd}
+            uniqueLabel={`to ${fmtNumber(outgoing.unique_recipients)} unique recipients`}
+            loans={outgoingLoans}
+            self={self}
+            names={names}
+          />
+        ) : null}
+        {showIncoming ? (
+          <PositionTransferPanel
+            kind="incoming"
+            count={incoming.count}
+            principal={incoming.principal_usd}
+            uniqueLabel={`from ${fmtNumber(incoming.unique_origins)} unique origins`}
+            loans={incomingLoans}
+            self={self}
+            names={names}
+          />
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+interface PositionTransferPanelProps {
+  kind: "outgoing" | "incoming"
+  count: number
+  principal: number
+  uniqueLabel: string
+  loans: WalletPositionTransferOutgoingLoan[] | WalletPositionTransferIncomingLoan[]
+  self: string
+  names: Record<string, string>
+}
+
+function PositionTransferPanel({
+  kind,
+  count,
+  principal,
+  uniqueLabel,
+  loans,
+  self: _self,
+  names,
+}: PositionTransferPanelProps) {
+  const isOutgoing = kind === "outgoing"
+  const Icon = isOutgoing ? ArrowUpRight : ArrowDownLeft
+  const accent = isOutgoing
+    ? "border-rose-500/30 text-rose-400"
+    : "border-emerald-500/30 text-emerald-400"
+  const title = isOutgoing ? "Transferred out" : "Transferred in"
+
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Icon size={14} className={isOutgoing ? "text-rose-400" : "text-emerald-400"} />
+          <h3 className="text-sm font-semibold text-slate-100">{title}</h3>
+        </div>
+        <span
+          className={
+            "rounded border px-2 py-0.5 text-[10px] uppercase tracking-wider font-semibold " +
+            accent
+          }
+        >
+          {fmtNumber(count)} loans
+        </span>
+      </div>
+      <div className="flex items-baseline gap-2 text-slate-300 text-sm">
+        <span className="text-lg font-semibold tabular-nums text-slate-100">
+          {fmtUsd(principal)}
+        </span>
+        <span className="text-xs text-slate-500">{uniqueLabel}</span>
+      </div>
+      {loans.length === 0 ? (
+        <div className="text-xs text-slate-500">No transfers in this direction.</div>
+      ) : (
+        <div className="overflow-x-auto -mx-1">
+          <table className="w-full text-xs min-w-[420px]">
+            <thead>
+              <tr className="text-[9px] uppercase tracking-widest text-slate-500 border-b border-slate-800">
+                <th className="py-1.5 px-2 text-left font-semibold">Collection</th>
+                <th className="py-1.5 px-2 text-left font-semibold">
+                  {isOutgoing ? "Recipient" : "Origin"}
+                </th>
+                <th className="py-1.5 px-2 text-left font-semibold">Borrower</th>
+                <th className="py-1.5 px-2 text-right font-semibold">Principal</th>
+                <th className="py-1.5 px-2 text-center font-semibold">Status</th>
+                <th className="py-1.5 px-2 text-right font-semibold">Funded</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loans.map((loan, idx) => {
+                const otherAddr = isOutgoing
+                  ? (loan as WalletPositionTransferOutgoingLoan).recipient_addr
+                  : (loan as WalletPositionTransferIncomingLoan).origin_addr
+                const sb = statusBadge(loan.status || "")
+                const collKey = (loan.collection || "other").toLowerCase()
+                return (
+                  <tr
+                    key={`${loan.listing_resource_id}-${idx}`}
+                    className="border-b border-slate-800/40 last:border-b-0"
+                  >
+                    <td className="py-1.5 px-2">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className="h-2 w-2 rounded"
+                          style={{
+                            background: COLLECTION_COLORS[collKey] ?? "#64748b",
+                          }}
+                        />
+                        <span className="text-slate-300">
+                          {COLLECTION_LABEL[collKey] ?? loan.collection}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-1.5 px-2">
+                      <Link
+                        href={`/analytics/wallets/${otherAddr}`}
+                        className="text-slate-400 hover:text-emerald-400 transition-colors"
+                        title={otherAddr}
+                      >
+                        {resolveDisplayName(otherAddr, names)}
+                      </Link>
+                    </td>
+                    <td className="py-1.5 px-2">
+                      <Link
+                        href={`/analytics/wallets/${loan.borrower_addr}`}
+                        className="text-slate-400 hover:text-emerald-400 transition-colors"
+                        title={loan.borrower_addr}
+                      >
+                        {resolveDisplayName(loan.borrower_addr, names)}
+                      </Link>
+                    </td>
+                    <td className="py-1.5 px-2 text-right text-slate-100 tabular-nums">
+                      {fmtUsd(loan.principal_usd)}
+                    </td>
+                    <td className="py-1.5 px-2 text-center">
+                      <span
+                        className={
+                          "rounded border px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold " +
+                          sb.cls
+                        }
+                      >
+                        {sb.label}
+                      </span>
+                    </td>
+                    <td className="py-1.5 px-2 text-right text-slate-400 tabular-nums">
+                      {fmtRelative(loan.funded_at)}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   )
 }
 
