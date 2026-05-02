@@ -1,22 +1,25 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
+import { hydrateAllDayEditions, toUpsertRow } from "@/lib/editions-hydrate"
 import crypto from "crypto"
 
 // ── On-chain NFL All Day sales indexer ───────────────────────────────────────
 //
 // Scans Flow NFTStorefrontV2.ListingCompleted events via the Flow REST API,
 // filters to AllDay NFT purchases, maps nftID → edition via wallet_moments_cache
-// (with a Cadence borrow fallback through the script endpoint), and writes
-// dedup'd rows into the partitioned `sales` table. Events that cannot be
-// mapped to an edition are written to `unmapped_sales` for later promotion,
-// and each run is logged via `log_pipeline_run` so silent failures surface.
+// (with a Cadence borrowMomentNFT fallback against the buyer wallet), and
+// writes dedup'd rows into the partitioned `sales` table. Sales whose buyer
+// wallet no longer holds the NFT (relisted instantly) fall through to
+// `unmapped_sales` for later promotion. Every run logs both the scanner and
+// the edition-resolver via pipeline_runs so silent failures surface.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const COLLECTION_SLUG = "nfl_all_day"
 const PIPELINE_NAME = "allday-sales-indexer"
+const RESOLVER_PIPELINE_NAME = "allday-edition-resolver"
 // Flowty's NFTStorefrontV2 fork (0x3cdbb3d569211ff3) is where AllDay moments
 // actually trade — the Dapper StorefrontV2 (0x4eb8a10cb9f87357) only carries
 // TopShot PackNFT / Pinnacle / MFL packs. Flowty's fork also emits `nftType`
@@ -27,8 +30,12 @@ const CHUNK_SIZE = 250
 const DEFAULT_SCAN_RANGE = 50_000
 const MAX_SCAN_RANGE = 100_000
 const INTER_CHUNK_DELAY_MS = 75
-const CADENCE_FALLBACK_MAX = 30
+// Cap Cadence borrow attempts per run. Flow REST shares a 20 req/s budget
+// across the project, and each unresolved sale costs 1-2 script calls
+// (borrow + optional getEditionData), so 5 keeps us well under the ceiling.
+const CADENCE_FALLBACK_MAX = 5
 const CADENCE_DELAY_MS = 150
+const SCRIPT_TIMEOUT_MS = 15_000
 
 // Addresses that appear in every Flowty purchase envelope but are never the
 // buyer. Normalised to 0x + 16-hex-chars for set lookups.
@@ -141,11 +148,10 @@ async function getLatestSealedHeight(): Promise<number> {
   return Number(json[0]?.header?.height ?? 0)
 }
 
-// Real-buyer resolution: the storefront tx has three candidate accounts —
-// proposer, authorizers, payer. For Flowty purchases the payer is almost
-// always the Flowty fee payer (0x18eb4ee6b3c026d2), so the true buyer is in
-// proposal_key.address or the authorizers list. After filtering out the known
-// infra addresses, whatever remains is the wallet that now holds the NFT.
+// Real-buyer resolution: when the storefront event payload doesn't carry an
+// explicit `buyer` field, fall back to the tx's proposer / authorizers /
+// payer. After filtering out the known infra addresses, whatever remains is
+// the wallet that now holds the NFT.
 async function fetchTxBuyers(txId: string): Promise<string[]> {
   try {
     const clean = txId.replace(/^0x/, "")
@@ -168,37 +174,145 @@ async function fetchTxBuyers(txId: string): Promise<string[]> {
   }
 }
 
-const BORROW_EDITION_SCRIPT = `
+// AllDay-typed borrow: the public capability at /public/AllDayNFTCollection is
+// published as a `&AllDay.Collection` (the contract's concrete collection
+// resource), not as the generic `&{NonFungibleToken.Collection}` interface.
+// Borrowing the concrete type lets us call the AllDay-specific
+// `borrowMomentNFT(id:)` accessor, which returns `&AllDay.NFT?` directly with
+// editionID, serialNumber, and mintingDate fields exposed — no unsafe cast
+// needed. Returns nil if the wallet doesn't hold the NFT (e.g. relisted
+// instantly post-sale), in which case we fall through to unmapped_sales.
+const BORROW_MOMENT_SCRIPT = `
 import AllDay from 0xe4cf4bdc1751c65d
-import NonFungibleToken from 0x1d7e57aa55817448
-access(all) fun main(owners: [Address], id: UInt64): [UInt64] {
-  for owner in owners {
-    let ref = getAccount(owner).capabilities.borrow<&{NonFungibleToken.Collection}>(/public/AllDayNFTCollection)
-    if ref == nil { continue }
-    let nft = ref!.borrowNFT(id)
-    if nft == nil { continue }
-    let ad = nft! as! &AllDay.NFT
-    return [ad.editionID, ad.serialNumber]
+access(all) fun main(buyer: Address, id: UInt64): {String: String}? {
+  let col = getAccount(buyer).capabilities.borrow<&AllDay.Collection>(/public/AllDayNFTCollection)
+  if col == nil { return nil }
+  let nft = col!.borrowMomentNFT(id: id)
+  if nft == nil { return nil }
+  return {
+    "id": nft!.id.toString(),
+    "editionID": nft!.editionID.toString(),
+    "serialNumber": nft!.serialNumber.toString(),
+    "mintingDate": nft!.mintingDate.toString()
   }
-  return []
+}
+`
+
+// Stateless edition-data fetch — used when the editions table doesn't already
+// have a row for the resolved editionID. Pulls play / set / series metadata
+// inline so we can upsert a populated edition without a second round trip.
+const GET_EDITION_DATA_SCRIPT = `
+import AllDay from 0xe4cf4bdc1751c65d
+access(all) fun main(editionID: UInt64): {String: String}? {
+  let edOpt = AllDay.getEditionData(id: editionID)
+  if edOpt == nil { return nil }
+  let ed = edOpt!
+  let result: {String: String} = {
+    "playID": ed.playID.toString(),
+    "setID": ed.setID.toString(),
+    "tier": ed.tier ?? "COMMON",
+    "maxMintSize": ed.maxMintSize?.toString() ?? "",
+    "numMinted": ed.numMinted.toString()
+  }
+  let playOpt = AllDay.getPlayData(id: ed.playID)
+  if playOpt != nil {
+    let meta = playOpt!.metadata
+    result["playerName"] = meta["playerFullName"] ?? meta["playerName"] ?? ""
+    result["teamName"] = meta["teamName"] ?? ""
+    result["playType"] = meta["playType"] ?? ""
+    result["dateOfMoment"] = meta["dateOfMoment"] ?? ""
+    result["awayTeamName"] = meta["awayTeamName"] ?? ""
+    result["homeTeamName"] = meta["homeTeamName"] ?? ""
+  }
+  let setOpt = AllDay.getSetData(id: ed.setID)
+  if setOpt != nil {
+    result["setName"] = setOpt!.name
+    result["seriesID"] = setOpt!.seriesID.toString()
+    let seriesOpt = AllDay.getSeriesData(id: setOpt!.seriesID)
+    if seriesOpt != nil {
+      result["seriesName"] = seriesOpt!.name
+    }
+  }
+  return result
 }
 `
 
 async function runScript(code: string, args: Array<{ type: string; value: unknown }>): Promise<unknown> {
   const body = {
-    script: Buffer.from(code).toString("base64"),
-    arguments: args.map((a) => Buffer.from(JSON.stringify(a)).toString("base64")),
+    script: Buffer.from(code, "utf8").toString("base64"),
+    arguments: args.map((a) => Buffer.from(JSON.stringify(a), "utf8").toString("base64")),
   }
   const res = await fetch(`${FLOW_REST}/v1/scripts?block_height=sealed`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(10000),
+    signal: AbortSignal.timeout(SCRIPT_TIMEOUT_MS),
   })
   if (!res.ok) throw new Error(`script HTTP ${res.status}`)
-  const json = (await res.json()) as { value: string }
-  const decoded = JSON.parse(Buffer.from(json.value, "base64").toString("utf8"))
+  const json = (await res.json()) as { value?: string } | string
+  // Flow REST returns either a quoted base64 JSON-string body or an object
+  // with `value`. Normalize: trim surrounding quotes, base64-decode, JSON.parse.
+  let raw: string
+  if (typeof json === "string") raw = json
+  else raw = String(json.value ?? "")
+  if (!raw) return null
+  const trimmed = raw.trim().replace(/^"|"$/g, "")
+  const decoded = JSON.parse(Buffer.from(trimmed, "base64").toString("utf8"))
   return unwrapCdc(decoded)
+}
+
+function normalizeTier(raw: string | undefined | null): string | null {
+  if (!raw) return null
+  const t = String(raw).toUpperCase()
+  if (t.includes("ULTIMATE")) return "ULTIMATE"
+  if (t.includes("LEGENDARY")) return "LEGENDARY"
+  if (t.includes("RARE")) return "RARE"
+  if (t.includes("COMMON")) return "COMMON"
+  return null
+}
+
+function buildOnChainEditionRow(
+  editionID: string,
+  data: Record<string, string>,
+  now: string,
+): Record<string, unknown> {
+  const playerName = (data.playerName ?? "").trim() || null
+  const setName = (data.setName ?? "").trim() || null
+  const teamName = (data.teamName ?? "").trim() || null
+  const numMinted = Number(data.numMinted)
+  const maxMint = Number(data.maxMintSize)
+  const circulation = Number.isFinite(maxMint) && maxMint > 0
+    ? maxMint
+    : Number.isFinite(numMinted) && numMinted > 0
+    ? numMinted
+    : null
+  const seriesID = Number(data.seriesID)
+  const setIdOnchain = Number(data.setID)
+  const playIdOnchain = Number(data.playID)
+  const dateRaw = data.dateOfMoment ? String(data.dateOfMoment).slice(0, 10) : null
+  const gameDate = dateRaw && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) ? dateRaw : null
+  const composedName =
+    playerName && setName ? `${playerName} — ${setName}` : playerName ?? setName
+
+  return {
+    external_id: editionID,
+    collection_id: ALLDAY_COLLECTION_ID,
+    collection: COLLECTION_SLUG,
+    name: composedName,
+    player_name: playerName,
+    set_name: setName,
+    team_name: teamName,
+    tier: normalizeTier(data.tier),
+    series: Number.isFinite(seriesID) && seriesID > 0 ? seriesID : null,
+    circulation_count: circulation,
+    set_id_onchain: Number.isFinite(setIdOnchain) ? setIdOnchain : null,
+    play_id_onchain: Number.isFinite(playIdOnchain) ? playIdOnchain : null,
+    play_type: (data.playType ?? "").trim() || null,
+    game_date: gameDate,
+    home_team: (data.homeTeamName ?? "").trim() || null,
+    away_team: (data.awayTeamName ?? "").trim() || null,
+    updated_at: now,
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -223,6 +337,15 @@ export async function POST(req: NextRequest) {
     let ok = true
     let errorMsg: string | null = null
     const extra: Record<string, unknown> = {}
+
+    // Edition-resolver counters — separate pipeline_runs row so we can monitor
+    // the borrowMomentNFT path independent of the scanner's totals.
+    const resolverStartedAt = new Date().toISOString()
+    let resolverAttempted = 0
+    let resolverResolved = 0
+    let resolverSkipped = 0
+    let resolverNewEditionsHydrated = 0
+    let resolverNewEditionsOnchain = 0
 
     try {
       const { data: cursorRow, error: cursorErr } = await (supabaseAdmin as any)
@@ -354,51 +477,81 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Inline edition resolution: for sales that missed wallet_moments_cache,
-      // look up the real buyer via the tx's proposer/authorizers/payer, then
-      // borrow the NFT from that wallet to read editionID + serialNumber.
-      // Hits get upserted into nft_edition_map so promote_unmapped_sales and
-      // future runs don't have to redo the work.
+      // Cadence borrow fallback: for sales that missed wallet_moments_cache,
+      // call borrowMomentNFT against the buyer wallet (authoritative from the
+      // event payload). Buyer-side borrow is reliable because the buyer holds
+      // the NFT post-sale by definition; the only failure mode is an instant
+      // relist that moves the NFT back into a Flowty escrow before the next
+      // sealed block — those fall through to unmapped_sales.
       const unresolvedSales = sales.filter((s) => !nftToEditionKey.has(s.nftID))
       const newlyResolved: Array<{
         nft_id: string
         edition_external_id: string
         serial_number: number
       }> = []
-      let cadenceResolved = 0
       const seen = new Set<string>()
+      const editionsToHydrate = new Set<string>()
+      const editionsByExternalId = new Map<string, string>() // external_id → uuid (newly inserted)
+
       for (const sale of unresolvedSales) {
-        if (cadenceResolved >= CADENCE_FALLBACK_MAX) break
+        if (resolverAttempted >= CADENCE_FALLBACK_MAX) break
         if (seen.has(sale.nftID) || nftToEditionKey.has(sale.nftID)) continue
         seen.add(sale.nftID)
-        try {
-          const buyers = await fetchTxBuyers(sale.transactionId)
-          if (buyers.length === 0) continue
-          const result = (await runScript(BORROW_EDITION_SCRIPT, [
-            {
-              type: "Array",
-              value: buyers.map((a) => ({ type: "Address", value: a })),
-            },
-            { type: "UInt64", value: sale.nftID },
-          ])) as unknown[] | null
-          if (Array.isArray(result) && result.length >= 2) {
-            const editionID = String(result[0])
-            const serial = Number(result[1])
-            nftToEditionKey.set(sale.nftID, editionID)
-            if (Number.isFinite(serial)) nftToSerial.set(sale.nftID, serial)
-            newlyResolved.push({
-              nft_id: sale.nftID,
-              edition_external_id: editionID,
-              serial_number: Number.isFinite(serial) ? serial : 0,
-            })
-            cadenceResolved++
-          }
-        } catch (err) {
-          console.log(
-            `[allday-sales-indexer] cadence fallback err nft=${sale.nftID}:`,
-            err instanceof Error ? err.message : String(err)
-          )
+        resolverAttempted++
+
+        // Prefer the event-payload buyer; fall back to tx authorizers/proposer
+        // when the event didn't carry one (rare with Flowty's fork but possible
+        // for direct storefront purchases).
+        const candidates: string[] = []
+        if (sale.buyer) candidates.push(normalizeAddress(sale.buyer))
+        if (candidates.length === 0) {
+          const txBuyers = await fetchTxBuyers(sale.transactionId)
+          for (const b of txBuyers) candidates.push(b)
         }
+        if (candidates.length === 0) {
+          resolverSkipped++
+          continue
+        }
+
+        let resolvedEditionID: string | null = null
+        let resolvedSerial = 0
+        for (const buyer of candidates) {
+          try {
+            const result = (await runScript(BORROW_MOMENT_SCRIPT, [
+              { type: "Address", value: buyer },
+              { type: "UInt64", value: sale.nftID },
+            ])) as Record<string, string> | null
+            if (result && typeof result === "object" && result.editionID) {
+              resolvedEditionID = String(result.editionID)
+              const serial = Number(result.serialNumber)
+              resolvedSerial = Number.isFinite(serial) ? serial : 0
+              break
+            }
+          } catch (err) {
+            console.log(
+              `[allday-sales-indexer] borrow err nft=${sale.nftID} buyer=${buyer}:`,
+              err instanceof Error ? err.message : String(err)
+            )
+          }
+          await delay(CADENCE_DELAY_MS)
+        }
+
+        if (!resolvedEditionID) {
+          // Buyer no longer holds the NFT (instant relist) — fall through to
+          // unmapped_sales for later promotion via promote_unmapped_sales.
+          resolverSkipped++
+          continue
+        }
+
+        nftToEditionKey.set(sale.nftID, resolvedEditionID)
+        if (resolvedSerial > 0) nftToSerial.set(sale.nftID, resolvedSerial)
+        newlyResolved.push({
+          nft_id: sale.nftID,
+          edition_external_id: resolvedEditionID,
+          serial_number: resolvedSerial,
+        })
+        editionsToHydrate.add(resolvedEditionID)
+        resolverResolved++
         await delay(CADENCE_DELAY_MS)
       }
 
@@ -414,7 +567,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Resolve edition_key → edition UUID
+      // Resolve edition_key → edition UUID (existing rows)
       const editionKeys = [...new Set(nftToEditionKey.values())]
       const editionKeyToId = new Map<string, string>()
       if (editionKeys.length > 0) {
@@ -426,6 +579,73 @@ export async function POST(req: NextRequest) {
             .eq("collection_id", ALLDAY_COLLECTION_ID)
             .in("external_id", batch)
           for (const row of data ?? []) editionKeyToId.set(row.external_id, row.id)
+        }
+      }
+
+      // For newly resolved editions that aren't in the editions table yet,
+      // hydrate via the AllDay GraphQL relay first; if that returns ok=false
+      // (relay hasn't ingested the edition yet), fall back to a stateless
+      // on-chain getEditionData call. Either way, upsert and pick up the UUID.
+      const missingExternalIds = [...editionsToHydrate].filter((k) => !editionKeyToId.has(k))
+      if (missingExternalIds.length > 0) {
+        const now = new Date().toISOString()
+        const upsertRows: Record<string, unknown>[] = []
+        let hydratedHits: HydratedHit[] = []
+        try {
+          const hydrated = await hydrateAllDayEditions(missingExternalIds)
+          for (const r of hydrated) {
+            if (r.ok) {
+              upsertRows.push(toUpsertRow(r))
+              hydratedHits.push({ external_id: r.external_id, ok: true })
+              resolverNewEditionsHydrated++
+            } else {
+              hydratedHits.push({ external_id: r.external_id, ok: false })
+            }
+          }
+        } catch (err) {
+          console.log(
+            `[allday-sales-indexer] hydrateAllDayEditions err:`,
+            err instanceof Error ? err.message : String(err)
+          )
+        }
+
+        const stillMissing = missingExternalIds.filter(
+          (k) => !hydratedHits.some((h) => h.external_id === k && h.ok)
+        )
+        for (const editionID of stillMissing) {
+          try {
+            const data = (await runScript(GET_EDITION_DATA_SCRIPT, [
+              { type: "UInt64", value: editionID },
+            ])) as Record<string, string> | null
+            if (data && typeof data === "object") {
+              upsertRows.push(buildOnChainEditionRow(editionID, data, now))
+              resolverNewEditionsOnchain++
+            } else {
+              console.log(`[allday-sales-indexer] getEditionData nil for ${editionID}`)
+            }
+          } catch (err) {
+            console.log(
+              `[allday-sales-indexer] getEditionData err edition=${editionID}:`,
+              err instanceof Error ? err.message : String(err)
+            )
+          }
+          await delay(CADENCE_DELAY_MS)
+        }
+
+        if (upsertRows.length > 0) {
+          const { data: inserted, error: upErr } = await (supabaseAdmin as any)
+            .from("editions")
+            .upsert(upsertRows, { onConflict: "external_id,collection_id", ignoreDuplicates: false })
+            .select("id, external_id")
+          if (upErr) {
+            console.log(`[allday-sales-indexer] editions upsert err: ${upErr.message}`)
+          }
+          for (const row of inserted ?? []) {
+            if (row.external_id && row.id) {
+              editionKeyToId.set(row.external_id, row.id)
+              editionsByExternalId.set(row.external_id, row.id)
+            }
+          }
         }
       }
 
@@ -523,7 +743,10 @@ export async function POST(req: NextRequest) {
       cursorAfter = String(targetHeight)
 
       extra.blocks_scanned = targetHeight - lastBlock
-      extra.cadence_resolved = cadenceResolved
+      extra.cadence_resolved = resolverResolved
+      extra.cadence_attempted = resolverAttempted
+      extra.editions_hydrated_from_relay = resolverNewEditionsHydrated
+      extra.editions_hydrated_from_chain = resolverNewEditionsOnchain
       extra.unresolved_sample = unresolvedNftIds.slice(0, 20)
       extra.elapsed_ms = Date.now() - start
 
@@ -563,10 +786,45 @@ export async function POST(req: NextRequest) {
           e instanceof Error ? e.message : String(e)
         )
       }
+
+      // Independent observability for the borrowMomentNFT path. duration_ms
+      // is a generated column on pipeline_runs, so omit it.
+      try {
+        const { error } = await (supabaseAdmin as any).from("pipeline_runs").insert({
+          pipeline: RESOLVER_PIPELINE_NAME,
+          collection_slug: COLLECTION_SLUG,
+          started_at: resolverStartedAt,
+          finished_at: new Date().toISOString(),
+          rows_found: resolverAttempted,
+          rows_written: resolverResolved,
+          rows_skipped: resolverSkipped,
+          ok,
+          error: errorMsg,
+          extra: {
+            editions_hydrated_from_relay: resolverNewEditionsHydrated,
+            editions_hydrated_from_chain: resolverNewEditionsOnchain,
+            cadence_fallback_max: CADENCE_FALLBACK_MAX,
+          },
+        })
+        if (error) {
+          console.log(
+            `[allday-edition-resolver] pipeline_runs insert error: code=${(error as any).code ?? "?"} msg=${(error.message ?? "?").slice(0, 200)}`
+          )
+        }
+      } catch (e) {
+        console.log(
+          `[allday-edition-resolver] pipeline_runs insert threw: ${e instanceof Error ? e.message : String(e)}`
+        )
+      }
     }
   })
 
   return NextResponse.json({ ok: true, message: "indexing started" })
+}
+
+interface HydratedHit {
+  external_id: string
+  ok: boolean
 }
 
 export async function GET(req: NextRequest) {
