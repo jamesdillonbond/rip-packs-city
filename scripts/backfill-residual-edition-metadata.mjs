@@ -68,19 +68,19 @@ function delay(ms) {
 // ── Top Shot hydrator (mirrors lib/editions-hydrate.ts; standalone for ──────
 // the script so we don't pull TS path resolution into Node ESM at runtime) ──
 
-const setMetaCache = new Map()
-
-async function tsGql(query, variables) {
+async function tsGql(query, variables, operationName) {
   const headers = {
     "Content-Type": "application/json",
     "User-Agent": "rip-packs-city/backfill",
   }
   if (TS_PROXY_SECRET) headers["X-Proxy-Secret"] = TS_PROXY_SECRET
+  const body = { query, variables }
+  if (operationName) body.operationName = operationName
   try {
     const res = await fetch(TS_PROXY_URL, {
       method: "POST",
       headers,
-      body: JSON.stringify({ query, variables }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
     if (!res.ok) return null
@@ -92,56 +92,81 @@ async function tsGql(query, variables) {
   }
 }
 
-async function fetchTsSetMeta(setID) {
-  if (setMetaCache.has(setID)) return setMetaCache.get(setID)
-  const data = await tsGql(
-    `query GetSet($setID: ID!) { getSet(input: { setID: $setID }) { set { flowName flowSeriesNumber } } }`,
-    { setID },
-  )
-  const set = data?.getSet?.set
-  const out = set
-    ? {
-        setName: set.flowName ? String(set.flowName).trim() : null,
-        series: set.flowSeriesNumber != null ? Number(set.flowSeriesNumber) : null,
-      }
-    : null
-  setMetaCache.set(setID, out)
-  return out
-}
-
-async function fetchTsPlayMeta(playID) {
-  const data = await tsGql(
-    `query GetPlay($playID: ID!) {
-      getPlay(input: { playID: $playID }) {
-        play {
-          stats {
-            playerName
-            playCategory
-            playType
-            dateOfMoment
-            teamAtMoment
-            homeTeamName
-            awayTeamName
+const SEARCH_EDITION_QUERY = `
+  query SearchEditionBackfill($input: SearchEditionsInput!) {
+    searchEditions(input: $input) {
+      searchSummary {
+        data {
+          ... on Editions {
+            data {
+              ... on Edition {
+                tier
+                circulationCount
+                set {
+                  flowId
+                  flowName
+                  flowSeriesNumber
+                }
+                play {
+                  flowID
+                  stats {
+                    playerName
+                    teamAtMoment
+                    teamAtMomentNbaId
+                    playCategory
+                    playType
+                    dateOfMoment
+                    homeTeamName
+                    awayTeamName
+                  }
+                }
+              }
+            }
           }
-          statsPlayerFullName
         }
       }
-    }`,
-    { playID },
+    }
+  }
+`
+
+function normalizeTsTier(raw) {
+  if (!raw) return null
+  const t = String(raw).toUpperCase()
+  if (t.includes("ULTIMATE")) return "ULTIMATE"
+  if (t.includes("LEGENDARY")) return "LEGENDARY"
+  if (t.includes("RARE")) return "RARE"
+  if (t.includes("FANDOM")) return "FANDOM"
+  if (t.includes("COMMON")) return "COMMON"
+  return null
+}
+
+async function fetchTsEditionMeta(setID, playID) {
+  const data = await tsGql(
+    SEARCH_EDITION_QUERY,
+    {
+      input: {
+        filters: { bySetIDs: [setID], byPlayIDs: [playID] },
+        searchInput: { pagination: { cursor: "", direction: "RIGHT", limit: 1 } },
+      },
+    },
+    "SearchEditionBackfill",
   )
-  const play = data?.getPlay?.play
-  if (!play) return null
-  const s = play.stats ?? {}
-  const playerName = play.statsPlayerFullName ?? s.playerName ?? null
+  const row = data?.searchEditions?.searchSummary?.data?.data?.[0]
+  if (!row) return null
+  const s = row.play?.stats ?? {}
   const dateOfMoment = s.dateOfMoment ?? null
   const dateSlice = dateOfMoment ? String(dateOfMoment).slice(0, 10) : null
   const gameDate = dateSlice && /^\d{4}-\d{2}-\d{2}$/.test(dateSlice) ? dateSlice : null
   return {
-    playerName: playerName ? String(playerName).trim() : null,
+    playerName: s.playerName ? String(s.playerName).trim() : null,
+    setName: row.set?.flowName ? String(row.set.flowName).trim() : null,
+    series: row.set?.flowSeriesNumber != null ? Number(row.set.flowSeriesNumber) : null,
+    tier: normalizeTsTier(row.tier),
+    circulation: row.circulationCount ?? null,
+    teamName: s.teamAtMoment ?? null,
     playCategory: s.playCategory ?? null,
     playType: s.playType ?? null,
     gameDate,
-    teamName: s.teamAtMoment ?? null,
     homeTeam: s.homeTeamName ?? null,
     awayTeam: s.awayTeamName ?? null,
   }
@@ -151,19 +176,21 @@ async function hydrateOneTs(extId) {
   const parts = String(extId).split(":")
   if (parts.length !== 2) return null
   const [setID, playID] = parts
-  const [playMeta, setMeta] = await Promise.all([fetchTsPlayMeta(playID), fetchTsSetMeta(setID)])
-  if (!playMeta?.playerName) return null
-  const setName = setMeta?.setName ?? null
+  const meta = await fetchTsEditionMeta(setID, playID)
+  if (!meta?.playerName) return null
+  const setName = meta.setName ?? null
   return {
-    name: setName ? `${playMeta.playerName} — ${setName}` : playMeta.playerName,
-    player_name: playMeta.playerName,
+    name: setName ? `${meta.playerName} — ${setName}` : meta.playerName,
+    player_name: meta.playerName,
     set_name: setName,
-    team_name: playMeta.teamName,
-    series: setMeta?.series ?? null,
-    play_type: playMeta.playCategory,
-    game_date: playMeta.gameDate,
-    home_team: playMeta.homeTeam,
-    away_team: playMeta.awayTeam,
+    team_name: meta.teamName,
+    tier: meta.tier,
+    series: meta.series,
+    circulation_count: meta.circulation,
+    play_type: meta.playType ?? meta.playCategory,
+    game_date: meta.gameDate,
+    home_team: meta.homeTeam,
+    away_team: meta.awayTeam,
   }
 }
 
