@@ -160,6 +160,14 @@ async function runListingCache() {
   // Flowty briefly returns overlapping windows); only abort after two such
   // pages in a row. Bare empty pages still break immediately.
   let consecutiveStaleSeenPages = 0
+  // Stage counters — exposed via structured logs at the end so we can tell
+  // exactly where the pipeline drops rows (parse vs upsert vs purge).
+  let pagesFetched = 0
+  let nftsWithoutListedOrder = 0
+  let nftsMissingId = 0
+  let nftsMissingResourceID = 0
+  let nftsMissingPlayerName = 0
+  let nftsDuplicateInRun = 0
 
   for (let page = 0; page < MAX_PAGES; page++) {
     const offset = page * PAGE_LIMIT
@@ -177,20 +185,39 @@ async function runListingCache() {
     }
     const nfts = Array.isArray(rawRows) ? rawRows : []
     stats.totalFetched += nfts.length
+    pagesFetched++
+    console.log(
+      `[topshot-listing-cache] stage=fetched page=${page} offset=${offset} fetched=${nfts.length} reportedTotal=${
+        typeof pageResp.total === "number" ? pageResp.total : "null"
+      }`
+    )
     if (nfts.length === 0) break
     const reportedTotal = typeof pageResp.total === "number" ? pageResp.total : null
     const prevSeenSize = seenFlowIds.size
+    const beforeRowsCount = rows.length
 
     for (const nft of nfts) {
       const orders = Array.isArray(nft?.orders) ? nft.orders : []
       const listedOrder = orders.find((o: any) => o?.state === "LISTED")
-      if (!listedOrder) continue
+      if (!listedOrder) {
+        nftsWithoutListedOrder++
+        continue
+      }
       const nftIdRaw = nft?.id ?? nft?.nftId
-      if (nftIdRaw === undefined || nftIdRaw === null) continue
+      if (nftIdRaw === undefined || nftIdRaw === null) {
+        nftsMissingId++
+        continue
+      }
       const nftIdStr = String(nftIdRaw)
-      if (seenFlowIds.has(nftIdStr)) continue
+      if (seenFlowIds.has(nftIdStr)) {
+        nftsDuplicateInRun++
+        continue
+      }
       const listingResourceID = listedOrder.listingResourceID
-      if (!listingResourceID) continue
+      if (!listingResourceID) {
+        nftsMissingResourceID++
+        continue
+      }
 
       let traits: Trait[] = []
       const rawTraits = nft?.nftView?.traits
@@ -213,7 +240,10 @@ async function runListingCache() {
           "playerName"
         )
 
-      if (!playerName) continue
+      if (!playerName) {
+        nftsMissingPlayerName++
+        continue
+      }
 
       const serial =
         toNumber(nft?.card?.num) ??
@@ -270,6 +300,10 @@ async function runListingCache() {
       })
     }
 
+    const pageRowsAdded = rows.length - beforeRowsCount
+    console.log(
+      `[topshot-listing-cache] stage=parsed page=${page} pageRowsAdded=${pageRowsAdded} runRowsTotal=${rows.length} seenFlowIds=${seenFlowIds.size}`
+    )
     if (nfts.length < PAGE_LIMIT) break
     if (seenFlowIds.size === prevSeenSize) {
       consecutiveStaleSeenPages++
@@ -282,6 +316,9 @@ async function runListingCache() {
   }
 
   stats.totalListed = rows.length
+  console.log(
+    `[topshot-listing-cache] stage=parse-summary pagesFetched=${pagesFetched} totalFetched=${stats.totalFetched} parsed=${rows.length} skipNoListedOrder=${nftsWithoutListedOrder} skipMissingId=${nftsMissingId} skipMissingResourceID=${nftsMissingResourceID} skipMissingPlayerName=${nftsMissingPlayerName} skipDuplicateInRun=${nftsDuplicateInRun}`
+  )
 
   // Dedup by flow_id before upsert. onConflict: 'flow_id' rejects the whole
   // batch when two VALUES rows share the conflict key, and the Flowty sweep
@@ -301,6 +338,9 @@ async function runListingCache() {
     }
   }
   const dedupedRows = Array.from(byFlowId.values())
+  console.log(
+    `[topshot-listing-cache] stage=deduped parsedRows=${rows.length} dedupedRows=${dedupedRows.length} flowIdCollisions=${rows.length - dedupedRows.length}`
+  )
 
   const runStartedAt = new Date(startedAt).toISOString()
 
@@ -316,20 +356,37 @@ async function runListingCache() {
       stats.upserted += count ?? batch.length
     }
   }
+  console.log(
+    `[topshot-listing-cache] stage=written upserted=${stats.upserted} upsertErrors=${stats.upsertErrors}`
+  )
 
   // Only purge stale rows if at least one new row was successfully upserted,
   // so a failed Flowty fetch doesn't wipe the existing cache.
+  let purgedRows = 0
+  let purgeSkipped = false
   if (stats.upserted > 0) {
-    const { error: delErr } = await supabaseAdmin
+    const { error: delErr, count: delCount } = await supabaseAdmin
       .from("cached_listings")
-      .delete()
+      .delete({ count: "exact" })
       .eq("source", "flowty")
       .eq("collection_id", TS_COLLECTION_ID)
       .lt("cached_at", runStartedAt)
     if (delErr) {
       console.log(`[topshot-listing-cache] stale purge error: ${delErr.message}`)
+    } else {
+      purgedRows = delCount ?? 0
     }
+  } else {
+    purgeSkipped = true
   }
+  const { count: postPurgeCount } = await supabaseAdmin
+    .from("cached_listings")
+    .select("*", { count: "exact", head: true })
+    .eq("source", "flowty")
+    .eq("collection_id", TS_COLLECTION_ID)
+  console.log(
+    `[topshot-listing-cache] stage=purged purgedRows=${purgedRows} purgeSkipped=${purgeSkipped} postPurgeRows=${postPurgeCount ?? "?"} runStartedAt=${runStartedAt}`
+  )
 
   try {
     const recalcUrl = `https://rip-packs-city.vercel.app/api/fmv-recalc`

@@ -12,6 +12,8 @@ function sm(serial: number, circ: number): number {
 function r2(n: number) { return Math.round(n * 100) / 100; }
 
 export async function GET() {
+  const startedAt = Date.now();
+  console.log(`[fmv/demo] start`);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supabase: any = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,21 +21,31 @@ export async function GET() {
   );
 
   // Fetch recent FMV snapshots (confirmed columns: edition_id, fmv_usd, confidence, computed_at)
+  const fmvT0 = Date.now();
   const { data: fmvRows, error: fmvErr } = await supabase
     .from("fmv_snapshots")
     .select("edition_id, fmv_usd, confidence, computed_at")
     .order("computed_at", { ascending: false })
     .limit(20);
+  console.log(`[fmv/demo] fmv_snapshots query elapsedMs=${Date.now() - fmvT0} rows=${fmvRows?.length ?? 0}`);
 
-  if (fmvErr) return NextResponse.json({ error: fmvErr.message }, { status: 500 });
-  if (!fmvRows?.length) return NextResponse.json({ description: "RIP PACKS CITY — FMV API with liquidity rating, outlier-filtered WAP, and daily price history. All values USD.", note: "No FMV data available yet — ingest cron is still populating the database.", sampleCount: 0, samples: [] });
+  if (fmvErr) {
+    console.log(`[fmv/demo] error elapsedMs=${Date.now() - startedAt} message=${fmvErr.message}`);
+    return NextResponse.json({ error: fmvErr.message }, { status: 500 });
+  }
+  if (!fmvRows?.length) {
+    console.log(`[fmv/demo] empty elapsedMs=${Date.now() - startedAt}`);
+    return NextResponse.json({ description: "RIP PACKS CITY — FMV API with liquidity rating, outlier-filtered WAP, and daily price history. All values USD.", note: "No FMV data available yet — ingest cron is still populating the database.", sampleCount: 0, samples: [] });
+  }
 
   // Resolve internal IDs → external edition keys (confirmed columns: id, external_id)
   const internalIds = [...new Set(fmvRows.map((r: { edition_id: string }) => r.edition_id))];
+  const edT0 = Date.now();
   const { data: editionRows } = await supabase
     .from("editions")
     .select("id, external_id")
     .in("id", internalIds);
+  console.log(`[fmv/demo] editions query elapsedMs=${Date.now() - edT0} rows=${editionRows?.length ?? 0}`);
 
   const idToExt = new Map<string, string>();
   for (const ed of (editionRows ?? [])) idToExt.set(ed.id as string, ed.external_id as string);
@@ -64,6 +76,7 @@ export async function GET() {
     if (samples.length >= 5) break;
   }
 
+  console.log(`[fmv/demo] done elapsedMs=${Date.now() - startedAt} samples=${samples.length}`);
   return NextResponse.json({
     description: "RIP PACKS CITY — FMV API with liquidity rating, outlier-filtered WAP, and daily price history. All values USD.",
     note: "Real FMV data from our LiveToken-powered ingest pipeline. All values USD.",
