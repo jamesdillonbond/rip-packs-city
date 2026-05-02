@@ -13,29 +13,35 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ username: string }> }
 ) {
+  const startedAt = Date.now();
   const { username } = await params;
   const handle = (username || "").trim().toLowerCase();
+  console.log(`[public/profile] start username=${handle}`);
   if (!handle) {
     return NextResponse.json({ error: "username required" }, { status: 400 });
   }
 
   // Resolve username -> user_id via profile_bio
+  const bioT0 = Date.now();
   const { data: bio, error: bioErr } = await supabase
     .from("profile_bio")
     .select("user_id, username, display_name, tagline, favorite_team, twitter, discord, avatar_url, accent_color")
     .ilike("username", handle)
     .maybeSingle();
+  console.log(`[public/profile] bio query elapsedMs=${Date.now() - bioT0} found=${!!bio}`);
 
   if (bioErr) {
     console.error("[public/profile bio]", bioErr);
     return NextResponse.json({ error: bioErr.message }, { status: 500 });
   }
   if (!bio) {
+    console.log(`[public/profile] not_found elapsedMs=${Date.now() - startedAt}`);
     return NextResponse.json({ error: "Not found", username: handle }, { status: 404 });
   }
 
   const userId = (bio as any).user_id;
 
+  const fanT0 = Date.now();
   const [{ data: trophies }, { data: wallets }] = await Promise.all([
     supabase
       .from("trophy_moments")
@@ -47,6 +53,7 @@ export async function GET(
       .select("username, display_name, collection_id, cached_fmv_usd, cached_moment_count, cached_top_tier, cached_badges, accent_color, cached_rpc_score, cached_change_24h")
       .eq("user_id", userId),
   ]);
+  console.log(`[public/profile] trophies+wallets parallel elapsedMs=${Date.now() - fanT0} trophies=${trophies?.length ?? 0} wallets=${wallets?.length ?? 0}`);
 
   // Strip wallet addresses from the public payload
   const walletSummaries = (wallets ?? []).map((w: any) => ({
@@ -62,6 +69,7 @@ export async function GET(
     cached_change_24h: w.cached_change_24h ?? null,
   }));
 
+  console.log(`[public/profile] done elapsedMs=${Date.now() - startedAt}`);
   return NextResponse.json({
     username: bio.username,
     bio: {

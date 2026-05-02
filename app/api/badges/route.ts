@@ -7,6 +7,8 @@ const supabase = createClient(
 )
 
 export async function GET(req: NextRequest) {
+  const startedAt = Date.now()
+  console.log(`[badges] start url=${req.nextUrl.pathname}${req.nextUrl.search}`)
   const { searchParams } = req.nextUrl
 
   const TS_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
@@ -116,7 +118,9 @@ export async function GET(req: NextRequest) {
     }
 
     // ── Execute ──────────────────────────────────────────────────────────────
+    const queryT0 = Date.now()
     const [countResult, dataResult] = await Promise.all([countQ, dataQ])
+    console.log(`[badges] data+count query elapsedMs=${Date.now() - queryT0} count=${countResult.count ?? 0} rows=${dataResult.data?.length ?? 0}`)
 
     if (dataResult.error) throw dataResult.error
 
@@ -147,12 +151,15 @@ export async function GET(req: NextRequest) {
     })
 
     // Last sync timestamp
+    const syncT0 = Date.now()
     const { data: syncData } = await supabase
       .from("badge_editions")
       .select("updated_at")
       .order("updated_at", { ascending: false })
       .limit(1)
       .single()
+    console.log(`[badges] sync query elapsedMs=${Date.now() - syncT0}`)
+    console.log(`[badges] done elapsedMs=${Date.now() - startedAt}`)
 
     return NextResponse.json({
       editions,
