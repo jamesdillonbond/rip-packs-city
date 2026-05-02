@@ -23,6 +23,15 @@ Repo: github.com/jamesdillonbond/rip-packs-city (public)
 
 ## Recent sessions
 
+### May 2, 2026 — Recent learnings (schema drift, proxy auth, search_path hardening)
+
+- **TopShot GraphQL `searchEditions` schema:** working query shape uses `input.filters.bySetIDs` and `input.filters.byPlayIDs` (plural array forms — singular `bySetID` / `byPlayID` variants are rejected as field-not-defined). Pagination via `input.searchInput.pagination.cursor` with `direction: RIGHT`. Response wraps via `searchSummary.data` on the `Editions` union, with a nested `data` on the `Edition` union. The legacy `getPlay` / `getSet` queries with input wrappers and data envelopes were superseded — do NOT use them.
+- **topshot-proxy auth chain failure mode:** when Vercel ingest produces `rows_written=0` in `editions-hydrate-at-insert` `pipeline_runs`, suspect `TS_PROXY_SECRET` in Vercel ≠ `PROXY_SECRET` in the Cloudflare Worker. Cloudflare wrangler secret values are write-only after creation, so the recovery is rotate-both-sides (not retrieve). Direct calls from Supabase IPs to `public-api.nbatopshot.com` bypass the proxy and remain a viable diagnostic path.
+- **probe-edge-function diagnostic pattern:** when MCP cannot read source from a third-party API, deploy a one-shot Supabase edge function that wraps `fetch` calls with various input shapes, invoke it via `SELECT net.http_get(url)` and read the response from `net._http_response` after `pg_sleep(20)`. The 422 GraphQL validation errors in the response body enumerate the expected schema better than introspection (which is often disabled).
+- **search_path hardening canonical pattern:** `ALTER FUNCTION public.name(args) SET search_path = public, pg_temp`. This matches the dominant hardened-function configuration in this DB (181 of 181 public functions now use this pinned form). The empty-string variant breaks unqualified references — do not use it.
+
+---
+
 ### April 26, 2026 — Flowty failed-tx monitor
 
 **Flowty failed-tx monitor (Apr 26):**
