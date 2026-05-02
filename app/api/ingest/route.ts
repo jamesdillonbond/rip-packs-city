@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { topshotGraphql } from "@/lib/topshot"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
+import { hydrateTopShotEditions, toUpsertRow } from "@/lib/editions-hydrate"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -531,6 +532,107 @@ export async function POST(req: NextRequest) {
     const { transactions, nextCursor } = await fetchRecentSales(batchSize, cursor)
 
     console.log(`[INGEST] Fetched ${transactions.length} transactions`)
+
+    // ── Hydrate-at-insert: pre-populate editions for new external_ids ─────────
+    // The downstream upsertEdition path doesn't write player_name/set_name/
+    // team_name, so a freshly inserted edition would land with those columns
+    // NULL until a backfill ran. Mirror the flowty-sales / flowty-listings /
+    // allday-pack-ev pattern: for any edition_key not yet in editions, hydrate
+    // metadata from TopShot GraphQL first, then let the per-tx upsert fill in
+    // the remaining columns (tier/series/edition_kind/circulation_count/...).
+    try {
+      const editionKeySet = new Set<string>()
+      for (const tx of transactions) {
+        const k = buildEditionKey(tx)
+        if (k) editionKeySet.add(k)
+      }
+      const allKeys = Array.from(editionKeySet)
+      if (allKeys.length > 0) {
+        const { data: existingRows } = await (supabaseAdmin as any)
+          .from("editions")
+          .select("external_id")
+          .in("external_id", allKeys)
+          .eq("collection_id", collectionId)
+        const existingSet = new Set<string>(
+          ((existingRows as { external_id: string }[] | null) ?? []).map(
+            (r) => r.external_id,
+          ),
+        )
+        const missing = allKeys.filter((k) => !existingSet.has(k))
+        if (missing.length > 0) {
+          const candidates = missing.length
+          let hydratedCount = 0
+          let fallbackCount = 0
+          const failed: string[] = []
+
+          const hydratedRows = await hydrateTopShotEditions(missing)
+          const upsertRows = hydratedRows.map((r) => {
+            if (r.ok) {
+              hydratedCount++
+            } else {
+              fallbackCount++
+              failed.push(r.external_id)
+              console.warn(
+                `[INGEST] hydrate-at-insert failed for ${r.external_id}; falling through to skeleton`,
+              )
+            }
+            return toUpsertRow(r)
+          })
+
+          try {
+            const { error: hydrateErr } = await (supabaseAdmin as any)
+              .from("editions")
+              .upsert(upsertRows, {
+                onConflict: "external_id,collection_id",
+                ignoreDuplicates: false,
+              })
+            if (hydrateErr) {
+              console.warn(
+                `[INGEST] hydrate-at-insert upsert error: ${hydrateErr.message}`,
+              )
+            }
+          } catch (err) {
+            console.warn(
+              `[INGEST] hydrate-at-insert upsert threw: ${err instanceof Error ? err.message : String(err)}`,
+            )
+          }
+
+          console.log(
+            `[INGEST] hydrate-at-insert: candidates=${candidates} hydrated=${hydratedCount} fallback=${fallbackCount}` +
+              (failed.length ? ` failed=${failed.slice(0, 5).join(",")}` : ""),
+          )
+
+          // Observability: a single pipeline_runs row per call site so we can
+          // monitor silent hydrate-failure rates without scraping logs.
+          try {
+            await (supabaseAdmin as any).from("pipeline_runs").insert({
+              pipeline: "editions-hydrate-at-insert",
+              collection_slug: "nba-top-shot",
+              started_at: new Date().toISOString(),
+              finished_at: new Date().toISOString(),
+              rows_found: candidates,
+              rows_written: hydratedCount,
+              rows_skipped: fallbackCount,
+              ok: true,
+              error: null,
+              extra: {
+                site: "ingest",
+                candidates,
+                hydrated: hydratedCount,
+                fallback_skeleton: fallbackCount,
+                failed_sample: failed.slice(0, 10),
+              },
+            })
+          } catch {
+            // Best-effort observability; don't block ingest on it.
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(
+        `[INGEST] hydrate-at-insert step error: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
 
     let salesIngested = 0
     let momentsWritten = 0
