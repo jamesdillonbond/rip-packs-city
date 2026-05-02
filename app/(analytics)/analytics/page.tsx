@@ -13,6 +13,7 @@ import {
 } from "lucide-react"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
 import { supabaseAdmin } from "@/lib/supabase"
+import PipelineHealthBadge from "@/components/analytics/PipelineHealthBadge"
 
 // The dashboard fans out to several Supabase-backed APIs at render time
 // and intermittently exceeds the 60s static-generation budget. Marking it
@@ -361,17 +362,22 @@ export default async function AnalyticsOverviewPage() {
     <div className="space-y-10">
       {/* Hero */}
       <section className="rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 px-6 py-8 sm:px-8 sm:py-10">
-        <div className="text-[10px] uppercase tracking-widest text-emerald-400 mb-2 font-semibold">
-          Rip Packs City Analytics
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-widest text-emerald-400 mb-2 font-semibold">
+              Rip Packs City Analytics
+            </div>
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-50 mb-3">
+              Analytics
+            </h1>
+            <p className="text-slate-300 max-w-2xl leading-relaxed">
+              Comprehensive on-chain analytics across Flow&apos;s largest digital collectibles
+              platforms. Loan books, sales, listings, wallet cohorts, and FMV indices —
+              updated continuously from chain events.
+            </p>
+          </div>
+          <PipelineHealthBadge />
         </div>
-        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-50 mb-3">
-          Analytics
-        </h1>
-        <p className="text-slate-300 max-w-2xl leading-relaxed">
-          Comprehensive on-chain analytics across Flow&apos;s largest digital collectibles
-          platforms. Loan books, sales, listings, wallet cohorts, and FMV indices —
-          updated continuously from chain events.
-        </p>
       </section>
 
       {/* Section grid */}

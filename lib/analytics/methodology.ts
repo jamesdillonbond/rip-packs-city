@@ -158,6 +158,23 @@ export const METHODOLOGY: Record<string, MethodologyEntry> = {
     ],
     refresh: "Every 10 minutes (ISR)",
   },
+  "position-transfers": {
+    slug: "position-transfers",
+    title: "Position Transfers Methodology",
+    blurb: "How HybridCustody parent/child reassignments surface as lender-at-settlement transfers.",
+    paragraphs: [
+      "A position transfer is a Flowty FULL loan whose lender_at_settlement (the wallet that held the funding position when FUNDING_SETTLED fired) does not match the origination lender at the FUNDING_AVAILABLE event time. About 0.81% of FULL loans land in this bucket — a small, structural minority of the loan book — and it is almost always caused by HybridCustody parent/child account reassignment, not a real change of human owner.",
+      "HybridCustody is Flow's account-linking primitive: a parent wallet can hold child accounts whose resources it controls. When a lender originates a loan from one account in their hierarchy and then restructures (moves the child account, links a new parent, swaps the funding resource between siblings), the chain sees the funding NFT settle into a different on-chain address even though the underlying capital owner is unchanged. The two addresses are the same human in nearly every case we have observed; calling them a 'position transfer' is a chain-level description, not an economic one.",
+      "Because the phenomenon is rare and almost always benign, we hide the wallet-profile section entirely when has_activity is false (which covers 95%+ of wallets). When we do surface it, we render the outgoing leg (this wallet was the origination lender on a loan that settled to someone else) and the incoming leg (this wallet became the settlement lender on a loan it didn't originate) side-by-side, with a counterparty link to /analytics/wallets/[other_addr] so analysts can chase the parent/child mapping if they care.",
+      "The dashboard-level rollup at /analytics/loans expands a 'Position Transfers' card with totals (count, principal at risk, unique origin lenders, unique recipient lenders, % of FULL loans), a top-25 ranking on each side, and the 25 most recent transfers. Numbers are computed by analytics_position_transfers_summary on the same loan-book view as the rest of the loans surface, so the principal in the summary matches the principal in the per-wallet detail.",
+    ],
+    sources: [
+      "flowty_funded_loans (Supabase view) — origination lender per loan",
+      "flowty_loan_events (Supabase) — FUNDING_SETTLED events with the at-settlement lender resource",
+      "analytics_wallet_position_transfers / analytics_position_transfers_summary RPCs",
+    ],
+    refresh: "Every 10 minutes",
+  },
   sets: {
     slug: "sets",
     title: "Sets Methodology",
