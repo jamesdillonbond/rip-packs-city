@@ -37,8 +37,17 @@ export interface MomentDetailModalProps {
     officialBadges?: string[];
     imageUrlPrefix?: string | null;
     buyUrl?: string | null;
+    acquisitionMethod?: string | null;
+    sourceAddress?: string | null;
+    loanPrincipal?: number | null;
   } | null;
   onClose: () => void;
+}
+
+function truncateAddress(addr: string): string {
+  const a = addr.trim();
+  if (a.length <= 12) return a;
+  return a.slice(0, 6) + "…" + a.slice(-4);
 }
 
 function getImageUrl(prefix: string | null | undefined): string | null {
@@ -284,6 +293,50 @@ export default function MomentDetailModal({ moment, onClose }: MomentDetailModal
                   {b}
                 </span>
               ))}
+            </div>
+          )}
+
+          {moment.acquisitionMethod === "loan_default" && (
+            <div
+              style={{
+                fontSize: 11,
+                padding: "8px 10px",
+                background: "rgba(239,68,68,0.10)",
+                border: "1px solid rgba(239,68,68,0.35)",
+                borderRadius: 4,
+                color: "rgba(255,255,255,0.85)",
+                lineHeight: 1.4,
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: "'Share Tech Mono', monospace",
+                  fontSize: 9,
+                  letterSpacing: "0.12em",
+                  color: "#ef4444",
+                  marginBottom: 4,
+                  textTransform: "uppercase",
+                }}
+              >
+                Loan Default
+              </div>
+              {moment.sourceAddress ? (
+                <div>
+                  Defaulted by{" "}
+                  <a
+                    href={`/analytics/wallets/${encodeURIComponent(moment.sourceAddress)}`}
+                    style={{ color: "#fff", fontFamily: "'Share Tech Mono', monospace", textDecoration: "underline" }}
+                  >
+                    {truncateAddress(moment.sourceAddress)}
+                  </a>
+                </div>
+              ) : null}
+              <div style={{ marginTop: 4, color: "rgba(255,255,255,0.65)" }}>
+                Displayed price is the loan principal in USDCF (1:1 USD)
+                {typeof moment.loanPrincipal === "number" && moment.loanPrincipal > 0
+                  ? `: $${moment.loanPrincipal.toFixed(2)}`
+                  : "."}
+              </div>
             </div>
           )}
 

@@ -238,6 +238,7 @@ export async function GET(req: NextRequest) {
         acquisition_source: row.acquisition_source ?? null,
         acquisition_confidence: row.acquisition_confidence ?? null,
         loan_principal: row.loan_principal != null ? Number(row.loan_principal) : null,
+        source_address: row.source_address ?? null,
         is_locked: row.is_locked === true,
       }
     })

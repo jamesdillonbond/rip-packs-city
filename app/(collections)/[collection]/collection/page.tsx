@@ -133,6 +133,8 @@ type MomentRow = {
   acquisitionMethod?: string | null
   acquisitionSource?: string | null
   acquisitionConfidence?: string | null
+  sourceAddress?: string | null
+  loanPrincipal?: number | null
   buyPrice?: number | null
   costBasis?: number | null
   costBasisLabel?: string | null
@@ -500,6 +502,7 @@ export default function WalletPage() {
   const [filterBadges, setFilterBadges] = useState(false)
   const [filterHasOffer, setFilterHasOffer] = useState(false)
   const [filterListed, setFilterListed] = useState(false)
+  const [filterLoanDefaultsOnly, setFilterLoanDefaultsOnly] = useState(false)
   const [setsData, setSetsData] = useState<{ sets: any[] } | null>(null)
   const isMobile = useMobile()
 
@@ -887,6 +890,7 @@ export default function WalletPage() {
     acquisition_source: string | null
     acquisition_confidence: string | null
     loan_principal: number | null
+    source_address: string | null
     is_locked: boolean
   }
 
@@ -947,6 +951,8 @@ export default function WalletPage() {
       acquisitionMethod: acqMethod,
       acquisitionSource: m.acquisition_source ?? null,
       acquisitionConfidence: m.acquisition_confidence ?? null,
+      sourceAddress: m.source_address ?? null,
+      loanPrincipal: m.loan_principal != null ? Number(m.loan_principal) : null,
       costBasis: basis,
       costBasisLabel: label,
     }
@@ -1453,6 +1459,7 @@ export default function WalletPage() {
       if (filterBadges && !(r.officialBadges?.length || (r as any).badgeScore > 0)) return false
       if (filterHasOffer && !(typeof r.bestOffer === "number" && r.bestOffer > 0)) return false
       if (filterListed && r.lowAsk == null) return false
+      if (filterLoanDefaultsOnly && r.acquisitionMethod !== "loan_default") return false
       // Task 14: filter to duplicates only
       if (filterDupsOnly) {
         const key = (r.setName ?? "") + "||" + (r.playerName ?? "") + "||" + getParallel(r)
@@ -1488,7 +1495,7 @@ export default function WalletPage() {
       })
     }
     return filtered
-  }, [rows, searchWithin, playerFilter, setFilter, seriesFilter, rarityFilter, lockedFilter, badgeFilter, filterBadges, filterHasOffer, filterListed, filterDupsOnly, duplicateEditions, sortKey, sortDirection, batchEditionStats, collectionSeriesMap])
+  }, [rows, searchWithin, playerFilter, setFilter, seriesFilter, rarityFilter, lockedFilter, badgeFilter, filterBadges, filterHasOffer, filterListed, filterLoanDefaultsOnly, filterDupsOnly, duplicateEditions, sortKey, sortDirection, batchEditionStats, collectionSeriesMap])
 
   const totals = useMemo(function() {
     let totalFmv = 0, totalBestOffer = 0, lockedFmv = 0, unlockedFmv = 0
@@ -1678,6 +1685,31 @@ export default function WalletPage() {
                 </div>
               </div>
             )}
+
+            {(function() {
+              const loanRows = rows.filter(function(r) { return r.acquisitionMethod === "loan_default" })
+              if (loanRows.length === 0) return null
+              const total = loanRows.reduce(function(sum, r) {
+                const principal = (typeof r.loanPrincipal === "number" && r.loanPrincipal > 0)
+                  ? r.loanPrincipal
+                  : (typeof r.costBasis === "number" && r.costBasis > 0 ? r.costBasis : 0)
+                return sum + principal
+              }, 0)
+              return (
+                <div
+                  className="rounded-lg border px-3 py-2 text-xs font-mono flex items-center gap-2"
+                  style={{ borderColor: "rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.06)", color: "#fca5a5" }}
+                  title="Acquired via loan default. Principal is the USDCF value lent against these moments (1:1 USD)."
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M14 11l7-7M9 7l7 7M3 21l4-4M9 11l4 4M14 4l6 6M3 13l8 8" />
+                  </svg>
+                  <span>
+                    {loanRows.length.toLocaleString()} acquired via loan default ({"$" + total.toFixed(2)} principal)
+                  </span>
+                </div>
+              )
+            })()}
           </div>
         )}
 
@@ -1798,6 +1830,9 @@ export default function WalletPage() {
           <button onClick={function() { setFilterBadges(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterBadges ? "text-white" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")} style={filterBadges ? { borderColor: accent, backgroundColor: accent + "1A", color: accent } : undefined}>🏷 BADGES</button>
           <button onClick={function() { setFilterHasOffer(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterHasOffer ? "text-white" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")} style={filterHasOffer ? { borderColor: accent, backgroundColor: accent + "1A", color: accent } : undefined}>💰 HAS OFFER</button>
           <button onClick={function() { setFilterListed(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterListed ? "text-white" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")} style={filterListed ? { borderColor: accent, backgroundColor: accent + "1A", color: accent } : undefined}>📋 LISTED</button>
+          {(filterLoanDefaultsOnly || rows.some(function(r) { return r.acquisitionMethod === "loan_default" })) && (
+            <button onClick={function() { setFilterLoanDefaultsOnly(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterLoanDefaultsOnly ? "" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")} style={filterLoanDefaultsOnly ? { borderColor: "#ef4444", backgroundColor: "rgba(239,68,68,0.10)", color: "#fca5a5" } : undefined} title="Show only moments acquired via loan default">⚖ LOAN DEFAULTS</button>
+          )}
           {/* Task 6: CSV Export */}
           {filteredRows.length > 0 && (
             <button
@@ -1968,7 +2003,7 @@ export default function WalletPage() {
                         const color = pl >= 0 ? "text-emerald-400" : "text-red-400"
                         return (
                           <div className="text-right">
-                            <div className="text-xs font-mono text-zinc-400">{label === "Loan" ? <span className="text-amber-400">Loan </span> : null}${basis.toFixed(2)}</div>
+                            <div className="text-xs font-mono text-zinc-400" title={label === "Loan" ? "Acquired via loan default. The displayed price is the principal that was lent against this moment in USDCF (1:1 USD)." : undefined}>{label === "Loan" ? <span className="text-red-400">Loan Default </span> : null}${basis.toFixed(2)}</div>
                             <div className={"text-[10px] font-mono " + color}>{pl >= 0 ? "+" : ""}{pl.toFixed(2)} ({plPct >= 0 ? "+" : ""}{plPct.toFixed(0)}%)</div>
                           </div>
                         )
@@ -2098,12 +2133,12 @@ export default function WalletPage() {
                               )}
                             </div>
                             {row.acquisitionMethod && (() => {
-                                const acqConfig: Record<string, { label: string; icon: string; prefix?: string; color: string }> = {
+                                const acqConfig: Record<string, { label: string; icon: string; prefix?: string; color: string; title?: string }> = {
                                   pack_pull: { label: "PACK", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4", color: "20,184,166" },
                                   marketplace: { label: "MKT", icon: "", color: "161,161,170" },
                                   challenge_reward: { label: "REWARD", icon: "M12 15l-2 5h4l-2-5zm-4-3a4 4 0 0 1 8 0H8zm-2-2h12l1-2H5l1 2zm3-4h6V3H9v3z", color: "245,158,11" },
                                   gift: { label: "GIFT", icon: "", prefix: "🎁 ", color: "168,85,247" },
-                                  loan_default: { label: "LOAN", icon: "", color: "245,158,11" },
+                                  loan_default: { label: "LOAN DEFAULT", icon: "M14 11l7-7M9 7l7 7M3 21l4-4M9 11l4 4M14 4l6 6M3 13l8 8", color: "239,68,68", title: "Acquired via loan default. The displayed price is the principal that was lent against this moment in USDCF (1:1 USD)." },
                                   airdrop: { label: "AIRDROP", icon: "", color: "52,211,153" },
                                   unknown: { label: "? UNVERIFIED", icon: "", color: "113,113,122" },
                                 }
@@ -2111,7 +2146,7 @@ export default function WalletPage() {
                                 if (!cfg) return null
                                 return (
                                   <div className="mt-1">
-                                    <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ background: "rgba(" + cfg.color + ",0.12)", color: "rgba(" + cfg.color + ",0.9)", border: "1px solid rgba(" + cfg.color + ",0.3)" }}>
+                                    <span title={cfg.title} className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ background: "rgba(" + cfg.color + ",0.12)", color: "rgba(" + cfg.color + ",0.9)", border: "1px solid rgba(" + cfg.color + ",0.3)" }}>
                                       {cfg.icon && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={cfg.icon}/></svg>}
                                       {cfg.prefix ?? ""}{cfg.label}
                                     </span>
@@ -2183,7 +2218,7 @@ export default function WalletPage() {
                           return <div className="text-[10px] text-zinc-500 font-mono">Ask {"$" + ask.toFixed(2)}</div>
                         })()}
                       </td>
-                      <td className="p-3 text-sm hidden xl:table-cell">
+                      <td className="p-3 text-sm hidden xl:table-cell" title={row.acquisitionMethod === "loan_default" ? "Acquired via loan default. The displayed price is the principal that was lent against this moment in USDCF (1:1 USD)." : undefined}>
                         {(function() {
                           const cbMap = costBasis.get(row.flowId ?? "")
                           const cb = cbMap ?? (row.costBasis != null || row.costBasisLabel ? { buyPrice: row.costBasis ?? 0, acquiredDate: row.acquiredAt ?? "", fmvAtAcquisition: null, acquisitionMethod: row.acquisitionMethod ?? null, costBasisLabel: row.costBasisLabel ?? null } : undefined)
@@ -2199,7 +2234,7 @@ export default function WalletPage() {
                             const label = cb.costBasisLabel
                             if (label === "Bought" && cb.buyPrice > 0) return <span className="font-mono text-white">${cb.buyPrice.toFixed(2)}{sourcePill}</span>
                             if (label === "Pack") return <span className="inline-block rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-zinc-600">PACK</span>
-                            if (label === "Loan" && cb.buyPrice > 0) return <span className="font-mono"><span className="text-amber-400">Loan</span> <span className="text-white">${cb.buyPrice.toFixed(2)}</span>{sourcePill}</span>
+                            if (label === "Loan" && cb.buyPrice > 0) return <span className="font-mono"><span className="text-red-400">Loan Default</span> <span className="text-white">${cb.buyPrice.toFixed(2)}</span>{sourcePill}</span>
                             if (label === "Gift") return <span className="inline-block rounded border border-blue-900 bg-blue-900 px-1.5 py-0.5 font-mono text-[10px] text-blue-400">GIFT</span>
                             if (label === "Reward") return <span className="inline-block rounded border border-purple-900 bg-purple-900 px-1.5 py-0.5 font-mono text-[10px] text-purple-400">REWARD</span>
                             if (label === "Airdrop") return <span className="inline-block rounded border border-green-900 bg-green-900 px-1.5 py-0.5 font-mono text-[10px] text-green-400">AIRDROP</span>
@@ -2277,17 +2312,17 @@ export default function WalletPage() {
                       <td className="p-3 text-zinc-500 text-xs hidden xl:table-cell">
                         <div>{formatAcquiredAt(row.acquiredAt)}</div>
                         {(() => {
-                          const acqPillMap: Record<string, { label: string; cls: string }> = {
-                            pack_pull:        { label: "PACK",    cls: "bg-green-950 text-green-300 border border-green-800" },
-                            marketplace:      { label: "MKT",     cls: "bg-zinc-800 text-zinc-400 border border-zinc-700" },
-                            challenge_reward: { label: "REWARD",  cls: "bg-amber-950 text-amber-300 border border-amber-800" },
-                            gift:             { label: "🎁 GIFT", cls: "bg-purple-950 text-purple-300 border border-purple-700" },
-                            loan_default:     { label: "LOAN",    cls: "bg-orange-950 text-orange-300 border border-orange-800" },
-                            airdrop:          { label: "AIRDROP", cls: "bg-emerald-950 text-emerald-300 border border-emerald-800" },
+                          const acqPillMap: Record<string, { label: string; cls: string; title?: string }> = {
+                            pack_pull:        { label: "PACK",         cls: "bg-green-950 text-green-300 border border-green-800" },
+                            marketplace:      { label: "MKT",          cls: "bg-zinc-800 text-zinc-400 border border-zinc-700" },
+                            challenge_reward: { label: "REWARD",       cls: "bg-amber-950 text-amber-300 border border-amber-800" },
+                            gift:             { label: "🎁 GIFT",      cls: "bg-purple-950 text-purple-300 border border-purple-700" },
+                            loan_default:     { label: "LOAN DEFAULT", cls: "bg-red-950 text-red-300 border border-red-800", title: "Acquired via loan default. The displayed price is the principal that was lent against this moment in USDCF (1:1 USD)." },
+                            airdrop:          { label: "AIRDROP",      cls: "bg-emerald-950 text-emerald-300 border border-emerald-800" },
                           }
                           const cfg = row.acquisitionMethod ? acqPillMap[row.acquisitionMethod] : null
                           if (!cfg) return null
-                          return <span className={"mt-0.5 inline-block text-[9px] font-bold px-1 py-0.5 rounded " + cfg.cls}>{cfg.label}</span>
+                          return <span title={cfg.title} className={"mt-0.5 inline-block text-[9px] font-bold px-1 py-0.5 rounded " + cfg.cls}>{cfg.label}</span>
                         })()}
                       </td>
                       <td className="p-3">
@@ -2597,6 +2632,9 @@ export default function WalletPage() {
           officialBadges: (selectedMoment.officialBadges ?? []).map(function(b) { return BADGE_TYPE_TO_TITLE[b] ?? b }),
           imageUrlPrefix: null,
           buyUrl: selectedMoment.momentId ? "https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/" + selectedMoment.momentId : null,
+          acquisitionMethod: selectedMoment.acquisitionMethod ?? null,
+          sourceAddress: selectedMoment.sourceAddress ?? null,
+          loanPrincipal: selectedMoment.loanPrincipal ?? null,
         } : null}
         onClose={function() { setSelectedMoment(null) }}
       />
