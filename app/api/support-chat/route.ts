@@ -1138,7 +1138,13 @@ export async function POST(req: NextRequest) {
     const meta = await finalize();
     return NextResponse.json(meta);
   } catch (err: any) {
-    console.log("[support-chat] outer error:", err?.status ?? "", err?.name ?? "", err?.message ?? String(err));
+    const m = String(err?.message ?? err);
+    console.log("[sc_err] status", err?.status ?? "");
+    console.log("[sc_err] name", err?.name ?? "");
+    console.log("[sc_err] m1", m.slice(0, 40));
+    console.log("[sc_err] m2", m.slice(40, 80));
+    console.log("[sc_err] m3", m.slice(80, 120));
+    console.log("[sc_err] m4", m.slice(120, 160));
     return NextResponse.json(
       { response: "Something went wrong on my end. Try again, or reach out to Trevor on Discord.", escalated: false, category: "error" },
       { status: 200 }
