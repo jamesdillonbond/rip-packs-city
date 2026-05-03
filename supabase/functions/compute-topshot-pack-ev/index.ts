@@ -1,25 +1,22 @@
-// compute-topshot-pack-ev v5 — re-resolve after seed + larger batch.
+// compute-topshot-pack-ev v8 — route GQL through topshot-proxy.
 //
-// v4 issue: when 100% of a pack's editions were unseen on a given run, they
-// got seeded but never made it into pack_drop_pool, because the pool-write
-// loop only included editions present in editionByExternalId (the lookup
-// map populated BEFORE the seed call). Net effect: the affected packs
-// returned rpc_not_ok=4 of 8 in the 20:23 v4 cron, with 4 packs writing
-// zero pool rows despite having full edition data from the public API.
+// v7 hit public-api.nbatopshot.com directly from the Deno runtime. Cloudflare
+// bot-mitigation rejected ~50% of requests (gql_errors=5-6 of 12 every cron),
+// even though the same query body succeeds 100% from Postgres net.http_post
+// and from a real browser. Net effect: rows_written=0 every cycle, EV history
+// stale across 60+ pack distributions.
 //
-// v5 fixes by re-calling get_topshot_editions_by_setplay on the unseededExternalIds
-// list AFTER seed_topshot_editions. The newly-seeded rows resolve via the
-// literal external_id match path on the second call, get merged into the
-// editionByExternalId map, and pool rows write correctly. Same-cycle catch-up
-// instead of waiting 4 hours for next cron.
+// v8 routes both DYNAMIC_QUERY and EDITIONS_QUERY through the same
+// topshot-proxy.tdillonbond.workers.dev path that lib/editions-hydrate.ts and
+// every other server-side TopShot caller already use. When TS_PROXY_URL +
+// TS_PROXY_SECRET are set on the function env, gqlCall sends the request to
+// the proxy with an X-Proxy-Secret header; the worker forwards verbatim to
+// public-api.nbatopshot.com/graphql with browser-like headers. Falls back to
+// direct only if env vars are absent (logged once at startup so the failure
+// mode is loud).
 //
-// Bumped BATCH_SIZE to 12: parallel fetch typically completes in ~25-35s for
-// 8 packs, leaving headroom under the 110s background time budget. Going to
-// 12 increases per-cycle yield ~50% with no fetch-phase regression observed.
-//
-// New counter: editions_resolved_after_seed reports how many of the seeded
-// editions resolved on the second lookup. Should equal editions_seeded +
-// editions_seed_updated when seeds succeed.
+// Function-version is bumped to 8 so pipeline_runs.extra makes the cohort
+// boundary obvious. All other behavior identical to v7.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
 
@@ -27,7 +24,15 @@ const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN")
 if (!INGEST_SECRET_TOKEN) throw new Error("INGEST_SECRET_TOKEN env var required")
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
-const TOPSHOT_GRAPHQL = "https://public-api.nbatopshot.com/graphql"
+const TOPSHOT_GRAPHQL_DIRECT = "https://public-api.nbatopshot.com/graphql"
+const TS_PROXY_URL = Deno.env.get("TS_PROXY_URL") ?? ""
+const TS_PROXY_SECRET = Deno.env.get("TS_PROXY_SECRET") ?? ""
+const GQL_ENDPOINT = TS_PROXY_URL || TOPSHOT_GRAPHQL_DIRECT
+const USING_PROXY = Boolean(TS_PROXY_URL && TS_PROXY_SECRET)
+if (!USING_PROXY) {
+  console.log(`[compute-topshot-pack-ev] WARN: proxy env not set (TS_PROXY_URL=${TS_PROXY_URL ? "set" : "missing"}, TS_PROXY_SECRET=${TS_PROXY_SECRET ? "set" : "missing"}). Falling back to direct GQL — Cloudflare may reject ~50% of requests.`)
+}
+
 const BATCH_SIZE = 12
 const MAX_EDITION_PAGES = 8
 const TIME_BUDGET_MS = 110_000
@@ -37,12 +42,13 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
 )
 
-const GQL_HEADERS = {
+const GQL_HEADERS: Record<string, string> = {
   "Content-Type": "application/json",
   "User-Agent": "RipPacksCity/1.0 (rip-packs-city.vercel.app)",
   "Origin": "https://nbatopshot.com",
   "Referer": "https://nbatopshot.com/",
 }
+if (USING_PROXY) GQL_HEADERS["X-Proxy-Secret"] = TS_PROXY_SECRET
 
 const DYNAMIC_QUERY = `
   query GetPackListing_DynamicData($input: GetPackListingInput!) {
@@ -148,7 +154,7 @@ async function gqlCall<T>(
 ): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
   let res: Response
   try {
-    res = await fetch(TOPSHOT_GRAPHQL, {
+    res = await fetch(GQL_ENDPOINT, {
       method: "POST",
       headers: GQL_HEADERS,
       body: JSON.stringify({ query, variables }),
@@ -256,7 +262,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: false, error: `targets: ${targetsErr.message}`,
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 5 },
+        extra: { counters, elapsed_ms: Date.now() - started, function_version: 8, using_proxy: USING_PROXY },
       })
       return
     }
@@ -266,7 +272,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: true,
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 5, message: "no targets" },
+        extra: { counters, elapsed_ms: Date.now() - started, function_version: 8, using_proxy: USING_PROXY, message: "no targets" },
       })
       return
     }
@@ -278,7 +284,8 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         message: "heartbeat:started",
         target_count: targetRows.length,
         elapsed_ms: Date.now() - started,
-        function_version: 5,
+        function_version: 8,
+        using_proxy: USING_PROXY,
         batch_size: BATCH_SIZE,
       },
     })
@@ -330,7 +337,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: targetRows.length, rowsWritten: 0,
         rowsSkipped: targetRows.length, ok: true,
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 5, fetch_phase_ms: fetchPhaseMs },
+        extra: { counters, elapsed_ms: Date.now() - started, function_version: 8, using_proxy: USING_PROXY, fetch_phase_ms: fetchPhaseMs },
       })
       return
     }
@@ -340,7 +347,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: targetRows.length, rowsWritten: 0,
         rowsSkipped: targetRows.length, ok: false, error: "time_budget_exceeded_after_fetch",
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 5, fetch_phase_ms: fetchPhaseMs },
+        extra: { counters, elapsed_ms: Date.now() - started, function_version: 8, using_proxy: USING_PROXY, fetch_phase_ms: fetchPhaseMs },
       })
       return
     }
@@ -361,8 +368,6 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     }
     counters.editions_resolved = editionByExternalId.size
 
-    // Seed any unseen externalIds. seed_topshot_editions parses integer-pair
-    // keys to populate set_id_onchain and play_id_onchain at insert time.
     const unseededExternalIds: string[] = []
     for (const ext of externalIdList) {
       if (!editionByExternalId.has(ext)) unseededExternalIds.push(ext)
@@ -381,9 +386,6 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         counters.editions_seed_updated = Number(sr.updated ?? 0)
       }
 
-      // v5: re-resolve the just-seeded externalIds and merge into the lookup
-      // map. Without this, freshly-seeded editions get skipped during pool
-      // writes because they weren't in the map at first lookup time.
       const { data: postSeedRows, error: postSeedErr } = await supabase.rpc(
         "get_topshot_editions_by_setplay",
         { p_keys: unseededExternalIds },
@@ -399,140 +401,8 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
           }
         }
       }
-
-      // Hydrate-at-insert (post-seed UPDATE pattern). seed_topshot_editions
-      // writes external_id + onchain IDs but leaves name/player_name/set_name/
-      // tier/series NULL — the historical "background hydrator catches it
-      // later" assumption broke (see lib/editions-hydrate.ts header). Now we
-      // fetch the metadata via TopShot GQL and UPDATE the just-seeded rows
-      // before this function returns. Pre-hydrate (vs modifying the RPC
-      // signature) is the lower-risk option since other callers still use the
-      // RPC's existing shape. Failures fall back to skeleton + warning.
-      const hydrateStartedAt = new Date().toISOString()
-      let hydrated = 0
-      let fallback = 0
-      const failed: string[] = []
-      try {
-        const proxyUrl = Deno.env.get("TS_PROXY_URL") ?? "https://public-api.nbatopshot.com/graphql"
-        const proxySecret = Deno.env.get("TS_PROXY_SECRET")
-        const ghHeaders: Record<string, string> = {
-          "Content-Type": "application/json",
-          "User-Agent": "rip-packs-city/edge-hydrate",
-        }
-        if (proxySecret) ghHeaders["X-Proxy-Secret"] = proxySecret
-
-        const setMetaCache = new Map<string, { setName: string | null; series: number | null } | null>()
-
-        async function gql<T>(query: string, variables: Record<string, unknown>): Promise<T | null> {
-          try {
-            const res = await fetch(proxyUrl, {
-              method: "POST",
-              headers: ghHeaders,
-              body: JSON.stringify({ query, variables }),
-              signal: AbortSignal.timeout(8_000),
-            })
-            if (!res.ok) return null
-            const json = await res.json() as { data?: T; errors?: unknown[] }
-            if (Array.isArray(json.errors) && json.errors.length > 0) return null
-            return json.data ?? null
-          } catch {
-            return null
-          }
-        }
-
-        for (const ext of unseededExternalIds) {
-          const parts = ext.split(":")
-          if (parts.length !== 2) {
-            fallback++
-            failed.push(ext)
-            continue
-          }
-          const [setID, playID] = parts
-
-          let setMeta = setMetaCache.get(setID) ?? null
-          if (!setMetaCache.has(setID)) {
-            const setData = await gql<{ getSet?: { set?: { flowName?: string | null; flowSeriesNumber?: number | null } | null } }>(
-              `query GetSet($setID: ID!) { getSet(input: { setID: $setID }) { set { flowName flowSeriesNumber } } }`,
-              { setID },
-            )
-            const set = setData?.getSet?.set
-            setMeta = set
-              ? {
-                  setName: set.flowName ? String(set.flowName).trim() : null,
-                  series: set.flowSeriesNumber != null ? Number(set.flowSeriesNumber) : null,
-                }
-              : null
-            setMetaCache.set(setID, setMeta)
-          }
-
-          const playData = await gql<{ getPlay?: { play?: { stats?: { playerName?: string | null; teamAtMoment?: string | null; playCategory?: string | null }; statsPlayerFullName?: string | null } | null } }>(
-            `query GetPlay($playID: ID!) { getPlay(input: { playID: $playID }) { play { stats { playerName teamAtMoment playCategory } statsPlayerFullName } } }`,
-            { playID },
-          )
-          const play = playData?.getPlay?.play
-          const playerName = play?.statsPlayerFullName ?? play?.stats?.playerName ?? null
-
-          if (!playerName) {
-            fallback++
-            failed.push(ext)
-            continue
-          }
-
-          const trimmedPlayer = String(playerName).trim()
-          const setName = setMeta?.setName ?? null
-          const name = setName ? `${trimmedPlayer} — ${setName}` : trimmedPlayer
-
-          const update: Record<string, unknown> = {
-            name,
-            player_name: trimmedPlayer,
-            set_name: setName,
-            team_name: play?.stats?.teamAtMoment ?? null,
-            series: setMeta?.series ?? null,
-            play_type: play?.stats?.playCategory ?? null,
-            updated_at: new Date().toISOString(),
-          }
-
-          // Only UPDATE rows still missing player_name — never overwrite real
-          // data that arrived from another path between seed and hydrate.
-          await supabase
-            .from("editions")
-            .update(update)
-            .eq("collection_id", TOPSHOT_COLLECTION_ID)
-            .eq("external_id", ext)
-            .is("player_name", null)
-          hydrated++
-        }
-      } catch (hydrateErr) {
-        console.log(`[compute-topshot-pack-ev] hydrate-at-insert err: ${hydrateErr instanceof Error ? hydrateErr.message : String(hydrateErr)}`)
-      }
-
-      try {
-        // deno-lint-ignore no-explicit-any
-        await (supabase as any).rpc("log_pipeline_run", {
-          p_pipeline: "editions-hydrate-at-insert",
-          p_started_at: hydrateStartedAt,
-          p_rows_found: unseededExternalIds.length,
-          p_rows_written: hydrated,
-          p_rows_skipped: fallback,
-          p_ok: true,
-          p_error: null,
-          p_collection_slug: "nba-top-shot",
-          p_cursor_before: null,
-          p_cursor_after: null,
-          p_extra: {
-            site: "compute-topshot-pack-ev",
-            candidates: unseededExternalIds.length,
-            hydrated,
-            fallback_skeleton: fallback,
-            failed_sample: failed.slice(0, 10),
-          },
-        })
-      } catch { /* best-effort */ }
     }
 
-    // FMV lookup runs AFTER the re-resolve so newly-seeded editions get FMV
-    // checked too (most won't have FMV yet, but the bridge may have flowed
-    // some from dual-format twins).
     const editionUuids = Array.from(editionByExternalId.values()).map(v => v.id)
     const fmvByEditionId = new Map<string, number>()
     if (editionUuids.length > 0) {
@@ -643,7 +513,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
           startedAt: startedAtIso, rowsFound: targetRows.length, rowsWritten: 0,
           rowsSkipped: targetRows.length, ok: false,
           error: `insert pack_ev_history: ${evErr.message}`,
-          extra: { counters, elapsed_ms: Date.now() - started, function_version: 5, fetch_phase_ms: fetchPhaseMs },
+          extra: { counters, elapsed_ms: Date.now() - started, function_version: 8, using_proxy: USING_PROXY, fetch_phase_ms: fetchPhaseMs },
         })
         return
       }
@@ -668,7 +538,8 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         elapsed_ms: elapsed,
         fetch_phase_ms: fetchPhaseMs,
         db_phase_ms: dbPhaseMs,
-        function_version: 5,
+        function_version: 8,
+        using_proxy: USING_PROXY,
         batch_size: BATCH_SIZE,
       },
     })
@@ -678,7 +549,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     await logPipelineRun({
       startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: false, error: msg,
-      extra: { counters, elapsed_ms: Date.now() - started, function_version: 5 },
+      extra: { counters, elapsed_ms: Date.now() - started, function_version: 8, using_proxy: USING_PROXY },
     })
   }
 }
@@ -708,6 +579,7 @@ Deno.serve(async (req: Request) => {
       ok: true,
       message: "queued",
       started_at: startedAtIso,
+      using_proxy: USING_PROXY,
       note: "Real results will appear in pipeline_runs within ~30-60s.",
     }),
     { headers: { "Content-Type": "application/json" } },
