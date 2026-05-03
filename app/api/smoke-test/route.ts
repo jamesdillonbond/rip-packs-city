@@ -465,6 +465,45 @@ async function runSmokeTests() {
       }
     })(),
 
+    // Pinnacle concierge regression — /api/support-chat with collectionId
+    // 'disney-pinnacle' + a known Pinnacle character must NOT return the
+    // generic "no results" message. Pinnacle data lives in pinnacle_*
+    // parallel tables; before the May 2026 audit fix the unified
+    // cached_listings table had 0 Pinnacle rows so every Pinnacle Sniper
+    // query silently failed. Soft because the path depends on Claude API
+    // availability + an Anthropic token budget; hard-gating it would cost
+    // tokens on every smoke run and blow up on Anthropic outages. The
+    // model occasionally still phrases negative responses; we accept any
+    // 200 with a non-empty response and no obvious "no results" string.
+    (async (): Promise<TestResult> => {
+      const name = "concierge resolves Pinnacle query (collectionId routing)";
+      try {
+        const res = await fetch(`${BASE_URL}/api/support-chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
+          body: JSON.stringify({
+            message: "Show me a Goofy pin under $50",
+            collectionId: "disney-pinnacle",
+            sessionId: `smoke-pinnacle-${Date.now()}`,
+          }),
+          cache: "no-store",
+          signal: AbortSignal.timeout(25000),
+        });
+        if (!res.ok) return { name, soft: true, passed: false, detail: `HTTP ${res.status}` };
+        const body = await res.json().catch(() => null);
+        const text = String(body?.response ?? "").toLowerCase();
+        const looksEmpty = !text || /no\s+(deals|results|moments|pins)\s+found/.test(text);
+        return {
+          name,
+          soft: true,
+          passed: !looksEmpty,
+          detail: looksEmpty ? "empty/no-results response" : `len=${text.length}`,
+        };
+      } catch (e: any) {
+        return { name, soft: true, passed: false, detail: e?.message ?? String(e) };
+      }
+    })(),
+
     // Cart validate endpoint sanity check — bogus-listing round trip should
     // return { results: { [id]: { exists: false, sniped: true } } }. Proves the
     // Flow REST script path is reachable and the response shape is intact.
