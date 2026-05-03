@@ -105,21 +105,44 @@ export default function HomePage() {
               Collections
             </h2>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
-              {collections.map((c) => (
-                <Link
-                  key={c.id}
-                  href={`/${c.id}/overview`}
-                  style={{ background: "#15151a", border: `1px solid ${c.accent}33`, borderRadius: 12, padding: "20px", textDecoration: "none", color: "#fff", display: "block" }}
-                >
-                  <div style={{ fontSize: 32, marginBottom: 12 }}>{c.icon}</div>
-                  <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 18, letterSpacing: "0.06em", textTransform: "uppercase", color: c.accent, marginBottom: 6 }}>
-                    {c.label}
-                  </div>
-                  <div style={{ fontSize: 13, color: "#9ca3af", lineHeight: 1.45 }}>
-                    {c.pitch ?? `${c.label} collector intelligence on Flow.`}
-                  </div>
-                </Link>
-              ))}
+              {collections.map((c) => {
+                const badgeBg = c.badge === "ALPHA" ? "#E03A2F" : c.accent
+                return (
+                  <Link
+                    key={c.id}
+                    href={`/${c.id}/overview`}
+                    style={{ position: "relative", background: "#15151a", border: `1px solid ${c.accent}33`, borderRadius: 12, padding: "20px", textDecoration: "none", color: "#fff", display: "block" }}
+                  >
+                    {c.badge && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: 10,
+                          right: 10,
+                          background: `${badgeBg}33`,
+                          color: "#fff",
+                          fontFamily: "'Share Tech Mono', monospace",
+                          fontSize: 9,
+                          letterSpacing: "0.15em",
+                          textTransform: "uppercase",
+                          borderRadius: 4,
+                          padding: "2px 6px",
+                          border: `1px solid ${badgeBg}66`,
+                        }}
+                      >
+                        {c.badge}
+                      </span>
+                    )}
+                    <div style={{ fontSize: 32, marginBottom: 12 }}>{c.icon}</div>
+                    <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 18, letterSpacing: "0.06em", textTransform: "uppercase", color: c.accent, marginBottom: 6 }}>
+                      {c.label}
+                    </div>
+                    <div style={{ fontSize: 13, color: "#9ca3af", lineHeight: 1.45 }}>
+                      {c.pitch ?? `${c.label} collector intelligence on Flow.`}
+                    </div>
+                  </Link>
+                )
+              })}
             </div>
           </section>
 
