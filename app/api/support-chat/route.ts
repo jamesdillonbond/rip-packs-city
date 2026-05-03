@@ -1121,7 +1121,8 @@ export async function POST(req: NextRequest) {
       (async () => {
         try {
           await runLoop();
-        } catch {
+        } catch (err: any) {
+          console.log("[support-chat] runLoop streaming error:", err?.status ?? "", err?.name ?? "", err?.message ?? String(err));
           try { await streamWriter!.write(encoder.encode("\n\n[stream error]")); } catch {}
         }
         const meta = await finalize();
@@ -1137,7 +1138,7 @@ export async function POST(req: NextRequest) {
     const meta = await finalize();
     return NextResponse.json(meta);
   } catch (err: any) {
-    console.error("[support-chat] Error:", err);
+    console.log("[support-chat] outer error:", err?.status ?? "", err?.name ?? "", err?.message ?? String(err));
     return NextResponse.json(
       { response: "Something went wrong on my end. Try again, or reach out to Trevor on Discord.", escalated: false, category: "error" },
       { status: 200 }
