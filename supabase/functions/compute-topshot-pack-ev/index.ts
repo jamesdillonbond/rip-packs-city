@@ -1,28 +1,31 @@
-// compute-topshot-pack-ev v9 — error diagnostics for post-proxy failure cohort.
+// compute-topshot-pack-ev v10 — concurrency throttle + 429/1015 retry to
+// unblock the topshot-proxy under Cloudflare Workers per-IP rate limits.
 //
-// v8 routed both DYNAMIC_QUERY and EDITIONS_QUERY through the topshot-proxy
-// worker. Failure rate dropped from ~50% to ~42% — Cloudflare bot mitigation
-// is no longer the dominant cause, but every cron tick still produces 5–6
-// gql_errors and 6–7 rpc_not_ok across 12 packs (rows_written=0).
+// v9 diagnostics confirmed both visible failure modes share one root cause:
+//   • errors_sample showed every gql_error was HTTP 429 with body
+//     "error code: 1015" (Cloudflare Workers per-IP rate limit on the
+//     proxy worker, NOT upstream nbatopshot.com bot mitigation).
+//   • rpc_not_ok_sample showed every rpc_not_ok was reason "pool_empty",
+//     which means pack_drop_pool was never seeded — and the seeding step
+//     depends on the same GetPackEditions GQL call that the 1015 throttle
+//     blocks. So the 67% rpc_not_ok rate is the downstream effect of the
+//     33% gql_error rate from prior runs.
 //
-// v9 adds two diagnostic arrays into pipeline_runs.extra so we can
-// reverse-engineer the actual root cause from telemetry:
-//   • errors_sample — for each gql_error, captures the operation name
-//     (GetPackListing_DynamicData or GetPackEditions), the pack flow_id
-//     (pack_listing_uuid), the GQL error message, the HTTP status, and the
-//     first 500 chars of the response body. The op name lets us tell
-//     dynamic-data failures from editions-pagination failures; the body
-//     surfaces Cloudflare interstitials, GQL validation errors, or upstream
-//     5xx responses that the v8 single-string error swallowed.
-//   • rpc_not_ok_sample — for each compute_pack_ev_per_edition_weighted
-//     RPC that returned ok!=true, captures the dist_id and the full RPC
-//     payload. rpc_not_ok is NOT an HTTP error — it's the SQL function's
-//     business-logic rejection (zero coverage, no priced editions, etc.).
-//     Capturing the payload tells us which validation tripped.
+// v10 fixes the throttle:
+//   1. Outer pack loop is no longer all-12-in-parallel via Promise.allSettled.
+//      Packs are processed in chunks of FETCH_CONCURRENCY (=3) with await
+//      between chunks. Worst-case concurrent requests through topshot-proxy
+//      drops from ~12-on-burst to ~3.
+//   2. gqlCall retries on HTTP 429 with body containing "1015". Up to
+//      MAX_1015_RETRIES (=3) attempts with RETRY_BACKOFF_MS (=2000) wait
+//      between attempts. Each retry is logged to errors_sample with a
+//      "retried_after_1015" marker so we can verify the fix is working
+//      from telemetry alone.
 //
-// Both samples are capped at 12 entries (one per pack in a batch) to keep
-// the jsonb column small. No proxy auth, cron schedule, or signature
-// changes — pure observability.
+// No changes to RPC handling — rpc_not_ok with reason "pool_empty" should
+// self-resolve once the proxy stops dropping editions calls and the next
+// few cron ticks finish seeding pack_drop_pool. No changes to cron
+// schedule, proxy auth, or batch size.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
 
@@ -43,6 +46,17 @@ const BATCH_SIZE = 12
 const MAX_EDITION_PAGES = 8
 const TIME_BUDGET_MS = 110_000
 const ERRORS_SAMPLE_CAP = 12
+const FETCH_CONCURRENCY = 3
+const MAX_1015_RETRIES = 3
+const RETRY_BACKOFF_MS = 2000
+
+const retryEvents: Array<{
+  op: string
+  attempt: number
+  status: number
+  body: string
+  marker: "retried_after_1015"
+}> = []
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
@@ -169,50 +183,72 @@ async function gqlCall<T>(
   variables: Record<string, unknown>,
   timeoutMs = 15000,
 ): Promise<{ ok: true; data: T } | { ok: false; failure: GqlFailure }> {
-  let res: Response
-  try {
-    res = await fetch(GQL_ENDPOINT, {
-      method: "POST",
-      headers: GQL_HEADERS,
-      body: JSON.stringify({ query, variables }),
-      signal: AbortSignal.timeout(timeoutMs),
-    })
-  } catch (err) {
-    return {
-      ok: false,
-      failure: { opName, error: `fetch: ${err instanceof Error ? err.message : String(err)}` },
+  for (let attempt = 1; attempt <= MAX_1015_RETRIES; attempt++) {
+    let res: Response
+    try {
+      res = await fetch(GQL_ENDPOINT, {
+        method: "POST",
+        headers: GQL_HEADERS,
+        body: JSON.stringify({ query, variables }),
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+    } catch (err) {
+      return {
+        ok: false,
+        failure: { opName, error: `fetch: ${err instanceof Error ? err.message : String(err)}` },
+      }
     }
-  }
-  if (!res.ok) {
-    const body = await res.text().catch(() => "")
-    return {
-      ok: false,
-      failure: { opName, error: `HTTP ${res.status}`, status: res.status, body: body.slice(0, 500) },
+    if (!res.ok) {
+      const body = await res.text().catch(() => "")
+      const bodyTrimmed = body.slice(0, 500)
+      const is1015 = res.status === 429 && body.includes("1015")
+      if (is1015 && attempt < MAX_1015_RETRIES) {
+        if (retryEvents.length < ERRORS_SAMPLE_CAP) {
+          retryEvents.push({
+            op: opName,
+            attempt,
+            status: res.status,
+            body: bodyTrimmed,
+            marker: "retried_after_1015",
+          })
+        }
+        console.log(`[compute-topshot-pack-ev] 1015 retry op=${opName} attempt=${attempt}, sleeping ${RETRY_BACKOFF_MS}ms`)
+        await new Promise(r => setTimeout(r, RETRY_BACKOFF_MS))
+        continue
+      }
+      return {
+        ok: false,
+        failure: { opName, error: `HTTP ${res.status}`, status: res.status, body: bodyTrimmed },
+      }
     }
-  }
-  const text = await res.text()
-  let json:
-    | { data?: T; errors?: Array<{ message: string }> }
-    | null = null
-  try { json = JSON.parse(text) } catch { json = null }
-  if (!json) {
-    return {
-      ok: false,
-      failure: { opName, error: "not-json", status: res.status, body: text.slice(0, 500) },
+    const text = await res.text()
+    let json:
+      | { data?: T; errors?: Array<{ message: string }> }
+      | null = null
+    try { json = JSON.parse(text) } catch { json = null }
+    if (!json) {
+      return {
+        ok: false,
+        failure: { opName, error: "not-json", status: res.status, body: text.slice(0, 500) },
+      }
     }
-  }
-  if (json.errors?.length) {
-    return {
-      ok: false,
-      failure: {
-        opName,
-        error: json.errors[0].message,
-        status: res.status,
-        body: JSON.stringify(json.errors).slice(0, 500),
-      },
+    if (json.errors?.length) {
+      return {
+        ok: false,
+        failure: {
+          opName,
+          error: json.errors[0].message,
+          status: res.status,
+          body: JSON.stringify(json.errors).slice(0, 500),
+        },
+      }
     }
+    return { ok: true, data: (json.data ?? {}) as T }
   }
-  return { ok: true, data: (json.data ?? {}) as T }
+  return {
+    ok: false,
+    failure: { opName, error: `HTTP 429 (1015) after ${MAX_1015_RETRIES} retries`, status: 429, body: "exhausted_1015_retries" },
+  }
 }
 
 async function fetchAllEditions(packListingId: string): Promise<{
@@ -279,6 +315,7 @@ async function logPipelineRun(args: {
 }
 
 async function runBackgroundWork(startedAtIso: string, started: number) {
+  retryEvents.length = 0
   const counters = {
     nodes_processed: 0,
     nodes_no_editions: 0,
@@ -321,7 +358,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: false, error: `targets: ${targetsErr.message}`,
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 9, using_proxy: USING_PROXY },
+        extra: { counters, elapsed_ms: Date.now() - started, function_version: 10, using_proxy: USING_PROXY },
       })
       return
     }
@@ -331,7 +368,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: true,
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 9, using_proxy: USING_PROXY, message: "no targets" },
+        extra: { counters, elapsed_ms: Date.now() - started, function_version: 10, using_proxy: USING_PROXY, message: "no targets" },
       })
       return
     }
@@ -343,16 +380,19 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         message: "heartbeat:started",
         target_count: targetRows.length,
         elapsed_ms: Date.now() - started,
-        function_version: 9,
+        function_version: 10,
         using_proxy: USING_PROXY,
         batch_size: BATCH_SIZE,
       },
     })
 
     const fetchStart = Date.now()
-    const fetchResults = await Promise.allSettled(
-      targetRows.map(t => fetchOnePack(t))
-    )
+    const fetchResults: PromiseSettledResult<FetchOutcome>[] = []
+    for (let i = 0; i < targetRows.length; i += FETCH_CONCURRENCY) {
+      const chunk = targetRows.slice(i, i + FETCH_CONCURRENCY)
+      const chunkResults = await Promise.allSettled(chunk.map(t => fetchOnePack(t)))
+      fetchResults.push(...chunkResults)
+    }
     const fetchPhaseMs = Date.now() - fetchStart
 
     const fetched: Array<Extract<FetchOutcome, { tag: "success" }>> = []
@@ -417,10 +457,10 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         rowsSkipped: targetRows.length, ok: true,
         extra: {
           counters,
-          errors_sample: errorsSample,
+          errors_sample: [...errorsSample, ...retryEvents],
           rpc_not_ok_sample: rpcNotOkSample,
           elapsed_ms: Date.now() - started,
-          function_version: 9,
+          function_version: 10,
           using_proxy: USING_PROXY,
           fetch_phase_ms: fetchPhaseMs,
         },
@@ -435,10 +475,10 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         rowsSkipped: targetRows.length, ok: false, error: "time_budget_exceeded_after_fetch",
         extra: {
           counters,
-          errors_sample: errorsSample,
+          errors_sample: [...errorsSample, ...retryEvents],
           rpc_not_ok_sample: rpcNotOkSample,
           elapsed_ms: Date.now() - started,
-          function_version: 9,
+          function_version: 10,
           using_proxy: USING_PROXY,
           fetch_phase_ms: fetchPhaseMs,
         },
@@ -617,10 +657,10 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
           error: `insert pack_ev_history: ${evErr.message}`,
           extra: {
             counters,
-            errors_sample: errorsSample,
+            errors_sample: [...errorsSample, ...retryEvents],
             rpc_not_ok_sample: rpcNotOkSample,
             elapsed_ms: Date.now() - started,
-            function_version: 9,
+            function_version: 10,
             using_proxy: USING_PROXY,
             fetch_phase_ms: fetchPhaseMs,
           },
@@ -645,12 +685,12 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       extra: {
         ...counters,
         editions_requested: seenExternalIds.size,
-        errors_sample: errorsSample,
+        errors_sample: [...errorsSample, ...retryEvents],
         rpc_not_ok_sample: rpcNotOkSample,
         elapsed_ms: elapsed,
         fetch_phase_ms: fetchPhaseMs,
         db_phase_ms: dbPhaseMs,
-        function_version: 9,
+        function_version: 10,
         using_proxy: USING_PROXY,
         batch_size: BATCH_SIZE,
       },
@@ -663,10 +703,10 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       ok: false, error: msg,
       extra: {
         counters,
-        errors_sample: errorsSample,
+        errors_sample: [...errorsSample, ...retryEvents],
         rpc_not_ok_sample: rpcNotOkSample,
         elapsed_ms: Date.now() - started,
-        function_version: 9,
+        function_version: 10,
         using_proxy: USING_PROXY,
       },
     })
