@@ -203,8 +203,9 @@ function minutesSince(iso: string | null | undefined): number | null {
   return Math.max(0, (Date.now() - t) / 60000)
 }
 
-type Freshness = { color: string; label: string }
-function freshnessFromAge(minutes: number | null): Freshness {
+type Freshness = { color: string; label: string; loading?: boolean }
+function freshnessFromAge(minutes: number | null, loading: boolean): Freshness {
+  if (loading) return { color: "var(--rpc-text-muted)", label: "Loading…", loading: true }
   if (minutes == null) return { color: "var(--rpc-text-ghost)", label: "UNKNOWN" }
   if (minutes < 30) return { color: "#34D399", label: "HEALTHY" }
   if (minutes < 60) return { color: "#F59E0B", label: "STALE" }
@@ -225,6 +226,7 @@ export default function OverviewPage() {
   const [stats, setStats] = useState<CollectionStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [timedOut, setTimedOut] = useState(false)
 
   const [walletInput, setWalletInput] = useState("")
   const [hasWallet, setHasWallet] = useState(false)
@@ -240,6 +242,10 @@ export default function OverviewPage() {
     let cancelled = false
     setLoading(true)
     setError(null)
+    setTimedOut(false)
+    const timeoutId = setTimeout(() => {
+      if (!cancelled) setTimedOut(true)
+    }, 5000)
     ;(async () => {
       try {
         const res = await fetch("/api/collection-stats?collection=" + encodeURIComponent(collection))
@@ -254,7 +260,10 @@ export default function OverviewPage() {
         if (!cancelled) setLoading(false)
       }
     })()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      clearTimeout(timeoutId)
+    }
   }, [collection])
 
   const ctaSubtitle = collection === "nba-top-shot"
@@ -264,7 +273,11 @@ export default function OverviewPage() {
   const about = COLLECTION_ABOUT[collection] ?? COLLECTION_ABOUT["nba-top-shot"]
 
   const fmvAge = stats?.fmv_age_minutes ?? null
-  const freshness = freshnessFromAge(fmvAge)
+  // Show loading state until either: data arrives, OR fetch settled with no
+  // age and 5s have elapsed (real outage). This prevents the "UNKNOWN" flash
+  // first-time visitors used to see during normal pipeline-health resolution.
+  const showLoading = loading || (fmvAge == null && !timedOut)
+  const freshness = freshnessFromAge(fmvAge, showLoading)
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -425,7 +438,20 @@ export default function OverviewPage() {
         {/* Pipeline Status */}
         <section className="rpc-card" style={{ padding: "16px 20px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-            <div style={{ width: 8, height: 8, borderRadius: "50%", background: freshness.color, animation: "pulse 2s infinite", border: "1px solid " + freshness.color }} />
+            {freshness.loading ? (
+              <div
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: "50%",
+                  border: "1.5px solid var(--rpc-border)",
+                  borderTopColor: "var(--rpc-text-muted)",
+                  animation: "rpc-spin 0.9s linear infinite",
+                }}
+              />
+            ) : (
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: freshness.color, animation: "pulse 2s infinite", border: "1px solid " + freshness.color }} />
+            )}
             <span className="rpc-label">Pipeline Status</span>
             <span className="rpc-mono" style={{ marginLeft: "auto", fontSize: "var(--text-xs)", color: freshness.color, fontWeight: 700, letterSpacing: "0.1em" }}>
               {freshness.label}
@@ -435,7 +461,7 @@ export default function OverviewPage() {
           <div className="rpc-card" style={{ padding: "12px 14px", position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: freshness.color, opacity: 0.7 }} />
             <div className="rpc-label" style={{ marginBottom: 4 }}>FMV Data Age</div>
-            {loading ? (
+            {showLoading ? (
               <div className="rpc-skeleton" style={{ width: "40%", height: 20 }} />
             ) : (
               <div className="rpc-heading" style={{ fontSize: "var(--text-xl)", color: freshness.color }}>
