@@ -35,6 +35,98 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 // timeout fallback instead of a quick reply.
 const GREETING_RE = /^\s*(hi+|hello|ping|hey+|sup|test|yo|hola|howdy|gm|gn)\s*[!.?]*\s*$/i;
 
+// ── Anthropic error classification ────────────────────────────────────────────
+// Distinguish credit-balance / billing / auth (long-tail outage we can't fix
+// from the user side), rate-limit / 429 (transient), and overloaded / 5xx /
+// network (transient Anthropic-side). Each maps to a distinct user-meaningful
+// message so we don't tell users "your query was too complex" when the real
+// problem is our wallet balance.
+type ConciergeErrorMode = "credit_balance" | "rate_limit" | "overloaded" | "unknown";
+
+function classifyAnthropicError(err: any): ConciergeErrorMode {
+  const status: number = Number(err?.status ?? 0);
+  // SDK normalises this onto err.type, but defensive lookups cover wrapped
+  // errors and fetch-layer failures where the body never parsed.
+  const errType: string = String(err?.type ?? err?.error?.error?.type ?? err?.error?.type ?? "");
+  const msg: string = String(err?.message ?? err ?? "").toLowerCase();
+  const name: string = String(err?.name ?? "");
+
+  if (
+    status === 401 || status === 402 || status === 403 ||
+    errType === "authentication_error" ||
+    errType === "permission_error" ||
+    /credit\s*balance|insufficient[_\s]+(?:funds|credit|balance)|invalid[_\s]+api[_\s]+key|billing/.test(msg)
+  ) {
+    return "credit_balance";
+  }
+  if (status === 429 || errType === "rate_limit_error" || /rate[_\s]*limit/.test(msg)) {
+    return "rate_limit";
+  }
+  if (
+    status >= 500 ||
+    errType === "overloaded_error" ||
+    errType === "api_error" ||
+    name === "APIConnectionError" ||
+    name === "APIConnectionTimeoutError" ||
+    /overloaded|connection|fetch failed|network|timeout|socket/.test(msg)
+  ) {
+    return "overloaded";
+  }
+  return "unknown";
+}
+
+const CONCIERGE_ERROR_MESSAGES: Record<ConciergeErrorMode, { response: string; category: string }> = {
+  credit_balance: {
+    response:
+      "AI concierge is temporarily unavailable. The collector tools below still work — try the Sniper page or browse Sets.",
+    category: "concierge_unavailable",
+  },
+  rate_limit: {
+    response:
+      "AI concierge is busy. Please try again in a minute, or use the Sniper page directly.",
+    category: "concierge_rate_limited",
+  },
+  overloaded: {
+    response:
+      "AI concierge is having a moment. Please try again shortly.",
+    category: "concierge_overloaded",
+  },
+  unknown: {
+    response:
+      "Something went wrong on my end. Try again, or reach out to Trevor on Discord.",
+    category: "error",
+  },
+};
+
+// Test-only synthetic error injector. Smoke test uses this to verify the
+// graceful-degradation path without an actual Anthropic outage. Gated by
+// INGEST_SECRET_TOKEN so it can't be triggered by random clients. Mode values
+// match ConciergeErrorMode keys (sans "unknown" — that one is the catch-all
+// default if a header is unrecognised).
+function buildSyntheticError(mode: string): Error & { status?: number; type?: string } {
+  if (mode === "credit_balance") {
+    const e: any = new Error("Your credit balance is too low to access the Anthropic API.");
+    e.status = 403;
+    e.type = "permission_error";
+    return e;
+  }
+  if (mode === "rate_limit") {
+    const e: any = new Error("Number of request tokens has exceeded your rate limit.");
+    e.status = 429;
+    e.type = "rate_limit_error";
+    return e;
+  }
+  if (mode === "overloaded") {
+    const e: any = new Error("Anthropic is temporarily overloaded.");
+    e.status = 529;
+    e.type = "overloaded_error";
+    return e;
+  }
+  const e: any = new Error("synthetic unknown error");
+  e.status = 500;
+  return e;
+}
+
 // ── Rate limiting (25 req/hr per session) ─────────────────────────────────────
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 function checkRateLimit(sessionId: string): boolean {
@@ -895,6 +987,13 @@ async function updateSession(sessionId: string, category: string, userMessage: s
 }
 
 export async function POST(req: NextRequest) {
+  // Declared in outer scope so the top-level catch can persist a meaningful
+  // error row tagged with the actual session/message/wallet rather than just
+  // a sentinel.
+  let parsedSessionId: string | null = null;
+  let parsedMessage: string | null = null;
+  let parsedUserWallet: string | null = null;
+  let parsedPageContext: string | null = null;
   try {
     const body = await req.json();
     const {
@@ -910,6 +1009,10 @@ export async function POST(req: NextRequest) {
       dailyDeal,
       stream: useStream = false,
     } = body;
+    parsedSessionId = sessionId;
+    parsedMessage = message;
+    parsedUserWallet = userWallet ?? null;
+    parsedPageContext = pageContext ?? null;
 
     if (!message?.trim()) {
       return NextResponse.json({ error: "Message required" }, { status: 400 });
@@ -969,6 +1072,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ response: greetText, escalated: false, category: greetCategory });
     }
 
+    // Test-only error injector. Header `x-rpc-test-error-mode` paired with a
+    // matching `x-rpc-test-secret` (= INGEST_SECRET_TOKEN) forces a synthetic
+    // Anthropic-style error to verify the graceful-degradation path. Anyone
+    // who already has the ingest secret can do far worse, so this isn't a
+    // new exposure surface.
+    const testErrMode = req.headers.get("x-rpc-test-error-mode");
+    const testErrSecret = req.headers.get("x-rpc-test-secret");
+    if (
+      testErrMode &&
+      process.env.INGEST_SECRET_TOKEN &&
+      testErrSecret === process.env.INGEST_SECRET_TOKEN
+    ) {
+      throw buildSyntheticError(testErrMode);
+    }
+
     const systemPrompt = buildSystemPrompt({ pageContext, collectionId, userWallet, userEmail, walletConnected, marketPulse, dailyDeal });
     const recentHistory = conversationHistory.slice(-10);
     const messages: Anthropic.MessageParam[] = [
@@ -983,6 +1101,9 @@ export async function POST(req: NextRequest) {
     let currentMessages = messages;
     let iterations = 0;
     const MAX_ITERATIONS = 5;
+    // Set when runLoop throws an Anthropic SDK error in the streaming path.
+    // finalize() consults this to pick the user-meaningful response + category.
+    let conciergeErrorMode: ConciergeErrorMode | null = null;
 
     let streamWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
     let streamResponse: Response | null = null;
@@ -1080,19 +1201,28 @@ export async function POST(req: NextRequest) {
     };
 
     const finalize = async () => {
-      if (!finalResponse) {
-        finalResponse = "That query was too complex for me to handle in time. Try breaking it down. You can also check the Sniper page directly for the full live feed.";
-      }
-      if (escalated) {
-        finalResponse += "\n\nYou can also DM us directly at https://twitter.com/RipPacksCity for a faster response.";
+      // Anthropic-side outage takes priority over the generic "too complex"
+      // fallback — that message is wrong on a 1-word "Ping" query and wrong
+      // on a billing failure.
+      let category: string;
+      if (conciergeErrorMode) {
+        const meta = CONCIERGE_ERROR_MESSAGES[conciergeErrorMode];
+        finalResponse = meta.response;
+        category = meta.category;
+      } else {
+        if (!finalResponse) {
+          finalResponse = "That query was too complex for me to handle in time. Try breaking it down. You can also check the Sniper page directly for the full live feed.";
+        }
+        if (escalated) {
+          finalResponse += "\n\nYou can also DM us directly at https://twitter.com/RipPacksCity for a faster response.";
+        }
+        category = classifyCategory(message);
       }
 
       const playerSearched =
         usedTools.includes("search_catalog_deals") || usedTools.includes("search_live_deals") || usedTools.includes("search_across_collections")
           ? body.message.match(/\b([A-Z][a-z]+ [A-Z][a-z]+)\b/)?.[0] ?? undefined
           : undefined;
-
-      const category = classifyCategory(message);
 
       // Persistence runs via after() so it's guaranteed to complete via Vercel's
       // waitUntil even if the streaming response closes (or the client disconnects)
@@ -1122,8 +1252,15 @@ export async function POST(req: NextRequest) {
         try {
           await runLoop();
         } catch (err: any) {
-          console.log("[support-chat] runLoop streaming error:", err?.status ?? "", err?.name ?? "", err?.message ?? String(err));
-          try { await streamWriter!.write(encoder.encode("\n\n[stream error]")); } catch {}
+          conciergeErrorMode = classifyAnthropicError(err);
+          console.log("[support-chat] runLoop streaming error:", err?.status ?? "", err?.name ?? "", conciergeErrorMode, (err?.message ?? String(err)).slice(0, 120));
+          // Overwrite any partial stream output with the user-meaningful
+          // message. We can't un-stream what already shipped, but for
+          // Anthropic 4xx/5xx that fire before any text-delta event, this
+          // is the user's first and only payload.
+          try {
+            await streamWriter!.write(encoder.encode("\n" + CONCIERGE_ERROR_MESSAGES[conciergeErrorMode].response));
+          } catch {}
         }
         const meta = await finalize();
         try {
@@ -1139,12 +1276,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(meta);
   } catch (err: any) {
     const m = String(err?.message ?? err);
+    const mode = classifyAnthropicError(err);
+    const meta = CONCIERGE_ERROR_MESSAGES[mode];
     console.log("[sc_err] status", err?.status ?? "");
     console.log("[sc_err] name", err?.name ?? "");
+    console.log("[sc_err] mode", mode);
     console.log("[sc_err] m1", m.slice(0, 40));
     console.log("[sc_err] m2", m.slice(40, 120));
+
+    // Persist the failure so we can monitor frequency from the DB rather than
+    // log archaeology. Falls back to header / sentinel if body parse failed.
+    try {
+      const session = parsedSessionId ?? req.headers.get("x-rpc-session-id") ?? `error-${Date.now()}`;
+      after(() =>
+        persistConversation({
+          session_id: session,
+          user_message: parsedMessage ?? "(error path — body unavailable)",
+          bot_response: meta.response,
+          escalated: false,
+          escalation_reason: null,
+          category: meta.category,
+          user_wallet: parsedUserWallet,
+          page_context: parsedPageContext,
+        })
+      );
+    } catch { /* best-effort */ }
+
     return NextResponse.json(
-      { response: "Something went wrong on my end. Try again, or reach out to Trevor on Discord.", escalated: false, category: "error" },
+      { response: meta.response, escalated: false, category: meta.category },
       { status: 200 }
     );
   }

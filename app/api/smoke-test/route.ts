@@ -696,6 +696,53 @@ async function runSmokeTests() {
       }
     })(),
 
+    // Graceful-degradation regression — verifies that an Anthropic-side
+    // outage does NOT surface as the misleading "Something went wrong" or
+    // "too complex" text. Sends `x-rpc-test-error-mode: credit_balance` with
+    // the ingest secret to force a synthetic 403 in the support-chat route,
+    // and asserts the user-facing response is the new "temporarily
+    // unavailable" message. Soft because it depends on the smoke-test
+    // process having INGEST_SECRET_TOKEN — if unset, the probe is skipped.
+    (async (): Promise<TestResult> => {
+      const name = "support-chat graceful-degradation (synthetic Anthropic 4xx)";
+      const secret = process.env.INGEST_SECRET_TOKEN;
+      if (!secret) return { name, soft: true, passed: true, detail: "skipped — no INGEST_SECRET_TOKEN" };
+      try {
+        const res = await fetch(`${BASE_URL}/api/support-chat`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": BROWSER_UA,
+            "x-rpc-test-error-mode": "credit_balance",
+            "x-rpc-test-secret": secret,
+          },
+          body: JSON.stringify({
+            message: "Test the graceful-degradation path",
+            sessionId: `smoke-degradation-${Date.now()}`,
+          }),
+          cache: "no-store",
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!res.ok) return { name, soft: true, passed: false, detail: `HTTP ${res.status}` };
+        const body = await res.json().catch(() => null);
+        const text = String(body?.response ?? "").toLowerCase();
+        const category = String(body?.category ?? "");
+        const matchesMessage = /temporarily\s+unavailable/.test(text);
+        const matchesCategory = category === "concierge_unavailable";
+        const passed = matchesMessage && matchesCategory;
+        return {
+          name,
+          soft: true,
+          passed,
+          detail: passed
+            ? `category=${category}`
+            : `text="${text.slice(0, 80)}" category=${category}`,
+        };
+      } catch (e: any) {
+        return { name, soft: true, passed: false, detail: e?.message ?? String(e) };
+      }
+    })(),
+
     // Cart validate endpoint sanity check — bogus-listing round trip should
     // return { results: { [id]: { exists: false, sniped: true } } }. Proves the
     // Flow REST script path is reachable and the response shape is intact.
