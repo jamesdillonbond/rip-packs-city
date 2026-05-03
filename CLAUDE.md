@@ -156,6 +156,7 @@ API endpoints:
 - /api/pack-roi
 - /api/collection-snapshot
 - /api/overview-stats
+- /api/admin/prune-pipeline-runs (POST, Bearer $INGEST_SECRET_TOKEN; daily cron-job.org schedule, prunes pipeline_runs older than 7d via prune_pipeline_runs RPC; fire-and-forget via after())
 
 Collection registry: lib/collections.ts (8 collections defined)
 Old flat routes redirect to the new nested paths.
