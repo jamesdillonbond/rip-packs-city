@@ -126,7 +126,7 @@ export const COLLECTIONS: Collection[] = [
     flowtyCollectionFilter: "0xedf9df96c92f4595/Pinnacle",
     cadenceCollectionPath: "/public/PinnacleCollection",
     supabaseCollectionId: "7dd9dd11-e8b6-45c4-ac99-71331f959714",
-    pitch: "Wallet analytics and marketplace intelligence for Disney Pinnacle — 424 editions tracked, 366 FMV live, 4,087 historical sales.",
+    pitch: "Wallet analytics and marketplace intelligence for Disney Pinnacle — 425 editions tracked, 367 FMV live, 4,113 historical sales.",
     news: [
       { title: "Pinnacle on Flow — 231 editions tracked, block-event sales backfill in progress", date: "2026-03-28", summary: "653 historical sales being resolved via Cadence block event scan.", url: "https://disneypinnacle.com" },
     ],
