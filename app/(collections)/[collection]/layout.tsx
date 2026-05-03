@@ -163,6 +163,23 @@ function CollectionBanner({ collection }: { collection: Collection }) {
 
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0 0" }}>
           <span style={{ fontSize: 22 }}>{collection.icon}</span>
+          {collection.badge && (
+            <span
+              style={{
+                background: `${collection.badge === "ALPHA" ? "#E03A2F" : collection.accent}33`,
+                color: "#fff",
+                border: `1px solid ${collection.badge === "ALPHA" ? "#E03A2F" : collection.accent}66`,
+                borderRadius: 4,
+                padding: "2px 6px",
+                fontFamily: "'Share Tech Mono', monospace",
+                fontSize: 9,
+                letterSpacing: "0.15em",
+                textTransform: "uppercase",
+              }}
+            >
+              {collection.badge}
+            </span>
+          )}
           <div>
             <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 20, letterSpacing: "0.06em", color: "#fff", textTransform: "uppercase", lineHeight: 1 }}>
               {collection.label}
