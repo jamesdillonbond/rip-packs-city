@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import React, { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { getCollection } from "@/lib/collections"
@@ -153,6 +153,27 @@ const COLLECTION_TICKER: Record<string, string[]> = {
     "\u26A1 SNIPER \u2014 fight moments below market",
     "\u26A1 ANALYTICS \u2014 portfolio tracking",
   ],
+}
+
+// One-line "where do I find my wallet" hint shown below the lookup input.
+// Keep it tight — Share Tech Mono 11px, single line on desktop. The Top Shot
+// hint links to the user-account page since usernames are the common path
+// there; the rest point collectors at their respective marketplace settings.
+const WALLET_HINTS: Record<string, React.ReactNode> = {
+  "nba-top-shot": (
+    <>
+      Don&apos;t know yours? Sign in to{" "}
+      <a href="https://nbatopshot.com" target="_blank" rel="noopener noreferrer" style={{ color: "rgba(255,255,255,0.6)", textDecoration: "underline" }}>
+        NBA Top Shot
+      </a>{" "}
+      &rarr; Account.
+    </>
+  ),
+  "nfl-all-day": "Don't know yours? Sign in to NFL All Day and check your account settings.",
+  "disney-pinnacle": "Don't know yours? Sign in to Disney Pinnacle and check your account settings.",
+  "laliga-golazos": "Don't know yours? Sign in to LaLiga Golazos and check your account settings.",
+  "ufc": "Don't know yours? Sign in to UFC Strike and check your account settings.",
+  "__default": "Don't know yours? Sign in to your collection's marketplace and check your account settings.",
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -341,6 +362,17 @@ export default function OverviewPage() {
               ANALYZE {"\u2192"}
             </button>
           </form>
+          <div
+            style={{
+              marginTop: 10,
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: 11,
+              color: "rgba(255,255,255,0.4)",
+              textAlign: "center",
+            }}
+          >
+            {WALLET_HINTS[collection] ?? WALLET_HINTS["__default"]}
+          </div>
         </section>
       )}
 
