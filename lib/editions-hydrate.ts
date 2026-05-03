@@ -328,14 +328,14 @@ function alldayHeaders(): Record<string, string> {
     "Content-Type": "application/json",
     "User-Agent": "rip-packs-city/editions-hydrate",
   }
-  if (process.env.AD_PROXY_URL && process.env.TS_PROXY_SECRET) {
+  if (process.env.ALLDAY_PROXY_URL && process.env.TS_PROXY_SECRET) {
     h["X-Proxy-Secret"] = process.env.TS_PROXY_SECRET
   }
   return h
 }
 
 function alldayUrl(): string {
-  return process.env.AD_PROXY_URL || ALLDAY_GQL_DEFAULT
+  return process.env.ALLDAY_PROXY_URL || ALLDAY_GQL_DEFAULT
 }
 
 function normalizeAllDayTier(raw: string | null | undefined): string | null {

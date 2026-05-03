@@ -3,7 +3,7 @@
 /**
  * seed-allday-editions.mjs — Bulk-seed NFL All Day editions from GQL into Supabase.
  *
- * Uses the nflallday.com consumer/graphql endpoint (or proxy if AD_PROXY_URL is set).
+ * Uses the nflallday.com consumer/graphql endpoint (or proxy if ALLDAY_PROXY_URL is set).
  * Fetches all editions via pagination, then upserts into the `editions` table
  * with collection_id = dee28451-5d62-409e-a1ad-a83f763ac070.
  *
@@ -13,7 +13,7 @@
  * Env vars:
  *   NEXT_PUBLIC_SUPABASE_URL    — Supabase URL
  *   SUPABASE_SERVICE_ROLE_KEY   — Supabase service role key
- *   AD_PROXY_URL                — (optional) Cloudflare proxy URL for All Day GQL
+ *   ALLDAY_PROXY_URL                — (optional) Cloudflare proxy URL for All Day GQL
  *   TS_PROXY_SECRET             — (optional) proxy auth secret
  */
 
@@ -31,13 +31,13 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
 
 // GQL endpoint — prefer proxy if available (Cloudflare blocks Vercel IPs)
-const GQL_URL = process.env.AD_PROXY_URL
-  ? process.env.AD_PROXY_URL
+const GQL_URL = process.env.ALLDAY_PROXY_URL
+  ? process.env.ALLDAY_PROXY_URL
   : "https://nflallday.com/consumer/graphql"
 
 function gqlHeaders() {
   const h = { "Content-Type": "application/json", "User-Agent": "sports-collectible-tool/0.1" }
-  if (process.env.AD_PROXY_URL && process.env.TS_PROXY_SECRET) {
+  if (process.env.ALLDAY_PROXY_URL && process.env.TS_PROXY_SECRET) {
     h["X-Proxy-Secret"] = process.env.TS_PROXY_SECRET
   }
   return h
