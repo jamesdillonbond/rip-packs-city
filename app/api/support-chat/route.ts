@@ -22,6 +22,11 @@ import {
   explainPinnacleFmv,
   searchPinnacleByName,
 } from "@/lib/concierge/pinnacle-router";
+import {
+  fetchUnifiedFmvDistribution,
+  fetchPinnacleFmvDistribution,
+  type FmvDistributionResult,
+} from "@/lib/concierge/fmv-distribution";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -188,15 +193,16 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_fmv",
-    description: "Get Fair Market Value for a specific edition. Provide editionKey (setID:playID) or playerName + setName. CRITICAL: when looking up FMV by name, ALWAYS pass the actual name the user asked about in playerName (or characterName for Pinnacle). Never query without a name when the user named someone specific.",
+    description: "Get catalog Fair Market Value from editions + fmv_snapshots (NOT current listings). Returns one of two shapes: 'single' (one edition matched) or 'distribution' ({count, median_fmv, p10, p90, min_fmv, max_fmv, sample_editions[]}). Use this for any price-comparison question — 'is $X fair for [player] [tier]?', 'what's a [player] [tier] worth?'. The catalog is independent of current listings, so a non-empty FMV exists even when nothing is for sale right now. Provide editionKey for a specific edition, or any combination of playerName/characterName + tier + setName for a filtered distribution. CRITICAL: when the user names a specific person, ALWAYS pass that exact name as playerName (sports) or characterName (Pinnacle).",
     input_schema: {
       type: "object" as const,
       properties: {
         collectionId: { type: "string", description: "Collection id. Defaults to the active page's collection." },
-        editionKey: { type: "string" },
-        playerName: { type: "string", description: "Player name (sports collections). Pass the exact name the user asked about." },
+        editionKey: { type: "string", description: "Specific edition (setID:playID for Top Shot, opaque key for Pinnacle). Returns single-edition shape." },
+        playerName: { type: "string", description: "Player name (sports). Returns distribution across the matching editions." },
         characterName: { type: "string", description: "Character name (Disney Pinnacle). Aliased to playerName server-side." },
-        setName: { type: "string" },
+        setName: { type: "string", description: "Set name (partial match). Use to narrow the distribution to one set." },
+        tier: { type: "string", description: "Tier (COMMON, RARE, LEGENDARY, etc., or Pinnacle variant_type). Use to narrow the distribution to one tier." },
       },
       required: [],
     },
@@ -436,6 +442,25 @@ If search_live_deals returns no results AND the user's question implies a price 
 
 Concrete example: "Should I buy this LeBron Common at $3?" — first call get_fmv with playerName="LeBron James" (and tier="COMMON" if available) or search_catalog_deals with player="LeBron James", tier="COMMON". The catalog will surface the median FMV across all LeBron Common editions, which is what the user actually needs to compare $3 against. Only then mention live availability.
 
+## CRITICAL — Reading get_fmv and search_catalog_deals responses
+get_fmv and search_catalog_deals (when they fall through to the catalog) return one of two shapes: **distribution** or **single**. Both are catalog-derived from editions + fmv_snapshots — they exist independently of whether anything is currently listed.
+
+When mode = "distribution" (count >= 2):
+- Surface the median (median_fmv field) and the middle-80% range (p10 to p90) so the user can compare the asked price.
+- Cite count to convey breadth: "Across 307 LeBron Commons, the median FMV is $2 (middle 80% spans $1 to $25)."
+- Optionally name 1-3 sample_editions to make the answer concrete.
+- Frame the user's price relative to the distribution: at the median, above the 90th percentile, below the 10th percentile.
+- Do NOT invent quantiles or counts that aren't in the response.
+
+When mode = "single" (count = 1):
+- Surface the single edition's fmv with its confidence label and the exact set/player/tier the row carries.
+- "FMV is $X (HIGH confidence) for the LeBron James Common in Set Y."
+- Same Not-Financial-Advice and FMV-from-tool-call rules apply.
+
+When status = "no_results":
+- Say so honestly. Do NOT fall back to a remembered range or invent a "ballpark."
+- "The catalog has no editions matching that filter — try a broader query."
+
 ## Shopping queries (all collections)
 1. Scope the query to the active collection by default. If the user names a different collection, switch.
 2. Choose the right tool for the question:
@@ -495,6 +520,57 @@ Bad — directive: "That LeBron Rare is a solid buy at $18 — you should grab i
 Bad — fluff: "That's a great question! I'd be happy to help you analyze that moment's value. Let me break it down for you..."
 
 Respond in whatever language the user writes in.`;
+}
+
+// ── FMV distribution result formatter ─────────────────────────────────────────
+// Centralised JSON shape for tool output. Distribution mode surfaces the
+// {count, p10, p50, p90, min, max, samples[]} the model uses to give
+// percentile-aware FMV answers; single mode preserves the per-edition
+// shape the model already knows how to read. The collectionId echo helps
+// the model frame "across N NBA Top Shot editions" vs cross-collection.
+function formatDistributionForModel(
+  result: FmvDistributionResult,
+  collectionId: string | null
+): string {
+  if (result.status === "no_results") {
+    return JSON.stringify({ status: "no_results", message: result.message, collectionId });
+  }
+  if (result.mode === "single") {
+    return JSON.stringify({
+      status: "ok",
+      mode: "single",
+      collectionId,
+      edition: {
+        edition_id: result.edition.edition_id,
+        external_id: result.edition.external_id,
+        player: result.edition.player_name,
+        set: result.edition.set_name,
+        tier: result.edition.tier,
+        fmv: result.edition.fmv_usd,
+        confidence: result.edition.confidence,
+        updated_at: result.edition.computed_at,
+      },
+    });
+  }
+  return JSON.stringify({
+    status: "ok",
+    mode: "distribution",
+    collectionId,
+    count: result.count,
+    median_fmv: result.p50,
+    p10: result.p10,
+    p90: result.p90,
+    min_fmv: result.min_fmv,
+    max_fmv: result.max_fmv,
+    sample_editions: result.sample_editions.map((s) => ({
+      external_id: s.external_id,
+      player: s.player_name,
+      set: s.set_name,
+      tier: s.tier,
+      fmv: s.fmv_usd,
+      confidence: s.confidence,
+    })),
+  });
 }
 
 // ── Tool execution ────────────────────────────────────────────────────────────
@@ -608,7 +684,23 @@ async function executeTool(
 
   if (toolName === "search_catalog_deals") {
     if (isPinnacle(effectiveCollectionId)) {
-      return searchPinnacleDeals(supabase, toolInput, { source: "catalog" });
+      // Pinnacle: try the listing-aware searchPinnacleDeals first (preserves
+      // the smoke-test character_name probe behavior). When it returns
+      // no_results AND a character/setName/variant filter is present, fall
+      // through to the catalog distribution helper so a "what's Goofy worth?"
+      // style question always reaches pinnacle_editions.
+      const pinnacleListings = await searchPinnacleDeals(supabase, toolInput, { source: "catalog" });
+      const pinnacleParsed = JSON.parse(pinnacleListings);
+      if (pinnacleParsed.status !== "no_results") return pinnacleListings;
+      const character = toolInput.player ?? toolInput.character ?? null;
+      if (!character && !toolInput.setName && !toolInput.tier) return pinnacleListings;
+      const dist = await fetchPinnacleFmvDistribution(supabase, {
+        character,
+        setName: toolInput.setName ?? null,
+        variant: toolInput.tier ?? null,
+        sampleLimit: toolInput.limit ?? 5,
+      });
+      return formatDistributionForModel(dist, "disney-pinnacle");
     }
     try {
       let query = supabase
@@ -626,24 +718,41 @@ async function executeTool(
 
       const { data, error } = await query;
       if (error) return JSON.stringify({ status: "error", message: error.message });
-      if (!data || data.length === 0) {
-        return JSON.stringify({ status: "no_results", message: "No moments found matching those criteria." });
+      if (data && data.length > 0) {
+        return JSON.stringify({
+          status: "ok",
+          results: data.map((d: any) => ({
+            player: d.player_name,
+            set: d.set_name,
+            tier: d.tier,
+            serial: d.serial_number,
+            price: Number(d.ask_price),
+            fmv: Number(d.fmv),
+            discount_pct: Number(d.discount),
+            badges: d.badge_slugs,
+            buy_url: d.buy_url,
+          })),
+          total: data.length,
+        });
       }
-      return JSON.stringify({
-        status: "ok",
-        results: data.map((d: any) => ({
-          player: d.player_name,
-          set: d.set_name,
-          tier: d.tier,
-          serial: d.serial_number,
-          price: Number(d.ask_price),
-          fmv: Number(d.fmv),
-          discount_pct: Number(d.discount),
-          badges: d.badge_slugs,
-          buy_url: d.buy_url,
-        })),
-        total: data.length,
-      });
+      // Listings-side returned empty. Fall through to the catalog distribution
+      // helper so a query like "is $3 fair for LeBron Common?" still surfaces
+      // the catalog median ($2.00 across 60 LeBron Common editions in NBA TS)
+      // even when nothing is currently listed. Only fire the fallback when
+      // the user supplied a player / tier / set filter — otherwise an
+      // unfiltered "show me deals" query would return 500-row distributions
+      // that aren't useful.
+      if (toolInput.player || toolInput.tier || toolInput.setName) {
+        const dist = await fetchUnifiedFmvDistribution(supabase, {
+          collectionUuid: effectiveCollectionUuid,
+          player: toolInput.player ?? null,
+          setName: toolInput.setName ?? null,
+          tier: toolInput.tier ?? null,
+          sampleLimit: toolInput.limit ?? 5,
+        });
+        return formatDistributionForModel(dist, effectiveCollectionId ?? null);
+      }
+      return JSON.stringify({ status: "no_results", message: "No moments found matching those criteria." });
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: err.message });
     }
@@ -652,41 +761,60 @@ async function executeTool(
   if (toolName === "get_fmv") {
     const warn = editionKeyMismatchWarning(toolInput.editionKey);
     if (warn) return warn;
+
+    // Pinnacle path: triple-key join (character_name, set_name, variant_type)
+    // against pinnacle_editions + pinnacle_fmv_snapshots. The legacy
+    // getPinnacleFmv handler is preserved for the editionKey path so the
+    // /api/fmv pipeline-style response shape is unchanged for that branch;
+    // the playerName/characterName branch routes to the new distributional
+    // helper to surface catalog-wide stats when nothing is currently listed.
     if (isPinnacle(effectiveCollectionId)) {
-      return getPinnacleFmv(supabase, toolInput);
-    }
-    try {
       if (toolInput.editionKey) {
-        const url = new URL(`${base}/api/fmv`);
-        url.searchParams.set("edition", toolInput.editionKey);
-        if (effectiveCollectionId) url.searchParams.set("collectionId", effectiveCollectionId);
-        const res = await fetch(url.toString(), { signal: AbortSignal.timeout(8000) });
-        return JSON.stringify(await res.json());
+        return getPinnacleFmv(supabase, toolInput);
       }
-      if (toolInput.playerName) {
-        let query = supabase
-          .from("cached_listings")
-          .select("player_name, set_name, tier, serial_number, ask_price, fmv, discount, collection_id")
-          .ilike("player_name", `%${toolInput.playerName}%`)
-          .not("fmv", "is", null)
-          .limit(5);
-        if (effectiveCollectionUuid) query = query.eq("collection_id", effectiveCollectionUuid);
-        const { data, error } = await query;
-        if (error || !data?.length) {
-          return JSON.stringify({ status: "not_found", message: "No FMV data found for that player." });
-        }
+      const character = toolInput.playerName ?? toolInput.characterName ?? null;
+      if (!character && !toolInput.setName) {
         return JSON.stringify({
-          status: "ok",
-          results: data.map((r: any) => ({
-            player: r.player_name,
-            set: r.set_name,
-            tier: r.tier,
-            low_ask: Number(r.ask_price),
-            fmv: Number(r.fmv),
-          })),
+          status: "error",
+          message: "Provide editionKey, characterName, or setName.",
         });
       }
-      return JSON.stringify({ status: "error", message: "Provide editionKey or playerName." });
+      const result = await fetchPinnacleFmvDistribution(supabase, {
+        character,
+        setName: toolInput.setName ?? null,
+        variant: toolInput.tier ?? null,
+        sampleLimit: 5,
+      });
+      return formatDistributionForModel(result, "disney-pinnacle");
+    }
+
+    // Unified path: editions + fmv_snapshots is the canonical FMV catalog.
+    // cached_listings is intentionally NOT used here — it only contains
+    // currently-listed inventory, so 0 LeBron rows in cached_listings does
+    // not mean LeBron has no FMV. Editions table is the source of truth.
+    try {
+      if (toolInput.editionKey) {
+        const result = await fetchUnifiedFmvDistribution(supabase, {
+          collectionUuid: effectiveCollectionUuid,
+          editionKey: toolInput.editionKey,
+          sampleLimit: 5,
+        });
+        return formatDistributionForModel(result, effectiveCollectionId ?? null);
+      }
+      if (toolInput.playerName || toolInput.setName || toolInput.tier) {
+        const result = await fetchUnifiedFmvDistribution(supabase, {
+          collectionUuid: effectiveCollectionUuid,
+          player: toolInput.playerName ?? null,
+          setName: toolInput.setName ?? null,
+          tier: toolInput.tier ?? null,
+          sampleLimit: 5,
+        });
+        return formatDistributionForModel(result, effectiveCollectionId ?? null);
+      }
+      return JSON.stringify({
+        status: "error",
+        message: "Provide editionKey, playerName, setName, or tier.",
+      });
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: err.message });
     }
