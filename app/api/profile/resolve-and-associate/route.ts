@@ -33,7 +33,7 @@ const DAPPER_SSO_SLUGS = new Set([
 function siteUrl() {
   return (
     process.env.NEXT_PUBLIC_SITE_URL ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://rip-packs-city.vercel.app")
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://www.rippackscity.com")
   );
 }
 

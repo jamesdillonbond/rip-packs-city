@@ -61,7 +61,7 @@ function buildHtml(a: any, sniperUrl: string): string {
       </div>
     </div>
     <div style="padding:14px 24px;background:#0f0f13;border-top:1px solid #26262d;font-size:11px;color:#6b7280;text-align:center;">
-      Manage your alerts at <a href="https://rip-packs-city.vercel.app/profile" style="color:#9ca3af;">rip-packs-city.vercel.app/profile</a>
+      Manage your alerts at <a href="https://www.rippackscity.com/profile" style="color:#9ca3af;">rippackscity.com/profile</a>
     </div>
   </div>
 </body></html>`;
@@ -246,7 +246,7 @@ export async function GET(req: NextRequest) {
 
     const wantsEmail = a.notification_email && (a.channel === "email" || a.channel === "both");
     if (wantsEmail) {
-      const sniperUrl = "https://rip-packs-city.vercel.app/nba-top-shot/sniper";
+      const sniperUrl = "https://www.rippackscity.com/nba-top-shot/sniper";
       const subject = `🔔 RPC Alert: ${a.player_name ?? "Moment"} hit your target`;
       const send = await sendEmail(a.notification_email, subject, buildHtml(a, sniperUrl));
       if (send.ok) {

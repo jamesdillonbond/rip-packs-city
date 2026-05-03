@@ -19,7 +19,7 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const BASE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL || "https://rip-packs-city.vercel.app"
+  process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
 interface EditionRow {
   id: string

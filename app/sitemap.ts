@@ -31,7 +31,7 @@ import { createClient } from '@supabase/supabase-js'
 import { publishedCollections } from '@/lib/collections'
 import { METHODOLOGY_LIST } from '@/lib/analytics/methodology'
 
-const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://rip-packs-city.vercel.app'
+const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
 
 // Wallet directory grows slowly — 6h cache keeps the build fast without
 // stale wallet entries lingering forever.

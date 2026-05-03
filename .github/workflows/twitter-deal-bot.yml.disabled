@@ -14,7 +14,7 @@ jobs:
         run: |
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            "https://rip-packs-city.vercel.app/api/bots/deal-tweet")
+            "https://www.rippackscity.com/api/bots/deal-tweet")
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | head -n -1)

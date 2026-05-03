@@ -7,7 +7,7 @@ if (-not $env:INGEST_SECRET_TOKEN) {
 }
 
 $wallet = "0xbd94cade097e50ac"
-$baseUrl = "https://rip-packs-city.vercel.app/api/cost-basis-gql-backfill"
+$baseUrl = "https://www.rippackscity.com/api/cost-basis-gql-backfill"
 $token = $env:INGEST_SECRET_TOKEN
 
 $offset = 0

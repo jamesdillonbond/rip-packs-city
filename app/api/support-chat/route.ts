@@ -149,7 +149,7 @@ function checkRateLimit(sessionId: string): boolean {
 function siteUrl() {
   return (
     process.env.NEXT_PUBLIC_SITE_URL ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://rip-packs-city.vercel.app")
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://www.rippackscity.com")
   );
 }
 
@@ -1007,7 +1007,7 @@ async function executeTool(
         .join(", ");
       return JSON.stringify({
         status: "ok",
-        summary: `Your collection: ${data.totalMoments} moments, total FMV $${Number(data.totalFmv).toFixed(2)}. Top moments: ${topList}. Share your collection at https://rip-packs-city.vercel.app/share/${encodeURIComponent(toolInput.walletAddress)}`,
+        summary: `Your collection: ${data.totalMoments} moments, total FMV $${Number(data.totalFmv).toFixed(2)}. Top moments: ${topList}. Share your collection at ${siteUrl()}/share/${encodeURIComponent(toolInput.walletAddress)}`,
         raw: data,
       });
     } catch (err: any) {

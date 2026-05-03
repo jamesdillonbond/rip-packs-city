@@ -167,7 +167,7 @@ async function handler(req: NextRequest) {
                   <p><strong>FMV:</strong> $${fmv.toFixed(2)}</p>
                   <p><strong>Discount:</strong> ${roundedDiscount}% below FMV</p>
                   <br/>
-                  <p><a href="https://rip-packs-city.vercel.app/nba-top-shot/market">View on RPC Market →</a></p>
+                  <p><a href="https://www.rippackscity.com/nba-top-shot/market">View on RPC Market →</a></p>
                 `,
               }),
             });

@@ -8,7 +8,7 @@ if [ -z "$INGEST_SECRET_TOKEN" ]; then
 fi
 
 WALLET="0xbd94cade097e50ac"
-BASE_URL="https://rip-packs-city.vercel.app/api/cost-basis-gql-backfill"
+BASE_URL="https://www.rippackscity.com/api/cost-basis-gql-backfill"
 TOKEN="$INGEST_SECRET_TOKEN"
 
 OFFSET=0

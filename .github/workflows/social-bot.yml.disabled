@@ -32,7 +32,7 @@ jobs:
           fi
 
           RESPONSE=$(curl -s -w "\n%{http_code}" \
-            "https://rip-packs-city.vercel.app/api/social-bot?secret=${{ secrets.INGEST_SECRET_TOKEN }}${DRY_RUN_PARAM}")
+            "https://www.rippackscity.com/api/social-bot?secret=${{ secrets.INGEST_SECRET_TOKEN }}${DRY_RUN_PARAM}")
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | head -n -1)

@@ -16,7 +16,7 @@ Rip Packs City (RPC) is a production-grade NBA Top Shot collector intelligence p
 
 Stack: Next.js 16 App Router, React 19, TypeScript 5, Tailwind 4, @onflow/fcl, Supabase, Vercel.
 
-Live: https://rip-packs-city.vercel.app
+Live: https://www.rippackscity.com
 Repo: github.com/jamesdillonbond/rip-packs-city (public)
 
 ---
@@ -98,7 +98,7 @@ Shipped (16+ commits)
 
 - On-chain sales indexer: NFTStorefrontV2.ListingCompleted + TopShotMarketV3.MomentPurchased events, 250-block chunks, GQL fallback via Cloudflare proxy for unknown nftIDs, dedup via transaction_hash
 - Pipeline trigger endpoint: GET /api/pipeline-trigger?token= runs ingest→sales-indexer→fmv-recalc→listing-cache sequentially
-- Seeded wallet pre-cache: GET /api/seed-wallet-refresh?token= — sequential cache-first refresh of all active seeded_wallets (300ms throttle, RPC-based cache count bypasses PostgREST cap, username→0x resolution). Cron-job.org schedule: every 6h (`0 */6 * * *`): https://rip-packs-city.vercel.app/api/seed-wallet-refresh?token=$INGEST_SECRET_TOKEN
+- Seeded wallet pre-cache: GET /api/seed-wallet-refresh?token= — sequential cache-first refresh of all active seeded_wallets (300ms throttle, RPC-based cache count bypasses PostgREST cap, username→0x resolution). Cron-job.org schedule: every 6h (`0 */6 * * *`): https://www.rippackscity.com/api/seed-wallet-refresh?token=$INGEST_SECRET_TOKEN
 - Public seeded-wallets list: GET /api/seeded-wallets (optional ?tag=power_user, ?username=jamesdillonbond)
 - Historical sales backfill script: scripts/sales-backfill.mjs
 - Edition metadata backfill script: scripts/backfill-edition-metadata.mjs (team_name + stub names via GQL)

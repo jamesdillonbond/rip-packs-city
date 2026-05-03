@@ -140,7 +140,7 @@ Invoke-WebRequest -Method POST `
   -Headers $headers -Body $deployBody
 ```
 
-Verify: `curl -H "Authorization: Bearer <NEW_TOKEN>" https://rip-packs-city.vercel.app/api/ingest`
+Verify: `curl -H "Authorization: Bearer <NEW_TOKEN>" https://www.rippackscity.com/api/ingest`
 should return a normal ingest response, not 401.
 
 ---

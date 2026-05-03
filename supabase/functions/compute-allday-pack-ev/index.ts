@@ -36,7 +36,7 @@ const supabase = createClient(
 
 const H = {
   "Content-Type": "application/json",
-  "User-Agent": "RipPacksCity/1.0 (rip-packs-city.vercel.app)",
+  "User-Agent": "RipPacksCity/1.0 (www.rippackscity.com)",
   "Origin": "https://nflallday.com",
   "Referer": "https://nflallday.com/",
 }

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 
-const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://rip-packs-city.vercel.app'
+const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
 
 // Root layout metadata — import into app/layout.tsx as: export const metadata = rootMetadata
 const ROOT_TITLE = 'Rip Packs City \u2014 Flow Blockchain Collector Intelligence'

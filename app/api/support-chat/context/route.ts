@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
   try {
     const base =
       process.env.NEXT_PUBLIC_SITE_URL ||
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://rip-packs-city.vercel.app");
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://www.rippackscity.com");
     const sniperRes = await fetch(
       `${base}/api/sniper-feed?limit=1&minDiscount=15&sortBy=discount`,
       { signal: AbortSignal.timeout(6000) }

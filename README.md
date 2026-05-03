@@ -2,7 +2,7 @@
 
 Collector intelligence platform for Flow-blockchain NFTs — FMV pricing, deal sniper, pack EV, badge tracker, and portfolio analytics for serious collectors.
 
-Live: <https://rip-packs-city.vercel.app>
+Live: <https://www.rippackscity.com>
 
 ## What it is
 

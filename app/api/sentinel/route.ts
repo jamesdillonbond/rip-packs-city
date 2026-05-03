@@ -156,7 +156,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const sniperUrl = `${process.env.NEXT_PUBLIC_SITE_URL || "https://rip-packs-city.vercel.app"}/api/sniper-feed`;
+    const sniperUrl = `${process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"}/api/sniper-feed`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
     const res = await fetch(sniperUrl, { signal: controller.signal });

@@ -71,6 +71,6 @@ Weighted average price from recent on-chain sales with recency decay. Confidence
 - API: /api/sniper-feed, /api/wallet-search, /api/edition-history, /api/market-analytics
 
 ## Contact
-- Site: https://rip-packs-city.vercel.app
+- Site: https://www.rippackscity.com
 - Email: rippackscity@gmail.com
 - Twitter: @RipPacksCity

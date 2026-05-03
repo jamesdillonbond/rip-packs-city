@@ -15,7 +15,7 @@
 import * as fcl from "@onflow/fcl";
 
 const APP_IDENTIFIER = "Rip Packs City";
-const APP_ICON = "https://rip-packs-city.vercel.app/icon.png";
+const APP_ICON = "https://www.rippackscity.com/icon.png";
 const FALLBACK_DISCOVERY = "https://fcl-discovery.onflow.org/authn";
 
 let configured = false;

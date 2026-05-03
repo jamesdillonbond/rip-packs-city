@@ -18,7 +18,7 @@ import { organizationJsonLd } from "@/lib/seo"
 export const dynamic = "force-static"
 export const revalidate = 3600
 
-const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://rip-packs-city.vercel.app"
+const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
 export const metadata: Metadata = {
   title: "Rip Packs City — Flow Blockchain Collector Intelligence",

@@ -14,7 +14,7 @@ jobs:
         run: |
           RESPONSE=$(curl -s -w "\n%{http_code}" \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            "https://rip-packs-city.vercel.app/api/cron/stale-fmv-monitor")
+            "https://www.rippackscity.com/api/cron/stale-fmv-monitor")
           
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | head -n -1)
@@ -41,7 +41,7 @@ jobs:
         run: |
           RESPONSE=$(curl -s -w "\n%{http_code}" \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            "https://rip-packs-city.vercel.app/api/cron/data-integrity")
+            "https://www.rippackscity.com/api/cron/data-integrity")
           
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | head -n -1)

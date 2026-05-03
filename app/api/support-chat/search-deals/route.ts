@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
           circulation: row.circulation_count ?? null,
           badges,
           edition_key: row.external_id ?? "",
-          rpc_url: `https://rip-packs-city.vercel.app/nba-top-shot/sniper`,
+          rpc_url: `https://www.rippackscity.com/nba-top-shot/sniper`,
           buy_url: `https://www.nbatopshot.com`,
         };
       })

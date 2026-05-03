@@ -148,7 +148,7 @@ export default function EditProfilePage() {
                 spellCheck={false}
               />
               <div className="hint">
-                Public URL: {publicUrl ? <code>rip-packs-city.vercel.app{publicUrl}</code> : "set a username to enable"}
+                Public URL: {publicUrl ? <code>rippackscity.com{publicUrl}</code> : "set a username to enable"}
               </div>
             </div>
 
