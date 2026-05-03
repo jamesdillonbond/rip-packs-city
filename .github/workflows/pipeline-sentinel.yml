@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: Run Pipeline Sentinel
         run: |
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST https://rip-packs-city.vercel.app/api/sentinel \
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST https://www.rippackscity.com/api/sentinel \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             -H "Content-Type: application/json")
 

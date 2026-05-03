@@ -393,7 +393,7 @@ async function runListingCache() {
   )
 
   try {
-    const recalcUrl = `https://rip-packs-city.vercel.app/api/fmv-recalc`
+    const recalcUrl = `${process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"}/api/fmv-recalc`
     const res = await fetch(recalcUrl, {
       method: "POST",
       headers: { Authorization: `Bearer ${TOKEN}` },

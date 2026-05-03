@@ -31,7 +31,7 @@ jobs:
           HTTP_STATUS=$(curl -s -o /tmp/pack_drop_response.json -w "%{http_code}" \
             -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            https://rip-packs-city.vercel.app/api/bots/pack-drop)
+            https://www.rippackscity.com/api/bots/pack-drop)
 
           echo "HTTP Status: $HTTP_STATUS"
           echo "Response:"

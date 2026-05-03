@@ -4,7 +4,7 @@ if [ -z "$INGEST_SECRET_TOKEN" ]; then
   exit 1
 fi
 TOKEN="$INGEST_SECRET_TOKEN"
-BASE="https://rip-packs-city.vercel.app/api/ingest/backfill"
+BASE="https://www.rippackscity.com/api/ingest/backfill"
 
 for YEAR in 2025 2024; do
   echo "========== BACKFILLING $YEAR =========="

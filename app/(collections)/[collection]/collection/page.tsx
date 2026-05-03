@@ -1589,7 +1589,7 @@ export default function WalletPage() {
             {rows.length > 0 && input.trim() && (
               <button
                 onClick={function() {
-                  const shareUrl = "https://rip-packs-city.vercel.app/share/" + encodeURIComponent(input.trim())
+                  const shareUrl = "https://www.rippackscity.com/share/" + encodeURIComponent(input.trim())
                   navigator.clipboard.writeText(shareUrl)
                   setCopied(true)
                   setTimeout(function() { setCopied(false) }, 2000)

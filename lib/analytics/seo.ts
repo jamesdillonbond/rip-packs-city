@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 
 export const ANALYTICS_BASE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL || "https://rippackscity.com"
+  process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
 const DEFAULT_OG = "/api/og/default"
 

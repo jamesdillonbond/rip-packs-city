@@ -81,9 +81,9 @@ export async function GET() {
     description: "RIP PACKS CITY — FMV API with liquidity rating, outlier-filtered WAP, and daily price history. All values USD.",
     note: "Real FMV data from our LiveToken-powered ingest pipeline. All values USD.",
     apiUsage: {
-      single: "GET  https://rip-packs-city.vercel.app/api/fmv?edition={setID:playID}[&serial=42]",
-      batch:  "POST https://rip-packs-city.vercel.app/api/fmv  { editions: ['...', '...'], serial?: 42 }",
-      demo:   "GET  https://rip-packs-city.vercel.app/api/fmv/demo",
+      single: "GET  https://www.rippackscity.com/api/fmv?edition={setID:playID}[&serial=42]",
+      batch:  "POST https://www.rippackscity.com/api/fmv  { editions: ['...', '...'], serial?: 42 }",
+      demo:   "GET  https://www.rippackscity.com/api/fmv/demo",
     },
     editionKeyFormat: "setUUID:playUUID — from Top Shot's edition system",
     confidenceLevels: { high: "5+ sales/7d", medium: "2–4 sales/7d", low: "0–1 sales/7d" },

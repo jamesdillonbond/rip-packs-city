@@ -12,7 +12,7 @@ TOTAL=99999
 
 while [ $OFFSET -lt $TOTAL ]; do
   echo "Processing from offset $OFFSET..."
-  RESULT=$(curl -s "https://rip-packs-city.vercel.app/api/bulk-classify?wallet=0xbd94cade097e50ac&token=$INGEST_SECRET_TOKEN&offset=$OFFSET")
+  RESULT=$(curl -s "https://www.rippackscity.com/api/bulk-classify?wallet=0xbd94cade097e50ac&token=$INGEST_SECRET_TOKEN&offset=$OFFSET")
   echo "$RESULT"
   # Extract nextOffset from the last JSON line in the stream
   LAST_LINE=$(echo "$RESULT" | tail -1)

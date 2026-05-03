@@ -14,7 +14,7 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d '{"batchSize": 50}' \
-            https://rip-packs-city.vercel.app/api/allday-ingest)
+            https://www.rippackscity.com/api/allday-ingest)
           echo "All Day ingest status: $STATUS"
           cat /tmp/allday-ingest.json
           if [ "$STATUS" != "200" ]; then

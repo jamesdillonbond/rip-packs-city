@@ -10,7 +10,7 @@ import { NextRequest } from "next/server";
 
 export const runtime = "edge";
 
-const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://rip-packs-city.vercel.app";
+const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com";
 
 const COLLECTIONS = [
   "NBA Top Shot",
@@ -155,7 +155,7 @@ export async function GET(_req: NextRequest) {
               display: "flex",
             }}
           >
-            rip-packs-city.vercel.app
+            rippackscity.com
           </div>
           <div
             style={{

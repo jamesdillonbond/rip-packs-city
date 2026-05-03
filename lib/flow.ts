@@ -10,7 +10,7 @@ const MAINNET_CONFIG = {
   'discovery.wallet': 'https://accounts.meetdapper.com/fcl/authn-restricted',
   'discovery.wallet.method': 'POP/RPC',
   'app.detail.title': 'Rip Packs City',
-  'app.detail.icon': 'https://rip-packs-city.vercel.app/rip-packs-city-logo.png',
+  'app.detail.icon': 'https://www.rippackscity.com/rip-packs-city-logo.png',
   'app.detail.id': APP_IDENTIFIER,
   '0xFungibleToken': '0xf233dcee88fe0abe',
   '0xNonFungibleToken': '0x1d7e57aa55817448',
@@ -27,7 +27,7 @@ const TESTNET_CONFIG = {
   'discovery.wallet': 'https://fcl-discovery.onflow.org/testnet/authn',
   'discovery.wallet.method': 'POP/RPC',
   'app.detail.title': 'Rip Packs City (Testnet)',
-  'app.detail.icon': 'https://rip-packs-city.vercel.app/rip-packs-city-logo.png',
+  'app.detail.icon': 'https://www.rippackscity.com/rip-packs-city-logo.png',
 }
 
 let initialized = false

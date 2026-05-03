@@ -17,7 +17,7 @@ jobs:
 
       - name: Run smoke tests
         run: |
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST https://rip-packs-city.vercel.app/api/smoke-test \
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST https://www.rippackscity.com/api/smoke-test \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             -H "Content-Type: application/json")
 

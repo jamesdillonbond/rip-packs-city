@@ -13,7 +13,7 @@ jobs:
         run: |
           STATUS=$(curl -s -o /tmp/check-alerts.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            https://rip-packs-city.vercel.app/api/cron/check-alerts)
+            https://www.rippackscity.com/api/cron/check-alerts)
           BODY=$(cat /tmp/check-alerts.json)
           echo "Check alerts status: $STATUS"
           echo "$BODY"

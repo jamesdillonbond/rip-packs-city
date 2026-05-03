@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "walletAddress is required" }, { status: 400 })
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://rip-packs-city.vercel.app"
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
     const session = await getStripe().checkout.sessions.create({
       mode: "subscription",

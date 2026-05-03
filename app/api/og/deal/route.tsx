@@ -313,7 +313,7 @@ export async function GET(req: NextRequest) {
               display: "flex",
             }}
           >
-            rip-packs-city.vercel.app/sniper
+            rippackscity.com/sniper
           </div>
           <div
             style={{

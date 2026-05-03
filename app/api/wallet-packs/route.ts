@@ -5,7 +5,7 @@ const STUDIO_GRAPHQL = "https://api.production.studio-platform.dapperlabs.com/gr
 
 const STUDIO_HEADERS = {
   "Content-Type": "application/json",
-  "User-Agent": "RipPacksCity/1.0 (rip-packs-city.vercel.app)",
+  "User-Agent": "RipPacksCity/1.0 (www.rippackscity.com)",
   "Origin": "https://nbatopshot.com",
   "Referer": "https://nbatopshot.com/",
 }
