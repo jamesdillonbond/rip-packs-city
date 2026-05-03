@@ -201,7 +201,14 @@ export async function fetchUnifiedFmvDistribution(
   if (input.collectionUuid) query = query.eq("collection_id", input.collectionUuid)
   if (input.player) query = query.ilike("player_name", `%${input.player}%`)
   if (input.setName) query = query.ilike("set_name", `%${input.setName}%`)
-  if (input.tier) query = query.ilike("tier", `%${input.tier}%`)
+  // editions.tier is a Postgres enum (tier_type) — values COMMON, FANDOM,
+  // RARE, LEGENDARY, ULTIMATE. ILIKE doesn't work on enum columns without
+  // an explicit text cast, and the supabase-js .ilike() helper doesn't
+  // emit one, so we normalize to uppercase and use eq() instead. The
+  // model can pass any case (common, Common, COMMON) — sixth run of
+  // Test 2 confirmed the model now reaches for the tier param after the
+  // f55e022 prompt rule, but the upstream filter was silently failing.
+  if (input.tier) query = query.eq("tier", input.tier.toUpperCase())
   // Hard cap to keep the result set bounded — the model never needs more
   // than ~500 editions to compute a meaningful distribution. Larger queries
   // return the first 500 ordered by id, which is acceptable for a sampled
