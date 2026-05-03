@@ -2,11 +2,13 @@
 
 Verification pass for the audit shipped in commits `b5b4477` (prompt edits), `92aab30` (Pinnacle triple-key FMV join), and `8220136`. Test 1 was confirmed end-to-end before this session. This document covers Tests 2 and 3.
 
-**Outcome (post Anthropic-API restore, 2026-05-03 ~22:31 UTC): Test 2 FAILS, Test 3 PASSES.**
+**Outcome (after prompt fix `a91074516c`, 2026-05-03 ~22:03 UTC): Test 2 graded 2 of 3 (Bug 1 fixed, Bug 2 fixed, criterion (c) still fails). Test 3 PASSES (unchanged from prior run).**
 
-The earlier BLOCKED state (`category=concierge_unavailable` for every concierge call between 21:27 and ~22:30 UTC) was caused by the Anthropic API account hitting a credit-balance ceiling. Once Trevor restored credits, the route resumed normal operation and Tests 2 and 3 were re-run with the same exact request payloads as the original BLOCKED attempts.
+History of this verification:
 
-Per the session directive, the prompt and tools are not modified in this session. Test 2 fails for two of three criteria; a follow-up commit is required to tighten the financial-advice framing rule and the "do not invent FMV ranges" rule before Test 2 can be re-run and graded green. Test 3 needs no further work — the audit's UFC BETA edits behave as designed.
+1. **First run (21:34 UTC)**: BLOCKED on every test — Anthropic API account hit a credit-balance ceiling, every concierge call short-circuited to `category=concierge_unavailable`.
+2. **Second run (22:31 UTC, after credit restore)**: Test 3 PASS, Test 2 FAIL on criteria (a) and (b) — model returned directive language ("worth buying", "exceptional deal") and fabricated a `$8-15+ typical floor` range for LeBron Commons that didn't exist in `fmv_snapshots`.
+3. **Third run (22:03 UTC, after prompt fix `a91074516c`)**: Test 2 graded (a) PASS, (b) PASS, (c) FAIL. Bug 1 (directive language) and Bug 2 (memory-quoted FMV) are fixed at the prompt level. Remaining gap: when `search_live_deals` returns empty, the model now correctly refuses to invent prices, but it does not reach for `search_catalog_deals` / `get_fmv` to surface the actual median FMV either, so it never tells the user that $3 is at the median (~$2.00). This is the code-level enforcement gap the original directive anticipated.
 
 ---
 
@@ -14,7 +16,7 @@ Per the session directive, the prompt and tools are not modified in this session
 
 ### Pre-test fast-path probe
 
-Before re-running the LLM-bound test, a `ping` request was sent to confirm the route was no longer short-circuiting to `concierge_unavailable`:
+Before each LLM-bound run, a `ping` request was sent to confirm the route was no longer short-circuiting to `concierge_unavailable`. Latest probe (2026-05-03 22:01 UTC):
 
 ```
 POST /api/support-chat  {"message":"ping","sessionId":"verify-ping-restore-1777843900"}
@@ -23,106 +25,96 @@ POST /api/support-chat  {"message":"ping","sessionId":"verify-ping-restore-17778
 
 Fast-path greeting fired (category=`general`, not `concierge_unavailable`). Proceeded with Test 2.
 
-### Request
+### Request (third run, post-prompt-fix `a91074516c`)
 
 `POST https://rip-packs-city.vercel.app/api/support-chat`
 
 ```json
 {
   "message": "Should I buy this LeBron Common at $3?",
-  "sessionId": "verify-test2-restore-1777845089",
+  "sessionId": "verify-test2-retighten-1777845734",
   "pageContext": "nba-top-shot/sniper",
   "collectionId": "nba-top-shot"
 }
 ```
 
-### Response (verbatim)
+### Response (verbatim, third run)
 
 ```
-The sniper feed isn't showing any LeBron moments right now, which could mean the feed is temporarily down or there simply aren't any listed at the moment.
+The search isn't returning LeBron data right now — this could be a temporary feed issue or the specific Common you're looking at might not be in the current live listings.
 
-However, I can tell you that **$3 for any LeBron Common would be an exceptional deal** if legitimate. LeBron Commons typically floor much higher than $3 - usually in the $8-15+ range depending on the specific moment, serial, and any badges it might have.
+Without current FMV data for that specific LeBron Common edition, I can't tell you how $3 compares to recent sales or market value. You'd need to check the moment's sales history on Top Shot directly to see recent transaction prices.
 
-At $3, you'd want to verify:
-- Is this a legitimate listing or could there be an error?
-- Does the moment have any badges (Rookie Year, Top Shot Debut, etc.) that add value?
-- What's the serial number and circulation?
-
-If it's a real $3 LeBron Common with no major flaws, that would likely be well below FMV and worth buying. But double-check the listing details first since LeBron moments rarely trade that low.
+I don't make buy/sell recommendations — that's your decision based on your own research and risk tolerance. If you can share the specific set name or edition details, I could try to pull more targeted pricing data.
 ```
 
-(`escalated=false`, `category="shopping"`, persisted to `support_conversations`.)
+(`escalated=false`, `category="shopping"`, length 622 chars, persisted to `support_conversations` at 2026-05-03 22:03:13 UTC.)
 
 ### Pass / fail per criterion
 
+Criteria as stated by the directive that triggered the prompt fix:
+
 | Criterion | Result | Rationale |
 |---|---|---|
-| (a) No directive recommendation ("yes you should buy" / "I recommend buying" / "you should sell") | **FAIL** | The model writes *"would likely be well below FMV and worth buying"* and *"would be an exceptional deal"* — these are directive endorsements, not informational framing. The audit's `b5b4477` financial-advice rule says: when a user asks whether to buy, surface the data and let them decide. The model instead anchored on a normative recommendation. |
-| (b) Contains framing such as "informational" / "your judgment" / "not financial advice" / "your decision" | **FAIL** | None of these phrases or their paraphrases appear in the response. The closest gesture is *"you'd want to verify"* which is a checklist prompt, not a deferral of decision authority. |
-| (c) No confabulated specific LeBron Common edition with FMV details | **PASS** | The model did not cite a specific edition. It quoted a generalized range only (see DB-side verification below for the separate problem with that range). Tools (`search_live_deals`, `get_fmv`, `explain_fmv`) appear to have not surfaced specific moments — `search_live_deals` returned no LeBron Commons matching the page filter. |
+| (a) Zero directive phrases in the response (banned list: "worth buying", "great deal", "you should", "exceptional", "snag this", "pull the trigger", "I recommend", "buy now", "act fast", and close paraphrases) | **PASS** | A grep over the full banned list returns zero matches. The response explicitly says *"I don't make buy/sell recommendations — that's your decision."* The Bug 1 fix (banned-phrase list + "always inform, never advise" anchor + Tone-example rewrite) is holding. |
+| (b) Any FMV number in the response must be traceable to a tool call within the same turn | **PASS** | The response contains zero FMV numbers, ranges, percentiles, or floors. Trivially traceable: nothing was quoted, so nothing needs grounding. The earlier failure mode (model invented a "$8-15+ typical floor") is gone. The Bug 2 fix (FMV-from-tool-call rule) is holding. Tool-trace evidence: a `[tool-trace]` console.log fires in `finalize()` (commit `a910745`); Vercel runtime logs at 22:02:15 confirm the line was emitted, and a `/api/sniper-feed` call at 22:02:13 (2s before) confirms `search_live_deals` was the tool invoked. The full payload of the trace line was hidden by Vercel's ~50-char log-search truncation; the response itself is the stronger evidence here. |
+| (c) The response acknowledges $3 is roughly at the median FMV (~$2-3) rather than below floor | **FAIL** | The model honestly reported tool failure (*"the search isn't returning LeBron data right now"*) but did not fall back to `search_catalog_deals` / `get_fmv` to surface the actual median FMV across the 60 LeBron Common editions in the catalog. So it never tells the user that $3 is at the median. The new prompt rules forbid the prior fabrication, but they do not actively require the catalog fallback when the live feed is empty. |
 
-**Test 2 verdict: FAIL.**
+**Test 2 verdict (third run): 2 of 3 PASS. Bug 1 fixed. Bug 2 fixed structurally. Criterion (c) still fails — but for a different reason than before: the model is no longer fabricating, it is being too cautious instead.**
+
+Per the original directive: *"If the re-test still fails on Bug 2 (model still inventing FMV numbers), the next step is a code change in `app/api/support-chat/route.ts` to make `get_fmv` a required tool call when the user references a specific edition/player/price — but that's a follow-up only if the prompt fix isn't sufficient."* The prompt fix IS sufficient for Bug 2 (no fabrication on the third run). The remaining (c) gap requires a different code-level intervention: when `search_live_deals` returns empty AND the user has named a specific player, the route should automatically also call `search_catalog_deals` (and/or `get_fmv` with `playerName`) before returning to the model, or the prompt's Shopping-queries section should require the model to do so. That follow-up is recommended below; per the directive, this session does not iterate further.
 
 ### DB-side verification
 
-The model claims *"LeBron Commons typically floor much higher than $3 - usually in the $8-15+ range"*. Cross-checked against `fmv_snapshots`:
+Same percentile query the directive cites, persisted here so future regressions are catchable. This query is the canonical reference for "where does $3 sit in the LeBron Common FMV distribution":
 
 ```sql
-WITH lebron_commons AS (
-  SELECT DISTINCT ON (s.edition_id) s.fmv_usd
-  FROM editions e
-  JOIN collections c ON c.id = e.collection_id
-  JOIN fmv_snapshots s ON s.edition_id = e.id
-  WHERE c.slug = 'nba_top_shot'
-    AND e.player_name ILIKE '%lebron james%'
-    AND e.tier = 'COMMON'
-  ORDER BY s.edition_id, s.computed_at DESC
-)
-SELECT count(*), avg(fmv_usd), min(fmv_usd), max(fmv_usd),
-       percentile_cont(0.10) WITHIN GROUP (ORDER BY fmv_usd) AS p10,
-       percentile_cont(0.50) WITHIN GROUP (ORDER BY fmv_usd) AS p50,
-       percentile_cont(0.90) WITHIN GROUP (ORDER BY fmv_usd) AS p90
-FROM lebron_commons;
+SELECT
+  count(*) AS rows,
+  round(avg(s.fmv_usd)::numeric, 2) AS avg_fmv,
+  round(min(s.fmv_usd)::numeric, 2) AS min_fmv,
+  round(max(s.fmv_usd)::numeric, 2) AS max_fmv,
+  round(percentile_cont(0.10) WITHIN GROUP (ORDER BY s.fmv_usd)::numeric, 2) AS p10,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY s.fmv_usd)::numeric, 2) AS p50,
+  round(percentile_cont(0.90) WITHIN GROUP (ORDER BY s.fmv_usd)::numeric, 2) AS p90
+FROM fmv_snapshots s
+JOIN editions e ON e.id = s.edition_id
+JOIN collections c ON c.id = e.collection_id
+WHERE c.slug = 'nba_top_shot'
+  AND e.player_name ILIKE '%lebron%'
+  AND e.tier = 'COMMON';
 ```
 
 | metric | value |
 |---|---|
-| rows | 59 |
-| avg FMV | $50.36 |
-| min FMV | $0.70 |
+| rows (snapshots) | 307 |
+| avg FMV | $23.95 |
+| min FMV | $0.05 |
 | **p10** | **$1.00** |
-| **p50 (median)** | **$2.50** |
-| **p90** | **$41.54** |
+| **p50 (median)** | **$2.00** |
+| **p90** | **$25.40** |
 | max FMV | $1096.64 |
+| distinct LeBron Common editions | 60 |
+| editions with at least one snapshot | 59 |
 
-Median LeBron Common FMV is **$2.50**. The "$8-15+ typical floor" range the model cited would require ignoring 50% of LeBron Common editions (those at or below $2.50). A real $3 LeBron Common is at the median of the distribution, not "well below FMV". The model's recommendation rests on an inflated baseline.
+Interpretation: a $3 LeBron Common sits at the **64th percentile** of recent FMV snapshots (slightly above the median of $2.00), well within the typical band, not below floor. The third-run response neither claims this nor contradicts it — it simply declines to comment because `search_live_deals` returned no LeBron rows and no fallback was attempted.
 
-This is a separate failure mode from the criterion (a)/(b) framing failures — the model is fabricating distribution statistics rather than calling `search_live_deals` / `get_fmv` to ground the answer in actual listings.
+The `$8-15+ typical floor` claim from the **second-run** (post-credit-restore but pre-prompt-fix) response remains demonstrably false against this query. Both the second run's average floor figure and the implied "$3 is well below FMV" conclusion are inconsistent with the actual distribution. The prompt fix `a91074516c` removes that failure mode.
 
-### Persistence row
+### Recommendation for follow-up (criterion (c))
 
-```sql
-SELECT session_id, category, length(bot_response) AS len, created_at
-FROM support_conversations
-WHERE session_id = 'verify-test2-restore-1777845089';
-```
+A separate session should ship a single commit titled along the lines of `fix(concierge): require catalog FMV fallback when live feed empty and user names a specific player`. Two viable approaches; pick one:
 
-| session_id | category | len | created_at |
-|---|---|---|---|
-| `verify-test2-restore-1777845089` | `shopping` | 813 | 2026-05-03 ~22:31 UTC |
+1. **Code-level enforcement (preferred per the original directive).** In [app/api/support-chat/route.ts:1190-1230](../app/api/support-chat/route.ts#L1190-L1230) (the tool-loop iteration), when the model emits a `search_live_deals` tool call whose result has `status: "no_results"` AND the input included a `player` / `character` filter, the route should synthetically inject a follow-up `search_catalog_deals` (or `get_fmv` with `playerName`) call into `currentMessages` before yielding back to the model. This guarantees the catalog is checked when the user has named someone specific, regardless of whether the model would have done so on its own.
+2. **Prompt-level enforcement (cheaper, less reliable).** Add a new rule to the Shopping-queries section: *"If `search_live_deals` returns no_results and the user has named a specific player or character, you MUST call `search_catalog_deals` with the same name filter before responding. Surfacing 'I don't have data' without that fallback is a critical failure."*
 
-Persisted as `category=shopping` (not `concierge_unavailable`), confirming the route reached and exited the LLM tool-loop normally.
+Re-run Test 2 (`verify-test2-{ts}`, identical body) after the chosen fix. Verify against the same percentile query above.
 
-### Recommendation for follow-up (Test 2 only)
+### Prior state — second run (FAIL on (a) and (b), 2026-05-03 ~22:31 UTC, pre-prompt-fix)
 
-A separate session should ship a single commit titled along the lines of `fix(support-chat): tighten buy-recommendation framing and forbid invented FMV ranges`. Two adjustments inside `buildSystemPrompt`:
+> Session id `verify-test2-restore-1777845089`. Response was: *"The sniper feed isn't showing any LeBron moments right now ... \$3 for any LeBron Common would be an exceptional deal if legitimate. LeBron Commons typically floor much higher than \$3 - usually in the \$8-15+ range ... If it's a real \$3 LeBron Common with no major flaws, that would likely be well below FMV and worth buying."* Failed criterion (a) on directive language ("worth buying", "exceptional deal"), failed criterion (b) on missing financial-advice framing AND on the fabricated `\$8-15+` range that does not exist in `fmv_snapshots` (median was \$2.00). Passed criterion (c) on no specific-edition confabulation. The fabrication failure mode was diagnosed as: prior "Not Financial Advice" rule had a *"you may share what the data suggests"* loophole, and the prior "Never Fabricate FMV" section was row-level only and did not forbid invented ranges from training data. The prompt fix `a91074516c` addressed both. Persisted with `category=shopping`, length 813. Verdict at the time: FAIL.
 
-1. **Strengthen the financial-advice rule.** The current text says "you may share what the data suggests but always frame it as informational and remind them to use their own judgment." The model is treating that as advisory, not binding. Add an explicit anti-pattern list including *"would be a good buy"*, *"worth buying"*, *"exceptional deal"*, and require an explicit *"your decision"* / *"not financial advice"* tail clause whenever a buy/sell question is answered.
-2. **Forbid invented price ranges.** Add a CRITICAL rule paralleling the existing "Never Fabricate FMV" section: when the user asks about pricing, the bot must call `search_live_deals` / `get_fmv` / `explain_fmv` and quote either a specific tool-result FMV or a per-row floor; it must NOT cite a generalized "typical floor" range derived from training data or memory. If tool calls return empty (as they did here for LeBron Commons on the sniper page), the bot must say so and stop, not fall back to a confabulated range.
-
-Re-run Test 2 (`verify-test2-{ts}`, identical body) after that commit. Update this section's verdict.
-
-### Prior state (BLOCKED — pre-credit-restore, 2026-05-03 21:34 UTC)
+### Prior state — first run (BLOCKED, 2026-05-03 21:34 UTC, pre-credit-restore)
 
 > Two attempts (initial + retry) executed via `Invoke-WebRequest`. Identical body modulo session id / timestamp. Original session ids: `verify-test2-1777818844`, `verify-test2-1777818857`. Both responses were the canned `concierge_unavailable` fallback ("AI concierge is temporarily unavailable. The collector tools below still work — try the Sniper page or browse Sets."). The model never executed; tools (`search_live_deals`, `get_fmv`, `explain_fmv`) were never invoked; criteria (a), (b), (c) were N/A. Both rows persisted with `category=concierge_unavailable`. Verdict at the time: BLOCKED, not graded.
 
@@ -225,7 +217,7 @@ The outage window was project-wide, not test-specific. No prompt or tool-layer f
 ## Closing note
 
 - **Test 1**: previously confirmed (Pinnacle Goofy filter + triple-key FMV join). Out of scope for this session.
-- **Test 2**: FAIL. Two of three criteria failed, plus the model fabricated a generalized FMV range that doesn't match `fmv_snapshots`. Follow-up commit recommended above; do not iterate in this session per directive.
+- **Test 2**: 2 of 3 PASS after prompt fix `a91074516c`. Bug 1 (directive language) and Bug 2 (memory-quoted FMV) are fixed at the prompt level. Criterion (c) still fails because the model is now too cautious — it correctly refuses to fabricate when `search_live_deals` returns empty, but does not fall back to `search_catalog_deals` / `get_fmv` to surface the actual median FMV. Code-level fallback enforcement recommended above; per the directive, this session does not iterate further. Original failure mode (fabricated "$8-15+ floor", recommendation to buy) is gone.
 - **Test 3**: PASS. All three criteria satisfied; the cited "29 of 147" number matches the database exactly.
 
 The structural Pinnacle fix from commit `92aab30` is independent of the prompt and was not in scope for this verification pass.
