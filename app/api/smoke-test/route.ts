@@ -491,15 +491,24 @@ async function runSmokeTests() {
           signal: AbortSignal.timeout(25000),
         });
         if (!res.ok) return { name, soft: true, passed: false, detail: `HTTP ${res.status}` };
-        const body = await res.json().catch(() => null);
-        const text = String(body?.response ?? "").toLowerCase();
+        const rawBody = await res.text();
+        const parsed = (() => { try { return JSON.parse(rawBody); } catch { return null; } })();
+        const text = String(parsed?.response ?? "").toLowerCase();
+        // Reject:
+        //  - empty / no-results model output (the Pinnacle catalog has Goofy
+        //    listings; an empty answer means the routing or filter regressed)
+        //  - "something went wrong" generic-error fallback (regression on the
+        //    Anthropic-error path leaking into the user-facing copy)
+        //  - response body's top-level category=error from the route handler
         const looksEmpty = !text || /no\s+(deals|results|moments|pins)\s+found/.test(text);
-        return {
-          name,
-          soft: true,
-          passed: !looksEmpty,
-          detail: looksEmpty ? "empty/no-results response" : `len=${text.length}`,
-        };
+        const looksGenericError = /something\s+went\s+wrong/i.test(text);
+        const looksRouteError = /"category"\s*:\s*"error"/i.test(rawBody);
+        const failed = looksEmpty || looksGenericError || looksRouteError;
+        const detail = looksEmpty ? "empty/no-results response"
+          : looksGenericError ? "generic 'something went wrong' fallback"
+          : looksRouteError ? "route returned category=error"
+          : `len=${text.length}`;
+        return { name, soft: true, passed: !failed, detail };
       } catch (e: any) {
         return { name, soft: true, passed: false, detail: e?.message ?? String(e) };
       }
