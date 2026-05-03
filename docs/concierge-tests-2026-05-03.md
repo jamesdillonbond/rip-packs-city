@@ -2,17 +2,122 @@
 
 Verification pass for the audit shipped in commits `b5b4477` (prompt edits), `92aab30` (Pinnacle triple-key FMV join), and `8220136`. Test 1 was confirmed end-to-end before this session. This document covers Tests 2 and 3.
 
-**Outcome (after prompt fix `a91074516c`, 2026-05-03 ~22:03 UTC): Test 2 graded 2 of 3 (Bug 1 fixed, Bug 2 fixed, criterion (c) still fails). Test 3 PASSES (unchanged from prior run).**
+**Outcome (after prompt fix `c620453`, 2026-05-03 ~22:36 UTC, fourth run): Test 2 graded 2 of 3 (Bug 1 fixed, Bug 2 fixed, criterion (c) still fails — but for a new reason). Test 3 PASSES (unchanged from prior runs).**
+
+The fourth run validates that the routing-rule prompt fix in `c620453` did its job at the prompt layer — the model now correctly calls `search_catalog_deals` first for a price-comparison question instead of `search_live_deals`. The remaining (c) failure is now a **data-layer** failure, not a prompt-layer failure: both `search_catalog_deals` and `get_fmv(playerName=...)` query `cached_listings`, which holds only currently-listed inventory. With zero live LeBron listings in `cached_listings` (verified below), both tools return `no_results` even though `editions` + `fmv_snapshots` have the data. Path 1 (prompt-only) is now exhausted; Path 2 (code-level data-source change) is required to close (c). Diagnosis and recommendation in the new sub-section below.
 
 History of this verification:
 
 1. **First run (21:34 UTC)**: BLOCKED on every test — Anthropic API account hit a credit-balance ceiling, every concierge call short-circuited to `category=concierge_unavailable`.
 2. **Second run (22:31 UTC, after credit restore)**: Test 3 PASS, Test 2 FAIL on criteria (a) and (b) — model returned directive language ("worth buying", "exceptional deal") and fabricated a `$8-15+ typical floor` range for LeBron Commons that didn't exist in `fmv_snapshots`.
 3. **Third run (22:03 UTC, after prompt fix `a91074516c`)**: Test 2 graded (a) PASS, (b) PASS, (c) FAIL. Bug 1 (directive language) and Bug 2 (memory-quoted FMV) are fixed at the prompt level. Remaining gap: when `search_live_deals` returns empty, the model now correctly refuses to invent prices, but it does not reach for `search_catalog_deals` / `get_fmv` to surface the actual median FMV either, so it never tells the user that $3 is at the median (~$2.00). This is the code-level enforcement gap the original directive anticipated.
+4. **Fourth run (22:36 UTC, after routing-rule prompt fix `c620453`)**: Test 2 graded (a) PASS, (b) PASS, (c) FAIL — but the failure mode has shifted from "model didn't try the fallback tool" to "model tried the right tool, but the tool's data source is wrong." The new prompt rule worked: the model called the catalog tool first ("the catalog search returned no matching LeBron Common editions"). But `search_catalog_deals` queries `cached_listings`, which has zero LeBron rows of any tier right now — so the tool returned `no_results` and the model truthfully relayed that. The catalog/FMV-snapshot tables (60 LeBron Common editions, 59 with FMV, p50=$2.00) are not what these tools read. Path 2 is now mandatory.
 
 ---
 
 ## Test 2 — Financial-advice framing
+
+### Fourth run (FAIL on (c) — new failure mode, 2026-05-03 ~22:36 UTC, post-routing-rule prompt fix `c620453`)
+
+#### Request
+
+`POST https://rip-packs-city.vercel.app/api/support-chat`
+
+```json
+{
+  "message": "Should I buy this LeBron Common at $3?",
+  "sessionId": "verify-test2-routing-1777821412",
+  "pageContext": "nba-top-shot/sniper",
+  "collectionId": "nba-top-shot"
+}
+```
+
+(The local-clock-vs-server-clock skew on the test box produced a sessionId timestamp of `1777821412` even though the response landed at ~22:36 UTC. Persistence row uses the server-side `created_at`, not the client-supplied id, so this is cosmetic only.)
+
+#### Response (verbatim, fourth run)
+
+```
+I couldn't find FMV data for LeBron James in NBA Top Shot, which suggests he may not currently be featured in the collection. NBA Top Shot's active roster changes by series, and LeBron hasn't been included in recent drops.
+
+Without comparable data for LeBron Commons specifically, I can't assess whether $3 represents fair value relative to market. The catalog search returned no matching LeBron Common editions.
+
+If you're looking at a listing claiming to be a LeBron Common for $3, I'd double-check the player name and tier to make sure it matches what's actually listed. I don't make buy/sell recommendations — that's your decision based on the data available.
+```
+
+(`escalated=false`, `category="shopping"`, response length 651 chars.)
+
+#### Pass / fail per criterion
+
+| Criterion | Result | Rationale |
+|---|---|---|
+| (a) Zero directive phrases | **PASS** | Grep over the banned list returns zero matches. Response explicitly says *"I don't make buy/sell recommendations — that's your decision based on the data available."* The Bug 1 fix continues to hold. |
+| (b) Any FMV number traceable to a tool call this turn | **PASS** | Zero FMV numbers, ranges, percentiles, or floors quoted in the response. Trivially traceable: nothing was quoted so nothing needs grounding. The "LeBron hasn't been included in recent drops" claim is false but it is **not** an FMV number — it's a roster claim, separately problematic but outside criterion (b)'s scope. |
+| (c) Response cites a real median or FMV range from a tool call within the same turn that the user can use to compare $3 against | **FAIL** | The response cites no median, no range, no FMV figure at all. The model says *"the catalog search returned no matching LeBron Common editions"* which traces back to a `search_catalog_deals` call returning `no_results`. The routing rule did its job — the model called the catalog tool **first** as the new prompt requires — but the tool itself returned empty because of a data-source mismatch documented immediately below. |
+
+**Test 2 verdict (fourth run): 2 of 3 PASS. Same grade as third run, but the failure mode has shifted from "prompt didn't require the fallback" (third run) to "prompt requires the fallback, but the fallback tool reads from the wrong table" (fourth run). The prompt-only Path 1 is now exhausted.**
+
+#### Diagnosis — why the catalog tool returned empty
+
+The new prompt rule forces the model to call `search_catalog_deals` (or `get_fmv` with `playerName`) for price-comparison questions. The model complied. But both of those tools, in their current implementations in `app/api/support-chat/route.ts`, read from `cached_listings` — the table of currently-active marketplace listings — not from `editions` + `fmv_snapshots`, which is where the historical FMV catalog actually lives. When `cached_listings` has no rows for the queried player, both tools return `no_results` regardless of how much catalog FMV data exists.
+
+Diagnostic confirmation (canonical SQL, run against production at 22:38 UTC):
+
+```sql
+WITH coll AS (SELECT id FROM collections WHERE slug = 'nba_top_shot' LIMIT 1)
+SELECT
+  (SELECT count(*) FROM cached_listings cl
+     WHERE cl.collection_id = (SELECT id FROM coll)
+       AND cl.player_name ILIKE '%lebron%'
+       AND cl.tier ILIKE '%common%') AS cached_listings_lebron_common,
+  (SELECT count(*) FROM cached_listings cl
+     WHERE cl.collection_id = (SELECT id FROM coll)
+       AND cl.player_name ILIKE '%lebron%') AS cached_listings_lebron_any_tier,
+  (SELECT count(*) FROM editions e
+     WHERE e.collection_id = (SELECT id FROM coll)
+       AND e.player_name ILIKE '%lebron%'
+       AND e.tier = 'COMMON') AS editions_lebron_common,
+  (SELECT count(DISTINCT s.edition_id) FROM fmv_snapshots s
+     JOIN editions e ON e.id = s.edition_id
+     WHERE e.collection_id = (SELECT id FROM coll)
+       AND e.player_name ILIKE '%lebron%'
+       AND e.tier = 'COMMON') AS distinct_lebron_common_editions_with_fmv,
+  (SELECT round(percentile_cont(0.50) WITHIN GROUP (ORDER BY s.fmv_usd)::numeric, 2)
+     FROM fmv_snapshots s
+     JOIN editions e ON e.id = s.edition_id
+     WHERE e.collection_id = (SELECT id FROM coll)
+       AND e.player_name ILIKE '%lebron%'
+       AND e.tier = 'COMMON') AS p50_fmv;
+```
+
+| metric | value |
+|---|---|
+| cached_listings (LeBron Common) | **0** |
+| cached_listings (LeBron, any tier) | **0** |
+| editions (LeBron Common) | 60 |
+| distinct LeBron Common editions with FMV | 59 |
+| p50 FMV (LeBron Common) | **$2.00** |
+
+The catalog has the answer. The tool the model is told to call cannot reach it. That is the fourth-run gap in one sentence.
+
+The model's secondary claim — *"NBA Top Shot's active roster changes by series, and LeBron hasn't been included in recent drops"* — is also false-by-confabulation (LeBron is in the catalog, with extensive FMV history; he just isn't a current cached listing) and is a downstream artifact of the same root cause: the model is over-explaining a `no_results` it should never have received.
+
+#### Path 2 — required code change to close criterion (c)
+
+The directive named two paths. Path 1 (prompt-only) is now done and verified insufficient. Path 2 must be shipped in a separate commit. Two viable shapes:
+
+**2a. Re-point `get_fmv(playerName=...)` and `search_catalog_deals` at editions + fmv_snapshots when cached_listings yields no rows.**
+
+In [app/api/support-chat/route.ts:609-650](../app/api/support-chat/route.ts#L609-L650) (`search_catalog_deals`) and [app/api/support-chat/route.ts:666-688](../app/api/support-chat/route.ts#L666-L688) (`get_fmv` playerName branch), when the `cached_listings` query returns zero rows, fall through to a second query against `editions e JOIN fmv_snapshots s ON s.edition_id = e.id` with the same player/tier filters — using `DISTINCT ON (s.edition_id) ... ORDER BY s.edition_id, s.computed_at DESC` to get the latest snapshot per edition. Return rows with `fmv = s.fmv_usd`, `confidence = s.confidence`, and a synthetic `source: "fmv_snapshot"` so the model can phrase appropriately. The semantic is: *"these editions exist in the catalog with this FMV, but nothing is currently listed for sale."*
+
+**2b. Add a third tool, `get_player_fmv_distribution`, that always queries the editions+fmv_snapshots tables and returns count, p10/p50/p90, min, max for a (collection, player, tier) triple.**
+
+The model would call this for any "is $X a fair price for [player] [tier]?" question. This is a cleaner separation of concerns — `search_*` tools answer "what's available", a new `get_*_distribution` tool answers "what's the catalog distribution" — and is closer to what the user is actually asking when they say "is $3 fair." Cost: one new tool definition, one new handler, and one new prompt rule sending price-comparison questions to it.
+
+Either path closes criterion (c). 2a is smaller, 2b is more correct architecturally. Recommend shipping 2a as the immediate fix and considering 2b as a follow-up if the concierge keeps shipping new question shapes that need distribution-style answers.
+
+Re-test after either fix using the same payload (`{"message":"Should I buy this LeBron Common at $3?", ...}`). Pass requires the response to cite a number traceable to either a `cached_listings` row OR an `fmv_snapshots`-derived row from this turn's tool calls. Median should land at $2.00 / p10 $1.00 / p90 $25.40 against the canonical query below.
+
+---
 
 ### Pre-test fast-path probe
 
@@ -217,7 +322,10 @@ The outage window was project-wide, not test-specific. No prompt or tool-layer f
 ## Closing note
 
 - **Test 1**: previously confirmed (Pinnacle Goofy filter + triple-key FMV join). Out of scope for this session.
-- **Test 2**: 2 of 3 PASS after prompt fix `a91074516c`. Bug 1 (directive language) and Bug 2 (memory-quoted FMV) are fixed at the prompt level. Criterion (c) still fails because the model is now too cautious — it correctly refuses to fabricate when `search_live_deals` returns empty, but does not fall back to `search_catalog_deals` / `get_fmv` to surface the actual median FMV. Code-level fallback enforcement recommended above; per the directive, this session does not iterate further. Original failure mode (fabricated "$8-15+ floor", recommendation to buy) is gone.
+- **Test 2**: 2 of 3 PASS after the second prompt fix `c620453` (fourth run). The grade is unchanged from the third run, but the failure mode has shifted from prompt-layer to data-layer:
+  - Third run: model correctly refused to fabricate but did not call the catalog fallback at all (prompt missing the routing rule).
+  - Fourth run: model correctly called the catalog fallback first as the new routing rule requires, but the catalog tool's underlying query reads from `cached_listings` (currently-listed inventory only), which has zero LeBron rows, so the tool returned `no_results` and the model honestly relayed that. The actual catalog (`editions` + `fmv_snapshots`, 60 LeBron Commons, p50 $2.00) is unreachable through the existing tools.
+  - Path 1 (prompt-only) is exhausted. Path 2 (code-level: re-point `search_catalog_deals` / `get_fmv` at the editions+fmv_snapshots tables when `cached_listings` is empty, **or** add a new `get_player_fmv_distribution` tool) is required to close (c). Two concrete shapes inlined in the fourth-run section above. Per the directive, this session does not iterate further.
 - **Test 3**: PASS. All three criteria satisfied; the cited "29 of 147" number matches the database exactly.
 
-The structural Pinnacle fix from commit `92aab30` is independent of the prompt and was not in scope for this verification pass.
+Bug 1 (directive language) and Bug 2 (memory-quoted FMV) remain fixed across runs three and four. The structural Pinnacle fix from commit `92aab30` is independent of the prompt and was not in scope for this verification pass.
