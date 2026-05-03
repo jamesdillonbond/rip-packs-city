@@ -47,6 +47,8 @@ export interface Collection {
   supabaseCollectionId?: string
   /** Short plain-English pitch used by SEO + empty states. */
   pitch?: string
+  /** Optional release-stage badge — rendered on the homepage card and overview header. */
+  badge?: "BETA" | "ALPHA"
   /** Per-collection news feed — rendered on overview. Keep 3-6 items. */
   news?: Array<{ title: string; date: string; summary: string; url: string }>
 }
@@ -165,14 +167,15 @@ export const COLLECTIONS: Collection[] = [
     accent: "#EF4444",
     icon: "\u{1F94A}",
     pages: ["overview", "collection", "sniper", "analytics"],
-    published: false,
+    published: true,
+    badge: "BETA",
     flowContractName: "UFC_NFT",
     contractAddress: "0x329feb3ab062d289",
     contractName: "UFC_NFT",
     flowtyCollectionFilter: "0x329feb3ab062d289/UFC_NFT",
     cadenceCollectionPath: "/public/UFC_NFTCollection",
     supabaseCollectionId: "9b4824a8-736d-4a96-b450-8dcc0c46b023",
-    pitch: "Catalog browser for UFC Strike on Flow. Near-zero on-chain volume — post-Aptos migration coverage planned.",
+    pitch: "Catalog browser for UFC Strike on Flow — 147 editions tracked, 29 with FMV. Beta coverage; post-Aptos migration backfill in progress.",
   },
   {
     id: "panini-blockchain",
