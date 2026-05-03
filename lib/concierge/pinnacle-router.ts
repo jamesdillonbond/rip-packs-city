@@ -33,40 +33,71 @@ interface DealRow {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Supabase = any
 
-async function fetchFmvByEditionKeys(supabase: Supabase, editionKeys: string[]) {
-  if (!editionKeys.length) return new Map<string, number>()
-  // pinnacle_fmv_snapshots.edition_id matches pinnacle_editions.id (text), but
-  // pinnacle_cached_listings joins by edition_key. Map listings → editions →
-  // FMV via edition_key → id.
+// Join cached_listings rows to FMV by (character_name, set_name, variant_type)
+// rather than by edition_key alone. pinnacle_cached_listings.edition_key is
+// NOT character-discriminating: multiple character_names share the same
+// edition_key (e.g. WDAS-OEV1-MFWA:Standard:1 carries Goofy, Minnie, and
+// other Winter Adventures rows in cached_listings even though
+// pinnacle_editions only registers Minnie at that key). Joining by
+// edition_key alone silently mis-attributed FMV across characters
+// ("Goofy at $1, FMV $29 → 97% off!" was actually Minnie's $29 FMV).
+//
+// pinnacle_editions has unique (character_name, set_name, variant_type)
+// triples per row, so this triple is the correct character-aware join key.
+// If a triple has no row in pinnacle_editions, FMV is null — the listing
+// surfaces but with no fabricated discount.
+type ListingTriple = {
+  character_name: string | null
+  set_name: string | null
+  variant_type: string | null
+}
+
+function tripleKey(t: ListingTriple): string {
+  return `${(t.character_name ?? "").toLowerCase().trim()}||${(t.set_name ?? "").toLowerCase().trim()}||${(t.variant_type ?? "").toLowerCase().trim()}`
+}
+
+async function fetchFmvByListingTriples(supabase: Supabase, triples: ListingTriple[]) {
+  const empty = new Map<string, number>()
+  if (!triples.length) return empty
+  const characters = Array.from(
+    new Set(triples.map((t) => t.character_name).filter((c): c is string => !!c))
+  )
+  if (!characters.length) return empty
   const { data: editions } = await supabase
     .from("pinnacle_editions")
-    .select("id, edition_key")
-    .in("edition_key", editionKeys)
-  const keyToId = new Map<string, string>()
+    .select("id, character_name, set_name, variant_type")
+    .in("character_name", characters)
+  const tripleToId = new Map<string, string>()
   for (const row of editions ?? []) {
-    if (row.edition_key && row.id) keyToId.set(row.edition_key, row.id)
+    if (!row.id) continue
+    tripleToId.set(
+      tripleKey({ character_name: row.character_name, set_name: row.set_name, variant_type: row.variant_type }),
+      row.id
+    )
   }
-  const ids = Array.from(new Set(keyToId.values()))
-  if (!ids.length) return new Map<string, number>()
+  const ids = Array.from(new Set(tripleToId.values()))
+  if (!ids.length) return empty
   const { data: fmvRows } = await supabase
     .from("pinnacle_fmv_snapshots")
     .select("edition_id, fmv_usd, computed_at")
     .in("edition_id", ids)
     .order("computed_at", { ascending: false })
-  // Take the most recent snapshot per edition_id.
   const idToFmv = new Map<string, number>()
   for (const row of fmvRows ?? []) {
     if (!idToFmv.has(row.edition_id) && row.fmv_usd != null) {
       idToFmv.set(row.edition_id, Number(row.fmv_usd))
     }
   }
-  // Project back onto edition_key.
-  const keyToFmv = new Map<string, number>()
-  for (const [key, id] of keyToId) {
-    const fmv = idToFmv.get(id)
-    if (fmv != null) keyToFmv.set(key, fmv)
+  const tripleToFmv = new Map<string, number>()
+  for (const t of triples) {
+    const k = tripleKey(t)
+    const id = tripleToId.get(k)
+    if (id) {
+      const fmv = idToFmv.get(id)
+      if (fmv != null) tripleToFmv.set(k, fmv)
+    }
   }
-  return keyToFmv
+  return tripleToFmv
 }
 
 export async function searchPinnacleDeals(
@@ -90,15 +121,19 @@ export async function searchPinnacleDeals(
     if (!rows || rows.length === 0) {
       return JSON.stringify({ status: "no_results", message: "No Pinnacle listings found matching those criteria." })
     }
-    const keyToFmv = await fetchFmvByEditionKeys(
+    const tripleToFmv = await fetchFmvByListingTriples(
       supabase,
-      rows.map((r: { edition_key: string }) => r.edition_key).filter(Boolean)
+      rows.map((r: {
+        character_name: string | null; set_name: string | null; variant_type: string | null;
+      }) => ({ character_name: r.character_name, set_name: r.set_name, variant_type: r.variant_type }))
     )
     const enriched: DealRow[] = rows.map((r: {
       edition_key: string; character_name: string | null; franchise: string | null;
       variant_type: string | null; set_name: string | null; ask_price: number; buy_url: string | null;
     }) => {
-      const fmv = keyToFmv.get(r.edition_key) ?? null
+      const fmv = tripleToFmv.get(tripleKey({
+        character_name: r.character_name, set_name: r.set_name, variant_type: r.variant_type,
+      })) ?? null
       const ask = Number(r.ask_price)
       const discount_pct = fmv != null && fmv > 0 ? Math.round(((fmv - ask) / fmv) * 100) : null
       return {
@@ -306,10 +341,12 @@ export async function searchPinnacleByName(
     .ilike("character_name", `%${name}%`)
     .order("ask_price", { ascending: true })
     .limit(perCollection)
-  const editionKeys = (rows ?? [])
-    .map((r: { edition_key: string }) => r.edition_key)
-    .filter(Boolean)
-  const keyToFmv = await fetchFmvByEditionKeys(supabase, editionKeys)
+  const tripleToFmv = await fetchFmvByListingTriples(
+    supabase,
+    (rows ?? []).map((r: {
+      character_name: string | null; set_name: string | null; variant_type: string | null;
+    }) => ({ character_name: r.character_name, set_name: r.set_name, variant_type: r.variant_type }))
+  )
   return {
     collection: "Disney Pinnacle",
     collectionId: PINNACLE_COLLECTION_ID,
@@ -317,7 +354,9 @@ export async function searchPinnacleByName(
       edition_key: string; character_name: string | null; franchise: string | null;
       variant_type: string | null; set_name: string | null; ask_price: number | null; buy_url: string | null;
     }) => {
-      const fmv = keyToFmv.get(r.edition_key) ?? null
+      const fmv = tripleToFmv.get(tripleKey({
+        character_name: r.character_name, set_name: r.set_name, variant_type: r.variant_type,
+      })) ?? null
       const ask = r.ask_price != null ? Number(r.ask_price) : null
       const discount_pct =
         fmv != null && fmv > 0 && ask != null ? Math.round(((fmv - ask) / fmv) * 100) : null

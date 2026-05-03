@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { createClient } from "@supabase/supabase-js";
+import { searchPinnacleDeals } from "@/lib/concierge/pinnacle-router";
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://rip-packs-city.vercel.app";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -504,16 +505,106 @@ async function runSmokeTests() {
       }
     })(),
 
+    // Pinnacle data-layer integrity — call searchPinnacleDeals directly with
+    // player='Goofy' and assert EVERY returned row's player is actually Goofy.
+    // This is a HARD test (not soft) because it doesn't depend on Anthropic;
+    // it's a pure SQL/Supabase check. Catches the May 2026 confabulation bug
+    // at its source: even if the model's text-output check passes by chance,
+    // a wrong row at this layer guarantees the bot will lie.
+    (async (): Promise<TestResult> => {
+      const name = "Pinnacle searchPinnacleDeals filters character_name correctly";
+      try {
+        const json = await searchPinnacleDeals(
+          svc,
+          { player: "Goofy", maxPrice: 50, limit: 10 },
+          { source: "live" }
+        );
+        const parsed = JSON.parse(json);
+        if (parsed.status === "no_results") {
+          return { name, passed: true, detail: "no goofy listings (acceptable)" };
+        }
+        if (parsed.status !== "ok" || !Array.isArray(parsed.results)) {
+          return { name, passed: false, detail: `unexpected status: ${parsed.status}` };
+        }
+        const wrongRows = parsed.results.filter(
+          (r: { player: string | null }) => !r.player || !/goofy/i.test(r.player)
+        );
+        if (wrongRows.length > 0) {
+          const sample = wrongRows[0];
+          return {
+            name,
+            passed: false,
+            detail: `${wrongRows.length} non-goofy row(s) leaked: e.g. player='${sample.player}' fmv=${sample.fmv}`,
+          };
+        }
+        return { name, passed: true, detail: `${parsed.results.length} rows, all goofy` };
+      } catch (e: any) {
+        return { name, passed: false, detail: e?.message ?? String(e) };
+      }
+    })(),
+
+    // Pinnacle FMV cross-character leak detector — for every (character_name,
+    // set_name, variant_type) triple in pinnacle_cached_listings whose
+    // character_name disagrees with pinnacle_editions[edition_key], verify
+    // searchPinnacleDeals does NOT attach a non-null FMV to those rows.
+    // Pre-fix, ~84% of cached listings had this drift and the router blindly
+    // borrowed the wrong character's FMV. Post-fix, FMV must be null when
+    // (character, set, variant) has no row in pinnacle_editions.
+    (async (): Promise<TestResult> => {
+      const name = "Pinnacle FMV not borrowed across characters (drift guard)";
+      try {
+        // Goofy/Winter Adventures Vol.1/Standard: known no-row in pinnacle_editions.
+        // If FMV is non-null here, the join is leaking a different character's value.
+        const json = await searchPinnacleDeals(
+          svc,
+          { player: "Goofy", maxPrice: 100, limit: 20 },
+          { source: "live" }
+        );
+        const parsed = JSON.parse(json);
+        if (parsed.status === "no_results") {
+          return { name, passed: true, detail: "no rows to check" };
+        }
+        if (parsed.status !== "ok" || !Array.isArray(parsed.results)) {
+          return { name, passed: false, detail: `unexpected status: ${parsed.status}` };
+        }
+        const leaks: string[] = [];
+        for (const r of parsed.results as Array<{
+          player: string | null; set: string | null; tier: string | null; fmv: number | null;
+        }>) {
+          if (r.fmv == null) continue;
+          // Verify pinnacle_editions actually has a row for this (character, set, variant).
+          const { data: match } = await (svc as any)
+            .from("pinnacle_editions")
+            .select("id")
+            .eq("character_name", r.player)
+            .eq("set_name", r.set)
+            .eq("variant_type", r.tier)
+            .limit(1);
+          if (!match || match.length === 0) {
+            leaks.push(`${r.player}/${r.set}/${r.tier} fmv=$${r.fmv}`);
+          }
+        }
+        if (leaks.length > 0) {
+          return { name, passed: false, detail: `FMV leaked on ${leaks.length} row(s): ${leaks[0]}` };
+        }
+        return { name, passed: true, detail: `${parsed.results.length} rows, no FMV leaks` };
+      } catch (e: any) {
+        return { name, passed: false, detail: e?.message ?? String(e) };
+      }
+    })(),
+
     // Concierge name-filter regression — when the user asks for a specific
-    // character, the model MUST filter on that name. Pre-fix bug:
-    // "Show me a Goofy pin under $50" returned Minnie Mouse because the
-    // Pinnacle search_live_deals path orders by ask_price ASC and only
-    // applied the character filter when the model passed `player`/`character`
-    // — which it often didn't. This test asserts the response either
-    // mentions Goofy explicitly or honestly says no Goofy match was found,
-    // and that it does NOT name a different Pinnacle character as if it
-    // were Goofy. Soft because it depends on Anthropic + non-deterministic
-    // model output; the hard signal is the regex on confabulated names.
+    // character, the model MUST filter on that name AND must not borrow FMV
+    // from a different row. Pre-fix bug shipped twice:
+    // (1) router didn't filter when model omitted `character` (commit 8220136
+    //     fixed the filter; smoke test b5b4477 added but was insufficient)
+    // (2) router joined FMV by edition_key alone, silently mapping Goofy
+    //     listings to Minnie's FMV. The text "Goofy at $1, FMV ~$29" passed
+    //     the b5b4477 probe because it mentioned Goofy. This tightened
+    //     version asserts the response also doesn't quote a discount % or
+    //     borrowed FMV figure when the upstream data wouldn't support it.
+    // Soft because it depends on Anthropic + non-deterministic model output;
+    // the hard signal lives in the data-layer probe above.
     (async (): Promise<TestResult> => {
       const name = "concierge filters by character name (Pinnacle Goofy probe)";
       try {
@@ -535,21 +626,31 @@ async function runSmokeTests() {
         // PASS shapes: mentions goofy, OR explicitly says no goofy results.
         const mentionsGoofy = /goofy/.test(text);
         const explicitNoMatch = /no\s+goofy/.test(text) || /couldn'?t\s+find\s+(?:any\s+)?goofy/.test(text);
-        // FAIL shape: confabulates a different Pinnacle character as the answer.
+        // FAIL shapes:
+        // (a) confabulates a different Pinnacle character as the answer.
         const confabulatedNames = [
           "minnie", "mickey mouse", "donald duck", "pluto", "daisy",
           "lando calrissian", "greef karga", "pegasus", "rafiki", "cogsworth",
         ];
         const confabulated = confabulatedNames.some((n) => text.includes(n)) && !mentionsGoofy;
-        const passed = (mentionsGoofy || explicitNoMatch) && !confabulated;
-        return {
-          name,
-          soft: true,
-          passed,
-          detail: passed
-            ? mentionsGoofy ? "mentions goofy" : "explicit no-match"
-            : confabulated ? `confabulated other character: ${raw.slice(0, 140)}` : "neither mention nor explicit no-match",
-        };
+        // (b) quotes the specific Minnie/Winter Adventures FMV ($29) on a
+        //     Goofy answer — the smoking-gun pattern from the May 2026
+        //     incident. Any FMV figure between $25 and $35 attached to a
+        //     Goofy claim is suspicious because no Goofy edition in cached
+        //     data has FMV in that band.
+        const fmvLeak = mentionsGoofy && /\$2\d|\$3[0-5]/.test(text) && /fmv|discount|\boff\b|below/.test(text);
+        // (c) any quoted discount % alongside a Goofy FMV claim — discount
+        //     requires a real FMV, and post-fix Goofy listings have fmv=null,
+        //     so any "X% below FMV" claim on Goofy is a regression.
+        const fakeDiscount = mentionsGoofy && /\d{2,3}\s*%\s*(?:below|off|under)/.test(text);
+        const passed = (mentionsGoofy || explicitNoMatch) && !confabulated && !fmvLeak && !fakeDiscount;
+        const detail = passed
+          ? mentionsGoofy ? "mentions goofy, no fmv leak" : "explicit no-match"
+          : confabulated ? `confabulated other character: ${raw.slice(0, 160)}`
+          : fmvLeak ? `fmv leak ($25-35 on goofy): ${raw.slice(0, 160)}`
+          : fakeDiscount ? `fake discount on goofy: ${raw.slice(0, 160)}`
+          : "neither mention nor explicit no-match";
+        return { name, soft: true, passed, detail };
       } catch (e: any) {
         return { name, soft: true, passed: false, detail: e?.message ?? String(e) };
       }
