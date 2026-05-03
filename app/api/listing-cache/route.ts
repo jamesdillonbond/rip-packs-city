@@ -473,7 +473,11 @@ export async function POST(req: NextRequest) {
     // Upsert first, then purge stale rows — avoids wiping the cache when all
     // inserts fail (previously: delete-then-insert left the cache at 0 if every
     // chunk errored, which is how LaLiga Golazos ended up with 0 rows).
-    const runStartedAt = new Date().toISOString();
+    // Threshold MUST be the function-top timestamp, not "now". Each freshly
+    // mapped row carries cached_at = mapping-time (later than startedAtIso),
+    // so .lt("cached_at", startedAtIso) only matches rows from prior runs.
+    // Using new Date() here would purge every row we just wrote.
+    const runStartedAt = startedAtIso;
 
     let inserted = 0;
     let insertErrors = 0;
