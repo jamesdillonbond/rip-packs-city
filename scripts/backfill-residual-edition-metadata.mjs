@@ -59,7 +59,7 @@ const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
 
 const TS_PROXY_URL = process.env.TS_PROXY_URL || "https://public-api.nbatopshot.com/graphql"
 const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET || null
-const ALLDAY_GQL_URL = process.env.AD_PROXY_URL || "https://nflallday.com/consumer/graphql"
+const ALLDAY_GQL_URL = process.env.ALLDAY_PROXY_URL || "https://nflallday.com/consumer/graphql"
 
 function delay(ms) {
   return new Promise((r) => setTimeout(r, ms))
@@ -240,7 +240,7 @@ async function fetchAllDayMap() {
   let after = null
   for (let page = 0; page < 50; page++) {
     const headers = { "Content-Type": "application/json", "User-Agent": "rip-packs-city/backfill" }
-    if (process.env.AD_PROXY_URL && TS_PROXY_SECRET) headers["X-Proxy-Secret"] = TS_PROXY_SECRET
+    if (process.env.ALLDAY_PROXY_URL && TS_PROXY_SECRET) headers["X-Proxy-Secret"] = TS_PROXY_SECRET
     const res = await fetch(ALLDAY_GQL_URL, {
       method: "POST",
       headers,

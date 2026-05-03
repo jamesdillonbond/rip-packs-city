@@ -165,7 +165,7 @@ const GQL_HEADERS: Record<string, string> = {
 const TS_PROXY_URL = process.env.TS_PROXY_URL ?? "";
 const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET ?? "";
 
-const AD_PROXY_URL = process.env.AD_PROXY_URL ?? "";
+const ALLDAY_PROXY_URL = process.env.ALLDAY_PROXY_URL ?? "";
 
 const ALLDAY_MARKETPLACE_QUERY = `
   query searchMarketplaceEditions($after: String, $first: Int, $sortBy: MarketplaceEditionSortType) {
@@ -646,7 +646,7 @@ async function fetchAllFlowtyListings(): Promise<FlowtyListing[]> {
 // ─── NFL All Day marketplace GQL ──────────────────────────────────────────────
 // searchMarketplaceEditions is the public marketplace feed. It can be fetched
 // directly from Vercel (no Cloudflare block) or via a Worker proxy when
-// AD_PROXY_URL is set. Returns edition-level floor data plus optional
+// ALLDAY_PROXY_URL is set. Returns edition-level floor data plus optional
 // numberOneSerial / jerseySerial hooks for the #1 and Jersey-Serial specials.
 
 interface AlldayGqlPage {
@@ -657,9 +657,9 @@ interface AlldayGqlPage {
 
 async function fetchAlldayGqlPage(after: string | null): Promise<AlldayGqlPage> {
   try {
-    const url = AD_PROXY_URL || "https://nflallday.com/consumer/graphql";
+    const url = ALLDAY_PROXY_URL || "https://nflallday.com/consumer/graphql";
     const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (AD_PROXY_URL && TS_PROXY_SECRET) headers["X-Proxy-Secret"] = TS_PROXY_SECRET;
+    if (ALLDAY_PROXY_URL && TS_PROXY_SECRET) headers["X-Proxy-Secret"] = TS_PROXY_SECRET;
     const res = await fetch(url, {
       method: "POST",
       headers,

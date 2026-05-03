@@ -25,7 +25,7 @@ All routes require `X-Proxy-Secret` header matching the worker secret.
 6. In Vercel dashboard, add these env vars:
    TS_PROXY_URL = https://topshot-proxy.YOUR-SUBDOMAIN.workers.dev
    TS_PROXY_SECRET = (same value you entered in step 4)
-   AD_PROXY_URL = https://topshot-proxy.YOUR-SUBDOMAIN.workers.dev/allday
+   ALLDAY_PROXY_URL = https://topshot-proxy.YOUR-SUBDOMAIN.workers.dev/allday
 7. Redeploy RPC (empty commit or click Redeploy in Vercel dashboard)
 
 ## Notes

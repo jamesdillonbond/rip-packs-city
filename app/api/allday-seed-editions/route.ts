@@ -17,7 +17,7 @@ const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
 
 // Prefer the Cloudflare proxy if available; fall back to consumer endpoint
 function getGqlUrl(): string {
-  if (process.env.AD_PROXY_URL) return process.env.AD_PROXY_URL
+  if (process.env.ALLDAY_PROXY_URL) return process.env.ALLDAY_PROXY_URL
   return "https://nflallday.com/consumer/graphql"
 }
 
@@ -26,7 +26,7 @@ function gqlHeaders(): Record<string, string> {
     "Content-Type": "application/json",
     "User-Agent": "sports-collectible-tool/0.1",
   }
-  if (process.env.AD_PROXY_URL && process.env.TS_PROXY_SECRET) {
+  if (process.env.ALLDAY_PROXY_URL && process.env.TS_PROXY_SECRET) {
     h["X-Proxy-Secret"] = process.env.TS_PROXY_SECRET
   }
   return h

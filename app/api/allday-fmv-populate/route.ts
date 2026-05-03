@@ -15,7 +15,7 @@ export const maxDuration = 25
 export const dynamic = "force-dynamic"
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
-const AD_GQL_PROXY = process.env.AD_PROXY_URL ?? ""
+const AD_GQL_PROXY = process.env.ALLDAY_PROXY_URL ?? ""
 const AD_GQL_SECRET = process.env.TS_PROXY_SECRET ?? ""
 const AD_GQL_FALLBACK = "https://nflallday.com/consumer/graphql"
 
@@ -120,7 +120,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  console.log('[allday-fmv-populate] start, proxy=', (process.env.AD_PROXY_URL ?? '').slice(0, 30))
+  console.log('[allday-fmv-populate] start, proxy=', (process.env.ALLDAY_PROXY_URL ?? '').slice(0, 30))
 
   const startedAt = new Date()
   const startedAtIso = startedAt.toISOString()
