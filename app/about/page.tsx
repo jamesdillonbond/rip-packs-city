@@ -1,105 +1,115 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import RpcLogo from "@/components/RpcLogo";
 import SiteFooter from "@/components/SiteFooter";
 
-const condensedFont = "'Barlow Condensed', sans-serif";
-const monoFont = "'Share Tech Mono', monospace";
-const RED = "#E03A2F";
-
-const SUPPORTED_COLLECTIONS = [
-  { label: "NBA Top Shot", icon: "\u{1F3C0}", accent: "#E03A2F" },
-  { label: "NFL All Day", icon: "\u{1F3C8}", accent: "#4F94D4" },
-  { label: "LaLiga Golazos", icon: "\u26BD", accent: "#22C55E" },
-  { label: "Disney Pinnacle", icon: "\u2728", accent: "#A855F7" },
-  { label: "UFC Strike", icon: "\u{1F94A}", accent: "#EF4444" },
-];
+export function generateMetadata(): Metadata {
+  return {
+    title: "About — Rip Packs City",
+    description:
+      "Rip Packs City is independent collector intelligence for the Flow blockchain — built in Portland by a Top Shot Team Captain for collectors who want real data, not hype.",
+    openGraph: {
+      title: "About — Rip Packs City",
+      description:
+        "Built in Portland. For collectors, by a collector. Independent collector intelligence for NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, and UFC Strike.",
+    },
+  };
+}
 
 export default function AboutPage() {
   return (
-    <div style={{ background: "#080808", color: "#F1F1F1", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Share+Tech+Mono&display=swap');`}</style>
-      <header style={{ background: "rgba(8,8,8,0.97)", borderBottom: "1px solid rgba(255,255,255,0.06)", position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(20px)" }}>
-        <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 20px", height: 56, display: "flex", alignItems: "center", gap: 16 }}>
-          <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
-            <RpcLogo size={32} />
-          </Link>
-          <Link href="/" style={{ marginLeft: "auto", fontFamily: monoFont, fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", textDecoration: "none" }}>
-            &larr; Back
-          </Link>
-        </div>
-      </header>
+    <div
+      style={{
+        background: "var(--rpc-surface)",
+        color: "var(--rpc-text-primary)",
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      <PageHeader />
 
-      <main style={{ flex: 1, padding: "56px 24px 80px" }}>
-        <div style={{ maxWidth: 760, margin: "0 auto" }}>
+      <main style={{ flex: 1, padding: "48px 24px 80px" }}>
+        <div style={{ maxWidth: 720, margin: "0 auto" }}>
+          <Breadcrumb current="About" />
 
-          <section style={{ textAlign: "center", marginBottom: 48 }}>
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
-              <RpcLogo size={140} />
-            </div>
-            <h1 style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 38, letterSpacing: "0.04em", textTransform: "uppercase", lineHeight: 1.1, marginBottom: 10 }}>
-              About <span style={{ color: RED }}>Rip Packs City</span>
-            </h1>
-            <p style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.5)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
-              Collector intelligence for the Flow blockchain
-            </p>
-          </section>
+          <h1
+            style={{
+              fontFamily: "'Barlow Condensed', sans-serif",
+              fontWeight: 800,
+              fontSize: 32,
+              textTransform: "uppercase",
+              letterSpacing: "0.04em",
+              color: "var(--rpc-text-primary)",
+              margin: "16px 0 24px",
+              lineHeight: 1.15,
+            }}
+          >
+            Built in Portland. For collectors, by a collector.
+          </h1>
 
-          <Section title="What it is">
-            Rip Packs City (RPC) is a collector intelligence platform for digital
-            collectibles on the Flow blockchain. We surface fair market value (FMV)
-            pricing, sniper-ready deals across marketplaces, badge tracking, set
-            completion, pack EV, and portfolio analytics &mdash; the data layer
-            serious collectors need but rarely get out of the box.
+          <Section title="The Origin">
+            Rip Packs City started as a tool for one collector &mdash; me &mdash;
+            trying to make sense of NBA Top Shot during the 2024-25 season. I&apos;d
+            been a Top Shot Team Captain for the Portland Trail Blazers community,
+            fielding questions every day about which moments were undervalued,
+            which packs were worth ripping, and what a fair price actually looked
+            like. The existing tools gave me pieces of the picture. None of them
+            gave me the whole thing. So I built it.
           </Section>
 
-          <Section title="Who built it">
-            RPC was built by <strong style={{ color: "#F1F1F1" }}>Trevor Dillon-Bond</strong>,
-            an Official Portland Trail Blazers Team Captain on NBA Top Shot. The
-            platform started as a tool for the Blazers community &mdash; collectors
-            who care about real value, not just hype &mdash; and grew into a
-            cross-collection intelligence stack covering the full Flow NFT
-            ecosystem.
+          <Section title="What RPC Is">
+            Rip Packs City is collector intelligence for the Flow blockchain. We
+            track NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, and
+            UFC Strike &mdash; five live collections totaling more than 21,000
+            editions and 80,000+ recorded sales. Every page on this site is built
+            around one question: what does a serious collector need to make a
+            confident decision? That means real fair-market values calibrated to
+            actual sales. A sniper that surfaces deals priced below FMV. Pack
+            expected-value calculations grounded in real edition coverage. Set
+            completion intelligence. Wallet analytics deep enough to evaluate a
+            trade partner. Public profiles you can share. An AI concierge that
+            answers questions in plain English using the same data the rest of
+            the platform runs on.
           </Section>
 
-          <Section title="Collections supported">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10, marginTop: 12 }}>
-              {SUPPORTED_COLLECTIONS.map((c) => (
-                <div
-                  key={c.label}
-                  style={{
-                    background: "rgba(255,255,255,0.03)",
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    borderLeft: `3px solid ${c.accent}`,
-                    borderRadius: 6,
-                    padding: "10px 12px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                  }}
-                >
-                  <span style={{ fontSize: 18 }}>{c.icon}</span>
-                  <span style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, letterSpacing: "0.04em", textTransform: "uppercase" }}>{c.label}</span>
-                </div>
-              ))}
-            </div>
+          <Section title="What RPC Isn't">
+            Rip Packs City is independent. We are not affiliated with Dapper Labs,
+            NBA Top Shot, NFL All Day, LaLiga, Disney, the UFC, or any of the
+            collections we track. We don&apos;t sell moments, we don&apos;t custody
+            them, and we don&apos;t take a cut of any transaction surfaced through
+            the platform. We don&apos;t give financial advice. Every FMV, every
+            deal score, every set valuation is a model output &mdash; useful, but
+            not a guarantee. Treat it like the weather forecast: usually right,
+            sometimes wrong, never a substitute for your own judgment.
           </Section>
 
-          <Section title="Relationship with Flowty">
-            RPC integrates with{" "}
-            <a href="https://www.flowty.io" target="_blank" rel="noopener noreferrer" style={{ color: RED, textDecoration: "none" }}>Flowty</a>{" "}
-            as a primary listing source for cross-marketplace deal discovery.
-            Flowty&apos;s leadership &mdash; CEO Mike Levy and CTO Austin Kline
-            &mdash; are aware of and supportive of RPC. Listings, valuations, and
-            buy flows surfaced on RPC route directly to Flowty when applicable.
+          <Section title="Who's Behind It">
+            Rip Packs City is built and operated by Trevor Dillon-Bond, an Oregon
+            resident and longtime collector. The platform runs out of Portland on
+            infrastructure I pay for myself. An LLC is in formation; once it&apos;s
+            registered the operator section will update. There is no team behind
+            the curtain &mdash; every line of code, every database migration,
+            every design decision so far has been mine, with help from AI tools
+            where it makes sense.
           </Section>
 
-          <Section title="Contact">
-            Questions, feedback, partnership inquiries, or data corrections:{" "}
-            <a href="mailto:rippackscity@gmail.com" style={{ color: RED, textDecoration: "none" }}>
-              rippackscity@gmail.com
+          <Section title="Get In Touch">
+            Questions, bug reports, partnership inquiries, or just a hello: reach
+            me on X at{" "}
+            <a
+              href="https://twitter.com/RipPacksCity"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "#E03A2F", textDecoration: "none" }}
+            >
+              @RipPacksCity
             </a>
+            . Response time depends on how loud Twitter is that day, but I read
+            every message.
           </Section>
 
+          <LastUpdated text="Last updated: May 2026." />
         </div>
       </main>
 
@@ -108,32 +118,119 @@ export default function AboutPage() {
   );
 }
 
+function PageHeader() {
+  return (
+    <header
+      style={{
+        background: "var(--rpc-surface)",
+        borderBottom: "1px solid var(--rpc-border)",
+        position: "sticky",
+        top: 0,
+        zIndex: 100,
+        backdropFilter: "blur(20px)",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: "var(--max-width)",
+          margin: "0 auto",
+          padding: "0 20px",
+          height: 56,
+          display: "flex",
+          alignItems: "center",
+          gap: 16,
+        }}
+      >
+        <Link
+          href="/"
+          style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}
+        >
+          <RpcLogo size={32} />
+        </Link>
+        <Link
+          href="/"
+          style={{
+            marginLeft: "auto",
+            fontFamily: "'Share Tech Mono', monospace",
+            fontSize: 11,
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            color: "var(--rpc-text-secondary)",
+            textDecoration: "none",
+          }}
+        >
+          &larr; Back
+        </Link>
+      </div>
+    </header>
+  );
+}
+
+function Breadcrumb({ current }: { current: string }) {
+  return (
+    <div
+      style={{
+        fontFamily: "'Share Tech Mono', monospace",
+        fontSize: 11,
+        letterSpacing: "0.12em",
+        textTransform: "uppercase",
+        color: "var(--rpc-text-ghost)",
+      }}
+    >
+      <Link
+        href="/"
+        style={{ color: "var(--rpc-text-ghost)", textDecoration: "none" }}
+      >
+        RPC
+      </Link>
+      <span style={{ margin: "0 8px" }}>&rsaquo;</span>
+      <span style={{ color: "var(--rpc-text-secondary)" }}>{current}</span>
+    </div>
+  );
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section style={{ marginBottom: 36 }}>
+    <section style={{ marginTop: 32 }}>
       <h2
         style={{
-          fontFamily: condensedFont,
-          fontWeight: 800,
-          fontSize: 20,
+          fontFamily: "'Barlow Condensed', sans-serif",
+          fontWeight: 700,
+          fontSize: 18,
           textTransform: "uppercase",
           letterSpacing: "0.06em",
-          color: "#F1F1F1",
-          marginBottom: 10,
+          color: "var(--rpc-text-secondary)",
+          margin: "0 0 12px",
         }}
       >
         {title}
       </h2>
-      <div
+      <p
         style={{
-          fontFamily: monoFont,
-          fontSize: 13,
-          lineHeight: 1.8,
-          color: "rgba(255,255,255,0.7)",
+          fontSize: 16,
+          lineHeight: 1.6,
+          color: "var(--rpc-text-primary)",
+          margin: 0,
         }}
       >
         {children}
-      </div>
+      </p>
     </section>
+  );
+}
+
+function LastUpdated({ text }: { text: string }) {
+  return (
+    <p
+      style={{
+        marginTop: 48,
+        fontFamily: "'Share Tech Mono', monospace",
+        fontSize: 11,
+        color: "var(--rpc-text-ghost)",
+        letterSpacing: "0.06em",
+      }}
+    >
+      {text}
+    </p>
   );
 }
