@@ -201,9 +201,12 @@ git push origin <branch>
 
 ## Supabase schema facts (critical — verify before writing queries)
 
-### editions table
-Columns: id (uuid), external_id (text) ONLY.
-No player_name, set_name, tier, or circulation_count on this table.
+### editions table (29 columns — verified 2026-05-03 against information_schema.columns)
+Columns: id (uuid), external_id (varchar), collection_id (uuid), player_id (uuid), set_id (uuid), name (varchar), tier (enum), series (smallint), edition_kind (enum), circulation_count (int), badges (text[]), reward_indicators (text[]), thumbnail_url (text), video_url (text), play_type (varchar), play_category (varchar), game_date (date), home_team (varchar), away_team (varchar), first_minted_at (timestamptz), last_updated_at (timestamptz), created_at (timestamptz), updated_at (timestamptz), set_id_onchain (int), play_id_onchain (int), collection (text), player_name (text), set_name (text), team_name (text).
+
+The denormalised `player_name` / `set_name` / `tier` / `team_name` / `circulation_count` columns DO exist on this table — it's safe to select them directly in queries. (CLAUDE.md previously claimed only id + external_id existed; that was wrong and is now corrected.)
+
+Pinnacle editions live in a parallel table `pinnacle_editions` with a different schema: id (text), external_id (text), edition_key (text), character_name (text), franchise (text), set_name (text), variant_type (text), edition_type (text), mint_count (int), is_chaser (bool), thumbnail_url (text), ask_price (numeric), ask_source (text), and 10+ other Pinnacle-native columns (studio, materials, effects, size, color, thickness, etc.). See lib/concierge/pinnacle-router.ts for centralised routing.
 
 ### fmv_snapshots table
 Columns: edition_id, fmv_usd, confidence, computed_at. NO source column.
