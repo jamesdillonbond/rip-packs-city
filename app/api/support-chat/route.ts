@@ -9,9 +9,9 @@
 // browsing and who they are. Tool calls thread collectionId into downstream
 // API calls where it's meaningful.
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { getCollection, publishedCollections, COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
@@ -28,6 +28,12 @@ const supabase: any = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+
+// Greeting fast-path — trivial inputs skip the heavy tool-loop entirely.
+// Why: the system prompt + 10 tool descriptions inflate first-token latency
+// enough that "Ping" was reliably hitting MAX_ITERATIONS and returning the
+// timeout fallback instead of a quick reply.
+const GREETING_RE = /^\s*(hi+|hello|ping|hey+|sup|test|yo|hola|howdy|gm|gn)\s*[!.?]*\s*$/i;
 
 // ── Rate limiting (25 req/hr per session) ─────────────────────────────────────
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -841,6 +847,29 @@ function classifyCategory(message: string): string {
   return "general";
 }
 
+async function persistConversation(row: {
+  session_id: string;
+  user_message: string;
+  bot_response: string;
+  escalated: boolean;
+  escalation_reason: string | null;
+  category: string;
+  user_wallet?: string | null;
+  page_context?: string | null;
+}) {
+  try {
+    const { error } = await supabase.from("support_conversations").insert({
+      ...row,
+      resolved: !row.escalated,
+    });
+    if (error) {
+      console.log("[support-chat] persist error:", error.message, error.code ?? "");
+    }
+  } catch (err: any) {
+    console.log("[support-chat] persist threw:", err?.message ?? String(err));
+  }
+}
+
 async function updateSession(sessionId: string, category: string, userMessage: string, playerSearched?: string) {
   try {
     const { data: existing } = await supabase
@@ -891,6 +920,53 @@ export async function POST(req: NextRequest) {
         { response: "You've sent a lot of messages! Take a breather and try again in an hour.", escalated: false, category: "rate_limit" },
         { status: 429 }
       );
+    }
+
+    // Greeting fast-path — return a hardcoded reply without invoking the LLM.
+    if (GREETING_RE.test(message)) {
+      const activeCol = collectionId ? getCollection(collectionId) : null;
+      const greetText = activeCol
+        ? `Hey! Welcome to RPC. You're on ${activeCol.label} (${activeCol.icon} ${activeCol.partner}). Ask me about live deals, FMV on a specific moment, badges, or your portfolio — happy to dig in.`
+        : `Hey! Welcome to RPC — collector intel for NBA Top Shot, NFL All Day, LaLiga Golazos, and Disney Pinnacle. What collection are you browsing, or what would you like to look up?`;
+      const greetCategory = classifyCategory(message);
+
+      after(() =>
+        persistConversation({
+          session_id: sessionId,
+          user_message: message,
+          bot_response: greetText,
+          escalated: false,
+          escalation_reason: null,
+          category: greetCategory,
+          user_wallet: userWallet ?? null,
+          page_context: pageContext ?? null,
+        })
+      );
+
+      if (useStream) {
+        const ts = new TransformStream<Uint8Array, Uint8Array>();
+        const writer = ts.writable.getWriter();
+        const enc = new TextEncoder();
+        (async () => {
+          try {
+            await writer.write(enc.encode(greetText));
+            await writer.write(
+              enc.encode("\x1e" + JSON.stringify({ response: greetText, escalated: false, category: greetCategory }))
+            );
+            await writer.close();
+          } catch { /* client disconnected */ }
+        })();
+        return new Response(ts.readable, {
+          headers: {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Cache-Control": "no-cache, no-transform",
+            "X-RPC-Stream": "1",
+            "X-Accel-Buffering": "no",
+          },
+        });
+      }
+
+      return NextResponse.json({ response: greetText, escalated: false, category: greetCategory });
     }
 
     const systemPrompt = buildSystemPrompt({ pageContext, collectionId, userWallet, userEmail, walletConnected, marketPulse, dailyDeal });
@@ -1018,25 +1094,27 @@ export async function POST(req: NextRequest) {
 
       const category = classifyCategory(message);
 
-      let messageId: number | null = null;
-      try {
-        const { data: ins } = await supabase.from("support_conversations").insert({
+      // Persistence runs via after() so it's guaranteed to complete via Vercel's
+      // waitUntil even if the streaming response closes (or the client disconnects)
+      // before the insert finishes. Snapshot the values the closure needs.
+      const fr = finalResponse;
+      const er = escalated;
+      const erReason = escalationReason ?? null;
+      after(async () => {
+        await persistConversation({
           session_id: sessionId,
           user_message: message,
-          bot_response: finalResponse,
-          escalated,
-          escalation_reason: escalationReason ?? null,
+          bot_response: fr,
+          escalated: er,
+          escalation_reason: erReason,
           category,
-          resolved: !escalated,
           user_wallet: userWallet ?? null,
           page_context: pageContext ?? null,
-        }).select("id").single();
-        messageId = ins?.id ?? null;
-      } catch { /* non-fatal */ }
+        });
+        await updateSession(sessionId, category, message, playerSearched).catch(() => {});
+      });
 
-      updateSession(sessionId, category, message, playerSearched).catch(() => {});
-
-      return { response: finalResponse, escalated, escalationReason, category, messageId };
+      return { response: finalResponse, escalated, escalationReason, category };
     };
 
     if (useStream && streamResponse && streamWriter) {
