@@ -15,6 +15,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { getCollection, publishedCollections, COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
+import {
+  isPinnacle,
+  searchPinnacleDeals,
+  getPinnacleFmv,
+  explainPinnacleFmv,
+  searchPinnacleByName,
+} from "@/lib/concierge/pinnacle-router";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -350,7 +357,30 @@ async function executeTool(
     ? (COLLECTION_UUID_BY_SLUG[effectiveCollectionId] ?? null)
     : null;
 
+  // Soft validation of edition-key shape against the active collection.
+  // Returns a warning result string when the shape is wrong; null when fine.
+  const editionKeyMismatchWarning = (key: unknown): string | null => {
+    if (!key || typeof key !== "string" || !effectiveCollectionId) return null;
+    const looksLikeTopShot = /^\d+:\d+$/.test(key);
+    if (effectiveCollectionId === "nba-top-shot" && !looksLikeTopShot) {
+      return JSON.stringify({
+        status: "wrong_collection",
+        message: `Edition key '${key}' doesn't match the Top Shot setID:playID format. Provide playerName instead, or check the active collection.`,
+      });
+    }
+    if (isPinnacle(effectiveCollectionId) && looksLikeTopShot) {
+      return JSON.stringify({
+        status: "wrong_collection",
+        message: "That edition key shape (setID:playID) belongs to Top Shot. Disney Pinnacle uses opaque edition_key strings.",
+      });
+    }
+    return null;
+  };
+
   if (toolName === "search_live_deals") {
+    if (isPinnacle(effectiveCollectionId)) {
+      return searchPinnacleDeals(supabase, toolInput, { source: "live" });
+    }
     try {
       const params = new URLSearchParams();
       if (effectiveCollectionId) params.set("collectionId", effectiveCollectionId);
@@ -415,6 +445,9 @@ async function executeTool(
   }
 
   if (toolName === "search_catalog_deals") {
+    if (isPinnacle(effectiveCollectionId)) {
+      return searchPinnacleDeals(supabase, toolInput, { source: "catalog" });
+    }
     try {
       let query = supabase
         .from("cached_listings")
@@ -455,6 +488,11 @@ async function executeTool(
   }
 
   if (toolName === "get_fmv") {
+    const warn = editionKeyMismatchWarning(toolInput.editionKey);
+    if (warn) return warn;
+    if (isPinnacle(effectiveCollectionId)) {
+      return getPinnacleFmv(supabase, toolInput);
+    }
     try {
       if (toolInput.editionKey) {
         const url = new URL(`${base}/api/fmv`);
@@ -529,6 +567,9 @@ async function executeTool(
 
       const published = publishedCollections();
       const queries = published.map(async (col) => {
+        if (isPinnacle(col.id)) {
+          return searchPinnacleByName(supabase, name, perCollection);
+        }
         const uuid = col.supabaseCollectionId;
         if (!uuid) return { collection: col.label, collectionId: col.id, results: [] };
         const { data } = await supabase
@@ -563,6 +604,10 @@ async function executeTool(
 
   if (toolName === "manage_watchlist") {
     if (!ctx.userWallet) return JSON.stringify({ status: "error", message: "owner_key_missing" });
+    if (toolInput.action !== "list") {
+      const warn = editionKeyMismatchWarning(toolInput.edition_key);
+      if (warn) return warn;
+    }
     try {
       if (toolInput.action === "list") {
         const res = await fetch(`${base}/api/watchlist?owner_key=${encodeURIComponent(ctx.userWallet)}`, { signal: AbortSignal.timeout(8000) });
@@ -605,6 +650,10 @@ async function executeTool(
 
   if (toolName === "manage_alerts") {
     if (!ctx.userWallet) return JSON.stringify({ status: "error", message: "owner_key_missing" });
+    if (toolInput.action !== "list") {
+      const warn = editionKeyMismatchWarning(toolInput.edition_key);
+      if (warn) return warn;
+    }
     try {
       if (toolInput.action === "list") {
         const res = await fetch(`${base}/api/alerts?owner_key=${encodeURIComponent(ctx.userWallet)}`, { signal: AbortSignal.timeout(8000) });
@@ -666,6 +715,11 @@ async function executeTool(
   }
 
   if (toolName === "explain_fmv") {
+    const warn = editionKeyMismatchWarning(toolInput.editionKey);
+    if (warn) return warn;
+    if (isPinnacle(effectiveCollectionId)) {
+      return explainPinnacleFmv(supabase, { editionKey: toolInput.editionKey });
+    }
     try {
       const editionKey = toolInput.editionKey;
       if (!editionKey) return JSON.stringify({ status: "error", message: "editionKey is required" });
