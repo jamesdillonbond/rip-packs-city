@@ -504,6 +504,97 @@ async function runSmokeTests() {
       }
     })(),
 
+    // Concierge name-filter regression — when the user asks for a specific
+    // character, the model MUST filter on that name. Pre-fix bug:
+    // "Show me a Goofy pin under $50" returned Minnie Mouse because the
+    // Pinnacle search_live_deals path orders by ask_price ASC and only
+    // applied the character filter when the model passed `player`/`character`
+    // — which it often didn't. This test asserts the response either
+    // mentions Goofy explicitly or honestly says no Goofy match was found,
+    // and that it does NOT name a different Pinnacle character as if it
+    // were Goofy. Soft because it depends on Anthropic + non-deterministic
+    // model output; the hard signal is the regex on confabulated names.
+    (async (): Promise<TestResult> => {
+      const name = "concierge filters by character name (Pinnacle Goofy probe)";
+      try {
+        const res = await fetch(`${BASE_URL}/api/support-chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
+          body: JSON.stringify({
+            message: "Show me a Goofy pin under $50",
+            collectionId: "disney-pinnacle",
+            sessionId: `smoke-goofy-filter-${Date.now()}`,
+          }),
+          cache: "no-store",
+          signal: AbortSignal.timeout(25000),
+        });
+        if (!res.ok) return { name, soft: true, passed: false, detail: `HTTP ${res.status}` };
+        const body = await res.json().catch(() => null);
+        const raw = String(body?.response ?? "");
+        const text = raw.toLowerCase();
+        // PASS shapes: mentions goofy, OR explicitly says no goofy results.
+        const mentionsGoofy = /goofy/.test(text);
+        const explicitNoMatch = /no\s+goofy/.test(text) || /couldn'?t\s+find\s+(?:any\s+)?goofy/.test(text);
+        // FAIL shape: confabulates a different Pinnacle character as the answer.
+        const confabulatedNames = [
+          "minnie", "mickey mouse", "donald duck", "pluto", "daisy",
+          "lando calrissian", "greef karga", "pegasus", "rafiki", "cogsworth",
+        ];
+        const confabulated = confabulatedNames.some((n) => text.includes(n)) && !mentionsGoofy;
+        const passed = (mentionsGoofy || explicitNoMatch) && !confabulated;
+        return {
+          name,
+          soft: true,
+          passed,
+          detail: passed
+            ? mentionsGoofy ? "mentions goofy" : "explicit no-match"
+            : confabulated ? `confabulated other character: ${raw.slice(0, 140)}` : "neither mention nor explicit no-match",
+        };
+      } catch (e: any) {
+        return { name, soft: true, passed: false, detail: e?.message ?? String(e) };
+      }
+    })(),
+
+    // Concierge name-filter regression for the unified path — same shape as
+    // the Pinnacle probe but on Top Shot. "LeBron James Common under $5"
+    // must either name LeBron or honestly report no match; must not name
+    // a different player as the answer.
+    (async (): Promise<TestResult> => {
+      const name = "concierge filters by player name (Top Shot LeBron probe)";
+      try {
+        const res = await fetch(`${BASE_URL}/api/support-chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
+          body: JSON.stringify({
+            message: "Find a LeBron James Common moment under $5",
+            collectionId: "nba-top-shot",
+            sessionId: `smoke-lebron-filter-${Date.now()}`,
+          }),
+          cache: "no-store",
+          signal: AbortSignal.timeout(25000),
+        });
+        if (!res.ok) return { name, soft: true, passed: false, detail: `HTTP ${res.status}` };
+        const body = await res.json().catch(() => null);
+        const raw = String(body?.response ?? "");
+        const text = raw.toLowerCase();
+        const mentionsLebron = /lebron/.test(text);
+        const explicitNoMatch = /no\s+lebron/.test(text) || /couldn'?t\s+find\s+(?:any\s+)?lebron/.test(text);
+        const confabulatedNames = ["stephen curry", "kevin durant", "luka", "giannis", "jokic", "embiid"];
+        const confabulated = confabulatedNames.some((n) => text.includes(n)) && !mentionsLebron;
+        const passed = (mentionsLebron || explicitNoMatch) && !confabulated;
+        return {
+          name,
+          soft: true,
+          passed,
+          detail: passed
+            ? mentionsLebron ? "mentions lebron" : "explicit no-match"
+            : confabulated ? `confabulated other player: ${raw.slice(0, 140)}` : "neither mention nor explicit no-match",
+        };
+      } catch (e: any) {
+        return { name, soft: true, passed: false, detail: e?.message ?? String(e) };
+      }
+    })(),
+
     // Cart validate endpoint sanity check — bogus-listing round trip should
     // return { results: { [id]: { exists: false, sniped: true } } }. Proves the
     // Flow REST script path is reachable and the response shape is intact.

@@ -54,12 +54,13 @@ function siteUrl() {
 const TOOLS: Anthropic.Tool[] = [
   {
     name: "search_live_deals",
-    description: "Search for live deals from the RPC sniper feed for the active collection. Use this first for any shopping query. Returns real listings with prices, FMV discounts, and buy links. Defaults to the page's active collection when collectionId is omitted.",
+    description: "Search for live deals from the RPC sniper feed for the active collection. Use this first for any shopping query. Returns real listings with prices, FMV discounts, and buy links. Defaults to the page's active collection when collectionId is omitted. CRITICAL: when the user names a specific person — a player (NBA/NFL/Golazos/UFC) or a character (Disney Pinnacle: Mickey, Goofy, Greef Karga, etc.) — you MUST pass that name in the `player` parameter (or `character` for Pinnacle). Never return unfiltered top-discount results when the user asked about someone specific.",
     input_schema: {
       type: "object" as const,
       properties: {
         collectionId: { type: "string", description: "Collection id (nba-top-shot, nfl-all-day, laliga-golazos, disney-pinnacle). Defaults to the active page's collection." },
-        player: { type: "string", description: "Player/subject name to filter by (partial match ok)" },
+        player: { type: "string", description: "Player or subject name to filter by (partial match, case-insensitive). REQUIRED whenever the user names a specific person — pass 'LeBron James', 'Patrick Mahomes', 'Messi', etc. For sports collections." },
+        character: { type: "string", description: "Character name for Disney Pinnacle (e.g. 'Goofy', 'Mickey Mouse', 'Greef Karga'). REQUIRED whenever the user names a specific character on Pinnacle. Aliased to `player` server-side; pass either field." },
         tier: { type: "string", description: "Tier filter (collection-dependent labels)" },
         maxPrice: { type: "number", description: "Maximum price in USD" },
         minDiscount: { type: "number", description: "Minimum % below FMV (0-100). Use 15 for 'good deals'." },
@@ -70,12 +71,13 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "search_catalog_deals",
-    description: "Search the RPC moment catalog via Supabase — player, tier, price, badges, FMV. Use as fallback when live feed is unavailable, or for badge-specific queries.",
+    description: "Search the RPC moment catalog via Supabase — player, tier, price, badges, FMV. Use as fallback when live feed is unavailable, or for badge-specific queries. CRITICAL: when the user names a specific person/character, you MUST pass `player` (sports) or `character` (Pinnacle) — never return unfiltered top-discount results.",
     input_schema: {
       type: "object" as const,
       properties: {
         collectionId: { type: "string", description: "Collection id. Defaults to the active page's collection." },
-        player: { type: "string" },
+        player: { type: "string", description: "Player or subject name (partial match, case-insensitive). REQUIRED whenever the user names a specific person." },
+        character: { type: "string", description: "Character name for Disney Pinnacle. REQUIRED whenever the user names a specific Pinnacle character. Aliased to `player`." },
         team: { type: "string" },
         tier: { type: "string" },
         maxPrice: { type: "number" },
@@ -88,13 +90,14 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_fmv",
-    description: "Get Fair Market Value for a specific edition. Provide editionKey (setID:playID) or playerName + setName.",
+    description: "Get Fair Market Value for a specific edition. Provide editionKey (setID:playID) or playerName + setName. CRITICAL: when looking up FMV by name, ALWAYS pass the actual name the user asked about in playerName (or characterName for Pinnacle). Never query without a name when the user named someone specific.",
     input_schema: {
       type: "object" as const,
       properties: {
         collectionId: { type: "string", description: "Collection id. Defaults to the active page's collection." },
         editionKey: { type: "string" },
-        playerName: { type: "string" },
+        playerName: { type: "string", description: "Player name (sports collections). Pass the exact name the user asked about." },
+        characterName: { type: "string", description: "Character name (Disney Pinnacle). Aliased to playerName server-side." },
         setName: { type: "string" },
       },
       required: [],
@@ -310,6 +313,13 @@ If a feed is temporarily blocked, explain it and suggest Flowty's cross-marketpl
 6. For budget queries ("I have $50"), optimize for value: badge presence, discount %, confidence. In thin-volume collections, weight toward floor proximity over FMV discount %.
 7. Never invent prices — always use tool results.
 
+## CRITICAL — Name Filtering Rule
+If the user names a specific player or character anywhere in their query — "LeBron James", "Patrick Mahomes", "Messi", "Goofy", "Mickey Mouse", "Greef Karga", "Iron Man", etc. — you MUST pass that exact name as a filter to every search and FMV tool call:
+- search_live_deals / search_catalog_deals: pass it as \`player\` (sports collections) or \`character\` (Disney Pinnacle).
+- get_fmv: pass it as \`playerName\` (sports) or \`characterName\` (Pinnacle).
+- search_across_collections: pass it as \`name\`.
+NEVER call these tools without the name filter when the user has named someone specific. NEVER label a returned row with a name the row doesn't actually have. If the filtered search returns zero rows, say so honestly ("No Goofy pins under $50 right now") — do NOT silently substitute a different character or player and present it as the requested one. The data layer filters by ILIKE on the canonical name column, so partial matches and case-insensitive matching just work.
+
 ## Cross-Collection Queries
 - Use search_across_collections when the user asks about a player/subject without naming a collection, or when comparing availability across collections.
 - Always mention which collection a result comes from in your response.
@@ -356,6 +366,15 @@ async function executeTool(
   const effectiveCollectionUuid: string | null = effectiveCollectionId
     ? (COLLECTION_UUID_BY_SLUG[effectiveCollectionId] ?? null)
     : null;
+
+  // Normalize Pinnacle-friendly aliases onto the canonical filter fields. The
+  // model sees `character` / `characterName` as Disney-natural parameter names
+  // and the server collapses them onto `player` / `playerName` so downstream
+  // handlers and Pinnacle router stay single-path.
+  if (toolInput && typeof toolInput === "object") {
+    if (toolInput.character && !toolInput.player) toolInput.player = toolInput.character;
+    if (toolInput.characterName && !toolInput.playerName) toolInput.playerName = toolInput.characterName;
+  }
 
   // Soft validation of edition-key shape against the active collection.
   // Returns a warning result string when the shape is wrong; null when fine.
