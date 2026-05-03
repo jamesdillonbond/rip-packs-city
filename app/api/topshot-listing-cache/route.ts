@@ -126,6 +126,18 @@ async function runListingCache() {
     upserted: 0,
     upsertErrors: 0,
     fmvRecalcCalled: false,
+    // Stage counters — hoisted out of the inner try so the finally-scoped
+    // log_pipeline_run call can fold them into pipeline_runs.extra.
+    pagesFetched: 0,
+    skipNoListedOrder: 0,
+    skipMissingId: 0,
+    skipMissingResourceID: 0,
+    skipMissingPlayerName: 0,
+    skipDuplicateInRun: 0,
+    dedupedRows: 0,
+    purgedRows: 0,
+    purgeSkipped: false,
+    headCountAfterPurge: null as number | null,
   }
 
   try {
@@ -160,14 +172,6 @@ async function runListingCache() {
   // Flowty briefly returns overlapping windows); only abort after two such
   // pages in a row. Bare empty pages still break immediately.
   let consecutiveStaleSeenPages = 0
-  // Stage counters — exposed via structured logs at the end so we can tell
-  // exactly where the pipeline drops rows (parse vs upsert vs purge).
-  let pagesFetched = 0
-  let nftsWithoutListedOrder = 0
-  let nftsMissingId = 0
-  let nftsMissingResourceID = 0
-  let nftsMissingPlayerName = 0
-  let nftsDuplicateInRun = 0
 
   for (let page = 0; page < MAX_PAGES; page++) {
     const offset = page * PAGE_LIMIT
@@ -185,7 +189,7 @@ async function runListingCache() {
     }
     const nfts = Array.isArray(rawRows) ? rawRows : []
     stats.totalFetched += nfts.length
-    pagesFetched++
+    stats.pagesFetched++
     console.log(
       `[topshot-listing-cache] stage=fetched page=${page} offset=${offset} fetched=${nfts.length} reportedTotal=${
         typeof pageResp.total === "number" ? pageResp.total : "null"
@@ -200,22 +204,22 @@ async function runListingCache() {
       const orders = Array.isArray(nft?.orders) ? nft.orders : []
       const listedOrder = orders.find((o: any) => o?.state === "LISTED")
       if (!listedOrder) {
-        nftsWithoutListedOrder++
+        stats.skipNoListedOrder++
         continue
       }
       const nftIdRaw = nft?.id ?? nft?.nftId
       if (nftIdRaw === undefined || nftIdRaw === null) {
-        nftsMissingId++
+        stats.skipMissingId++
         continue
       }
       const nftIdStr = String(nftIdRaw)
       if (seenFlowIds.has(nftIdStr)) {
-        nftsDuplicateInRun++
+        stats.skipDuplicateInRun++
         continue
       }
       const listingResourceID = listedOrder.listingResourceID
       if (!listingResourceID) {
-        nftsMissingResourceID++
+        stats.skipMissingResourceID++
         continue
       }
 
@@ -241,7 +245,7 @@ async function runListingCache() {
         )
 
       if (!playerName) {
-        nftsMissingPlayerName++
+        stats.skipMissingPlayerName++
         continue
       }
 
@@ -317,7 +321,7 @@ async function runListingCache() {
 
   stats.totalListed = rows.length
   console.log(
-    `[topshot-listing-cache] stage=parse-summary pagesFetched=${pagesFetched} totalFetched=${stats.totalFetched} parsed=${rows.length} skipNoListedOrder=${nftsWithoutListedOrder} skipMissingId=${nftsMissingId} skipMissingResourceID=${nftsMissingResourceID} skipMissingPlayerName=${nftsMissingPlayerName} skipDuplicateInRun=${nftsDuplicateInRun}`
+    `[topshot-listing-cache] stage=parse-summary pagesFetched=${stats.pagesFetched} totalFetched=${stats.totalFetched} parsed=${rows.length} skipNoListedOrder=${stats.skipNoListedOrder} skipMissingId=${stats.skipMissingId} skipMissingResourceID=${stats.skipMissingResourceID} skipMissingPlayerName=${stats.skipMissingPlayerName} skipDuplicateInRun=${stats.skipDuplicateInRun}`
   )
 
   // Dedup by flow_id before upsert. onConflict: 'flow_id' rejects the whole
@@ -338,6 +342,7 @@ async function runListingCache() {
     }
   }
   const dedupedRows = Array.from(byFlowId.values())
+  stats.dedupedRows = dedupedRows.length
   console.log(
     `[topshot-listing-cache] stage=deduped parsedRows=${rows.length} dedupedRows=${dedupedRows.length} flowIdCollisions=${rows.length - dedupedRows.length}`
   )
@@ -362,8 +367,6 @@ async function runListingCache() {
 
   // Only purge stale rows if at least one new row was successfully upserted,
   // so a failed Flowty fetch doesn't wipe the existing cache.
-  let purgedRows = 0
-  let purgeSkipped = false
   if (stats.upserted > 0) {
     const { error: delErr, count: delCount } = await supabaseAdmin
       .from("cached_listings")
@@ -374,18 +377,19 @@ async function runListingCache() {
     if (delErr) {
       console.log(`[topshot-listing-cache] stale purge error: ${delErr.message}`)
     } else {
-      purgedRows = delCount ?? 0
+      stats.purgedRows = delCount ?? 0
     }
   } else {
-    purgeSkipped = true
+    stats.purgeSkipped = true
   }
   const { count: postPurgeCount } = await supabaseAdmin
     .from("cached_listings")
     .select("*", { count: "exact", head: true })
     .eq("source", "flowty")
     .eq("collection_id", TS_COLLECTION_ID)
+  stats.headCountAfterPurge = postPurgeCount ?? null
   console.log(
-    `[topshot-listing-cache] stage=purged purgedRows=${purgedRows} purgeSkipped=${purgeSkipped} postPurgeRows=${postPurgeCount ?? "?"} runStartedAt=${runStartedAt}`
+    `[topshot-listing-cache] stage=purged purgedRows=${stats.purgedRows} purgeSkipped=${stats.purgeSkipped} postPurgeRows=${postPurgeCount ?? "?"} runStartedAt=${runStartedAt}`
   )
 
   try {
@@ -440,6 +444,19 @@ async function runListingCache() {
           total_fetched: stats.totalFetched,
           fmv_recalc_called: stats.fmvRecalcCalled,
           duration_ms: Date.now() - startedAt,
+          fetched: stats.totalFetched,
+          parsed: stats.totalListed,
+          deduped: stats.dedupedRows,
+          written: stats.upserted,
+          purged: stats.purgedRows,
+          purge_skipped: stats.purgeSkipped,
+          head_count_after_purge: stats.headCountAfterPurge,
+          pages_fetched: stats.pagesFetched,
+          skip_no_listed_order: stats.skipNoListedOrder,
+          skip_missing_id: stats.skipMissingId,
+          skip_missing_resource_id: stats.skipMissingResourceID,
+          skip_missing_player_name: stats.skipMissingPlayerName,
+          skip_duplicate_in_run: stats.skipDuplicateInRun,
         },
       })
     } catch (e) {
