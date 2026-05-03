@@ -32,8 +32,10 @@ const MAX_SCAN_RANGE = 100_000
 const INTER_CHUNK_DELAY_MS = 75
 // Cap Cadence borrow attempts per run. Flow REST shares a 20 req/s budget
 // across the project, and each unresolved sale costs 1-2 script calls
-// (borrow + optional getEditionData), so 5 keeps us well under the ceiling.
-const CADENCE_FALLBACK_MAX = 5
+// (borrow + optional getEditionData). Bumped 5 -> 12 once the topshot-proxy
+// 1015 throttle landed (commit 72ea41b) — the per-tick cap was the bottleneck
+// draining the residual NULL-edition cohorts (62 NBA TS, 36 AllDay).
+const CADENCE_FALLBACK_MAX = 12
 const CADENCE_DELAY_MS = 150
 const SCRIPT_TIMEOUT_MS = 15_000
 
