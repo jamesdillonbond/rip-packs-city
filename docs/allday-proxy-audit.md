@@ -7,6 +7,55 @@ Trigger: We rotated `TS_PROXY_SECRET`, `PINNACLE_PROXY_SECRET`, and `SPORK_PROXY
 
 The audit identified a split between two env-var names for the same worker secret. That split has now been unified on `TS_PROXY_SECRET` across all 7 call sites. The legacy AllDay-specific env-var name is removed from the codebase. The Vercel env entry for the legacy name should be deleted from the dashboard so it does not drift back. See the "Caller-by-caller reference" section below for the post-cleanup state.
 
+## STATUS UPDATE 2026-05-03 (later that day): phantom-worker conclusion was wrong
+
+Cloudflare metrics for 2026-05-03 show `allday-proxy.tdillonbond.workers.dev` serving **6,000 requests over 24h with a 100% success rate** to upstream `nflallday.com`. That contradicts the original TL;DR claim that no separate AllDay worker exists. A real worker is deployed at that hostname and is doing real work. The original audit's grep was complete *for this repo*, but the worker lives outside it — so the audit's negative result is correct in scope but its inference ("therefore no such worker") was wrong.
+
+### Re-investigation: where does the call site live?
+
+A comprehensive sweep of the entire repo (every git-tracked file, every untracked file, all of `app/`, `lib/`, `supabase/functions/`, `scripts/`, `workers/`, `infrastructure/`, `.github/`, `next.config.ts`, all docs and env files) for the strings `allday-proxy.tdillonbond.workers.dev`, `allday-proxy`, `allday-proxy.tdillonbond`, `ALLDAY_PROXY_URL`, `ALLDAY_PROXY`, `AllDayProxy`, and `alldayProxy` returns these matches and no others:
+
+| File | Pattern | Live? |
+|------|---------|-------|
+| [next.config.ts:18](next.config.ts#L18) | `connect-src 'self' https: wss: https://allday-proxy.tdillonbond.workers.dev` | **Dead.** The production CSP (verified from a `/api/smoke-test` response header) is the one in `proxy.ts:80`, which does NOT include this host. Per smoke-test response on dpl_3LpLb642iq9ED9GdDWADv5TCJHVQ, the served CSP lists `pinnacle-proxy` and `topshot-proxy` only. The `next.config.ts` CSP is shadowed by the middleware-set CSP from proxy.ts. Added by Trevor on 2026-04-17 in commit 50cde8e ("feat(sniper): AllDay UI polish + Cadence integer enrichment"). |
+| [docs/allday-proxy-audit.md](docs/allday-proxy-audit.md) | This file | Documentation only |
+
+`git log --all -p -i -S "allday-proxy.tdillonbond"` returns only the audit doc creation commit. `git log --all --diff-filter=AD --name-only | grep -i allday-proxy` finds no file ever named with `allday-proxy` outside `docs/allday-proxy-audit.md`. There has never been a `workers/allday-proxy/` or `infrastructure/allday-proxy-worker/` directory in this repo's history.
+
+No code in this repo constructs the string `allday-proxy.tdillonbond.workers.dev` — checked literal occurrences, template-literal compositions (`workers.dev` + `/allday`), and env-var indirections (no `ALLDAY_PROXY_URL` variant exists; the codebase only reads `AD_PROXY_URL`).
+
+### What the 6,000 req/day must therefore mean
+
+Conclusion: a real `allday-proxy` Cloudflare worker exists, but its source-of-truth lives outside this repo. The audit's mistake was inferring "no source in repo → no worker." The real options for where it actually lives:
+
+1. **Most likely — Vercel env redirect via `AD_PROXY_URL`.** The 7 in-repo callers that read `process.env.AD_PROXY_URL` would route to the standalone `allday-proxy` worker if Vercel's `AD_PROXY_URL` value is `https://allday-proxy.tdillonbond.workers.dev/...` rather than the README-recommended `https://topshot-proxy.tdillonbond.workers.dev/allday`. The standalone worker would then need its own `PROXY_SECRET` configured to the same value as `topshot-proxy`'s — that's why both Top Shot and AllDay traffic succeed under one `TS_PROXY_SECRET` env value. **Verification command**: `vercel env ls` (Vercel CLI not installed locally; use the dashboard at https://vercel.com/rippackscity-projects/rip-packs-city/settings/environment-variables and read `AD_PROXY_URL`).
+2. **Cloudflare worker deployed manually from the dashboard** (not from this repo's `wrangler deploy`). Wrangler-managed workers in this repo: `topshot-proxy`, `pinnacle-proxy`, `spork-proxy`. The `allday-proxy` worker is published but not under any version control we can see. **Verification command**: `wrangler deployments list --name allday-proxy` against the tdillonbond Cloudflare account, or browse the Cloudflare dashboard → Workers & Pages → `allday-proxy`.
+3. **Supabase Edge Function whose source isn't synced to this repo.** This repo's `supabase/functions/` contains 11 functions; the Supabase project might host more that were deployed via the dashboard or MCP tool and never committed. **Verification command**: `supabase functions list --project-ref bxcqstmqfzmuolpuynti` (or use the MCP `list_edge_functions` tool against project `bxcqstmqfzmuolpuynti` and grep the deployed source for `allday-proxy`).
+4. **cron-job.org direct hit.** A cron entry on cron-job.org that POSTs to `https://allday-proxy.tdillonbond.workers.dev/...` directly — not invoked through any RPC code. This repo doesn't ship a `CRON_JOBS.md` (none exists), so the inventory of cron-job.org entries has to come from the cron-job.org dashboard itself.
+5. **Less likely — browser code.** Production CSP blocks the host (smoke-test header confirms), so even if some sniper UI fetched it, the browser would refuse the request. Doesn't match a 100% success rate.
+
+### Why the original audit got it wrong
+
+The audit conflated "absence of evidence in the repo" with "evidence of absence." Three independent things were true and the audit collapsed them:
+
+- The hostname is not constructed in repo code → correct.
+- No worker source for it exists in `workers/` or `infrastructure/` → correct.
+- Therefore the worker does not exist → **wrong**. Cloudflare workers can be deployed without their source ever entering this repo, and Vercel env vars can route in-repo callers to them.
+
+The 6,000 req/day to `nflallday.com` upstream is the falsifying evidence. Those requests are happening, and the fact that they succeed means `X-Proxy-Secret` is being sent and accepted — meaning some caller (in or adjacent to our infra) holds a matching secret and a URL pointing to that worker.
+
+### Next investigation step (to actually find the call site)
+
+This requires resources outside the repo. In priority order:
+
+1. Read `AD_PROXY_URL` in the Vercel dashboard for production. If it's `https://allday-proxy.tdillonbond.workers.dev/...`, mystery solved — every in-repo caller with `AD_PROXY_URL` indirection routes there, and we just need to decide whether to consolidate by repointing it at `topshot-proxy/allday` and decommissioning the standalone worker.
+2. Check Cloudflare dashboard / wrangler for the `allday-proxy` worker's source and any scheduled triggers. If the worker has its own scheduled handler (Cloudflare Cron Trigger), it may be self-firing — that explains traffic without any RPC-side caller.
+3. Use the Supabase MCP `list_edge_functions` against project `bxcqstmqfzmuolpuynti` and inspect any function whose source isn't in `supabase/functions/` here.
+4. Audit cron-job.org for any job whose target URL contains `allday-proxy`.
+
+Until one of those four sources is checked, do **not** decommission the `allday-proxy` Cloudflare worker. The 6k/day is real traffic with real callers.
+
+
 ## TL;DR
 
 1. **There is no separate `allday-proxy.tdillonbond.workers.dev` worker.** The hostname appears once in `next.config.ts:18` (CSP `connect-src`) but no worker source for it exists in the repo, and it does not appear in `proxy.ts` (the canonical CSP). All AllDay traffic is served by the **same** `topshot-proxy.tdillonbond.workers.dev` worker via its `/allday` path route.
