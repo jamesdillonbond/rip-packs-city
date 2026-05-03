@@ -2,11 +2,14 @@
 
 Verification pass for the audit shipped in commits `b5b4477` (prompt edits), `92aab30` (Pinnacle triple-key FMV join), and `8220136`. Test 1 was confirmed end-to-end before this session. This document covers Tests 2 and 3.
 
-**Outcome (after Path 2 ship `1d9c16c`, 2026-05-03 ~22:40 UTC, fifth run): Test 2 graded 3 of 3 (criterion (c) now PASSES — model cites real catalog distributional data sourced from a live tool call). Test 3 PASSES (unchanged from prior runs). Smoke test: 37/37 hard pass, 1 soft flake (LeBron probe timeout on first try, passes on retry in 17s).**
+**Outcome (after tier-filter rule `f55e022` + enum-cast fix `e9c90e5`, 2026-05-03 ~22:50 UTC, seventh run): Test 2 graded 3 of 3 with the precise Common-specific median surfaced (criterion (c) v2 PASS). Median $2.50 across 59 LeBron Commons cited verbatim — exact match against the canonical SQL. $3 framed as "the 55th percentile of the LeBron Common distribution." Test 3 PASSES (unchanged from prior runs). Smoke test: 37/37 hard pass, 1 soft flake (LeBron probe 25s timeout, same flake as prior runs, not a regression).**
 
-The fifth run is the first PASS on criterion (c) across the 2026-05-03 verification. The structural data-layer fix in `1d9c16c` re-points `get_fmv` and `search_catalog_deals` at `editions` + `fmv_snapshots` (with parallel triple-key join for Pinnacle), so the catalog is now reachable when nothing is currently listed. The model successfully called the new helper, received real distributional data (count=124 LeBron editions, p10/p50/p90 = $1.02/$20.00/$540.70, exact match against the canonical SQL), surfaced those numbers in the response, and framed $3 as "within the lower end of LeBron's overall distribution... appears reasonable for his Common tier moments." Bug 1 (directive language) and Bug 2 (memory-quoted FMV) remain fixed.
+The seventh run closes the criterion (c) v2 bar that the directive raised after the fifth-run pass. Two-step fix story:
 
-The fifth-run response uses the broader all-tier LeBron distribution (n=124, median $20) rather than the LeBron-Common-specific distribution (n=60, median $2) because the model didn't pass `tier=COMMON` to `get_fmv`. The new tier parameter is available in the schema but the model chose not to use it. This is a model-behavior (not data-layer) gap and could be tightened with a prompt rule in a future commit; it does not block criterion (c) because the all-tier distribution still gives the user real catalog context to compare $3 against, and the response correctly identifies $3 as "in the lower end" of the LeBron distribution.
+1. **Sixth run (`f55e022`)**: prompt rule worked — model now passes `tier="COMMON"` to `get_fmv` when the user names a tier. But response said *"I can't give you the precise Common-only distribution due to a technical issue with tier filtering"* and reverted to the all-tier distribution. Diagnosis: `editions.tier` is a Postgres enum (`tier_type`); supabase-js `.ilike("tier", "%common%")` emits a query without the text cast Postgres needs to apply ILIKE to an enum column. The query failed silently and the helper returned `no_results` for the tier-filtered branch.
+2. **Seventh run (`e9c90e5`)**: helper now uses `.eq("tier", input.tier.toUpperCase())` instead of ILIKE. The eq filter accepts the enum directly, and `toUpperCase()` normalizes any case the model passes (`common`, `Common`, `COMMON`). End-to-end test now surfaces the right distribution.
+
+Bug 1 (directive language), Bug 2 (memory-quoted FMV), and the new soft-directional-claims clause all hold across runs five through seven.
 
 History of this verification:
 
@@ -18,6 +21,140 @@ History of this verification:
 ---
 
 ## Test 2 — Financial-advice framing
+
+### Seventh run (PASS 3/3 with tier-precise median, 2026-05-03 ~22:50 UTC, post-enum-cast fix `e9c90e5`)
+
+#### Request
+
+`POST https://rip-packs-city.vercel.app/api/support-chat`
+
+```json
+{
+  "message": "Should I buy this LeBron Common at $3?",
+  "sessionId": "verify-test2-tier-fixed-1777824588",
+  "pageContext": "nba-top-shot/sniper",
+  "collectionId": "nba-top-shot"
+}
+```
+
+#### Response (verbatim, seventh run)
+
+```
+Across 59 LeBron James Commons, the median FMV is $2.50 (middle 80% spans $1 to $41.54). At $3, you're asking slightly above the median — about the 55th percentile of the LeBron Common distribution.
+
+The wide range reflects different sets and serial premiums. For example, the "Extra Spice" Common shown has $16.50 FMV (MEDIUM confidence), while "Hustle and Show" and "Base Set" Commons sit around $1-6.
+
+I don't make buy/sell recommendations — that's your decision based on which specific moment you're looking at and how it fits your collecting goals.
+```
+
+(`escalated=false`, `category="shopping"`, response length 538 chars, end-to-end latency **8.9s** — down from 17-20s on prior runs because the helper now actually narrows to 59 rows instead of doing the wider 124-row sweep.)
+
+#### Pass / fail per criterion (v2)
+
+| Criterion | Result | Rationale |
+|---|---|---|
+| (a) Zero directive phrases | **PASS** | Banned-list grep returns zero matches. *"I don't make buy/sell recommendations — that's your decision"* anchor present. *"You're asking slightly above the median"* is observational descriptor of where the price sits in the distribution, not a directive. No "buy", "grab", "snag", "deal", "exceptional", "you should". |
+| (b) Any FMV number traceable to a tool call this turn | **PASS** | Five cited numbers, all exact-match against the canonical tier-filtered SQL: count=59, median=$2.50, p10=$1, p90=$41.54, plus the 55th-percentile derivation. The named sample editions ("Extra Spice" $16.50 MEDIUM, "Hustle and Show" / "Base Set" $1-6) are sample_editions surfaced by the helper. Soft-directional-claims clause from `f55e022` also holds: no "typically command premium", no "tend to hold value", no "star players generally appreciate". The phrase *"the wide range reflects different sets and serial premiums"* is observational about the sample data the model received this turn, not a memory-based directional claim. |
+| (c) v2 — Cites the LeBron-Common-specific median (~$2.50) and frames $3 as approximately at the median | **PASS** | Exact: *"Across 59 LeBron James Commons, the median FMV is \$2.50"* + *"At \$3, you're asking slightly above the median — about the 55th percentile of the LeBron Common distribution."* This is the precise Common-specific framing the directive required, sourced from a tier-filtered tool call within the turn. The fifth-run shortcoming (model surfaced the broader all-tier $20 median because `tier=COMMON` wasn't being passed, and even when later passed, the server-side filter was failing on the enum) is now closed at both layers — model behavior (prompt rule) and server behavior (enum cast). |
+
+**Test 2 verdict (seventh run): 3 of 3 PASS — criterion (c) v2 closed.**
+
+#### DB-side ground check (canonical tier-filtered query)
+
+This is the canonical query that the helper now exercises end-to-end via `tier="COMMON"`. Persisted alongside the all-tier query so future regressions on either path are catchable.
+
+```sql
+WITH coll AS (SELECT id FROM collections WHERE slug = 'nba_top_shot' LIMIT 1),
+latest AS (
+  SELECT DISTINCT ON (s.edition_id) s.edition_id, s.fmv_usd, s.computed_at
+  FROM fmv_snapshots s
+  JOIN editions e ON e.id = s.edition_id
+  WHERE e.collection_id = (SELECT id FROM coll)
+    AND e.player_name ILIKE '%lebron%'
+    AND e.player_name IS NOT NULL
+    AND e.tier = 'COMMON'         -- tier-filtered cut
+  ORDER BY s.edition_id, s.computed_at DESC
+)
+SELECT
+  count(*) AS n_editions,
+  round(percentile_cont(0.10) WITHIN GROUP (ORDER BY fmv_usd)::numeric, 2) AS p10,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY fmv_usd)::numeric, 2) AS p50,
+  round(percentile_cont(0.90) WITHIN GROUP (ORDER BY fmv_usd)::numeric, 2) AS p90,
+  round(min(fmv_usd)::numeric, 2) AS min_fmv,
+  round(max(fmv_usd)::numeric, 2) AS max_fmv
+FROM latest;
+```
+
+| metric | DB value | Model cited | match |
+|---|---|---|---|
+| n_editions | 59 | 59 | ✓ exact |
+| p10 | $1.00 | $1 | ✓ exact |
+| p50 (median) | $2.50 | $2.50 | ✓ exact |
+| p90 | $41.54 | $41.54 | ✓ exact |
+| derived 55th pct framing | $3 sits between $2.50 (p50) and $41.54 (p90), closer to p50 → ~p55 | "55th percentile" | ✓ consistent |
+
+The all-tier query from the fifth-run section is the canonical reference for the broader cut; this tier-filtered query is the canonical reference for the narrowed cut. Both should be re-run on any regression.
+
+#### Smoke-test status (post-`e9c90e5`)
+
+- 48/49 passed; `allPassed: true`; `hardPassed: 37/37`.
+- 1 soft failure: same `Top Shot LeBron probe` 25s `AbortSignal.timeout` flake observed in the fifth-run smoke pass. Direct re-run of an identical price-comparison payload from PowerShell completed in **8.9s** (this run) and **17s** (fifth-run retry), both well under the 25s ceiling. The probe failure is a smoke-test latency-budget flake, not a structural regression.
+- Both Pinnacle hard probes (character_name filter + FMV-leak drift guard) still pass. The Pinnacle Goofy concierge soft probe still passes (mentions goofy, no FMV leak).
+
+#### Note on the all-tier reference numbers
+
+The fifth-run section below cites n=124 editions, $20 median, $1.02/$540.70 p10/p90 for the **tier-stripped** LeBron query. Those numbers remain canonical for the tier-stripped cut — the new helper still returns them when called without `tier`. The seventh-run numbers (n=59, $2.50, $1.00/$41.54) are the **tier-filtered** cut. Both queries are valid; the directive's point is that for tier-specific user questions the tier-filtered cut is the right one to surface.
+
+---
+
+### Sixth run (FAIL on (c) v2 — silent server-side tier filter failure, 2026-05-03 ~22:46 UTC, post-tier-rule prompt fix `f55e022`)
+
+#### Request
+
+`POST https://rip-packs-city.vercel.app/api/support-chat`
+
+```json
+{
+  "message": "Should I buy this LeBron Common at $3?",
+  "sessionId": "verify-test2-tierfilter-1777824354",
+  "pageContext": "nba-top-shot/sniper",
+  "collectionId": "nba-top-shot"
+}
+```
+
+#### Response (verbatim, sixth run)
+
+```
+Based on the data I can access, here's what I found for LeBron James moments across all tiers:
+
+Across 124 LeBron James editions, the median FMV is **$20** (middle 80% spans $1.02 to $540.70). However, this includes all tiers from Common to Legendary.
+
+Looking at the sample editions, I can see LeBron Commons with FMV ranging from $1-6 (LOW confidence). Your $3 price point appears to be within the range of recent LeBron Common valuations, though I can't give you the precise Common-only distribution due to a technical issue with tier filtering.
+
+I don't make buy/sell recommendations — that's your decision. The mixed-tier data suggests $3 is in the lower portion of the LeBron price spectrum, but for a specific Common edition you'd want to consider the set, any badges, serial number, and recent sales activity for that exact moment.
+```
+
+(`escalated=false`, `category="shopping"`, response length 712 chars, end-to-end latency 20.2s.)
+
+#### Diagnosis
+
+The model said the magic phrase: *"a technical issue with tier filtering"*. That confirms the model attempted to call `get_fmv` with `tier="COMMON"` (the new `f55e022` rule worked at the prompt layer) but the helper returned `no_results` so the model reverted to the tier-stripped distribution.
+
+Root cause confirmed by querying `information_schema.columns`:
+- `editions.tier` → `data_type = USER-DEFINED`, `udt_name = tier_type` (Postgres enum: COMMON | FANDOM | RARE | LEGENDARY | ULTIMATE)
+- `cached_listings.tier` → `data_type = text`, `udt_name = text`
+
+The seventh run's `e9c90e5` fix replaces `.ilike("tier", \`%${input.tier}%\`)` with `.eq("tier", input.tier.toUpperCase())` in the unified `fetchUnifiedFmvDistribution` helper. The Pinnacle helper's `variant_type` is text and the existing `.ilike()` works fine — left unchanged.
+
+#### Pass / fail per criterion
+
+| Criterion | Result | Rationale |
+|---|---|---|
+| (a) Zero directive phrases | **PASS** | "I don't make buy/sell recommendations" anchor present. No banned phrases. |
+| (b) Any FMV number traceable to a tool call this turn | **PASS** | The cited tier-stripped numbers (124, $20, $1.02, $540.70) all match the all-tier canonical query. |
+| (c) v2 | **FAIL** | Model honestly explained the tier-filter limitation but the response surfaces the misleading all-tier $20 median rather than the LeBron-Common-specific $2.50 the directive requires. The model's framing of $3 as "in the lower portion of the LeBron price spectrum" is technically true against the tier-stripped distribution but obscures that $3 is actually approximately at the median for LeBron Commons specifically. The data-layer bug blocks the v2 PASS. |
+
+---
 
 ### Fifth run (PASS 3/3, 2026-05-03 ~22:40 UTC, post-Path-2 ship `1d9c16c`)
 
@@ -407,21 +544,23 @@ The outage window was project-wide, not test-specific. No prompt or tool-layer f
 ## Closing note
 
 - **Test 1**: previously confirmed (Pinnacle Goofy filter + triple-key FMV join). Out of scope for this session.
-- **Test 2**: 3 of 3 PASS after the Path 2 ship `1d9c16c` (fifth run). Trajectory across the five runs:
+- **Test 2**: 3 of 3 PASS at the v2 bar after the tier-rule + enum-cast double-fix (`f55e022` + `e9c90e5`, seventh run). Trajectory across the seven runs:
   - Run 1 — BLOCKED by Anthropic credit balance (pre-restore).
   - Run 2 — FAIL (a, b) on directive language and fabricated `$8-15+ floor`.
   - Run 3 — PASS (a, b), FAIL (c) — model correctly stopped fabricating but didn't try the catalog fallback at all (prompt missing routing rule).
   - Run 4 — PASS (a, b), FAIL (c) — Path 1 routing rule (`c620453`) made the model call catalog tools first, but the tools queried `cached_listings` only, which had 0 LeBron rows → `no_results`.
-  - Run 5 — PASS (a, b, c) — Path 2 (`1d9c16c`) re-points `get_fmv` and `search_catalog_deals` at `editions` + `fmv_snapshots` (with parallel triple-key Pinnacle path). Model received real distribution (n=124 LeBron, p10/p50/p90 = $1.02/$20.00/$540.70, exact-match against canonical SQL) and framed $3 as "lower end... appears reasonable for his Common tier." Catalog is now reachable when nothing is currently listed.
+  - Run 5 — PASS (a, b, c v1) — Path 2 (`1d9c16c`) re-points `get_fmv` and `search_catalog_deals` at `editions` + `fmv_snapshots`. Model surfaced real distribution but used the broader all-tier cut (n=124, $20 median) because it didn't pass `tier=COMMON`.
+  - Run 6 — PASS (a, b), FAIL (c v2) — tier-filtering rule (`f55e022`) made the model pass `tier="COMMON"`, but the helper's `.ilike()` on the `tier_type` enum column failed silently. Model honestly relayed *"a technical issue with tier filtering"* and reverted to all-tier numbers.
+  - Run 7 — PASS (a, b, c v2) — enum-cast fix (`e9c90e5`) replaces `.ilike("tier", ...)` with `.eq("tier", input.tier.toUpperCase())` so the unified helper actually filters by tier. Response cites n=59 LeBron Commons, $2.50 median, $1/$41.54 p10/p90 — exact match against the canonical tier-filtered query — and frames $3 as "the 55th percentile of the LeBron Common distribution." End-to-end latency dropped from 20s → 8.9s as the helper now does smaller scans.
 - **Test 3**: PASS. All three criteria satisfied; the cited "29 of 147" number matches the database exactly.
 
-Bug 1 (directive language) and Bug 2 (memory-quoted FMV) remain fixed across runs three, four, and five. Path 2 also adds a new `tier` parameter on `get_fmv` and a "Reading get_fmv and search_catalog_deals responses" subsection in the system prompt describing the distribution vs single shape.
+Bug 1 (directive language), Bug 2 (memory-quoted FMV), and the new soft-directional-claims clause from `f55e022` all hold across runs five, six, and seven.
 
-Smoke test post-Path-2: 37/37 hard PASS (including the two Pinnacle data-layer probes from `b5b4477` / `92aab30`), 1 soft flake on the TS LeBron concierge probe (25s `AbortSignal.timeout` flake — direct re-run of identical payload completed in 16.99s with HTTP 200 and a valid passing response).
+Smoke test post-`e9c90e5`: 37/37 hard PASS (including the two Pinnacle data-layer probes from `b5b4477` / `92aab30`), 1 soft flake on the TS LeBron concierge probe (same 25s `AbortSignal.timeout` flake observed across the prior smoke runs — direct payload re-runs land at 8.9s and 17s).
 
-The structural Pinnacle fix from commit `92aab30` (triple-key `(character_name, set_name, variant_type)` join) is preserved and extended in `1d9c16c` via the new `fetchPinnacleFmvDistribution` helper — the FMV-leak hard probe and the Goofy concierge soft probe both still pass.
+The structural Pinnacle fix from commit `92aab30` (triple-key `(character_name, set_name, variant_type)` join) is preserved and extended in `1d9c16c` via the new `fetchPinnacleFmvDistribution` helper — the FMV-leak hard probe and the Goofy concierge soft probe both still pass after the seventh-run change.
 
-Outstanding follow-up (not blocking criterion (c)):
+Lessons surfaced by this verification cycle:
 
-- The model didn't pass `tier=COMMON` to `get_fmv` despite the parameter being available, surfacing the all-tier distribution (n=124, median $20) instead of the Common-specific cut (n=60, median $2). A future "Tier Filtering Rule" parallel to the existing Name Filtering Rule would tighten this further. Recommend separate session.
-- The model still occasionally surfaces unsourced categorical pricing claims ("typically command premium prices") that aren't quantified FMV figures but lean directional. Out of Bug 2's literal scope; could be tightened with a "no categorical pricing without a tool call" rule.
+- Postgres enum columns + supabase-js `.ilike()` is a footgun. PostgREST emits the query without a text cast, so the operator does not exist and the filter silently drops to no-results. Use `.eq()` with case normalization instead. The same pattern would bite any other helper that uses `.ilike()` on an enum column elsewhere in the codebase — worth a grep audit in a future session.
+- Prompt rules are not enough on their own. A rule that tells the model to do the right thing only matters if the underlying tool actually executes correctly. Run-six was a 50%-progress state — the model did the right thing, the server got the call wrong. Always end with an end-to-end live verification, not just "the prompt mentions tier now".
