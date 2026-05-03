@@ -69,6 +69,8 @@ export default function HomePage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
       />
 
+      <style>{`@media (min-width: 768px){.rpc-home-logo{height:120px!important}}`}</style>
+
       <div style={{ minHeight: "100vh", background: "#0B0B0D", color: "#fff", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
         <header style={{ borderBottom: "1px solid #26262d", padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 1280, margin: "0 auto" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -84,6 +86,12 @@ export default function HomePage() {
 
         <main style={{ maxWidth: 1280, margin: "0 auto", padding: "60px 24px" }}>
           <section style={{ textAlign: "center", padding: "40px 0 60px" }}>
+            <img
+              src="/rip-packs-city-logo.png"
+              alt="Rip Packs City"
+              className="rpc-home-logo"
+              style={{ display: "block", margin: "0 auto 24px", height: 80, width: "auto" }}
+            />
             <h1 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 56, letterSpacing: "0.04em", textTransform: "uppercase", lineHeight: 1.05, margin: "0 0 16px", maxWidth: 920, marginInline: "auto" }}>
               Flow Blockchain Collector Intelligence
             </h1>
