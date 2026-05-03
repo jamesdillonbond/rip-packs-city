@@ -23,7 +23,7 @@ if (!FLOWTY_PROXY_TOKEN) {
   throw new Error("FLOWTY_PROXY_TOKEN env var is required")
 }
 const AD_GQL_PROXY = process.env.AD_PROXY_URL ?? ""
-const AD_GQL_SECRET = process.env.AD_PROXY_SECRET ?? ""
+const AD_GQL_SECRET = process.env.TS_PROXY_SECRET ?? ""
 const AD_GQL_FALLBACK = "https://nflallday.com/consumer/graphql"
 const AD_GQL_PAGE_SIZE = 100
 const AD_GQL_MAX_PAGES = 70

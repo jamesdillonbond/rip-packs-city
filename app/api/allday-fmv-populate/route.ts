@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic"
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const AD_GQL_PROXY = process.env.AD_PROXY_URL ?? ""
-const AD_GQL_SECRET = process.env.AD_PROXY_SECRET ?? ""
+const AD_GQL_SECRET = process.env.TS_PROXY_SECRET ?? ""
 const AD_GQL_FALLBACK = "https://nflallday.com/consumer/graphql"
 
 const SWEEP_ID = "allday-fmv-sweep"

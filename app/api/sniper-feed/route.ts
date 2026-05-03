@@ -166,7 +166,6 @@ const TS_PROXY_URL = process.env.TS_PROXY_URL ?? "";
 const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET ?? "";
 
 const AD_PROXY_URL = process.env.AD_PROXY_URL ?? "";
-const AD_PROXY_SECRET = process.env.AD_PROXY_SECRET ?? "";
 
 const ALLDAY_MARKETPLACE_QUERY = `
   query searchMarketplaceEditions($after: String, $first: Int, $sortBy: MarketplaceEditionSortType) {
@@ -660,7 +659,7 @@ async function fetchAlldayGqlPage(after: string | null): Promise<AlldayGqlPage> 
   try {
     const url = AD_PROXY_URL || "https://nflallday.com/consumer/graphql";
     const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (AD_PROXY_URL && AD_PROXY_SECRET) headers["X-Proxy-Secret"] = AD_PROXY_SECRET;
+    if (AD_PROXY_URL && TS_PROXY_SECRET) headers["X-Proxy-Secret"] = TS_PROXY_SECRET;
     const res = await fetch(url, {
       method: "POST",
       headers,
