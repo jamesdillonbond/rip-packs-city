@@ -1,22 +1,28 @@
-// compute-topshot-pack-ev v8 — route GQL through topshot-proxy.
+// compute-topshot-pack-ev v9 — error diagnostics for post-proxy failure cohort.
 //
-// v7 hit public-api.nbatopshot.com directly from the Deno runtime. Cloudflare
-// bot-mitigation rejected ~50% of requests (gql_errors=5-6 of 12 every cron),
-// even though the same query body succeeds 100% from Postgres net.http_post
-// and from a real browser. Net effect: rows_written=0 every cycle, EV history
-// stale across 60+ pack distributions.
+// v8 routed both DYNAMIC_QUERY and EDITIONS_QUERY through the topshot-proxy
+// worker. Failure rate dropped from ~50% to ~42% — Cloudflare bot mitigation
+// is no longer the dominant cause, but every cron tick still produces 5–6
+// gql_errors and 6–7 rpc_not_ok across 12 packs (rows_written=0).
 //
-// v8 routes both DYNAMIC_QUERY and EDITIONS_QUERY through the same
-// topshot-proxy.tdillonbond.workers.dev path that lib/editions-hydrate.ts and
-// every other server-side TopShot caller already use. When TS_PROXY_URL +
-// TS_PROXY_SECRET are set on the function env, gqlCall sends the request to
-// the proxy with an X-Proxy-Secret header; the worker forwards verbatim to
-// public-api.nbatopshot.com/graphql with browser-like headers. Falls back to
-// direct only if env vars are absent (logged once at startup so the failure
-// mode is loud).
+// v9 adds two diagnostic arrays into pipeline_runs.extra so we can
+// reverse-engineer the actual root cause from telemetry:
+//   • errors_sample — for each gql_error, captures the operation name
+//     (GetPackListing_DynamicData or GetPackEditions), the pack flow_id
+//     (pack_listing_uuid), the GQL error message, the HTTP status, and the
+//     first 500 chars of the response body. The op name lets us tell
+//     dynamic-data failures from editions-pagination failures; the body
+//     surfaces Cloudflare interstitials, GQL validation errors, or upstream
+//     5xx responses that the v8 single-string error swallowed.
+//   • rpc_not_ok_sample — for each compute_pack_ev_per_edition_weighted
+//     RPC that returned ok!=true, captures the dist_id and the full RPC
+//     payload. rpc_not_ok is NOT an HTTP error — it's the SQL function's
+//     business-logic rejection (zero coverage, no priced editions, etc.).
+//     Capturing the payload tells us which validation tripped.
 //
-// Function-version is bumped to 8 so pipeline_runs.extra makes the cohort
-// boundary obvious. All other behavior identical to v7.
+// Both samples are capped at 12 entries (one per pack in a batch) to keep
+// the jsonb column small. No proxy auth, cron schedule, or signature
+// changes — pure observability.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
 
@@ -36,6 +42,7 @@ if (!USING_PROXY) {
 const BATCH_SIZE = 12
 const MAX_EDITION_PAGES = 8
 const TIME_BUDGET_MS = 110_000
+const ERRORS_SAMPLE_CAP = 12
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
@@ -73,6 +80,7 @@ const DYNAMIC_QUERY = `
     }
   }
 `
+const DYNAMIC_OP = "GetPackListing_DynamicData"
 
 const EDITIONS_QUERY = `
   query GetPackEditions($input: GetPackListingInput!, $after: ID) {
@@ -97,6 +105,7 @@ const EDITIONS_QUERY = `
     }
   }
 `
+const EDITIONS_OP = "GetPackEditions"
 
 interface DynamicData {
   getPackListing?: {
@@ -140,18 +149,26 @@ interface TargetRow {
   retail_price_usd: string | number | null
 }
 
+interface GqlFailure {
+  opName: string
+  error: string
+  status?: number
+  body?: string
+}
+
 type FetchOutcome =
   | { tag: "success"; target: TargetRow; totalUnopened: number; totalPackCount: number; editions: EditionNode[] }
   | { tag: "no_dynamic"; target: TargetRow }
   | { tag: "no_editions"; target: TargetRow }
   | { tag: "zero_unopened"; target: TargetRow }
-  | { tag: "gql_error"; target: TargetRow; error: string }
+  | { tag: "gql_error"; target: TargetRow; failure: GqlFailure }
 
 async function gqlCall<T>(
+  opName: string,
   query: string,
   variables: Record<string, unknown>,
   timeoutMs = 15000,
-): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
+): Promise<{ ok: true; data: T } | { ok: false; failure: GqlFailure }> {
   let res: Response
   try {
     res = await fetch(GQL_ENDPOINT, {
@@ -161,29 +178,56 @@ async function gqlCall<T>(
       signal: AbortSignal.timeout(timeoutMs),
     })
   } catch (err) {
-    return { ok: false, error: `fetch: ${err instanceof Error ? err.message : String(err)}` }
+    return {
+      ok: false,
+      failure: { opName, error: `fetch: ${err instanceof Error ? err.message : String(err)}` },
+    }
   }
-  if (!res.ok) return { ok: false, error: `HTTP ${res.status}` }
-  const json = await res.json().catch(() => null) as
-    | { data?: T; errors?: Array<{ message: string }> } | null
-  if (!json) return { ok: false, error: "not-json" }
-  if (json.errors?.length) return { ok: false, error: json.errors[0].message }
+  if (!res.ok) {
+    const body = await res.text().catch(() => "")
+    return {
+      ok: false,
+      failure: { opName, error: `HTTP ${res.status}`, status: res.status, body: body.slice(0, 500) },
+    }
+  }
+  const text = await res.text()
+  let json:
+    | { data?: T; errors?: Array<{ message: string }> }
+    | null = null
+  try { json = JSON.parse(text) } catch { json = null }
+  if (!json) {
+    return {
+      ok: false,
+      failure: { opName, error: "not-json", status: res.status, body: text.slice(0, 500) },
+    }
+  }
+  if (json.errors?.length) {
+    return {
+      ok: false,
+      failure: {
+        opName,
+        error: json.errors[0].message,
+        status: res.status,
+        body: JSON.stringify(json.errors).slice(0, 500),
+      },
+    }
+  }
   return { ok: true, data: (json.data ?? {}) as T }
 }
 
 async function fetchAllEditions(packListingId: string): Promise<{
   ok: true; editions: EditionNode[]
-} | { ok: false; error: string }> {
+} | { ok: false; failure: GqlFailure }> {
   const all: EditionNode[] = []
   let cursor: string | null = null
   let pages = 0
   while (pages < MAX_EDITION_PAGES) {
     pages++
-    const r = await gqlCall<EditionsResponse>(EDITIONS_QUERY, {
+    const r = await gqlCall<EditionsResponse>(EDITIONS_OP, EDITIONS_QUERY, {
       input: { packListingId },
       after: cursor ?? undefined,
     })
-    if (!r.ok) return { ok: false, error: r.error }
+    if (!r.ok) return { ok: false, failure: r.failure }
     const conn = r.data?.getPackListing?.data?.packEditionsV3
     const edges = conn?.edges ?? []
     for (const e of edges) if (e?.node) all.push(e.node)
@@ -195,10 +239,10 @@ async function fetchAllEditions(packListingId: string): Promise<{
 }
 
 async function fetchOnePack(target: TargetRow): Promise<FetchOutcome> {
-  const dyn = await gqlCall<DynamicData>(DYNAMIC_QUERY, {
+  const dyn = await gqlCall<DynamicData>(DYNAMIC_OP, DYNAMIC_QUERY, {
     input: { packListingId: target.pack_listing_uuid },
   })
-  if (!dyn.ok) return { tag: "gql_error", target, error: `dyn: ${dyn.error}` }
+  if (!dyn.ok) return { tag: "gql_error", target, failure: dyn.failure }
 
   const cr = dyn.data?.getPackListing?.data?.packListingContentRemaining
   if (!cr) return { tag: "no_dynamic", target }
@@ -207,7 +251,7 @@ async function fetchOnePack(target: TargetRow): Promise<FetchOutcome> {
   if (totalUnopened === 0) return { tag: "zero_unopened", target }
 
   const eds = await fetchAllEditions(target.pack_listing_uuid)
-  if (!eds.ok) return { tag: "gql_error", target, error: `eds: ${eds.error}` }
+  if (!eds.ok) return { tag: "gql_error", target, failure: eds.failure }
   if (eds.editions.length === 0) return { tag: "no_editions", target }
 
   return { tag: "success", target, totalUnopened, totalPackCount, editions: eds.editions }
@@ -252,6 +296,21 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     gql_errors: 0,
   }
 
+  const errorsSample: Array<{
+    op: string
+    flow_id: string
+    dist_id: string
+    error: string
+    status?: number
+    body?: string
+  }> = []
+  const rpcNotOkSample: Array<{
+    dist_id: string
+    pack_price: number
+    slots: number
+    payload: unknown
+  }> = []
+
   try {
     const { data: targets, error: targetsErr } = await supabase
       .from("topshot_pack_ev_targets")
@@ -262,7 +321,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: false, error: `targets: ${targetsErr.message}`,
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 8, using_proxy: USING_PROXY },
+        extra: { counters, elapsed_ms: Date.now() - started, function_version: 9, using_proxy: USING_PROXY },
       })
       return
     }
@@ -272,7 +331,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: true,
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 8, using_proxy: USING_PROXY, message: "no targets" },
+        extra: { counters, elapsed_ms: Date.now() - started, function_version: 9, using_proxy: USING_PROXY, message: "no targets" },
       })
       return
     }
@@ -284,7 +343,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         message: "heartbeat:started",
         target_count: targetRows.length,
         elapsed_ms: Date.now() - started,
-        function_version: 8,
+        function_version: 9,
         using_proxy: USING_PROXY,
         batch_size: BATCH_SIZE,
       },
@@ -303,7 +362,16 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       counters.nodes_processed++
       if (r.status === "rejected") {
         counters.gql_errors++
-        console.log(`[compute-topshot-pack-ev] settled-rejected: ${r.reason}`)
+        const reason = r.reason instanceof Error ? r.reason.message : String(r.reason)
+        if (errorsSample.length < ERRORS_SAMPLE_CAP) {
+          errorsSample.push({
+            op: "settled-rejected",
+            flow_id: "",
+            dist_id: "",
+            error: reason.slice(0, 500),
+          })
+        }
+        console.log(`[compute-topshot-pack-ev] settled-rejected: ${reason}`)
         continue
       }
       const o = r.value
@@ -328,7 +396,17 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
           break
         case "gql_error":
           counters.gql_errors++
-          console.log(`[compute-topshot-pack-ev] gql err dist=${o.target.dist_id}: ${o.error}`)
+          if (errorsSample.length < ERRORS_SAMPLE_CAP) {
+            errorsSample.push({
+              op: o.failure.opName,
+              flow_id: o.target.pack_listing_uuid,
+              dist_id: o.target.dist_id,
+              error: o.failure.error.slice(0, 500),
+              status: o.failure.status,
+              body: o.failure.body,
+            })
+          }
+          console.log(`[compute-topshot-pack-ev] gql err op=${o.failure.opName} dist=${o.target.dist_id}: ${o.failure.error}`)
           break
       }
     }
@@ -337,7 +415,15 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: targetRows.length, rowsWritten: 0,
         rowsSkipped: targetRows.length, ok: true,
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 8, using_proxy: USING_PROXY, fetch_phase_ms: fetchPhaseMs },
+        extra: {
+          counters,
+          errors_sample: errorsSample,
+          rpc_not_ok_sample: rpcNotOkSample,
+          elapsed_ms: Date.now() - started,
+          function_version: 9,
+          using_proxy: USING_PROXY,
+          fetch_phase_ms: fetchPhaseMs,
+        },
       })
       return
     }
@@ -347,7 +433,15 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: targetRows.length, rowsWritten: 0,
         rowsSkipped: targetRows.length, ok: false, error: "time_budget_exceeded_after_fetch",
-        extra: { counters, elapsed_ms: Date.now() - started, function_version: 8, using_proxy: USING_PROXY, fetch_phase_ms: fetchPhaseMs },
+        extra: {
+          counters,
+          errors_sample: errorsSample,
+          rpc_not_ok_sample: rpcNotOkSample,
+          elapsed_ms: Date.now() - started,
+          function_version: 9,
+          using_proxy: USING_PROXY,
+          fetch_phase_ms: fetchPhaseMs,
+        },
       })
       return
     }
@@ -481,6 +575,14 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       const ev = rpcResult as any
       if (!ev || ev.ok !== true) {
         counters.rpc_not_ok++
+        if (rpcNotOkSample.length < ERRORS_SAMPLE_CAP) {
+          rpcNotOkSample.push({
+            dist_id: distId,
+            pack_price: packPrice,
+            slots,
+            payload: ev,
+          })
+        }
         continue
       }
 
@@ -513,7 +615,15 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
           startedAt: startedAtIso, rowsFound: targetRows.length, rowsWritten: 0,
           rowsSkipped: targetRows.length, ok: false,
           error: `insert pack_ev_history: ${evErr.message}`,
-          extra: { counters, elapsed_ms: Date.now() - started, function_version: 8, using_proxy: USING_PROXY, fetch_phase_ms: fetchPhaseMs },
+          extra: {
+            counters,
+            errors_sample: errorsSample,
+            rpc_not_ok_sample: rpcNotOkSample,
+            elapsed_ms: Date.now() - started,
+            function_version: 9,
+            using_proxy: USING_PROXY,
+            fetch_phase_ms: fetchPhaseMs,
+          },
         })
         return
       }
@@ -535,10 +645,12 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       extra: {
         ...counters,
         editions_requested: seenExternalIds.size,
+        errors_sample: errorsSample,
+        rpc_not_ok_sample: rpcNotOkSample,
         elapsed_ms: elapsed,
         fetch_phase_ms: fetchPhaseMs,
         db_phase_ms: dbPhaseMs,
-        function_version: 8,
+        function_version: 9,
         using_proxy: USING_PROXY,
         batch_size: BATCH_SIZE,
       },
@@ -549,7 +661,14 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     await logPipelineRun({
       startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: false, error: msg,
-      extra: { counters, elapsed_ms: Date.now() - started, function_version: 8, using_proxy: USING_PROXY },
+      extra: {
+        counters,
+        errors_sample: errorsSample,
+        rpc_not_ok_sample: rpcNotOkSample,
+        elapsed_ms: Date.now() - started,
+        function_version: 9,
+        using_proxy: USING_PROXY,
+      },
     })
   }
 }
