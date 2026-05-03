@@ -1139,12 +1139,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(meta);
   } catch (err: any) {
     const m = String(err?.message ?? err);
-    console.log("[sc_err] status", err?.status ?? "");
-    console.log("[sc_err] name", err?.name ?? "");
-    console.log("[sc_err] m1", m.slice(0, 40));
-    console.log("[sc_err] m2", m.slice(40, 80));
-    console.log("[sc_err] m3", m.slice(80, 120));
-    console.log("[sc_err] m4", m.slice(120, 160));
+    try {
+      await supabase.from("support_conversations").insert({
+        session_id: "_sc_diag_",
+        user_message: "DIAG_ERR",
+        bot_response: `status=${err?.status ?? ""} name=${err?.name ?? ""} msg=${m}`.slice(0, 4000),
+        escalated: false,
+        category: "diagnostic",
+        resolved: false,
+      });
+    } catch {}
     return NextResponse.json(
       { response: "Something went wrong on my end. Try again, or reach out to Trevor on Discord.", escalated: false, category: "error" },
       { status: 200 }
