@@ -268,23 +268,57 @@ async function runListingCache() {
   const editionIds = Array.from(
     new Set(rows.map((r) => r.edition_external_id).filter((x): x is string => !!x))
   )
-  const editionMap = new Map<string, string>()
+  type EditionEnrichment = {
+    id: string
+    player_name: string | null
+    set_name: string | null
+    team_name: string | null
+    series: number | null
+    thumbnail_url: string | null
+  }
+  const editionMap = new Map<string, EditionEnrichment>()
   for (let i = 0; i < editionIds.length; i += EDITION_LOOKUP_CHUNK) {
     const chunk = editionIds.slice(i, i + EDITION_LOOKUP_CHUNK)
     const { data, error } = await supabaseAdmin
       .from("editions")
-      .select("id, external_id")
+      .select("id, external_id, player_name, set_name, team_name, series, thumbnail_url")
       .eq("collection_id", UFC_COLLECTION_ID)
       .in("external_id", chunk)
     if (error) {
       console.log(`[ufc-listing-cache] edition lookup error: ${error.message}`)
       continue
     }
-    for (const row of data ?? []) {
-      if (row.external_id && row.id) editionMap.set(row.external_id, row.id)
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      const ext = row.external_id as string | null
+      const id = row.id as string | null
+      if (!ext || !id) continue
+      editionMap.set(ext, {
+        id,
+        player_name: (row.player_name as string | null) ?? null,
+        set_name: (row.set_name as string | null) ?? null,
+        team_name: (row.team_name as string | null) ?? null,
+        series: (row.series as number | null) ?? null,
+        thumbnail_url: (row.thumbnail_url as string | null) ?? null,
+      })
     }
   }
   stats.editionsMapped = editionMap.size
+
+  // Enrich rows from editions metadata. Flowty wins for player_name (it
+  // correctly identifies fighters on UFC trash-talk catchphrase moments
+  // like MY-BALLS-WAS-HOT-15677 where editions.player_name is the
+  // catchphrase string itself); editions wins for set_name / team_name /
+  // series_name (Flowty doesn't surface them).
+  for (const r of rows) {
+    if (!r.edition_external_id) continue
+    const ed = editionMap.get(r.edition_external_id)
+    if (!ed) continue
+    if (r.player_name == null && ed.player_name != null) r.player_name = ed.player_name
+    if (r.thumbnail_url == null && ed.thumbnail_url != null) r.thumbnail_url = ed.thumbnail_url
+    if (ed.set_name != null) r.set_name = ed.set_name
+    if (ed.team_name != null) r.team_name = ed.team_name
+    if (ed.series != null) r.series_name = `Series ${ed.series}`
+  }
 
   // Wipe existing UFC cached listings.
   const { error: delErr } = await supabaseAdmin
