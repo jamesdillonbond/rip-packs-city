@@ -215,12 +215,12 @@ function holoClass(tier: string): string {
   }
 }
 
-function discountColor(pct: number) {
-  if (pct >= 50) return "bg-red-500/20 text-red-300 border border-red-500/40";
-  if (pct >= 30) return "bg-orange-500/20 text-orange-300 border border-orange-500/40";
-  if (pct >= 15) return "bg-yellow-500/20 text-yellow-300 border border-yellow-500/40";
-  if (pct >= 5)  return "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
-  return "border";
+function discountColor(pct: number): React.CSSProperties {
+  if (pct >= 50) return { background: "rgba(239,68,68,0.2)", color: "rgb(252,165,165)", border: "1px solid rgba(239,68,68,0.4)" };
+  if (pct >= 30) return { background: "rgba(249,115,22,0.2)", color: "rgb(253,186,116)", border: "1px solid rgba(249,115,22,0.4)" };
+  if (pct >= 15) return { background: "rgba(234,179,8,0.2)", color: "rgb(253,224,71)", border: "1px solid rgba(234,179,8,0.4)" };
+  if (pct >= 5)  return { background: "rgba(16,185,129,0.2)", color: "rgb(110,231,183)", border: "1px solid rgba(16,185,129,0.4)" };
+  return { border: "1px solid var(--rpc-border)" };
 }
 
 function ConfidenceDot({
@@ -1548,7 +1548,7 @@ export default function SniperPage() {
                       )}
                     </div>
                     <span style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-primary)", fontSize: "var(--text-sm)", fontWeight: 600 }}>${fmt(deal.askPrice)}</span>
-                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${discountColor(deal.discount)}`} style={{ fontFamily: "var(--font-mono)" }}>
+                    <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold" style={{ fontFamily: "var(--font-mono)", ...discountColor(deal.discount) }}>
                       {deal.discount > 0 ? `-${fmt(deal.discount, 1)}%` : "~0%"}
                     </span>
                   </div>
@@ -1851,7 +1851,7 @@ export default function SniperPage() {
 
                     {/* Discount */}
                     <td style={{ padding: "8px 12px", textAlign: "right" }}>
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${discountColor(deal.discount)}`} style={{ fontFamily: "var(--font-mono)" }}>
+                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold" style={{ fontFamily: "var(--font-mono)", ...discountColor(deal.discount) }}>
                         {deal.discount > 0 ? `-${fmt(deal.discount, 1)}%` : "~0%"}
                       </span>
                     </td>

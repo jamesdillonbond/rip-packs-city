@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, useMemo, useState, useEffect, useCallback, useRef, Suspense } from "react"
+import { Fragment, useMemo, useState, useEffect, useCallback, useRef, Suspense, type CSSProperties } from "react"
 import { useSearchParams, useRouter, useParams } from "next/navigation"
 import {
   normalizeSetName,
@@ -1425,6 +1425,16 @@ export default function WalletPage() {
     return ["all", ...Array.from(s).sort()]
   }, [rows])
 
+  const availableSeries = useMemo(function() {
+    const s = new Set<string>()
+    rows.forEach(function(r) {
+      if (r.series == null) return
+      const label = seriesFilterLabel(r.series, collectionSeriesMap)
+      if (label && label !== "—") s.add(label)
+    })
+    return ["all", ...Array.from(s).sort()]
+  }, [rows, collectionSeriesMap])
+
   // True when the loaded collection belongs to the signed-in / connected user
   const isOwnCollection = useMemo(function() {
     if (!input.trim()) return false
@@ -1540,6 +1550,16 @@ export default function WalletPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  const filterSelectStyle: CSSProperties = {
+    background: "var(--rpc-surface-raised)",
+    border: "1px solid var(--rpc-border)",
+    borderRadius: "var(--radius-md)",
+    padding: "8px 12px",
+    fontSize: "var(--text-sm)",
+    color: "var(--rpc-text-primary)",
+    outline: "none",
+  }
+
   return (
     <div className="min-h-screen bg-black text-zinc-100 overflow-x-hidden">
       <Suspense fallback={null}>
@@ -1550,10 +1570,19 @@ export default function WalletPage() {
 
         {/* Profile key indicator */}
         {ownerKey && (
-          <div className="mb-4 flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-400">
+          <div
+            className="mb-4 flex items-center gap-2 px-3 py-2"
+            style={{
+              border: "1px solid var(--rpc-border)",
+              background: "var(--rpc-surface)",
+              borderRadius: "var(--radius-md)",
+              fontSize: "var(--text-xs)",
+              color: "var(--rpc-text-muted)",
+            }}
+          >
             <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
-            Signed in as <span className="font-semibold text-white">{/^0x[a-fA-F0-9]{16}$/.test(ownerKey) ? ownerKey.slice(0, 6) + "\u2026" + ownerKey.slice(-4) : ownerKey}</span>
-            <span className="ml-1 text-zinc-600">· Loading wallet will update your profile stats</span>
+            Signed in as <span style={{ fontWeight: 600, color: "var(--rpc-text-primary)" }}>{/^0x[a-fA-F0-9]{16}$/.test(ownerKey) ? ownerKey.slice(0, 6) + "\u2026" + ownerKey.slice(-4) : ownerKey}</span>
+            <span style={{ marginLeft: 4, color: "var(--rpc-text-ghost)" }}>· Loading wallet will update your profile stats</span>
           </div>
         )}
 
@@ -1564,10 +1593,17 @@ export default function WalletPage() {
             onChange={function(e) { setInput(e.target.value) }}
             onKeyDown={function(e) { if (e.key === "Enter" && !loading && input.trim()) handleSearch() }}
             placeholder={ownerKey ? "Enter Top Shot username or wallet address (or press Enter to load your wallet)" : "Enter Top Shot username or wallet address"}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white outline-none placeholder:text-zinc-500 sm:max-w-lg"
-            style={{ ["--accent" as string]: accent }}
-            onFocus={function(e) { e.currentTarget.style.borderColor = accent }}
-            onBlur={function(e) { e.currentTarget.style.borderColor = "" }}
+            className="w-full sm:max-w-lg"
+            style={{
+              background: "var(--rpc-surface-raised)",
+              border: "1px solid var(--rpc-border)",
+              borderRadius: "var(--radius-md)",
+              padding: "8px 12px",
+              color: "var(--rpc-text-primary)",
+              outline: "none",
+            }}
+            onFocus={function(e) { e.currentTarget.style.borderColor = "var(--rpc-red)" }}
+            onBlur={function(e) { e.currentTarget.style.borderColor = "var(--rpc-border)" }}
           />
           {isSeededPreloaded && (
             <span
@@ -1581,8 +1617,11 @@ export default function WalletPage() {
             <button
               onClick={handleSearch}
               disabled={loading || !input.trim()}
-              className="rounded-lg px-5 py-2 font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
-              style={{ backgroundColor: accent }}
+              className="rpc-btn-primary"
+              style={{
+                opacity: loading || !input.trim() ? 0.5 : 1,
+                cursor: loading || !input.trim() ? "not-allowed" : "pointer",
+              }}
             >
               {loading ? "Loading..." : "Search"}
             </button>
@@ -1595,7 +1634,18 @@ export default function WalletPage() {
                   setTimeout(function() { setCopied(false) }, 2000)
                 }}
                 title="Copy shareable collection card link"
-                className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-400 hover:bg-zinc-900 transition"
+                style={{
+                  background: "transparent",
+                  border: "1px solid var(--rpc-border)",
+                  borderRadius: "var(--radius-md)",
+                  padding: "8px 12px",
+                  fontSize: "var(--text-sm)",
+                  color: "var(--rpc-text-secondary)",
+                  cursor: "pointer",
+                  transition: "background var(--transition-fast)",
+                }}
+                onMouseEnter={function(e) { e.currentTarget.style.background = "var(--rpc-surface-hover)" }}
+                onMouseLeave={function(e) { e.currentTarget.style.background = "transparent" }}
               >
                 {copied ? "Link copied!" : "Share"}
               </button>
@@ -1780,23 +1830,19 @@ export default function WalletPage() {
 
         {/* Filters */}
         <div className="mb-5 grid gap-2 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
-          <select value={playerFilter} onChange={function(e) { setPlayerFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
+          <select value={playerFilter} onChange={function(e) { setPlayerFilter(e.target.value) }} style={filterSelectStyle}>
             {availablePlayers.map(function(p) { return <option key={p} value={p}>{p === "all" ? "All Players" : p}</option> })}
           </select>
-          <select value={setFilter} onChange={function(e) { setSetFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
+          <select value={setFilter} onChange={function(e) { setSetFilter(e.target.value) }} style={filterSelectStyle}>
             {availableSets.map(function(s) { return <option key={s} value={s}>{s === "all" ? "All Sets" : s}</option> })}
           </select>
-          <select value={seriesFilter} onChange={function(e) { setSeriesFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
-            <option value="all">All Series</option>
-            {collectionSeriesOptions.length > 0
-              ? collectionSeriesOptions.map(function(s) { return <option key={s.seriesNumber} value={s.label}>{s.label}</option> })
-              : Object.entries(SERIES_FILTER_LABEL_FALLBACK).map(function([num, label]) { return <option key={num} value={label}>{label}</option> })
-            }
+          <select value={seriesFilter} onChange={function(e) { setSeriesFilter(e.target.value) }} style={filterSelectStyle}>
+            {availableSeries.map(function(s) { return <option key={s} value={s}>{s === "all" ? "All Series" : s}</option> })}
           </select>
-          <select value={rarityFilter} onChange={function(e) { setRarityFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
+          <select value={rarityFilter} onChange={function(e) { setRarityFilter(e.target.value) }} style={filterSelectStyle}>
             {availableRarities.map(function(tier) { return <option key={tier} value={tier}>{tier === "all" ? "All Rarities" : tier}</option> })}
           </select>
-          <select value={lockedFilter} onChange={function(e) { setLockedFilter(e.target.value) }} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
+          <select value={lockedFilter} onChange={function(e) { setLockedFilter(e.target.value) }} style={filterSelectStyle}>
             <option value="all">All Lock States</option>
             <option value="locked">Locked</option>
             <option value="unlocked">Unlocked</option>
@@ -1821,8 +1867,8 @@ export default function WalletPage() {
             ["badge", "Badge"],
           ] as [SortKey, string][]).map(function([key, label]) {
             return (
-              <button key={key} onClick={function() { toggleSort(key) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm hover:bg-zinc-900 " + (sortKey === key ? "text-white" : "border-zinc-700 text-zinc-400")} style={sortKey === key ? { borderColor: accent } : undefined}>
-                {label}{sortKey === key && <span className="ml-1 text-zinc-500">{sortDirection === "asc" ? "↑" : "↓"}</span>}
+              <button key={key} onClick={function() { toggleSort(key) }} className={"rpc-chip shrink-0" + (sortKey === key ? " active" : "")}>
+                {label}{sortKey === key && <span style={{ marginLeft: 4, opacity: 0.7 }}>{sortDirection === "asc" ? "↑" : "↓"}</span>}
               </button>
             )
           })}
@@ -2046,26 +2092,25 @@ export default function WalletPage() {
             )}
           </div>
         ) : (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-950">
-         <div className="overflow-x-auto">
-          <table className="w-full min-w-[480px] border-collapse text-sm">
-            <thead className="bg-zinc-900">
-              <tr className="border-b border-zinc-800 text-left">
-                <th className="p-3">Player</th>
-                <th className="p-3 hidden sm:table-cell">Set</th>
-                <th className="p-3 hidden sm:table-cell text-left">Series</th>
-                <th className="p-3 hidden md:table-cell">Parallel</th>
-                <th className="p-3 hidden md:table-cell">Rarity</th>
-                <th className="p-3 hidden sm:table-cell">Serial / Mint</th>
-                <th className="p-3 hidden lg:table-cell">Held / Locked</th>
-                <th className="p-3 hidden xl:table-cell">Packs</th>
-                <th className="p-3 whitespace-nowrap">FMV</th>
-                <th className="p-3 hidden xl:table-cell">Paid</th>
-                <th className="p-3 hidden xl:table-cell">P&amp;L</th>
-                <th className="p-3 hidden lg:table-cell">Low Ask</th>
-                <th className="p-3 hidden lg:table-cell">Best Offer</th>
-                <th className="p-3 hidden xl:table-cell">Acquired</th>
-                <th className="p-3">Details</th>
+        <div className="rpc-card" style={{ overflow: "auto", borderRadius: "var(--radius-md)" }}>
+          <table style={{ width: "100%", minWidth: 480, borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)", textAlign: "left" }}>
+                <th className="rpc-label" style={{ padding: "10px 12px", textAlign: "left" }}>Player</th>
+                <th className="rpc-label hidden sm:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Set</th>
+                <th className="rpc-label hidden sm:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Series</th>
+                <th className="rpc-label hidden md:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Parallel</th>
+                <th className="rpc-label hidden md:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Rarity</th>
+                <th className="rpc-label hidden sm:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Serial / Mint</th>
+                <th className="rpc-label hidden lg:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Held / Locked</th>
+                <th className="rpc-label hidden xl:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Packs</th>
+                <th className="rpc-label whitespace-nowrap" style={{ padding: "10px 12px", textAlign: "left" }}>FMV</th>
+                <th className="rpc-label hidden xl:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Paid</th>
+                <th className="rpc-label hidden xl:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>P&amp;L</th>
+                <th className="rpc-label hidden lg:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Low Ask</th>
+                <th className="rpc-label hidden lg:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Best Offer</th>
+                <th className="rpc-label hidden xl:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Acquired</th>
+                <th className="rpc-label" style={{ padding: "10px 12px", textAlign: "left" }}>Details</th>
               </tr>
             </thead>
             <tbody>
@@ -2088,7 +2133,13 @@ export default function WalletPage() {
 
                 return (
                   <Fragment key={row.momentId}>
-                    <tr onClick={function(e) { const t = e.target as HTMLElement; if (t.closest("a,button,input,svg,video")) return; setSelectedMoment(row) }} className={"group border-b border-zinc-800 align-top cursor-pointer " + (row.tier?.toUpperCase() === "LEGENDARY" ? " rpc-holo-legendary" : row.tier?.toUpperCase() === "ULTIMATE" ? " rpc-holo-ultimate" : row.tier?.toUpperCase() === "RARE" ? " rpc-holo-rare" : "")}>
+                    <tr
+                      onClick={function(e) { const t = e.target as HTMLElement; if (t.closest("a,button,input,svg,video")) return; setSelectedMoment(row) }}
+                      className={"group align-top cursor-pointer " + (row.tier?.toUpperCase() === "LEGENDARY" ? " rpc-holo-legendary" : row.tier?.toUpperCase() === "ULTIMATE" ? " rpc-holo-ultimate" : row.tier?.toUpperCase() === "RARE" ? " rpc-holo-rare" : "")}
+                      style={{ borderBottom: "1px solid var(--rpc-border)", transition: "background var(--transition-fast)" }}
+                      onMouseEnter={function(e) { (e.currentTarget as HTMLElement).style.background = "var(--rpc-surface-hover)" }}
+                      onMouseLeave={function(e) { (e.currentTarget as HTMLElement).style.background = "transparent" }}
+                    >
                       <td className="p-3 min-w-[160px]">
                         <div className="flex items-center gap-2">
                           {(() => {
@@ -2428,7 +2479,7 @@ export default function WalletPage() {
                     </tr>
 
                     {expanded ? (
-                      <tr className="border-b border-zinc-800 bg-black/60">
+                      <tr style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)" }}>
                         <td colSpan={16} className="p-4">
                           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
@@ -2533,7 +2584,6 @@ export default function WalletPage() {
               })}
             </tbody>
           </table>
-         </div>
         </div>
         )}
 
