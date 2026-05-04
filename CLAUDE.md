@@ -195,7 +195,7 @@ git push origin <branch>
 - app/api/fmv/route.ts — FMV lookup endpoint
 - app/api/support-chat/route.ts — AI concierge (5 tools, Claude Sonnet)
 - workers/topshot-proxy/ — Cloudflare Worker, live at https://topshot-proxy.tdillonbond.workers.dev. Routes: POST / or POST /topshot → public-api.nbatopshot.com/graphql, POST /allday → public-api.nflallday.com/graphql. Auth: X-Proxy-Secret header must match worker's PROXY_SECRET (synced with TS_PROXY_SECRET in .env.local). Sibling workers pinnacle-proxy and spork-proxy share the same workers/ directory but were not verified during the topshot-proxy fix — secret state for those is unknown but they are not currently blocking anything.
-- CI/CD: GitHub Actions workflows in .github/workflows/ — rpc-pipeline.yml, ops-monitor.yml, pipeline-sentinel.yml, alert-checker.yml, allday-ingest.yml, pinnacle-owner-discovery.yml, ts-listing-ingest.yml, smoke-tests.yml. Several other workflows (social-bot.yml, listing-alert-bot.yml, pack-drop-bot.yml, portfolio-digest.yml, rpc-report.yml, twitter-deal-bot.yml) exist as .disabled and are intentionally not running.
+- CI/CD: GitHub Actions workflows in .github/workflows/ — rpc-pipeline.yml, ops-monitor.yml, pipeline-sentinel.yml, alert-checker.yml, allday-ingest.yml, badge-sync.yml, pinnacle-owner-discovery.yml, ts-listing-ingest.yml, smoke-tests.yml.
 
 ---
 
@@ -371,13 +371,7 @@ Main branch is the canonical clean branch.
 
 1. Cart execution blocked — needs NEXT_PUBLIC_WALLETCONNECT_ID (register at dashboard.reown.com) + Dapper co-signer registration
 
-2. Twitter deal bot — lib/twitter/post.ts shipped, posted_deals table exists, needs cron trigger
-
-3. ~3,600 editions missing onchain IDs; 42 badge_editions rows with no player name
-
-4. Sentry error capture inactive — `@sentry/nextjs ^10.47.0` is wired (sentry.client/server/edge.config.ts all reference `NEXT_PUBLIC_SENTRY_DSN`) but no DSN set in Vercel env. SDK is current; only blocker is creating a Sentry project (or locating the existing one) and pasting its DSN as `NEXT_PUBLIC_SENTRY_DSN` for production/preview/development. `Sentry.init` is gated by `enabled: NODE_ENV === "production"` and falls back to `""` when DSN is absent, so prod is silently dropping events today.
-
-5. Pack-drop bot scaffolded but not built — workflow at `.github/workflows/pack-drop-bot.yml.disabled` is double-disabled (the `.disabled` suffix means GitHub doesn't pick it up, AND the job has `if: false`). The `pack_drops` Supabase table exists with full schema, indexes, and RLS but has 0 rows because nothing writes to it. The route `app/api/bots/pack-drop/route.ts` does not exist — only `app/api/pack-roi/route.ts` reads `pack_drops`. To activate: build the route handler, drop `if: false` from the job, rename the workflow without `.disabled`.
+2. Sentry error capture inactive — `@sentry/nextjs ^10.47.0` is wired (sentry.client/server/edge.config.ts all reference `NEXT_PUBLIC_SENTRY_DSN`) but no DSN set in Vercel env. SDK is current; only blocker is creating a Sentry project (or locating the existing one) and pasting its DSN as `NEXT_PUBLIC_SENTRY_DSN` for production/preview/development. `Sentry.init` is gated by `enabled: NODE_ENV === "production"` and falls back to `""` when DSN is absent, so prod is silently dropping events today.
 
 ---
 
@@ -385,10 +379,9 @@ Main branch is the canonical clean branch.
 
 1. Cart execution (WalletConnect ID + Dapper registration)
 2. Austin Kline FMV API outreach (demo URL live)
-3. Twitter deal bot activation (add cron trigger)
-4. LLC formation (Oregon, Milwaukie)
-5. RPC Pro monetization ($9/month freemium gate)
-6. Custom domain rippackscity.com (affects Resend + Supabase auth redirects)
+3. LLC formation (Oregon, Milwaukie)
+4. RPC Pro monetization ($9/month freemium gate)
+5. Custom domain rippackscity.com (affects Resend + Supabase auth redirects)
 
 ---
 
