@@ -53,19 +53,53 @@ export interface PackTableProps {
   className?: string
 }
 
-const TIER_CLASS: Record<string, string> = {
-  ULTIMATE: 'text-yellow-400 border-yellow-900 bg-yellow-950/30',
-  LEGENDARY: 'text-orange-400 border-orange-900 bg-orange-950/30',
-  RARE: 'text-purple-400 border-purple-900 bg-purple-950/30',
-  EPIC: 'text-indigo-400 border-indigo-900 bg-indigo-950/30',
-  UNCOMMON: 'text-teal-400 border-teal-900 bg-teal-950/30',
-  FANDOM: 'text-blue-400 border-blue-900 bg-blue-950/30',
-  COMMON: 'text-slate-400 border-zinc-800 bg-zinc-900',
+type ChipStyle = {
+  background: string
+  color: string
+  border: string
 }
 
-function tierChip(tier: string): string {
+const TIER_STYLE: Record<string, ChipStyle> = {
+  ULTIMATE: { background: 'rgba(234,179,8,0.15)', border: '1px solid rgba(234,179,8,0.4)', color: 'rgb(253,224,71)' },
+  LEGENDARY: { background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.4)', color: 'rgb(253,186,116)' },
+  RARE: { background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.4)', color: 'rgb(216,180,254)' },
+  EPIC: { background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.4)', color: 'rgb(165,180,252)' },
+  UNCOMMON: { background: 'rgba(20,184,166,0.15)', border: '1px solid rgba(20,184,166,0.4)', color: 'rgb(94,234,212)' },
+  FANDOM: { background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.4)', color: 'rgb(147,197,253)' },
+  COMMON: { background: 'rgba(100,116,139,0.15)', border: '1px solid rgba(100,116,139,0.4)', color: 'rgb(203,213,225)' },
+}
+
+const TIER_DEFAULT: ChipStyle = {
+  background: 'rgba(100,116,139,0.15)',
+  border: '1px solid rgba(100,116,139,0.4)',
+  color: 'rgb(203,213,225)',
+}
+
+function tierChip(tier: string): ChipStyle {
   const t = tier.toUpperCase().replace('MOMENT_TIER_', '')
-  return TIER_CLASS[t] ?? 'text-zinc-400 border-zinc-800 bg-zinc-900'
+  return TIER_STYLE[t] ?? TIER_DEFAULT
+}
+
+const COVERAGE_NULL: ChipStyle = {
+  background: 'rgba(100,116,139,0.15)',
+  border: '1px solid rgba(100,116,139,0.4)',
+  color: 'rgb(148,163,184)',
+}
+const COVERAGE_LOW: ChipStyle = {
+  background: 'rgba(249,115,22,0.15)',
+  border: '1px solid rgba(249,115,22,0.4)',
+  color: 'rgb(253,186,116)',
+}
+const COVERAGE_HIGH: ChipStyle = {
+  background: 'rgba(16,185,129,0.15)',
+  border: '1px solid rgba(16,185,129,0.4)',
+  color: 'rgb(110,231,183)',
+}
+
+function coverageChipClass(cov: number | null): ChipStyle {
+  if (cov == null) return COVERAGE_NULL
+  if (cov < 0.6) return COVERAGE_LOW
+  return COVERAGE_HIGH
 }
 
 function fmtPrice(n: number | null | undefined): string {
@@ -83,12 +117,6 @@ function marginClass(pct: number | null): string {
   if (pct > 0) return 'text-emerald-400'
   if (pct < 0) return 'text-red-400'
   return 'text-zinc-400'
-}
-
-function coverageChipClass(cov: number | null): string {
-  if (cov == null) return 'bg-zinc-900 text-zinc-500 border-zinc-800'
-  if (cov < 0.6) return 'bg-orange-950 text-orange-300 border-orange-800'
-  return 'bg-emerald-950 text-emerald-300 border-emerald-900'
 }
 
 const RARE_SINGLE_TITLE =
@@ -143,7 +171,8 @@ export default function PackTable({
   const HeaderCell = ({ k, label, className: thClass = '' }: { k: SortKey; label: string; className?: string }) => (
     <th
       onClick={() => setSort(k)}
-      className={`cursor-pointer select-none p-3 text-left text-[11px] uppercase tracking-wide text-zinc-500 hover:text-zinc-300 ${thClass}`}
+      className={`rpc-label cursor-pointer select-none ${thClass}`}
+      style={{ textAlign: 'left', padding: '10px 12px' }}
     >
       {label}
       <SortArrow active={sortKey === k} dir={sortDir} />
@@ -153,10 +182,16 @@ export default function PackTable({
   return (
     <>
       {/* Desktop / tablet: full table */}
-      <div className={`hidden sm:block overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950 ${className}`}>
-        <table className="w-full min-w-[900px] border-collapse text-sm">
-          <thead className="bg-zinc-900 border-b border-zinc-800">
-            <tr>
+      <div
+        className={`hidden sm:block rpc-card ${className}`}
+        style={{ overflow: 'auto', borderRadius: 'var(--radius-md)' }}
+      >
+        <table
+          className="w-full min-w-[900px] border-collapse"
+          style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)' }}
+        >
+          <thead>
+            <tr style={{ background: 'var(--rpc-surface)', borderBottom: '1px solid var(--rpc-border)' }}>
               <HeaderCell k="title" label="Pack" />
               <HeaderCell k="tier" label="Tier" />
               <HeaderCell k="slots" label="Slots" />
@@ -165,12 +200,23 @@ export default function PackTable({
               <HeaderCell k="evMarginPct" label="EV Margin %" />
               <HeaderCell k="fmvCoverage" label="FMV Coverage" />
               <HeaderCell k="depletionPct" label="Depletion %" />
-              <th className="p-3 text-left text-[11px] uppercase tracking-wide text-zinc-500">Action</th>
+              <th className="rpc-label" style={{ textAlign: 'left', padding: '10px 12px' }}>
+                Action
+              </th>
             </tr>
           </thead>
           <tbody>
             {sorted.map((r) => (
-              <tr key={r.id} className="border-b border-zinc-800 hover:bg-zinc-900/50">
+              <tr
+                key={r.id}
+                style={{ borderBottom: '1px solid var(--rpc-border)', transition: 'background var(--transition-fast)' }}
+                onMouseEnter={(e) => {
+                  ;(e.currentTarget as HTMLElement).style.background = 'var(--rpc-surface-hover)'
+                }}
+                onMouseLeave={(e) => {
+                  ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+                }}
+              >
                 <td className="p-3">
                   <div className="flex items-center gap-3">
                     {r.thumbnailUrl ? (
@@ -183,7 +229,10 @@ export default function PackTable({
                   </div>
                 </td>
                 <td className="p-3">
-                  <span className={`inline-block rounded border px-2 py-0.5 text-[11px] font-semibold capitalize ${tierChip(r.tier)}`}>
+                  <span
+                    className="inline-block rounded px-2 py-0.5 text-[11px] font-semibold capitalize"
+                    style={tierChip(r.tier)}
+                  >
                     {r.tier.replace('MOMENT_TIER_', '').toLowerCase()}
                   </span>
                 </td>
@@ -204,7 +253,10 @@ export default function PackTable({
                 </td>
                 <td className={`p-3 font-semibold tabular-nums ${marginClass(r.evMarginPct)}`}>{fmtPct(r.evMarginPct)}</td>
                 <td className="p-3">
-                  <span className={`inline-block rounded-full border px-2 py-0.5 text-[11px] font-semibold ${coverageChipClass(r.fmvCoverage)}`}>
+                  <span
+                    className="inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                    style={coverageChipClass(r.fmvCoverage)}
+                  >
                     {r.fmvCoverage == null ? '—' : fmtPct(r.fmvCoverage)}
                   </span>
                 </td>
@@ -240,7 +292,10 @@ export default function PackTable({
               )}
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-semibold text-white truncate">{r.title}</div>
-                <span className={`mt-0.5 inline-block rounded border px-1.5 py-0.5 text-[10px] font-semibold capitalize ${tierChip(r.tier)}`}>
+                <span
+                  className="mt-0.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold capitalize"
+                  style={tierChip(r.tier)}
+                >
                   {r.tier.replace('MOMENT_TIER_', '').toLowerCase()}
                 </span>
               </div>
@@ -260,7 +315,10 @@ export default function PackTable({
             <div className="mt-2 flex items-center gap-3 text-xs text-zinc-400">
               <span className="tabular-nums">{fmtPrice(r.price)}</span>
               <span>·</span>
-              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${coverageChipClass(r.fmvCoverage)}`}>
+              <span
+                className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                style={coverageChipClass(r.fmvCoverage)}
+              >
                 Cov {r.fmvCoverage == null ? '—' : fmtPct(r.fmvCoverage)}
               </span>
               <span>·</span>
