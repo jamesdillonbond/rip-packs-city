@@ -25,7 +25,7 @@ export type Collection =
   | "topshot"
   | "allday"
   | "golazos"
-  | "ufc"
+  | "ufc_strike"
   | "pinnacle"
   | "unknown"
 
@@ -135,7 +135,7 @@ const COLLECTION_ADDRESSES: Array<{ collection: Collection; addr: string }> = [
   { collection: "topshot", addr: "0b2a3299cc857e29" },
   { collection: "allday", addr: "e4cf4bdc1751c65d" },
   { collection: "golazos", addr: "87ca73a41bb50ad5" },
-  { collection: "ufc", addr: "329feb3ab062d289" },
+  { collection: "ufc_strike", addr: "329feb3ab062d289" },
   { collection: "pinnacle", addr: "edf9df96c92f4595" },
 ]
 

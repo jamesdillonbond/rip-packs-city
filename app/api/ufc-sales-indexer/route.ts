@@ -416,7 +416,7 @@ async function runIndexer(req: NextRequest) {
           id: crypto.randomUUID(),
           edition_id: editionId,
           collection_id: UFC_COLLECTION_ID,
-          collection: "ufc",
+          collection: "ufc_strike",
           nft_id: s.nftID,
           price_usd: price,
           serial_number: nftToSerial.get(s.nftID) ?? 0,
