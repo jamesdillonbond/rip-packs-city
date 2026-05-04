@@ -18,6 +18,5 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          TS_PROXY_URL: ${{ secrets.TS_PROXY_URL }}
-          TS_PROXY_SECRET: ${{ secrets.TS_PROXY_SECRET }}
+          FLOWTY_PROXY_TOKEN: ${{ secrets.FLOWTY_PROXY_TOKEN }}
         run: node scripts/ts-ingest.js

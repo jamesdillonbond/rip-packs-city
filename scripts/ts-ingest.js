@@ -3,19 +3,20 @@
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const FLOWTY_ENDPOINT = "https://api2.flowty.io/collection/0x0b2a3299cc857e29/TopShot";
+const FLOWTY_PROXY_URL =
+  "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/flowty-proxy";
+const FLOWTY_PROXY_TOKEN = process.env.FLOWTY_PROXY_TOKEN;
+const TS_CONTRACT_ADDRESS = "0x0b2a3299cc857e29";
+const TS_CONTRACT_NAME = "TopShot";
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
   process.exit(1);
 }
-
-const FLOWTY_HEADERS = {
-  "Content-Type": "application/json",
-  "Origin": "https://www.flowty.io",
-  "Referer": "https://www.flowty.io/",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146 Safari/537.36",
-};
+if (!FLOWTY_PROXY_TOKEN) {
+  console.error("Missing FLOWTY_PROXY_TOKEN");
+  process.exit(1);
+}
 
 function flattenTraits(raw) {
   // nftView.traits can be { traits: { "0": {name, value}, "1": ... } }
@@ -44,23 +45,33 @@ const TRAIT_MAP = {
 };
 
 async function fetchFlowtyPage(from) {
-  const res = await fetch(FLOWTY_ENDPOINT, {
+  const res = await fetch(FLOWTY_PROXY_URL, {
     method: "POST",
-    headers: FLOWTY_HEADERS,
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${FLOWTY_PROXY_TOKEN}`,
+    },
     body: JSON.stringify({
-      address: null,
-      addresses: [],
-      collectionFilters: [{ collection: "0x0b2a3299cc857e29.TopShot", traits: [] }],
-      from,
-      includeAllListings: true,
-      limit: 24,
-      onlyUnlisted: false,
-      orderFilters: [{ conditions: [], kind: "storefront", paymentTokens: [] }],
-      sort: { direction: "desc", listingKind: "storefront", path: "blockTimestamp" },
+      contractAddress: TS_CONTRACT_ADDRESS,
+      contractName: TS_CONTRACT_NAME,
+      payload: {
+        address: null,
+        addresses: [],
+        collectionFilters: [{ collection: "0x0b2a3299cc857e29.TopShot", traits: [] }],
+        from,
+        includeAllListings: true,
+        limit: 24,
+        onlyUnlisted: false,
+        orderFilters: [{ conditions: [], kind: "storefront", paymentTokens: [] }],
+        sort: { direction: "desc", listingKind: "storefront", path: "blockTimestamp" },
+      },
     }),
-    signal: AbortSignal.timeout(12000),
+    signal: AbortSignal.timeout(15000),
   });
-  if (!res.ok) throw new Error(`Flowty HTTP ${res.status} from=${from}: ${await res.text().then(t => t.slice(0, 200))}`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`flowty-proxy HTTP ${res.status} from=${from}: ${text.slice(0, 300)}`);
+  }
   const json = await res.json();
   return json?.nfts ?? json?.data ?? [];
 }
@@ -96,13 +107,19 @@ async function deleteStale() {
     const offsets = [0, 24, 48, 72, 96];
     const pages = await Promise.allSettled(offsets.map(o => fetchFlowtyPage(o)));
     const all = [];
+    let pageFailures = 0;
     for (const [i, result] of pages.entries()) {
       if (result.status === "fulfilled") {
         console.log(`Page from=${offsets[i]}: ${result.value.length} items`);
         all.push(...result.value);
       } else {
+        pageFailures += 1;
         console.error(`Page from=${offsets[i]} failed: ${result.reason?.message}`);
       }
+    }
+    if (pageFailures === offsets.length) {
+      console.error(`All ${offsets.length} Flowty pages failed via flowty-proxy — skipping deleteStale to preserve last good data`);
+      process.exit(1);
     }
 
     // Log first item structure for debugging
@@ -155,11 +172,18 @@ async function deleteStale() {
     console.log(`Edition key resolution: ${resolvedCount}/${rows.length} rows have valid set_id/play_id`);
 
     console.log(`Upserting ${rows.length} rows...`);
+    let upserted = 0;
     for (let i = 0; i < rows.length; i += 100) {
-      await upsert(rows.slice(i, i + 100));
+      const batch = rows.slice(i, i + 100);
+      await upsert(batch);
+      upserted += batch.length;
     }
-    await deleteStale();
-    console.log(`Done. ${rows.length} listings ingested.`);
+    if (upserted > 0) {
+      await deleteStale();
+    } else {
+      console.error("Skipping deleteStale: 0 rows upserted (preserves last good data)");
+    }
+    console.log(`Done. ${upserted} listings ingested.`);
   } catch (err) {
     console.error("Ingest failed:", err.message);
     process.exit(1);
