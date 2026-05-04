@@ -2,11 +2,9 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
 // GET /api/pack-roi?wallet={address}
-// Computes pack ROI for a wallet by clustering moments by acquisition time
-// and matching clusters to known pack drops.
+// Computes pack ROI for a wallet by clustering moments by acquisition time.
 
 const TWO_HOURS_MS = 2 * 60 * 60 * 1000
-const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000
 
 type PackRipResult = {
   packName: string | null
@@ -25,7 +23,6 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Fetch wallet moments with acquisition time and FMV
     const { data: moments } = await supabaseAdmin
       .from("wallet_moments_cache")
       .select("edition_id, acquired_at, fmv")
@@ -37,7 +34,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ packs: [], message: "No moments found for this wallet" })
     }
 
-    // Cluster moments by acquisition time (within 2 hours = same pack rip)
     const clusters: { timestamp: Date; moments: typeof moments }[] = []
     let currentCluster: typeof moments = []
     let clusterStart: Date | null = null
@@ -54,7 +50,6 @@ export async function GET(req: NextRequest) {
         currentCluster.push(m)
       }
     }
-    // Push final cluster
     if (currentCluster.length >= 2 && clusterStart) {
       clusters.push({ timestamp: clusterStart, moments: currentCluster })
     }
@@ -63,58 +58,18 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ packs: [], message: "No pack rip events detected (need 2+ moments acquired together)" })
     }
 
-    // Fetch pack drops for matching
-    const { data: packDrops } = await supabaseAdmin
-      .from("pack_drops")
-      .select("id, name, drop_date, secondary_price")
-      .order("drop_date", { ascending: false })
-
-    // Try to match each cluster to a pack drop and fetch pack cost from pack_ev_cache
-    const results: PackRipResult[] = []
-
-    for (const cluster of clusters) {
+    const results: PackRipResult[] = clusters.map((cluster) => {
       const totalFmv = cluster.moments.reduce((s: number, m: any) => s + (Number(m.fmv) || 0), 0)
-
-      // Find pack drop within 48 hours of cluster timestamp
-      let matchedPack: { name: string; drop_date: string; secondary_price: number | null } | null = null
-      if (packDrops) {
-        for (const pd of packDrops) {
-          if (!pd.drop_date) continue
-          const dropTime = new Date(pd.drop_date).getTime()
-          const clusterTime = cluster.timestamp.getTime()
-          if (Math.abs(clusterTime - dropTime) <= FORTY_EIGHT_HOURS_MS) {
-            matchedPack = pd
-            break
-          }
-        }
-      }
-
-      // Try pack_ev_cache for cost if we have a matched pack
-      let packCost: number | null = matchedPack?.secondary_price ?? null
-      if (matchedPack && !packCost) {
-        try {
-          const { data: evRow } = await supabaseAdmin
-            .from("pack_ev_cache")
-            .select("pack_price")
-            .eq("pack_drop_id", matchedPack.name)
-            .single()
-          if (evRow?.pack_price) packCost = Number(evRow.pack_price)
-        } catch { /* non-fatal */ }
-      }
-
-      const roi = packCost ? Number((totalFmv - packCost).toFixed(2)) : null
-      const roiPct = packCost && packCost > 0 ? Number((((totalFmv - packCost) / packCost) * 100).toFixed(1)) : null
-
-      results.push({
-        packName: matchedPack?.name ?? null,
-        dropDate: matchedPack?.drop_date ?? cluster.timestamp.toISOString(),
+      return {
+        packName: null,
+        dropDate: cluster.timestamp.toISOString(),
         momentsReceived: cluster.moments.length,
         currentFmv: Number(totalFmv.toFixed(2)),
-        packCost,
-        roi,
-        roiPct,
-      })
-    }
+        packCost: null,
+        roi: null,
+        roiPct: null,
+      }
+    })
 
     return NextResponse.json(
       { packs: results },
