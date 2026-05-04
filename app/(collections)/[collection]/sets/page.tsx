@@ -111,6 +111,7 @@ export default function SetsPage() {
   const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<SortKey>("completion");
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [openSet, setOpenSet] = useState<SetProgress | null>(null);
 
   const autoLoadFired = useRef(false);
 
@@ -173,6 +174,16 @@ export default function SetsPage() {
     go();
     return () => { cancelled = true; };
   }, [wallet]);
+
+  // Modal close on Escape
+  useEffect(() => {
+    if (!openSet) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpenSet(null);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [openSet]);
 
   // ── Filtered + sorted sets ──────────────────────────────────────────────
   const displaySets = useMemo(() => {
@@ -307,11 +318,59 @@ export default function SetsPage() {
               <Pill label="NOT STARTED" active={filter === "not_started"} onClick={() => setFilter("not_started")} accent={accent} />
             </div>
 
-            {/* Set cards grid */}
-            <div className="sets-grid">
-              {displaySets.map((set) => (
-                <SetCard key={set.setId} set={set} accent={accent} />
-              ))}
+            {/* Sets table */}
+            <div className="rpc-card" style={{ overflow: "auto", WebkitOverflowScrolling: "touch", borderRadius: "var(--radius-md)", maxWidth: "100%" }}>
+              <table style={{ width: "100%", minWidth: 640, fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr className="rpc-thead-scanline" style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)" }}>
+                    <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px" }}>Set</th>
+                    <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Owned</th>
+                    <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px" }}>Progress</th>
+                    <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Cost</th>
+                    <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {displaySets.map((set) => {
+                    const isComplete = set.completionPct === 100;
+                    return (
+                      <tr
+                        key={set.setId}
+                        style={{ borderBottom: "1px solid var(--rpc-border)", cursor: "pointer", transition: "background var(--transition-fast)" }}
+                        onClick={() => setOpenSet(set)}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--rpc-surface-hover)"; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                      >
+                        <td style={{ padding: "8px 12px", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: colors.text, fontFamily: displayFont, fontWeight: 700, letterSpacing: "0.02em" }}>
+                          {set.setName}
+                        </td>
+                        <td style={{ padding: "8px 12px", textAlign: "right", color: colors.text }}>
+                          {set.ownedCount} / {set.totalEditions}
+                        </td>
+                        <td style={{ padding: "8px 12px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div style={{ width: 60, height: 6, background: colors.barBg, borderRadius: 3, overflow: "hidden", flexShrink: 0 }}>
+                              <div style={{ width: set.completionPct + "%", height: "100%", background: isComplete ? colors.green : colors.accent }} />
+                            </div>
+                            <span style={{ color: colors.muted, fontSize: "var(--text-xs)" }}>{set.completionPct}%</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: "8px 12px", textAlign: "right", color: colors.text }}>
+                          {fmt$(set.totalMissingCost)}
+                        </td>
+                        <td style={{ padding: "8px 12px", textAlign: "right" }}>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setOpenSet(set); }}
+                            style={{ fontFamily: monoFont, fontSize: 10, padding: "4px 10px", borderRadius: 4, border: "1px solid " + colors.cardBorder, background: "transparent", color: colors.accent, cursor: "pointer", letterSpacing: "0.08em" }}
+                          >
+                            VIEW
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
 
             {displaySets.length === 0 && (
@@ -319,23 +378,73 @@ export default function SetsPage() {
                 No sets match this filter
               </div>
             )}
-
-            <style>{`
-              .sets-grid {
-                display: grid;
-                grid-template-columns: repeat(1, 1fr);
-                gap: 16px;
-              }
-              @media (min-width: 768px) {
-                .sets-grid { grid-template-columns: repeat(2, 1fr); }
-              }
-              @media (min-width: 1280px) {
-                .sets-grid { grid-template-columns: repeat(3, 1fr); }
-              }
-            `}</style>
           </>
         )}
       </div>
+
+      {/* ── Owned-pieces modal ─────────────────────────────────────────────── */}
+      {openSet && (
+        <div
+          onClick={() => setOpenSet(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: colors.bg, border: "1px solid " + colors.cardBorder, borderRadius: 10, padding: "20px 24px", maxWidth: 720, maxHeight: "85vh", width: "100%", overflow: "auto" }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+              <h3 style={{ fontFamily: displayFont, fontWeight: 800, fontSize: 18, color: colors.text, textTransform: "uppercase", letterSpacing: "0.04em", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {openSet.setName}
+              </h3>
+              <button
+                onClick={() => setOpenSet(null)}
+                aria-label="Close"
+                style={{ fontFamily: monoFont, fontSize: 14, color: colors.muted, background: "transparent", border: "none", cursor: "pointer", padding: 4, flexShrink: 0 }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ fontFamily: monoFont, fontSize: 11, color: colors.muted, marginBottom: 14, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+              {openSet.ownedCount} / {openSet.totalEditions} OWNED · {openSet.completionPct}%
+            </div>
+            {openSet.owned.length === 0 ? (
+              <div style={{ fontFamily: monoFont, fontSize: 12, color: colors.muted, padding: "20px 0", textAlign: "center" }}>
+                No moments owned in this set yet
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {openSet.owned.map((piece, idx) => (
+                  <a
+                    key={`${piece.playId}-${piece.serialNumber ?? idx}`}
+                    href={piece.topshotUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ display: "flex", alignItems: "center", gap: 12, padding: 8, borderRadius: 6, background: colors.card, border: "1px solid " + colors.cardBorder, textDecoration: "none", transition: "border-color 0.15s ease" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.borderColor = colors.cardHover)}
+                    onMouseLeave={(e) => (e.currentTarget.style.borderColor = colors.cardBorder)}
+                  >
+                    {piece.thumbnailUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={piece.thumbnailUrl} alt="" style={{ width: 40, height: 40, borderRadius: 4, objectFit: "cover", flexShrink: 0 }} />
+                    ) : (
+                      <div style={{ width: 40, height: 40, borderRadius: 4, background: colors.barBg, flexShrink: 0 }} />
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 14, color: colors.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {piece.playerName}
+                      </div>
+                      <div style={{ fontFamily: monoFont, fontSize: 10, color: colors.muted, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                        #{piece.serialNumber ?? "—"} · {piece.tier}
+                      </div>
+                    </div>
+                    <span style={{ fontFamily: monoFont, fontSize: 10, color: colors.accent, letterSpacing: "0.08em", flexShrink: 0 }}>VIEW →</span>
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -383,102 +492,5 @@ function Pill({ label, active, onClick, accent }: { label: string; active: boole
     >
       {label}
     </button>
-  );
-}
-
-function SetCard({ set, accent }: { set: SetProgress; accent: string }) {
-  const colors = makeColors(accent);
-  const isComplete = set.completionPct === 100;
-  const pctLabel = set.ownedCount + " / " + set.totalEditions + " · " + set.completionPct + "%";
-
-  // Find cheapest missing moment
-  const cheapestMissing = useMemo(() => {
-    if (set.missing.length === 0) return null;
-    const priced = set.missing.filter((m) => m.lowestAsk !== null && m.lowestAsk > 0);
-    if (priced.length === 0) return set.missing[0]; // show first unpriced
-    return priced.reduce((a, b) => (a.lowestAsk! < b.lowestAsk! ? a : b));
-  }, [set.missing]);
-
-  return (
-    <div
-      style={{
-        background: colors.card,
-        border: "1px solid " + colors.cardBorder,
-        borderRadius: 10,
-        padding: "18px 20px",
-        transition: "border-color 0.15s ease",
-        cursor: "default",
-      }}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = colors.cardHover)}
-      onMouseLeave={(e) => (e.currentTarget.style.borderColor = colors.cardBorder)}
-    >
-      {/* Set name + complete badge */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 12 }}>
-        <h3 style={{ fontFamily: displayFont, fontWeight: 800, fontSize: 16, color: colors.text, textTransform: "uppercase", letterSpacing: "0.03em", margin: 0, lineHeight: 1.2, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {set.setName}
-        </h3>
-        {isComplete && (
-          <span style={{ fontFamily: monoFont, fontSize: 10, fontWeight: 700, color: colors.green, background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.25)", borderRadius: 4, padding: "2px 8px", whiteSpace: "nowrap", flexShrink: 0 }}>
-            ✓ COMPLETE
-          </span>
-        )}
-      </div>
-
-      {/* Progress bar */}
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ width: "100%", height: 8, background: colors.barBg, borderRadius: 4, overflow: "hidden" }}>
-          <div
-            style={{
-              width: set.completionPct + "%",
-              height: "100%",
-              borderRadius: 4,
-              background: isComplete ? colors.green : colors.accent,
-              transition: "width 0.5s ease",
-            }}
-          />
-        </div>
-        <div style={{ fontFamily: monoFont, fontSize: 11, color: colors.muted, marginTop: 5 }}>
-          {pctLabel}
-        </div>
-      </div>
-
-      {/* Cost to complete */}
-      {set.totalMissingCost !== null && !isComplete && (
-        <div style={{ fontFamily: monoFont, fontSize: 11, color: colors.muted, marginBottom: 6 }}>
-          Cost to complete: <span style={{ color: colors.text }}>{fmt$(set.totalMissingCost)}</span>
-          {set.costConfidence === "low" && (
-            <span style={{ color: colors.muted, marginLeft: 6, opacity: 0.7 }}>est.</span>
-          )}
-        </div>
-      )}
-
-      {/* Locked vs tradeable completion */}
-      {!isComplete && typeof set.lockedOwnedCount === "number" && set.lockedOwnedCount > 0 && (
-        <div style={{ fontFamily: monoFont, fontSize: 10, color: colors.muted, marginBottom: 6, opacity: 0.85 }}>
-          {set.tradeableOwnedCount ?? 0} tradeable ({set.lockedOwnedCount} locked)
-        </div>
-      )}
-
-      {/* Cheapest missing moment */}
-      {cheapestMissing && !isComplete && (
-        <div style={{ fontFamily: monoFont, fontSize: 11, color: colors.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          Cheapest: <span style={{ color: "rgba(255,255,255,0.65)" }}>{cheapestMissing.playerName}</span>
-          {cheapestMissing.hasBadge && (
-            <span title={(cheapestMissing.badgeSlugs ?? []).join(", ")} style={{ color: "#FFD700", marginLeft: 6, fontWeight: 700 }}>★</span>
-          )}
-          {cheapestMissing.fmv != null && cheapestMissing.fmv > 0 && (
-            <span style={{ color: colors.text, marginLeft: 6 }}>
-              FMV {fmt$(cheapestMissing.fmv)}
-              {(cheapestMissing.fmvConfidence === "LOW" || cheapestMissing.fmvConfidence === "ASK_ONLY") && (
-                <span style={{ color: colors.muted, opacity: 0.7 }}>*</span>
-              )}
-            </span>
-          )}
-          {cheapestMissing.lowestAsk !== null && (
-            <span style={{ color: colors.accent, marginLeft: 6 }}>Ask {fmt$(cheapestMissing.lowestAsk)}</span>
-          )}
-        </div>
-      )}
-    </div>
   );
 }
