@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { fetchOpenOffers } from "@/lib/flowty/fetchOpenOffers";
 import { getOrSetCache } from "@/lib/cache";
 import { z } from "zod";
-import { getCollection } from "@/lib/collections";
+import { getCollectionUuid, fromDbSlug } from "@/lib/collections";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1123,15 +1123,18 @@ function mapCachedListingToDeal(r: any): SniperDeal {
 
 // ─── Cached-listings sniper feed — used by All Day and any non-Top-Shot collection ───
 
-const COLLECTION_UUID_MAP: Record<string, string> = {
-  "nfl-all-day": "dee28451-5d62-409e-a1ad-a83f763ac070",
-  "nba-top-shot": "95f28a17-224a-4025-96ad-adf8a4c63bfd",
-};
-
 function resolveCollectionUuid(slug: string): string | null {
-  if (COLLECTION_UUID_MAP[slug]) return COLLECTION_UUID_MAP[slug];
-  const col = getCollection(slug);
-  // Fall back to looking up in collection_config at runtime (not needed yet)
+  // Direct registry lookup — covers every published Flow collection
+  // (nba-top-shot, nfl-all-day, laliga-golazos, ufc, disney-pinnacle).
+  const direct = getCollectionUuid(slug);
+  if (direct) return direct;
+  // Tolerance for callers that pass the DB underscore slug ("ufc_strike",
+  // "nba_top_shot") or its hyphenated cousin ("ufc-strike"). Map back to
+  // the canonical app slug, then resolve. The canonical slug for UFC
+  // Strike is "ufc"; the DB row uses "ufc_strike".
+  const dbSlug = slug.replace(/-/g, "_");
+  const appSlug = fromDbSlug(dbSlug);
+  if (appSlug) return getCollectionUuid(appSlug);
   return null;
 }
 
