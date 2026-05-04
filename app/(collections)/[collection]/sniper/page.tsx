@@ -1585,8 +1585,8 @@ export default function SniperPage() {
         )}
 
         {visibleDeals.length > 0 && !isMobile && (
-          <div className="rpc-card" style={{ overflow: "auto", borderRadius: "var(--radius-md)", maxWidth: "100%" }}>
-            <table style={{ width: "100%", fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)", borderCollapse: "collapse" }}>
+          <div className="rpc-card" style={{ overflow: "auto", WebkitOverflowScrolling: "touch", borderRadius: "var(--radius-md)", maxWidth: "100%" }}>
+            <table style={{ width: "100%", minWidth: 980, fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)", borderCollapse: "collapse" }}>
               <thead>
                 <tr className="rpc-thead-scanline" style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)" }}>
                   <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px" }}>Moment</th>
