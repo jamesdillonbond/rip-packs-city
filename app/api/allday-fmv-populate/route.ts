@@ -84,7 +84,7 @@ async function fetchPage(cursor: string | null): Promise<PageResult> {
 
   if (!res.ok) {
     const txt = await res.text().catch(() => "")
-    console.error('[allday-fmv-populate] page HTTP', res.status, txt.slice(0, 200))
+    console.log('[allday-fmv-populate] page HTTP', res.status, txt.slice(0, 200))
     throw new Error(`GQL http ${res.status}: ${txt.slice(0, 200)}`)
   }
 
@@ -93,7 +93,7 @@ async function fetchPage(cursor: string | null): Promise<PageResult> {
   try {
     json = JSON.parse(rawText)
   } catch (e) {
-    console.error('[allday-fmv-populate] JSON parse failed, raw:', rawText.slice(0, 500))
+    console.log('[allday-fmv-populate] JSON parse failed, raw:', rawText.slice(0, 500))
     throw e
   }
   console.log('[allday-fmv-populate] page1-raw:', JSON.stringify(json).slice(0, 400))
