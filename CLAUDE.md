@@ -193,7 +193,7 @@ git push origin <branch>
 - lib/cart/CartContext.tsx — cart state (addToCart: thumbnailUrl must be null not undefined)
 - app/api/sniper-feed/route.ts — merges Top Shot GQL + Flowty listings
 - app/api/fmv/route.ts — FMV lookup endpoint
-- app/api/support-chat/route.ts — AI concierge (8 tools, Claude Sonnet)
+- app/api/support-chat/route.ts — AI concierge (5 tools, Claude Sonnet)
 - workers/topshot-proxy/ — Cloudflare Worker, live at https://topshot-proxy.tdillonbond.workers.dev. Routes: POST / or POST /topshot → public-api.nbatopshot.com/graphql, POST /allday → public-api.nflallday.com/graphql. Auth: X-Proxy-Secret header must match worker's PROXY_SECRET (synced with TS_PROXY_SECRET in .env.local). Sibling workers pinnacle-proxy and spork-proxy share the same workers/ directory but were not verified during the topshot-proxy fix — secret state for those is unknown but they are not currently blocking anything.
 - CI/CD: GitHub Actions workflows in .github/workflows/ — rpc-pipeline.yml, ops-monitor.yml, pipeline-sentinel.yml, alert-checker.yml, allday-ingest.yml, pinnacle-owner-discovery.yml, ts-listing-ingest.yml, smoke-tests.yml. Several other workflows (social-bot.yml, listing-alert-bot.yml, pack-drop-bot.yml, portfolio-digest.yml, rpc-report.yml, twitter-deal-bot.yml) exist as .disabled and are intentionally not running.
 
@@ -367,7 +367,7 @@ Tracked but intentionally unfixed — revisit when adding a real consumer or a p
 
 ## Known issues / active work
 
-Main branch is the canonical clean branch. Latest production deploy: commit f6ca38a.
+Main branch is the canonical clean branch.
 
 1. Cart execution blocked — needs NEXT_PUBLIC_WALLETCONNECT_ID (register at dashboard.reown.com) + Dapper co-signer registration
 
