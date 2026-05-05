@@ -1,0 +1,236 @@
+// app/(collections)/[collection]/player/[slug]/page.tsx
+// Phase 1D. Player (or Character on Pinnacle) detail page.
+//
+// Data: get_player_detail(collection_id, player_slug) +
+// get_player_editions(collection_id, player_slug, 200, 0).
+// Pinnacle: is_character flips labels Player→Character, Team→Franchise.
+
+import type { Metadata } from "next"
+import Link from "next/link"
+import { notFound } from "next/navigation"
+import { supabaseAdmin } from "@/lib/supabase"
+import { getCollectionByUrlSlug } from "@/lib/collection-slug"
+import { playerPageMetadata } from "@/lib/seo"
+import { getEntityLabels } from "@/lib/entity-labels"
+import { Section, StatCell, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
+import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
+
+export const revalidate = 600
+export const dynamicParams = true
+
+export async function generateStaticParams() {
+  return [] as Array<{ collection: string; slug: string }>
+}
+
+interface PlayerDetail {
+  id: string
+  collection_id: string
+  collection_slug: string
+  player_slug: string
+  external_id: string | null
+  name: string
+  first_name: string | null
+  last_name: string | null
+  team: string | null
+  team_slug: string | null
+  jersey_number: number | null
+  position: string | null
+  player_tier: string | null
+  is_active: boolean | null
+  headshot_url: string | null
+  is_character: boolean | null
+  edition_count: number | null
+  total_circulation: number | null
+  fmv_total_usd: number | null
+  floor_total_usd: number | null
+  first_minted_at: string | null
+  last_minted_at: string | null
+}
+
+const PAGE_SIZE = 200
+
+type RpcClient = { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }> }
+function rpc() { return supabaseAdmin as unknown as RpcClient }
+
+async function fetchDetail(collectionId: string, slug: string): Promise<PlayerDetail | null> {
+  const { data, error } = await rpc().rpc("get_player_detail", { p_collection_id: collectionId, p_player_slug: slug })
+  if (error) { console.error("[player] detail error", error.message); return null }
+  if (!data) return null
+  if (Array.isArray(data)) return (data[0] as PlayerDetail) ?? null
+  return data as PlayerDetail
+}
+
+async function fetchEditions(collectionId: string, slug: string, limit: number, offset: number): Promise<EditionTile[]> {
+  const { data, error } = await rpc().rpc("get_player_editions", { p_collection_id: collectionId, p_player_slug: slug, p_limit: limit, p_offset: offset })
+  if (error) { console.error("[player] editions error", error.message); return [] }
+  return Array.isArray(data) ? (data as EditionTile[]) : []
+}
+
+// ── Metadata ────────────────────────────────────────────────────────────────
+
+export async function generateMetadata(props: { params: Promise<{ collection: string; slug: string }> }): Promise<Metadata> {
+  const { collection, slug } = await props.params
+  const coll = getCollectionByUrlSlug(collection)
+  if (!coll) return {}
+  const detail = await fetchDetail(coll.id, slug)
+  if (!detail) return {}
+  return playerPageMetadata(detail as unknown as Record<string, unknown>, collection, slug)
+}
+
+// ── Page ────────────────────────────────────────────────────────────────────
+
+export default async function PlayerPage(props: { params: Promise<{ collection: string; slug: string }> }) {
+  const { collection, slug } = await props.params
+  const coll = getCollectionByUrlSlug(collection)
+  if (!coll) notFound()
+
+  const detail = await fetchDetail(coll.id, slug)
+  if (!detail) notFound()
+
+  const labels = getEntityLabels(collection)
+  const isCharacter = detail.is_character === true
+  const editions = await fetchEditions(coll.id, slug, PAGE_SIZE, 0)
+
+  // Portrait fallback chain: headshot_url → first edition thumbnail → none.
+  const portrait = detail.headshot_url ?? editions[0]?.thumbnail_url ?? null
+  const teamHref = detail.team_slug ? `/${collection}/team/${encodeURIComponent(detail.team_slug)}` : null
+
+  // Top sale = highest FMV in the visible portfolio (proxy until a top-sale RPC exists).
+  const topSale = editions.reduce<EditionTile | null>((best, e) => {
+    if (!best) return e
+    return ((e.fmv_usd ?? 0) > (best.fmv_usd ?? 0)) ? e : best
+  }, null)
+
+  // Group editions by set_slug → set summary cards.
+  const setMap = new Map<string, { setSlug: string; setName: string; count: number; fmvTotal: number }>()
+  for (const e of editions) {
+    if (!e.set_slug || !e.set_name) continue
+    const existing = setMap.get(e.set_slug)
+    if (existing) {
+      existing.count += 1
+      existing.fmvTotal += e.fmv_usd ?? 0
+    } else {
+      setMap.set(e.set_slug, { setSlug: e.set_slug, setName: e.set_name, count: 1, fmvTotal: e.fmv_usd ?? 0 })
+    }
+  }
+  const setCards = Array.from(setMap.values()).sort((a, b) => b.fmvTotal - a.fmvTotal)
+
+  return (
+    <div>
+      {/* ── Hero ─────────────────────────────────────────────────────────── */}
+      <section className="rpc-card" style={{ padding: 18 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,240px) 1fr", gap: 24, alignItems: "start" }}>
+          <div style={{ width: "100%", maxWidth: 240, aspectRatio: "1 / 1", background: "rgba(0,0,0,0.4)", border: "1px solid var(--rpc-border)", borderRadius: 6, overflow: "hidden" }}>
+            {portrait ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={portrait} alt={`${detail.name} ${labels.portrait}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--rpc-text-muted)", fontFamily: "'Share Tech Mono', monospace", fontSize: 11 }}>
+                No {labels.portrait.toLowerCase()}
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
+            <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.18em", textTransform: "uppercase" }}>{labels.player}</div>
+            <h1 style={{ margin: 0, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 36, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", lineHeight: 1.05, textTransform: "uppercase" }}>
+              {detail.name}
+            </h1>
+
+            {isCharacter ? (
+              <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)", letterSpacing: "0.06em" }}>
+                Character{detail.team ? <> · {labels.team}: {teamHref ? <Link href={teamHref} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>{detail.team}</Link> : detail.team}</> : null}
+              </div>
+            ) : (
+              <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)", letterSpacing: "0.06em", display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+                {detail.jersey_number !== null && <span>#{detail.jersey_number}</span>}
+                {detail.position && <span>{detail.position}</span>}
+                {detail.team && (teamHref ? (
+                  <Link href={teamHref} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>{detail.team}</Link>
+                ) : <span>{detail.team}</span>)}
+                {detail.is_active === true && (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: 999, background: "var(--rpc-success)", boxShadow: "0 0 6px var(--rpc-success)" }} />
+                    <span style={{ color: "var(--rpc-success)" }}>active</span>
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Stat strip ───────────────────────────────────────────────────── */}
+      <section style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+        <StatCell label="Editions" value={fmtCount(detail.edition_count)} />
+        <StatCell label="Total Mint" value={fmtCount(detail.total_circulation)} />
+        <StatCell label="FMV Total" value={fmtUsd(detail.fmv_total_usd)} />
+        <StatCell label="Floor Total" value={fmtUsd(detail.floor_total_usd)} />
+      </section>
+
+      {(detail.first_minted_at || detail.last_minted_at) && (
+        <div className="rpc-mono" style={{ marginTop: 8, padding: "0 4px", display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--rpc-text-muted)" }}>
+          <span>{detail.first_minted_at ? <>First minted {relTime(detail.first_minted_at)}</> : ""}</span>
+          <span>{detail.last_minted_at ? <>Last minted {relTime(detail.last_minted_at)}</> : ""}</span>
+        </div>
+      )}
+
+      {/* ── Editions grid ────────────────────────────────────────────────── */}
+      <Section title="Editions">
+        <EditionsGridPaginated
+          collectionUrlSlug={collection}
+          fetchUrl={`/api/entity/player?collection=${encodeURIComponent(collection)}&slug=${encodeURIComponent(slug)}`}
+          initial={editions}
+          pageSize={PAGE_SIZE}
+          showSetLink
+          showSort
+        />
+      </Section>
+
+      {/* ── Top sale ─────────────────────────────────────────────────────── */}
+      {topSale && topSale.fmv_usd !== null && topSale.fmv_usd > 0 && (
+        <Section title="Top Edition">
+          <Link
+            href={`/${collection}/edition/${encodeURIComponent(topSale.route_slug)}`}
+            className="rpc-card"
+            style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 14, padding: 12, textDecoration: "none", color: "inherit" }}
+          >
+            <div style={{ width: 120, height: 120, background: "rgba(0,0,0,0.3)", borderRadius: 4, overflow: "hidden" }}>
+              {topSale.thumbnail_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={topSale.thumbnail_url} alt={topSale.player_name ?? "Edition"} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              )}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: 4 }}>
+              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 18, color: "var(--rpc-text-primary)" }}>{topSale.player_name ?? topSale.name}</div>
+              {topSale.set_name && <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>{topSale.set_name}</div>}
+              <div style={{ marginTop: 4, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 24, color: "var(--rpc-text-primary)" }}>{fmtUsd(topSale.fmv_usd)}</div>
+            </div>
+          </Link>
+        </Section>
+      )}
+
+      {/* ── Sets ─────────────────────────────────────────────────────────── */}
+      {setCards.length > 0 && (
+        <Section title="Sets">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
+            {setCards.map(s => (
+              <Link
+                key={s.setSlug}
+                href={`/${collection}/set/${encodeURIComponent(s.setSlug)}`}
+                className="rpc-card"
+                style={{ padding: 12, textDecoration: "none", color: "inherit", display: "block" }}
+              >
+                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 15, color: "var(--rpc-text-primary)", marginBottom: 6, lineHeight: 1.2 }}>{s.setName}</div>
+                <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>
+                  {fmtCount(s.count)} edition{s.count === 1 ? "" : "s"} · {fmtUsd(s.fmvTotal)}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </Section>
+      )}
+    </div>
+  )
+}
+
