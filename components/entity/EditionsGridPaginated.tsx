@@ -27,6 +27,11 @@ export interface EditionTile {
   floor_usd?: number | null
   fmv_confidence?: string | null
   fmv_computed_at?: string | null
+  // Pack-content extensions (Phase 2A). Only set by get_pack_contents — every
+  // other RPC leaves these undefined and the footer renders the standard
+  // confidence + circulation row.
+  drop_weight?: number | null
+  hit_probability?: number | null
 }
 
 type SortKey = "fmv_desc" | "circ_asc" | "series_desc" | "alpha"
@@ -157,6 +162,18 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
                 <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>Mint {EM_DASH}</span>
               )}
             </div>
+            {(e.hit_probability !== undefined && e.hit_probability !== null) && (
+              <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.10em" }}>
+                  Hit {(e.hit_probability * 100).toFixed(2)}%
+                </span>
+                {(e.drop_weight !== undefined && e.drop_weight !== null) && (
+                  <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)" }}>
+                    Wt {fmtCount(e.drop_weight)}
+                  </span>
+                )}
+              </div>
+            )}
           </Link>
         ))}
       </div>
