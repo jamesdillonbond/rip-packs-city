@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
+import { applyPhantomGuard } from "@/lib/fmv-phantom-guard"
 
 // ── FMV Recalc Route ──────────────────────────────────────────────────────────
 //
@@ -500,7 +501,7 @@ export async function POST(req: NextRequest) {
         continue
       }
 
-      insertRows.push({
+      insertRows.push(applyPhantomGuard({
         edition_id: editionId,
         collection_id: collectionId,
         fmv_usd: Number(fmv.toFixed(2)),
@@ -514,7 +515,7 @@ export async function POST(req: NextRequest) {
         sales_count_30d: sales.length,
         days_since_sale: daysSinceSale,
         algo_version: ALGO_VERSION,
-      })
+      }))
     }
 
     const CHUNK_SIZE = 100
@@ -571,7 +572,7 @@ export async function POST(req: NextRequest) {
       if (rows.length > 0) {
         console.log(`[FMV-RECALC] Backfill: ${rows.length} editions with no snapshot`)
 
-        const backfillRows = rows.map((row) => ({
+        const backfillRows = rows.map((row) => applyPhantomGuard({
           edition_id: row.edition_id,
           collection_id: row.collection_id,
           fmv_usd: Number((row.low_ask * 0.90).toFixed(2)),
@@ -664,7 +665,7 @@ export async function POST(req: NextRequest) {
             const daysSinceSale = Math.round(
               (now.getTime() - new Date(row.latest_sold_at).getTime()) / (1000 * 60 * 60 * 24)
             )
-            return {
+            return applyPhantomGuard({
               edition_id: row.edition_id,
               collection_id: row.collection_id,
               fmv_usd: Number(avgPrice.toFixed(2)),
@@ -677,7 +678,7 @@ export async function POST(req: NextRequest) {
               sales_count_30d: 0,
               days_since_sale: daysSinceSale,
               algo_version: ALGO_VERSION,
-            }
+            })
           })
 
           // Delete-then-insert — never upsert fmv_snapshots (partitioned table).
@@ -772,7 +773,7 @@ export async function POST(req: NextRequest) {
           const skipSet = new Set<string>(insertRows.map((r) => String(r.edition_id)))
           const touchRows = rows
             .filter((r) => !skipSet.has(String(r.edition_id)))
-            .map((r) => ({
+            .map((r) => applyPhantomGuard({
               edition_id: r.edition_id,
               collection_id: r.collection_id,
               fmv_usd: r.fmv_usd,
