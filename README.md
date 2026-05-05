@@ -62,7 +62,6 @@ Optional: `RESEND_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `INGEST_SE
 - `/[collection]/collection` — wallet analyzer
 - `/[collection]/sniper` — real-time deals below FMV
 - `/[collection]/packs` — pack drops with EV
-- `/[collection]/badges` — badge editions + serial premiums
 - `/[collection]/market` — edition-level intel
 - `/api/fmv` — FMV lookup (GET single, POST batch)
 - `/api/support-chat` — Claude Sonnet concierge

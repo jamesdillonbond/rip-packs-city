@@ -11,7 +11,7 @@ const ALLOWED_ORIGINS = [
 const CORS_API_PATHS = ["/api/fmv", "/api/sniper-feed", "/api/health"];
 
 // Collection-prefixed pages were previously auth-gated. Now they're public:
-// every browse/market/analytics/sniper/badges/sets/packs/overview/collection
+// every browse/market/analytics/sniper/sets/packs/overview/collection
 // page renders with full SSR data for anonymous traffic so search crawlers
 // (and humans without an account) can index + use them. Personalization
 // features inside those pages stay client-gated (e.g. Save-to-Watchlist,

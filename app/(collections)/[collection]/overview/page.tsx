@@ -637,7 +637,6 @@ export default function OverviewPage() {
             },
             { label: "Pack EV",   desc: "Expected value vs price",             icon: "\u25A3", color: "var(--tier-legendary)", page: "packs" },
             { label: "Sniper",    desc: "Real-time deals below FMV",           icon: "\u26A1", color: "#34D399",                page: "sniper" },
-            { label: "Badges",    desc: "Debut \u00b7 Fresh \u00b7 Rookie Year", icon: "\u2B50", color: "var(--tier-rare)",      page: "badges" },
             { label: "Sets",      desc: "Completion + bottleneck finder",       icon: "\u25C9", color: "#F472B6",                page: "sets" },
             { label: "Analytics", desc: "Portfolio breakdown + clarity",        icon: "\u25CE", color: "#A78BFA",                page: "analytics" },
             { label: "Market",    desc: "Edition lookup + leaderboards",        icon: "\u25C8", color: "var(--tier-rare)",      page: "market" },

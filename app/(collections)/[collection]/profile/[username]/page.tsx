@@ -761,12 +761,11 @@ export default function ProfilePageV6() {
       {/* ── Quick Links ── */}
       <section style={{ marginBottom: 32 }}>
         <div style={Object.assign({}, labelStyle, { marginBottom: 12 })}>TOOLS</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
           {[
             { label: "Collection", icon: "\u25C8", href: basePath + "/collection", color: "#E03A2F" },
             { label: "Pack EV", icon: "\u25A3", href: basePath + "/packs", color: "#F59E0B" },
             { label: "Sniper", icon: "\u26A1", href: basePath + "/sniper", color: "#34D399" },
-            { label: "Badges", icon: "\u2B50", href: basePath + "/badges", color: "#818CF8" },
             { label: "Sets", icon: "\u25C9", href: basePath + "/sets", color: "#F472B6" },
           ].map(function(link) {
             return (

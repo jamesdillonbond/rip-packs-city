@@ -40,36 +40,6 @@ function IconSniper({ color }: { color: string }) {
   );
 }
 
-function IconSets({ color }: { color: string }) {
-  return (
-    <svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="3" width="7" height="7" rx="1" />
-      <rect x="14" y="3" width="7" height="7" rx="1" />
-      <rect x="3" y="14" width="7" height="7" rx="1" />
-      <rect x="14" y="14" width="7" height="7" rx="1" />
-    </svg>
-  );
-}
-
-function IconBadges({ color }: { color: string }) {
-  return (
-    <svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <polygon points="12 2 15 9 22 9.5 17 14.5 18.5 22 12 18 5.5 22 7 14.5 2 9.5 9 9 12 2" />
-    </svg>
-  );
-}
-
-function IconAnalytics({ color }: { color: string }) {
-  return (
-    <svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <line x1="3" y1="21" x2="21" y2="21" />
-      <rect x="5" y="12" width="3" height="7" />
-      <rect x="10.5" y="7" width="3" height="12" />
-      <rect x="16" y="14" width="3" height="5" />
-    </svg>
-  );
-}
-
 function IconProfile({ color }: { color: string }) {
   return (
     <svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -83,23 +53,10 @@ const ICON_COMPONENTS = {
   home: IconHome,
   wallet: IconWallet,
   sniper: IconSniper,
-  sets: IconSets,
-  badges: IconBadges,
-  analytics: IconAnalytics,
   profile: IconProfile,
 } as const;
 
 type IconKey = keyof typeof ICON_COMPONENTS;
-
-function thirdTabFor(collection: string): { label: string; iconKey: IconKey; href: string } {
-  if (collection === "nfl-all-day") {
-    return { label: "BADGES", iconKey: "badges", href: `/${collection}/badges` };
-  }
-  if (collection === "disney-pinnacle" || collection === "laliga-golazos" || collection === "ufc") {
-    return { label: "ANALYTICS", iconKey: "analytics", href: `/${collection}/analytics` };
-  }
-  return { label: "SETS", iconKey: "sets", href: `/${collection}/sets` };
-}
 
 export default function MobileNav() {
   const pathname = usePathname() ?? "/";
@@ -116,11 +73,13 @@ export default function MobileNav() {
 
   const accent = getCollection(collection)?.accent ?? "#E03A2F";
 
+  // Four primary tabs after the Badges page elimination — Sets / Analytics
+  // remain reachable from the per-collection layout nav strip; mobile keeps
+  // the four cross-collection essentials.
   const tabs: { label: string; iconKey: IconKey; href: string }[] = [
     { label: "HOME", iconKey: "home", href: "/" },
-    { label: "COLLECTION", iconKey: "wallet", href: `/${collection}/collection` },
+    { label: "WALLET", iconKey: "wallet", href: `/${collection}/collection` },
     { label: "SNIPER", iconKey: "sniper", href: `/${collection}/sniper` },
-    thirdTabFor(collection),
     { label: "PROFILE", iconKey: "profile", href: "/profile" },
   ];
 

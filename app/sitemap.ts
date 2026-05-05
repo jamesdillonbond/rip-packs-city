@@ -5,7 +5,7 @@
 //   • root + static pages (about, privacy, terms)
 //   • /{collection}/{page} for every published collection × every page
 //     listed on that Collection (overview, collection, market, analytics,
-//     sniper, badges, sets, packs)
+//     sniper, sets, packs)
 //   • /analytics + /analytics/{section} including methodology
 //   • /analytics/loans/{collection} per-collection drill-downs
 //   • /analytics/wallets/{address} for every active Flowty wallet
@@ -55,7 +55,6 @@ const PAGE_FREQ: Record<string, NonNullable<MetadataRoute.Sitemap[number]['chang
   sniper:     'hourly',
   packs:      'daily',
   collection: 'weekly',
-  badges:     'weekly',
   sets:       'weekly',
   vault:      'weekly',
 }
@@ -67,7 +66,6 @@ const PAGE_PRIORITY: Record<string, number> = {
   sniper:     0.8,
   collection: 0.7,
   packs:      0.7,
-  badges:     0.6,
   sets:       0.6,
   vault:      0.5,
 }

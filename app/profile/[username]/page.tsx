@@ -579,12 +579,11 @@ export default function PublicProfilePage() {
         {/* ── Quick Links ── */}
         <section style={{ marginBottom: 32 }}>
           <div style={Object.assign({}, labelStyle, { marginBottom: 12 })}>TOOLS</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
             {[
               { label: "Collection", icon: "◈", href: "/nba-top-shot/collection", color: "#E03A2F" },
               { label: "Pack EV", icon: "▣", href: "/nba-top-shot/packs", color: "#F59E0B" },
               { label: "Sniper", icon: "⚡", href: "/nba-top-shot/sniper", color: "#34D399" },
-              { label: "Badges", icon: "⭐", href: "/nba-top-shot/badges", color: "#818CF8" },
               { label: "Sets", icon: "◉", href: "/nba-top-shot/sets", color: "#F472B6" },
             ].map(function(link) {
               return (
