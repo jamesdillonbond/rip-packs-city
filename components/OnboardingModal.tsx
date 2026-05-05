@@ -45,13 +45,9 @@ export default function OnboardingModal() {
     <div
       role="dialog"
       aria-modal="true"
-      style={{
-        position: 'fixed', inset: 0, zIndex: 10000,
-        background: 'rgba(0,0,0,0.78)', backdropFilter: 'blur(4px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 16, animation: 'rpc-onb-fade 220ms ease-out',
-      }}
       onClick={complete}
+      className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md"
+      style={{ animation: 'rpc-onb-fade 220ms ease-out' }}
     >
       <style>{`
         @keyframes rpc-onb-fade { from { opacity: 0 } to { opacity: 1 } }
@@ -59,11 +55,10 @@ export default function OnboardingModal() {
       `}</style>
       <div
         onClick={e => e.stopPropagation()}
+        className="w-full max-w-[480px] bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl"
         style={{
-          width: '100%', maxWidth: 480, background: '#0d0d0d',
-          border: '1px solid rgba(224,58,47,0.35)', borderRadius: 14,
-          padding: 24, color: '#fff', animation: 'rpc-onb-slide 260ms ease-out',
-          boxShadow: '0 30px 80px rgba(0,0,0,0.6)',
+          padding: 24, color: '#fff',
+          animation: 'rpc-onb-slide 260ms ease-out',
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
@@ -103,7 +98,7 @@ export default function OnboardingModal() {
                   key={c.id}
                   onClick={() => pickCollection(c.id)}
                   style={{
-                    background: 'rgba(13,13,13,0.85)', border: `1px solid ${c.accent}44`,
+                    background: '#0a0a0a', border: `1px solid ${c.accent}44`,
                     borderRadius: 10, padding: 14, color: '#fff', cursor: 'pointer',
                     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
                     transition: 'border-color 120ms',
@@ -135,7 +130,7 @@ export default function OnboardingModal() {
                 onKeyDown={e => e.key === 'Enter' && searchWallet()}
                 placeholder="0x… or @username"
                 style={{
-                  flex: 1, background: 'rgba(13,13,13,0.85)', border: '1px solid rgba(255,255,255,0.12)',
+                  flex: 1, background: '#0a0a0a', border: '1px solid rgba(255,255,255,0.12)',
                   borderRadius: 6, padding: '10px 12px', color: '#fff', fontFamily: monoFont, fontSize: 12, outline: 'none',
                 }}
               />
