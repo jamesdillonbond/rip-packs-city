@@ -2,11 +2,13 @@
 //
 // Email magic-link sign-in page. Primary entry to any collection tool.
 //
-// Flow:
-//   1. User enters email → supabase.auth.signInWithOtp
-//   2. Supabase emails a magic link
-//   3. Link redirects to /api/auth/callback which sets cookies + redirects
-//      back to the page the user was trying to visit.
+// Soft-launch flow:
+//   1. User enters email
+//   2. Page POSTs to /api/auth/request-magic-link (server-side allow-list gate)
+//   3. If the email isn't on the allow-list, the route returns 403 and we
+//      render a "you're on the waitlist" branch with a link to /early-access.
+//   4. Otherwise Supabase emails the magic link and the link redirects to
+//      /api/auth/callback which sets cookies + bounces back to ?redirect=.
 
 "use client"
 
@@ -15,12 +17,14 @@ import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { sendMagicLink } from "@/lib/auth/supabase-client"
 
+type Status = "idle" | "sending" | "sent" | "error" | "waitlist"
+
 function LoginInner() {
   const params = useSearchParams()
   const redirect = params.get("redirect") ?? "/profile"
   const urlError = params.get("error")
   const [email, setEmail] = useState("")
-  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle")
+  const [status, setStatus] = useState<Status>("idle")
   const [error, setError] = useState(urlError ?? "")
 
   async function handleSubmit(e: React.FormEvent) {
@@ -28,9 +32,17 @@ function LoginInner() {
     if (!email.trim()) return
     setStatus("sending")
     setError("")
-    const { error } = await sendMagicLink(email.trim().toLowerCase(), redirect)
-    if (error) { setError(error); setStatus("error"); return }
-    setStatus("sent")
+    const result = await sendMagicLink(email.trim().toLowerCase(), redirect)
+    if (result.ok) {
+      setStatus("sent")
+      return
+    }
+    if (result.notOnAllowList) {
+      setStatus("waitlist")
+      return
+    }
+    setError(result.error)
+    setStatus("error")
   }
 
   return (
@@ -105,6 +117,56 @@ function LoginInner() {
               Use a different email
             </button>
           </div>
+        ) : status === "waitlist" ? (
+          <div style={{ padding: "24px 8px" }}>
+            <div style={{ fontSize: 36, marginBottom: 14 }}>{"🎟️"}</div>
+            <div style={{
+              fontFamily: "var(--font-display)", fontWeight: 800,
+              fontSize: 18, textTransform: "uppercase", letterSpacing: "0.04em",
+              marginBottom: 10,
+            }}>
+              You&apos;re on the waitlist
+            </div>
+            <div style={{
+              fontFamily: "var(--font-mono)", fontSize: 11,
+              color: "var(--rpc-text-secondary)", lineHeight: 1.7,
+            }}>
+              <span style={{ color: "var(--rpc-text-primary)" }}>{email}</span> isn&apos;t on the
+              soft-launch allow-list yet. Request access and we&apos;ll email you when your spot
+              opens.
+            </div>
+            <Link
+              href="/early-access"
+              style={{
+                display: "inline-block",
+                marginTop: 22,
+                background: "var(--por-red)",
+                border: "none", color: "var(--por-white)",
+                fontFamily: "var(--font-display)", fontWeight: 900,
+                fontSize: 13, letterSpacing: "0.12em", textTransform: "uppercase",
+                padding: "12px 22px",
+                borderRadius: "var(--radius-sm)",
+                textDecoration: "none",
+                boxShadow: "var(--scan-glow)",
+              }}
+            >
+              Request access
+            </Link>
+            <div style={{ marginTop: 16 }}>
+              <button
+                onClick={() => { setStatus("idle"); setEmail("") }}
+                style={{
+                  background: "transparent",
+                  border: "1px solid var(--rpc-border)",
+                  color: "var(--rpc-text-muted)",
+                  padding: "8px 18px", fontFamily: "var(--font-mono)",
+                  fontSize: 10, letterSpacing: "0.15em", cursor: "pointer",
+                  borderRadius: "var(--radius-sm)", textTransform: "uppercase",
+                }}>
+                Use a different email
+              </button>
+            </div>
+          </div>
         ) : (
           <form onSubmit={handleSubmit}>
             <label style={{
@@ -173,6 +235,20 @@ function LoginInner() {
                 {String(error).trim() || "Something went wrong — please try again."}
               </div>
             )}
+
+            <div style={{
+              marginTop: 18,
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              color: "var(--rpc-text-ghost)",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+            }}>
+              No invite yet?{" "}
+              <Link href="/early-access" style={{ color: "var(--rpc-text-muted)" }}>
+                Request early access →
+              </Link>
+            </div>
           </form>
         )}
 

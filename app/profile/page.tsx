@@ -11,6 +11,7 @@ import { ConnectButton } from "@/components/auth/ConnectButton";
 import SignInWithDapper from "@/components/SignInWithDapper";
 import { publishedCollections, getCollection } from "@/lib/collections";
 import ViewTrophyModal from "@/components/profile/ViewTrophyModal";
+import TrophyPickerModal from "@/components/profile/TrophyPickerModal";
 import type { TrophyMoment as ViewTrophyShape } from "@/components/profile/_shared";
 
 const condensedFont = "'Barlow Condensed', sans-serif";
@@ -934,7 +935,7 @@ function ProfilePageInner() {
 
       {/* ── Modals ── */}
       {pinSlot != null && (
-        <PinModal
+        <TrophyPickerModal
           slot={pinSlot}
           ownerKey={userId ? null : (wallets[0]?.wallet_addr ?? null)}
           onClose={() => setPinSlot(null)}
@@ -1470,115 +1471,6 @@ function WalletGroupCard({
   );
 }
 
-// ── PinModal: tabbed grid + manual ──────────────────────────────────────────
-
-function PinModal({
-  slot,
-  ownerKey,
-  onClose,
-  onPinned,
-}: {
-  slot: number;
-  ownerKey: string | null;
-  onClose: () => void;
-  onPinned: () => void;
-}) {
-  const [tab, setTab] = useState<"grid" | "manual">("grid");
-  const [moments, setMoments] = useState<TopMoment[] | null>(null);
-  const [pickError, setPickError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  // Manual entry
-  const [manualId, setManualId] = useState("");
-  const [manualPreview, setManualPreview] = useState<TopMoment | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const url = "/api/profile/top-moments?limit=24" + (ownerKey ? `&ownerKey=${encodeURIComponent(ownerKey)}` : "");
-    fetch(url, { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (!cancelled) setMoments(d?.moments ?? []); })
-      .catch(() => { if (!cancelled) setMoments([]); });
-    return () => { cancelled = true; };
-  }, [ownerKey]);
-
-  const pin = useCallback(async (m: TopMoment) => {
-    setSaving(true);
-    setPickError(null);
-    try {
-      const res = await fetch("/api/profile/trophy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          slot,
-          momentId: m.moment_id,
-          collectionId: m.collection_id,
-          editionId: m.edition_key,
-          playerName: m.player_name,
-          setName: m.set_name,
-          serialNumber: m.serial_number,
-          circulationCount: m.mint_count,
-          tier: m.tier,
-          thumbnailUrl: m.image_url,
-          fmv: m.fmv_usd,
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || `HTTP ${res.status}`);
-      }
-      onPinned();
-    } catch (err: any) {
-      setPickError(err?.message ?? "Failed to pin");
-    } finally {
-      setSaving(false);
-    }
-  }, [slot, onPinned]);
-
-  return (
-    <ModalShell onClose={onClose} title={`Pin to slot ${slot}`}>
-      <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: "1px solid #27272a" }}>
-        <TabBtn active={tab === "grid"} onClick={() => setTab("grid")}>Pick from collection</TabBtn>
-        <TabBtn active={tab === "manual"} onClick={() => setTab("manual")}>Enter ID manually</TabBtn>
-      </div>
-
-      {tab === "grid" && (
-        <>
-          {moments == null ? (
-            <div style={{ textAlign: "center", padding: 24 }}>
-              <span className="rpc-spinner" />
-            </div>
-          ) : moments.length === 0 ? (
-            <div style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.6)", padding: 16, textAlign: "center" }}>
-              No owned moments found yet — try the manual tab if you know the moment ID.
-            </div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10, maxHeight: 480, overflowY: "auto", paddingRight: 4 }}>
-              {moments.map((m) => (
-                <PickerCard key={`${m.collection_id}-${m.moment_id}`} m={m} disabled={saving} onClick={() => pin(m)} />
-              ))}
-            </div>
-          )}
-          {pickError && <div style={{ color: "#F87171", fontFamily: monoFont, fontSize: 11, marginTop: 8 }}>{pickError}</div>}
-        </>
-      )}
-
-      {tab === "manual" && (
-        <ManualPinForm
-          slot={slot}
-          manualId={manualId}
-          setManualId={setManualId}
-          preview={manualPreview}
-          setPreview={setManualPreview}
-          saving={saving}
-          setSaving={setSaving}
-          onPinned={onPinned}
-        />
-      )}
-    </ModalShell>
-  );
-}
-
 function HeroEditModal({
   ownerKey,
   onClose,
@@ -1711,135 +1603,6 @@ function PickerCard({ m, disabled, onClick }: { m: TopMoment; disabled: boolean;
         </div>
       </div>
     </button>
-  );
-}
-
-function ManualPinForm({
-  slot,
-  manualId,
-  setManualId,
-  preview,
-  setPreview,
-  saving,
-  setSaving,
-  onPinned,
-}: {
-  slot: number;
-  manualId: string;
-  setManualId: (v: string) => void;
-  preview: TopMoment | null;
-  setPreview: (m: TopMoment | null) => void;
-  saving: boolean;
-  setSaving: (v: boolean) => void;
-  onPinned: () => void;
-}) {
-  const [error, setError] = useState<string | null>(null);
-
-  const lookup = useCallback(async () => {
-    const id = manualId.trim();
-    if (!id) return;
-    setError(null);
-    try {
-      // Lookup by raw moment ID against the user's own top-moments first;
-      // most users will pin from their own collection. If absent, FMV will
-      // be null but the trophy will still pin.
-      const res = await fetch("/api/profile/top-moments?limit=96", { cache: "no-store" });
-      if (res.ok) {
-        const d = await res.json();
-        const found = (d?.moments ?? []).find((m: TopMoment) => String(m.moment_id) === id);
-        if (found) {
-          setPreview(found);
-          return;
-        }
-      }
-      setPreview({
-        moment_id: id,
-        collection_id: "",
-        collection_slug: "",
-        wallet_address: "",
-        player_name: null,
-        set_name: null,
-        tier: null,
-        serial_number: null,
-        mint_count: null,
-        fmv_usd: null,
-        image_url: null,
-        is_locked: false,
-        series_number: null,
-        edition_key: null,
-      });
-    } catch (e: any) {
-      setError(e?.message ?? "Lookup failed");
-    }
-  }, [manualId, setPreview]);
-
-  const pin = useCallback(async () => {
-    if (!preview) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/profile/trophy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          slot,
-          momentId: preview.moment_id,
-          collectionId: preview.collection_id || undefined,
-          editionId: preview.edition_key,
-          playerName: preview.player_name,
-          setName: preview.set_name,
-          serialNumber: preview.serial_number,
-          circulationCount: preview.mint_count,
-          tier: preview.tier,
-          thumbnailUrl: preview.image_url,
-          fmv: preview.fmv_usd,
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || `HTTP ${res.status}`);
-      }
-      onPinned();
-    } catch (err: any) {
-      setError(err?.message ?? "Failed to pin");
-    } finally {
-      setSaving(false);
-    }
-  }, [preview, slot, setSaving, onPinned]);
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
-        Paste a moment ID to pin a trophy directly. Useful for moments outside your saved wallets (gifts, friends' moments you're holding).
-      </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <input
-          value={manualId}
-          onChange={(e) => setManualId(e.target.value)}
-          placeholder="Moment ID"
-          style={{ flex: 1, padding: "10px 12px", background: "#0a0a0a", border: "1px solid #27272a", borderRadius: 6, color: "#fff", fontFamily: monoFont, fontSize: 13 }}
-        />
-        <button onClick={lookup} style={primaryBtnStyle}>Look up</button>
-      </div>
-      {preview && (
-        <div style={{ background: "#0a0a0a", border: "1px solid #27272a", borderRadius: 8, padding: 12, display: "flex", gap: 12 }}>
-          {preview.image_url && <img src={preview.image_url} alt="" style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 6 }} />}
-          <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "#fff" }}>{preview.player_name ?? preview.moment_id}</div>
-            <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 4 }}>
-              {preview.set_name ?? "—"}{preview.serial_number ? ` #${preview.serial_number}` : ""}{preview.mint_count ? `/${preview.mint_count}` : ""}
-            </div>
-            <div style={{ marginTop: 6, fontFamily: condensedFont, fontWeight: 800, color: "#34D399" }}>
-              {preview.fmv_usd != null ? fmtUsd(Number(preview.fmv_usd)) : "FMV unknown"}
-            </div>
-          </div>
-          <button onClick={pin} disabled={saving} style={primaryBtnStyle}>
-            {saving ? "Pinning…" : "Pin"}
-          </button>
-        </div>
-      )}
-      {error && <div style={{ color: "#F87171", fontFamily: monoFont, fontSize: 11 }}>{error}</div>}
-    </div>
   );
 }
 

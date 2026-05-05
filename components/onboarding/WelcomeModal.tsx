@@ -48,28 +48,16 @@ export default function WelcomeModal({ accent, collectionId }: WelcomeModalProps
       role="dialog"
       aria-modal="true"
       aria-label="Welcome to Rip Packs City"
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1000,
-        background: "rgba(0,0,0,0.78)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "16px",
-        animation: "fadeIn 220ms ease-out",
-      }}
       onClick={dismiss}
+      className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md"
+      style={{ animation: "fadeIn 220ms ease-out" }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        className="bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl"
         style={{
-          background: "var(--rpc-surface-raised, #161616)",
-          border: `1px solid var(--rpc-border, ${accent}55)`,
-          borderRadius: 10,
           width: "min(90vw, 480px)",
           padding: "28px 24px 22px",
-          boxShadow: `0 24px 60px rgba(0,0,0,0.6), 0 0 0 1px ${accent}22 inset`,
           animation: "fadeIn 280ms ease-out",
         }}
       >
@@ -290,7 +278,7 @@ function Step2({
               placeholder="0x… or username"
               style={{
                 flex: 1,
-                background: "rgba(0,0,0,0.4)",
+                background: "#0a0a0a",
                 border: "1px solid rgba(255,255,255,0.12)",
                 borderRadius: 4,
                 padding: "6px 10px",
