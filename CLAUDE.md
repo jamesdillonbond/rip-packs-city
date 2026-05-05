@@ -250,6 +250,14 @@ topshotScore { points } does NOT exist — causes 422. Use tssPoints as null pla
 listingOrderID is the preferred field in GQL responses (shipped April 2026).
 listingResourceID resolution: prefer listingOrderID, fallback to storefrontListingID.
 
+### NFL All Day GraphQL (two endpoints, non-overlapping schemas — don't conflate)
+AllDay has two graphql endpoints. Cloudflare WAF on **both** hostnames blocks Vercel + Supabase egress, so both go through the topshot-proxy Cloudflare worker — but on different routes because the schemas don't overlap.
+- `https://public-api.nflallday.com/graphql` — exposes wallet/marketplace queries (`searchMomentNFTsV2`, `searchMarketplaceEditions`, etc). Served via the proxy worker `/allday` route. Used by sniper-feed, allday-fmv-populate, allday-listing-cache.
+- `https://nflallday.com/consumer/graphql` — the only endpoint that hosts `getMintedMoment(momentId)` (and related per-moment lookups). Served via the proxy worker `/allday-consumer` route (added 2026-05-05 with the sales-serial-backfill edge function). Same `X-Proxy-Secret` as the other routes — single rotation surface.
+- Vercel routes that hit consumer/graphql directly (`lib/alldayGraphql.ts`, allday-wallet-search, allday-sets, etc) work because Vercel egress isn't WAF-blocked there. Edge functions and other non-Vercel cloud egress need the worker.
+
+The same `getMintedMoment(momentId){data{... on MintedMoment{flowSerialNumber}}}` query that works on TopShot's public-api will return HTTP 404 on AllDay's public-api — only consumer/graphql resolves it.
+
 ### Flowty API
 POST https://api2.flowty.io/collection/0x0b2a3299cc857e29/TopShot
 Required headers: Origin: https://www.flowty.io
