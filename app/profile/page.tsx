@@ -10,6 +10,8 @@ import SignOutButton from "@/components/auth/SignOutButton";
 import { ConnectButton } from "@/components/auth/ConnectButton";
 import SignInWithDapper from "@/components/SignInWithDapper";
 import { publishedCollections, getCollection } from "@/lib/collections";
+import ViewTrophyModal from "@/components/profile/ViewTrophyModal";
+import type { TrophyMoment as ViewTrophyShape } from "@/components/profile/_shared";
 
 const condensedFont = "'Barlow Condensed', sans-serif";
 const monoFont = "'Share Tech Mono', monospace";
@@ -52,10 +54,13 @@ interface Trophy {
   player_name: string | null;
   set_name: string | null;
   serial_number: number | null;
+  circulation_count: number | null;
   tier: string | null;
   thumbnail_url: string | null;
+  video_url: string | null;
   fmv: number | null;
   badges: string[] | null;
+  note: string | null;
 }
 
 interface HeroMoment {
@@ -265,6 +270,8 @@ function ProfilePageInner() {
 
   // Pin flow: which slot is being filled, and whether the modal is open.
   const [pinSlot, setPinSlot] = useState<number | null>(null);
+  // View flow: which filled trophy is currently expanded in the detail modal.
+  const [viewTrophy, setViewTrophy] = useState<Trophy | null>(null);
   // Hero edit flow: open the same picker but write to profile_bio instead of trophy_moments.
   const [heroEditOpen, setHeroEditOpen] = useState(false);
   // Verification: which wallet is currently in the verify-by-listing modal.
@@ -277,6 +284,29 @@ function ProfilePageInner() {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 6000);
   }, []);
+
+  // Phase 7 — DELETE /api/profile/trophy unpins a slot. Optimistically removes
+  // the row from local state so the slot flips back to "empty" immediately,
+  // then surfaces a toast on success/failure. Failure rolls the row back.
+  const handleRemoveTrophy = useCallback(async (slot: number) => {
+    const previous = trophies;
+    setTrophies((prev) => prev.filter((t) => t.slot !== slot));
+    try {
+      const res = await fetch("/api/profile/trophy", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slot }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      pushToast("Trophy removed", "info");
+    } catch (err) {
+      setTrophies(previous);
+      pushToast(err instanceof Error ? err.message : "Failed to remove trophy", "info");
+    }
+  }, [trophies, pushToast]);
 
   const refreshStats = useCallback(async (addrs: string[]) => {
     if (addrs.length === 0) {
@@ -673,7 +703,7 @@ function ProfilePageInner() {
             onEdit={() => setHeroEditOpen(true)}
           />
         ) : trophies.length > 0 ? (
-          <TrophyCaseSection trophies={trophies} onPickSlot={setPinSlot} />
+          <TrophyCaseSection trophies={trophies} onPickSlot={setPinSlot} onView={setViewTrophy} onRemove={handleRemoveTrophy} />
         ) : (
           <EmptyHeroState wallets={wallets} indexing={indexing} onPickSlot={setPinSlot} />
         )}
@@ -689,7 +719,7 @@ function ProfilePageInner() {
             below the stats only when the hero card occupied the top slot, so
             users still get the 6-grid pin UI without scrolling past it. */}
         {wallets.length > 0 && showHero && (
-          <TrophyCaseSection trophies={trophies} onPickSlot={setPinSlot} />
+          <TrophyCaseSection trophies={trophies} onPickSlot={setPinSlot} onView={setViewTrophy} onRemove={handleRemoveTrophy} />
         )}
 
         {/* ── Saved Wallets ── */}
@@ -909,6 +939,12 @@ function ProfilePageInner() {
           ownerKey={userId ? null : (wallets[0]?.wallet_addr ?? null)}
           onClose={() => setPinSlot(null)}
           onPinned={async () => { setPinSlot(null); await refresh(); pushToast("Trophy pinned", "success"); }}
+        />
+      )}
+      {viewTrophy && (
+        <ViewTrophyModal
+          trophy={viewTrophy as unknown as ViewTrophyShape}
+          onClose={() => setViewTrophy(null)}
         />
       )}
       {heroEditOpen && (
@@ -1166,7 +1202,19 @@ function EmptyHeroState({ wallets, indexing, onPickSlot }: { wallets: SavedWalle
 
 // ── Trophy Case ─────────────────────────────────────────────────────────────
 
-function TrophyCaseSection({ trophies, onPickSlot }: { trophies: Trophy[]; onPickSlot: (slot: number) => void }) {
+function TrophyCaseSection({
+  trophies,
+  onPickSlot,
+  onView,
+  onRemove,
+}: {
+  trophies: Trophy[];
+  onPickSlot: (slot: number) => void;
+  /** Optional: when set, clicking a filled slot opens the detail modal. */
+  onView?: (trophy: Trophy) => void;
+  /** Optional: when set, an X button appears on hover and removes the slot. */
+  onRemove?: (slot: number) => void;
+}) {
   const emptySlotStyle: React.CSSProperties = {
     aspectRatio: "1/1",
     background: "#0d0d0d",
@@ -1186,6 +1234,10 @@ function TrophyCaseSection({ trophies, onPickSlot }: { trophies: Trophy[]; onPic
 
   return (
     <section className="rpc-section">
+      <style>{`
+        .rpc-trophy-slot .rpc-trophy-actions { opacity: 0; transition: opacity var(--transition-fast); }
+        .rpc-trophy-slot:hover .rpc-trophy-actions { opacity: 1; }
+      `}</style>
       <div className="rpc-section-title">Trophy Case</div>
       <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)", marginBottom: 12, letterSpacing: "0.02em", lineHeight: 1.5 }}>
         Pin your 6 best moments across any collection — your permanent flex.
@@ -1207,9 +1259,69 @@ function TrophyCaseSection({ trophies, onPickSlot }: { trophies: Trophy[]; onPic
             );
           }
           const cMeta = collectionMetaByUuid(t.collection_id);
+          const clickable = !!onView;
           return (
-            <div key={slot} className={`rpc-binder-slot ${tierHoloClass(t.tier)}`} style={{ position: "relative", aspectRatio: "1/1", background: "#111", border: `1px solid ${tierColor(t.tier)}66`, borderRadius: 8, overflow: "hidden" }}>
+            <div
+              key={slot}
+              className={`rpc-binder-slot rpc-trophy-slot ${tierHoloClass(t.tier)}`}
+              style={{ position: "relative", aspectRatio: "1/1", background: "#111", border: `1px solid ${tierColor(t.tier)}66`, borderRadius: 8, overflow: "hidden", cursor: clickable ? "pointer" : "default" }}
+              onClick={clickable ? () => onView!(t) : undefined}
+              role={clickable ? "button" : undefined}
+              tabIndex={clickable ? 0 : undefined}
+              onKeyDown={clickable ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onView!(t); } } : undefined}
+              aria-label={clickable ? `View trophy: ${t.player_name ?? "Trophy"}` : undefined}
+            >
               {t.thumbnail_url && <img src={t.thumbnail_url} alt={t.player_name || ""} style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
+              <div className="rpc-trophy-actions" style={{ position: "absolute", top: 6, right: 6, display: "flex", gap: 4, zIndex: 2 }}>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onPickSlot(slot); }}
+                  title="Edit pin"
+                  aria-label={`Edit slot ${slot}`}
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: "50%",
+                    background: "rgba(0,0,0,0.7)",
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    color: "#fff",
+                    cursor: "pointer",
+                    fontSize: 11,
+                    lineHeight: 1,
+                    padding: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  ✎
+                </button>
+                {onRemove && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onRemove(slot); }}
+                    title="Remove pin"
+                    aria-label={`Remove slot ${slot}`}
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: "50%",
+                      background: "rgba(0,0,0,0.7)",
+                      border: "1px solid rgba(239,68,68,0.45)",
+                      color: "#F87171",
+                      cursor: "pointer",
+                      fontSize: 14,
+                      lineHeight: 1,
+                      padding: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
               <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "6px 8px", background: "linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0))", fontSize: 10, fontFamily: condensedFont, fontWeight: 700 }}>
                 <div style={{ color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.player_name ?? t.moment_id}</div>
                 <div style={{ display: "flex", gap: 6, marginTop: 2, alignItems: "center" }}>
