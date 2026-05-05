@@ -220,6 +220,138 @@ function KpiCard(props: { label: string; value: string; pct?: number | null; per
   )
 }
 
+const MARKETPLACE_LABEL: Record<string, string> = {
+  topshot: "TopShot Native",
+  allday: "AllDay Native",
+  golazos: "Golazos Native",
+  pinnacle: "Pinnacle Native",
+  flowty: "Flowty",
+  "on-chain": "On-chain",
+  unknown: "Unknown",
+}
+const MARKETPLACE_COLOR: Record<string, string> = {
+  topshot: "#E03A2F",
+  allday: "#4F94D4",
+  golazos: "#22C55E",
+  pinnacle: "#A855F7",
+  flowty: "#3B82F6",
+  "on-chain": "#94A3B8",
+  unknown: "#6B7280",
+}
+function marketplaceLabel(key: string): string {
+  return MARKETPLACE_LABEL[key] ?? (key.charAt(0).toUpperCase() + key.slice(1))
+}
+function marketplaceColor(key: string): string {
+  return MARKETPLACE_COLOR[key] ?? "#6B7280"
+}
+
+function MarketplaceBreakdownCard({
+  rows,
+  loading,
+  period,
+}: {
+  rows: Array<{ marketplace: string; volume: number; transactions: number }>
+  loading: boolean
+  period: string
+}) {
+  const totalVolume = rows.reduce((s, r) => s + r.volume, 0)
+  const totalTx = rows.reduce((s, r) => s + r.transactions, 0)
+  const enriched = rows.map((r) => ({
+    ...r,
+    label: marketplaceLabel(r.marketplace),
+    color: marketplaceColor(r.marketplace),
+    volumePct: totalVolume > 0 ? (r.volume / totalVolume) * 100 : 0,
+    txPct: totalTx > 0 ? (r.transactions / totalTx) * 100 : 0,
+  }))
+
+  return (
+    <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+      <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+        Marketplace Breakdown <span className="ml-1 text-[10px] tracking-widest text-zinc-500">/ last {period}</span>
+      </h2>
+      {loading ? (
+        <div className="h-48 animate-pulse rounded bg-zinc-900" />
+      ) : enriched.length === 0 ? (
+        <div className="py-8 text-center text-sm text-zinc-500">No marketplace activity in the last {period}.</div>
+      ) : enriched.length === 1 ? (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-black/30 p-3" style={{ fontFamily: "'Share Tech Mono', monospace" }}>
+          <div className="flex items-center gap-3">
+            <span
+              className="inline-block h-2.5 w-2.5 rounded-full"
+              style={{ background: enriched[0].color }}
+            />
+            <span className="text-sm font-semibold text-white">{enriched[0].label}</span>
+            <span className="text-[10px] uppercase tracking-widest text-zinc-500">single source</span>
+          </div>
+          <div className="flex items-center gap-4 text-[11px] text-zinc-300">
+            <span>Volume {fmt(enriched[0].volume)}</span>
+            <span className="text-zinc-700">·</span>
+            <span>{enriched[0].transactions.toLocaleString()} sales</span>
+            <span className="text-zinc-700">·</span>
+            <span style={{ color: enriched[0].color }} className="font-bold">100%</span>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="h-72" style={{ fontFamily: "'Share Tech Mono', monospace" }}>
+            <div className="mb-1 text-[10px] uppercase tracking-widest text-zinc-500">USD volume</div>
+            <ResponsiveContainer>
+              <BarChart data={enriched} margin={{ top: 10, right: 16, bottom: 30, left: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                <XAxis dataKey="label" tick={{ fill: "#a1a1aa", fontSize: 10 }} interval={0} angle={-15} textAnchor="end" height={50} />
+                <YAxis tick={{ fill: "#a1a1aa", fontSize: 10 }} tickFormatter={(v) => fmt(Number(v))} />
+                <ReTooltip
+                  contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "'Share Tech Mono', monospace" }}
+                  formatter={(v) => [fmtUsd(Number(v)), "Volume"] as [string, string]}
+                />
+                <Bar dataKey="volume" radius={[4, 4, 0, 0]}>
+                  {enriched.map((r) => (
+                    <Cell key={r.marketplace} fill={r.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="h-72" style={{ fontFamily: "'Share Tech Mono', monospace" }}>
+            <div className="mb-1 text-[10px] uppercase tracking-widest text-zinc-500">Transactions</div>
+            <ResponsiveContainer>
+              <BarChart data={enriched} margin={{ top: 10, right: 16, bottom: 30, left: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                <XAxis dataKey="label" tick={{ fill: "#a1a1aa", fontSize: 10 }} interval={0} angle={-15} textAnchor="end" height={50} />
+                <YAxis tick={{ fill: "#a1a1aa", fontSize: 10 }} tickFormatter={(v) => Number(v).toLocaleString()} />
+                <ReTooltip
+                  contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "'Share Tech Mono', monospace" }}
+                  formatter={(v) => [Number(v).toLocaleString(), "Sales"] as [string, string]}
+                />
+                <Bar dataKey="transactions" radius={[4, 4, 0, 0]}>
+                  {enriched.map((r) => (
+                    <Cell key={r.marketplace} fill={r.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+      {enriched.length >= 2 && (
+        <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-zinc-400" style={{ fontFamily: "'Share Tech Mono', monospace" }}>
+          {enriched.map((r) => (
+            <span key={r.marketplace} className="inline-flex items-center gap-2">
+              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: r.color }} />
+              <span className="text-zinc-200">{r.label}</span>
+              <span className="text-zinc-500">{fmt(r.volume)}</span>
+              <span className="text-zinc-700">·</span>
+              <span className="text-zinc-500">{r.volumePct.toFixed(1)}% vol</span>
+              <span className="text-zinc-700">·</span>
+              <span className="text-zinc-500">{r.txPct.toFixed(1)}% tx</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
 function pivotDailyTier<T extends "sale_count" | "volume" | "avg_price">(
   rows: DailyTierRow[] | undefined,
   field: T
@@ -329,6 +461,31 @@ function AnalyticsInner() {
       .filter((t) => t.tier && t.tier !== "UNKNOWN" && Number(t.volume) > 0)
       .map((t) => ({ name: t.tier, value: Math.round(Number(t.volume) * 100) / 100 }))
   }, [marketData?.tierAnalytics])
+
+  // Phase 6 — ecosystem-wide marketplace breakdown for the active period.
+  // Aggregates marketData.daily (already keyed by date+marketplace from
+  // /api/market-analytics) into per-marketplace totals. Two metrics: USD
+  // volume and transaction count. Single-source collections (Pinnacle,
+  // UFC, Golazos, AllDay today) collapse to a "100% on X" indicator.
+  const marketplaceBreakdown = useMemo(() => {
+    if (!marketData?.daily || marketData.daily.length === 0) return []
+    const acc = new Map<string, { volume: number; transactions: number }>()
+    for (const row of marketData.daily) {
+      const mp = (row.marketplace || "unknown").toLowerCase()
+      const slot = acc.get(mp) ?? { volume: 0, transactions: 0 }
+      slot.volume += Number(row.volume ?? 0)
+      slot.transactions += Number(row.saleCount ?? 0)
+      acc.set(mp, slot)
+    }
+    return Array.from(acc.entries())
+      .map(([marketplace, vals]) => ({
+        marketplace,
+        volume: Math.round(vals.volume * 100) / 100,
+        transactions: vals.transactions,
+      }))
+      .filter((r) => r.volume > 0 || r.transactions > 0)
+      .sort((a, b) => b.volume - a.volume)
+  }, [marketData?.daily])
 
   const avgPricePivot = useMemo(
     () => pivotDailyTier(marketData?.dailyTierVolume, "avg_price"),
@@ -683,6 +840,9 @@ function AnalyticsInner() {
             </div>
           )
         })()}
+
+        {/* Section — Marketplace Breakdown (Phase 6) */}
+        <MarketplaceBreakdownCard rows={marketplaceBreakdown} loading={marketLoading && !marketData} period={marketData?.period ?? "30d"} />
 
         {/* Section A — Volume by Tier */}
         <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
