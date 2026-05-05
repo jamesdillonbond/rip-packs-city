@@ -1,11 +1,21 @@
 // app/api/market/route.ts
 //
-// Phase 3 — Market browser API.
+// Phase 4 — Market browser API.
 //
 // Collection-aware listing feed pulled from cached_listings (which is already
 // fully denormalized — player_name, team_name, set_name, tier, serial_number,
 // ask_price, fmv, thumbnail_url, badge_slugs live on the row). Replaces the
 // old NBA-only badge_editions version.
+//
+// Phase 4 additions:
+//   - team (multi-select)
+//   - badges (multi-select; intersects cached_listings.badge_slugs)
+//   - specialSerials toggle (#1, last-serial)
+//   - per-row editionKey derived via editions JOIN on (player_name, set_name)
+//     so the client can join against /api/wallet/edition-counts for the
+//     "Edition Owned / Locked" column. TS uses set_id_onchain:play_id_onchain
+//     (matches the integer form in wallet_moments_cache); other collections
+//     use editions.external_id (already the canonical wmc edition_key shape).
 //
 // Outlier clamp:
 //   cached_listings on thin-volume collections (notably LaLiga Golazos) gets
@@ -16,30 +26,18 @@
 //   Rare < $50K, Legendary < $250K, Ultimate < $1M. Fandom/Uncommon/Contender
 //   follow their nearest analog (< $500 / < $50K).
 //
-// Discount + fmv joins:
-//   cached_listings has fmv on-row but confidence is NULL today (the ingester
-//   doesn't populate it). For the Market browse shape that's fine — we compute
-//   discount here and let the client render a LOW confidence chip when fmv is
-//   null or missing. fmv_current is not joined — cached_listings.fmv is the
-//   snapshot that was live when the listing was cached, which is what you
-//   want in the marketplace view anyway.
-//
 // Pagination:
 //   Server-side via range(). Max 1000 rows per query, default page size 50.
 //   Response includes { total, page, hasMore } so the client doesn't have to
 //   eat a 1000-row payload for UI-side paging.
-//
-// Sort:
-//   price_asc / price_desc / discount_asc / discount_desc / fmv_asc / fmv_desc
-//   / recent (listed_at desc, default). discount sorts fall back to in-memory
-//   sort of the current page since PostgREST can't order by a cross-column
-//   expression.
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 10
+
+const TS_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
 // Tier ceilings — ask prices above these are treated as sentinels and dropped.
 // Keys are upper-cased raw tier strings as stored in cached_listings.tier.
@@ -79,6 +77,52 @@ function computeDiscount(ask: number | null, fmv: number | null): number | null 
   return Math.round(((fmv - ask) / fmv) * 1000) / 10
 }
 
+function normJoinKey(player: string | null | undefined, set: string | null | undefined): string | null {
+  if (!player || !set) return null
+  return `${String(player).trim().toLowerCase()}|${String(set).trim().toLowerCase()}`
+}
+
+interface EditionRow {
+  external_id: string | null
+  collection_id: string
+  player_name: string | null
+  set_name: string | null
+  set_id_onchain: number | null
+  play_id_onchain: number | null
+  badges: string[] | null
+}
+
+async function loadEditionLookup(collectionId: string): Promise<Map<string, EditionRow>> {
+  // One query per request. cached_listings is small (~280 rows total across
+  // all collections today), and the editions table is bounded too — joining
+  // in-memory is faster than fanning out per-row PostgREST calls.
+  const map = new Map<string, EditionRow>()
+  try {
+    const { data, error } = await (supabaseAdmin as any)
+      .from("editions")
+      .select("external_id, collection_id, player_name, set_name, set_id_onchain, play_id_onchain, badges")
+      .eq("collection_id", collectionId)
+      .limit(50_000)
+    if (error) {
+      console.log("[/api/market] editions lookup error: " + error.message)
+      return map
+    }
+    for (const r of (data ?? []) as EditionRow[]) {
+      const k = normJoinKey(r.player_name, r.set_name)
+      if (!k) continue
+      // Keep the most-resolved row when collisions happen — prefer the one
+      // with both onchain ids populated.
+      const existing = map.get(k)
+      const incomingOnchain = r.set_id_onchain != null && r.play_id_onchain != null
+      const existingOnchain = existing && existing.set_id_onchain != null && existing.play_id_onchain != null
+      if (!existing || (incomingOnchain && !existingOnchain)) map.set(k, r)
+    }
+  } catch (err) {
+    console.log("[/api/market] editions lookup threw: " + (err instanceof Error ? err.message : String(err)))
+  }
+  return map
+}
+
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
 
@@ -109,7 +153,16 @@ export async function GET(req: NextRequest) {
   const seriesList = seriesRaw
     ? seriesRaw.split(",").map(s => s.trim()).filter(Boolean)
     : []
-  const hasBadges = sp.get("hasBadges") === "true"
+  const teamRaw = sp.get("team") || ""
+  const teams = teamRaw
+    ? teamRaw.split(",").map(t => t.trim()).filter(Boolean)
+    : []
+  const badgeRaw = sp.get("badges") || ""
+  const badges = badgeRaw
+    ? badgeRaw.split(",").map(b => b.trim()).filter(Boolean)
+    : []
+  const hasBadges = sp.get("hasBadges") === "true" || badges.length > 0
+  const specialSerials = sp.get("specialSerials") === "true"
   const parallel = (sp.get("parallel") || "").trim()
 
   // ── Pagination + sort ──────────────────────────────────────────────────
@@ -139,7 +192,9 @@ export async function GET(req: NextRequest) {
     if (player) q = q.ilike("player_name", `%${player}%`)
     if (sets.length > 0) q = q.in("set_name", sets)
     if (seriesList.length > 0) q = q.in("series_name", seriesList)
+    if (teams.length > 0) q = q.in("team_name", teams)
     if (hasBadges) q = q.not("badge_slugs", "is", null)
+    if (badges.length > 0) q = q.overlaps("badge_slugs", badges)
     if (parallel) q = q.ilike("raw_data->>parallel", `%${parallel}%`)
 
     // DB-level sort only for columns PostgREST can order on directly.
@@ -162,13 +217,18 @@ export async function GET(req: NextRequest) {
     const fetchLimit = sort.startsWith("discount") ? MAX_LIMIT : Math.min(MAX_LIMIT, offset + limit + 100)
     q = q.range(0, fetchLimit - 1)
 
-    const { data, error, count } = await q
+    // Run editions lookup in parallel with the main query.
+    const [{ data, error, count }, editionLookup] = await Promise.all([
+      q,
+      loadEditionLookup(collectionId),
+    ])
+
     if (error) {
       console.log("[/api/market] query error:", error.message)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // ── Tier-based outlier clamp + discount computation ──────────────────
+    // ── Tier-based outlier clamp + edition enrichment + discount ─────────
     const clamped = (data ?? []).filter((r: any) => {
       const tier = typeof r.tier === "string" ? r.tier.toUpperCase() : null
       const ceiling = tier ? TIER_CEILING[tier] : null
@@ -176,10 +236,35 @@ export async function GET(req: NextRequest) {
       return true
     })
 
+    const isTopShot = collectionId === TS_COLLECTION_ID
+
     const enriched = clamped.map((r: any) => {
       const ask = r.ask_price != null ? Number(r.ask_price) : null
       const fmv = r.fmv != null ? Number(r.fmv) : null
       const discount = computeDiscount(ask, fmv)
+      const lookupKey = normJoinKey(r.player_name, r.set_name)
+      const ed = lookupKey ? editionLookup.get(lookupKey) : null
+      // editionKey: TS uses on-chain integers (matches wmc); others use the
+      // editions.external_id slug (also matches wmc for those collections).
+      let editionKey: string | null = null
+      if (ed) {
+        if (isTopShot && ed.set_id_onchain != null && ed.play_id_onchain != null) {
+          editionKey = `${ed.set_id_onchain}:${ed.play_id_onchain}`
+        } else if (!isTopShot && ed.external_id) {
+          editionKey = ed.external_id
+        } else if (ed.external_id && /^\d+:\d+$/.test(ed.external_id)) {
+          editionKey = ed.external_id
+        }
+      }
+      // Fall back to editions.badges if cached_listings.badge_slugs is empty.
+      const cachedBadges = Array.isArray(r.badge_slugs) ? r.badge_slugs : []
+      const editionBadges = ed && Array.isArray(ed.badges) ? ed.badges : []
+      const badgeSlugs = cachedBadges.length > 0 ? cachedBadges : editionBadges
+      const serial = r.serial_number != null ? Number(r.serial_number) : null
+      const circ = r.circulation_count != null ? Number(r.circulation_count) : null
+      const isSpecialSerial =
+        (serial != null && serial === 1) ||
+        (serial != null && circ != null && circ > 0 && serial === circ)
       return {
         id: r.id,
         flowId: r.flow_id,
@@ -189,8 +274,8 @@ export async function GET(req: NextRequest) {
         setName: r.set_name,
         seriesName: r.series_name,
         tier: r.tier,
-        serialNumber: r.serial_number,
-        circulationCount: r.circulation_count,
+        serialNumber: serial,
+        circulationCount: circ,
         askPrice: ask,
         fmv,
         discount,
@@ -198,7 +283,9 @@ export async function GET(req: NextRequest) {
         source: r.source,
         buyUrl: r.buy_url,
         thumbnailUrl: r.thumbnail_url,
-        badgeSlugs: Array.isArray(r.badge_slugs) ? r.badge_slugs : [],
+        badgeSlugs,
+        editionKey,
+        isSpecialSerial,
         listingResourceId: r.listing_resource_id,
         storefrontAddress: r.storefront_address,
         isLocked: r.is_locked,
@@ -211,24 +298,31 @@ export async function GET(req: NextRequest) {
     // Discount filter happens after computation.
     const hasMinDiscount = Number.isFinite(minDiscount)
     const hasMaxDiscount = Number.isFinite(maxDiscount)
-    const discountFiltered = (hasMinDiscount || hasMaxDiscount)
-      ? enriched.filter(r => {
-          if (r.discount == null) return false
-          if (hasMinDiscount && r.discount < minDiscount) return false
-          if (hasMaxDiscount && r.discount > maxDiscount) return false
-          return true
-        })
-      : enriched
+    let postFiltered = enriched
+    if (hasMinDiscount || hasMaxDiscount) {
+      postFiltered = postFiltered.filter(r => {
+        if (r.discount == null) return false
+        if (hasMinDiscount && r.discount < minDiscount) return false
+        if (hasMaxDiscount && r.discount > maxDiscount) return false
+        return true
+      })
+    }
+
+    // Special-serials filter (server-side because the hint columns are
+    // already on the row). Defined as serial == 1 OR serial == circulation_count.
+    if (specialSerials) {
+      postFiltered = postFiltered.filter(r => r.isSpecialSerial)
+    }
 
     // Apply discount sort in memory.
     if (sort === "discount_desc") {
-      discountFiltered.sort((a, b) => (b.discount ?? -Infinity) - (a.discount ?? -Infinity))
+      postFiltered.sort((a, b) => (b.discount ?? -Infinity) - (a.discount ?? -Infinity))
     } else if (sort === "discount_asc") {
-      discountFiltered.sort((a, b) => (a.discount ?? Infinity) - (b.discount ?? Infinity))
+      postFiltered.sort((a, b) => (a.discount ?? Infinity) - (b.discount ?? Infinity))
     }
 
-    const total = discountFiltered.length
-    const paged = discountFiltered.slice(offset, offset + limit)
+    const total = postFiltered.length
+    const paged = postFiltered.slice(offset, offset + limit)
     const hasMore = offset + limit < total
 
     return NextResponse.json({

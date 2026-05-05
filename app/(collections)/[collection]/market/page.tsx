@@ -1,13 +1,23 @@
 "use client"
 
-// Phase 3 — Market page.
+// Phase 4 — Market page.
 // Sortable / filterable browser of every listing in the active collection.
 // Distinct from /sniper (deal-focused) and /collection (wallet-focused).
+//
+// Phase 4 changes:
+//   - Default view is now "table" (the grid card view is still toggleable)
+//   - Series column added between Tier and Set
+//   - Edition Owned/Locked column ("3 / 2") for signed-in users
+//   - Badges render as inline images via <BadgeIcon>
+//   - New filters: Set / Series / Player typeahead / Owned-or-not / Team /
+//     Tier / Specific Badges / Special Serials, all URL-persisted
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useCollectionContext } from "@/lib/hooks/useCollectionContext"
+import { getOwnerKey } from "@/lib/owner-key"
+import BadgeIcon from "@/components/BadgeIcon"
 
 type Listing = {
   id: string
@@ -28,6 +38,8 @@ type Listing = {
   buyUrl: string | null
   thumbnailUrl: string | null
   badgeSlugs: string[]
+  editionKey: string | null
+  isSpecialSerial: boolean
   listingResourceId: string | null
   storefrontAddress: string | null
   isLocked: boolean | null
@@ -55,6 +67,8 @@ type SortKey =
   | "price_asc" | "price_desc"
   | "discount_asc" | "discount_desc"
   | "fmv_asc" | "fmv_desc"
+
+type OwnedFilter = "all" | "owned" | "not_owned"
 
 const SORT_LABELS: Record<SortKey, string> = {
   recent:         "Recently listed",
@@ -113,26 +127,36 @@ function relativeAge(iso: string | null): string {
   return `${Math.floor(hours / 24)}d`
 }
 
+function parseList(value: string | null | undefined): string[] {
+  if (!value) return []
+  return value.split(",").map(s => s.trim()).filter(Boolean)
+}
+
 function MarketInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { collection, collectionId, supabaseCollectionId, accent, momentUrl } = useCollectionContext()
 
-  // ── View state (table / grid) ─────────────────────────────────────────
+  // ── View state (table / grid) — table is the Phase 4 default ──────────
   const [view, setView] = useState<"grid" | "table">(() => {
-    return (searchParams.get("view") === "table" ? "table" : "grid")
+    return (searchParams.get("view") === "grid" ? "grid" : "table")
   })
 
   // ── Filters — initialized from URL so deep-linking works ─────────────
-  const [tiersSel, setTiersSel] = useState<string[]>(() => {
-    const v = searchParams.get("tier")
-    return v ? v.split(",").filter(Boolean) : []
-  })
+  const [tiersSel, setTiersSel] = useState<string[]>(() => parseList(searchParams.get("tier")))
+  const [setsSel, setSetsSel] = useState<string[]>(() => parseList(searchParams.get("set")))
+  const [seriesSel, setSeriesSel] = useState<string[]>(() => parseList(searchParams.get("series")))
+  const [teamsSel, setTeamsSel] = useState<string[]>(() => parseList(searchParams.get("team")))
+  const [badgesSel, setBadgesSel] = useState<string[]>(() => parseList(searchParams.get("badges")))
   const [minPrice, setMinPrice] = useState<string>(searchParams.get("minPrice") ?? "")
   const [maxPrice, setMaxPrice] = useState<string>(searchParams.get("maxPrice") ?? "")
   const [minDiscount, setMinDiscount] = useState<string>(searchParams.get("minDiscount") ?? "")
   const [playerQuery, setPlayerQuery] = useState<string>(searchParams.get("player") ?? "")
-  const [hasBadges, setHasBadges] = useState<boolean>(searchParams.get("hasBadges") === "true")
+  const [specialSerials, setSpecialSerials] = useState<boolean>(searchParams.get("specialSerials") === "true")
+  const [ownedFilter, setOwnedFilter] = useState<OwnedFilter>(() => {
+    const v = searchParams.get("owned")
+    return v === "owned" || v === "not_owned" ? v : "all"
+  })
   const [sort, setSort] = useState<SortKey>(() => {
     const v = (searchParams.get("sort") as SortKey) ?? "recent"
     return (Object.keys(SORT_LABELS) as SortKey[]).includes(v) ? v : "recent"
@@ -150,7 +174,36 @@ function MarketInner() {
   }, [playerQuery])
 
   // Any time an active filter changes, snap back to page 1.
-  useEffect(() => { setPage(1) }, [tiersSel.join(","), minPrice, maxPrice, minDiscount, debouncedPlayer, hasBadges, sort])
+  useEffect(() => { setPage(1) }, [
+    tiersSel.join(","), setsSel.join(","), seriesSel.join(","), teamsSel.join(","), badgesSel.join(","),
+    minPrice, maxPrice, minDiscount, debouncedPlayer, specialSerials, ownedFilter, sort,
+  ])
+
+  // ── Owner key + edition counts (powers Owned filter + Owned/Locked col) ──
+  const [ownerKey, setOwnerKey] = useState<string | null>(null)
+  const [editionStats, setEditionStats] = useState<Map<string, { owned: number; locked: number }>>(new Map())
+  useEffect(() => {
+    setOwnerKey(getOwnerKey())
+  }, [])
+  useEffect(() => {
+    if (!ownerKey || !ownerKey.startsWith("0x") || !collectionId) return
+    let cancelled = false
+    fetch(`/api/wallet/edition-counts?wallet=${encodeURIComponent(ownerKey)}&collection=${encodeURIComponent(collectionId)}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(15000),
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then((j: { editions?: Record<string, { owned: number; locked: number }> } | null) => {
+        if (cancelled || !j) return
+        const next = new Map<string, { owned: number; locked: number }>()
+        for (const [k, v] of Object.entries(j.editions ?? {})) {
+          next.set(k, { owned: Number(v.owned) || 0, locked: Number(v.locked) || 0 })
+        }
+        setEditionStats(next)
+      })
+      .catch(() => { /* silent */ })
+    return () => { cancelled = true }
+  }, [ownerKey, collectionId])
 
   // ── Data ─────────────────────────────────────────────────────────────
   const [data, setData] = useState<MarketResponse | null>(null)
@@ -161,16 +214,20 @@ function MarketInner() {
     const params = new URLSearchParams()
     if (supabaseCollectionId) params.set("collectionId", supabaseCollectionId)
     if (tiersSel.length > 0) params.set("tier", tiersSel.join(","))
+    if (setsSel.length > 0) params.set("set", setsSel.join(","))
+    if (seriesSel.length > 0) params.set("series", seriesSel.join(","))
+    if (teamsSel.length > 0) params.set("team", teamsSel.join(","))
+    if (badgesSel.length > 0) params.set("badges", badgesSel.join(","))
     if (minPrice) params.set("minPrice", minPrice)
     if (maxPrice) params.set("maxPrice", maxPrice)
     if (minDiscount) params.set("minDiscount", minDiscount)
     if (debouncedPlayer) params.set("player", debouncedPlayer)
-    if (hasBadges) params.set("hasBadges", "true")
+    if (specialSerials) params.set("specialSerials", "true")
     params.set("sort", sort)
     params.set("page", String(page))
     params.set("limit", "50")
     return params.toString()
-  }, [supabaseCollectionId, tiersSel, minPrice, maxPrice, minDiscount, debouncedPlayer, hasBadges, sort, page])
+  }, [supabaseCollectionId, tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, specialSerials, sort, page])
 
   useEffect(() => {
     if (!supabaseCollectionId) { setLoading(false); return }
@@ -190,21 +247,24 @@ function MarketInner() {
   useEffect(() => {
     const sp = new URLSearchParams()
     if (tiersSel.length > 0) sp.set("tier", tiersSel.join(","))
+    if (setsSel.length > 0) sp.set("set", setsSel.join(","))
+    if (seriesSel.length > 0) sp.set("series", seriesSel.join(","))
+    if (teamsSel.length > 0) sp.set("team", teamsSel.join(","))
+    if (badgesSel.length > 0) sp.set("badges", badgesSel.join(","))
     if (minPrice) sp.set("minPrice", minPrice)
     if (maxPrice) sp.set("maxPrice", maxPrice)
     if (minDiscount) sp.set("minDiscount", minDiscount)
     if (debouncedPlayer) sp.set("player", debouncedPlayer)
-    if (hasBadges) sp.set("hasBadges", "true")
+    if (specialSerials) sp.set("specialSerials", "true")
+    if (ownedFilter !== "all") sp.set("owned", ownedFilter)
     if (sort !== "recent") sp.set("sort", sort)
     if (page > 1) sp.set("page", String(page))
-    if (view === "table") sp.set("view", "table")
+    if (view === "grid") sp.set("view", "grid")
     const qs = sp.toString()
     try { router.replace(qs ? `?${qs}` : "?", { scroll: false }) } catch { /* ignore */ }
-  }, [tiersSel, minPrice, maxPrice, minDiscount, debouncedPlayer, hasBadges, sort, page, view, router])
+  }, [tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, specialSerials, ownedFilter, sort, page, view, router])
 
   // ── Thin-volume notice — reads /api/ready's per_collection array ─────
-  // (/api/health is a minimal liveness probe; readiness telemetry lives at
-  // /api/ready.)
   const [healthRow, setHealthRow] = useState<HealthPerCollection | null>(null)
   useEffect(() => {
     let cancelled = false
@@ -221,20 +281,46 @@ function MarketInner() {
 
   const thinVolume = healthRow != null && (healthRow.sales_24h ?? 0) < 10
 
-  // ── Filter controls ──────────────────────────────────────────────────
+  // ── Filter dropdown options (derived from current results) ───────────
   const availableTiers = COLLECTION_TIERS[collectionId] ?? []
+  const baseListings = data?.listings ?? []
+  const setOptions = useMemo(() => collectDistinct(baseListings, l => l.setName), [baseListings])
+  const seriesOptions = useMemo(() => collectDistinct(baseListings, l => l.seriesName), [baseListings])
+  const teamOptions = useMemo(() => collectDistinct(baseListings, l => l.teamName), [baseListings])
+  const badgeOptions = useMemo(() => {
+    const seen = new Set<string>()
+    for (const l of baseListings) for (const b of l.badgeSlugs) if (b) seen.add(b)
+    return Array.from(seen).sort()
+  }, [baseListings])
 
+  // Owned filter is applied client-side because the join lives on the
+  // browser anyway (we already loaded /api/wallet/edition-counts above).
+  const filteredListings = useMemo(() => {
+    if (ownedFilter === "all" || !ownerKey || editionStats.size === 0) return baseListings
+    return baseListings.filter(l => {
+      const stats = l.editionKey ? editionStats.get(l.editionKey) : null
+      const owned = stats != null && stats.owned > 0
+      return ownedFilter === "owned" ? owned : !owned
+    })
+  }, [baseListings, ownedFilter, ownerKey, editionStats])
+
+  // ── Filter controls ──────────────────────────────────────────────────
   const toggleTier = useCallback((t: string) => {
     setTiersSel(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])
   }, [])
 
   const clearFilters = useCallback(() => {
     setTiersSel([])
+    setSetsSel([])
+    setSeriesSel([])
+    setTeamsSel([])
+    setBadgesSel([])
     setMinPrice("")
     setMaxPrice("")
     setMinDiscount("")
     setPlayerQuery("")
-    setHasBadges(false)
+    setSpecialSerials(false)
+    setOwnedFilter("all")
     setSort("recent")
     setPage(1)
   }, [])
@@ -242,22 +328,28 @@ function MarketInner() {
   const activeFilterCount = useMemo(() => {
     let n = 0
     if (tiersSel.length > 0) n++
+    if (setsSel.length > 0) n++
+    if (seriesSel.length > 0) n++
+    if (teamsSel.length > 0) n++
+    if (badgesSel.length > 0) n++
     if (minPrice) n++
     if (maxPrice) n++
     if (minDiscount) n++
     if (debouncedPlayer) n++
-    if (hasBadges) n++
+    if (specialSerials) n++
+    if (ownedFilter !== "all") n++
     return n
-  }, [tiersSel, minPrice, maxPrice, minDiscount, debouncedPlayer, hasBadges])
+  }, [tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, specialSerials, ownedFilter])
 
   // ── Render ───────────────────────────────────────────────────────────
   if (!collection) {
     return <div className="rpc-mono" style={{ padding: 24, color: "var(--rpc-text-muted)" }}>Unknown collection.</div>
   }
 
-  const listings = data?.listings ?? []
   const total = data?.pagination.total ?? 0
   const hasMore = data?.pagination.hasMore ?? false
+  const showOwnedColumn = !!ownerKey && editionStats.size > 0
+  const showOwnedFilter = !!ownerKey
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -280,8 +372,7 @@ function MarketInner() {
         </div>
       )}
 
-      {/* ── Filter bar — HUD-styled (scoped scanline overlay via rpc-thead-scanline
-           — `rpc-scanlines` is a viewport-wide fixed overlay, not what we want here) ── */}
+      {/* ── Filter bar ── */}
       <section
         className="rpc-card rpc-thead-scanline"
         style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12, position: "relative", overflow: "hidden" }}
@@ -334,7 +425,7 @@ function MarketInner() {
             </select>
 
             <div style={{ display: "flex", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", overflow: "hidden" }}>
-              {(["grid", "table"] as const).map(v => (
+              {(["table", "grid"] as const).map(v => (
                 <button
                   key={v}
                   type="button"
@@ -358,7 +449,7 @@ function MarketInner() {
           </div>
         </div>
 
-        {/* Row 2: price / discount / player / badges */}
+        {/* Row 2: price / discount / player */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <span className="rpc-label">Price</span>
           <input
@@ -398,20 +489,6 @@ function MarketInner() {
             style={{ ...inputStyle, width: 180 }}
           />
 
-          {collectionId === "nba-top-shot" && (
-            <label
-              className="rpc-mono"
-              style={{ display: "inline-flex", gap: 6, alignItems: "center", marginLeft: 12, cursor: "pointer", fontSize: 11, color: "var(--rpc-text-muted)", letterSpacing: "0.06em" }}
-            >
-              <input
-                type="checkbox"
-                checked={hasBadges}
-                onChange={(e) => setHasBadges(e.target.checked)}
-              />
-              Badges only
-            </label>
-          )}
-
           {activeFilterCount > 0 && (
             <button
               type="button"
@@ -424,10 +501,53 @@ function MarketInner() {
           )}
         </div>
 
-        {/* Row 3: result summary */}
+        {/* Row 3: multi-select dropdowns + special serials + owned filter */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <MultiSelectChip label="Set" selected={setsSel} options={setOptions} onChange={setSetsSel} />
+          <MultiSelectChip label="Series" selected={seriesSel} options={seriesOptions} onChange={setSeriesSel} />
+          <MultiSelectChip label="Team" selected={teamsSel} options={teamOptions} onChange={setTeamsSel} />
+          <MultiSelectChip label="Badges" selected={badgesSel} options={badgeOptions} onChange={setBadgesSel} />
+
+          <label
+            className="rpc-mono"
+            style={{ display: "inline-flex", gap: 6, alignItems: "center", cursor: "pointer", fontSize: 11, color: "var(--rpc-text-muted)", letterSpacing: "0.06em" }}
+          >
+            <input
+              type="checkbox"
+              checked={specialSerials}
+              onChange={(e) => setSpecialSerials(e.target.checked)}
+            />
+            Special serials only
+          </label>
+
+          {showOwnedFilter && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span className="rpc-label">Owned</span>
+              {(["all", "owned", "not_owned"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setOwnedFilter(v)}
+                  className="rpc-chip"
+                  style={{
+                    color: ownedFilter === v ? "#fff" : "var(--rpc-text-muted)",
+                    borderColor: ownedFilter === v ? accent : "rgba(255,255,255,0.15)",
+                    background: ownedFilter === v ? accent + "22" : "transparent",
+                    fontWeight: ownedFilter === v ? 700 : 500,
+                  }}
+                  aria-pressed={ownedFilter === v}
+                >
+                  {v === "all" ? "All" : v === "owned" ? "Owned" : "Not owned"}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Row 4: result summary */}
         <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.08em" }}>
           {loading ? "LOADING…" : error ? `ERROR — ${error}` :
-            `${total.toLocaleString()} LISTING${total === 1 ? "" : "S"}` +
+            `${filteredListings.length.toLocaleString()} OF ${total.toLocaleString()} LISTING${total === 1 ? "" : "S"}` +
             (data?.diagnostics && data.diagnostics.rawCount > data.diagnostics.postClampCount
               ? ` · ${(data.diagnostics.rawCount - data.diagnostics.postClampCount).toLocaleString()} OUTLIERS CLAMPED`
               : "")
@@ -444,20 +564,20 @@ function MarketInner() {
         <div className="rpc-card" style={{ padding: 20, borderLeft: "3px solid #EF4444" }}>
           <span className="rpc-mono" style={{ color: "#FCA5A5" }}>Couldn&apos;t load market — {error}</span>
         </div>
-      ) : listings.length === 0 ? (
+      ) : filteredListings.length === 0 ? (
         <EmptyState collectionId={collectionId} thinVolume={thinVolume} />
       ) : view === "grid" ? (
         <div className="rpc-binder">
-          {listings.map((l) => (
-            <ListingCard key={l.id} listing={l} accent={accent} momentUrl={momentUrl} />
+          {filteredListings.map((l) => (
+            <ListingCard key={l.id} listing={l} accent={accent} momentUrl={momentUrl} editionStats={editionStats} showOwned={showOwnedColumn} />
           ))}
         </div>
       ) : (
-        <ListingTable listings={listings} accent={accent} momentUrl={momentUrl} />
+        <ListingTable listings={filteredListings} accent={accent} momentUrl={momentUrl} editionStats={editionStats} showOwnedColumn={showOwnedColumn} />
       )}
 
       {/* ── Pagination ── */}
-      {!loading && !error && listings.length > 0 && (
+      {!loading && !error && filteredListings.length > 0 && (
         <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "center", padding: "8px 0 20px" }}>
           <button
             type="button"
@@ -488,6 +608,118 @@ function MarketInner() {
 
 // ── Sub-components ──────────────────────────────────────────────────────
 
+function collectDistinct(rows: Listing[], pick: (l: Listing) => string | null | undefined): string[] {
+  const seen = new Set<string>()
+  for (const r of rows) {
+    const v = pick(r)
+    if (v != null && v !== "") seen.add(String(v))
+  }
+  return Array.from(seen).sort((a, b) => a.localeCompare(b))
+}
+
+function MultiSelectChip({
+  label, selected, options, onChange,
+}: {
+  label: string
+  selected: string[]
+  options: string[]
+  onChange: (next: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const summary = selected.length === 0 ? "Any" : selected.length === 1 ? selected[0] : `${selected.length} selected`
+  const toggle = (v: string) => {
+    if (selected.includes(v)) onChange(selected.filter(x => x !== v))
+    else onChange([...selected, v])
+  }
+  return (
+    <div style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <span className="rpc-label">{label}</span>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="rpc-chip"
+        style={{
+          minWidth: 110,
+          background: selected.length > 0 ? "rgba(255,255,255,0.05)" : "transparent",
+          color: selected.length > 0 ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)",
+          fontWeight: selected.length > 0 ? 700 : 500,
+        }}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={options.length === 0}
+        title={options.length === 0 ? "No options in current results" : undefined}
+      >
+        {summary} ▾
+      </button>
+      {open && options.length > 0 && (
+        <div
+          role="listbox"
+          style={{
+            position: "absolute",
+            top: "calc(100% + 4px)",
+            left: 0,
+            zIndex: 50,
+            background: "var(--rpc-surface-raised)",
+            border: "1px solid var(--rpc-border)",
+            borderRadius: "var(--radius-sm)",
+            boxShadow: "0 6px 18px rgba(0,0,0,0.6)",
+            padding: 6,
+            minWidth: 180,
+            maxHeight: 240,
+            overflow: "auto",
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+          }}
+        >
+          {selected.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              style={{
+                display: "block",
+                width: "100%",
+                padding: "4px 6px",
+                marginBottom: 4,
+                background: "transparent",
+                border: "none",
+                textAlign: "left",
+                color: "var(--rpc-text-ghost)",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: 10,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+              }}
+            >
+              Clear
+            </button>
+          )}
+          {options.map(opt => (
+            <label
+              key={opt}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "4px 6px",
+                cursor: "pointer",
+                color: selected.includes(opt) ? "var(--rpc-text-primary)" : "var(--rpc-text-secondary)",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={selected.includes(opt)}
+                onChange={() => toggle(opt)}
+              />
+              <span>{opt}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const inputStyle: React.CSSProperties = {
   padding: "5px 10px",
   background: "var(--rpc-surface-raised)",
@@ -516,14 +748,21 @@ function sourceLabel(src: string | null): string {
   }
 }
 
-function ListingCard({ listing, accent, momentUrl }: {
+function ownLockLabel(stats: { owned: number; locked: number } | null | undefined): string {
+  if (!stats || stats.owned <= 0) return "—"
+  return `${stats.owned} / ${stats.locked}`
+}
+
+function ListingCard({ listing, accent, momentUrl, editionStats, showOwned }: {
   listing: Listing; accent: string; momentUrl: (id: string) => string | null
+  editionStats: Map<string, { owned: number; locked: number }>; showOwned: boolean
 }) {
   const tier = (listing.tier ?? "").toUpperCase()
   const dot = tierColor(tier)
   const discount = fmtDiscount(listing.discount)
   const buy = listing.buyUrl ?? (listing.flowId ? momentUrl(listing.flowId) : null)
   const hasThumb = !!listing.thumbnailUrl
+  const stats = listing.editionKey ? editionStats.get(listing.editionKey) : null
 
   return (
     <a
@@ -569,8 +808,16 @@ function ListingCard({ listing, accent, momentUrl }: {
         </div>
         <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: "0.04em" }}>
           <span style={{ color: dot }}>{tier || "—"}</span>
+          {listing.seriesName ? <> · {listing.seriesName}</> : null}
           {listing.setName ? <> · {listing.setName}</> : null}
         </div>
+        {listing.badgeSlugs.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+            {Array.from(new Set(listing.badgeSlugs)).slice(0, 4).map(slug => (
+              <BadgeIcon key={slug} title={slug} size={20} />
+            ))}
+          </div>
+        )}
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 2 }}>
           <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 15, color: "var(--rpc-text-primary)" }}>
             {fmtUsd(listing.askPrice)}
@@ -579,20 +826,27 @@ function ListingCard({ listing, accent, momentUrl }: {
             {discount.text}
           </span>
         </div>
-        <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-ghost)", letterSpacing: "0.08em", textTransform: "uppercase", display: "flex", gap: 6 }}>
+        <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-ghost)", letterSpacing: "0.08em", textTransform: "uppercase", display: "flex", gap: 6, flexWrap: "wrap" }}>
           <span>FMV {fmtUsd(listing.fmv)}</span>
           <span>·</span>
           <span>{sourceLabel(listing.source)}</span>
           <span>·</span>
           <span>{relativeAge(listing.listedAt)}</span>
+          {showOwned && (
+            <>
+              <span>·</span>
+              <span>OWN {ownLockLabel(stats)}</span>
+            </>
+          )}
         </div>
       </div>
     </a>
   )
 }
 
-function ListingTable({ listings, accent, momentUrl }: {
+function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColumn }: {
   listings: Listing[]; accent: string; momentUrl: (id: string) => string | null
+  editionStats: Map<string, { owned: number; locked: number }>; showOwnedColumn: boolean
 }) {
   return (
     <div className="rpc-card" style={{ padding: 0, overflow: "auto" }}>
@@ -602,8 +856,11 @@ function ListingTable({ listings, accent, momentUrl }: {
             <th style={th}></th>
             <th style={th}>Player</th>
             <th style={th}>Tier</th>
+            <th style={th}>Series</th>
             <th style={th}>Set</th>
+            <th style={th}>Badges</th>
             <th style={{ ...th, textAlign: "right" }}>Serial</th>
+            {showOwnedColumn && <th style={{ ...th, textAlign: "right" }}>Own / Lock</th>}
             <th style={{ ...th, textAlign: "right" }}>Ask</th>
             <th style={{ ...th, textAlign: "right" }}>FMV</th>
             <th style={{ ...th, textAlign: "right" }}>Discount</th>
@@ -618,6 +875,8 @@ function ListingTable({ listings, accent, momentUrl }: {
             const dot = tierColor(tier)
             const discount = fmtDiscount(l.discount)
             const buy = l.buyUrl ?? (l.flowId ? momentUrl(l.flowId) : null)
+            const stats = l.editionKey ? editionStats.get(l.editionKey) : null
+            const uniqueBadges = Array.from(new Set(l.badgeSlugs))
             return (
               <tr
                 key={l.id}
@@ -635,10 +894,31 @@ function ListingTable({ listings, accent, momentUrl }: {
                   {l.playerName ?? "—"}
                 </td>
                 <td style={{ ...td, color: dot }}>{tier || "—"}</td>
+                <td style={{ ...td, color: "var(--rpc-text-muted)" }}>{l.seriesName ?? "—"}</td>
                 <td style={{ ...td, color: "var(--rpc-text-muted)" }}>{l.setName ?? "—"}</td>
+                <td style={td}>
+                  {uniqueBadges.length === 0 ? (
+                    <span style={{ color: "var(--rpc-text-ghost)" }}>—</span>
+                  ) : (
+                    <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                      {uniqueBadges.slice(0, 3).map(slug => (
+                        <BadgeIcon key={slug} title={slug} size={20} />
+                      ))}
+                      {uniqueBadges.length > 3 && (
+                        <span style={{ fontSize: 10, color: "var(--rpc-text-ghost)" }}>+{uniqueBadges.length - 3}</span>
+                      )}
+                    </div>
+                  )}
+                </td>
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-muted)" }}>
                   {l.serialNumber != null ? `#${l.serialNumber}${l.circulationCount ? `/${l.circulationCount}` : ""}` : "—"}
                 </td>
+                {showOwnedColumn && (
+                  <td style={{ ...td, textAlign: "right", color: stats && stats.owned > 0 ? "var(--rpc-success)" : "var(--rpc-text-ghost)" }}
+                      title={stats && stats.owned > 0 ? `${stats.owned} owned · ${stats.locked} locked` : undefined}>
+                    {ownLockLabel(stats)}
+                  </td>
+                )}
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-primary)", fontWeight: 700 }}>{fmtUsd(l.askPrice)}</td>
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-muted)" }}>{fmtUsd(l.fmv)}</td>
                 <td style={{ ...td, textAlign: "right", color: discount.color, fontWeight: 700 }}>{discount.text}</td>
