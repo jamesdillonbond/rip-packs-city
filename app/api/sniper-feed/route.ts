@@ -634,12 +634,14 @@ async function fetchFlowtyPage(from: number): Promise<FlowtyListing[]> {
   }
 }
 
-async function fetchAllFlowtyListings(): Promise<FlowtyListing[]> {
-  const pages = await Promise.all([
-    fetchFlowtyPage(0), fetchFlowtyPage(24),
-    fetchFlowtyPage(48), fetchFlowtyPage(72),
-    fetchFlowtyPage(96),
-  ]);
+// Pull `pageCount` pages of 24 listings each from Flowty in parallel.
+// Default 5 pages = 120 items (the long-standing baseline). Filter-exhaustion
+// passes call this with higher counts until the post-filter pool refills the
+// configured visible-deal target.
+async function fetchAllFlowtyListings(pageCount: number = 5): Promise<FlowtyListing[]> {
+  const safeCount = Math.max(1, Math.min(25, Math.floor(pageCount)));
+  const offsets = Array.from({ length: safeCount }, (_, i) => i * 24);
+  const pages = await Promise.all(offsets.map((from) => fetchFlowtyPage(from)));
   return pages.flat();
 }
 
@@ -1009,56 +1011,91 @@ export async function GET(req: Request) {
   // Phase 2: collectionId takes precedence over legacy `collection` param.
   const collection = params.collectionId ?? params.collection;
 
-  // Cache key based on all query params — same params = same response for 25s
-  const cacheKey = `sniper-feed:${JSON.stringify(params)}`;
+  // Cache key based on all query params — same params = same response for 25s.
+  // Filter-exhaustion iterations append the Flowty page-depth so each depth
+  // gets its own cached compute (without that, every iteration would clobber
+  // the previous one and we'd lose the cache entirely).
+  const baseCacheKey = `sniper-feed:${JSON.stringify(params)}`;
   const CACHE_TTL = 25_000;
 
-  try {
-    // All Day gets the dedicated RPC path — cached_listings + fmv_snapshots
-    // join + discount computation all server-side. Top Shot is unchanged.
-    // Other non-TS collections still use the generic cached-listings path.
-    const computeFn = collection === "nfl-all-day"
-      ? () => computeAllDaySniperFeed({ minDiscount, rarity: effectiveRarity, team, maxPrice, sortBy })
-      : collection !== "nba-top-shot"
-      ? () => computeCachedSniperFeed({ collection, minDiscount, rarity: effectiveRarity, team, maxPrice, sortBy, serialFilter })
-      : () => computeSniperFeed({ minDiscount, rarity: effectiveRarity, team, badgeOnly, serialFilter, maxPrice, sortBy });
+  // Server-side filter exhaustion: when filters are non-default and the
+  // post-filter pool falls below TARGET, deepen the Flowty page pull
+  // and re-run. Caps at MAX_ITERATIONS to bound cost. nba-top-shot is the
+  // only path that benefits — Flowty is the only paginated source — so
+  // other collection paths short-circuit at iter=0.
+  const TARGET_DEAL_COUNT = 120;
+  const MAX_ITERATIONS = 5;
+  const filtersActive =
+    minDiscount > 0 ||
+    maxPrice > 0 ||
+    serialFilter !== "all" ||
+    badgeOnly ||
+    !!params.editionKey ||
+    (player.trim().length > 0) ||
+    params.flowWalletOnly === "true" ||
+    effectiveRarity !== "all" ||
+    team !== "all";
+  const canExhaust = collection === "nba-top-shot" && filtersActive;
 
-    let result = await getOrSetCache(cacheKey, CACHE_TTL, computeFn) as { count: number; tsCount: number; flowtyCount: number; lastRefreshed: string; deals: SniperDeal[]; cached?: boolean };
+  function buildComputeFn(flowtyPageCount: number) {
+    if (collection === "nfl-all-day") {
+      return () => computeAllDaySniperFeed({ minDiscount, rarity: effectiveRarity, team, maxPrice, sortBy });
+    }
+    if (collection !== "nba-top-shot") {
+      return () => computeCachedSniperFeed({ collection, minDiscount, rarity: effectiveRarity, team, maxPrice, sortBy, serialFilter });
+    }
+    return () => computeSniperFeed({ minDiscount, rarity: effectiveRarity, team, badgeOnly, serialFilter, maxPrice, sortBy, flowtyPageCount });
+  }
 
-    // Post-fetch filter: edition key (for edition depth panel)
+  type FeedResult = { count: number; tsCount: number; flowtyCount: number; lastRefreshed: string; deals: SniperDeal[]; cached?: boolean };
+
+  function applyOuterFilters(deals: SniperDeal[]): SniperDeal[] {
+    let out = deals;
     if (params.editionKey) {
       const ek = params.editionKey;
-      const filtered = (result.deals as SniperDeal[]).filter(
-        (d) => d.editionKey === ek || d.intEditionKey === ek
-      );
-      result = { ...result, deals: filtered, count: filtered.length };
+      out = out.filter((d) => d.editionKey === ek || d.intEditionKey === ek);
     }
-
-    // Post-fetch filter: player name (case-insensitive substring match)
     if (player && player.trim()) {
-      const playerLower = player.trim().toLowerCase();
-      const filtered = (result.deals as SniperDeal[]).filter((d) =>
-        d.playerName.toLowerCase().includes(playerLower)
-      );
-      result = { ...result, deals: filtered, count: filtered.length };
+      const lower = player.trim().toLowerCase();
+      out = out.filter((d) => d.playerName.toLowerCase().includes(lower));
     }
-
-    // Post-fetch filter: Flow wallet only (FLOW or USDC_E payment tokens)
     if (params.flowWalletOnly === "true") {
-      const filtered = (result.deals as SniperDeal[]).filter(
-        (d) => d.paymentToken === "FLOW" || d.paymentToken === "USDC_E"
-      );
-      result = { ...result, deals: filtered, count: filtered.length };
+      out = out.filter((d) => d.paymentToken === "FLOW" || d.paymentToken === "USDC_E");
+    }
+    return out;
+  }
+
+  try {
+    let flowtyPageCount = 5;
+    let result = (await getOrSetCache(baseCacheKey + `:p${flowtyPageCount}`, CACHE_TTL, buildComputeFn(flowtyPageCount))) as FeedResult;
+    let iter = 1;
+    let filteredDeals = applyOuterFilters(result.deals);
+    let lastRawCount = result.deals.length;
+
+    while (canExhaust && iter < MAX_ITERATIONS && filteredDeals.length < TARGET_DEAL_COUNT) {
+      flowtyPageCount += 5;
+      const next = (await getOrSetCache(baseCacheKey + `:p${flowtyPageCount}`, CACHE_TTL, buildComputeFn(flowtyPageCount))) as FeedResult;
+      // If a deeper fetch returned no additional raw deals, the source is
+      // exhausted — stop and use what we already have.
+      if (next.deals.length <= lastRawCount) break;
+      lastRawCount = next.deals.length;
+      result = next;
+      filteredDeals = applyOuterFilters(result.deals);
+      iter++;
     }
 
-    // Post-fetch limit
-    if (limit > 0 && result.deals.length > limit) {
-      result = { ...result, deals: result.deals.slice(0, limit), count: limit };
+    // Final shaping uses the filtered set.
+    let finalDeals = filteredDeals;
+    if (limit > 0 && finalDeals.length > limit) {
+      finalDeals = finalDeals.slice(0, limit);
     }
 
-    return NextResponse.json(result, {
-      headers: { "Cache-Control": "public, max-age=0, s-maxage=25, stale-while-revalidate=60" },
-    });
+    return NextResponse.json(
+      { ...result, deals: finalDeals, count: finalDeals.length, iterations: iter },
+      {
+        headers: { "Cache-Control": "public, max-age=0, s-maxage=25, stale-while-revalidate=60" },
+      }
+    );
   } catch (err: any) {
     console.error("[sniper-feed] unhandled error:", err?.message);
     return NextResponse.json({ error: "Feed unavailable", deals: [], count: 0 }, { status: 500 });
@@ -1618,15 +1655,20 @@ async function computeCachedSniperFeed(opts: {
 async function computeSniperFeed(opts: {
   minDiscount: number; rarity: string; team: string;
   badgeOnly: boolean; serialFilter: string; maxPrice: number; sortBy: string;
+  /** How many Flowty pages of 24 listings to pull. Default 5 (=120 items)
+      matches the long-standing baseline; the outer handler pumps this up
+      iteratively when filters are aggressive enough to drain the pool. */
+  flowtyPageCount?: number;
 }) {
   const { minDiscount, rarity, team, badgeOnly, serialFilter, maxPrice, sortBy } = opts;
+  const flowtyPageCount = opts.flowtyPageCount ?? 5;
 
   const supabase = supabaseAdmin;
 
   // 1. Fetch TS listings + Flowty in parallel
   const [{ listings: tsListings, tsCount }, flowtyListings] = await Promise.all([
     fetchTopShotPool(supabase as any),
-    fetchAllFlowtyListings(),
+    fetchAllFlowtyListings(flowtyPageCount),
   ]);
 
   console.log(`[sniper-feed] fetched ts=${tsListings.length} flowty=${flowtyListings.length}`);

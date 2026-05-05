@@ -16,7 +16,6 @@ import { getOwnerKey } from "@/lib/owner-key";
 import { PINNACLE_VARIANT_COLORS, PINNACLE_VARIANT_LABELS } from "@/lib/pinnacle/pinnacleTypes";
 import MomentDetailModal from "@/components/MomentDetailModal";
 import BadgeIcon from "@/components/BadgeIcon";
-import BadgePills from "@/components/BadgePills";
 
 function SniperThumbnailPreview({ thumbUrl, playerName, tierColor, backgroundColor, children }: { thumbUrl: string | null; playerName: string; tierColor: string; backgroundColor?: string; children: React.ReactNode }) {
   const [hovered, setHovered] = useState(false);
@@ -731,6 +730,40 @@ export default function SniperPage() {
       }
     })();
   }, []);
+
+  // Edition-level owned/locked counts for the "Edition Owned/Locked" column.
+  // Reads wallet_moments_cache (the same source the Collection page uses)
+  // grouped by edition_key. Populates `editionStats`, which the Own/Lock cell
+  // renders as "owned / locked" (e.g. "3 / 2"). Skips Pinnacle (different
+  // edition-key shape) and short-circuits when ownerKey is missing.
+  useEffect(() => {
+    if (isPinnacle) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const key = getOwnerKey();
+        if (!key || !key.startsWith("0x")) {
+          setEditionStats(new Map());
+          return;
+        }
+        const res = await fetch(
+          `/api/wallet/edition-counts?wallet=${encodeURIComponent(key)}&collection=${encodeURIComponent(collectionSlug)}`,
+          { cache: "no-store", signal: AbortSignal.timeout(15000) }
+        );
+        if (!res.ok || cancelled) return;
+        const json = (await res.json()) as { editions?: Record<string, { owned: number; locked: number }> };
+        if (cancelled) return;
+        const next = new Map<string, { owned: number; locked: number }>();
+        for (const [k, v] of Object.entries(json.editions ?? {})) {
+          next.set(k, { owned: Number(v.owned) || 0, locked: Number(v.locked) || 0 });
+        }
+        setEditionStats(next);
+      } catch {
+        // Silent — empty editionStats falls back to the simple ownedIds path.
+      }
+    })();
+    return () => { cancelled = true };
+  }, [collectionSlug, isPinnacle]);
 
   const buildFeedUrl = useCallback(() => {
     const params = new URLSearchParams();
@@ -1589,8 +1622,8 @@ export default function SniperPage() {
             <table style={{ width: "100%", minWidth: 980, fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)", borderCollapse: "collapse" }}>
               <thead>
                 <tr className="rpc-thead-scanline" style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)" }}>
-                  <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px" }}>Moment</th>
-                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Serial</th>
+                  <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px 10px 10px" }}>Moment</th>
+                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px 10px 4px" }}>Serial</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Listed</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Own / Lock</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Ask</th>
@@ -1610,16 +1643,16 @@ export default function SniperPage() {
                       key={`sold-${soldId}`}
                       style={{ borderBottom: "1px solid var(--rpc-border)", opacity: 0.4, textDecoration: "line-through", pointerEvents: "none" }}
                     >
-                      <td style={{ padding: "8px 12px" }}>
-                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                          <div style={{ width: 36, height: 36, borderRadius: 4, background: "var(--rpc-surface-raised)", flexShrink: 0 }} />
+                      <td style={{ padding: "8px 4px 8px 10px", maxWidth: 360 }}>
+                        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                          <div style={{ width: 56, height: 56, borderRadius: 6, background: "var(--rpc-surface-raised)", flexShrink: 0 }} />
                           <div>
                             <div style={{ fontFamily: "var(--font-display)", fontWeight: 700 }}>{deal.playerName}</div>
                             <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>{deal.setName}</div>
                           </div>
                         </div>
                       </td>
-                      <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)" }}>#{deal.serial}</td>
+                      <td style={{ padding: "8px 12px 8px 4px", textAlign: "right", fontFamily: "var(--font-mono)" }}>#{deal.serial}</td>
                       <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>{timeAgo(deal.updatedAt)}</td>
                       <td style={{ padding: "8px 12px", textAlign: "right" }}>—</td>
                       <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)" }}>${fmt(deal.askPrice)}</td>
@@ -1642,18 +1675,20 @@ export default function SniperPage() {
                     onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = deal.discount >= 40 ? "rgba(224,58,47,0.08)" : "transparent"; }}
                   >
                     {/* Moment info */}
-                    <td style={{ padding: "8px 12px" }}>
-                      <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                    <td style={{ padding: "8px 4px 8px 10px", maxWidth: 360 }}>
+                      <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                         {deal.thumbnailUrl ? (
                           <SniperThumbnailPreview thumbUrl={deal.thumbnailUrl} playerName={deal.playerName} tierColor={resolveTierColor(deal.tier, isAllDay)} backgroundColor={isAllDay ? "#1a1a1a" : undefined}>
                             <img
                               src={isAllDay ? deal.thumbnailUrl.replace("width=256", "width=512") : deal.thumbnailUrl}
                               alt={deal.playerName}
-                              width={36}
-                              height={36}
-                              style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 4, flexShrink: 0, background: "#1a1a1a", cursor: "pointer" }}
+                              width={56}
+                              height={56}
+                              style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 6, flexShrink: 0, background: "#1a1a1a", cursor: "pointer", boxShadow: `0 0 0 1px ${resolveTierColor(deal.tier, isAllDay)}40`, transition: "box-shadow var(--transition-fast)" }}
                               loading="lazy"
                               onClick={(e) => { e.stopPropagation(); setSelectedDeal(deal); }}
+                              onMouseEnter={(e) => { (e.currentTarget as HTMLImageElement).style.boxShadow = `0 0 0 2px ${resolveTierColor(deal.tier, isAllDay)}` }}
+                              onMouseLeave={(e) => { (e.currentTarget as HTMLImageElement).style.boxShadow = `0 0 0 1px ${resolveTierColor(deal.tier, isAllDay)}40` }}
                               onError={(e) => {
                                 const img = e.currentTarget as HTMLImageElement;
                                 img.onerror = null;
@@ -1662,7 +1697,7 @@ export default function SniperPage() {
                             />
                           </SniperThumbnailPreview>
                         ) : (
-                          <div style={{ width: 36, height: 36, borderRadius: 4, background: "var(--rpc-surface-raised)", flexShrink: 0 }} />
+                          <div style={{ width: 56, height: 56, borderRadius: 6, background: "var(--rpc-surface-raised)", flexShrink: 0 }} />
                         )}
                         <div style={{ minWidth: 0 }}>
                       <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, color: "var(--rpc-text-primary)", lineHeight: 1.2 }}>{deal.playerName}</div>
@@ -1732,7 +1767,11 @@ export default function SniperPage() {
                         </div>
                       )}
                       {!isPinnacle && deal.hasBadge && deal.badgeSlugs.length > 0 && (
-                        <BadgePills titles={deal.badgeSlugs} />
+                        <div className="flex flex-wrap items-center gap-1 mt-1">
+                          {Array.from(new Set(deal.badgeSlugs)).slice(0, 4).map((slug) => (
+                            <BadgeIcon key={slug} title={slug} size={24} />
+                          ))}
+                        </div>
                       )}
                       {/* Task 4: Pack-linked listing tag */}
                       {!isPinnacle && deal.packName && (
@@ -1763,7 +1802,7 @@ export default function SniperPage() {
                     </td>
 
                     {/* Serial — Task 3: serial intelligence chips */}
-                    <td style={{ padding: "8px 12px", textAlign: "right" }}>
+                    <td style={{ padding: "8px 12px 8px 4px", textAlign: "right" }}>
                       <div style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)" }}>{deal.serial === 0 ? "Floor" : `#${deal.serial}`}</div>
                       {deal.circulationCount > 0 && (
                         <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>/ {deal.circulationCount.toLocaleString()}</div>
@@ -1802,25 +1841,23 @@ export default function SniperPage() {
                       {timeAgo(deal.updatedAt)}
                     </td>
 
-                    {/* Own / Lock */}
+                    {/* Own / Lock — "owned / locked" count of this edition the
+                        signed-in wallet holds. Falls back to "—" when not
+                        signed in, no edition match, or the user owns zero. */}
                     <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>
                       {(() => {
-                        if (isAllDay || ownedIds.size === 0) return "—";
-                        // Use edition-level stats (editionKey match) for accurate own/lock counts
-                        const eStats = editionStats.get(deal.editionKey);
+                        if (!ownerKey) return "—";
+                        const eStats =
+                          (deal.editionKey && editionStats.get(deal.editionKey)) ||
+                          (deal.intEditionKey && editionStats.get(deal.intEditionKey)) ||
+                          null;
                         if (eStats && eStats.owned > 0) {
                           return (
-                            <span style={{ color: "var(--rpc-success)" }}>
-                              {eStats.owned}{eStats.locked > 0 ? ` / ${eStats.locked}🔒` : ""}
+                            <span style={{ color: "var(--rpc-success)" }} title={`${eStats.owned} owned · ${eStats.locked} locked`}>
+                              {eStats.owned} / {eStats.locked}
                             </span>
                           );
                         }
-                        // ownedIds is a set of integer setID:playID keys from on-chain.
-                        const isOwned =
-                          (!!deal.intEditionKey && ownedIds.has(deal.intEditionKey)) ||
-                          (!!deal.editionKey && ownedIds.has(deal.editionKey));
-                        if (isOwned) return <span style={{ color: "var(--rpc-success)" }}>✓ OWN</span>;
-                        if (deal.isLocked) return <span title="Locked">🔒</span>;
                         return "—";
                       })()}
                     </td>
