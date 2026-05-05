@@ -1,19 +1,15 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import PackTable, { type PackRow, type SortKey as TableSortKey } from './PackTable'
-import { getOwnerKey } from '@/lib/owner-key'
-import { fetchSavedWalletForCollection } from '@/lib/profile/saved-wallet-for-collection'
 import { useWarmCache } from '@/lib/warmup/WarmupContext'
 
 // Shared client component for the two static pack pages (nba-top-shot,
-// nfl-all-day). Does three things:
-//   1. Loads rows from /api/packs?collection=<slug> with server-side sort,
-//      tier filter, and title search.
-//   2. Renders the unified <PackTable/>.
-//   3. Keeps the "My Sealed Packs" wallet-query strip above the table
-//      (auto-loads from localStorage owner key / saved wallet, falls back
-//      to manual wallet input).
+// nfl-all-day). Renders /api/packs (pack_table_rows view) into the unified
+// <PackTable/> with a top filter strip: search, tier chips, type chips,
+// price-range min/max, and a visible sort dropdown. The wallet-driven
+// "My Sealed Packs" strip was removed — auto-firing wallet-packs on mount
+// for signed-in users was the regression that hid the listings.
 
 type SortKey = 'value_ratio_desc' | 'ev_margin_pct_desc' | 'retail_price_asc' | 'title_asc'
 
@@ -29,6 +25,7 @@ interface ApiRow {
   title: string
   image_url: string | null
   tier: string
+  pack_type: string | null
   slots: number | null
   retail_price_usd: number | null
   gross_ev: number | null
@@ -43,13 +40,6 @@ interface ApiResponse {
   rows: ApiRow[]
   total: number
   collection_slug: string
-}
-
-interface WalletResponse {
-  owned?: Record<string, number>
-  walletAddress?: string
-  totalSealedPacks?: number
-  error?: string
 }
 
 interface Props {
@@ -70,7 +60,8 @@ function toPackRow(r: ApiRow): PackRow {
     title: r.title ?? `Pack #${r.dist_id}`,
     thumbnailUrl: r.image_url,
     tier: (r.tier ?? 'common').toUpperCase(),
-    slots: r.slots ?? 0,
+    slots: r.slots,
+    packType: r.pack_type,
     price: r.retail_price_usd == null ? 0 : Number(r.retail_price_usd),
     grossEV: r.gross_ev == null ? null : Number(r.gross_ev),
     evMarginPct: r.ev_margin_pct == null ? null : Number(r.ev_margin_pct),
@@ -80,19 +71,21 @@ function toPackRow(r: ApiRow): PackRow {
   }
 }
 
+function parsePriceInput(s: string): number | null {
+  const t = s.trim()
+  if (!t) return null
+  const n = Number(t.replace(/[$,\s]/g, ''))
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
+
 export default function PackPageClient({ collection, tiers, title, accent = '#E03A2F' }: Props) {
   const [sort, setSort] = useState<SortKey>('value_ratio_desc')
   const [tier, setTier] = useState<string>('all')
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
-
-  const [walletInput, setWalletInput] = useState('')
-  const [walletQuery, setWalletQuery] = useState('')
-  const [walletLoading, setWalletLoading] = useState(false)
-  const [walletError, setWalletError] = useState('')
-  const [ownedPacks, setOwnedPacks] = useState<Record<string, number>>({})
-  const [walletAddress, setWalletAddress] = useState('')
-  const autoWalletFired = useRef(false)
+  const [packType, setPackType] = useState<string>('all')
+  const [priceMinInput, setPriceMinInput] = useState('')
+  const [priceMaxInput, setPriceMaxInput] = useState('')
 
   // Debounce search input → search state
   useEffect(() => {
@@ -100,10 +93,9 @@ export default function PackPageClient({ collection, tiers, title, accent = '#E0
     return () => clearTimeout(t)
   }, [searchInput])
 
-  // Warm-cache key only includes the collection slug; the spec keys the
-  // global warmer on `pack-listings:<slug>` so the default sort/tier/search
-  // landing read is instant. Filter changes still re-fetch through the same
-  // cache under filter-specific keys.
+  // /api/packs accepts collection+sort+tier+search server-side, so those keys
+  // round-trip into the cache key. Pack-type and price filters apply
+  // client-side against the resulting rows.
   const filterSuffix = (sort !== 'value_ratio_desc' || tier !== 'all' || search)
     ? ':' + sort + ':' + tier + ':' + search
     : ''
@@ -128,58 +120,30 @@ export default function PackPageClient({ collection, tiers, title, accent = '#E0
   const loading = packsLoading
   const error = packsError ? (packsError instanceof Error ? packsError.message : String(packsError)) : ''
 
-  const loadWallet = useCallback(async (source: string) => {
-    setWalletQuery(source)
-    setWalletLoading(true)
-    setWalletError('')
-    setOwnedPacks({})
-    setWalletAddress('')
-    try {
-      const res = await fetch('/api/wallet-packs?wallet=' + encodeURIComponent(source))
-      const json = (await res.json().catch(() => ({}))) as WalletResponse
-      if (!res.ok) throw new Error(json.error || 'Failed to load wallet')
-      setOwnedPacks(json.owned ?? {})
-      setWalletAddress(json.walletAddress ?? '')
-      if (json.totalSealedPacks === 0) setWalletError('No sealed packs found for this wallet.')
-    } catch (err) {
-      setWalletError(err instanceof Error ? err.message : 'Something went wrong')
-    } finally {
-      setWalletLoading(false)
+  // Discover pack_type values present in the current result set so the chip
+  // row only surfaces options that actually filter something (the column is
+  // null for ~85% of TS rows; offering "all/pack/box/case" by default keeps
+  // it useful without polluting collections that lack this dimension).
+  const packTypeOptions = useMemo(() => {
+    const seen = new Set<string>()
+    for (const r of rows) {
+      if (r.pack_type) seen.add(r.pack_type)
     }
-  }, [])
+    return Array.from(seen).sort()
+  }, [rows])
 
-  useEffect(() => {
-    if (autoWalletFired.current) return
-    autoWalletFired.current = true
-    const key = getOwnerKey()
-    if (key) {
-      setWalletInput(key)
-      loadWallet(key)
-      return
-    }
-    fetchSavedWalletForCollection(collection).then((addr) => {
-      if (!addr) return
-      setWalletInput(addr)
-      loadWallet(addr)
+  const filteredRows = useMemo(() => {
+    const min = parsePriceInput(priceMinInput)
+    const max = parsePriceInput(priceMaxInput)
+    return rows.filter((r) => {
+      if (packType !== 'all' && (r.pack_type ?? '') !== packType) return false
+      if (min != null && (r.retail_price_usd == null || Number(r.retail_price_usd) < min)) return false
+      if (max != null && (r.retail_price_usd == null || Number(r.retail_price_usd) > max)) return false
+      return true
     })
-  }, [collection, loadWallet])
+  }, [rows, packType, priceMinInput, priceMaxInput])
 
-  const handleWalletSearch = () => {
-    const q = walletInput.trim()
-    if (q) loadWallet(q)
-  }
-
-  const packRows: PackRow[] = rows.map((r) => toPackRow(r))
-
-  // "My Sealed Packs" — rows from the current catalog that the wallet owns.
-  const ownedDistIds = Object.keys(ownedPacks)
-  const ownedRows = ownedDistIds
-    .map((id) => {
-      const match = rows.find((r) => r.dist_id === id)
-      return match ? { ...match, __count: ownedPacks[id] ?? 1 } : null
-    })
-    .filter((x): x is ApiRow & { __count: number } => x !== null)
-  const hasOwned = ownedRows.length > 0
+  const packRows: PackRow[] = filteredRows.map((r) => toPackRow(r))
 
   return (
     <div className="mx-auto max-w-[1400px] px-3 py-4 md:px-6">
@@ -188,67 +152,40 @@ export default function PackPageClient({ collection, tiers, title, accent = '#E0
         <div>
           <h1 className="text-sm font-semibold text-white">{title}</h1>
           <div className="text-xs text-zinc-500">
-            {loading ? 'Loading…' : `${total.toLocaleString()} distributions`}
+            {loading ? 'Loading…' : packRows.length === total
+              ? `${total.toLocaleString()} distributions`
+              : `${packRows.length.toLocaleString()} of ${total.toLocaleString()} distributions`}
           </div>
         </div>
       </div>
 
-      {/* My Sealed Packs strip */}
-      <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+      {/* Filters strip */}
+      <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-950 p-3 space-y-3">
+        {/* Row 1: search + sort */}
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[10px] uppercase tracking-wide text-zinc-500">My sealed packs</span>
           <input
-            value={walletInput}
-            onChange={(e) => setWalletInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleWalletSearch() }}
-            placeholder="Username or 0x wallet"
-            className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white outline-none placeholder:text-zinc-500 flex-1 min-w-[180px]"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search packs by name…"
+            className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white outline-none placeholder:text-zinc-500 flex-1 min-w-[200px]"
           />
-          <button
-            onClick={handleWalletSearch}
-            disabled={walletLoading || !walletInput.trim()}
-            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:bg-zinc-900 disabled:opacity-50"
-          >
-            {walletLoading ? 'Loading…' : 'Show owned'}
-          </button>
-          {walletAddress && <span className="text-xs text-emerald-400">{walletQuery}</span>}
-          {walletError && <span className="text-xs text-red-400">{walletError}</span>}
-        </div>
-        {hasOwned && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {ownedRows.map((r) => (
-              <span
-                key={r.dist_id}
-                className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs"
-              >
-                {r.image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={r.image_url} alt="" className="h-6 w-6 rounded object-cover" />
-                ) : null}
-                <span className="max-w-[140px] truncate text-white">{r.title}</span>
-                {r.__count > 1 && (
-                  <span className="rounded bg-emerald-950 px-1 text-[10px] font-semibold text-emerald-300">
-                    x{r.__count}
-                  </span>
-                )}
-              </span>
-            ))}
+          <div className="flex items-center gap-2 ml-auto">
+            <span className="text-[10px] uppercase tracking-wide text-zinc-500">Sort</span>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortKey)}
+              className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-white outline-none"
+            >
+              {SORT_OPTIONS.map(({ key, label }) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
+            </select>
           </div>
-        )}
-      </div>
+        </div>
 
-      {/* Controls: search + tier filter + sort */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <input
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Search packs…"
-          className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white outline-none placeholder:text-zinc-500 w-44"
-        />
-
-        {/* Tier chips */}
+        {/* Row 2: tier chips */}
         <div className="flex flex-wrap items-center gap-1">
-          <span className="text-[10px] uppercase tracking-wide text-zinc-600 mr-1">Tier</span>
+          <span className="text-[10px] uppercase tracking-wide text-zinc-500 mr-1">Tier</span>
           <button
             onClick={() => setTier('all')}
             className={
@@ -274,33 +211,63 @@ export default function PackPageClient({ collection, tiers, title, accent = '#E0
           ))}
         </div>
 
-        {/* Sort: pill row (desktop), dropdown (mobile) */}
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-[10px] uppercase tracking-wide text-zinc-600">Sort</span>
-          <div className="hidden sm:flex items-center gap-1">
-            {SORT_OPTIONS.map(({ key, label }) => (
+        {/* Row 3: type chips + price range */}
+        <div className="flex flex-wrap items-center gap-3">
+          {packTypeOptions.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="text-[10px] uppercase tracking-wide text-zinc-500 mr-1">Type</span>
               <button
-                key={key}
-                onClick={() => setSort(key)}
+                onClick={() => setPackType('all')}
                 className={
                   'rounded-lg px-2.5 py-1 text-xs font-semibold transition ' +
-                  (sort === key ? 'text-white' : 'border border-zinc-700 text-zinc-400 hover:bg-zinc-900')
+                  (packType === 'all' ? 'text-white' : 'border border-zinc-700 text-zinc-400 hover:bg-zinc-900')
                 }
-                style={sort === key ? { backgroundColor: accent } : undefined}
+                style={packType === 'all' ? { backgroundColor: accent } : undefined}
               >
-                {label}
+                All
               </button>
-            ))}
+              {packTypeOptions.map((pt) => (
+                <button
+                  key={pt}
+                  onClick={() => setPackType(pt)}
+                  className={
+                    'rounded-lg px-2.5 py-1 text-xs font-semibold capitalize transition ' +
+                    (packType === pt ? 'text-white' : 'border border-zinc-700 text-zinc-400 hover:bg-zinc-900')
+                  }
+                  style={packType === pt ? { backgroundColor: accent } : undefined}
+                >
+                  {pt}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] uppercase tracking-wide text-zinc-500">Price</span>
+            <input
+              value={priceMinInput}
+              onChange={(e) => setPriceMinInput(e.target.value)}
+              placeholder="Min"
+              inputMode="decimal"
+              className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-white outline-none placeholder:text-zinc-500 w-20"
+            />
+            <span className="text-[10px] text-zinc-600">–</span>
+            <input
+              value={priceMaxInput}
+              onChange={(e) => setPriceMaxInput(e.target.value)}
+              placeholder="Max"
+              inputMode="decimal"
+              className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-white outline-none placeholder:text-zinc-500 w-20"
+            />
+            {(priceMinInput || priceMaxInput) && (
+              <button
+                onClick={() => { setPriceMinInput(''); setPriceMaxInput('') }}
+                className="text-[10px] uppercase tracking-wide text-zinc-500 hover:text-white"
+              >
+                Clear
+              </button>
+            )}
           </div>
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortKey)}
-            className="sm:hidden rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-white outline-none"
-          >
-            {SORT_OPTIONS.map(({ key, label }) => (
-              <option key={key} value={key}>{label}</option>
-            ))}
-          </select>
         </div>
       </div>
 

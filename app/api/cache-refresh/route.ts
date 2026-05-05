@@ -405,6 +405,7 @@ export async function GET(req: NextRequest) {
       })
 
       let lockedCount = 0
+      const enrichedKeysById = new Map<string, string>()
       for (const { id, meta, gql } of results) {
         if (!meta) continue
         const editionKey = scripts.buildEditionKey(meta)
@@ -426,9 +427,83 @@ export async function GET(req: NextRequest) {
           .update(update)
           .eq("wallet_address", wallet)
           .eq("moment_id", id)
-        if (!error) enriched++
+        if (!error) {
+          enriched++
+          if (editionKey) enrichedKeysById.set(id, editionKey)
+        }
       }
       console.log("[cache-refresh] isLocked: " + lockedCount + "/" + results.length + " moments locked")
+
+      // Step 6b: For non-TopShot collections, populate fmv_usd on the rows we
+      // just enriched. wallet-search is the existing FMV writer for TS+AllDay
+      // but isn't always called for the non-TS collections, so brand-new wmc
+      // rows would otherwise stay NULL forever. Joins editions.external_id ↔
+      // wmc.edition_key and applies a defensive ceiling: cap at $10K unless
+      // the snapshot is HIGH confidence with sales_count_30d >= 3 (guards
+      // against the known FMV pipeline outliers in LaLiga / AllDay).
+      if (!isTopShot && enrichedKeysById.size > 0) {
+        const keys = [...new Set(enrichedKeysById.values())]
+        const extToFmv = new Map<string, number | null>()
+        try {
+          const CHUNK_KEYS = 100
+          const extToInternal = new Map<string, string>()
+          for (let i = 0; i < keys.length; i += CHUNK_KEYS) {
+            const slice = keys.slice(i, i + CHUNK_KEYS)
+            const { data: edRows } = await supabase
+              .from("editions")
+              .select("id, external_id")
+              .eq("collection_id", collectionId)
+              .in("external_id", slice)
+            for (const r of edRows ?? []) {
+              if (r.external_id && r.id) extToInternal.set(r.external_id, r.id)
+            }
+          }
+          const internalIds = [...new Set(extToInternal.values())]
+          const fmvByInternal = new Map<string, { fmv_usd: number | null; confidence: string | null; sales_count_30d: number | null }>()
+          for (let i = 0; i < internalIds.length; i += CHUNK_KEYS) {
+            const slice = internalIds.slice(i, i + CHUNK_KEYS)
+            const { data: snaps } = await supabase
+              .from("fmv_snapshots")
+              .select("edition_id, fmv_usd, confidence, sales_count_30d, computed_at")
+              .in("edition_id", slice)
+              .order("computed_at", { ascending: false })
+            for (const s of snaps ?? []) {
+              if (!fmvByInternal.has(s.edition_id)) {
+                fmvByInternal.set(s.edition_id, {
+                  fmv_usd: s.fmv_usd != null ? Number(s.fmv_usd) : null,
+                  confidence: s.confidence ?? null,
+                  sales_count_30d: s.sales_count_30d != null ? Number(s.sales_count_30d) : null,
+                })
+              }
+            }
+          }
+          for (const [extId, internalId] of extToInternal) {
+            const snap = fmvByInternal.get(internalId)
+            if (!snap) { extToFmv.set(extId, null); continue }
+            const v = snap.fmv_usd
+            if (v == null || !Number.isFinite(v)) { extToFmv.set(extId, null); continue }
+            if (v <= 10000) { extToFmv.set(extId, v); continue }
+            const isHigh = String(snap.confidence ?? "").toUpperCase() === "HIGH"
+            const c = Number(snap.sales_count_30d ?? 0)
+            extToFmv.set(extId, isHigh && c >= 3 ? v : null)
+          }
+        } catch (e: any) {
+          console.log("[cache-refresh] fmv lookup err: " + (e?.message ?? "unknown"))
+        }
+
+        let fmvWritten = 0
+        for (const [id, key] of enrichedKeysById) {
+          const fmv = extToFmv.get(key) ?? null
+          if (fmv == null) continue
+          const { error } = await supabase
+            .from("wallet_moments_cache")
+            .update({ fmv_usd: fmv })
+            .eq("wallet_address", wallet)
+            .eq("moment_id", id)
+          if (!error) fmvWritten++
+        }
+        console.log("[cache-refresh] fmv_usd written for " + fmvWritten + "/" + enrichedKeysById.size + " (" + collectionSlug + ")")
+      }
     }
 
     console.log("[cache-refresh] Done: stubs=" + stubsInserted + " enriched=" + enriched +
