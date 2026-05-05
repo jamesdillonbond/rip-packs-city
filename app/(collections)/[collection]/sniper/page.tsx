@@ -89,7 +89,7 @@ interface SniperDeal {
   buyUrl: string;
   listingResourceID: string | null;
   storefrontAddress: string | null;
-  source?: "topshot" | "flowty" | "pinnacle";
+  source?: "topshot" | "allday" | "golazos" | "pinnacle" | "flowty";
   paymentToken?: "DUC" | "FUT" | "FLOW" | "USDC_E";
   offerAmount?: number | null;
   offerFmvPct?: number | null;
@@ -287,24 +287,25 @@ function SerialBadge({ deal }: { deal: SniperDeal }) {
   );
 }
 
-function SourceBadge({ source, isAllDay }: { source?: "topshot" | "flowty" | "pinnacle"; isAllDay?: boolean }) {
-  if (source === "pinnacle") {
-    return (
-      <span className="rpc-chip" style={{ background: "rgba(168,85,247,0.12)", borderColor: "rgba(168,85,247,0.25)", color: "#c084fc" }}>
-        PINNACLE
-      </span>
-    );
-  }
-  if (source === "flowty") {
-    return (
-      <span className="rpc-chip" style={{ background: "rgba(59,130,246,0.12)", borderColor: "rgba(59,130,246,0.25)", color: "var(--rpc-info)" }}>
-        FLOWTY
-      </span>
-    );
-  }
+// Marketplace source chips — each native fetcher tags its deals with a
+// per-collection slug; Flowty mirror data uses "flowty". Phase 5 expanded
+// the dictionary so AllDay / Golazos native rows render their own label
+// instead of falling back to "AD" or being mistagged as Flowty.
+const SOURCE_BADGE_STYLES: Record<NonNullable<SniperDeal["source"]>, { bg: string; border: string; color: string; label: string }> = {
+  topshot:  { bg: "var(--rpc-surface-raised)", border: "var(--rpc-border)",        color: "var(--rpc-text-muted)", label: "TS NATIVE" },
+  allday:   { bg: "rgba(79,148,212,0.12)",     border: "rgba(79,148,212,0.25)",    color: "#93C5FD",                label: "ALLDAY NATIVE" },
+  golazos:  { bg: "rgba(34,197,94,0.12)",      border: "rgba(34,197,94,0.25)",     color: "#86EFAC",                label: "GOLAZOS NATIVE" },
+  pinnacle: { bg: "rgba(168,85,247,0.12)",     border: "rgba(168,85,247,0.25)",    color: "#c084fc",                label: "PINNACLE NATIVE" },
+  flowty:   { bg: "rgba(59,130,246,0.12)",     border: "rgba(59,130,246,0.25)",    color: "var(--rpc-info)",        label: "FLOWTY" },
+};
+
+function SourceBadge({ source, isAllDay }: { source?: SniperDeal["source"]; isAllDay?: boolean }) {
+  // Fall back to the legacy AD/TS chip when source is missing.
+  const key: NonNullable<SniperDeal["source"]> = source ?? (isAllDay ? "allday" : "topshot");
+  const style = SOURCE_BADGE_STYLES[key];
   return (
-    <span className="rpc-chip" style={{ background: "var(--rpc-surface-raised)", color: "var(--rpc-text-muted)" }}>
-      {isAllDay ? "AD" : "TS"}
+    <span className="rpc-chip" style={{ background: style.bg, borderColor: style.border, color: style.color }}>
+      {style.label}
     </span>
   );
 }
@@ -544,14 +545,13 @@ export default function SniperPage() {
   const isPinnacle = collectionSlug === "pinnacle" || collectionSlug === "disney-pinnacle";
   const isGolazos = collectionSlug === "laliga-golazos";
   const isUfc = collectionSlug === "ufc";
-  const feedEndpoint = isPinnacle
-    ? "/api/pinnacle-sniper"
-    : isGolazos
-    ? "/api/golazos-sniper-feed"
-    : isUfc
-    ? "/api/ufc-sniper-feed"
-    : "/api/sniper-feed";
-  const feedCollection = isPinnacle ? "nba-top-shot" : collectionSlug;
+  // Phase 5: every collection now flows through the unified endpoint. The
+  // per-collection dispatch lives server-side in /api/sniper-feed and reuses
+  // the existing dedicated handlers via shared compute functions.
+  const feedEndpoint = "/api/sniper-feed";
+  // Pinnacle uses its own slug; the legacy fallback to "nba-top-shot" was a
+  // workaround from when /api/pinnacle-sniper ignored the collection param.
+  const feedCollection = isPinnacle ? "disney-pinnacle" : collectionSlug;
   const brandLabel = isPinnacle ? "Pinnacle" : collectionObj?.shortLabel ?? "Top Shot";
 
   const isMobile = useMobile();
@@ -767,7 +767,7 @@ export default function SniperPage() {
 
   const buildFeedUrl = useCallback(() => {
     const params = new URLSearchParams();
-    params.set("collection", collectionSlug);
+    params.set("collection", feedCollection);
     if (tierTab !== "all") params.set("tier", tierTab);
     if (minDiscount > 0) params.set("minDiscount", String(minDiscount));
     if (maxPrice > 0) params.set("maxPrice", String(maxPrice));
@@ -777,7 +777,7 @@ export default function SniperPage() {
     if (flowWalletOnly) params.set("flowWalletOnly", "true");
     params.set("sortBy", sortBy);
     return `${feedEndpoint}?${params}`;
-  }, [tierTab, minDiscount, maxPrice, playerFilter, serialFilter, badgeOnly, flowWalletOnly, sortBy, feedEndpoint, collectionSlug]);
+  }, [tierTab, minDiscount, maxPrice, playerFilter, serialFilter, badgeOnly, flowWalletOnly, sortBy, feedEndpoint, feedCollection]);
 
   const feedKey = buildFeedUrl();
 
