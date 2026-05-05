@@ -17,6 +17,7 @@ import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useCollectionContext } from "@/lib/hooks/useCollectionContext"
 import { getOwnerKey } from "@/lib/owner-key"
+import { slugifyName } from "@/lib/entity-labels"
 import BadgeIcon from "@/components/BadgeIcon"
 
 type Listing = {
@@ -573,7 +574,7 @@ function MarketInner() {
           ))}
         </div>
       ) : (
-        <ListingTable listings={filteredListings} accent={accent} momentUrl={momentUrl} editionStats={editionStats} showOwnedColumn={showOwnedColumn} />
+        <ListingTable listings={filteredListings} accent={accent} momentUrl={momentUrl} editionStats={editionStats} showOwnedColumn={showOwnedColumn} collectionUrlSlug={collectionId} />
       )}
 
       {/* ── Pagination ── */}
@@ -844,9 +845,10 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned }: {
   )
 }
 
-function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColumn }: {
+function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColumn, collectionUrlSlug }: {
   listings: Listing[]; accent: string; momentUrl: (id: string) => string | null
   editionStats: Map<string, { owned: number; locked: number }>; showOwnedColumn: boolean
+  collectionUrlSlug: string
 }) {
   return (
     <div className="rpc-card" style={{ padding: 0, overflow: "auto" }}>
@@ -891,11 +893,33 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                   ) : null}
                 </td>
                 <td style={{ ...td, color: "var(--rpc-text-primary)", fontFamily: "var(--font-display)", fontWeight: 700 }}>
-                  {l.playerName ?? "—"}
+                  {l.playerName ? (
+                    <Link
+                      href={`/${collectionUrlSlug}/player/${slugifyName(l.playerName)}`}
+                      prefetch={false}
+                      style={{ color: "inherit", textDecoration: "none" }}
+                    >
+                      {l.playerName}
+                    </Link>
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td style={{ ...td, color: dot }}>{tier || "—"}</td>
                 <td style={{ ...td, color: "var(--rpc-text-muted)" }}>{l.seriesName ?? "—"}</td>
-                <td style={{ ...td, color: "var(--rpc-text-muted)" }}>{l.setName ?? "—"}</td>
+                <td style={{ ...td, color: "var(--rpc-text-muted)" }}>
+                  {l.setName ? (
+                    <Link
+                      href={`/${collectionUrlSlug}/set/${slugifyName(l.setName)}`}
+                      prefetch={false}
+                      style={{ color: "inherit", textDecoration: "none" }}
+                    >
+                      {l.setName}
+                    </Link>
+                  ) : (
+                    "—"
+                  )}
+                </td>
                 <td style={td}>
                   {uniqueBadges.length === 0 ? (
                     <span style={{ color: "var(--rpc-text-ghost)" }}>—</span>

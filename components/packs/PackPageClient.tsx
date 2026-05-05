@@ -54,7 +54,7 @@ function pctFraction(pct: number | null | undefined): number | null {
   return pct / 100
 }
 
-function toPackRow(r: ApiRow): PackRow {
+function toPackRow(r: ApiRow, collectionUrlSlug: string): PackRow {
   return {
     id: r.dist_id,
     title: r.title ?? `Pack #${r.dist_id}`,
@@ -68,6 +68,7 @@ function toPackRow(r: ApiRow): PackRow {
     fmvCoverage: pctFraction(r.fmv_coverage_pct),
     depletionPct: pctFraction(r.depletion_pct),
     isRareSinglePack: r.is_rare_single_pack === true,
+    detailHref: `/${collectionUrlSlug}/pack/${r.dist_id}`,
   }
 }
 
@@ -143,7 +144,7 @@ export default function PackPageClient({ collection, tiers, title, accent = '#E0
     })
   }, [rows, packType, priceMinInput, priceMaxInput])
 
-  const packRows: PackRow[] = filteredRows.map((r) => toPackRow(r))
+  const packRows: PackRow[] = filteredRows.map((r) => toPackRow(r, collection))
 
   return (
     <div className="mx-auto max-w-[1400px] px-3 py-4 md:px-6">

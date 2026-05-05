@@ -6,6 +6,7 @@ import Link from "next/link";
 import { getCollection } from "@/lib/collections";
 import { getOwnerKey } from "@/lib/owner-key";
 import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection";
+import { slugifyName } from "@/lib/entity-labels";
 
 // ── Types (mirrors API response) ─────────────────────────────────────────────
 
@@ -342,7 +343,14 @@ export default function SetsPage() {
                         onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
                       >
                         <td style={{ padding: "8px 12px", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: colors.text, fontFamily: displayFont, fontWeight: 700, letterSpacing: "0.02em" }}>
-                          {set.setName}
+                          <Link
+                            href={`/${collectionSlug}/set/${slugifyName(set.setName)}`}
+                            prefetch={false}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ color: "inherit", textDecoration: "none" }}
+                          >
+                            {set.setName}
+                          </Link>
                         </td>
                         <td style={{ padding: "8px 12px", textAlign: "right", color: colors.text }}>
                           {set.ownedCount} / {set.totalEditions}

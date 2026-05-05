@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import React, { useMemo, useState } from 'react'
 
 // PackTable — unified pack listings/EV row renderer shared by Top Shot and
@@ -36,6 +37,8 @@ export interface PackRow {
   onAction?: () => void
   /** Button label; default 'Analyze'. */
   actionLabel?: string
+  /** When set, the title cell links here (the pack detail page). */
+  detailHref?: string
 }
 
 export type SortKey =
@@ -271,7 +274,13 @@ export default function PackTable({
                 <td className="p-3">
                   <div className="flex items-center gap-3">
                     <PackThumb url={r.thumbnailUrl} tier={r.tier} title={r.title} size={40} />
-                    <span className="font-medium text-white">{r.title}</span>
+                    {r.detailHref ? (
+                      <Link href={r.detailHref} prefetch={false} className="font-medium text-white hover:underline">
+                        {r.title}
+                      </Link>
+                    ) : (
+                      <span className="font-medium text-white">{r.title}</span>
+                    )}
                   </div>
                 </td>
                 <td className="p-3">
@@ -332,7 +341,15 @@ export default function PackTable({
             <div className="flex items-start gap-3">
               <PackThumb url={r.thumbnailUrl} tier={r.tier} title={r.title} size={48} />
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-white truncate">{r.title}</div>
+                <div className="text-sm font-semibold text-white truncate">
+                  {r.detailHref ? (
+                    <Link href={r.detailHref} prefetch={false} className="hover:underline">
+                      {r.title}
+                    </Link>
+                  ) : (
+                    r.title
+                  )}
+                </div>
                 <span
                   className="mt-0.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold capitalize"
                   style={tierChip(r.tier)}
