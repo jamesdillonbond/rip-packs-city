@@ -260,3 +260,228 @@ export function profilePageMetadata(username: string): Metadata {
     },
   }
 }
+
+// ── Phase 1A: Entity-detail metadata helpers ────────────────────────────────
+// editionPageMetadata, setPageMetadata, playerPageMetadata, teamPageMetadata,
+// and seriesPageMetadata all accept the URL collection slug + the relevant
+// detail RPC payload and return a Next.js Metadata object with:
+//   - title in the format "<Subject> — <Context> | <Collection> | Rip Packs City"
+//   - description summarizing the entity
+//   - openGraph.images using whatever thumbnail/portrait is available
+//   - twitter card type "summary_large_image"
+//   - canonical URL set to the absolute hyphenated path
+//
+// Inputs are typed loosely (Record<string, unknown>) so they accept the RPC
+// payloads directly without each helper needing to import a full type.
+
+type Payload = Record<string, unknown>
+
+const COLLECTION_DISPLAY_NAMES: Record<string, string> = {
+  "nba-top-shot": "NBA Top Shot",
+  "nfl-all-day": "NFL All Day",
+  "laliga-golazos": "LaLiga Golazos",
+  "disney-pinnacle": "Disney Pinnacle",
+  "ufc": "UFC Strike",
+}
+
+function s(p: Payload, k: string): string | null {
+  const v = p[k]
+  return typeof v === "string" && v.length > 0 ? v : null
+}
+
+function n(p: Payload, k: string): number | null {
+  const v = p[k]
+  if (typeof v === "number" && Number.isFinite(v)) return v
+  if (typeof v === "string") {
+    const parsed = Number(v)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+function fmtUsd(value: number | null): string | null {
+  if (value === null) return null
+  if (value >= 100) return `$${Math.round(value).toLocaleString()}`
+  return `$${value.toFixed(2)}`
+}
+
+function fmtCount(value: number | null): string | null {
+  return value === null ? null : value.toLocaleString()
+}
+
+function buildMeta(opts: {
+  title: string
+  description: string
+  canonical: string
+  image?: string | null
+}): Metadata {
+  const image = opts.image ?? "/api/og/default"
+  return {
+    title: opts.title,
+    description: opts.description,
+    alternates: { canonical: opts.canonical },
+    openGraph: {
+      title: opts.title,
+      description: opts.description,
+      url: opts.canonical,
+      siteName: "Rip Packs City",
+      type: "website",
+      images: [{ url: image, width: 1200, height: 630 }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: opts.title,
+      description: opts.description,
+      images: image ? [image] : undefined,
+    },
+  }
+}
+
+/**
+ * Edition detail page. Expects a payload with route_slug + name fields and
+ * optionally fmv.fmv_usd. Pinnacle payloads carry the same fields.
+ */
+export function editionPageMetadata(payload: Payload, collectionUrlSlug: string): Metadata {
+  const collectionLabel = COLLECTION_DISPLAY_NAMES[collectionUrlSlug] ?? "Flow"
+  const routeSlug = s(payload, "route_slug") ?? s(payload, "external_id") ?? ""
+  const playerName = s(payload, "player_name") ?? s(payload, "name") ?? "Edition"
+  const setName = s(payload, "set_name") ?? "Edition"
+  const tier = s(payload, "tier")
+  const seriesLabel = s(payload, "series_label")
+  const circulation = n(payload, "circulation_count")
+  const thumbnail = s(payload, "thumbnail_url")
+  const fmvObj = (payload.fmv as Payload | null | undefined) ?? null
+  const fmvUsd = fmvObj ? n(fmvObj, "fmv_usd") : null
+  const subject = playerName
+  const context = setName
+  const title = `${subject} — ${context} | ${collectionLabel} | Rip Packs City`
+  const descParts = [
+    `${subject} (${setName}) — ${collectionLabel} edition.`,
+    tier ? `Tier ${tier}.` : null,
+    seriesLabel ? `${seriesLabel}.` : null,
+    circulation ? `Circulation ${fmtCount(circulation)}.` : null,
+    fmvUsd ? `Current FMV ${fmtUsd(fmvUsd)}.` : null,
+    "Live FMV, recent sales, history chart, and packs that contained this edition.",
+  ].filter(Boolean) as string[]
+  const description = descParts.join(" ")
+  const canonical = `${BASE_URL}/${collectionUrlSlug}/edition/${encodeURIComponent(routeSlug)}`
+  return buildMeta({ title, description, canonical, image: thumbnail })
+}
+
+/**
+ * Set detail page. Expects a payload with set_name (canonical) plus aggregate
+ * fields. The slug is provided separately because the canonical set_name can
+ * contain whitespace and unicode that should NOT roundtrip through encoding.
+ */
+export function setPageMetadata(
+  payload: Payload,
+  collectionUrlSlug: string,
+  setSlug: string,
+): Metadata {
+  const collectionLabel = COLLECTION_DISPLAY_NAMES[collectionUrlSlug] ?? "Flow"
+  const setName = s(payload, "set_name") ?? "Set"
+  const editionCount = n(payload, "edition_count")
+  const totalCirc = n(payload, "total_circulation")
+  const fmvTotal = n(payload, "fmv_total_usd")
+  const title = `${setName} — Set | ${collectionLabel} | Rip Packs City`
+  const descParts = [
+    `${setName} on ${collectionLabel}.`,
+    editionCount ? `${fmtCount(editionCount)} editions.` : null,
+    totalCirc ? `${fmtCount(totalCirc)} total circulation.` : null,
+    fmvTotal ? `Aggregate FMV ${fmtUsd(fmvTotal)}.` : null,
+    "Tier mix, edition grid, and player breakdown.",
+  ].filter(Boolean) as string[]
+  const description = descParts.join(" ")
+  const canonical = `${BASE_URL}/${collectionUrlSlug}/set/${encodeURIComponent(setSlug)}`
+  return buildMeta({ title, description, canonical })
+}
+
+/**
+ * Player (or character, on Pinnacle) detail page.
+ */
+export function playerPageMetadata(
+  payload: Payload,
+  collectionUrlSlug: string,
+  playerSlug: string,
+): Metadata {
+  const collectionLabel = COLLECTION_DISPLAY_NAMES[collectionUrlSlug] ?? "Flow"
+  const isCharacter = payload["is_character"] === true
+  const noun = isCharacter ? "Character" : "Player"
+  const name = s(payload, "name") ?? "Player"
+  const team = s(payload, "team")
+  const editionCount = n(payload, "edition_count")
+  const fmvTotal = n(payload, "fmv_total_usd")
+  const headshot = s(payload, "headshot_url")
+  const teamLabel = isCharacter ? "Franchise" : "Team"
+  const title = `${name} — ${noun} | ${collectionLabel} | Rip Packs City`
+  const descParts = [
+    `${name} (${noun}) on ${collectionLabel}.`,
+    team ? `${teamLabel}: ${team}.` : null,
+    editionCount ? `${fmtCount(editionCount)} editions.` : null,
+    fmvTotal ? `Portfolio FMV ${fmtUsd(fmvTotal)}.` : null,
+    "Edition grid, top sale, and set breakdown.",
+  ].filter(Boolean) as string[]
+  const description = descParts.join(" ")
+  const canonical = `${BASE_URL}/${collectionUrlSlug}/player/${encodeURIComponent(playerSlug)}`
+  return buildMeta({ title, description, canonical, image: headshot })
+}
+
+/**
+ * Team (or franchise, on Pinnacle) detail page.
+ */
+export function teamPageMetadata(
+  payload: Payload,
+  collectionUrlSlug: string,
+  teamSlug: string,
+): Metadata {
+  const collectionLabel = COLLECTION_DISPLAY_NAMES[collectionUrlSlug] ?? "Flow"
+  const isFranchise = payload["is_franchise"] === true
+  const noun = isFranchise ? "Franchise" : "Team"
+  const teamName = s(payload, "team_name") ?? "Team"
+  const playerCount = n(payload, "player_count")
+  const editionCount = n(payload, "edition_count")
+  const fmvTotal = n(payload, "fmv_total_usd")
+  const title = `${teamName} — ${noun} | ${collectionLabel} | Rip Packs City`
+  const descParts = [
+    `${teamName} ${noun.toLowerCase()} on ${collectionLabel}.`,
+    playerCount ? `${fmtCount(playerCount)} ${isFranchise ? "characters" : "players"}.` : null,
+    editionCount ? `${fmtCount(editionCount)} editions.` : null,
+    fmvTotal ? `Aggregate FMV ${fmtUsd(fmvTotal)}.` : null,
+    isFranchise ? "Cast grid and franchise breakdown." : "Roster grid and team breakdown.",
+  ].filter(Boolean) as string[]
+  const description = descParts.join(" ")
+  const canonical = `${BASE_URL}/${collectionUrlSlug}/team/${encodeURIComponent(teamSlug)}`
+  return buildMeta({ title, description, canonical })
+}
+
+/**
+ * Series detail page.
+ */
+export function seriesPageMetadata(
+  payload: Payload,
+  collectionUrlSlug: string,
+  seriesSlug: string,
+): Metadata {
+  const collectionLabel = COLLECTION_DISPLAY_NAMES[collectionUrlSlug] ?? "Flow"
+  const displayLabel = s(payload, "display_label") ?? "Series"
+  const season = s(payload, "season")
+  const editionCount = n(payload, "edition_count")
+  const setCount = n(payload, "set_count")
+  const playerCount = n(payload, "player_count")
+  const fmvTotal = n(payload, "fmv_total_usd")
+  const subject = displayLabel
+  const context = season ? `Season ${season}` : "Series"
+  const title = `${subject} — ${context} | ${collectionLabel} | Rip Packs City`
+  const descParts = [
+    `${displayLabel} on ${collectionLabel}.`,
+    season ? `Season ${season}.` : null,
+    editionCount ? `${fmtCount(editionCount)} editions.` : null,
+    setCount ? `${fmtCount(setCount)} sets.` : null,
+    playerCount ? `${fmtCount(playerCount)} players.` : null,
+    fmvTotal ? `Aggregate FMV ${fmtUsd(fmvTotal)}.` : null,
+    "Top editions, set breakdown, and player leaderboard.",
+  ].filter(Boolean) as string[]
+  const description = descParts.join(" ")
+  const canonical = `${BASE_URL}/${collectionUrlSlug}/series/${encodeURIComponent(seriesSlug)}`
+  return buildMeta({ title, description, canonical })
+}
