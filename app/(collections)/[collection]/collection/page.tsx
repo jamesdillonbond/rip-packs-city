@@ -1,7 +1,9 @@
 "use client"
 
 import { Fragment, useMemo, useState, useEffect, useCallback, useRef, Suspense, type CSSProperties } from "react"
+import Link from "next/link"
 import { useSearchParams, useRouter, useParams } from "next/navigation"
+import { slugifyName } from "@/lib/entity-labels"
 import {
   normalizeSetName,
   normalizeParallel,
@@ -2005,7 +2007,19 @@ export default function WalletPage() {
                 <div key={row.momentId} className="rounded-xl border border-zinc-800 bg-zinc-950 p-3 flex flex-col gap-1.5 cursor-pointer" onClick={function() { toggleExpanded(row.momentId) }}>
                   {/* Row 1: Player + Tier + Chevron */}
                   <div className="flex items-center justify-between">
-                    <span className="font-semibold text-white text-sm truncate mr-2">{row.playerName}</span>
+                    {row.playerName ? (
+                      <Link
+                        href={`/${collectionSlug}/player/${slugifyName(row.playerName)}`}
+                        prefetch={false}
+                        onClick={function(e) { e.stopPropagation() }}
+                        className="font-semibold text-white text-sm truncate mr-2"
+                        style={{ textDecoration: "none" }}
+                      >
+                        {row.playerName}
+                      </Link>
+                    ) : (
+                      <span className="font-semibold text-white text-sm truncate mr-2">{row.playerName}</span>
+                    )}
                     <div className="flex items-center gap-1.5">
                       {row.tier && (
                         <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold shrink-0 " + (tierBg[tierKey] ?? "bg-zinc-800")} style={{ color: tierColorMap[tierKey] ?? "#9ca3af" }}>
@@ -2017,7 +2031,19 @@ export default function WalletPage() {
                   </div>
                   {/* Row 2: Set + Series */}
                   <div className="text-xs text-zinc-400">
-                    {normalizeSetName(row.setName)} &middot; {seriesIntToSeason(row.series, collectionSeriesMap) || "—"}
+                    {row.setName ? (
+                      <Link
+                        href={`/${collectionSlug}/set/${slugifyName(row.setName)}`}
+                        prefetch={false}
+                        onClick={function(e) { e.stopPropagation() }}
+                        style={{ color: "inherit", textDecoration: "none" }}
+                      >
+                        {normalizeSetName(row.setName)}
+                      </Link>
+                    ) : (
+                      normalizeSetName(row.setName)
+                    )}
+                    &nbsp;&middot;&nbsp;{seriesIntToSeason(row.series, collectionSeriesMap) || "—"}
                   </div>
                   {/* Row 3: Serial, Badges */}
                   <div className="flex items-center justify-between gap-2">
@@ -2174,7 +2200,17 @@ export default function WalletPage() {
                           })()}
                           <div>
                             <div className="font-semibold text-white text-sm">
-                              <span>{row.playerName}</span>
+                              {row.playerName ? (
+                                <Link
+                                  href={`/${collectionSlug}/player/${slugifyName(row.playerName)}`}
+                                  prefetch={false}
+                                  style={{ color: "inherit", textDecoration: "none" }}
+                                >
+                                  {row.playerName}
+                                </Link>
+                              ) : (
+                                <span>{row.playerName}</span>
+                              )}
                             </div>
                             <div className="mt-1 flex flex-wrap gap-1 items-center">
                               {officialBadges.map(function(title) { return <BadgeIcon key={"official-" + title} title={title} /> })}
@@ -2207,7 +2243,19 @@ export default function WalletPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="p-3 text-sm hidden sm:table-cell">{normalizeSetName(row.setName)}</td>
+                      <td className="p-3 text-sm hidden sm:table-cell">
+                        {row.setName ? (
+                          <Link
+                            href={`/${collectionSlug}/set/${slugifyName(row.setName)}`}
+                            prefetch={false}
+                            style={{ color: "inherit", textDecoration: "none" }}
+                          >
+                            {normalizeSetName(row.setName)}
+                          </Link>
+                        ) : (
+                          normalizeSetName(row.setName)
+                        )}
+                      </td>
                       <td className="p-3 text-zinc-400 text-sm hidden sm:table-cell">{seriesDisplayLabel(row.series, collectionSeriesMap)}</td>
                       <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{getParallel(row)}</td>
                       <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{row.tier ?? "—"}</td>

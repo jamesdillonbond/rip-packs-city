@@ -4,6 +4,7 @@ import React from "react";
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { useCart } from "@/lib/cart/CartContext";
 import { useWarmCache } from "@/lib/warmup/WarmupContext";
 import {
@@ -14,6 +15,7 @@ import {
 import { getCollection } from "@/lib/collections";
 import { getOwnerKey } from "@/lib/owner-key";
 import { PINNACLE_VARIANT_COLORS, PINNACLE_VARIANT_LABELS } from "@/lib/pinnacle/pinnacleTypes";
+import { slugifyName } from "@/lib/entity-labels";
 import MomentDetailModal from "@/components/MomentDetailModal";
 import BadgeIcon from "@/components/BadgeIcon";
 
@@ -1555,7 +1557,18 @@ export default function SniperPage() {
                   {/* Row 1: Player + Tier + Source */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, color: "var(--rpc-text-primary)" }} className="truncate">{deal.playerName}</span>
+                      {deal.editionKey ? (
+                        <Link
+                          href={`/${collectionSlug}/edition/${encodeURIComponent(deal.editionKey)}`}
+                          prefetch={false}
+                          style={{ fontFamily: "var(--font-display)", fontWeight: 700, color: "var(--rpc-text-primary)", textDecoration: "none" }}
+                          className="truncate"
+                        >
+                          {deal.playerName}
+                        </Link>
+                      ) : (
+                        <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, color: "var(--rpc-text-primary)" }} className="truncate">{deal.playerName}</span>
+                      )}
                       {isPinnacle ? (
                         <span style={{ color: variantColor(deal.tier), fontWeight: 600, fontSize: "var(--text-xs)", border: `1px solid ${variantColor(deal.tier)}40`, background: `${variantColor(deal.tier)}15`, borderRadius: 3, padding: "0 4px" }}>
                           {deal.tier}
@@ -1700,7 +1713,20 @@ export default function SniperPage() {
                           <div style={{ width: 56, height: 56, borderRadius: 6, background: "var(--rpc-surface-raised)", flexShrink: 0 }} />
                         )}
                         <div style={{ minWidth: 0 }}>
-                      <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, color: "var(--rpc-text-primary)", lineHeight: 1.2 }}>{deal.playerName}</div>
+                      <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, color: "var(--rpc-text-primary)", lineHeight: 1.2 }}>
+                        {deal.editionKey ? (
+                          <Link
+                            href={`/${collectionSlug}/edition/${encodeURIComponent(deal.editionKey)}`}
+                            prefetch={false}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ color: "inherit", textDecoration: "none" }}
+                          >
+                            {deal.playerName}
+                          </Link>
+                        ) : (
+                          deal.playerName
+                        )}
+                      </div>
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)" }}>
                         {isPinnacle ? (
                           <span
