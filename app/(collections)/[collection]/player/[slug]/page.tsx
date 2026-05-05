@@ -66,6 +66,32 @@ async function fetchEditions(collectionId: string, slug: string, limit: number, 
   return Array.isArray(data) ? (data as EditionTile[]) : []
 }
 
+interface PlayerTopSale {
+  sale_id: string
+  edition_id: string | null
+  route_slug: string | null
+  player_name: string | null
+  edition_name: string | null
+  set_name: string | null
+  tier: string | null
+  thumbnail_url: string | null
+  price_usd: number | null
+  serial_number: number | null
+  sold_at: string | null
+  marketplace: string | null
+  nft_id: string | null
+  source: string | null
+  buyer_address: string | null
+  seller_address: string | null
+  transaction_hash: string | null
+}
+
+async function fetchTopSales(collectionId: string, slug: string, limit: number): Promise<PlayerTopSale[]> {
+  const { data, error } = await rpc().rpc("get_player_top_sales", { p_collection_id: collectionId, p_player_slug: slug, p_limit: limit })
+  if (error) { console.error("[player] top sales error", error.message); return [] }
+  return Array.isArray(data) ? (data as PlayerTopSale[]) : []
+}
+
 // ── Metadata ────────────────────────────────────────────────────────────────
 
 export async function generateMetadata(props: { params: Promise<{ collection: string; slug: string }> }): Promise<Metadata> {
@@ -89,17 +115,14 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
 
   const labels = getEntityLabels(collection)
   const isCharacter = detail.is_character === true
-  const editions = await fetchEditions(coll.id, slug, PAGE_SIZE, 0)
+  const [editions, topSales] = await Promise.all([
+    fetchEditions(coll.id, slug, PAGE_SIZE, 0),
+    fetchTopSales(coll.id, slug, 5),
+  ])
 
   // Portrait fallback chain: headshot_url → first edition thumbnail → none.
   const portrait = detail.headshot_url ?? editions[0]?.thumbnail_url ?? null
   const teamHref = detail.team_slug ? `/${collection}/team/${encodeURIComponent(detail.team_slug)}` : null
-
-  // Top sale = highest FMV in the visible portfolio (proxy until a top-sale RPC exists).
-  const topSale = editions.reduce<EditionTile | null>((best, e) => {
-    if (!best) return e
-    return ((e.fmv_usd ?? 0) > (best.fmv_usd ?? 0)) ? e : best
-  }, null)
 
   // Group editions by set_slug → set summary cards.
   const setMap = new Map<string, { setSlug: string; setName: string; count: number; fmvTotal: number }>()
@@ -187,28 +210,37 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
         />
       </Section>
 
-      {/* ── Top sale ─────────────────────────────────────────────────────── */}
-      {topSale && topSale.fmv_usd !== null && topSale.fmv_usd > 0 && (
-        <Section title="Top Edition">
-          <Link
-            href={`/${collection}/edition/${encodeURIComponent(topSale.route_slug)}`}
-            className="rpc-card"
-            style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 14, padding: 12, textDecoration: "none", color: "inherit" }}
-          >
-            <div style={{ width: 120, height: 120, background: "rgba(0,0,0,0.3)", borderRadius: 4, overflow: "hidden" }}>
-              {topSale.thumbnail_url && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={topSale.thumbnail_url} alt={topSale.player_name ?? "Edition"} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              )}
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: 4 }}>
-              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 18, color: "var(--rpc-text-primary)" }}>{topSale.player_name ?? topSale.name}</div>
-              {topSale.set_name && <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>{topSale.set_name}</div>}
-              <div style={{ marginTop: 4, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 24, color: "var(--rpc-text-primary)" }}>{fmtUsd(topSale.fmv_usd)}</div>
-            </div>
-          </Link>
-        </Section>
-      )}
+      {/* ── Top sales ────────────────────────────────────────────────────── */}
+      <Section title="Top Sales">
+        {topSales.length === 0 ? (
+          <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "'Share Tech Mono', monospace", fontSize: 12 }}>
+            No recorded sales yet
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {topSales.map(s => {
+              const href = s.route_slug ? `/${collection}/edition/${encodeURIComponent(s.route_slug)}` : null
+              const inner = (
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(110px, auto) 1fr minmax(120px, auto) minmax(110px, auto)", gap: 12, padding: "10px 12px", alignItems: "center" }}>
+                  <span className="rpc-mono" style={{ fontSize: 11, color: s.serial_number != null && s.serial_number > 0 ? "var(--rpc-text-secondary)" : "var(--rpc-text-muted)", letterSpacing: "0.06em" }}>
+                    {s.serial_number != null && s.serial_number > 0 ? `#${s.serial_number}` : "unresolved"}
+                  </span>
+                  <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.02em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {s.edition_name ?? s.set_name ?? "—"}
+                  </span>
+                  <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", textAlign: "right" }}>{relTime(s.sold_at)}</span>
+                  <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)", textAlign: "right" }}>{fmtUsd(s.price_usd)}</span>
+                </div>
+              )
+              return href ? (
+                <Link key={s.sale_id} href={href} className="rpc-card" style={{ textDecoration: "none", color: "inherit" }}>{inner}</Link>
+              ) : (
+                <div key={s.sale_id} className="rpc-card">{inner}</div>
+              )
+            })}
+          </div>
+        )}
+      </Section>
 
       {/* ── Sets ─────────────────────────────────────────────────────────── */}
       {setCards.length > 0 && (
