@@ -339,18 +339,23 @@ export async function POST(req: NextRequest) {
 
     // 4b: Remaining — check moments table
     const remaining = uniqueNftIds.filter((id) => !cacheMap.has(id))
-    const momentsMap = new Map<string, string>() // nft_id → edition_id
+    const momentsMap = new Map<string, { editionId: string; serial: number | null }>()
     if (remaining.length > 0) {
       for (let i = 0; i < remaining.length; i += 500) {
         const batch = remaining.slice(i, i + 500)
         const { data: momentRows } = await (supabaseAdmin as any)
           .from("moments")
-          .select("nft_id, edition_id")
+          .select("nft_id, edition_id, serial_number")
           .in("nft_id", batch)
 
         if (momentRows) {
           for (const row of momentRows) {
-            if (row.edition_id) momentsMap.set(row.nft_id, row.edition_id)
+            if (row.edition_id) {
+              momentsMap.set(row.nft_id, {
+                editionId: row.edition_id,
+                serial: row.serial_number ?? null,
+              })
+            }
           }
         }
       }
@@ -385,21 +390,22 @@ export async function POST(req: NextRequest) {
 
     const GQL_MAX = 50
     const GQL_DELAY_MS = 200
-    const gqlResolvedMap = new Map<string, string>() // nftID → edition UUID
+    const gqlResolvedMap = new Map<string, { editionId: string; serial: number | null }>()
     const proxyUrl = process.env.TS_PROXY_URL || "https://public-api.nbatopshot.com/graphql"
 
     if (stillUnresolved.length > 0) {
       console.log(`[sales-indexer] attempting GQL resolution for ${Math.min(stillUnresolved.length, GQL_MAX)} of ${stillUnresolved.length} unresolved nftIDs`)
 
-      const gqlQuery = `query($id:ID!){getMintedMoment(momentId:$id){data{...on MintedMoment{play{...on Play{id}}set{...on Set{id flowSeriesNumber}}}}}}`
+      // flowSerialNumber sits on MintedMoment directly; flowSeriesNumber on Set is the
+      // series number (e.g. Series 4) — different concept. Pre-Apr 10 the indexer
+      // did not include flowSerialNumber and every GQL-resolved row landed with serial=0.
+      const gqlQuery = `query($id:ID!){getMintedMoment(momentId:$id){data{...on MintedMoment{flowSerialNumber play{...on Play{id}}set{...on Set{id flowSeriesNumber}}}}}}`
 
-      // In-memory cache: nftID → edition UUID (avoids repeat GQL calls for same moment)
-      const gqlEditionCache = new Map<string, string>()
+      const gqlEditionCache = new Map<string, { editionId: string; serial: number | null }>()
 
       for (let i = 0; i < Math.min(stillUnresolved.length, GQL_MAX); i++) {
         const nftId = stillUnresolved[i]
 
-        // Skip if already resolved by a prior GQL call in this run
         if (gqlEditionCache.has(nftId)) {
           gqlResolvedMap.set(nftId, gqlEditionCache.get(nftId)!)
           continue
@@ -427,9 +433,11 @@ export async function POST(req: NextRequest) {
             if (momentData) {
               const playId = momentData.play?.id
               const setId = momentData.set?.id
+              const rawSerial = momentData.flowSerialNumber
+              const serial = rawSerial != null ? Number(rawSerial) : null
+              const safeSerial = Number.isFinite(serial as number) ? (serial as number) : null
 
               if (playId && setId) {
-                // Try UUID-based lookup: set_id + player_id columns
                 const { data: edRow } = await (supabaseAdmin as any)
                   .from("editions")
                   .select("id, external_id")
@@ -440,10 +448,10 @@ export async function POST(req: NextRequest) {
                   .maybeSingle()
 
                 if (edRow?.id) {
-                  gqlResolvedMap.set(nftId, edRow.id)
-                  gqlEditionCache.set(nftId, edRow.id)
+                  const entry = { editionId: edRow.id, serial: safeSerial }
+                  gqlResolvedMap.set(nftId, entry)
+                  gqlEditionCache.set(nftId, entry)
                 } else {
-                  // Fallback: try external_id if GQL returns integer-like IDs
                   const extKey = `${setId}:${playId}`
                   const { data: edRow2 } = await (supabaseAdmin as any)
                     .from("editions")
@@ -454,8 +462,9 @@ export async function POST(req: NextRequest) {
                     .maybeSingle()
 
                   if (edRow2?.id) {
-                    gqlResolvedMap.set(nftId, edRow2.id)
-                    gqlEditionCache.set(nftId, edRow2.id)
+                    const entry = { editionId: edRow2.id, serial: safeSerial }
+                    gqlResolvedMap.set(nftId, entry)
+                    gqlEditionCache.set(nftId, entry)
                   } else {
                     console.log(`[sales-indexer] GQL edition lookup failed for setId=${setId} playId=${playId}`)
                   }
@@ -482,23 +491,34 @@ export async function POST(req: NextRequest) {
     // Step 5 & 6: Build and insert sales
     const salesBatch: any[] = []
     const unresolvedIds: string[] = []
+    let serialsResolved = 0
+    let serialsZero = 0
 
     for (const evt of matchingEvents) {
       const nftId = String(evt.data.nftID)
       let editionId: string | null = null
-      let serialNumber = 0
+      let serialNumber: number | null = null
 
       const cached = cacheMap.get(nftId)
       if (cached) {
         editionId = editionKeyToId.get(cached.edition_key) ?? null
-        serialNumber = cached.serial_number ?? 0
-      } else {
-        editionId = momentsMap.get(nftId) ?? null
+        serialNumber = cached.serial_number ?? null
       }
 
-      // GQL fallback
       if (!editionId) {
-        editionId = gqlResolvedMap.get(nftId) ?? null
+        const m = momentsMap.get(nftId)
+        if (m) {
+          editionId = m.editionId
+          if (serialNumber == null) serialNumber = m.serial
+        }
+      }
+
+      if (!editionId) {
+        const g = gqlResolvedMap.get(nftId)
+        if (g) {
+          editionId = g.editionId
+          if (serialNumber == null) serialNumber = g.serial
+        }
       }
 
       if (!editionId) {
@@ -510,6 +530,9 @@ export async function POST(req: NextRequest) {
         ? "topshot"
         : determineMarketplace(evt.data.commissionReceiver ?? null)
 
+      if (serialNumber != null && serialNumber > 0) serialsResolved++
+      else serialsZero++
+
       salesBatch.push({
         id: crypto.randomUUID(),
         edition_id: editionId,
@@ -517,7 +540,7 @@ export async function POST(req: NextRequest) {
         collection: "nba_top_shot",
         nft_id: nftId,
         price_usd: parseFloat(evt.data.salePrice) || 0,
-        serial_number: serialNumber,
+        serial_number: serialNumber ?? 0,
         sold_at: toIsoTimestamp(evt.blockTimestamp),
         marketplace,
         source: "onchain",
@@ -591,6 +614,8 @@ export async function POST(req: NextRequest) {
       extra: {
         sales_resolved: salesBatch.length,
         gql_resolved: gqlResolvedMap.size,
+        serials_resolved: serialsResolved,
+        serials_zero: serialsZero,
         duped: duped,
         unresolved_count: unresolvedIds.length,
         blocks_scanned: targetHeight - lastBlock,
