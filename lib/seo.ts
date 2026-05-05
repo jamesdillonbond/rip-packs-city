@@ -95,11 +95,6 @@ const PAGE_META: Record<string, PageMeta> = {
     description:
       'Browse active and past {label} packs with expected value calculations, pull odds, and buy/skip recommendations.',
   },
-  badges: {
-    title: 'Badge Tracker — {label} Rookie & Specialty Badges',
-    description:
-      'Explore {label} badge editions with serial premiums, circulation, and specialty tags.',
-  },
   sets: {
     title: 'Set Completion — Track Your {label} Sets',
     description:
@@ -118,23 +113,7 @@ const PAGE_META: Record<string, PageMeta> = {
 }
 
 // Per-collection overrides keyed by `${page}:${collectionId}`.
-const PAGE_META_OVERRIDES: Record<string, PageMeta> = {
-  'badges:nba-top-shot': {
-    title: 'Badge Tracker — NBA Top Shot Rookie Year, Top Shot Debut & Championship Year Badges',
-    description:
-      'Explore NBA Top Shot badge editions: Rookie Year, Top Shot Debut, Championship Year, Fresh, and serial badges with real-time FMV and circulation.',
-  },
-  'badges:nfl-all-day': {
-    title: 'Badge Tracker — NFL All Day Rookie, Playoffs & Super Bowl Badges',
-    description:
-      'Explore NFL All Day badge editions: Rookie, Playoffs, Super Bowl, Pro Bowl, and First Touchdown badges with real-time FMV and circulation.',
-  },
-  'badges:laliga-golazos': {
-    title: 'Badge Tracker — LaLiga Golazos El Clásico, Ídolos & Estrellas Badges',
-    description:
-      'Explore LaLiga Golazos badge editions: El Clásico, Eterno Rival, Ídolos, Estrellas, Team Europa, and Tiki Taka with real-time FMV.',
-  },
-}
+const PAGE_META_OVERRIDES: Record<string, PageMeta> = {}
 
 export function pageMetadata(page: string, collectionLabel: string, collectionId: string): Metadata {
   const override = PAGE_META_OVERRIDES[`${page}:${collectionId}`]

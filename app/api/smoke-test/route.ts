@@ -175,8 +175,8 @@ async function runSmokeTests() {
     // the 307 to /login and reporting "200" downstream.
     ...([
       "/nba-top-shot/sniper", "/nba-top-shot/collection", "/nba-top-shot/sets",
-      "/nba-top-shot/badges", "/nba-top-shot/packs",
-      "/nfl-all-day/collection", "/nfl-all-day/badges", "/nfl-all-day/overview",
+      "/nba-top-shot/packs",
+      "/nfl-all-day/collection", "/nfl-all-day/overview",
       "/laliga-golazos/collection", "/disney-pinnacle/collection",
       "/disney-pinnacle/overview",
       "/nba-top-shot/market", "/nfl-all-day/market",
