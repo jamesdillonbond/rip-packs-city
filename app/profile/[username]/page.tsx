@@ -275,15 +275,22 @@ export default function PublicProfilePage() {
   const [loading, setLoading] = useState(true);
   const [sniperLoading, setSniperLoading] = useState(true);
 
-  // Fetch all data on mount
+  // Fetch all data on mount.
+  //
+  // /api/profile/{trophy,bio,saved-wallets} are all auth-gated (requireUser)
+  // and silently 401 for public profile views, leaving trophies / bio /
+  // wallets empty. The /api/public/profile/[username] aggregated endpoint
+  // returns the same fields with privacy-stripped wallet summaries and is
+  // intentionally unauthenticated. Phase 7.5 consolidated those three reads
+  // into the public endpoint; portfolio-history stays as a separate call
+  // because the public endpoint doesn't include sparkline snapshots.
   useEffect(function() {
     if (!username) return;
     setLoading(true);
 
     const enc = encodeURIComponent(username);
 
-    // Fetch trophies
-    const trophyP = fetch("/api/profile/trophy?username=" + enc)
+    const publicP = fetch("/api/public/profile/" + enc)
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(data) {
         if (!data) return;
@@ -292,30 +299,18 @@ export default function PublicProfilePage() {
           if (t.slot >= 1 && t.slot <= MAX_SLOTS) slots[t.slot - 1] = t;
         });
         setTrophies(slots);
+        if (data.bio) setBio(data.bio);
+        if (Array.isArray(data.wallets)) setWallets(data.wallets);
       })
       .catch(function() {});
 
-    // Fetch bio
-    const bioP = fetch("/api/profile/bio?ownerKey=" + enc)
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(data) { if (data?.bio) setBio(data.bio); })
-      .catch(function() {});
-
-    // Fetch saved wallets (for stats)
-    const walletsP = fetch("/api/profile/saved-wallets?ownerKey=" + enc + "&public=1")
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(data) {
-        if (data?.wallets) setWallets(data.wallets);
-      })
-      .catch(function() {});
-
-    // Fetch portfolio history for sparkline
+    // Fetch portfolio history for sparkline (public, ownerKey-driven endpoint).
     const historyP = fetch("/api/profile/portfolio-history?ownerKey=" + enc + "&days=30")
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(data) { if (data?.snapshots) setSnapshots(data.snapshots); })
       .catch(function() {});
 
-    Promise.all([trophyP, bioP, walletsP, historyP]).finally(function() { setLoading(false); });
+    Promise.all([publicP, historyP]).finally(function() { setLoading(false); });
   }, [username]);
 
   // Fetch sniper deals
