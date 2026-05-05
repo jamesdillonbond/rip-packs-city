@@ -1,7 +1,9 @@
 "use client"
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
+import { getOwnerKey } from "@/lib/owner-key"
+import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection"
 import {
   PINNACLE_COLLECTION_ID,
   PINNACLE_VARIANT_COLORS,
@@ -83,6 +85,32 @@ function PinnacleCollectionPageInner() {
     setActiveWallet(w)
     router.replace(`/disney-pinnacle/collection?wallet=${encodeURIComponent(w)}`)
   }, [input, router])
+
+  // Auto-load: when neither URL ?wallet= nor manual input is set but the user
+  // is signed in, fall back to ownerKey or the saved Pinnacle wallet so the
+  // page populates without requiring a trip to /profile. Only fires once and
+  // only when nothing has been typed.
+  const autoFiredRef = useRef(false)
+  useEffect(() => {
+    if (autoFiredRef.current) return
+    if (walletParam) return
+    if (input.trim()) return
+    autoFiredRef.current = true
+    let cancelled = false
+    const seedFromKey = getOwnerKey()
+    if (seedFromKey && seedFromKey.startsWith("0x")) {
+      setInput(seedFromKey)
+      setActiveWallet(seedFromKey)
+      return
+    }
+    fetchSavedWalletForCollection("disney-pinnacle").then((addr) => {
+      if (cancelled || !addr) return
+      setInput(addr)
+      setActiveWallet(addr)
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     if (!activeWallet) return

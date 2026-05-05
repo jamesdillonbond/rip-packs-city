@@ -131,8 +131,9 @@ Deno.serve(async (req: Request) => {
   // (which equals the wallet's edition_key under the same makeEditionKey()
   // slug rules). Loaded once per invocation; small enough to keep in memory.
   const editionMap = new Map<string, EditionEnrichment>();
+  const editionIdMap = new Map<string, string>(); // external_id → internal uuid
   const { data: edRows, error: edErr } = await supabase.from("editions")
-    .select("external_id, player_name, set_name, thumbnail_url")
+    .select("id, external_id, player_name, set_name, thumbnail_url")
     .eq("collection_id", UFC_COLLECTION_ID);
   if (edErr) console.warn(`[enrich-ufc-wallet] editions lookup error: ${edErr.message}`);
   for (const r of (edRows ?? []) as Array<Record<string, unknown>>) {
@@ -143,6 +144,47 @@ Deno.serve(async (req: Request) => {
       set_name: (r.set_name as string | null) ?? null,
       thumbnail_url: (r.thumbnail_url as string | null) ?? null,
     });
+    const uuid = r.id as string | null;
+    if (uuid) editionIdMap.set(ext, uuid);
+  }
+
+  // Load latest fmv_snapshots for these editions so the upsert below can
+  // populate wmc.fmv_usd in the same pass. Defensive ceiling: cap at $10K
+  // unless HIGH confidence with sales_count_30d >= 3 (guards known FMV
+  // pipeline outliers).
+  const fmvByExt = new Map<string, number | null>();
+  const internalEditionIds = [...new Set(editionIdMap.values())];
+  if (internalEditionIds.length > 0) {
+    const fmvByInternal = new Map<string, { fmv_usd: number | null; confidence: string | null; sales_count_30d: number | null }>();
+    for (let i = 0; i < internalEditionIds.length; i += 200) {
+      const slice = internalEditionIds.slice(i, i + 200);
+      const { data: snaps } = await supabase
+        .from("fmv_snapshots")
+        .select("edition_id, fmv_usd, confidence, sales_count_30d, computed_at")
+        .in("edition_id", slice)
+        .order("computed_at", { ascending: false });
+      for (const s of (snaps ?? []) as Array<Record<string, unknown>>) {
+        const eid = s.edition_id as string;
+        if (fmvByInternal.has(eid)) continue;
+        fmvByInternal.set(eid, {
+          fmv_usd: s.fmv_usd != null ? Number(s.fmv_usd) : null,
+          confidence: (s.confidence as string | null) ?? null,
+          sales_count_30d: s.sales_count_30d != null ? Number(s.sales_count_30d) : null,
+        });
+      }
+    }
+    for (const [extId, internalId] of editionIdMap) {
+      const snap = fmvByInternal.get(internalId);
+      if (!snap || snap.fmv_usd == null || !Number.isFinite(snap.fmv_usd)) {
+        fmvByExt.set(extId, null);
+        continue;
+      }
+      const v = snap.fmv_usd;
+      if (v <= 10000) { fmvByExt.set(extId, v); continue; }
+      const isHigh = String(snap.confidence ?? "").toUpperCase() === "HIGH";
+      const c = Number(snap.sales_count_30d ?? 0);
+      fmvByExt.set(extId, isHigh && c >= 3 ? v : null);
+    }
   }
 
   const CHUNK = 100, CONC = 5;
@@ -184,6 +226,7 @@ Deno.serve(async (req: Request) => {
           // existing wallet image_url wins; editions.thumbnail_url is the fallback.
           const image_url = existingImageMap.get(id) ?? ed?.thumbnail_url ?? null;
 
+          const fmvForRow = fmvByExt.get(editionKey) ?? null;
           updates.push({
             moment_id: id,
             wallet_address: wallet,
@@ -195,6 +238,7 @@ Deno.serve(async (req: Request) => {
             image_url,
             tier: inferTier(max),
             is_locked: false,
+            fmv_usd: fmvForRow,
             last_seen_at: new Date().toISOString(),
           });
           if (sampleData.length < 3) {

@@ -225,15 +225,20 @@ export default function WarmupProvider({ children }: { children: React.ReactNode
           })(),
         )
 
-        // 3. Pack listings (120 s) — keyed by collection slug.
+        // 3. Pack listings (120 s) — keyed to match PackPageClient's
+        // useWarmCache key shape so the warm payload is consumed by the page.
+        // Previously this prefetched /api/pack-listings (Studio aggregation)
+        // into the same key the page read with /api/packs (pack_table_rows
+        // shape), leaving signed-in users on a wrong-shape cache that
+        // rendered zero rows.
         const packKey = "pack-listings:nba-top-shot"
         tasks.push(
           (async () => {
             prefetch(
               packKey,
               async () => {
-                const res = await fetch("/api/pack-listings?collection=nba-top-shot")
-                if (!res.ok) throw new Error("pack-listings " + res.status)
+                const res = await fetch("/api/packs?collection=nba-top-shot&sort=value_ratio_desc&limit=500")
+                if (!res.ok) throw new Error("packs " + res.status)
                 return await res.json()
               },
               120_000,

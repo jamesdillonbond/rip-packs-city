@@ -579,7 +579,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
         fmvChunks.push(
           (supabaseAdmin as any)
             .from("fmv_snapshots")
-            .select("edition_id, fmv_usd, confidence, computed_at")
+            .select("edition_id, fmv_usd, confidence, sales_count_30d, computed_at")
             .in("edition_id", internalIds.slice(i, i + CHUNK))
             .order("computed_at", { ascending: false })
         )
@@ -593,17 +593,25 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
       }
     }
 
-    // 7. Build editionKey → FMV data map
+    // 7. Build editionKey → FMV data map.
+    // Defensive ceiling: discard fmv_usd > $10K unless the snapshot is HIGH
+    // confidence with sales_count_30d >= 3. Guards against known FMV pipeline
+    // outliers (12 LaLiga + 11 AllDay editions currently emit $900K-$1M values
+    // from low-data fallbacks).
     const editionFmvMap = new Map<string, { fmv: number; confidence: string; computedAt: string }>()
     for (const [extId, intId] of extToId) {
       const snap = fmvMap.get(intId)
-      if (snap) {
-        editionFmvMap.set(extId, {
-          fmv: Number(snap.fmv_usd),
-          confidence: (snap.confidence ?? "low").toLowerCase(),
-          computedAt: snap.computed_at,
-        })
-      }
+      if (!snap) continue
+      const raw = Number(snap.fmv_usd)
+      if (!Number.isFinite(raw)) continue
+      const isHigh = String(snap.confidence ?? "").toUpperCase() === "HIGH"
+      const sc = Number((snap as any).sales_count_30d ?? 0)
+      if (raw > 10000 && !(isHigh && sc >= 3)) continue
+      editionFmvMap.set(extId, {
+        fmv: raw,
+        confidence: (snap.confidence ?? "low").toLowerCase(),
+        computedAt: snap.computed_at,
+      })
     }
 
     // 7b. Fallback: for edition keys that didn't resolve, try alternate format
@@ -656,7 +664,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
               newFmvChunks.push(
                 (supabaseAdmin as any)
                   .from("fmv_snapshots")
-                  .select("edition_id, fmv_usd, confidence, computed_at")
+                  .select("edition_id, fmv_usd, confidence, sales_count_30d, computed_at")
                   .in("edition_id", newInternalIds.slice(i, i + CHUNK))
                   .order("computed_at", { ascending: false })
               )
@@ -669,20 +677,25 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
             }
           }
 
-          // Map unmatched numeric keys to FMV via playID
+          // Map unmatched numeric keys to FMV via playID. Re-applies the same
+          // sanity ceiling as the primary lookup above.
           for (const key of unmatchedKeys) {
             const parts = key.split(":")
             if (parts.length !== 2) continue
             const editionUuid = playIdToEdition.get(parts[1])
             if (!editionUuid) continue
             const snap = fmvMap.get(editionUuid)
-            if (snap) {
-              editionFmvMap.set(key, {
-                fmv: Number(snap.fmv_usd),
-                confidence: (snap.confidence ?? "low").toLowerCase(),
-                computedAt: snap.computed_at,
-              })
-            }
+            if (!snap) continue
+            const raw = Number(snap.fmv_usd)
+            if (!Number.isFinite(raw)) continue
+            const isHigh = String(snap.confidence ?? "").toUpperCase() === "HIGH"
+            const sc = Number((snap as any).sales_count_30d ?? 0)
+            if (raw > 10000 && !(isHigh && sc >= 3)) continue
+            editionFmvMap.set(key, {
+              fmv: raw,
+              confidence: (snap.confidence ?? "low").toLowerCase(),
+              computedAt: snap.computed_at,
+            })
           }
         }
       } catch (fallbackErr) {

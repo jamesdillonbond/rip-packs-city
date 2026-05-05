@@ -18,7 +18,10 @@ export interface PackRow {
   title: string
   thumbnailUrl: string | null
   tier: string
-  slots: number
+  /** Slots is null/0 for some pack types (Bundle, Reward, Chance Hit) — render those as a label rather than a literal 0. */
+  slots: number | null
+  /** Source pack_type value (e.g. "pack", "box", "case") used as the slots fallback label. */
+  packType?: string | null
   price: number
   grossEV: number | null
   /** EV margin as a fraction (0.12 for +12%). Null when EV data unavailable. */
@@ -119,12 +122,60 @@ function marginClass(pct: number | null): string {
   return 'text-zinc-400'
 }
 
+// Slots cell: render the integer when meaningful, otherwise fall back to the
+// pack_type label (Bundle, Reward, Chance Hit, etc) or an em-dash. Several
+// pack types in the catalog (Grail Seeker, certain Fast Break runs) ship a
+// legitimate null/0 from the source — rendering "0" is misleading.
+function fmtSlots(slots: number | null, packType?: string | null): string {
+  if (slots != null && slots > 0) return String(slots)
+  const label = (packType ?? '').trim()
+  if (label) return label.charAt(0).toUpperCase() + label.slice(1)
+  return '—'
+}
+
 const RARE_SINGLE_TITLE =
   'EV represents one specific ultra-rare moment rather than a probabilistic pull across a pool.'
 
 function SortArrow({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
   if (!active) return <span className="text-zinc-700 ml-1">↕</span>
   return <span className="ml-1">{dir === 'desc' ? '↓' : '↑'}</span>
+}
+
+// Tier-aware fallback when a pack thumbnail 404s or is null. Renders a
+// solid square with the tier color and the pack title's first letter so
+// the row stays visually anchored even without a real image.
+function PackThumb({ url, tier, title, size = 40 }: { url: string | null; tier: string; title: string; size?: number }) {
+  const [errored, setErrored] = useState(false)
+  const chip = tierChip(tier)
+  if (!url || errored) {
+    const initial = (title || '?').trim().charAt(0).toUpperCase() || '?'
+    return (
+      <div
+        className="rounded flex items-center justify-center flex-shrink-0 font-semibold"
+        style={{
+          width: size,
+          height: size,
+          background: chip.background,
+          border: chip.border,
+          color: chip.color,
+          fontSize: size >= 48 ? 16 : 13,
+        }}
+        aria-label={title}
+      >
+        {initial}
+      </div>
+    )
+  }
+  return (
+    /* eslint-disable-next-line @next/next/no-img-element */
+    <img
+      src={url}
+      alt={title}
+      className="rounded object-cover flex-shrink-0"
+      style={{ width: size, height: size }}
+      onError={() => setErrored(true)}
+    />
+  )
 }
 
 export default function PackTable({
@@ -219,12 +270,7 @@ export default function PackTable({
               >
                 <td className="p-3">
                   <div className="flex items-center gap-3">
-                    {r.thumbnailUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={r.thumbnailUrl} alt={r.title} className="h-10 w-10 rounded object-cover flex-shrink-0" />
-                    ) : (
-                      <div className="h-10 w-10 rounded bg-zinc-900 flex items-center justify-center text-zinc-700">?</div>
-                    )}
+                    <PackThumb url={r.thumbnailUrl} tier={r.tier} title={r.title} size={40} />
                     <span className="font-medium text-white">{r.title}</span>
                   </div>
                 </td>
@@ -236,7 +282,7 @@ export default function PackTable({
                     {r.tier.replace('MOMENT_TIER_', '').toLowerCase()}
                   </span>
                 </td>
-                <td className="p-3 text-zinc-300">{r.slots}</td>
+                <td className="p-3 text-zinc-300">{fmtSlots(r.slots, r.packType)}</td>
                 <td className="p-3 text-zinc-300 tabular-nums">{fmtPrice(r.price)}</td>
                 <td className="p-3 text-zinc-300 tabular-nums">
                   <div className="flex items-center gap-2">
@@ -284,12 +330,7 @@ export default function PackTable({
         {sorted.map((r) => (
           <div key={r.id} className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
             <div className="flex items-start gap-3">
-              {r.thumbnailUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={r.thumbnailUrl} alt={r.title} className="h-12 w-12 rounded object-cover flex-shrink-0" />
-              ) : (
-                <div className="h-12 w-12 rounded bg-zinc-900 flex items-center justify-center text-zinc-700 flex-shrink-0">?</div>
-              )}
+              <PackThumb url={r.thumbnailUrl} tier={r.tier} title={r.title} size={48} />
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-semibold text-white truncate">{r.title}</div>
                 <span
@@ -315,14 +356,14 @@ export default function PackTable({
             <div className="mt-2 flex items-center gap-3 text-xs text-zinc-400">
               <span className="tabular-nums">{fmtPrice(r.price)}</span>
               <span>·</span>
+              <span className="tabular-nums">{fmtSlots(r.slots, r.packType)} slots</span>
+              <span>·</span>
               <span
                 className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
                 style={coverageChipClass(r.fmvCoverage)}
               >
                 Cov {r.fmvCoverage == null ? '—' : fmtPct(r.fmvCoverage)}
               </span>
-              <span>·</span>
-              <span className="tabular-nums">Depleted {fmtPct(r.depletionPct)}</span>
               {r.onAction && (
                 <button
                   onClick={r.onAction}

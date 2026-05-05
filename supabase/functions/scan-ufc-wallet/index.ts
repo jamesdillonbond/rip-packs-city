@@ -229,12 +229,84 @@ serve(async (req: Request) => {
     }
   }
 
+  // Populate fmv_usd for the rows we just upserted by joining edition_key →
+  // editions.external_id → latest fmv_snapshots. Defensive ceiling: cap at
+  // $10K unless HIGH confidence with sales_count_30d >= 3 (guards against
+  // known FMV pipeline outliers).
+  let fmvWritten = 0
+  try {
+    const keys = [...new Set(rows.map((r) => r.edition_key).filter(Boolean) as string[])]
+    if (keys.length > 0) {
+      const extToInternal = new Map<string, string>()
+      for (let i = 0; i < keys.length; i += 200) {
+        const slice = keys.slice(i, i + 200)
+        const { data: edRows } = await supabase
+          .from("editions")
+          .select("id, external_id")
+          .eq("collection_id", UFC_COLLECTION_ID)
+          .in("external_id", slice)
+        for (const r of edRows ?? []) {
+          const ext = (r as { external_id?: string }).external_id
+          const id = (r as { id?: string }).id
+          if (ext && id) extToInternal.set(ext, id)
+        }
+      }
+      const internalIds = [...new Set(extToInternal.values())]
+      const fmvByInternal = new Map<string, { fmv_usd: number | null; confidence: string | null; sales_count_30d: number | null }>()
+      for (let i = 0; i < internalIds.length; i += 200) {
+        const slice = internalIds.slice(i, i + 200)
+        const { data: snaps } = await supabase
+          .from("fmv_snapshots")
+          .select("edition_id, fmv_usd, confidence, sales_count_30d, computed_at")
+          .in("edition_id", slice)
+          .order("computed_at", { ascending: false })
+        for (const s of snaps ?? []) {
+          const row = s as { edition_id: string; fmv_usd?: number | null; confidence?: string | null; sales_count_30d?: number | null }
+          if (!fmvByInternal.has(row.edition_id)) {
+            fmvByInternal.set(row.edition_id, {
+              fmv_usd: row.fmv_usd != null ? Number(row.fmv_usd) : null,
+              confidence: row.confidence ?? null,
+              sales_count_30d: row.sales_count_30d != null ? Number(row.sales_count_30d) : null,
+            })
+          }
+        }
+      }
+      const extToFmv = new Map<string, number | null>()
+      for (const [extId, internalId] of extToInternal) {
+        const snap = fmvByInternal.get(internalId)
+        if (!snap || snap.fmv_usd == null || !Number.isFinite(snap.fmv_usd)) {
+          extToFmv.set(extId, null)
+          continue
+        }
+        const v = snap.fmv_usd
+        if (v <= 10000) { extToFmv.set(extId, v); continue }
+        const isHigh = String(snap.confidence ?? "").toUpperCase() === "HIGH"
+        const c = Number(snap.sales_count_30d ?? 0)
+        extToFmv.set(extId, isHigh && c >= 3 ? v : null)
+      }
+      for (const r of rows) {
+        const fmv = r.edition_key ? extToFmv.get(r.edition_key) ?? null : null
+        if (fmv == null) continue
+        const { error } = await supabase
+          .from("wallet_moments_cache")
+          .update({ fmv_usd: fmv })
+          .eq("wallet_address", r.wallet_address)
+          .eq("collection_id", r.collection_id)
+          .eq("moment_id", r.moment_id)
+        if (!error) fmvWritten++
+      }
+    }
+  } catch (err) {
+    errors.push(`fmv lookup: ${String(err)}`)
+  }
+
   return new Response(JSON.stringify({
     ok: true,
     wallet,
     momentsFound: ids.length,
     metadataResolved: rows.length,
     upserted,
+    fmvWritten,
     errors: errors.slice(0, 20),
     errorCount: errors.length,
     elapsed_ms: Date.now() - startedAt,

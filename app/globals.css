@@ -10,3 +10,12 @@ body {
 * {
   box-sizing: border-box;
 }
+
+/* Native <select> options inherit the OS dropdown theme, which on dark page
+   backgrounds collapses to black-on-black text until hovered. Force a dark
+   surface with light text so the option list stays readable everywhere. */
+select option,
+select optgroup {
+  background-color: #18181b;
+  color: #f4f4f5;
+}
