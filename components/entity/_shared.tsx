@@ -1,0 +1,180 @@
+// components/entity/_shared.tsx
+// Phase 1A/1B/1C/1D/1E/1F.
+// Server-safe formatting and tiny presentational helpers used across every
+// entity detail page (edition, set, player, team, series). Keep this file
+// free of "use client" directives — anything client-only lives in its own
+// component.
+
+import Link from "next/link"
+import type { ReactNode } from "react"
+
+export const EM_DASH = "—"
+
+// ── Formatters ──────────────────────────────────────────────────────────────
+
+export function fmtUsd(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return EM_DASH
+  if (value === 0) return EM_DASH
+  if (value >= 100) {
+    return value.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })
+  }
+  return value.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+export function fmtCount(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return EM_DASH
+  return value.toLocaleString("en-US")
+}
+
+export function fmtPercent(value: number | null | undefined, digits = 1): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return EM_DASH
+  const sign = value > 0 ? "+" : ""
+  return `${sign}${value.toFixed(digits)}%`
+}
+
+/** Wallet address: lowercase, 0x prefix, truncated to 0x1234…abcd. */
+export function truncWallet(addr: string | null | undefined): string {
+  if (!addr) return EM_DASH
+  const lower = addr.toLowerCase()
+  const prefixed = lower.startsWith("0x") ? lower : `0x${lower}`
+  if (prefixed.length <= 12) return prefixed
+  return `${prefixed.slice(0, 6)}…${prefixed.slice(-4)}`
+}
+
+/** Compact relative time. Uses Intl.RelativeTimeFormat. */
+export function relTime(iso: string | null | undefined, now = Date.now()): string {
+  if (!iso) return EM_DASH
+  const t = new Date(iso).getTime()
+  if (!Number.isFinite(t)) return EM_DASH
+  const diffSec = Math.round((t - now) / 1000)
+  const abs = Math.abs(diffSec)
+  const fmt = new Intl.RelativeTimeFormat("en-US", { numeric: "auto" })
+  if (abs < 60) return fmt.format(diffSec, "second")
+  if (abs < 3600) return fmt.format(Math.round(diffSec / 60), "minute")
+  if (abs < 86400) return fmt.format(Math.round(diffSec / 3600), "hour")
+  if (abs < 86400 * 30) return fmt.format(Math.round(diffSec / 86400), "day")
+  if (abs < 86400 * 365) return fmt.format(Math.round(diffSec / (86400 * 30)), "month")
+  return fmt.format(Math.round(diffSec / (86400 * 365)), "year")
+}
+
+// ── Tier badge ──────────────────────────────────────────────────────────────
+
+const TIER_VAR_MAP: Record<string, { fg: string; bg: string; bd: string }> = {
+  ULTIMATE:    { fg: "var(--tier-ultimate)",   bg: "var(--tier-ultimate-bg)",   bd: "var(--tier-ultimate-border)" },
+  LEGENDARY:   { fg: "var(--tier-legendary)",  bg: "var(--tier-legendary-bg)",  bd: "var(--tier-legendary-border)" },
+  CHAMPION:    { fg: "var(--tier-champion)",   bg: "var(--tier-champion-bg)",   bd: "var(--tier-champion-border)" },
+  CHALLENGER:  { fg: "var(--tier-challenger)", bg: "var(--tier-challenger-bg)", bd: "var(--tier-challenger-border)" },
+  CONTENDER:   { fg: "var(--tier-contender)",  bg: "var(--tier-contender-bg)",  bd: "var(--tier-contender-border)" },
+  RARE:        { fg: "var(--tier-rare)",       bg: "var(--tier-rare-bg)",       bd: "var(--tier-rare-border)" },
+  UNCOMMON:    { fg: "var(--tier-uncommon)",   bg: "var(--tier-uncommon-bg)",   bd: "var(--tier-uncommon-border)" },
+  FANDOM:      { fg: "var(--tier-fandom)",     bg: "var(--tier-fandom-bg)",     bd: "var(--tier-fandom-border)" },
+  COMMON:      { fg: "var(--tier-common)",     bg: "var(--tier-common-bg)",     bd: "var(--tier-common-border)" },
+}
+
+const GRAY_FALLBACK = { fg: "var(--rpc-text-secondary)", bg: "rgba(255,255,255,0.04)", bd: "rgba(255,255,255,0.12)" }
+
+export function TierBadge({ tier, label }: { tier: string | null | undefined; label?: string }) {
+  if (!tier) return null
+  const key = tier.toUpperCase()
+  const colors = TIER_VAR_MAP[key] ?? GRAY_FALLBACK
+  const text = label ?? tier
+  return (
+    <span style={{
+      display: "inline-block",
+      padding: "2px 8px",
+      borderRadius: 4,
+      fontFamily: "'Share Tech Mono', monospace",
+      fontSize: 10,
+      letterSpacing: "0.12em",
+      textTransform: "uppercase",
+      color: colors.fg,
+      background: colors.bg,
+      border: `1px solid ${colors.bd}`,
+    }}>{text}</span>
+  )
+}
+
+// ── Confidence pill ─────────────────────────────────────────────────────────
+
+const CONFIDENCE_COLORS: Record<string, { fg: string; bg: string; bd: string }> = {
+  HIGH:      { fg: "#34D399", bg: "rgba(52,211,153,0.10)", bd: "rgba(52,211,153,0.30)" },
+  MEDIUM:    { fg: "#F59E0B", bg: "rgba(245,158,11,0.10)", bd: "rgba(245,158,11,0.30)" },
+  LOW:       { fg: "#94A3B8", bg: "rgba(148,163,184,0.10)", bd: "rgba(148,163,184,0.30)" },
+  ASK_ONLY:  { fg: "#3B82F6", bg: "rgba(59,130,246,0.10)", bd: "rgba(59,130,246,0.30)" },
+}
+
+export function ConfidencePill({ confidence }: { confidence: string | null | undefined }) {
+  if (!confidence || confidence === "NONE") {
+    return <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.08em" }}>no FMV</span>
+  }
+  const key = confidence.toUpperCase()
+  const colors = CONFIDENCE_COLORS[key] ?? GRAY_FALLBACK
+  return (
+    <span style={{
+      display: "inline-block",
+      padding: "2px 8px",
+      borderRadius: 999,
+      fontFamily: "'Share Tech Mono', monospace",
+      fontSize: 10,
+      letterSpacing: "0.10em",
+      color: colors.fg,
+      background: colors.bg,
+      border: `1px solid ${colors.bd}`,
+    }}>{key.replace("_", " ")}</span>
+  )
+}
+
+// ── Stat cell ───────────────────────────────────────────────────────────────
+
+export function StatCell({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
+  return (
+    <div className="rpc-card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>{label}</div>
+      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 22, color: "var(--rpc-text-primary)", lineHeight: 1.1 }}>{value}</div>
+      {sub !== undefined && (
+        <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "var(--rpc-text-secondary)", letterSpacing: "0.06em" }}>{sub}</div>
+      )}
+    </div>
+  )
+}
+
+// ── Wallet link ─────────────────────────────────────────────────────────────
+
+export function WalletLink({ address }: { address: string | null | undefined }) {
+  if (!address) return <span style={{ color: "var(--rpc-text-muted)" }}>{EM_DASH}</span>
+  const lower = address.toLowerCase().startsWith("0x") ? address.toLowerCase() : `0x${address.toLowerCase()}`
+  return (
+    <Link href={`/profile/${lower}`} style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontFamily: "'Share Tech Mono', monospace", fontSize: 11 }}>
+      {truncWallet(address)}
+    </Link>
+  )
+}
+
+// ── Card section wrapper ────────────────────────────────────────────────────
+
+export function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="rpc-card" style={{ padding: 18, marginTop: 14 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
+        <h2 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 16, letterSpacing: "0.10em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: 0 }}>{title}</h2>
+        {action}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+// ── Marketplace label ───────────────────────────────────────────────────────
+
+export function marketplaceLabel(raw: string | null | undefined): string {
+  if (!raw) return EM_DASH
+  const k = raw.toLowerCase()
+  if (k === "topshot" || k === "nba_top_shot" || k === "top_shot") return "Top Shot"
+  if (k === "allday" || k === "nfl_all_day" || k === "all_day") return "All Day"
+  if (k === "golazos" || k === "laliga_golazos") return "Golazos"
+  if (k === "ufc" || k === "ufc_strike") return "UFC Strike"
+  if (k === "pinnacle" || k === "disney_pinnacle") return "Pinnacle"
+  if (k === "flowty") return "Flowty"
+  if (k === "onchain") return "On-chain"
+  return raw[0].toUpperCase() + raw.slice(1)
+}
