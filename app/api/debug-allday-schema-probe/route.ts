@@ -1,37 +1,24 @@
 // app/api/debug-allday-schema-probe/route.ts
-// Probe A (round 2). After round 1 confirmed `getMintedMoment` is gone from
-// consumer/graphql, this round looks for the replacement that exposes serial
-// number per nft_id. Two endpoints + several query shapes per endpoint.
+// Probe A (round 3). Round 2 confirmed:
+//   - public-api.nflallday.com/graphql nginx-404s our queries (not the path)
+//   - consumer/graphql HAS searchMomentNFTsV2 with `MomentNFTFilters` whitelisting
+//     bySetFlowIDs | byFlowIDs | byPlayFlowIDs | byFlowIDsV2
+//   - byFlowIDs accepts [Int], not [String]
 //
-// Endpoints:
-//   - public-api.nflallday.com/graphql     (sniper-feed hits this directly,
-//                                            no proxy, no auth — known good)
-//   - nflallday.com/consumer/graphql       (scripts/fetch-allday-collection.mjs
-//                                            hits this with searchMomentNFTsV2)
-//
-// Queries we try, each against both endpoints:
-//   1. searchMomentNFTsV2 with `byFlowIDs` filter (most likely candidate)
-//   2. searchMomentNFTsV2 with `byNFTFlowIDs` filter (variant)
-//   3. searchMomentListings with `byNFTID` (verifies serialNumber in the
-//      schema; will only return rows for currently-listed moments, but the
-//      404/422 behavior tells us if nft-id filtering is even an option)
+// This round confirms the byFlowIDs([Int]) path actually returns serialNumber,
+// and compares byFlowIDs vs byFlowIDsV2 head-to-head so we pick the right one.
+// Selection set is expanded — extra fields cost nothing if accepted, and any
+// "Cannot query field" rejections document the schema for free.
 //
 // Auth: GET ?token=INGEST_SECRET_TOKEN[&nft_id=<id>]
-// Default nft_id is 10313674 — same target probe round 1 used.
-//
-// Response shape: { endpoint, query_name, status, errors[], data sample } per
-// probe so the next-step decision is one diff against the responses.
 
 import { NextRequest, NextResponse } from "next/server"
 
 export const dynamic = "force-dynamic"
 
-const PUBLIC_API = "https://public-api.nflallday.com/graphql"
 const CONSUMER_API = "https://nflallday.com/consumer/graphql"
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 
-// Same minimal header set sniper-feed uses against public-api. Consumer/graphql
-// accepts the same headers per round 1's probe responses.
 const BASE_HEADERS: Record<string, string> = {
   "Content-Type": "application/json",
   "User-Agent": "sports-collectible-tool/0.1",
@@ -45,39 +32,45 @@ interface Probe {
 }
 
 function buildProbes(nftId: string): Probe[] {
+  // Try the same selection set on both filter variants. Selection set includes
+  // a few extra fields beyond the minimum we need (flowID + serialNumber) so
+  // the schema's response shape is captured here as documentation.
+  const SELECTION_SET = `
+    edges {
+      node {
+        flowID
+        serialNumber
+        editionFlowID
+        edition {
+          tier
+          set { flowID name }
+          play { id metadata { playerFullName teamName } }
+        }
+      }
+    }
+  `
+  const idAsInt = Number(nftId)
+
   return [
-    // ── searchMomentNFTsV2 — byFlowIDs filter (the most likely shape) ──────
     {
-      name: "publicApi__searchMomentNFTsV2__byFlowIDs",
-      endpoint: PUBLIC_API,
-      query: `query Q($ids:[String]!){searchMomentNFTsV2(input:{first:5, filters:{byFlowIDs:$ids}}){edges{node{flowID serialNumber editionFlowID}}}}`,
-      variables: { ids: [nftId] },
-    },
-    {
-      name: "consumer__searchMomentNFTsV2__byFlowIDs",
+      name: "consumer__searchMomentNFTsV2__byFlowIDs__intArray",
       endpoint: CONSUMER_API,
-      query: `query Q($ids:[String]!){searchMomentNFTsV2(input:{first:5, filters:{byFlowIDs:$ids}}){edges{node{flowID serialNumber editionFlowID}}}}`,
-      variables: { ids: [nftId] },
-    },
-    // ── searchMomentNFTsV2 — byNFTFlowIDs variant ──────────────────────────
-    {
-      name: "publicApi__searchMomentNFTsV2__byNFTFlowIDs",
-      endpoint: PUBLIC_API,
-      query: `query Q($ids:[String]!){searchMomentNFTsV2(input:{first:5, filters:{byNFTFlowIDs:$ids}}){edges{node{flowID serialNumber editionFlowID}}}}`,
-      variables: { ids: [nftId] },
+      query: `query Q($ids:[Int]!){searchMomentNFTsV2(input:{first:5, filters:{byFlowIDs:$ids}}){${SELECTION_SET}}}`,
+      variables: { ids: [idAsInt] },
     },
     {
-      name: "consumer__searchMomentNFTsV2__byNFTFlowIDs",
+      name: "consumer__searchMomentNFTsV2__byFlowIDsV2__intArray",
       endpoint: CONSUMER_API,
-      query: `query Q($ids:[String]!){searchMomentNFTsV2(input:{first:5, filters:{byNFTFlowIDs:$ids}}){edges{node{flowID serialNumber editionFlowID}}}}`,
-      variables: { ids: [nftId] },
+      query: `query Q($ids:[Int]!){searchMomentNFTsV2(input:{first:5, filters:{byFlowIDsV2:$ids}}){${SELECTION_SET}}}`,
+      variables: { ids: [idAsInt] },
     },
-    // ── searchMomentListings byNFTID — sanity check (sniper-feed schema) ──
+    // Defensive: also try byFlowIDsV2 with [String] in case V2 is "newer, less
+    // restrictive" and accepts strings — explicit hypothesis test, not a guess.
     {
-      name: "publicApi__searchMomentListings__byNFTID",
-      endpoint: PUBLIC_API,
-      query: `query Q($id:String!){searchMomentListings(input:{filters:{byNFTID:$id}, searchInput:{pagination:{cursor:"", direction:RIGHT, limit:5}}}){data{searchSummary{data{... on MomentListings{data{... on MomentListing{id serialNumber}}}}}}}}`,
-      variables: { id: nftId },
+      name: "consumer__searchMomentNFTsV2__byFlowIDsV2__stringArray",
+      endpoint: CONSUMER_API,
+      query: `query Q($ids:[String]!){searchMomentNFTsV2(input:{first:5, filters:{byFlowIDsV2:$ids}}){${SELECTION_SET}}}`,
+      variables: { ids: [String(nftId)] },
     },
   ]
 }
