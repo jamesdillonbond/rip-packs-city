@@ -1,17 +1,45 @@
 // Multi-collection GQL proxy — routes requests to the correct upstream
 // based on the URL path. Cloudflare Workers bypass the IP blocks that
-// prevent Vercel from reaching Dapper Labs GQL endpoints directly.
+// prevent Vercel + Supabase egress from reaching Dapper Labs GQL endpoints
+// directly.
+//
+// AllDay has TWO graphql endpoints with non-overlapping schemas:
+//   - public-api.nflallday.com/graphql   (searchMomentNFTsV2, searchPackNFTsV2 — wallet/pack queries)
+//   - nflallday.com/consumer/graphql     (getMintedMoment — moment-by-id, only place flowSerialNumber lives)
+// Both need the proxy because Cloudflare WAF blocks Vercel + Supabase egress on both hostnames.
 //
 // Routes:
-//   POST /              → public-api.nbatopshot.com/graphql  (legacy, backward compat)
-//   POST /topshot       → public-api.nbatopshot.com/graphql
-//   POST /allday        → public-api.nflallday.com/graphql
+//   POST /                  → public-api.nbatopshot.com/graphql  (legacy default, backward compat)
+//   POST /topshot           → public-api.nbatopshot.com/graphql
+//   POST /allday            → public-api.nflallday.com/graphql
+//   POST /allday-consumer   → nflallday.com/consumer/graphql
 //
-// Auth: X-Proxy-Secret header must match env.PROXY_SECRET
+// Auth: X-Proxy-Secret header must match env.PROXY_SECRET (single secret
+// shared across all routes — single rotation surface).
+//
+// /allday-consumer additional gating: the consumer endpoint serves a reduced
+// public schema (no getMintedMoment) to non-browser-fingerprinted requests.
+// This route adds Origin / Referer / browser User-Agent so the schema flips
+// to the full view. Scoped to this route only — public-api routes stay on
+// the bare "sports-collectible-tool/0.1" UA they've always used.
 
 const UPSTREAM_MAP = {
-  topshot: "https://public-api.nbatopshot.com/graphql",
-  allday: "https://public-api.nflallday.com/graphql",
+  "topshot":         "https://public-api.nbatopshot.com/graphql",
+  "allday":          "https://public-api.nflallday.com/graphql",
+  "allday-consumer": "https://nflallday.com/consumer/graphql",
+};
+
+const DEFAULT_ROUTE = "topshot";
+const DEFAULT_UA = "sports-collectible-tool/0.1";
+
+// Route-scoped header overrides merged on top of the defaults. Only set the
+// keys a route actually needs — empty/missing entries are no-ops.
+const ROUTE_HEADERS = {
+  "allday-consumer": {
+    "Origin": "https://nflallday.com",
+    "Referer": "https://nflallday.com/",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  },
 };
 
 export default {
@@ -38,25 +66,25 @@ export default {
       return new Response("Unauthorized", { status: 401 });
     }
 
-    // Determine upstream from URL path
+    // Determine upstream from URL path. Empty / "all-day" alias preserved for
+    // backward compatibility with earlier callers.
     const url = new URL(request.url);
-    const path = url.pathname.replace(/^\/+|\/+$/g, "").toLowerCase();
+    let path = url.pathname.replace(/^\/+|\/+$/g, "").toLowerCase();
+    if (path === "all-day") path = "allday";
 
-    let upstream;
-    if (path === "allday" || path === "all-day") {
-      upstream = UPSTREAM_MAP.allday;
-    } else {
-      // Default: Top Shot (backward compatible — "/" or "/topshot")
-      upstream = UPSTREAM_MAP.topshot;
-    }
+    const matchedRoute = UPSTREAM_MAP[path] ? path : DEFAULT_ROUTE;
+    const upstream = UPSTREAM_MAP[matchedRoute];
+
+    const upstreamHeaders = {
+      "Content-Type": "application/json",
+      "User-Agent": DEFAULT_UA,
+      ...(ROUTE_HEADERS[matchedRoute] || {}),
+    };
 
     const body = await request.text();
     const upstreamRes = await fetch(upstream, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "sports-collectible-tool/0.1",
-      },
+      headers: upstreamHeaders,
       body,
     });
 
