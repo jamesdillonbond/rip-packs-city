@@ -83,7 +83,11 @@ export async function GET(req: NextRequest) {
 
       for (const row of rows || []) {
         const date = (row.sold_at as string).slice(0, 10)
-        const mp = row.source || "pinnacle"
+        // Pinnacle's only marketplace is the native one — surface it under
+        // the canonical "pinnacle" label so analytics_sales and this route
+        // agree (analytics_sales view was updated in Phase 6 to map all
+        // pinnacle_sales rows to marketplace='pinnacle').
+        const mp = "pinnacle"
         const price = parseFloat(row.sale_price_usd) || 0
         const key = `${date}|${mp}`
         totalSales++
