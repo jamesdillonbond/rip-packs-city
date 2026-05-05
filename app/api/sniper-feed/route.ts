@@ -5,6 +5,7 @@ import { fetchOpenOffers } from "@/lib/flowty/fetchOpenOffers";
 import { getOrSetCache } from "@/lib/cache";
 import { z } from "zod";
 import { getCollectionUuid, fromDbSlug } from "@/lib/collections";
+import { computePinnacleSniperFeed } from "@/lib/sniper/pinnacle";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -133,7 +134,9 @@ export interface SniperDeal {
   listingResourceID: string | null;
   listingOrderID: string | null;
   storefrontAddress: string | null;
-  source: "topshot" | "flowty";
+  // Marketplace tag — collection-native fetches use the per-collection slug,
+  // Flowty mirror data uses "flowty". UI consumes this for source labels.
+  source: "topshot" | "allday" | "golazos" | "pinnacle" | "flowty";
   paymentToken: "DUC" | "FUT" | "FLOW" | "USDC_E";
   offerAmount: number | null;
   offerFmvPct: number | null;
@@ -1009,7 +1012,19 @@ export async function GET(req: Request) {
   const serialFilter = params.serial;
 
   // Phase 2: collectionId takes precedence over legacy `collection` param.
-  const collection = params.collectionId ?? params.collection;
+  // Phase 5: also accept long-form (underscored) slugs as aliases for the
+  // hyphenated form the rest of the app uses, so callers can pass either
+  // `nba-top-shot` or `nba_top_shot` etc.
+  const COLLECTION_ALIASES: Record<string, string> = {
+    nba_top_shot: "nba-top-shot",
+    nfl_all_day: "nfl-all-day",
+    laliga_golazos: "laliga-golazos",
+    disney_pinnacle: "disney-pinnacle",
+    ufc_strike: "ufc",
+    pinnacle: "disney-pinnacle",
+  };
+  const rawCollection = params.collectionId ?? params.collection;
+  const collection = COLLECTION_ALIASES[rawCollection] ?? rawCollection;
 
   // Cache key based on all query params — same params = same response for 25s.
   // Filter-exhaustion iterations append the Flowty page-depth so each depth
@@ -1040,6 +1055,28 @@ export async function GET(req: Request) {
   function buildComputeFn(flowtyPageCount: number) {
     if (collection === "nfl-all-day") {
       return () => computeAllDaySniperFeed({ minDiscount, rarity: effectiveRarity, team, maxPrice, sortBy });
+    }
+    if (collection === "disney-pinnacle") {
+      // Pinnacle has its own data source (pinnacle_fmv_snapshots + Flowty
+      // Pinnacle listings) and its own SniperDeal mapping shape — see
+      // lib/sniper/pinnacle.ts. Reuses the same compute that
+      // /api/pinnacle-sniper exposes so the two routes stay in sync.
+      return async () => {
+        const pin = await computePinnacleSniperFeed({
+          variantFilter: effectiveRarity,
+          maxPrice,
+          minDiscount,
+          playerFilter: player,
+          sortBy,
+        });
+        return {
+          count: pin.count,
+          tsCount: 0,
+          flowtyCount: pin.flowtyCount,
+          lastRefreshed: pin.lastRefreshed,
+          deals: pin.deals as unknown as SniperDeal[],
+        };
+      };
     }
     if (collection !== "nba-top-shot") {
       return () => computeCachedSniperFeed({ collection, minDiscount, rarity: effectiveRarity, team, maxPrice, sortBy, serialFilter });
@@ -1423,7 +1460,7 @@ async function computeAllDaySniperFeed(opts: {
       listingResourceID: null,
       listingOrderID: null,
       storefrontAddress: null,
-      source: "flowty",
+      source: "allday",
       paymentToken: "FLOW",
       offerAmount: null,
       offerFmvPct: null,
