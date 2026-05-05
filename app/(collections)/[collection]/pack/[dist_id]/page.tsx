@@ -7,6 +7,7 @@
 // pack data and will always 404 here.
 
 import type { Metadata } from "next"
+import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
@@ -144,6 +145,12 @@ export default async function PackPage(props: { params: Promise<{ collection: st
         </div>
       )}
 
+      <TopEvContributors
+        contents={contents}
+        poolTotalFmvUsd={detail.pool_total_fmv_usd}
+        collectionUrlSlug={collection}
+      />
+
       {/* ── Contents grid ────────────────────────────────────────────────── */}
       <Section title="Pack Contents">
         {contents.length === 0 ? (
@@ -162,5 +169,89 @@ export default async function PackPage(props: { params: Promise<{ collection: st
         )}
       </Section>
     </div>
+  )
+}
+
+// ── Top EV Contributors ─────────────────────────────────────────────────────
+//
+// Server component. The get_pack_contents RPC orders by (fmv_usd * drop_weight)
+// DESC, so the top three EV contributors are just the first three rows of the
+// contents page. Pool-EV percent is computed against detail.pool_total_fmv_usd
+// which is itself the SUM of fmv_usd * drop_weight across the full pool —
+// directly comparable. Hidden when the pool has no FMV data or fewer than two
+// rows (one-row "top contributors" isn't useful).
+
+function TopEvContributors({
+  contents,
+  poolTotalFmvUsd,
+  collectionUrlSlug,
+}: {
+  contents: EditionTile[]
+  poolTotalFmvUsd: number | null
+  collectionUrlSlug: string
+}) {
+  if (!poolTotalFmvUsd || poolTotalFmvUsd <= 0) return null
+
+  const ranked = contents
+    .map((t) => {
+      const fmv = typeof t.fmv_usd === "number" ? t.fmv_usd : 0
+      const weight = typeof t.drop_weight === "number" ? t.drop_weight : 0
+      return { tile: t, contribution: fmv * weight }
+    })
+    .filter((r) => r.contribution > 0)
+    .sort((a, b) => b.contribution - a.contribution)
+    .slice(0, 3)
+
+  if (ranked.length < 2) return null
+
+  const summed = ranked.reduce((acc, r) => acc + r.contribution, 0)
+  const pct = (summed / poolTotalFmvUsd) * 100
+  const pctLabel = pct >= 99.95 ? ">99%" : `${pct.toFixed(1)}%`
+  const subtitle = `These ${ranked.length === 3 ? "three" : "two"} editions account for ${pctLabel} of pack EV.`
+
+  return (
+    <Section title="Top EV Contributors">
+      <div style={{ marginTop: -4, marginBottom: 12, fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: "var(--rpc-text-secondary)", letterSpacing: "0.04em" }}>
+        {subtitle}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+        {ranked.map(({ tile, contribution }) => {
+          const sharePct = (contribution / poolTotalFmvUsd) * 100
+          const editionHref = `/${collectionUrlSlug}/edition/${tile.route_slug}`
+          return (
+            <Link
+              key={tile.route_slug}
+              href={editionHref}
+              prefetch={false}
+              style={{ textDecoration: "none", color: "inherit" }}
+            >
+              <div className="rpc-card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 6, height: "100%" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                  <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 18, color: "var(--rpc-text-primary)", lineHeight: 1.1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {tile.player_name ?? tile.name ?? EM_DASH}
+                  </div>
+                  {tile.tier && <TierBadge tier={tile.tier} />}
+                </div>
+                {tile.set_name && (
+                  <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.06em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {tile.set_name}
+                  </div>
+                )}
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, gap: 8 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>EV Contribution</div>
+                    <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)", lineHeight: 1.1 }}>{fmtUsd(contribution)}</div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2, textAlign: "right" }}>
+                    <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>Pool Share</div>
+                    <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)", lineHeight: 1.1 }}>{sharePct.toFixed(1)}%</div>
+                  </div>
+                </div>
+              </div>
+            </Link>
+          )
+        })}
+      </div>
+    </Section>
   )
 }
