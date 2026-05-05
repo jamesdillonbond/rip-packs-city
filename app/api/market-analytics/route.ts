@@ -25,8 +25,6 @@ function periodToDays(period: string): number {
   }
 }
 
-const MAX_ROWS = 50000
-
 function getStartDate(period: string): string {
   const now = new Date()
   switch (period) {
@@ -63,73 +61,39 @@ export async function GET(req: NextRequest) {
   const endDate = new Date().toISOString().slice(0, 10)
 
   try {
-    // ── Base time-series: totalSales / totalVolume / daily[] ─────────────
-    let totalSales = 0
-    let totalVolume = 0
-    const dailyMap = new Map<string, { saleCount: number; volume: number }>()
+    // ── Base time-series via SQL-aggregated RPCs ─────────────────────────
+    // Phase 6.5: replaced raw `.from("sales").limit(MAX_ROWS)` reads with
+    // get_daily_marketplace_volume() / get_daily_marketplace_volume_pinnacle().
+    // The previous approach silently capped at PostgREST's 1000-row default
+    // (~1.5 days of TopShot sales) so 30-day breakdowns missed most of the
+    // window. The RPCs aggregate server-side and return one row per
+    // (day, marketplace).
+    const { data: rows, error } = isPinnacle
+      ? await (supabaseAdmin as any).rpc("get_daily_marketplace_volume_pinnacle", {
+          p_start_iso: startIso,
+        })
+      : await (supabaseAdmin as any).rpc("get_daily_marketplace_volume", {
+          p_collection_id: collectionId,
+          p_start_iso: startIso,
+        })
 
-    if (isPinnacle) {
-      const { data: rows, error } = await (supabaseAdmin as any)
-        .from("pinnacle_sales")
-        .select("sold_at, sale_price_usd, source")
-        .gte("sold_at", startIso)
-        .order("sold_at", { ascending: true })
-        .limit(MAX_ROWS)
-
-      if (error) {
-        console.log("[market-analytics] pinnacle_sales query error:", error.message)
-        return NextResponse.json({ error: "Query failed" }, { status: 500 })
-      }
-
-      for (const row of rows || []) {
-        const date = (row.sold_at as string).slice(0, 10)
-        // Pinnacle's only marketplace is the native one — surface it under
-        // the canonical "pinnacle" label so analytics_sales and this route
-        // agree (analytics_sales view was updated in Phase 6 to map all
-        // pinnacle_sales rows to marketplace='pinnacle').
-        const mp = "pinnacle"
-        const price = parseFloat(row.sale_price_usd) || 0
-        const key = `${date}|${mp}`
-        totalSales++
-        totalVolume += price
-        const existing = dailyMap.get(key)
-        if (existing) { existing.saleCount++; existing.volume += price }
-        else dailyMap.set(key, { saleCount: 1, volume: price })
-      }
-    } else {
-      const { data: rows, error } = await (supabaseAdmin as any)
-        .from("sales")
-        .select("sold_at, price_usd, marketplace")
-        .eq("collection_id", collectionId)
-        .gte("sold_at", startIso)
-        .order("sold_at", { ascending: true })
-        .limit(MAX_ROWS)
-
-      if (error) {
-        console.log("[market-analytics] query error:", error.message)
-        return NextResponse.json({ error: "Query failed" }, { status: 500 })
-      }
-
-      for (const row of rows || []) {
-        const date = (row.sold_at as string).slice(0, 10)
-        const mp = row.marketplace || "unknown"
-        const price = parseFloat(row.price_usd) || 0
-        const key = `${date}|${mp}`
-        totalSales++
-        totalVolume += price
-        const existing = dailyMap.get(key)
-        if (existing) { existing.saleCount++; existing.volume += price }
-        else dailyMap.set(key, { saleCount: 1, volume: price })
-      }
+    if (error) {
+      console.log("[market-analytics] daily RPC error:", error.message)
+      return NextResponse.json({ error: "Query failed" }, { status: 500 })
     }
 
-    const daily = Array.from(dailyMap.entries()).map(([key, val]) => {
-      const [date, marketplace] = key.split("|")
+    let totalSales = 0
+    let totalVolume = 0
+    const daily = (rows || []).map((r: any) => {
+      const saleCount = Number(r.sale_count) || 0
+      const volume = Number(r.volume_usd) || 0
+      totalSales += saleCount
+      totalVolume += volume
       return {
-        date,
-        marketplace,
-        saleCount: val.saleCount,
-        volume: Math.round(val.volume * 100) / 100,
+        date: r.day,
+        marketplace: r.marketplace,
+        saleCount,
+        volume: Math.round(volume * 100) / 100,
       }
     })
 
