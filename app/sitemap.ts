@@ -29,6 +29,8 @@
 import type { MetadataRoute } from 'next'
 import { createClient } from '@supabase/supabase-js'
 import { publishedCollections } from '@/lib/collections'
+import { listEntityPageCollections, getCollectionByDbSlug } from '@/lib/collection-slug'
+import { slugifyName } from '@/lib/entity-labels'
 import { METHODOLOGY_LIST } from '@/lib/analytics/methodology'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
@@ -101,17 +103,24 @@ interface DirectoryRow {
   last_active_at: string | null
 }
 
-// DB slugs for collections that have a per-edition route in `editions`.
-// Pinnacle data lives in `pinnacle_editions` and has no /edition/[id]
-// route segment yet — re-add 'disney_pinnacle' here once that ships.
+// DB slugs for collections that have rows in the `editions` table.
+// Pinnacle data lives in `pinnacle_editions` (different schema) and is
+// excluded from sitemap enumeration here — its entity pages are still
+// reachable via in-app navigation and discoverable by GSC after launch.
 const EDITION_COLLECTION_DB_SLUGS = [
   'nba_top_shot',
   'nfl_all_day',
   'laliga_golazos',
+  'ufc_strike',
 ]
 
 interface EditionRow {
   id: string
+  external_id: string | null
+  collection_db_slug: string
+  player_name: string | null
+  set_name: string | null
+  team_name: string | null
   last_updated_at: string | null
 }
 
@@ -119,6 +128,9 @@ async function getEditionRows(): Promise<EditionRow[]> {
   // One sitemap entry per edition in a published collection. Service-role
   // client bypasses RLS; the join is materialised by Supabase via the
   // foreign-key relation. ~20.5K rows total today.
+  //
+  // We also derive distinct set/player/team slugs from these rows for the
+  // entity sitemap entries — keeps the build-time query count to one.
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) return []
@@ -126,7 +138,7 @@ async function getEditionRows(): Promise<EditionRow[]> {
     const sb: any = createClient(url, key)
     const { data, error } = await sb
       .from('editions')
-      .select('id, last_updated_at, collections!inner(slug)')
+      .select('id, external_id, last_updated_at, player_name, set_name, team_name, collections!inner(slug)')
       .in('collections.slug', EDITION_COLLECTION_DB_SLUGS)
       .order('last_updated_at', { ascending: false, nullsFirst: false })
       .limit(50000)
@@ -134,12 +146,63 @@ async function getEditionRows(): Promise<EditionRow[]> {
       console.log('[sitemap] editions query error: ' + error.message)
       return []
     }
-    return ((data ?? []) as Array<{ id: string; last_updated_at: string | null }>).map((r) => ({
+    return ((data ?? []) as Array<{
+      id: string
+      external_id: string | null
+      last_updated_at: string | null
+      player_name: string | null
+      set_name: string | null
+      team_name: string | null
+      collections: { slug: string } | null
+    }>).map((r) => ({
       id: r.id,
+      external_id: r.external_id,
+      collection_db_slug: r.collections?.slug ?? '',
+      player_name: r.player_name,
+      set_name: r.set_name,
+      team_name: r.team_name,
       last_updated_at: r.last_updated_at,
     }))
   } catch (err) {
     console.log('[sitemap] editions query threw: ' + (err instanceof Error ? err.message : String(err)))
+    return []
+  }
+}
+
+interface SeriesRow {
+  collection_db_slug: string
+  display_label: string
+  last_updated_at: string | null
+}
+
+async function getCollectionSeries(): Promise<SeriesRow[]> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return []
+  try {
+    const sb: any = createClient(url, key)
+    const { data, error } = await sb
+      .from('collection_series')
+      .select('display_label, updated_at, collections!inner(slug)')
+      .in('collections.slug', EDITION_COLLECTION_DB_SLUGS)
+      .limit(2000)
+    if (error) {
+      console.log('[sitemap] collection_series query error: ' + error.message)
+      return []
+    }
+    return ((data ?? []) as Array<{
+      display_label: string | null
+      updated_at: string | null
+      collections: { slug: string } | null
+    }>)
+      .filter((r) => typeof r.display_label === 'string' && r.display_label.length > 0)
+      .map((r) => ({
+        collection_db_slug: r.collections?.slug ?? '',
+        display_label: r.display_label as string,
+        last_updated_at: r.updated_at,
+      }))
+  } catch (err) {
+    console.log('[sitemap] collection_series query threw: ' + (err instanceof Error ? err.message : String(err)))
     return []
   }
 }
@@ -282,20 +345,95 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }))
 
   const editions = await getEditionRows()
-  const editionPages: MetadataRoute.Sitemap = editions.map((e) => ({
-    url: `${BASE_URL}/edition/${e.id}`,
-    lastModified: e.last_updated_at ? new Date(e.last_updated_at) : now,
-    changeFrequency: 'daily' as const,
-    priority: 0.6,
-  }))
+
+  // Per-edition entries on the new nested route. Old /edition/[uuid] still
+  // resolves via a redirect (app/edition/[id]/page.tsx) but the sitemap
+  // points to canonical /[collection]/edition/[external_id] URLs.
+  const editionPages: MetadataRoute.Sitemap = editions
+    .filter((e) => !!e.external_id)
+    .map((e) => {
+      const coll = getCollectionByDbSlug(e.collection_db_slug)
+      if (!coll) return null
+      return {
+        url: `${BASE_URL}/${coll.urlSlug}/edition/${encodeURIComponent(e.external_id as string)}`,
+        lastModified: e.last_updated_at ? new Date(e.last_updated_at) : now,
+        changeFrequency: 'daily' as const,
+        priority: 0.6,
+      }
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null)
+
+  // Distinct set / player / team slugs derived from the edition rows above.
+  // De-dupe per collection × entity slug; pick the most recent
+  // last_updated_at as the lastModified hint.
+  const setMap = new Map<string, Date>()
+  const playerMap = new Map<string, Date>()
+  const teamMap = new Map<string, Date>()
+  for (const e of editions) {
+    const coll = getCollectionByDbSlug(e.collection_db_slug)
+    if (!coll) continue
+    const ts = e.last_updated_at ? new Date(e.last_updated_at) : now
+    if (e.set_name) {
+      const k = `${coll.urlSlug}|${slugifyName(e.set_name)}`
+      const prev = setMap.get(k)
+      if (!prev || ts > prev) setMap.set(k, ts)
+    }
+    if (e.player_name) {
+      const k = `${coll.urlSlug}|${slugifyName(e.player_name)}`
+      const prev = playerMap.get(k)
+      if (!prev || ts > prev) playerMap.set(k, ts)
+    }
+    if (e.team_name) {
+      const k = `${coll.urlSlug}|${slugifyName(e.team_name)}`
+      const prev = teamMap.get(k)
+      if (!prev || ts > prev) teamMap.set(k, ts)
+    }
+  }
+
+  function entityPages(map: Map<string, Date>, segment: 'set' | 'player' | 'team', priority: number): MetadataRoute.Sitemap {
+    const out: MetadataRoute.Sitemap = []
+    for (const [key, ts] of map) {
+      const [urlSlug, slug] = key.split('|')
+      out.push({
+        url: `${BASE_URL}/${urlSlug}/${segment}/${encodeURIComponent(slug)}`,
+        lastModified: ts,
+        changeFrequency: 'weekly',
+        priority,
+      })
+    }
+    return out
+  }
+
+  const newSetPages = entityPages(setMap, 'set', 0.6)
+  const newPlayerPages = entityPages(playerMap, 'player', 0.6)
+  const newTeamPages = entityPages(teamMap, 'team', 0.55)
+
+  // Series — one entry per collection_series.display_label.
+  const seriesRows = await getCollectionSeries()
+  const seriesPages: MetadataRoute.Sitemap = seriesRows
+    .map((r) => {
+      const coll = getCollectionByDbSlug(r.collection_db_slug)
+      if (!coll) return null
+      const slug = slugifyName(r.display_label)
+      return {
+        url: `${BASE_URL}/${coll.urlSlug}/series/${encodeURIComponent(slug)}`,
+        lastModified: r.last_updated_at ? new Date(r.last_updated_at) : now,
+        changeFrequency: 'weekly' as const,
+        priority: 0.55,
+      }
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null)
 
   const topSets = await getTopSets()
-  const setPages: MetadataRoute.Sitemap = topSets.map((s) => ({
+  const legacySetPages: MetadataRoute.Sitemap = topSets.map((s) => ({
     url: `${BASE_URL}/analytics/sets/${s.set_id}`,
     lastModified: now,
     changeFrequency: 'weekly' as const,
     priority: 0.5,
   }))
+
+  // Touch the unused import so tsc doesn't complain when no entity rows exist.
+  void listEntityPageCollections
 
   return [
     ...staticPages,
@@ -304,6 +442,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...walletPages,
     ...profilePages,
     ...editionPages,
-    ...setPages,
+    ...newSetPages,
+    ...newPlayerPages,
+    ...newTeamPages,
+    ...seriesPages,
+    ...legacySetPages,
   ]
 }
