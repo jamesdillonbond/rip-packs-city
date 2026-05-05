@@ -51,6 +51,7 @@ export interface TrophyMoment {
   id?: number;
   slot: number;
   moment_id: string;
+  collection_id?: string | null;
   player_name: string | null;
   set_name: string | null;
   serial_number: number | null;
@@ -60,6 +61,8 @@ export interface TrophyMoment {
   video_url: string | null;
   fmv: number | null;
   badges: string[] | null;
+  note?: string | null;
+  pinned_at?: string | null;
 }
 
 export interface PortfolioSnapshot {

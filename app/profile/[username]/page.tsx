@@ -11,6 +11,8 @@ import CollectionBreakdownCard from "@/components/profile/CollectionBreakdownCar
 import PortfolioSparkline from "@/components/profile/PortfolioSparkline";
 import PublicTrophyCase from "@/components/profile/PublicTrophyCase";
 import PublicAchievements from "@/components/profile/PublicAchievements";
+import ViewTrophyModal from "@/components/profile/ViewTrophyModal";
+import type { TrophyMoment as ViewTrophyShape } from "@/components/profile/_shared";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface TrophyMoment {
@@ -264,6 +266,8 @@ export default function PublicProfilePage() {
 
   // State
   const [trophies, setTrophies] = useState<(TrophyMoment | null)[]>([null, null, null, null, null, null]);
+  // Public profile view-trophy modal — read-only, opens on click.
+  const [viewTrophy, setViewTrophy] = useState<TrophyMoment | null>(null);
   const [bio, setBio] = useState<ProfileBio | null>(null);
   const [wallets, setWallets] = useState<SavedWalletPublic[]>([]);
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
@@ -497,7 +501,7 @@ export default function PublicProfilePage() {
               <p className="rpc-label" style={{ marginTop: 8 }}>LOADING TROPHY CASE&hellip;</p>
             </div>
           ) : (
-            <PublicTrophyCase trophies={trophies} />
+            <PublicTrophyCase trophies={trophies} onTrophyClick={setViewTrophy} />
           )}
         </section>
 
@@ -607,6 +611,12 @@ export default function PublicProfilePage() {
           </Link>
         </div>
       </main>
+      {viewTrophy && (
+        <ViewTrophyModal
+          trophy={viewTrophy as unknown as ViewTrophyShape}
+          onClose={() => setViewTrophy(null)}
+        />
+      )}
     </div>
   );
 }

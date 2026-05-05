@@ -3,11 +3,18 @@
 import React from "react";
 import { monoFont, condensedFont, labelStyle, TIER_COLORS, TrophyMoment } from "./_shared";
 
-export default function PublicTrophyCase(props: { trophies: (TrophyMoment | null)[] }) {
+export default function PublicTrophyCase(props: {
+  trophies: (TrophyMoment | null)[];
+  /** Optional click handler — when set, filled slots become buttons that
+      open the parent's ViewTrophyModal. Public profiles only ever pass
+      view (no edit / no remove), so we don't take action callbacks here. */
+  onTrophyClick?: (trophy: TrophyMoment) => void;
+}) {
   const slots: (TrophyMoment | null)[] = [];
   for (let i = 0; i < 6; i++) {
     slots.push(props.trophies[i] ?? null);
   }
+  const onTrophyClick = props.onTrophyClick;
 
   return (
     <section style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "16px 18px" }}>
@@ -44,9 +51,14 @@ export default function PublicTrophyCase(props: { trophies: (TrophyMoment | null
           }
           const thumb = t.thumbnail_url ?? t.video_url ?? null;
           const tierColor = (t.tier && TIER_COLORS[t.tier]) || "#6B7280";
+          const clickable = !!onTrophyClick;
           return (
             <div
               key={t.moment_id + "-" + i}
+              role={clickable ? "button" : undefined}
+              tabIndex={clickable ? 0 : undefined}
+              onClick={clickable ? () => onTrophyClick!(t) : undefined}
+              onKeyDown={clickable ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onTrophyClick!(t); } } : undefined}
               style={{
                 background: "rgba(255,255,255,0.02)",
                 border: "1px solid rgba(255,255,255,0.07)",
@@ -54,6 +66,7 @@ export default function PublicTrophyCase(props: { trophies: (TrophyMoment | null
                 overflow: "hidden",
                 display: "flex",
                 flexDirection: "column",
+                cursor: clickable ? "pointer" : "default",
               }}
             >
               <div style={{ position: "relative", aspectRatio: "1 / 1", background: "rgba(255,255,255,0.03)" }}>
