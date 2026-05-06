@@ -124,6 +124,7 @@ export async function GET(req: NextRequest) {
   let query = supabaseAdmin
     .from("support_conversations")
     .select(SELECT_COLUMNS)
+    .not("feedback_type", "is", null)
     .in("feedback_status", statuses);
 
   if (types) query = query.in("feedback_type", types);
