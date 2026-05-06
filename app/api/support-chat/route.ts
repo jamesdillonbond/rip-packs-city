@@ -1160,13 +1160,6 @@ async function executeTool(
   return JSON.stringify({ status: "error", message: `Unknown tool: ${toolName}` });
 }
 
-// classifyCategory returns the live-conversation category. Note: when
-// conciergeErrorMode is set, finalize() and the top-level catch block both
-// override this with CONCIERGE_ERROR_MESSAGES[mode].category — that is the
-// SECOND category-emission path. This is intentional but should be unified
-// behind a single resolver in a future pass; both sites currently bypass
-// this function for the error categories (concierge_unavailable,
-// concierge_rate_limited, concierge_overloaded, error).
 function classifyCategory(message: string): string {
   const m = message.toLowerCase();
   if (m.includes("buy") || m.includes("deal") || m.includes("find") || m.includes("recommend")) return "shopping";
@@ -1177,6 +1170,11 @@ function classifyCategory(message: string): string {
   if (m.includes("bug") || m.includes("broken") || m.includes("error") || m.includes("crash")) return "bug";
   if (m.includes("new") || m.includes("start") || m.includes("beginner") || m.includes("how do i")) return "onboarding";
   return "general";
+}
+
+function resolveCategory(message: string, errorMode?: ConciergeErrorMode | null): string {
+  if (errorMode) return CONCIERGE_ERROR_MESSAGES[errorMode].category;
+  return classifyCategory(message);
 }
 
 async function persistConversation(row: {
@@ -1492,11 +1490,8 @@ export async function POST(req: NextRequest) {
     };
 
     const finalize = async () => {
-      let category: string;
       if (conciergeErrorMode) {
-        const meta = CONCIERGE_ERROR_MESSAGES[conciergeErrorMode];
-        finalResponse = meta.response;
-        category = meta.category;
+        finalResponse = CONCIERGE_ERROR_MESSAGES[conciergeErrorMode].response;
       } else {
         if (!finalResponse) {
           finalResponse = "That query was too complex for me to handle in time. Try breaking it down. You can also check the Sniper page directly for the full live feed.";
@@ -1504,8 +1499,8 @@ export async function POST(req: NextRequest) {
         if (escalated) {
           finalResponse += "\n\nYou can also DM us directly at https://twitter.com/RipPacksCity for a faster response.";
         }
-        category = classifyCategory(message);
       }
+      const category = resolveCategory(message, conciergeErrorMode);
 
       const playerSearched =
         usedTools.includes("search_catalog_deals") || usedTools.includes("search_live_deals") || usedTools.includes("search_across_collections")
@@ -1577,6 +1572,7 @@ export async function POST(req: NextRequest) {
     const m = String(err?.message ?? err);
     const mode = classifyAnthropicError(err);
     const meta = CONCIERGE_ERROR_MESSAGES[mode];
+    const category = resolveCategory(parsedMessage ?? "", mode);
     console.log("[sc_err] status", err?.status ?? "");
     console.log("[sc_err] name", err?.name ?? "");
     console.log("[sc_err] mode", mode);
@@ -1592,7 +1588,7 @@ export async function POST(req: NextRequest) {
           bot_response: meta.response,
           escalated: false,
           escalation_reason: null,
-          category: meta.category,
+          category,
           user_wallet: parsedUserWallet,
           owner_key: parsedOwnerKey,
           page_context: parsedPageContext,
@@ -1601,7 +1597,7 @@ export async function POST(req: NextRequest) {
     } catch { /* best-effort */ }
 
     return NextResponse.json(
-      { response: meta.response, escalated: false, category: meta.category },
+      { response: meta.response, escalated: false, category },
       { status: 200 }
     );
   }
