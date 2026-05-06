@@ -1,12 +1,18 @@
 #!/usr/bin/env node
 
 /**
- * Phase 2B. Rehydrate any TopShot editions row where set_name OR player_name
- * is NULL by re-running the canonical SearchEditionBackfill GQL through the
- * topshot-proxy worker. Targets the 12 fully-NULL UUID:UUID rows created in
- * the 2026-05-05 04:23:31 batch plus the ~22 partials with player_name still
- * NULL after their first hydrate. Some genuinely 404 against the public-api
- * schema (retired plays, draft / unreleased editions) — those are left alone.
+ * Phase 2B (widened). Rehydrate any TopShot editions row where set_name,
+ * player_name, circulation_count, or tier is NULL by re-running the canonical
+ * SearchEditionBackfill GQL through the topshot-proxy worker.
+ *
+ * The original filter only caught fully-NULL or NULL-player rows. Widening to
+ * include circulation_count and tier picks up partial-hydrate stragglers (the
+ * GQL ran once and populated set_name/player_name but the response was missing
+ * other fields). Some genuinely 404 against the public-api schema (retired
+ * plays, draft / unreleased editions, UUID:UUID multi-player challenges) —
+ * those return null from hydrateOne and are left alone. The strip-nulls patch
+ * step further protects rows from regressions when GQL only returns a partial
+ * record on the second attempt.
  *
  * Usage:
  *   node --env-file=.env.local scripts/rehydrate-null-topshot-editions.mjs --dry-run
@@ -187,7 +193,7 @@ async function loadCohort() {
     .from("editions")
     .select("id, external_id")
     .eq("collection_id", TS_COLLECTION_ID)
-    .or("set_name.is.null,player_name.is.null")
+    .or("set_name.is.null,player_name.is.null,circulation_count.is.null,tier.is.null")
     .order("created_at", { ascending: false })
   if (error) throw new Error(`cohort load: ${error.message}`)
   return data ?? []
