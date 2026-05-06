@@ -10,6 +10,7 @@ import {
   normalizeSetName,
   buildEditionScopeKey,
 } from "@/lib/wallet-normalize"
+import { resolveTopShotUsernameCacheAware } from "@/lib/topshot-username-resolve"
 
 type WalletRow = {
   momentId: string
@@ -72,15 +73,6 @@ type WalletSearchResponse = {
   error?: string
 }
 
-type UsernameProfileResponse = {
-  getUserProfileByUsername?: {
-    publicInfo?: {
-      flowAddress?: string | null
-      username?: string | null
-    } | null
-  } | null
-}
-
 type MintedMomentGraphqlData = {
   getMintedMoment?: {
     data?: {
@@ -109,7 +101,6 @@ type MintedMomentGraphqlData = {
   } | null
 }
 
-const USERNAME_TTL = 1000 * 60 * 10
 const OWNED_IDS_TTL = 1000 * 60 * 10
 const METADATA_TTL = 1000 * 60 * 30
 const GQL_MOMENT_TTL = 1000 * 60 * 10
@@ -212,23 +203,18 @@ async function withRetry<T>(fn: () => Promise<T>, delayMs = 2000): Promise<T> {
 async function resolveWalletFromInput(input: string): Promise<string> {
   const trimmed = input.trim()
   if (isWalletAddress(trimmed)) return ensureFlowPrefix(trimmed)
-  return getOrSetCache(`username:${trimmed.toLowerCase()}`, USERNAME_TTL, async () => {
-    const cleanedUsername = trimmed.replace(/^@+/, "")
-    const query = `
-      query GetUserProfileByUsername($username: String!) {
-        getUserProfileByUsername(input: { username: $username }) {
-          publicInfo { flowAddress username }
-        }
-      }
-    `
-    const data = await withRetry(function() {
-      return topshotGraphql<UsernameProfileResponse>(query, { username: cleanedUsername })
-    })
-    const rawWallet = data?.getUserProfileByUsername?.publicInfo?.flowAddress ?? null
-    const wallet = rawWallet ? ensureFlowPrefix(rawWallet) : null
-    if (!wallet) throw new Error("Could not resolve username to wallet address.")
-    return wallet
-  })
+
+  // Username path. Layered resolver: wallet_usernames → seeded_wallets →
+  // saved_wallets → user_profiles → live Top Shot GQL via topshot-proxy.
+  // Hits at the live layer are written back to wallet_usernames so the next
+  // call short-circuits at layer 1. The 10-min in-process getOrSetCache
+  // wrapper that used to live here is now redundant with the Postgres cache
+  // and was dropped to keep username-to-wallet a single source of truth.
+  const outcome = await resolveTopShotUsernameCacheAware(supabaseAdmin, trimmed)
+  if (outcome.found) return outcome.walletAddress
+  // Surface the same error message clients have always received for unresolved
+  // usernames so the UI's existing copy ("Username not found...") still fires.
+  throw new Error("Could not resolve username to wallet address.")
 }
 
 async function getOwnedMomentIds(wallet: string): Promise<number[]> {
