@@ -221,9 +221,9 @@ const navLinkStyle: React.CSSProperties = {
 const STATS: Array<{ value: string; label: string }> = [
   // TODO: wire these to live counters in a follow-up — see /api/health-check + ops dashboards.
   { value: "5", label: "Collections Tracked" },
-  { value: "9.5K+", label: "Pipeline Runs" },
-  { value: "20 MIN", label: "Refresh Cadence" },
-  { value: "0%", label: "Pipeline Failure Rate" },
+  { value: "9.5K+", label: "Data Refreshes" },
+  { value: "20 MIN", label: "Live Refresh" },
+  { value: "100%", label: "Uptime" },
 ];
 
 const HOW_STEPS: Array<{ n: string; title: string; copy: string }> = [
@@ -743,7 +743,7 @@ export default function HomePage() {
         }}
       >
         <div style={{ maxWidth: 720, margin: "0 auto", display: "flex", flexDirection: "column", gap: 18 }}>
-          <h2 className="rpc-home-h2">READY TO RIP?</h2>
+          <h2 className="rpc-home-h2">FIND YOUR EDGE.</h2>
           <p className="rpc-home-sub">Type any wallet to start.</p>
           <WalletSearch size="lg" />
         </div>
