@@ -25,6 +25,13 @@ function tierLabel(raw: string): string {
 export async function GET(req: NextRequest) {
   const sessionId = req.nextUrl.searchParams.get("sessionId");
   const ownerKey = req.nextUrl.searchParams.get("ownerKey");
+  // Beta posture: market-status / movers / dailyDeal are NOT included by default.
+  // The chat widget no longer auto-fires a market-pulse follow-up message after
+  // the greeting, and the bot can fetch live market data via its existing tools
+  // when the user asks for deals. To opt back in (e.g. for an explicit "market
+  // pulse" widget), pass includeMarketStatus=true.
+  const includeMarketStatus =
+    req.nextUrl.searchParams.get("includeMarketStatus") === "true";
 
   // ── 1. Per-session continuity (chat_sessions) ──────────────────────────────
   let returningUser = false;
@@ -107,114 +114,119 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // ── 2. Daily deal (live sniper feed) ────────────────────────────────────────
+  // ── 2 + 3. Market context (gated behind includeMarketStatus) ───────────────
+  // During beta the chat opens with a personalized greeting only — no
+  // auto-firing market-pulse / dailyDeal follow-up. The bot still has live
+  // market tools (search_live_deals, get_fmv) and uses them when the user asks.
   let dailyDeal: object | null = null;
-  try {
-    const base =
-      process.env.NEXT_PUBLIC_SITE_URL ||
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://www.rippackscity.com");
-    const sniperRes = await fetch(
-      `${base}/api/sniper-feed?limit=1&minDiscount=15&sortBy=discount`,
-      { signal: AbortSignal.timeout(6000) }
-    );
-    if (sniperRes.ok) {
-      const sniperData = await sniperRes.json();
-      const deals = sniperData.deals ?? [];
-      if (deals.length > 0) {
-        const d = deals[0];
-        dailyDeal = {
-          player_name: d.playerName,
-          low_ask: d.askPrice,
-          discount_pct: Math.round(d.discount),
-          tier: tierLabel(d.tier ?? "COMMON"),
-          source: d.source ?? "topshot",
-          set_name: d.setName,
-          series: d.seriesName ?? null,
-          fmv: d.adjustedFmv ?? d.baseFmv,
-          buy_url: d.buyUrl ?? null,
-        };
-      }
-    }
-  } catch (err) {
-    console.error("[context] dailyDeal sniper-feed error:", err);
-  }
-
-  if (!dailyDeal) {
-    try {
-      const { data: fallbackRows } = await supabase
-        .from("cached_listings")
-        .select("player_name, set_name, series_name, tier, ask_price, fmv, discount, badge_slugs, buy_url")
-        .gt("discount", 10)
-        .not("fmv", "is", null)
-        .lt("ask_price", 500)
-        .order("discount", { ascending: false })
-        .limit(1);
-      if (fallbackRows && fallbackRows.length > 0) {
-        const r = fallbackRows[0];
-        dailyDeal = {
-          player_name: r.player_name,
-          tier: tierLabel(r.tier ?? "COMMON"),
-          set_name: r.set_name,
-          series: r.series_name ?? null,
-          low_ask: Number(r.ask_price),
-          fmv: Number(r.fmv),
-          discount_pct: Math.round(Number(r.discount)),
-          badges: r.badge_slugs ?? [],
-          buy_url: r.buy_url ?? null,
-        };
-      }
-    } catch (err) {
-      console.error("[context] dailyDeal fallback error:", err);
-    }
-  }
-
-  // ── 3. Market pulse ────────────────────────────────────────────────────────
   let marketPulse: string | null = null;
-  try {
-    const { data: pulse } = await supabase.rpc("get_market_pulse");
-    const { deals_below_20, deals_below_30, total_tracked } = pulse?.[0] ?? {};
 
-    if (deals_below_30 && deals_below_30 > 0) {
-      marketPulse = `${deals_below_30} moment${deals_below_30 !== 1 ? "s" : ""} listed 30%+ below FMV right now`;
-    } else if (deals_below_20 && deals_below_20 > 0) {
-      marketPulse = `${deals_below_20} moment${deals_below_20 !== 1 ? "s" : ""} listed 20%+ below FMV right now`;
-    } else if (total_tracked) {
-      marketPulse = `${total_tracked} moments tracked — FMV data fresh`;
-    }
-  } catch (err) {
-    console.error("[context] marketPulse RPC error:", err);
-  }
-
-  try {
-    const { data: movers } = await supabase.rpc("get_fmv_movers", {
-      lookback_interval: "24 hours",
-      min_fmv: 2,
-      limit_count: 3,
-    });
-    if (movers && movers.length > 0) {
-      const hot = movers.filter((m: any) => m.pct_change > 20);
-      if (hot.length > 0) {
-        const moverStr = hot
-          .map((m: any) => `${m.player_name} up ${Math.round(m.pct_change)}% today`)
-          .join(", ");
-        marketPulse = (marketPulse ?? "Market active") + ` · \u{1F525} ${moverStr}`;
-      }
-    }
-  } catch (err) {
-    console.error("[context] fmv_movers error:", err);
-  }
-
-  if (!marketPulse) {
+  if (includeMarketStatus) {
     try {
-      const { count } = await supabase
-        .from("cached_listings")
-        .select("*", { count: "exact", head: true })
-        .gte("discount", 30);
-      if (count && count > 0) {
-        marketPulse = `${count} moment${count !== 1 ? "s" : ""} listed 30%+ below FMV right now`;
+      const base =
+        process.env.NEXT_PUBLIC_SITE_URL ||
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://www.rippackscity.com");
+      const sniperRes = await fetch(
+        `${base}/api/sniper-feed?limit=1&minDiscount=15&sortBy=discount`,
+        { signal: AbortSignal.timeout(6000) }
+      );
+      if (sniperRes.ok) {
+        const sniperData = await sniperRes.json();
+        const deals = sniperData.deals ?? [];
+        if (deals.length > 0) {
+          const d = deals[0];
+          dailyDeal = {
+            player_name: d.playerName,
+            low_ask: d.askPrice,
+            discount_pct: Math.round(d.discount),
+            tier: tierLabel(d.tier ?? "COMMON"),
+            source: d.source ?? "topshot",
+            set_name: d.setName,
+            series: d.seriesName ?? null,
+            fmv: d.adjustedFmv ?? d.baseFmv,
+            buy_url: d.buyUrl ?? null,
+          };
+        }
       }
     } catch (err) {
-      console.error("[context] marketPulse fallback error:", err);
+      console.error("[context] dailyDeal sniper-feed error:", err);
+    }
+
+    if (!dailyDeal) {
+      try {
+        const { data: fallbackRows } = await supabase
+          .from("cached_listings")
+          .select("player_name, set_name, series_name, tier, ask_price, fmv, discount, badge_slugs, buy_url")
+          .gt("discount", 10)
+          .not("fmv", "is", null)
+          .lt("ask_price", 500)
+          .order("discount", { ascending: false })
+          .limit(1);
+        if (fallbackRows && fallbackRows.length > 0) {
+          const r = fallbackRows[0];
+          dailyDeal = {
+            player_name: r.player_name,
+            tier: tierLabel(r.tier ?? "COMMON"),
+            set_name: r.set_name,
+            series: r.series_name ?? null,
+            low_ask: Number(r.ask_price),
+            fmv: Number(r.fmv),
+            discount_pct: Math.round(Number(r.discount)),
+            badges: r.badge_slugs ?? [],
+            buy_url: r.buy_url ?? null,
+          };
+        }
+      } catch (err) {
+        console.error("[context] dailyDeal fallback error:", err);
+      }
+    }
+
+    try {
+      const { data: pulse } = await supabase.rpc("get_market_pulse");
+      const { deals_below_20, deals_below_30, total_tracked } = pulse?.[0] ?? {};
+
+      if (deals_below_30 && deals_below_30 > 0) {
+        marketPulse = `${deals_below_30} moment${deals_below_30 !== 1 ? "s" : ""} listed 30%+ below FMV right now`;
+      } else if (deals_below_20 && deals_below_20 > 0) {
+        marketPulse = `${deals_below_20} moment${deals_below_20 !== 1 ? "s" : ""} listed 20%+ below FMV right now`;
+      } else if (total_tracked) {
+        marketPulse = `${total_tracked} moments tracked — FMV data fresh`;
+      }
+    } catch (err) {
+      console.error("[context] marketPulse RPC error:", err);
+    }
+
+    try {
+      const { data: movers } = await supabase.rpc("get_fmv_movers", {
+        lookback_interval: "24 hours",
+        min_fmv: 2,
+        limit_count: 3,
+      });
+      if (movers && movers.length > 0) {
+        const hot = movers.filter((m: any) => m.pct_change > 20);
+        if (hot.length > 0) {
+          const moverStr = hot
+            .map((m: any) => `${m.player_name} up ${Math.round(m.pct_change)}% today`)
+            .join(", ");
+          marketPulse = (marketPulse ?? "Market active") + ` · \u{1F525} ${moverStr}`;
+        }
+      }
+    } catch (err) {
+      console.error("[context] fmv_movers error:", err);
+    }
+
+    if (!marketPulse) {
+      try {
+        const { count } = await supabase
+          .from("cached_listings")
+          .select("*", { count: "exact", head: true })
+          .gte("discount", 30);
+        if (count && count > 0) {
+          marketPulse = `${count} moment${count !== 1 ? "s" : ""} listed 30%+ below FMV right now`;
+        }
+      } catch (err) {
+        console.error("[context] marketPulse fallback error:", err);
+      }
     }
   }
 
