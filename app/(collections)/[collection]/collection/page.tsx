@@ -2098,29 +2098,37 @@ export default function WalletPage() {
             )}
           </div>
         ) : (
-        <div className="rpc-card" style={{ overflow: "auto", borderRadius: "var(--radius-md)" }}>
-          <table style={{ width: "100%", minWidth: 480, borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
+        <div className="rpc-table-wrapper">
+          <table className="rpc-table">
             <thead>
-              <tr style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)", textAlign: "left" }}>
-                <th className="rpc-label" style={{ padding: "10px 12px", textAlign: "left" }}>Player</th>
-                <th className="rpc-label hidden sm:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Set</th>
-                <th className="rpc-label hidden sm:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Series</th>
-                <th className="rpc-label hidden md:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Parallel</th>
-                <th className="rpc-label hidden md:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Rarity</th>
-                <th className="rpc-label hidden sm:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Serial / Mint</th>
-                <th className="rpc-label hidden lg:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Held / Locked</th>
-                <th className="rpc-label hidden xl:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Packs</th>
-                <th className="rpc-label whitespace-nowrap" style={{ padding: "10px 12px", textAlign: "left" }}>FMV</th>
-                <th className="rpc-label hidden xl:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Paid</th>
-                <th className="rpc-label hidden xl:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>P&amp;L</th>
-                <th className="rpc-label hidden lg:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Low Ask</th>
-                <th className="rpc-label hidden lg:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Best Offer</th>
-                <th className="rpc-label hidden xl:table-cell" style={{ padding: "10px 12px", textAlign: "left" }}>Acquired</th>
-                <th className="rpc-label" style={{ padding: "10px 12px", textAlign: "left" }}>Details</th>
+              <tr>
+                <th>Player</th>
+                <th className="hidden sm:table-cell">Set</th>
+                <th className="hidden sm:table-cell">Series</th>
+                <th className="hidden md:table-cell">Parallel</th>
+                <th className="hidden md:table-cell">Rarity</th>
+                <th className="hidden sm:table-cell">Serial / Mint</th>
+                <th className="hidden lg:table-cell">Held / Locked</th>
+                <th className="hidden xl:table-cell">Packs</th>
+                <th className="whitespace-nowrap">FMV</th>
+                <th className="hidden xl:table-cell">Paid</th>
+                <th className="hidden xl:table-cell">P&amp;L</th>
+                <th className="hidden lg:table-cell">Low Ask</th>
+                <th className="hidden lg:table-cell">Best Offer</th>
+                <th className="hidden xl:table-cell">Acquired</th>
+                <th>Details</th>
               </tr>
             </thead>
             <tbody>
-              {filteredRows.map(function(row) {
+              {filteredRows.length === 0 && hasSearched && !loading ? (
+                <tr>
+                  <td colSpan={15} className="rpc-table-empty">
+                    {rows.length === 0
+                      ? "No moments found for this wallet on this collection."
+                      : "No moments match your current filters. Try adjusting the filters above."}
+                  </td>
+                </tr>
+              ) : filteredRows.map(function(row) {
                 const scopeKey = buildEditionScopeKey({ editionKey: row.editionKey, setName: row.setName, playerName: row.playerName, parallel: row.parallel, subedition: row.subedition })
                 const editionCounts = { owned: row.editionsOwned ?? batchEditionStats.get(scopeKey)?.owned ?? 0, locked: row.editionsLocked ?? batchEditionStats.get(scopeKey)?.locked ?? 0 }
                 const expanded = !!expandedRows[row.momentId]
@@ -2141,12 +2149,9 @@ export default function WalletPage() {
                   <Fragment key={row.momentId}>
                     <tr
                       onClick={function(e) { const t = e.target as HTMLElement; if (t.closest("a,button,input,svg,video")) return; setSelectedMoment(row) }}
-                      className={"group align-top cursor-pointer " + (row.tier?.toUpperCase() === "LEGENDARY" ? " rpc-holo-legendary" : row.tier?.toUpperCase() === "ULTIMATE" ? " rpc-holo-ultimate" : row.tier?.toUpperCase() === "RARE" ? " rpc-holo-rare" : "")}
-                      style={{ borderBottom: "1px solid var(--rpc-border)", transition: "background var(--transition-fast)" }}
-                      onMouseEnter={function(e) { (e.currentTarget as HTMLElement).style.background = "var(--rpc-surface-hover)" }}
-                      onMouseLeave={function(e) { (e.currentTarget as HTMLElement).style.background = "transparent" }}
+                      className={"group align-top " + (expanded ? "rpc-table-row--expanded " : "") + (row.tier?.toUpperCase() === "LEGENDARY" ? " rpc-holo-legendary" : row.tier?.toUpperCase() === "ULTIMATE" ? " rpc-holo-ultimate" : row.tier?.toUpperCase() === "RARE" ? " rpc-holo-rare" : "")}
                     >
-                      <td className="p-3 min-w-[160px]">
+                      <td className="rpc-table-cell--player min-w-[160px]">
                         <div className="flex items-center gap-2">
                           {(() => {
                             const thumbUrl = getThumbnailUrl(row, collectionSlug)
@@ -2251,7 +2256,7 @@ export default function WalletPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="p-3 text-sm hidden sm:table-cell">
+                      <td className="text-sm hidden sm:table-cell">
                         {row.setName ? (
                           <Link
                             href={`/${collectionSlug}/set/${slugifyName(row.setName)}`}
@@ -2264,10 +2269,10 @@ export default function WalletPage() {
                           normalizeSetName(row.setName)
                         )}
                       </td>
-                      <td className="p-3 text-zinc-400 text-sm hidden sm:table-cell">{seriesDisplayLabel(row.series, collectionSeriesMap)}</td>
-                      <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{getParallel(row)}</td>
-                      <td className="p-3 text-zinc-400 text-sm hidden md:table-cell">{row.tier ?? "—"}</td>
-                      <td className="p-3 hidden sm:table-cell">
+                      <td className="text-sm hidden sm:table-cell">{seriesDisplayLabel(row.series, collectionSeriesMap)}</td>
+                      <td className="text-sm hidden md:table-cell">{getParallel(row)}</td>
+                      <td className="text-sm hidden md:table-cell">{row.tier ?? "—"}</td>
+                      <td className="rpc-table-cell--mono hidden sm:table-cell">
                         <div className={"inline-flex min-w-[80px] flex-col rounded-lg border px-2 py-1 " + (primaryBadge ? "" : "border-zinc-800 bg-black")} style={primaryBadge ? { borderColor: accent, backgroundColor: accent + "1A" } : undefined}>
                           <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} />
                           <div className={"text-sm font-black flex items-center gap-1 " + (primaryBadge ? "" : "text-white")} style={primaryBadge ? { color: accent } : undefined}>
@@ -2280,7 +2285,7 @@ export default function WalletPage() {
                           {primaryBadge ? <div className="mt-1 rounded bg-white px-1 py-0.5 text-[9px] font-bold text-black">{primaryBadge}</div> : null}
                         </div>
                       </td>
-                      <td className="p-3 text-sm hidden lg:table-cell">
+                      <td className="text-sm hidden lg:table-cell">
                         <div>{editionCounts.owned} / {editionCounts.locked}</div>
                         {isLocked && <span className="ml-1.5 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">Locked</span>}
                         {row.badgeInfo && row.badgeInfo.circulation_count > 0 && !(row.badgeInfo.circulation_count === 1 || row.tier?.toUpperCase() === "ULTIMATE") && (
@@ -2294,7 +2299,7 @@ export default function WalletPage() {
                           <div className="mt-1 text-[10px] text-purple-400 font-mono">1/1</div>
                         )}
                       </td>
-                      <td className="p-3 text-sm hidden xl:table-cell">
+                      <td className="text-sm hidden xl:table-cell">
                         {(function() {
                           const count = getPackCount(row.setName)
                           if (!count) return <span className="text-zinc-600">—</span>
@@ -2305,7 +2310,7 @@ export default function WalletPage() {
                           )
                         })()}
                       </td>
-                      <td className="p-3 min-w-[90px] whitespace-nowrap">
+                      <td className="rpc-table-cell--mono min-w-[90px] whitespace-nowrap">
                         <div className={"font-semibold text-sm " + (fmv.muted ? "text-zinc-500" : "text-white")}>{fmv.text}</div>
                         {(function() {
                           if (row.marketConfidence === "none" || !row.fmv || row.fmv <= 0 || row.lowAsk == null) return null
@@ -2325,7 +2330,7 @@ export default function WalletPage() {
                           return <div className="text-[10px] text-zinc-500 font-mono">Ask {"$" + ask.toFixed(2)}</div>
                         })()}
                       </td>
-                      <td className="p-3 text-sm hidden xl:table-cell" title={row.acquisitionMethod === "loan_default" ? "Acquired via loan default. The displayed price is the principal that was lent against this moment in USDCF (1:1 USD)." : undefined}>
+                      <td className="text-sm hidden xl:table-cell" title={row.acquisitionMethod === "loan_default" ? "Acquired via loan default. The displayed price is the principal that was lent against this moment in USDCF (1:1 USD)." : undefined}>
                         {(function() {
                           const cbMap = costBasis.get(row.flowId ?? "")
                           const cb = cbMap ?? (row.costBasis != null || row.costBasisLabel ? { buyPrice: row.costBasis ?? 0, acquiredDate: row.acquiredAt ?? "", fmvAtAcquisition: null, acquisitionMethod: row.acquisitionMethod ?? null, costBasisLabel: row.costBasisLabel ?? null } : undefined)
@@ -2351,7 +2356,7 @@ export default function WalletPage() {
                           return <span className="text-zinc-700">—</span>
                         })()}
                       </td>
-                      <td className="p-3 text-sm hidden xl:table-cell">
+                      <td className="text-sm hidden xl:table-cell">
                         {(function() {
                           const currentFmv = row.fmv
                           if (!currentFmv) return <span className="text-zinc-600">—</span>
@@ -2371,7 +2376,7 @@ export default function WalletPage() {
                           )
                         })()}
                       </td>
-                      <td className="p-3 text-sm hidden lg:table-cell">
+                      <td className="rpc-table-cell--mono text-sm hidden lg:table-cell">
                         {row.lowAsk != null ? (
                           <span style={{ color: row.fmv && row.lowAsk < row.fmv ? "#22c55e" : "#9ca3af" }}>
                             ${row.lowAsk.toFixed(2)}
@@ -2390,7 +2395,7 @@ export default function WalletPage() {
                           <span className="text-zinc-600">—</span>
                         )}
                       </td>
-                      <td className="p-3 text-sm hidden lg:table-cell">
+                      <td className="rpc-table-cell--mono text-sm hidden lg:table-cell">
                         {(function() {
                           const offer = row.bestOffer
                           const edOffer = row.editionOffer
@@ -2416,7 +2421,7 @@ export default function WalletPage() {
                           )
                         })()}
                       </td>
-                      <td className="p-3 text-zinc-500 text-xs hidden xl:table-cell">
+                      <td className="rpc-table-cell--muted text-xs hidden xl:table-cell">
                         <div>{formatAcquiredAt(row.acquiredAt)}</div>
                         {(() => {
                           const acqPillMap: Record<string, { label: string; cls: string; title?: string }> = {
@@ -2432,7 +2437,7 @@ export default function WalletPage() {
                           return <span title={cfg.title} className={"mt-0.5 inline-block text-[9px] font-bold px-1 py-0.5 rounded " + cfg.cls}>{cfg.label}</span>
                         })()}
                       </td>
-                      <td className="p-3">
+                      <td>
                         <div className="flex items-center gap-1.5 relative">
                           <button onClick={function() { toggleExpanded(row.momentId) }} className="rounded-lg border border-zinc-700 px-2 py-1 text-xs text-white hover:bg-zinc-900">
                             {expanded ? "Hide" : "Show"}
@@ -2643,24 +2648,9 @@ export default function WalletPage() {
         </div>
         )}
 
-        {/* Empty state */}
-        {hasSearched && !loading && filteredRows.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="text-lg font-bold text-zinc-400 uppercase tracking-widest">No Moments Found</div>
-            <div className="mt-2 text-sm text-zinc-500">Try searching a different wallet or connect yours</div>
-            <button
-              onClick={function() { runSearch("0xbd94cade097e50ac") }}
-              className="mt-4 text-sm transition-colors hover:opacity-80"
-              style={{ color: accent }}
-            >
-              View example: 0xbd94cade097e50ac →
-            </button>
-          </div>
-        )}
-
         {paginatedPage < paginatedTotalPages ? (
           <div className="mt-6 flex flex-col items-center gap-2">
-            <button onClick={handleLoadMore} disabled={loadingMore} className="rounded-lg px-4 py-2 font-semibold text-white disabled:opacity-50" style={{ backgroundColor: accent }}>
+            <button onClick={handleLoadMore} disabled={loadingMore} className="rpc-table-load-more">
               {loadingMore ? "Loading..." : "Load More (" + (paginatedTotal - rows.length) + " remaining)"}
             </button>
             <span className="text-xs text-zinc-600">

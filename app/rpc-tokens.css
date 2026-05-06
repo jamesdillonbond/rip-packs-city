@@ -18,6 +18,7 @@
   --rpc-surface-hover: rgba(255, 255, 255, 0.06);
   --rpc-border: rgba(255, 255, 255, 0.12);
   --rpc-border-hover: rgba(255, 255, 255, 0.18);
+  --rpc-border-subtle: rgba(255, 255, 255, 0.04);
   --rpc-border-active: rgba(224, 58, 47, 0.6);
   --rpc-silver: #BFC0BF;
 
@@ -745,4 +746,89 @@
   font-size: 11px;
   color: var(--rpc-text-muted);
   letter-spacing: 0.05em;
+}
+
+/* ── Table region — wallet analytics ──────────────────────── */
+.rpc-table-wrapper {
+  border: 1px solid var(--rpc-border);
+  border-radius: 12px;
+  background: var(--rpc-surface);
+  overflow-x: auto;
+}
+.rpc-table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.rpc-table thead {
+  background: var(--rpc-surface-raised);
+  border-bottom: 1px solid var(--rpc-border);
+}
+.rpc-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--rpc-text-muted);
+}
+.rpc-table tbody tr {
+  border-bottom: 1px solid var(--rpc-border-subtle);
+  transition: background-color 0.15s;
+  cursor: pointer;
+}
+.rpc-table tbody tr:hover {
+  background: var(--rpc-surface-hover);
+}
+.rpc-table tbody tr.rpc-table-row--expanded {
+  background: var(--rpc-surface-hover);
+  box-shadow: inset 3px 0 0 var(--rpc-red);
+}
+.rpc-table td {
+  padding: 10px 16px;
+  color: var(--rpc-text-primary);
+  vertical-align: middle;
+}
+.rpc-table-cell--mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.rpc-table-cell--player {
+  font-weight: 600;
+  color: var(--rpc-text-primary);
+}
+.rpc-table-cell--muted {
+  color: var(--rpc-text-secondary);
+}
+.rpc-table-empty {
+  padding: 48px 24px;
+  text-align: center;
+  font-family: var(--font-mono);
+  color: var(--rpc-text-muted);
+}
+.rpc-table-load-more {
+  background: transparent;
+  border: 1px solid var(--rpc-border);
+  border-radius: 6px;
+  padding: 10px 20px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--rpc-text-secondary);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+.rpc-table-load-more:hover {
+  background: var(--rpc-surface-hover);
+  border-color: var(--rpc-border-hover);
+  color: var(--rpc-text-primary);
+}
+.rpc-table-load-more:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
