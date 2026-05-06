@@ -3,9 +3,10 @@ import type { Metadata } from 'next'
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
 
 // Root layout metadata — import into app/layout.tsx as: export const metadata = rootMetadata
-const ROOT_TITLE = 'Rip Packs City \u2014 Flow Blockchain Collector Intelligence'
+const ROOT_TITLE =
+  'Rip Packs City \u2014 Collector Intelligence for NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos & UFC Strike'
 const ROOT_DESCRIPTION =
-  'NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike collector intelligence on Flow blockchain.'
+  'Collector intelligence on Flow blockchain \u2014 FMV pricing, sniper deals, pack EV, and wallet analytics for NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike.'
 
 export const rootMetadata: Metadata = {
   metadataBase: new URL(BASE_URL),
@@ -27,9 +28,11 @@ export const rootMetadata: Metadata = {
     'moment value',
     'Top Shot analytics',
     'Flow blockchain',
+    'Flowty',
     'collector tools',
     'sniper deals',
     'pack EV',
+    'pack EV calculator',
     'badge tracker',
   ],
   openGraph: {
@@ -74,41 +77,48 @@ export const organizationJsonLd = {
 type PageMeta = { title: string; description: string }
 
 // Generic per-page templates — {label} is replaced by the collection's display name.
+// Descriptions stay cross-collection-friendly: any Flow blockchain wallet across
+// Top Shot, All Day, Pinnacle, Golazos, and UFC funnels through these helpers.
 const PAGE_META: Record<string, PageMeta> = {
   overview: {
     title: '{label} Overview — Market Pulse, Top Sales & Collector Intel',
     description:
-      'Daily {label} market pulse: volume, active listings, top sales, and hottest editions for collectors on Flow.',
+      'Daily {label} market pulse on Flow: volume, active listings, top sales, hottest editions, and pipeline health for collectors.',
   },
   collection: {
     title: 'Wallet Analytics — Track Your {label} Collection Value',
     description:
-      'Analyze any {label} wallet with real-time FMV, badge detection, serial premiums, and Flowty ask prices.',
+      'Analyze any Flow blockchain wallet across Top Shot, All Day, Pinnacle, Golazos, and UFC — real-time FMV, badge detection, serial premiums, and Flowty ask prices for {label}.',
   },
   sniper: {
     title: 'Sniper — {label} Deals Below FMV',
     description:
-      'Track {label} moments with real-time FMV, sniper deals, and Flowty marketplace intelligence.',
+      'Live deals below FMV across Top Shot, All Day, Pinnacle, Golazos, and UFC. Real-time FMV, Flowty marketplace intelligence, and per-edition discount scoring for {label}.',
   },
   packs: {
     title: 'Pack Drop Tools — {label} Pack Analysis & EV Calculator',
     description:
-      'Browse active and past {label} packs with expected value calculations, pull odds, and buy/skip recommendations.',
+      'Pack EV calculator for Flow drops across Top Shot, All Day, and Golazos: expected value, pull odds, and buy/skip recommendations for active and past {label} packs.',
+  },
+  badges: {
+    title: 'Badge Tracker — {label} Top Shot Debut, Rookie Year & Championship Premiums',
+    description:
+      'Detect badge-eligible moments on any Flow blockchain wallet and track {label} premiums for Top Shot Debut, Fresh, Rookie Year, Championship, and more across the ecosystem.',
   },
   sets: {
     title: 'Set Completion — Track Your {label} Sets',
     description:
-      'Track set completion progress, find bottleneck moments, and discover the cheapest path to completing any {label} set.',
+      'Set completion progress, bottleneck moments, and the cheapest path to finishing any {label} set across Flow blockchain collections.',
   },
   analytics: {
     title: 'Portfolio Analytics — {label} Wallet Breakdown',
     description:
-      'Deep-dive wallet analytics for {label}: acquisition origin, tier breakdown, series breakdown, liquid vs locked FMV, and portfolio clarity score.',
+      'Deep-dive wallet analytics across Top Shot, All Day, Pinnacle, Golazos, and UFC: acquisition origin, tier and series breakdown, liquid vs locked FMV, and portfolio clarity score for {label}.',
   },
   market: {
     title: 'Market Intelligence — {label} Edition Lookup & Leaderboards',
     description:
-      'Edition-level market intelligence for {label}: FMV, ask/offer depth, 30-day sales, liquidity and discount leaderboards.',
+      'Edition-level market intelligence for {label}: FMV, ask/offer depth, 30-day sales, and liquidity and discount leaderboards across the Flow blockchain ecosystem.',
   },
 }
 

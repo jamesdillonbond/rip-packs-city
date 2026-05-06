@@ -313,7 +313,7 @@ export async function GET(req: NextRequest) {
               display: "flex",
             }}
           >
-            rippackscity.com/sniper
+            www.rippackscity.com/sniper
           </div>
           <div
             style={{
