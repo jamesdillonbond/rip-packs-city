@@ -37,7 +37,6 @@ export default function robots(): MetadataRoute.Robots {
           '/*?owner_key=',
           '/*?address=',
           // unpublished collection
-          '/ufc/',
           '/panini-blockchain/',
         ],
       },
