@@ -20,6 +20,7 @@ type SeededRow = {
   tags: string[] | null
   priority: number | null
   last_refreshed_at: string | null
+  cached_moment_count: number | null
 }
 
 async function resolveUsernameToAddress(
@@ -46,22 +47,42 @@ async function resolveUsernameToAddress(
   }
 }
 
-async function refreshViaWalletSearch(
+// Fire wallet-backfill (Cadence walk over col.getIDs()) instead of
+// wallet-search (which paginates with default limit=24 and was the source of
+// the May 6 truncation bug — wallets like Rigged ended up with 101 cached
+// moments out of 33,000+ on-chain). wallet-backfill returns 202 immediately
+// and continues enrichment in the background up to ~260s. We don't await
+// completion here because the parent after() lifetime is shared across all
+// 600+ active seeded wallets.
+async function refreshViaWalletBackfill(
   origin: string,
-  walletAddress: string
+  walletAddress: string,
+  ingestToken: string,
+  forceFullWalk: boolean
 ): Promise<boolean> {
-  const res = await fetch(origin + "/api/wallet-search", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ input: walletAddress, collection: "nba-top-shot" }),
-  })
-  return res.ok
+  try {
+    const res = await fetch(origin + "/api/wallet-backfill", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ingestToken}`,
+      },
+      body: JSON.stringify({
+        wallet: walletAddress,
+        // Default-true on the route side; pass false explicitly when we want a
+        // forced re-walk (e.g. detected drift > tolerance).
+        skip_cached: !forceFullWalk,
+      }),
+    })
+    return res.status === 202 || res.ok
+  } catch {
+    return false
+  }
 }
 
-// Bump last_seen_at on every cache row for a wallet. The cache-hit path below
-// never re-runs the on-chain sweep (wallet-search / cache-refresh only touch
-// last_seen_at on the rows they upsert), so without this the timestamp
-// silently goes stale on seeded wallets even though we just verified them.
+// Bump last_seen_at on every cache row for a wallet. Used on the no-op path
+// when we skip backfill (cache count looks healthy and refresh window has
+// not elapsed) so wallet_moments_cache.last_seen_at stays fresh.
 async function touchCacheLastSeen(
   supabase: any,
   walletAddress: string
@@ -80,6 +101,12 @@ async function touchCacheLastSeen(
   return count ?? 0
 }
 
+// Cache counts at known truncation signatures (24 = wallet-search default
+// limit, 50 / 60 = manual-limit pages, 100 / 101 = older paginated paths).
+// Force a full backfill walk for any wallet sitting on one of these so the
+// fix re-enriches the entire collection on first run.
+const SUSPICIOUS_COUNTS = new Set<number>([24, 25, 48, 50, 60, 96, 100, 101, 200])
+
 export async function GET(req: NextRequest) {
   // Support both ?token= query param and Authorization: Bearer header
   const queryToken = req.nextUrl.searchParams.get("token")
@@ -94,14 +121,14 @@ export async function GET(req: NextRequest) {
   }
 
   const origin = new URL(req.url).origin
+  const ingestToken = process.env.INGEST_SECRET_TOKEN!
 
   after(async () => {
     const supabase = getSupabase()
 
-    // Fetch all active seeded wallets (no stale filter — we decide freshness via cache count)
     const { data, error } = await supabase
       .from("seeded_wallets")
-      .select("id, username, wallet_address, display_name, tags, priority, last_refreshed_at")
+      .select("id, username, wallet_address, display_name, tags, priority, last_refreshed_at, cached_moment_count")
       .eq("is_active", true)
 
     if (error) {
@@ -110,58 +137,35 @@ export async function GET(req: NextRequest) {
     }
 
     const rows = (data as SeededRow[] | null) ?? []
-
-    // Split into two groups
     const walletsWithAddress = rows.filter((r) => r.wallet_address != null)
     const walletsWithoutAddress = rows.filter((r) => r.wallet_address == null)
 
     const errors: string[] = []
-    let cacheRefreshed = 0
-    let newlySeeded = 0
+    let backfillFired = 0
+    let backfillForced = 0
     let usernameResolved = 0
     let resolutionFailed = 0
 
-    // ── Process wallets that already have a 0x address ──────────────
     for (const row of walletsWithAddress) {
       try {
         const addr = row.wallet_address!
-
-        // Check cache count via RPC (bypasses PostgREST 1000-row cap)
-        const { data: countData, error: countErr } = await (supabase as any).rpc(
-          "get_wallet_cache_count",
-          { p_wallet_address: addr }
-        )
-
-        const cacheCount =
-          !countErr && countData != null ? Number(countData) : 0
-
-        if (cacheCount > 0) {
-          // Cache exists — just refresh stats from existing cache rows
-          await (supabase as any).rpc("refresh_seeded_wallet_stats", {
-            p_wallet_address: addr,
-          })
-          const touched = await touchCacheLastSeen(supabase, addr)
-          cacheRefreshed++
+        const cached = row.cached_moment_count ?? 0
+        // Force a full re-walk when the count is at a known truncation
+        // signature OR is zero. Otherwise the backfill route's default
+        // skip_cached=true keeps refreshes lean.
+        const forceFull = cached === 0 || SUSPICIOUS_COUNTS.has(cached)
+        const ok = await refreshViaWalletBackfill(origin, addr, ingestToken, forceFull)
+        if (ok) {
+          backfillFired++
+          if (forceFull) backfillForced++
           console.log(
-            `[seed-wallet-refresh] cache-hit ${row.username} (${addr}): ${cacheCount} cached moments, stats refreshed, last_seen_at bumped on ${touched} rows`
+            `[seed-wallet-refresh] backfill-fired ${row.username} (${addr}) cached=${cached} force_full=${forceFull}`
           )
         } else {
-          // Cache empty — call wallet-search to populate it
-          const ok = await refreshViaWalletSearch(origin, addr)
-          if (ok) {
-            await (supabase as any).rpc("refresh_seeded_wallet_stats", {
-              p_wallet_address: addr,
-            })
-            newlySeeded++
-            console.log(
-              `[seed-wallet-refresh] newly-seeded ${row.username} (${addr})`
-            )
-          } else {
-            errors.push(`wallet-search failed for ${row.username}`)
-            console.log(
-              `[seed-wallet-refresh] wallet-search failed for ${row.username} (${addr})`
-            )
-          }
+          errors.push(`backfill failed for ${row.username}`)
+          console.log(
+            `[seed-wallet-refresh] backfill failed for ${row.username} (${addr})`
+          )
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
@@ -169,25 +173,26 @@ export async function GET(req: NextRequest) {
         console.log(`[seed-wallet-refresh] error for ${row.username}: ${msg}`)
       }
 
-      // Sequential throttle — avoid hammering wallet-search / TS GQL
-      await sleep(300)
+      // Light throttle so we don't spawn 600 concurrent Vercel invocations.
+      // 250ms × 600 wallets = 2.5 minutes to fan out, still inside the 300s
+      // ceiling. The fanned-out backfill calls each have their own 300s
+      // background lifetime, independent of this caller's clock.
+      await sleep(250)
     }
 
-    // ── Resolve wallets that only have a username ───────────────────
+    // Resolve wallets that only have a username, then fire backfill.
     for (const row of walletsWithoutAddress) {
       try {
         const resolved = await resolveUsernameToAddress(row.username)
-
         if (!resolved) {
           resolutionFailed++
           console.log(
             `[seed-wallet-refresh] username resolution failed for ${row.username}`
           )
-          await sleep(300)
+          await sleep(250)
           continue
         }
 
-        // Persist the resolved address
         await supabase
           .from("seeded_wallets")
           .update({ wallet_address: resolved })
@@ -198,31 +203,12 @@ export async function GET(req: NextRequest) {
           `[seed-wallet-refresh] resolved ${row.username} → ${resolved}`
         )
 
-        // Now run cache-first logic with the resolved address
-        const { data: countData, error: countErr } = await (supabase as any).rpc(
-          "get_wallet_cache_count",
-          { p_wallet_address: resolved }
-        )
-
-        const cacheCount =
-          !countErr && countData != null ? Number(countData) : 0
-
-        if (cacheCount > 0) {
-          await (supabase as any).rpc("refresh_seeded_wallet_stats", {
-            p_wallet_address: resolved,
-          })
-          await touchCacheLastSeen(supabase, resolved)
-          cacheRefreshed++
+        const ok = await refreshViaWalletBackfill(origin, resolved, ingestToken, true)
+        if (ok) {
+          backfillFired++
+          backfillForced++
         } else {
-          const ok = await refreshViaWalletSearch(origin, resolved)
-          if (ok) {
-            await (supabase as any).rpc("refresh_seeded_wallet_stats", {
-              p_wallet_address: resolved,
-            })
-            newlySeeded++
-          } else {
-            errors.push(`wallet-search failed for ${row.username} (resolved)`)
-          }
+          errors.push(`backfill failed for ${row.username} (resolved)`)
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
@@ -232,13 +218,13 @@ export async function GET(req: NextRequest) {
         )
       }
 
-      await sleep(300)
+      await sleep(250)
     }
 
     console.log(
       `[seed-wallet-refresh] done — processed=${
         walletsWithAddress.length + walletsWithoutAddress.length
-      } cache_refreshed=${cacheRefreshed} newly_seeded=${newlySeeded} username_resolved=${usernameResolved} resolution_failed=${resolutionFailed} errors=${errors.length}`
+      } backfill_fired=${backfillFired} backfill_forced=${backfillForced} username_resolved=${usernameResolved} resolution_failed=${resolutionFailed} errors=${errors.length}`
     )
   })
 
@@ -247,3 +233,7 @@ export async function GET(req: NextRequest) {
     { status: 202 }
   )
 }
+
+// touchCacheLastSeen retained for any future manual reuse — currently unused
+// after the backfill rewrite (each wallet always gets a backfill firing).
+void touchCacheLastSeen
