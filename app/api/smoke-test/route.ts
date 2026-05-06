@@ -16,163 +16,315 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-type TestResult = { name: string; passed: boolean; detail?: string; soft?: boolean };
+type TestResult = {
+  name: string;
+  passed: boolean;
+  detail?: string;
+  soft?: boolean;
+  endpoint: string;
+  expected: string;
+  elapsedMs: number;
+  statusCode?: number | null;
+  bodyExcerpt?: string | null;
+  notes?: Record<string, unknown> | null;
+};
 
-async function checkUrl(
-  name: string,
-  url: string,
-  expectJson = true,
-  options: { timeoutMs?: number; soft?: boolean } = {}
-): Promise<TestResult> {
-  const timeoutMs = options.timeoutMs ?? 4000;
-  const soft = options.soft ?? false;
+type TestSeed = Omit<TestResult, "elapsedMs"> | (Omit<TestResult, "elapsedMs"> & { elapsedMs?: number });
+
+// Wraps a test body to capture elapsed_ms and convert thrown errors into a
+// structured failure. Every test uses this so the smoke_test_results write
+// has a consistent shape.
+async function time(fn: () => Promise<TestSeed>, fallback: { name: string; endpoint: string; expected: string; soft?: boolean }): Promise<TestResult> {
+  const start = Date.now();
   try {
-    const res = await fetch(url, {
-      cache: "no-store",
-      headers: { "User-Agent": BROWSER_UA },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!res.ok) return { name, passed: false, soft, detail: `HTTP ${res.status}` };
-    if (expectJson) {
-      const data = await res.json();
-      if (data && typeof data === "object") return { name, passed: true, soft };
-      return { name, passed: false, soft, detail: "empty or non-JSON response" };
-    }
-    return { name, passed: true, soft };
+    const r = await fn();
+    return { ...r, elapsedMs: Date.now() - start } as TestResult;
   } catch (e: any) {
-    return { name, passed: false, soft, detail: e.message };
+    return {
+      name: fallback.name,
+      endpoint: fallback.endpoint,
+      expected: fallback.expected,
+      passed: false,
+      detail: e?.message ?? String(e),
+      soft: fallback.soft,
+      elapsedMs: Date.now() - start,
+      statusCode: null,
+      bodyExcerpt: null,
+      notes: null,
+    };
   }
 }
 
-// -------------------------------------------------------
-// RLS Write-Block Tests
-// Attempts an unauthorized write using the anon key with
-// NO x-owner-key header. Expects RLS to block it (error).
-// -------------------------------------------------------
+// HTTP probe with timing + status + body_excerpt capture on failure.
+async function checkUrl(
+  meta: { name: string; endpoint: string; expected: string; soft?: boolean; notes?: Record<string, unknown> },
+  url: string,
+  expectJson = true,
+  options: { timeoutMs?: number; method?: string; body?: string; headers?: Record<string, string> } = {}
+): Promise<TestResult> {
+  const timeoutMs = options.timeoutMs ?? 4000;
+  return time(async () => {
+    const res = await fetch(url, {
+      method: options.method ?? "GET",
+      cache: "no-store",
+      headers: { "User-Agent": BROWSER_UA, ...(options.headers ?? {}) },
+      body: options.body,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      return {
+        name: meta.name,
+        endpoint: meta.endpoint,
+        expected: meta.expected,
+        passed: false,
+        soft: meta.soft,
+        detail: `HTTP ${res.status}`,
+        statusCode: res.status,
+        bodyExcerpt: body.slice(0, 500),
+        notes: meta.notes ?? null,
+      };
+    }
+    if (expectJson) {
+      const text = await res.text();
+      let data: unknown = null;
+      try { data = JSON.parse(text); } catch { /* fall through */ }
+      const passed = data != null && typeof data === "object";
+      return {
+        name: meta.name,
+        endpoint: meta.endpoint,
+        expected: meta.expected,
+        passed,
+        soft: meta.soft,
+        detail: passed ? undefined : "empty or non-JSON response",
+        statusCode: res.status,
+        bodyExcerpt: passed ? null : text.slice(0, 500),
+        notes: meta.notes ?? null,
+      };
+    }
+    return {
+      name: meta.name,
+      endpoint: meta.endpoint,
+      expected: meta.expected,
+      passed: true,
+      soft: meta.soft,
+      statusCode: res.status,
+      bodyExcerpt: null,
+      notes: meta.notes ?? null,
+    };
+  }, meta);
+}
+
+// Anon insert against an RLS-enabled table. Expected to be blocked.
 async function checkRlsBlocked(
-  name: string,
   table: string,
   row: Record<string, unknown>
 ): Promise<TestResult> {
-  try {
-    // Anon client — no x-owner-key header, simulating a raw API call
+  const meta = {
+    name: `RLS blocks ${table} unauthorized write`,
+    endpoint: `rls:${table}`,
+    expected: "rls-blocks-anon-insert",
+  };
+  return time(async () => {
     const anonClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const { error } = await (anonClient.from(table) as any).insert(row);
     if (error) {
-      // RLS blocked it — this is the expected success path
-      return { name, passed: true, detail: `Blocked: ${error.code}` };
+      return {
+        ...meta,
+        passed: true,
+        detail: `Blocked: ${error.code}`,
+        statusCode: null,
+        bodyExcerpt: null,
+        notes: { table, error_code: error.code },
+      };
     }
-    // If no error, the write went through — RLS is NOT working. Post-Phase 4
-    // there's no owner_key column to target; we can't cleanly delete the rogue
-    // row by value, so we flag it and leave cleanup to the operator.
-    return { name, passed: false, detail: "RLS FAILED — unauthorized write succeeded" };
-  } catch (e: any) {
-    // Network/unexpected error — treat as blocked (safe side)
-    return { name, passed: true, detail: `Exception (treated as blocked): ${e.message}` };
-  }
+    return {
+      ...meta,
+      passed: false,
+      detail: "RLS FAILED — unauthorized write succeeded",
+      statusCode: null,
+      bodyExcerpt: null,
+      notes: { table },
+    };
+  }, meta);
 }
 
 async function runSmokeTests() {
   const svc = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-  // ── Run all independent tests in parallel ──────────────────
-  const settled = await Promise.allSettled([
+  const settled = await Promise.allSettled<TestResult>([
     // 1. Sniper feed returns deals (soft-fail — depends on Flowty + Top Shot GQL)
-    (async (): Promise<TestResult> => {
-      const name = "sniper-feed returns deals (external: Flowty/TS GQL)";
-      try {
-        const res = await fetch(`${BASE_URL}/api/sniper-feed`, {
-          cache: "no-store",
-          headers: { "User-Agent": BROWSER_UA },
-          signal: AbortSignal.timeout(15000),
-        });
-        const data = await res.json();
-        const deals = data?.deals ?? data ?? [];
-        return { name, soft: true, passed: Array.isArray(deals) && deals.length > 0, detail: `${deals.length} deals` };
-      } catch (e: any) {
-        return { name, soft: true, passed: false, detail: e?.message ?? String(e) };
-      }
-    })(),
+    time(async () => {
+      const meta = {
+        name: "sniper-feed returns deals (external: Flowty/TS GQL)",
+        endpoint: "/api/sniper-feed",
+        expected: "has-deals-array",
+        soft: true,
+      };
+      const res = await fetch(`${BASE_URL}/api/sniper-feed`, {
+        cache: "no-store",
+        headers: { "User-Agent": BROWSER_UA },
+        signal: AbortSignal.timeout(15000),
+      });
+      const text = await res.text();
+      let data: any = null;
+      try { data = JSON.parse(text); } catch { /* swallow */ }
+      const deals = data?.deals ?? data ?? [];
+      const passed = Array.isArray(deals) && deals.length > 0;
+      return {
+        ...meta,
+        passed,
+        statusCode: res.status,
+        bodyExcerpt: passed ? null : text.slice(0, 500),
+        detail: `${Array.isArray(deals) ? deals.length : 0} deals`,
+        notes: { count: Array.isArray(deals) ? deals.length : 0 },
+      };
+    }, {
+      name: "sniper-feed returns deals (external: Flowty/TS GQL)",
+      endpoint: "/api/sniper-feed",
+      expected: "has-deals-array",
+      soft: true,
+    }),
 
     // 2. FMV API responds (cold-start tolerant — soft failure with extended timeout)
-    checkUrl("fmv/demo responds", `${BASE_URL}/api/fmv/demo`, true, { timeoutMs: 15000, soft: true }),
+    checkUrl(
+      { name: "fmv/demo responds", endpoint: "/api/fmv/demo", expected: "200-json", soft: true },
+      `${BASE_URL}/api/fmv/demo`,
+      true,
+      { timeoutMs: 15000 }
+    ),
 
-    // 3 + 4. Pipeline freshness via analytics_pipeline_health RPC. The RPC is
-    // the canonical source of truth for pipeline lag — its `status` field
-    // already encodes healthy/degraded/stale thresholds per pipeline, so we
-    // don't have to re-implement them in the smoke test. Replaces the prior
-    // in-route "max(ingested_at)" / "max(computed_at)" probes which produced
-    // 999-min sentinels when the underlying query failed or returned null.
-    (async (): Promise<TestResult> => {
-      const name = "sales pipeline healthy (analytics_pipeline_health)";
-      try {
-        const { data, error } = await (svc as any).rpc("analytics_pipeline_health");
-        if (error) return { name, passed: false, detail: `rpc error: ${error.message}` };
-        const sales = data?.pipelines?.sales;
-        if (!sales) return { name, passed: false, detail: "missing pipelines.sales in RPC response" };
-        const ok = sales.status === "healthy";
-        return {
-          name,
-          passed: ok,
-          detail: `status=${sales.status} lag=${sales.lag_minutes}m (max ${sales.expected_max_lag_min}m)`,
-        };
-      } catch (e: any) {
-        return { name, passed: false, detail: e?.message ?? String(e) };
+    // 3. Sales pipeline freshness via analytics_pipeline_health RPC.
+    time(async () => {
+      const meta = {
+        name: "sales pipeline healthy (analytics_pipeline_health)",
+        endpoint: "rpc:analytics_pipeline_health.sales",
+        expected: "status=healthy",
+      };
+      const { data, error } = await (svc as any).rpc("analytics_pipeline_health");
+      if (error) {
+        return { ...meta, passed: false, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
       }
-    })(),
+      const sales = data?.pipelines?.sales;
+      if (!sales) {
+        return { ...meta, passed: false, detail: "missing pipelines.sales in RPC response", statusCode: null, bodyExcerpt: null, notes: null };
+      }
+      const ok = sales.status === "healthy";
+      return {
+        ...meta,
+        passed: ok,
+        detail: `status=${sales.status} lag=${sales.lag_minutes}m (max ${sales.expected_max_lag_min}m)`,
+        statusCode: null,
+        bodyExcerpt: null,
+        notes: { status: sales.status, lag_minutes: sales.lag_minutes, expected_max_lag_min: sales.expected_max_lag_min },
+      };
+    }, {
+      name: "sales pipeline healthy (analytics_pipeline_health)",
+      endpoint: "rpc:analytics_pipeline_health.sales",
+      expected: "status=healthy",
+    }),
 
-    (async (): Promise<TestResult> => {
-      const name = "fmv pipeline healthy (analytics_pipeline_health)";
-      try {
-        const { data, error } = await (svc as any).rpc("analytics_pipeline_health");
-        if (error) return { name, passed: false, detail: `rpc error: ${error.message}` };
-        const fmv = data?.pipelines?.fmv;
-        if (!fmv) return { name, passed: false, detail: "missing pipelines.fmv in RPC response" };
-        const ok = fmv.status === "healthy";
-        return {
-          name,
-          passed: ok,
-          detail: `status=${fmv.status} lag=${fmv.lag_minutes}m (max ${fmv.expected_max_lag_min}m)`,
-        };
-      } catch (e: any) {
-        return { name, passed: false, detail: e?.message ?? String(e) };
+    // 4. FMV pipeline freshness via analytics_pipeline_health RPC.
+    time(async () => {
+      const meta = {
+        name: "fmv pipeline healthy (analytics_pipeline_health)",
+        endpoint: "rpc:analytics_pipeline_health.fmv",
+        expected: "status=healthy",
+      };
+      const { data, error } = await (svc as any).rpc("analytics_pipeline_health");
+      if (error) {
+        return { ...meta, passed: false, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
       }
-    })(),
+      const fmv = data?.pipelines?.fmv;
+      if (!fmv) {
+        return { ...meta, passed: false, detail: "missing pipelines.fmv in RPC response", statusCode: null, bodyExcerpt: null, notes: null };
+      }
+      const ok = fmv.status === "healthy";
+      return {
+        ...meta,
+        passed: ok,
+        detail: `status=${fmv.status} lag=${fmv.lag_minutes}m (max ${fmv.expected_max_lag_min}m)`,
+        statusCode: null,
+        bodyExcerpt: null,
+        notes: { status: fmv.status, lag_minutes: fmv.lag_minutes, expected_max_lag_min: fmv.expected_max_lag_min },
+      };
+    }, {
+      name: "fmv pipeline healthy (analytics_pipeline_health)",
+      endpoint: "rpc:analytics_pipeline_health.fmv",
+      expected: "status=healthy",
+    }),
 
     // 5. Listing cache has rows
-    (async (): Promise<TestResult> => {
+    time(async () => {
+      const meta = {
+        name: "cached_listings has rows",
+        endpoint: "table:cached_listings",
+        expected: "row-count>0",
+      };
       const { count } = await (svc.from("cached_listings") as any)
         .select("*", { count: "exact", head: true });
-      return { name: "cached_listings has rows", passed: (count ?? 0) > 0, detail: `${count} rows` };
-    })(),
+      const passed = (count ?? 0) > 0;
+      return {
+        ...meta,
+        passed,
+        detail: `${count} rows`,
+        statusCode: null,
+        bodyExcerpt: null,
+        notes: { count: count ?? 0 },
+      };
+    }, {
+      name: "cached_listings has rows",
+      endpoint: "table:cached_listings",
+      expected: "row-count>0",
+    }),
 
-    // 6. Wallet search responds (soft-fail — depends on Top Shot GQL + Flow blockchain via FCL)
-    (async (): Promise<TestResult> => {
-      const name = "wallet-search responds (external: TS GQL/Flow)";
-      try {
-        const res = await fetch(`${BASE_URL}/api/wallet-search`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
-          body: JSON.stringify({ input: "0xbd94cade097e50ac" }),
-          cache: "no-store", signal: AbortSignal.timeout(20000),
-        });
-        return { name, soft: true, passed: res.ok, detail: `HTTP ${res.status}` };
-      } catch (e: any) {
-        return { name, soft: true, passed: false, detail: e?.message ?? String(e) };
-      }
-    })(),
+    // 6. Wallet search responds (soft-fail — depends on Top Shot GQL + Flow)
+    time(async () => {
+      const meta = {
+        name: "wallet-search responds (external: TS GQL/Flow)",
+        endpoint: "/api/wallet-search",
+        expected: "200-status",
+        soft: true,
+      };
+      const res = await fetch(`${BASE_URL}/api/wallet-search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
+        body: JSON.stringify({ input: "0xbd94cade097e50ac" }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(20000),
+      });
+      const text = await res.text();
+      return {
+        ...meta,
+        passed: res.ok,
+        detail: `HTTP ${res.status}`,
+        statusCode: res.status,
+        bodyExcerpt: res.ok ? null : text.slice(0, 500),
+        notes: { wallet: "0xbd94cade097e50ac" },
+      };
+    }, {
+      name: "wallet-search responds (external: TS GQL/Flow)",
+      endpoint: "/api/wallet-search",
+      expected: "200-status",
+      soft: true,
+    }),
 
     // 7. Pack listings responds
-    checkUrl("pack-listings responds", `${BASE_URL}/api/pack-listings`),
+    checkUrl(
+      { name: "pack-listings responds", endpoint: "/api/pack-listings", expected: "200-json" },
+      `${BASE_URL}/api/pack-listings`
+    ),
 
-    // 8. Badges API responds (cold-start tolerant — soft failure with extended timeout)
-    checkUrl("badges API responds", `${BASE_URL}/api/badges`, true, { timeoutMs: 15000, soft: true }),
+    // 8. Badges API responds (cold-start tolerant)
+    checkUrl(
+      { name: "badges API responds", endpoint: "/api/badges", expected: "200-json", soft: true },
+      `${BASE_URL}/api/badges`,
+      true,
+      { timeoutMs: 15000 }
+    ),
 
     // Public collection pages — must return 200 to anonymous browsers post the
-    // SEO open-gate change. Manual redirect + browser UA + explicit status===200
-    // assertion makes regression detectable: if the auth gate accidentally
-    // re-clamps a public path, the test fails instead of silently following
-    // the 307 to /login and reporting "200" downstream.
+    // SEO open-gate change.
     ...([
       "/nba-top-shot/sniper", "/nba-top-shot/collection", "/nba-top-shot/sets",
       "/nba-top-shot/packs",
@@ -183,25 +335,43 @@ async function runSmokeTests() {
       "/laliga-golazos/market", "/disney-pinnacle/market",
       "/nba-top-shot/analytics", "/nfl-all-day/analytics",
       "/laliga-golazos/analytics", "/disney-pinnacle/analytics",
-    ].map(async (page): Promise<TestResult> => {
-      const res = await fetch(`${BASE_URL}${page}`, {
-        cache: "no-store",
-        redirect: "manual",
-        headers: { "User-Agent": BROWSER_UA },
-        signal: AbortSignal.timeout(6000),
-      });
-      return {
+    ].map((page) =>
+      time(async () => {
+        const meta = {
+          name: `public page ${page} returns 200`,
+          endpoint: page,
+          expected: "200-status",
+        };
+        const res = await fetch(`${BASE_URL}${page}`, {
+          cache: "no-store",
+          redirect: "manual",
+          headers: { "User-Agent": BROWSER_UA },
+          signal: AbortSignal.timeout(6000),
+        });
+        const passed = res.status === 200;
+        const text = passed ? "" : await res.text().catch(() => "");
+        return {
+          ...meta,
+          passed,
+          detail: `HTTP ${res.status}`,
+          statusCode: res.status,
+          bodyExcerpt: passed ? null : text.slice(0, 500),
+          notes: { location: res.headers.get("location") ?? null },
+        };
+      }, {
         name: `public page ${page} returns 200`,
-        passed: res.status === 200,
-        detail: `HTTP ${res.status}`,
-      };
-    })),
+        endpoint: page,
+        expected: "200-status",
+      })
+    )),
 
-    // Auth-gated /profile (the editor) — must 307 to /login for anonymous
-    // traffic. /profile/[username] is the public profile page (open) and
-    // is intentionally not probed here.
-    (async (): Promise<TestResult> => {
-      const name = "auth-gated /profile redirects (307)";
+    // Auth-gated /profile (the editor) — must 307 to /login for anonymous traffic.
+    time(async () => {
+      const meta = {
+        name: "auth-gated /profile redirects (307)",
+        endpoint: "/profile",
+        expected: "307-to-login",
+      };
       const res = await fetch(`${BASE_URL}/profile`, {
         cache: "no-store",
         redirect: "manual",
@@ -211,596 +381,754 @@ async function runSmokeTests() {
       const location = res.headers.get("location") ?? "";
       const ok = res.status === 307 && location.includes("/login");
       return {
-        name,
+        ...meta,
         passed: ok,
         detail: `HTTP ${res.status}${location ? ` → ${location}` : ""}`,
+        statusCode: res.status,
+        bodyExcerpt: null,
+        notes: { location },
       };
-    })(),
+    }, {
+      name: "auth-gated /profile redirects (307)",
+      endpoint: "/profile",
+      expected: "307-to-login",
+    }),
 
     // Phase 3 — market API returns listings for Top Shot
-    (async (): Promise<TestResult> => {
-      const name = "market API returns Top Shot listings";
-      try {
-        const url = `${BASE_URL}/api/market?collectionId=95f28a17-224a-4025-96ad-adf8a4c63bfd&limit=10`;
-        const res = await fetch(url, {
-          cache: "no-store",
-          headers: { "User-Agent": BROWSER_UA },
-          signal: AbortSignal.timeout(6000),
-        });
-        if (!res.ok) return { name, passed: false, detail: `HTTP ${res.status}` };
-        const body = await res.json();
-        const listings = Array.isArray(body?.listings) ? body.listings : [];
-        return { name, passed: listings.length > 0, detail: `${listings.length} listings` };
-      } catch (e: any) {
-        return { name, passed: false, detail: e?.message ?? String(e) };
+    time(async () => {
+      const meta = {
+        name: "market API returns Top Shot listings",
+        endpoint: "/api/market",
+        expected: "listings>0",
+        notes: { collectionId: "95f28a17-224a-4025-96ad-adf8a4c63bfd" } as Record<string, unknown>,
+      };
+      const url = `${BASE_URL}/api/market?collectionId=95f28a17-224a-4025-96ad-adf8a4c63bfd&limit=10`;
+      const res = await fetch(url, {
+        cache: "no-store",
+        headers: { "User-Agent": BROWSER_UA },
+        signal: AbortSignal.timeout(6000),
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        return { ...meta, passed: false, detail: `HTTP ${res.status}`, statusCode: res.status, bodyExcerpt: text.slice(0, 500), notes: meta.notes ?? null };
       }
-    })(),
+      let body: any = null;
+      try { body = JSON.parse(text); } catch { /* swallow */ }
+      const listings = Array.isArray(body?.listings) ? body.listings : [];
+      const passed = listings.length > 0;
+      return {
+        ...meta,
+        passed,
+        detail: `${listings.length} listings`,
+        statusCode: res.status,
+        bodyExcerpt: passed ? null : text.slice(0, 500),
+        notes: { ...(meta.notes ?? {}), count: listings.length },
+      };
+    }, {
+      name: "market API returns Top Shot listings",
+      endpoint: "/api/market",
+      expected: "listings>0",
+    }),
 
-    // 15–18. RLS Write-Block Tests. Post Phase 4: tables are now keyed on
-    // user_id UUID with DEFAULT auth.uid(). Anon writes still blocked.
-    checkRlsBlocked("RLS blocks saved_wallets unauthorized write", "saved_wallets", {
-      wallet_addr: "0x0000000000000000", username: "rls_test",
-    }),
-    checkRlsBlocked("RLS blocks profile_bio unauthorized write", "profile_bio", {
-      username: "rls_test", display_name: "rls_test",
-    }),
-    checkRlsBlocked("RLS blocks recent_searches unauthorized write", "recent_searches", {
-      query: "rls_test", query_type: "wallet",
-    }),
-    checkRlsBlocked("RLS blocks trophy_moments unauthorized write", "trophy_moments", {
-      slot: 1, moment_id: "rls_test_moment",
-    }),
+    // 15–18. RLS Write-Block Tests.
+    checkRlsBlocked("saved_wallets", { wallet_addr: "0x0000000000000000", username: "rls_test" }),
+    checkRlsBlocked("profile_bio", { username: "rls_test", display_name: "rls_test" }),
+    checkRlsBlocked("recent_searches", { query: "rls_test", query_type: "wallet" }),
+    checkRlsBlocked("trophy_moments", { slot: 1, moment_id: "rls_test_moment" }),
 
-    // Phase 4: auth-gated profile routes accept or redirect. 2xx/3xx OR 401 all OK.
+    // Phase 4: auth-gated profile routes accept or redirect. 200 OR 401 all OK.
     ...([
       "/api/profile/activity",
       "/api/profile/favorites",
       "/api/profile/hero-moment",
-    ].map(async (path): Promise<TestResult> => {
-      const name = `${path} returns 200 or 401`;
-      try {
+    ].map((path) =>
+      time(async () => {
+        const meta = {
+          name: `${path} returns 200 or 401`,
+          endpoint: path,
+          expected: "200-or-401",
+        };
         const res = await fetch(`${BASE_URL}${path}`, {
           cache: "no-store",
           redirect: "follow",
           headers: { "User-Agent": BROWSER_UA },
           signal: AbortSignal.timeout(5000),
         });
-        return { name, passed: res.status === 200 || res.status === 401, detail: `HTTP ${res.status}` };
-      } catch (e: any) {
-        return { name, passed: false, detail: e?.message ?? String(e) };
-      }
-    })),
-
-    // Phase 4: public profile route is unauthenticated — accepts 200 (user exists)
-    // or 404 (username not registered). Greenfield migration means 404 is
-    // expected until Trevor re-seeds the jamesdillonbond bio. Soft + extended
-    // timeout to absorb cold-start latency (route does 3 sequential Supabase
-    // round-trips: bio lookup → trophies+wallets parallel fetch).
-    (async (): Promise<TestResult> => {
-      const name = "/api/public/profile/jamesdillonbond returns JSON";
-      try {
-        const res = await fetch(`${BASE_URL}/api/public/profile/jamesdillonbond`, {
-          cache: "no-store",
-          headers: { "User-Agent": BROWSER_UA },
-          signal: AbortSignal.timeout(15000),
-        });
-        const ok = res.status === 200 || res.status === 404;
-        if (!ok) return { name, passed: false, soft: true, detail: `HTTP ${res.status}` };
-        const body = await res.json().catch(() => null);
-        return { name, passed: body != null, soft: true, detail: body?.error ?? `HTTP ${res.status}` };
-      } catch (e: any) {
-        return { name, passed: false, soft: true, detail: e?.message ?? String(e) };
-      }
-    })(),
-
-    // Phase 4.1: /api/profile/resolve-and-associate — username-based multi-collection
-    // wallet auto-association. When unauthenticated, returns 401. If the smoke test
-    // runs with a session (via SMOKE_TEST_SESSION_TOKEN), a known-good username
-    // should return 200 with a 4-entry associatedCollections array.
-    (async (): Promise<TestResult> => {
-      const name = "/api/profile/resolve-and-associate responds (200 or 401)";
-      try {
-        const headers: Record<string, string> = {
-          "Content-Type": "application/json",
-          "User-Agent": BROWSER_UA,
+        const passed = res.status === 200 || res.status === 401;
+        const text = passed ? "" : await res.text().catch(() => "");
+        return {
+          ...meta,
+          passed,
+          detail: `HTTP ${res.status}`,
+          statusCode: res.status,
+          bodyExcerpt: passed ? null : text.slice(0, 500),
+          notes: null,
         };
-        const token = process.env.SMOKE_TEST_SESSION_TOKEN;
-        if (token) headers.cookie = `sb-auth-token=${token}`;
-        const res = await fetch(`${BASE_URL}/api/profile/resolve-and-associate`, {
-          method: "POST",
-          cache: "no-store",
-          headers,
-          body: JSON.stringify({ username: "jamesdillonbond" }),
-          signal: AbortSignal.timeout(8000),
-        });
-        if (res.status === 401) {
-          return { name, passed: true, detail: "401 (unauthenticated, expected without session)" };
-        }
-        if (res.status !== 200) {
-          return { name, passed: false, detail: `HTTP ${res.status}` };
-        }
-        const body = await res.json().catch(() => null);
-        const ok =
-          body != null &&
-          typeof body.walletAddress === "string" &&
-          Array.isArray(body.associatedCollections) &&
-          body.associatedCollections.length === 4;
-        return { name, passed: ok, detail: ok ? `${body.walletAddress} x4` : "malformed 200 body" };
-      } catch (e: any) {
-        return { name, passed: false, detail: e?.message ?? String(e) };
+      }, {
+        name: `${path} returns 200 or 401`,
+        endpoint: path,
+        expected: "200-or-401",
+      })
+    )),
+
+    // Phase 4: public profile route is unauthenticated — accepts 200 (user
+    // exists) or 404 (username not registered).
+    time(async () => {
+      const meta = {
+        name: "/api/public/profile/jamesdillonbond returns JSON",
+        endpoint: "/api/public/profile/jamesdillonbond",
+        expected: "200-or-404-json",
+        soft: true,
+      };
+      const res = await fetch(`${BASE_URL}/api/public/profile/jamesdillonbond`, {
+        cache: "no-store",
+        headers: { "User-Agent": BROWSER_UA },
+        signal: AbortSignal.timeout(15000),
+      });
+      const text = await res.text();
+      const okStatus = res.status === 200 || res.status === 404;
+      if (!okStatus) {
+        return { ...meta, passed: false, detail: `HTTP ${res.status}`, statusCode: res.status, bodyExcerpt: text.slice(0, 500), notes: null };
       }
-    })(),
+      let body: any = null;
+      try { body = JSON.parse(text); } catch { /* swallow */ }
+      const passed = body != null;
+      return {
+        ...meta,
+        passed,
+        detail: body?.error ?? `HTTP ${res.status}`,
+        statusCode: res.status,
+        bodyExcerpt: passed ? null : text.slice(0, 500),
+        notes: null,
+      };
+    }, {
+      name: "/api/public/profile/jamesdillonbond returns JSON",
+      endpoint: "/api/public/profile/jamesdillonbond",
+      expected: "200-or-404-json",
+      soft: true,
+    }),
+
+    // Phase 4.1: /api/profile/resolve-and-associate
+    time(async () => {
+      const meta = {
+        name: "/api/profile/resolve-and-associate responds (200 or 401)",
+        endpoint: "/api/profile/resolve-and-associate",
+        expected: "200-with-4-collections-or-401",
+      };
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "User-Agent": BROWSER_UA,
+      };
+      const token = process.env.SMOKE_TEST_SESSION_TOKEN;
+      if (token) headers.cookie = `sb-auth-token=${token}`;
+      const res = await fetch(`${BASE_URL}/api/profile/resolve-and-associate`, {
+        method: "POST",
+        cache: "no-store",
+        headers,
+        body: JSON.stringify({ username: "jamesdillonbond" }),
+        signal: AbortSignal.timeout(8000),
+      });
+      const text = await res.text();
+      if (res.status === 401) {
+        return { ...meta, passed: true, detail: "401 (unauthenticated, expected without session)", statusCode: 401, bodyExcerpt: null, notes: null };
+      }
+      if (res.status !== 200) {
+        return { ...meta, passed: false, detail: `HTTP ${res.status}`, statusCode: res.status, bodyExcerpt: text.slice(0, 500), notes: null };
+      }
+      let body: any = null;
+      try { body = JSON.parse(text); } catch { /* swallow */ }
+      const ok =
+        body != null &&
+        typeof body.walletAddress === "string" &&
+        Array.isArray(body.associatedCollections) &&
+        body.associatedCollections.length === 4;
+      return {
+        ...meta,
+        passed: ok,
+        detail: ok ? `${body.walletAddress} x4` : "malformed 200 body",
+        statusCode: 200,
+        bodyExcerpt: ok ? null : text.slice(0, 500),
+        notes: null,
+      };
+    }, {
+      name: "/api/profile/resolve-and-associate responds (200 or 401)",
+      endpoint: "/api/profile/resolve-and-associate",
+      expected: "200-with-4-collections-or-401",
+    }),
 
     // Phase 4.2: /api/profile/resolve-and-associate must respond quickly even
-    // though it fires 4 parallel wallet-search calls in the background via
-    // after(). The after() callback runs after the response is flushed, so
-    // the POST should return well under 3 seconds even without a session
-    // (401 short-circuits before GQL). This regression-tests that the
-    // background fanout isn't accidentally blocking the response.
-    (async (): Promise<TestResult> => {
-      const name = "/api/profile/resolve-and-associate returns quickly (after() non-blocking)";
-      try {
-        const start = Date.now();
-        const res = await fetch(`${BASE_URL}/api/profile/resolve-and-associate`, {
-          method: "POST",
-          cache: "no-store",
-          headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
-          body: JSON.stringify({ username: "jamesdillonbond" }),
-          signal: AbortSignal.timeout(5000),
-        });
-        const elapsed = Date.now() - start;
-        // Any non-5xx status is acceptable — we're measuring response latency,
-        // not auth behaviour. 3s ceiling allows cold-start slack.
-        const ok = res.status < 500 && elapsed < 3000;
-        return { name, passed: ok, detail: `HTTP ${res.status} in ${elapsed}ms` };
-      } catch (e: any) {
-        return { name, passed: false, detail: e?.message ?? String(e) };
-      }
-    })(),
+    // though it fires 4 parallel wallet-search calls in the background.
+    time(async () => {
+      const meta = {
+        name: "/api/profile/resolve-and-associate returns quickly (after() non-blocking)",
+        endpoint: "/api/profile/resolve-and-associate",
+        expected: "non-5xx-under-3s",
+      };
+      const start = Date.now();
+      const res = await fetch(`${BASE_URL}/api/profile/resolve-and-associate`, {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
+        body: JSON.stringify({ username: "jamesdillonbond" }),
+        signal: AbortSignal.timeout(5000),
+      });
+      const elapsed = Date.now() - start;
+      const ok = res.status < 500 && elapsed < 3000;
+      return {
+        ...meta,
+        passed: ok,
+        detail: `HTTP ${res.status} in ${elapsed}ms`,
+        statusCode: res.status,
+        bodyExcerpt: null,
+        notes: { latency_ms: elapsed },
+      };
+    }, {
+      name: "/api/profile/resolve-and-associate returns quickly (after() non-blocking)",
+      endpoint: "/api/profile/resolve-and-associate",
+      expected: "non-5xx-under-3s",
+    }),
 
-    // Phase 4 (opt-in): attach a smoke-test user session cookie and probe the
-    // auth-gated /nba-top-shot/collection page. If SMOKE_TEST_SESSION_TOKEN is
-    // unset, skip without failing. To generate the token:
-    //   1) Sign in as a test user in prod via /login magic link
-    //   2) Inspect cookies for `sb-*-auth-token` and paste its raw value
-    //      into Vercel env `SMOKE_TEST_SESSION_TOKEN`
-    //   3) Re-deploy so the smoke test can use it
-    (async (): Promise<TestResult> => {
-      const name = "authed /nba-top-shot/collection renders (opt-in via SMOKE_TEST_SESSION_TOKEN)";
+    // Phase 4 (opt-in): authed /nba-top-shot/collection render
+    time(async () => {
+      const meta = {
+        name: "authed /nba-top-shot/collection renders (opt-in via SMOKE_TEST_SESSION_TOKEN)",
+        endpoint: "/nba-top-shot/collection",
+        expected: "authed-200-with-content",
+        soft: true,
+      };
       const token = process.env.SMOKE_TEST_SESSION_TOKEN;
-      if (!token) return { name, passed: true, soft: true, detail: "skipped — no SMOKE_TEST_SESSION_TOKEN" };
-      try {
-        const res = await fetch(`${BASE_URL}/nba-top-shot/collection`, {
-          cache: "no-store",
-          redirect: "manual",
-          headers: { cookie: `sb-auth-token=${token}`, "User-Agent": BROWSER_UA },
-          signal: AbortSignal.timeout(8000),
-        });
-        if (res.status !== 200) {
-          return { name, passed: false, soft: true, detail: `HTTP ${res.status}` };
-        }
-        const html = await res.text();
-        const hit = html.includes("COLLECTION ANALYZER") || html.toLowerCase().includes("nba top shot");
-        return { name, passed: hit, soft: true, detail: hit ? "auth render ok" : "content marker missing" };
-      } catch (e: any) {
-        return { name, passed: false, soft: true, detail: e?.message ?? String(e) };
+      if (!token) {
+        return { ...meta, passed: true, detail: "skipped — no SMOKE_TEST_SESSION_TOKEN", statusCode: null, bodyExcerpt: null, notes: { skipped: true } };
       }
-    })(),
+      const res = await fetch(`${BASE_URL}/nba-top-shot/collection`, {
+        cache: "no-store",
+        redirect: "manual",
+        headers: { cookie: `sb-auth-token=${token}`, "User-Agent": BROWSER_UA },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (res.status !== 200) {
+        const txt = await res.text().catch(() => "");
+        return { ...meta, passed: false, detail: `HTTP ${res.status}`, statusCode: res.status, bodyExcerpt: txt.slice(0, 500), notes: null };
+      }
+      const html = await res.text();
+      const hit = html.includes("COLLECTION ANALYZER") || html.toLowerCase().includes("nba top shot");
+      return {
+        ...meta,
+        passed: hit,
+        detail: hit ? "auth render ok" : "content marker missing",
+        statusCode: 200,
+        bodyExcerpt: hit ? null : html.slice(0, 500),
+        notes: null,
+      };
+    }, {
+      name: "authed /nba-top-shot/collection renders (opt-in via SMOKE_TEST_SESSION_TOKEN)",
+      endpoint: "/nba-top-shot/collection",
+      expected: "authed-200-with-content",
+      soft: true,
+    }),
 
-    // Phase 4.3 (opt-in): /api/profile/hero-moment must return a populated
-    // hero object for a test user whose wallet_moments_cache is already
-    // indexed. Regression test for the hero-moment ↔ wallet_moments_cache
-    // wiring (previously queried the empty `moments` table). Skip gracefully
-    // when SMOKE_TEST_SESSION_TOKEN is unset — the unauthed 401 probe above
-    // already covers the wiring-exists case.
-    (async (): Promise<TestResult> => {
-      const name = "/api/profile/hero-moment returns populated hero (opt-in via SMOKE_TEST_SESSION_TOKEN)";
+    // Phase 4.3 (opt-in): /api/profile/hero-moment populated
+    time(async () => {
+      const meta = {
+        name: "/api/profile/hero-moment returns populated hero (opt-in via SMOKE_TEST_SESSION_TOKEN)",
+        endpoint: "/api/profile/hero-moment",
+        expected: "authed-hero-with-fmv",
+        soft: true,
+      };
       const token = process.env.SMOKE_TEST_SESSION_TOKEN;
-      if (!token) return { name, passed: true, soft: true, detail: "skipped — no SMOKE_TEST_SESSION_TOKEN" };
-      try {
-        const res = await fetch(`${BASE_URL}/api/profile/hero-moment`, {
-          cache: "no-store",
-          redirect: "manual",
-          headers: { cookie: `sb-auth-token=${token}`, "User-Agent": BROWSER_UA },
-          signal: AbortSignal.timeout(6000),
-        });
-        if (res.status !== 200) {
-          return { name, passed: false, soft: true, detail: `HTTP ${res.status}` };
-        }
-        const body = await res.json().catch(() => null);
-        const ok =
-          body?.hero != null &&
-          typeof body.hero.momentId === "string" &&
-          typeof body.hero.fmvUsd === "number" &&
-          body.hero.fmvUsd > 0;
+      if (!token) {
+        return { ...meta, passed: true, detail: "skipped — no SMOKE_TEST_SESSION_TOKEN", statusCode: null, bodyExcerpt: null, notes: { skipped: true } };
+      }
+      const res = await fetch(`${BASE_URL}/api/profile/hero-moment`, {
+        cache: "no-store",
+        redirect: "manual",
+        headers: { cookie: `sb-auth-token=${token}`, "User-Agent": BROWSER_UA },
+        signal: AbortSignal.timeout(6000),
+      });
+      const text = await res.text();
+      if (res.status !== 200) {
+        return { ...meta, passed: false, detail: `HTTP ${res.status}`, statusCode: res.status, bodyExcerpt: text.slice(0, 500), notes: null };
+      }
+      let body: any = null;
+      try { body = JSON.parse(text); } catch { /* swallow */ }
+      const ok =
+        body?.hero != null &&
+        typeof body.hero.momentId === "string" &&
+        typeof body.hero.fmvUsd === "number" &&
+        body.hero.fmvUsd > 0;
+      return {
+        ...meta,
+        passed: !!ok,
+        detail: ok
+          ? `${body.hero.playerName ?? "?"} $${body.hero.fmvUsd.toFixed(2)}`
+          : body?.reason ?? "malformed body",
+        statusCode: 200,
+        bodyExcerpt: ok ? null : text.slice(0, 500),
+        notes: null,
+      };
+    }, {
+      name: "/api/profile/hero-moment returns populated hero (opt-in via SMOKE_TEST_SESSION_TOKEN)",
+      endpoint: "/api/profile/hero-moment",
+      expected: "authed-hero-with-fmv",
+      soft: true,
+    }),
+
+    // Sniper cart wiring
+    time(async () => {
+      const meta = {
+        name: "sniper cart wiring (Flowty has listing fields, TS rows ineligible)",
+        endpoint: "/api/sniper-feed",
+        expected: "flowty-cart-fields-present",
+        soft: true,
+      };
+      const res = await fetch(`${BASE_URL}/api/sniper-feed`, {
+        cache: "no-store",
+        headers: { "User-Agent": BROWSER_UA },
+        signal: AbortSignal.timeout(15000),
+      });
+      const text = await res.text();
+      let data: any = null;
+      try { data = JSON.parse(text); } catch { /* swallow */ }
+      const deals = Array.isArray(data) ? data : data?.deals ?? [];
+      if (!Array.isArray(deals) || deals.length === 0) {
+        return { ...meta, passed: false, detail: "no deals returned", statusCode: res.status, bodyExcerpt: text.slice(0, 500), notes: null };
+      }
+      const flowty = deals.find((d: any) => d?.source === "flowty");
+      const ts = deals.find((d: any) => d?.source === "topshot");
+      const flowtyOk =
+        !flowty ||
+        (typeof flowty.listingResourceID === "string" &&
+          typeof flowty.storefrontAddress === "string" &&
+          typeof flowty.askPrice === "number" &&
+          flowty.askPrice > 0);
+      const tsOk = !ts || ts.source === "topshot";
+      const okAll = flowtyOk && tsOk;
+      return {
+        ...meta,
+        passed: okAll,
+        detail: okAll
+          ? `flowty=${flowty ? "ok" : "none"} ts=${ts ? "tagged" : "none"}`
+          : `flowty=${flowtyOk ? "ok" : "missing cart fields"} ts=${tsOk ? "tagged" : "untagged"}`,
+        statusCode: res.status,
+        bodyExcerpt: okAll ? null : text.slice(0, 500),
+        notes: { flowty_present: !!flowty, ts_present: !!ts },
+      };
+    }, {
+      name: "sniper cart wiring (Flowty has listing fields, TS rows ineligible)",
+      endpoint: "/api/sniper-feed",
+      expected: "flowty-cart-fields-present",
+      soft: true,
+    }),
+
+    // Pinnacle concierge regression
+    time(async () => {
+      const meta = {
+        name: "concierge resolves Pinnacle query (collectionId routing)",
+        endpoint: "/api/support-chat",
+        expected: "non-empty-non-error-pinnacle-response",
+        soft: true,
+        notes: { collectionId: "disney-pinnacle", probe: "Goofy under $50" } as Record<string, unknown>,
+      };
+      const res = await fetch(`${BASE_URL}/api/support-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
+        body: JSON.stringify({
+          message: "Show me a Goofy pin under $50",
+          collectionId: "disney-pinnacle",
+          sessionId: `smoke-pinnacle-${Date.now()}`,
+        }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(25000),
+      });
+      const rawBody = await res.text();
+      if (!res.ok) {
+        return { ...meta, passed: false, detail: `HTTP ${res.status}`, statusCode: res.status, bodyExcerpt: rawBody.slice(0, 500), notes: meta.notes };
+      }
+      const parsed = (() => { try { return JSON.parse(rawBody); } catch { return null; } })();
+      const text = String(parsed?.response ?? "").toLowerCase();
+      const looksEmpty = !text || /no\s+(deals|results|moments|pins)\s+found/.test(text);
+      const looksGenericError = /something\s+went\s+wrong/i.test(text);
+      const looksRouteError = /"category"\s*:\s*"error"/i.test(rawBody);
+      const failed = looksEmpty || looksGenericError || looksRouteError;
+      const detail = looksEmpty ? "empty/no-results response"
+        : looksGenericError ? "generic 'something went wrong' fallback"
+        : looksRouteError ? "route returned category=error"
+        : `len=${text.length}`;
+      return {
+        ...meta,
+        passed: !failed,
+        detail,
+        statusCode: res.status,
+        bodyExcerpt: failed ? rawBody.slice(0, 500) : null,
+        notes: meta.notes,
+      };
+    }, {
+      name: "concierge resolves Pinnacle query (collectionId routing)",
+      endpoint: "/api/support-chat",
+      expected: "non-empty-non-error-pinnacle-response",
+      soft: true,
+    }),
+
+    // Pinnacle data-layer integrity
+    time(async () => {
+      const meta = {
+        name: "Pinnacle searchPinnacleDeals filters character_name correctly",
+        endpoint: "lib:searchPinnacleDeals",
+        expected: "all-rows-match-character",
+      };
+      const json = await searchPinnacleDeals(
+        svc,
+        { player: "Goofy", maxPrice: 50, limit: 10 },
+        { source: "live" }
+      );
+      const parsed = JSON.parse(json);
+      if (parsed.status === "no_results") {
+        return { ...meta, passed: true, detail: "no goofy listings (acceptable)", statusCode: null, bodyExcerpt: null, notes: { result_count: 0 } };
+      }
+      if (parsed.status !== "ok" || !Array.isArray(parsed.results)) {
+        return { ...meta, passed: false, detail: `unexpected status: ${parsed.status}`, statusCode: null, bodyExcerpt: json.slice(0, 500), notes: null };
+      }
+      const wrongRows = parsed.results.filter(
+        (r: { player: string | null }) => !r.player || !/goofy/i.test(r.player)
+      );
+      if (wrongRows.length > 0) {
+        const sample = wrongRows[0];
         return {
-          name,
-          passed: !!ok,
-          soft: true,
-          detail: ok
-            ? `${body.hero.playerName ?? "?"} $${body.hero.fmvUsd.toFixed(2)}`
-            : body?.reason ?? "malformed body",
+          ...meta,
+          passed: false,
+          detail: `${wrongRows.length} non-goofy row(s) leaked: e.g. player='${sample.player}' fmv=${sample.fmv}`,
+          statusCode: null,
+          bodyExcerpt: JSON.stringify(sample).slice(0, 500),
+          notes: { wrong_count: wrongRows.length, total: parsed.results.length },
         };
-      } catch (e: any) {
-        return { name, passed: false, soft: true, detail: e?.message ?? String(e) };
       }
-    })(),
-    // Sniper cart wiring — first Flowty row must carry listingResourceID +
-    // storefrontAddress + askPrice for cart eligibility, and Top Shot-sourced
-    // rows must not be flagged cart-eligible (they live in Dapper custody).
-    (async (): Promise<TestResult> => {
-      const name = "sniper cart wiring (Flowty has listing fields, TS rows ineligible)";
-      try {
-        const res = await fetch(`${BASE_URL}/api/sniper-feed`, {
-          cache: "no-store",
-          headers: { "User-Agent": BROWSER_UA },
-          signal: AbortSignal.timeout(15000),
-        });
-        const data = await res.json();
-        const deals = Array.isArray(data) ? data : data?.deals ?? [];
-        if (!Array.isArray(deals) || deals.length === 0) {
-          return { name, passed: false, soft: true, detail: "no deals returned" };
+      return {
+        ...meta,
+        passed: true,
+        detail: `${parsed.results.length} rows, all goofy`,
+        statusCode: null,
+        bodyExcerpt: null,
+        notes: { result_count: parsed.results.length },
+      };
+    }, {
+      name: "Pinnacle searchPinnacleDeals filters character_name correctly",
+      endpoint: "lib:searchPinnacleDeals",
+      expected: "all-rows-match-character",
+    }),
+
+    // Pinnacle FMV cross-character leak detector
+    time(async () => {
+      const meta = {
+        name: "Pinnacle FMV not borrowed across characters (drift guard)",
+        endpoint: "lib:searchPinnacleDeals",
+        expected: "no-fmv-leak",
+      };
+      const json = await searchPinnacleDeals(
+        svc,
+        { player: "Goofy", maxPrice: 100, limit: 20 },
+        { source: "live" }
+      );
+      const parsed = JSON.parse(json);
+      if (parsed.status === "no_results") {
+        return { ...meta, passed: true, detail: "no rows to check", statusCode: null, bodyExcerpt: null, notes: null };
+      }
+      if (parsed.status !== "ok" || !Array.isArray(parsed.results)) {
+        return { ...meta, passed: false, detail: `unexpected status: ${parsed.status}`, statusCode: null, bodyExcerpt: json.slice(0, 500), notes: null };
+      }
+      const leaks: string[] = [];
+      for (const r of parsed.results as Array<{
+        player: string | null; set: string | null; tier: string | null; fmv: number | null;
+      }>) {
+        if (r.fmv == null) continue;
+        const { data: match } = await (svc as any)
+          .from("pinnacle_editions")
+          .select("id")
+          .eq("character_name", r.player)
+          .eq("set_name", r.set)
+          .eq("variant_type", r.tier)
+          .limit(1);
+        if (!match || match.length === 0) {
+          leaks.push(`${r.player}/${r.set}/${r.tier} fmv=$${r.fmv}`);
         }
-        const flowty = deals.find((d: any) => d?.source === "flowty");
-        const ts = deals.find((d: any) => d?.source === "topshot");
-        const flowtyOk =
-          !flowty ||
-          (typeof flowty.listingResourceID === "string" &&
-            typeof flowty.storefrontAddress === "string" &&
-            typeof flowty.askPrice === "number" &&
-            flowty.askPrice > 0);
-        // Top Shot rows are allowed to have listing fields (and often do), but
-        // must carry source === 'topshot' so isCartEligible can reject them.
-        const tsOk = !ts || ts.source === "topshot";
-        const okAll = flowtyOk && tsOk;
+      }
+      if (leaks.length > 0) {
         return {
-          name,
-          soft: true,
-          passed: okAll,
-          detail: okAll
-            ? `flowty=${flowty ? "ok" : "none"} ts=${ts ? "tagged" : "none"}`
-            : `flowty=${flowtyOk ? "ok" : "missing cart fields"} ts=${tsOk ? "tagged" : "untagged"}`,
+          ...meta,
+          passed: false,
+          detail: `FMV leaked on ${leaks.length} row(s): ${leaks[0]}`,
+          statusCode: null,
+          bodyExcerpt: leaks.slice(0, 5).join("; ").slice(0, 500),
+          notes: { leak_count: leaks.length, total: parsed.results.length },
         };
-      } catch (e: any) {
-        return { name, passed: false, soft: true, detail: e?.message ?? String(e) };
       }
-    })(),
+      return {
+        ...meta,
+        passed: true,
+        detail: `${parsed.results.length} rows, no FMV leaks`,
+        statusCode: null,
+        bodyExcerpt: null,
+        notes: { result_count: parsed.results.length },
+      };
+    }, {
+      name: "Pinnacle FMV not borrowed across characters (drift guard)",
+      endpoint: "lib:searchPinnacleDeals",
+      expected: "no-fmv-leak",
+    }),
 
-    // Pinnacle concierge regression — /api/support-chat with collectionId
-    // 'disney-pinnacle' + a known Pinnacle character must NOT return the
-    // generic "no results" message. Pinnacle data lives in pinnacle_*
-    // parallel tables; before the May 2026 audit fix the unified
-    // cached_listings table had 0 Pinnacle rows so every Pinnacle Sniper
-    // query silently failed. Soft because the path depends on Claude API
-    // availability + an Anthropic token budget; hard-gating it would cost
-    // tokens on every smoke run and blow up on Anthropic outages. The
-    // model occasionally still phrases negative responses; we accept any
-    // 200 with a non-empty response and no obvious "no results" string.
-    (async (): Promise<TestResult> => {
-      const name = "concierge resolves Pinnacle query (collectionId routing)";
-      try {
-        const res = await fetch(`${BASE_URL}/api/support-chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
-          body: JSON.stringify({
-            message: "Show me a Goofy pin under $50",
-            collectionId: "disney-pinnacle",
-            sessionId: `smoke-pinnacle-${Date.now()}`,
-          }),
-          cache: "no-store",
-          signal: AbortSignal.timeout(25000),
-        });
-        if (!res.ok) return { name, soft: true, passed: false, detail: `HTTP ${res.status}` };
-        const rawBody = await res.text();
-        const parsed = (() => { try { return JSON.parse(rawBody); } catch { return null; } })();
-        const text = String(parsed?.response ?? "").toLowerCase();
-        // Reject:
-        //  - empty / no-results model output (the Pinnacle catalog has Goofy
-        //    listings; an empty answer means the routing or filter regressed)
-        //  - "something went wrong" generic-error fallback (regression on the
-        //    Anthropic-error path leaking into the user-facing copy)
-        //  - response body's top-level category=error from the route handler
-        const looksEmpty = !text || /no\s+(deals|results|moments|pins)\s+found/.test(text);
-        const looksGenericError = /something\s+went\s+wrong/i.test(text);
-        const looksRouteError = /"category"\s*:\s*"error"/i.test(rawBody);
-        const failed = looksEmpty || looksGenericError || looksRouteError;
-        const detail = looksEmpty ? "empty/no-results response"
-          : looksGenericError ? "generic 'something went wrong' fallback"
-          : looksRouteError ? "route returned category=error"
-          : `len=${text.length}`;
-        return { name, soft: true, passed: !failed, detail };
-      } catch (e: any) {
-        return { name, soft: true, passed: false, detail: e?.message ?? String(e) };
+    // Concierge name-filter regression — Pinnacle Goofy
+    time(async () => {
+      const meta = {
+        name: "concierge filters by character name (Pinnacle Goofy probe)",
+        endpoint: "/api/support-chat",
+        expected: "goofy-mention-or-explicit-no-match",
+        soft: true,
+        notes: { collectionId: "disney-pinnacle", probe: "Goofy under $50" } as Record<string, unknown>,
+      };
+      const res = await fetch(`${BASE_URL}/api/support-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
+        body: JSON.stringify({
+          message: "Show me a Goofy pin under $50",
+          collectionId: "disney-pinnacle",
+          sessionId: `smoke-goofy-filter-${Date.now()}`,
+        }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(25000),
+      });
+      const rawText = await res.text();
+      if (!res.ok) {
+        return { ...meta, passed: false, detail: `HTTP ${res.status}`, statusCode: res.status, bodyExcerpt: rawText.slice(0, 500), notes: meta.notes };
       }
-    })(),
+      let body: any = null;
+      try { body = JSON.parse(rawText); } catch { /* swallow */ }
+      const raw = String(body?.response ?? "");
+      const text = raw.toLowerCase();
+      const mentionsGoofy = /goofy/.test(text);
+      const explicitNoMatch = /no\s+goofy/.test(text) || /couldn'?t\s+find\s+(?:any\s+)?goofy/.test(text);
+      const confabulatedNames = [
+        "minnie", "mickey mouse", "donald duck", "pluto", "daisy",
+        "lando calrissian", "greef karga", "pegasus", "rafiki", "cogsworth",
+      ];
+      const confabulated = confabulatedNames.some((n) => text.includes(n)) && !mentionsGoofy;
+      const fmvLeak = mentionsGoofy && /\$2\d|\$3[0-5]/.test(text) && /fmv|discount|\boff\b|below/.test(text);
+      const fakeDiscount = mentionsGoofy && /\d{2,3}\s*%\s*(?:below|off|under)/.test(text);
+      const passed = (mentionsGoofy || explicitNoMatch) && !confabulated && !fmvLeak && !fakeDiscount;
+      const detail = passed
+        ? mentionsGoofy ? "mentions goofy, no fmv leak" : "explicit no-match"
+        : confabulated ? `confabulated other character: ${raw.slice(0, 160)}`
+        : fmvLeak ? `fmv leak ($25-35 on goofy): ${raw.slice(0, 160)}`
+        : fakeDiscount ? `fake discount on goofy: ${raw.slice(0, 160)}`
+        : "neither mention nor explicit no-match";
+      return {
+        ...meta,
+        passed,
+        detail,
+        statusCode: res.status,
+        bodyExcerpt: passed ? null : rawText.slice(0, 500),
+        notes: meta.notes,
+      };
+    }, {
+      name: "concierge filters by character name (Pinnacle Goofy probe)",
+      endpoint: "/api/support-chat",
+      expected: "goofy-mention-or-explicit-no-match",
+      soft: true,
+    }),
 
-    // Pinnacle data-layer integrity — call searchPinnacleDeals directly with
-    // player='Goofy' and assert EVERY returned row's player is actually Goofy.
-    // This is a HARD test (not soft) because it doesn't depend on Anthropic;
-    // it's a pure SQL/Supabase check. Catches the May 2026 confabulation bug
-    // at its source: even if the model's text-output check passes by chance,
-    // a wrong row at this layer guarantees the bot will lie.
-    (async (): Promise<TestResult> => {
-      const name = "Pinnacle searchPinnacleDeals filters character_name correctly";
-      try {
-        const json = await searchPinnacleDeals(
-          svc,
-          { player: "Goofy", maxPrice: 50, limit: 10 },
-          { source: "live" }
-        );
-        const parsed = JSON.parse(json);
-        if (parsed.status === "no_results") {
-          return { name, passed: true, detail: "no goofy listings (acceptable)" };
-        }
-        if (parsed.status !== "ok" || !Array.isArray(parsed.results)) {
-          return { name, passed: false, detail: `unexpected status: ${parsed.status}` };
-        }
-        const wrongRows = parsed.results.filter(
-          (r: { player: string | null }) => !r.player || !/goofy/i.test(r.player)
-        );
-        if (wrongRows.length > 0) {
-          const sample = wrongRows[0];
-          return {
-            name,
-            passed: false,
-            detail: `${wrongRows.length} non-goofy row(s) leaked: e.g. player='${sample.player}' fmv=${sample.fmv}`,
-          };
-        }
-        return { name, passed: true, detail: `${parsed.results.length} rows, all goofy` };
-      } catch (e: any) {
-        return { name, passed: false, detail: e?.message ?? String(e) };
+    // Concierge name-filter regression — Top Shot LeBron
+    time(async () => {
+      const meta = {
+        name: "concierge filters by player name (Top Shot LeBron probe)",
+        endpoint: "/api/support-chat",
+        expected: "lebron-mention-or-explicit-no-match",
+        soft: true,
+        notes: { collectionId: "nba-top-shot", probe: "LeBron Common under $5" } as Record<string, unknown>,
+      };
+      const res = await fetch(`${BASE_URL}/api/support-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
+        body: JSON.stringify({
+          message: "Find a LeBron James Common moment under $5",
+          collectionId: "nba-top-shot",
+          sessionId: `smoke-lebron-filter-${Date.now()}`,
+        }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(25000),
+      });
+      const rawText = await res.text();
+      if (!res.ok) {
+        return { ...meta, passed: false, detail: `HTTP ${res.status}`, statusCode: res.status, bodyExcerpt: rawText.slice(0, 500), notes: meta.notes };
       }
-    })(),
+      let body: any = null;
+      try { body = JSON.parse(rawText); } catch { /* swallow */ }
+      const raw = String(body?.response ?? "");
+      const text = raw.toLowerCase();
+      const mentionsLebron = /lebron/.test(text);
+      const explicitNoMatch = /no\s+lebron/.test(text) || /couldn'?t\s+find\s+(?:any\s+)?lebron/.test(text);
+      const confabulatedNames = ["stephen curry", "kevin durant", "luka", "giannis", "jokic", "embiid"];
+      const confabulated = confabulatedNames.some((n) => text.includes(n)) && !mentionsLebron;
+      const passed = (mentionsLebron || explicitNoMatch) && !confabulated;
+      const detail = passed
+        ? mentionsLebron ? "mentions lebron" : "explicit no-match"
+        : confabulated ? `confabulated other player: ${raw.slice(0, 140)}` : "neither mention nor explicit no-match";
+      return {
+        ...meta,
+        passed,
+        detail,
+        statusCode: res.status,
+        bodyExcerpt: passed ? null : rawText.slice(0, 500),
+        notes: meta.notes,
+      };
+    }, {
+      name: "concierge filters by player name (Top Shot LeBron probe)",
+      endpoint: "/api/support-chat",
+      expected: "lebron-mention-or-explicit-no-match",
+      soft: true,
+    }),
 
-    // Pinnacle FMV cross-character leak detector — for every (character_name,
-    // set_name, variant_type) triple in pinnacle_cached_listings whose
-    // character_name disagrees with pinnacle_editions[edition_key], verify
-    // searchPinnacleDeals does NOT attach a non-null FMV to those rows.
-    // Pre-fix, ~84% of cached listings had this drift and the router blindly
-    // borrowed the wrong character's FMV. Post-fix, FMV must be null when
-    // (character, set, variant) has no row in pinnacle_editions.
-    (async (): Promise<TestResult> => {
-      const name = "Pinnacle FMV not borrowed across characters (drift guard)";
-      try {
-        // Goofy/Winter Adventures Vol.1/Standard: known no-row in pinnacle_editions.
-        // If FMV is non-null here, the join is leaking a different character's value.
-        const json = await searchPinnacleDeals(
-          svc,
-          { player: "Goofy", maxPrice: 100, limit: 20 },
-          { source: "live" }
-        );
-        const parsed = JSON.parse(json);
-        if (parsed.status === "no_results") {
-          return { name, passed: true, detail: "no rows to check" };
-        }
-        if (parsed.status !== "ok" || !Array.isArray(parsed.results)) {
-          return { name, passed: false, detail: `unexpected status: ${parsed.status}` };
-        }
-        const leaks: string[] = [];
-        for (const r of parsed.results as Array<{
-          player: string | null; set: string | null; tier: string | null; fmv: number | null;
-        }>) {
-          if (r.fmv == null) continue;
-          // Verify pinnacle_editions actually has a row for this (character, set, variant).
-          const { data: match } = await (svc as any)
-            .from("pinnacle_editions")
-            .select("id")
-            .eq("character_name", r.player)
-            .eq("set_name", r.set)
-            .eq("variant_type", r.tier)
-            .limit(1);
-          if (!match || match.length === 0) {
-            leaks.push(`${r.player}/${r.set}/${r.tier} fmv=$${r.fmv}`);
-          }
-        }
-        if (leaks.length > 0) {
-          return { name, passed: false, detail: `FMV leaked on ${leaks.length} row(s): ${leaks[0]}` };
-        }
-        return { name, passed: true, detail: `${parsed.results.length} rows, no FMV leaks` };
-      } catch (e: any) {
-        return { name, passed: false, detail: e?.message ?? String(e) };
-      }
-    })(),
-
-    // Concierge name-filter regression — when the user asks for a specific
-    // character, the model MUST filter on that name AND must not borrow FMV
-    // from a different row. Pre-fix bug shipped twice:
-    // (1) router didn't filter when model omitted `character` (commit 8220136
-    //     fixed the filter; smoke test b5b4477 added but was insufficient)
-    // (2) router joined FMV by edition_key alone, silently mapping Goofy
-    //     listings to Minnie's FMV. The text "Goofy at $1, FMV ~$29" passed
-    //     the b5b4477 probe because it mentioned Goofy. This tightened
-    //     version asserts the response also doesn't quote a discount % or
-    //     borrowed FMV figure when the upstream data wouldn't support it.
-    // Soft because it depends on Anthropic + non-deterministic model output;
-    // the hard signal lives in the data-layer probe above.
-    (async (): Promise<TestResult> => {
-      const name = "concierge filters by character name (Pinnacle Goofy probe)";
-      try {
-        const res = await fetch(`${BASE_URL}/api/support-chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
-          body: JSON.stringify({
-            message: "Show me a Goofy pin under $50",
-            collectionId: "disney-pinnacle",
-            sessionId: `smoke-goofy-filter-${Date.now()}`,
-          }),
-          cache: "no-store",
-          signal: AbortSignal.timeout(25000),
-        });
-        if (!res.ok) return { name, soft: true, passed: false, detail: `HTTP ${res.status}` };
-        const body = await res.json().catch(() => null);
-        const raw = String(body?.response ?? "");
-        const text = raw.toLowerCase();
-        // PASS shapes: mentions goofy, OR explicitly says no goofy results.
-        const mentionsGoofy = /goofy/.test(text);
-        const explicitNoMatch = /no\s+goofy/.test(text) || /couldn'?t\s+find\s+(?:any\s+)?goofy/.test(text);
-        // FAIL shapes:
-        // (a) confabulates a different Pinnacle character as the answer.
-        const confabulatedNames = [
-          "minnie", "mickey mouse", "donald duck", "pluto", "daisy",
-          "lando calrissian", "greef karga", "pegasus", "rafiki", "cogsworth",
-        ];
-        const confabulated = confabulatedNames.some((n) => text.includes(n)) && !mentionsGoofy;
-        // (b) quotes the specific Minnie/Winter Adventures FMV ($29) on a
-        //     Goofy answer — the smoking-gun pattern from the May 2026
-        //     incident. Any FMV figure between $25 and $35 attached to a
-        //     Goofy claim is suspicious because no Goofy edition in cached
-        //     data has FMV in that band.
-        const fmvLeak = mentionsGoofy && /\$2\d|\$3[0-5]/.test(text) && /fmv|discount|\boff\b|below/.test(text);
-        // (c) any quoted discount % alongside a Goofy FMV claim — discount
-        //     requires a real FMV, and post-fix Goofy listings have fmv=null,
-        //     so any "X% below FMV" claim on Goofy is a regression.
-        const fakeDiscount = mentionsGoofy && /\d{2,3}\s*%\s*(?:below|off|under)/.test(text);
-        const passed = (mentionsGoofy || explicitNoMatch) && !confabulated && !fmvLeak && !fakeDiscount;
-        const detail = passed
-          ? mentionsGoofy ? "mentions goofy, no fmv leak" : "explicit no-match"
-          : confabulated ? `confabulated other character: ${raw.slice(0, 160)}`
-          : fmvLeak ? `fmv leak ($25-35 on goofy): ${raw.slice(0, 160)}`
-          : fakeDiscount ? `fake discount on goofy: ${raw.slice(0, 160)}`
-          : "neither mention nor explicit no-match";
-        return { name, soft: true, passed, detail };
-      } catch (e: any) {
-        return { name, soft: true, passed: false, detail: e?.message ?? String(e) };
-      }
-    })(),
-
-    // Concierge name-filter regression for the unified path — same shape as
-    // the Pinnacle probe but on Top Shot. "LeBron James Common under $5"
-    // must either name LeBron or honestly report no match; must not name
-    // a different player as the answer.
-    (async (): Promise<TestResult> => {
-      const name = "concierge filters by player name (Top Shot LeBron probe)";
-      try {
-        const res = await fetch(`${BASE_URL}/api/support-chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
-          body: JSON.stringify({
-            message: "Find a LeBron James Common moment under $5",
-            collectionId: "nba-top-shot",
-            sessionId: `smoke-lebron-filter-${Date.now()}`,
-          }),
-          cache: "no-store",
-          signal: AbortSignal.timeout(25000),
-        });
-        if (!res.ok) return { name, soft: true, passed: false, detail: `HTTP ${res.status}` };
-        const body = await res.json().catch(() => null);
-        const raw = String(body?.response ?? "");
-        const text = raw.toLowerCase();
-        const mentionsLebron = /lebron/.test(text);
-        const explicitNoMatch = /no\s+lebron/.test(text) || /couldn'?t\s+find\s+(?:any\s+)?lebron/.test(text);
-        const confabulatedNames = ["stephen curry", "kevin durant", "luka", "giannis", "jokic", "embiid"];
-        const confabulated = confabulatedNames.some((n) => text.includes(n)) && !mentionsLebron;
-        const passed = (mentionsLebron || explicitNoMatch) && !confabulated;
-        return {
-          name,
-          soft: true,
-          passed,
-          detail: passed
-            ? mentionsLebron ? "mentions lebron" : "explicit no-match"
-            : confabulated ? `confabulated other player: ${raw.slice(0, 140)}` : "neither mention nor explicit no-match",
-        };
-      } catch (e: any) {
-        return { name, soft: true, passed: false, detail: e?.message ?? String(e) };
-      }
-    })(),
-
-    // Graceful-degradation regression — verifies that an Anthropic-side
-    // outage does NOT surface as the misleading "Something went wrong" or
-    // "too complex" text. Sends `x-rpc-test-error-mode: credit_balance` with
-    // the ingest secret to force a synthetic 403 in the support-chat route,
-    // and asserts the user-facing response is the new "temporarily
-    // unavailable" message. Soft because it depends on the smoke-test
-    // process having INGEST_SECRET_TOKEN — if unset, the probe is skipped.
-    (async (): Promise<TestResult> => {
-      const name = "support-chat graceful-degradation (synthetic Anthropic 4xx)";
+    // Graceful-degradation regression — synthetic Anthropic 4xx
+    time(async () => {
+      const meta = {
+        name: "support-chat graceful-degradation (synthetic Anthropic 4xx)",
+        endpoint: "/api/support-chat",
+        expected: "category=concierge_unavailable",
+        soft: true,
+      };
       const secret = process.env.INGEST_SECRET_TOKEN;
-      if (!secret) return { name, soft: true, passed: true, detail: "skipped — no INGEST_SECRET_TOKEN" };
-      try {
-        const res = await fetch(`${BASE_URL}/api/support-chat`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "User-Agent": BROWSER_UA,
-            "x-rpc-test-error-mode": "credit_balance",
-            "x-rpc-test-secret": secret,
-          },
-          body: JSON.stringify({
-            message: "Test the graceful-degradation path",
-            sessionId: `smoke-degradation-${Date.now()}`,
-          }),
-          cache: "no-store",
-          signal: AbortSignal.timeout(8000),
-        });
-        if (!res.ok) return { name, soft: true, passed: false, detail: `HTTP ${res.status}` };
-        const body = await res.json().catch(() => null);
-        const text = String(body?.response ?? "").toLowerCase();
-        const category = String(body?.category ?? "");
-        const matchesMessage = /temporarily\s+unavailable/.test(text);
-        const matchesCategory = category === "concierge_unavailable";
-        const passed = matchesMessage && matchesCategory;
-        return {
-          name,
-          soft: true,
-          passed,
-          detail: passed
-            ? `category=${category}`
-            : `text="${text.slice(0, 80)}" category=${category}`,
-        };
-      } catch (e: any) {
-        return { name, soft: true, passed: false, detail: e?.message ?? String(e) };
+      if (!secret) {
+        return { ...meta, passed: true, detail: "skipped — no INGEST_SECRET_TOKEN", statusCode: null, bodyExcerpt: null, notes: { skipped: true } };
       }
-    })(),
+      const res = await fetch(`${BASE_URL}/api/support-chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": BROWSER_UA,
+          "x-rpc-test-error-mode": "credit_balance",
+          "x-rpc-test-secret": secret,
+        },
+        body: JSON.stringify({
+          message: "Test the graceful-degradation path",
+          sessionId: `smoke-degradation-${Date.now()}`,
+        }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(8000),
+      });
+      const rawText = await res.text();
+      if (!res.ok) {
+        return { ...meta, passed: false, detail: `HTTP ${res.status}`, statusCode: res.status, bodyExcerpt: rawText.slice(0, 500), notes: null };
+      }
+      let body: any = null;
+      try { body = JSON.parse(rawText); } catch { /* swallow */ }
+      const text = String(body?.response ?? "").toLowerCase();
+      const category = String(body?.category ?? "");
+      const matchesMessage = /temporarily\s+unavailable/.test(text);
+      const matchesCategory = category === "concierge_unavailable";
+      const passed = matchesMessage && matchesCategory;
+      return {
+        ...meta,
+        passed,
+        detail: passed
+          ? `category=${category}`
+          : `text="${text.slice(0, 80)}" category=${category}`,
+        statusCode: res.status,
+        bodyExcerpt: passed ? null : rawText.slice(0, 500),
+        notes: { category, matches_message: matchesMessage },
+      };
+    }, {
+      name: "support-chat graceful-degradation (synthetic Anthropic 4xx)",
+      endpoint: "/api/support-chat",
+      expected: "category=concierge_unavailable",
+      soft: true,
+    }),
 
-    // Cart validate endpoint sanity check — bogus-listing round trip should
-    // return { results: { [id]: { exists: false, sniped: true } } }. Proves the
-    // Flow REST script path is reachable and the response shape is intact.
-    (async (): Promise<TestResult> => {
-      const name = "/api/cart/validate responds on bogus listing";
-      try {
-        const res = await fetch(`${BASE_URL}/api/cart/validate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
-          body: JSON.stringify({
-            listings: [
-              {
-                listingResourceID: "1",
-                storefrontAddress: "0x0000000000000001",
-                expectedPrice: 1,
-              },
-            ],
-          }),
-          cache: "no-store",
-          signal: AbortSignal.timeout(12000),
-        });
-        if (!res.ok) return { name, passed: false, detail: `HTTP ${res.status}` };
-        const data = await res.json();
-        const r = data?.results?.["1"];
-        const ok = !!r && typeof r.exists === "boolean" && typeof r.sniped === "boolean";
-        return {
-          name,
-          passed: ok,
-          detail: ok ? `exists=${r.exists} sniped=${r.sniped}` : "malformed body",
-        };
-      } catch (e: any) {
-        return { name, passed: false, detail: e?.message ?? String(e) };
+    // Cart validate endpoint sanity check
+    time(async () => {
+      const meta = {
+        name: "/api/cart/validate responds on bogus listing",
+        endpoint: "/api/cart/validate",
+        expected: "results-shape-with-exists-and-sniped",
+      };
+      const res = await fetch(`${BASE_URL}/api/cart/validate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
+        body: JSON.stringify({
+          listings: [
+            {
+              listingResourceID: "1",
+              storefrontAddress: "0x0000000000000001",
+              expectedPrice: 1,
+            },
+          ],
+        }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(12000),
+      });
+      const rawText = await res.text();
+      if (!res.ok) {
+        return { ...meta, passed: false, detail: `HTTP ${res.status}`, statusCode: res.status, bodyExcerpt: rawText.slice(0, 500), notes: null };
       }
-    })(),
+      let data: any = null;
+      try { data = JSON.parse(rawText); } catch { /* swallow */ }
+      const r = data?.results?.["1"];
+      const ok = !!r && typeof r.exists === "boolean" && typeof r.sniped === "boolean";
+      return {
+        ...meta,
+        passed: ok,
+        detail: ok ? `exists=${r.exists} sniped=${r.sniped}` : "malformed body",
+        statusCode: res.status,
+        bodyExcerpt: ok ? null : rawText.slice(0, 500),
+        notes: ok ? { exists: r.exists, sniped: r.sniped } : null,
+      };
+    }, {
+      name: "/api/cart/validate responds on bogus listing",
+      endpoint: "/api/cart/validate",
+      expected: "results-shape-with-exists-and-sniped",
+    }),
   ]);
 
   // ── Collect results, converting rejected promises to failures ──
   const results: TestResult[] = settled.map((s, i) =>
     s.status === "fulfilled"
       ? s.value
-      : { name: `test ${i + 1}`, passed: false, detail: (s.reason as Error)?.message ?? String(s.reason) }
+      : {
+          name: `test ${i + 1}`,
+          endpoint: `unknown-${i + 1}`,
+          expected: "unknown",
+          passed: false,
+          detail: (s.reason as Error)?.message ?? String(s.reason),
+          elapsedMs: 0,
+          statusCode: null,
+          bodyExcerpt: null,
+          notes: null,
+        }
   );
 
-  // Only log RLS results that actually failed — a passing RLS denial is the
-  // smoke test verifying intended behavior and shouldn't pollute the log feed.
-  // The error-level surface is reserved for actionable regressions (e.g. an
-  // anon write that succeeded when it should have been blocked).
+  // ── Per-endpoint structured persistence to public.smoke_test_results ──
+  // Single insert keeps overhead low; ignoring write errors keeps the smoke
+  // test resilient if the table is missing or RLS shifts.
+  const ranAt = new Date().toISOString();
+  const rows = results.map((r) => ({
+    ran_at: ranAt,
+    endpoint: r.endpoint,
+    ok: r.passed,
+    status_code: r.statusCode ?? null,
+    elapsed_ms: r.elapsedMs,
+    error: r.passed ? null : (r.detail ?? null),
+    body_excerpt: r.bodyExcerpt ?? null,
+    expected: r.expected,
+    notes: r.notes ?? null,
+  }));
+  try {
+    const { error: insErr } = await (svc.from("smoke_test_results") as any).insert(rows);
+    if (insErr) {
+      console.error("[smoke-test] failed to write smoke_test_results:", insErr.message);
+    }
+  } catch (err) {
+    console.error("[smoke-test] exception writing smoke_test_results:", err instanceof Error ? err.message : String(err));
+  }
+
+  // RLS regressions still get a console.error for in-line visibility.
   for (const r of results) {
-    if (r.name.startsWith("RLS") && !r.passed) {
+    if (r.endpoint.startsWith("rls:") && !r.passed) {
       console.error(`[smoke-test] ${r.name}: REGRESSION — ${r.detail}`);
     }
   }
@@ -811,17 +1139,17 @@ async function runSmokeTests() {
     if (!r.passed && !r.soft) {
       Sentry.withScope((scope) => {
         scope.setTag("smoke_test", r.name);
+        scope.setTag("endpoint", r.endpoint);
         scope.setTag("route", "smoke-test");
         scope.setExtra("detail", r.detail ?? "");
+        scope.setExtra("body_excerpt", r.bodyExcerpt ?? "");
+        scope.setExtra("expected", r.expected);
         Sentry.captureMessage("smoke test failed: " + r.name, "error");
       });
     }
   }
 
   // ── Summary ────────────────────────────────────────────────
-  // allPassed reflects platform health only — soft tests (external API
-  // dependencies like Flowty / Top Shot GQL / Flow RPC) are informational
-  // and must not gate the overall smoke result.
   const passed = results.filter((r) => r.passed).length;
   const total = results.length;
   const hardResults = results.filter((r) => !r.soft);
@@ -833,14 +1161,12 @@ async function runSmokeTests() {
 
   console.log(`SMOKE-TEST ${allPassed ? "ALL PASSED" : "FAILURES DETECTED"} (hard ${hardPassed}/${hardTotal}, overall ${passed}/${total})`);
   if (failures.length > 0) {
-    console.error("SMOKE-TEST HARD FAILURES:", JSON.stringify(failures, null, 2));
+    console.error("SMOKE-TEST HARD FAILURES:", JSON.stringify(failures.map((f) => ({ endpoint: f.endpoint, error: f.detail, status: f.statusCode })), null, 2));
   }
   if (softFailures.length > 0) {
-    console.warn("SMOKE-TEST SOFT FAILURES (external deps, informational):", JSON.stringify(softFailures, null, 2));
+    console.warn("SMOKE-TEST SOFT FAILURES (external deps, informational):", JSON.stringify(softFailures.map((f) => ({ endpoint: f.endpoint, error: f.detail })), null, 2));
   }
 
-  // Always return 200 — smoke test route must never 500.
-  // Individual test failures are reported in the results array.
   return NextResponse.json({
     passed,
     total,
@@ -848,6 +1174,7 @@ async function runSmokeTests() {
     hardPassed,
     hardTotal,
     softFailures: softFailures.length,
+    ranAt,
     results,
   }, { status: 200 });
 }
@@ -856,7 +1183,6 @@ export async function POST() {
   try {
     return await runSmokeTests();
   } catch (err: any) {
-    // Top-level safety net — smoke test must NEVER return 500
     Sentry.withScope((scope) => {
       scope.setTag("route", "smoke-test");
       scope.setTag("smoke_test", "top-level-crash");
