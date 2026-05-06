@@ -21,8 +21,16 @@ type Status = "idle" | "sending" | "sent" | "error" | "waitlist"
 
 function LoginInner() {
   const params = useSearchParams()
-  const redirect = params.get("redirect") ?? "/dashboard"
-  const urlError = params.get("error")
+  // `next` is what proxy.ts (root middleware) emits; `redirect` is the legacy
+  // param name used by older links and by the magic-link callback chain.
+  const redirect = params.get("next") ?? params.get("redirect") ?? "/dashboard"
+  const urlErrorRaw = params.get("error")
+  const urlError =
+    urlErrorRaw === "access_revoked"
+      ? "Your access has been revoked. Contact support if this is unexpected."
+      : urlErrorRaw === "allowlist_unavailable"
+        ? "Sign-in service is temporarily unavailable. Please try again in a moment."
+        : urlErrorRaw
   const [email, setEmail] = useState("")
   const [status, setStatus] = useState<Status>("idle")
   const [error, setError] = useState(urlError ?? "")
