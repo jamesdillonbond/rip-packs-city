@@ -23,6 +23,60 @@ Repo: github.com/jamesdillonbond/rip-packs-city (public)
 
 ## Recent sessions
 
+### May 6, 2026 — DraftKings retirement, NBA stats pivot, smoke-test structured logging
+
+Shipped
+
+- **`sync-nba-games` retired (410 Gone):** function body replaced with a
+  410 stub. Vercel-side cron-job.org schedule is still pointed at it; the
+  410 keeps pipeline_runs clean instead of fetch_failed timeouts. Disable
+  the schedule when convenient.
+- **`sync-nba-projections` v4 — DraftKings → NBA Stats rolling-5:**
+  - DK pivot: `source = "nba-stats-rolling5"`, `projection_method =
+    "rolling-5-game-fantasy-average"`. New nullable `projection_method`
+    column added to `nba_player_projections`.
+  - Worker route `/nba/rolling-projections` on `rpc-sports-proxy` fans out
+    to two upstreams in parallel: `cdn.nba.com/.../todaysScoreboard_00.json`
+    (works from CF Workers, authoritative for `nba_games`) and
+    `stats.nba.com/stats/leaguedashplayerstats` (currently 520'd at the
+    origin from CF Worker IPs). Player-stats failure is non-fatal — the
+    function still ships games-only with a `note` describing the degraded
+    state and `ok=true` on `pipeline_runs`. Tighter 10s timeout on the
+    player-stats fetch keeps the round-trip ≤ 12s.
+  - Confidence dropped to `LOW` (rolling averages are noisier than DK's
+    model). DK-source rows from earlier today remain in
+    `nba_player_projections` until they age out by `game_date`.
+  - **Open issue:** stats.nba.com is unreachable from CF Workers
+    (Cloudflare-on-Cloudflare origin block). Resolution path: move the
+    player-stats ingress off CF (Deno Deploy / Render / Fly.io), use
+    balldontlie.io paid tier, or route through a residential-IP proxy.
+    Until then, projections stay at 0 rows/day; `nba_games` keeps refreshing.
+- **cdn.nba.com format note:** new game IDs follow `00<seasontype><season><n>`
+  pattern (10 digits, e.g. `0042500212`). DK competition IDs were 7-digit.
+  The two coexist in `nba_games` until DK rows age out. Match for downstream
+  queries by `(game_date, home_team_abbr, away_team_abbr)` and prefer the
+  most recent `last_synced_at` if duplicates appear.
+- **smoke-test structured logging:** `/api/smoke-test` now writes one row
+  per probe to `public.smoke_test_results` (endpoint, ok, status_code,
+  elapsed_ms, error, body_excerpt, expected, notes jsonb). Per-endpoint
+  detail is now queryable via SQL — Vercel runtime logs only ever surface
+  the first console.log per request, so this is the canonical surface for
+  diagnosing which probe failed.
+
+Key constants (May 6)
+
+- `nba_player_projections.projection_method`: nullable text label. Today:
+  `rolling-5-game-fantasy-average` for the rolling source. Legacy DK rows
+  keep it NULL.
+- Worker route `/nba/rolling-projections` lives on
+  `rpc-sports-proxy.tdillonbond.workers.dev`; the `cdn.nba.com` upstream is
+  unauthenticated.
+- `smoke_test_results` table is service-role-only (RLS); the route writes
+  via `supabaseAdmin`. Diagnostic query: `SELECT endpoint, ok, error,
+  ran_at FROM smoke_test_results ORDER BY ran_at DESC LIMIT 30`.
+
+---
+
 ### May 2, 2026 — Recent learnings (schema drift, proxy auth, search_path hardening)
 
 - **TopShot GraphQL `searchEditions` schema:** working query shape uses `input.filters.bySetIDs` and `input.filters.byPlayIDs` (plural array forms — singular `bySetID` / `byPlayID` variants are rejected as field-not-defined). Pagination via `input.searchInput.pagination.cursor` with `direction: RIGHT`. Response wraps via `searchSummary.data` on the `Editions` union, with a nested `data` on the `Edition` union. The legacy `getPlay` / `getSet` queries with input wrappers and data envelopes were superseded — do NOT use them.

@@ -5,12 +5,19 @@
 // Routes (all POST, all gated by X-Proxy-Secret matching env.PROXY_SECRET):
 //   POST /nba/scoreboard               → stats.nba.com/stats/scoreboardV2 (pass-through)
 //   POST /nba/draftkings-projections   → DraftKings draftgroups + draftables (normalized)
+//   POST /nba/rolling-projections      → stats.nba.com last-5-games averages + DK fp formula
 //   POST /nba/odds                     → 501 placeholder until the Odds API key
 //
 // Cache:
-//   /nba/scoreboard            → 5 min  (stats.nba.com is the truth source for live scoring)
+//   /nba/scoreboard             → 5 min  (stats.nba.com is the truth source for live scoring)
 //   /nba/draftkings-projections → 10 min (DK refreshes salary / status throughout the day)
-//   /nba/odds                  → none (501)
+//   /nba/rolling-projections    → 10 min (rolling averages refresh after each completed game)
+//   /nba/odds                   → none (501)
+//
+// Rolling-projections is the active replacement for DraftKings as of
+// 2026-05-06 — Akamai started 403'ing api.draftkings.com regardless of
+// header fingerprint. Stats.nba.com is more permissive and the rolling
+// average is a reasonable stand-in until a real projection feed lands.
 //
 // Same secret-rotation surface as topshot-proxy: PROXY_SECRET set via
 // `wrangler secret put PROXY_SECRET` on this worker. Reuse the same value
@@ -472,6 +479,409 @@ async function handleDraftKingsProjections(_request: Request): Promise<Response>
   return jsonResponse(normalized, 200, 600);
 }
 
+// ─── /nba/rolling-projections ─────────────────────────────────────────────────
+// stats.nba.com replacement for DraftKings. Two upstreams:
+//   - cdn.nba.com (S3-served static scoreboard JSON) — open to CF Workers,
+//     authoritative for today's slate. Returns gameId + team tricodes + UTC
+//     tipoff. This is the primary writer for nba_games rows.
+//   - stats.nba.com leaguedashplayerstats — last-5-games per-game averages.
+//     Currently 520s from CF Worker IPs (origin-side CF block). The route
+//     keeps it on the request path as best-effort: when it lands, full DK
+//     fantasy projections ship; when it 520s, the response carries games-only
+//     with a degraded `note` so pipeline_runs records the partial state.
+// DK fantasy points are computed from the rolling averages with the standard
+// DraftKings formula:
+//   fp = pts + 1.2*reb + 1.5*ast + 3*stl + 3*blk - tov
+//        + 1.5*(dd2/gp) + 3*(td3/gp)
+// DD2/TD3 are totals over the last-N window — divide by GP for per-game
+// frequency. The bonus is approximate when applied to averaged rows; it
+// stays small relative to the base score and is acceptable as a stand-in
+// projection until a non-CF ingress for stats.nba.com is in place.
+
+const NBA_TEAM_ID_TO_ABBR: Record<string, string> = {
+  "1610612737": "ATL", "1610612738": "BOS", "1610612739": "CLE", "1610612740": "NOP",
+  "1610612741": "CHI", "1610612742": "DAL", "1610612743": "DEN", "1610612744": "GSW",
+  "1610612745": "HOU", "1610612746": "LAC", "1610612747": "LAL", "1610612748": "MIA",
+  "1610612749": "MIL", "1610612750": "MIN", "1610612751": "BKN", "1610612752": "NYK",
+  "1610612753": "ORL", "1610612754": "IND", "1610612755": "PHI", "1610612756": "PHX",
+  "1610612757": "POR", "1610612758": "SAC", "1610612759": "SAS", "1610612760": "OKC",
+  "1610612761": "TOR", "1610612762": "UTA", "1610612763": "MEM", "1610612764": "WAS",
+  "1610612765": "DET", "1610612766": "CHA",
+};
+
+interface NbaResultSet {
+  name: string;
+  headers: string[];
+  rowSet: unknown[][];
+}
+
+interface NbaApiResponse {
+  resultSets?: NbaResultSet[];
+}
+
+function nbaSeasonStringFromETDate(etDate: string): string {
+  // etDate is YYYY-MM-DD. NBA seasons run Oct (year N) through Jun (year N+1).
+  // Months Jul–Sep have no NBA games, but pinning to the most-recent season
+  // keeps the request shape valid even on an off-day.
+  const [yStr, mStr] = etDate.split("-");
+  const y = parseInt(yStr, 10);
+  const m = parseInt(mStr, 10);
+  const startYear = m >= 10 ? y : y - 1;
+  const endYY = String((startYear + 1) % 100).padStart(2, "0");
+  return `${startYear}-${endYY}`;
+}
+
+function nbaSeasonTypeFromETDate(etDate: string): "Playoffs" | "Regular Season" {
+  // Mid-April → mid-June is Playoffs; rest of the season is Regular Season.
+  // Off-season (Jul–Sep) returns Regular Season as a harmless default — the
+  // upstream returns an empty rowSet, which we surface as no-slate-today.
+  const [_, mStr, dStr] = etDate.split("-");
+  const m = parseInt(mStr, 10);
+  const d = parseInt(dStr, 10);
+  if (m === 4 && d >= 15) return "Playoffs";
+  if (m === 5 || m === 6) return "Playoffs";
+  return "Regular Season";
+}
+
+function buildPlayerStatsUrl(season: string, seasonType: "Regular Season" | "Playoffs"): string {
+  const url = new URL("https://stats.nba.com/stats/leaguedashplayerstats");
+  // The endpoint requires every parameter, even when empty. Missing params
+  // produce a 400 with "The field <X> is required". Filled exactly the way
+  // the official site does.
+  const params: Record<string, string> = {
+    College: "",
+    Conference: "",
+    Country: "",
+    DateFrom: "",
+    DateTo: "",
+    Division: "",
+    DraftPick: "",
+    DraftYear: "",
+    GameScope: "",
+    GameSegment: "",
+    Height: "",
+    LastNGames: "5",
+    LeagueID: "00",
+    Location: "",
+    MeasureType: "Base",
+    Month: "0",
+    OpponentTeamID: "0",
+    Outcome: "",
+    PORound: "0",
+    PaceAdjust: "N",
+    PerMode: "PerGame",
+    Period: "0",
+    PlayerExperience: "",
+    PlayerPosition: "",
+    PlusMinus: "N",
+    Rank: "N",
+    Season: season,
+    SeasonSegment: "",
+    SeasonType: seasonType,
+    ShotClockRange: "",
+    StarterBench: "",
+    TeamID: "0",
+    VsConference: "",
+    VsDivision: "",
+    Weight: "",
+  };
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  return url.toString();
+}
+
+interface RollingPlayer {
+  name: string;
+  teamAbbr: string | null;
+  position: string | null;
+  salary: number | null;
+  status: string | null;
+  projFp: number | null;
+  proj_points: number | null;
+  proj_rebounds: number | null;
+  proj_assists: number | null;
+  proj_threes: number | null;
+  proj_steals: number | null;
+  proj_blocks: number | null;
+  proj_turnovers: number | null;
+  proj_minutes: number | null;
+  opponentAbbr: string | null;
+  gameStartTime: string | null;
+  gp: number | null;
+}
+
+function parsePlayerStats(json: NbaApiResponse): RollingPlayer[] {
+  const set = (json.resultSets ?? []).find(s => s.name === "LeagueDashPlayerStats");
+  if (!set) return [];
+  const idx = (h: string) => set.headers.indexOf(h);
+  const iName = idx("PLAYER_NAME");
+  const iTeam = idx("TEAM_ABBREVIATION");
+  const iGP = idx("GP");
+  const iMin = idx("MIN");
+  const iPts = idx("PTS");
+  const iReb = idx("REB");
+  const iAst = idx("AST");
+  const iTov = idx("TOV");
+  const iStl = idx("STL");
+  const iBlk = idx("BLK");
+  const iThree = idx("FG3M");
+  const iDD2 = idx("DD2");
+  const iTD3 = idx("TD3");
+
+  const out: RollingPlayer[] = [];
+  for (const row of set.rowSet ?? []) {
+    const name = String(row[iName] ?? "").trim();
+    if (!name) continue;
+    const team = String(row[iTeam] ?? "").trim() || null;
+    const num = (i: number): number | null => {
+      if (i < 0) return null;
+      const v = row[i];
+      if (v == null) return null;
+      const n = typeof v === "number" ? v : parseFloat(String(v));
+      return Number.isFinite(n) ? n : null;
+    };
+    const gp = num(iGP);
+    const pts = num(iPts);
+    const reb = num(iReb);
+    const ast = num(iAst);
+    const tov = num(iTov);
+    const stl = num(iStl);
+    const blk = num(iBlk);
+    const three = num(iThree);
+    const min = num(iMin);
+    const dd2 = num(iDD2);
+    const td3 = num(iTD3);
+
+    let projFp: number | null = null;
+    if (pts != null && reb != null && ast != null && stl != null && blk != null && tov != null) {
+      const ddRate = gp && gp > 0 && dd2 != null ? dd2 / gp : 0;
+      const tdRate = gp && gp > 0 && td3 != null ? td3 / gp : 0;
+      projFp = pts + 1.2 * reb + 1.5 * ast + 3 * stl + 3 * blk - tov + 1.5 * ddRate + 3 * tdRate;
+      projFp = Math.round(projFp * 100) / 100;
+    }
+
+    out.push({
+      name,
+      teamAbbr: team,
+      position: null,
+      salary: null,
+      status: null,
+      projFp,
+      proj_points: pts,
+      proj_rebounds: reb,
+      proj_assists: ast,
+      proj_threes: three,
+      proj_steals: stl,
+      proj_blocks: blk,
+      proj_turnovers: tov,
+      proj_minutes: min,
+      opponentAbbr: null,
+      gameStartTime: null,
+      gp,
+    });
+  }
+  return out;
+}
+
+function parseScoreboardGames(json: NbaApiResponse, etDate: string): NormalizedGame[] {
+  const sets = json.resultSets ?? [];
+  const header = sets.find(s => s.name === "GameHeader");
+  if (!header) return [];
+  const iGame = header.headers.indexOf("GAME_ID");
+  const iHomeTeam = header.headers.indexOf("HOME_TEAM_ID");
+  const iAwayTeam = header.headers.indexOf("VISITOR_TEAM_ID");
+  const iStatusText = header.headers.indexOf("GAME_STATUS_TEXT");
+
+  const out: NormalizedGame[] = [];
+  for (const row of header.rowSet ?? []) {
+    const gameId = String(row[iGame] ?? "").trim();
+    if (!gameId) continue;
+    const homeId = String(row[iHomeTeam] ?? "");
+    const awayId = String(row[iAwayTeam] ?? "");
+    const homeAbbr = NBA_TEAM_ID_TO_ABBR[homeId] ?? null;
+    const awayAbbr = NBA_TEAM_ID_TO_ABBR[awayId] ?? null;
+    const statusText = String(row[iStatusText] ?? "").trim();
+    out.push({
+      gameId,
+      name: homeAbbr && awayAbbr ? `${awayAbbr} @ ${homeAbbr}` : statusText,
+      homeAbbr,
+      awayAbbr,
+      startTime: null,
+      gameDate: etDate,
+    });
+  }
+  return out;
+}
+
+interface CdnScoreboardTeam {
+  teamId?: number;
+  teamTricode?: string;
+}
+
+interface CdnScoreboardGame {
+  gameId?: string;
+  gameTimeUTC?: string;
+  homeTeam?: CdnScoreboardTeam;
+  awayTeam?: CdnScoreboardTeam;
+}
+
+interface CdnScoreboardResponse {
+  scoreboard?: {
+    gameDate?: string;
+    games?: CdnScoreboardGame[];
+  };
+}
+
+function parseCdnScoreboardGames(json: CdnScoreboardResponse, etDate: string): NormalizedGame[] {
+  const games = json?.scoreboard?.games ?? [];
+  const sourceDate = json?.scoreboard?.gameDate ?? etDate;
+  const out: NormalizedGame[] = [];
+  for (const g of games) {
+    const gameId = (g.gameId ?? "").toString().trim();
+    if (!gameId) continue;
+    const home = g.homeTeam?.teamTricode?.trim().toUpperCase() ?? null;
+    const away = g.awayTeam?.teamTricode?.trim().toUpperCase() ?? null;
+    if (!home || !away) continue;
+    out.push({
+      gameId,
+      name: `${away} @ ${home}`,
+      homeAbbr: home,
+      awayAbbr: away,
+      startTime: g.gameTimeUTC ?? null,
+      gameDate: sourceDate,
+    });
+  }
+  return out;
+}
+
+function attachOpponents(players: RollingPlayer[], games: NormalizedGame[]): RollingPlayer[] {
+  // For each player on a team that's playing today, attach the opponent abbr
+  // so the edge function's findGameForTeam() can fall through if it ever
+  // skips the games-table lookup. The primary binding still goes via
+  // nba_games on the supabase side; this is best-effort metadata.
+  const teamToOpp = new Map<string, string>();
+  for (const g of games) {
+    if (g.homeAbbr && g.awayAbbr) {
+      teamToOpp.set(g.homeAbbr, g.awayAbbr);
+      teamToOpp.set(g.awayAbbr, g.homeAbbr);
+    }
+  }
+  return players.map(p => ({
+    ...p,
+    opponentAbbr: p.teamAbbr ? teamToOpp.get(p.teamAbbr.toUpperCase()) ?? null : null,
+  }));
+}
+
+async function handleRollingProjections(_request: Request): Promise<Response> {
+  const todayET = todayInET();
+  const season = nbaSeasonStringFromETDate(todayET);
+  const seasonType = nbaSeasonTypeFromETDate(todayET);
+
+  // Two upstreams, both fired in parallel:
+  //   1. cdn.nba.com — static S3 mirror of today's scoreboard. Open to CF
+  //      Workers (no WAF), returns clean JSON with team tricodes + tipoff UTC.
+  //      This is the primary source of nba_games rows.
+  //   2. stats.nba.com — last-5-games per-game averages. Behind Cloudflare,
+  //      currently 520s every request from CF Workers (origin-side block on
+  //      Worker IP ranges). Kept on the request path as a best-effort: if it
+  //      lands, we get full DK fantasy projections; if it 520s, we still
+  //      ship the games payload with players=[] and a note explaining the
+  //      degraded state.
+  // Result: nba_games stays fresh even when projections are unavailable.
+
+  const cdnUrl = "https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json";
+  const cdnHeaders: Record<string, string> = {
+    "User-Agent": NBA_USER_AGENT,
+    "Accept": "application/json, text/plain, */*",
+  };
+
+  // Tight 10s budget on player stats so the worker returns quickly when
+  // stats.nba.com 520s (the common case from CF Workers). cdn.nba.com almost
+  // always responds in well under 1s.
+  const psTimeout = AbortSignal.timeout(10_000);
+  const [sbResult, psResult] = await Promise.allSettled([
+    fetch(cdnUrl, { method: "GET", headers: cdnHeaders }),
+    fetch(buildPlayerStatsUrl(season, seasonType), { method: "GET", headers: NBA_HEADERS, signal: psTimeout }),
+  ]);
+
+  if (sbResult.status === "rejected") {
+    return jsonResponse(
+      { error: "scoreboard_fetch_failed", message: String((sbResult as PromiseRejectedResult).reason) },
+      502,
+    );
+  }
+  const sbRes = sbResult.value;
+  if (!sbRes.ok) {
+    const body = await sbRes.text().catch(() => "");
+    return jsonResponse(
+      { error: "scoreboard_upstream_failed", status: sbRes.status, body_excerpt: body.slice(0, 800) },
+      502,
+    );
+  }
+  let sbJson: CdnScoreboardResponse;
+  try { sbJson = await sbRes.json(); } catch (err) {
+    return jsonResponse(
+      { error: "scoreboard_not_json", message: err instanceof Error ? err.message : String(err) },
+      502,
+    );
+  }
+  const games = parseCdnScoreboardGames(sbJson, todayET);
+
+  if (games.length === 0) {
+    const empty: NormalizedDkResponse = {
+      draftGroupId: null,
+      gameDate: todayET,
+      players: [],
+      games: [],
+      note: "no_nba_slate_today",
+    };
+    return jsonResponse(empty, 200, 600);
+  }
+
+  // Player stats — best-effort. stats.nba.com is currently 520'ing CF Worker
+  // IPs (Cloudflare-on-Cloudflare origin block); the games payload still
+  // ships so the downstream pipeline keeps nba_games fresh. The note carries
+  // the upstream status so pipeline_runs has a useful signal.
+  let players: RollingPlayer[] = [];
+  let degradedNote: string | undefined;
+  let degradedStatus: number | null = null;
+
+  if (psResult.status === "rejected") {
+    degradedNote = "playerstats_fetch_failed";
+  } else {
+    const psRes = psResult.value;
+    if (!psRes.ok) {
+      degradedNote = "playerstats_upstream_blocked";
+      degradedStatus = psRes.status;
+    } else {
+      let psJson: NbaApiResponse | null = null;
+      try { psJson = await psRes.json(); } catch { degradedNote = "playerstats_not_json"; }
+      if (psJson) {
+        players = parsePlayerStats(psJson);
+        if (players.length === 0) degradedNote = "playerstats_empty";
+        else players = attachOpponents(players, games);
+      }
+    }
+  }
+
+  const normalized: NormalizedDkResponse & {
+    source: string;
+    season: string;
+    seasonType: string;
+    upstreamPlayerStatusOnDegrade?: number | null;
+  } = {
+    draftGroupId: null,
+    gameDate: todayET,
+    players,
+    games,
+    source: "nba-stats-rolling5",
+    season,
+    seasonType,
+    note: degradedNote,
+    upstreamPlayerStatusOnDegrade: degradedStatus,
+  };
+  return jsonResponse(normalized, 200, 600);
+}
+
 // ─── /nba/odds (placeholder) ──────────────────────────────────────────────────
 // Reserved for the Odds API integration. Once the API key arrives, wire
 // https://api.the-odds-api.com/v4/sports/basketball_nba/odds through here
@@ -505,6 +915,8 @@ export default {
         return handleScoreboard(request);
       case "/nba/draftkings-projections":
         return handleDraftKingsProjections(request);
+      case "/nba/rolling-projections":
+        return handleRollingProjections(request);
       case "/nba/odds":
         return handleOdds();
       default:
