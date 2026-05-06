@@ -2,10 +2,6 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 
-/* ================================================================== */
-/*  SupportChat v5 — instant welcome, async deal loading, polish pass  */
-/* ================================================================== */
-
 interface MomentCard {
   playerName: string; setName?: string; tier?: string; series?: string;
   price: number; fmv?: number; discountPct?: number; badgeNames?: string[];
@@ -45,7 +41,6 @@ function tierColor(tier?: string): string {
 function sourceColor(source?: string): string { return source === "flowty" ? "#06b6d4" : "#E03A2F"; }
 function badgeIconUrl(name: string): string { return `https://nbatopshot.com/img/momentTags/static/${name}.svg`; }
 
-/* ── Moment Card ───────────────────────────────────────────────── */
 function MomentCardUI({ card, onAddToCart }: { card: MomentCard; onAddToCart?: (c: MomentCard) => void }) {
   return (
     <div style={{ background: "#111", border: "1px solid #222", borderRadius: 12, overflow: "hidden", marginTop: 6, marginBottom: 4 }}>
@@ -86,14 +81,19 @@ function MomentCardUI({ card, onAddToCart }: { card: MomentCard; onAddToCart?: (
   );
 }
 
-/* ── Feedback Buttons ──────────────────────────────────────────── */
 function FeedbackButtons({ messageId, sessionId, dbId, feedback: initialFeedback }: { messageId: string; sessionId: string; dbId?: number; feedback?: "up" | "down" | null }) {
   const [feedback, setFeedback] = useState<"up" | "down" | null>(initialFeedback || null);
   const [sent, setSent] = useState(false);
   const sendFeedback = async (value: "up" | "down") => {
     if (sent) return;
     setFeedback(value); setSent(true);
-    try { await fetch("/api/support-chat/feedback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messageId: dbId || null, sessionId, feedback: value }) }); } catch { /* silent */ }
+    try {
+      await fetch("/api/support-chat/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messageId: dbId ?? null, sessionId, feedback: value }),
+      });
+    } catch { /* silent */ }
   };
   return (
     <div style={{ display: "flex", gap: 4, marginTop: 6, opacity: sent ? 0.5 : 1 }}>
@@ -103,67 +103,59 @@ function FeedbackButtons({ messageId, sessionId, dbId, feedback: initialFeedback
   );
 }
 
-/* ── Default quick suggestions by page + collection ────────────── */
+// Beta-flavored quick-suggestion pills. The dominant feel is feedback intake;
+// one or two deal-flavored prompts remain so users can still escape into the
+// concierge when they need it.
 const PAGE_DEFAULTS: Record<string, string[]> = {
-  // NBA Top Shot
-  "sniper (nba-top-shot)": ["Best deals right now", "Rare moments under $20", "Find me a LeBron deal", "What badges are hot?"],
-  "badges (nba-top-shot)": ["Most valuable badges?", "Rookie Year moments under $15", "Check badges for Wembanyama", "What is Top Shot Debut?"],
-  "collection (nba-top-shot)": ["Analyze my portfolio", "What should I sell?", "My most undervalued moment?", "Sets I'm close to completing?"],
-  "sets (nba-top-shot)": ["Cheapest set to complete?", "What's in Run It Back?", "Best investment sets?", "Show me S8 sets"],
-  "packs (nba-top-shot)": ["Are packs worth buying?", "How does Pack EV work?", "Best value pack right now?", "What's inside the latest drop?"],
-  "overview (nba-top-shot)": ["Top sales today", "Hottest editions", "Market pulse", "Where do I start?"],
-  "market (nba-top-shot)": ["Show everything under $20", "Filter by legendary only", "Cheapest ultimate right now"],
-  "analytics (nba-top-shot)": ["Top sales this week", "Which tier is trending", "Hottest player this month"],
+  "sniper (nba-top-shot)": ["Bug on this page?", "Confusing on this page?", "Best deals right now", "Find me a LeBron deal"],
+  "badges (nba-top-shot)": ["Bug on this page?", "How does X work?", "Most valuable badges?", "Check badges for Wembanyama"],
+  "collection (nba-top-shot)": ["Bug with my collection view?", "Suggest a feature", "Analyze my portfolio", "Sets I'm close to completing?"],
+  "sets (nba-top-shot)": ["Bug on this page?", "Confusing on this page?", "Cheapest set to complete?", "Best investment sets?"],
+  "packs (nba-top-shot)": ["Pack EV looks wrong?", "Suggest a feature", "Best value pack right now?", "How does Pack EV work?"],
+  "overview (nba-top-shot)": ["Report a bug", "Suggest a feature", "Top sales today", "Where do I start?"],
+  "market (nba-top-shot)": ["Bug on this page?", "Confusing filter?", "Show everything under $20", "Cheapest legendary right now"],
+  "analytics (nba-top-shot)": ["A number looks off?", "Suggest a feature", "Top sales this week", "Hottest player this month"],
 
-  // NFL All Day
-  "sniper (nfl-all-day)": ["Best All Day deals", "Cheap legendaries", "Find me a Mahomes deal", "Rookie moments under $10"],
-  "collection (nfl-all-day)": ["Analyze my All Day wallet", "What should I sell?", "My best moments", "Set completion progress"],
-  "packs (nfl-all-day)": ["All Day pack EV", "Best value pack", "What tiers drop in this pack?", "Skip or buy?"],
-  "sets (nfl-all-day)": ["Cheapest All Day set", "Set bottlenecks", "Series 4 sets", "Playoffs sets"],
-  "badges (nfl-all-day)": ["Rookie badges", "Super Bowl badges", "Pro Bowl premiums", "First Touchdown moments"],
-  "overview (nfl-all-day)": ["Top All Day sales", "Market pulse", "Hottest editions", "Where do I start?"],
-  "market (nfl-all-day)": ["Show everything under $20", "Filter by legendary only", "Cheapest ultimate right now"],
-  "analytics (nfl-all-day)": ["Top sales this week", "Which tier is trending", "Hottest player this month"],
+  "sniper (nfl-all-day)": ["Bug on this page?", "Suggest a feature", "Best All Day deals", "Find me a Mahomes deal"],
+  "collection (nfl-all-day)": ["Bug with my collection view?", "Suggest a feature", "Analyze my All Day wallet", "Set completion progress"],
+  "packs (nfl-all-day)": ["Pack EV looks wrong?", "Suggest a feature", "All Day pack EV", "Skip or buy?"],
+  "sets (nfl-all-day)": ["Bug on this page?", "Confusing on this page?", "Cheapest All Day set", "Set bottlenecks"],
+  "badges (nfl-all-day)": ["Bug on this page?", "How does X work?", "Rookie badges", "First Touchdown moments"],
+  "overview (nfl-all-day)": ["Report a bug", "Suggest a feature", "Top All Day sales", "Where do I start?"],
+  "market (nfl-all-day)": ["Bug on this page?", "Confusing filter?", "Show everything under $20", "Cheapest legendary right now"],
+  "analytics (nfl-all-day)": ["A number looks off?", "Suggest a feature", "Top sales this week", "Hottest player this month"],
 
-  // LaLiga Golazos
-  "sniper (laliga-golazos)": ["Best Golazos deals", "Cheap legendaries", "Find me a Messi moment", "El Clásico badges"],
-  "collection (laliga-golazos)": ["Analyze my Golazos wallet", "What should I sell?", "My best moments", "Set completion"],
-  "packs (laliga-golazos)": ["Golazos pack EV", "Best value pack", "Tier odds", "Skip or buy?"],
-  "sets (laliga-golazos)": ["Cheapest Golazos set", "Set bottlenecks", "Ídolos sets", "Estrellas sets"],
-  "overview (laliga-golazos)": ["Top Golazos sales", "Market pulse", "Hottest editions", "Where do I start?"],
-  "market (laliga-golazos)": ["Show everything under $20", "Filter by legendary only", "Cheapest ultimate right now"],
-  "analytics (laliga-golazos)": ["Top sales this week", "Which tier is trending", "Hottest player this month"],
+  "sniper (laliga-golazos)": ["Bug on this page?", "Suggest a feature", "Best Golazos deals", "Find me a Messi moment"],
+  "collection (laliga-golazos)": ["Bug with my collection view?", "Suggest a feature", "Analyze my Golazos wallet", "Set completion"],
+  "packs (laliga-golazos)": ["Pack EV looks wrong?", "Suggest a feature", "Golazos pack EV", "Skip or buy?"],
+  "sets (laliga-golazos)": ["Bug on this page?", "Confusing on this page?", "Cheapest Golazos set", "Ídolos sets"],
+  "overview (laliga-golazos)": ["Report a bug", "Suggest a feature", "Top Golazos sales", "Where do I start?"],
+  "market (laliga-golazos)": ["Bug on this page?", "Confusing filter?", "Show everything under $20", "Cheapest legendary right now"],
+  "analytics (laliga-golazos)": ["A number looks off?", "Suggest a feature", "Top sales this week", "Hottest player this month"],
 
-  // Disney Pinnacle
-  "sniper (disney-pinnacle)": ["Best Pinnacle deals", "Cheap variant pins", "Star Wars pins under $10", "Pixar pins"],
-  "collection (disney-pinnacle)": ["Analyze my Pinnacle wallet", "What should I sell?", "Variant breakdown", "My best pins"],
-  "overview (disney-pinnacle)": ["Top Pinnacle sales", "Hottest pins", "What is Pinnacle?", "Where do I start?"],
-  "market (disney-pinnacle)": ["Show everything under $20", "Filter by legendary only", "Cheapest ultimate right now"],
-  "analytics (disney-pinnacle)": ["Top sales this week", "Which tier is trending", "Hottest player this month"],
+  "sniper (disney-pinnacle)": ["Bug on this page?", "Suggest a feature", "Best Pinnacle deals", "Star Wars pins under $10"],
+  "collection (disney-pinnacle)": ["Bug with my collection view?", "Suggest a feature", "Analyze my Pinnacle wallet", "Variant breakdown"],
+  "overview (disney-pinnacle)": ["Report a bug", "Suggest a feature", "Top Pinnacle sales", "What is Pinnacle?"],
+  "market (disney-pinnacle)": ["Bug on this page?", "Confusing filter?", "Show everything under $20", "Cheapest legendary right now"],
+  "analytics (disney-pinnacle)": ["A number looks off?", "Suggest a feature", "Top sales this week", "Hottest player this month"],
 
-  // UFC Strike
-  "sniper (ufc)": ["Best UFC deals", "Cheap moments", "Find me a McGregor moment", "Title fights"],
-  "collection (ufc)": ["Analyze my UFC wallet", "My best moments", "What about the Aptos migration?"],
-  "overview (ufc)": ["UFC Strike status", "Aptos migration", "Hottest moments", "Where do I start?"],
+  "sniper (ufc)": ["Bug on this page?", "Suggest a feature", "Best UFC deals", "Find me a McGregor moment"],
+  "collection (ufc)": ["Bug with my collection view?", "Suggest a feature", "Analyze my UFC wallet", "What about the Aptos migration?"],
+  "overview (ufc)": ["Report a bug", "Suggest a feature", "UFC Strike status", "Aptos migration"],
 
-  // Generic fallbacks (page only)
-  sniper: ["Best deals right now", "Rare moments under $20", "Find me a deal", "What badges are hot?"],
-  badges: ["Most valuable badges?", "Rookie moments under $15", "Badge premiums", "What is Top Shot Debut?"],
-  collection: ["Analyze my portfolio", "What should I sell?", "My most undervalued moment?", "Set progress"],
-  sets: ["Cheapest set to complete?", "Best investment sets?", "Set bottlenecks", "Latest sets"],
-  packs: ["Are packs worth buying?", "How does Pack EV work?", "Best value pack right now?", "Tier odds"],
-  overview: ["Top sales today", "Hottest editions", "Market pulse", "Where do I start?"],
-  market: ["Show everything under $20", "Filter by legendary only", "Cheapest ultimate right now"],
-  analytics: ["Top sales this week", "Which tier is trending", "Hottest player this month"],
+  sniper: ["Bug on this page?", "Suggest a feature", "Best deals right now", "Find me a deal"],
+  badges: ["Bug on this page?", "How does X work?", "Most valuable badges?", "Badge premiums"],
+  collection: ["Bug with my collection view?", "Suggest a feature", "Analyze my portfolio", "Set progress"],
+  sets: ["Bug on this page?", "Confusing on this page?", "Cheapest set to complete?", "Best investment sets?"],
+  packs: ["Pack EV looks wrong?", "Suggest a feature", "Best value pack right now?", "How does Pack EV work?"],
+  overview: ["Report a bug", "Suggest a feature", "Top sales today", "Where do I start?"],
+  market: ["Bug on this page?", "Confusing filter?", "Show everything under $20", "Cheapest legendary right now"],
+  analytics: ["A number looks off?", "Suggest a feature", "Top sales this week", "Hottest player this month"],
 };
-const DEFAULT_SUGGESTIONS = ["Find me deals under $10", "How does FMV work?", "What are badges?", "Show me top discounts"];
+const DEFAULT_SUGGESTIONS = ["Report a bug", "Suggest a feature", "Something looks off", "How does FMV work?"];
 
-/* ================================================================== */
-/*  Main Component                                                     */
-/* ================================================================== */
-
-export default function SupportChat({ pageContext, collectionId, userWallet, userEmail, walletConnected, onAddToCart }: {
-  pageContext?: string; collectionId?: string | null; userWallet?: string | null; userEmail?: string | null; walletConnected?: boolean; onAddToCart?: (moment: any) => void;
+export default function SupportChat({ pageContext, collectionId, userWallet, ownerKey, walletConnected, onAddToCart }: {
+  pageContext?: string; collectionId?: string | null; userWallet?: string | null; ownerKey?: string | null; walletConnected?: boolean; onAddToCart?: (moment: any) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -180,7 +172,6 @@ export default function SupportChat({ pageContext, collectionId, userWallet, use
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
   useEffect(() => { if (isOpen) { setTimeout(() => inputRef.current?.focus(), 300); setHasNewMessage(false); } }, [isOpen]);
 
-  // Hide FAB when a text input/textarea is focused (mobile keyboard open)
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     function handleFocusIn(e: FocusEvent) {
@@ -205,84 +196,86 @@ export default function SupportChat({ pageContext, collectionId, userWallet, use
     };
   }, []);
 
-  // ── Instant welcome on open, then async context enrichment ─────
   useEffect(() => {
     if (!isOpen || contextLoaded || messages.length > 0) return;
     setContextLoaded(true);
 
-    // Try full "page (collection)" key first, then fall back to page-only
     const fullKey = (pageContext || "").trim().toLowerCase();
     const pageName = fullKey.split("(")[0].trim();
     const defaultSuggestions = PAGE_DEFAULTS[fullKey] || PAGE_DEFAULTS[pageName] || DEFAULT_SUGGESTIONS;
     setQuickSuggestions(defaultSuggestions);
 
-    // Show instant static welcome — no waiting
-    const instantWelcome = walletConnected
-      ? "Hey! I'm your RPC concierge. I can find deals, analyze your portfolio, check FMV, or help you build your collection.\n\nWhat are you looking for today?"
-      : "Welcome to Rip Packs City! I can help you find deals on NBA Top Shot moments, explain how the platform works, or just chat about collecting.\n\nWhat can I help you with?";
+    const instantWelcome = ownerKey
+      ? `Hey ${ownerKey} — RPC is in closed beta, so I'm mostly here to help you get unstuck, answer how-things-work questions, and pass feedback to Trevor. I can also pull live deals or check FMV if you want.\n\nWhat's up?`
+      : `Welcome to Rip Packs City — we're in closed beta. I'm here to help you get unstuck, answer questions, and capture bug reports or feature requests for Trevor. I can also find deals and check FMV when you need it.\n\nWhat can I help with?`;
 
     setMessages([{ id: "welcome", role: "system", text: instantWelcome, timestamp: new Date() }]);
 
-    // Async: fetch context and append deal + memory if available
     (async () => {
       try {
         const params = new URLSearchParams({ sessionId });
         if (pageContext) params.set("pageContext", pageContext);
         if (collectionId) params.set("collectionId", collectionId);
+        if (ownerKey) params.set("ownerKey", ownerKey);
         const res = await fetch(`/api/support-chat/context?${params}`);
         if (!res.ok) return;
         const ctx = await res.json();
 
-        // Update suggestions from server if available
         if (ctx.pageSuggestions && ctx.pageSuggestions.length > 0) {
           setQuickSuggestions(ctx.pageSuggestions);
         }
 
-        // Build enrichment message parts
-        const parts: string[] = [];
-
-        if (ctx.returningUser && ctx.lastTopics?.length > 0) {
-          // Replace welcome with returning user version
+        // Returning beta tester: rewrite the welcome with a warmer, status-aware message.
+        if (ctx.returningBetaTester) {
+          const open = ctx.lastOpenFeedback;
+          let nameLine = ownerKey ? `Welcome back, ${ownerKey}.` : "Welcome back.";
+          let statusLine: string | null = null;
+          if (open?.feedback_summary) {
+            const status = String(open.feedback_status ?? "new");
+            if (status === "shipped") {
+              statusLine = `Your last feedback ("${open.feedback_summary}") shipped — thanks for the catch.`;
+            } else if (status === "in_progress") {
+              statusLine = `Your last feedback ("${open.feedback_summary}") is in progress — Trevor is on it.`;
+            } else if (status === "wontfix" || status === "duplicate") {
+              statusLine = `Your last feedback ("${open.feedback_summary}") was triaged as ${status}.`;
+            } else {
+              statusLine = `Your last feedback ("${open.feedback_summary}") is still in the queue.`;
+            }
+          } else if (typeof ctx.conversationCount === "number" && ctx.conversationCount > 0) {
+            statusLine = `${ctx.conversationCount} prior session${ctx.conversationCount === 1 ? "" : "s"} on file.`;
+          }
+          const text = [nameLine, statusLine, "What's up today?"].filter(Boolean).join(" ");
+          setMessages((prev) => {
+            const updated = [...prev];
+            if (updated[0]?.id === "welcome") {
+              updated[0] = { ...updated[0], text };
+            }
+            return updated;
+          });
+        } else if (ctx.returningUser && ctx.lastTopics?.length > 0) {
           setMessages((prev) => {
             const updated = [...prev];
             if (updated[0]?.id === "welcome") {
               updated[0] = {
                 ...updated[0],
-                text: `Welcome back! Last time we chatted about ${ctx.lastTopics.join(", ")}.\n\nWhat can I help with today?`,
+                text: `Welcome back! Last time we touched on ${ctx.lastTopics.join(", ")}. What's up today?`,
               };
             }
             return updated;
           });
         }
 
-        if (ctx.dailyDeal) {
-          const d = ctx.dailyDeal;
-          const playerName = d.player_name;
-          const price = d.low_ask;
-          const discountPct = d.discount_pct;
-          if (playerName && price != null && discountPct != null) {
-            const priceStr = typeof price === "number" ? price.toFixed(2) : parseFloat(price).toFixed(2);
-            const source = d.source === "flowty" ? "Flowty" : "TopShot";
-            const seriesStr = d.series ? `, ${d.series}` : "";
-            const setStr = d.set_name ? `, ${d.set_name}` : "";
-            let dealLine = `🔥 Top deal: ${playerName}${seriesStr}${setStr} — $${priceStr}, ${Math.round(discountPct)}% below FMV on ${source}`;
-            if (d.buy_url) dealLine += `\n${d.buy_url}`;
-            parts.push(dealLine);
-          }
-        }
+        // Skip the deal-of-the-day blurb in beta posture — it muddies the
+        // support-first feel. Market pulse stays as a one-liner if present.
         if (ctx.marketPulse) {
-          parts.push(`📊 ${ctx.marketPulse}`);
-        }
-
-        if (parts.length > 0) {
           setMessages((prev) => [
             ...prev,
-            { id: "market_pulse", role: "system", text: parts.join("\n"), timestamp: new Date() },
+            { id: "market_pulse", role: "system", text: `📊 ${ctx.marketPulse}`, timestamp: new Date() },
           ]);
         }
       } catch { /* context fetch failed silently — static welcome already shown */ }
     })();
-  }, [isOpen, contextLoaded, messages.length, walletConnected, sessionId, pageContext]);
+  }, [isOpen, contextLoaded, messages.length, walletConnected, ownerKey, sessionId, pageContext, collectionId]);
 
   const handleAddToCart = useCallback((card: MomentCard) => {
     if (onAddToCart) {
@@ -306,11 +299,21 @@ export default function SupportChat({ pageContext, collectionId, userWallet, use
     try {
       const res = await fetch("/api/support-chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed, sessionId, userWallet: userWallet || null, userEmail: userEmail || null, pageContext: pageContext || null, collectionId: collectionId || null, walletConnected: !!walletConnected, conversationHistory: history, stream: true }),
+        body: JSON.stringify({
+          message: trimmed,
+          sessionId,
+          ownerKey: ownerKey || null,
+          userWallet: userWallet || null,
+          pageContext: pageContext || null,
+          collectionId: collectionId || null,
+          walletConnected: !!walletConnected,
+          conversationHistory: history,
+          stream: true,
+        }),
       });
       if (res.status === 429) {
         setMessages((prev) => prev.filter((m) => m.id !== "typing"));
-        setMessages((prev) => [...prev, { id: `e_${Date.now()}`, role: "assistant", text: "You\u2019ve sent a lot of messages \u2014 I need a short break. Come back in an hour and I\u2019ll be ready to help again.", timestamp: new Date() }]);
+        setMessages((prev) => [...prev, { id: `e_${Date.now()}`, role: "assistant", text: "You’ve sent a lot of messages — I need a short break. Come back in an hour and I’ll be ready to help again.", timestamp: new Date() }]);
         return;
       }
 
@@ -323,9 +326,6 @@ export default function SupportChat({ pageContext, collectionId, userWallet, use
         return;
       }
 
-      // Streaming path: replace the typing placeholder with an assistant msg
-      // and append text chunks as they arrive. Trailing JSON-on-its-own-line
-      // payload (prefixed with \x1e) carries metadata (escalated, momentCards).
       const msgId = `b_${Date.now()}`;
       setMessages((prev) => prev.filter((m) => m.id !== "typing"));
       setMessages((prev) => [...prev, { id: msgId, role: "assistant", text: "", feedback: null, timestamp: new Date() }]);
@@ -367,16 +367,14 @@ export default function SupportChat({ pageContext, collectionId, userWallet, use
       setMessages((prev) => prev.filter((m) => m.id !== "typing"));
       setMessages((prev) => [...prev, { id: `e_${Date.now()}`, role: "assistant", text: "Connection issue. Try again in a moment.", timestamp: new Date() }]);
     } finally { setIsLoading(false); }
-  }, [input, isLoading, sessionId, userWallet, pageContext, walletConnected, isOpen, messages]);
+  }, [input, isLoading, sessionId, ownerKey, userWallet, pageContext, collectionId, walletConnected, isOpen, messages]);
 
-  // External "ask" event from ExplainButton or other components
   useEffect(() => {
     function handleAsk(e: Event) {
       const detail = (e as CustomEvent).detail as { text?: string } | undefined;
       const text = detail?.text?.trim();
       if (!text) return;
       setIsOpen(true);
-      // Wait a tick so the chat is open / context loaded before sending
       setTimeout(() => { sendMessage(text); }, 80);
     }
     window.addEventListener("rpc-concierge-ask", handleAsk);
@@ -412,17 +410,15 @@ export default function SupportChat({ pageContext, collectionId, userWallet, use
 
       {isOpen && (
         <div className="rpc-chat-panel" style={{ position: "fixed", bottom: 88, right: 16, width: "min(400px, calc(100vw - 32px))", height: "min(580px, calc(100vh - 120px))", background: "#0d0d0d", border: "1px solid #222", borderRadius: 16, display: "flex", flexDirection: "column", overflow: "hidden", zIndex: 9998, boxShadow: "0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05)" }}>
-          {/* Header */}
           <div style={{ padding: "14px 16px", background: "linear-gradient(135deg, #1a0a09 0%, #0d0d0d 100%)", borderBottom: "1px solid #1a1a1a", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
             <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg, #E03A2F 0%, #b82e25 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>🏙️</div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", letterSpacing: "-0.01em" }}>RPC Concierge</div>
-              <div style={{ fontSize: 11, color: "#666", marginTop: 1 }}>Personal shopper · Powered by Claude</div>
+              <div style={{ fontSize: 11, color: "#666", marginTop: 1 }}>Beta support · Powered by Claude</div>
             </div>
             <button onClick={() => setIsOpen(false)} aria-label="Close" style={{ background: "none", border: "none", color: "#555", cursor: "pointer", padding: 4, fontSize: 18, lineHeight: 1, borderRadius: 6 }}>✕</button>
           </div>
 
-          {/* Messages */}
           <div className="rpc-chat-scrollbar" style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
             {messages.map((msg) => (
               <div key={msg.id} className="rpc-msg-enter" style={{ display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start" }}>
@@ -456,7 +452,6 @@ export default function SupportChat({ pageContext, collectionId, userWallet, use
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Quick Action Pills — always visible */}
           {quickSuggestions.length > 0 && (
             <div style={{ overflowX: "auto", whiteSpace: "nowrap", padding: "8px 12px", display: "flex", gap: 6, scrollbarWidth: "none", flexShrink: 0 }} className="rpc-hide-scrollbar">
               {quickSuggestions.map((suggestion) => (
@@ -469,22 +464,20 @@ export default function SupportChat({ pageContext, collectionId, userWallet, use
             </div>
           )}
 
-          {/* Input */}
           <div style={{ padding: "10px 14px 14px", borderTop: "1px solid #1a1a1a", background: "#0a0a0a", flexShrink: 0 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <input ref={inputRef} className="rpc-chat-input" type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
-                placeholder={walletConnected ? "Find deals, check FMV, analyze portfolio..." : "Ask about deals, badges, FMV..."}
+                placeholder={ownerKey ? "Report a bug, ask a question, or look up a moment…" : "Ask a question, report a bug, or hunt deals…"}
                 maxLength={2000} disabled={isLoading}
                 style={{ flex: 1, padding: "10px 14px", background: "#141414", border: "1px solid #222", borderRadius: 10, color: "#eee", fontSize: 13.5, transition: "box-shadow 0.15s" }} />
               <button onClick={() => sendMessage()} disabled={!input.trim() || isLoading} aria-label="Send"
                 style={{ width: 38, height: 38, borderRadius: 10, border: "none", background: input.trim() && !isLoading ? "linear-gradient(135deg, #E03A2F 0%, #c43028 100%)" : "#1a1a1a", color: input.trim() && !isLoading ? "#fff" : "#444", cursor: input.trim() && !isLoading ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>↑</button>
             </div>
-            <div style={{ marginTop: 6, fontSize: 10, color: "#444", textAlign: "center" }}>AI concierge · Prices are live · Not financial advice</div>
+            <div style={{ marginTop: 6, fontSize: 10, color: "#444", textAlign: "center" }}>Closed beta · Feedback goes to Trevor · Not financial advice</div>
           </div>
         </div>
       )}
 
-      {/* Floating Button */}
       <button onClick={() => setIsOpen((o) => !o)} aria-label={isOpen ? "Close chat" : "Open RPC concierge"}
         className={`rpc-chat-bubble${inputFocused ? " hidden" : ""}`}
         style={{ position: "fixed", bottom: 20, right: 16, width: 52, height: 52, borderRadius: 14, border: "none", background: isOpen ? "#1a1a1a" : "linear-gradient(135deg, #E03A2F 0%, #b82e25 100%)", color: "#fff", cursor: "pointer", display: inputFocused ? "none" : "flex", alignItems: "center", justifyContent: "center", fontSize: 22, zIndex: 9999, boxShadow: isOpen ? "0 4px 20px rgba(0,0,0,0.3)" : "0 4px 24px rgba(224,58,47,0.35), 0 0 0 1px rgba(224,58,47,0.15)", transition: "transform 0.15s, background 0.2s, box-shadow 0.2s" }}

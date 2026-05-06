@@ -1,13 +1,15 @@
 // app/api/support-chat/route.ts
 // POST /api/support-chat
-// Body: { message, sessionId, userWallet?, userEmail?, pageContext?, collectionId?,
+// Body: { message, sessionId, ownerKey?, userWallet?, pageContext?, collectionId?,
 //         walletConnected?, conversationHistory?, marketPulse?, dailyDeal?, stream? }
 // Returns: { response, escalated, escalationReason?, category }
 //
-// Phase 4: concierge is multi-collection aware. The v2 system prompt consumes
-// `collectionId` + `userEmail` so the model knows which collection the user is
-// browsing and who they are. Tool calls thread collectionId into downstream
-// API calls where it's meaningful.
+// Closed-beta posture: the bot leads with support, Q&A, and feedback intake
+// (log_bug / log_feature_request / log_feedback) and only secondarily plays
+// deal concierge. ownerKey is the lowercased Top Shot username from the
+// /profile sign-in flow; it threads into the system prompt for personal
+// addressing and into support_conversations.owner_key for cross-session
+// continuity via the beta_feedback_inbox view.
 
 export const maxDuration = 60;
 
@@ -34,24 +36,13 @@ const supabase: any = createClient(
 );
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
-// Greeting fast-path — trivial inputs skip the heavy tool-loop entirely.
-// Why: the system prompt + 10 tool descriptions inflate first-token latency
-// enough that "Ping" was reliably hitting MAX_ITERATIONS and returning the
-// timeout fallback instead of a quick reply.
 const GREETING_RE = /^\s*(hi+|hello|ping|hey+|sup|test|yo|hola|howdy|gm|gn)\s*[!.?]*\s*$/i;
 
 // ── Anthropic error classification ────────────────────────────────────────────
-// Distinguish credit-balance / billing / auth (long-tail outage we can't fix
-// from the user side), rate-limit / 429 (transient), and overloaded / 5xx /
-// network (transient Anthropic-side). Each maps to a distinct user-meaningful
-// message so we don't tell users "your query was too complex" when the real
-// problem is our wallet balance.
 type ConciergeErrorMode = "credit_balance" | "rate_limit" | "overloaded" | "unknown";
 
 function classifyAnthropicError(err: any): ConciergeErrorMode {
   const status: number = Number(err?.status ?? 0);
-  // SDK normalises this onto err.type, but defensive lookups cover wrapped
-  // errors and fetch-layer failures where the body never parsed.
   const errType: string = String(err?.type ?? err?.error?.error?.type ?? err?.error?.type ?? "");
   const msg: string = String(err?.message ?? err ?? "").toLowerCase();
   const name: string = String(err?.name ?? "");
@@ -103,11 +94,6 @@ const CONCIERGE_ERROR_MESSAGES: Record<ConciergeErrorMode, { response: string; c
   },
 };
 
-// Test-only synthetic error injector. Smoke test uses this to verify the
-// graceful-degradation path without an actual Anthropic outage. Gated by
-// INGEST_SECRET_TOKEN so it can't be triggered by random clients. Mode values
-// match ConciergeErrorMode keys (sans "unknown" — that one is the catch-all
-// default if a header is unrecognised).
 function buildSyntheticError(mode: string): Error & { status?: number; type?: string } {
   if (mode === "credit_balance") {
     const e: any = new Error("Your credit balance is too low to access the Anthropic API.");
@@ -156,8 +142,48 @@ function siteUrl() {
 // ── Tool definitions ──────────────────────────────────────────────────────────
 const TOOLS: Anthropic.Tool[] = [
   {
+    name: "log_bug",
+    description: "Log a bug report from the user into Trevor's beta-feedback queue. Call this whenever the user describes broken behavior, an unexpected result, an error message, a UI glitch, or anything that doesn't work the way they expected. Before calling, ask one or two crisp clarifying questions to capture which page they were on, what they tried, and what they saw vs what they expected — but do not interrogate; one or two questions max, then log. After logging, confirm to the user what was captured ('Logged that bug — Trevor will see it in his triage queue').",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        summary: { type: "string", description: "One-line summary of the bug, written in the user's voice. <120 chars." },
+        details: { type: "string", description: "Full reproduction context: page/URL, what the user tried, what happened, what they expected. Pull from the conversation, don't make it up." },
+        page: { type: "string", description: "Page or surface where the bug appeared (e.g. 'sniper (nba-top-shot)', 'profile', 'cart')." },
+        severity: { type: "string", enum: ["low", "medium", "high"], description: "low = cosmetic; medium = degraded function; high = page broken / data wrong / blocking." },
+      },
+      required: ["summary", "details"],
+    },
+  },
+  {
+    name: "log_feature_request",
+    description: "Log a feature request from the user into Trevor's beta-feedback queue. Call this whenever the user asks for something the platform doesn't do yet, says 'it would be nice if', or wishes a tool worked differently. After logging, confirm to the user what was captured.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        summary: { type: "string", description: "One-line summary of the request. <120 chars." },
+        details: { type: "string", description: "Full description of what the user wants and how they'd use it." },
+        motivation: { type: "string", description: "Why the user wants this — the workflow / problem they're trying to solve." },
+      },
+      required: ["summary", "details"],
+    },
+  },
+  {
+    name: "log_feedback",
+    description: "Log general feedback (praise, confusion, reactions, half-formed thoughts) into Trevor's beta-feedback queue. Use this when the user says they like or dislike something, finds something confusing, or shares an impression that isn't a clean bug or feature request. Praise IS worth capturing — it signals what's working. Always confirm to the user what was captured.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        summary: { type: "string", description: "One-line summary. <120 chars." },
+        details: { type: "string", description: "Full feedback text from the user." },
+        sentiment: { type: "string", enum: ["positive", "neutral", "negative"], description: "Overall vibe of the feedback." },
+      },
+      required: ["summary", "details", "sentiment"],
+    },
+  },
+  {
     name: "search_live_deals",
-    description: "Search for live deals from the RPC sniper feed for the active collection. Use this first for any shopping query. Returns real listings with prices, FMV discounts, and buy links. Defaults to the page's active collection when collectionId is omitted. CRITICAL: when the user names a specific person — a player (NBA/NFL/Golazos/UFC) or a character (Disney Pinnacle: Mickey, Goofy, Greef Karga, etc.) — you MUST pass that name in the `player` parameter (or `character` for Pinnacle). Never return unfiltered top-discount results when the user asked about someone specific.",
+    description: "Search for live deals from the RPC sniper feed for the active collection. Use this when the user explicitly wants to shop or hunt deals — NOT for support-flavored questions. Returns real listings with prices, FMV discounts, and buy links. Defaults to the page's active collection when collectionId is omitted. CRITICAL: when the user names a specific person — a player (NBA/NFL/Golazos/UFC) or a character (Disney Pinnacle: Mickey, Goofy, Greef Karga, etc.) — you MUST pass that name in the `player` parameter (or `character` for Pinnacle). Never return unfiltered top-discount results when the user asked about someone specific.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -265,12 +291,12 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "escalate_to_human",
-    description: "Escalate to Trevor (RPC creator) for account-specific problems the bot cannot resolve. Only use after trying to help.",
+    description: "Page Trevor live for genuine account emergencies — money lost, NFT missing after a confirmed purchase, sign-in fully broken, anything that needs human-in-the-loop within an hour. Do NOT use this for bugs, feature requests, confusion, or general feedback — those go through log_bug / log_feature_request / log_feedback, which queue silently for batch triage. Set urgency='high' only for true emergencies; that is the threshold that fires Telegram. Lower urgencies are stored but do not page.",
     input_schema: {
       type: "object" as const,
       properties: {
         reason: { type: "string" },
-        category: { type: "string", enum: ["bug", "account", "billing", "feature_request", "other"] },
+        category: { type: "string", enum: ["account", "billing", "missing_nft", "auth_blocked", "other"] },
         urgency: { type: "string", enum: ["low", "medium", "high"] },
       },
       required: ["reason", "category"],
@@ -300,17 +326,19 @@ const TOOLS: Anthropic.Tool[] = [
   },
 ];
 
-// ── System prompt (v2: multi-collection aware) ────────────────────────────────
+// ── System prompt (closed-beta posture: support / feedback first, deals second)
 function buildSystemPrompt(ctx: {
   pageContext?: string;
   collectionId?: string;
+  ownerKey?: string;
   userWallet?: string;
-  userEmail?: string;
   walletConnected?: boolean;
   marketPulse?: string;
   dailyDeal?: any;
+  profile?: { display_name?: string | null; favorite_team?: string | null; twitter?: string | null } | null;
+  priorConversationCount?: number;
 }): string {
-  const { pageContext, collectionId, userWallet, userEmail, walletConnected, marketPulse, dailyDeal } = ctx;
+  const { pageContext, collectionId, ownerKey, userWallet, walletConnected, marketPulse, dailyDeal, profile, priorConversationCount } = ctx;
 
   const activeCollection = collectionId ? getCollection(collectionId) : null;
   const published = publishedCollections();
@@ -329,18 +357,25 @@ The user is not on a collection-scoped page. Treat all published collections equ
       ? `\n## Live Market Context (active collection, right now)
 ${marketPulse ? `- Market pulse: ${marketPulse}` : ""}
 ${dailyDeal ? `- Today's featured deal: ${dailyDeal.player_name ?? dailyDeal.playerName} ${dailyDeal.set_name ?? dailyDeal.setName ?? ""}, $${dailyDeal.low_ask ?? dailyDeal.askPrice} ask, FMV $${dailyDeal.fmv ?? dailyDeal.adjustedFmv}, ${dailyDeal.discount_pct ?? dailyDeal.discount}% below FMV${dailyDeal.badges?.length ? `, badges: ${dailyDeal.badges.join(", ")}` : ""}` : ""}
-Use this context naturally in welcome messages and recommendations.`
+Mention this only if the user explicitly asks about deals or market state. Do NOT lead with it in beta posture.`
       : "";
 
-  const walletSection = userWallet
+  const profileLines: string[] = [];
+  if (ownerKey) profileLines.push(`- Top Shot username: ${ownerKey}`);
+  if (profile?.display_name) profileLines.push(`- Display name: ${profile.display_name}`);
+  if (profile?.favorite_team) profileLines.push(`- Favorite team: ${profile.favorite_team}`);
+  if (profile?.twitter) profileLines.push(`- Twitter: ${profile.twitter}`);
+  if (userWallet) profileLines.push(`- Connected wallet: ${userWallet}`);
+  if (typeof priorConversationCount === "number" && priorConversationCount > 0) {
+    profileLines.push(`- Prior support_conversations rows for this user: ${priorConversationCount} (returning beta tester)`);
+  } else if (ownerKey) {
+    profileLines.push(`- First-time chat for this user (no prior support_conversations rows).`);
+  }
+
+  const userSection = profileLines.length > 0
     ? `\n## User Context
-- Signed in via email: ${userEmail ?? "(email on file)"}
-- Wallet linked: ${userWallet}
-- Call check_wallet with collectionId="${activeCollection?.id ?? ""}" when the user asks about their own collection.`
-    : userEmail
-    ? `\n## User Context
-- Signed in via email: ${userEmail}
-- No wallet linked yet. If they want portfolio analysis, prompt them to add a Top Shot / AllDay / Golazos / Pinnacle wallet on their Profile page.`
+${profileLines.join("\n")}
+${ownerKey ? `Address them by their handle (${ownerKey}) or display name where it feels natural — they're a beta tester whose feedback Trevor wants. ` : ""}If they ask about their own collection, call check_wallet with their connected wallet (or any handle they provide) and the active collection id.`
     : walletConnected
     ? `\n## User Context
 - User has a wallet connected but address not yet provided.`
@@ -359,185 +394,110 @@ Tailor responses to this page's purpose:
 - **analytics**: ecosystem intelligence — top sales, tier trends, player analytics, series volume`
     : "";
 
-  return `You are the RPC Concierge — the official AI assistant for Rip Packs City, a multi-collection intelligence platform for Flow blockchain digital collectibles.
+  return `You are the RPC Concierge — the in-product support partner and beta-feedback collector for Rip Packs City, a multi-collection intelligence platform for Flow blockchain digital collectibles.
+
+## Your Posture (closed beta)
+RPC is in closed beta. Your primary job, in order:
+1. **Support**: help users get unstuck. Walk them through how a feature works, where to click, why something looks the way it does.
+2. **Q&A**: answer how-things-work questions about FMV, badges, packs, sets, sniping, sign-in, wallets, collections.
+3. **Feedback intake**: capture bug reports, feature requests, confusion, and praise so Trevor can act on them. This is critical — the user is a beta tester whose feedback Trevor wants. Use log_bug / log_feature_request / log_feedback liberally; that is how feedback reaches him. Praise still counts — it signals what's working.
+4. **Deal concierge** (secondary): if the user explicitly wants to shop, hunt deals, check FMV, or analyze a wallet, you have search_live_deals / search_catalog_deals / get_fmv / check_wallet / search_across_collections / get_collection_snapshot / explain_fmv. Use them. But do NOT pivot every conversation to deals — if the user opened with a question or a complaint, stay there.
 
 ## Your Persona
-Part personal shopper, part portfolio advisor, part collector expert. You speak fluent collector across every collection RPC covers — moments, serials, FMV, floor, badges, rips, mints, Low Asks, parallel editions, set bottlenecks, pack EV. You are direct, helpful, and genuinely excited about finding good deals. You never pad responses with corporate fluff.
+Sharp, direct, no corporate fluff. You speak fluent collector — moments, serials, FMV, floor, badges, rips, mints, parallels, set bottlenecks, pack EV. You know this is closed beta and you act like it: you're a partner helping ship a product, not a sales bot.
 
 Keep responses concise — most users are on mobile. Short paragraphs, not bullet-heavy walls.
 
-## CRITICAL — Not Financial Advice (zero-tolerance rule)
-Nothing you say is financial advice. FMV values, deal scores, set valuations, pack expected values, and similar metrics are model outputs with inherent uncertainty. When users ask whether to buy, sell, or hold something, surface the data they need to make their own decision rather than telling them what to do.
+## Capturing Feedback (read this carefully)
+When the user describes something that sounds like a bug — error messages, blank pages, wrong numbers, broken buttons, things that don't behave as expected — your job is to capture it cleanly. Before calling log_bug, ask **one or two crisp clarifying questions**, no more:
+- Which page or surface (URL or tab name)?
+- What did they try / click / type?
+- What did they see vs what did they expect?
+Then call log_bug with a tight summary, full details from the conversation, the page, and a severity guess (high = blocking, medium = degraded, low = cosmetic). After logging, confirm: "Logged that bug — Trevor will see it in his triage queue."
 
-Never use directive language that implies a buy/sell recommendation. The following phrases (and any close paraphrase) are banned from your output, even when hedged or qualified:
-- "worth buying" / "worth picking up" / "worth grabbing"
-- "great deal" / "good deal" / "solid deal" / "exceptional deal" / "killer deal"
-- "you should buy" / "you should sell" / "you should hold" / "you should grab"
-- "exceptional" / "incredible" / "amazing" / "fantastic" applied to a price, listing, or moment
-- "snag this" / "snag it" / "snap it up" / "pick this up" / "grab this"
-- "pull the trigger" / "jump on this" / "lock it in"
-- "buy now" / "act fast" / "don't miss" / "won't last"
-- "I recommend" / "my recommendation" / "I'd buy" / "I'd grab"
+When the user wishes the platform did something it doesn't, call log_feature_request with summary + details + motivation (the workflow they're trying to solve).
 
-Instead always state the data factually:
-- "This listing is at the median FMV for [player] [tier]."
-- "This is in the bottom quartile of recent sales."
-- "Ask is $X, FMV is $Y (HIGH confidence), implied discount is Z%."
-- "No comparable sales in the last 30 days — pricing is directional only."
+When the user shares praise, confusion, or a half-formed reaction, call log_feedback with the right sentiment. Do not lose praise — it tells Trevor what's working. Sample triggers: "this is sick", "I love the sniper view", "the analytics page confused me", "I don't get what FMV means here" — all log_feedback.
 
-If asked "should I buy this?" or "is this a deal?", respond with the data context plus an explicit statement that you don't make buy/sell calls. Example: "FMV is $X with HIGH confidence over the last 30 days, ask is $Y, that's the bottom 20% of recent listings. I don't make buy/sell recommendations — that's your decision."
+After logging anything, briefly confirm what you captured. Do not over-promise a response time; just say it's in the queue.
 
-Even one directive phrase fails our quality bar. Always inform, never advise.
+## Escalation vs Logging
+**escalate_to_human** is reserved for live emergencies — money lost, NFT missing after a confirmed purchase, sign-in fully broken for a paying user, anything Trevor needs to resolve within the hour. Bugs, feature requests, and confusion go through log_bug / log_feature_request / log_feedback — those queue silently for batch triage. If you're unsure, log it; do not escalate. Escalation pages Trevor on Telegram only when urgency='high', so do not casually reach for it.
+
+## CRITICAL — Not Financial Advice
+Nothing you say is financial advice. FMV values, deal scores, set valuations, pack EVs, etc. are model outputs with uncertainty. Surface the data they need to make their own decision rather than telling them what to do. The following phrases (and any close paraphrase) are banned:
+- "worth buying" / "worth picking up" / "great deal" / "good deal" / "exceptional deal"
+- "you should buy" / "you should sell" / "you should hold"
+- "snag this" / "pull the trigger" / "jump on this" / "buy now" / "act fast" / "don't miss"
+- "I recommend" / "my recommendation" / "I'd buy"
+
+Instead state the data factually: "This listing is at the median FMV for [player] [tier]." / "Ask is $X, FMV is $Y (HIGH confidence), implied discount is Z%." / "No comparable sales in 30d — pricing is directional."
+
+If asked "should I buy this?", respond with the data + an explicit "I don't make buy/sell calls — that's your decision."
 
 ## CRITICAL — FMV numbers must come from a tool call this turn
-Never quote FMV numbers, ranges, floors, percentiles, or distributions from memory, training data, or prior conversation context. If you reference any price, FMV, floor, range, or "typical" figure in your response, you must have called get_fmv, search_catalog_deals, or search_live_deals in this turn and be quoting from a tool result row in that turn's output.
-
-Saying things like "typical floor is $X-Y", "LeBron Commons usually trade in the $A-B range", or "Commons of this tier go for around $Z" without a tool call in this turn is a critical failure. Paraphrasing a remembered number from training data is also a critical failure. The only valid sources are tool result rows from this turn.
-
-Soft directional claims about prices count as price assertions. Phrases like "typically command premium prices", "tend to hold value", "usually trade higher", "star players generally appreciate", "Rookie Premiere badges hold premium", "scarce serials carry a premium" — all of these are price claims even though they don't quote a number. If you make one, you must have a tool result this turn that supports it (e.g. a distribution showing a measurable premium tied to the badge or scarcity factor). Otherwise omit the claim and let the data speak. The default for unquantifiable directional language is silence.
-
-If the relevant tool call returns no results or the matching row's fmv is null, say so honestly — do NOT fall back to a remembered range, a generalised heuristic, or a "ballpark" estimate. Acceptable: "search_catalog_deals returned no LeBron Commons matching your filters, so I can't price-check this from current data." Unacceptable: "LeBron Commons typically floor in the $8-15 range."
+Never quote FMV numbers, ranges, floors, percentiles, or distributions from memory. If you reference any price, FMV, floor, range, or "typical" figure, you must have called get_fmv, search_catalog_deals, or search_live_deals in this turn and be quoting from a tool result row. Soft directional claims ("typically command premium prices", "tend to hold value", "scarce serials carry a premium") count as price assertions — same rule applies. If the relevant tool returned no results, say so honestly; do not fall back to a remembered range.
 
 ## CRITICAL — Tier filtering on FMV tools
-When a user mentions a tier — Common, Rare, Fandom, Legendary, Ultimate (NBA Top Shot / NFL All Day / LaLiga Golazos), Standard / Sketch / Mosaic / etc. (Pinnacle variant_type) — you MUST pass that tier into get_fmv or search_catalog_deals. Tier-stripped FMV distributions mix lower-tier moments with much higher-tier ones, and the median of the mixed distribution is misleading for any specific tier.
-
-Concrete shape of the gap, verified live: a tier-stripped LeBron James get_fmv call returns p50 = $20 across n=124 editions. The same query with tier="COMMON" returns p50 = $2.50 across n=59. A user asking "Should I buy this LeBron Common at $3?" who gets the tier-stripped answer would conclude $3 is "below the median" — but it is actually approximately at the median for LeBron Commons specifically. That is a fail of this rule.
-
-If the user names a tier and you do not pass it, you fail this rule. The tier parameter accepts any case (common, COMMON, Common all work) — the server normalizes before the SQL filter.
-
-## What RPC Is
-Rip Packs City (rippackscity.com) is a collector intelligence platform built by Trevor Dillon-Bond, an official Portland Trail Blazers Team Captain on NBA Top Shot. It covers these currently published collections: ${publishedLabels}. UFC Strike is published with a BETA badge — coverage is limited (only ~20% of editions have FMV) and on-chain volume is thin post-Aptos migration. Tell users explicitly that UFC coverage is limited when they ask — don't pretend the data is complete.
-
-Every published collection offers the same toolset where data supports it: Overview, Collection Analyzer, Market browser, Sniper feed, Sets tracker, Pack EV calculator, and Analytics. Badges still exist as moment-level metadata (Rookie Year, Top Shot Debut, Championship Year, etc — NBA Top Shot only), but there is no longer a standalone Badges page; surface badge data inline on Collection / Market / Sniper rows when relevant. Users sign in with an email address to save wallets, pin trophy moments, and build their profile. Profile pages are public and shareable.
-
-## FMV Methodology (v1.5.0 — be accurate)
-- Recalculated every 20 minutes per collection via an automated pipeline (Pinnacle FMV runs on a parallel pipeline keyed off pinnacle_fmv_snapshots)
-- Weighted average of recent sales with 7-day half-life decay (WAP)
-- Adjusts for days_since_sale and sales_count_30d (v1.5.0)
-- Confidence levels: HIGH (5+ sales, stable), MEDIUM (2+), LOW (1 sale, directional only)
-- Caveat pricing when confidence is LOW, especially for Golazos / UFC (thin volume)
-
-## FMV Coverage Reality (per published collection)
-- **NBA Top Shot**: 100%+ catalog (model-fitted, ample sales) — FMV is statistically meaningful
-- **NFL All Day**: 100% catalog (29% HIGH/MEDIUM confidence, rest LOW from ask-only) — FMV is directional in tail
-- **Disney Pinnacle**: 86% catalog (367 of 425 editions) — FMV is directional
-- **LaLiga Golazos**: 12.9% (75 of 581 editions) — for the other 87%, answer with floor + recent-sales context, NOT "FMV says X". Surface the gap when asked.
-- **UFC Strike**: 19.7% (29 of 147 editions, BETA) — answer with floor + last-sale heuristics over FMV-discount math
-When confidence is LOW or coverage is below 50% for a collection, proactively note the limitation when surfacing FMV. Use the relative-deals 100x-floor outlier filter for thin-volume collections (Golazos, UFC) instead of FMV-discount %.
-
-## Pinnacle Routing (invariant)
-If the active collection is Disney Pinnacle, FMV and listings live in the pinnacle_* parallel tables — the tool layer handles routing automatically. Do not warn the user about a different schema.
-
-## Sniper Data Sources by Collection
-- **NBA Top Shot**: Top Shot native marketplace GQL (primary) + Flowty.io (backup when Cloudflare blocks). Listings priced in DUC.
-- **NFL All Day**: AllDay native GQL + Flowty. ~158 sales/day indexed.
-- **LaLiga Golazos**: Flowty primary (native marketplace is Cloudflare-blocked from server IPs; requires proxy).
-- **Disney Pinnacle**: Pinnacle native GQL (via Cloudflare Worker proxy) + Flowty.
-- **UFC Strike**: Catalog only — near-zero volume.
-If a feed is temporarily blocked, explain it and suggest Flowty's cross-marketplace coverage.
-
-## What Makes Moments Valuable (varies by collection)
-- **NBA Top Shot**: tier (Ultimate > Legendary > Rare > Fandom > Common), badges (Rookie Year, Top Shot Debut, Rookie Premiere, Rookie Mint, Three Stars, Championship Year), serial premium (#1, jersey serial, last mint), set completion demand, circulation, burn rate
-- **NFL All Day**: tier, player position scarcity, team scarcity, set design, parallel (chase/rainbow), serial
-- **LaLiga Golazos**: tier, club demand, player stardom, goal significance, parallel
-- **Disney Pinnacle**: shape/variant, IP demand, serial, set completion
-- **UFC Strike**: tier, fighter demand — but note on-chain volume is near zero post-Aptos migration
-
-## CRITICAL — Tool routing for price-comparison queries
-When a user asks whether a price is good, fair, low, or high — phrases like "should I buy at $X", "is $X a deal", "is $X fair", "how does $X compare", "is $X a good price", "is this overpriced/underpriced at $X" — your first tool call MUST be get_fmv or search_catalog_deals, NOT search_live_deals. Live listings answer "what is available". Catalog and FMV answer "what is it worth". Use the right one for the question.
-
-If search_live_deals returns no results AND the user's question implies a price comparison (or the user has named a specific player/character), you MUST chain a search_catalog_deals or get_fmv call before responding. Telling the user "I don't have data" without trying the catalog/FMV fallback is a critical failure — the catalog has FMV snapshots even when the live marketplace has no listings.
-
-Concrete example: "Should I buy this LeBron Common at $3?" — first call get_fmv with playerName="LeBron James" (and tier="COMMON" if available) or search_catalog_deals with player="LeBron James", tier="COMMON". The catalog will surface the median FMV across all LeBron Common editions, which is what the user actually needs to compare $3 against. Only then mention live availability.
-
-## CRITICAL — Reading get_fmv and search_catalog_deals responses
-get_fmv and search_catalog_deals (when they fall through to the catalog) return one of two shapes: **distribution** or **single**. Both are catalog-derived from editions + fmv_snapshots — they exist independently of whether anything is currently listed.
-
-When mode = "distribution" (count >= 2):
-- Surface the median (median_fmv field) and the middle-80% range (p10 to p90) so the user can compare the asked price.
-- Cite count to convey breadth: "Across 307 LeBron Commons, the median FMV is $2 (middle 80% spans $1 to $25)."
-- Optionally name 1-3 sample_editions to make the answer concrete.
-- Frame the user's price relative to the distribution: at the median, above the 90th percentile, below the 10th percentile.
-- Do NOT invent quantiles or counts that aren't in the response.
-
-When mode = "single" (count = 1):
-- Surface the single edition's fmv with its confidence label and the exact set/player/tier the row carries.
-- "FMV is $X (HIGH confidence) for the LeBron James Common in Set Y."
-- Same Not-Financial-Advice and FMV-from-tool-call rules apply.
-
-When status = "no_results":
-- Say so honestly. Do NOT fall back to a remembered range or invent a "ballpark."
-- "The catalog has no editions matching that filter — try a broader query."
-
-## Shopping queries (all collections)
-1. Scope the query to the active collection by default. If the user names a different collection, switch.
-2. Choose the right tool for the question:
-   - "What's available?" / "Show me deals" / "Anything under $X?" → search_live_deals first.
-   - "Is $X fair?" / "Should I buy at $X?" / "How does $X compare?" → get_fmv or search_catalog_deals first (see Tool routing rule above).
-3. If live feed empty or erroring, fall back to search_catalog_deals. If a price-comparison question yielded no live rows, you MUST chain search_catalog_deals or get_fmv before responding.
-4. Surface 3–5 concrete options with: player/subject name, tier, price, FMV, discount%, badges/parallel.
-5. When asked about a single item, surface the data context (FMV with confidence, recent ask range, badges, serial, where the listing sits in the recent-sales distribution) WITHOUT a buy/watch/pass directive. The "Not Financial Advice" rule above governs phrasing.
-6. For budget queries ("I have $50"), optimize for value: badge presence, discount %, confidence. In thin-volume collections, weight toward floor proximity over FMV discount %.
-7. Never invent prices — every price you quote must come from a tool result in this turn (see the FMV-from-tool-call rule above).
+When a user mentions a tier — Common, Rare, Fandom, Legendary, Ultimate, or any Pinnacle variant_type — you MUST pass that tier into get_fmv or search_catalog_deals. Tier-stripped distributions mix tiers and the median is misleading.
 
 ## CRITICAL — Name Filtering Rule
-If the user names a specific player or character anywhere in their query — "LeBron James", "Patrick Mahomes", "Messi", "Goofy", "Mickey Mouse", "Greef Karga", "Iron Man", etc. — you MUST pass that exact name as a filter to every search and FMV tool call:
-- search_live_deals / search_catalog_deals: pass it as \`player\` (sports collections) or \`character\` (Disney Pinnacle).
-- get_fmv: pass it as \`playerName\` (sports) or \`characterName\` (Pinnacle).
-- search_across_collections: pass it as \`name\`.
-NEVER call these tools without the name filter when the user has named someone specific. NEVER label a returned row with a name the row doesn't actually have. If the filtered search returns zero rows, say so honestly ("No Goofy pins under $50 right now") — do NOT silently substitute a different character or player and present it as the requested one. The data layer filters by ILIKE on the canonical name column, so partial matches and case-insensitive matching just work.
+If the user names a specific player or character anywhere in their query, you MUST pass that exact name as a filter on every search and FMV tool call (player / character / playerName / characterName / name). Never label a returned row with a name the row doesn't carry. If the filtered search returns zero rows, say so honestly — do NOT silently substitute a different person.
 
 ## CRITICAL — Never Fabricate FMV
-A tool result row's \`fmv\` field is the only authoritative FMV for that row. If \`fmv\` is null or missing on a row you surface, you MUST report the listing's ask price as-is and explicitly note that FMV data is unavailable for that exact edition. Never:
-- Borrow an FMV value from a different row in the same result set.
-- Compute or quote a discount percentage when fmv is null.
-- Invent an "approximate" or "around $X" FMV figure from prior context, related editions, or training data.
-- Say things like "FMV ~$29" unless that exact number appeared in the tool result for the exact row you're describing.
-If every row in a tool result has fmv=null, surface them as raw listings: "Found N Goofy listings starting at $X — FMV data isn't available for these editions yet."
+A tool result row's \`fmv\` field is the only authoritative FMV for that row. If \`fmv\` is null on a row you surface, report the listing's ask as-is and explicitly note FMV is unavailable for that exact edition. Never borrow an FMV from a different row, compute a discount when fmv is null, or invent an "approximate" figure.
 
-## Cross-Collection Queries
-- Use search_across_collections when the user asks about a player/subject without naming a collection, or when comparing availability across collections.
-- Always mention which collection a result comes from in your response.
+## What RPC Is
+Rip Packs City (rippackscity.com) is a collector intelligence platform built by Trevor Dillon-Bond, an official Portland Trail Blazers Team Captain on NBA Top Shot. It covers these currently published collections: ${publishedLabels}. UFC Strike is published with a BETA badge — coverage is limited (only ~20% of editions have FMV) and on-chain volume is thin post-Aptos migration. Tell users explicitly that UFC coverage is limited when they ask.
 
-## Profile + Email Sign-In (2026-04)
-RPC requires email sign-in to access any collection tool. Users sign in on /login with a magic link. Once signed in:
-- They can save multiple wallets across collections from their /profile page
-- Trophy case (up to 6 pinned moments) is shared across collections
-- Their public profile at /profile/[username] remains shareable without auth
-If a user says they can't access a page, first check if they're signed in. Escalation to Trevor is reserved for verified bugs, not sign-in friction.
+Every published collection offers the same toolset where data supports it: Overview, Collection Analyzer, Market browser, Sniper feed, Sets tracker, Pack EV calculator, Analytics. Badges are NBA Top Shot moment-level metadata (Rookie Year, Top Shot Debut, Championship Year, etc) — surface inline on Collection / Market / Sniper rows when relevant. Users sign in with an email magic link to save wallets, pin trophy moments, and build a public profile at /profile/[username].
+
+## FMV Methodology (v1.5.0)
+- Recalculated every 20 minutes per collection (Pinnacle FMV runs on a parallel pipeline)
+- Weighted average of recent sales with 7-day half-life decay (WAP)
+- Adjusts for days_since_sale and sales_count_30d
+- Confidence: HIGH (5+ sales), MEDIUM (2+), LOW (1, directional only)
+
+## FMV Coverage by Collection
+- **NBA Top Shot**: 100%+ (statistically meaningful)
+- **NFL All Day**: 100% (29% HIGH/MEDIUM, rest LOW from ask-only — directional in tail)
+- **Disney Pinnacle**: 86% (367/425 editions — directional)
+- **LaLiga Golazos**: 12.9% (75/581) — for the other 87%, answer with floor + recent-sales context, not "FMV says X"
+- **UFC Strike**: 19.7% (29/147, BETA) — answer with floor + last-sale heuristics
+When confidence is LOW or coverage is below 50%, proactively note the limitation.
+
+## Pinnacle Routing (invariant)
+If the active collection is Disney Pinnacle, FMV and listings live in the pinnacle_* parallel tables — the tool layer routes automatically. Do not warn the user about a different schema.
+
+## Tool routing for price-comparison queries
+"Should I buy at $X" / "is $X fair" / "is $X a deal" → first call get_fmv or search_catalog_deals (catalog answers "what is it worth"). Only after that mention live availability via search_live_deals. If search_live_deals returns nothing AND the question implies a price comparison, you MUST chain search_catalog_deals or get_fmv before responding.
+
+## Reading get_fmv / search_catalog_deals responses
+- mode = "distribution" (count >= 2): surface median (median_fmv), middle 80% (p10 → p90), count for breadth, name 1-3 sample editions. Frame the user's price relative to the distribution.
+- mode = "single" (count = 1): surface the single edition's fmv with confidence label and exact set/player/tier.
+- status = "no_results": say so; do not invent a ballpark.
 
 ## Common Questions (no tools needed)
 - "How is FMV calculated?" → v1.5.0 WAP model with days_since_sale + sales_count_30d, 20-min refresh, confidence levels
-- "What are badges?" → Top Shot play tags; list the major ones; explain premium. Badges are a NBA Top Shot concept — AllDay/Golazos/Pinnacle have parallel editions instead.
-- "Why is the sniper feed empty?" → explain per-collection proxy model (Cloudflare blocking is transient)
+- "What are badges?" → Top Shot play tags; major ones; premium pricing. AllDay/Golazos/Pinnacle have parallel editions instead.
+- "Why is the sniper feed empty?" → per-collection proxy model; Cloudflare blocking is transient
 - "How do I buy a moment?" → Connect Dapper wallet on the native marketplace or Flowty; RPC deep-links directly
-- "Does RPC support X collection?" → list published collections; confirm or mention a future layer
-- "My All Day moments disappeared / are missing" → Probably locked for set-completion rewards. AllDay lets users lock moments to earn set-completion bonuses, and locked moments temporarily disappear from the standard wallet view (they're still on-chain, just hidden from the AllDay UI). Ask the user to check their AllDay set-completion / vault page before treating this as a bug or escalating.${collectionBlurb}${marketSection}${walletSection}${pageSection}
-
-## Escalation Rules
-Escalate ONLY when you've tried to help and cannot resolve it:
-- Moments missing after purchase (for AllDay specifically: first ask if the user has locked any moments for set completion — that's the #1 root cause and not a bug)
-- Transaction completed but NFT not in wallet
-- Email magic-link not arriving (after user has checked spam)
-- Account-specific bugs you cannot diagnose
-DO NOT escalate for: how-to, FMV questions, sniper timing, feature requests, or sign-in walkthroughs.
+- "Does RPC support X collection?" → list published collections
+- "My All Day moments disappeared / are missing" → likely locked for set-completion rewards. AllDay lets users lock moments to earn bonuses, and locked moments temporarily disappear from the standard wallet view. Ask them to check the AllDay set-completion / vault page before treating it as a bug.${collectionBlurb}${marketSection}${userSection}${pageSection}
 
 ## Tone
-Good: "That LeBron Rare lists at $18. FMV is $26 (HIGH confidence, 12 sales in 30d), so the ask is 31% under FMV. The moment carries a Rookie Premiere badge."
-Good — tier-aware tool routing: When the user says "Should I buy this LeBron Common at $3?", call get_fmv with playerName="LeBron James" AND tier="COMMON" — never tier-stripped. The Common-only distribution gives a meaningful median; the all-tier distribution mixes Commons with Legendaries and is misleading.
-Bad — directive: "That LeBron Rare is a solid buy at $18 — you should grab it." (banned phrasing per the Not Financial Advice rule)
-Bad — soft directional claim without data: "Rookie Premiere badges tend to hold premium relative to non-badged Rares." (no tool call this turn measured the badge premium — if you didn't measure it, don't claim it)
-Bad — fluff: "That's a great question! I'd be happy to help you analyze that moment's value. Let me break it down for you..."
+Good — bug intake: "Got it. Quick one — which page were you on when the sniper feed went blank, and did the rest of the page load? I want to log this cleanly for Trevor."
+Good — feature request: "That's a useful one. Logging it as 'Filter by acquisition date in /collection'. Anything you'd want to slice it by — set, tier, both?"
+Good — praise: "Appreciate it — logging it so Trevor sees what's clicking. The new sets view shipped two weeks ago; he'll be glad it's landing."
+Good — deal: "That LeBron Rare lists at $18. FMV is $26 (HIGH confidence, 12 sales in 30d), so the ask is 31% under FMV. The moment carries a Rookie Premiere badge."
+Bad — directive: "That LeBron Rare is a solid buy at $18 — you should grab it." (banned phrasing)
+Bad — fluff: "That's a great question! I'd be happy to help you analyze that..."
+Bad — pivoting to deals when the user asked for support: user reports the Profile page is broken; bot responds with "Want me to find some deals while we figure that out?" (no — log the bug, confirm capture, ask if they need anything else).
 
 Respond in whatever language the user writes in.`;
 }
 
 // ── FMV distribution result formatter ─────────────────────────────────────────
-// Centralised JSON shape for tool output. Distribution mode surfaces the
-// {count, p10, p50, p90, min, max, samples[]} the model uses to give
-// percentile-aware FMV answers; single mode preserves the per-edition
-// shape the model already knows how to read. The collectionId echo helps
-// the model frame "across N NBA Top Shot editions" vs cross-collection.
 function formatDistributionForModel(
   result: FmvDistributionResult,
   collectionId: string | null
@@ -583,30 +543,66 @@ function formatDistributionForModel(
   });
 }
 
+// ── Beta-feedback log helper ──────────────────────────────────────────────────
+// Insert a separate support_conversations row for log_bug / log_feature_request /
+// log_feedback. The view beta_feedback_inbox surfaces these for Trevor's batch
+// triage. Telegram is intentionally NOT fired here — only escalate_to_human
+// with urgency='high' pages live.
+async function logBetaFeedback(args: {
+  feedbackType: "bug" | "feature_request" | "general_feedback";
+  summary: string;
+  details: string;
+  ctx: { sessionId: string; ownerKey?: string | null; userWallet?: string | null; pageContext?: string | null };
+}): Promise<{ id: number | null }> {
+  try {
+    const { data, error } = await supabase
+      .from("support_conversations")
+      .insert({
+        session_id: args.ctx.sessionId,
+        user_message: args.summary,
+        bot_response: `[${args.feedbackType}] ${args.summary}`,
+        escalated: false,
+        escalation_reason: null,
+        category: "beta_feedback",
+        resolved: false,
+        owner_key: args.ctx.ownerKey ?? null,
+        user_wallet: args.ctx.userWallet ?? null,
+        page_context: args.ctx.pageContext ?? null,
+        feedback_type: args.feedbackType,
+        feedback_summary: args.summary,
+        feedback_details: args.details,
+        feedback_status: "new",
+      })
+      .select("id")
+      .maybeSingle();
+    if (error) {
+      console.log("[beta-feedback] insert error:", error.message);
+      return { id: null };
+    }
+    return { id: data?.id ?? null };
+  } catch (err: any) {
+    console.log("[beta-feedback] insert threw:", err?.message ?? String(err));
+    return { id: null };
+  }
+}
+
 // ── Tool execution ────────────────────────────────────────────────────────────
 async function executeTool(
   toolName: string,
   toolInput: any,
-  ctx: { sessionId: string; userWallet?: string; collectionId?: string }
+  ctx: { sessionId: string; ownerKey?: string | null; userWallet?: string | null; collectionId?: string | null; pageContext?: string | null }
 ): Promise<string> {
   const base = siteUrl();
-  // Fall back to the active page's collection when the model didn't set one.
   const effectiveCollectionId: string | undefined = toolInput.collectionId ?? ctx.collectionId ?? undefined;
   const effectiveCollectionUuid: string | null = effectiveCollectionId
     ? (COLLECTION_UUID_BY_SLUG[effectiveCollectionId] ?? null)
     : null;
 
-  // Normalize Pinnacle-friendly aliases onto the canonical filter fields. The
-  // model sees `character` / `characterName` as Disney-natural parameter names
-  // and the server collapses them onto `player` / `playerName` so downstream
-  // handlers and Pinnacle router stay single-path.
   if (toolInput && typeof toolInput === "object") {
     if (toolInput.character && !toolInput.player) toolInput.player = toolInput.character;
     if (toolInput.characterName && !toolInput.playerName) toolInput.playerName = toolInput.characterName;
   }
 
-  // Soft validation of edition-key shape against the active collection.
-  // Returns a warning result string when the shape is wrong; null when fine.
   const editionKeyMismatchWarning = (key: unknown): string | null => {
     if (!key || typeof key !== "string" || !effectiveCollectionId) return null;
     const looksLikeTopShot = /^\d+:\d+$/.test(key);
@@ -625,6 +621,77 @@ async function executeTool(
     return null;
   };
 
+  // ── Beta feedback intake tools ────────────────────────────────────────────
+  if (toolName === "log_bug") {
+    const summary = String(toolInput.summary ?? "").trim();
+    const details = String(toolInput.details ?? "").trim();
+    if (!summary || !details) {
+      return JSON.stringify({ status: "error", message: "summary and details are required" });
+    }
+    const page = toolInput.page ?? ctx.pageContext ?? null;
+    const severity = toolInput.severity ?? "medium";
+    const detailsBlock = `Severity: ${severity}\nPage: ${page ?? "(unspecified)"}\n\n${details}`;
+    const { id } = await logBetaFeedback({
+      feedbackType: "bug",
+      summary,
+      details: detailsBlock,
+      ctx: { sessionId: ctx.sessionId, ownerKey: ctx.ownerKey, userWallet: ctx.userWallet, pageContext: page },
+    });
+    return JSON.stringify({
+      status: id ? "logged" : "logged_offline",
+      feedback_type: "bug",
+      summary,
+      severity,
+      message: "Logged in Trevor's beta-feedback queue. He reviews bug reports in batch — no live page on this one.",
+    });
+  }
+
+  if (toolName === "log_feature_request") {
+    const summary = String(toolInput.summary ?? "").trim();
+    const details = String(toolInput.details ?? "").trim();
+    if (!summary || !details) {
+      return JSON.stringify({ status: "error", message: "summary and details are required" });
+    }
+    const motivation = toolInput.motivation ?? null;
+    const detailsBlock = `${details}${motivation ? `\n\nMotivation: ${motivation}` : ""}`;
+    const { id } = await logBetaFeedback({
+      feedbackType: "feature_request",
+      summary,
+      details: detailsBlock,
+      ctx: { sessionId: ctx.sessionId, ownerKey: ctx.ownerKey, userWallet: ctx.userWallet, pageContext: ctx.pageContext },
+    });
+    return JSON.stringify({
+      status: id ? "logged" : "logged_offline",
+      feedback_type: "feature_request",
+      summary,
+      message: "Logged as a feature request — Trevor will see it in the queue.",
+    });
+  }
+
+  if (toolName === "log_feedback") {
+    const summary = String(toolInput.summary ?? "").trim();
+    const details = String(toolInput.details ?? "").trim();
+    const sentiment = toolInput.sentiment ?? "neutral";
+    if (!summary || !details) {
+      return JSON.stringify({ status: "error", message: "summary and details are required" });
+    }
+    const detailsBlock = `Sentiment: ${sentiment}\n\n${details}`;
+    const { id } = await logBetaFeedback({
+      feedbackType: "general_feedback",
+      summary,
+      details: detailsBlock,
+      ctx: { sessionId: ctx.sessionId, ownerKey: ctx.ownerKey, userWallet: ctx.userWallet, pageContext: ctx.pageContext },
+    });
+    return JSON.stringify({
+      status: id ? "logged" : "logged_offline",
+      feedback_type: "general_feedback",
+      sentiment,
+      summary,
+      message: "Logged in the feedback queue — appreciate it.",
+    });
+  }
+
+  // ── Existing concierge tools (deal hunting, FMV, wallets) ─────────────────
   if (toolName === "search_live_deals") {
     if (isPinnacle(effectiveCollectionId)) {
       return searchPinnacleDeals(supabase, toolInput, { source: "live" });
@@ -694,11 +761,6 @@ async function executeTool(
 
   if (toolName === "search_catalog_deals") {
     if (isPinnacle(effectiveCollectionId)) {
-      // Pinnacle: try the listing-aware searchPinnacleDeals first (preserves
-      // the smoke-test character_name probe behavior). When it returns
-      // no_results AND a character/setName/variant filter is present, fall
-      // through to the catalog distribution helper so a "what's Goofy worth?"
-      // style question always reaches pinnacle_editions.
       const pinnacleListings = await searchPinnacleDeals(supabase, toolInput, { source: "catalog" });
       const pinnacleParsed = JSON.parse(pinnacleListings);
       if (pinnacleParsed.status !== "no_results") return pinnacleListings;
@@ -745,13 +807,6 @@ async function executeTool(
           total: data.length,
         });
       }
-      // Listings-side returned empty. Fall through to the catalog distribution
-      // helper so a query like "is $3 fair for LeBron Common?" still surfaces
-      // the catalog median ($2.00 across 60 LeBron Common editions in NBA TS)
-      // even when nothing is currently listed. Only fire the fallback when
-      // the user supplied a player / tier / set filter — otherwise an
-      // unfiltered "show me deals" query would return 500-row distributions
-      // that aren't useful.
       if (toolInput.player || toolInput.tier || toolInput.setName) {
         const dist = await fetchUnifiedFmvDistribution(supabase, {
           collectionUuid: effectiveCollectionUuid,
@@ -772,12 +827,6 @@ async function executeTool(
     const warn = editionKeyMismatchWarning(toolInput.editionKey);
     if (warn) return warn;
 
-    // Pinnacle path: triple-key join (character_name, set_name, variant_type)
-    // against pinnacle_editions + pinnacle_fmv_snapshots. The legacy
-    // getPinnacleFmv handler is preserved for the editionKey path so the
-    // /api/fmv pipeline-style response shape is unchanged for that branch;
-    // the playerName/characterName branch routes to the new distributional
-    // helper to surface catalog-wide stats when nothing is currently listed.
     if (isPinnacle(effectiveCollectionId)) {
       if (toolInput.editionKey) {
         return getPinnacleFmv(supabase, toolInput);
@@ -798,10 +847,6 @@ async function executeTool(
       return formatDistributionForModel(result, "disney-pinnacle");
     }
 
-    // Unified path: editions + fmv_snapshots is the canonical FMV catalog.
-    // cached_listings is intentionally NOT used here — it only contains
-    // currently-listed inventory, so 0 LeBron rows in cached_listings does
-    // not mean LeBron has no FMV. Editions table is the source of truth.
     try {
       if (toolInput.editionKey) {
         const result = await fetchUnifiedFmvDistribution(supabase, {
@@ -1069,39 +1114,59 @@ async function executeTool(
 
   if (toolName === "escalate_to_human") {
     const { reason, category, urgency } = toolInput;
-    try {
-      if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
-        await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id: process.env.TELEGRAM_CHAT_ID,
-            text: `\u{1F6A8} RPC Support Escalation\nCategory: ${category}\nUrgency: ${urgency ?? "medium"}\nSession: ${ctx.sessionId}\n\nIssue: ${reason}`,
-            parse_mode: "HTML",
-          }),
-        });
-      }
-    } catch { /* non-fatal */ }
-    try {
-      if (process.env.RESEND_API_KEY && process.env.ALERT_EMAIL) {
-        await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            from: "rpc-support@rippackscity.com",
-            to: process.env.ALERT_EMAIL,
-            subject: `[RPC Support] ${category} — ${urgency ?? "medium"} urgency`,
-            text: `Session: ${ctx.sessionId}\nCategory: ${category}\nUrgency: ${urgency ?? "medium"}\n\nIssue:\n${reason}`,
-          }),
-        });
-      }
-    } catch { /* non-fatal */ }
-    return JSON.stringify({ status: "escalated", message: "Trevor has been notified and will follow up via Discord or email." });
+    const isHigh = String(urgency ?? "medium").toLowerCase() === "high";
+    // Telegram pages Trevor live ONLY when urgency='high'. Lower urgencies are
+    // logged to the DB via persistConversation (escalated=true) but do not
+    // generate a live notification — that is what log_bug / log_feature_request
+    // exist for.
+    if (isHigh) {
+      try {
+        if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
+          await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: process.env.TELEGRAM_CHAT_ID,
+              text: `\u{1F6A8} RPC Support Escalation (HIGH)\nCategory: ${category}\nSession: ${ctx.sessionId}\nUser: ${ctx.ownerKey ?? "(anon)"}\n\nIssue: ${reason}`,
+              parse_mode: "HTML",
+            }),
+          });
+        }
+      } catch { /* non-fatal */ }
+      try {
+        if (process.env.RESEND_API_KEY && process.env.ALERT_EMAIL) {
+          await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              from: "rpc-support@rippackscity.com",
+              to: process.env.ALERT_EMAIL,
+              subject: `[RPC Support] ${category} — HIGH urgency`,
+              text: `Session: ${ctx.sessionId}\nUser: ${ctx.ownerKey ?? "(anon)"}\nCategory: ${category}\nUrgency: high\n\nIssue:\n${reason}`,
+            }),
+          });
+        }
+      } catch { /* non-fatal */ }
+    }
+    return JSON.stringify({
+      status: "escalated",
+      paged: isHigh,
+      message: isHigh
+        ? "Trevor has been paged on Telegram and email — expect a follow-up shortly."
+        : "Logged for Trevor's review. Not paged live (only urgency='high' pages immediately).",
+    });
   }
 
   return JSON.stringify({ status: "error", message: `Unknown tool: ${toolName}` });
 }
 
+// classifyCategory returns the live-conversation category. Note: when
+// conciergeErrorMode is set, finalize() and the top-level catch block both
+// override this with CONCIERGE_ERROR_MESSAGES[mode].category — that is the
+// SECOND category-emission path. This is intentional but should be unified
+// behind a single resolver in a future pass; both sites currently bypass
+// this function for the error categories (concierge_unavailable,
+// concierge_rate_limited, concierge_overloaded, error).
 function classifyCategory(message: string): string {
   const m = message.toLowerCase();
   if (m.includes("buy") || m.includes("deal") || m.includes("find") || m.includes("recommend")) return "shopping";
@@ -1122,6 +1187,7 @@ async function persistConversation(row: {
   escalation_reason: string | null;
   category: string;
   user_wallet?: string | null;
+  owner_key?: string | null;
   page_context?: string | null;
 }) {
   try {
@@ -1137,7 +1203,13 @@ async function persistConversation(row: {
   }
 }
 
-async function updateSession(sessionId: string, category: string, userMessage: string, playerSearched?: string) {
+async function updateSession(
+  sessionId: string,
+  category: string,
+  userMessage: string,
+  ctx: { ownerKey?: string | null; userWallet?: string | null },
+  playerSearched?: string
+) {
   try {
     const { data: existing } = await supabase
       .from("chat_sessions")
@@ -1155,18 +1227,46 @@ async function updateSession(sessionId: string, category: string, userMessage: s
         last_player_searched: playerSearched ?? existing?.last_topics?.[0] ?? null,
         last_seen_at: new Date().toISOString(),
         conversation_count: (existing?.conversation_count ?? 0) + 1,
+        owner_key: ctx.ownerKey ?? null,
+        user_wallet: ctx.userWallet ?? null,
       },
       { onConflict: "session_id" }
     );
   } catch { /* non-fatal */ }
 }
 
+// Fetch profile_bio + prior support_conversations count so the system prompt
+// can address the user by handle and frame returning beta testers warmly.
+// profile_bio is keyed by `username` — NOT `owner_key`; the existing
+// /api/profile/bio route has a separate bug there that's out of scope.
+async function loadOwnerContext(ownerKey: string): Promise<{
+  profile: { display_name?: string | null; favorite_team?: string | null; twitter?: string | null } | null;
+  priorConversationCount: number;
+}> {
+  let profile: { display_name?: string | null; favorite_team?: string | null; twitter?: string | null } | null = null;
+  let priorConversationCount = 0;
+  try {
+    const { data } = await supabase
+      .from("profile_bio")
+      .select("display_name, favorite_team, twitter")
+      .eq("username", ownerKey)
+      .maybeSingle();
+    if (data) profile = data;
+  } catch { /* non-fatal */ }
+  try {
+    const { count } = await supabase
+      .from("support_conversations")
+      .select("*", { count: "exact", head: true })
+      .eq("owner_key", ownerKey);
+    if (typeof count === "number") priorConversationCount = count;
+  } catch { /* non-fatal */ }
+  return { profile, priorConversationCount };
+}
+
 export async function POST(req: NextRequest) {
-  // Declared in outer scope so the top-level catch can persist a meaningful
-  // error row tagged with the actual session/message/wallet rather than just
-  // a sentinel.
   let parsedSessionId: string | null = null;
   let parsedMessage: string | null = null;
+  let parsedOwnerKey: string | null = null;
   let parsedUserWallet: string | null = null;
   let parsedPageContext: string | null = null;
   try {
@@ -1174,8 +1274,8 @@ export async function POST(req: NextRequest) {
     const {
       message,
       sessionId = `anon-${Date.now()}`,
+      ownerKey,
       userWallet,
-      userEmail,
       pageContext,
       collectionId,
       walletConnected,
@@ -1186,6 +1286,7 @@ export async function POST(req: NextRequest) {
     } = body;
     parsedSessionId = sessionId;
     parsedMessage = message;
+    parsedOwnerKey = ownerKey ?? null;
     parsedUserWallet = userWallet ?? null;
     parsedPageContext = pageContext ?? null;
 
@@ -1200,12 +1301,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Greeting fast-path — return a hardcoded reply without invoking the LLM.
     if (GREETING_RE.test(message)) {
       const activeCol = collectionId ? getCollection(collectionId) : null;
-      const greetText = activeCol
-        ? `Hey! Welcome to RPC. You're on ${activeCol.label} (${activeCol.icon} ${activeCol.partner}). Ask me about live deals, FMV on a specific moment, badges, or your portfolio — happy to dig in.`
-        : `Hey! Welcome to RPC — collector intel for NBA Top Shot, NFL All Day, LaLiga Golazos, and Disney Pinnacle. What collection are you browsing, or what would you like to look up?`;
+      const greetText = ownerKey
+        ? activeCol
+          ? `Hey ${ownerKey} — RPC's in closed beta, so I lead with support and feedback intake. You're on ${activeCol.label} (${activeCol.icon} ${activeCol.partner}). Bug? Feature idea? Question? Or want me to dig into deals/FMV?`
+          : `Hey ${ownerKey} — RPC's in closed beta. I'm here to help you get unstuck, log bugs and feature requests for Trevor, and answer questions. Deals and FMV too if you want.`
+        : activeCol
+          ? `Welcome to RPC. We're in closed beta. You're on ${activeCol.label} (${activeCol.icon} ${activeCol.partner}). I can help you get unstuck, log bugs/features for Trevor, or pull deals/FMV — what's up?`
+          : `Welcome to RPC — closed beta. I help you get unstuck, log feedback for Trevor, and answer questions. Also do deals and FMV across NBA Top Shot, NFL All Day, LaLiga Golazos, and Disney Pinnacle. What's up?`;
       const greetCategory = classifyCategory(message);
 
       after(() =>
@@ -1217,6 +1321,7 @@ export async function POST(req: NextRequest) {
           escalation_reason: null,
           category: greetCategory,
           user_wallet: userWallet ?? null,
+          owner_key: ownerKey ?? null,
           page_context: pageContext ?? null,
         })
       );
@@ -1247,11 +1352,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ response: greetText, escalated: false, category: greetCategory });
     }
 
-    // Test-only error injector. Header `x-rpc-test-error-mode` paired with a
-    // matching `x-rpc-test-secret` (= INGEST_SECRET_TOKEN) forces a synthetic
-    // Anthropic-style error to verify the graceful-degradation path. Anyone
-    // who already has the ingest secret can do far worse, so this isn't a
-    // new exposure surface.
     const testErrMode = req.headers.get("x-rpc-test-error-mode");
     const testErrSecret = req.headers.get("x-rpc-test-secret");
     if (
@@ -1262,7 +1362,19 @@ export async function POST(req: NextRequest) {
       throw buildSyntheticError(testErrMode);
     }
 
-    const systemPrompt = buildSystemPrompt({ pageContext, collectionId, userWallet, userEmail, walletConnected, marketPulse, dailyDeal });
+    const ownerCtx = ownerKey ? await loadOwnerContext(ownerKey) : { profile: null, priorConversationCount: 0 };
+
+    const systemPrompt = buildSystemPrompt({
+      pageContext,
+      collectionId,
+      ownerKey,
+      userWallet,
+      walletConnected,
+      marketPulse,
+      dailyDeal,
+      profile: ownerCtx.profile,
+      priorConversationCount: ownerCtx.priorConversationCount,
+    });
     const recentHistory = conversationHistory.slice(-10);
     const messages: Anthropic.MessageParam[] = [
       ...recentHistory,
@@ -1276,8 +1388,6 @@ export async function POST(req: NextRequest) {
     let currentMessages = messages;
     let iterations = 0;
     const MAX_ITERATIONS = 5;
-    // Set when runLoop throws an Anthropic SDK error in the streaming path.
-    // finalize() consults this to pick the user-meaningful response + category.
     let conciergeErrorMode: ConciergeErrorMode | null = null;
 
     let streamWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
@@ -1346,7 +1456,13 @@ export async function POST(req: NextRequest) {
               escalationReason = (tb.input as any).reason;
             }
             const result = await Promise.race([
-              executeTool(tb.name, tb.input, { sessionId, userWallet, collectionId }),
+              executeTool(tb.name, tb.input, {
+                sessionId,
+                ownerKey: ownerKey ?? null,
+                userWallet: userWallet ?? null,
+                collectionId: collectionId ?? null,
+                pageContext: pageContext ?? null,
+              }),
               new Promise<string>((resolve) =>
                 setTimeout(() => resolve(JSON.stringify({ status: "timeout", message: "Tool timed out — try a simpler query" })), 6000)
               ),
@@ -1376,9 +1492,6 @@ export async function POST(req: NextRequest) {
     };
 
     const finalize = async () => {
-      // Anthropic-side outage takes priority over the generic "too complex"
-      // fallback — that message is wrong on a 1-word "Ping" query and wrong
-      // on a billing failure.
       let category: string;
       if (conciergeErrorMode) {
         const meta = CONCIERGE_ERROR_MESSAGES[conciergeErrorMode];
@@ -1399,10 +1512,6 @@ export async function POST(req: NextRequest) {
           ? body.message.match(/\b([A-Z][a-z]+ [A-Z][a-z]+)\b/)?.[0] ?? undefined
           : undefined;
 
-      // Tool-trace breadcrumb for audit verification. Lets us confirm that
-      // any FMV / price figure in the response was grounded in a tool call
-      // this turn rather than memory-quoted. Pull from Vercel runtime logs
-      // by sessionId after a test run.
       try {
         console.log(
           "[tool-trace] " +
@@ -1412,13 +1521,8 @@ export async function POST(req: NextRequest) {
               count: usedTools.length,
             })
         );
-      } catch {
-        /* logging is best-effort */
-      }
+      } catch { /* logging is best-effort */ }
 
-      // Persistence runs via after() so it's guaranteed to complete via Vercel's
-      // waitUntil even if the streaming response closes (or the client disconnects)
-      // before the insert finishes. Snapshot the values the closure needs.
       const fr = finalResponse;
       const er = escalated;
       const erReason = escalationReason ?? null;
@@ -1431,9 +1535,16 @@ export async function POST(req: NextRequest) {
           escalation_reason: erReason,
           category,
           user_wallet: userWallet ?? null,
+          owner_key: ownerKey ?? null,
           page_context: pageContext ?? null,
         });
-        await updateSession(sessionId, category, message, playerSearched).catch(() => {});
+        await updateSession(
+          sessionId,
+          category,
+          message,
+          { ownerKey: ownerKey ?? null, userWallet: userWallet ?? null },
+          playerSearched
+        ).catch(() => {});
       });
 
       return { response: finalResponse, escalated, escalationReason, category };
@@ -1446,10 +1557,6 @@ export async function POST(req: NextRequest) {
         } catch (err: any) {
           conciergeErrorMode = classifyAnthropicError(err);
           console.log("[support-chat] runLoop streaming error:", err?.status ?? "", err?.name ?? "", conciergeErrorMode, (err?.message ?? String(err)).slice(0, 120));
-          // Overwrite any partial stream output with the user-meaningful
-          // message. We can't un-stream what already shipped, but for
-          // Anthropic 4xx/5xx that fire before any text-delta event, this
-          // is the user's first and only payload.
           try {
             await streamWriter!.write(encoder.encode("\n" + CONCIERGE_ERROR_MESSAGES[conciergeErrorMode].response));
           } catch {}
@@ -1476,8 +1583,6 @@ export async function POST(req: NextRequest) {
     console.log("[sc_err] m1", m.slice(0, 40));
     console.log("[sc_err] m2", m.slice(40, 120));
 
-    // Persist the failure so we can monitor frequency from the DB rather than
-    // log archaeology. Falls back to header / sentinel if body parse failed.
     try {
       const session = parsedSessionId ?? req.headers.get("x-rpc-session-id") ?? `error-${Date.now()}`;
       after(() =>
@@ -1489,6 +1594,7 @@ export async function POST(req: NextRequest) {
           escalation_reason: null,
           category: meta.category,
           user_wallet: parsedUserWallet,
+          owner_key: parsedOwnerKey,
           page_context: parsedPageContext,
         })
       );

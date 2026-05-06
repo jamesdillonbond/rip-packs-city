@@ -6,42 +6,26 @@ import {
   cartEligibilityReason,
   cartIneligibleTooltip,
 } from "@/lib/cart/eligibility";
+import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key";
+import { useFlowUser } from "@/lib/hooks/useFlowUser";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-
-/* ------------------------------------------------------------------ */
-/*  SupportChatConnected                                               */
-/*  Thin client wrapper that bridges CartContext + route info into      */
-/*  the SupportChat component. Also fetches userEmail so the concierge  */
-/*  can greet signed-in users by identity.                             */
-/* ------------------------------------------------------------------ */
 
 export default function SupportChatConnected() {
   const { addToCart } = useCart();
   const pathname = usePathname();
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const { user } = useFlowUser();
+  const [ownerKey, setOwnerKeyState] = useState<string>("");
 
-  // Extract collection + page from URL: /nba-top-shot/sniper → "sniper (nba-top-shot)"
   const segments = pathname.split("/").filter(Boolean);
   const collectionId = segments[0] || "";
   const pageContext = segments[1] || "overview";
   const pageLabel = collectionId ? `${pageContext} (${collectionId})` : pageContext;
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/profile/me", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled) setUserEmail(data?.user?.email ?? null);
-      } catch {
-        /* not signed in or network failure — stay null */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    setOwnerKeyState(getOwnerKey());
+    const unsub = onOwnerKeyChange((next) => setOwnerKeyState(next));
+    return unsub;
   }, []);
 
   const handleAddToCart = (moment: any) => {
@@ -71,8 +55,9 @@ export default function SupportChatConnected() {
     <SupportChat
       pageContext={pageLabel}
       collectionId={collectionId || null}
-      userEmail={userEmail}
-      walletConnected={false}
+      ownerKey={ownerKey || null}
+      userWallet={user.addr}
+      walletConnected={user.loggedIn}
       onAddToCart={handleAddToCart}
     />
   );
