@@ -252,6 +252,12 @@ type MintedMomentGQL = {
   } | null;
 };
 
+// NOTE (2026-05-05): the public-api `getMintedMoment(momentId)` field was
+// removed from the AllDay schema. This call now throws via lib/allday's
+// errors[] propagation; we catch and return placeholder defaults — option
+// (a) per the triage in docs/allday-graphql-callers-broken.md. The caller
+// already retrieves on-chain `tier` via getMomentMetadata, so the "COMMON"
+// default here is wrong but downstream code prefers other tier sources.
 async function fetchMomentGQL(momentId: string) {
   const query = `
     query GetMoment($id: ID!) {
@@ -268,7 +274,9 @@ async function fetchMomentGQL(momentId: string) {
       tier: formatTier(m?.tier ?? null),
       lowestAsk: m?.forSale ? toNum(m?.price) : null,
     };
-  } catch {
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log("[allday-sets] fetchMomentGQL " + momentId + " failed: " + msg.slice(0, 200));
     return { flowId: null, tier: "COMMON", lowestAsk: null };
   }
 }
@@ -336,7 +344,11 @@ async function fetchLowestAskForPlay(setIntId: string, playIntId: string): Promi
     const edges = data?.searchMomentListings?.data?.searchEdge ?? [];
     const price = edges[0]?.node?.moment?.listing?.price;
     return typeof price === "number" ? price : null;
-  } catch { return null; }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log("[allday-sets] fetchLowestAskForPlay " + setIntId + ":" + playIntId + " failed: " + msg.slice(0, 200));
+    return null;
+  }
 }
 
 // ── Enrich missing plays with tier + thumbnail via GQL ────────────────────────
@@ -385,7 +397,9 @@ async function enrichMissingPlaysWithGQL(
         tier: tierFromListing ? formatTier(tierFromListing) : gql.tier,
         thumbnailUrl: gql.flowId ? alldayImageUrl(gql.flowId) : null,
       };
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log("[allday-sets] enrichMissingPlaysWithGQL " + setIntId + ":" + piece.playId + " failed: " + msg.slice(0, 200));
       return piece;
     }
   });

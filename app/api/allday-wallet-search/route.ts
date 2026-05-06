@@ -172,6 +172,13 @@ async function getMomentMetadata(wallet: string, id: number) {
   })
 }
 
+// NOTE (2026-05-05): the public-api `getMintedMoment(momentId)` field was
+// removed from the AllDay schema. This call now throws via lib/allday's
+// errors[] propagation; the per-moment try/catch below recovers with a
+// placeholder row. The throw is what we want — option (a) per the triage in
+// docs/allday-graphql-callers-broken.md. searchMomentNFTsV2 can recover
+// flowId/serialNumber/tier but not forSale/price/lastPurchasePrice/isLocked/
+// createdAt; those have been silently null since the schema migration.
 async function fetchMomentGraphQL(id: string) {
   return getOrSetCache(`allday-gql-moment:${id}`, GQL_MOMENT_TTL, async () => {
     const q = `
@@ -360,7 +367,7 @@ export async function POST(req: NextRequest) {
           thumbnailUrl: buildThumbnailUrl(gql.flowId),
         } as WalletRow
       } catch (momentErr: any) {
-        console.warn("[allday-wallet-search] Moment " + id + " failed: " + (momentErr.message || "unknown").slice(0, 100))
+        console.log("[allday-wallet-search] Moment " + id + " failed: " + (momentErr.message || "unknown").slice(0, 200))
         return {
           momentId: String(id),
           playerName: "Unknown (error loading)",
@@ -377,6 +384,11 @@ export async function POST(req: NextRequest) {
         } as WalletRow
       }
     })
+
+    const errorRows = baseRows.filter((r) => r.playerName === "Unknown (error loading)").length
+    if (errorRows > 0) {
+      console.log(`[allday-wallet-search] ${errorRows}/${baseRows.length} moments failed GQL fetch (likely getMintedMoment schema removal — see docs/allday-graphql-callers-broken.md)`)
+    }
 
     // Batch-enrich FMV from fmv_snapshots
     const rows = await batchEnrichFmv(baseRows)
