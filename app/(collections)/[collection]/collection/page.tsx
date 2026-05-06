@@ -299,7 +299,7 @@ function debugReasonLabel(reason?: string | null) {
     case "NO_BEST_OFFER": return "No best offer"
     case "NO_MARKET_INPUTS": return "No market inputs"
     case "SPECIAL_SERIAL_NO_BASE": return "No serial base"
-    default: return reason ?? "-"
+    default: return reason ?? "—"
   }
 }
 
@@ -2065,25 +2065,45 @@ export default function WalletPage() {
                   </div>
                   {/* Expanded content */}
                   {expanded && (
-                    <div className="mt-2 pt-2 border-t border-zinc-800">
-                      <div className="grid gap-3 grid-cols-1">
-                        <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Market</div>
-                          <div className="space-y-1 text-sm">
-                            <div>Low Ask: {formatCurrency(row.lowAsk ?? getBestAsk(row))}</div>
-                            <div>Best Offer: {formatCurrency(row.bestOffer ?? row.editionBestOffer)}</div>
-                            <div>FMV: {fmv.text} <ExplainButton context={`${row.playerName ?? ""} — ${row.setName ?? ""} (${row.editionKey ?? ""}) FMV ${fmv.text}`} question="How is this FMV calculated?" /></div>
-                            <div>Confidence: {confidenceLabel(row.marketConfidence).label} <ExplainButton context={`${row.playerName ?? ""} — confidence ${confidenceLabel(row.marketConfidence).label}`} question="What does this confidence level mean?" /></div>
-                            <div>Held: {editionCounts.owned} / Locked: {editionCounts.locked}</div>
+                    <div className="rpc-expand-panel mt-2">
+                      <div className="rpc-expand-section">
+                        <div className="rpc-expand-section-eyebrow">Details</div>
+                        <div className="rpc-expand-grid">
+                          <div className="rpc-expand-field">
+                            <div className="rpc-expand-field-label">Low Ask</div>
+                            <div className="rpc-expand-field-value rpc-table-cell--mono">{formatCurrency(row.lowAsk ?? getBestAsk(row))}</div>
+                          </div>
+                          <div className="rpc-expand-field">
+                            <div className="rpc-expand-field-label">Best Offer</div>
+                            <div className="rpc-expand-field-value rpc-table-cell--mono">{formatCurrency(row.bestOffer ?? row.editionBestOffer)}</div>
+                          </div>
+                          <div className="rpc-expand-field">
+                            <div className="rpc-expand-field-label">FMV</div>
+                            <div className="rpc-expand-field-value rpc-table-cell--mono">
+                              {fmv.text} <ExplainButton context={`${row.playerName ?? ""} — ${row.setName ?? ""} (${row.editionKey ?? ""}) FMV ${fmv.text}`} question="How is this FMV calculated?" />
+                            </div>
+                          </div>
+                          <div className="rpc-expand-field">
+                            <div className="rpc-expand-field-label">Confidence</div>
+                            <div className="rpc-expand-field-value">
+                              {confidenceLabel(row.marketConfidence).label} <ExplainButton context={`${row.playerName ?? ""} — confidence ${confidenceLabel(row.marketConfidence).label}`} question="What does this confidence level mean?" />
+                            </div>
+                          </div>
+                          <div className="rpc-expand-field">
+                            <div className="rpc-expand-field-label">Held / Locked</div>
+                            <div className="rpc-expand-field-value rpc-table-cell--mono">{editionCounts.owned} / {editionCounts.locked}</div>
                           </div>
                         </div>
-                        <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Links</div>
-                          <div className="space-y-2">
-                            <a href={"https://nbatopshot.com/moment/" + row.momentId} target="_blank" rel="noopener noreferrer" className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-white hover:bg-zinc-900">View on Top Shot</a>
-                            <a href={"https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/" + row.momentId} target="_blank" rel="noopener noreferrer" className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-white hover:bg-zinc-900">View on Flowty</a>
-                          </div>
+                      </div>
+                      <div className="rpc-expand-section">
+                        <div className="rpc-expand-section-eyebrow">Links</div>
+                        <div className="flex flex-wrap gap-2">
+                          <a href={"https://nbatopshot.com/moment/" + row.momentId} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">View on Top Shot</a>
+                          <a href={"https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/" + row.momentId} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">View on Flowty</a>
                         </div>
+                      </div>
+                      <div className="rpc-expand-section">
+                        <div className="rpc-expand-section-eyebrow">Recent sales for this edition</div>
                         <EditionRecentSales editionKey={row.editionKey ?? null} mintCount={getMint(row)} />
                       </div>
                     </div>
@@ -2540,68 +2560,135 @@ export default function WalletPage() {
                     </tr>
 
                     {expanded ? (
-                      <tr style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)" }}>
-                        <td colSpan={16} className="p-4">
-                          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Market</div>
-                              <div className="space-y-1 text-sm">
-                                <div>Top Shot Ask: {formatCurrency(row.topshotAsk ?? row.editionLowAsk)}</div>
-                                <div>Flowty Ask: {formatCurrency(row.flowtyAsk)}</div>
-                                <div>Best Ask: {formatCurrency(getBestAsk(row) ?? row.editionLowAsk)}</div>
-                                <div>Best Market: {row.bestMarket ?? (row.editionMarketSource ? row.editionMarketSource : "-")}</div>
-                                <div>Best Offer: {formatCurrency(row.bestOffer ?? row.editionBestOffer)}</div>
-                                <div>FMV: {fmv.text}</div>
-                                <div>FMV Method: {row.fmvMethod === "band" ? "WAP (high confidence)" : row.fmvMethod === "low-ask-only" ? "WAP (medium)" : row.fmvMethod === "best-offer-only" ? "Floor/Ask price" : row.fmvMethod === "none" ? "-" : (row.fmvMethod ?? "-")}</div>
-                                <div className={"font-medium " + conf.color}>Confidence: {conf.label}</div>
+                      <tr>
+                        <td colSpan={16}>
+                          <div className="rpc-expand-panel">
+                            <div className="rpc-expand-section">
+                              <div className="rpc-expand-section-eyebrow">Details</div>
+                              <div className="rpc-expand-grid">
+                                <div className="rpc-expand-field">
+                                  <div className="rpc-expand-field-label">Top Shot Ask</div>
+                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{formatCurrency(row.topshotAsk ?? row.editionLowAsk)}</div>
+                                </div>
+                                <div className="rpc-expand-field">
+                                  <div className="rpc-expand-field-label">Flowty Ask</div>
+                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{formatCurrency(row.flowtyAsk)}</div>
+                                </div>
+                                <div className="rpc-expand-field">
+                                  <div className="rpc-expand-field-label">Best Ask</div>
+                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{formatCurrency(getBestAsk(row) ?? row.editionLowAsk)}</div>
+                                </div>
+                                <div className="rpc-expand-field">
+                                  <div className="rpc-expand-field-label">Best Market</div>
+                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{row.bestMarket ?? row.editionMarketSource ?? "—"}</div>
+                                </div>
+                                <div className="rpc-expand-field">
+                                  <div className="rpc-expand-field-label">Best Offer</div>
+                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{formatCurrency(row.bestOffer ?? row.editionBestOffer)}</div>
+                                </div>
+                                <div className="rpc-expand-field">
+                                  <div className="rpc-expand-field-label">FMV</div>
+                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{fmv.text}</div>
+                                </div>
+                                <div className="rpc-expand-field">
+                                  <div className="rpc-expand-field-label">FMV Method</div>
+                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{row.fmvMethod === "band" ? "WAP (high confidence)" : row.fmvMethod === "low-ask-only" ? "WAP (medium)" : row.fmvMethod === "best-offer-only" ? "Floor/Ask price" : row.fmvMethod === "none" ? "—" : (row.fmvMethod ?? "—")}</div>
+                                </div>
+                                <div className="rpc-expand-field">
+                                  <div className="rpc-expand-field-label">Confidence</div>
+                                  <div className={"rpc-expand-field-value " + conf.color}>{conf.label}</div>
+                                </div>
+                                {/* TODO: team_name from UUID-keyed Flowty editions is often wrong. Long-term fix: add team column to wallet_moments_cache and prefer that over editions.team_name */}
+                                <div className="rpc-expand-field">
+                                  <div className="rpc-expand-field-label">Team</div>
+                                  <div className="rpc-expand-field-value">{row.team ?? "—"}</div>
+                                </div>
+                                <div className="rpc-expand-field">
+                                  <div className="rpc-expand-field-label">League</div>
+                                  <div className="rpc-expand-field-value">{row.league ?? "—"}</div>
+                                </div>
+                                <div className="rpc-expand-field">
+                                  <div className="rpc-expand-field-label">Parallel</div>
+                                  <div className="rpc-expand-field-value">{getParallel(row)}</div>
+                                </div>
+                                <div className="rpc-expand-field">
+                                  <div className="rpc-expand-field-label">Series</div>
+                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{row.series ?? "—"} ({seriesIntToSeason(row.series, collectionSeriesMap) || "—"})</div>
+                                </div>
+                                <div className="rpc-expand-field">
+                                  <div className="rpc-expand-field-label">Acquired</div>
+                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{formatAcquiredAt(row.acquiredAt)}</div>
+                                </div>
+                                <div className="rpc-expand-field">
+                                  <div className="rpc-expand-field-label">Locked</div>
+                                  <div className="rpc-expand-field-value">{isLocked ? "Yes" : "No"}</div>
+                                </div>
+                                <div className="rpc-expand-field">
+                                  <div className="rpc-expand-field-label">Edition Key</div>
+                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{row.editionKey ?? "—"}</div>
+                                </div>
+                                {showDebug ? (
+                                  <>
+                                    <div className="rpc-expand-field">
+                                      <div className="rpc-expand-field-label">Scope Key</div>
+                                      <div className="rpc-expand-field-value rpc-expand-field-value--debug rpc-table-cell--mono">{scopeKey}</div>
+                                    </div>
+                                    <div className="rpc-expand-field">
+                                      <div className="rpc-expand-field-label">Valuation</div>
+                                      <div className="rpc-expand-field-value rpc-expand-field-value--debug rpc-table-cell--mono">{row.valuationScope ?? "—"}</div>
+                                    </div>
+                                    <div className="rpc-expand-field">
+                                      <div className="rpc-expand-field-label">Market Source</div>
+                                      <div className="rpc-expand-field-value rpc-expand-field-value--debug rpc-table-cell--mono">{row.marketSource ?? "—"}</div>
+                                    </div>
+                                    <div className="rpc-expand-field">
+                                      <div className="rpc-expand-field-label">Reason</div>
+                                      <div className="rpc-expand-field-value rpc-expand-field-value--debug rpc-table-cell--mono">{debugReasonLabel(row.marketDebugReason)}</div>
+                                    </div>
+                                    <div className="rpc-expand-field">
+                                      <div className="rpc-expand-field-label">Edition Source</div>
+                                      <div className="rpc-expand-field-value rpc-expand-field-value--debug rpc-table-cell--mono">{row.editionMarketSource ?? "—"}</div>
+                                    </div>
+                                  </>
+                                ) : null}
                               </div>
+                              {getTraits(row).length > 0 && (
+                                <div className="mt-3 flex flex-wrap gap-1">
+                                  {getTraits(row).map(function(trait) { return <span key={trait} className="rounded px-2 py-0.5 text-[10px]" style={{ backgroundColor: accent + "1A", color: accent }}>{trait}</span> })}
+                                </div>
+                              )}
                             </div>
-                            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Links</div>
-                              <div className="space-y-2">
-                                <a href={"https://nbatopshot.com/moment/" + row.momentId} target="_blank" rel="noopener noreferrer" className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-white hover:bg-zinc-900">View on Top Shot</a>
+                            <div className="rpc-expand-section">
+                              <div className="rpc-expand-section-eyebrow">Links</div>
+                              <div className="flex flex-wrap gap-2">
+                                <a href={"https://nbatopshot.com/moment/" + row.momentId} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">View on Top Shot</a>
                                 {row.flowtyListingUrl ? (
-                                  <a href={"/out/flowty/" + row.momentId + "?source=wallet-expand&priceAtClick=" + (row.flowtyAsk ?? "")} target="_blank" rel="noopener noreferrer" className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-white hover:bg-zinc-900">
+                                  <a href={"/out/flowty/" + row.momentId + "?source=wallet-expand&priceAtClick=" + (row.flowtyAsk ?? "")} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">
                                     {"View on Flowty" + (row.flowtyAsk ? " (" + formatCurrency(row.flowtyAsk) + ")" : "")}
                                   </a>
                                 ) : (
-                                  <a href={"https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/NFT/" + row.momentId} target="_blank" rel="noopener noreferrer" className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-500 hover:bg-zinc-900">Check Flowty</a>
+                                  <a href={"https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/NFT/" + row.momentId} target="_blank" rel="noopener noreferrer" className="rpc-expand-link rpc-expand-link--muted">Check Flowty</a>
                                 )}
                                 {summary && (
-                                  <a href={"/nba-top-shot/sets?wallet=" + encodeURIComponent(input.trim())} className="block rounded-lg border border-zinc-700 px-3 py-1.5 text-center text-xs text-zinc-400 hover:bg-zinc-900">View Set Progress →</a>
+                                  <a href={"/nba-top-shot/sets?wallet=" + encodeURIComponent(input.trim())} className="rpc-expand-link rpc-expand-link--muted">View Set Progress →</a>
                                 )}
-                              </div>
-                            </div>
-                            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Metadata</div>
-                              <div className="space-y-1 text-sm">
-                                {/* TODO: team_name from UUID-keyed Flowty editions is often wrong. Long-term fix: add team column to wallet_moments_cache and prefer that over editions.team_name */}
-                                <div>Team: {row.team ?? "-"}</div>
-                                <div>League: {row.league ?? "-"}</div>
-                                <div>Parallel: {getParallel(row)}</div>
-                                <div>Series: {row.series ?? "-"} ({seriesIntToSeason(row.series, collectionSeriesMap) || "—"})</div>
-                                <div>Acquired: {formatAcquiredAt(row.acquiredAt)}</div>
-                                <div>Locked: {isLocked ? "Yes" : "No"}</div>
-                                <div className="flex flex-wrap gap-1 pt-1">
-                                  {getTraits(row).map(function(trait) { return <span key={trait} className="rounded px-2 py-0.5 text-[10px]" style={{ backgroundColor: accent + "1A", color: accent }}>{trait}</span> })}
-                                </div>
                               </div>
                             </div>
                             {row.badgeInfo?.badge_score ? (
-                              <div className="rounded-xl border border-zinc-700 bg-zinc-950 p-3">
-                                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Badges</div>
-                                <div className="space-y-1 text-sm">
+                              <div className="rpc-expand-section">
+                                <div className="rpc-expand-section-eyebrow">Badges</div>
+                                <div className="space-y-2">
                                   <div className="flex items-center gap-2">
-                                    <span className="text-zinc-400">Score</span>
+                                    <span className="text-xs" style={{ color: "var(--rpc-text-secondary)" }}>Score</span>
                                     <span className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-black text-white" style={{ backgroundColor: accent }}>{row.badgeInfo.badge_score}</span>
                                   </div>
-                                  <div className="flex flex-wrap gap-1 pt-1">
+                                  <div className="flex flex-wrap gap-1">
                                     {(row.badgeInfo.badge_titles ?? [])
                                       .filter(function(t) { return BADGE_PILL_TITLES.has(t) })
                                       .filter(function(t) { return !row.badgeInfo?.is_three_star_rookie || !ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR.has(t) })
                                       .map(function(title) { return <BadgeIcon key={title} title={title} /> })}
                                   </div>
-                                  <div className="pt-1 text-xs text-zinc-500">
+                                  <div className="text-[11px] font-mono space-y-0.5" style={{ color: "var(--rpc-text-muted)" }}>
                                     <div>Burn rate: {row.badgeInfo.burn_rate_pct.toFixed(1)}%</div>
                                     <div>Lock rate: {row.badgeInfo.lock_rate_pct.toFixed(1)}%</div>
                                     {(row.badgeInfo.circulation_count === 1 || row.tier?.toUpperCase() === "ULTIMATE") ? (
@@ -2620,22 +2707,11 @@ export default function WalletPage() {
                                   </div>
                                 </div>
                               </div>
-                            ) : showDebug ? (
-                              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Debug</div>
-                                <div className="space-y-1 text-sm">
-                                  <div>Edition Key: {row.editionKey ?? "-"}</div>
-                                  <div>Scope Key: {scopeKey}</div>
-                                  <div>Valuation: {row.valuationScope ?? "-"}</div>
-                                  <div>Market Source: {row.marketSource ?? "-"}</div>
-                                  <div>Reason: {debugReasonLabel(row.marketDebugReason)}</div>
-                                  <div>Edition Source: {row.editionMarketSource ?? "-"}</div>
-                                </div>
-                              </div>
                             ) : null}
-                          </div>
-                          <div className="mt-4">
-                            <EditionRecentSales editionKey={row.editionKey ?? null} mintCount={getMint(row)} />
+                            <div className="rpc-expand-section">
+                              <div className="rpc-expand-section-eyebrow">Recent sales for this edition</div>
+                              <EditionRecentSales editionKey={row.editionKey ?? null} mintCount={getMint(row)} />
+                            </div>
                           </div>
                         </td>
                       </tr>
