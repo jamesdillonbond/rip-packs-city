@@ -23,6 +23,74 @@ Repo: github.com/jamesdillonbond/rip-packs-city (public)
 
 ## Recent sessions
 
+### May 6, 2026 — Multi-collection wallet enrichment (Phase 1 prep)
+
+Shipped
+
+- Schema migration `wallet_moments_cache_collection_scoped_unique`:
+  replaced the `(wallet_address, moment_id)` UNIQUE with
+  `(wallet_address, collection_id, moment_id)`. The old shape would have
+  collided on cross-collection IDs (Pinnacle moment 5 vs AllDay moment 5
+  on the same wallet). Verified zero existing collisions before the swap.
+- `seeded_wallets.last_refreshed_per_collection jsonb DEFAULT '{}'` —
+  per-collection freshness map keyed by slug
+  (`nba_top_shot`/`nfl_all_day`/etc.). Each enricher stamps its own slug;
+  the legacy `last_refreshed_at` stays for backward compat.
+- `app/api/wallet-backfill-allday` — sibling of `wallet-backfill`,
+  Cadence-backed AllDay enricher. Uses
+  `lib/allday-cadence.GET_OWNED_MOMENT_IDS` /
+  `GET_MOMENT_METADATA` (already in repo). Same fire-and-forget shape:
+  returns 202, runs in `after()` for up to ~260s, logs to
+  `pipeline_runs` as `wallet-backfill-allday`. Sets
+  `collection_id = dee28451-5d62-409e-a1ad-a83f763ac070` (AllDay UUID)
+  and stamps `last_refreshed_per_collection.nfl_all_day` on completion.
+- `app/api/wallet-backfill-multicollection` — orchestrator that fans out
+  to every per-collection enricher in parallel with the same Bearer +
+  `{ wallet, skip_cached }` shape. Today the fan-out covers
+  `nba_top_shot` + `nfl_all_day`. Add new entries to
+  `COLLECTIONS_TO_FAN_OUT` as Pinnacle / Golazos / UFC enrichers land.
+- `wallet-backfill` (Top Shot) updated to use the new constraint name
+  on upsert (`onConflict: "wallet_address,collection_id,moment_id"`),
+  filter cached-id reads by `collection_id`, set `collection_id`
+  explicitly on each row, and stamp
+  `last_refreshed_per_collection.nba_top_shot` via the new helper.
+
+Known gaps (Phase 1 followup)
+
+- **Disney Pinnacle** per-wallet enricher: the existing `pinnacle-wallet`
+  route reads from `wallet_moments_cache` (populated by Pinnacle ingest
+  pipeline, not by wallet-side Cadence). Need a `wallet-backfill-pinnacle`
+  Vercel route that mirrors the AllDay one, using the Pinnacle contract
+  address `0xedf9df96c92f4595` and the documented Cadence shape
+  (`Int` IDs not `UInt64`).
+- **LaLiga Golazos** per-wallet enricher: not built. Contract address +
+  Cadence shape needs verification before writing the helper.
+- **UFC Strike** per-wallet enricher: `enrich-ufc-wallet` edge function
+  is sale-trigger-driven only. Either extend it to accept a public
+  `{ wallet }` body or add a new `wallet-backfill-ufc` Vercel route.
+- **Per-collection cron schedule**: cron-job.org currently has only the
+  Top Shot `seed-wallet-refresh`. Add per-collection entries (every 4h
+  for AllDay/Pinnacle, every 12h for Golazos/UFC) once the missing
+  enrichers land.
+
+Verification path
+
+```sql
+-- Per-collection coverage. Should grow to ~22 / 22 / 22 / 22 / 22 once
+-- Phase 1 invitees are fanned through wallet-backfill-multicollection.
+SELECT c.slug, COUNT(DISTINCT wmc.wallet_address) AS wallets
+FROM wallet_moments_cache wmc JOIN collections c ON c.id = wmc.collection_id
+GROUP BY c.slug ORDER BY wallets DESC;
+
+-- mbl267 spot-check after invite goes out (Mike Levy, Flowty CEO — his
+-- AllDay collection is the one that actually matters to him).
+SELECT c.slug, COUNT(*) FROM wallet_moments_cache wmc
+JOIN collections c ON c.id = wmc.collection_id
+WHERE wmc.wallet_address = '0x11859edcf2f53edd' GROUP BY c.slug;
+```
+
+---
+
 ### May 6, 2026 — sync-nba-odds + odds-proxy + Tonight's Pick
 
 Shipped
