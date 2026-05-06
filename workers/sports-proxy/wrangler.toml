@@ -1,0 +1,7 @@
+name = "rpc-sports-proxy"
+main = "index.ts"
+compatibility_date = "2026-05-05"
+
+# PROXY_SECRET is set via: wrangler secret put PROXY_SECRET
+# Reuse the same value as the topshot-proxy worker (single-secret rotation
+# surface). Each worker can be rotated independently later if needed.
