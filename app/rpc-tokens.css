@@ -627,3 +627,37 @@
     --binder-card-min: 140px;
   }
 }
+
+/* ── Stat tile (wallet analytics row) ─────────────────────── */
+.rpc-stat-tile {
+  background: var(--rpc-surface);
+  border: 1px solid var(--rpc-border);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+}
+.rpc-stat-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--rpc-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rpc-stat-value {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 24px;
+  letter-spacing: 0.02em;
+  color: var(--rpc-text-primary);
+  margin-top: 4px;
+  line-height: 1.1;
+}
+.rpc-stat-caption {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--rpc-text-muted);
+  letter-spacing: 0.05em;
+}

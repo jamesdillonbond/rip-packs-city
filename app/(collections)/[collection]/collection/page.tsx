@@ -11,7 +11,7 @@ import {
 } from "@/lib/wallet-normalize"
 import { buildEditionSeedCandidate } from "@/lib/edition-market-seed"
 import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key"
-import { getCollection } from "@/lib/collections"
+import { getCollection, COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection"
 import { useWarmCache, usePrefetch } from "@/lib/warmup/WarmupContext"
 import ExplainButton from "@/components/ExplainButton"
@@ -48,12 +48,6 @@ function ThumbnailPreview({ thumbUrl, playerName, tierColor, children }: { thumb
   )
 }
 
-const COLLECTION_UUID_BY_SLUG: Record<string, string> = {
-  "nba-top-shot": "95f28a17-224a-4025-96ad-adf8a4c63bfd",
-  "nfl-all-day": "dee28451-5d62-409e-a1ad-a83f763ac070",
-  "disney-pinnacle": "7dd9dd11-e8b6-45c4-ac99-71331f959714",
-  "ufc": "9b4824a8-736d-4a96-b450-8dcc0c46b023",
-}
 const ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR = new Set(["Rookie Year", "Rookie Premiere", "Rookie Mint"])
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -218,9 +212,19 @@ function seriesIntToSeason(seriesRaw: string | undefined | null, seriesMap?: Map
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// Em-dash for missing data; $0 for real zero; thousands separators for positive.
+// Used by every stat tile and table cell that renders a USD value.
 function formatCurrency(value: number | null | undefined) {
-  if (value === null || value === undefined || Number.isNaN(value)) return "-"
-  return "$" + value.toFixed(2)
+  if (value === null || value === undefined || Number.isNaN(value)) return "—"
+  if (value === 0) return "$0"
+  const sign = value < 0 ? "-" : ""
+  const abs = Math.abs(Number(value)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return sign + "$" + abs
+}
+
+function formatCount(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—"
+  return Number(value).toLocaleString("en-US")
 }
 
 
@@ -447,6 +451,12 @@ export default function WalletPage() {
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
   const [selectedMoment, setSelectedMoment] = useState<MomentRow | null>(null)
   const [showDebug, setShowDebug] = useState(false)
+  const [debugMode, setDebugMode] = useState(false)
+  useEffect(function() {
+    if (typeof window !== "undefined") {
+      setDebugMode(new URLSearchParams(window.location.search).get("debug") === "1")
+    }
+  }, [])
   const [badgeFilter, setBadgeFilter] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
   const [ownerKey, setOwnerKey] = useState("")
@@ -1655,69 +1665,69 @@ export default function WalletPage() {
           </div>
         </div>
 
-        {/* Portfolio summary */}
-        {hasSearched && rows.length > 0 && (
+        {/* Portfolio summary — always render once searched so empty/no-data wallets
+             show $0 / em-dash placeholders rather than a missing tile row. */}
+        {hasSearched && (
           <div className="mb-5 space-y-3">
             <div className="grid gap-3 grid-cols-2 xl:grid-cols-4">
 
               {/* Wallet FMV — authoritative total from get_wallet_summary() when available */}
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-zinc-500 flex items-center gap-2">
+              <div className="rpc-stat-tile">
+                <div className="rpc-stat-eyebrow">
                   <span>Wallet FMV</span>
-                  {walletSummaryLoading && <span className="inline-block h-1.5 w-1.5 rounded-full bg-zinc-600 animate-pulse" />}
+                  {walletSummaryLoading && <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "var(--rpc-text-muted)", animation: "skeletonPulse 1.5s ease-in-out infinite" }} />}
                   <ExplainButton context={`Wallet ${connectedWallet || ownerKey || input.trim()} on ${collectionSlug}`} question="How is my total portfolio FMV calculated?" />
                 </div>
-                <div className="text-xl font-black text-white">
+                <div className="rpc-stat-value">
                   {(function() {
                     const fmvVal = walletSummary ? walletSummary.wallet_fmv : (walletTotalFmv !== null ? walletTotalFmv : totals.totalFmv)
                     if (fmvVal > 0) return formatCurrency(fmvVal)
-                    return "N/A"
+                    return walletSummary ? "$0" : "—"
                   })()}
                 </div>
-                <div className="mt-1 text-[11px] text-zinc-500">
-                  {(paginatedTotal || totals.totalCount) + " moments"}
+                <div className="rpc-stat-caption">
+                  {formatCount(paginatedTotal || totals.totalCount) + (collectionSlug === "disney-pinnacle" ? " pins" : " moments")}
                 </div>
               </div>
 
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-zinc-500 flex items-center gap-2">
+              <div className="rpc-stat-tile">
+                <div className="rpc-stat-eyebrow">
                   <span>Unlocked FMV</span>
-                  {walletSummaryLoading && <span className="inline-block h-1.5 w-1.5 rounded-full bg-zinc-600 animate-pulse" />}
+                  {walletSummaryLoading && <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "var(--rpc-text-muted)", animation: "skeletonPulse 1.5s ease-in-out infinite" }} />}
                 </div>
                 {(function() {
                   const unlockedFmv = walletSummary ? walletSummary.unlocked_fmv : totals.unlockedFmv
                   const unlockedCount = walletSummary ? walletSummary.unlocked_count : totals.unlockedCount
+                  const display = unlockedFmv > 0 ? formatCurrency(unlockedFmv) : (walletSummary ? "$0" : "—")
                   return (
                     <>
-                      <div className="text-xl font-black text-white">{unlockedFmv > 0 ? formatCurrency(unlockedFmv) : "N/A"}</div>
-                      <div className="mt-1 text-[11px] text-zinc-500">{unlockedCount} unlocked</div>
+                      <div className="rpc-stat-value">{display}</div>
+                      <div className="rpc-stat-caption">{formatCount(unlockedCount)} unlocked</div>
                     </>
                   )
                 })()}
               </div>
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-zinc-500 flex items-center gap-2">
+              <div className="rpc-stat-tile">
+                <div className="rpc-stat-eyebrow">
                   <span>Locked FMV</span>
-                  {walletSummaryLoading && <span className="inline-block h-1.5 w-1.5 rounded-full bg-zinc-600 animate-pulse" />}
+                  {walletSummaryLoading && <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "var(--rpc-text-muted)", animation: "skeletonPulse 1.5s ease-in-out infinite" }} />}
                 </div>
                 {(function() {
                   const lockedFmv = walletSummary ? walletSummary.locked_fmv : totals.lockedFmv
                   const lockedCount = walletSummary ? walletSummary.locked_count : totals.lockedCount
-                  const fmvLabel = walletSummary
-                    ? (lockedFmv > 0 ? formatCurrency(lockedFmv) : "$0")
-                    : (lockedFmv > 0 ? formatCurrency(lockedFmv) : "N/A")
+                  const display = lockedFmv > 0 ? formatCurrency(lockedFmv) : (walletSummary ? "$0" : "—")
                   return (
                     <>
-                      <div className="text-xl font-black text-white">{fmvLabel}</div>
-                      <div className="mt-1 text-[11px] text-zinc-500">{lockedCount} locked</div>
+                      <div className="rpc-stat-value">{display}</div>
+                      <div className="rpc-stat-caption">{formatCount(lockedCount)} locked</div>
                     </>
                   )
                 })()}
               </div>
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Best Offer Total</div>
-                <div className="text-xl font-black text-white">{totals.totalBestOffer > 0 ? formatCurrency(totals.totalBestOffer) : "N/A"}</div>
-                <div className="mt-1 text-[11px] text-zinc-500">{totals.totalFmv > 0 && totals.totalBestOffer > 0 ? "Spread gap: " + formatCurrency(totals.spreadGap) : ""}</div>
+              <div className="rpc-stat-tile">
+                <div className="rpc-stat-eyebrow">Best Offer Total</div>
+                <div className="rpc-stat-value">{totals.totalBestOffer > 0 ? formatCurrency(totals.totalBestOffer) : "—"}</div>
+                <div className="rpc-stat-caption">{totals.totalFmv > 0 && totals.totalBestOffer > 0 ? "vs FMV: " + formatCurrency(-totals.spreadGap) : ""}</div>
               </div>
             </div>
 
@@ -1935,8 +1945,12 @@ export default function WalletPage() {
               ⬇ Full CSV
             </a>
           )}
-          <button onClick={function() { setShowDebug(function(prev) { return !prev }) }} className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">{showDebug ? "Hide Debug" : "Debug"}</button>
-          <button onClick={copySeedCandidates} className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">Copy Seeds</button>
+          {debugMode && (
+            <>
+              <button onClick={function() { setShowDebug(function(prev) { return !prev }) }} className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">{showDebug ? "Hide Debug" : "Debug"}</button>
+              <button onClick={copySeedCandidates} className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">Copy Seeds</button>
+            </>
+          )}
         </div>
 
         {error ? <div className="mb-4 rounded-lg border border-red-800 bg-red-950 p-3 text-red-300 text-sm">{error}</div> : null}
@@ -2173,23 +2187,51 @@ export default function WalletPage() {
                             const tierColorForPrev = ({ COMMON: "#9ca3af", UNCOMMON: "#14b8a6", FANDOM: "#60a5fa", RARE: "#38bdf8", LEGENDARY: "#fbbf24", ULTIMATE: "#c084fc" } as Record<string, string>)[(row.tier ?? "").toUpperCase()] ?? "#9ca3af"
                             return (
                               <div className="relative shrink-0" style={{ width: 48, height: 64 }}>
-                                {thumbUrl ? (
-                                  <ThumbnailPreview thumbUrl={thumbUrl} playerName={row.playerName} tierColor={tierColorForPrev}>
-                                    <img
-                                      src={thumbUrl}
-                                      alt={row.playerName}
-                                      width={48}
-                                      height={64}
-                                      loading="lazy"
-                                      className="rounded object-cover bg-zinc-900 cursor-pointer"
-                                      style={{ width: 48, height: 64 }}
+                                {(function() {
+                                  const initials = (row.playerName ?? "")
+                                    .split(/\s+/)
+                                    .filter(Boolean)
+                                    .slice(0, 2)
+                                    .map(function(s) { return s[0]?.toUpperCase() ?? "" })
+                                    .join("")
+                                  const fallback = (
+                                    <div
+                                      className="rounded flex items-center justify-center cursor-pointer"
+                                      style={{ width: 48, height: 64, background: accent, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 16, letterSpacing: "0.04em" }}
                                       onClick={function(e) { e.stopPropagation(); setSelectedMoment(row) }}
-                                      onError={function(e) { (e.target as HTMLImageElement).style.display = "none" }}
-                                    />
-                                  </ThumbnailPreview>
-                                ) : (
-                                  <div className="rounded bg-zinc-900" style={{ width: 48, height: 64 }} />
-                                )}
+                                      title={row.playerName}
+                                    >
+                                      {initials || "—"}
+                                    </div>
+                                  )
+                                  if (!thumbUrl) return fallback
+                                  return (
+                                    <ThumbnailPreview thumbUrl={thumbUrl} playerName={row.playerName} tierColor={tierColorForPrev}>
+                                      <img
+                                        src={thumbUrl}
+                                        alt={row.playerName}
+                                        width={48}
+                                        height={64}
+                                        loading="lazy"
+                                        className="rounded object-cover cursor-pointer"
+                                        style={{ width: 48, height: 64, background: "var(--rpc-surface)" }}
+                                        onClick={function(e) { e.stopPropagation(); setSelectedMoment(row) }}
+                                        onError={function(e) {
+                                          const img = e.target as HTMLImageElement
+                                          img.style.display = "none"
+                                          const parent = img.parentElement
+                                          if (parent && !parent.querySelector("[data-rpc-fallback]")) {
+                                            const div = document.createElement("div")
+                                            div.setAttribute("data-rpc-fallback", "1")
+                                            div.style.cssText = "width:48px;height:64px;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-display);font-weight:900;font-size:16px;letter-spacing:0.04em;background:" + accent
+                                            div.textContent = initials || "—"
+                                            parent.appendChild(div)
+                                          }
+                                        }}
+                                      />
+                                    </ThumbnailPreview>
+                                  )
+                                })()}
                                 {isLocked && (
                                   <div className="absolute inset-0 rounded bg-zinc-900/60 flex items-center justify-center">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
