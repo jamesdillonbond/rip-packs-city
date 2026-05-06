@@ -70,13 +70,14 @@ interface MappingRow {
 
 interface FetchOutcome {
   rows: MappingRow[];
+  returnedIds: string[];
   gqlErrors: string[];
   status: number | null;
   fatal: string | null;
 }
 
 async function fetchAllDayMappings(nftIds: string[]): Promise<FetchOutcome> {
-  const out: FetchOutcome = { rows: [], gqlErrors: [], status: null, fatal: null };
+  const out: FetchOutcome = { rows: [], returnedIds: [], gqlErrors: [], status: null, fatal: null };
 
   // AllDay flowIDs are well within Int32 today (~10M). Defensive filter so a
   // future wraparound doesn't 422 the entire batch.
@@ -139,6 +140,7 @@ async function fetchAllDayMappings(nftIds: string[]): Promise<FetchOutcome> {
     const serial = rawSerial != null && Number.isFinite(Number(rawSerial)) && Number(rawSerial) > 0
       ? Number(rawSerial)
       : null;
+    if (flowID) out.returnedIds.push(flowID);
     if (!flowID || !editionFlowID) continue;
     out.rows.push({ nft_id: flowID, edition_external_id: editionFlowID, serial_number: serial });
   }
@@ -183,8 +185,41 @@ interface ResolverSummary {
   mappings_written: number;
   sales_promoted: number;
   sales_archived: number;
+  failures_recorded: number;
   promote_raw: unknown;
   fatal: string | null;
+}
+
+async function recordResolutionFailures(
+  collectionId: string,
+  missingIds: string[],
+  detail: string,
+): Promise<number> {
+  if (missingIds.length === 0) return 0;
+  const calls = missingIds.map((nftId) =>
+    // deno-lint-ignore no-explicit-any
+    (supabase as any).rpc("record_unmapped_resolution_failure", {
+      p_collection_id: collectionId,
+      p_nft_id: nftId,
+      p_reason: "gql_no_data",
+      p_detail: detail,
+    }).then(
+      // deno-lint-ignore no-explicit-any
+      (r: any) => (r?.error ? { ok: false, msg: String(r.error.message ?? "?") } : { ok: true }),
+      (err: unknown) => ({ ok: false, msg: err instanceof Error ? err.message : String(err) }),
+    )
+  );
+  const results = await Promise.all(calls);
+  let recorded = 0;
+  let firstErr: string | null = null;
+  for (const r of results) {
+    if (r.ok) recorded++;
+    else if (!firstErr) firstErr = r.msg.slice(0, 200);
+  }
+  if (firstErr) {
+    console.log(`[allday-unmapped] record_unmapped_resolution_failure errors (sample): ${firstErr}`);
+  }
+  return recorded;
 }
 
 async function runResolver(batchSize: number, startedAt: string): Promise<ResolverSummary> {
@@ -196,6 +231,7 @@ async function runResolver(batchSize: number, startedAt: string): Promise<Resolv
     mappings_written: 0,
     sales_promoted: 0,
     sales_archived: 0,
+    failures_recorded: 0,
     promote_raw: null,
     fatal: null,
   };
@@ -248,6 +284,24 @@ async function runResolver(batchSize: number, startedAt: string): Promise<Resolv
   }
 
   const rowsJson = fetchResult.rows;
+
+  // Dead-set detection: nft_ids that we asked GQL about but did not see in the
+  // response. Skip recording on partial-error responses — gql_errors present
+  // means the response is not fully trustworthy and we don't want to falsely
+  // escalate retry_count on ids the API may have failed to evaluate. HTTP /
+  // parse fatals already short-circuited above.
+  if (summary.gql_errors.length === 0) {
+    const returnedSet = new Set(fetchResult.returnedIds);
+    const missing = nftIds.filter((id) => !returnedSet.has(id));
+    if (missing.length > 0) {
+      const detail = `batch_size_${nftIds.length}_returned_${returnedSet.size}`;
+      summary.failures_recorded = await recordResolutionFailures(
+        ALLDAY_COLLECTION_ID,
+        missing,
+        detail,
+      );
+    }
+  }
 
   if (rowsJson.length === 0) {
     await logPipelineRun({
@@ -311,7 +365,7 @@ async function runResolver(batchSize: number, startedAt: string): Promise<Resolv
   });
 
   console.log(
-    `[allday-unmapped] targets=${targets.length} mappings=${summary.mappings_written} promoted=${summary.sales_promoted} archived=${summary.sales_archived} gql_errors=${summary.gql_errors.length}`,
+    `[allday-unmapped] targets=${targets.length} mappings=${summary.mappings_written} promoted=${summary.sales_promoted} archived=${summary.sales_archived} failures_recorded=${summary.failures_recorded} gql_errors=${summary.gql_errors.length}`,
   );
 
   return summary;
