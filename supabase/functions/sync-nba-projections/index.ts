@@ -26,7 +26,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 const SPORTS_PROXY_URL = Deno.env.get("SPORTS_PROXY_URL") ?? ""
-const TS_PROXY_SECRET = Deno.env.get("TS_PROXY_SECRET") ?? ""
+const SPORTS_PROXY_SECRET = Deno.env.get("SPORTS_PROXY_SECRET") ?? ""
 
 const FUNCTION_VERSION = 3
 const PIPELINE = "sync-nba-projections"
@@ -282,7 +282,7 @@ async function logRun(args: {
 async function runWork(startedAtIso: string, started: number) {
   const gameDate = todayInET()
 
-  if (!SPORTS_PROXY_URL || !TS_PROXY_SECRET) {
+  if (!SPORTS_PROXY_URL || !SPORTS_PROXY_SECRET) {
     await logRun({
       startedAt: startedAtIso,
       rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
@@ -292,7 +292,7 @@ async function runWork(startedAtIso: string, started: number) {
         function_version: FUNCTION_VERSION,
         game_date: gameDate,
         has_url: !!SPORTS_PROXY_URL,
-        has_secret: !!TS_PROXY_SECRET,
+        has_secret: !!SPORTS_PROXY_SECRET,
         elapsed_ms: Date.now() - started,
       },
     })
@@ -305,7 +305,7 @@ async function runWork(startedAtIso: string, started: number) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Proxy-Secret": TS_PROXY_SECRET,
+        "X-Proxy-Secret": SPORTS_PROXY_SECRET,
       },
       body: JSON.stringify({}),
       signal: AbortSignal.timeout(20_000),

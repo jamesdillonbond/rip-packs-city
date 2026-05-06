@@ -40,11 +40,16 @@ sync-nba-projections  ──POST /nba/draftkings-projections──►  rpc-sport
 sync-nba-odds (TODO)  ──POST /nba/odds─────────────────────►  rpc-sports-proxy  ──►  api.the-odds-api.com (pending key)
 ```
 
-The edge function sends `X-Proxy-Secret: ${TS_PROXY_SECRET}`. The worker
-compares against `env.PROXY_SECRET`. The two binding names exist so the
-secret can be rotated independently of `topshot-proxy` if needed; today
-they share the same value (single rotation surface). See
+The edge function sends `X-Proxy-Secret: ${SPORTS_PROXY_SECRET}`. The
+worker compares against `env.PROXY_SECRET`. The two binding names exist
+so the secret can be rotated independently of `topshot-proxy` if needed;
+today they share the same value (single rotation surface). See
 `workers/sports-proxy/README.md` for deploy + secret commands.
+
+> Repo drift fixed 2026-05-06: the Supabase edge function previously
+> read `TS_PROXY_SECRET` to match `topshot-proxy`. The deployed function
+> now reads `SPORTS_PROXY_SECRET` (a separate Supabase edge-function
+> secret). `main` was brought into sync with that deployed state.
 
 The `/nba/scoreboard` route on the worker is retained as a transparent
 pass-through (5 min cache) but no edge function consumes it today — kept
@@ -72,7 +77,7 @@ players against `nba_players.full_name_normalized` first, then
 
 **Proxy hop.** The function `POST`s
 `{SPORTS_PROXY_URL}/nba/draftkings-projections` with `{}` body and
-`X-Proxy-Secret: ${TS_PROXY_SECRET}` header. The worker:
+`X-Proxy-Secret: ${SPORTS_PROXY_SECRET}` header. The worker:
 1. Calls `GET https://www.draftkings.com/lobby/getcontests?sport=NBA` to
    discover the active draft group (`/draftgroups/v1/draftgroups` returns
    400 without filters and is not viable as a discovery surface).
@@ -145,9 +150,20 @@ curl -X POST \
   https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/sync-nba-projections
 ```
 
-**Cron-job.org schedule.** Every 2 hr from 12pm ET through 1am ET (8 runs
-per active-game day). The DFF page typically updates around mid-morning
-ET for that night's slate; running before noon ET gives stale data.
+**Cron-job.org schedule.** Every 2 hr from 12pm ET through 1am ET. DK
+draftables typically settle by mid-morning ET for that night's slate;
+running before noon ET picks up stale or in-progress data.
+
+Cron-job.org expects UTC. Two windows depending on US daylight-savings:
+
+| US window | Cron expression (UTC) | Translates to (ET) |
+|---|---|---|
+| EDT (mid-Mar through early-Nov, UTC-4) | `0 0,12,14,16,18,20,22 * * *` | runs at 8pm, 8am, 10am, 12pm, 2pm, 4pm, 6pm ET |
+| EST (early-Nov through mid-Mar, UTC-5) | `0 1,13,15,17,19,21,23 * * *` | runs at 8pm, 8am, 10am, 12pm, 2pm, 4pm, 6pm ET |
+
+Update the cron expression manually each time the US clocks change (two
+edits per year). Both expressions hit the same wall-clock ET hours; the
+hour-list shift accounts for the ±1h DST offset.
 
 ---
 
@@ -190,6 +206,11 @@ curl -X POST \
 indexed during the day without colliding with the every-2-hour projections
 refresh.
 
+| US window | Cron expression (UTC) | Translates to (ET) |
+|---|---|---|
+| EDT (UTC-4) | `0 8 * * *` | 4am ET |
+| EST (UTC-5) | `0 9 * * *` | 4am ET |
+
 ---
 
 ## Verification checklist after first deploy
@@ -216,27 +237,64 @@ After `supabase functions deploy <name>` for each:
    should report `auto_aliased = 0` until new wallets are scanned.
 
 If either function logs `error: "missing_proxy_env"`, set
-`SPORTS_PROXY_URL` and confirm `TS_PROXY_SECRET` exist in the Supabase
-edge-function secrets dashboard. If either logs `proxy_HTTP_502` with
-`upstream_error` / `body_excerpt` populated, the worker reached upstream
-and upstream rejected — inspect the body excerpt before redeploying.
+`SPORTS_PROXY_URL` and confirm `SPORTS_PROXY_SECRET` exist in the
+Supabase edge-function secrets dashboard. If either logs `proxy_HTTP_502`
+with `upstream_error` / `body_excerpt` populated, the worker reached
+upstream and upstream rejected — inspect the body excerpt before
+redeploying.
 
 ---
 
-## Cron-job.org configuration table
+## Setting up cron-job.org
 
-| Job | Schedule | Endpoint |
+Two NBA pipelines run on cron today; the legacy `sync-nba-games` job
+(every 30 min, scoreboardV2) was retired on 2026-05-06 — `nba_games` is
+now populated as a side-effect of `sync-nba-projections`. If a stale
+`sync-nba-games` entry is still scheduled on cron-job.org, delete it by
+hand.
+
+| Job | Endpoint | Schedule (ET) |
 |---|---|---|
-| sync-nba-projections | every 2 hr 12pm-1am ET | `POST /functions/v1/sync-nba-projections` |
-| match-topshot-players | once daily at 4am ET | `POST /functions/v1/match-topshot-players` |
+| sync-nba-projections | `POST /functions/v1/sync-nba-projections` | every 2 hr 12pm–1am |
+| match-topshot-players | `POST /functions/v1/match-topshot-players` | once daily 4am |
 
-> The legacy `sync-nba-games` job (every 30 min, scoreboardV2) was retired
-> on 2026-05-06 along with its edge function. Remove the entry from
-> cron-job.org by hand if it's still scheduled there.
+For each job (do this twice — once per pipeline):
 
-All three carry `Authorization: Bearer $INGEST_SECRET_TOKEN` (same token
-as the rest of the cron-job.org fleet — see `docs/TOKEN_ROTATION.md`
-when rotating).
+1. **Create a new cron job** in cron-job.org (https://console.cron-job.org/jobs).
+2. **URL.** `https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/{function_name}`
+   — substitute `sync-nba-projections` or `match-topshot-players`.
+3. **Method.** `POST`.
+4. **Headers.** Add a single header:
+   - Name: `Authorization`
+   - Value: `Bearer <INGEST_SECRET_TOKEN>` — retrieve from Supabase
+     dashboard → Project settings → Edge Functions → Secrets, copy the
+     value of `INGEST_SECRET_TOKEN`. Same token used elsewhere; see
+     `docs/TOKEN_ROTATION.md` when it rotates.
+5. **Body.** Empty (do not check "Send body").
+6. **Schedule.** Pick "Custom" and paste the UTC cron expression from
+   the per-pipeline tables above (EDT vs EST — match the current US
+   window). Update twice per year at the DST flip.
+7. **Notifications.** Set the failure threshold to **3 consecutive
+   failures** before notifying (matches the existing `topshot-pack-ev`
+   cadence so the inbox doesn't churn on transient blips).
+8. **Save.** First successful run lands within ~30–60s in Supabase
+   `pipeline_runs` filtered by `pipeline = 'sync-nba-projections'` (or
+   `'match-topshot-players'`). Inspect `extra` to confirm
+   `function_version = 3` for projections.
+
+Verify both are wired by waiting for one cycle each, then querying:
+
+```sql
+SELECT pipeline, started_at, ok, rows_written, extra->>'elapsed_ms' AS ms
+FROM pipeline_runs
+WHERE pipeline IN ('sync-nba-projections', 'match-topshot-players')
+ORDER BY started_at DESC
+LIMIT 4;
+```
+
+The most recent two rows should be `ok = true` with `rows_written` > 0
+on a normal slate (sync-nba-projections) and `rows_written = 0` is OK
+for match-topshot-players once the alias backfill is complete.
 
 ---
 
@@ -254,7 +312,7 @@ Once the Odds API key is registered:
   (passing `?apiKey=${env.ODDS_API_KEY}`). Mirror the
   `/nba/scoreboard` pass-through pattern; cache 60 min.
 - `supabase/functions/sync-nba-odds` — POSTs `{SPORTS_PROXY_URL}/nba/odds`
-  with `X-Proxy-Secret: ${TS_PROXY_SECRET}`, matches odds-API events to
+  with `X-Proxy-Secret: ${SPORTS_PROXY_SECRET}`, matches odds-API events to
   `nba_games` rows by team abbreviation + `game_date`, writes
   `home_moneyline`, `away_moneyline`, `home_spread`, `total_points`,
   `last_synced_at`. Skips games with `status = 'final'`. Cron every
