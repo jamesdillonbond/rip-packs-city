@@ -131,6 +131,13 @@ export function classifyError(msg: string | null | undefined): {
   return { category: "UNKNOWN_FAILURE", subcategory }
 }
 
+// Coverage notes — see docs/flowty-classifier-coverage-findings.md (2026-05-05).
+// Golazos resolves zero rows from this scanner because LaLiga Golazos uses
+// a separate Dapper marketplace contract, not NFTStorefrontV2. The address
+// below is correct; the absence is the data, not a classifier gap.
+// "unknown" rows are dominated by (a) failed txs that abort before the NFT
+// contract is referenced and (b) off-platform Flow NFTs that trade via the
+// Flowty fork but aren't in our supported five-collection scope.
 const COLLECTION_ADDRESSES: Array<{ collection: Collection; addr: string }> = [
   { collection: "topshot", addr: "0b2a3299cc857e29" },
   { collection: "allday", addr: "e4cf4bdc1751c65d" },
