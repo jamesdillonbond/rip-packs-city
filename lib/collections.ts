@@ -13,6 +13,7 @@ export type CollectionPage =
   | "overview"
   | "collection"
   | "packs"
+  | "fast-break"
   | "sniper"
   | "badges"
   | "sets"
@@ -64,7 +65,7 @@ export const COLLECTIONS: Collection[] = [
     accent: "#E03A2F",
     accentSoft: "#FF4D40",
     icon: "\u{1F3C0}",
-    pages: ["overview", "collection", "market", "packs", "sniper", "sets", "analytics"],
+    pages: ["overview", "collection", "market", "packs", "fast-break", "sniper", "sets", "analytics"],
     published: true,
     graphqlUrl: "https://public-api.nbatopshot.com/graphql",
     flowContractName: "TopShot",
@@ -314,26 +315,28 @@ export function getCollectionUuid(slug: string): string | null {
 // ── Page labels + pitches ───────────────────────────────────────────────────
 
 export const PAGE_LABELS: Record<CollectionPage, string> = {
-  overview:   "Overview",
-  collection: "Collection",
-  packs:      "Packs",
-  sniper:     "Sniper",
-  badges:     "Badges",
-  sets:       "Sets",
-  vault:      "Vault",
-  market:     "Market",
-  analytics:  "Analytics",
+  overview:     "Overview",
+  collection:   "Collection",
+  packs:        "Packs",
+  "fast-break": "Fast Break",
+  sniper:       "Sniper",
+  badges:       "Badges",
+  sets:         "Sets",
+  vault:        "Vault",
+  market:       "Market",
+  analytics:    "Analytics",
 }
 
 // One-line page pitches — rendered under tab hovers and in empty states.
 export const PAGE_PITCHES: Record<CollectionPage, string> = {
-  overview:   "Ecosystem snapshot, news, pipeline health",
-  collection: "Your moments — FMV, badges, acquisition history",
-  market:     "Sort and filter every listing in the ecosystem",
-  packs:      "Pack EV calculator — find drops where EV > retail",
-  sniper:     "Real-time deals below FMV",
-  badges:     "Top Shot Debut, Rookie Year, Championship, and more",
-  sets:       "Completion tracking and bottleneck finder",
-  analytics:  "Sortable ecosystem-wide intelligence",
-  vault:      "Real-world-asset vaulted cards",
+  overview:     "Ecosystem snapshot, news, pipeline health",
+  collection:   "Your moments — FMV, badges, acquisition history",
+  market:       "Sort and filter every listing in the ecosystem",
+  packs:        "Pack EV calculator — find drops where EV > retail",
+  "fast-break": "Build the optimal Fast Break lineup from your wallet",
+  sniper:       "Real-time deals below FMV",
+  badges:       "Top Shot Debut, Rookie Year, Championship, and more",
+  sets:         "Completion tracking and bottleneck finder",
+  analytics:    "Sortable ecosystem-wide intelligence",
+  vault:        "Real-world-asset vaulted cards",
 }
