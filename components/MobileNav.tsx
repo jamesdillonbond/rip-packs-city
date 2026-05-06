@@ -80,7 +80,7 @@ export default function MobileNav() {
     { label: "HOME", iconKey: "home", href: "/" },
     { label: "WALLET", iconKey: "wallet", href: `/${collection}/collection` },
     { label: "SNIPER", iconKey: "sniper", href: `/${collection}/sniper` },
-    { label: "PROFILE", iconKey: "profile", href: "/profile" },
+    { label: "PROFILE", iconKey: "profile", href: "/dashboard" },
   ];
 
   return (

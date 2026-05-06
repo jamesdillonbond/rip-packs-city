@@ -323,7 +323,7 @@ export default function OverviewPage() {
                 localStorage.setItem("rpc_collection_last_wallet", value)
               } catch { /* ignore */ }
               setSubmitted(true)
-              router.push("/profile?wallet=" + encodeURIComponent(value))
+              router.push("/dashboard?wallet=" + encodeURIComponent(value))
             }}
             style={{ display: "inline-flex", gap: 8, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}
           >

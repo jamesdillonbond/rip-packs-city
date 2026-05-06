@@ -1,5 +1,5 @@
 // app/api/subscribe/verify/route.ts
-// GET ?token=... — flips verified=true and redirects to /profile?verified=true.
+// GET ?token=... — flips verified=true and redirects to /dashboard?verified=true.
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   const origin = new URL(req.url).origin
 
   if (!token) {
-    return NextResponse.redirect(`${origin}/profile?verified=false`)
+    return NextResponse.redirect(`${origin}/dashboard?verified=false`)
   }
 
   try {
@@ -19,10 +19,10 @@ export async function GET(req: NextRequest) {
       .eq("verification_token", token)
 
     if (error) {
-      return NextResponse.redirect(`${origin}/profile?verified=false`)
+      return NextResponse.redirect(`${origin}/dashboard?verified=false`)
     }
-    return NextResponse.redirect(`${origin}/profile?verified=true`)
+    return NextResponse.redirect(`${origin}/dashboard?verified=true`)
   } catch {
-    return NextResponse.redirect(`${origin}/profile?verified=false`)
+    return NextResponse.redirect(`${origin}/dashboard?verified=false`)
   }
 }

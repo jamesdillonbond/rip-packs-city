@@ -3,10 +3,13 @@ import type { Metadata } from 'next'
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
 
 // Root layout metadata — import into app/layout.tsx as: export const metadata = rootMetadata
+// Home (/) inherits these directly \u2014 the marketing page does not export its
+// own metadata, so default title, description, openGraph, and twitter all
+// describe the home surface. The %s template below still applies per-subpage.
 const ROOT_TITLE =
-  'Rip Packs City \u2014 Collector Intelligence for NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos & UFC Strike'
+  'Rip Packs City \u2014 The Intelligence Layer for Flow Collectibles'
 const ROOT_DESCRIPTION =
-  'Collector intelligence on Flow blockchain \u2014 FMV pricing, sniper deals, pack EV, and wallet analytics for NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike.'
+  'The intelligence layer for Flow collectibles. FMV, deals, and portfolio analytics for NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike. No signup required.'
 
 export const rootMetadata: Metadata = {
   metadataBase: new URL(BASE_URL),

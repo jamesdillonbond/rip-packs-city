@@ -26,7 +26,8 @@ export default function robots(): MetadataRoute.Robots {
           '/_next/',
           '/admin/',
           '/login',
-          '/profile',         // editor — exact match; /profile/* (public profiles) NOT disallowed
+          '/dashboard',       // authed dashboard — private surface
+          '/profile',         // legacy editor route, now 308s to /dashboard; /profile/* (public profiles) NOT disallowed
           '/profile/edit',
           '/profile/settings',
           '/auth/',

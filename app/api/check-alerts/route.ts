@@ -61,7 +61,7 @@ function buildHtml(a: any, sniperUrl: string): string {
       </div>
     </div>
     <div style="padding:14px 24px;background:#0f0f13;border-top:1px solid #26262d;font-size:11px;color:#6b7280;text-align:center;">
-      Manage your alerts at <a href="https://www.rippackscity.com/profile" style="color:#9ca3af;">rippackscity.com/profile</a>
+      Manage your alerts at <a href="https://www.rippackscity.com/dashboard" style="color:#9ca3af;">rippackscity.com/dashboard</a>
     </div>
   </div>
 </body></html>`;
