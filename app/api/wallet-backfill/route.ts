@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import fcl from "@/lib/flow"
 import * as t from "@onflow/types"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -9,6 +9,14 @@ export const maxDuration = 300
 const BATCH_SIZE = 20
 const CONCURRENCY = 8
 const UPSERT_CHUNK = 200
+// Stop the inner walk before Vercel kills the function so the upserts that
+// already landed are not abandoned mid-batch and the pipeline_runs row gets
+// a clean "timeout" termination_reason instead of a generic 504.
+const SOFT_DEADLINE_MS = 260_000
+// Defensive cap. Largest known TopShot wallet is ~70k; 200k leaves room and
+// also short-circuits any pathological response. Beyond this we mark the
+// run safety_ceiling and stop walking.
+const MAX_MOMENTS_PER_RUN = 200_000
 
 async function getOwnedMomentIds(wallet: string): Promise<number[]> {
   const cadence = `
@@ -79,64 +87,121 @@ async function mapWithConcurrency<T, R>(
   return results
 }
 
-export async function POST(req: NextRequest) {
-  // Auth check
-  const authHeader = req.headers.get("authorization")
-  const expectedToken = process.env.INGEST_SECRET_TOKEN
-  if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
-
-  let body: { wallet?: string }
+async function logRun(args: {
+  startedAt: string
+  wallet: string
+  rowsFound: number
+  rowsWritten: number
+  rowsSkipped: number
+  ok: boolean
+  error?: string | null
+  extra: Record<string, unknown>
+}) {
   try {
-    body = await req.json()
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
+    await (supabaseAdmin as any).rpc("log_pipeline_run", {
+      p_pipeline: "wallet-backfill",
+      p_started_at: args.startedAt,
+      p_rows_found: args.rowsFound,
+      p_rows_written: args.rowsWritten,
+      p_rows_skipped: args.rowsSkipped,
+      p_ok: args.ok,
+      p_error: args.error ?? null,
+      p_collection_slug: "nba_top_shot",
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: { wallet: args.wallet, ...args.extra },
+    })
+  } catch (err) {
+    console.warn(
+      `[wallet-backfill] log_pipeline_run failed: ${err instanceof Error ? err.message : String(err)}`
+    )
   }
+}
 
-  const wallet = body.wallet?.trim()
-  if (!wallet) {
-    return NextResponse.json({ error: "wallet field required" }, { status: 400 })
+async function loadCachedMomentIds(wallet: string): Promise<Set<string>> {
+  const ids = new Set<string>()
+  const PAGE = 1000
+  let from = 0
+  while (true) {
+    const { data, error } = await (supabaseAdmin as any)
+      .from("wallet_moments_cache")
+      .select("moment_id")
+      .eq("wallet_address", wallet)
+      .range(from, from + PAGE - 1)
+    if (error) {
+      console.warn(`[wallet-backfill] cached-id read failed: ${error.message}`)
+      return ids
+    }
+    const rows = (data ?? []) as Array<{ moment_id: string }>
+    for (const r of rows) ids.add(String(r.moment_id))
+    if (rows.length < PAGE) break
+    from += PAGE
   }
+  return ids
+}
 
-  console.log(`[wallet-backfill] Starting backfill for wallet: ${wallet}`)
-
-  const now = new Date().toISOString()
+async function runBackfill(
+  startedAtIso: string,
+  startedMs: number,
+  wallet: string,
+  skipCached: boolean
+) {
   let totalFetched = 0
   let totalUpserted = 0
   let batchesFetched = 0
+  let totalSkippedCached = 0
+  let terminatedReason:
+    | "no_more_moments"
+    | "safety_ceiling"
+    | "timeout"
+    | "error" = "no_more_moments"
 
   try {
-    // Step 1: Get all owned moment IDs via FCL on-chain query
-    const ids = await getOwnedMomentIds(wallet)
-    console.log(`[wallet-backfill] Found ${ids.length} moment IDs on-chain for ${wallet}`)
-
-    if (ids.length === 0) {
-      return NextResponse.json({
-        total_fetched: 0,
-        total_upserted: 0,
-        pages_fetched: 0,
-        wallet_address: wallet,
+    const onChainIds = await getOwnedMomentIds(wallet)
+    if (onChainIds.length === 0) {
+      await (supabaseAdmin as any).rpc("refresh_seeded_wallet_stats", {
+        p_wallet_address: wallet,
       })
+      await logRun({
+        startedAt: startedAtIso,
+        wallet,
+        rowsFound: 0,
+        rowsWritten: 0,
+        rowsSkipped: 0,
+        ok: true,
+        extra: {
+          on_chain_count: 0,
+          pages_fetched: 0,
+          total_moments_seen: 0,
+          terminated_reason: "no_more_moments",
+          skip_cached: skipCached,
+          elapsed_ms: Date.now() - startedMs,
+        },
+      })
+      return
     }
 
-    // Step 2 & 3: Process in batches of 20 with concurrency 8
-    const allRows: Array<{
-      wallet_address: string
-      moment_id: string
-      edition_key: string
-      serial_number: number | null
-      player_name: string | null
-      set_name: string | null
-      tier: string | null
-      series_number: number | null
-      acquired_at: string | null
-      fmv_usd: null
-      last_seen_at: string
-    }> = []
+    const cachedIds = skipCached ? await loadCachedMomentIds(wallet) : new Set<string>()
+    const idsToWalk = skipCached
+      ? onChainIds.filter((id) => !cachedIds.has(String(id)))
+      : onChainIds
+    totalSkippedCached = onChainIds.length - idsToWalk.length
 
-    for (let batchStart = 0; batchStart < ids.length; batchStart += BATCH_SIZE) {
-      const batch = ids.slice(batchStart, batchStart + BATCH_SIZE)
+    if (idsToWalk.length > MAX_MOMENTS_PER_RUN) {
+      terminatedReason = "safety_ceiling"
+      idsToWalk.length = MAX_MOMENTS_PER_RUN
+    }
+
+    const now = new Date().toISOString()
+    const allRows: Array<Record<string, unknown>> = []
+
+    for (let batchStart = 0; batchStart < idsToWalk.length; batchStart += BATCH_SIZE) {
+      if (Date.now() - startedMs > SOFT_DEADLINE_MS) {
+        terminatedReason = "timeout"
+        break
+      }
+
+      const batch = idsToWalk.slice(batchStart, batchStart + BATCH_SIZE)
       batchesFetched++
 
       const metadataResults = await mapWithConcurrency(batch, CONCURRENCY, async (id) => {
@@ -144,8 +209,9 @@ export async function POST(req: NextRequest) {
           return await getMomentMetadata(wallet, id)
         } catch (err) {
           console.warn(
-            `[wallet-backfill] Failed to fetch metadata for moment ${id}:`,
-            err instanceof Error ? err.message : String(err)
+            `[wallet-backfill] meta fail momentId=${id} wallet=${wallet.slice(0, 10)} reason=${
+              err instanceof Error ? err.message : String(err)
+            }`
           )
           return null
         }
@@ -154,7 +220,6 @@ export async function POST(req: NextRequest) {
       for (let i = 0; i < batch.length; i++) {
         const meta = metadataResults[i]
         if (!meta) continue
-
         totalFetched++
 
         const setID = meta.setID ?? null
@@ -178,55 +243,132 @@ export async function POST(req: NextRequest) {
         })
       }
 
-      // Log progress every 100 moments
-      if (totalFetched > 0 && totalFetched % 100 < BATCH_SIZE) {
-        console.log(`[wallet-backfill] Progress: ${totalFetched} moments processed`)
-      }
-    }
-
-    // Step 4: Upsert in chunks of 200
-    if (allRows.length > 0) {
-      for (let i = 0; i < allRows.length; i += UPSERT_CHUNK) {
-        const chunk = allRows.slice(i, i + UPSERT_CHUNK)
+      // Flush in flight whenever we cross the chunk threshold so partial
+      // progress is durable even if the function is killed mid-walk.
+      if (allRows.length >= UPSERT_CHUNK) {
+        const chunk = allRows.splice(0, allRows.length)
         const { data, error } = await (supabaseAdmin as any)
           .from("wallet_moments_cache")
           .upsert(chunk, { onConflict: "wallet_address,moment_id" })
           .select("moment_id")
-
         if (error) {
           console.error(
-            `[wallet-backfill] Upsert error at chunk ${Math.floor(i / UPSERT_CHUNK)}:`,
-            error.message
+            `[wallet-backfill] upsert err batch=${batchesFetched}: ${error.message}`
           )
+        } else {
+          totalUpserted += data?.length ?? chunk.length
         }
-        totalUpserted += data?.length ?? chunk.length
+      }
+
+      if (totalFetched > 0 && totalFetched % 200 < BATCH_SIZE) {
+        console.log(
+          `[wallet-backfill] progress wallet=${wallet.slice(0, 10)} fetched=${totalFetched}/${idsToWalk.length}`
+        )
       }
     }
 
-    console.log(
-      `[wallet-backfill] Backfill complete for ${wallet}: ${totalFetched} fetched, ${totalUpserted} upserted, ${batchesFetched} batches`
-    )
+    // Flush whatever's still buffered.
+    if (allRows.length > 0) {
+      const { data, error } = await (supabaseAdmin as any)
+        .from("wallet_moments_cache")
+        .upsert(allRows, { onConflict: "wallet_address,moment_id" })
+        .select("moment_id")
+      if (error) {
+        console.error(
+          `[wallet-backfill] final upsert err: ${error.message}`
+        )
+      } else {
+        totalUpserted += data?.length ?? allRows.length
+      }
+    }
 
-    return NextResponse.json({
-      total_fetched: totalFetched,
-      total_upserted: totalUpserted,
-      pages_fetched: batchesFetched,
-      wallet_address: wallet,
+    // Refresh the seeded_wallets stats so cached_moment_count reflects the
+    // new cache total. Safe to call even when the row isn't in seeded_wallets
+    // (the RPC just no-ops on the UPDATE).
+    await (supabaseAdmin as any).rpc("refresh_seeded_wallet_stats", {
+      p_wallet_address: wallet,
+    })
+
+    await logRun({
+      startedAt: startedAtIso,
+      wallet,
+      rowsFound: idsToWalk.length,
+      rowsWritten: totalUpserted,
+      rowsSkipped: totalSkippedCached,
+      ok: true,
+      extra: {
+        on_chain_count: onChainIds.length,
+        pages_fetched: batchesFetched,
+        total_moments_seen: totalFetched,
+        skipped_cached: totalSkippedCached,
+        terminated_reason: terminatedReason,
+        skip_cached: skipCached,
+        elapsed_ms: Date.now() - startedMs,
+      },
     })
   } catch (err) {
-    console.error(
-      `[wallet-backfill] Error during backfill:`,
-      err instanceof Error ? err.message : String(err)
-    )
-    return NextResponse.json(
-      {
-        error: err instanceof Error ? err.message : String(err),
-        total_fetched: totalFetched,
-        total_upserted: totalUpserted,
+    terminatedReason = "error"
+    const msg = err instanceof Error ? err.message : String(err)
+    await logRun({
+      startedAt: startedAtIso,
+      wallet,
+      rowsFound: totalFetched,
+      rowsWritten: totalUpserted,
+      rowsSkipped: totalSkippedCached,
+      ok: false,
+      error: msg,
+      extra: {
         pages_fetched: batchesFetched,
-        wallet_address: wallet,
+        total_moments_seen: totalFetched,
+        terminated_reason: terminatedReason,
+        skip_cached: skipCached,
+        elapsed_ms: Date.now() - startedMs,
       },
-      { status: 500 }
-    )
+    })
+    console.error(`[wallet-backfill] error during backfill for ${wallet}: ${msg}`)
   }
+}
+
+export async function POST(req: NextRequest) {
+  const authHeader = req.headers.get("authorization")
+  const expectedToken = process.env.INGEST_SECRET_TOKEN
+  if (!expectedToken || authHeader !== `Bearer ${expectedToken}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  let body: { wallet?: string; skip_cached?: boolean }
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
+  }
+
+  const wallet = body.wallet?.trim()
+  if (!wallet) {
+    return NextResponse.json({ error: "wallet field required" }, { status: 400 })
+  }
+  // skip_cached defaults true so cron-driven re-runs only enrich the diff.
+  // Callers that want a forced full re-walk pass skip_cached: false.
+  const skipCached = body.skip_cached !== false
+
+  const startedMs = Date.now()
+  const startedAtIso = new Date(startedMs).toISOString()
+
+  // Run the heavy walk on the after() background lifetime so the caller
+  // (cron-job.org / seed-wallet-refresh) gets a fast 202 even when the
+  // wallet has 30k+ moments. Vercel's after() inherits maxDuration, so the
+  // soft deadline above keeps the walk under that ceiling.
+  after(async () => {
+    await runBackfill(startedAtIso, startedMs, wallet, skipCached)
+  })
+
+  return NextResponse.json(
+    {
+      accepted: true,
+      wallet_address: wallet,
+      skip_cached: skipCached,
+      started_at: startedAtIso,
+    },
+    { status: 202 }
+  )
 }
