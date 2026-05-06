@@ -127,8 +127,8 @@ export default function EditProfilePage() {
           <h1 style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 22, letterSpacing: "0.04em", textTransform: "uppercase" }}>
             Edit Profile
           </h1>
-          <Link href="/profile" style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.6)", textDecoration: "none" }}>
-            ← Back to profile
+          <Link href="/dashboard" style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.6)", textDecoration: "none" }}>
+            ← Back to dashboard
           </Link>
         </header>
 

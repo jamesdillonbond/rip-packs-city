@@ -21,7 +21,7 @@ type Status = "idle" | "sending" | "sent" | "error" | "waitlist"
 
 function LoginInner() {
   const params = useSearchParams()
-  const redirect = params.get("redirect") ?? "/profile"
+  const redirect = params.get("redirect") ?? "/dashboard"
   const urlError = params.get("error")
   const [email, setEmail] = useState("")
   const [status, setStatus] = useState<Status>("idle")

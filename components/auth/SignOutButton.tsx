@@ -162,7 +162,7 @@ export default function SignOutButton() {
             {email}
           </div>
           <Link
-            href="/profile"
+            href="/dashboard"
             onClick={() => setOpen(false)}
             style={{
               display: "block",

@@ -601,7 +601,7 @@ export default function PublicProfilePage() {
         {/* ── CTA Footer ── */}
         <div style={{ textAlign: "center", paddingTop: 32, borderTop: "1px solid var(--rpc-border)" }}>
           <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.15em", marginBottom: 12 }}>POWERED BY RIP PACKS CITY</div>
-          <Link href="/profile" className="rpc-btn-primary" style={{ textDecoration: "none", display: "inline-block", fontSize: 13, padding: "10px 24px", background: accentColor, borderColor: accentColor }}>
+          <Link href="/dashboard" className="rpc-btn-primary" style={{ textDecoration: "none", display: "inline-block", fontSize: 13, padding: "10px 24px", background: accentColor, borderColor: accentColor }}>
             BUILD YOUR OWN PROFILE →
           </Link>
         </div>
