@@ -577,6 +577,14 @@ export default function SniperPage() {
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(false);
   const [ownedFilter, setOwnedFilter] = useState<"all" | "owned" | "not-owned">("all");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  // Fast Break deep-link state (?moment= / ?momentId=). Distinct from the
+  // ?highlight= flowId pattern: Fast Break passes the moment_id from
+  // cached_listings, which corresponds to deal.momentId on the feed (NOT
+  // deal.flowId). We resolve to flowId in a separate effect once the feed
+  // loads, then drive the existing highlight/scroll machinery from there.
+  const [deepLinkMomentId, setDeepLinkMomentId] = useState<string | null>(null);
+  const [deepLinkDismissed, setDeepLinkDismissed] = useState(false);
+  const [deepLinkResolved, setDeepLinkResolved] = useState<"pending" | "found" | "missing">("pending");
   const [editionStats, setEditionStats] = useState<Map<string, { owned: number; locked: number }>>(new Map());
   const [showFilters, setShowFilters] = useState(false);
 
@@ -639,11 +647,25 @@ export default function SniperPage() {
   const [benchmarks, setBenchmarks] = useState<Record<string, TierBenchmark> | null>(null);
   const [relativeLoading, setRelativeLoading] = useState(false);
 
-  // Highlight detection on page load
+  // Highlight detection on page load — supports two URL shapes:
+  //   ?highlight={flowId}  (legacy share-link copy from this page)
+  //   ?moment={momentId} or ?momentId={momentId}  (Fast Break Acquisition Gap)
+  // The deal-resolve effect runs later in the component once `data` is in
+  // scope and turns the deepLinkMomentId into a flowId highlight + scroll.
   useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get("highlight");
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("highlight");
     if (id) setHighlightedId(id);
+    const moment = params.get("moment") ?? params.get("momentId");
+    if (moment) setDeepLinkMomentId(moment);
   }, []);
+
+  function dismissDeepLinkBanner() {
+    setDeepLinkDismissed(true);
+    setDeepLinkMomentId(null);
+    setHighlightedId(null);
+    setDeepLinkResolved("pending");
+  }
 
   // Player filter with 300ms debounce
   const [playerInput, setPlayerInput] = useState("");
@@ -874,6 +896,28 @@ export default function SniperPage() {
   useEffect(() => {
     setCountdown(REFRESH_INTERVAL);
   }, [feedKey]);
+
+  // Resolve ?moment={momentId} → deal.flowId once the feed loads. Sets the
+  // highlight + scrolls the row into view if the deal is still listed.
+  // If the listing was removed between Fast Break click and arrival here,
+  // the banner falls back to "removed" copy without applying any filter
+  // (minimum-viable per Prompt 4.5 — a player-filter fallback would need a
+  // name lookup endpoint that doesn't exist yet).
+  useEffect(() => {
+    if (!deepLinkMomentId || deepLinkDismissed) return;
+    if (!data?.deals) return;
+    const found = data.deals.find((d) => d.momentId === deepLinkMomentId);
+    if (found) {
+      setHighlightedId(found.flowId);
+      setDeepLinkResolved("found");
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`sniper-row-${found.flowId}`);
+        if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+      });
+    } else {
+      setDeepLinkResolved("missing");
+    }
+  }, [deepLinkMomentId, deepLinkDismissed, data]);
 
   useEffect(() => {
     if (paused || tabHidden) return;
@@ -1419,6 +1463,46 @@ export default function SniperPage() {
           </div>
         )}
 
+        {deepLinkMomentId && !deepLinkDismissed && deepLinkResolved !== "pending" && (
+          <div
+            className="rpc-hud"
+            role="status"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              marginBottom: 16,
+              borderColor: deepLinkResolved === "found" ? `${accent}66` : "var(--rpc-warning)",
+              color: deepLinkResolved === "found" ? accent : "var(--rpc-warning)",
+              fontFamily: "var(--font-mono)",
+              fontSize: "var(--text-sm)",
+            }}
+          >
+            <span style={{ flex: 1 }}>
+              {deepLinkResolved === "found"
+                ? "Showing the listing you came from Fast Break."
+                : "That listing was just removed — here are tonight's deals."}
+            </span>
+            <button
+              type="button"
+              onClick={dismissDeepLinkBanner}
+              aria-label="Dismiss Fast Break deep link"
+              style={{
+                background: "transparent",
+                border: "1px solid currentColor",
+                borderRadius: 4,
+                color: "inherit",
+                padding: "2px 8px",
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                cursor: "pointer",
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {loading && !data && (
           <div style={{ padding: "80px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
             {[100, 85, 70, 55, 40].map((w, i) => (
@@ -1681,6 +1765,7 @@ export default function SniperPage() {
                 {visibleDeals.map((deal) => (
                   <React.Fragment key={`${deal.source}-${deal.flowId}-${deal.listingResourceID}`}>
                   <tr
+                    id={`sniper-row-${deal.flowId}`}
                     className={`${holoClass(deal.tier)}${deal.flowId === highlightedId ? " ring-2" : ""}${deal.discount >= 40 ? " rpc-hot-deal" : ""}`}
                     style={{ borderBottom: expandedFlowId === deal.flowId ? "none" : "1px solid var(--rpc-border)", transition: "background var(--transition-fast)", cursor: "pointer", ...(deal.flowId === highlightedId ? { boxShadow: `0 0 0 2px ${accent}80`, background: `${accent}12` } : {}) }}
                     onClick={() => toggleEditionDepth(deal)}
