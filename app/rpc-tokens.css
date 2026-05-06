@@ -628,6 +628,91 @@
   }
 }
 
+/* ── Filter region — wallet analytics ─────────────────────── */
+.rpc-filter-select,
+.rpc-filter-input {
+  background: var(--rpc-surface);
+  border: 1px solid var(--rpc-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--rpc-text-primary);
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.rpc-filter-select::placeholder,
+.rpc-filter-input::placeholder {
+  color: var(--rpc-text-ghost);
+}
+.rpc-filter-select:focus,
+.rpc-filter-input:focus {
+  border-color: var(--rpc-red);
+  box-shadow: 0 0 0 2px var(--rpc-red-bg);
+}
+.rpc-filter-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='none' stroke='%23ffffff6b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M1 1l4 4 4-4'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 10px 6px;
+}
+
+.rpc-filter-button {
+  background: transparent;
+  border: 1px solid var(--rpc-border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--rpc-text-secondary);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+.rpc-filter-button:hover {
+  background: var(--rpc-surface-hover);
+  border-color: var(--rpc-border-hover);
+  color: var(--rpc-text-primary);
+}
+.rpc-filter-button--active,
+.rpc-filter-button--active:hover {
+  background: var(--rpc-red-bg);
+  border-color: var(--rpc-red-border);
+  color: var(--rpc-red);
+}
+
+.rpc-filter-toggle {
+  background: transparent;
+  border: 1px solid var(--rpc-border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--rpc-text-secondary);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+.rpc-filter-toggle:hover {
+  background: var(--rpc-surface-hover);
+  border-color: var(--rpc-border-hover);
+  color: var(--rpc-text-primary);
+}
+.rpc-filter-toggle--active,
+.rpc-filter-toggle--active:hover {
+  background: var(--rpc-red-bg);
+  border-color: var(--rpc-red-border);
+  color: var(--rpc-red);
+}
+
 /* ── Stat tile (wallet analytics row) ─────────────────────── */
 .rpc-stat-tile {
   background: var(--rpc-surface);

@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, useMemo, useState, useEffect, useCallback, useRef, Suspense, type CSSProperties } from "react"
+import { Fragment, useMemo, useState, useEffect, useCallback, useRef, Suspense } from "react"
 import Link from "next/link"
 import { useSearchParams, useRouter, useParams } from "next/navigation"
 import { slugifyName } from "@/lib/entity-labels"
@@ -1551,16 +1551,6 @@ export default function WalletPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  const filterSelectStyle: CSSProperties = {
-    background: "var(--rpc-surface-raised)",
-    border: "1px solid var(--rpc-border)",
-    borderRadius: "var(--radius-md)",
-    padding: "8px 12px",
-    fontSize: "var(--text-sm)",
-    color: "var(--rpc-text-primary)",
-    outline: "none",
-  }
-
   return (
     <div className="min-h-screen bg-black text-zinc-100 overflow-x-hidden">
       <Suspense fallback={null}>
@@ -1818,24 +1808,24 @@ export default function WalletPage() {
 
         {/* Filters */}
         <div className="mb-5 grid gap-2 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
-          <select value={playerFilter} onChange={function(e) { setPlayerFilter(e.target.value) }} style={filterSelectStyle}>
+          <select value={playerFilter} onChange={function(e) { setPlayerFilter(e.target.value) }} className="rpc-filter-select">
             {availablePlayers.map(function(p) { return <option key={p} value={p}>{p === "all" ? "All Players" : p}</option> })}
           </select>
-          <select value={setFilter} onChange={function(e) { setSetFilter(e.target.value) }} style={filterSelectStyle}>
+          <select value={setFilter} onChange={function(e) { setSetFilter(e.target.value) }} className="rpc-filter-select">
             {availableSets.map(function(s) { return <option key={s} value={s}>{s === "all" ? "All Sets" : s}</option> })}
           </select>
-          <select value={seriesFilter} onChange={function(e) { setSeriesFilter(e.target.value) }} style={filterSelectStyle}>
+          <select value={seriesFilter} onChange={function(e) { setSeriesFilter(e.target.value) }} className="rpc-filter-select">
             {availableSeries.map(function(s) { return <option key={s} value={s}>{s === "all" ? "All Series" : s}</option> })}
           </select>
-          <select value={rarityFilter} onChange={function(e) { setRarityFilter(e.target.value) }} style={filterSelectStyle}>
+          <select value={rarityFilter} onChange={function(e) { setRarityFilter(e.target.value) }} className="rpc-filter-select">
             {availableRarities.map(function(tier) { return <option key={tier} value={tier}>{tier === "all" ? "All Rarities" : tier}</option> })}
           </select>
-          <select value={lockedFilter} onChange={function(e) { setLockedFilter(e.target.value) }} style={filterSelectStyle}>
+          <select value={lockedFilter} onChange={function(e) { setLockedFilter(e.target.value) }} className="rpc-filter-select">
             <option value="all">All Lock States</option>
             <option value="locked">Locked</option>
             <option value="unlocked">Unlocked</option>
           </select>
-          <input value={searchWithin} onChange={function(e) { setSearchWithin(e.target.value) }} placeholder="Filter moments…" className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white placeholder:text-zinc-500 col-span-2 sm:col-span-1" />
+          <input value={searchWithin} onChange={function(e) { setSearchWithin(e.target.value) }} placeholder="Filter moments…" className="rpc-filter-input col-span-2 sm:col-span-1" />
         </div>
 
         {/* Sort buttons */}
@@ -1855,17 +1845,17 @@ export default function WalletPage() {
             ["badge", "Badge"],
           ] as [SortKey, string][]).map(function([key, label]) {
             return (
-              <button key={key} onClick={function() { toggleSort(key) }} className={"rpc-chip shrink-0" + (sortKey === key ? " active" : "")}>
+              <button key={key} onClick={function() { toggleSort(key) }} className={"rpc-filter-button shrink-0" + (sortKey === key ? " rpc-filter-button--active" : "")}>
                 {label}{sortKey === key && <span style={{ marginLeft: 4, opacity: 0.7 }}>{sortDirection === "asc" ? "↑" : "↓"}</span>}
               </button>
             )
           })}
           <div className="border-l border-zinc-700 mx-1" />
-          <button onClick={function() { setFilterBadges(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterBadges ? "text-white" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")} style={filterBadges ? { borderColor: accent, backgroundColor: accent + "1A", color: accent } : undefined}>🏷 BADGES</button>
-          <button onClick={function() { setFilterHasOffer(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterHasOffer ? "text-white" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")} style={filterHasOffer ? { borderColor: accent, backgroundColor: accent + "1A", color: accent } : undefined}>💰 HAS OFFER</button>
-          <button onClick={function() { setFilterListed(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterListed ? "text-white" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")} style={filterListed ? { borderColor: accent, backgroundColor: accent + "1A", color: accent } : undefined}>📋 LISTED</button>
+          <button onClick={function() { setFilterBadges(function(f) { return !f }) }} className={"rpc-filter-toggle shrink-0" + (filterBadges ? " rpc-filter-toggle--active" : "")}>🏷 BADGES</button>
+          <button onClick={function() { setFilterHasOffer(function(f) { return !f }) }} className={"rpc-filter-toggle shrink-0" + (filterHasOffer ? " rpc-filter-toggle--active" : "")}>💰 HAS OFFER</button>
+          <button onClick={function() { setFilterListed(function(f) { return !f }) }} className={"rpc-filter-toggle shrink-0" + (filterListed ? " rpc-filter-toggle--active" : "")}>📋 LISTED</button>
           {(filterLoanDefaultsOnly || rows.some(function(r) { return r.acquisitionMethod === "loan_default" })) && (
-            <button onClick={function() { setFilterLoanDefaultsOnly(function(f) { return !f }) }} className={"shrink-0 rounded-lg border px-3 py-1 text-sm " + (filterLoanDefaultsOnly ? "" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900")} style={filterLoanDefaultsOnly ? { borderColor: "#ef4444", backgroundColor: "rgba(239,68,68,0.10)", color: "#fca5a5" } : undefined} title="Show only moments acquired via loan default">⚖ LOAN DEFAULTS</button>
+            <button onClick={function() { setFilterLoanDefaultsOnly(function(f) { return !f }) }} className={"rpc-filter-toggle shrink-0" + (filterLoanDefaultsOnly ? " rpc-filter-toggle--active" : "")} title="Show only moments acquired via loan default">⚖ LOAN DEFAULTS</button>
           )}
           {/* Task 6: CSV Export */}
           {filteredRows.length > 0 && (
@@ -1905,7 +1895,7 @@ export default function WalletPage() {
                 a.click()
                 URL.revokeObjectURL(url)
               }}
-              className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900"
+              className="rpc-filter-button shrink-0"
             >
               Export CSV
             </button>
@@ -1915,7 +1905,7 @@ export default function WalletPage() {
               href={"/api/portfolio-export?wallet=" + encodeURIComponent(connectedWallet || ownerKey || input.trim()) + "&collection=" + encodeURIComponent(collectionSlug)}
               target="_blank"
               rel="noopener noreferrer"
-              className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900 inline-flex items-center gap-1 font-mono"
+              className="rpc-filter-button shrink-0 inline-flex items-center gap-1"
               title="Download all moments as CSV"
             >
               ⬇ Full CSV
@@ -1923,8 +1913,8 @@ export default function WalletPage() {
           )}
           {debugMode && (
             <>
-              <button onClick={function() { setShowDebug(function(prev) { return !prev }) }} className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">{showDebug ? "Hide Debug" : "Debug"}</button>
-              <button onClick={copySeedCandidates} className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1 text-sm text-zinc-400 hover:bg-zinc-900">Copy Seeds</button>
+              <button onClick={function() { setShowDebug(function(prev) { return !prev }) }} className="rpc-filter-button shrink-0">{showDebug ? "Hide Debug" : "Debug"}</button>
+              <button onClick={copySeedCandidates} className="rpc-filter-button shrink-0">Copy Seeds</button>
             </>
           )}
         </div>
