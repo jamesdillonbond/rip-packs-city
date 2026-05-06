@@ -728,7 +728,7 @@ function ProfilePageInner() {
           <div className="rpc-section-title">Saved Wallets</div>
 
           <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)", marginBottom: 8, lineHeight: 1.5 }}>
-            Add a wallet by entering your Dapper username — we'll associate it with NBA Top Shot, NFL All Day, LaLiga Golazos, and Disney Pinnacle automatically.
+            Add a wallet by entering your Dapper username — we'll associate it with NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, and UFC Strike automatically.
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>

@@ -64,7 +64,7 @@ export const COLLECTIONS: Collection[] = [
     accent: "#E03A2F",
     accentSoft: "#FF4D40",
     icon: "\u{1F3C0}",
-    pages: ["overview", "collection", "packs", "sniper", "market", "sets", "analytics"],
+    pages: ["overview", "collection", "market", "packs", "sniper", "sets", "analytics"],
     published: true,
     graphqlUrl: "https://public-api.nbatopshot.com/graphql",
     flowContractName: "TopShot",
