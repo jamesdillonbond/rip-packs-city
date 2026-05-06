@@ -265,14 +265,11 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
           });
         }
 
-        // Skip the deal-of-the-day blurb in beta posture — it muddies the
-        // support-first feel. Market pulse stays as a one-liner if present.
-        if (ctx.marketPulse) {
-          setMessages((prev) => [
-            ...prev,
-            { id: "market_pulse", role: "system", text: `📊 ${ctx.marketPulse}`, timestamp: new Date() },
-          ]);
-        }
+        // Beta posture: do NOT auto-fire a market-pulse / dailyDeal follow-up
+        // after the greeting. The first thing the user sees is the personalized
+        // welcome plus quick-suggestion pills, full stop. The bot can fetch
+        // live market context via search_live_deals / get_fmv when the user
+        // asks (e.g. clicks the "Pull live deals" pill or asks for a player).
       } catch { /* context fetch failed silently — static welcome already shown */ }
     })();
   }, [isOpen, contextLoaded, messages.length, walletConnected, ownerKey, sessionId, pageContext, collectionId]);
