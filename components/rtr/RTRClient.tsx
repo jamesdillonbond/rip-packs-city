@@ -16,9 +16,24 @@ import { useWarmCache } from "@/lib/warmup/WarmupContext"
 
 // ── Tonight's Pick ────────────────────────────────────────────────────
 
+interface LivePick {
+  gameId: string
+  homeTeam: string
+  awayTeam: string
+  recommendedSide: "home_ml" | "away_ml"
+  impliedProbability: number
+  rationale: string
+  homeML: number
+  awayML: number
+  tipoffAt: string | null
+  bookmaker: string | null
+  oddsLastSyncedAt: string
+}
+
 interface PicksResponse {
-  picks: unknown[]
+  picks: LivePick[]
   message?: string
+  note?: string
 }
 
 // ── Tier Progress ─────────────────────────────────────────────────────
@@ -133,20 +148,19 @@ function TonightsPickSection() {
     { ttlMs: 60_000 },
   )
 
-  const isPending = picks.data?.message === "odds_pending_api_key" || (picks.data && picks.data.picks.length === 0)
+  const top: LivePick | null = picks.data?.picks?.[0] ?? null
+  const isEmpty = !picks.loading && !top
+  const noFreshNote = picks.data?.message === "no_fresh_odds" ? picks.data?.note ?? null : null
 
   return (
     <div style={CARD_STYLE}>
       <div style={SECTION_HEADER}>Tonight&apos;s Pick</div>
       {picks.loading && !picks.data ? (
         <div style={{ height: 60, background: "rgba(255,255,255,0.04)", borderRadius: "var(--radius-md)" }} />
-      ) : isPending ? (
+      ) : isEmpty ? (
         <div
           style={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 14,
-            padding: 18,
+            display: "flex", alignItems: "flex-start", gap: 14, padding: 18,
             background: "rgba(224,58,47,0.05)",
             border: "1px dashed var(--rpc-red-border)",
             borderRadius: "var(--radius-md)",
@@ -155,82 +169,138 @@ function TonightsPickSection() {
           <div
             aria-hidden
             style={{
-              flexShrink: 0,
-              width: 36,
-              height: 36,
-              borderRadius: 999,
-              background: "var(--rpc-red-bg)",
-              border: "1px solid var(--rpc-red-border)",
-              color: "var(--rpc-red)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 18,
+              flexShrink: 0, width: 36, height: 36, borderRadius: 999,
+              background: "var(--rpc-red-bg)", border: "1px solid var(--rpc-red-border)",
+              color: "var(--rpc-red)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18,
             }}
           >
             ⚡
           </div>
           <div style={{ flex: 1 }}>
-            <div
-              style={{
-                fontFamily: "'Barlow Condensed', sans-serif",
-                fontWeight: 800,
-                fontSize: 16,
-                color: "var(--rpc-text-primary)",
-                letterSpacing: "0.04em",
-                marginBottom: 4,
-              }}
-            >
-              Odds integration coming soon
+            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", marginBottom: 4 }}>
+              No game odds available right now
             </div>
-            <div
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--rpc-text-secondary)",
-                lineHeight: 1.7,
-                marginBottom: 10,
-              }}
-            >
-              Picks recommendations will land here once the Odds API key is wired. We&apos;ll surface tonight&apos;s highest-implied-probability moneyline so you can route your full Spendable Balance with confidence.
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", lineHeight: 1.7 }}>
+              {noFreshNote ?? "Odds refresh hourly during NBA active hours. Check back closer to tipoff for tonight's recommended pick."}
             </div>
-            <button
-              onClick={() => setWhyOpen(v => !v)}
-              className="rpc-btn-ghost"
-              aria-expanded={whyOpen}
-              style={{ padding: "4px 10px", fontSize: 10 }}
-            >
-              {whyOpen ? "Hide explanation" : "Why does this matter?"}
-            </button>
-            {whyOpen && (
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: 12,
-                  background: "rgba(255,255,255,0.03)",
-                  border: "1px solid var(--rpc-border)",
-                  borderRadius: "var(--radius-md)",
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  color: "var(--rpc-text-secondary)",
-                  lineHeight: 1.7,
-                }}
-              >
-                Picks are pure +EV with a downside floor: a wrong answer refunds your full balance, while a correct answer pays out. The optimal v1 strategy is therefore &quot;all-in on the night&apos;s highest-implied-probability outcome.&quot; Splitting becomes useful only once we model covariance across same-night games — out of scope for v1.
-              </div>
-            )}
           </div>
         </div>
-      ) : (
-        // Real picks payload — render once the route stops returning
-        // odds_pending_api_key. Out of scope for this prompt; the stub
-        // route never reaches this branch today.
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)" }}>
-          Picks loaded but UI for live picks is not yet implemented. Refresh once Prompt 1B ships.
-        </div>
-      )}
+      ) : top ? (
+        <LivePickCard pick={top} whyOpen={whyOpen} setWhyOpen={setWhyOpen} />
+      ) : null}
     </div>
   )
+}
+
+function LivePickCard({
+  pick, whyOpen, setWhyOpen,
+}: { pick: LivePick; whyOpen: boolean; setWhyOpen: (v: boolean | ((prev: boolean) => boolean)) => void }) {
+  const sideTeam = pick.recommendedSide === "home_ml" ? pick.homeTeam : pick.awayTeam
+  const opposingTeam = pick.recommendedSide === "home_ml" ? pick.awayTeam : pick.homeTeam
+  const sideMl = pick.recommendedSide === "home_ml" ? pick.homeML : pick.awayML
+  const pct = Math.round(pick.impliedProbability * 100)
+  const tipoffLabel = pick.tipoffAt ? formatTipoff(pick.tipoffAt) : null
+  const oddsAge = formatOddsAge(pick.oddsLastSyncedAt)
+
+  return (
+    <div
+      style={{
+        display: "flex", flexDirection: "column", gap: 14, padding: 18,
+        background: "rgba(224,58,47,0.06)",
+        border: "1px solid var(--rpc-red-border)",
+        borderRadius: "var(--radius-md)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+        <div
+          aria-hidden
+          style={{
+            flexShrink: 0, width: 44, height: 44, borderRadius: 999,
+            background: "var(--rpc-red)", color: "#fff",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 18, letterSpacing: "0.02em",
+          }}
+        >
+          {sideTeam.slice(0, 3).toUpperCase()}
+        </div>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 22, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", textTransform: "uppercase" }}>
+            {sideTeam} ML
+          </div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", letterSpacing: "0.06em", marginTop: 4 }}>
+            vs {opposingTeam}
+            {tipoffLabel ? ` · ${tipoffLabel}` : ""}
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 28, color: "var(--rpc-red)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+            {pct}%
+          </div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase", marginTop: 4 }}>
+            de-vigged
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+        <span>ML {formatAmericanOdds(sideMl)}</span>
+        {pick.bookmaker && <span>· via {pick.bookmaker}</span>}
+        <span>· odds {oddsAge}</span>
+      </div>
+
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", lineHeight: 1.7 }}>
+        {pick.rationale}
+      </div>
+
+      <div>
+        <button
+          onClick={() => setWhyOpen(v => !v)}
+          className="rpc-btn-ghost"
+          aria-expanded={whyOpen}
+          style={{ padding: "4px 10px", fontSize: 10 }}
+        >
+          {whyOpen ? "Hide explanation" : "Why does this matter?"}
+        </button>
+        {whyOpen && (
+          <div
+            style={{
+              marginTop: 12, padding: 12,
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid var(--rpc-border)",
+              borderRadius: "var(--radius-md)",
+              fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", lineHeight: 1.7,
+            }}
+          >
+            Picks are pure +EV with a downside floor: a wrong answer refunds your full balance, while a correct answer pays out. The optimal v1 strategy is therefore &quot;all-in on the night&apos;s highest-implied-probability outcome.&quot; Splitting becomes useful only once we model covariance across same-night games — out of scope for v1.
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function formatAmericanOdds(odds: number): string {
+  if (!Number.isFinite(odds) || odds === 0) return "—"
+  return odds > 0 ? `+${odds}` : String(odds)
+}
+
+function formatTipoff(iso: string): string {
+  const ms = Date.parse(iso)
+  if (!Number.isFinite(ms)) return ""
+  // Use Intl with no explicit timezone so the user's local TZ wins on
+  // hydration. SSR will render UTC briefly; that's acceptable.
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(ms))
+}
+
+function formatOddsAge(iso: string): string {
+  const ms = Date.parse(iso)
+  if (!Number.isFinite(ms)) return "unknown"
+  const delta = Date.now() - ms
+  if (delta < 60_000) return "just now"
+  const min = Math.round(delta / 60_000)
+  if (min < 60) return `${min}m ago`
+  const hr = Math.round(min / 60)
+  return `${hr}h ago`
 }
 
 // ── Section 2: Tier Progress ─────────────────────────────────────────

@@ -23,6 +23,70 @@ Repo: github.com/jamesdillonbond/rip-packs-city (public)
 
 ## Recent sessions
 
+### May 6, 2026 — sync-nba-odds + odds-proxy + Tonight's Pick
+
+Shipped
+
+- `workers/odds-proxy` — new Cloudflare Worker fronting the-odds-api.com.
+  Live at `https://odds-proxy.tdillonbond.workers.dev`. Holds
+  `ODDS_API_KEY` as a wrangler secret (worker-only, never in Vercel /
+  Supabase env). Same `X-Proxy-Secret` rotation as topshot-proxy
+  (`PROXY_SECRET = TS_PROXY_SECRET`). Routes:
+  `GET /v4/sports/basketball_nba/odds` (pass-through with apiKey
+  injection, 5min cache, surfaces `X-Quota-Remaining` / `X-Quota-Used`
+  upstream headers as response headers so callers can monitor budget).
+- `supabase/functions/sync-nba-odds` — fire-and-forget edge function.
+  Bearer-gated, `EdgeRuntime.waitUntil`-backed. Pulls today's NBA odds,
+  picks bookmaker (FanDuel > DraftKings > BetMGM > first), parses
+  h2h/spreads/totals, computes de-vigged home win probability, and
+  upserts onto `nba_games` rows by (game_date, home_abbr, away_abbr).
+  Logs `events_fetched`, `events_parsed`, `games_matched`,
+  `games_updated`, `bookmaker_counts`, `quota_remaining`, `quota_used`.
+- Schema migration `nba_games_odds_columns`: added `home_moneyline`
+  (int), `away_moneyline` (int), `home_spread` (numeric), `total_points`
+  (numeric), `home_win_probability_devig` (numeric, ∈[0,1]),
+  `odds_bookmaker` (text), `odds_last_synced_at` (timestamptz). Plus
+  `idx_nba_games_odds_last_synced_at` partial index for the freshness
+  filter.
+- `lib/rtr-picks.ts` gained `pickTonightsBest(supabase, opts)` — reads
+  the freshest odds-enriched `nba_games` row (default 90-min window) and
+  returns a single ranked pick or null.
+- `app/api/rtr/picks/today` is no longer a stub: returns the live pick
+  shape `{picks: [{gameId, homeTeam, awayTeam, recommendedSide,
+  impliedProbability, rationale, homeML, awayML, tipoffAt, bookmaker,
+  oddsLastSyncedAt}]}`. Empty payload is `picks: []` with `message:
+  "no_fresh_odds"`.
+- `components/rtr/RTRClient.tsx` `TonightsPickSection` renders the live
+  pick in a brand-styled card (rpc-red accent, Barlow Condensed display,
+  Share Tech Mono numeric). Falls back to "No game odds available right
+  now" when the route returns `no_fresh_odds`.
+- `app/api/cron/sync-nba-odds` cron-job.org entrypoint. Bearer
+  INGEST_SECRET_TOKEN / CRON_SECRET; fans out to the edge function and
+  returns 202.
+
+Required env (must be set before the pipeline produces rows)
+
+- **Cloudflare Worker `odds-proxy`** secrets:
+  `wrangler secret put PROXY_SECRET --name odds-proxy` (= TS_PROXY_SECRET)
+  `wrangler secret put ODDS_API_KEY --name odds-proxy` (= the-odds-api.com key)
+- **Supabase edge function `sync-nba-odds`** env (set in Supabase
+  dashboard or via `supabase secrets set`):
+  `ODDS_PROXY_URL=https://odds-proxy.tdillonbond.workers.dev`
+  `ODDS_PROXY_SECRET=<same TS_PROXY_SECRET value>`
+- **cron-job.org** entry: GET `https://www.rippackscity.com/api/cron/sync-nba-odds`
+  with `Authorization: Bearer $INGEST_SECRET_TOKEN`, every 60 minutes
+  during 22:00 UTC → 06:00 UTC (covers 4pm-2am ET active window).
+
+Verification path: hit `/api/cron/sync-nba-odds` once after env is set,
+poll `pipeline_runs` for the `sync-nba-odds` row (`events_fetched`
+should be > 0 once odds land), then check
+`SELECT home_team_abbr, away_team_abbr, home_moneyline,
+home_win_probability_devig, odds_last_synced_at FROM nba_games WHERE
+odds_last_synced_at IS NOT NULL ORDER BY tipoff_at DESC LIMIT 5`. Visit
+`/nba-top-shot/road-to-the-ring` to confirm the live pick renders.
+
+---
+
 ### May 6, 2026 — Wallet enrichment truncation fix (CRITICAL)
 
 Shipped
