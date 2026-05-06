@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useSearchParams, useRouter } from "next/navigation"
 import { getOwnerKey } from "@/lib/owner-key"
 import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection"
+import WalletStatRow from "@/components/wallet-stat-row"
 import {
   PINNACLE_COLLECTION_ID,
   PINNACLE_VARIANT_COLORS,
@@ -75,9 +76,17 @@ function PinnacleCollectionPageInner() {
   const [loading, setLoading] = useState(false)
   const [totalFmv, setTotalFmv] = useState<number | null>(null)
   const [momentCount, setMomentCount] = useState<number>(0)
+  // Pinnacle has no locking concept — null signals "n/a for this collection"
+  // to <WalletStatRow>. bestOfferTotal / spreadGap stay null until Pinnacle
+  // wallet-scoped offer ingest exists.
+  const [unlockedFmv, setUnlockedFmv] = useState<number | null>(null)
+  const [unlockedCount, setUnlockedCount] = useState<number | null>(null)
+  const [bestOfferTotal, setBestOfferTotal] = useState<number | null>(null)
+  const [spreadGap, setSpreadGap] = useState<number | null>(null)
   const [variants, setVariants] = useState<VariantBucket[]>([])
   const [franchises, setFranchises] = useState<FranchiseBucket[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [hasSearched, setHasSearched] = useState(Boolean(walletParam))
 
   const onSearch = useCallback(() => {
     const w = input.trim()
@@ -127,12 +136,19 @@ function PinnacleCollectionPageInner() {
         setRows(Array.isArray(json.moments) ? json.moments : [])
         setTotalFmv(json.totalFmv ?? null)
         setMomentCount(json.momentCount ?? (json.moments?.length ?? 0))
+        setUnlockedFmv(json.unlockedFmv ?? null)
+        setUnlockedCount(json.unlockedCount ?? null)
+        setBestOfferTotal(json.bestOfferTotal ?? null)
+        setSpreadGap(json.spreadGap ?? null)
         setVariants(Array.isArray(json.variants) ? json.variants : [])
         setFranchises(Array.isArray(json.franchises) ? json.franchises : [])
+        setHasSearched(true)
       } catch (e: any) {
         if (cancelled) return
         setError(e?.message ?? "Failed to load")
         setRows([]); setTotalFmv(null); setMomentCount(0); setVariants([]); setFranchises([])
+        setUnlockedFmv(null); setUnlockedCount(null); setBestOfferTotal(null); setSpreadGap(null)
+        setHasSearched(true)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -179,13 +195,31 @@ function PinnacleCollectionPageInner() {
         </div>
       )}
 
-      {activeWallet && (
+      {(activeWallet || hasSearched) && (
         <>
-          {/* Header cards */}
+          {/* Standard four-tile WalletStatRow — same component every collection
+              renders. Pinnacle returns null for lockedFmv/lockedCount/bestOfferTotal
+              because those concepts don't apply here. */}
+          <div style={{ marginBottom: 16 }}>
+            <WalletStatRow
+              walletFmv={totalFmv}
+              unlockedFmv={unlockedFmv}
+              lockedFmv={null}
+              bestOfferTotal={bestOfferTotal}
+              momentCount={momentCount || null}
+              unlockedCount={unlockedCount}
+              lockedCount={null}
+              spreadGap={spreadGap}
+              collectionSlug="disney-pinnacle"
+              loading={loading}
+            />
+          </div>
+
+          {/* Pinnacle-specific secondary row — additive context that doesn't
+              fit the universal four-tile layout. */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 24 }}>
             <HeaderCard label="Wallet" value={`${activeWallet.slice(0, 6)}…${activeWallet.slice(-4)}`} />
             <HeaderCard label="Total Pins" value={String(momentCount)} />
-            <HeaderCard label="Total FMV" value={usd(totalFmv)} />
             <HeaderCard label="Franchises" value={String(sortedFranchises.length)} />
           </div>
 
