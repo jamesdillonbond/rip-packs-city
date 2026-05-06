@@ -7,10 +7,12 @@
 //   2. If not on the allow-list → 403 { ok: false, reason: "not_on_allow_list" }
 //      so the login page can show the waitlist message + link to /early-access.
 //   3. If allowed → call signInWithOtp on the server with an absolute
-//      emailRedirectTo pointing at /api/auth/callback (with the optional
-//      redirect query param appended). Returning a relative URL or omitting
-//      this option causes Supabase to fall back to the project Site URL,
-//      which won't hit the callback route.
+//      emailRedirectTo pointing at /auth/confirm (with the optional redirect
+//      query param appended). The Supabase project is configured for the
+//      implicit flow, so the magic link returns to /auth/confirm with tokens
+//      in the URL fragment hash; a browser-only page consumes them and writes
+//      the session cookies. Server routes cannot read URL fragments, which is
+//      why the legacy /api/auth/callback target stopped working for this flow.
 //
 // check_email_allowed is restricted to service-role and must NEVER be called
 // from client code.
@@ -26,7 +28,7 @@ function buildCallbackUrl(req: NextRequest, redirect?: string | null): string {
   const safeRedirect =
     typeof redirect === "string" && redirect.startsWith("/") ? redirect : null
   return (
-    `${origin}/api/auth/callback` +
+    `${origin}/auth/confirm` +
     (safeRedirect ? `?redirect=${encodeURIComponent(safeRedirect)}` : "")
   )
 }
