@@ -15,7 +15,45 @@ import { NextRequest, NextResponse, after } from "next/server"
 import fcl from "@/lib/flow"
 import * as t from "@onflow/types"
 import { supabaseAdmin } from "@/lib/supabase"
-import { GET_OWNED_MOMENT_IDS, GET_MOMENT_METADATA } from "@/lib/allday-cadence"
+import { GET_OWNED_MOMENT_IDS } from "@/lib/allday-cadence"
+
+// Inline metadata script — `lib/allday-cadence.GET_MOMENT_METADATA` borrows
+// from /public/AllDayMomentNFTCollection (a path that doesn't exist on
+// most wallets), so it panics universally on borrow. The IDs come from
+// /public/AllDayNFTCollection via GET_OWNED_MOMENT_IDS, so the metadata
+// script needs to borrow there too. Uses the standard NonFungibleToken
+// borrowNFT + cast pattern, mirroring GET_UNLOCKED_MOMENT_DETAILS in the
+// same lib (which is the only metadata-resolving AllDay script that
+// actually works in production today).
+const GET_MOMENT_METADATA_FIXED = `
+  import AllDay from 0xe4cf4bdc1751c65d
+  import NonFungibleToken from 0x1d7e57aa55817448
+  access(all)
+  fun main(address: Address, id: UInt64): {String:String} {
+    let col = getAccount(address).capabilities.borrow<&{NonFungibleToken.Collection}>(/public/AllDayNFTCollection)
+      ?? panic("no collection")
+    let raw = col.borrowNFT(id) ?? panic("no nft")
+    let nft = raw as! &AllDay.NFT
+    let editionData = AllDay.getEditionData(id: nft.editionID) ?? panic("no edition")
+    let playData = AllDay.getPlayData(id: editionData.playID) ?? panic("no play")
+    let setData = AllDay.getSetData(id: editionData.setID) ?? panic("no set")
+    let seriesData = AllDay.getSeriesData(id: setData.seriesID) ?? panic("no series")
+    return {
+      "player": playData.metadata["playerFullName"] ?? "",
+      "team": playData.metadata["teamName"] ?? "",
+      "setName": setData.name,
+      "series": seriesData.name,
+      "serial": nft.serialNumber.toString(),
+      "mint": editionData.maxMintSize?.toString() ?? editionData.numMinted.toString(),
+      "playID": editionData.playID.toString(),
+      "setID": editionData.setID.toString(),
+      "tier": editionData.tier ?? "COMMON",
+      "playCategory": playData.metadata["playType"] ?? "",
+      "jerseyNumber": playData.metadata["playerJerseyNumber"] ?? "",
+      "dateOfMoment": playData.metadata["dateOfMoment"] ?? ""
+    }
+  }
+`
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -38,7 +76,7 @@ async function getOwnedMomentIds(wallet: string): Promise<number[]> {
 
 async function getMomentMetadata(wallet: string, id: number): Promise<Record<string, string>> {
   const result = await fcl.query({
-    cadence: GET_MOMENT_METADATA,
+    cadence: GET_MOMENT_METADATA_FIXED,
     args: (arg: any) => [arg(wallet, t.Address), arg(String(id), t.UInt64)],
   })
   return result as Record<string, string>
