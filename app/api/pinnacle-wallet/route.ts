@@ -46,12 +46,34 @@ export async function GET(req: NextRequest) {
     const franchises = Array.isArray(franchisesRes?.data) ? franchisesRes.data
       : Array.isArray(franchisesRes?.data?.franchises) ? franchisesRes.data.franchises : []
 
+    // Pinnacle has no locking concept — every pin in wallet_moments_cache
+    // for collection 7dd9dd11... has is_locked = false. Return null (not 0)
+    // for lockedFmv + lockedCount so <WalletStatRow> renders em-dash with
+    // an "n/a for this collection" caption rather than a misleading
+    // "0 locked" caption.
+    //
+    // bestOfferTotal: Pinnacle's marketplace ingest doesn't surface
+    // wallet-scoped offer totals today. Returning null (not 0) keeps the
+    // tile honest. TODO: wire this when Pinnacle offer ingest lands.
+    const unlockedFmv = totalFmv
+    const unlockedCount = momentCount
+    const lockedFmv: number | null = null
+    const lockedCount: number | null = null
+    const bestOfferTotal: number | null = null
+    const spreadGap: number | null = null
+
     return NextResponse.json({
       ok: true,
       wallet,
       moments,
       momentCount,
       totalFmv,
+      unlockedFmv,
+      unlockedCount,
+      lockedFmv,
+      lockedCount,
+      bestOfferTotal,
+      spreadGap,
       variants,
       franchises,
       errors: {

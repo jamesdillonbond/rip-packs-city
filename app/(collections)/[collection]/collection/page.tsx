@@ -18,6 +18,8 @@ import ExplainButton from "@/components/ExplainButton"
 import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
 import MomentDetailModal from "@/components/MomentDetailModal"
 import BadgeIcon from "@/components/BadgeIcon"
+import WalletStatRow from "@/components/wallet-stat-row"
+import { formatCurrency, formatCount } from "@/lib/format"
 
 function ThumbnailPreview({ thumbUrl, playerName, tierColor, children }: { thumbUrl: string | null; playerName: string; tierColor: string; children: React.ReactNode }) {
   const [hovered, setHovered] = useState(false)
@@ -212,21 +214,8 @@ function seriesIntToSeason(seriesRaw: string | undefined | null, seriesMap?: Map
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// Em-dash for missing data; $0 for real zero; thousands separators for positive.
-// Used by every stat tile and table cell that renders a USD value.
-function formatCurrency(value: number | null | undefined) {
-  if (value === null || value === undefined || Number.isNaN(value)) return "—"
-  if (value === 0) return "$0"
-  const sign = value < 0 ? "-" : ""
-  const abs = Math.abs(Number(value)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  return sign + "$" + abs
-}
-
-function formatCount(value: number | null | undefined) {
-  if (value === null || value === undefined || Number.isNaN(value)) return "—"
-  return Number(value).toLocaleString("en-US")
-}
-
+// formatCurrency / formatCount moved to lib/format.ts so the WalletStatRow
+// component and any other consumer share one definition.
 
 function formatAcquiredAt(iso: string | null | undefined): string {
   if (!iso) return "—"
@@ -1666,70 +1655,56 @@ export default function WalletPage() {
         </div>
 
         {/* Portfolio summary — always render once searched so empty/no-data wallets
-             show $0 / em-dash placeholders rather than a missing tile row. */}
-        {hasSearched && (
+             show $0 / em-dash placeholders rather than a missing tile row.
+             Adapter logic: prefer authoritative walletSummary when loaded;
+             fall back to client-computed totals; emit null (not 0) when the
+             data hasn't arrived yet so WalletStatRow renders em-dash. */}
+        {hasSearched && (function() {
+          const walletFmv: number | null = walletSummary
+            ? walletSummary.wallet_fmv
+            : (walletTotalFmv !== null && walletTotalFmv > 0
+                ? walletTotalFmv
+                : (totals.totalFmv > 0 ? totals.totalFmv : null))
+          const unlockedFmv: number | null = walletSummary
+            ? walletSummary.unlocked_fmv
+            : (totals.totalCount > 0 ? totals.unlockedFmv : null)
+          const unlockedCount: number | null = walletSummary
+            ? walletSummary.unlocked_count
+            : (totals.totalCount > 0 ? totals.unlockedCount : null)
+          // Top Shot / AllDay / Golazos / UFC all support locking — pass 0
+          // (not null) when there are no locked moments, since 0 means
+          // "wallet has none locked" while null would mean "concept doesn't apply".
+          const lockedFmv: number | null = walletSummary
+            ? walletSummary.locked_fmv
+            : (totals.totalCount > 0 ? totals.lockedFmv : null)
+          const lockedCount: number | null = walletSummary
+            ? walletSummary.locked_count
+            : (totals.totalCount > 0 ? totals.lockedCount : null)
+          const bestOfferTotal: number | null = totals.totalBestOffer > 0 ? totals.totalBestOffer : null
+          const spreadGap: number | null = (walletFmv !== null && bestOfferTotal !== null)
+            ? walletFmv - bestOfferTotal
+            : null
+          const momentCount: number | null = (paginatedTotal || totals.totalCount) || null
+          return (
           <div className="mb-5 space-y-3">
-            <div className="grid gap-3 grid-cols-2 xl:grid-cols-4">
-
-              {/* Wallet FMV — authoritative total from get_wallet_summary() when available */}
-              <div className="rpc-stat-tile">
-                <div className="rpc-stat-eyebrow">
-                  <span>Wallet FMV</span>
-                  {walletSummaryLoading && <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "var(--rpc-text-muted)", animation: "skeletonPulse 1.5s ease-in-out infinite" }} />}
-                  <ExplainButton context={`Wallet ${connectedWallet || ownerKey || input.trim()} on ${collectionSlug}`} question="How is my total portfolio FMV calculated?" />
-                </div>
-                <div className="rpc-stat-value">
-                  {(function() {
-                    const fmvVal = walletSummary ? walletSummary.wallet_fmv : (walletTotalFmv !== null ? walletTotalFmv : totals.totalFmv)
-                    if (fmvVal > 0) return formatCurrency(fmvVal)
-                    return walletSummary ? "$0" : "—"
-                  })()}
-                </div>
-                <div className="rpc-stat-caption">
-                  {formatCount(paginatedTotal || totals.totalCount) + (collectionSlug === "disney-pinnacle" ? " pins" : " moments")}
-                </div>
-              </div>
-
-              <div className="rpc-stat-tile">
-                <div className="rpc-stat-eyebrow">
-                  <span>Unlocked FMV</span>
-                  {walletSummaryLoading && <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "var(--rpc-text-muted)", animation: "skeletonPulse 1.5s ease-in-out infinite" }} />}
-                </div>
-                {(function() {
-                  const unlockedFmv = walletSummary ? walletSummary.unlocked_fmv : totals.unlockedFmv
-                  const unlockedCount = walletSummary ? walletSummary.unlocked_count : totals.unlockedCount
-                  const display = unlockedFmv > 0 ? formatCurrency(unlockedFmv) : (walletSummary ? "$0" : "—")
-                  return (
-                    <>
-                      <div className="rpc-stat-value">{display}</div>
-                      <div className="rpc-stat-caption">{formatCount(unlockedCount)} unlocked</div>
-                    </>
-                  )
-                })()}
-              </div>
-              <div className="rpc-stat-tile">
-                <div className="rpc-stat-eyebrow">
-                  <span>Locked FMV</span>
-                  {walletSummaryLoading && <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "var(--rpc-text-muted)", animation: "skeletonPulse 1.5s ease-in-out infinite" }} />}
-                </div>
-                {(function() {
-                  const lockedFmv = walletSummary ? walletSummary.locked_fmv : totals.lockedFmv
-                  const lockedCount = walletSummary ? walletSummary.locked_count : totals.lockedCount
-                  const display = lockedFmv > 0 ? formatCurrency(lockedFmv) : (walletSummary ? "$0" : "—")
-                  return (
-                    <>
-                      <div className="rpc-stat-value">{display}</div>
-                      <div className="rpc-stat-caption">{formatCount(lockedCount)} locked</div>
-                    </>
-                  )
-                })()}
-              </div>
-              <div className="rpc-stat-tile">
-                <div className="rpc-stat-eyebrow">Best Offer Total</div>
-                <div className="rpc-stat-value">{totals.totalBestOffer > 0 ? formatCurrency(totals.totalBestOffer) : "—"}</div>
-                <div className="rpc-stat-caption">{totals.totalFmv > 0 && totals.totalBestOffer > 0 ? "vs FMV: " + formatCurrency(-totals.spreadGap) : ""}</div>
-              </div>
-            </div>
+            <WalletStatRow
+              walletFmv={walletFmv}
+              unlockedFmv={unlockedFmv}
+              lockedFmv={lockedFmv}
+              bestOfferTotal={bestOfferTotal}
+              momentCount={momentCount}
+              unlockedCount={unlockedCount}
+              lockedCount={lockedCount}
+              spreadGap={spreadGap}
+              collectionSlug={collectionSlug}
+              loading={walletSummaryLoading}
+              walletFmvAccessory={
+                <ExplainButton
+                  context={`Wallet ${connectedWallet || ownerKey || input.trim()} on ${collectionSlug}`}
+                  question="How is my total portfolio FMV calculated?"
+                />
+              }
+            />
 
             {acquisitionStats && acquisitionStats.total_count > 0 && (
               <div className="grid grid-cols-3 gap-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3 font-mono">
@@ -1773,7 +1748,8 @@ export default function WalletPage() {
               )
             })()}
           </div>
-        )}
+          )
+        })()}
 
         {/* Cost basis / P&L summary */}
         {hasSearched && (walletSummary?.cost_basis ? walletSummary.cost_basis > 0 : (costBasis.size > 0 || rows.some(function(r) { return r.costBasis != null }))) && (function() {
