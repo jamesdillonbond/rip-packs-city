@@ -1,83 +1,122 @@
 # NBA pipelines (Fast Break + Road to the Ring)
 
-These three Supabase edge functions feed `nba_games`, `nba_players`,
+These two Supabase edge functions feed `nba_games`, `nba_players`,
 `nba_player_projections`, and `nba_player_aliases` for the Top Shot Fast
 Break optimizer (`/api/fast-break/*`) and the RTR picks recommender
 (`/api/rtr/*`).
 
-The fourth source — sportsbook moneylines — lives in a separate edge
-function (`sync-nba-odds`) plus a Cloudflare Worker (`workers/odds-proxy`)
-gated on an Odds API key. That layer ships separately as Prompt 1B.
+DraftKings is the single source for both `nba_games` and
+`nba_player_projections` — `sync-nba-projections` reads the DK draftables
+payload once per run and writes both tables. Live scores are not currently
+tracked (deferred to a future ESPN-based scores pipeline if needed).
 
-All three functions follow the same patterns as `compute-topshot-pack-ev`:
+The third source — sportsbook moneylines — lives in a separate edge
+function (`sync-nba-odds`) gated on an Odds API key. The Cloudflare Worker
+hop is already in place (`workers/sports-proxy` exposes `/nba/odds` as a
+501 placeholder); when the key arrives, swap the placeholder for a real
+upstream fetch and ship `sync-nba-odds` per Prompt 1B.
+
+Both functions follow the same patterns as `compute-topshot-pack-ev`:
 service-role client, `Bearer ${INGEST_SECRET_TOKEN}` auth, background work
 via `EdgeRuntime.waitUntil`, structured logging through the
 `log_pipeline_run` RPC. The HTTP response returns immediately; the actual
 work is observable in `pipeline_runs` filtered by pipeline name.
 
----
+## Architecture (proxy hop)
 
-## sync-nba-games
-
-**What it does.** Pulls today's NBA schedule from
-`https://stats.nba.com/stats/scoreboardV2` and upserts into
-`public.nba_games` keyed on `external_game_id`.
-
-**Headers required.** `stats.nba.com` 403s requests without realistic
-browser headers. The function sets `User-Agent` (Chrome 124),
-`Referer: https://www.nba.com/`, `Origin: https://www.nba.com`,
-`x-nba-stats-origin: stats`, `x-nba-stats-token: true`.
-
-**Date handling.** `GAME_DATE_EST` is the ET-day the game belongs to. The
-function uses `Intl.DateTimeFormat("America/New_York")` for both the
-`MM/DD/YYYY` API parameter and the `YYYY-MM-DD` `game_date` column.
-
-**Status mapping.** `GAME_STATUS_ID`: 1 → `scheduled`, 2 → `live`,
-3 → `final`. Anything else is logged as `unknown_status_count` in
-`pipeline_runs.extra` and stored as `scheduled`.
-
-**Tipoff parsing.** Best-effort. Before tipoff, `GAME_STATUS_TEXT` carries
-a string like `"7:00 pm ET"`. The function parses that, combines with
-`GAME_DATE_EST` and the live `Intl` ET offset (EDT/EST aware), and stores
-as `tipoff_at`. Once a game is live or final, that string switches to
-`"Q3 5:23"` / `"Final"` and parsing returns `null`.
-
-To prevent live/final polls from nulling out a previously-stored tipoff,
-the upsert is two-pass:
-
-1. Pass 1 sends only the always-fresh fields (`status`, `home_score`,
-   `away_score`, etc). `tipoff_at` is omitted, so the existing column value
-   is preserved on update.
-2. Pass 2 sends `tipoff_at` for the subset of games where the current poll
-   parsed it successfully.
-
-**Failure behaviour.** Non-200 from `stats.nba.com`, network errors, or
-JSON parse failures all log to `pipeline_runs` with `ok=false` and exit
-without touching existing rows. **Never delete or null any nba_games row
-on a failed poll.**
-
-**Trigger.**
+`api.draftkings.com` blocks Vercel and Supabase egress IPs.
+`sync-nba-projections` therefore goes through the `rpc-sports-proxy`
+Cloudflare Worker rather than calling upstream directly. That single
+proxy call returns both projections AND today's games (derived from the
+`competition` field on each draftable), so a single edge-function
+invocation populates both `nba_games` and `nba_player_projections`:
 
 ```
-curl -X POST \
-  -H "Authorization: Bearer $INGEST_SECRET_TOKEN" \
-  https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/sync-nba-games
+sync-nba-projections  ──POST /nba/draftkings-projections──►  rpc-sports-proxy  ──►  api.draftkings.com/draftgroups/v1/...
+                          (returns both `players[]` and `games[]` for the slate)
+                              │
+                              └──► writes nba_games (upsert by external_game_id) THEN nba_player_projections
+
+sync-nba-odds (TODO)  ──POST /nba/odds─────────────────────►  rpc-sports-proxy  ──►  api.the-odds-api.com (pending key)
 ```
 
-**Cron-job.org schedule.** Every 30 min, no time restriction.
-`*/30 * * * *`.
+The edge function sends `X-Proxy-Secret: ${TS_PROXY_SECRET}`. The worker
+compares against `env.PROXY_SECRET`. The two binding names exist so the
+secret can be rotated independently of `topshot-proxy` if needed; today
+they share the same value (single rotation surface). See
+`workers/sports-proxy/README.md` for deploy + secret commands.
+
+The `/nba/scoreboard` route on the worker is retained as a transparent
+pass-through (5 min cache) but no edge function consumes it today — kept
+in place in case a future scores pipeline needs it via a different
+upstream. The `/nba/draftkings-projections` route does the multi-call DK
+shape parsing inside the worker — finds today's NBA Classic draft group
+from the lobby contests feed, fetches `/draftables` for it, dedupes
+CPT/UTIL slot duplicates, derives the unique-by-`competitionId` games
+list, and returns `{draftGroupId, gameDate, players[...], games[...]}`.
+The edge function only consumes the cleaner shape (10 min cache).
 
 ---
 
 ## sync-nba-projections
 
-**What it does.** Scrapes
-`https://www.dailyfantasyfuel.com/nba/projections` for today's NBA
-DraftKings projections (FP, minutes, status) and upserts into
-`public.nba_player_projections` with `source = 'dailyfantasyfuel'`.
-Resolves players against `nba_players.full_name_normalized` first, then
+**What it does.** Pulls today's NBA DraftKings projections (FP, salary,
+status, opponent) AND today's games (parsed from the same draftables
+payload) from `api.draftkings.com` (via the `rpc-sports-proxy` Cloudflare
+Worker). Upserts into `public.nba_games` first (so the immediately-
+following game-match step picks them up), then upserts into
+`public.nba_player_projections` with `source = 'draftkings'`. Resolves
+players against `nba_players.full_name_normalized` first, then
 `nba_player_aliases.alias_normalized`, then auto-INSERTs a new
 `nba_players` row if neither hits.
+
+**Proxy hop.** The function `POST`s
+`{SPORTS_PROXY_URL}/nba/draftkings-projections` with `{}` body and
+`X-Proxy-Secret: ${TS_PROXY_SECRET}` header. The worker:
+1. Calls `GET https://www.draftkings.com/lobby/getcontests?sport=NBA` to
+   discover the active draft group (`/draftgroups/v1/draftgroups` returns
+   400 without filters and is not viable as a discovery surface).
+2. Filters to Classic NBA contests (`gameTypeId === 70`) grouped by `dg`,
+   keeps groups whose start date (in ET) is today, and picks the most
+   referenced (largest contest count for that draft group).
+3. Calls `GET .../draftgroups/v1/draftgroups/{id}/draftables` for that
+   group.
+4. Dedupes CPT/UTIL slot duplicates (keeps the smallest `rosterSlotId`
+   entry), and additionally derives the unique-by-`competitionId` games
+   list from the same draftables payload — each `competition.name` is
+   parsed `"{AWAY} @ {HOME}"` into `homeAbbr`/`awayAbbr`, `startTime` is
+   passed through, and `gameDate` is the ET-day of `startTime`.
+5. Returns `{draftGroupId, gameDate, players: [{name, teamAbbr, position,
+   salary, status, projFp, opponentAbbr, gameStartTime}], games: [{gameId,
+   name, homeAbbr, awayAbbr, startTime, gameDate}]}`.
+6. On a no-game day returns `200` with
+   `{draftGroupId: null, players: [], games: [], note: "no_nba_slate_today"}`
+   so the edge function logs a benign skip rather than an error.
+
+The edge function consumes the already-clean shape — no DK-specific
+parsing remains on the Supabase side.
+
+**Game upsert (replaces sync-nba-games).** The retired `sync-nba-games`
+pipeline (which scraped `stats.nba.com/scoreboardV2`) was dropped entirely
+on 2026-05-06; DK's `competition` data on each draftable is now the single
+source of truth for `nba_games`. The edge function calls
+`upsertGames(proxy.games, gameDate, started)` BEFORE the player resolver
+runs so `loadTodaysGames(gameDate)` picks up the just-inserted rows on
+the same invocation. Mapping is direct:
+
+| `nba_games` column | DK source field | Notes |
+|---|---|---|
+| `external_game_id` | `competition.competitionId` (stringified) | DK namespace, distinct from the legacy 0042400301-style stats.nba.com IDs |
+| `game_date` | derived from `competition.startTime` (ET-day) | falls back to `proxy.gameDate` if `startTime` is missing |
+| `home_team_abbr` | parsed right side of `"{AWAY} @ {HOME}"` | |
+| `away_team_abbr` | parsed left side of `"{AWAY} @ {HOME}"` | |
+| `tipoff_at` | `competition.startTime` (already ISO with TZ) | |
+| `status` | derived from `startTime` vs `now()`: `> 4h ago` → `final`, `±4h` → `live`, else `scheduled` | DK doesn't expose live game state; this is a coarse heuristic |
+| `home_score`, `away_score` | left NULL | DK doesn't provide live scores |
+
+`onConflict: external_game_id`. Rows missing parsed home/away are counted
+as `games_skipped` in `pipeline_runs.extra` rather than written. Live
+scores are deferred to a future pipeline (likely ESPN-based) when needed.
 
 **Player resolution.** JS-side normalization mirrors
 `public.normalize_player_name`: `NFD` → strip combining marks → strip
@@ -94,20 +133,9 @@ counted as `no_game_match_count` and a sample of names goes into
 **UNIQUE.** `(nba_player_id, game_id, source)`. The same player can carry
 projections from multiple sources later without conflict.
 
-**Injury status mapping.** Empty / `NONE` / `GO` → `ACTIVE`. `GTD`,
-`Q`, `QUESTIONABLE`, `DTD` → `QUESTIONABLE`. `OUT`, `INJ`, `INJURED`,
-`OFS` → `OUT`. Confidence is fixed at `MED` for v1.
-
-**Scraping risk.** DFF can change page structure. The extractor tries two
-strategies in order:
-1. Inline JSON blob (`__NEXT_DATA__`, `window.__INITIAL_STATE__`,
-   `window.__NUXT__`, `var projectionsData = …`).
-2. HTML `<table>` with a recognizable header row containing "Player"
-   and "Proj" columns.
-
-If both miss, the function logs `error: "no_rows_parsed"` plus an HTML
-excerpt to `pipeline_runs.extra.body_excerpt` so the parser can be
-adjusted without redeploying blind.
+**Injury status mapping.** Empty / `NONE` / `GO` / `AVAILABLE` →
+`ACTIVE`. `GTD`, `Q`, `QUESTIONABLE`, `DTD` → `QUESTIONABLE`. `OUT`,
+`INJ`, `INJURED`, `OFS` → `OUT`. Confidence is fixed at `MED` for v1.
 
 **Trigger.**
 
@@ -159,8 +187,8 @@ curl -X POST \
 ```
 
 **Cron-job.org schedule.** Once daily at 4am ET. Catches new wallets
-indexed during the day without colliding with the 30-min `sync-nba-games`
-cycle or the every-2-hour projections refresh.
+indexed during the day without colliding with the every-2-hour projections
+refresh.
 
 ---
 
@@ -168,22 +196,30 @@ cycle or the every-2-hour projections refresh.
 
 After `supabase functions deploy <name>` for each:
 
-1. **sync-nba-games** — POST it once. Confirm
-   `SELECT COUNT(*) FROM nba_games WHERE game_date = current_date;` matches
-   the expected slate (2 conference-semis games on 2026-05-05).
-2. **sync-nba-projections** — POST it once after `sync-nba-games` has
-   populated today's slate. Confirm
-   `SELECT COUNT(*) FROM nba_player_projections WHERE game_date = current_date AND source = 'dailyfantasyfuel';`
-   returns at least 30 rows (typically 50-150 depending on slate size).
-3. **match-topshot-players** — POST it once. Inspect the latest
+1. **sync-nba-projections** — POST it once. Confirm both halves wrote:
+   - `SELECT COUNT(*) FROM nba_games WHERE game_date = current_date;`
+     matches the expected slate.
+   - `SELECT COUNT(*) FROM nba_player_projections WHERE game_date = current_date AND source = 'draftkings';`
+     returns at least 100 rows on a normal slate (DK exposes the full
+     roster, not just chalk plays).
+   - In the latest `pipeline_runs` row, `extra.games_total` and
+     `extra.games_upserted` should both be ≥ 1, and `extra.no_game_match_count`
+     should drop to near zero (residual gap is players in the contest pool
+     whose team isn't on the slate — happens occasionally on DK).
+   - On the first run after switching to the worker,
+     `pipeline_runs.extra.players_auto_inserted` will be high (the seed only
+     covers ~70 players); subsequent runs trend to ~0.
+2. **match-topshot-players** — POST it once. Inspect the latest
    `pipeline_runs` row for this pipeline; the `extra.summary.auto_aliased`
    counter should be > 0 on the first run if there are any
    wallet_moments_cache names that didn't already alias. Subsequent runs
    should report `auto_aliased = 0` until new wallets are scanned.
 
-If `sync-nba-projections` returns `error: "no_rows_parsed"`, inspect
-`pipeline_runs.extra.body_excerpt` — the DFF page structure has shifted
-and the regex extractors need adjustment.
+If either function logs `error: "missing_proxy_env"`, set
+`SPORTS_PROXY_URL` and confirm `TS_PROXY_SECRET` exist in the Supabase
+edge-function secrets dashboard. If either logs `proxy_HTTP_502` with
+`upstream_error` / `body_excerpt` populated, the worker reached upstream
+and upstream rejected — inspect the body excerpt before redeploying.
 
 ---
 
@@ -191,9 +227,12 @@ and the regex extractors need adjustment.
 
 | Job | Schedule | Endpoint |
 |---|---|---|
-| sync-nba-games | `*/30 * * * *` (every 30 min) | `POST /functions/v1/sync-nba-games` |
 | sync-nba-projections | every 2 hr 12pm-1am ET | `POST /functions/v1/sync-nba-projections` |
 | match-topshot-players | once daily at 4am ET | `POST /functions/v1/match-topshot-players` |
+
+> The legacy `sync-nba-games` job (every 30 min, scoreboardV2) was retired
+> on 2026-05-06 along with its edge function. Remove the entry from
+> cron-job.org by hand if it's still scheduled there.
 
 All three carry `Authorization: Bearer $INGEST_SECRET_TOKEN` (same token
 as the rest of the cron-job.org fleet — see `docs/TOKEN_ROTATION.md`
@@ -201,16 +240,23 @@ when rotating).
 
 ---
 
-## Where Prompt 1B (odds-proxy + sync-nba-odds) plugs in
+## Where Prompt 1B (sync-nba-odds) plugs in
+
+The Cloudflare hop is already shipped — `rpc-sports-proxy` exposes
+`POST /nba/odds` as a 501 placeholder returning
+`{error: "odds_route_pending_api_key"}`.
 
 Once the Odds API key is registered:
-- `workers/odds-proxy` — Cloudflare Worker proxy mirroring
-  `topshot-proxy`. Bypasses the Vercel/Supabase egress block on
-  `the-odds-api.com`. `X-Proxy-Secret` matches `TS_PROXY_SECRET`.
-- `supabase/functions/sync-nba-odds` — pulls
-  `https://api.the-odds-api.com/v4/sports/basketball_nba/odds` via the
-  worker, matches odds-API events to `nba_games` rows by team
-  abbreviation + `game_date`, writes `home_moneyline`, `away_moneyline`,
-  `home_spread`, `total_points`, `last_synced_at`. Skips games with
-  `status = 'final'`. Cron every 60 min during NBA active hours
-  (4pm-2am ET) to stay under the 500-req/month free tier.
+- Add `ODDS_API_KEY` to `rpc-sports-proxy` via
+  `wrangler secret put ODDS_API_KEY` and replace the `handleOdds()`
+  placeholder in `workers/sports-proxy/index.ts` with a fetch against
+  `https://api.the-odds-api.com/v4/sports/basketball_nba/odds`
+  (passing `?apiKey=${env.ODDS_API_KEY}`). Mirror the
+  `/nba/scoreboard` pass-through pattern; cache 60 min.
+- `supabase/functions/sync-nba-odds` — POSTs `{SPORTS_PROXY_URL}/nba/odds`
+  with `X-Proxy-Secret: ${TS_PROXY_SECRET}`, matches odds-API events to
+  `nba_games` rows by team abbreviation + `game_date`, writes
+  `home_moneyline`, `away_moneyline`, `home_spread`, `total_points`,
+  `last_synced_at`. Skips games with `status = 'final'`. Cron every
+  60 min during NBA active hours (4pm-2am ET) to stay under the
+  500-req/month free tier.

@@ -1,15 +1,20 @@
-// sync-nba-projections — scrapes DailyFantasyFuel's NBA projections page and
-// upserts into nba_player_projections.
+// sync-nba-projections — pulls today's NBA DraftKings projections AND today's
+// games from rpc-sports-proxy (which fronts api.draftkings.com — Vercel/
+// Supabase egress is blocked there). Single proxy call, two writes:
+//   1. nba_games (upsert by external_game_id) — replaces the retired
+//      sync-nba-games pipeline. DK's `competition` field on each draftable is
+//      the single source of truth now.
+//   2. nba_player_projections (upsert by nba_player_id+game_id+source).
+// Resolves players against nba_players.full_name_normalized first, then
+// nba_player_aliases, then auto-INSERTs a new nba_players row if neither hits.
 //
-// Scraping risk: DFF can change page structure. We try two extraction modes
-// in order:
-//   1. Next.js __NEXT_DATA__ JSON blob (most resilient)
-//   2. HTML <tr><td>...</td></tr> regex extraction (fallback)
-// On total miss we log a body excerpt to pipeline_runs.extras so the user
-// can diagnose without redeploying. We never delete prior projections.
-//
-// Player resolution uses normalize_player_name() in SQL so JS normalization
-// doesn't have to perfectly match the SQL function for unaccent edge cases.
+// The proxy returns an already-normalized shape:
+//   { draftGroupId, gameDate,
+//     players: [{name, teamAbbr, position, salary, status, projFp,
+//                opponentAbbr, gameStartTime}],
+//     games:   [{gameId, name, homeAbbr, awayAbbr, startTime, gameDate}] }
+// so all the DK shape parsing lives in workers/sports-proxy. This function
+// just consumes the cleaner output.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
 
@@ -20,27 +25,40 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? ""
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-const FUNCTION_VERSION = 1
+const SPORTS_PROXY_URL = Deno.env.get("SPORTS_PROXY_URL") ?? ""
+const TS_PROXY_SECRET = Deno.env.get("TS_PROXY_SECRET") ?? ""
+
+const FUNCTION_VERSION = 3
 const PIPELINE = "sync-nba-projections"
 const COLLECTION_SLUG = "nba_top_shot"
-const SOURCE = "dailyfantasyfuel"
-const DFF_URL = "https://www.dailyfantasyfuel.com/nba/projections"
+const SOURCE = "draftkings"
 
-const BROWSER_HEADERS: Record<string, string> = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-  "Accept-Language": "en-US,en;q=0.9",
-}
-
-interface ScrapedPlayer {
-  rawName: string
+interface ProxyPlayer {
+  name: string
   teamAbbr: string | null
   position: string | null
-  opponentAbbr: string | null
-  projFp: number | null
-  projMinutes: number | null
+  salary: number | null
   status: string | null
+  projFp: number | null
+  opponentAbbr: string | null
+  gameStartTime: string | null
+}
+
+interface ProxyGame {
+  gameId: string
+  name: string
+  homeAbbr: string | null
+  awayAbbr: string | null
+  startTime: string | null
+  gameDate: string | null
+}
+
+interface ProxyResponse {
+  draftGroupId: number | null
+  gameDate: string
+  players: ProxyPlayer[]
+  games?: ProxyGame[]
+  note?: string
 }
 
 function todayInET(): string {
@@ -57,10 +75,7 @@ function todayInET(): string {
 function normalizeJs(s: string): string {
   // Mirrors public.normalize_player_name(): unaccent + strip non-alphabetic
   // + lowercase. NFD splits accented chars into base + combining mark, then
-  // we strip the combining-mark range U+0300 through U+036F. Close enough
-  // approximation of pg_trgm/unaccent for NBA names — the sync-nba-projections
-  // resolver also falls back to alias lookup, which uses the SQL function
-  // canonical form, so any drift gets corrected on subsequent runs.
+  // we strip the combining-mark range U+0300 through U+036F.
   return s
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
@@ -71,165 +86,14 @@ function normalizeJs(s: string): string {
 function mapInjuryStatus(raw: string | null): string {
   if (!raw) return "ACTIVE"
   const u = raw.trim().toUpperCase()
-  if (u === "" || u === "NONE" || u === "GO" || u === "ACTIVE" || u === "PROBABLE") return "ACTIVE"
+  if (u === "" || u === "NONE" || u === "GO" || u === "ACTIVE" || u === "AVAILABLE" || u === "PROBABLE") return "ACTIVE"
   if (u === "GTD" || u === "Q" || u === "QUESTIONABLE" || u === "DTD") return "QUESTIONABLE"
   if (u === "OUT" || u === "INJ" || u === "INJURED" || u === "OFS") return "OUT"
   return "ACTIVE"
 }
 
-function toNum(v: unknown): number | null {
-  if (v == null) return null
-  const n = typeof v === "number" ? v : parseFloat(String(v).replace(/[^0-9.\-]/g, ""))
-  return Number.isFinite(n) ? n : null
-}
-
-function stripTags(html: string): string {
-  return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim()
-}
-
-// Extraction strategy 1: Next.js / Nuxt / standard server-rendered data blob.
-function extractFromInlineJson(html: string): ScrapedPlayer[] {
-  const candidates: { tag: string; pattern: RegExp }[] = [
-    { tag: "__NEXT_DATA__", pattern: /<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/ },
-    { tag: "__NUXT__", pattern: /window\.__NUXT__\s*=\s*([\s\S]*?);<\/script>/ },
-    { tag: "__INITIAL_STATE__", pattern: /window\.__INITIAL_STATE__\s*=\s*([\s\S]*?);<\/script>/ },
-    { tag: "projectionsData", pattern: /var\s+projectionsData\s*=\s*(\[[\s\S]*?\]);/ },
-  ]
-
-  for (const c of candidates) {
-    const m = html.match(c.pattern)
-    if (!m) continue
-    const raw = m[1].trim()
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(raw)
-    } catch {
-      continue
-    }
-    const players = walkForPlayers(parsed)
-    if (players.length > 0) {
-      console.log(`[sync-nba-projections] inline-json hit tag=${c.tag} players=${players.length}`)
-      return players
-    }
-  }
-  return []
-}
-
-// Recursively walk an arbitrary JSON tree looking for arrays of objects that
-// look like player-projection rows. A "looks like" row has a name field and
-// either a projected-FP or salary field.
-function walkForPlayers(node: unknown): ScrapedPlayer[] {
-  if (!node) return []
-  if (Array.isArray(node)) {
-    if (node.length > 0 && looksLikePlayerArray(node)) {
-      return node.map(coercePlayerRow).filter((p): p is ScrapedPlayer => p !== null)
-    }
-    for (const v of node) {
-      const found = walkForPlayers(v)
-      if (found.length > 0) return found
-    }
-    return []
-  }
-  if (typeof node === "object") {
-    for (const v of Object.values(node as Record<string, unknown>)) {
-      const found = walkForPlayers(v)
-      if (found.length > 0) return found
-    }
-  }
-  return []
-}
-
-function looksLikePlayerArray(arr: unknown[]): boolean {
-  if (arr.length < 5) return false
-  let hits = 0
-  for (let i = 0; i < Math.min(arr.length, 8); i++) {
-    const item = arr[i]
-    if (!item || typeof item !== "object") continue
-    const keys = Object.keys(item).map(k => k.toLowerCase())
-    const hasName = keys.some(k => k === "name" || k === "playername" || k === "player_name" || k === "player")
-    const hasProj = keys.some(k =>
-      k.includes("projection") || k.includes("projected") || k === "fpts" || k === "fp" || k === "salary",
-    )
-    if (hasName && hasProj) hits++
-  }
-  return hits >= 3
-}
-
-function coercePlayerRow(item: unknown): ScrapedPlayer | null {
-  if (!item || typeof item !== "object") return null
-  const obj = item as Record<string, unknown>
-  const lookup = (...names: string[]): unknown => {
-    for (const n of names) {
-      for (const key of Object.keys(obj)) {
-        if (key.toLowerCase() === n.toLowerCase()) return obj[key]
-      }
-    }
-    return null
-  }
-  const rawName = String(lookup("name", "playerName", "player_name", "player", "fullName") ?? "").trim()
-  if (!rawName) return null
-  return {
-    rawName,
-    teamAbbr: stringOrNull(lookup("team", "teamAbbr", "team_abbr", "teamabbreviation")),
-    position: stringOrNull(lookup("position", "pos")),
-    opponentAbbr: stringOrNull(lookup("opponent", "opp", "opponentAbbr", "opp_team")),
-    projFp: toNum(lookup("projection", "projectedPoints", "projection_dk", "fpts", "fp", "projectedFp", "proj_fp")),
-    projMinutes: toNum(lookup("minutes", "projectedMinutes", "min", "projMinutes", "proj_minutes")),
-    status: stringOrNull(lookup("status", "injuryStatus", "injury_status")),
-  }
-}
-
-function stringOrNull(v: unknown): string | null {
-  if (v == null) return null
-  const s = String(v).trim()
-  return s ? s : null
-}
-
-// Extraction strategy 2: pull <tr> blocks from any HTML table that has a
-// recognizable Player + Projected Points column structure.
-function extractFromHtmlTable(html: string): ScrapedPlayer[] {
-  const tables = html.match(/<table[\s\S]*?<\/table>/gi) ?? []
-  for (const tbl of tables) {
-    const headerMatch = tbl.match(/<th[^>]*>[\s\S]*?<\/th>/gi) ?? []
-    const headers = headerMatch.map(h => stripTags(h).toLowerCase())
-    if (!headers.length) continue
-
-    const playerIdx = headers.findIndex(h => h.includes("player") || h === "name")
-    const teamIdx = headers.findIndex(h => h === "team" || h === "tm")
-    const posIdx = headers.findIndex(h => h === "pos" || h === "position")
-    const oppIdx = headers.findIndex(h => h === "opp" || h.includes("opponent"))
-    const projIdx = headers.findIndex(h => h.includes("proj") && (h.includes("fp") || h.includes("point") || h.includes("dk") || h === "proj"))
-    const minIdx = headers.findIndex(h => h === "min" || h === "mins" || h.includes("minute"))
-    const statusIdx = headers.findIndex(h => h === "status" || h.includes("inj"))
-    if (playerIdx < 0 || projIdx < 0) continue
-
-    const rows = tbl.match(/<tr[\s\S]*?<\/tr>/gi) ?? []
-    const players: ScrapedPlayer[] = []
-    for (const row of rows) {
-      const cells = (row.match(/<td[\s\S]*?<\/td>/gi) ?? []).map(stripTags)
-      if (cells.length === 0) continue
-      const rawName = cells[playerIdx] ?? ""
-      if (!rawName) continue
-      players.push({
-        rawName,
-        teamAbbr: teamIdx >= 0 ? cells[teamIdx] ?? null : null,
-        position: posIdx >= 0 ? cells[posIdx] ?? null : null,
-        opponentAbbr: oppIdx >= 0 ? cells[oppIdx] ?? null : null,
-        projFp: toNum(cells[projIdx]),
-        projMinutes: minIdx >= 0 ? toNum(cells[minIdx]) : null,
-        status: statusIdx >= 0 ? cells[statusIdx] ?? null : null,
-      })
-    }
-    if (players.length >= 5) {
-      console.log(`[sync-nba-projections] html-table hit rows=${players.length}`)
-      return players
-    }
-  }
-  return []
-}
-
 interface MatchedPlayer {
-  scraped: ScrapedPlayer
+  scraped: ProxyPlayer
   nbaPlayerId: string
   autoInserted: boolean
 }
@@ -239,16 +103,16 @@ interface MatchResult {
   noNameSkipped: number
 }
 
-async function resolveOrInsertPlayers(scraped: ScrapedPlayer[]): Promise<MatchResult> {
+async function resolveOrInsertPlayers(scraped: ProxyPlayer[]): Promise<MatchResult> {
   const matched: MatchedPlayer[] = []
   let noNameSkipped = 0
 
   for (const sp of scraped) {
-    if (!sp.rawName) {
+    if (!sp.name) {
       noNameSkipped++
       continue
     }
-    const normalized = normalizeJs(sp.rawName)
+    const normalized = normalizeJs(sp.name)
 
     // Step 1: direct match on full_name_normalized.
     const { data: direct, error: directErr } = await supabase
@@ -257,7 +121,7 @@ async function resolveOrInsertPlayers(scraped: ScrapedPlayer[]): Promise<MatchRe
       .eq("full_name_normalized", normalized)
       .limit(1)
     if (directErr) {
-      console.log(`[sync-nba-projections] direct lookup err name="${sp.rawName}": ${directErr.message}`)
+      console.log(`[sync-nba-projections] direct lookup err name="${sp.name}": ${directErr.message}`)
       continue
     }
     if (direct && direct.length > 0) {
@@ -272,7 +136,7 @@ async function resolveOrInsertPlayers(scraped: ScrapedPlayer[]): Promise<MatchRe
       .eq("alias_normalized", normalized)
       .limit(1)
     if (aliasErr) {
-      console.log(`[sync-nba-projections] alias lookup err name="${sp.rawName}": ${aliasErr.message}`)
+      console.log(`[sync-nba-projections] alias lookup err name="${sp.name}": ${aliasErr.message}`)
       continue
     }
     if (alias && alias.length > 0) {
@@ -283,7 +147,7 @@ async function resolveOrInsertPlayers(scraped: ScrapedPlayer[]): Promise<MatchRe
     // Step 3: insert a new nba_players row. We rely on full_name_normalized
     // UNIQUE so concurrent inserts collapse safely.
     const insertRow = {
-      full_name: sp.rawName,
+      full_name: sp.name,
       full_name_normalized: normalized,
       current_team_abbr: sp.teamAbbr,
       position: sp.position,
@@ -295,13 +159,63 @@ async function resolveOrInsertPlayers(scraped: ScrapedPlayer[]): Promise<MatchRe
       .select("id")
       .single()
     if (insErr || !inserted) {
-      console.log(`[sync-nba-projections] insert err name="${sp.rawName}": ${insErr?.message ?? "unknown"}`)
+      console.log(`[sync-nba-projections] insert err name="${sp.name}": ${insErr?.message ?? "unknown"}`)
       continue
     }
     matched.push({ scraped: sp, nbaPlayerId: inserted.id, autoInserted: true })
   }
 
   return { matched, noNameSkipped }
+}
+
+function deriveGameStatus(startTime: string | null, nowMs: number): "scheduled" | "live" | "final" {
+  if (!startTime) return "scheduled"
+  const ms = Date.parse(startTime)
+  if (!Number.isFinite(ms)) return "scheduled"
+  const fourHr = 4 * 60 * 60 * 1000
+  const diff = nowMs - ms
+  if (diff > fourHr) return "final"
+  if (diff >= -fourHr) return "live"
+  return "scheduled"
+}
+
+interface UpsertGamesResult {
+  total: number
+  upserted: number
+  skipped: number
+  error: string | null
+}
+
+async function upsertGames(games: ProxyGame[], fallbackGameDate: string, nowMs: number): Promise<UpsertGamesResult> {
+  const total = games.length
+  if (total === 0) return { total: 0, upserted: 0, skipped: 0, error: null }
+
+  let skipped = 0
+  const rows: Record<string, unknown>[] = []
+  const nowIso = new Date(nowMs).toISOString()
+  for (const g of games) {
+    if (!g.gameId || !g.homeAbbr || !g.awayAbbr) {
+      skipped++
+      continue
+    }
+    rows.push({
+      external_game_id: g.gameId,
+      game_date: g.gameDate ?? fallbackGameDate,
+      home_team_abbr: g.homeAbbr,
+      away_team_abbr: g.awayAbbr,
+      tipoff_at: g.startTime,
+      status: deriveGameStatus(g.startTime, nowMs),
+      last_synced_at: nowIso,
+    })
+  }
+
+  if (rows.length === 0) return { total, upserted: 0, skipped, error: null }
+
+  const { error } = await supabase
+    .from("nba_games")
+    .upsert(rows, { onConflict: "external_game_id" })
+  if (error) return { total, upserted: 0, skipped, error: error.message }
+  return { total, upserted: rows.length, skipped, error: null }
 }
 
 interface GameMatch {
@@ -368,61 +282,104 @@ async function logRun(args: {
 async function runWork(startedAtIso: string, started: number) {
   const gameDate = todayInET()
 
-  let html = ""
-  let httpStatus = 0
+  if (!SPORTS_PROXY_URL || !TS_PROXY_SECRET) {
+    await logRun({
+      startedAt: startedAtIso,
+      rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
+      ok: false,
+      error: "missing_proxy_env",
+      extra: {
+        function_version: FUNCTION_VERSION,
+        game_date: gameDate,
+        has_url: !!SPORTS_PROXY_URL,
+        has_secret: !!TS_PROXY_SECRET,
+        elapsed_ms: Date.now() - started,
+      },
+    })
+    return
+  }
+
+  let res: Response
   try {
-    const res = await fetch(DFF_URL, {
-      method: "GET",
-      headers: BROWSER_HEADERS,
+    res = await fetch(`${SPORTS_PROXY_URL.replace(/\/+$/g, "")}/nba/draftkings-projections`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Proxy-Secret": TS_PROXY_SECRET,
+      },
+      body: JSON.stringify({}),
       signal: AbortSignal.timeout(20_000),
     })
-    httpStatus = res.status
-    html = await res.text()
-    if (!res.ok) {
-      await logRun({
-        startedAt: startedAtIso,
-        rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
-        ok: false,
-        error: `HTTP ${res.status}`,
-        extra: {
-          function_version: FUNCTION_VERSION,
-          game_date: gameDate,
-          body_excerpt: html.slice(0, 500),
-          elapsed_ms: Date.now() - started,
-        },
-      })
-      return
-    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     await logRun({
       startedAt: startedAtIso,
       rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: false,
-      error: `fetch_failed: ${msg}`,
+      error: `proxy_fetch_failed: ${msg}`,
       extra: { function_version: FUNCTION_VERSION, game_date: gameDate, elapsed_ms: Date.now() - started },
     })
     return
   }
 
-  let scraped = extractFromInlineJson(html)
-  if (scraped.length === 0) scraped = extractFromHtmlTable(html)
-
-  if (scraped.length === 0) {
-    // Known scraping risk — DFF page structure may have changed. Log enough
-    // to diagnose without redeploying.
+  let proxyJson: ProxyResponse | { error?: string; status?: number; body_excerpt?: string }
+  try {
+    proxyJson = await res.json()
+  } catch (err) {
     await logRun({
       startedAt: startedAtIso,
       rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: false,
-      error: "no_rows_parsed",
+      error: `proxy_not_json: ${err instanceof Error ? err.message : String(err)}`,
+      extra: { function_version: FUNCTION_VERSION, game_date: gameDate, http_status: res.status, elapsed_ms: Date.now() - started },
+    })
+    return
+  }
+
+  if (!res.ok) {
+    const errBody = proxyJson as { error?: string; status?: number; body_excerpt?: string }
+    await logRun({
+      startedAt: startedAtIso,
+      rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
+      ok: false,
+      error: `proxy_HTTP_${res.status}`,
       extra: {
         function_version: FUNCTION_VERSION,
         game_date: gameDate,
-        http_status: httpStatus,
-        html_length: html.length,
-        body_excerpt: html.slice(0, 1500),
-        note: "DFF page structure changed — adjust extractFromInlineJson / extractFromHtmlTable",
+        proxy_error: errBody.error ?? null,
+        upstream_status: errBody.status ?? null,
+        upstream_body_excerpt: errBody.body_excerpt ?? null,
+        elapsed_ms: Date.now() - started,
+      },
+    })
+    return
+  }
+
+  const proxy = proxyJson as ProxyResponse
+  const scraped = proxy.players ?? []
+  const proxyGames = proxy.games ?? []
+
+  // Upsert games BEFORE player resolution so loadTodaysGames() picks up newly
+  // inserted rows on the same run. This replaces the retired sync-nba-games
+  // pipeline — DK's competition data is the single source for nba_games now.
+  const gamesResult = await upsertGames(proxyGames, gameDate, started)
+
+  if (scraped.length === 0) {
+    // Distinguish no-slate days (proxy returned note: "no_nba_slate_today")
+    // from genuine fetch successes that still came back empty.
+    await logRun({
+      startedAt: startedAtIso,
+      rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
+      ok: true,
+      extra: {
+        function_version: FUNCTION_VERSION,
+        game_date: gameDate,
+        message: proxy.note ?? "no_players_returned",
+        draft_group_id: proxy.draftGroupId ?? null,
+        games_total: gamesResult.total,
+        games_upserted: gamesResult.upserted,
+        games_skipped: gamesResult.skipped,
+        games_error: gamesResult.error,
         elapsed_ms: Date.now() - started,
       },
     })
@@ -444,7 +401,7 @@ async function runWork(startedAtIso: string, started: number) {
     if (!game) {
       noGameMatch++
       if (noGameSamples.length < 10) {
-        noGameSamples.push(`${m.scraped.rawName} (${m.scraped.teamAbbr ?? "?"})`)
+        noGameSamples.push(`${m.scraped.name} (${m.scraped.teamAbbr ?? "?"})`)
       }
       continue
     }
@@ -454,7 +411,7 @@ async function runWork(startedAtIso: string, started: number) {
       game_date: gameDate,
       proj_fp_dk: m.scraped.projFp,
       proj_points: null,
-      proj_minutes: m.scraped.projMinutes,
+      proj_minutes: null,
       injury_status: mapInjuryStatus(m.scraped.status),
       confidence: "MED",
       source: SOURCE,
@@ -462,13 +419,13 @@ async function runWork(startedAtIso: string, started: number) {
     })
   }
 
-  let writeError: string | null = null
+  let writeError: string | null = gamesResult.error ? `games_upsert: ${gamesResult.error}` : null
   let upserted = 0
   if (projectionRows.length > 0) {
     const { error } = await supabase
       .from("nba_player_projections")
       .upsert(projectionRows, { onConflict: "nba_player_id,game_id,source" })
-    if (error) writeError = `upsert: ${error.message}`
+    if (error) writeError = writeError ?? `upsert: ${error.message}`
     else upserted = projectionRows.length
   }
 
@@ -482,6 +439,7 @@ async function runWork(startedAtIso: string, started: number) {
     extra: {
       function_version: FUNCTION_VERSION,
       game_date: gameDate,
+      draft_group_id: proxy.draftGroupId ?? null,
       rows_parsed: scraped.length,
       players_matched: matched.length,
       players_auto_inserted: autoInsertedCount,
@@ -490,6 +448,10 @@ async function runWork(startedAtIso: string, started: number) {
       no_game_match_samples: noGameSamples,
       no_name_skipped: noNameSkipped,
       games_today: games.length,
+      games_total: gamesResult.total,
+      games_upserted: gamesResult.upserted,
+      games_skipped: gamesResult.skipped,
+      games_error: gamesResult.error,
       elapsed_ms: Date.now() - started,
     },
   })

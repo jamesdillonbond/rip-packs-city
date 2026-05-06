@@ -150,10 +150,20 @@ interface NormalizedPlayer {
   gameStartTime: string | null;
 }
 
+interface NormalizedGame {
+  gameId: string;
+  name: string;
+  homeAbbr: string | null;
+  awayAbbr: string | null;
+  startTime: string | null;
+  gameDate: string | null;
+}
+
 interface NormalizedDkResponse {
   draftGroupId: number | null;
   gameDate: string;
   players: NormalizedPlayer[];
+  games: NormalizedGame[];
   note?: string;
 }
 
@@ -177,6 +187,48 @@ function dateInETFromMs(ms: number): string {
   });
   const parts = Object.fromEntries(fmt.formatToParts(new Date(ms)).map(p => [p.type, p.value]));
   return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function dateInETFromIso(iso: string | undefined | null): string | null {
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return null;
+  return dateInETFromMs(ms);
+}
+
+function parseCompetitionTeams(name: string | undefined | null): { homeAbbr: string | null; awayAbbr: string | null } {
+  if (!name) return { homeAbbr: null, awayAbbr: null };
+  // DK competition.name comes through as "MIN @ SAS" (away @ home). Some legacy
+  // contests still use " vs " — accept either, but for "@" the right-hand
+  // token is always the home team.
+  const at = name.match(/^\s*([A-Z]{2,4})\s*@\s*([A-Z]{2,4})\s*$/i);
+  if (at) return { homeAbbr: at[2].toUpperCase(), awayAbbr: at[1].toUpperCase() };
+  const vs = name.match(/^\s*([A-Z]{2,4})\s+vs\.?\s+([A-Z]{2,4})\s*$/i);
+  if (vs) return { homeAbbr: vs[2].toUpperCase(), awayAbbr: vs[1].toUpperCase() };
+  return { homeAbbr: null, awayAbbr: null };
+}
+
+function extractGames(draftables: DkDraftable[]): NormalizedGame[] {
+  // Each draftable is one (player, eligible roster slot); the same competition
+  // shows up many times. Dedupe by competitionId so each game ships once.
+  const seen = new Map<string, NormalizedGame>();
+  for (const d of draftables) {
+    const comp = d.competition;
+    const cid = comp?.competitionId;
+    if (cid == null) continue;
+    const key = String(cid);
+    if (seen.has(key)) continue;
+    const { homeAbbr, awayAbbr } = parseCompetitionTeams(comp?.name);
+    seen.set(key, {
+      gameId: key,
+      name: (comp?.name ?? "").trim(),
+      homeAbbr,
+      awayAbbr,
+      startTime: comp?.startTime ?? null,
+      gameDate: dateInETFromIso(comp?.startTime ?? null),
+    });
+  }
+  return [...seen.values()];
 }
 
 function parseMsJsonDate(sd: string | undefined): number | null {
@@ -348,6 +400,7 @@ async function handleDraftKingsProjections(_request: Request): Promise<Response>
       draftGroupId: null,
       gameDate: todayET,
       players: [],
+      games: [],
       note: "no_nba_slate_today",
     };
     return jsonResponse(empty, 200, 600);
@@ -394,11 +447,14 @@ async function handleDraftKingsProjections(_request: Request): Promise<Response>
   }
 
   // Step C: normalize.
-  const players = normalizeDraftables(dJson.draftables ?? []);
+  const draftables = dJson.draftables ?? [];
+  const players = normalizeDraftables(draftables);
+  const games = extractGames(draftables);
   const normalized: NormalizedDkResponse = {
     draftGroupId,
     gameDate: todayET,
     players,
+    games,
   };
   return jsonResponse(normalized, 200, 600);
 }

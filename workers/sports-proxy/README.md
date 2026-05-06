@@ -19,11 +19,15 @@ All routes require `X-Proxy-Secret` header matching the worker's `PROXY_SECRET`.
 - `POST /nba/scoreboard` — `{"gameDate": "MM/DD/YYYY"}` (Eastern-day, format the
   same as `stats.nba.com` expects).
 - `POST /nba/draftkings-projections` — `{}` (no params; the worker resolves
-  today's NBA draft group from `/draftgroups/v1/draftgroups`, picks the largest
-  by `playerCount`, and returns its draftables normalized to
-  `{draftGroupId, gameDate, players[...]}`.) Returns
-  `{draftGroupId: null, players: [], note: "no_nba_slate_today"}` on a no-game
-  day so callers can distinguish "scrape worked, no games" from a failure.
+  today's NBA draft group via the public lobby contests feed, picks the
+  most-frequent Classic NBA group whose start date is today in ET, and returns
+  its draftables normalized to `{draftGroupId, gameDate, players[...], games[...]}`.
+  `games` is the deduplicated list of competitions (one per `competitionId`)
+  with parsed `homeAbbr`/`awayAbbr`/`startTime`/`gameDate` so consumers can
+  populate `nba_games` from the same payload.) Returns
+  `{draftGroupId: null, players: [], games: [], note: "no_nba_slate_today"}`
+  on a no-game day so callers can distinguish "scrape worked, no games" from
+  a failure.
 - `POST /nba/odds` — `{}` (501 until the key arrives).
 
 ## Deploy (run locally — needs Cloudflare account)
@@ -63,9 +67,9 @@ functions → Secrets):
 SPORTS_PROXY_URL = https://rpc-sports-proxy.tdillonbond.workers.dev
 ```
 
-Both `sync-nba-games` and `sync-nba-projections` send
-`X-Proxy-Secret: ${TS_PROXY_SECRET}` (existing Supabase secret, same value as
-the worker's `PROXY_SECRET`). No new secret is required on the Supabase side.
+`sync-nba-projections` sends `X-Proxy-Secret: ${TS_PROXY_SECRET}` (existing
+Supabase secret, same value as the worker's `PROXY_SECRET`). No new secret is
+required on the Supabase side.
 
 ## Adding the Odds API key later
 
