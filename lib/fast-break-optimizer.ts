@@ -81,18 +81,36 @@ export function buildOptimalLineup(
   let chosen: ProjectedPlayer[] | null = null
   let chosenSerial = Infinity
   let chosenScore = -Infinity
+  let chosenNameKey = "￿"
 
+  // Deterministic tiebreaker chain so the same inputs always yield the same
+  // recommendation (page reload should not flip the lineup):
+  //   1. Highest score within the 5% band (set above by `threshold`).
+  //   2. Lowest serial sum.
+  //   3. Higher score (still within the band).
+  //   4. Alphabetic on the sorted-fullName join — vanishingly rare in practice
+  //      but guarantees stability when 1–3 are exact ties.
   for (const combo of allCombos) {
     const score = combo.reduce((acc, p) => acc + p.projPoints, 0)
     if (score < threshold) continue
     const serialSum = combo.reduce((acc, p) => acc + p.bestSerial, 0)
-    if (
-      serialSum < chosenSerial ||
-      (serialSum === chosenSerial && score > chosenScore)
-    ) {
+    const nameKey = combo
+      .map(p => p.fullName)
+      .sort()
+      .join("|")
+
+    let better = false
+    if (serialSum < chosenSerial) better = true
+    else if (serialSum === chosenSerial) {
+      if (score > chosenScore) better = true
+      else if (score === chosenScore && nameKey < chosenNameKey) better = true
+    }
+
+    if (better) {
       chosen = combo
       chosenSerial = serialSum
       chosenScore = score
+      chosenNameKey = nameKey
     }
   }
 
