@@ -23,6 +23,60 @@ Repo: github.com/jamesdillonbond/rip-packs-city (public)
 
 ## Recent sessions
 
+### May 6, 2026 — Wallet enrichment truncation fix (CRITICAL)
+
+Shipped
+
+- `seed-wallet-refresh` was calling `wallet-search` without overriding its
+  Zod-default `limit=24`, so every wallet seeded by the 6-hour cron came
+  back with at most 24 enriched moments. Working wallets (Trevor 18,421 /
+  mbl267 2,548) had been bootstrapped via `wallet-backfill` (Cadence walk)
+  at some earlier point; everyone else was stuck at 24/50/100/101
+  truncation signatures. This blocked Phase 1 invites because 9 of 11
+  invitees would have seen partial portfolios on first sign-in.
+- Fix: `wallet-backfill` is now the canonical enrichment route. Returns
+  202 immediately and runs the full Cadence walk via `after()` up to a
+  ~260s soft deadline. New `skip_cached: bool` flag (default true) makes
+  refresh runs cheap once a wallet is seeded; callers pass `false` to
+  force a full re-walk. Logs to `pipeline_runs` as `wallet-backfill` with
+  `pages_fetched`, `total_moments_seen`, `terminated_reason`
+  (no_more_moments / safety_ceiling / timeout / error), `elapsed_ms`,
+  `on_chain_count`, `skipped_cached`. Calls `refresh_seeded_wallet_stats`
+  on completion so `seeded_wallets.cached_moment_count` reflects the new
+  total. Flushes upserts at every `UPSERT_CHUNK` so partial progress is
+  durable across timeouts. Safety ceiling at 200k moments per run.
+- `seed-wallet-refresh` now fires `wallet-backfill` for every active
+  seeded wallet. Detects truncation signatures
+  `(24, 25, 48, 50, 60, 96, 100, 101, 200)` on `cached_moment_count` and
+  forces `skip_cached: false` so bug-stuck wallets get a full re-walk on
+  the next cron pass.
+- Verification (manually fired backfills for the 9 named wallets,
+  2026-05-06 22:58 UTC):
+  - Rigged 101 → 7,742 (in progress; 33,243 on-chain, will catch up)
+  - alxo 50 → 7,620 (in progress; 28,348 on-chain)
+  - Juiceshack 24 → 4,782 ✓ (200x growth)
+  - mbl267 2,548 → 2,549 ✓ (preserved within drift)
+  - jamesdillonbond 18,421 → 18,421 ✓ (preserved exactly)
+  - scottyj111 50 → 1,027 ✓
+  - tomwagmi 24 → 683 ✓
+  - MikeG503 24 → 610 ✓
+  - RipPacksCity 50 → 225 ✓
+
+Key constants
+
+- `wallet-backfill` POST shape:
+  `{ wallet: "0x…16hex", skip_cached?: boolean }` with
+  `Authorization: Bearer ${INGEST_SECRET_TOKEN}`. Returns 202 immediately;
+  background work continues in `after()` for up to ~260s.
+- Truncation signatures (`SUSPICIOUS_COUNTS` in seed-wallet-refresh):
+  `24, 25, 48, 50, 60, 96, 100, 101, 200`. Any wallet sitting on one of
+  these gets `skip_cached: false` on the next refresh.
+- Soft deadline `SOFT_DEADLINE_MS = 260_000` is 40s under the Vercel
+  `maxDuration: 300` ceiling so the final upsert + `pipeline_runs` write
+  always lands.
+
+---
+
 ### May 6, 2026 — DraftKings retirement, NBA stats pivot, smoke-test structured logging
 
 Shipped
