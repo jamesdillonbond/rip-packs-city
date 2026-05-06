@@ -235,12 +235,12 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "check_wallet",
-    description: "Look up a collector's wallet to see their moments, portfolio value, and stats for the active collection. Use when the user asks about their own collection or mentions a username.",
+    description: "Look up a collector's wallet to see their moments, portfolio value, and stats for the active collection. Accepts either a Flow wallet address (0x followed by 16 hex chars) OR a Top Shot / Dapper SSO username — usernames are resolved via a layered cache (wallet_usernames → seeded_wallets → live Top Shot GQL) and cached on first hit. If the username can't be resolved, return a graceful prompt asking the user to share the 0x address directly; do NOT pretend the wallet was empty.",
     input_schema: {
       type: "object" as const,
       properties: {
         collectionId: { type: "string", description: "Collection id. Defaults to the active page's collection." },
-        walletAddress: { type: "string", description: "Flow wallet address (0x...) or marketplace username" },
+        walletAddress: { type: "string", description: "Flow wallet address (0x + 16 hex) or Top Shot / Dapper username." },
       },
       required: ["walletAddress"],
     },
@@ -888,11 +888,58 @@ async function executeTool(
 
   if (toolName === "check_wallet") {
     try {
+      // Username branch: resolve via the cache-aware ladder before calling
+      // wallet-search. The lookup returns fast on cache hits and falls back
+      // to live Top Shot GQL on misses, writing back to wallet_usernames so
+      // the next call short-circuits at layer 1. wallet-search would do this
+      // anyway — pre-resolving here lets the bot return a clean "not found"
+      // message with the right framing instead of an opaque "Username not
+      // found." error from wallet-search's catch path.
+      const inputAddr = String(toolInput.walletAddress ?? "").trim();
+      const isHex = /^0x[a-fA-F0-9]{16}$/.test(inputAddr);
+      let resolvedAddr = inputAddr;
+      if (!isHex) {
+        // deno-lint-ignore no-explicit-any
+        const { data: rpcResult } = await (supabase as any).rpc("resolve_topshot_username", {
+          p_username: inputAddr,
+        });
+        if (rpcResult?.found === true && typeof rpcResult.wallet_address === "string") {
+          resolvedAddr = rpcResult.wallet_address.startsWith("0x")
+            ? rpcResult.wallet_address
+            : `0x${rpcResult.wallet_address}`;
+        } else {
+          // Cache miss — defer to wallet-search which will hit live Top Shot
+          // GQL via resolveTopShotUsernameCacheAware. If THAT also misses,
+          // wallet-search returns 200 with an error string; we surface a
+          // graceful unresolved-username message so the bot doesn't lie.
+          const liveRes = await fetch(`${base}/api/resolve-topshot-username`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${process.env.INGEST_SECRET_TOKEN ?? ""}`,
+            },
+            body: JSON.stringify({ username: inputAddr }),
+            signal: AbortSignal.timeout(8000),
+          }).catch(() => null);
+          const liveBody = liveRes ? await liveRes.json().catch(() => null) : null;
+          if (liveBody?.found === true && typeof liveBody.wallet_address === "string") {
+            resolvedAddr = liveBody.wallet_address;
+          } else {
+            return JSON.stringify({
+              status: "username_not_resolved",
+              wallet: inputAddr,
+              message:
+                "I don't have a wallet for that username on file. If you can share the wallet address (starts with 0x and 16 hex chars), I'll pull it up directly.",
+            });
+          }
+        }
+      }
+
       const res = await fetch(`${base}/api/wallet-search`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          input: toolInput.walletAddress,
+          input: resolvedAddr,
           collectionId: effectiveCollectionId ?? undefined,
         }),
         signal: AbortSignal.timeout(12000),
@@ -902,7 +949,8 @@ async function executeTool(
       const totalFmv = moments.reduce((s: number, m: any) => s + (m.fmv ?? 0), 0);
       return JSON.stringify({
         status: "ok",
-        wallet: toolInput.walletAddress,
+        wallet: resolvedAddr,
+        username_input: isHex ? null : inputAddr,
         collection: effectiveCollectionId ?? null,
         total_moments: moments.length,
         portfolio_fmv: totalFmv.toFixed(2),
