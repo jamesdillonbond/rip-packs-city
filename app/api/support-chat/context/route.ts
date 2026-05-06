@@ -1,6 +1,8 @@
 // app/api/support-chat/context/route.ts
 // Provides pre-load context for the chat widget on open.
-// Returns: dailyDeal, marketPulse, returningUser, lastTopics for session continuity.
+// Returns: dailyDeal, marketPulse, returningUser, returningBetaTester,
+// conversationCount, lastTopics, lastPlayerSearched, lastOpenFeedback,
+// pageWelcome, pageSuggestions.
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -20,18 +22,11 @@ function tierLabel(raw: string): string {
   );
 }
 
-function seriesLabel(n: number): string {
-  const map: Record<number, string> = {
-    0: "S1", 2: "S2", 3: "Sum 21", 4: "S3", 5: "S4",
-    6: "23-24", 7: "24-25", 8: "25-26",
-  };
-  return map[n] ?? `S${n}`;
-}
-
 export async function GET(req: NextRequest) {
   const sessionId = req.nextUrl.searchParams.get("sessionId");
+  const ownerKey = req.nextUrl.searchParams.get("ownerKey");
 
-  // ── 1. Returning user detection ────────────────────────────────────────────
+  // ── 1. Per-session continuity (chat_sessions) ──────────────────────────────
   let returningUser = false;
   let lastTopics: string[] = [];
   let lastPlayerSearched: string | null = null;
@@ -55,6 +50,7 @@ export async function GET(req: NextRequest) {
         .update({
           last_seen_at: new Date().toISOString(),
           conversation_count: (session.conversation_count ?? 1) + 1,
+          ...(ownerKey ? { owner_key: ownerKey } : {}),
         })
         .eq("session_id", sessionId);
     } else {
@@ -64,9 +60,50 @@ export async function GET(req: NextRequest) {
           last_seen_at: new Date().toISOString(),
           first_seen_at: new Date().toISOString(),
           conversation_count: 1,
+          ...(ownerKey ? { owner_key: ownerKey } : {}),
         },
         { onConflict: "session_id" }
       );
+    }
+  }
+
+  // ── 1b. Cross-session continuity for signed-in beta testers ────────────────
+  // When ownerKey is present, override conversationCount with the owner_key
+  // total (cross-session) so a returning beta tester sees a warm welcome
+  // even on a fresh sessionStorage. Also surface their most recent open
+  // feedback row from beta_feedback_inbox.
+  let returningBetaTester = false;
+  let lastOpenFeedback: {
+    id: number;
+    feedback_type: string | null;
+    feedback_summary: string | null;
+    feedback_status: string | null;
+    created_at: string | null;
+  } | null = null;
+  if (ownerKey) {
+    try {
+      const { count } = await supabase
+        .from("support_conversations")
+        .select("*", { count: "exact", head: true })
+        .eq("owner_key", ownerKey);
+      if (typeof count === "number") {
+        conversationCount = count;
+        returningBetaTester = count > 0;
+      }
+    } catch (err) {
+      console.error("[context] cross-session count error:", err);
+    }
+    try {
+      const { data: feedbackRow } = await supabase
+        .from("beta_feedback_inbox")
+        .select("id, feedback_type, feedback_summary, feedback_status, created_at")
+        .eq("owner_key", ownerKey)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (feedbackRow) lastOpenFeedback = feedbackRow;
+    } catch (err) {
+      console.error("[context] last open feedback lookup error:", err);
     }
   }
 
@@ -85,7 +122,6 @@ export async function GET(req: NextRequest) {
       const deals = sniperData.deals ?? [];
       if (deals.length > 0) {
         const d = deals[0];
-        console.log("[context] daily deal raw:", JSON.stringify({ setName: d.setName, seriesName: d.seriesName, playerName: d.playerName }));
         dailyDeal = {
           player_name: d.playerName,
           low_ask: d.askPrice,
@@ -103,7 +139,6 @@ export async function GET(req: NextRequest) {
     console.error("[context] dailyDeal sniper-feed error:", err);
   }
 
-  // Fallback: direct cached_listings if sniper feed returned nothing
   if (!dailyDeal) {
     try {
       const { data: fallbackRows } = await supabase
@@ -133,7 +168,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // ── 3. Market pulse (via get_market_pulse RPC, fallback to direct count) ────
+  // ── 3. Market pulse ────────────────────────────────────────────────────────
   let marketPulse: string | null = null;
   try {
     const { data: pulse } = await supabase.rpc("get_market_pulse");
@@ -150,7 +185,6 @@ export async function GET(req: NextRequest) {
     console.error("[context] marketPulse RPC error:", err);
   }
 
-  // ── 3b. FMV movers — append heating-up signal to marketPulse ────────────────
   try {
     const { data: movers } = await supabase.rpc("get_fmv_movers", {
       lookback_interval: "24 hours",
@@ -170,7 +204,6 @@ export async function GET(req: NextRequest) {
     console.error("[context] fmv_movers error:", err);
   }
 
-  // Fallback: direct count from cached_listings if RPC returned nothing
   if (!marketPulse) {
     try {
       const { count } = await supabase
@@ -185,48 +218,43 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // ── 4. Welcome message (page-aware) ────────────────────────────────────────
-  const pageContext = req.nextUrl.searchParams.get("page") ?? "";
-  const dealSnippet = dailyDeal
-    ? `Top deal: ${(dailyDeal as any).player_name} ${(dailyDeal as any).set_name}, $${(dailyDeal as any).low_ask} — ${(dailyDeal as any).discount_pct}% below FMV.`
-    : null;
+  // ── 4. Welcome message + page suggestions (beta posture) ───────────────────
+  // The bot's static welcome is rendered client-side in SupportChat for instant
+  // paint; this pageWelcome is a server-side fallback for clients that consume
+  // the field. We keep it terse and beta-flavored so it can't override the
+  // client-side voice.
+  const pageContext = req.nextUrl.searchParams.get("pageContext") ?? req.nextUrl.searchParams.get("page") ?? "";
 
-  let pageWelcome = "I can help you find deals, check FMV on any moment, or answer questions about the platform.";
-
-  if (returningUser && lastPlayerSearched) {
-    pageWelcome = `Welcome back! Last time you were looking at ${lastPlayerSearched} moments — want me to check for new deals?`;
-  } else if (returningUser) {
-    pageWelcome = "Welcome back! Want me to surface today's best deals, or is there something specific you're hunting?";
-  } else if (pageContext.includes("sniper") && dealSnippet) {
-    pageWelcome = `\u{1F525} ${dealSnippet} Want me to find more?`;
-  } else if (pageContext.includes("sniper")) {
-    pageWelcome = "The sniper feed shows live deals below FMV. I can help you filter or find specific players.";
-  } else if (pageContext.includes("collection")) {
-    pageWelcome = "Connect your wallet to see your portfolio FMV and near-complete sets. I can analyze any wallet — just paste a username.";
-  } else if (pageContext.includes("market")) {
-    pageWelcome = "Browse the full marketplace here. Try filtering by badge type or discount to find value." + (dealSnippet ? ` ${dealSnippet}` : "");
-  } else if (pageContext.includes("sets")) {
-    pageWelcome = "I can find the cheapest path to completing your nearest set. Paste your username and I'll check.";
-  } else if (pageContext.includes("packs")) {
-    pageWelcome = "Check the EV calculator to find the best-value packs. I can compare pack EVs if you need help deciding.";
-  } else if (pageContext.includes("overview")) {
-    pageWelcome = "Welcome to RPC — your collector intel hub. Sniper finds deals, Collection analyzes your wallet, and Market lets you browse everything." + (dealSnippet ? ` ${dealSnippet}` : "");
-  } else if (dealSnippet) {
-    pageWelcome = `\u{1F44B} ${dealSnippet} Want me to find more?`;
+  let pageWelcome = "Closed beta — I'm here for support, Q&A, and feedback for Trevor. Deals and FMV too if you want.";
+  if (returningBetaTester && lastOpenFeedback?.feedback_summary) {
+    const status = String(lastOpenFeedback.feedback_status ?? "new");
+    if (status === "shipped") {
+      pageWelcome = `Welcome back. Your feedback "${lastOpenFeedback.feedback_summary}" shipped — thanks for the catch.`;
+    } else if (status === "in_progress") {
+      pageWelcome = `Welcome back. Your feedback "${lastOpenFeedback.feedback_summary}" is in progress.`;
+    } else {
+      pageWelcome = `Welcome back. Your last feedback "${lastOpenFeedback.feedback_summary}" is still in the queue.`;
+    }
+  } else if (returningUser && lastPlayerSearched) {
+    pageWelcome = `Welcome back. Last time you were looking at ${lastPlayerSearched} — anything to follow up on, or something new?`;
   }
 
-  const suggestions =
-    returningUser && lastPlayerSearched
-      ? [`Find me ${lastPlayerSearched} deals`, "Show top discounts right now", "How is FMV calculated?", "What are badges?"]
-      : ["Find me deals under $10", "Show top discounts right now", "How is FMV calculated?", "What are badges?"];
+  // Beta-flavored suggestions. Return the same shape SupportChat already
+  // expects; the client-side PAGE_DEFAULTS map provides per-page fallbacks
+  // before this fetch lands, so these can stay generic.
+  const suggestions = returningBetaTester
+    ? ["Report a bug", "Suggest a feature", "Share feedback", "Find me a deal"]
+    : ["Report a bug", "Suggest a feature", "Something looks off", "How does X work?"];
 
   return NextResponse.json({
     dailyDeal,
     marketPulse,
     returningUser,
+    returningBetaTester,
     conversationCount,
     lastTopics,
     lastPlayerSearched,
+    lastOpenFeedback,
     pageWelcome,
     pageSuggestions: suggestions,
   });
