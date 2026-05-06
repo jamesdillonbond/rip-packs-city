@@ -6,8 +6,11 @@
 //   1. Run the email through `check_email_allowed` (service-role only RPC).
 //   2. If not on the allow-list → 403 { ok: false, reason: "not_on_allow_list" }
 //      so the login page can show the waitlist message + link to /early-access.
-//   3. If allowed → call signInWithOtp on the server with the same redirect URL
-//      a client call would have used, return 200 { ok: true }.
+//   3. If allowed → call signInWithOtp on the server with an absolute
+//      emailRedirectTo pointing at /api/auth/callback (with the optional
+//      redirect query param appended). Returning a relative URL or omitting
+//      this option causes Supabase to fall back to the project Site URL,
+//      which won't hit the callback route.
 //
 // check_email_allowed is restricted to service-role and must NEVER be called
 // from client code.
@@ -20,7 +23,8 @@ function buildCallbackUrl(req: NextRequest, redirect?: string | null): string {
   const envOrigin = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? ""
   const reqOrigin = new URL(req.url).origin
   const origin = envOrigin || reqOrigin
-  const safeRedirect = typeof redirect === "string" && redirect.startsWith("/") ? redirect : null
+  const safeRedirect =
+    typeof redirect === "string" && redirect.startsWith("/") ? redirect : null
   return (
     `${origin}/api/auth/callback` +
     (safeRedirect ? `?redirect=${encodeURIComponent(safeRedirect)}` : "")
@@ -71,6 +75,17 @@ export async function POST(req: NextRequest) {
   )
 
   const emailRedirectTo = buildCallbackUrl(req, redirect)
+
+  // Sanity: emailRedirectTo MUST be absolute. If it isn't, Supabase silently
+  // falls back to the project Site URL and our callback never runs.
+  if (!/^https?:\/\//i.test(emailRedirectTo)) {
+    console.error("[request-magic-link] non-absolute emailRedirectTo computed", { emailRedirectTo })
+    return NextResponse.json(
+      { ok: false, error: "Sign-in service is misconfigured. Please contact support." },
+      { status: 500 }
+    )
+  }
+
   const { error: otpError } = await supabaseAuth.auth.signInWithOtp({
     email,
     options: {
