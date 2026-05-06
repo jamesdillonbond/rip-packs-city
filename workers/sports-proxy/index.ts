@@ -34,12 +34,25 @@ const NBA_HEADERS: Record<string, string> = {
   "x-nba-stats-token": "true",
 };
 
+// Akamai bot detection on www.draftkings.com upgraded between 2026-05-06
+// 16:42 UTC and 17:09 UTC and started 403'ing the prior fingerprint
+// (UA + Accept + Accept-Language + Origin + Referer was no longer enough).
+// The full Chrome 124 fingerprint below — sec-ch-ua / sec-fetch-* / a more
+// realistic Accept and the /lobby referer — passes Akamai today. Applied to
+// both upstream fetches (lobby/getcontests and draftgroups/v1/draftables).
 const DK_HEADERS: Record<string, string> = {
-  "User-Agent": NBA_USER_AGENT,
-  "Accept": "application/json",
+  "User-Agent":
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Accept": "application/json, text/plain, */*",
   "Accept-Language": "en-US,en;q=0.9",
+  "Referer": "https://www.draftkings.com/lobby",
   "Origin": "https://www.draftkings.com",
-  "Referer": "https://www.draftkings.com/",
+  "Sec-Ch-Ua": "\"Chromium\";v=\"124\", \"Not(A:Brand\";v=\"99\"",
+  "Sec-Ch-Ua-Mobile": "?0",
+  "Sec-Ch-Ua-Platform": "\"macOS\"",
+  "Sec-Fetch-Dest": "empty",
+  "Sec-Fetch-Mode": "cors",
+  "Sec-Fetch-Site": "same-origin",
 };
 
 const CORS_HEADERS = {
