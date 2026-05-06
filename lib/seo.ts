@@ -9,7 +9,7 @@ const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.c
 const ROOT_TITLE =
   'Rip Packs City \u2014 The Intelligence Layer for Flow Collectibles'
 const ROOT_DESCRIPTION =
-  'The intelligence layer for Flow collectibles. FMV, deals, and portfolio analytics for NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike. No signup required.'
+  'The intelligence layer for Flow collectibles — FMV, deals, and portfolio analytics for Top Shot, All Day, Pinnacle, Golazos, and UFC Strike.'
 
 export const rootMetadata: Metadata = {
   metadataBase: new URL(BASE_URL),
