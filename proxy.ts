@@ -5,11 +5,13 @@
 //
 // Order of operations on every matched request:
 //   1. CORS preflight (OPTIONS) for the public-CORS API paths.
-//   2. Bearer-token bypass — if Authorization carries INGEST_SECRET_TOKEN or
-//      CRON_SECRET, short-circuit ALL further middleware logic. This keeps
-//      cron-job.org and internal pipeline jobs (/api/seed-wallet-refresh,
-//      /api/ingest, /api/listing-cache*, /api/sales-indexer*,
-//      /api/flowty-tx-scanner, /api/fmv-recalc, etc.) reachable.
+//   2. Bypass-token check — if Authorization: Bearer <X> OR ?token=<X> carries
+//      INGEST_SECRET_TOKEN or CRON_SECRET, short-circuit ALL further middleware
+//      logic. Keeps cron-job.org and internal pipeline jobs reachable
+//      (/api/seed-wallet-refresh, /api/ingest, /api/listing-cache*,
+//      /api/sales-indexer*, /api/flowty-tx-scanner, /api/fmv-recalc, etc.),
+//      regardless of whether the cron is configured with a header or a query
+//      param.
 //   3. Per-IP rate limiting on /api/* (existing behaviour — preserved).
 //   4. Public-bypass paths (homepage, /login, /early-access, /auth, the
 //      corresponding API surfaces, /_next, static assets).
@@ -78,21 +80,35 @@ function cleanupRateLimitMap() {
 
 let lastCleanup = Date.now()
 
-// ── Bearer-token bypass helper ──────────────────────────────────────────────
-// Returns true iff the request carries an Authorization: Bearer <X> header
-// where X exactly matches INGEST_SECRET_TOKEN or CRON_SECRET (whichever are
-// set). NEVER logs the token. Returns false silently for any other shape —
-// missing header and wrong token both fall through to the normal middleware
-// path so attackers can't probe for a valid token via response-shape diffing.
-function hasValidBearer(request: NextRequest): boolean {
-  const authHeader = request.headers.get("authorization") || ""
-  if (!authHeader.startsWith("Bearer ")) return false
-  const token = authHeader.slice(7)
+// ── Bypass-token helper ────────────────────────────────────────────────────
+// Returns true iff EITHER:
+//   • Authorization: Bearer <X> where X matches INGEST_SECRET_TOKEN or
+//     CRON_SECRET, OR
+//   • ?token=<X> where X matches the same.
+// NEVER logs the token value. Returns false silently for any other shape —
+// missing/wrong header and missing/wrong query param all fall through to the
+// normal middleware path so attackers can't probe for a valid token via
+// response-shape diffing. Does NOT consume or strip either input — downstream
+// routes still see the original Authorization header and ?token= query param
+// for their own re-validation.
+function tokenMatches(token: string): boolean {
   if (!token) return false
   const ingest = process.env.INGEST_SECRET_TOKEN
   const cron = process.env.CRON_SECRET
   if (ingest && token === ingest) return true
   if (cron && token === cron) return true
+  return false
+}
+
+function hasValidBypassToken(request: NextRequest): boolean {
+  // Header form
+  const authHeader = request.headers.get("authorization") || ""
+  if (authHeader.startsWith("Bearer ")) {
+    if (tokenMatches(authHeader.slice(7))) return true
+  }
+  // Query-param form
+  const queryToken = request.nextUrl.searchParams.get("token") || ""
+  if (queryToken && tokenMatches(queryToken)) return true
   return false
 }
 
@@ -250,8 +266,8 @@ function carryCookies(target: NextResponse, source: NextResponse) {
   })
 }
 
-// CORS-on-success header writer (factored so the bearer-bypass and the
-// gated-pass paths share identical handling).
+// CORS-on-success header writer (factored so the bypass and the gated-pass
+// paths share identical handling).
 function applyCorsHeaders(request: NextRequest, response: NextResponse, isCorsApiRoute: boolean) {
   if (!isCorsApiRoute) return
   const origin = request.headers.get("origin") || ""
@@ -288,16 +304,18 @@ export async function proxy(request: NextRequest) {
     })
   }
 
-  // ── Bearer-token bypass ─────────────────────────────────────────────────
+  // ── Bypass-token short-circuit (header OR query param) ──────────────────
   // Cron-job.org and internal pipeline jobs hit /api/seed-wallet-refresh,
   // /api/ingest, /api/listing-cache*, /api/sales-indexer*, /api/fmv-recalc,
   // /api/flowty-tx-scanner, etc. with INGEST_SECRET_TOKEN (or CRON_SECRET for
-  // generic crons). Without this short-circuit the auth gate redirects every
-  // cron call to /login and the data pipeline silently dies within ~30 min.
-  // Runs BEFORE rate limiting, public-path check, and any session lookup.
-  // The Authorization header is read but not consumed — downstream route
-  // handlers still see and re-validate it for defense-in-depth.
-  if (hasValidBearer(request)) {
+  // generic crons). Production cron config is mixed: some send the secret as
+  // an Authorization: Bearer header, others as a ?token=… query param.
+  // Without this short-circuit the auth gate redirects every cron call to
+  // /login and the data pipeline silently dies within ~30 min. Runs BEFORE
+  // rate limiting, public-path check, and any session lookup. Neither input
+  // is consumed or stripped — downstream route handlers still see and
+  // re-validate them for defense-in-depth.
+  if (hasValidBypassToken(request)) {
     const passResponse = NextResponse.next()
     applyCorsHeaders(request, passResponse, isCorsApiRoute)
     return applySecurityHeaders(passResponse)
