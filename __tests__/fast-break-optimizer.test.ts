@@ -116,6 +116,27 @@ describe("buildOptimalLineup", () => {
     const lineup = buildOptimalLineup(players, 2, false)
     expect(lineup?.captainNbaPlayerId).toBeNull()
   })
+
+  it("is deterministic when score and serial sum tie: alphabetic name key wins", () => {
+    // Four players, all 40 projPoints / serial 5. All C(4,2)=6 lineups have
+    // identical 80 score and 10 serial. Among them "Adam|Bob" is the
+    // alphabetically-first sorted-name key, so it must win regardless of input order.
+    const base = (id: string, name: string): ProjectedPlayer => mkPlayer({
+      id,
+      fullName: name,
+      projPoints: 40,
+      bestSerial: 5,
+    })
+    const players = [base("p2", "Bob"), base("p4", "Yvonne"), base("p1", "Adam"), base("p3", "Zoe")]
+    const reordered = [base("p3", "Zoe"), base("p1", "Adam"), base("p2", "Bob"), base("p4", "Yvonne")]
+    const a = buildOptimalLineup(players, 2, false)
+    const b = buildOptimalLineup(reordered, 2, false)
+    expect(a).not.toBeNull()
+    expect(b).not.toBeNull()
+    const ids = (l: typeof a) => l!.players.map(p => p.fullName).sort().join("|")
+    expect(ids(a)).toBe("Adam|Bob")
+    expect(ids(a)).toBe(ids(b))
+  })
 })
 
 describe("suggestCaptainAlternates", () => {
