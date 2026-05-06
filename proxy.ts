@@ -13,8 +13,8 @@
 //      regardless of whether the cron is configured with a header or a query
 //      param.
 //   3. Per-IP rate limiting on /api/* (existing behaviour — preserved).
-//   4. Public-bypass paths (homepage, /login, /early-access, /auth, the
-//      corresponding API surfaces, /_next, static assets).
+//   4. Public-bypass paths (homepage, /login, /early-access, /auth, /admin,
+//      the marketing-surface API routes, /_next, static assets).
 //   5. Authenticated Supabase session check (else → /login?next=<path>).
 //   6. Allow-list cache (cookie) → service-role check_email_allowed RPC.
 //      On revocation: signOut + /login?error=access_revoked.
@@ -122,26 +122,40 @@ function isPublicPath(pathname: string): boolean {
   if (pathname === "/robots.txt") return true
   if (pathname === "/sitemap.xml") return true
 
+  // ── Marketing / auth surface pages ───────────────────────────────────
   // /login + subpaths
   if (pathname === "/login" || pathname.startsWith("/login/")) return true
   // /early-access + subpaths
   if (pathname === "/early-access" || pathname.startsWith("/early-access/")) return true
   // /auth + subpaths (covers /auth/confirm and similar)
   if (pathname === "/auth" || pathname.startsWith("/auth/")) return true
+  // /admin pages — enforce their own RPC_ADMIN_TOKEN bearer auth at the page
+  // / route-handler level, so they bypass the user-session middleware. Note:
+  // this covers /admin/allow-list, /admin/feedback, etc.
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) return true
 
-  // /api/early-access + subpaths
-  if (pathname === "/api/early-access" || pathname.startsWith("/api/early-access/")) return true
-  // /api/auth + subpaths
+  // ── API routes that anon clients are allowed to hit ──────────────────
+  // /api/auth + subpaths (sign-in flow)
   if (pathname === "/api/auth" || pathname.startsWith("/api/auth/")) return true
+  // /api/early-access + subpaths (waitlist intake)
+  if (pathname === "/api/early-access" || pathname.startsWith("/api/early-access/")) return true
   // /api/admin — has its own RPC_ADMIN_TOKEN bearer check
   if (pathname === "/api/admin" || pathname.startsWith("/api/admin/")) return true
   // /api/cron — external cron services hit these with CRON_SECRET
   if (pathname === "/api/cron" || pathname.startsWith("/api/cron/")) return true
+  // /api/public/* — explicitly anon-safe routes (e.g. /api/public/profile/<u>
+  // for the demo profile lookup the homepage links to)
+  if (pathname === "/api/public" || pathname.startsWith("/api/public/")) return true
+  // /api/wallet-search — exact path only; the marketing search box hits it
+  if (pathname === "/api/wallet-search") return true
+  // /api/support-chat + subpaths — concierge is intentionally public so
+  // unsigned visitors can ask questions and convert
+  if (pathname === "/api/support-chat" || pathname.startsWith("/api/support-chat/")) return true
+  // /api/cart + subpaths — homepage cart functionality
+  if (pathname === "/api/cart" || pathname.startsWith("/api/cart/")) return true
 
-  // _next + subpaths
+  // ── Framework + static ───────────────────────────────────────────────
   if (pathname === "/_next" || pathname.startsWith("/_next/")) return true
-
-  // Static asset extensions
   if (STATIC_EXT_RX.test(pathname)) return true
 
   return false
