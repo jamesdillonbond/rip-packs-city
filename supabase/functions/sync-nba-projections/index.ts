@@ -1,20 +1,16 @@
-// sync-nba-projections — pulls today's NBA DraftKings projections AND today's
-// games from rpc-sports-proxy (which fronts api.draftkings.com — Vercel/
-// Supabase egress is blocked there). Single proxy call, two writes:
-//   1. nba_games (upsert by external_game_id) — replaces the retired
-//      sync-nba-games pipeline. DK's `competition` field on each draftable is
-//      the single source of truth now.
+// sync-nba-projections — pulls today's NBA projections AND today's games
+// from rpc-sports-proxy. As of 2026-05-06, the source is stats.nba.com
+// last-5-games per-game averages converted to DraftKings fantasy points
+// via the standard formula (DraftKings is unreachable through Akamai). The
+// proxy returns the same { gameDate, players, games } shape as before, so
+// the only edits here are the route name and the new source label.
+//
+// Single proxy call, two writes:
+//   1. nba_games (upsert by external_game_id) — DK's competition payload is
+//      replaced by stats.nba.com scoreboardV2 GameHeader rows.
 //   2. nba_player_projections (upsert by nba_player_id+game_id+source).
 // Resolves players against nba_players.full_name_normalized first, then
 // nba_player_aliases, then auto-INSERTs a new nba_players row if neither hits.
-//
-// The proxy returns an already-normalized shape:
-//   { draftGroupId, gameDate,
-//     players: [{name, teamAbbr, position, salary, status, projFp,
-//                opponentAbbr, gameStartTime}],
-//     games:   [{gameId, name, homeAbbr, awayAbbr, startTime, gameDate}] }
-// so all the DK shape parsing lives in workers/sports-proxy. This function
-// just consumes the cleaner output.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
 
@@ -28,10 +24,12 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 const SPORTS_PROXY_URL = Deno.env.get("SPORTS_PROXY_URL") ?? ""
 const SPORTS_PROXY_SECRET = Deno.env.get("SPORTS_PROXY_SECRET") ?? ""
 
-const FUNCTION_VERSION = 3
+const FUNCTION_VERSION = 4
 const PIPELINE = "sync-nba-projections"
 const COLLECTION_SLUG = "nba_top_shot"
-const SOURCE = "draftkings"
+const SOURCE = "nba-stats-rolling5"
+const PROJECTION_METHOD = "rolling-5-game-fantasy-average"
+const PROXY_ROUTE = "/nba/rolling-projections"
 
 interface ProxyPlayer {
   name: string
@@ -40,8 +38,17 @@ interface ProxyPlayer {
   salary: number | null
   status: string | null
   projFp: number | null
+  proj_points?: number | null
+  proj_rebounds?: number | null
+  proj_assists?: number | null
+  proj_threes?: number | null
+  proj_steals?: number | null
+  proj_blocks?: number | null
+  proj_turnovers?: number | null
+  proj_minutes?: number | null
   opponentAbbr: string | null
   gameStartTime: string | null
+  gp?: number | null
 }
 
 interface ProxyGame {
@@ -58,6 +65,9 @@ interface ProxyResponse {
   gameDate: string
   players: ProxyPlayer[]
   games?: ProxyGame[]
+  source?: string
+  season?: string
+  seasonType?: string
   note?: string
 }
 
@@ -301,14 +311,17 @@ async function runWork(startedAtIso: string, started: number) {
 
   let res: Response
   try {
-    res = await fetch(`${SPORTS_PROXY_URL.replace(/\/+$/g, "")}/nba/draftkings-projections`, {
+    res = await fetch(`${SPORTS_PROXY_URL.replace(/\/+$/g, "")}${PROXY_ROUTE}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-Proxy-Secret": SPORTS_PROXY_SECRET,
       },
       body: JSON.stringify({}),
-      signal: AbortSignal.timeout(20_000),
+      // stats.nba.com latency is 3-10s per call; the worker fans them in
+      // parallel, but tail latency on either endpoint can push the round-trip
+      // past 20s. 45s gives slack without lingering across cron cycles.
+      signal: AbortSignal.timeout(45_000),
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -317,7 +330,7 @@ async function runWork(startedAtIso: string, started: number) {
       rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: false,
       error: `proxy_fetch_failed: ${msg}`,
-      extra: { function_version: FUNCTION_VERSION, game_date: gameDate, elapsed_ms: Date.now() - started },
+      extra: { function_version: FUNCTION_VERSION, game_date: gameDate, source: SOURCE, elapsed_ms: Date.now() - started },
     })
     return
   }
@@ -331,7 +344,7 @@ async function runWork(startedAtIso: string, started: number) {
       rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: false,
       error: `proxy_not_json: ${err instanceof Error ? err.message : String(err)}`,
-      extra: { function_version: FUNCTION_VERSION, game_date: gameDate, http_status: res.status, elapsed_ms: Date.now() - started },
+      extra: { function_version: FUNCTION_VERSION, game_date: gameDate, source: SOURCE, http_status: res.status, elapsed_ms: Date.now() - started },
     })
     return
   }
@@ -346,6 +359,7 @@ async function runWork(startedAtIso: string, started: number) {
       extra: {
         function_version: FUNCTION_VERSION,
         game_date: gameDate,
+        source: SOURCE,
         proxy_error: errBody.error ?? null,
         upstream_status: errBody.status ?? null,
         upstream_body_excerpt: errBody.body_excerpt ?? null,
@@ -360,13 +374,17 @@ async function runWork(startedAtIso: string, started: number) {
   const proxyGames = proxy.games ?? []
 
   // Upsert games BEFORE player resolution so loadTodaysGames() picks up newly
-  // inserted rows on the same run. This replaces the retired sync-nba-games
-  // pipeline — DK's competition data is the single source for nba_games now.
+  // inserted rows on the same run. This is the single writer for nba_games
+  // now that sync-nba-games is retired (returns 410).
   const gamesResult = await upsertGames(proxyGames, gameDate, started)
 
   if (scraped.length === 0) {
-    // Distinguish no-slate days (proxy returned note: "no_nba_slate_today")
-    // from genuine fetch successes that still came back empty.
+    // Two flavours of "no players": (a) no slate today (note=no_nba_slate_today,
+    // games=0) and (b) games arrived but stats.nba.com is upstream-blocked
+    // (note=playerstats_upstream_blocked / playerstats_fetch_failed). Either
+    // way, nba_games has been refreshed from cdn.nba.com — only the projection
+    // tier degrades. ok=true keeps the cron green; the note and game counts
+    // tell the operator what actually happened.
     await logRun({
       startedAt: startedAtIso,
       rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
@@ -374,8 +392,10 @@ async function runWork(startedAtIso: string, started: number) {
       extra: {
         function_version: FUNCTION_VERSION,
         game_date: gameDate,
+        source: SOURCE,
         message: proxy.note ?? "no_players_returned",
-        draft_group_id: proxy.draftGroupId ?? null,
+        season: proxy.season ?? null,
+        season_type: proxy.seasonType ?? null,
         games_total: gamesResult.total,
         games_upserted: gamesResult.upserted,
         games_skipped: gamesResult.skipped,
@@ -410,11 +430,20 @@ async function runWork(startedAtIso: string, started: number) {
       game_id: game.gameId,
       game_date: gameDate,
       proj_fp_dk: m.scraped.projFp,
-      proj_points: null,
-      proj_minutes: null,
+      proj_points: m.scraped.proj_points ?? null,
+      proj_rebounds: m.scraped.proj_rebounds ?? null,
+      proj_assists: m.scraped.proj_assists ?? null,
+      proj_threes: m.scraped.proj_threes ?? null,
+      proj_steals: m.scraped.proj_steals ?? null,
+      proj_blocks: m.scraped.proj_blocks ?? null,
+      proj_turnovers: m.scraped.proj_turnovers ?? null,
+      proj_minutes: m.scraped.proj_minutes ?? null,
       injury_status: mapInjuryStatus(m.scraped.status),
-      confidence: "MED",
+      // Stand-in projections from a 5-game rolling window are noisier than DK's
+      // model; tier them as LOW until a real projection feed arrives.
+      confidence: "LOW",
       source: SOURCE,
+      projection_method: PROJECTION_METHOD,
       last_synced_at: nowIso,
     })
   }
@@ -439,7 +468,9 @@ async function runWork(startedAtIso: string, started: number) {
     extra: {
       function_version: FUNCTION_VERSION,
       game_date: gameDate,
-      draft_group_id: proxy.draftGroupId ?? null,
+      source: SOURCE,
+      season: proxy.season ?? null,
+      season_type: proxy.seasonType ?? null,
       rows_parsed: scraped.length,
       players_matched: matched.length,
       players_auto_inserted: autoInsertedCount,
@@ -481,6 +512,7 @@ Deno.serve(async (req: Request) => {
       message: "queued",
       started_at: startedAtIso,
       function_version: FUNCTION_VERSION,
+      source: SOURCE,
       note: "Real results will appear in pipeline_runs within ~30-60s.",
     }),
     { headers: { "Content-Type": "application/json" } },
