@@ -275,6 +275,29 @@ async function loadTodaysGames(gameDate: string): Promise<GameMatch[]> {
   }))
 }
 
+// Looks up nba_games by the external IDs we just upserted so projections
+// bind to the actual slate the upstream emitted, not to today's-ET-date.
+// DK's lobby getcontests filters to "contests not yet started" which during
+// playoffs surfaces tomorrow's slate; today's-ET filtering misses every
+// player. Loading by external_game_id is deterministic regardless of which
+// upstream populated nba_games.
+async function loadGamesByExternalIds(externalIds: string[]): Promise<GameMatch[]> {
+  if (externalIds.length === 0) return []
+  const { data, error } = await supabase
+    .from("nba_games")
+    .select("id, home_team_abbr, away_team_abbr")
+    .in("external_game_id", externalIds)
+  if (error) {
+    console.log(`[sync-nba-projections] nba_games external_id load err: ${error.message}`)
+    return []
+  }
+  return (data ?? []).map(r => ({
+    gameId: r.id as string,
+    homeAbbr: String(r.home_team_abbr),
+    awayAbbr: String(r.away_team_abbr),
+  }))
+}
+
 function findGameForTeam(games: GameMatch[], teamAbbr: string | null): { gameId: string; opponentAbbr: string } | null {
   if (!teamAbbr) return null
   const ta = teamAbbr.trim().toUpperCase()
@@ -718,7 +741,12 @@ async function runWork(startedAtIso: string, started: number) {
     return
   }
 
-  const games = await loadTodaysGames(gameDate)
+  // Bind projections to the games we just upserted, not to today's-ET-date.
+  // DK during playoffs returns tomorrow's slate (game_date 2026-05-08 at 4pm
+  // ET on 2026-05-07) because its lobby filters to "contests not yet
+  // started". Filtering nba_games by today's-ET would miss every player.
+  const upsertedExternalIds = proxyGames.map(g => g.gameId).filter((s): s is string => !!s)
+  const games = await loadGamesByExternalIds(upsertedExternalIds)
   const { matched, noNameSkipped } = await resolveOrInsertPlayers(scraped)
 
   const projectionRows: Record<string, unknown>[] = []
