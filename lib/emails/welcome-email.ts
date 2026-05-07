@@ -111,8 +111,12 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;")
 }
 
+// Email rows show collection-status only. Internal metadata stuffed into
+// the summary by the prewarm orchestrator (e.g. username_resolution_failure)
+// is filtered out here so it doesn't render as a row labelled with a raw
+// snake_case key in the user's welcome email.
 function renderCollectionRows(summary: PrewarmSummary): string {
-  const keys = Object.keys(summary)
+  const keys = Object.keys(summary).filter((k) => k in COLLECTION_LABELS)
   if (keys.length === 0) {
     return `<p style="margin:0;color:${TEXT_MUTED};font-size:14px;line-height:1.55;">
       Your dashboard is ready. Sign in to start exploring.
@@ -231,7 +235,7 @@ export function buildWelcomeEmailHtml(opts: WelcomeEmailOpts): string {
 
 export function buildWelcomeEmailText(opts: WelcomeEmailOpts): string {
   const summary = opts.prewarm_summary ?? {}
-  const keys = Object.keys(summary)
+  const keys = Object.keys(summary).filter((k) => k in COLLECTION_LABELS)
   const lines: string[] = [
     "Welcome to Rip Packs City",
     "",
