@@ -231,6 +231,11 @@ export function getCollection(id: string): Collection | undefined {
   return COLLECTIONS.find(c => c.id === id)
 }
 
+export function getCollectionByUuid(uuid: string): Collection | undefined {
+  if (!uuid) return undefined
+  return COLLECTIONS.find(c => c.supabaseCollectionId === uuid)
+}
+
 export function getPublishedCollection(id: string): Collection | undefined {
   return publishedCollections().find(c => c.id === id)
 }
