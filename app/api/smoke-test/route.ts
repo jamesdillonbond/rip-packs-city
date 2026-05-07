@@ -16,6 +16,29 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
+const INGEST_SECRET_TOKEN = process.env.INGEST_SECRET_TOKEN ?? "";
+
+// Smoke-test fetches must short-circuit the proxy.ts auth gate so probes
+// against authed routes hit the real handler instead of bouncing to
+// /login. The proxy checks `Authorization: Bearer ${INGEST_SECRET_TOKEN}`
+// first and lets matching requests through. smokeFetch injects that
+// bearer + the browser UA + a no-store cache default; per-call init
+// overrides any of those by simply setting the same header/option.
+async function smokeFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers as HeadersInit | undefined);
+  if (!headers.has("authorization") && INGEST_SECRET_TOKEN) {
+    headers.set("Authorization", `Bearer ${INGEST_SECRET_TOKEN}`);
+  }
+  if (!headers.has("user-agent")) {
+    headers.set("User-Agent", BROWSER_UA);
+  }
+  return fetch(url, {
+    ...init,
+    cache: init.cache ?? "no-store",
+    headers,
+  });
+}
+
 type TestResult = {
   name: string;
   passed: boolean;
@@ -64,7 +87,7 @@ async function checkUrl(
 ): Promise<TestResult> {
   const timeoutMs = options.timeoutMs ?? 4000;
   return time(async () => {
-    const res = await fetch(url, {
+    const res = await smokeFetch(url, {
       method: options.method ?? "GET",
       cache: "no-store",
       headers: { "User-Agent": BROWSER_UA, ...(options.headers ?? {}) },
@@ -161,7 +184,7 @@ async function runSmokeTests() {
         expected: "has-deals-array",
         soft: true,
       };
-      const res = await fetch(`${BASE_URL}/api/sniper-feed`, {
+      const res = await smokeFetch(`${BASE_URL}/api/sniper-feed`, {
         cache: "no-store",
         headers: { "User-Agent": BROWSER_UA },
         signal: AbortSignal.timeout(15000),
@@ -206,7 +229,7 @@ async function runSmokeTests() {
         expected: "200-content-type-image",
         soft: true,
       };
-      const res = await fetch(`${BASE_URL}/api/og/collection/nba-top-shot`, {
+      const res = await smokeFetch(`${BASE_URL}/api/og/collection/nba-top-shot`, {
         cache: "no-store",
         redirect: "manual",
         headers: { "User-Agent": BROWSER_UA },
@@ -238,7 +261,7 @@ async function runSmokeTests() {
         endpoint: "/legal/fmv-methodology",
         expected: "200-html",
       };
-      const res = await fetch(`${BASE_URL}/legal/fmv-methodology`, {
+      const res = await smokeFetch(`${BASE_URL}/legal/fmv-methodology`, {
         cache: "no-store",
         redirect: "manual",
         headers: { "User-Agent": BROWSER_UA },
@@ -265,7 +288,7 @@ async function runSmokeTests() {
         endpoint: "/pricing",
         expected: "200-html",
       };
-      const res = await fetch(`${BASE_URL}/pricing`, {
+      const res = await smokeFetch(`${BASE_URL}/pricing`, {
         cache: "no-store",
         redirect: "manual",
         headers: { "User-Agent": BROWSER_UA },
@@ -378,7 +401,7 @@ async function runSmokeTests() {
         expected: "200-status",
         soft: true,
       };
-      const res = await fetch(`${BASE_URL}/api/wallet-search`, {
+      const res = await smokeFetch(`${BASE_URL}/api/wallet-search`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
         body: JSON.stringify({ input: "0xbd94cade097e50ac" }),
@@ -434,7 +457,7 @@ async function runSmokeTests() {
           endpoint: page,
           expected: "200-status",
         };
-        const res = await fetch(`${BASE_URL}${page}`, {
+        const res = await smokeFetch(`${BASE_URL}${page}`, {
           cache: "no-store",
           redirect: "manual",
           headers: { "User-Agent": BROWSER_UA },
@@ -464,7 +487,7 @@ async function runSmokeTests() {
         endpoint: "/profile",
         expected: "307-to-login",
       };
-      const res = await fetch(`${BASE_URL}/profile`, {
+      const res = await smokeFetch(`${BASE_URL}/profile`, {
         cache: "no-store",
         redirect: "manual",
         headers: { "User-Agent": BROWSER_UA },
@@ -495,7 +518,7 @@ async function runSmokeTests() {
         notes: { collectionId: "95f28a17-224a-4025-96ad-adf8a4c63bfd" } as Record<string, unknown>,
       };
       const url = `${BASE_URL}/api/market?collectionId=95f28a17-224a-4025-96ad-adf8a4c63bfd&limit=10`;
-      const res = await fetch(url, {
+      const res = await smokeFetch(url, {
         cache: "no-store",
         headers: { "User-Agent": BROWSER_UA },
         signal: AbortSignal.timeout(6000),
@@ -540,7 +563,7 @@ async function runSmokeTests() {
           endpoint: path,
           expected: "200-or-401",
         };
-        const res = await fetch(`${BASE_URL}${path}`, {
+        const res = await smokeFetch(`${BASE_URL}${path}`, {
           cache: "no-store",
           redirect: "follow",
           headers: { "User-Agent": BROWSER_UA },
@@ -572,7 +595,7 @@ async function runSmokeTests() {
         expected: "200-or-404-json",
         soft: true,
       };
-      const res = await fetch(`${BASE_URL}/api/public/profile/jamesdillonbond`, {
+      const res = await smokeFetch(`${BASE_URL}/api/public/profile/jamesdillonbond`, {
         cache: "no-store",
         headers: { "User-Agent": BROWSER_UA },
         signal: AbortSignal.timeout(15000),
@@ -613,7 +636,7 @@ async function runSmokeTests() {
       };
       const token = process.env.SMOKE_TEST_SESSION_TOKEN;
       if (token) headers.cookie = `sb-auth-token=${token}`;
-      const res = await fetch(`${BASE_URL}/api/profile/resolve-and-associate`, {
+      const res = await smokeFetch(`${BASE_URL}/api/profile/resolve-and-associate`, {
         method: "POST",
         cache: "no-store",
         headers,
@@ -657,7 +680,7 @@ async function runSmokeTests() {
         expected: "non-5xx-under-3s",
       };
       const start = Date.now();
-      const res = await fetch(`${BASE_URL}/api/profile/resolve-and-associate`, {
+      const res = await smokeFetch(`${BASE_URL}/api/profile/resolve-and-associate`, {
         method: "POST",
         cache: "no-store",
         headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
@@ -692,7 +715,7 @@ async function runSmokeTests() {
       if (!token) {
         return { ...meta, passed: true, detail: "skipped — no SMOKE_TEST_SESSION_TOKEN", statusCode: null, bodyExcerpt: null, notes: { skipped: true } };
       }
-      const res = await fetch(`${BASE_URL}/nba-top-shot/collection`, {
+      const res = await smokeFetch(`${BASE_URL}/nba-top-shot/collection`, {
         cache: "no-store",
         redirect: "manual",
         headers: { cookie: `sb-auth-token=${token}`, "User-Agent": BROWSER_UA },
@@ -731,7 +754,7 @@ async function runSmokeTests() {
       if (!token) {
         return { ...meta, passed: true, detail: "skipped — no SMOKE_TEST_SESSION_TOKEN", statusCode: null, bodyExcerpt: null, notes: { skipped: true } };
       }
-      const res = await fetch(`${BASE_URL}/api/profile/hero-moment`, {
+      const res = await smokeFetch(`${BASE_URL}/api/profile/hero-moment`, {
         cache: "no-store",
         redirect: "manual",
         headers: { cookie: `sb-auth-token=${token}`, "User-Agent": BROWSER_UA },
@@ -773,7 +796,7 @@ async function runSmokeTests() {
         expected: "flowty-cart-fields-present",
         soft: true,
       };
-      const res = await fetch(`${BASE_URL}/api/sniper-feed`, {
+      const res = await smokeFetch(`${BASE_URL}/api/sniper-feed`, {
         cache: "no-store",
         headers: { "User-Agent": BROWSER_UA },
         signal: AbortSignal.timeout(15000),
@@ -821,7 +844,7 @@ async function runSmokeTests() {
         soft: true,
         notes: { collectionId: "disney-pinnacle", probe: "Goofy under $50" } as Record<string, unknown>,
       };
-      const res = await fetch(`${BASE_URL}/api/support-chat`, {
+      const res = await smokeFetch(`${BASE_URL}/api/support-chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
         body: JSON.stringify({
@@ -976,7 +999,7 @@ async function runSmokeTests() {
         soft: true,
         notes: { collectionId: "disney-pinnacle", probe: "Goofy under $50" } as Record<string, unknown>,
       };
-      const res = await fetch(`${BASE_URL}/api/support-chat`, {
+      const res = await smokeFetch(`${BASE_URL}/api/support-chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
         body: JSON.stringify({
@@ -1035,7 +1058,7 @@ async function runSmokeTests() {
         soft: true,
         notes: { collectionId: "nba-top-shot", probe: "LeBron Common under $5" } as Record<string, unknown>,
       };
-      const res = await fetch(`${BASE_URL}/api/support-chat`, {
+      const res = await smokeFetch(`${BASE_URL}/api/support-chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
         body: JSON.stringify({
@@ -1089,7 +1112,7 @@ async function runSmokeTests() {
       if (!secret) {
         return { ...meta, passed: true, detail: "skipped — no INGEST_SECRET_TOKEN", statusCode: null, bodyExcerpt: null, notes: { skipped: true } };
       }
-      const res = await fetch(`${BASE_URL}/api/support-chat`, {
+      const res = await smokeFetch(`${BASE_URL}/api/support-chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1139,7 +1162,7 @@ async function runSmokeTests() {
         endpoint: "/api/cart/validate",
         expected: "results-shape-with-exists-and-sniped",
       };
-      const res = await fetch(`${BASE_URL}/api/cart/validate`, {
+      const res = await smokeFetch(`${BASE_URL}/api/cart/validate`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
         body: JSON.stringify({
