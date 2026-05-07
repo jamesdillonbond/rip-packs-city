@@ -16,6 +16,7 @@ const LINKS: TopNavLink[] = [
   { label: "Pinnacle", href: "/disney-pinnacle/overview", matchPrefix: "/disney-pinnacle" },
   { label: "UFC", href: "/ufc/overview", matchPrefix: "/ufc" },
   { label: "Analytics", href: "/analytics", matchPrefix: "/analytics" },
+  { label: "Blog", href: "/blog", matchPrefix: "/blog" },
 ]
 
 export default function TopNav() {
