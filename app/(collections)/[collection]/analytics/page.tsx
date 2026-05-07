@@ -24,7 +24,7 @@ type AnalyticsResponse = {
     challenge_reward_count: number
     gift_count: number
     total_tracked: number
-  }
+  } | null
   locked: {
     locked_count: number
     unlocked_count: number
@@ -156,7 +156,6 @@ function seriesLabel(n: number | null | undefined): string {
   if (n === null || n === undefined) return "Unknown"
   switch (n) {
     case 0: return "Series 1"
-    case 1: return "Series 1"
     case 2: return "Series 2"
     case 3: return "Summer 2021"
     case 4: return "Series 3"
@@ -566,7 +565,7 @@ function AnalyticsInner() {
     try { router.replace(`?wallet=${encodeURIComponent(trimmed)}`, { scroll: false }) } catch {}
     try {
       const [analyticsRes, mpRes] = await Promise.all([
-        fetch(`/api/analytics?wallet=${encodeURIComponent(trimmed)}`),
+        fetch(`/api/analytics?wallet=${encodeURIComponent(trimmed)}&collection_id=${encodeURIComponent(collection)}`),
         fetch(`/api/marketplace-breakdown?wallet=${encodeURIComponent(trimmed)}`),
       ])
       const json = await analyticsRes.json()
@@ -588,12 +587,17 @@ function AnalyticsInner() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlWallet])
 
-  const acq = data?.acquisition
+  const acq = data?.acquisition ?? null
   const acqTotal = acq ? (acq.pack_pull_count + acq.marketplace_count + acq.challenge_reward_count + acq.gift_count) : 0
   const pctPack = acq && acqTotal > 0 ? (acq.pack_pull_count / acqTotal) * 100 : 0
   const pctMarket = acq && acqTotal > 0 ? (acq.marketplace_count / acqTotal) * 100 : 0
   const pctReward = acq && acqTotal > 0 ? (acq.challenge_reward_count / acqTotal) * 100 : 0
   const pctGift = acq && acqTotal > 0 ? (acq.gift_count / acqTotal) * 100 : 0
+  const acquisitionNotIndexed = !acq || (acq.total_tracked ?? 0) === 0
+  const isPinnacle = collection === "disney-pinnacle"
+  const seriesEmpty = !marketData?.seriesAnalytics || marketData.seriesAnalytics.length === 0
+  const badgeEmpty = !marketData?.badgePremium || marketData.badgePremium.length === 0
+  const hidePinnacleSeriesAndBadge = isPinnacle && seriesEmpty && badgeEmpty
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
@@ -636,35 +640,43 @@ function AnalyticsInner() {
           {/* Section 1 — Portfolio Origin Story */}
           <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
             <div className="mb-3 text-[11px] uppercase tracking-widest text-zinc-500">Portfolio Origin Story</div>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Packs Pulled</div>
-                <div className="font-mono text-3xl font-black" style={{ color: "rgb(20,184,166)" }}>{acq?.pack_pull_count.toLocaleString() ?? "—"}</div>
+            {acquisitionNotIndexed ? (
+              <div className="rounded-lg border border-zinc-800 bg-black/30 px-3 py-3 text-[12px] text-zinc-400">
+                Acquisition history not yet indexed for this collection — coming soon.
               </div>
-              <div>
-                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Marketplace Buys</div>
-                <div className="font-mono text-3xl font-black text-zinc-300">{acq?.marketplace_count.toLocaleString() ?? "—"}</div>
-              </div>
-              <div>
-                <div className="text-[10px] uppercase tracking-widest text-zinc-500">Challenge Rewards</div>
-                <div className="font-mono text-3xl font-black" style={{ color: "rgb(245,158,11)" }}>{acq?.challenge_reward_count.toLocaleString() ?? "—"}</div>
-              </div>
-            </div>
-            {acqTotal > 0 && (
-              <div className="mt-4">
-                <div className="flex h-3 w-full overflow-hidden rounded-full border border-zinc-800">
-                  {pctPack > 0 && <div style={{ width: `${pctPack}%`, background: "rgb(20,184,166)" }} />}
-                  {pctMarket > 0 && <div style={{ width: `${pctMarket}%`, background: "rgb(161,161,170)" }} />}
-                  {pctReward > 0 && <div style={{ width: `${pctReward}%`, background: "rgb(245,158,11)" }} />}
-                  {pctGift > 0 && <div style={{ width: `${pctGift}%`, background: "rgb(96,165,250)" }} />}
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-zinc-500">Packs Pulled</div>
+                    <div className="font-mono text-3xl font-black" style={{ color: "rgb(20,184,166)" }}>{acq!.pack_pull_count.toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-zinc-500">Marketplace Buys</div>
+                    <div className="font-mono text-3xl font-black text-zinc-300">{acq!.marketplace_count.toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-zinc-500">Challenge Rewards</div>
+                    <div className="font-mono text-3xl font-black" style={{ color: "rgb(245,158,11)" }}>{acq!.challenge_reward_count.toLocaleString()}</div>
+                  </div>
                 </div>
-                <div className="mt-2 flex flex-wrap gap-4 font-mono text-[11px] text-zinc-500">
-                  <span>Pack {pctPack.toFixed(0)}%</span>
-                  <span>Market {pctMarket.toFixed(0)}%</span>
-                  <span>Reward {pctReward.toFixed(0)}%</span>
-                  {pctGift > 0 && <span>Gift {pctGift.toFixed(0)}%</span>}
-                </div>
-              </div>
+                {acqTotal > 0 && (
+                  <div className="mt-4">
+                    <div className="flex h-3 w-full overflow-hidden rounded-full border border-zinc-800">
+                      {pctPack > 0 && <div style={{ width: `${pctPack}%`, background: "rgb(20,184,166)" }} />}
+                      {pctMarket > 0 && <div style={{ width: `${pctMarket}%`, background: "rgb(161,161,170)" }} />}
+                      {pctReward > 0 && <div style={{ width: `${pctReward}%`, background: "rgb(245,158,11)" }} />}
+                      {pctGift > 0 && <div style={{ width: `${pctGift}%`, background: "rgb(96,165,250)" }} />}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-4 font-mono text-[11px] text-zinc-500">
+                      <span>Pack {pctPack.toFixed(0)}%</span>
+                      <span>Market {pctMarket.toFixed(0)}%</span>
+                      <span>Reward {pctReward.toFixed(0)}%</span>
+                      {pctGift > 0 && <span>Gift {pctGift.toFixed(0)}%</span>}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </section>
 
@@ -764,6 +776,7 @@ function AnalyticsInner() {
           </section>
 
           {/* Section 4 — Series Breakdown */}
+          {!hidePinnacleSeriesAndBadge && (
           <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
             <div className="mb-3 text-[11px] uppercase tracking-widest text-zinc-500">Series Breakdown</div>
             <table className="w-full text-sm">
@@ -788,6 +801,7 @@ function AnalyticsInner() {
               </tbody>
             </table>
           </section>
+          )}
 
           {/* Section 5 — Portfolio Clarity Score */}
           <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
@@ -1064,6 +1078,7 @@ function AnalyticsInner() {
         </section>
 
         {/* Section F — Badge Premium */}
+        {!hidePinnacleSeriesAndBadge && (
         <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
           <h2 className="mb-1 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
             Badge Premium
@@ -1102,8 +1117,10 @@ function AnalyticsInner() {
             </div>
           )}
         </section>
+        )}
 
         {/* Section G — Volume by Series */}
+        {!hidePinnacleSeriesAndBadge && (
         <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
           <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
             Volume by Series
@@ -1144,8 +1161,10 @@ function AnalyticsInner() {
             </div>
           )}
         </section>
+        )}
 
         {/* Section H — Daily Volume by Series */}
+        {!hidePinnacleSeriesAndBadge && (
         <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
           <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
             Daily Volume by Series
@@ -1185,6 +1204,7 @@ function AnalyticsInner() {
             </div>
           )}
         </section>
+        )}
 
         {/* Section I — Player Search */}
         <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
