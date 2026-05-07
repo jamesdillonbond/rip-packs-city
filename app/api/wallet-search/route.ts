@@ -883,6 +883,21 @@ const walletSearchSchema = z.object({
 })
 
 export async function POST(req: NextRequest) {
+  // topLevelStage is updated as the handler progresses through phases so the
+  // top-level catch can pin the failure to a specific stage instead of
+  // emitting a generic "[wallet-search] error" line that Vercel truncates
+  // before the cause is visible.
+  let topLevelStage:
+    | "parse_body"
+    | "validate"
+    | "resolve_wallet"
+    | "fetch_owned_ids"
+    | "enrich_moments"
+    | "fmv_enrich"
+    | "acquisition_enrich"
+    | "respond"
+    = "parse_body"
+  let resolvedInput: string | null = null
   try {
     let body: unknown
     try {
@@ -898,6 +913,7 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       )
     }
+    topLevelStage = "validate"
 
     if (!body || typeof body !== "object" || !("input" in body) || !(body as any).input || String((body as any).input).trim() === "") {
       console.log("[wallet-search] missing or empty input field")
@@ -925,6 +941,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { input, offset, limit } = parsed.data
+    resolvedInput = input
     // Phase 2: collectionId takes precedence over the legacy collection alias.
     const collection = parsed.data.collectionId ?? parsed.data.collection
     const isAllDay = collection === "nfl-all-day"
@@ -974,7 +991,9 @@ export async function POST(req: NextRequest) {
     let wallet: string
     let ids: number[]
     try {
+      topLevelStage = "resolve_wallet"
       wallet = await resolveWalletFromInput(input)
+      topLevelStage = "fetch_owned_ids"
       ids = isAllDay ? await getAllDayOwnedIds(wallet) : await getOwnedMomentIds(wallet)
     } catch (err) {
       console.error("[wallet-search] Failed to resolve wallet or fetch owned IDs:", err instanceof Error ? err.message : String(err))
@@ -988,6 +1007,7 @@ export async function POST(req: NextRequest) {
       )
     }
     const slice = ids.slice(offset, offset + limit)
+    topLevelStage = "enrich_moments"
 
     const baseRows = (await mapWithConcurrency(slice, 8, async (id) => {
       // INVARIANT_SAFE: catch per-moment errors so one bad moment doesn't crash the whole wallet
@@ -1111,9 +1131,11 @@ export async function POST(req: NextRequest) {
     })
 
     // Batch-enrich FMV from fmv_snapshots + low ask from cached_listings
+    topLevelStage = "fmv_enrich"
     const fmvEnriched = await batchEnrichFmvAndAsks(rowsWithCounts)
 
     // Enrich with acquisition method data
+    topLevelStage = "acquisition_enrich"
     const rows = await enrichWithAcquisitionData(fmvEnriched, wallet)
 
     // Fire-and-forget — progressively reclassify unknown acquisitions
@@ -1239,6 +1261,7 @@ export async function POST(req: NextRequest) {
       console.log("[wallet-search] acquisition-stats lookup failed:", err instanceof Error ? err.message : String(err))
     }
 
+    topLevelStage = "respond"
     return NextResponse.json({
       rows,
       walletAddress: wallet,
@@ -1252,6 +1275,29 @@ export async function POST(req: NextRequest) {
     } satisfies WalletSearchResponse)
   } catch (e) {
     const message = cleanErrorMessage(e)
+    // Structured single-line log so a single Vercel-dashboard grep tells the
+    // whole story next time wallet-search 500s. Vercel truncates after ~50
+    // chars on filtered searches; keeping it on one console.log line means
+    // the headline carries stage + input + cause.
+    try {
+      const errCode =
+        (e && typeof e === "object" && "code" in (e as any) ? String((e as any).code) : null) ??
+        (e instanceof Error && (e as any).cause && typeof (e as any).cause === "object" && "code" in ((e as any).cause)
+          ? String(((e as any).cause as any).code)
+          : null)
+      const errName = e instanceof Error ? e.name : null
+      const rawMsg = e instanceof Error ? e.message : String(e)
+      console.log(
+        "[wallet-search] error " +
+          JSON.stringify({
+            stage: topLevelStage,
+            input: resolvedInput,
+            error_message: rawMsg.slice(0, 240),
+            error_code: errCode,
+            error_name: errName,
+          })
+      )
+    } catch { /* logging is best-effort */ }
     return NextResponse.json(
       {
         rows: [],

@@ -1251,7 +1251,23 @@ async function runSmokeTests() {
   const failures = results.filter((r) => !r.passed && !r.soft);
   const softFailures = results.filter((r) => !r.passed && r.soft);
 
-  console.log(`SMOKE-TEST ${allPassed ? "ALL PASSED" : "FAILURES DETECTED"} (hard ${hardPassed}/${hardTotal}, overall ${passed}/${total})`);
+  // Vercel only surfaces the first console.log per request in its dashboard
+  // search, so fold the failing endpoint names + statuses into the headline
+  // line. Detail JSON still goes to a follow-up console.error for anyone
+  // tailing logs at runtime; the headline is what shows up in dashboard
+  // search.
+  const failingEndpointsBrief = failures
+    .map((f) => `${f.endpoint}${f.statusCode != null ? `(${f.statusCode})` : ""}`)
+    .join(",");
+  const softFailingEndpointsBrief = softFailures
+    .map((f) => f.endpoint)
+    .join(",");
+  const headline =
+    `SMOKE-TEST ${allPassed ? "ALL PASSED" : "FAILURES DETECTED"}` +
+    ` hard ${hardPassed}/${hardTotal} overall ${passed}/${total}` +
+    (failures.length > 0 ? ` failing=[${failingEndpointsBrief}]` : "") +
+    (softFailures.length > 0 ? ` soft_failing=[${softFailingEndpointsBrief}]` : "");
+  console.log(headline);
   if (failures.length > 0) {
     console.error("SMOKE-TEST HARD FAILURES:", JSON.stringify(failures.map((f) => ({ endpoint: f.endpoint, error: f.detail, status: f.statusCode })), null, 2));
   }
