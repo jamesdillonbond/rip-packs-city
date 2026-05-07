@@ -9,7 +9,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   AreaChart, Area, BarChart, Bar,
 } from "recharts"
-import { getCollection } from "@/lib/collections"
+import { getCollection, getCollectionByUuid } from "@/lib/collections"
 import { pickEmpty } from "@/lib/schonely"
 
 // ── Slug mapping ────────────────────────────────────────────────────────────
@@ -218,8 +218,9 @@ const TIER_COLOR: Record<string, string> = {
   COMMON: "var(--tier-common)",
 }
 
-// Explicit hex tier colors for recharts (Tailwind/CSS vars can't be read by SVG).
-// Kept as fallbacks per brand-token migration policy.
+// Hex tier colors required by recharts SVG rendering — CSS vars can't be read
+// from SVG attributes, so charts must use literal hex. Non-chart UI uses
+// TIER_COLOR (var(--tier-*)) tokens.
 const TIER_HEX: Record<string, string> = {
   ULTIMATE: "#FFD700",
   LEGENDARY: "#A855F7",
@@ -854,6 +855,7 @@ function WhaleLeaderboard({ short }: { short: string }) {
 
 function SalesHistoryCard({ wallet, urlSlug }: { wallet: string; urlSlug: string }) {
   const [rows, setRows] = useState<any[] | null>(null)
+  const [note, setNote] = useState<string | null>(null)
   const [missing, setMissing] = useState(false)
   useEffect(() => {
     let cancelled = false
@@ -862,7 +864,11 @@ function SalesHistoryCard({ wallet, urlSlug }: { wallet: string; urlSlug: string
         if (!r.ok) { setMissing(true); return null }
         return r.json()
       })
-      .then((j) => { if (!cancelled && j?.rows) setRows(j.rows) })
+      .then((j) => {
+        if (cancelled || !j) return
+        if (j.rows) setRows(j.rows)
+        if (j.note) setNote(j.note)
+      })
       .catch(() => { setMissing(true) })
     return () => { cancelled = true }
   }, [wallet, urlSlug])
@@ -873,9 +879,15 @@ function SalesHistoryCard({ wallet, urlSlug }: { wallet: string; urlSlug: string
       <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "var(--font-display)" }}>
         Sales History
       </h2>
+      {note && (
+        <div className="mb-3 text-[11px]" style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)" }}>
+          {note}
+        </div>
+      )}
       <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
         <thead>
           <tr className="border-b border-zinc-800 text-left text-[10px] uppercase tracking-widest text-zinc-500">
+            <th className="py-1.5 pr-2">Side</th>
             <th className="py-1.5 pr-2">Player</th>
             <th className="py-1.5 pr-2">Set</th>
             <th className="py-1.5 pr-2">Serial</th>
@@ -885,16 +897,21 @@ function SalesHistoryCard({ wallet, urlSlug }: { wallet: string; urlSlug: string
           </tr>
         </thead>
         <tbody>
-          {rows.map((s, i) => (
-            <tr key={i} className="border-b border-zinc-900">
-              <td className="py-1.5 pr-2 text-zinc-200">{s.player_name ?? "—"}</td>
-              <td className="py-1.5 pr-2 text-zinc-400">{s.set_name ?? "—"}</td>
-              <td className="py-1.5 pr-2 text-zinc-400">{s.serial_number ? `#${s.serial_number}` : "—"}</td>
-              <td className="py-1.5 pr-2 text-right text-white">{fmt(Number(s.price_usd) || 0)}</td>
-              <td className="py-1.5 pr-2 text-zinc-300">{s.marketplace ?? "—"}</td>
-              <td className="py-1.5 text-right text-zinc-500">{s.sold_at ? relativeDate(s.sold_at) : "—"}</td>
-            </tr>
-          ))}
+          {rows.map((s, i) => {
+            const isBuy = s.side === "buy"
+            const sideColor = isBuy ? "var(--rpc-success)" : "var(--rpc-red)"
+            return (
+              <tr key={i} className="border-b border-zinc-900">
+                <td className="py-1.5 pr-2 text-[10px] uppercase" style={{ color: sideColor }}>{s.side ?? "—"}</td>
+                <td className="py-1.5 pr-2 text-zinc-200">{s.player_name ?? "—"}</td>
+                <td className="py-1.5 pr-2 text-zinc-400">{s.set_name ?? "—"}</td>
+                <td className="py-1.5 pr-2 text-zinc-400">{s.serial_number ? `#${s.serial_number}` : "—"}</td>
+                <td className="py-1.5 pr-2 text-right text-white">{fmt(Number(s.price_usd) || 0)}</td>
+                <td className="py-1.5 pr-2 text-zinc-300">{s.marketplace ?? "—"}</td>
+                <td className="py-1.5 text-right text-zinc-500">{s.sold_at ? relativeDate(s.sold_at) : "—"}</td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </section>
@@ -924,52 +941,104 @@ function CrossCollectionHoldingsCard({ usernameInput }: { usernameInput: string 
     buckets.set(cid, (buckets.get(cid) ?? 0) + (Number(w.cached_moment_count) || 0))
   }
   if (buckets.size === 0) return null
+  // Resolve UUID → Collection so we can render real labels + accent dots and link
+  // to that collection's analytics page. Sort by moment count descending.
+  const enriched = Array.from(buckets.entries())
+    .map(([cid, count]) => {
+      const c = getCollectionByUuid(cid)
+      return {
+        cid,
+        count,
+        collection: c,
+        label: c?.label ?? "Unknown collection",
+        accent: c?.accent ?? "var(--rpc-text-muted)",
+        href: c ? `/${c.id}/analytics` : null,
+      }
+    })
+    .sort((a, b) => b.count - a.count)
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
       <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "var(--font-display)" }}>
         Cross-Collection Holdings
       </h2>
       <div className="flex flex-wrap gap-2">
-        {Array.from(buckets.entries()).map(([cid, count]) => (
-          <span
-            key={cid}
-            className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px]"
-            style={{ border: "1px solid var(--rpc-border)", background: "var(--rpc-surface)", fontFamily: "var(--font-mono)" }}
-          >
-            <span className="text-zinc-400">{cid.slice(0, 8)}</span>
-            <span className="text-zinc-700">·</span>
-            <span className="text-zinc-200">{count.toLocaleString()} moments</span>
-          </span>
-        ))}
+        {enriched.map((row) => {
+          const inner = (
+            <>
+              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: row.accent }} />
+              <span className="text-zinc-200">{row.label}</span>
+              <span className="text-zinc-700">·</span>
+              <span className="text-zinc-400">{row.count.toLocaleString()} moments</span>
+            </>
+          )
+          const baseClass = "inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px]"
+          const baseStyle = { border: "1px solid var(--rpc-border)", background: "var(--rpc-surface)", fontFamily: "var(--font-mono)" } as const
+          return row.href ? (
+            <Link
+              key={row.cid}
+              href={`${row.href}?wallet=${encodeURIComponent(usernameInput.replace(/^@+/, ""))}`}
+              className={`${baseClass} transition-colors hover:bg-zinc-900`}
+              style={baseStyle}
+            >
+              {inner}
+            </Link>
+          ) : (
+            <span key={row.cid} className={baseClass} style={baseStyle}>
+              {inner}
+            </span>
+          )
+        })}
       </div>
     </section>
   )
 }
 
 function HeldTimeDistributionCard({ wallet, urlSlug }: { wallet: string; urlSlug: string }) {
-  const [data, setData] = useState<Array<{ bucket: string; count: number }> | null>(null)
+  type HoldTimeResponse = {
+    buckets?: Array<{ bucket: string; count: number }>
+    total?: number
+    reason?: string
+  }
+  const [resp, setResp] = useState<HoldTimeResponse | null>(null)
   const [missing, setMissing] = useState(false)
   useEffect(() => {
     let cancelled = false
-    // Optimistic: try a hypothetical hold-time route that may not exist.
     fetch(`/api/wallet-hold-time?wallet=${encodeURIComponent(wallet)}&collection=${encodeURIComponent(urlSlug)}`)
       .then(async (r) => {
         if (!r.ok) { setMissing(true); return null }
         return r.json()
       })
-      .then((j) => { if (!cancelled && j?.buckets) setData(j.buckets) })
+      .then((j) => { if (!cancelled && j) setResp(j as HoldTimeResponse) })
       .catch(() => { setMissing(true) })
     return () => { cancelled = true }
   }, [wallet, urlSlug])
-  if (missing || !data || data.length === 0) return null
+  if (missing || !resp) return null
+  if (resp.reason === "acquisition_data_unavailable") {
+    return (
+      <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+        <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "var(--font-display)" }}>
+          Held Time Distribution
+        </h2>
+        <div className="text-[11px]" style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)" }}>
+          Hold time tracking is Top Shot only today — coming to other collections as cost-basis backfill ships.
+        </div>
+      </section>
+    )
+  }
+  const total = Number(resp.total ?? 0)
+  const buckets = resp.buckets ?? []
+  if (total === 0) return null
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
       <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "var(--font-display)" }}>
         Held Time Distribution
       </h2>
+      <div className="mb-2 text-[11px]" style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)" }}>
+        {total.toLocaleString()} moments tracked
+      </div>
       <div className="h-56" style={{ fontFamily: "var(--font-mono)" }}>
         <ResponsiveContainer>
-          <BarChart data={data}>
+          <BarChart data={buckets}>
             <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
             <XAxis dataKey="bucket" stroke="#71717a" tick={{ fontSize: 10 }} />
             <YAxis stroke="#71717a" tick={{ fontSize: 10 }} />
@@ -978,6 +1047,130 @@ function HeldTimeDistributionCard({ wallet, urlSlug }: { wallet: string; urlSlug
           </BarChart>
         </ResponsiveContainer>
       </div>
+    </section>
+  )
+}
+
+function CostBasisCard({ wallet, urlSlug }: { wallet: string; urlSlug: string }) {
+  type Mover = {
+    player_name: string | null
+    set_name: string | null
+    tier: string | null
+    serial_number: number | null
+    buy_price: number
+    current_fmv: number
+    pnl_pct: number
+  }
+  type CostBasisResponse = {
+    summary?: {
+      tracked_count: number
+      total_cost_basis: number
+      total_current_fmv: number
+      total_pnl_usd: number
+      total_pnl_pct: number
+      win_count: number
+      loss_count: number
+    }
+    top_movers?: { gainers: Mover[]; losers: Mover[] }
+    sample_size_note?: string
+    reason?: string
+  }
+  const [resp, setResp] = useState<CostBasisResponse | null>(null)
+  const [missing, setMissing] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/wallet-cost-basis?wallet=${encodeURIComponent(wallet)}&collection=${encodeURIComponent(urlSlug)}`)
+      .then(async (r) => {
+        if (!r.ok) { setMissing(true); return null }
+        return r.json()
+      })
+      .then((j) => { if (!cancelled && j) setResp(j as CostBasisResponse) })
+      .catch(() => { setMissing(true) })
+    return () => { cancelled = true }
+  }, [wallet, urlSlug])
+  if (missing || !resp || resp.reason) return null
+  const s = resp.summary
+  if (!s || s.tracked_count === 0) return null
+  const pnlColor = s.total_pnl_usd >= 0 ? "var(--rpc-success)" : "var(--rpc-danger)"
+  const winDenom = s.win_count + s.loss_count
+  const gainers = resp.top_movers?.gainers ?? []
+  const losers = resp.top_movers?.losers ?? []
+  const renderMover = (m: Mover, kind: "gain" | "loss") => {
+    const color = kind === "gain" ? "var(--rpc-success)" : "var(--rpc-danger)"
+    const sign = m.pnl_pct >= 0 ? "+" : ""
+    return (
+      <li key={`${kind}-${m.player_name}-${m.serial_number}-${m.pnl_pct}`} className="flex items-center justify-between gap-2 py-1">
+        <span className="truncate text-zinc-200">
+          {m.player_name ?? "—"}
+          {m.serial_number ? <span className="text-zinc-500"> #{m.serial_number}</span> : null}
+          <span className="block text-[10px] text-zinc-500">{m.set_name ?? "—"}</span>
+        </span>
+        <span className="shrink-0 text-[11px]" style={{ color, fontFamily: "var(--font-mono)" }}>
+          {sign}{m.pnl_pct.toFixed(1)}%
+        </span>
+      </li>
+    )
+  }
+  return (
+    <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+      <div className="mb-3 text-[11px] uppercase tracking-widest text-zinc-500">Cost Basis & P&amp;L</div>
+      {resp.sample_size_note && (
+        <div className="mb-2 text-[11px]" style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)" }}>
+          {resp.sample_size_note}
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" style={{ fontFamily: "var(--font-mono)" }}>
+        <div className="rounded-lg border border-zinc-800 bg-black p-3">
+          <div className="text-[10px] uppercase tracking-widest text-zinc-500">Tracked</div>
+          <div className="text-2xl font-black text-white">{s.tracked_count.toLocaleString()}</div>
+        </div>
+        <div className="rounded-lg border border-zinc-800 bg-black p-3">
+          <div className="text-[10px] uppercase tracking-widest text-zinc-500">Cost Basis</div>
+          <div className="text-2xl font-black text-white">{fmt(s.total_cost_basis)}</div>
+        </div>
+        <div className="rounded-lg border border-zinc-800 bg-black p-3">
+          <div className="text-[10px] uppercase tracking-widest text-zinc-500">Current FMV</div>
+          <div className="text-2xl font-black text-white">{fmt(s.total_current_fmv)}</div>
+        </div>
+        <div className="rounded-lg border border-zinc-800 bg-black p-3">
+          <div className="text-[10px] uppercase tracking-widest text-zinc-500">Total P&amp;L</div>
+          <div className="text-2xl font-black" style={{ color: pnlColor }}>
+            {s.total_pnl_usd >= 0 ? "+" : ""}{fmt(s.total_pnl_usd)}
+          </div>
+          <div className="mt-0.5 text-[10px]" style={{ color: pnlColor }}>
+            {s.total_pnl_pct >= 0 ? "+" : ""}{s.total_pnl_pct.toFixed(1)}%
+          </div>
+        </div>
+      </div>
+      {winDenom > 0 && (
+        <div className="mt-2 text-[11px]" style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)" }}>
+          Win rate: {s.win_count.toLocaleString()} of {winDenom.toLocaleString()}
+        </div>
+      )}
+      {(gainers.length > 0 || losers.length > 0) && (
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="rounded-lg border border-zinc-800 bg-black p-3">
+            <div className="mb-2 text-[10px] uppercase tracking-widest" style={{ color: "var(--rpc-success)" }}>Top Gainers</div>
+            {gainers.length === 0 ? (
+              <div className="text-[11px] text-zinc-500">No tracked gainers.</div>
+            ) : (
+              <ul className="text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
+                {gainers.map((m) => renderMover(m, "gain"))}
+              </ul>
+            )}
+          </div>
+          <div className="rounded-lg border border-zinc-800 bg-black p-3">
+            <div className="mb-2 text-[10px] uppercase tracking-widest" style={{ color: "var(--rpc-danger)" }}>Top Losers</div>
+            {losers.length === 0 ? (
+              <div className="text-[11px] text-zinc-500">No tracked losers.</div>
+            ) : (
+              <ul className="text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
+                {losers.map((m) => renderMover(m, "loss"))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
     </section>
   )
 }
@@ -1748,6 +1941,9 @@ function AnalyticsInner() {
                 </div>
                 <div className="mt-2 text-[11px] text-zinc-600">Locked moments cannot be listed or traded.</div>
               </section>
+
+              {/* Cost Basis & P&L (TopShot only; hides on non-TS or empty cost-basis) */}
+              <CostBasisCard wallet={activeWallet} urlSlug={collection} />
 
               {/* Marketplace Breakdown — TS vs Flowty */}
               {mpBreakdown && (() => {
