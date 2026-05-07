@@ -71,6 +71,22 @@ export function isStorageLimitError(err: unknown): boolean {
   return /\b1106\b/.test(msg) || /max interaction with storage/.test(msg) || /storage.*exceed/.test(msg)
 }
 
+// Wallet has no collection capability published at the /public path the
+// Cadence script targets (typical reproducer: Pinnacle-only collectors
+// surfaced into the AllDay queue via Flowty transactions). Flow REST returns
+// HTTP 400 with `code = InvalidArgument desc = failed to ex…` (truncated
+// tail not worth parsing). Distinguished from storage_limit by elapsed time:
+// no_collection_capability bounces fast (~4s), storage_limit takes much
+// longer. Permanent for the wallet/collection pair — no retry fixes it, the
+// capability simply doesn't exist on chain.
+export function isNoCollectionCapabilityError(err: unknown, elapsedMs?: number): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  const hasShape = /Flow script HTTP 400/i.test(msg) && /code\s*=\s*InvalidArgument/i.test(msg)
+  if (!hasShape) return false
+  if (typeof elapsedMs === "number" && elapsedMs > 10_000) return false
+  return true
+}
+
 async function logRun(args: {
   pipelineName: string
   collectionSlug: string
@@ -224,6 +240,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<void> {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
+    const elapsedMs = Date.now() - startedMs
     if (isStorageLimitError(err)) {
       await logRun({
         pipelineName: config.pipelineName,
@@ -235,11 +252,29 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<void> {
           terminated_reason: "storage_limit_exceeded",
           flagged_for_sharded_scan: true,
           skip_cached: skipCached,
-          elapsed_ms: Date.now() - startedMs,
+          elapsed_ms: elapsedMs,
           error_excerpt: msg.slice(0, 200),
         },
       })
       console.log(`[${config.pipelineName}] wallet_too_large wallet=${wallet} — flagged for future sharded scan`)
+      return
+    }
+    if (isNoCollectionCapabilityError(err, elapsedMs)) {
+      await logRun({
+        pipelineName: config.pipelineName,
+        collectionSlug: config.slug,
+        startedAt: startedAtIso, wallet,
+        rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
+        ok: true,
+        extra: {
+          terminated_reason: "no_collection_capability",
+          flagged_for_no_capability: true,
+          skip_cached: skipCached,
+          elapsed_ms: elapsedMs,
+          error_excerpt: msg.slice(0, 200),
+        },
+      })
+      console.log(`[${config.pipelineName}] no_collection_capability wallet=${wallet} — wallet lacks ${config.slug} collection capability`)
       return
     }
     await logRun({
@@ -250,7 +285,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<void> {
       ok: false, error: msg,
       extra: {
         terminated_reason: "error", skip_cached: skipCached,
-        elapsed_ms: Date.now() - startedMs,
+        elapsed_ms: elapsedMs,
       },
     })
     console.error(`[${config.pipelineName}] error during backfill for ${wallet}: ${msg}`)
