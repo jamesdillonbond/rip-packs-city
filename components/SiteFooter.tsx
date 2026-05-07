@@ -138,6 +138,20 @@ export default function SiteFooter() {
           How is FMV calculated?
         </Link>
       </div>
+
+      <div
+        style={{
+          padding: "8px 24px 12px",
+          maxWidth: "var(--max-width)",
+          margin: "0 auto",
+          fontFamily: "var(--font-mono)",
+          fontSize: "var(--text-xs)",
+          color: "var(--rpc-text-muted)",
+          textAlign: "center",
+        }}
+      >
+        Built in <span style={{ color: "var(--rpc-red)" }}>Rip City</span> by an official Trail Blazers Team Captain.
+      </div>
     </footer>
   );
 }
