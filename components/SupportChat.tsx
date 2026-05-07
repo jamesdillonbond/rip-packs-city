@@ -476,6 +476,7 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
       )}
 
       <button onClick={() => setIsOpen((o) => !o)} aria-label={isOpen ? "Close chat" : "Open RPC concierge"}
+        data-tour-anchor="chatbot-launcher"
         className={`rpc-chat-bubble${inputFocused ? " hidden" : ""}`}
         style={{ position: "fixed", bottom: 20, right: 16, width: 52, height: 52, borderRadius: 14, border: "none", background: isOpen ? "#1a1a1a" : "linear-gradient(135deg, #E03A2F 0%, #b82e25 100%)", color: "#fff", cursor: "pointer", display: inputFocused ? "none" : "flex", alignItems: "center", justifyContent: "center", fontSize: 22, zIndex: 9999, boxShadow: isOpen ? "0 4px 20px rgba(0,0,0,0.3)" : "0 4px 24px rgba(224,58,47,0.35), 0 0 0 1px rgba(224,58,47,0.15)", transition: "transform 0.15s, background 0.2s, box-shadow 0.2s" }}
         onMouseEnter={(e) => { (e.target as HTMLElement).style.transform = "scale(1.06)"; }}

@@ -725,7 +725,7 @@ function ProfilePageInner() {
         )}
 
         {/* ── Saved Wallets ── */}
-        <section className="rpc-section">
+        <section className="rpc-section" data-tour-anchor="saved-wallets-card">
           <div className="rpc-section-title">Saved Wallets</div>
 
           <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)", marginBottom: 8, lineHeight: 1.5 }}>
