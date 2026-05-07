@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react"
 import { formatCurrency, formatCount } from "@/lib/format"
+import FmvDisclaimer from "@/components/legal/FmvDisclaimer"
 
 // Shared four-tile wallet analytics row used by every collection's
 // /[collection]/collection page (and the standalone Pinnacle page until
@@ -91,6 +92,7 @@ export default function WalletStatRow(props: WalletStatRowProps) {
     typeof spreadGap === "number"
 
   return (
+    <div>
     <div className="grid gap-3 grid-cols-2 xl:grid-cols-4">
       <div className="rpc-stat-tile">
         <div className="rpc-stat-eyebrow">
@@ -156,6 +158,10 @@ export default function WalletStatRow(props: WalletStatRowProps) {
           {showSpreadGap ? "vs FMV: " + formatCurrency(-(spreadGap as number)) : ""}
         </div>
       </div>
+    </div>
+    <div style={{ marginTop: 8 }}>
+      <FmvDisclaimer variant="short" />
+    </div>
     </div>
   )
 }
