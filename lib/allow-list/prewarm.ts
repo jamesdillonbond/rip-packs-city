@@ -29,6 +29,7 @@ import {
   type PrewarmStatusValue,
   type PrewarmSummary,
 } from "@/lib/emails/welcome-email"
+import { resolveTopShotUsername } from "@/lib/topshot-username-resolve"
 
 const TS_SEEDER_TIMEOUT_MS = 90_000
 
@@ -98,6 +99,44 @@ async function runTopShotSeeder(
   } finally {
     clearTimeout(timer)
   }
+}
+
+// Early-access form lets users sign up with email + username only (no wallet
+// address). Without a wallet, the seeder branch below would short-circuit
+// every flagged collection to "deferred" and the user would land on an empty
+// dashboard. Resolve the username to a Flow address up front so the rest of
+// processSinglePrewarmRow has something to seed against. The same Top Shot
+// username + Dapper SSO link governs all 4 marketplaces, so a single
+// resolution covers every flagged collection.
+async function resolveUsernameToWallet(
+  row: AllowListRow,
+  summary: PrewarmSummary
+): Promise<void> {
+  if (row.wallet_addr) return
+  if (!row.username || !row.username.trim()) return
+
+  let resolved
+  try {
+    resolved = await resolveTopShotUsername(row.username)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    summary.username_resolution_failure = `gql_error: ${msg.slice(0, 200)}`
+    return
+  }
+  if (!resolved) {
+    summary.username_resolution_failure = `not_found:${row.username}`
+    return
+  }
+
+  const { error: updateErr } = await supabaseAdmin
+    .from("allow_list")
+    .update({ wallet_addr: resolved.walletAddress })
+    .eq("id", row.id)
+  if (updateErr) {
+    summary.username_resolution_failure = `update_error: ${updateErr.message.slice(0, 200)}`
+    return
+  }
+  row.wallet_addr = resolved.walletAddress
 }
 
 function flaggedSet(row: AllowListRow): Set<CollectionKey> {
@@ -219,6 +258,8 @@ export async function processSinglePrewarmRow(
   const flagged = flaggedSet(row)
   const summary: PrewarmSummary = {}
   let tsError: string | null = null
+
+  await resolveUsernameToWallet(row, summary)
 
   // nba_top_shot — only collection with a real seeder today.
   if (flagged.has("nba_top_shot")) {
