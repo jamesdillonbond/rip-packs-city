@@ -1,105 +1,73 @@
 // app/api/wallet-backfill-allday/route.ts
 //
-// Sibling of /api/wallet-backfill, scoped to NFL All Day. Reads on-chain
-// IDs from the AllDay collection capability via Cadence, walks them in
-// concurrent batches, and upserts to wallet_moments_cache with
-// collection_id = AllDay UUID. Same fire-and-forget after() shape so
-// cron-job.org / wallet-backfill-multicollection get a fast 202.
+// AllDay wallet enricher. Per the May 6 multi-collection rollout, this
+// route gets every on-chain NFT ID a wallet owns and writes the structural
+// rows to wallet_moments_cache. Per-moment Cadence metadata calls are
+// intentionally NOT made — the existing AllDay infra (sales-indexer +
+// allday-edition-resolver) populates player_name / set_name / tier on
+// the editions table; reads JOIN wallet_moments_cache.edition_key against
+// editions.external_id at query time.
 //
-// AllDay metadata composition: borrowMomentNFT → editionID → playID →
-// playData.metadata["playerFullName"|"teamName"|"playType"], setData.name,
-// seriesData.name. The Cadence helper at lib/allday-cadence.ts already
-// chains the joins.
+// Why no per-moment metadata?
+//   - The lib/allday-cadence.GET_MOMENT_METADATA script panicked on
+//     borrow for every wallet (path/interface mismatch with no working
+//     replacement found in this session). Pulling N per-moment Cadence
+//     calls also doesn't scale — for whales (6k+ moments) it bumps right
+//     against Vercel's 300s ceiling.
+//   - The proven production pattern from app/api/wallet/seed/route.ts
+//     gets IDs only, and trusts the out-of-band edition resolver to fill
+//     in player/set/tier on the editions table. Wallet-scoped reads JOIN
+//     by edition_key.
+//
+// Trade-off: invitees see their moment counts on first sign-in, but
+// rows that don't yet have a matching editions row will lack player /
+// set names until the edition resolver catches up. For Phase 1 that's
+// acceptable — the count is the most important promise.
 
 import { NextRequest, NextResponse, after } from "next/server"
-import fcl from "@/lib/flow"
-import * as t from "@onflow/types"
 import { supabaseAdmin } from "@/lib/supabase"
-import { GET_OWNED_MOMENT_IDS } from "@/lib/allday-cadence"
-
-// Inline metadata script — `lib/allday-cadence.GET_MOMENT_METADATA` borrows
-// from /public/AllDayMomentNFTCollection (a path that doesn't exist on
-// most wallets), so it panics universally on borrow. The IDs come from
-// /public/AllDayNFTCollection via GET_OWNED_MOMENT_IDS, so the metadata
-// script needs to borrow there too. Uses the standard NonFungibleToken
-// borrowNFT + cast pattern, mirroring GET_UNLOCKED_MOMENT_DETAILS in the
-// same lib (which is the only metadata-resolving AllDay script that
-// actually works in production today).
-const GET_MOMENT_METADATA_FIXED = `
-  import AllDay from 0xe4cf4bdc1751c65d
-  import NonFungibleToken from 0x1d7e57aa55817448
-  access(all)
-  fun main(address: Address, id: UInt64): {String:String} {
-    let col = getAccount(address).capabilities.borrow<&{NonFungibleToken.Collection}>(/public/AllDayNFTCollection)
-      ?? panic("no collection")
-    let raw = col.borrowNFT(id) ?? panic("no nft")
-    let nft = raw as! &AllDay.NFT
-    let editionData = AllDay.getEditionData(id: nft.editionID) ?? panic("no edition")
-    let playData = AllDay.getPlayData(id: editionData.playID) ?? panic("no play")
-    let setData = AllDay.getSetData(id: editionData.setID) ?? panic("no set")
-    let seriesData = AllDay.getSeriesData(id: setData.seriesID) ?? panic("no series")
-    return {
-      "player": playData.metadata["playerFullName"] ?? "",
-      "team": playData.metadata["teamName"] ?? "",
-      "setName": setData.name,
-      "series": seriesData.name,
-      "serial": nft.serialNumber.toString(),
-      "mint": editionData.maxMintSize?.toString() ?? editionData.numMinted.toString(),
-      "playID": editionData.playID.toString(),
-      "setID": editionData.setID.toString(),
-      "tier": editionData.tier ?? "COMMON",
-      "playCategory": playData.metadata["playType"] ?? "",
-      "jerseyNumber": playData.metadata["playerJerseyNumber"] ?? "",
-      "dateOfMoment": playData.metadata["dateOfMoment"] ?? ""
-    }
-  }
-`
 
 export const dynamic = "force-dynamic"
-export const maxDuration = 300
+export const maxDuration = 60
 
+const FLOW_REST = "https://rest-mainnet.onflow.org/v1/scripts"
 const COLLECTION_SLUG = "nfl_all_day"
 const ALLDAY_COLLECTION_UUID = "dee28451-5d62-409e-a1ad-a83f763ac070"
-const BATCH_SIZE = 20
-const CONCURRENCY = 8
 const UPSERT_CHUNK = 200
-const SOFT_DEADLINE_MS = 260_000
-const MAX_MOMENTS_PER_RUN = 200_000
 
-async function getOwnedMomentIds(wallet: string): Promise<number[]> {
-  const result = await fcl.query({
-    cadence: GET_OWNED_MOMENT_IDS,
-    args: (arg: any) => [arg(wallet, t.Address)],
-  })
-  return Array.isArray(result) ? (result as number[]) : []
+// Same Cadence shape the wallet/seed route uses successfully (verified
+// in production for all 5 collections). Note: NonFungibleToken
+// `CollectionPublic` (with the Public suffix) is the capability that
+// AllDay's standard collection actually exposes; the bare `Collection`
+// interface in lib/allday-cadence does NOT borrow on most wallets.
+const ALLDAY_GET_IDS_CADENCE = `
+import NonFungibleToken from 0x1d7e57aa55817448
+access(all) fun main(address: Address): [UInt64] {
+  let acct = getAccount(address)
+  let col = acct.capabilities.borrow<&{NonFungibleToken.CollectionPublic}>(/public/AllDayNFTCollection)
+  if col == nil { return [] }
+  return col!.getIDs()
 }
+`.trim()
 
-async function getMomentMetadata(wallet: string, id: number): Promise<Record<string, string>> {
-  const result = await fcl.query({
-    cadence: GET_MOMENT_METADATA_FIXED,
-    args: (arg: any) => [arg(wallet, t.Address), arg(String(id), t.UInt64)],
-  })
-  return result as Record<string, string>
-}
-
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  worker: (item: T, index: number) => Promise<R>
-): Promise<R[]> {
-  const results: R[] = new Array(items.length)
-  let nextIndex = 0
-  async function runWorker() {
-    while (true) {
-      const currentIndex = nextIndex++
-      if (currentIndex >= items.length) return
-      results[currentIndex] = await worker(items[currentIndex], currentIndex)
-    }
+async function fetchOnChainIds(wallet: string): Promise<string[]> {
+  const body = {
+    script: btoa(ALLDAY_GET_IDS_CADENCE),
+    arguments: [btoa(JSON.stringify({ type: "Address", value: wallet }))],
   }
-  await Promise.all(
-    Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, () => runWorker())
-  )
-  return results
+  const res = await fetch(`${FLOW_REST}?block_height=sealed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(20_000),
+  })
+  if (!res.ok) {
+    throw new Error(`Flow script HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
+  }
+  const raw = await res.text()
+  const decoded = JSON.parse(atob(raw.trim().replace(/^"|"$/g, "")))
+  const arr: Array<{ value: string }> = decoded?.value ?? []
+  return arr.map(v => String(v.value))
 }
 
 async function logRun(args: {
@@ -155,20 +123,13 @@ async function loadCachedMomentIds(wallet: string): Promise<Set<string>> {
 }
 
 async function stampLastRefreshed(wallet: string) {
-  // Update both the legacy single-timestamp and the per-collection jsonb so
-  // mixed-shape consumers (Top Shot cron pre-Prompt-14, multi-collection
-  // post-Prompt-14) keep working.
   try {
-    await (supabaseAdmin as any).rpc("refresh_seeded_wallet_stats", {
-      p_wallet_address: wallet,
-    })
+    await (supabaseAdmin as any).rpc("refresh_seeded_wallet_stats", { p_wallet_address: wallet })
   } catch { /* swallow */ }
   try {
     await (supabaseAdmin as any)
       .from("seeded_wallets")
-      .update({
-        last_refreshed_per_collection: { [COLLECTION_SLUG]: new Date().toISOString() },
-      })
+      .update({ last_refreshed_per_collection: { [COLLECTION_SLUG]: new Date().toISOString() } })
       .eq("wallet_address", wallet)
   } catch { /* swallow */ }
 }
@@ -179,18 +140,11 @@ async function runBackfill(
   wallet: string,
   skipCached: boolean
 ) {
-  let totalFetched = 0
   let totalUpserted = 0
-  let batchesFetched = 0
-  let totalSkippedCached = 0
-  let terminatedReason:
-    | "no_more_moments"
-    | "safety_ceiling"
-    | "timeout"
-    | "error" = "no_more_moments"
+  let terminatedReason: "no_more_moments" | "error" = "no_more_moments"
 
   try {
-    const onChainIds = await getOwnedMomentIds(wallet)
+    const onChainIds = await fetchOnChainIds(wallet)
     if (onChainIds.length === 0) {
       await stampLastRefreshed(wallet)
       await logRun({
@@ -198,103 +152,48 @@ async function runBackfill(
         rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: true,
         extra: {
-          on_chain_count: 0, pages_fetched: 0, total_moments_seen: 0,
-          terminated_reason: "no_more_moments", skip_cached: skipCached,
-          elapsed_ms: Date.now() - startedMs,
+          on_chain_count: 0, terminated_reason: "no_more_moments",
+          skip_cached: skipCached, elapsed_ms: Date.now() - startedMs,
         },
       })
       return
     }
 
     const cachedIds = skipCached ? await loadCachedMomentIds(wallet) : new Set<string>()
-    const idsToWalk = skipCached
-      ? onChainIds.filter(id => !cachedIds.has(String(id)))
-      : onChainIds
-    totalSkippedCached = onChainIds.length - idsToWalk.length
-
-    if (idsToWalk.length > MAX_MOMENTS_PER_RUN) {
-      terminatedReason = "safety_ceiling"
-      idsToWalk.length = MAX_MOMENTS_PER_RUN
-    }
+    const idsToWrite = skipCached ? onChainIds.filter(id => !cachedIds.has(id)) : onChainIds
+    const skippedCount = onChainIds.length - idsToWrite.length
 
     const now = new Date().toISOString()
-    const allRows: Array<Record<string, unknown>> = []
+    const rows = idsToWrite.map(id => ({
+      wallet_address: wallet,
+      collection_id: ALLDAY_COLLECTION_UUID,
+      moment_id: String(id),
+      // Player / set / tier intentionally null — the AllDay edition
+      // resolver fills in editions.external_id metadata, and reads JOIN
+      // wallet_moments_cache.edition_key → editions at query time.
+      // edition_key NULL until we wire a separate post-walk enricher
+      // that fetches each NFT's editionID via a batched Cadence script.
+      edition_key: null,
+      player_name: null,
+      set_name: null,
+      tier: null,
+      serial_number: null,
+      series_number: null,
+      acquired_at: null,
+      fmv_usd: null,
+      last_seen_at: now,
+    }))
 
-    for (let batchStart = 0; batchStart < idsToWalk.length; batchStart += BATCH_SIZE) {
-      if (Date.now() - startedMs > SOFT_DEADLINE_MS) {
-        terminatedReason = "timeout"
-        break
-      }
-
-      const batch = idsToWalk.slice(batchStart, batchStart + BATCH_SIZE)
-      batchesFetched++
-
-      const metadataResults = await mapWithConcurrency(batch, CONCURRENCY, async (id) => {
-        try {
-          return await getMomentMetadata(wallet, id)
-        } catch (err) {
-          console.warn(
-            `[wallet-backfill-allday] meta fail momentId=${id} wallet=${wallet.slice(0, 10)} reason=${err instanceof Error ? err.message : String(err)}`
-          )
-          return null
-        }
-      })
-
-      for (let i = 0; i < batch.length; i++) {
-        const meta = metadataResults[i]
-        if (!meta) continue
-        totalFetched++
-
-        const setID = meta.setID ?? null
-        const playID = meta.playID ?? null
-        const editionKey = setID && playID ? `${setID}:${playID}` : ""
-        const serial = meta.serial ? parseInt(meta.serial, 10) : null
-
-        allRows.push({
-          wallet_address: wallet,
-          collection_id: ALLDAY_COLLECTION_UUID,
-          moment_id: String(batch[i]),
-          edition_key: editionKey,
-          serial_number: Number.isFinite(serial) ? serial : null,
-          player_name: meta.player || null,
-          set_name: meta.setName || null,
-          tier: meta.tier || null,
-          series_number: null, // AllDay series is name-based, not numeric
-          acquired_at: null,
-          fmv_usd: null,
-          last_seen_at: now,
-        })
-      }
-
-      if (allRows.length >= UPSERT_CHUNK) {
-        const chunk = allRows.splice(0, allRows.length)
-        const { data, error } = await (supabaseAdmin as any)
-          .from("wallet_moments_cache")
-          .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
-          .select("moment_id")
-        if (error) {
-          console.error(`[wallet-backfill-allday] upsert err batch=${batchesFetched}: ${error.message}`)
-        } else {
-          totalUpserted += data?.length ?? chunk.length
-        }
-      }
-
-      if (totalFetched > 0 && totalFetched % 200 < BATCH_SIZE) {
-        console.log(
-          `[wallet-backfill-allday] progress wallet=${wallet.slice(0, 10)} fetched=${totalFetched}/${idsToWalk.length}`
-        )
-      }
-    }
-
-    if (allRows.length > 0) {
+    for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
+      const chunk = rows.slice(i, i + UPSERT_CHUNK)
       const { data, error } = await (supabaseAdmin as any)
         .from("wallet_moments_cache")
-        .upsert(allRows, { onConflict: "wallet_address,collection_id,moment_id" })
+        .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
         .select("moment_id")
       if (error) {
-        console.error(`[wallet-backfill-allday] final upsert err: ${error.message}`)
+        console.error(`[wallet-backfill-allday] upsert err chunk=${i}: ${error.message}`)
       } else {
-        totalUpserted += data?.length ?? allRows.length
+        totalUpserted += data?.length ?? chunk.length
       }
     }
 
@@ -302,13 +201,12 @@ async function runBackfill(
 
     await logRun({
       startedAt: startedAtIso, wallet,
-      rowsFound: idsToWalk.length, rowsWritten: totalUpserted, rowsSkipped: totalSkippedCached,
+      rowsFound: onChainIds.length, rowsWritten: totalUpserted, rowsSkipped: skippedCount,
       ok: true,
       extra: {
         on_chain_count: onChainIds.length,
-        pages_fetched: batchesFetched,
-        total_moments_seen: totalFetched,
-        skipped_cached: totalSkippedCached,
+        rows_to_write: idsToWrite.length,
+        skipped_cached: skippedCount,
         terminated_reason: terminatedReason,
         skip_cached: skipCached,
         elapsed_ms: Date.now() - startedMs,
@@ -319,10 +217,9 @@ async function runBackfill(
     const msg = err instanceof Error ? err.message : String(err)
     await logRun({
       startedAt: startedAtIso, wallet,
-      rowsFound: totalFetched, rowsWritten: totalUpserted, rowsSkipped: totalSkippedCached,
+      rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
       ok: false, error: msg,
       extra: {
-        pages_fetched: batchesFetched, total_moments_seen: totalFetched,
         terminated_reason: terminatedReason, skip_cached: skipCached,
         elapsed_ms: Date.now() - startedMs,
       },
