@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { topshotGraphql } from "@/lib/topshot"
+import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+const VALID_UUIDS = new Set(Object.values(COLLECTION_UUID_BY_SLUG))
 
 const SERIES_MAP: Record<number, string> = {
   0: "Series 1",
@@ -35,13 +37,32 @@ async function resolveWallet(input: string): Promise<string> {
   return raw.startsWith("0x") ? raw : `0x${raw}`
 }
 
+function resolveCollectionId(raw: string | null): string | null {
+  if (!raw) return null
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  // UUID passed directly — accept if it's one of ours.
+  if (VALID_UUIDS.has(trimmed)) return trimmed
+  // Slug (hyphen-style: nba-top-shot, nfl-all-day, etc).
+  const uuid = COLLECTION_UUID_BY_SLUG[trimmed]
+  return uuid ?? null
+}
+
 export async function GET(req: NextRequest) {
   try {
     const walletInput = req.nextUrl.searchParams.get("wallet")
     if (!walletInput) return NextResponse.json({ error: "wallet required" }, { status: 400 })
 
+    const collectionParam = req.nextUrl.searchParams.get("collection_id")
+    const collectionId = resolveCollectionId(collectionParam)
+    if (!collectionId) {
+      return NextResponse.json(
+        { error: "collection_id required (slug like nba-top-shot or canonical UUID)" },
+        { status: 400 }
+      )
+    }
+
     const wallet = await resolveWallet(walletInput)
-    const collectionId = req.nextUrl.searchParams.get("collection_id") || TOPSHOT_COLLECTION_ID
 
     // Acquisition stats via RPC
     const { data: acqRaw } = await (supabaseAdmin as any).rpc("get_acquisition_stats", {
@@ -111,16 +132,25 @@ export async function GET(req: NextRequest) {
     const clarityCount = (confidenceDist.HIGH || 0) + (confidenceDist.MEDIUM || 0)
     const clarityPct = total > 0 ? Math.round((clarityCount / total) * 1000) / 10 : 0
 
+    // Acquisition history is currently only tracked for Top Shot via the Top Shot
+    // GraphQL acquisition timeline. For the other collections we have no
+    // acquisition source yet, so report nulls instead of misleading zeros.
+    const isTopShot = collectionId === TOPSHOT_COLLECTION_ID
+    const acqTotal = Number(acqResult.total_moments ?? 0)
+    const acquisitionPayload = !isTopShot && acqTotal === 0
+      ? null
+      : {
+          pack_pull_count: acqCounts.pack_pull,
+          marketplace_count: acqCounts.marketplace,
+          challenge_reward_count: acqCounts.challenge_reward,
+          gift_count: acqCounts.gift,
+          total_tracked: acqTotal,
+        }
+
     return NextResponse.json({
       wallet,
       collection_id: collectionId,
-      acquisition: {
-        pack_pull_count: acqCounts.pack_pull,
-        marketplace_count: acqCounts.marketplace,
-        challenge_reward_count: acqCounts.challenge_reward,
-        gift_count: acqCounts.gift,
-        total_tracked: Number(acqResult.total_moments ?? 0),
-      },
+      acquisition: acquisitionPayload,
       locked: {
         locked_count: lockedCount,
         unlocked_count: unlockedCount,

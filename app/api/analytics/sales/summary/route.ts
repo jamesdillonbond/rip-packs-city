@@ -28,12 +28,18 @@ export async function GET(req: NextRequest) {
       `[analytics/sales/summary] start window=${window} collections=${collections?.join(",") ?? "all"}`
     )
 
+    // Always pass an explicit p_end_at — when window=all, windowRange returns
+    // null endISO. The RPC's prior-period delta logic only computes when both
+    // start and end bounds are set, so we anchor end to "now" so the SalesDashboard
+    // delta chips populate correctly for every window.
+    const endISO = range.endISO ?? new Date().toISOString()
+
     const { data, error } = await rpcWithRetry<SalesSummaryResponse>(
       supabaseAdmin,
       "analytics_sales_summary",
       {
         p_start_at: range.startISO,
-        p_end_at: range.endISO,
+        p_end_at: endISO,
         p_collections: collections,
       }
     )
