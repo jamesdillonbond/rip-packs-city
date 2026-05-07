@@ -14,6 +14,7 @@ const LINKS: TopNavLink[] = [
   { label: "All Day", href: "/nfl-all-day/overview", matchPrefix: "/nfl-all-day" },
   { label: "Golazos", href: "/laliga-golazos/overview", matchPrefix: "/laliga-golazos" },
   { label: "Pinnacle", href: "/disney-pinnacle/overview", matchPrefix: "/disney-pinnacle" },
+  { label: "UFC", href: "/ufc/overview", matchPrefix: "/ufc" },
   { label: "Analytics", href: "/analytics", matchPrefix: "/analytics" },
 ]
 
