@@ -1,24 +1,26 @@
-// app/api/wallet-backfill-allday/route.ts
+// app/api/wallet-backfill-golazos/route.ts
 //
-// AllDay wallet enricher — thin wrapper over the shared
-// runIdOnlyBackfill helper. See lib/wallet-backfill-helpers.ts for the
-// runner, the cache-diff logic, and the rationale for ID-only writes.
+// LaLiga Golazos wallet enricher. ID-only via NonFungibleToken
+// CollectionPublic at /public/GolazoNFTCollection. Golazos has the
+// thinnest secondary-market liquidity of the five collections; the
+// editions table is sparse, so most rows here will read with player /
+// set null until the Golazos ingest pipeline catches up.
 
 import { NextRequest, NextResponse, after } from "next/server"
 import {
   runIdOnlyBackfill,
-  CADENCE_ALLDAY,
-  ALLDAY_COLLECTION_UUID,
+  CADENCE_GOLAZOS,
+  GOLAZOS_COLLECTION_UUID,
 } from "@/lib/wallet-backfill-helpers"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
 
 const CONFIG = {
-  slug: "nfl_all_day",
-  collectionUuid: ALLDAY_COLLECTION_UUID,
-  cadenceScript: CADENCE_ALLDAY,
-  pipelineName: "wallet-backfill-allday",
+  slug: "laliga_golazos",
+  collectionUuid: GOLAZOS_COLLECTION_UUID,
+  cadenceScript: CADENCE_GOLAZOS,
+  pipelineName: "wallet-backfill-golazos",
 } as const
 
 export async function POST(req: NextRequest) {
