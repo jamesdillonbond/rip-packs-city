@@ -196,6 +196,97 @@ export async function POST(req: NextRequest) {
 
   const isDuplicate = Boolean(result.duplicate)
 
+  // Auto-approval pass — only on first-time submissions. Calls
+  // auto_approve_eligible() with the same fields submit_allow_list_request
+  // received. Score >= 90 → auto-promote to status='active' and stamp
+  // auto_approved_at; 60-89 → record score but leave pending so admin can
+  // bulk-approve mid-band; < 60 → leave as pending without a score; any
+  // blocked_by → mark rejected with the reason. Decisions are advisory:
+  // failures during this pass are non-fatal.
+  let autoApprovalOutcome: {
+    eligible: boolean
+    score: number
+    reasons: string[]
+    blocked_by: string[]
+    action: "auto_approved" | "pending_with_score" | "pending" | "rejected"
+  } | null = null
+
+  if (!isDuplicate) {
+    try {
+      const { data: scoreResult } = await supabaseAdmin.rpc("auto_approve_eligible", {
+        p_email: email,
+        p_wallet_addr: wallet,
+        p_username: username,
+        p_ip_hash: ipHash,
+      })
+      const scored = (scoreResult ?? {}) as {
+        eligible?: boolean
+        score?: number
+        reasons?: string[]
+        blocked_by?: string[]
+      }
+      const score = typeof scored.score === "number" ? scored.score : 0
+      const blockedBy = Array.isArray(scored.blocked_by) ? scored.blocked_by : []
+
+      const { data: row } = await supabaseAdmin
+        .from("allow_list")
+        .select("id")
+        .eq("email", email)
+        .maybeSingle()
+
+      if (row?.id) {
+        if (blockedBy.length > 0) {
+          await supabaseAdmin
+            .from("allow_list")
+            .update({
+              status: "rejected",
+              reject_reason: blockedBy[0],
+              auto_approval_score: score,
+            })
+            .eq("id", row.id)
+          autoApprovalOutcome = {
+            eligible: false, score, reasons: scored.reasons ?? [],
+            blocked_by: blockedBy, action: "rejected",
+          }
+        } else if (score >= 90) {
+          await supabaseAdmin
+            .from("allow_list")
+            .update({
+              status: "active",
+              auto_approved_at: new Date().toISOString(),
+              auto_approval_score: score,
+              approved_by: "auto",
+              approved_at: new Date().toISOString(),
+            })
+            .eq("id", row.id)
+          autoApprovalOutcome = {
+            eligible: true, score, reasons: scored.reasons ?? [],
+            blocked_by: [], action: "auto_approved",
+          }
+        } else if (score >= 60) {
+          await supabaseAdmin
+            .from("allow_list")
+            .update({ auto_approval_score: score })
+            .eq("id", row.id)
+          autoApprovalOutcome = {
+            eligible: false, score, reasons: scored.reasons ?? [],
+            blocked_by: [], action: "pending_with_score",
+          }
+        } else {
+          autoApprovalOutcome = {
+            eligible: false, score, reasons: scored.reasons ?? [],
+            blocked_by: [], action: "pending",
+          }
+        }
+      }
+    } catch (autoErr) {
+      console.warn(
+        "[early-access/submit] auto_approve_eligible failed (continuing):",
+        autoErr instanceof Error ? autoErr.message : String(autoErr)
+      )
+    }
+  }
+
   // First-time submissions: page Trevor on Telegram and stamp notified_at.
   // Duplicates just merge collections into an existing row so they should not
   // re-page. Run after the response so the user's thank-you state is instant.
@@ -232,6 +323,12 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     duplicate: isDuplicate,
-    status: result.status ?? "pending",
+    status:
+      autoApprovalOutcome?.action === "auto_approved"
+        ? "active"
+        : autoApprovalOutcome?.action === "rejected"
+          ? "rejected"
+          : (result.status ?? "pending"),
+    auto_approval: autoApprovalOutcome,
   })
 }

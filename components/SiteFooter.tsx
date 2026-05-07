@@ -106,11 +106,37 @@ export default function SiteFooter() {
         }}
       >
         <span>&copy; 2026 RIP PACKS CITY</span>
-        <div style={{ display: "flex", gap: 16 }}>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", justifyContent: "flex-end" }}>
           <Link href="/about" style={{ color: "var(--rpc-text-ghost)", textDecoration: "none" }}>ABOUT</Link>
+          <Link href="/pricing" style={{ color: "var(--rpc-text-ghost)", textDecoration: "none" }}>PRICING</Link>
+          <Link href="/legal/fmv-methodology" style={{ color: "var(--rpc-text-ghost)", textDecoration: "none" }}>FMV METHODOLOGY</Link>
           <Link href="/terms" style={{ color: "var(--rpc-text-ghost)", textDecoration: "none" }}>TERMS</Link>
           <Link href="/privacy" style={{ color: "var(--rpc-text-ghost)", textDecoration: "none" }}>PRIVACY</Link>
         </div>
+      </div>
+
+      {/* FMV disclaimer strip — surfaces "not investment advice" globally
+          per the Phase 1 legal review. Same copy + methodology link as the
+          inline FmvDisclaimer component used on per-page price displays;
+          this footer placement is the catch-all so the disclosure fires on
+          every surface even if a specific tile drops the inline variant. */}
+      <div
+        style={{
+          borderTop: "1px solid var(--rpc-border)",
+          padding: "10px 24px",
+          maxWidth: "var(--max-width)",
+          margin: "0 auto",
+          fontSize: "var(--text-xs)",
+          color: "var(--rpc-text-ghost)",
+          letterSpacing: "0.06em",
+          textAlign: "center",
+        }}
+      >
+        FMV is for informational purposes only — not investment advice. Marketplaces are
+        volatile; past prices do not predict future prices. {" "}
+        <Link href="/legal/fmv-methodology" style={{ color: "var(--rpc-text-muted)", textDecoration: "underline", textDecorationStyle: "dotted" }}>
+          How is FMV calculated?
+        </Link>
       </div>
     </footer>
   );
