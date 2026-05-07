@@ -10,6 +10,7 @@ import {
   AreaChart, Area, BarChart, Bar,
 } from "recharts"
 import { getCollection } from "@/lib/collections"
+import { pickEmpty } from "@/lib/schonely"
 
 // ── Slug mapping ────────────────────────────────────────────────────────────
 // URL slug ("nba-top-shot") → RPC short slug ("topshot") used by the
@@ -1585,7 +1586,7 @@ function AnalyticsInner() {
               ) : playerLoading ? (
                 <div className="h-24 animate-pulse rounded bg-zinc-900" />
               ) : !playerResults || playerResults.length === 0 ? (
-                <div className="py-6 text-center text-sm text-zinc-500">No results</div>
+                <div className="py-6 text-center text-sm text-zinc-500">{pickEmpty()}</div>
               ) : (
                 <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
                   <thead>

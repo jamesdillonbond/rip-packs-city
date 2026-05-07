@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import RpcLogo from "@/components/RpcLogo";
 import SiteFooter from "@/components/SiteFooter";
 import MobileNav from "@/components/MobileNav";
+import PinwheelDivider from "@/components/visual/PinwheelDivider";
 import { publishedCollections } from "@/lib/collections";
 import { organizationJsonLd } from "@/lib/seo";
 
@@ -482,6 +483,8 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      <PinwheelDivider />
 
       {/* HOW IT WORKS */}
       <section
