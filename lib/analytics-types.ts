@@ -678,6 +678,99 @@ export interface LenderPerformanceRow {
   active_loans: number
 }
 
+// ── Liquidity distribution RPC response ───────────────────────────────────
+// analytics_liquidity_distribution(p_collections). Per-collection roll-up of
+// editions bucketed by liquidity_rating (L5..L1, plus a 'cold' bucket for
+// editions with no rating). Pinnacle has no liquidity_rating column today
+// so all rows fold into the cold bucket.
+
+export interface LiquidityDistributionRow {
+  collection: string
+  l5: number
+  l4: number
+  l3: number
+  l2: number
+  l1: number
+  l0: number
+  cold: number
+  total: number
+  high_conf_total_fmv: number
+}
+
+export interface LiquidityDistributionResponse {
+  as_of: string
+  rows: LiquidityDistributionRow[]
+}
+
+// ── Net Marketplace activity RPC response ─────────────────────────────────
+// flowty_top_net_marketplace(p_collection, p_start, p_end, p_limit).
+// Wallets ranked by combined buy + sell activity on Flowty's NFTStorefrontV2
+// fork. net_position_usd = buy_volume - sell_volume (negative = net seller).
+
+export interface NetMarketplaceRow {
+  rank: number
+  address: string
+  buy_volume_usd: number
+  sell_volume_usd: number
+  gross_activity_usd: number
+  net_position_usd: number
+  buy_tx_count: number
+  sell_tx_count: number
+  total_tx_count: number
+}
+
+export interface NetMarketplaceResponse {
+  collection: string
+  days: number
+  rows: NetMarketplaceRow[]
+}
+
+// ── Insider signals route response ────────────────────────────────────────
+// /api/analytics/insider/signals — composes three Supabase tables into one
+// dashboard payload. has_data is the visibility gate for the InsiderSignals
+// component on /analytics: when false the component returns null entirely.
+
+export interface InsiderAlertRow {
+  id: string
+  alert_type: string | null
+  title: string | null
+  summary: string | null
+  // 1 = info, 2 = warn, 3 = urgent.
+  severity: number | null
+  generated_at: string
+  expires_at: string | null
+}
+
+export interface InsiderBuybackRow {
+  id: string
+  acquisition_method: string | null
+  buyer_address: string | null
+  seller_address: string | null
+  moment_id: string | null
+  serial_number: number | null
+  price_usd: number | null
+  sold_at: string
+  player_name: string | null
+  set_name: string | null
+}
+
+export interface ExternalAnnouncementRow {
+  id: string
+  source: string | null
+  source_channel: string | null
+  source_url: string | null
+  title: string | null
+  posted_at: string
+}
+
+export interface InsiderSignalsResponse {
+  has_data: boolean
+  alerts: InsiderAlertRow[]
+  buybacks: InsiderBuybackRow[]
+  announcements: ExternalAnnouncementRow[]
+  generated_at: string
+}
+
 // ── Username resolution responses ──────────────────────────────────────────
 // analytics_resolve_usernames + analytics_lookup_username. Public mapping
 // from wallet address to NBA Top Shot username (or other source).

@@ -762,6 +762,110 @@ function LoansBookCard({ short }: { short: string }) {
   )
 }
 
+function LiquidityHeatmapCard({ short }: { short: string }) {
+  type Row = {
+    collection: string
+    l5: number; l4: number; l3: number; l2: number; l1: number; l0: number
+    cold: number; total: number; high_conf_total_fmv: number
+  }
+  const [row, setRow] = useState<Row | null>(null)
+  const [loading, setLoading] = useState(true)
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    fetch(`/api/analytics/fmv/liquidity-distribution?collections=${encodeURIComponent(short)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (cancelled || !j?.rows) return
+        const match = (j.rows as Row[]).find((r) => (r.collection || "").toLowerCase() === short)
+        setRow(match ?? null)
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [short])
+
+  // Buckets in chart order: L5 (deepest) → L1 → cold (no rating).
+  const BUCKETS = [
+    { key: "l5", label: "L5", color: "var(--rpc-success)", help: "Deep liquidity" },
+    { key: "l4", label: "L4", color: "var(--rpc-info)", help: "Strong liquidity" },
+    { key: "l3", label: "L3", color: "var(--rpc-warning)", help: "Moderate" },
+    { key: "l2", label: "L2", color: "#fb923c", help: "Light" },
+    { key: "l1", label: "L1", color: "var(--rpc-danger)", help: "Thin" },
+    { key: "cold", label: "Cold", color: "#475569", help: "No liquidity rating" },
+  ] as const
+
+  const isPinnacle = short === "pinnacle"
+  const total = row ? Number(row.total) || 0 : 0
+  const fmv = row ? Number(row.high_conf_total_fmv) || 0 : 0
+  const tooThin = total > 0 && total < 10
+
+  return (
+    <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <div className="text-[10px] uppercase tracking-widest text-zinc-500" style={{ fontFamily: "var(--font-display)" }}>
+          Liquidity Heatmap
+        </div>
+        {row && (
+          <div className="text-[11px] text-zinc-400" style={{ fontFamily: "var(--font-mono)" }}>
+            {total.toLocaleString()} editions · {fmt(fmv)} reliable FMV
+          </div>
+        )}
+      </div>
+
+      {loading && !row ? (
+        <div className="h-16 animate-pulse rounded bg-zinc-900" />
+      ) : !row ? (
+        <div className="text-sm text-zinc-500">No liquidity data for this collection.</div>
+      ) : isPinnacle ? (
+        <div className="text-[11px]" style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)" }}>
+          Pinnacle FMV is sales-volume-derived; granular liquidity ratings coming in a future update.
+        </div>
+      ) : tooThin ? (
+        <div className="text-[11px]" style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)" }}>
+          Insufficient FMV coverage to chart liquidity.
+        </div>
+      ) : (
+        <>
+          {/* Stacked horizontal proportion bar */}
+          <div className="flex h-3 w-full overflow-hidden rounded-full border border-zinc-800">
+            {BUCKETS.map((b) => {
+              const value = Number((row as any)[b.key]) || 0
+              const pct = total > 0 ? (value / total) * 100 : 0
+              if (pct === 0) return null
+              return (
+                <div
+                  key={b.key}
+                  style={{ width: `${pct}%`, background: b.color }}
+                  title={`${b.label} · ${value.toLocaleString()} (${pct.toFixed(1)}%)`}
+                />
+              )
+            })}
+          </div>
+
+          {/* Mini-grid: count + percentage per bucket */}
+          <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6" style={{ fontFamily: "var(--font-mono)" }}>
+            {BUCKETS.map((b) => {
+              const value = Number((row as any)[b.key]) || 0
+              const pct = total > 0 ? (value / total) * 100 : 0
+              return (
+                <div key={b.key} className="rounded-lg border border-zinc-800 bg-black p-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-block h-2 w-2 rounded-full" style={{ background: b.color }} />
+                    <span className="text-[10px] uppercase tracking-widest text-zinc-500">{b.label}</span>
+                  </div>
+                  <div className="mt-1 text-base font-bold text-white">{value.toLocaleString()}</div>
+                  <div className="text-[10px] text-zinc-500">{pct.toFixed(1)}%</div>
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
+    </section>
+  )
+}
+
 function WhaleLeaderboard({ short }: { short: string }) {
   const [buyers, setBuyers] = useState<LeaderboardRow[] | null>(null)
   const [sellers, setSellers] = useState<LeaderboardRow[] | null>(null)
@@ -1433,6 +1537,11 @@ function AnalyticsInner() {
             <PackEvCard short={short} urlSlug={collection} />
             <LoansBookCard short={short} />
           </section>
+
+          {/* Liquidity heatmap (full-width — needs the room for the 6-bucket mini-grid) */}
+          <div className="mb-6">
+            <LiquidityHeatmapCard short={short} />
+          </div>
 
           {/* Whale leaderboard */}
           <div className="mb-6">

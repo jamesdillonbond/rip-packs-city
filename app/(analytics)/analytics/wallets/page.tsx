@@ -15,6 +15,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { resolveUsernames, displayName } from "@/lib/flowty-username"
 import WalletIdenticon from "@/components/analytics/WalletIdenticon"
 import WalletsHubOverview from "@/components/analytics/WalletsHubOverview"
+import NetMarketplaceLeaderboard from "@/components/analytics/NetMarketplaceLeaderboard"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
 import type { WalletDirectoryRow } from "@/lib/analytics-types"
 
@@ -124,6 +125,8 @@ export default async function WalletsIndexPage() {
         </header>
 
         <WalletsHubOverview />
+
+        <NetMarketplaceLeaderboard />
 
         <div className="space-y-3">
           <div>
