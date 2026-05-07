@@ -195,6 +195,26 @@ export const METHODOLOGY: Record<string, MethodologyEntry> = {
     ],
     refresh: "FMV every ~10 min · catalog daily · per-set detail ISR every 6h",
   },
+  packs: {
+    slug: "packs",
+    title: "Pack Analytics Methodology",
+    blurb: "How RPC computes pack expected value, supply tracking, and the EV-vs-ask ratio that powers the Top EV table.",
+    paragraphs: [
+      "Pack analytics tracks every active pack listing across NBA Top Shot and NFL All Day in near-real-time. A 20-minute cron crawls Top Shot's pack-listings endpoint and AllDay's pack-distributions endpoint, normalizes the catalog into a unified packs table, and stamps each row with the live ask price, supply totals, and reward tier composition. Pinnacle, Golazos, and UFC Strike are out of scope today — none of those collections expose pack listings as a structured first-class endpoint.",
+      "Expected value (EV) is computed as the sum of remaining moment FMV times pull odds, divided by remaining_count. For each reward tier in a pack, we look up FMV across every edition that's still in the reward pool, weight by the pull probability for that tier, and accumulate. The denominator (remaining_count) accounts for opened packs draining the pool — EV climbs as the high-tier moments stay locked in unopened packs. Reward odds come from the pack's published pull rates; FMV uses the canonical fmv_snapshots table (HIGH+MEDIUM+LOW confidence, ASK_ONLY excluded — see the FMV methodology for why).",
+      "Supply curve. The total_minted and total_opened fields are read directly from the on-chain pack contract — every pack has a deterministic mint count at distribution time and an opened-counter that ticks up as buyers crack packs. Outstanding supply is total_minted − total_opened. The supply curve is what makes pack EV interesting: as opens accumulate, the expected pull pool shrinks asymmetrically (high-tier moments are pulled less often than common ones), so EV per remaining pack drifts upward over time. The Top EV table sorts by EV / ask ratio and surfaces the packs where this drift has overrun the listing price.",
+      "Confidence — Coverage %. Each pack's EV figure carries a coverage percentage: the share of reward-pool editions that have HIGH or MEDIUM FMV confidence. Packs at 100% coverage are fully reliable. Packs below 70% are flagged with a thin-data warning chip in the dashboard — the EV is still rendered (with the caveat) but shouldn't drive auto-buy logic. Coverage drops happen mostly on freshly-minted reward editions where the FMV pipeline hasn't had enough sales to compute a HIGH-confidence number yet.",
+      "Caveats. Reward packs at $0 (free distributions earned via challenges) and locked packs at $99,999 (placeholder asks for un-listable inventory) are excluded from headline metrics. Pack EV becomes structurally unstable as remaining_count approaches single digits — when only a handful of unopened packs remain in a distribution, the variance on the EV estimate explodes and a single high-tier pull can move the headline number 10x. The dashboard renders an info chip on these rows so readers don't misread the spike as a buying signal.",
+    ],
+    sources: [
+      "packs (Supabase) — one row per active pack listing, with ask, supply, and reward composition",
+      "pack_rewards (Supabase) — per-pack reward tier composition with pull odds",
+      "fmv_snapshots (Supabase) — most recent FMV per reward edition (HIGH+MEDIUM+LOW confidence)",
+      "Top Shot pack-listings + AllDay pack-distributions endpoints — listing source",
+      "On-chain pack contract reads — total_minted / total_opened supply curve",
+    ],
+    refresh: "Every 20 minutes via listing-cache pipeline.",
+  },
 }
 
 export const METHODOLOGY_LIST = Object.values(METHODOLOGY)
