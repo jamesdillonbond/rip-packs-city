@@ -6,7 +6,7 @@ import {
   isWalletAddress,
   resolveTopShotUsernameCacheAware,
 } from "@/lib/topshot-username-resolve"
-import { isStorageLimitError } from "@/lib/wallet-backfill-helpers"
+import { isStorageLimitError, isNoCollectionCapabilityError } from "@/lib/wallet-backfill-helpers"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -329,6 +329,7 @@ async function runBackfill(
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
+    const elapsedMs = Date.now() - startedMs
     // Cadence error 1106 ("max interaction with storage") is a permanent
     // property of mega-wallets — log as ok:true with a sharded-scan flag so
     // it stops counting as a pipeline failure. See lib/wallet-backfill-helpers.
@@ -346,11 +347,36 @@ async function runBackfill(
           terminated_reason: "storage_limit_exceeded",
           flagged_for_sharded_scan: true,
           skip_cached: skipCached,
-          elapsed_ms: Date.now() - startedMs,
+          elapsed_ms: elapsedMs,
           error_excerpt: msg.slice(0, 200),
         },
       })
       console.log(`[wallet-backfill] wallet_too_large wallet=${wallet} — flagged for future sharded scan`)
+      return
+    }
+    // Wallet has no /public/MomentCollection capability — uncommon for TopShot
+    // (it would mean a Flow account that has never touched TopShot at all)
+    // but possible if a discovery iterator surfaces a non-collector wallet.
+    // Same pattern as the AllDay reproducer 0xb6f2481eba4df97b.
+    if (isNoCollectionCapabilityError(err, elapsedMs)) {
+      await logRun({
+        startedAt: startedAtIso,
+        wallet,
+        rowsFound: totalFetched,
+        rowsWritten: totalUpserted,
+        rowsSkipped: totalSkippedCached,
+        ok: true,
+        extra: {
+          pages_fetched: batchesFetched,
+          total_moments_seen: totalFetched,
+          terminated_reason: "no_collection_capability",
+          flagged_for_no_capability: true,
+          skip_cached: skipCached,
+          elapsed_ms: elapsedMs,
+          error_excerpt: msg.slice(0, 200),
+        },
+      })
+      console.log(`[wallet-backfill] no_collection_capability wallet=${wallet} — wallet lacks TopShot collection capability`)
       return
     }
     terminatedReason = "error"
@@ -367,7 +393,7 @@ async function runBackfill(
         total_moments_seen: totalFetched,
         terminated_reason: terminatedReason,
         skip_cached: skipCached,
-        elapsed_ms: Date.now() - startedMs,
+        elapsed_ms: elapsedMs,
       },
     })
     console.error(`[wallet-backfill] error during backfill for ${wallet}: ${msg}`)
