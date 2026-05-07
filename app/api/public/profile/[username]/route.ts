@@ -5,6 +5,13 @@
 // username, suitable for the shareable /profile/[username] page.
 //
 // Path sits under /api/public/* which the proxy doesn't gate.
+//
+// Lookup pattern: username (URL path param) -> user_id (resolved via the
+// denormalized `profile_bio.username` cache) -> profile_bio.user_id (full
+// row) -> trophies / saved_wallets (keyed on user_id, the only canonical
+// foreign key into auth.users). Never join trophies / saved_wallets to
+// profile_bio.username directly — that column is a cache, the source of
+// truth is auth.users.id.
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
@@ -21,28 +28,39 @@ export async function GET(
     return NextResponse.json({ error: "username required" }, { status: 400 });
   }
 
-  // Resolve username -> user_id via profile_bio
-  const bioT0 = Date.now();
-  const { data: bio, error: bioErr } = await supabase
+  // Step 1: username -> user_id. profile_bio.username is the denormalized
+  // cache that maps the public URL handle to auth.users.id; we read just
+  // user_id here so the rest of the pipeline keys on the canonical id.
+  const resolveT0 = Date.now();
+  const { data: idRow, error: idErr } = await supabase
     .from("profile_bio")
-    .select("user_id, username, display_name, tagline, favorite_team, twitter, discord, avatar_url, accent_color")
+    .select("user_id")
     .ilike("username", handle)
     .maybeSingle();
-  console.log(`[public/profile] bio query elapsedMs=${Date.now() - bioT0} found=${!!bio}`);
+  console.log(`[public/profile] resolve username->user_id elapsedMs=${Date.now() - resolveT0} found=${!!idRow}`);
 
-  if (bioErr) {
-    console.error("[public/profile bio]", bioErr);
-    return NextResponse.json({ error: bioErr.message }, { status: 500 });
+  if (idErr) {
+    console.error("[public/profile resolve]", idErr);
+    return NextResponse.json({ error: idErr.message }, { status: 500 });
   }
-  if (!bio) {
+  if (!idRow) {
     console.log(`[public/profile] not_found elapsedMs=${Date.now() - startedAt}`);
     return NextResponse.json({ error: "Not found", username: handle }, { status: 404 });
   }
 
-  const userId = (bio as any).user_id;
+  const userId = (idRow as any).user_id as string;
 
+  // Step 2: load full bio + trophies + wallets in parallel, all keyed on
+  // user_id. The bio row is the same one we just probed; we re-select with
+  // the full column set so the response is a single round-trip away from a
+  // ready-to-render payload.
   const fanT0 = Date.now();
-  const [{ data: trophies }, { data: wallets }] = await Promise.all([
+  const [{ data: bio, error: bioErr }, { data: trophies }, { data: wallets }] = await Promise.all([
+    supabase
+      .from("profile_bio")
+      .select("username, display_name, tagline, favorite_team, twitter, discord, avatar_url, accent_color")
+      .eq("user_id", userId)
+      .maybeSingle(),
     supabase
       .from("trophy_moments")
       .select("slot, moment_id, collection_id, edition_id, player_name, set_name, serial_number, circulation_count, tier, thumbnail_url, video_url, fmv, badges, note, pinned_at")
@@ -53,6 +71,15 @@ export async function GET(
       .select("username, display_name, collection_id, cached_fmv_usd, cached_moment_count, cached_top_tier, cached_badges, accent_color, cached_rpc_score, cached_change_24h")
       .eq("user_id", userId),
   ]);
+
+  if (bioErr) {
+    console.error("[public/profile bio]", bioErr);
+    return NextResponse.json({ error: bioErr.message }, { status: 500 });
+  }
+  if (!bio) {
+    console.log(`[public/profile] bio_missing_for_user_id elapsedMs=${Date.now() - startedAt}`);
+    return NextResponse.json({ error: "Not found", username: handle }, { status: 404 });
+  }
   console.log(`[public/profile] trophies+wallets parallel elapsedMs=${Date.now() - fanT0} trophies=${trophies?.length ?? 0} wallets=${wallets?.length ?? 0}`);
 
   // Strip wallet addresses from the public payload
