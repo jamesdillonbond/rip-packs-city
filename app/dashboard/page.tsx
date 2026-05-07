@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import MobileNav from "@/components/MobileNav";
 import SupportChatConnected from "@/components/SupportChatConnected";
+import FirstRunTourMount from "@/components/onboarding/FirstRunTourMount";
 import RpcLogo from "@/components/RpcLogo";
 import SignOutButton from "@/components/auth/SignOutButton";
 import { ConnectButton } from "@/components/auth/ConnectButton";
@@ -991,6 +992,7 @@ function ProfilePageInner() {
 
       <MobileNav />
       <SupportChatConnected />
+      <FirstRunTourMount />
     </div>
   );
 }

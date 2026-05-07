@@ -153,6 +153,11 @@ function isPublicPath(pathname: string): boolean {
   if (pathname === "/api/support-chat" || pathname.startsWith("/api/support-chat/")) return true
   // /api/cart + subpaths — homepage cart functionality
   if (pathname === "/api/cart" || pathname.startsWith("/api/cart/")) return true
+  // /api/og + subpaths — social-share crawlers (Twitter / Slack / Discord
+  // / iMessage) need the OG card endpoints unauthenticated to render
+  // preview cards. Without this they see a 307→/login redirect and pull a
+  // generic Vercel auth thumbnail instead of the branded RPC card.
+  if (pathname === "/api/og" || pathname.startsWith("/api/og/")) return true
 
   // ── Framework + static ───────────────────────────────────────────────
   if (pathname === "/_next" || pathname.startsWith("/_next/")) return true
