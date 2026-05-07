@@ -15,6 +15,8 @@ const TOKEN = process.env.INGEST_SECRET_TOKEN ?? "";
 const RESEND_KEY = process.env.RESEND_API_KEY ?? "";
 const FROM = process.env.RPC_ALERTS_FROM || "RPC Alerts <onboarding@resend.dev>";
 const OPS_EMAIL = process.env.ALERT_EMAIL || "tdillonbond@gmail.com";
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? "";
 const COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const PIPELINE_ALERT_DEBOUNCE_MIN = 60;
 
@@ -69,6 +71,39 @@ function buildHtml(a: any, sniperUrl: string): string {
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+}
+
+async function sendTelegram(text: string): Promise<{ ok: boolean; error?: string }> {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    return { ok: false, error: "TELEGRAM_BOT_TOKEN/CHAT_ID not configured" };
+  }
+  try {
+    const res = await fetch(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, parse_mode: "HTML" }),
+      }
+    );
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      return { ok: false, error: `Telegram ${res.status}: ${body.slice(0, 200)}` };
+    }
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? String(err) };
+  }
+}
+
+function buildPipelineAlertTelegram(alerts: PipelineAlert[]): string {
+  const header = `🚨 <b>RPC Pipeline Alert</b> — ${alerts.length} active`;
+  const lines = alerts.slice(0, 12).map((a) => {
+    const sevTag = a.severity === "critical" ? "🔴" : "🟠";
+    return `${sevTag} <b>${escapeHtml(a.pipeline)}</b> · ${escapeHtml(a.type)} — ${escapeHtml(a.detail)}`;
+  });
+  const truncated = alerts.length > 12 ? `\n…and ${alerts.length - 12} more` : "";
+  return `${header}\n${lines.join("\n")}${truncated}`;
 }
 
 async function sendEmail(to: string, subject: string, html: string): Promise<{ ok: boolean; error?: string }> {
@@ -137,19 +172,21 @@ async function processPipelineAlerts(): Promise<{
   alerts_active: number;
   alerts_critical_or_high: number;
   emails_sent: number;
+  telegrams_sent: number;
   debounced: boolean;
   error?: string;
+  channel_errors?: { email?: string; telegram?: string };
 }> {
   const { data, error } = await (supabaseAdmin as any).rpc("get_pipeline_alerts");
   if (error) {
     console.log(`[check-alerts] get_pipeline_alerts err: ${error.message}`);
-    return { alerts_active: 0, alerts_critical_or_high: 0, emails_sent: 0, debounced: false, error: error.message };
+    return { alerts_active: 0, alerts_critical_or_high: 0, emails_sent: 0, telegrams_sent: 0, debounced: false, error: error.message };
   }
   const allAlerts: PipelineAlert[] = Array.isArray(data) ? data : [];
   const hot = allAlerts.filter((a) => a.severity === "critical" || a.severity === "high");
 
   if (hot.length === 0) {
-    return { alerts_active: allAlerts.length, alerts_critical_or_high: 0, emails_sent: 0, debounced: false };
+    return { alerts_active: allAlerts.length, alerts_critical_or_high: 0, emails_sent: 0, telegrams_sent: 0, debounced: false };
   }
 
   const hashInput = JSON.stringify(
@@ -169,7 +206,7 @@ async function processPipelineAlerts(): Promise<{
 
   if (existing) {
     console.log(`[check-alerts] pipeline alerts debounced (hash=${alertHash.slice(0, 10)}, last sent ${existing.sent_at})`);
-    return { alerts_active: allAlerts.length, alerts_critical_or_high: hot.length, emails_sent: 0, debounced: true };
+    return { alerts_active: allAlerts.length, alerts_critical_or_high: hot.length, emails_sent: 0, telegrams_sent: 0, debounced: true };
   }
 
   const topNames = hot
@@ -177,15 +214,26 @@ async function processPipelineAlerts(): Promise<{
     .map((a) => a.pipeline)
     .join(", ");
   const subject = `[RPC] ${hot.length} pipeline alert${hot.length === 1 ? "" : "s"}: ${topNames}${hot.length > 3 ? "…" : ""}`;
-  const send = await sendEmail(OPS_EMAIL, subject, buildPipelineAlertHtml(hot));
-  if (!send.ok) {
-    console.log(`[check-alerts] pipeline email failed: ${send.error}`);
+
+  const [emailRes, telegramRes] = await Promise.all([
+    sendEmail(OPS_EMAIL, subject, buildPipelineAlertHtml(hot)),
+    sendTelegram(buildPipelineAlertTelegram(hot)),
+  ]);
+
+  const channel_errors: { email?: string; telegram?: string } = {};
+  if (!emailRes.ok) channel_errors.email = emailRes.error;
+  if (!telegramRes.ok) channel_errors.telegram = telegramRes.error;
+
+  if (!emailRes.ok && !telegramRes.ok) {
+    console.log(`[check-alerts] pipeline notify failed on all channels — email:${emailRes.error} telegram:${telegramRes.error}`);
     return {
       alerts_active: allAlerts.length,
       alerts_critical_or_high: hot.length,
       emails_sent: 0,
+      telegrams_sent: 0,
       debounced: false,
-      error: send.error,
+      error: `all channels failed`,
+      channel_errors,
     };
   }
 
@@ -200,8 +248,18 @@ async function processPipelineAlerts(): Promise<{
       .slice(0, 500),
   });
 
-  console.log(`[check-alerts] pipeline email sent to ${OPS_EMAIL} — ${hot.length} alerts (hash=${alertHash.slice(0, 10)})`);
-  return { alerts_active: allAlerts.length, alerts_critical_or_high: hot.length, emails_sent: 1, debounced: false };
+  console.log(
+    `[check-alerts] pipeline notify — ${hot.length} alerts (hash=${alertHash.slice(0, 10)}) email=${emailRes.ok ? "ok" : "fail"} telegram=${telegramRes.ok ? "ok" : "fail"}`
+  );
+
+  return {
+    alerts_active: allAlerts.length,
+    alerts_critical_or_high: hot.length,
+    emails_sent: emailRes.ok ? 1 : 0,
+    telegrams_sent: telegramRes.ok ? 1 : 0,
+    debounced: false,
+    ...(Object.keys(channel_errors).length > 0 ? { channel_errors } : {}),
+  };
 }
 
 export async function GET(req: NextRequest) {
@@ -267,11 +325,12 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  const pipelineNotifications = (pipelineAlerts.emails_sent ?? 0) + (pipelineAlerts.telegrams_sent ?? 0);
   await (supabaseAdmin as any).rpc("log_pipeline_run", {
     p_pipeline: "check-alerts",
     p_started_at: startedAt,
     p_rows_found: (pipelineAlerts.alerts_active ?? 0) + total_triggered,
-    p_rows_written: (pipelineAlerts.emails_sent ?? 0) + emailed,
+    p_rows_written: pipelineNotifications + emailed,
     p_rows_skipped: skipped_cooldown,
     p_ok: errors.length === 0 && !pipelineAlerts.error,
     p_error: pipelineAlerts.error ?? (errors.length ? `${errors.length} fmv errs` : null),
