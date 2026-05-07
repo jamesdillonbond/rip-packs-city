@@ -47,13 +47,12 @@ async function resolveUsernameToAddress(
   }
 }
 
-// Fire wallet-backfill (Cadence walk over col.getIDs()) instead of
-// wallet-search (which paginates with default limit=24 and was the source of
-// the May 6 truncation bug — wallets like Rigged ended up with 101 cached
-// moments out of 33,000+ on-chain). wallet-backfill returns 202 immediately
-// and continues enrichment in the background up to ~260s. We don't await
-// completion here because the parent after() lifetime is shared across all
-// 600+ active seeded wallets.
+// Fire wallet-backfill-multicollection so the cron sweep refreshes all 5
+// published collections per wallet on every cycle. Each child enricher
+// (wallet-backfill, wallet-backfill-allday, …) runs its own after() so
+// the orchestrator returns 202 in <5s; most cycles for fully-cached
+// wallets are no-ops because skip_cached defaults to true and walks only
+// the on-chain → cache diff. Heavy lifting hits whales on first seed.
 async function refreshViaWalletBackfill(
   origin: string,
   walletAddress: string,
@@ -61,7 +60,7 @@ async function refreshViaWalletBackfill(
   forceFullWalk: boolean
 ): Promise<boolean> {
   try {
-    const res = await fetch(origin + "/api/wallet-backfill", {
+    const res = await fetch(origin + "/api/wallet-backfill-multicollection", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -69,8 +68,9 @@ async function refreshViaWalletBackfill(
       },
       body: JSON.stringify({
         wallet: walletAddress,
-        // Default-true on the route side; pass false explicitly when we want a
-        // forced re-walk (e.g. detected drift > tolerance).
+        // Default-true on the orchestrator side; pass false explicitly when
+        // we detect a drift signature (e.g. cached_moment_count sitting on a
+        // truncation marker like 24 / 50 / 100).
         skip_cached: !forceFullWalk,
       }),
     })
