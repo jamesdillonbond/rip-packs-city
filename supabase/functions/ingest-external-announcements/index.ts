@@ -1,3 +1,4 @@
+// RETIRED 2026-05-07: Reddit/RSS path abandoned, see /api/admin/announcements for current ingest.
 // ingest-external-announcements
 //
 // Polls the public surfaces (RSS feeds, Twitter mirrors via Nitter,
@@ -22,8 +23,14 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? ""
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-const FUNCTION_VERSION = 2
+const FUNCTION_VERSION = 3
 const PIPELINE = "ingest-external-announcements"
+
+// Cap the per-attempt body excerpt we surface into pipeline_runs.extra so a
+// run-of-the-mill 403/429/Cloudflare-challenge body doesn't blow up the JSON
+// payload. 500 chars is enough to identify the failure mode (Reddit's text
+// 429s, Cloudflare interstitial markers, DNS/timeout exception messages).
+const BODY_EXCERPT_MAX = 500
 
 interface SourceConfig {
   source: "topshot" | "pinnacle" | "allday"
@@ -159,7 +166,19 @@ function parseFeed(xml: string): ParsedEntry[] {
   return out
 }
 
-async function fetchOneFeed(url: string): Promise<{ xml: string | null; status: number; error?: string }> {
+interface FetchAttempt {
+  url: string
+  status: number
+  error?: string
+  error_kind?: "http_error" | "empty_body" | "exception"
+  exception_name?: string
+  body_excerpt?: string
+  content_type?: string | null
+  elapsed_ms: number
+}
+
+async function fetchOneFeed(url: string): Promise<{ xml: string | null; attempt: FetchAttempt }> {
+  const started = Date.now()
   try {
     const res = await fetch(url, {
       method: "GET",
@@ -169,23 +188,76 @@ async function fetchOneFeed(url: string): Promise<{ xml: string | null; status: 
       },
       signal: AbortSignal.timeout(12_000),
     })
+    const contentType = res.headers.get("content-type")
     if (!res.ok) {
-      return { xml: null, status: res.status, error: `HTTP ${res.status}` }
+      // Read the error body so we can tell 403-from-Cloudflare apart from
+      // 429-from-Reddit-rate-limit apart from a generic upstream HTML
+      // interstitial. Tolerate a body read failure (some upstreams hang up).
+      let bodyExcerpt = ""
+      try {
+        const errBody = await res.text()
+        bodyExcerpt = (errBody ?? "").slice(0, BODY_EXCERPT_MAX)
+      } catch (_e) {
+        bodyExcerpt = "<body read failed>"
+      }
+      return {
+        xml: null,
+        attempt: {
+          url,
+          status: res.status,
+          error: `HTTP ${res.status}`,
+          error_kind: "http_error",
+          body_excerpt: bodyExcerpt,
+          content_type: contentType,
+          elapsed_ms: Date.now() - started,
+        },
+      }
     }
     const body = await res.text()
     if (!body || body.length < 64) {
-      return { xml: null, status: res.status, error: "empty_or_tiny_body" }
+      return {
+        xml: null,
+        attempt: {
+          url,
+          status: res.status,
+          error: "empty_or_tiny_body",
+          error_kind: "empty_body",
+          body_excerpt: (body ?? "").slice(0, BODY_EXCERPT_MAX),
+          content_type: contentType,
+          elapsed_ms: Date.now() - started,
+        },
+      }
     }
-    return { xml: body, status: res.status }
+    return {
+      xml: body,
+      attempt: {
+        url,
+        status: res.status,
+        content_type: contentType,
+        elapsed_ms: Date.now() - started,
+      },
+    }
   } catch (err) {
-    return { xml: null, status: 0, error: err instanceof Error ? err.message : String(err) }
+    const name = err instanceof Error ? err.name : "Unknown"
+    const message = err instanceof Error ? err.message : String(err)
+    return {
+      xml: null,
+      attempt: {
+        url,
+        status: 0,
+        error: message,
+        error_kind: "exception",
+        exception_name: name,
+        elapsed_ms: Date.now() - started,
+      },
+    }
   }
 }
 
 interface SourceResult {
   source: string
   url_used: string | null
-  attempts: Array<{ url: string; status: number; error?: string }>
+  attempts: FetchAttempt[]
   parsed: number
   inserted: number
   skipped_dupe: number
@@ -206,7 +278,7 @@ async function ingestSource(cfg: SourceConfig): Promise<SourceResult> {
   let xml: string | null = null
   for (const url of cfg.feeds) {
     const r = await fetchOneFeed(url)
-    result.attempts.push({ url, status: r.status, error: r.error })
+    result.attempts.push(r.attempt)
     if (r.xml) {
       xml = r.xml
       result.url_used = url
@@ -320,6 +392,14 @@ async function runWork(startedAtIso: string, started: number) {
         inserted: r.inserted,
         skipped_dupe: r.skipped_dupe,
         errors: r.errors.slice(0, 3),
+        // Full per-feed attempt detail (status, error_kind, exception_name,
+        // body_excerpt, content_type, elapsed_ms) so a one-shot run reveals
+        // whether Reddit's hitting us with 403 / 429 / Cloudflare interstitial
+        // / DNS / timeout from Supabase egress. Query via:
+        //   SELECT extra->'sources' FROM pipeline_runs
+        //   WHERE pipeline = 'ingest-external-announcements'
+        //   ORDER BY started_at DESC LIMIT 1;
+        attempts: r.attempts,
       })),
       elapsed_ms: Date.now() - started,
     },
