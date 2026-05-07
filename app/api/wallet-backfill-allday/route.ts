@@ -10,6 +10,11 @@ import {
   CADENCE_ALLDAY,
   ALLDAY_COLLECTION_UUID,
 } from "@/lib/wallet-backfill-helpers"
+import { supabaseAdmin } from "@/lib/supabase"
+import {
+  isWalletAddress,
+  resolveTopShotUsernameCacheAware,
+} from "@/lib/topshot-username-resolve"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -35,11 +40,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const wallet = body.wallet?.trim()
-  if (!wallet) {
+  const rawInput = body.wallet?.trim()
+  if (!rawInput) {
     return NextResponse.json({ error: "wallet field required" }, { status: 400 })
   }
   const skipCached = body.skip_cached !== false
+
+  // Resolve username → 0x via the shared TopShot resolver. Dapper SSO maps
+  // username → wallet for all four collections, so a TopShot resolution is
+  // authoritative for AllDay too. Skipping this step caused Flow to reject
+  // raw usernames with "invalid address prefix: expected 0x, got ja".
+  let wallet: string
+  if (isWalletAddress(rawInput)) {
+    wallet = rawInput.startsWith("0x") ? rawInput : `0x${rawInput}`
+  } else {
+    const outcome = await resolveTopShotUsernameCacheAware(supabaseAdmin, rawInput)
+    if (!outcome.found) {
+      return NextResponse.json(
+        { error: "could not resolve username", input: rawInput, reason: outcome.reason },
+        { status: 400 }
+      )
+    }
+    wallet = outcome.walletAddress
+  }
 
   const startedMs = Date.now()
   const startedAtIso = new Date(startedMs).toISOString()
@@ -59,6 +82,7 @@ export async function POST(req: NextRequest) {
       accepted: true,
       collection: CONFIG.slug,
       wallet_address: wallet,
+      input: rawInput,
       skip_cached: skipCached,
       started_at: startedAtIso,
     },

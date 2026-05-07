@@ -2,6 +2,11 @@ import { NextRequest, NextResponse, after } from "next/server"
 import fcl from "@/lib/flow"
 import * as t from "@onflow/types"
 import { supabaseAdmin } from "@/lib/supabase"
+import {
+  isWalletAddress,
+  resolveTopShotUsernameCacheAware,
+} from "@/lib/topshot-username-resolve"
+import { isStorageLimitError } from "@/lib/wallet-backfill-helpers"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -323,8 +328,32 @@ async function runBackfill(
       },
     })
   } catch (err) {
-    terminatedReason = "error"
     const msg = err instanceof Error ? err.message : String(err)
+    // Cadence error 1106 ("max interaction with storage") is a permanent
+    // property of mega-wallets — log as ok:true with a sharded-scan flag so
+    // it stops counting as a pipeline failure. See lib/wallet-backfill-helpers.
+    if (isStorageLimitError(err)) {
+      await logRun({
+        startedAt: startedAtIso,
+        wallet,
+        rowsFound: totalFetched,
+        rowsWritten: totalUpserted,
+        rowsSkipped: totalSkippedCached,
+        ok: true,
+        extra: {
+          pages_fetched: batchesFetched,
+          total_moments_seen: totalFetched,
+          terminated_reason: "storage_limit_exceeded",
+          flagged_for_sharded_scan: true,
+          skip_cached: skipCached,
+          elapsed_ms: Date.now() - startedMs,
+          error_excerpt: msg.slice(0, 200),
+        },
+      })
+      console.log(`[wallet-backfill] wallet_too_large wallet=${wallet} — flagged for future sharded scan`)
+      return
+    }
+    terminatedReason = "error"
     await logRun({
       startedAt: startedAtIso,
       wallet,
@@ -359,13 +388,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const wallet = body.wallet?.trim()
-  if (!wallet) {
+  const rawInput = body.wallet?.trim()
+  if (!rawInput) {
     return NextResponse.json({ error: "wallet field required" }, { status: 400 })
   }
   // skip_cached defaults true so cron-driven re-runs only enrich the diff.
   // Callers that want a forced full re-walk pass skip_cached: false.
   const skipCached = body.skip_cached !== false
+
+  // Resolve username → 0x before kicking off Cadence. Pre-fix the route would
+  // pass `jamesdillonbond` straight into the script and Flow would reject with
+  // "invalid address prefix: expected 0x, got ja". Layered cache resolver
+  // hits wallet_usernames first (fast) and only falls back to live TopShot
+  // GQL when nothing has been seen before.
+  let wallet: string
+  if (isWalletAddress(rawInput)) {
+    wallet = rawInput.startsWith("0x") ? rawInput : `0x${rawInput}`
+  } else {
+    const outcome = await resolveTopShotUsernameCacheAware(supabaseAdmin, rawInput)
+    if (!outcome.found) {
+      return NextResponse.json(
+        { error: "could not resolve username", input: rawInput, reason: outcome.reason },
+        { status: 400 }
+      )
+    }
+    wallet = outcome.walletAddress
+  }
 
   const startedMs = Date.now()
   const startedAtIso = new Date(startedMs).toISOString()
@@ -382,6 +430,7 @@ export async function POST(req: NextRequest) {
     {
       accepted: true,
       wallet_address: wallet,
+      input: rawInput,
       skip_cached: skipCached,
       started_at: startedAtIso,
     },

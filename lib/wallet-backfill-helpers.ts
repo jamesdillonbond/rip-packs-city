@@ -59,6 +59,18 @@ export async function fetchOnChainIds(cadence: string, wallet: string): Promise<
   return arr.map(v => String(v.value))
 }
 
+// Cadence error code 1106 ("max interaction with storage exceeded the limit")
+// is a permanent property of mega-wallets like 0xe1f2a091f7bb5245 (20MB+
+// inventory) — there is no retry that fixes it. The script literally cannot
+// touch that much state in a single transaction. These wallets need a
+// future sharded-scan implementation; until then we mark them ok:true with
+// terminated_reason='storage_limit_exceeded' so they stop counting as a
+// pipeline failure.
+export function isStorageLimitError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
+  return /\b1106\b/.test(msg) || /max interaction with storage/.test(msg) || /storage.*exceed/.test(msg)
+}
+
 async function logRun(args: {
   pipelineName: string
   collectionSlug: string
@@ -212,6 +224,24 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<void> {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
+    if (isStorageLimitError(err)) {
+      await logRun({
+        pipelineName: config.pipelineName,
+        collectionSlug: config.slug,
+        startedAt: startedAtIso, wallet,
+        rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
+        ok: true,
+        extra: {
+          terminated_reason: "storage_limit_exceeded",
+          flagged_for_sharded_scan: true,
+          skip_cached: skipCached,
+          elapsed_ms: Date.now() - startedMs,
+          error_excerpt: msg.slice(0, 200),
+        },
+      })
+      console.log(`[${config.pipelineName}] wallet_too_large wallet=${wallet} — flagged for future sharded scan`)
+      return
+    }
     await logRun({
       pipelineName: config.pipelineName,
       collectionSlug: config.slug,

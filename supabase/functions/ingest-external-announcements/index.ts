@@ -22,44 +22,49 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? ""
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-const FUNCTION_VERSION = 1
+const FUNCTION_VERSION = 2
 const PIPELINE = "ingest-external-announcements"
 
 interface SourceConfig {
   source: "topshot" | "pinnacle" | "allday"
   channel: string // human-readable label written to source_channel
   // Fallback URLs tried in order; first one returning parseable XML wins.
-  // Nitter instances rotate so we keep multiple. Official RSS feeds (when
-  // available) come first because they're the most stable.
   feeds: string[]
 }
 
+// Pivot 2026-05-07: every Nitter mirror in the v1 registry is dead.
+// nitter.net 404s, privacydev returns DNS errors, poast/space 403, and the
+// last two answering 200 (tiekoetter, cz) gate behind Anubis / Cloudflare
+// challenge pages — they return HTML, not RSS, so the function read
+// `all_feeds_failed` for every source on every run.
+//
+// Reddit's per-subreddit Atom feeds at /r/<sub>/.rss are public, do not
+// require auth, and respond as `application/atom+xml` for any browser-style
+// User-Agent. Coverage is complete for our three target communities and the
+// existing parseFeed() handles Atom entries.
 const SOURCES: SourceConfig[] = [
   {
     source: "topshot",
-    channel: "twitter:@nbatopshot",
+    channel: "reddit:r/nbatopshot",
     feeds: [
-      "https://nitter.net/nbatopshot/rss",
-      "https://nitter.privacydev.net/nbatopshot/rss",
-      "https://nitter.poast.org/nbatopshot/rss",
+      "https://www.reddit.com/r/nbatopshot/.rss",
+      "https://old.reddit.com/r/nbatopshot/.rss",
     ],
   },
   {
     source: "pinnacle",
-    channel: "twitter:@DisneyPinnacle",
+    channel: "reddit:r/DisneyPinnacle",
     feeds: [
-      "https://nitter.net/DisneyPinnacle/rss",
-      "https://nitter.privacydev.net/DisneyPinnacle/rss",
-      "https://nitter.poast.org/DisneyPinnacle/rss",
+      "https://www.reddit.com/r/DisneyPinnacle/.rss",
+      "https://old.reddit.com/r/DisneyPinnacle/.rss",
     ],
   },
   {
     source: "allday",
-    channel: "twitter:@NFLALLDAY",
+    channel: "reddit:r/NFLAllDay",
     feeds: [
-      "https://nitter.net/NFLALLDAY/rss",
-      "https://nitter.privacydev.net/NFLALLDAY/rss",
-      "https://nitter.poast.org/NFLALLDAY/rss",
+      "https://www.reddit.com/r/NFLAllDay/.rss",
+      "https://old.reddit.com/r/NFLAllDay/.rss",
     ],
   },
 ]

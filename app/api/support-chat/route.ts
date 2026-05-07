@@ -1492,6 +1492,20 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // Per-iteration timing capture for the [chat-trace] log emitted at the
+    // end of the request. The 504s reported 2026-05-07 are ambiguous between
+    // long Anthropic calls (history blow-up on long sessions) and slow tool
+    // dispatch — these spans surface where the budget actually goes.
+    type IterationTrace = {
+      iteration: number;
+      anthropic_ms: number;
+      stop_reason: string | null;
+      tool_calls: Array<{ name: string; ms: number; timed_out: boolean }>;
+      tool_total_ms: number;
+    };
+    const iterationTraces: IterationTrace[] = [];
+    const requestStartedMs = Date.now();
+
     const runIterationStreaming = async () => {
       const stream = anthropic.messages.stream({
         model: "claude-sonnet-4-20250514",
@@ -1511,6 +1525,14 @@ export async function POST(req: NextRequest) {
     const runLoop = async () => {
       while (iterations < MAX_ITERATIONS) {
         iterations++;
+        const trace: IterationTrace = {
+          iteration: iterations,
+          anthropic_ms: 0,
+          stop_reason: null,
+          tool_calls: [],
+          tool_total_ms: 0,
+        };
+        const anthropicStart = Date.now();
         const response = useStream
           ? await runIterationStreaming()
           : await anthropic.messages.create({
@@ -1520,6 +1542,8 @@ export async function POST(req: NextRequest) {
               tools: TOOLS,
               messages: currentMessages,
             });
+        trace.anthropic_ms = Date.now() - anthropicStart;
+        trace.stop_reason = response.stop_reason ?? null;
 
         if (response.stop_reason === "end_turn") {
           finalResponse = response.content
@@ -1527,6 +1551,7 @@ export async function POST(req: NextRequest) {
             .map((b: any) => b.text)
             .join("\n")
             .trim();
+          iterationTraces.push(trace);
           break;
         }
 
@@ -1541,6 +1566,8 @@ export async function POST(req: NextRequest) {
               escalated = true;
               escalationReason = (tb.input as any).reason;
             }
+            const toolStart = Date.now();
+            let timedOut = false;
             const result = await Promise.race([
               executeTool(tb.name, tb.input, {
                 sessionId,
@@ -1550,9 +1577,15 @@ export async function POST(req: NextRequest) {
                 pageContext: pageContext ?? null,
               }),
               new Promise<string>((resolve) =>
-                setTimeout(() => resolve(JSON.stringify({ status: "timeout", message: "Tool timed out — try a simpler query" })), 6000)
+                setTimeout(() => {
+                  timedOut = true;
+                  resolve(JSON.stringify({ status: "timeout", message: "Tool timed out — try a simpler query" }));
+                }, 6000)
               ),
             ]);
+            const toolMs = Date.now() - toolStart;
+            trace.tool_calls.push({ name: tb.name, ms: toolMs, timed_out: timedOut });
+            trace.tool_total_ms += toolMs;
             (toolResults.content as Anthropic.ToolResultBlockParam[]).push({
               type: "tool_result",
               tool_use_id: tb.id,
@@ -1565,6 +1598,7 @@ export async function POST(req: NextRequest) {
             { role: "assistant" as const, content: response.content },
             toolResults,
           ];
+          iterationTraces.push(trace);
           continue;
         }
 
@@ -1573,6 +1607,7 @@ export async function POST(req: NextRequest) {
           .map((b: any) => b.text)
           .join("\n")
           .trim();
+        iterationTraces.push(trace);
         break;
       }
     };
@@ -1602,6 +1637,31 @@ export async function POST(req: NextRequest) {
               session: sessionId,
               tools: usedTools,
               count: usedTools.length,
+            })
+        );
+      } catch { /* logging is best-effort */ }
+
+      // [chat-trace] one structured line capturing per-iteration spend so
+      // we can attribute 504s to either the Anthropic call or specific tool
+      // calls. Format is intentionally shallow JSON so a single grep over
+      // Vercel logs can answer "which iteration / which tool was slow"
+      // without joining across log lines.
+      try {
+        const totalMs = Date.now() - requestStartedMs;
+        const anthropicTotal = iterationTraces.reduce((s, t) => s + t.anthropic_ms, 0);
+        const toolTotal = iterationTraces.reduce((s, t) => s + t.tool_total_ms, 0);
+        console.log(
+          "[chat-trace] " +
+            JSON.stringify({
+              session: sessionId,
+              total_ms: totalMs,
+              iterations: iterationTraces.length,
+              anthropic_ms_total: anthropicTotal,
+              tool_ms_total: toolTotal,
+              messages_in_history: recentHistory.length,
+              stream: useStream,
+              iter: iterationTraces,
+              error_mode: conciergeErrorMode,
             })
         );
       } catch { /* logging is best-effort */ }

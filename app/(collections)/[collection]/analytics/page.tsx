@@ -795,7 +795,6 @@ function LiquidityHeatmapCard({ short }: { short: string }) {
     { key: "cold", label: "Cold", color: "#475569", help: "No liquidity rating" },
   ] as const
 
-  const isPinnacle = short === "pinnacle"
   const total = row ? Number(row.total) || 0 : 0
   const fmv = row ? Number(row.high_conf_total_fmv) || 0 : 0
   const tooThin = total > 0 && total < 10
@@ -817,10 +816,6 @@ function LiquidityHeatmapCard({ short }: { short: string }) {
         <div className="h-16 animate-pulse rounded bg-zinc-900" />
       ) : !row ? (
         <div className="text-sm text-zinc-500">No liquidity data for this collection.</div>
-      ) : isPinnacle ? (
-        <div className="text-[11px]" style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)" }}>
-          Pinnacle FMV is sales-volume-derived; granular liquidity ratings coming in a future update.
-        </div>
       ) : tooThin ? (
         <div className="text-[11px]" style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)" }}>
           Insufficient FMV coverage to chart liquidity.

@@ -19,6 +19,12 @@
 // header fingerprint. Stats.nba.com is more permissive and the rolling
 // average is a reasonable stand-in until a real projection feed lands.
 //
+// 2026-05-07 hardening pass: rotate UA across a small pool, send the
+// navigation-flavored sec-fetch-* family on the DK fetches, retry once
+// on 403 with a fresh UA, and retry stats.nba.com 520s up to 3 attempts
+// with exponential backoff (1s, 2s). Akamai had caught up to the fixed
+// Chrome 124 fingerprint and was 403'ing 12 times per 24h.
+//
 // Same secret-rotation surface as topshot-proxy: PROXY_SECRET set via
 // `wrangler secret put PROXY_SECRET` on this worker. Reuse the same value
 // already stored in topshot-proxy's PROXY_SECRET so RPC env stays single-secret
@@ -28,11 +34,58 @@ interface Env {
   PROXY_SECRET: string;
 }
 
-const NBA_USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+// ─── Browser fingerprint pool ─────────────────────────────────────────────────
+// Each entry is one self-consistent fingerprint snapshot taken from real
+// Chrome devtools captures (network panel → copy as cURL). Mixing UA strings
+// with mismatched sec-ch-ua values is itself a bot signal, so the pool keeps
+// each combination atomic. Firefox / Safari entries omit sec-ch-ua (those
+// browsers don't send Client Hints).
+interface BrowserFingerprint {
+  ua: string;
+  secChUa?: string;
+  secChUaPlatform: string;
+}
 
-const NBA_HEADERS: Record<string, string> = {
-  "User-Agent": NBA_USER_AGENT,
+const BROWSER_POOL: BrowserFingerprint[] = [
+  {
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    secChUa: "\"Not/A)Brand\";v=\"8\", \"Chromium\";v=\"126\", \"Google Chrome\";v=\"126\"",
+    secChUaPlatform: "\"Windows\"",
+  },
+  {
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
+    secChUa: "\"Not)A;Brand\";v=\"99\", \"Google Chrome\";v=\"127\", \"Chromium\";v=\"127\"",
+    secChUaPlatform: "\"macOS\"",
+  },
+  {
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    secChUa: "\"Chromium\";v=\"128\", \"Not;A=Brand\";v=\"24\", \"Google Chrome\";v=\"128\"",
+    secChUaPlatform: "\"Windows\"",
+  },
+  {
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
+    secChUaPlatform: "\"macOS\"",
+  },
+  {
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0",
+    secChUaPlatform: "\"Windows\"",
+  },
+];
+
+function pickFingerprint(exclude?: BrowserFingerprint): BrowserFingerprint {
+  if (BROWSER_POOL.length === 1) return BROWSER_POOL[0];
+  if (!exclude) return BROWSER_POOL[Math.floor(Math.random() * BROWSER_POOL.length)];
+  // Pick a fingerprint other than the one we already tried so the retry
+  // genuinely changes the bot fingerprint Akamai sees.
+  const candidates = BROWSER_POOL.filter(f => f.ua !== exclude.ua);
+  return candidates[Math.floor(Math.random() * candidates.length)];
+}
+
+// stats.nba.com expects a desktop browser fingerprint. The legacy worker
+// captured Chrome 124 with the nba.com origin / referer; that still works,
+// but we rotate the UA via the pool so we don't present a single signature
+// across every request.
+const NBA_HEADERS_BASE: Record<string, string> = {
   "Accept": "application/json, text/plain, */*",
   "Accept-Language": "en-US,en;q=0.9",
   "Origin": "https://www.nba.com",
@@ -41,26 +94,96 @@ const NBA_HEADERS: Record<string, string> = {
   "x-nba-stats-token": "true",
 };
 
-// Akamai bot detection on www.draftkings.com upgraded between 2026-05-06
-// 16:42 UTC and 17:09 UTC and started 403'ing the prior fingerprint
-// (UA + Accept + Accept-Language + Origin + Referer was no longer enough).
-// The full Chrome 124 fingerprint below — sec-ch-ua / sec-fetch-* / a more
-// realistic Accept and the /lobby referer — passes Akamai today. Applied to
-// both upstream fetches (lobby/getcontests and draftgroups/v1/draftables).
-const DK_HEADERS: Record<string, string> = {
-  "User-Agent":
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Accept": "application/json, text/plain, */*",
-  "Accept-Language": "en-US,en;q=0.9",
-  "Referer": "https://www.draftkings.com/lobby",
-  "Origin": "https://www.draftkings.com",
-  "Sec-Ch-Ua": "\"Chromium\";v=\"124\", \"Not(A:Brand\";v=\"99\"",
-  "Sec-Ch-Ua-Mobile": "?0",
-  "Sec-Ch-Ua-Platform": "\"macOS\"",
-  "Sec-Fetch-Dest": "empty",
-  "Sec-Fetch-Mode": "cors",
-  "Sec-Fetch-Site": "same-origin",
-};
+function nbaHeaders(fp: BrowserFingerprint): Record<string, string> {
+  const h: Record<string, string> = {
+    ...NBA_HEADERS_BASE,
+    "User-Agent": fp.ua,
+  };
+  if (fp.secChUa) {
+    h["Sec-Ch-Ua"] = fp.secChUa;
+    h["Sec-Ch-Ua-Mobile"] = "?0";
+    h["Sec-Ch-Ua-Platform"] = fp.secChUaPlatform;
+  }
+  return h;
+}
+
+// DraftKings (Akamai) — navigation-flavored fingerprint. 2026-05-06 the prior
+// CORS/XHR fingerprint started 403'ing; navigation-style sec-fetch values
+// pass Akamai's coherence check more reliably for the lobby URL because that
+// URL ostensibly serves an HTML page. Accept stays `application/json` because
+// the upstream still returns JSON regardless of Accept; flipping Accept to
+// text/html caused the upstream to redirect to the marketing landing page.
+function dkHeaders(fp: BrowserFingerprint): Record<string, string> {
+  const h: Record<string, string> = {
+    "User-Agent": fp.ua,
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.draftkings.com/lobby",
+    "Origin": "https://www.draftkings.com",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
+  };
+  if (fp.secChUa) {
+    h["Sec-Ch-Ua"] = fp.secChUa;
+    h["Sec-Ch-Ua-Mobile"] = "?0";
+    h["Sec-Ch-Ua-Platform"] = fp.secChUaPlatform;
+  }
+  return h;
+}
+
+// fetchWithDkRetry — primary fetch wrapper for DK. On a 403 (Akamai bot
+// rejection) sleep 5 seconds and retry once with a different fingerprint.
+// 401s are also retried because they correlate with the same Akamai bucket
+// when the lobby cookie set lacks the tracking values the UA is expected
+// to carry.
+async function fetchWithDkRetry(url: string): Promise<Response> {
+  const fp1 = pickFingerprint();
+  let res = await fetch(url, { method: "GET", headers: dkHeaders(fp1) });
+  if (res.status === 403 || res.status === 401) {
+    await new Promise(resolve => setTimeout(resolve, 5_000));
+    const fp2 = pickFingerprint(fp1);
+    res = await fetch(url, { method: "GET", headers: dkHeaders(fp2) });
+  }
+  return res;
+}
+
+// fetchWithStatsRetry — stats.nba.com 520s sporadically (Cloudflare-on-
+// Cloudflare origin issue). Retry up to 3 attempts with 1s / 2s backoff.
+// Anything other than 5xx returns immediately so we don't burn budget on
+// 4xx that won't change.
+async function fetchWithStatsRetry(url: string, perAttemptTimeoutMs = 8_000): Promise<{ res: Response; attempts: number }> {
+  const backoffs = [1_000, 2_000];
+  let lastRes: Response | null = null;
+  let fp = pickFingerprint();
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "GET",
+        headers: nbaHeaders(fp),
+        signal: AbortSignal.timeout(perAttemptTimeoutMs),
+      });
+      lastRes = res;
+      if (res.status < 500) return { res, attempts: attempt };
+      // 5xx — back off and rotate fingerprint before retrying.
+      if (attempt < 3) {
+        await new Promise(resolve => setTimeout(resolve, backoffs[attempt - 1]));
+        fp = pickFingerprint(fp);
+      }
+    } catch (err) {
+      // Network / timeout error. Treat like a 5xx for retry purposes.
+      if (attempt < 3) {
+        await new Promise(resolve => setTimeout(resolve, backoffs[attempt - 1]));
+        fp = pickFingerprint(fp);
+        continue;
+      }
+      throw err;
+    }
+  }
+  return { res: lastRes!, attempts: 3 };
+}
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -110,10 +233,7 @@ async function handleScoreboard(request: Request): Promise<Response> {
   url.searchParams.set("LeagueID", "00");
   url.searchParams.set("GameDate", gameDate);
 
-  const upstream = await fetch(url.toString(), {
-    method: "GET",
-    headers: NBA_HEADERS,
-  });
+  const { res: upstream, attempts } = await fetchWithStatsRetry(url.toString());
   const text = await upstream.text();
 
   if (!upstream.ok) {
@@ -121,6 +241,7 @@ async function handleScoreboard(request: Request): Promise<Response> {
       {
         error: "upstream_failed",
         status: upstream.status,
+        attempts,
         body_excerpt: text.slice(0, 800),
       },
       502,
@@ -383,10 +504,7 @@ async function handleDraftKingsProjections(_request: Request): Promise<Response>
   // not a viable discovery surface; the lobby getcontests JSON is.
   let dgRes: Response;
   try {
-    dgRes = await fetch("https://www.draftkings.com/lobby/getcontests?sport=NBA", {
-      method: "GET",
-      headers: DK_HEADERS,
-    });
+    dgRes = await fetchWithDkRetry("https://www.draftkings.com/lobby/getcontests?sport=NBA");
   } catch (err) {
     return jsonResponse(
       { error: "draftgroups_fetch_failed", message: err instanceof Error ? err.message : String(err) },
@@ -429,10 +547,7 @@ async function handleDraftKingsProjections(_request: Request): Promise<Response>
   // Step B: fetch the draftables for that group.
   let dRes: Response;
   try {
-    dRes = await fetch(`https://api.draftkings.com/draftgroups/v1/draftgroups/${draftGroupId}/draftables`, {
-      method: "GET",
-      headers: DK_HEADERS,
-    });
+    dRes = await fetchWithDkRetry(`https://api.draftkings.com/draftgroups/v1/draftgroups/${draftGroupId}/draftables`);
   } catch (err) {
     return jsonResponse(
       {
@@ -485,10 +600,11 @@ async function handleDraftKingsProjections(_request: Request): Promise<Response>
 //     authoritative for today's slate. Returns gameId + team tricodes + UTC
 //     tipoff. This is the primary writer for nba_games rows.
 //   - stats.nba.com leaguedashplayerstats — last-5-games per-game averages.
-//     Currently 520s from CF Worker IPs (origin-side CF block). The route
+//     Sporadic 520s from CF Worker IPs (origin-side CF block). The route
 //     keeps it on the request path as best-effort: when it lands, full DK
-//     fantasy projections ship; when it 520s, the response carries games-only
-//     with a degraded `note` so pipeline_runs records the partial state.
+//     fantasy projections ship; when it 520s after retries, the response
+//     carries games-only with a degraded `note` so pipeline_runs records
+//     the partial state.
 // DK fantasy points are computed from the rolling averages with the standard
 // DraftKings formula:
 //   fp = pts + 1.2*reb + 1.5*ast + 3*stl + 3*blk - tov
@@ -682,36 +798,6 @@ function parsePlayerStats(json: NbaApiResponse): RollingPlayer[] {
   return out;
 }
 
-function parseScoreboardGames(json: NbaApiResponse, etDate: string): NormalizedGame[] {
-  const sets = json.resultSets ?? [];
-  const header = sets.find(s => s.name === "GameHeader");
-  if (!header) return [];
-  const iGame = header.headers.indexOf("GAME_ID");
-  const iHomeTeam = header.headers.indexOf("HOME_TEAM_ID");
-  const iAwayTeam = header.headers.indexOf("VISITOR_TEAM_ID");
-  const iStatusText = header.headers.indexOf("GAME_STATUS_TEXT");
-
-  const out: NormalizedGame[] = [];
-  for (const row of header.rowSet ?? []) {
-    const gameId = String(row[iGame] ?? "").trim();
-    if (!gameId) continue;
-    const homeId = String(row[iHomeTeam] ?? "");
-    const awayId = String(row[iAwayTeam] ?? "");
-    const homeAbbr = NBA_TEAM_ID_TO_ABBR[homeId] ?? null;
-    const awayAbbr = NBA_TEAM_ID_TO_ABBR[awayId] ?? null;
-    const statusText = String(row[iStatusText] ?? "").trim();
-    out.push({
-      gameId,
-      name: homeAbbr && awayAbbr ? `${awayAbbr} @ ${homeAbbr}` : statusText,
-      homeAbbr,
-      awayAbbr,
-      startTime: null,
-      gameDate: etDate,
-    });
-  }
-  return out;
-}
-
 interface CdnScoreboardTeam {
   teamId?: number;
   teamTricode?: string;
@@ -776,31 +862,28 @@ async function handleRollingProjections(_request: Request): Promise<Response> {
   const season = nbaSeasonStringFromETDate(todayET);
   const seasonType = nbaSeasonTypeFromETDate(todayET);
 
-  // Two upstreams, both fired in parallel:
+  // Two upstreams:
   //   1. cdn.nba.com — static S3 mirror of today's scoreboard. Open to CF
   //      Workers (no WAF), returns clean JSON with team tricodes + tipoff UTC.
   //      This is the primary source of nba_games rows.
-  //   2. stats.nba.com — last-5-games per-game averages. Behind Cloudflare,
-  //      currently 520s every request from CF Workers (origin-side block on
-  //      Worker IP ranges). Kept on the request path as a best-effort: if it
-  //      lands, we get full DK fantasy projections; if it 520s, we still
-  //      ship the games payload with players=[] and a note explaining the
-  //      degraded state.
+  //   2. stats.nba.com — last-5-games per-game averages. Sporadic 520s from
+  //      CF Workers. Wrapped in fetchWithStatsRetry (3 attempts, exponential
+  //      backoff). When it 520s every time, we ship games-only with players=[]
+  //      and a note explaining the degraded state.
   // Result: nba_games stays fresh even when projections are unavailable.
 
   const cdnUrl = "https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json";
+  const cdnFp = pickFingerprint();
   const cdnHeaders: Record<string, string> = {
-    "User-Agent": NBA_USER_AGENT,
+    "User-Agent": cdnFp.ua,
     "Accept": "application/json, text/plain, */*",
   };
 
-  // Tight 10s budget on player stats so the worker returns quickly when
-  // stats.nba.com 520s (the common case from CF Workers). cdn.nba.com almost
-  // always responds in well under 1s.
-  const psTimeout = AbortSignal.timeout(10_000);
+  // Fire scoreboard + player-stats concurrently. Player-stats uses retry
+  // wrapper internally; scoreboard rarely fails so a single attempt is fine.
   const [sbResult, psResult] = await Promise.allSettled([
-    fetch(cdnUrl, { method: "GET", headers: cdnHeaders }),
-    fetch(buildPlayerStatsUrl(season, seasonType), { method: "GET", headers: NBA_HEADERS, signal: psTimeout }),
+    fetch(cdnUrl, { method: "GET", headers: cdnHeaders, signal: AbortSignal.timeout(12_000) }),
+    fetchWithStatsRetry(buildPlayerStatsUrl(season, seasonType)),
   ]);
 
   if (sbResult.status === "rejected") {
@@ -837,20 +920,21 @@ async function handleRollingProjections(_request: Request): Promise<Response> {
     return jsonResponse(empty, 200, 600);
   }
 
-  // Player stats — best-effort. stats.nba.com is currently 520'ing CF Worker
-  // IPs (Cloudflare-on-Cloudflare origin block); the games payload still
-  // ships so the downstream pipeline keeps nba_games fresh. The note carries
-  // the upstream status so pipeline_runs has a useful signal.
+  // Player stats — best-effort with retry. stats.nba.com's 520s are CF-on-CF
+  // origin issues; rotating the fingerprint between retries occasionally
+  // recovers, otherwise we ship games-only with a degradation note.
   let players: RollingPlayer[] = [];
   let degradedNote: string | undefined;
   let degradedStatus: number | null = null;
+  let psAttempts: number | null = null;
 
   if (psResult.status === "rejected") {
     degradedNote = "playerstats_fetch_failed";
   } else {
-    const psRes = psResult.value;
+    const { res: psRes, attempts } = psResult.value;
+    psAttempts = attempts;
     if (!psRes.ok) {
-      degradedNote = "playerstats_upstream_blocked";
+      degradedNote = `playerstats_upstream_blocked_after_${attempts}_attempts`;
       degradedStatus = psRes.status;
     } else {
       let psJson: NbaApiResponse | null = null;
@@ -868,6 +952,7 @@ async function handleRollingProjections(_request: Request): Promise<Response> {
     season: string;
     seasonType: string;
     upstreamPlayerStatusOnDegrade?: number | null;
+    playerStatsAttempts?: number | null;
   } = {
     draftGroupId: null,
     gameDate: todayET,
@@ -878,6 +963,7 @@ async function handleRollingProjections(_request: Request): Promise<Response> {
     seasonType,
     note: degradedNote,
     upstreamPlayerStatusOnDegrade: degradedStatus,
+    playerStatsAttempts: psAttempts,
   };
   return jsonResponse(normalized, 200, 600);
 }
