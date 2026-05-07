@@ -3,6 +3,8 @@
 ## Overview
 Rip Packs City (RPC) is a collector intelligence platform for Flow blockchain NFT collectibles. Founded by Trevor Dillon-Bond, an Official Portland Trail Blazers Team Captain on NBA Top Shot.
 
+Five collections are live and supported across the platform: NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, and UFC Strike. Every collection exposes wallet analytics, FMV pricing, marketplace browser, and a sniper feed; pack EV, set completion, and analytics tabs scale across collections as data coverage allows.
+
 ## Supported Collections
 
 ### NBA Top Shot
@@ -43,7 +45,16 @@ Rip Packs City (RPC) is a collector intelligence platform for Flow blockchain NF
 - **FMV Engine (v1.5.1)**: Outlier-filtered weighted average price, recency decay, liquidity rating (0–5), serial multiplier, deal rating (0–1), lowest ask flag. Refreshed every 20 minutes per collection.
 - **Sniper Feed**: Real-time listings below FMV from native marketplaces and Flowty. Deduped, sorted by recency. Per-collection data sources.
 - **Market Browser (Phase 3)**: Sortable / filterable marketplace listings per collection — tier, price, discount, player. URL-synced filter state.
-- **Analytics (Phase 3)**: Ecosystem-wide tier trends, player momentum, top sales, weekly volume per collection.
+- **Analytics suite at /analytics**: live cross-collection intelligence. Surfaces:
+  - **/analytics** — homepage and Pulse dashboard (volume, growth, ecosystem health)
+  - **/analytics/sales** — sortable sales feed, leaderboards, marketplace mix, period-over-period deltas
+  - **/analytics/listings** — open marketplace listings, order-book depth, locked vs liquid
+  - **/analytics/loans** — Flowty loan offers, funded loans, lender performance
+  - **/analytics/wallets** — wallet hub overview, position transfers, biggest sales, retention cohorts
+  - **/analytics/fmv** — FMV index, top movers, tier pulse, pipeline health (5 collections)
+  - **/analytics/packs** — live pack EV dashboard with top-EV table and fresh drops
+  - **/analytics/sets** — set/edition counts, tier breakdown, series overview (5 collections)
+- **Per-collection analytics tab**: each collection has Market and Portfolio sub-tabs at /{collection-id}/analytics. Market shows order-book depth, FMV health, pack EV, loans book, whale leaderboard, plus ecosystem-wide breakdowns. Portfolio analyzes a wallet — origin story, liquid vs locked, marketplace breakdown, tier/series breakdown, clarity score.
 - **Wallet Analytics**: Any Flow wallet — moment inventory, FMV totals, cost basis, P&L, acquisition history, badge detection.
 - **Set Completion**: Track owned vs needed, bottleneck finder, cheapest completion path.
 - **Pack Tools**: Pack browser with EV calculator, tier breakdown, buy/skip signal.
@@ -68,6 +79,9 @@ Weighted average price from recent on-chain sales with recency decay. Confidence
 - Collection pages: /{collection-id}/{page}
 - Profiles: /profile/[username]
 - API: /api/sniper-feed, /api/wallet-search, /api/edition-history, /api/market-analytics
+
+## Live Site
+- Production: https://www.rippackscity.com (canonical surface for every page in this index)
 
 ## Contact
 - Site: https://www.rippackscity.com

@@ -32,6 +32,7 @@ const SET_COLLECTIONS = [
   { key: "topshot", label: "Top Shot" },
   { key: "allday", label: "NFL All Day" },
   { key: "golazos", label: "LaLiga Golazos" },
+  { key: "pinnacle", label: "Disney Pinnacle" },
   { key: "ufc", label: "UFC Strike" },
 ] as const
 
@@ -39,6 +40,7 @@ const COLLECTION_LABEL: Record<string, string> = {
   topshot: "Top Shot",
   allday: "All Day",
   golazos: "Golazos",
+  pinnacle: "Pinnacle",
   ufc: "UFC",
 }
 
@@ -46,6 +48,7 @@ const COLLECTION_COLOR: Record<string, string> = {
   topshot: "#a78bfa",
   allday: "#34d399",
   golazos: "#22d3ee",
+  pinnacle: "#f472b6",
   ufc: "#f97316",
 }
 

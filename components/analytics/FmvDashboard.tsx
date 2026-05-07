@@ -21,13 +21,23 @@ import type {
 
 const FMV_COLLECTIONS = [
   { key: "topshot", label: "Top Shot" },
-  { key: "allday", label: "NFL All Day" },
+  { key: "allday", label: "All Day" },
+  { key: "pinnacle", label: "Pinnacle" },
+  { key: "golazos", label: "Golazos" },
+  { key: "ufc", label: "UFC Strike" },
 ]
 
 const COLLECTION_LABEL: Record<string, string> = {
   topshot: "Top Shot",
   allday: "All Day",
+  pinnacle: "Pinnacle",
+  golazos: "Golazos",
+  ufc: "UFC Strike",
 }
+
+// analytics_fmv_top_movers may not have full coverage for newer collections.
+// Hide the Top Movers card for these until we verify the RPC accepts them.
+const TOP_MOVERS_UNSUPPORTED = new Set<string>(["pinnacle", "golazos", "ufc"])
 
 const WINDOW_OPTIONS: Array<{ value: 1 | 7 | 30; label: string }> = [
   { value: 1, label: "1 day" },
@@ -610,7 +620,7 @@ export default function FmvDashboard() {
             FMV Index — Fair Market Value Across Flow NFTs
           </h1>
           <p className="text-sm text-slate-400 max-w-2xl">
-            Algorithmic pricing across NBA Top Shot and NFL All Day editions.
+            Algorithmic pricing across Top Shot, All Day, Pinnacle, Golazos, and UFC Strike editions.
             Refreshes every 10 minutes.
           </p>
         </div>
@@ -694,7 +704,8 @@ export default function FmvDashboard() {
         )}
       </section>
 
-      {/* Top movers */}
+      {/* Top movers — hidden when every active collection is unsupported by analytics_fmv_top_movers */}
+      {!(activeCollections.length > 0 && activeCollections.every((c) => TOP_MOVERS_UNSUPPORTED.has(c))) && (
       <section>
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -808,6 +819,7 @@ export default function FmvDashboard() {
           direction={direction}
         />
       </section>
+      )}
 
       {/* Tier pulse */}
       <section>
