@@ -261,7 +261,12 @@ Deno.serve(async (req: Request) => {
   let upserted = 0;
   for (let i = 0; i < updates.length; i += 50) {
     const b = updates.slice(i, i + 50);
-    const { error } = await supabase.from("wallet_moments_cache").upsert(b, { onConflict: "wallet_address,moment_id" });
+    // The wallet_moments_cache UNIQUE constraint was migrated to
+     // (wallet_address, collection_id, moment_id) on 2026-05-06 to support
+     // cross-collection moment-id collisions. Using the old 2-column
+     // onConflict silently no-ops every upsert and the function reports
+     // upserted: 0 even when sampleData looks correct.
+    const { error } = await supabase.from("wallet_moments_cache").upsert(b, { onConflict: "wallet_address,collection_id,moment_id" });
     if (!error) upserted += b.length; else sampleErrors.push(`upsert: ${error.message}`);
   }
 
