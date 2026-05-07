@@ -194,6 +194,98 @@ async function runSmokeTests() {
       { timeoutMs: 15000 }
     ),
 
+    // 2b. /api/og/collection/[slug] — must return 200 to anonymous
+    // crawlers (Twitter / Slack / Discord). Regression guard for the
+    // proxy.isPublicPath bypass we added on 2026-05-07; if the bypass
+    // breaks again, social previews go back to a generic Vercel auth
+    // thumbnail. Image bytes can be slow on first render — soft test.
+    time(async () => {
+      const meta = {
+        name: "og/collection/nba-top-shot returns 200 to anon",
+        endpoint: "/api/og/collection/nba-top-shot",
+        expected: "200-content-type-image",
+        soft: true,
+      };
+      const res = await fetch(`${BASE_URL}/api/og/collection/nba-top-shot`, {
+        cache: "no-store",
+        redirect: "manual",
+        headers: { "User-Agent": BROWSER_UA },
+        signal: AbortSignal.timeout(15_000),
+      });
+      const ct = res.headers.get("content-type") ?? "";
+      const passed = res.status === 200 && /image\//i.test(ct);
+      return {
+        ...meta,
+        passed,
+        statusCode: res.status,
+        bodyExcerpt: passed ? null : `content-type=${ct}`,
+        detail: passed ? `image bytes ok` : `HTTP ${res.status} content-type=${ct}`,
+        notes: { content_type: ct },
+      };
+    }, {
+      name: "og/collection/nba-top-shot returns 200 to anon",
+      endpoint: "/api/og/collection/nba-top-shot",
+      expected: "200-content-type-image",
+      soft: true,
+    }),
+
+    // 2c. /legal/fmv-methodology and /pricing — both new public pages
+    // shipped 2026-05-07. Crawlers and shareable URLs both need them
+    // available to anonymous traffic. Hard-pass tests.
+    time(async () => {
+      const meta = {
+        name: "legal/fmv-methodology renders",
+        endpoint: "/legal/fmv-methodology",
+        expected: "200-html",
+      };
+      const res = await fetch(`${BASE_URL}/legal/fmv-methodology`, {
+        cache: "no-store",
+        redirect: "manual",
+        headers: { "User-Agent": BROWSER_UA },
+        signal: AbortSignal.timeout(8000),
+      });
+      const passed = res.status === 200;
+      return {
+        ...meta,
+        passed,
+        statusCode: res.status,
+        detail: `HTTP ${res.status}`,
+        bodyExcerpt: passed ? null : (await res.text().catch(() => "")).slice(0, 500),
+        notes: null,
+      };
+    }, {
+      name: "legal/fmv-methodology renders",
+      endpoint: "/legal/fmv-methodology",
+      expected: "200-html",
+    }),
+
+    time(async () => {
+      const meta = {
+        name: "pricing page renders",
+        endpoint: "/pricing",
+        expected: "200-html",
+      };
+      const res = await fetch(`${BASE_URL}/pricing`, {
+        cache: "no-store",
+        redirect: "manual",
+        headers: { "User-Agent": BROWSER_UA },
+        signal: AbortSignal.timeout(10_000),
+      });
+      const passed = res.status === 200;
+      return {
+        ...meta,
+        passed,
+        statusCode: res.status,
+        detail: `HTTP ${res.status}`,
+        bodyExcerpt: passed ? null : (await res.text().catch(() => "")).slice(0, 500),
+        notes: null,
+      };
+    }, {
+      name: "pricing page renders",
+      endpoint: "/pricing",
+      expected: "200-html",
+    }),
+
     // 3. Sales pipeline freshness via analytics_pipeline_health RPC.
     time(async () => {
       const meta = {
