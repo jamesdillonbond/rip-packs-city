@@ -14,6 +14,8 @@ import {
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
 import { supabaseAdmin } from "@/lib/supabase"
 import PipelineHealthBadge from "@/components/analytics/PipelineHealthBadge"
+import InsiderSignals from "@/components/analytics/InsiderSignals"
+import RecentWhaleTrades from "@/components/analytics/RecentWhaleTrades"
 
 // The dashboard fans out to several Supabase-backed APIs at render time
 // and intermittently exceeds the 60s static-generation budget. Marking it
@@ -401,6 +403,9 @@ export default async function AnalyticsOverviewPage() {
         </div>
       </section>
 
+      {/* Insider signals — self-gating, renders only when has_data is true */}
+      <InsiderSignals />
+
       {/* Section grid */}
       <section>
         <h2 className="text-lg font-semibold text-slate-100 mb-4">Sections</h2>
@@ -461,6 +466,9 @@ export default async function AnalyticsOverviewPage() {
           })}
         </div>
       </section>
+
+      {/* Recent whale trades — top sales over the last 30 days */}
+      <RecentWhaleTrades />
 
       {/* Recent updates timeline */}
       <section>
