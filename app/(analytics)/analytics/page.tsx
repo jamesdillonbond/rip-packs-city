@@ -185,9 +185,22 @@ interface SectionCard {
   icon: typeof Activity
   metrics?: Array<{ label: string; value: string }>
   status: "live"
+  methodologyTopic?: string
 }
 
 const TIMELINE = [
+  {
+    date: "May 7, 2026",
+    title: "Per-collection Market and Portfolio analytics tabs shipped",
+  },
+  {
+    date: "May 7, 2026",
+    title: "Pack analytics live across Top Shot and All Day with EV teasers per collection",
+  },
+  {
+    date: "May 7, 2026",
+    title: "FMV index extended to all five collections",
+  },
   {
     date: "Mar 24, 2026",
     title: "Flowty marketplace reopened with USDCf loans",
@@ -250,6 +263,7 @@ export default async function AnalyticsOverviewPage() {
       description: "Live Flowty loan book — capital deployed, rates, default tracking.",
       icon: HandCoins,
       status: "live",
+      methodologyTopic: "loans",
       metrics: summary
         ? [
             { label: "Total volume", value: formatUsd(summary.total_principal_usd) },
@@ -263,6 +277,7 @@ export default async function AnalyticsOverviewPage() {
       description: "Live transaction stream — loans + sales across the Flow ecosystem, refreshing every 30s.",
       icon: Activity,
       status: "live",
+      methodologyTopic: "pulse",
       metrics: pulse
         ? [
             {
@@ -282,6 +297,7 @@ export default async function AnalyticsOverviewPage() {
       description: "On-chain sales indexed across NFTStorefrontV2, TopShotMarketV3, and Pinnacle.Trade.",
       icon: BarChart3,
       status: "live",
+      methodologyTopic: "sales",
       metrics: salesSummary
         ? [
             { label: "L30 volume", value: formatUsd(salesSummary.total_volume_usd) },
@@ -295,6 +311,7 @@ export default async function AnalyticsOverviewPage() {
       description: "Open Flowty loan offers and a sample of the Top Shot orderbook.",
       icon: List,
       status: "live",
+      methodologyTopic: "listings",
       metrics: listings
         ? [
             { label: "Open offers", value: formatCount(listings.loan_offers?.count ?? 0) },
@@ -308,6 +325,7 @@ export default async function AnalyticsOverviewPage() {
       description: "Every wallet active on the Flowty loan book — lenders, borrowers, and mixed-role power users.",
       icon: Users,
       status: "live",
+      methodologyTopic: "wallet-profiles",
       metrics: walletsOverview?.totals
         ? [
             {
@@ -327,6 +345,7 @@ export default async function AnalyticsOverviewPage() {
       description: "Algorithmic fair-market-value pricing across NBA Top Shot and NFL All Day editions.",
       icon: Sparkles,
       status: "live",
+      methodologyTopic: "fmv",
       metrics:
         fmvTotalUsd > 0
           ? [
@@ -341,6 +360,7 @@ export default async function AnalyticsOverviewPage() {
       description: "Pack listings ranked by expected value vs current ask, with FMV coverage and supply signals.",
       icon: Package,
       status: "live",
+      methodologyTopic: "packs",
     },
     {
       href: "/analytics/sets",
@@ -348,6 +368,7 @@ export default async function AnalyticsOverviewPage() {
       description: "Catalog rollups across NBA Top Shot, NFL All Day, LaLiga Golazos, and UFC Strike — sets, editions, and series eras.",
       icon: Layers,
       status: "live",
+      methodologyTopic: "sets",
       metrics:
         setsTotalSets > 0
           ? [
@@ -387,46 +408,55 @@ export default async function AnalyticsOverviewPage() {
           {cards.map((c) => {
             const Icon = c.icon
             return (
-              <Link
+              <div
                 key={c.href}
-                href={c.href}
                 className="group relative rounded-xl border border-slate-800 bg-slate-900/40 p-5 transition-all hover:border-emerald-500/40 hover:bg-slate-900/70"
               >
-                <div className="flex items-start gap-3 mb-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-md border bg-emerald-500/10 border-emerald-500/20">
-                    <Icon size={16} className="text-emerald-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-slate-100">{c.label}</h3>
-                      <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-emerald-400 border border-emerald-500/30">
-                        Live
-                      </span>
+                <Link href={c.href} className="block">
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-md border bg-emerald-500/10 border-emerald-500/20">
+                      <Icon size={16} className="text-emerald-400" />
                     </div>
-                  </div>
-                  <ArrowUpRight
-                    size={14}
-                    className="text-slate-600 group-hover:text-emerald-400 transition-colors"
-                  />
-                </div>
-                <p className="text-sm leading-relaxed mb-3 text-slate-400">
-                  {c.description}
-                </p>
-                {c.metrics ? (
-                  <div className="flex gap-4 pt-3 border-t border-slate-800/80">
-                    {c.metrics.map((m) => (
-                      <div key={m.label}>
-                        <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
-                          {m.label}
-                        </div>
-                        <div className="text-base font-semibold tabular-nums text-slate-100">
-                          {m.value}
-                        </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-slate-100">{c.label}</h3>
+                        <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-emerald-400 border border-emerald-500/30">
+                          Live
+                        </span>
                       </div>
-                    ))}
+                    </div>
+                    <ArrowUpRight
+                      size={14}
+                      className="text-slate-600 group-hover:text-emerald-400 transition-colors"
+                    />
                   </div>
+                  <p className="text-sm leading-relaxed mb-3 text-slate-400">
+                    {c.description}
+                  </p>
+                  {c.metrics ? (
+                    <div className="flex gap-4 pt-3 border-t border-slate-800/80">
+                      {c.metrics.map((m) => (
+                        <div key={m.label}>
+                          <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+                            {m.label}
+                          </div>
+                          <div className="text-base font-semibold tabular-nums text-slate-100">
+                            {m.value}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </Link>
+                {c.methodologyTopic ? (
+                  <Link
+                    href={`/analytics/methodology/${c.methodologyTopic}`}
+                    className="mt-3 inline-block text-[11px] uppercase tracking-widest text-slate-500 hover:text-emerald-300 transition-colors"
+                  >
+                    Methodology →
+                  </Link>
                 ) : null}
-              </Link>
+              </div>
             )
           })}
         </div>
