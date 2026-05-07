@@ -1,27 +1,30 @@
 // sync-nba-projections — pulls today's NBA projections AND today's games
-// from rpc-sports-proxy.
+// from rpc-sports-proxy + ESPN.
 //
-// 2026-05-07 PIVOT: stats.nba.com began 520'ing scoreboard requests in
-// addition to the existing player-stats block, leaving the function
-// running ok=true but writing 0 projections every cycle and intermittent
-// 502s on the games side. This rev adds a DraftKings fallback chain:
+// 2026-05-07 PIVOT pt 2: Akamai's TLS / IP fingerprinting on stats.nba.com
+// AND draftkings.com is now blocking the worker entirely — pipeline_runs
+// rows show via=none + both_upstreams_failed across multiple cycles. UA
+// rotation + sec-fetch hardening can't bypass a TLS-fingerprint block.
 //
-//   1. Call /nba/rolling-projections (cdn.nba.com games + stats.nba.com
-//      rolling-5 players). On a clean run this still wins — it's the only
-//      source today that emits the canonical 10-digit cdn.nba.com game IDs.
-//   2. If rolling returns 502 OR returns 200 with players=[] AND a
-//      degradation note, call /nba/draftkings-projections in a second
-//      round-trip. DK's Akamai surface was hardened in the May 7 worker
-//      pass (UA pool + sec-ch-ua + sec-fetch fingerprints + 403-retry).
-//   3. Use whichever combination of {games, players} yields a writable
-//      result. Always prefer rolling's games when both populate so we
-//      don't drift back into 7-digit DK competition IDs in nba_games.
-//   4. Bind player rows to nba_games via team-abbr lookup (same as before).
-//      Source/method/confidence labels reflect the actual upstream that
-//      produced the players for that run, so the admin UI can see the mix.
+// New 3-tier fallback chain (in order):
+//
+//   1. /nba/rolling-projections via rpc-sports-proxy (cdn.nba.com games +
+//      stats.nba.com rolling-5 players). Best signal when it works.
+//   2. /nba/draftkings-projections via rpc-sports-proxy. DK's model
+//      projections, MEDIUM confidence. Both worker routes share an Akamai
+//      surface — frequently both fail at the same time today.
+//   3. site.api.espn.com scoreboard (direct, no proxy). ESPN doesn't use
+//      Akamai and doesn't TLS-fingerprint. Returns today's games + each
+//      team's stat-category "rating" leader with PPG/RPG/APG/SPG/BPG
+//      embedded in the displayValue. Coverage is thin (~1-2 named players
+//      per team) but it's the only source emitting fresh data on Akamai-
+//      blocked days. Confidence labelled LOW.
 //
 // Two writes per run:
-//   1. nba_games (upsert by external_game_id, 10-digit cdn.nba.com IDs).
+//   1. nba_games (upsert by external_game_id). cdn.nba.com gives 10-digit
+//      IDs; ESPN gives event IDs ("401809241" etc); DK gives 7-digit. We
+//      prefer cdn.nba.com when present so the table stays homogeneous,
+//      but accept whichever upstream produced games when others failed.
 //   2. nba_player_projections (upsert by nba_player_id+game_id+source).
 // Resolves players against nba_players.full_name_normalized first, then
 // nba_player_aliases, then auto-INSERTs a new nba_players row if neither hits.
@@ -38,7 +41,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 const SPORTS_PROXY_URL = Deno.env.get("SPORTS_PROXY_URL") ?? ""
 const SPORTS_PROXY_SECRET = Deno.env.get("SPORTS_PROXY_SECRET") ?? ""
 
-const FUNCTION_VERSION = 5
+const FUNCTION_VERSION = 6
 const PIPELINE = "sync-nba-projections"
 const COLLECTION_SLUG = "nba_top_shot"
 
@@ -49,6 +52,9 @@ const ROLLING_SOURCE = "nba-stats-rolling5"
 const ROLLING_METHOD = "rolling-5-game-fantasy-average"
 const DK_SOURCE = "draftkings"
 const DK_METHOD = "draftkings-model"
+const ESPN_SOURCE = "espn-team-leader"
+const ESPN_METHOD = "espn-season-rating-leader"
+const ESPN_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
 
 interface ProxyPlayer {
   name: string
@@ -356,6 +362,185 @@ async function callProxyRoute(route: string): Promise<ProxyAttempt> {
   return { ok: true, status: res.status, body: parsed as ProxyResponse, error: null, upstream_status: null, upstream_body_excerpt: null }
 }
 
+// ─── ESPN tier-3 fallback ────────────────────────────────────────────────
+// site.api.espn.com is open to Supabase egress (no Akamai, no TLS-fingerprint
+// gate). Scoreboard returns today's games + each team's leaders array; the
+// "rating" category embeds PPG/RPG/APG/SPG/BPG in a single displayValue
+// string per team's MVP. Parsing that string gives us a single rich row
+// per team without per-player calls.
+
+interface EspnLeader {
+  athlete?: { id?: string | number; fullName?: string; displayName?: string }
+  displayValue?: string
+  value?: number
+}
+interface EspnLeaderCategory { name?: string; displayName?: string; leaders?: EspnLeader[] }
+interface EspnCompetitor {
+  homeAway?: "home" | "away"
+  team?: { id?: string | number; abbreviation?: string; displayName?: string }
+  leaders?: EspnLeaderCategory[]
+}
+interface EspnEvent {
+  id?: string
+  date?: string
+  competitions?: Array<{ competitors?: EspnCompetitor[] }>
+}
+interface EspnScoreboard { events?: EspnEvent[] }
+
+// Match a "23.9 PPG, 5.5 RPG, 9.9 APG, 1.4 SPG, 0.8 BPG" rating display.
+// Each stat is optional in case ESPN drops one; we treat missing as 0.
+function parseRatingString(s: string): {
+  pts: number; reb: number; ast: number; stl: number; blk: number
+} | null {
+  if (!s) return null
+  const grab = (re: RegExp): number => {
+    const m = s.match(re)
+    if (!m) return 0
+    const n = parseFloat(m[1])
+    return Number.isFinite(n) ? n : 0
+  }
+  const pts = grab(/([\d.]+)\s*PPG/i)
+  const reb = grab(/([\d.]+)\s*RPG/i)
+  const ast = grab(/([\d.]+)\s*APG/i)
+  const stl = grab(/([\d.]+)\s*SPG/i)
+  const blk = grab(/([\d.]+)\s*BPG/i)
+  if (pts === 0 && reb === 0 && ast === 0) return null
+  return { pts, reb, ast, stl, blk }
+}
+
+function dkFantasyFromBaseStats(s: { pts: number; reb: number; ast: number; stl: number; blk: number }): number {
+  // No threes / TOV / DD2 / TD3 in the rating string — approximate.
+  const fp = s.pts + 1.2 * s.reb + 1.5 * s.ast + 3 * s.stl + 3 * s.blk
+  return Math.round(fp * 100) / 100
+}
+
+interface EspnFetchOutcome {
+  ok: boolean
+  status: number | null
+  body: ProxyResponse | null
+  error: string | null
+}
+
+async function callEspnScoreboard(): Promise<EspnFetchOutcome> {
+  let res: Response
+  try {
+    res = await fetch(ESPN_SCOREBOARD_URL, {
+      method: "GET",
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; rip-packs-city/1.0; +https://rippackscity.com)",
+      },
+      signal: AbortSignal.timeout(15_000),
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { ok: false, status: null, body: null, error: `espn_fetch_failed: ${msg}` }
+  }
+  if (!res.ok) {
+    return { ok: false, status: res.status, body: null, error: `espn_HTTP_${res.status}` }
+  }
+  let json: EspnScoreboard
+  try { json = await res.json() } catch (err) {
+    return { ok: false, status: res.status, body: null, error: `espn_not_json: ${err instanceof Error ? err.message : String(err)}` }
+  }
+
+  const games: ProxyGame[] = []
+  const players: ProxyPlayer[] = []
+  const seenPlayerKey = new Set<string>()
+  const todayET = todayInET()
+
+  for (const ev of json.events ?? []) {
+    const comp = ev.competitions?.[0]
+    if (!comp) continue
+    const home = comp.competitors?.find(c => c.homeAway === "home")
+    const away = comp.competitors?.find(c => c.homeAway === "away")
+    const homeAbbr = home?.team?.abbreviation?.toUpperCase() ?? null
+    const awayAbbr = away?.team?.abbreviation?.toUpperCase() ?? null
+    if (!ev.id || !homeAbbr || !awayAbbr) continue
+
+    games.push({
+      gameId: String(ev.id),
+      name: `${awayAbbr} @ ${homeAbbr}`,
+      homeAbbr,
+      awayAbbr,
+      startTime: ev.date ?? null,
+      gameDate: todayET,
+    })
+
+    for (const competitor of [home, away]) {
+      if (!competitor) continue
+      const teamAbbr = competitor.team?.abbreviation?.toUpperCase() ?? null
+      const opponentAbbr = competitor === home ? awayAbbr : homeAbbr
+      // Iterate every leader category; dedupe by athlete.id so the same
+      // player doesn't get 4 rows when they lead PTS + AST + rating.
+      for (const cat of competitor.leaders ?? []) {
+        for (const ld of cat.leaders ?? []) {
+          const athleteId = ld.athlete?.id ? String(ld.athlete.id) : ""
+          const name = (ld.athlete?.fullName ?? ld.athlete?.displayName ?? "").trim()
+          if (!name) continue
+          const key = athleteId ? `id:${athleteId}` : `name:${name.toLowerCase()}|team:${teamAbbr ?? ""}`
+          if (seenPlayerKey.has(key)) continue
+
+          // Prefer the rating-category display because it carries all 5
+          // stats. Other categories carry just one (PTS/REB/AST). For
+          // single-stat leaders we still emit a row but with reduced
+          // fantasy approximation.
+          const display = String(ld.displayValue ?? "")
+          let stats = parseRatingString(display)
+          if (!stats) {
+            // Single-stat fallback — assign to whichever stat the cat is.
+            const v = typeof ld.value === "number" ? ld.value : parseFloat(display)
+            if (!Number.isFinite(v)) continue
+            const catName = (cat.name ?? "").toLowerCase()
+            stats = {
+              pts: catName.includes("point") ? v : 0,
+              reb: catName.includes("rebound") ? v : 0,
+              ast: catName.includes("assist") ? v : 0,
+              stl: 0, blk: 0,
+            }
+            if (stats.pts === 0 && stats.reb === 0 && stats.ast === 0) continue
+          }
+
+          seenPlayerKey.add(key)
+          const fp = dkFantasyFromBaseStats(stats)
+          players.push({
+            name,
+            teamAbbr: teamAbbr,
+            position: null,
+            salary: null,
+            status: null,
+            projFp: fp,
+            proj_points: stats.pts,
+            proj_rebounds: stats.reb,
+            proj_assists: stats.ast,
+            proj_threes: null,
+            proj_steals: stats.stl,
+            proj_blocks: stats.blk,
+            proj_turnovers: null,
+            proj_minutes: null,
+            opponentAbbr,
+            gameStartTime: ev.date ?? null,
+          })
+        }
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    status: res.status,
+    body: {
+      draftGroupId: null,
+      gameDate: todayET,
+      players,
+      games,
+      source: ESPN_SOURCE,
+      note: games.length === 0 ? "no_nba_slate_today" : undefined,
+    },
+    error: null,
+  }
+}
+
 async function runWork(startedAtIso: string, started: number) {
   const gameDate = todayInET()
 
@@ -384,10 +569,7 @@ async function runWork(startedAtIso: string, started: number) {
 
   // Step 2 — fallback to DK when rolling failed entirely OR when rolling
   // returned no players. DK's payload format is the same shape; only the
-  // source label and confidence tier change. We do NOT use DK's games when
-  // rolling already produced cdn.nba.com games — DK's 7-digit competition
-  // IDs would coexist with the canonical 10-digit IDs in nba_games and
-  // pollute downstream joins.
+  // source label and confidence tier change.
   let dk: ProxyAttempt | null = null
   if (rollingDegraded) {
     dk = await callProxyRoute(DK_ROUTE)
@@ -395,9 +577,24 @@ async function runWork(startedAtIso: string, started: number) {
 
   const dkPlayers = dk?.body?.players ?? []
   const dkGames = dk?.body?.games ?? []
+  const dkDegraded = !dk || !dk.ok || dkPlayers.length === 0
+
+  // Step 3 — ESPN scoreboard fallback. Hits site.api.espn.com directly
+  // (no proxy worker, no Akamai surface). Only fires when both worker
+  // routes failed to produce players. Coverage is thin but ESPN doesn't
+  // share the TLS-fingerprint block that's currently breaking the worker
+  // upstreams, so it's the path that actually works on bad-Akamai days.
+  let espn: EspnFetchOutcome | null = null
+  if (rollingDegraded && dkDegraded) {
+    espn = await callEspnScoreboard()
+  }
+  const espnPlayers = espn?.body?.players ?? []
+  const espnGames = espn?.body?.games ?? []
 
   // Decide what to write. Source picks the players upstream; gamesSource
-  // picks which payload's `games` array we upsert from.
+  // picks which payload's `games` array we upsert from. We always prefer
+  // the most-authoritative games payload available (cdn.nba.com 10-digit
+  // IDs > DK 7-digit IDs > ESPN event IDs).
   let scraped: ProxyPlayer[] = []
   let proxyGames: ProxyGame[] = []
   let activeSource = ROLLING_SOURCE
@@ -405,41 +602,49 @@ async function runWork(startedAtIso: string, started: number) {
   let activeConfidence: "HIGH" | "MEDIUM" | "LOW" = "LOW"
   let viaTag = "rolling"
 
+  // Choose the games payload first (most authoritative wins).
+  let chosenGames: ProxyGame[] = []
+  let gamesSource = "none"
+  if (rollingGames.length > 0) { chosenGames = rollingGames; gamesSource = "rolling" }
+  else if (dkGames.length > 0) { chosenGames = dkGames; gamesSource = "dk" }
+  else if (espnGames.length > 0) { chosenGames = espnGames; gamesSource = "espn" }
+
   if (rolling.ok && rollingPlayers.length > 0) {
     scraped = rollingPlayers
-    proxyGames = rollingGames
+    proxyGames = chosenGames
     activeSource = ROLLING_SOURCE
     activeMethod = ROLLING_METHOD
     activeConfidence = "LOW"
-    viaTag = "rolling"
+    viaTag = `rolling+${gamesSource}-games`
   } else if (dk && dk.ok && dkPlayers.length > 0) {
     scraped = dkPlayers
-    // Prefer rolling games (10-digit IDs) when present; fall back to DK
-    // games only when rolling 502'd entirely.
-    proxyGames = rollingGames.length > 0 ? rollingGames : dkGames
+    proxyGames = chosenGames
     activeSource = DK_SOURCE
     activeMethod = DK_METHOD
     activeConfidence = "MEDIUM"
-    viaTag = rollingGames.length > 0 ? "dk-players+rolling-games" : "dk"
-  } else if (rolling.ok) {
-    // Rolling worked but had no players, DK didn't help either.
-    proxyGames = rollingGames
-    viaTag = dk ? "rolling-games-only+dk-failed" : "rolling-games-only"
-  } else if (dk && dk.ok) {
-    // Rolling 502'd but DK at least returned a games payload (no players).
-    proxyGames = dkGames
-    viaTag = "dk-games-only"
+    viaTag = `dk+${gamesSource}-games`
+  } else if (espn && espn.ok && espnPlayers.length > 0) {
+    scraped = espnPlayers
+    proxyGames = chosenGames
+    activeSource = ESPN_SOURCE
+    activeMethod = ESPN_METHOD
+    activeConfidence = "LOW"
+    viaTag = `espn+${gamesSource}-games`
+  } else if (chosenGames.length > 0) {
+    // Some upstream produced games but nobody produced players.
+    proxyGames = chosenGames
+    viaTag = `${gamesSource}-games-only`
   }
-  // If both failed entirely, scraped + proxyGames stay empty; we still log
-  // the run with both errors.
+  // If everything failed entirely, scraped + proxyGames stay empty.
 
-  // Hard-fail only when BOTH upstreams failed AND we have nothing to write.
-  if (!rolling.ok && (!dk || !dk.ok)) {
+  // Hard-fail only when ALL THREE upstreams failed AND we have nothing
+  // to write — not even games.
+  if (chosenGames.length === 0 && scraped.length === 0) {
     await logRun({
       startedAt: startedAtIso,
       rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: false,
-      error: `both_upstreams_failed`,
+      error: `all_upstreams_failed`,
       extra: {
         function_version: FUNCTION_VERSION,
         game_date: gameDate,
@@ -448,17 +653,21 @@ async function runWork(startedAtIso: string, started: number) {
         rolling_status: rolling.status,
         rolling_upstream_status: rolling.upstream_status,
         rolling_body_excerpt: rolling.upstream_body_excerpt,
+        dk_attempted: !!dk,
         dk_error: dk?.error ?? null,
         dk_status: dk?.status ?? null,
         dk_upstream_status: dk?.upstream_status ?? null,
         dk_body_excerpt: dk?.upstream_body_excerpt ?? null,
+        espn_attempted: !!espn,
+        espn_error: espn?.error ?? null,
+        espn_status: espn?.status ?? null,
         elapsed_ms: Date.now() - started,
       },
     })
     return
   }
 
-  const proxy: ProxyResponse = (rolling.body ?? dk?.body) as ProxyResponse
+  const proxy: ProxyResponse = (rolling.body ?? dk?.body ?? espn?.body) as ProxyResponse
 
   // Upsert games BEFORE player resolution so loadTodaysGames() picks up newly
   // inserted rows on the same run. This is the single writer for nba_games
@@ -492,6 +701,10 @@ async function runWork(startedAtIso: string, started: number) {
         dk_ok: dk?.ok ?? null,
         dk_players: dkPlayers.length,
         dk_error: dk?.error ?? null,
+        espn_attempted: !!espn,
+        espn_ok: espn?.ok ?? null,
+        espn_players: espnPlayers.length,
+        espn_error: espn?.error ?? null,
         games_total: gamesResult.total,
         games_upserted: gamesResult.upserted,
         games_skipped: gamesResult.skipped,
@@ -587,6 +800,10 @@ async function runWork(startedAtIso: string, started: number) {
       dk_ok: dk?.ok ?? null,
       dk_players: dkPlayers.length,
       dk_error: dk?.error ?? null,
+      espn_attempted: !!espn,
+      espn_ok: espn?.ok ?? null,
+      espn_players: espnPlayers.length,
+      espn_error: espn?.error ?? null,
       elapsed_ms: Date.now() - started,
     },
   })
@@ -617,7 +834,7 @@ Deno.serve(async (req: Request) => {
       started_at: startedAtIso,
       function_version: FUNCTION_VERSION,
       primary_source: ROLLING_SOURCE,
-      fallback_source: DK_SOURCE,
+      fallback_sources: [DK_SOURCE, ESPN_SOURCE],
       note: "Real results will appear in pipeline_runs within ~30-60s.",
     }),
     { headers: { "Content-Type": "application/json" } },
