@@ -1,3 +1,21 @@
+// app/api/pinnacle-listing-cache/route.ts
+//
+// 2026-05-07 finding: probed api2.flowty.io/collection/0xedf9df96c92f4595/Pinnacle
+// at offsets 0, 100, 500, 1000, 5000, 9500 with filter shapes {},
+// listingKind:resale, listingKind:storefront, listingKind:sale. Every one of
+// the 10,000 active listings returns salePrice=1 + usdValue=1, customID
+// DAPPER_MARKETPLACE, paymentTokenName DUC, distributed across many distinct
+// seller storefronts. The parser is reading the right field — Flowty's
+// Pinnacle integration is genuinely emitting uniform $1 floor data today.
+//
+// Either (a) Pinnacle's secondary market is at the $1 marketplace floor
+// across the board, or (b) Flowty hasn't indexed Pinnacle's higher-priced
+// listings yet (resale traffic on disneypinnacle.com may live elsewhere).
+// Until we wire a second upstream, the route still writes the rows it
+// receives, but logs the floor-only state in pipeline_runs.extra so the
+// operator can tell at a glance that the cache is degraded vs. genuinely
+// reflecting market depth.
+
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import {
@@ -206,6 +224,9 @@ async function run(req: NextRequest) {
   let errors = 0
   let askOnlyFmvCount = 0
   let salesFmvCount = 0
+  // Hoisted detection so the final logRun (after the try/catch) sees them.
+  let dollarOnePct = 0
+  let upstreamFloorOnly = false
 
   try {
     const raw: FlowtyNft[] = []
@@ -229,6 +250,19 @@ async function run(req: NextRequest) {
     }
     mappedCount = rows.length
     console.log(`[pinnacle-listing-cache] Mapped ${rows.length} valid listings`)
+
+    // Floor-only detection. If 95%+ of mapped listings carry the $1
+    // marketplace floor, surface that in pipeline_runs.extra so the
+    // dashboard can show "upstream returning floor only — no signal" instead
+    // of pretending every Pinnacle pin is worth $1. We still write the rows
+    // (they ARE real listings) but downstream FMV consumers should treat
+    // floor-only data as a degraded source.
+    const dollarOneRows = rows.filter(r => r.ask_price === 1).length
+    dollarOnePct = rows.length > 0 ? dollarOneRows / rows.length : 0
+    upstreamFloorOnly = rows.length >= 20 && dollarOnePct >= 0.95
+    if (upstreamFloorOnly) {
+      console.log(`[pinnacle-listing-cache] FLOOR-ONLY upstream — ${dollarOneRows}/${rows.length} listings at $1 (Flowty Pinnacle integration likely missing secondary-market resales)`)
+    }
 
     if (rows.length === 0) {
       await logRun({
@@ -291,6 +325,11 @@ async function run(req: NextRequest) {
       ask_only_fmv_count: askOnlyFmvCount,
       sales_fmv_count: salesFmvCount,
       duration_ms: Date.now() - started,
+      // Upstream-floor signal — flips true when Flowty returns ≥95% $1 rows,
+      // which is the current 2026-05-07 state. Dashboard can branch on this
+      // instead of treating cached_listings as authoritative ask data.
+      upstream_floor_only: upstreamFloorOnly,
+      dollar_one_pct: Number(dollarOnePct.toFixed(3)),
     },
   })
 
