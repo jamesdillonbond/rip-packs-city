@@ -9,21 +9,16 @@
 // this orchestrator is fast — fan-out is mostly fetch-latency bound, not
 // enrichment-latency bound.
 //
-// Per-collection coverage (May 6, 2026):
-//   - nba_top_shot   → /api/wallet-backfill         (Cadence + GQL)
-//   - nfl_all_day    → /api/wallet-backfill-allday  (Cadence)
-//   - disney_pinnacle → SKIP (no Cadence path yet — pinnacle-wallet route
-//     reads from cached pinnacle data populated by ingest, not by
-//     wallet-side Cadence walks). Follow-up: build wallet-backfill-pinnacle
-//     once the Pinnacle ingest pattern is mirrored on the wallet axis.
-//   - laliga_golazos → SKIP (Flowty-only listings; per-wallet enrichment
-//     is not yet wired). Follow-up.
-//   - ufc_strike     → SKIP (existing enrich-ufc-wallet edge function is
-//     sale-trigger-driven, not full-wallet-walk). Follow-up: extend it to
-//     accept a public { wallet } body for parity with TS / AllDay.
+// Per-collection coverage (May 7, 2026):
+//   - nba_top_shot   → /api/wallet-backfill            (Cadence + GQL)
+//   - nfl_all_day    → /api/wallet-backfill-allday     (Cadence, ID-only)
+//   - disney_pinnacle → /api/wallet-backfill-pinnacle  (Cadence, ID-only)
+//   - laliga_golazos → /api/wallet-backfill-golazos    (Cadence, ID-only)
+//   - ufc_strike     → /api/wallet-backfill-ufc        (Cadence, ID-only)
 //
-// As each collection's per-wallet enricher lands, append it to
-// COLLECTIONS_TO_FAN_OUT below — no schema or orchestrator changes needed.
+// All five collections now flow through this orchestrator. The non-TS
+// enrichers write IDs only; player / set / tier come from out-of-band
+// edition resolvers via JOIN at query time.
 
 import { NextRequest, NextResponse } from "next/server"
 
@@ -36,9 +31,11 @@ interface FanoutTarget {
 }
 
 const COLLECTIONS_TO_FAN_OUT: FanoutTarget[] = [
-  { slug: "nba_top_shot", path: "/api/wallet-backfill" },
-  { slug: "nfl_all_day", path: "/api/wallet-backfill-allday" },
-  // disney_pinnacle, laliga_golazos, ufc_strike pending — see header.
+  { slug: "nba_top_shot",    path: "/api/wallet-backfill" },
+  { slug: "nfl_all_day",     path: "/api/wallet-backfill-allday" },
+  { slug: "disney_pinnacle", path: "/api/wallet-backfill-pinnacle" },
+  { slug: "laliga_golazos",  path: "/api/wallet-backfill-golazos" },
+  { slug: "ufc_strike",      path: "/api/wallet-backfill-ufc" },
 ]
 
 interface FanoutResult {
@@ -114,9 +111,6 @@ export async function POST(req: NextRequest) {
       accepted_count: accepted,
       collection_count: COLLECTIONS_TO_FAN_OUT.length,
       results,
-      pending_collections: ["disney_pinnacle", "laliga_golazos", "ufc_strike"],
-      note:
-        "Disney Pinnacle, LaLiga Golazos, and UFC Strike per-wallet enrichers are not yet built. Top Shot + AllDay land via this fan-out today.",
     },
     { status: 202 }
   )

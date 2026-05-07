@@ -1,24 +1,26 @@
-// app/api/wallet-backfill-allday/route.ts
+// app/api/wallet-backfill-pinnacle/route.ts
 //
-// AllDay wallet enricher — thin wrapper over the shared
-// runIdOnlyBackfill helper. See lib/wallet-backfill-helpers.ts for the
-// runner, the cache-diff logic, and the rationale for ID-only writes.
+// Disney Pinnacle wallet enricher. ID-only via NonFungibleToken
+// CollectionPublic at /public/PinnacleCollection. The Pinnacle ingest
+// pipeline owns metadata (character_name, set_name, variant_type) on
+// pinnacle_editions; reads JOIN wallet_moments_cache.moment_id at query
+// time.
 
 import { NextRequest, NextResponse, after } from "next/server"
 import {
   runIdOnlyBackfill,
-  CADENCE_ALLDAY,
-  ALLDAY_COLLECTION_UUID,
+  CADENCE_PINNACLE,
+  PINNACLE_COLLECTION_UUID,
 } from "@/lib/wallet-backfill-helpers"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
 
 const CONFIG = {
-  slug: "nfl_all_day",
-  collectionUuid: ALLDAY_COLLECTION_UUID,
-  cadenceScript: CADENCE_ALLDAY,
-  pipelineName: "wallet-backfill-allday",
+  slug: "disney_pinnacle",
+  collectionUuid: PINNACLE_COLLECTION_UUID,
+  cadenceScript: CADENCE_PINNACLE,
+  pipelineName: "wallet-backfill-pinnacle",
 } as const
 
 export async function POST(req: NextRequest) {

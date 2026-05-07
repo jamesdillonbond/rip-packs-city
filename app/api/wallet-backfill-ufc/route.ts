@@ -1,24 +1,26 @@
-// app/api/wallet-backfill-allday/route.ts
+// app/api/wallet-backfill-ufc/route.ts
 //
-// AllDay wallet enricher — thin wrapper over the shared
-// runIdOnlyBackfill helper. See lib/wallet-backfill-helpers.ts for the
-// runner, the cache-diff logic, and the rationale for ID-only writes.
+// UFC Strike wallet enricher. ID-only via NonFungibleToken
+// CollectionPublic at /public/UFC_NFTCollection. UFC migrated to Aptos
+// per the April 2026 session note in CLAUDE.md, so the on-chain Flow
+// data is essentially frozen — this enricher captures whatever Flow-side
+// holdings exist for invitees who collected UFC pre-migration.
 
 import { NextRequest, NextResponse, after } from "next/server"
 import {
   runIdOnlyBackfill,
-  CADENCE_ALLDAY,
-  ALLDAY_COLLECTION_UUID,
+  CADENCE_UFC,
+  UFC_COLLECTION_UUID,
 } from "@/lib/wallet-backfill-helpers"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
 
 const CONFIG = {
-  slug: "nfl_all_day",
-  collectionUuid: ALLDAY_COLLECTION_UUID,
-  cadenceScript: CADENCE_ALLDAY,
-  pipelineName: "wallet-backfill-allday",
+  slug: "ufc_strike",
+  collectionUuid: UFC_COLLECTION_UUID,
+  cadenceScript: CADENCE_UFC,
+  pipelineName: "wallet-backfill-ufc",
 } as const
 
 export async function POST(req: NextRequest) {
