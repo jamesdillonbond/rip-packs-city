@@ -20,6 +20,7 @@ import MomentDetailModal from "@/components/MomentDetailModal"
 import BadgeIcon from "@/components/BadgeIcon"
 import WalletStatRow from "@/components/wallet-stat-row"
 import { formatCurrency, formatCount } from "@/lib/format"
+import { pickLoading } from "@/lib/schonely"
 
 function ThumbnailPreview({ thumbUrl, playerName, tierColor, children }: { thumbUrl: string | null; playerName: string; tierColor: string; children: React.ReactNode }) {
   const [hovered, setHovered] = useState(false)
@@ -1614,7 +1615,7 @@ export default function WalletPage() {
                 cursor: loading || !input.trim() ? "not-allowed" : "pointer",
               }}
             >
-              {loading ? "Loading..." : "Search"}
+              {loading ? pickLoading() : "Search"}
             </button>
             {rows.length > 0 && input.trim() && (
               <button
@@ -2727,7 +2728,7 @@ export default function WalletPage() {
         {paginatedPage < paginatedTotalPages ? (
           <div className="mt-6 flex flex-col items-center gap-2">
             <button onClick={handleLoadMore} disabled={loadingMore} className="rpc-table-load-more">
-              {loadingMore ? "Loading..." : "Load More (" + (paginatedTotal - rows.length) + " remaining)"}
+              {loadingMore ? pickLoading() : "Load More (" + (paginatedTotal - rows.length) + " remaining)"}
             </button>
             <span className="text-xs text-zinc-600">
               Showing {rows.length} of {paginatedTotal} moments

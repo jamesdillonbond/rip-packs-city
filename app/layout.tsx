@@ -5,6 +5,7 @@ import WarmupProvider from "@/lib/warmup/WarmupContext"
 import { rootMetadata, organizationJsonLd } from "@/lib/seo"
 import WalletPreloader from "@/components/WalletPreloader"
 import OnboardingModal from "@/components/OnboardingModal"
+import ConsoleGreeting from "@/components/visual/ConsoleGreeting"
 
 export const metadata: Metadata = rootMetadata
 
@@ -25,6 +26,7 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
         />
+        <ConsoleGreeting />
         <WarmupProvider>
           <CartProvider>
             <WalletPreloader />
