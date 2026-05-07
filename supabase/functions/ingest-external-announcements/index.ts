@@ -1,3 +1,4 @@
+// RETIRED 2026-05-07: Reddit/RSS path abandoned, see /api/admin/announcements for current ingest.
 // ingest-external-announcements
 //
 // Polls the public surfaces (RSS feeds, Twitter mirrors via Nitter,
