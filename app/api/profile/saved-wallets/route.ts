@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
+import { checkFeatureQuota } from "@/lib/pro-tier";
 
 const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 
@@ -68,6 +69,51 @@ export async function POST(req: NextRequest) {
   }
   walletAddr = String(walletAddr).toLowerCase();
   const resolvedCollectionId = collectionId ?? NBA_TOP_SHOT_UUID;
+
+  // Pro-tier saved-wallet cap. feature_quotas.saved_wallets_max stores a
+  // count limit (not a daily-event limit) keyed on the user's wallet via
+  // get_user_plan. Free → 1 wallet; pro_trial → 5; pro_paid/grandfather/
+  // moments_payment → unlimited; founding/admin → unlimited.
+  // Existence of the row IS the count, so we don't fire record_feature_usage
+  // here. We pre-check on POST only; idempotent re-saves of the same
+  // (user_id, wallet_addr, collection_id) skip the cap check below.
+  try {
+    const { count: existingForRow } = await supabase
+      .from("saved_wallets")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("wallet_addr", walletAddr)
+      .eq("collection_id", resolvedCollectionId);
+
+    const isReSave = (existingForRow ?? 0) > 0;
+    if (!isReSave) {
+      const { count: currentCount } = await supabase
+        .from("saved_wallets")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id);
+
+      const quota = await checkFeatureQuota(walletAddr, "saved_wallets_max");
+      const maxAllowed = quota.daily_limit; // null = unlimited per quota RPC contract
+      if (maxAllowed !== null && (currentCount ?? 0) >= maxAllowed) {
+        return NextResponse.json(
+          {
+            error: "plan_limit_reached",
+            message: `Free plan supports ${maxAllowed} saved wallet${maxAllowed === 1 ? "" : "s"}. Upgrade to RPC Pro for unlimited.`,
+            plan: quota.plan,
+            saved_wallet_count: currentCount ?? 0,
+            saved_wallet_limit: maxAllowed,
+            upgrade_url: "/pricing",
+          },
+          { status: 402 }
+        );
+      }
+    }
+  } catch (err) {
+    // Fail-open on quota infra errors so a transient Postgres hiccup doesn't
+    // block legitimate saves. The count check is best-effort defense in
+    // depth; the database itself remains the source of truth.
+    console.warn("[saved-wallets POST] quota check error", err);
+  }
 
   try {
     const { data, error } = await supabase

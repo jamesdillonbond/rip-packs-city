@@ -43,6 +43,8 @@ interface AllowRow {
   reject_reason: string | null;
   notified_at: string | null;
   notes: string | null;
+  auto_approval_score: number | null;
+  auto_approved_at: string | null;
 }
 
 interface CountsBag {

@@ -35,6 +35,8 @@ const SELECT_COLUMNS = [
   "reject_reason",
   "notified_at",
   "notes",
+  "auto_approval_score",
+  "auto_approved_at",
 ].join(",")
 
 const STATUS_RANK: Record<string, number> = {

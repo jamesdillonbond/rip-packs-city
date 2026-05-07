@@ -29,6 +29,7 @@ import {
   fetchPinnacleFmvDistribution,
   type FmvDistributionResult,
 } from "@/lib/concierge/fmv-distribution";
+import { checkFeatureQuota, recordFeatureUsage } from "@/lib/pro-tier";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -1356,6 +1357,34 @@ export async function POST(req: NextRequest) {
         { response: "You've sent a lot of messages! Take a breather and try again in an hour.", escalated: false, category: "rate_limit" },
         { status: 429 }
       );
+    }
+
+    // Pro tier daily quota — only enforced when we have a wallet to key on.
+    // Free users get 5/day; pro_trial 50/day; founding/pro_paid/grandfather 200/day;
+    // founding+admin unlimited. Anonymous users (no wallet) bypass the quota
+    // and rely on the per-session rate limit above. Recording happens in
+    // after() so failures don't block response delivery.
+    if (userWallet) {
+      const quota = await checkFeatureQuota(userWallet, "concierge_messages");
+      if (!quota.allowed) {
+        return NextResponse.json(
+          {
+            response: `You've hit your daily Concierge limit (${quota.daily_limit ?? 0}/day on the ${quota.plan} plan). Upgrade to RPC Pro for 200 messages per day — see /pricing.`,
+            escalated: false,
+            category: "daily_limit_reached",
+            error: "daily_limit_reached",
+            plan: quota.plan,
+            used_today: quota.used_today,
+            daily_limit: quota.daily_limit,
+            upgrade_url: "/pricing",
+          },
+          { status: 429 }
+        );
+      }
+      // Quota passed — record usage in the background so every return path
+      // below (greeting, streaming, normal response, escalation) increments
+      // the daily counter exactly once.
+      after(() => recordFeatureUsage(userWallet, "concierge_messages", { session_id: sessionId }));
     }
 
     if (GREETING_RE.test(message)) {
