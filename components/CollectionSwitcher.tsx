@@ -39,6 +39,7 @@ export default function CollectionSwitcher({ activeCollectionId }: CollectionSwi
 
   return (
     <div
+      data-tour-anchor="collection-switcher"
       style={{
         display: "flex",
         gap: 6,

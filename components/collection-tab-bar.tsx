@@ -26,6 +26,9 @@ export function CollectionTabBar({ collection }: { collection: Collection }) {
             role="tab"
             aria-selected={isActive}
             className="rpc-coll-tab"
+            // FirstRunTour anchors the "Real-time deal flow" step on the
+            // sniper nav link; other tabs aren't anchored.
+            data-tour-anchor={page === "sniper" ? "sniper-nav-link" : undefined}
             style={{
               padding: "8px 14px",
               fontSize: 11,
