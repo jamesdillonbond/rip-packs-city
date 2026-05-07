@@ -481,6 +481,11 @@ async function runSmokeTests() {
     )),
 
     // Auth-gated /profile (the editor) — must 307 to /login for anonymous traffic.
+    // We pass `Authorization: ""` to opt out of smokeFetch's bearer-bypass
+    // injection; this probe is specifically verifying that anon callers (no
+    // bearer, no session cookie) get redirected by the proxy gate, which is
+    // the exact path the bypass would short-circuit. Empty header matches
+    // smokeFetch's "header already present, skip injection" branch.
     time(async () => {
       const meta = {
         name: "auth-gated /profile redirects (307)",
@@ -490,7 +495,7 @@ async function runSmokeTests() {
       const res = await smokeFetch(`${BASE_URL}/profile`, {
         cache: "no-store",
         redirect: "manual",
-        headers: { "User-Agent": BROWSER_UA },
+        headers: { "User-Agent": BROWSER_UA, Authorization: "" },
         signal: AbortSignal.timeout(6000),
       });
       const location = res.headers.get("location") ?? "";
