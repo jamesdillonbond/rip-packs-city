@@ -1,13 +1,27 @@
 // sync-nba-projections — pulls today's NBA projections AND today's games
-// from rpc-sports-proxy. As of 2026-05-06, the source is stats.nba.com
-// last-5-games per-game averages converted to DraftKings fantasy points
-// via the standard formula (DraftKings is unreachable through Akamai). The
-// proxy returns the same { gameDate, players, games } shape as before, so
-// the only edits here are the route name and the new source label.
+// from rpc-sports-proxy.
 //
-// Single proxy call, two writes:
-//   1. nba_games (upsert by external_game_id) — DK's competition payload is
-//      replaced by stats.nba.com scoreboardV2 GameHeader rows.
+// 2026-05-07 PIVOT: stats.nba.com began 520'ing scoreboard requests in
+// addition to the existing player-stats block, leaving the function
+// running ok=true but writing 0 projections every cycle and intermittent
+// 502s on the games side. This rev adds a DraftKings fallback chain:
+//
+//   1. Call /nba/rolling-projections (cdn.nba.com games + stats.nba.com
+//      rolling-5 players). On a clean run this still wins — it's the only
+//      source today that emits the canonical 10-digit cdn.nba.com game IDs.
+//   2. If rolling returns 502 OR returns 200 with players=[] AND a
+//      degradation note, call /nba/draftkings-projections in a second
+//      round-trip. DK's Akamai surface was hardened in the May 7 worker
+//      pass (UA pool + sec-ch-ua + sec-fetch fingerprints + 403-retry).
+//   3. Use whichever combination of {games, players} yields a writable
+//      result. Always prefer rolling's games when both populate so we
+//      don't drift back into 7-digit DK competition IDs in nba_games.
+//   4. Bind player rows to nba_games via team-abbr lookup (same as before).
+//      Source/method/confidence labels reflect the actual upstream that
+//      produced the players for that run, so the admin UI can see the mix.
+//
+// Two writes per run:
+//   1. nba_games (upsert by external_game_id, 10-digit cdn.nba.com IDs).
 //   2. nba_player_projections (upsert by nba_player_id+game_id+source).
 // Resolves players against nba_players.full_name_normalized first, then
 // nba_player_aliases, then auto-INSERTs a new nba_players row if neither hits.
@@ -24,12 +38,17 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 const SPORTS_PROXY_URL = Deno.env.get("SPORTS_PROXY_URL") ?? ""
 const SPORTS_PROXY_SECRET = Deno.env.get("SPORTS_PROXY_SECRET") ?? ""
 
-const FUNCTION_VERSION = 4
+const FUNCTION_VERSION = 5
 const PIPELINE = "sync-nba-projections"
 const COLLECTION_SLUG = "nba_top_shot"
-const SOURCE = "nba-stats-rolling5"
-const PROJECTION_METHOD = "rolling-5-game-fantasy-average"
-const PROXY_ROUTE = "/nba/rolling-projections"
+
+const ROLLING_ROUTE = "/nba/rolling-projections"
+const DK_ROUTE = "/nba/draftkings-projections"
+
+const ROLLING_SOURCE = "nba-stats-rolling5"
+const ROLLING_METHOD = "rolling-5-game-fantasy-average"
+const DK_SOURCE = "draftkings"
+const DK_METHOD = "draftkings-model"
 
 interface ProxyPlayer {
   name: string
@@ -289,6 +308,54 @@ async function logRun(args: {
   }
 }
 
+interface ProxyAttempt {
+  ok: boolean
+  status: number | null
+  body: ProxyResponse | null
+  error: string | null
+  upstream_status: number | null
+  upstream_body_excerpt: string | null
+}
+
+async function callProxyRoute(route: string): Promise<ProxyAttempt> {
+  let res: Response
+  try {
+    res = await fetch(`${SPORTS_PROXY_URL.replace(/\/+$/g, "")}${route}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Proxy-Secret": SPORTS_PROXY_SECRET,
+      },
+      body: JSON.stringify({}),
+      signal: AbortSignal.timeout(45_000),
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { ok: false, status: null, body: null, error: `fetch_failed: ${msg}`, upstream_status: null, upstream_body_excerpt: null }
+  }
+
+  let parsed: ProxyResponse | { error?: string; status?: number; body_excerpt?: string }
+  try {
+    parsed = await res.json()
+  } catch (err) {
+    return { ok: false, status: res.status, body: null, error: `not_json: ${err instanceof Error ? err.message : String(err)}`, upstream_status: null, upstream_body_excerpt: null }
+  }
+
+  if (!res.ok) {
+    const errBody = parsed as { error?: string; status?: number; body_excerpt?: string }
+    return {
+      ok: false,
+      status: res.status,
+      body: null,
+      error: `HTTP_${res.status}: ${errBody.error ?? "unknown"}`,
+      upstream_status: errBody.status ?? null,
+      upstream_body_excerpt: errBody.body_excerpt ?? null,
+    }
+  }
+
+  return { ok: true, status: res.status, body: parsed as ProxyResponse, error: null, upstream_status: null, upstream_body_excerpt: null }
+}
+
 async function runWork(startedAtIso: string, started: number) {
   const gameDate = todayInET()
 
@@ -309,69 +376,89 @@ async function runWork(startedAtIso: string, started: number) {
     return
   }
 
-  let res: Response
-  try {
-    res = await fetch(`${SPORTS_PROXY_URL.replace(/\/+$/g, "")}${PROXY_ROUTE}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Proxy-Secret": SPORTS_PROXY_SECRET,
-      },
-      body: JSON.stringify({}),
-      // stats.nba.com latency is 3-10s per call; the worker fans them in
-      // parallel, but tail latency on either endpoint can push the round-trip
-      // past 20s. 45s gives slack without lingering across cron cycles.
-      signal: AbortSignal.timeout(45_000),
-    })
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    await logRun({
-      startedAt: startedAtIso,
-      rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
-      ok: false,
-      error: `proxy_fetch_failed: ${msg}`,
-      extra: { function_version: FUNCTION_VERSION, game_date: gameDate, source: SOURCE, elapsed_ms: Date.now() - started },
-    })
-    return
+  // Step 1 — primary attempt: rolling-projections.
+  const rolling = await callProxyRoute(ROLLING_ROUTE)
+  const rollingPlayers = rolling.body?.players ?? []
+  const rollingGames = rolling.body?.games ?? []
+  const rollingDegraded = !rolling.ok || rollingPlayers.length === 0
+
+  // Step 2 — fallback to DK when rolling failed entirely OR when rolling
+  // returned no players. DK's payload format is the same shape; only the
+  // source label and confidence tier change. We do NOT use DK's games when
+  // rolling already produced cdn.nba.com games — DK's 7-digit competition
+  // IDs would coexist with the canonical 10-digit IDs in nba_games and
+  // pollute downstream joins.
+  let dk: ProxyAttempt | null = null
+  if (rollingDegraded) {
+    dk = await callProxyRoute(DK_ROUTE)
   }
 
-  let proxyJson: ProxyResponse | { error?: string; status?: number; body_excerpt?: string }
-  try {
-    proxyJson = await res.json()
-  } catch (err) {
-    await logRun({
-      startedAt: startedAtIso,
-      rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
-      ok: false,
-      error: `proxy_not_json: ${err instanceof Error ? err.message : String(err)}`,
-      extra: { function_version: FUNCTION_VERSION, game_date: gameDate, source: SOURCE, http_status: res.status, elapsed_ms: Date.now() - started },
-    })
-    return
-  }
+  const dkPlayers = dk?.body?.players ?? []
+  const dkGames = dk?.body?.games ?? []
 
-  if (!res.ok) {
-    const errBody = proxyJson as { error?: string; status?: number; body_excerpt?: string }
+  // Decide what to write. Source picks the players upstream; gamesSource
+  // picks which payload's `games` array we upsert from.
+  let scraped: ProxyPlayer[] = []
+  let proxyGames: ProxyGame[] = []
+  let activeSource = ROLLING_SOURCE
+  let activeMethod = ROLLING_METHOD
+  let activeConfidence: "HIGH" | "MEDIUM" | "LOW" = "LOW"
+  let viaTag = "rolling"
+
+  if (rolling.ok && rollingPlayers.length > 0) {
+    scraped = rollingPlayers
+    proxyGames = rollingGames
+    activeSource = ROLLING_SOURCE
+    activeMethod = ROLLING_METHOD
+    activeConfidence = "LOW"
+    viaTag = "rolling"
+  } else if (dk && dk.ok && dkPlayers.length > 0) {
+    scraped = dkPlayers
+    // Prefer rolling games (10-digit IDs) when present; fall back to DK
+    // games only when rolling 502'd entirely.
+    proxyGames = rollingGames.length > 0 ? rollingGames : dkGames
+    activeSource = DK_SOURCE
+    activeMethod = DK_METHOD
+    activeConfidence = "MEDIUM"
+    viaTag = rollingGames.length > 0 ? "dk-players+rolling-games" : "dk"
+  } else if (rolling.ok) {
+    // Rolling worked but had no players, DK didn't help either.
+    proxyGames = rollingGames
+    viaTag = dk ? "rolling-games-only+dk-failed" : "rolling-games-only"
+  } else if (dk && dk.ok) {
+    // Rolling 502'd but DK at least returned a games payload (no players).
+    proxyGames = dkGames
+    viaTag = "dk-games-only"
+  }
+  // If both failed entirely, scraped + proxyGames stay empty; we still log
+  // the run with both errors.
+
+  // Hard-fail only when BOTH upstreams failed AND we have nothing to write.
+  if (!rolling.ok && (!dk || !dk.ok)) {
     await logRun({
       startedAt: startedAtIso,
       rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: false,
-      error: `proxy_HTTP_${res.status}`,
+      error: `both_upstreams_failed`,
       extra: {
         function_version: FUNCTION_VERSION,
         game_date: gameDate,
-        source: SOURCE,
-        proxy_error: errBody.error ?? null,
-        upstream_status: errBody.status ?? null,
-        upstream_body_excerpt: errBody.body_excerpt ?? null,
+        via: "none",
+        rolling_error: rolling.error,
+        rolling_status: rolling.status,
+        rolling_upstream_status: rolling.upstream_status,
+        rolling_body_excerpt: rolling.upstream_body_excerpt,
+        dk_error: dk?.error ?? null,
+        dk_status: dk?.status ?? null,
+        dk_upstream_status: dk?.upstream_status ?? null,
+        dk_body_excerpt: dk?.upstream_body_excerpt ?? null,
         elapsed_ms: Date.now() - started,
       },
     })
     return
   }
 
-  const proxy = proxyJson as ProxyResponse
-  const scraped = proxy.players ?? []
-  const proxyGames = proxy.games ?? []
+  const proxy: ProxyResponse = (rolling.body ?? dk?.body) as ProxyResponse
 
   // Upsert games BEFORE player resolution so loadTodaysGames() picks up newly
   // inserted rows on the same run. This is the single writer for nba_games
@@ -379,12 +466,12 @@ async function runWork(startedAtIso: string, started: number) {
   const gamesResult = await upsertGames(proxyGames, gameDate, started)
 
   if (scraped.length === 0) {
-    // Two flavours of "no players": (a) no slate today (note=no_nba_slate_today,
-    // games=0) and (b) games arrived but stats.nba.com is upstream-blocked
-    // (note=playerstats_upstream_blocked / playerstats_fetch_failed). Either
-    // way, nba_games has been refreshed from cdn.nba.com — only the projection
-    // tier degrades. ok=true keeps the cron green; the note and game counts
-    // tell the operator what actually happened.
+    // Three flavours of "no players": (a) no slate today, (b) rolling worked
+    // for games but stats.nba.com player-stats blocked AND DK fallback also
+    // empty/failed, (c) both upstreams failed — handled separately above.
+    // Either way nba_games may have been refreshed from cdn.nba.com — only
+    // the projection tier degrades. ok=true keeps the cron green; the via
+    // tag + error fields tell the operator which upstream produced what.
     await logRun({
       startedAt: startedAtIso,
       rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
@@ -392,10 +479,19 @@ async function runWork(startedAtIso: string, started: number) {
       extra: {
         function_version: FUNCTION_VERSION,
         game_date: gameDate,
-        source: SOURCE,
-        message: proxy.note ?? "no_players_returned",
-        season: proxy.season ?? null,
-        season_type: proxy.seasonType ?? null,
+        source: activeSource,
+        via: viaTag,
+        message: proxy?.note ?? "no_players_returned",
+        season: proxy?.season ?? null,
+        season_type: proxy?.seasonType ?? null,
+        rolling_ok: rolling.ok,
+        rolling_players: rollingPlayers.length,
+        rolling_note: rolling.body?.note ?? null,
+        rolling_error: rolling.error,
+        dk_attempted: !!dk,
+        dk_ok: dk?.ok ?? null,
+        dk_players: dkPlayers.length,
+        dk_error: dk?.error ?? null,
         games_total: gamesResult.total,
         games_upserted: gamesResult.upserted,
         games_skipped: gamesResult.skipped,
@@ -439,11 +535,11 @@ async function runWork(startedAtIso: string, started: number) {
       proj_turnovers: m.scraped.proj_turnovers ?? null,
       proj_minutes: m.scraped.proj_minutes ?? null,
       injury_status: mapInjuryStatus(m.scraped.status),
-      // Stand-in projections from a 5-game rolling window are noisier than DK's
-      // model; tier them as LOW until a real projection feed arrives.
-      confidence: "LOW",
-      source: SOURCE,
-      projection_method: PROJECTION_METHOD,
+      // Confidence tracks the active upstream: DK's model is MEDIUM,
+      // stats.nba.com rolling-5 is LOW (noisier stand-in).
+      confidence: activeConfidence,
+      source: activeSource,
+      projection_method: activeMethod,
       last_synced_at: nowIso,
     })
   }
@@ -468,9 +564,10 @@ async function runWork(startedAtIso: string, started: number) {
     extra: {
       function_version: FUNCTION_VERSION,
       game_date: gameDate,
-      source: SOURCE,
-      season: proxy.season ?? null,
-      season_type: proxy.seasonType ?? null,
+      source: activeSource,
+      via: viaTag,
+      season: proxy?.season ?? null,
+      season_type: proxy?.seasonType ?? null,
       rows_parsed: scraped.length,
       players_matched: matched.length,
       players_auto_inserted: autoInsertedCount,
@@ -483,6 +580,13 @@ async function runWork(startedAtIso: string, started: number) {
       games_upserted: gamesResult.upserted,
       games_skipped: gamesResult.skipped,
       games_error: gamesResult.error,
+      rolling_ok: rolling.ok,
+      rolling_players: rollingPlayers.length,
+      rolling_note: rolling.body?.note ?? null,
+      dk_attempted: !!dk,
+      dk_ok: dk?.ok ?? null,
+      dk_players: dkPlayers.length,
+      dk_error: dk?.error ?? null,
       elapsed_ms: Date.now() - started,
     },
   })
@@ -512,7 +616,8 @@ Deno.serve(async (req: Request) => {
       message: "queued",
       started_at: startedAtIso,
       function_version: FUNCTION_VERSION,
-      source: SOURCE,
+      primary_source: ROLLING_SOURCE,
+      fallback_source: DK_SOURCE,
       note: "Real results will appear in pipeline_runs within ~30-60s.",
     }),
     { headers: { "Content-Type": "application/json" } },
