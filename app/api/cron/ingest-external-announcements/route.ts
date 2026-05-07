@@ -1,18 +1,25 @@
 // app/api/cron/ingest-external-announcements/route.ts
 //
-// Cron entrypoint for external announcement ingestion (Top Shot /
-// Pinnacle / AllDay RSS feeds). Schedule on cron-job.org every 30
-// minutes once the upstream Nitter URLs are stable; while they remain
-// flaky, schedule defensively every 60 min and surface failures
-// through pipeline_runs.
+// Retired 2026-05-07. The RSS / Nitter ingest path was replaced by the
+// webhook ingest at /api/admin/announcements (see commit 92aa5e8). This
+// route remains in the tree only so cron-job.org schedules still pointed
+// at it get a structured 410 Gone instead of triggering edge invocations
+// or showing up as pipeline failures. Delete the cron-job.org schedule
+// and then this file together once both have aged out.
 
 import { NextRequest, NextResponse } from "next/server"
 
 export const dynamic = "force-dynamic"
-export const maxDuration = 25
+export const maxDuration = 5
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const INGEST_SECRET_TOKEN = process.env.INGEST_SECRET_TOKEN!
+
+const RETIRED_BODY = {
+  error: "gone",
+  retired_at: "2026-05-07",
+  reason: "RSS announcement ingest retired in favor of webhook ingest",
+  replacement: "/api/admin/announcements",
+} as const
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization") ?? ""
@@ -25,30 +32,7 @@ export async function GET(req: NextRequest) {
   if (!isValid) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   }
-
-  try {
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/ingest-external-announcements`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${INGEST_SECRET_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({}),
-      signal: AbortSignal.timeout(15_000),
-    })
-    const text = await res.text()
-    let body: unknown = null
-    try { body = JSON.parse(text) } catch { /* leave null */ }
-    return NextResponse.json(
-      { accepted: res.ok, edge_status: res.status, edge_body: body ?? text.slice(0, 500) },
-      { status: res.ok ? 202 : 502 },
-    )
-  } catch (err) {
-    return NextResponse.json(
-      { error: "edge_invoke_failed", message: err instanceof Error ? err.message : String(err) },
-      { status: 502 },
-    )
-  }
+  return NextResponse.json(RETIRED_BODY, { status: 410 })
 }
 
 export async function POST(req: NextRequest) {
