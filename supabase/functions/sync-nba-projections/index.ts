@@ -599,7 +599,10 @@ async function runWork(startedAtIso: string, started: number) {
   let proxyGames: ProxyGame[] = []
   let activeSource = ROLLING_SOURCE
   let activeMethod = ROLLING_METHOD
-  let activeConfidence: "HIGH" | "MEDIUM" | "LOW" = "LOW"
+  // nba_player_projections.confidence CHECK constraint allows HIGH/MED/LOW
+  // (3-letter MED, not MEDIUM). Mismatch crashes the upsert with
+  // "violates check constraint nba_player_projections_confidence_check".
+  let activeConfidence: "HIGH" | "MED" | "LOW" = "LOW"
   let viaTag = "rolling"
 
   // Choose the games payload first (most authoritative wins).
@@ -621,7 +624,7 @@ async function runWork(startedAtIso: string, started: number) {
     proxyGames = chosenGames
     activeSource = DK_SOURCE
     activeMethod = DK_METHOD
-    activeConfidence = "MEDIUM"
+    activeConfidence = "MED"
     viaTag = `dk+${gamesSource}-games`
   } else if (espn && espn.ok && espnPlayers.length > 0) {
     scraped = espnPlayers
@@ -748,8 +751,9 @@ async function runWork(startedAtIso: string, started: number) {
       proj_turnovers: m.scraped.proj_turnovers ?? null,
       proj_minutes: m.scraped.proj_minutes ?? null,
       injury_status: mapInjuryStatus(m.scraped.status),
-      // Confidence tracks the active upstream: DK's model is MEDIUM,
-      // stats.nba.com rolling-5 is LOW (noisier stand-in).
+      // Confidence tracks the active upstream: DK's model is MED,
+      // stats.nba.com rolling-5 is LOW, ESPN team-leader is LOW.
+      // Constraint allows HIGH/MED/LOW (3-letter MED, not MEDIUM).
       confidence: activeConfidence,
       source: activeSource,
       projection_method: activeMethod,
