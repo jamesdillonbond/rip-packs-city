@@ -23,6 +23,53 @@ Repo: github.com/jamesdillonbond/rip-packs-city (public)
 
 ## Recent sessions
 
+### May 7, 2026 — Multi-collection enrichment Phase 1 close-out
+
+Shipped (continuing the May 6 multi-collection work)
+
+- `lib/wallet-backfill-helpers.ts` — generic `runIdOnlyBackfill`
+  runner + per-collection Cadence scripts + collection-UUID constants.
+  Every non-Top-Shot enricher is now a 60-line wrapper over the helper.
+- `/api/wallet-backfill-pinnacle`, `/api/wallet-backfill-golazos`,
+  `/api/wallet-backfill-ufc` — three new ID-only enrichers, all using
+  `NonFungibleToken.CollectionPublic` with the canonical /public path.
+- `/api/wallet-backfill-multicollection` — `COLLECTIONS_TO_FAN_OUT`
+  extended to all 5 published collections; `pending_collections` field
+  removed from the response.
+- `/api/seed-wallet-refresh` cron — fires the multi-collection
+  orchestrator instead of just `/api/wallet-backfill`. The 6h sweep now
+  refreshes all 5 collections per wallet.
+
+Verification (2026-05-07 00:53 UTC, after full fan-out):
+```
+slug             | wallets | moments
+nba_top_shot     | 46      | 235,868
+nfl_all_day      | 17      |  16,124
+disney_pinnacle  | 12      |  13,063
+ufc_strike       | 12      |     508
+laliga_golazos   | 1       |      44
+```
+- Mike Levy (`0x11859edcf2f53edd`): 2549 TS / 33 AllDay / 32 UFC /
+  15 Pinnacle — full cross-collection coverage delivered.
+- Phase 1 invitees: 21 wallets seeded across every collection where
+  they hold moments. Golazos stayed at 1 wallet because none of the
+  21 are Golazos collectors (verified via on-chain `getIDs()` returning
+  0).
+
+Still pending (next session)
+
+- Per-moment metadata Cadence for Pinnacle / Golazos / UFC (player /
+  set / tier currently NULL on those rows; reads JOIN the
+  `editions` / `pinnacle_editions` tables and inherit metadata that way).
+- A batched-Cadence enricher for AllDay editionID resolution so
+  `wallet_moments_cache.edition_key` can populate without N per-moment
+  Cadence calls — would let JOINs hit the editions table by edition_key.
+- Per-collection cron schedules (every-4h AllDay/Pinnacle, every-12h
+  Golazos/UFC) if the unified 6h cycle proves too coarse. Currently
+  unified.
+
+---
+
 ### May 6, 2026 — Multi-collection wallet enrichment (Phase 1 prep)
 
 Shipped
