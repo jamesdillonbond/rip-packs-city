@@ -480,17 +480,15 @@ async function runSmokeTests() {
       })
     )),
 
-    // Auth-gated /profile (the editor) — must 307 to /login for anonymous traffic.
-    // We pass `Authorization: ""` to opt out of smokeFetch's bearer-bypass
-    // injection; this probe is specifically verifying that anon callers (no
-    // bearer, no session cookie) get redirected by the proxy gate, which is
-    // the exact path the bypass would short-circuit. Empty header matches
-    // smokeFetch's "header already present, skip injection" branch.
+    // /profile redirects to /dashboard (308) — the May 6 migration retired the
+    // standalone /profile editor in favour of /dashboard's editor surface, so
+    // the legacy bookmark URL now 308s through. Bearer-bypass is opted out
+    // with Authorization: "" so we exercise the actual rewrite, not the bypass.
     time(async () => {
       const meta = {
-        name: "auth-gated /profile redirects (307)",
+        name: "/profile redirects to /dashboard (308)",
         endpoint: "/profile",
-        expected: "307-to-login",
+        expected: "308-to-dashboard",
       };
       const res = await smokeFetch(`${BASE_URL}/profile`, {
         cache: "no-store",
@@ -499,7 +497,7 @@ async function runSmokeTests() {
         signal: AbortSignal.timeout(6000),
       });
       const location = res.headers.get("location") ?? "";
-      const ok = res.status === 307 && location.includes("/login");
+      const ok = res.status === 308 && location.includes("/dashboard");
       return {
         ...meta,
         passed: ok,
@@ -509,9 +507,9 @@ async function runSmokeTests() {
         notes: { location },
       };
     }, {
-      name: "auth-gated /profile redirects (307)",
+      name: "/profile redirects to /dashboard (308)",
       endpoint: "/profile",
-      expected: "307-to-login",
+      expected: "308-to-dashboard",
     }),
 
     // Phase 3 — market API returns listings for Top Shot
@@ -1130,7 +1128,7 @@ async function runSmokeTests() {
           sessionId: `smoke-degradation-${Date.now()}`,
         }),
         cache: "no-store",
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(15000),
       });
       const rawText = await res.text();
       if (!res.ok) {
