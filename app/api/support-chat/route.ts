@@ -1247,6 +1247,7 @@ async function persistConversation(row: {
   user_wallet?: string | null;
   owner_key?: string | null;
   page_context?: string | null;
+  is_smoke_test?: boolean;
 }) {
   try {
     const { error } = await supabase.from("support_conversations").insert({
@@ -1261,11 +1262,31 @@ async function persistConversation(row: {
   }
 }
 
+// Constant-time check of the X-RPC-Smoke-Test header against
+// SMOKE_TEST_SESSION_TOKEN env. crypto.timingSafeEqual is used so token
+// validation does not leak via response timing. Returns false (treat as
+// real anonymous traffic) if either side is missing or lengths mismatch.
+function isSmokeTestRequest(req: NextRequest): boolean {
+  const presented = req.headers.get("x-rpc-smoke-test");
+  const expected = process.env.SMOKE_TEST_SESSION_TOKEN;
+  if (!presented || !expected) return false;
+  const a = Buffer.from(presented);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { timingSafeEqual } = require("node:crypto") as typeof import("node:crypto");
+    return timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
 async function updateSession(
   sessionId: string,
   category: string,
   userMessage: string,
-  ctx: { ownerKey?: string | null; userWallet?: string | null },
+  ctx: { ownerKey?: string | null; userWallet?: string | null; isSmokeTest?: boolean },
   playerSearched?: string
 ) {
   try {
@@ -1287,6 +1308,7 @@ async function updateSession(
         conversation_count: (existing?.conversation_count ?? 0) + 1,
         owner_key: ctx.ownerKey ?? null,
         user_wallet: ctx.userWallet ?? null,
+        is_smoke_test: ctx.isSmokeTest ?? false,
       },
       { onConflict: "session_id" }
     );
@@ -1327,6 +1349,12 @@ export async function POST(req: NextRequest) {
   let parsedOwnerKey: string | null = null;
   let parsedUserWallet: string | null = null;
   let parsedPageContext: string | null = null;
+  // X-RPC-Smoke-Test header carries SMOKE_TEST_SESSION_TOKEN so the
+  // smoke-test runner's anonymous traffic gets flagged on
+  // support_conversations.is_smoke_test (and chat_sessions.is_smoke_test).
+  // Real anonymous traffic from the in-product chat will not present this
+  // header and will continue to land with is_smoke_test=false (the default).
+  const isSmokeTest = isSmokeTestRequest(req);
   try {
     const body = await req.json();
     const {
@@ -1409,6 +1437,7 @@ export async function POST(req: NextRequest) {
           user_wallet: userWallet ?? null,
           owner_key: ownerKey ?? null,
           page_context: pageContext ?? null,
+          is_smoke_test: isSmokeTest,
         })
       );
 
@@ -1680,12 +1709,13 @@ export async function POST(req: NextRequest) {
           user_wallet: userWallet ?? null,
           owner_key: ownerKey ?? null,
           page_context: pageContext ?? null,
+          is_smoke_test: isSmokeTest,
         });
         await updateSession(
           sessionId,
           category,
           message,
-          { ownerKey: ownerKey ?? null, userWallet: userWallet ?? null },
+          { ownerKey: ownerKey ?? null, userWallet: userWallet ?? null, isSmokeTest },
           playerSearched
         ).catch(() => {});
       });
@@ -1740,6 +1770,7 @@ export async function POST(req: NextRequest) {
           user_wallet: parsedUserWallet,
           owner_key: parsedOwnerKey,
           page_context: parsedPageContext,
+          is_smoke_test: isSmokeTest,
         })
       );
     } catch { /* best-effort */ }

@@ -17,13 +17,16 @@ const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 const INGEST_SECRET_TOKEN = process.env.INGEST_SECRET_TOKEN ?? "";
+const SMOKE_TEST_SESSION_TOKEN = process.env.SMOKE_TEST_SESSION_TOKEN ?? "";
 
 // Smoke-test fetches must short-circuit the proxy.ts auth gate so probes
 // against authed routes hit the real handler instead of bouncing to
 // /login. The proxy checks `Authorization: Bearer ${INGEST_SECRET_TOKEN}`
 // first and lets matching requests through. smokeFetch injects that
-// bearer + the browser UA + a no-store cache default; per-call init
-// overrides any of those by simply setting the same header/option.
+// bearer + the browser UA + the X-RPC-Smoke-Test forward-fill header (so
+// downstream writes to support_conversations / chat_sessions land with
+// is_smoke_test=true) + a no-store cache default; per-call init overrides
+// any of those by simply setting the same header/option.
 async function smokeFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers as HeadersInit | undefined);
   if (!headers.has("authorization") && INGEST_SECRET_TOKEN) {
@@ -31,6 +34,9 @@ async function smokeFetch(url: string, init: RequestInit = {}): Promise<Response
   }
   if (!headers.has("user-agent")) {
     headers.set("User-Agent", BROWSER_UA);
+  }
+  if (!headers.has("x-rpc-smoke-test") && SMOKE_TEST_SESSION_TOKEN) {
+    headers.set("X-RPC-Smoke-Test", SMOKE_TEST_SESSION_TOKEN);
   }
   return fetch(url, {
     ...init,
