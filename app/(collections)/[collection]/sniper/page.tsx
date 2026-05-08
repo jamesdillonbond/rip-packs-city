@@ -1682,9 +1682,25 @@ export default function SniperPage() {
                       {deal.discount > 0 ? `-${fmt(deal.discount, 1)}%` : "~0%"}
                     </span>
                   </div>
-                  {/* Row 4: Adj. FMV + Action */}
-                  <div className="flex items-center justify-between gap-2">
+                  {/* Row 4: Adj. FMV + Listed + Own/Lock + Action */}
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
                     <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)" }}>Adj. FMV ${fmt(deal.adjustedFmv)}</span>
+                    <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-ghost)" }}>Listed {timeAgo(deal.updatedAt)}</span>
+                    {(() => {
+                      if (!ownerKey) return null;
+                      const eStats =
+                        (deal.editionKey && editionStats.get(deal.editionKey)) ||
+                        (deal.intEditionKey && editionStats.get(deal.intEditionKey)) ||
+                        null;
+                      if (eStats && eStats.owned > 0) {
+                        return (
+                          <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-success)" }} title={`${eStats.owned} owned · ${eStats.locked} locked`}>
+                            Own {eStats.owned} / Lock {eStats.locked}
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
                     {!isPinnacle && deal.hasBadge && deal.badgeSlugs.length > 0 && (
                       <div className="flex gap-1 flex-wrap items-center">
                         {Array.from(new Set(deal.badgeSlugs)).slice(0, 3).map((slug) => (

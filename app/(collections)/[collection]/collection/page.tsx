@@ -2028,10 +2028,18 @@ export default function WalletPage() {
                   </div>
                   {/* Row 3: Serial, Badges */}
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-xs font-mono text-white">#{getSerial(row) ?? "-"}<span className="text-zinc-500">/{getMint(row) ?? "-"}</span></span>
                       {getLocked(row) && <span title="Locked" style={{ opacity: 0.6, fontSize: 11 }} aria-label="Locked">🔒</span>}
                       <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} />
+                      {editionCounts.owned > 1 && (
+                        <span
+                          className="text-[10px] font-mono text-zinc-400"
+                          title={`You hold ${editionCounts.owned} of this edition · ${editionCounts.locked} locked`}
+                        >
+                          ×{editionCounts.owned}{editionCounts.locked > 0 ? ` (${editionCounts.locked}🔒)` : ""}
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-1 flex-wrap justify-center">
                       {supaBadges.map(function(title) { return <BadgeIcon key={"m-" + title} title={title} /> })}
