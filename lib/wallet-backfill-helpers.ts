@@ -241,6 +241,40 @@ async function loadCachedMomentIds(wallet: string, collectionUuid: string): Prom
   return ids
 }
 
+// Map<moment_id, edition_key_present>. Used by the paginated-recovery
+// pre-flight short-circuit: if every on-chain ID is already cached AND
+// already has edition_key populated, the chunk loop would emit dozens of
+// Cadence calls (~80s wasted Cadence/cron pass on Pinnacle mega-wallets,
+// per 2026-05-08 telemetry) only to skip every row at the cachedIds.has
+// filter. Sharing a single map between the short-circuit check and the
+// chunk loop keeps it to one wmc read.
+async function loadCachedMomentIdsAndKeys(
+  wallet: string,
+  collectionUuid: string,
+): Promise<Map<string, boolean>> {
+  const map = new Map<string, boolean>()
+  const PAGE = 1000
+  let from = 0
+  while (true) {
+    // deno-lint-ignore no-explicit-any
+    const { data, error } = await (supabaseAdmin as any)
+      .from("wallet_moments_cache")
+      .select("moment_id, edition_key")
+      .eq("wallet_address", wallet)
+      .eq("collection_id", collectionUuid)
+      .range(from, from + PAGE - 1)
+    if (error) {
+      console.warn(`[wallet-backfill] cached-id-key read failed: ${error.message}`)
+      return map
+    }
+    const rows = (data ?? []) as Array<{ moment_id: string; edition_key: string | null }>
+    for (const r of rows) map.set(String(r.moment_id), r.edition_key != null)
+    if (rows.length < PAGE) break
+    from += PAGE
+  }
+  return map
+}
+
 async function stampLastRefreshed(wallet: string, slug: string) {
   try {
     // deno-lint-ignore no-explicit-any
@@ -924,13 +958,90 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
       return
     }
 
-    const cachedIds = skipCached ? await loadCachedMomentIds(wallet, config.collectionUuid) : new Set<string>()
+    const cachedMap = skipCached
+      ? await loadCachedMomentIdsAndKeys(wallet, config.collectionUuid)
+      : new Map<string, boolean>()
+
+    // Step 1.5: pre-flight short-circuit (added 2026-05-08). If every
+    // on-chain ID is already cached AND edition_key is already populated
+    // on those rows, the chunk loop is pure waste — it would emit 16+
+    // Cadence calls (~50-80s for Pinnacle mega-wallets) only to skip
+    // every row at the in-loop cache filter. Skipped only when force=true
+    // (caller explicitly requested re-walk). Post-pass JOIN UPDATE still
+    // runs because pinnacle_editions/editions metadata may have changed
+    // since the prior cron tick. The chunk loop is bypassed entirely;
+    // pagination_chunks is intentionally absent from telemetry to keep
+    // dashboards distinguishing skipped-from-paginated runs cleanly.
+    if (skipCached && !force && cachedMap.size > 0 && onChainIds.length > 0) {
+      const preflightStartMs = Date.now()
+      let allCachedAndEnriched = true
+      for (const id of onChainIds) {
+        if (cachedMap.get(id) !== true) {
+          allCachedAndEnriched = false
+          break
+        }
+      }
+      if (allCachedAndEnriched) {
+        try {
+          if (mode === "allday") {
+            // deno-lint-ignore no-explicit-any
+            const { data: updResult, error: updErr } = await (supabaseAdmin as any).rpc(
+              "backfill_wmc_metadata_from_editions",
+              { p_wallet_address: wallet, p_collection_id: config.collectionUuid },
+            )
+            if (updErr) {
+              console.warn(`[${config.pipelineName}] preflight post-pass update failed: ${updErr.message}`)
+            } else if (updResult != null) {
+              postPassUpdated = Number(updResult) || 0
+            }
+          } else {
+            // deno-lint-ignore no-explicit-any
+            const { data: updResult, error: updErr } = await (supabaseAdmin as any).rpc(
+              "backfill_pinnacle_wmc_metadata_from_editions",
+              { p_wallet_address: wallet },
+            )
+            if (updErr) {
+              console.warn(`[${config.pipelineName}] preflight post-pass update failed: ${updErr.message}`)
+            } else if (updResult != null) {
+              postPassUpdated = Number(updResult) || 0
+            }
+          }
+        } catch (err) {
+          console.warn(
+            `[${config.pipelineName}] preflight post-pass update threw: ${err instanceof Error ? err.message : String(err)}`,
+          )
+        }
+        await stampLastRefreshed(wallet, config.slug)
+        await logRun({
+          pipelineName: config.pipelineName,
+          collectionSlug: config.slug,
+          startedAt: startedAtIso, wallet,
+          rowsFound: onChainIds.length, rowsWritten: 0, rowsSkipped: onChainIds.length,
+          ok: true,
+          extra: {
+            on_chain_count: onChainIds.length,
+            cached_count_with_key: onChainIds.length,
+            terminated_reason: "all_ids_already_enriched",
+            recovered_from: parentTerminatedReason,
+            parent_error_excerpt: parentErrorExcerpt,
+            skip_cached: skipCached,
+            force: !!force,
+            elapsed_ms: Date.now() - startedMs,
+            preflight_elapsed_ms: Date.now() - preflightStartMs,
+            post_pass_metadata_updated: postPassUpdated,
+            mode: fullMode,
+          },
+        })
+        return
+      }
+    }
+
     const now = new Date().toISOString()
     let totalSkippedCached = 0
 
     // Step 2: chunk loop. Each iteration calls GET_*_DETAILS_RANGE for a
-    // 1000-id window, builds rows, upserts immediately. Per-chunk errors
-    // are non-fatal (logged + counted); only a complete inability to
+    // mode-specific id window, builds rows, upserts immediately. Per-chunk
+    // errors are non-fatal (logged + counted); only a complete inability to
     // proceed throws out to the outer catch.
     for (let start = 0; start < onChainIds.length; start += chunkSize) {
       if (Date.now() - startedMs > PAGINATION_SOFT_DEADLINE_MS) {
@@ -959,7 +1070,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
             const serial = Number.isFinite(serialRaw as number) && (serialRaw as number) > 0
               ? (serialRaw as number)
               : null
-            if (skipCached && cachedIds.has(nftId)) { totalSkippedCached++; continue }
+            if (skipCached && cachedMap.has(nftId)) { totalSkippedCached++; continue }
             chunkRows.push({
               wallet_address: wallet,
               collection_id: config.collectionUuid,
@@ -993,7 +1104,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
             const serial = Number.isFinite(serialRaw as number) && (serialRaw as number) > 0
               ? (serialRaw as number)
               : null
-            if (skipCached && cachedIds.has(nftId)) { totalSkippedCached++; continue }
+            if (skipCached && cachedMap.has(nftId)) { totalSkippedCached++; continue }
             chunkRows.push({
               wallet_address: wallet,
               collection_id: config.collectionUuid,

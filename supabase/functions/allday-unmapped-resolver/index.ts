@@ -53,11 +53,18 @@ const FLOWTY_HEADERS: Record<string, string> = {
   "User-Agent": "rip-packs-city/allday-unmapped-resolver",
 };
 
-const DEFAULT_BATCH_SIZE = 50;
+// Bumped 50→200 on 2026-05-08 to drain the AllDay backlog faster.
+// At ~8% Flowty-edition-id resolution rate, batch=50 yielded ~3.9
+// mappings/run × 58 runs/day = ~227/day against a 2.8k backlog.
+// batch=200 + concurrency=16 expands per-run throughput proportionally
+// while staying under the 8s per-call Flowty timeout (200/16 ≈ 12.5
+// in flight × ~100ms = ~1.3s wall clock for the fan-out). MAX_BATCH_SIZE
+// stays at 200 — the cap is enforced by clampInt below.
+const DEFAULT_BATCH_SIZE = 200;
 const MAX_BATCH_SIZE = 200;
 const PROMOTE_LIMIT = 1000;
 const PER_CALL_TIMEOUT_MS = 8_000;
-const CONCURRENCY = 8;
+const CONCURRENCY = 16;
 
 interface ResolverTarget {
   collection_id: string;

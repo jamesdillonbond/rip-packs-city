@@ -23,6 +23,90 @@ Repo: github.com/jamesdillonbond/rip-packs-city (public)
 
 ## Recent sessions
 
+### May 8, 2026 (late) — Paginated short-circuit + TS edition seed + AllDay resolver tune
+
+Shipped
+
+- `lib/wallet-backfill-helpers.ts`: pre-flight short-circuit in
+  `runPaginatedDetailsBackfill`. Before walking chunks, load
+  `Map<moment_id, edition_key_present>` from wmc; if every on-chain ID is
+  already cached AND has `edition_key` populated, skip pagination
+  entirely with `terminated_reason='all_ids_already_enriched'`. Only
+  applies when `skipCached=true && force=false` (force-mode preserves
+  full re-walk semantics). Post-pass JOIN UPDATE still runs because
+  `pinnacle_editions`/`editions` may have new metadata since the prior
+  cron tick. Telemetry: `cached_count_with_key`, `preflight_elapsed_ms`,
+  `pagination_chunks` intentionally absent. The chunk-loop's in-loop
+  cache filter switched from `cachedIds.has` → `cachedMap.has` so both
+  paths share one wmc read.
+- `scripts/seed-topshot-editions-from-sets.ts`: removed broken
+  `setData!.tier` capture from the Cadence script. `TopShot.QuerySetData`
+  exposes only `setID/name/series` — no `tier` field (verified
+  2026-05-08 against setIDs 4, 6, 7 with Cadence error 1101 across all).
+  Tier population stays the responsibility of
+  `enrich-topshot-editions.ts`, which resolves it via the GQL endpoint.
+  Re-ran against the 139 outstanding setIDs (4–246): inserted 2,099 new
+  editions, 0 errors.
+- `supabase/functions/allday-unmapped-resolver/index.ts`: bumped
+  `DEFAULT_BATCH_SIZE` 50→200 and `CONCURRENCY` 8→16. Caveat: prior
+  conjecture put the constant at 5; it was already 50. The "~5 / run"
+  observation was successes/run, not batch size. Real bottleneck is
+  Flowty's ~8% edition-id resolution rate on backlog targets.
+- DB migration `tighten_unmapped_resolver_retire_threshold`:
+  `get_unmapped_resolver_targets` permanent-retire threshold dropped
+  from `retry_count >= 10` to `retry_count >= 5`. The 24h cooldown
+  clause (retry_count >= 3 AND last_failed_at within 24h) is unchanged.
+  Rationale: 27-NFT cohort sitting at retry_count=3 with
+  flowty_no_edition_id → cycles back in once per day, marches toward
+  10. Retiring at 5 cuts wasted work in half.
+- `scripts/fetch-missing-pinnacle-editions.ts`: closes the Pinnacle
+  Gap 1 (edition_keys referenced by wmc but missing from
+  `pinnacle_editions`). Aggregates the gap in JS (PostgREST can't
+  express the cross-table NOT EXISTS), looks up one moment_id per
+  missing key against Flowty's per-NFT REST endpoint
+  (`api2.flowty.io/nft/0xedf9df96c92f4595/Pinnacle/{id}`), parses
+  traits, INSERTs into `pinnacle_editions`, then triggers
+  `backfill_pinnacle_wmc_metadata_from_editions(NULL)` to apply across
+  all wallets. First run resolved 21/22, wrote 21 rows, updated 834
+  wmc rows. The 1 skipped key (`STAR-OEEV1-SWHL:Color Splash:1`,
+  2 wmc rows affected) returned a Flowty payload with no
+  RoyaltyCodes/Variant traits — re-run after the next Flowty
+  re-index or hand-fill via the GQL path. Trevor's Pinnacle
+  set_name coverage went from 163/180 to 180/180.
+
+Verification (after sweep)
+
+- `wallet_moments_cache` for TS collection
+  (`95f28a17-224a-4025-96ad-adf8a4c63bfd`):
+  ```
+  null_tier:      262,727 → 43,605 (-219,122; -83%)
+  null_set_name:                32
+  null_player_name:          2,044
+  ```
+  The remaining 43,605 null_tier rows correspond to editions where
+  `editions.tier` itself is NULL — those need a downstream
+  `enrich-topshot-editions.ts --integer` pass (or the editions-side GQL
+  resolver) to fill on the editions table first; the wmc backfill is
+  just a JOIN COALESCE.
+- `editions` for TS: 14,396 → 16,649 (+2,253 — close to the 2,099
+  inserted, with some upsert noise).
+- AllDay resolver redeployed (v6); first cron tick after deploy will
+  show whether the +4× batch + concurrency translates to ~4× drain
+  rate. Watch `pipeline_runs` for `pipeline=allday-unmapped-resolver`
+  with `extra->>'batch_requested' = '200'`.
+
+Cadence note (saved to memory)
+
+- `TopShot.QuerySetData` (returned by `getSetData(setID)`) on this
+  contract version only exposes `setID`, `name`, and `series`. Tier is
+  NOT readable through this API — it's stored on the `Set` resource
+  internally and only accessed by privileged borrows. Anything that
+  needs TopShot tier on-chain has to go through GQL or per-NFT
+  MetadataViews on a held moment, not via the public read-only
+  TopShot getter functions.
+
+---
+
 ### May 8, 2026 — Pinnacle wallet-backfill chain enrichment
 
 Shipped

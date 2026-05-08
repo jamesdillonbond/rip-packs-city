@@ -14,11 +14,10 @@
 // What this script does, per setID in --sets=...:
 //   1. Cadence: TopShot.getPlaysInSet(setID) — enumerate all playIDs.
 //   2. Cadence: TopShot.getPlayMetaData(playID) — pull metadata per play.
-//   3. Cadence: TopShot.getSetSeries(setID) + getSetData(setID).tier —
-//      pull series and tier in one shot. Tier is normalised to uppercase
-//      without the MOMENT_TIER_ prefix (e.g. "COMMON", "RARE",
-//      "LEGENDARY", "FANDOM", "ULTIMATE") to match the existing
-//      editions.tier column convention used by enrich-topshot-editions.ts.
+//   3. Cadence: TopShot.getSetData(setID) — pull set name + series in one
+//      shot. Tier is NOT exposed on QuerySetData (verified 2026-05-08 —
+//      only setID, name, series are accessible via getSetData). It's
+//      filled out-of-band by enrich-topshot-editions.ts via GraphQL.
 //   4. INSERT-or-skip into editions(external_id='{setID}:{playID}',
 //      collection_id=TS UUID, player_name=FullName, team_name=TeamAtMoment,
 //      play_type=PlayCategory, game_date=DateOfMoment::date,
@@ -29,10 +28,12 @@
 // What this script does NOT do: thumbnail_url (not on-chain).
 // Run this first, then run enrich-topshot-editions.ts to fill that.
 //
-// Tier capture (added 2026-05-08): the prior version left tier NULL.
-// Re-running for the 139 outstanding setIDs after this patch will populate
-// tier on the freshly-inserted rows; existing rows are not rewritten
-// because the upsert uses ignoreDuplicates: true.
+// Tier capture: not possible via Cadence on this contract version.
+// QuerySetData (returned by TopShot.getSetData) exposes only setID, name,
+// and series — no tier field. An earlier patch tried setData!.tier and
+// errored 1101 across all setIDs (verified 2026-05-08 against setIDs 4,
+// 6, 7). Tier population is the job of enrich-topshot-editions.ts which
+// resolves it via TopShot GraphQL.
 //
 // Usage:
 //   SUPABASE_SERVICE_ROLE_KEY=... npx tsx scripts/seed-topshot-editions-from-sets.ts --sets=218,5,29
@@ -106,25 +107,17 @@ access(all) fun main(playID: UInt32): {String: String} {
 }
 `.trim()
 
-// Pulls name + series + tier in one round-trip. Tier is taken from
-// TopShot.getSetData(setID: setID).tier — modern TopShot mainnet exposes
-// tier on QuerySetData (per-set, since each TS Set has a single tier).
-// We do an optional-chained access so a setID with no on-chain SetData
-// still returns a usable result rather than panicking.
+// Pulls name + series in one round-trip. Tier is NOT available on
+// QuerySetData — see file header. Tier stays NULL on inserts; the
+// enrich-topshot-editions.ts post-pass fills it via GraphQL.
 const CADENCE_GET_SET_INFO = `
 import TopShot from 0x0b2a3299cc857e29
 access(all) fun main(setID: UInt32): {String: String} {
   let name = TopShot.getSetName(setID: setID) ?? ""
   let series = TopShot.getSetSeries(setID: setID)
-  let setData = TopShot.getSetData(setID: setID)
-  var tier = ""
-  if setData != nil {
-    tier = setData!.tier ?? ""
-  }
   return {
     "name": name,
-    "series": series == nil ? "" : series!.toString(),
-    "tier": tier
+    "series": series == nil ? "" : series!.toString()
   }
 }
 `.trim()
@@ -155,17 +148,10 @@ async function getSetInfo(
     args: (arg: any) => [arg(String(setID), t.UInt32)],
   })) as Record<string, string>
   const series = Number(r.series)
-  // Normalise tier to match enrich-topshot-editions.ts convention: strip
-  // any MOMENT_TIER_ prefix and uppercase. Empty/whitespace → null so the
-  // INSERT writes NULL rather than a literal "" string.
-  const rawTier = (r.tier ?? "").trim()
-  const tier = rawTier
-    ? rawTier.replace(/^MOMENT_TIER_/i, "").toUpperCase()
-    : null
   return {
     name: r.name ?? "",
     series: Number.isFinite(series) ? series : null,
-    tier,
+    tier: null,
   }
 }
 
