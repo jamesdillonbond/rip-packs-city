@@ -376,7 +376,7 @@ export async function POST(req: NextRequest) {
         // Even when the cursor is at the chain tip, fire the historical-backlog
         // drainer so the 2,900+ residue from before the inline resolver shipped
         // gets nibbled at every cron cycle. Edge function returns 202 instantly.
-        await fireSupabaseEdgeFunction("allday-unmapped-resolver", { batch_size: 50 })
+        await fireSupabaseEdgeFunction("allday-unmapped-resolver", { batch_size: 5 })
         await fireNextPipelineStep("/api/fmv-recalc", chain)
         extra.message = "already up to date"
         return
@@ -759,7 +759,7 @@ export async function POST(req: NextRequest) {
       // Drain a batch of the historical unmapped_sales backlog (~2,900 rows
       // dating back to 2026-04-16, before the inline resolver shipped) on
       // every cron cycle. ~50 rows per 20 min = full drain in <24 hours.
-      await fireSupabaseEdgeFunction("allday-unmapped-resolver", { batch_size: 50 })
+      await fireSupabaseEdgeFunction("allday-unmapped-resolver", { batch_size: 5 })
       await fireNextPipelineStep("/api/fmv-recalc", chain)
     } catch (err) {
       ok = false
