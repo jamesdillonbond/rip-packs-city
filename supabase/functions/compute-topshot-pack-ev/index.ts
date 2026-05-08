@@ -54,7 +54,7 @@ const ERRORS_SAMPLE_CAP = 12
 const FETCH_CONCURRENCY = 3
 const MAX_1015_RETRIES = 3
 const RETRY_BACKOFF_MS = 2000
-const FUNCTION_VERSION = 11
+const FUNCTION_VERSION = 12
 
 const retryEvents: Array<{
   op: string
@@ -674,6 +674,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         edition_count: Math.min(Number(ev.edition_count), 32767),
         total_unopened: f.totalUnopened,
         depletion_pct: depletionPct,
+        snapshotted_at: nowIso,
       })
     }
 
