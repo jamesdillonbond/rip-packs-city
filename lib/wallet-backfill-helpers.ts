@@ -34,13 +34,20 @@ import {
 const FLOW_REST = "https://rest-mainnet.onflow.org/v1/scripts"
 const UPSERT_CHUNK = 200
 
-// Paginated mega-wallet recovery: chunk size is the count of getIDs()
-// indices walked per Cadence call. 1000 fits comfortably under Flow's
-// 100k computation budget for both AllDay (cheap struct-field reads) and
-// Pinnacle (per-NFT MetadataViews.getTraits, the dominant cost). Soft
-// deadline halts the chunk loop ~40s before the route's maxDuration=600
-// so the post-pass JOIN UPDATE and pipeline_runs row always land.
-const PAGINATION_CHUNK_SIZE = 1000
+// Paginated mega-wallet recovery: per-mode chunk size is the count of
+// getIDs() indices walked per Cadence call. AllDay uses 1000 — borrowNFT
+// + struct field reads (editionID, serialNumber) are cheap, ~10k compute
+// per chunk. Pinnacle uses 500 — per-NFT MetadataViews.getTraits +
+// getEditions iterates trait arrays so a 1000-NFT chunk on
+// 0xb6f2481eba4df97b (1277 NFTs) tripped Cadence error 1110 itself
+// (verified 2026-05-08); 500-NFT chunks fit under the 100k budget with
+// margin. Soft deadline halts the chunk loop ~40s before the route's
+// maxDuration=600 so the post-pass JOIN UPDATE and pipeline_runs row
+// always land.
+const PAGINATION_CHUNK_SIZE_BY_MODE: Record<"allday" | "pinnacle", number> = {
+  allday: 1000,
+  pinnacle: 500,
+}
 const PAGINATION_SOFT_DEADLINE_MS = 560_000
 
 // Resolve a raw wallet input (0x-address or Top Shot username) to a 16-hex
@@ -847,16 +854,16 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<vo
 // the catch handlers of runAllDayDetailsBackfill / runPinnacleDetailsBackfill
 // when a single-shot details call breaches Flow's 100k computation budget
 // (Cadence error 1110 OR access-API HTTP 500 with `error=internal server
-// error` + /v1/scripts in the message). Walks getIDs() in chunks of
-// PAGINATION_CHUNK_SIZE via GET_*_DETAILS_RANGE(addr, start, count) and
-// upserts per chunk so partial progress is durable even if a downstream
-// chunk fails or the maxDuration soft deadline fires.
+// error` + /v1/scripts in the message). Walks getIDs() in per-mode
+// chunk sizes via GET_*_DETAILS_RANGE(addr, start, count) and upserts
+// per chunk so partial progress is durable even if a downstream chunk
+// fails or the maxDuration soft deadline fires.
 //
 // Telemetry written to pipeline_runs.extra:
 //   pagination_chunks         number of chunks that successfully fetched + upserted
 //   pagination_chunk_errors   number of chunks that threw (skipped, not aborted)
 //   pagination_total_ids      total getIDs() length walked (= on-chain count)
-//   pagination_chunk_size     current PAGINATION_CHUNK_SIZE
+//   pagination_chunk_size     mode-specific chunk size (allday=1000, pinnacle=500)
 //   pagination_elapsed_ms     duration of the paginated run only
 //   recovered_from            parent terminated_reason that triggered this
 //   parent_error_excerpt      first 200 chars of the original error message
@@ -873,6 +880,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
   } = args
   const paginationStartedMs = Date.now()
   const fullMode = mode === "allday" ? "details_allday_paginated" : "details_pinnacle_paginated"
+  const chunkSize = PAGINATION_CHUNK_SIZE_BY_MODE[mode]
 
   let totalUpserted = 0
   let postPassUpdated = 0
@@ -908,7 +916,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
           pagination_chunks: 0,
           pagination_chunk_errors: 0,
           pagination_total_ids: 0,
-          pagination_chunk_size: PAGINATION_CHUNK_SIZE,
+          pagination_chunk_size: chunkSize,
           pagination_elapsed_ms: Date.now() - paginationStartedMs,
           mode: fullMode,
         },
@@ -924,13 +932,13 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
     // 1000-id window, builds rows, upserts immediately. Per-chunk errors
     // are non-fatal (logged + counted); only a complete inability to
     // proceed throws out to the outer catch.
-    for (let start = 0; start < onChainIds.length; start += PAGINATION_CHUNK_SIZE) {
+    for (let start = 0; start < onChainIds.length; start += chunkSize) {
       if (Date.now() - startedMs > PAGINATION_SOFT_DEADLINE_MS) {
         hitSoftDeadline = true
         console.log(`[${config.pipelineName}] paginated soft deadline hit at chunk start=${start}/${onChainIds.length}`)
         break
       }
-      const count = Math.min(PAGINATION_CHUNK_SIZE, onChainIds.length - start)
+      const count = Math.min(chunkSize, onChainIds.length - start)
       let chunkRows: Array<Record<string, unknown>> = []
       try {
         if (mode === "allday") {
@@ -1090,7 +1098,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
         pagination_chunks: chunksProcessed,
         pagination_chunk_errors: chunkErrors,
         pagination_total_ids: onChainIds.length,
-        pagination_chunk_size: PAGINATION_CHUNK_SIZE,
+        pagination_chunk_size: chunkSize,
         pagination_elapsed_ms: Date.now() - paginationStartedMs,
         mode: fullMode,
       },
@@ -1115,7 +1123,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
         pagination_chunks: chunksProcessed,
         pagination_chunk_errors: chunkErrors,
         pagination_total_ids: onChainIds.length,
-        pagination_chunk_size: PAGINATION_CHUNK_SIZE,
+        pagination_chunk_size: chunkSize,
         pagination_elapsed_ms: Date.now() - paginationStartedMs,
         mode: fullMode,
       },
