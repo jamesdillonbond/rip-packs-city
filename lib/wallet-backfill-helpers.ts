@@ -104,6 +104,21 @@ export function isStorageLimitError(err: unknown): boolean {
   return /\b1106\b/.test(msg) || /max interaction with storage/.test(msg) || /storage.*exceed/.test(msg)
 }
 
+// Cadence error code 1110 ("computation exceeds limit (100000)") fires on
+// mega-wallets when the script does per-NFT work (borrowNFT + getTraits +
+// getEditions) and the cumulative compute crosses Flow's 100k budget. The
+// canonical reproducer is 0x5f71947aea94eb43 (~7700 Pinnacle NFTs) against
+// runPinnacleDetailsBackfill. Same blast radius as 1106 (storage limit) —
+// retry doesn't help, the script literally can't process that much state in
+// a single call. Long-term fix is pagination (slice getIDs() into chunks of
+// ~1000 and chain multiple Cadence calls). Until then we mark ok=true with
+// terminated_reason='computation_limit_exceeded' so the wallet stops
+// counting as a pipeline failure.
+export function isComputationLimitError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
+  return /\b1110\b/.test(msg) || /computation exceeds limit/.test(msg)
+}
+
 // Wallet has no collection capability published at the /public path the
 // Cadence script targets (typical reproducer: Pinnacle-only collectors
 // surfaced into the AllDay queue via Flowty transactions). Flow REST returns
@@ -698,6 +713,24 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<vo
           mode: "details_pinnacle",
         },
       })
+      return
+    }
+    if (isComputationLimitError(err)) {
+      await logRun({
+        pipelineName: config.pipelineName,
+        collectionSlug: config.slug,
+        startedAt: startedAtIso, wallet,
+        rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
+        ok: true,
+        extra: {
+          terminated_reason: "computation_limit_exceeded",
+          flagged_for_pagination: true,
+          skip_cached: skipCached, elapsed_ms: elapsedMs,
+          error_excerpt: msg.slice(0, 200),
+          mode: "details_pinnacle",
+        },
+      })
+      console.log(`[${config.pipelineName}] computation_limit wallet=${wallet} — needs paginated Cadence (TODO)`)
       return
     }
     if (isNoCollectionCapabilityError(err, elapsedMs)) {
