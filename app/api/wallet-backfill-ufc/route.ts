@@ -10,6 +10,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import {
   runIdOnlyBackfill,
   resolveWalletInput,
+  triggerUfcEnrichmentChain,
   CADENCE_UFC,
   UFC_COLLECTION_UUID,
 } from "@/lib/wallet-backfill-helpers"
@@ -63,6 +64,20 @@ export async function POST(req: NextRequest) {
       wallet,
       skipCached,
     })
+    // Chain into the UFC chain-metadata enricher so wmc rows land with
+    // edition_key / player_name / set_name / tier populated rather than
+    // sitting NULL. enrich-ufc-wallet is paginated (100 NFTs per page)
+    // so we drive it sequentially until done.
+    try {
+      const result = await triggerUfcEnrichmentChain(wallet)
+      console.log(
+        `[wallet-backfill-ufc] enrich chain wallet=${wallet} pages=${result.pagesFired} enriched=${result.totalEnriched} done=${result.done}`,
+      )
+    } catch (err) {
+      console.warn(
+        `[wallet-backfill-ufc] enrich chain failed wallet=${wallet}: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
   })
 
   return NextResponse.json(

@@ -15,11 +15,14 @@
 // per-moment metadata Cadence for those collections, but we do have
 // working ID enumeration).
 
+import fcl from "@/lib/flow"
+import * as t from "@onflow/types"
 import { supabaseAdmin } from "@/lib/supabase"
 import {
   isWalletAddress,
   resolveTopShotUsernameCacheAware,
 } from "@/lib/topshot-username-resolve"
+import { GET_UNLOCKED_MOMENT_DETAILS } from "@/lib/allday-cadence"
 
 const FLOW_REST = "https://rest-mainnet.onflow.org/v1/scripts"
 const UPSERT_CHUNK = 200
@@ -318,6 +321,240 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<void> {
       },
     })
     console.error(`[${config.pipelineName}] error during backfill for ${wallet}: ${msg}`)
+  }
+}
+
+// triggerUfcEnrichmentChain — fire-and-forget loop that calls
+// enrich-ufc-wallet edge function with paginated start values until done.
+// Called from wallet-backfill-ufc after the ID-only wmc insert lands so
+// per-moment chain metadata (edition_key, player_name, set_name, tier)
+// gets populated without manual intervention. Up to 30 pages × 100
+// moments = 3,000 moments per wallet enriched per backfill run; any
+// remaining tail drains on the next cron pass.
+export async function triggerUfcEnrichmentChain(wallet: string): Promise<{
+  pagesFired: number
+  totalEnriched: number
+  done: boolean
+}> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const ingestToken = process.env.INGEST_SECRET_TOKEN
+  if (!supabaseUrl || !ingestToken) {
+    return { pagesFired: 0, totalEnriched: 0, done: false }
+  }
+  const baseUrl = `${supabaseUrl}/functions/v1/enrich-ufc-wallet`
+  let start = 0
+  let pages = 0
+  let enrichedTotal = 0
+  let done = false
+  const MAX_PAGES = 30
+  while (pages < MAX_PAGES) {
+    const url = new URL(baseUrl)
+    url.searchParams.set("wallet", wallet)
+    url.searchParams.set("start", String(start))
+    url.searchParams.set("token", ingestToken)
+    let json: any
+    try {
+      const res = await fetch(url.toString(), {
+        method: "GET",
+        headers: { Authorization: `Bearer ${ingestToken}` },
+        signal: AbortSignal.timeout(45_000),
+      })
+      if (!res.ok) {
+        console.warn(`[ufc-enrich-chain] HTTP ${res.status} wallet=${wallet} start=${start}`)
+        break
+      }
+      json = await res.json()
+    } catch (err) {
+      console.warn(`[ufc-enrich-chain] fetch failed wallet=${wallet}: ${err instanceof Error ? err.message : String(err)}`)
+      break
+    }
+    pages++
+    enrichedTotal += Number(json?.enriched ?? 0)
+    if (json?.done === true || json?.nextStart == null) {
+      done = true
+      break
+    }
+    start = Number(json.nextStart)
+    if (!Number.isFinite(start) || start <= 0) break
+  }
+  return { pagesFired: pages, totalEnriched: enrichedTotal, done }
+}
+
+// runAllDayDetailsBackfill — AllDay-specific enriched backfill. Unlike the
+// generic runIdOnlyBackfill which only writes (wallet, collection, moment_id)
+// tuples, this calls GET_UNLOCKED_MOMENT_DETAILS — a single Cadence script
+// that returns [[nftID, editionID, serialNumber], ...] for the whole wallet
+// in one shot. We write edition_key (= editionID) and serial_number on
+// every row, then run a single SQL JOIN UPDATE to backfill tier /
+// player_name / set_name / team_name from the editions table.
+//
+// Why this exists: 98.5% of wallet_moments_cache rows for AllDay had
+// edition_key NULL because the prior helper wrote ID-only and there was no
+// out-of-band resolver populating wmc.edition_key. The editions table has
+// rich per-edition metadata (tier, player_name, set_name, team_name) but no
+// path was wiring it to wmc.
+export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<void> {
+  const { config, startedAtIso, startedMs, wallet, skipCached } = args
+  let totalUpserted = 0
+  let postPassUpdated = 0
+
+  try {
+    const raw = await fcl.query({
+      cadence: GET_UNLOCKED_MOMENT_DETAILS,
+      args: (arg: any) => [arg(wallet, t.Address)],
+    })
+    const triples: string[][] = Array.isArray(raw) ? (raw as any) : []
+
+    if (triples.length === 0) {
+      await stampLastRefreshed(wallet, config.slug)
+      await logRun({
+        pipelineName: config.pipelineName,
+        collectionSlug: config.slug,
+        startedAt: startedAtIso, wallet,
+        rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
+        ok: true,
+        extra: {
+          on_chain_count: 0, terminated_reason: "no_more_moments",
+          skip_cached: skipCached, elapsed_ms: Date.now() - startedMs,
+          mode: "details_allday",
+        },
+      })
+      return
+    }
+
+    const cachedIds = skipCached ? await loadCachedMomentIds(wallet, config.collectionUuid) : new Set<string>()
+    const now = new Date().toISOString()
+    const rows: Array<Record<string, unknown>> = []
+    let skippedCount = 0
+    for (const tri of triples) {
+      if (!Array.isArray(tri) || tri.length < 2) continue
+      const nftId = String(tri[0])
+      const editionId = String(tri[1])
+      const serialRaw = tri[2] != null ? Number(tri[2]) : null
+      const serial = Number.isFinite(serialRaw as number) && (serialRaw as number) > 0
+        ? (serialRaw as number)
+        : null
+      if (skipCached && cachedIds.has(nftId)) { skippedCount++; continue }
+      rows.push({
+        wallet_address: wallet,
+        collection_id: config.collectionUuid,
+        moment_id: nftId,
+        edition_key: editionId,
+        serial_number: serial,
+        // tier/player_name/set_name filled by post-pass JOIN UPDATE below.
+        tier: null,
+        player_name: null,
+        set_name: null,
+        series_number: null,
+        acquired_at: null,
+        fmv_usd: null,
+        last_seen_at: now,
+      })
+    }
+
+    for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
+      const chunk = rows.slice(i, i + UPSERT_CHUNK)
+      // deno-lint-ignore no-explicit-any
+      const { data, error } = await (supabaseAdmin as any)
+        .from("wallet_moments_cache")
+        .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
+        .select("moment_id")
+      if (error) {
+        console.error(`[${config.pipelineName}] upsert err chunk=${i}: ${error.message}`)
+      } else {
+        totalUpserted += data?.length ?? chunk.length
+      }
+    }
+
+    // Post-pass JOIN UPDATE: backfill tier / player_name / set_name on rows
+    // that just landed (and any older rows for this wallet/collection that
+    // are still missing). The editions table is populated by separate
+    // seeders; we only fill columns that are still NULL so a future
+    // edition update doesn't clobber wallet-side overrides if any.
+    try {
+      // deno-lint-ignore no-explicit-any
+      const { data: updResult, error: updErr } = await (supabaseAdmin as any).rpc(
+        "backfill_wmc_metadata_from_editions",
+        { p_wallet_address: wallet, p_collection_id: config.collectionUuid },
+      )
+      if (updErr) {
+        console.warn(`[${config.pipelineName}] post-pass update failed: ${updErr.message}`)
+      } else if (updResult != null) {
+        postPassUpdated = Number(updResult) || 0
+      }
+    } catch (err) {
+      console.warn(
+        `[${config.pipelineName}] post-pass update threw: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+
+    await stampLastRefreshed(wallet, config.slug)
+    await logRun({
+      pipelineName: config.pipelineName,
+      collectionSlug: config.slug,
+      startedAt: startedAtIso, wallet,
+      rowsFound: triples.length, rowsWritten: totalUpserted, rowsSkipped: skippedCount,
+      ok: true,
+      extra: {
+        on_chain_count: triples.length,
+        rows_to_write: rows.length,
+        skipped_cached: skippedCount,
+        post_pass_metadata_updated: postPassUpdated,
+        terminated_reason: "no_more_moments",
+        skip_cached: skipCached,
+        elapsed_ms: Date.now() - startedMs,
+        mode: "details_allday",
+      },
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    const elapsedMs = Date.now() - startedMs
+    if (isStorageLimitError(err)) {
+      await logRun({
+        pipelineName: config.pipelineName,
+        collectionSlug: config.slug,
+        startedAt: startedAtIso, wallet,
+        rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
+        ok: true,
+        extra: {
+          terminated_reason: "storage_limit_exceeded",
+          flagged_for_sharded_scan: true,
+          skip_cached: skipCached, elapsed_ms: elapsedMs,
+          error_excerpt: msg.slice(0, 200),
+          mode: "details_allday",
+        },
+      })
+      return
+    }
+    if (isNoCollectionCapabilityError(err, elapsedMs)) {
+      await logRun({
+        pipelineName: config.pipelineName,
+        collectionSlug: config.slug,
+        startedAt: startedAtIso, wallet,
+        rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
+        ok: true,
+        extra: {
+          terminated_reason: "no_collection_capability",
+          flagged_for_no_capability: true,
+          skip_cached: skipCached, elapsed_ms: elapsedMs,
+          error_excerpt: msg.slice(0, 200),
+          mode: "details_allday",
+        },
+      })
+      return
+    }
+    await logRun({
+      pipelineName: config.pipelineName,
+      collectionSlug: config.slug,
+      startedAt: startedAtIso, wallet,
+      rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
+      ok: false, error: msg,
+      extra: {
+        terminated_reason: "error", skip_cached: skipCached,
+        elapsed_ms: elapsedMs, mode: "details_allday",
+      },
+    })
+    console.error(`[${config.pipelineName}] error during details backfill for ${wallet}: ${msg}`)
   }
 }
 
