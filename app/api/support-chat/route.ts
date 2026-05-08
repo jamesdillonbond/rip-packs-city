@@ -1775,8 +1775,22 @@ export async function POST(req: NextRequest) {
       );
     } catch { /* best-effort */ }
 
+    // concierge_unavailable rows are the ticket queue Trevor reviews — query
+    // support_conversations WHERE category='concierge_unavailable' AND
+    // is_smoke_test=false to see what people were asking when the chat was
+    // offline. The `escalate: true` flag tells the frontend to render the
+    // existing "logged for Trevor" indicator so the user knows their question
+    // was captured. Persisted row keeps escalated=false to avoid polluting
+    // the real-escalation queries Trevor runs against the same table.
+    const escalateForFrontend = category === "concierge_unavailable";
+
     return NextResponse.json(
-      { response: meta.response, escalated: false, category },
+      {
+        response: meta.response,
+        escalated: false,
+        escalate: escalateForFrontend,
+        category,
+      },
       { status: 200 }
     );
   }

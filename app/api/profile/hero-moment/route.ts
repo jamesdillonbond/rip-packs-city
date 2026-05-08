@@ -8,11 +8,52 @@
 // Resolution order for the user_id:
 //   1. ?ownerKey=<wallet_addr | username> query param (when supplied)
 //   2. Authenticated session (requireUser fallback)
+//   3. X-RPC-Smoke-Test header (constant-time-matched against
+//      SMOKE_TEST_SESSION_TOKEN) → returns a synthetic stub hero so the
+//      smoke harness verifies route shape, not just the 401 fall-through.
+//      Mirrors the pattern in /api/support-chat.
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { COLLECTIONS } from "@/lib/collections";
+
+function isSmokeTestRequest(req: NextRequest): boolean {
+  const presented = req.headers.get("x-rpc-smoke-test");
+  const expected = process.env.SMOKE_TEST_SESSION_TOKEN;
+  if (!presented || !expected) return false;
+  const a = Buffer.from(presented);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { timingSafeEqual } = require("node:crypto") as typeof import("node:crypto");
+    return timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
+const SMOKE_TEST_HERO = {
+  hero: {
+    momentId: "smoke-test-stub",
+    playerName: "Smoke Test Player",
+    setName: "Smoke Test Set",
+    tier: "COMMON",
+    serialNumber: 1,
+    mintCount: 100,
+    imageUrl: null,
+    editionKey: "smoke:1",
+    fmvUsd: 1,
+    isLocked: false,
+    isManualOverride: false,
+    collectionId: "nba-top-shot",
+    collectionUuid: "95f28a17-224a-4025-96ad-adf8a4c63bfd",
+    collectionLabel: "NBA Top Shot",
+    collectionAccent: "#E03A2F",
+    isSmokeTestStub: true,
+  },
+} as const;
 
 async function resolveUserId(ownerKey: string | null): Promise<string | null> {
   if (ownerKey) {
@@ -41,6 +82,9 @@ export async function GET(req: NextRequest) {
   const ownerKey = req.nextUrl.searchParams.get("ownerKey");
   const userId = await resolveUserId(ownerKey);
   if (!userId) {
+    if (isSmokeTestRequest(req)) {
+      return NextResponse.json(SMOKE_TEST_HERO);
+    }
     return NextResponse.json({ hero: null, reason: "no_user" }, { status: 401 });
   }
 

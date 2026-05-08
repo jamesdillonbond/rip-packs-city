@@ -318,7 +318,11 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
       if (!isStream) {
         const data = await res.json();
         setMessages((prev) => prev.filter((m) => m.id !== "typing"));
-        setMessages((prev) => [...prev, { id: `b_${Date.now()}`, dbId: data.messageId, role: "assistant", text: data.response || "Sorry, try again?", escalated: data.escalated, momentCards: data.momentCards, feedback: null, timestamp: new Date() }]);
+        // Coerce escalated || escalate so the concierge_unavailable case
+        // (server emits escalate=true, escalated=false) reuses the existing
+        // "Flagged for Trevor" banner and suppresses thumbs-up/down on a
+        // message the bot didn't actually answer.
+        setMessages((prev) => [...prev, { id: `b_${Date.now()}`, dbId: data.messageId, role: "assistant", text: data.response || "Sorry, try again?", escalated: !!(data.escalated || data.escalate), momentCards: data.momentCards, feedback: null, timestamp: new Date() }]);
         if (!isOpen) setHasNewMessage(true);
         return;
       }
@@ -357,7 +361,7 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
         try { meta = JSON.parse(metaJson); } catch { meta = null; }
       }
       if (meta) {
-        setMessages((prev) => prev.map((m) => m.id === msgId ? { ...m, dbId: meta.messageId, escalated: meta.escalated, momentCards: meta.momentCards } : m));
+        setMessages((prev) => prev.map((m) => m.id === msgId ? { ...m, dbId: meta.messageId, escalated: !!(meta.escalated || meta.escalate), momentCards: meta.momentCards } : m));
       }
       if (!isOpen) setHasNewMessage(true);
     } catch {
