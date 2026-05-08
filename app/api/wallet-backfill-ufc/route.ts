@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  let body: { wallet?: string; skip_cached?: boolean }
+  let body: { wallet?: string; skip_cached?: boolean; force?: boolean }
   try {
     body = await req.json()
   } catch {
@@ -51,7 +51,15 @@ export async function POST(req: NextRequest) {
     )
   }
   const wallet = resolved.wallet
-  const skipCached = body.skip_cached !== false
+  // force=true (?force=true OR {force: true}) translates to skip_cached=false
+  // so the ID-only upsert refreshes every wallet_moments_cache row. The
+  // separate enrich-ufc-wallet edge function still drives per-moment
+  // metadata (edition_key/player/set/tier) via triggerUfcEnrichmentChain
+  // — it always runs, with or without force, and is the actual chain
+  // enrichment for UFC.
+  const forceParam = req.nextUrl.searchParams.get("force")
+  const force = body.force === true || forceParam === "true" || forceParam === "1"
+  const skipCached = force ? false : body.skip_cached !== false
 
   const startedMs = Date.now()
   const startedAtIso = new Date(startedMs).toISOString()
@@ -63,6 +71,7 @@ export async function POST(req: NextRequest) {
       startedMs,
       wallet,
       skipCached,
+      force,
     })
     // Chain into the UFC chain-metadata enricher so wmc rows land with
     // edition_key / player_name / set_name / tier populated rather than
@@ -87,6 +96,7 @@ export async function POST(req: NextRequest) {
       wallet_address: wallet,
       input: rawInput,
       skip_cached: skipCached,
+      force,
       started_at: startedAtIso,
     },
     { status: 202 }

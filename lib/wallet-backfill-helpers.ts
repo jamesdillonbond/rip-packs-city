@@ -70,6 +70,15 @@ interface BackfillArgs {
   startedMs: number
   wallet: string
   skipCached: boolean
+  // force=true is set by the route when the caller passes ?force=true (or
+  // {force: true}). It does not change the filtering logic on its own —
+  // the route already translates force=true into skipCached=false so the
+  // helper writes edition_key + serial_number on every on-chain row, even
+  // ones already in wmc. We thread the flag through purely for telemetry
+  // (pipeline_runs.extra.force) so we can distinguish a deliberate
+  // re-enrichment sweep from a normal cron pass that happened to receive
+  // skip_cached=false.
+  force?: boolean
 }
 
 export async function fetchOnChainIds(cadence: string, wallet: string): Promise<string[]> {
@@ -117,6 +126,23 @@ export function isStorageLimitError(err: unknown): boolean {
 export function isComputationLimitError(err: unknown): boolean {
   const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
   return /\b1110\b/.test(msg) || /computation exceeds limit/.test(msg)
+}
+
+// AllDay's GET_UNLOCKED_MOMENT_DETAILS exhibits a different failure shape
+// on mega-wallets than Pinnacle does. Instead of a clean Cadence 1110
+// computation_limit_exceeded, the upstream Flow access node returns a
+// generic HTTP 500 with `error=internal server error` and the script
+// path (`/v1/scripts`) embedded in the message — Flow's REST/Access API
+// surfacing the per-script execution-budget breach as an opaque 500.
+// Canonical reproducers (May 8, 2026): 0xb7700366fa738a43 (41,550 AllDay
+// moments), 0x640705263fe8f11b (43,425 AllDay moments). Treated as
+// equivalent to a 1110: ok=true, flagged_for_pagination=true, log
+// terminated_reason='access_api_error_likely_computation_limit'. Same
+// long-term fix as Pinnacle — paginated GET_ALLDAY_DETAILS_RANGE walking
+// getIDs() in ~1000-NFT chunks.
+export function isAccessApiInternalServerError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return /error=internal server error/i.test(msg) && /v1\/scripts/i.test(msg)
 }
 
 // Wallet has no collection capability published at the /public path the
@@ -214,7 +240,7 @@ async function stampLastRefreshed(wallet: string, slug: string) {
 // left null; out-of-band edition resolvers populate player/set/tier on
 // the editions table and reads JOIN at query time.
 export async function runIdOnlyBackfill(args: BackfillArgs): Promise<void> {
-  const { config, startedAtIso, startedMs, wallet, skipCached } = args
+  const { config, startedAtIso, startedMs, wallet, skipCached, force } = args
   let totalUpserted = 0
 
   try {
@@ -229,7 +255,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<void> {
         ok: true,
         extra: {
           on_chain_count: 0, terminated_reason: "no_more_moments",
-          skip_cached: skipCached, elapsed_ms: Date.now() - startedMs,
+          skip_cached: skipCached, force: !!force, elapsed_ms: Date.now() - startedMs,
         },
       })
       return
@@ -283,6 +309,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<void> {
         skipped_cached: skippedCount,
         terminated_reason: "no_more_moments",
         skip_cached: skipCached,
+        force: !!force,
         elapsed_ms: Date.now() - startedMs,
       },
     })
@@ -300,6 +327,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<void> {
           terminated_reason: "storage_limit_exceeded",
           flagged_for_sharded_scan: true,
           skip_cached: skipCached,
+          force: !!force,
           elapsed_ms: elapsedMs,
           error_excerpt: msg.slice(0, 200),
         },
@@ -318,6 +346,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<void> {
           terminated_reason: "no_collection_capability",
           flagged_for_no_capability: true,
           skip_cached: skipCached,
+          force: !!force,
           elapsed_ms: elapsedMs,
           error_excerpt: msg.slice(0, 200),
         },
@@ -333,6 +362,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<void> {
       ok: false, error: msg,
       extra: {
         terminated_reason: "error", skip_cached: skipCached,
+        force: !!force,
         elapsed_ms: elapsedMs,
       },
     })
@@ -410,7 +440,7 @@ export async function triggerUfcEnrichmentChain(wallet: string): Promise<{
 // rich per-edition metadata (tier, player_name, set_name, team_name) but no
 // path was wiring it to wmc.
 export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<void> {
-  const { config, startedAtIso, startedMs, wallet, skipCached } = args
+  const { config, startedAtIso, startedMs, wallet, skipCached, force } = args
   let totalUpserted = 0
   let postPassUpdated = 0
 
@@ -431,7 +461,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<void
         ok: true,
         extra: {
           on_chain_count: 0, terminated_reason: "no_more_moments",
-          skip_cached: skipCached, elapsed_ms: Date.now() - startedMs,
+          skip_cached: skipCached, force: !!force, elapsed_ms: Date.now() - startedMs,
           mode: "details_allday",
         },
       })
@@ -518,6 +548,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<void
         post_pass_metadata_updated: postPassUpdated,
         terminated_reason: "no_more_moments",
         skip_cached: skipCached,
+        force: !!force,
         elapsed_ms: Date.now() - startedMs,
         mode: "details_allday",
       },
@@ -535,11 +566,52 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<void
         extra: {
           terminated_reason: "storage_limit_exceeded",
           flagged_for_sharded_scan: true,
-          skip_cached: skipCached, elapsed_ms: elapsedMs,
+          skip_cached: skipCached, force: !!force, elapsed_ms: elapsedMs,
           error_excerpt: msg.slice(0, 200),
           mode: "details_allday",
         },
       })
+      return
+    }
+    // Mega-wallet handlers — order matters. Check explicit Cadence 1110
+    // first (rare on AllDay but cheap to detect), then the wider AllDay
+    // generic-500 signature (`error=internal server error` + /v1/scripts).
+    // Both map to the same outcome (flag for pagination) but use distinct
+    // terminated_reason values so we can distinguish in pipeline_runs.
+    if (isComputationLimitError(err)) {
+      await logRun({
+        pipelineName: config.pipelineName,
+        collectionSlug: config.slug,
+        startedAt: startedAtIso, wallet,
+        rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
+        ok: true,
+        extra: {
+          terminated_reason: "computation_limit_exceeded",
+          flagged_for_pagination: true,
+          skip_cached: skipCached, force: !!force, elapsed_ms: elapsedMs,
+          error_excerpt: msg.slice(0, 200),
+          mode: "details_allday",
+        },
+      })
+      console.log(`[${config.pipelineName}] computation_limit wallet=${wallet} — needs paginated Cadence (TODO)`)
+      return
+    }
+    if (isAccessApiInternalServerError(err)) {
+      await logRun({
+        pipelineName: config.pipelineName,
+        collectionSlug: config.slug,
+        startedAt: startedAtIso, wallet,
+        rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
+        ok: true,
+        extra: {
+          terminated_reason: "access_api_error_likely_computation_limit",
+          flagged_for_pagination: true,
+          skip_cached: skipCached, force: !!force, elapsed_ms: elapsedMs,
+          error_excerpt: msg.slice(0, 200),
+          mode: "details_allday",
+        },
+      })
+      console.log(`[${config.pipelineName}] access_api_500 wallet=${wallet} — likely computation_limit, needs paginated Cadence (TODO)`)
       return
     }
     if (isNoCollectionCapabilityError(err, elapsedMs)) {
@@ -552,7 +624,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<void
         extra: {
           terminated_reason: "no_collection_capability",
           flagged_for_no_capability: true,
-          skip_cached: skipCached, elapsed_ms: elapsedMs,
+          skip_cached: skipCached, force: !!force, elapsed_ms: elapsedMs,
           error_excerpt: msg.slice(0, 200),
           mode: "details_allday",
         },
@@ -567,6 +639,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<void
       ok: false, error: msg,
       extra: {
         terminated_reason: "error", skip_cached: skipCached,
+        force: !!force,
         elapsed_ms: elapsedMs, mode: "details_allday",
       },
     })
@@ -586,7 +659,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<void
 // holdings (Trevor's 180 Pinnacle moments — only 1 mapped) were invisible
 // to the resolver. Write-time enrichment closes that gap.
 export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<void> {
-  const { config, startedAtIso, startedMs, wallet, skipCached } = args
+  const { config, startedAtIso, startedMs, wallet, skipCached, force } = args
   let totalUpserted = 0
   let postPassUpdated = 0
 
@@ -608,7 +681,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<vo
         ok: true,
         extra: {
           on_chain_count: 0, terminated_reason: "no_more_moments",
-          skip_cached: skipCached, elapsed_ms: Date.now() - startedMs,
+          skip_cached: skipCached, force: !!force, elapsed_ms: Date.now() - startedMs,
           mode: "details_pinnacle",
         },
       })
@@ -691,6 +764,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<vo
         post_pass_metadata_updated: postPassUpdated,
         terminated_reason: "no_more_moments",
         skip_cached: skipCached,
+        force: !!force,
         elapsed_ms: Date.now() - startedMs,
         mode: "details_pinnacle",
       },
@@ -708,7 +782,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<vo
         extra: {
           terminated_reason: "storage_limit_exceeded",
           flagged_for_sharded_scan: true,
-          skip_cached: skipCached, elapsed_ms: elapsedMs,
+          skip_cached: skipCached, force: !!force, elapsed_ms: elapsedMs,
           error_excerpt: msg.slice(0, 200),
           mode: "details_pinnacle",
         },
@@ -725,12 +799,30 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<vo
         extra: {
           terminated_reason: "computation_limit_exceeded",
           flagged_for_pagination: true,
-          skip_cached: skipCached, elapsed_ms: elapsedMs,
+          skip_cached: skipCached, force: !!force, elapsed_ms: elapsedMs,
           error_excerpt: msg.slice(0, 200),
           mode: "details_pinnacle",
         },
       })
       console.log(`[${config.pipelineName}] computation_limit wallet=${wallet} — needs paginated Cadence (TODO)`)
+      return
+    }
+    if (isAccessApiInternalServerError(err)) {
+      await logRun({
+        pipelineName: config.pipelineName,
+        collectionSlug: config.slug,
+        startedAt: startedAtIso, wallet,
+        rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
+        ok: true,
+        extra: {
+          terminated_reason: "access_api_error_likely_computation_limit",
+          flagged_for_pagination: true,
+          skip_cached: skipCached, force: !!force, elapsed_ms: elapsedMs,
+          error_excerpt: msg.slice(0, 200),
+          mode: "details_pinnacle",
+        },
+      })
+      console.log(`[${config.pipelineName}] access_api_500 wallet=${wallet} — likely computation_limit, needs paginated Cadence (TODO)`)
       return
     }
     if (isNoCollectionCapabilityError(err, elapsedMs)) {
@@ -743,7 +835,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<vo
         extra: {
           terminated_reason: "no_collection_capability",
           flagged_for_no_capability: true,
-          skip_cached: skipCached, elapsed_ms: elapsedMs,
+          skip_cached: skipCached, force: !!force, elapsed_ms: elapsedMs,
           error_excerpt: msg.slice(0, 200),
           mode: "details_pinnacle",
         },
@@ -758,6 +850,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<vo
       ok: false, error: msg,
       extra: {
         terminated_reason: "error", skip_cached: skipCached,
+        force: !!force,
         elapsed_ms: elapsedMs, mode: "details_pinnacle",
       },
     })
