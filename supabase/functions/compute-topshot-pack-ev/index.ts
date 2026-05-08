@@ -1,36 +1,21 @@
-// compute-topshot-pack-ev v11 — pool_empty sentinel write to break the
-// queue-poisoning loop on legitimately sold-out paid packs.
+// compute-topshot-pack-ev v14 — BATCH_SIZE 12 → 8 to fix ~50% time-budget
+// timeouts. Fetch time scales linearly with batch (BATCH_SIZE / FETCH_CONCURRENCY
+// chunks × ~30s per chunk), so v13's 12-pack batches hit fetch_phase_ms 119–148s
+// against TIME_BUDGET_MS=110000 too often. Dropping to 8 puts typical fetch at
+// ~3 chunks (~90s) with comfortable headroom. Throughput math: 12 packs × 50%
+// success rate = 6/run → 8 packs × ~95% success = 7.6/run, so net throughput
+// holds while reliability jumps. The targets view orders by last_ev_at NULLS
+// FIRST, so any packs not picked up this tick come up next.
 //
-// v10 background:
-//   • Outer pack loop chunks at FETCH_CONCURRENCY=3 to stay under the
-//     topshot-proxy Cloudflare Workers per-IP rate limit.
-//   • gqlCall retries HTTP 429 / Cloudflare code 1015 up to MAX_1015_RETRIES.
+// v11–v13 history retained:
+//   v11 — pool_empty sentinel write breaks queue-poisoning on sold-out packs.
+//   v12 — explicit snapshotted_at on the success path (PostgREST batch inserts
+//         were padding NULL across rows that relied on the column DEFAULT).
+//   v13 — added zero_total_weight to the sentinel-trigger reasons.
 //
-// v11 fix (queue poisoning on pool_empty):
-//   When compute_pack_ev_per_edition_weighted returns ok=false with
-//   reason="pool_empty" — i.e. the pack distribution exists but has zero
-//   unopened pack instances on the marketplace (sold-out seasonal team
-//   packs etc.) — the prior behavior was to count rpc_not_ok and `continue`
-//   without writing to pack_ev_history. That left pack_ev_latest NULL for
-//   the dist_id, the topshot_pack_ev_targets view kept selecting the same
-//   rows on every tick, and the function effectively spun in place.
-//
-//   v11 pushes a sentinel row into the same evRows batch that successful
-//   evaluations use, so it goes through the same insert path:
-//     gross_ev=0, pack_ev=0, is_positive_ev=false, value_ratio=null,
-//     fmv_coverage_pct=null, edition_count=0, total_unopened=0,
-//     depletion_pct=100, snapshotted_at=now, pack_price from
-//     retail_price_usd or null.
-//
-//   gross_ev and pack_ev are 0 (not null) on purpose: pack_ev_latest filters
-//   pack_ev between -10000 and 1000000 and a NULL would be dropped from the
-//   view, defeating the unblock.
-//
-//   Sentinel writes ONLY fire on RPC reason="pool_empty". They do NOT fire
-//   on HTTP 429, Cloudflare 1015, GQL errors, or network timeouts — those
-//   are transient and continue to retry on the next tick.
-//
-// No changes to batch size, queue selection logic, or cron schedule.
+// Outer pack loop still chunks at FETCH_CONCURRENCY=3 to stay under the
+// topshot-proxy Cloudflare Workers per-IP rate limit. gqlCall retries
+// HTTP 429 / Cloudflare code 1015 up to MAX_1015_RETRIES.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
 
@@ -47,14 +32,14 @@ if (!USING_PROXY) {
   console.log(`[compute-topshot-pack-ev] WARN: proxy env not set (TS_PROXY_URL=${TS_PROXY_URL ? "set" : "missing"}, TS_PROXY_SECRET=${TS_PROXY_SECRET ? "set" : "missing"}). Falling back to direct GQL — Cloudflare may reject ~50% of requests.`)
 }
 
-const BATCH_SIZE = 12
+const BATCH_SIZE = 8
 const MAX_EDITION_PAGES = 8
 const TIME_BUDGET_MS = 110_000
 const ERRORS_SAMPLE_CAP = 12
 const FETCH_CONCURRENCY = 3
 const MAX_1015_RETRIES = 3
 const RETRY_BACKOFF_MS = 2000
-const FUNCTION_VERSION = 13
+const FUNCTION_VERSION = 14
 
 const retryEvents: Array<{
   op: string
