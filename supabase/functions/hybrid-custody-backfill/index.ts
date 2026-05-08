@@ -229,60 +229,21 @@ async function recordLink(parent: string, child: string, relationship: "restrict
 }
 
 async function buildCandidates(): Promise<string[]> {
-  const set = new Set<string>();
-
-  // seeded_wallets active
-  const seeded = await supabase
-    .from("seeded_wallets")
-    .select("wallet_address")
-    .eq("is_active", true);
-  if (seeded.error) throw new Error(`seeded_wallets read: ${seeded.error.message}`);
-  for (const r of (seeded.data ?? [])) {
-    if (r?.wallet_address) set.add(String(r.wallet_address));
-  }
-
-  // saved_wallets (note column is wallet_addr, not wallet_address)
-  const saved = await supabase
-    .from("saved_wallets")
-    .select("wallet_addr");
-  if (saved.error) throw new Error(`saved_wallets read: ${saved.error.message}`);
-  for (const r of (saved.data ?? [])) {
-    if (r?.wallet_addr) set.add(String(r.wallet_addr));
-  }
-
-  // distinct buyers + sellers from analytics_sales over the lookback window —
-  // two narrow queries (no generic exec RPC available; one each is faster
-  // than a UNION across the whole view).
-  const sinceIso = new Date(Date.now() - SALES_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  // analytics_sales is a view → safe to .select(); .neq filters out null buyers.
-  const buyers = await supabase
-    .from("analytics_sales")
-    .select("buyer_address")
-    .gte("sold_at", sinceIso)
-    .not("buyer_address", "is", null)
-    .limit(50000);
-  if (!buyers.error) {
-    for (const r of (buyers.data ?? [])) {
-      if (r?.buyer_address) set.add(String(r.buyer_address));
+  // Server-side dedup via RPC. The RPC returns text[] (a scalar) rather than
+  // SETOF/TABLE — PostgREST applies its db-max-rows=1000 cap to row-returning
+  // RPCs but lets scalar arrays through whole, so a 1.6k-element array survives.
+  const { data, error } = await supabase.rpc("get_hybrid_custody_candidates", {
+    p_days: SALES_LOOKBACK_DAYS,
+  });
+  if (error) throw new Error(`get_hybrid_custody_candidates: ${error.message}`);
+  const arr = (data ?? []) as unknown;
+  const out = new Set<string>();
+  if (Array.isArray(arr)) {
+    for (const a of arr) {
+      if (typeof a === "string" && a) out.add(a);
     }
-  } else {
-    console.log(`[hybrid-custody-backfill] analytics_sales buyers read warning: ${buyers.error.message?.slice(0, 200)}`);
   }
-  const sellers = await supabase
-    .from("analytics_sales")
-    .select("seller_address")
-    .gte("sold_at", sinceIso)
-    .not("seller_address", "is", null)
-    .limit(50000);
-  if (!sellers.error) {
-    for (const r of (sellers.data ?? [])) {
-      if (r?.seller_address) set.add(String(r.seller_address));
-    }
-  } else {
-    console.log(`[hybrid-custody-backfill] analytics_sales sellers read warning: ${sellers.error.message?.slice(0, 200)}`);
-  }
-
-  return [...set];
+  return [...out];
 }
 
 async function processWithConcurrency<T>(
