@@ -1,0 +1,8 @@
+name = "hybrid-custody-proxy"
+main = "index.ts"
+compatibility_date = "2026-05-08"
+
+# Secret (write-only after creation):
+#   wrangler secret put PROXY_SECRET --name hybrid-custody-proxy
+# Set this to the same value as INGEST_SECRET_TOKEN — single rotation surface
+# for the events ingester and one-shot backfill that consume the worker.
