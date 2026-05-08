@@ -145,7 +145,7 @@ export default function SiteFooter() {
           textAlign: "center",
         }}
       >
-        Built in <span style={{ color: "var(--rpc-red)" }}>Rip City</span> by an official Trail Blazers Team Captain.
+        Built in <span style={{ color: "var(--rpc-red)" }}>Rip City</span> for the Flow collectibles community.
       </div>
     </footer>
   );
