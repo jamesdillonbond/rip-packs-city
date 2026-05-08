@@ -1,9 +1,9 @@
 # Rip Packs City
 
 ## Overview
-Rip Packs City (RPC) is a collector intelligence platform for Flow blockchain NFT collectibles. Founded by Trevor Dillon-Bond, an Official Portland Trail Blazers Team Captain on NBA Top Shot.
+Rip Packs City (RPC) is a collector intelligence platform built for the Flow digital collectibles community. RPC covers NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike — the major collections across the Dapper and Top Shot ecosystem. Built by collectors, for collectors, with the goal of bringing pro-grade analytics to anyone ripping packs and tracking moments on Flow.
 
-Five collections are live and supported across the platform: NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, and UFC Strike. Every collection exposes wallet analytics, FMV pricing, marketplace browser, and a sniper feed; pack EV, set completion, and analytics tabs scale across collections as data coverage allows.
+Every collection exposes wallet analytics, FMV pricing, marketplace browser, and a sniper feed; pack EV, set completion, and analytics tabs scale across collections as data coverage allows.
 
 ## Supported Collections
 
@@ -76,8 +76,18 @@ Weighted average price from recent on-chain sales with recency decay. Confidence
 ## URL Structure
 - Homepage: /
 - About: /about
-- Collection pages: /{collection-id}/{page}
+- Collection landing: /{collection-id}
 - Profiles: /profile/[username]
+- Collection sharing: /share/[wallet]
+- Cross-collection analytics: /analytics, /analytics/sales, /analytics/listings, /analytics/loans, /analytics/wallets, /analytics/fmv, /analytics/packs, /analytics/sets
+
+Per-collection routes (verified against publishedCollections() in lib/collections.ts):
+- NBA Top Shot: /nba-top-shot/{overview, collection, market, packs, fast-break, road-to-the-ring, sniper, sets, analytics}
+- NFL All Day: /nfl-all-day/{overview, collection, market, packs, sniper, sets, analytics}
+- Disney Pinnacle: /disney-pinnacle/{overview, collection, market, sniper, analytics}
+- LaLiga Golazos: /laliga-golazos/{overview, collection, market, packs, sniper, sets, analytics}
+- UFC Strike: /ufc/{overview, collection, sniper, analytics}
+
 - API: /api/sniper-feed, /api/wallet-search, /api/edition-history, /api/market-analytics
 
 ## Live Site
