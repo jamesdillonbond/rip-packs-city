@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  let body: { wallet?: string; skip_cached?: boolean }
+  let body: { wallet?: string; skip_cached?: boolean; force?: boolean }
   try {
     body = await req.json()
   } catch {
@@ -53,7 +53,17 @@ export async function POST(req: NextRequest) {
     )
   }
   const wallet = resolved.wallet
-  const skipCached = body.skip_cached !== false
+  // force=true (?force=true OR {force: true}) bypasses the cached-id filter
+  // so chain enrichment writes edition_key + serial on every on-chain row,
+  // even ones already in wmc. The post-pass JOIN against editions then
+  // fills tier/player_name/set_name/team_name on the same rows. Use this
+  // to unblock stable wallets whose wmc rows were created before chain
+  // enrichment shipped (~2026-05-07). Do NOT force on mega-wallets
+  // (>5k AllDay moments) — they'll likely trip the access-API
+  // computation-limit handler and need pagination.
+  const forceParam = req.nextUrl.searchParams.get("force")
+  const force = body.force === true || forceParam === "true" || forceParam === "1"
+  const skipCached = force ? false : body.skip_cached !== false
 
   const startedMs = Date.now()
   const startedAtIso = new Date(startedMs).toISOString()
@@ -65,6 +75,7 @@ export async function POST(req: NextRequest) {
       startedMs,
       wallet,
       skipCached,
+      force,
     })
   })
 
@@ -75,6 +86,7 @@ export async function POST(req: NextRequest) {
       wallet_address: wallet,
       input: rawInput,
       skip_cached: skipCached,
+      force,
       started_at: startedAtIso,
     },
     { status: 202 }
