@@ -1,26 +1,36 @@
 // app/api/wallet-backfill-pinnacle/route.ts
 //
-// Disney Pinnacle wallet enricher. ID-only via NonFungibleToken
-// CollectionPublic at /public/PinnacleCollection. The Pinnacle ingest
-// pipeline owns metadata (character_name, set_name, variant_type) on
-// pinnacle_editions; reads JOIN wallet_moments_cache.moment_id at query
-// time.
+// Disney Pinnacle wallet enricher. Calls runPinnacleDetailsBackfill (NOT
+// the generic runIdOnlyBackfill) so each wmc row lands with edition_key +
+// serial_number populated from a single Cadence call that walks every
+// owned NFT and derives editionKey from MetadataViews traits
+// (RoyaltyCodes:Variant:Printing). After the upsert, a SQL JOIN backfill
+// against pinnacle_editions fills character_name / set_name / tier
+// (= variant_type) / mint_count.
+//
+// Pre-2026-05-07 this route used runIdOnlyBackfill which left ~99.4% of
+// rows with NULL edition_key on Trevor's wallet (1/180) because the only
+// edition_key resolver path (pinnacle-nft-resolver edge function) was
+// triggered by recent on-chain Deposit events — stable holdings never
+// fired. Mirror of the AllDay/UFC chain-enrichment fix shipped 2026-05-07.
 
 import { NextRequest, NextResponse, after } from "next/server"
 import {
-  runIdOnlyBackfill,
+  runPinnacleDetailsBackfill,
   resolveWalletInput,
-  CADENCE_PINNACLE,
   PINNACLE_COLLECTION_UUID,
 } from "@/lib/wallet-backfill-helpers"
 
 export const dynamic = "force-dynamic"
-export const maxDuration = 60
+export const maxDuration = 120
 
+// cadenceScript on the config is unused by runPinnacleDetailsBackfill —
+// it calls GET_PINNACLE_UNLOCKED_DETAILS directly. Kept on the config
+// shape only because BackfillCollectionConfig requires it.
 const CONFIG = {
   slug: "disney_pinnacle",
   collectionUuid: PINNACLE_COLLECTION_UUID,
-  cadenceScript: CADENCE_PINNACLE,
+  cadenceScript: "",
   pipelineName: "wallet-backfill-pinnacle",
 } as const
 
@@ -56,7 +66,7 @@ export async function POST(req: NextRequest) {
   const startedAtIso = new Date(startedMs).toISOString()
 
   after(async () => {
-    await runIdOnlyBackfill({
+    await runPinnacleDetailsBackfill({
       config: CONFIG,
       startedAtIso,
       startedMs,

@@ -23,6 +23,7 @@ import {
   resolveTopShotUsernameCacheAware,
 } from "@/lib/topshot-username-resolve"
 import { GET_UNLOCKED_MOMENT_DETAILS } from "@/lib/allday-cadence"
+import { GET_PINNACLE_UNLOCKED_DETAILS } from "@/lib/cadence/pinnacle-wallet"
 
 const FLOW_REST = "https://rest-mainnet.onflow.org/v1/scripts"
 const UPSERT_CHUNK = 200
@@ -552,6 +553,179 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<void
       extra: {
         terminated_reason: "error", skip_cached: skipCached,
         elapsed_ms: elapsedMs, mode: "details_allday",
+      },
+    })
+    console.error(`[${config.pipelineName}] error during details backfill for ${wallet}: ${msg}`)
+  }
+}
+
+// runPinnacleDetailsBackfill — Pinnacle-specific enriched backfill. Mirrors
+// runAllDayDetailsBackfill: a single Cadence call returns
+// [{id, editionKey, serial}, ...] for the wallet, we upsert with edition_key
+// + serial_number populated, then a Pinnacle-specific JOIN UPDATE backfills
+// character_name / set_name / tier (= variant_type) / mint_count from the
+// pinnacle_editions table.
+//
+// Why this exists (parallel to AllDay rationale): the pinnacle-nft-resolver
+// only catches NFTs that fired recent on-chain Deposit events, so stable
+// holdings (Trevor's 180 Pinnacle moments — only 1 mapped) were invisible
+// to the resolver. Write-time enrichment closes that gap.
+export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<void> {
+  const { config, startedAtIso, startedMs, wallet, skipCached } = args
+  let totalUpserted = 0
+  let postPassUpdated = 0
+
+  try {
+    const raw = await fcl.query({
+      cadence: GET_PINNACLE_UNLOCKED_DETAILS,
+      args: (arg: any) => [arg(wallet, t.Address)],
+    })
+    type PinDetail = { id: string; editionKey: string | null; serial: string | null }
+    const details: PinDetail[] = Array.isArray(raw) ? (raw as any) : []
+
+    if (details.length === 0) {
+      await stampLastRefreshed(wallet, config.slug)
+      await logRun({
+        pipelineName: config.pipelineName,
+        collectionSlug: config.slug,
+        startedAt: startedAtIso, wallet,
+        rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
+        ok: true,
+        extra: {
+          on_chain_count: 0, terminated_reason: "no_more_moments",
+          skip_cached: skipCached, elapsed_ms: Date.now() - startedMs,
+          mode: "details_pinnacle",
+        },
+      })
+      return
+    }
+
+    const cachedIds = skipCached ? await loadCachedMomentIds(wallet, config.collectionUuid) : new Set<string>()
+    const now = new Date().toISOString()
+    const rows: Array<Record<string, unknown>> = []
+    let skippedCount = 0
+    for (const d of details) {
+      const nftId = String(d.id)
+      const editionKey = d.editionKey != null ? String(d.editionKey) : null
+      const serialRaw = d.serial != null ? Number(d.serial) : null
+      const serial = Number.isFinite(serialRaw as number) && (serialRaw as number) > 0
+        ? (serialRaw as number)
+        : null
+      if (skipCached && cachedIds.has(nftId)) { skippedCount++; continue }
+      rows.push({
+        wallet_address: wallet,
+        collection_id: config.collectionUuid,
+        moment_id: nftId,
+        edition_key: editionKey,
+        serial_number: serial,
+        // character_name/set_name/tier/mint_count filled by post-pass JOIN.
+        character_name: null,
+        set_name: null,
+        tier: null,
+        player_name: null,
+        series_number: null,
+        acquired_at: null,
+        fmv_usd: null,
+        last_seen_at: now,
+      })
+    }
+
+    for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
+      const chunk = rows.slice(i, i + UPSERT_CHUNK)
+      // deno-lint-ignore no-explicit-any
+      const { data, error } = await (supabaseAdmin as any)
+        .from("wallet_moments_cache")
+        .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
+        .select("moment_id")
+      if (error) {
+        console.error(`[${config.pipelineName}] upsert err chunk=${i}: ${error.message}`)
+      } else {
+        totalUpserted += data?.length ?? chunk.length
+      }
+    }
+
+    // Post-pass JOIN UPDATE against pinnacle_editions.
+    try {
+      // deno-lint-ignore no-explicit-any
+      const { data: updResult, error: updErr } = await (supabaseAdmin as any).rpc(
+        "backfill_pinnacle_wmc_metadata_from_editions",
+        { p_wallet_address: wallet },
+      )
+      if (updErr) {
+        console.warn(`[${config.pipelineName}] post-pass update failed: ${updErr.message}`)
+      } else if (updResult != null) {
+        postPassUpdated = Number(updResult) || 0
+      }
+    } catch (err) {
+      console.warn(
+        `[${config.pipelineName}] post-pass update threw: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+
+    await stampLastRefreshed(wallet, config.slug)
+    await logRun({
+      pipelineName: config.pipelineName,
+      collectionSlug: config.slug,
+      startedAt: startedAtIso, wallet,
+      rowsFound: details.length, rowsWritten: totalUpserted, rowsSkipped: skippedCount,
+      ok: true,
+      extra: {
+        on_chain_count: details.length,
+        rows_to_write: rows.length,
+        skipped_cached: skippedCount,
+        post_pass_metadata_updated: postPassUpdated,
+        terminated_reason: "no_more_moments",
+        skip_cached: skipCached,
+        elapsed_ms: Date.now() - startedMs,
+        mode: "details_pinnacle",
+      },
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    const elapsedMs = Date.now() - startedMs
+    if (isStorageLimitError(err)) {
+      await logRun({
+        pipelineName: config.pipelineName,
+        collectionSlug: config.slug,
+        startedAt: startedAtIso, wallet,
+        rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
+        ok: true,
+        extra: {
+          terminated_reason: "storage_limit_exceeded",
+          flagged_for_sharded_scan: true,
+          skip_cached: skipCached, elapsed_ms: elapsedMs,
+          error_excerpt: msg.slice(0, 200),
+          mode: "details_pinnacle",
+        },
+      })
+      return
+    }
+    if (isNoCollectionCapabilityError(err, elapsedMs)) {
+      await logRun({
+        pipelineName: config.pipelineName,
+        collectionSlug: config.slug,
+        startedAt: startedAtIso, wallet,
+        rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
+        ok: true,
+        extra: {
+          terminated_reason: "no_collection_capability",
+          flagged_for_no_capability: true,
+          skip_cached: skipCached, elapsed_ms: elapsedMs,
+          error_excerpt: msg.slice(0, 200),
+          mode: "details_pinnacle",
+        },
+      })
+      return
+    }
+    await logRun({
+      pipelineName: config.pipelineName,
+      collectionSlug: config.slug,
+      startedAt: startedAtIso, wallet,
+      rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
+      ok: false, error: msg,
+      extra: {
+        terminated_reason: "error", skip_cached: skipCached,
+        elapsed_ms: elapsedMs, mode: "details_pinnacle",
       },
     })
     console.error(`[${config.pipelineName}] error during details backfill for ${wallet}: ${msg}`)
