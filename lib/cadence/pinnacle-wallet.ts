@@ -213,16 +213,22 @@ access(all) struct PinnacleDetail {
     }
 }
 
+// Mirrors the per-NFT resolve-pinnacle-nft.cdc pattern: borrow a plain
+// NonFungibleToken.Collection capability, iterate getIDs(), call borrowNFT
+// for each id and pass the NFT ref directly to MetadataViews.getTraits /
+// getEditions (NFT itself implements ViewResolver). Avoids the
+// ResolverCollection interface which is not present at the
+// 0x1d7e57aa55817448 MetadataViews address on Pinnacle's contract surface.
 access(all) fun main(addr: Address): [PinnacleDetail] {
     let out: [PinnacleDetail] = []
     let acct = getAccount(addr)
-    let cap = acct.capabilities.get<&{NonFungibleToken.CollectionPublic, MetadataViews.ResolverCollection}>(/public/PinnacleCollection)
+    let cap = acct.capabilities.get<&{NonFungibleToken.Collection}>(/public/PinnacleCollection)
     if !cap.check() { return out }
     let col = cap.borrow()!
     for id in col.getIDs() {
-        let resolver = col.borrowViewResolver(id: id)
-        if resolver == nil { continue }
-        let nft = resolver!
+        let nftRef = col.borrowNFT(id)
+        if nftRef == nil { continue }
+        let nft = nftRef!
 
         var royaltyCode: String? = nil
         var variant: String? = nil
