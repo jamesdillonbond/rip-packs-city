@@ -268,6 +268,88 @@ access(all) fun main(addr: Address): [PinnacleDetail] {
 }
 `
 
+// ── Script 5: Paginated per-NFT details (mega-wallet recovery path) ─────────
+//
+// Identical output shape to GET_PINNACLE_UNLOCKED_DETAILS but walks only
+// getIDs()[start..start+count] instead of every owned NFT. Used by
+// runPaginatedDetailsBackfill when a single-shot details call hits Cadence
+// 1110 (computation_limit_exceeded) on mega-wallets like
+// 0x5f71947aea94eb43 (~7,700 Pinnacle NFTs). Per-NFT MetadataViews work
+// (getTraits + getEditions) is the dominant compute cost here, so capping
+// the window at ~1000 NFTs keeps each call comfortably under the 100k
+// computation budget. args: address (Address), start (Int), count (Int).
+
+export const GET_PINNACLE_UNLOCKED_DETAILS_RANGE = `
+import NonFungibleToken from 0x1d7e57aa55817448
+import MetadataViews from 0x1d7e57aa55817448
+import Pinnacle from 0xedf9df96c92f4595
+
+access(all) struct PinnacleDetail {
+    access(all) let id: UInt64
+    access(all) let editionKey: String?
+    access(all) let serial: UInt64?
+    init(id: UInt64, editionKey: String?, serial: UInt64?) {
+        self.id = id
+        self.editionKey = editionKey
+        self.serial = serial
+    }
+}
+
+access(all) fun main(addr: Address, start: Int, count: Int): [PinnacleDetail] {
+    let out: [PinnacleDetail] = []
+    let acct = getAccount(addr)
+    let cap = acct.capabilities.get<&{NonFungibleToken.Collection}>(/public/PinnacleCollection)
+    if !cap.check() { return out }
+    let col = cap.borrow()!
+    let ids = col.getIDs()
+    let total = ids.length
+    if start >= total { return out }
+    var endVal = start + count
+    if endVal > total { endVal = total }
+    let window = ids.slice(from: start, upTo: endVal)
+    for id in window {
+        let nftRef = col.borrowNFT(id)
+        if nftRef == nil { continue }
+        let nft = nftRef!
+
+        var royaltyCode: String? = nil
+        var variant: String? = nil
+        var printing: UInt64? = nil
+        if let traits = MetadataViews.getTraits(nft) {
+            for trait in traits.traits {
+                if trait.name == "RoyaltyCodes" {
+                    if let arr = trait.value as? [String] {
+                        if arr.length > 0 { royaltyCode = arr[0] }
+                    }
+                } else if trait.name == "Variant" {
+                    if let v = trait.value as? String { variant = v }
+                } else if trait.name == "Printing" {
+                    if let p = trait.value as? Int { printing = UInt64(p) }
+                    else if let p2 = trait.value as? UInt64 { printing = p2 }
+                    else if let p3 = trait.value as? Int32 { printing = UInt64(p3) }
+                    else if let p4 = trait.value as? UInt32 { printing = UInt64(p4) }
+                }
+            }
+        }
+
+        var editionKey: String? = nil
+        if royaltyCode != nil && variant != nil && printing != nil {
+            editionKey = royaltyCode!.concat(":").concat(variant!).concat(":").concat(printing!.toString())
+        }
+
+        var serial: UInt64? = nil
+        if let editions = MetadataViews.getEditions(nft) {
+            if editions.infoList.length > 0 {
+                serial = editions.infoList[0].number
+            }
+        }
+
+        out.append(PinnacleDetail(id: id, editionKey: editionKey, serial: serial))
+    }
+    return out
+}
+`
+
 // ── Constants ───────────────────────────────────────────────────────────────
 
 export const PINNACLE_COLLECTION_PUBLIC_PATH = "/public/PinnacleCollection"

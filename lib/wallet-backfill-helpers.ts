@@ -22,11 +22,26 @@ import {
   isWalletAddress,
   resolveTopShotUsernameCacheAware,
 } from "@/lib/topshot-username-resolve"
-import { GET_UNLOCKED_MOMENT_DETAILS } from "@/lib/allday-cadence"
-import { GET_PINNACLE_UNLOCKED_DETAILS } from "@/lib/cadence/pinnacle-wallet"
+import {
+  GET_UNLOCKED_MOMENT_DETAILS,
+  GET_UNLOCKED_MOMENT_DETAILS_RANGE,
+} from "@/lib/allday-cadence"
+import {
+  GET_PINNACLE_UNLOCKED_DETAILS,
+  GET_PINNACLE_UNLOCKED_DETAILS_RANGE,
+} from "@/lib/cadence/pinnacle-wallet"
 
 const FLOW_REST = "https://rest-mainnet.onflow.org/v1/scripts"
 const UPSERT_CHUNK = 200
+
+// Paginated mega-wallet recovery: chunk size is the count of getIDs()
+// indices walked per Cadence call. 1000 fits comfortably under Flow's
+// 100k computation budget for both AllDay (cheap struct-field reads) and
+// Pinnacle (per-NFT MetadataViews.getTraits, the dominant cost). Soft
+// deadline halts the chunk loop ~40s before the route's maxDuration=600
+// so the post-pass JOIN UPDATE and pipeline_runs row always land.
+const PAGINATION_CHUNK_SIZE = 1000
+const PAGINATION_SOFT_DEADLINE_MS = 560_000
 
 // Resolve a raw wallet input (0x-address or Top Shot username) to a 16-hex
 // 0x address. Dapper SSO maps username → wallet for all 5 collections, so a
@@ -576,42 +591,28 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<void
     // Mega-wallet handlers — order matters. Check explicit Cadence 1110
     // first (rare on AllDay but cheap to detect), then the wider AllDay
     // generic-500 signature (`error=internal server error` + /v1/scripts).
-    // Both map to the same outcome (flag for pagination) but use distinct
-    // terminated_reason values so we can distinguish in pipeline_runs.
+    // Both fall through to the paginated recovery path which walks
+    // getIDs()[start..start+1000] in chunks and stays under the 100k
+    // computation budget per call. parentTerminatedReason distinguishes
+    // the two trigger shapes in pipeline_runs.extra.recovered_from.
     if (isComputationLimitError(err)) {
-      await logRun({
-        pipelineName: config.pipelineName,
-        collectionSlug: config.slug,
-        startedAt: startedAtIso, wallet,
-        rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
-        ok: true,
-        extra: {
-          terminated_reason: "computation_limit_exceeded",
-          flagged_for_pagination: true,
-          skip_cached: skipCached, force: !!force, elapsed_ms: elapsedMs,
-          error_excerpt: msg.slice(0, 200),
-          mode: "details_allday",
-        },
+      console.log(`[${config.pipelineName}] computation_limit wallet=${wallet} — falling through to paginated path`)
+      await runPaginatedDetailsBackfill({
+        config, startedAtIso, startedMs, wallet, skipCached, force,
+        mode: "allday",
+        parentTerminatedReason: "computation_limit_exceeded",
+        parentErrorExcerpt: msg.slice(0, 200),
       })
-      console.log(`[${config.pipelineName}] computation_limit wallet=${wallet} — needs paginated Cadence (TODO)`)
       return
     }
     if (isAccessApiInternalServerError(err)) {
-      await logRun({
-        pipelineName: config.pipelineName,
-        collectionSlug: config.slug,
-        startedAt: startedAtIso, wallet,
-        rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
-        ok: true,
-        extra: {
-          terminated_reason: "access_api_error_likely_computation_limit",
-          flagged_for_pagination: true,
-          skip_cached: skipCached, force: !!force, elapsed_ms: elapsedMs,
-          error_excerpt: msg.slice(0, 200),
-          mode: "details_allday",
-        },
+      console.log(`[${config.pipelineName}] access_api_500 wallet=${wallet} — falling through to paginated path`)
+      await runPaginatedDetailsBackfill({
+        config, startedAtIso, startedMs, wallet, skipCached, force,
+        mode: "allday",
+        parentTerminatedReason: "access_api_error_likely_computation_limit",
+        parentErrorExcerpt: msg.slice(0, 200),
       })
-      console.log(`[${config.pipelineName}] access_api_500 wallet=${wallet} — likely computation_limit, needs paginated Cadence (TODO)`)
       return
     }
     if (isNoCollectionCapabilityError(err, elapsedMs)) {
@@ -790,39 +791,23 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<vo
       return
     }
     if (isComputationLimitError(err)) {
-      await logRun({
-        pipelineName: config.pipelineName,
-        collectionSlug: config.slug,
-        startedAt: startedAtIso, wallet,
-        rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
-        ok: true,
-        extra: {
-          terminated_reason: "computation_limit_exceeded",
-          flagged_for_pagination: true,
-          skip_cached: skipCached, force: !!force, elapsed_ms: elapsedMs,
-          error_excerpt: msg.slice(0, 200),
-          mode: "details_pinnacle",
-        },
+      console.log(`[${config.pipelineName}] computation_limit wallet=${wallet} — falling through to paginated path`)
+      await runPaginatedDetailsBackfill({
+        config, startedAtIso, startedMs, wallet, skipCached, force,
+        mode: "pinnacle",
+        parentTerminatedReason: "computation_limit_exceeded",
+        parentErrorExcerpt: msg.slice(0, 200),
       })
-      console.log(`[${config.pipelineName}] computation_limit wallet=${wallet} — needs paginated Cadence (TODO)`)
       return
     }
     if (isAccessApiInternalServerError(err)) {
-      await logRun({
-        pipelineName: config.pipelineName,
-        collectionSlug: config.slug,
-        startedAt: startedAtIso, wallet,
-        rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
-        ok: true,
-        extra: {
-          terminated_reason: "access_api_error_likely_computation_limit",
-          flagged_for_pagination: true,
-          skip_cached: skipCached, force: !!force, elapsed_ms: elapsedMs,
-          error_excerpt: msg.slice(0, 200),
-          mode: "details_pinnacle",
-        },
+      console.log(`[${config.pipelineName}] access_api_500 wallet=${wallet} — falling through to paginated path`)
+      await runPaginatedDetailsBackfill({
+        config, startedAtIso, startedMs, wallet, skipCached, force,
+        mode: "pinnacle",
+        parentTerminatedReason: "access_api_error_likely_computation_limit",
+        parentErrorExcerpt: msg.slice(0, 200),
       })
-      console.log(`[${config.pipelineName}] access_api_500 wallet=${wallet} — likely computation_limit, needs paginated Cadence (TODO)`)
       return
     }
     if (isNoCollectionCapabilityError(err, elapsedMs)) {
@@ -855,6 +840,287 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<vo
       },
     })
     console.error(`[${config.pipelineName}] error during details backfill for ${wallet}: ${msg}`)
+  }
+}
+
+// runPaginatedDetailsBackfill — mega-wallet recovery path. Triggered from
+// the catch handlers of runAllDayDetailsBackfill / runPinnacleDetailsBackfill
+// when a single-shot details call breaches Flow's 100k computation budget
+// (Cadence error 1110 OR access-API HTTP 500 with `error=internal server
+// error` + /v1/scripts in the message). Walks getIDs() in chunks of
+// PAGINATION_CHUNK_SIZE via GET_*_DETAILS_RANGE(addr, start, count) and
+// upserts per chunk so partial progress is durable even if a downstream
+// chunk fails or the maxDuration soft deadline fires.
+//
+// Telemetry written to pipeline_runs.extra:
+//   pagination_chunks         number of chunks that successfully fetched + upserted
+//   pagination_chunk_errors   number of chunks that threw (skipped, not aborted)
+//   pagination_total_ids      total getIDs() length walked (= on-chain count)
+//   pagination_chunk_size     current PAGINATION_CHUNK_SIZE
+//   pagination_elapsed_ms     duration of the paginated run only
+//   recovered_from            parent terminated_reason that triggered this
+//   parent_error_excerpt      first 200 chars of the original error message
+interface PaginatedBackfillArgs extends BackfillArgs {
+  mode: "allday" | "pinnacle"
+  parentTerminatedReason: string
+  parentErrorExcerpt: string
+}
+
+export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): Promise<void> {
+  const {
+    config, startedAtIso, startedMs, wallet, skipCached, force,
+    mode, parentTerminatedReason, parentErrorExcerpt,
+  } = args
+  const paginationStartedMs = Date.now()
+  const fullMode = mode === "allday" ? "details_allday_paginated" : "details_pinnacle_paginated"
+
+  let totalUpserted = 0
+  let postPassUpdated = 0
+  let chunksProcessed = 0
+  let chunkErrors = 0
+  let onChainIds: string[] = []
+  let hitSoftDeadline = false
+
+  try {
+    // Step 1: cheap getIDs() walk. Both CADENCE_ALLDAY and CADENCE_PINNACLE
+    // do nothing per-NFT — they just borrow the public collection cap and
+    // return getIDs(), well under the computation budget even at 40k+.
+    const idScript = mode === "allday" ? CADENCE_ALLDAY : CADENCE_PINNACLE
+    onChainIds = await fetchOnChainIds(idScript, wallet)
+
+    if (onChainIds.length === 0) {
+      // Shouldn't happen — the parent details call already proved IDs
+      // existed (otherwise no computation_limit). Defensive log.
+      await stampLastRefreshed(wallet, config.slug)
+      await logRun({
+        pipelineName: config.pipelineName,
+        collectionSlug: config.slug,
+        startedAt: startedAtIso, wallet,
+        rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
+        ok: true,
+        extra: {
+          on_chain_count: 0,
+          terminated_reason: "no_more_moments",
+          recovered_from: parentTerminatedReason,
+          parent_error_excerpt: parentErrorExcerpt,
+          skip_cached: skipCached, force: !!force,
+          elapsed_ms: Date.now() - startedMs,
+          pagination_chunks: 0,
+          pagination_chunk_errors: 0,
+          pagination_total_ids: 0,
+          pagination_chunk_size: PAGINATION_CHUNK_SIZE,
+          pagination_elapsed_ms: Date.now() - paginationStartedMs,
+          mode: fullMode,
+        },
+      })
+      return
+    }
+
+    const cachedIds = skipCached ? await loadCachedMomentIds(wallet, config.collectionUuid) : new Set<string>()
+    const now = new Date().toISOString()
+    let totalSkippedCached = 0
+
+    // Step 2: chunk loop. Each iteration calls GET_*_DETAILS_RANGE for a
+    // 1000-id window, builds rows, upserts immediately. Per-chunk errors
+    // are non-fatal (logged + counted); only a complete inability to
+    // proceed throws out to the outer catch.
+    for (let start = 0; start < onChainIds.length; start += PAGINATION_CHUNK_SIZE) {
+      if (Date.now() - startedMs > PAGINATION_SOFT_DEADLINE_MS) {
+        hitSoftDeadline = true
+        console.log(`[${config.pipelineName}] paginated soft deadline hit at chunk start=${start}/${onChainIds.length}`)
+        break
+      }
+      const count = Math.min(PAGINATION_CHUNK_SIZE, onChainIds.length - start)
+      let chunkRows: Array<Record<string, unknown>> = []
+      try {
+        if (mode === "allday") {
+          const raw = await fcl.query({
+            cadence: GET_UNLOCKED_MOMENT_DETAILS_RANGE,
+            args: (arg: any) => [
+              arg(wallet, t.Address),
+              arg(String(start), t.Int),
+              arg(String(count), t.Int),
+            ],
+          })
+          const triples: string[][] = Array.isArray(raw) ? (raw as any) : []
+          for (const tri of triples) {
+            if (!Array.isArray(tri) || tri.length < 2) continue
+            const nftId = String(tri[0])
+            const editionId = String(tri[1])
+            const serialRaw = tri[2] != null ? Number(tri[2]) : null
+            const serial = Number.isFinite(serialRaw as number) && (serialRaw as number) > 0
+              ? (serialRaw as number)
+              : null
+            if (skipCached && cachedIds.has(nftId)) { totalSkippedCached++; continue }
+            chunkRows.push({
+              wallet_address: wallet,
+              collection_id: config.collectionUuid,
+              moment_id: nftId,
+              edition_key: editionId,
+              serial_number: serial,
+              tier: null,
+              player_name: null,
+              set_name: null,
+              series_number: null,
+              acquired_at: null,
+              fmv_usd: null,
+              last_seen_at: now,
+            })
+          }
+        } else {
+          type PinDetail = { id: string; editionKey: string | null; serial: string | null }
+          const raw = await fcl.query({
+            cadence: GET_PINNACLE_UNLOCKED_DETAILS_RANGE,
+            args: (arg: any) => [
+              arg(wallet, t.Address),
+              arg(String(start), t.Int),
+              arg(String(count), t.Int),
+            ],
+          })
+          const details: PinDetail[] = Array.isArray(raw) ? (raw as any) : []
+          for (const d of details) {
+            const nftId = String(d.id)
+            const editionKey = d.editionKey != null ? String(d.editionKey) : null
+            const serialRaw = d.serial != null ? Number(d.serial) : null
+            const serial = Number.isFinite(serialRaw as number) && (serialRaw as number) > 0
+              ? (serialRaw as number)
+              : null
+            if (skipCached && cachedIds.has(nftId)) { totalSkippedCached++; continue }
+            chunkRows.push({
+              wallet_address: wallet,
+              collection_id: config.collectionUuid,
+              moment_id: nftId,
+              edition_key: editionKey,
+              serial_number: serial,
+              character_name: null,
+              set_name: null,
+              tier: null,
+              player_name: null,
+              series_number: null,
+              acquired_at: null,
+              fmv_usd: null,
+              last_seen_at: now,
+            })
+          }
+        }
+      } catch (chunkErr) {
+        chunkErrors++
+        const cmsg = chunkErr instanceof Error ? chunkErr.message : String(chunkErr)
+        console.warn(`[${config.pipelineName}] paginated chunk start=${start} count=${count} failed: ${cmsg.slice(0, 200)}`)
+        continue
+      }
+      chunksProcessed++
+
+      for (let i = 0; i < chunkRows.length; i += UPSERT_CHUNK) {
+        const sub = chunkRows.slice(i, i + UPSERT_CHUNK)
+        // deno-lint-ignore no-explicit-any
+        const { data, error } = await (supabaseAdmin as any)
+          .from("wallet_moments_cache")
+          .upsert(sub, { onConflict: "wallet_address,collection_id,moment_id" })
+          .select("moment_id")
+        if (error) {
+          console.error(`[${config.pipelineName}] paginated upsert err chunk=${start}+${i}: ${error.message}`)
+        } else {
+          totalUpserted += data?.length ?? sub.length
+        }
+      }
+    }
+
+    // Step 3: post-pass JOIN UPDATE. AllDay backfills against editions;
+    // Pinnacle against pinnacle_editions. Same RPC the non-paginated path
+    // uses — fills tier / player_name / set_name (AllDay) or
+    // character_name / set_name / tier / mint_count (Pinnacle).
+    try {
+      if (mode === "allday") {
+        // deno-lint-ignore no-explicit-any
+        const { data: updResult, error: updErr } = await (supabaseAdmin as any).rpc(
+          "backfill_wmc_metadata_from_editions",
+          { p_wallet_address: wallet, p_collection_id: config.collectionUuid },
+        )
+        if (updErr) {
+          console.warn(`[${config.pipelineName}] paginated post-pass update failed: ${updErr.message}`)
+        } else if (updResult != null) {
+          postPassUpdated = Number(updResult) || 0
+        }
+      } else {
+        // deno-lint-ignore no-explicit-any
+        const { data: updResult, error: updErr } = await (supabaseAdmin as any).rpc(
+          "backfill_pinnacle_wmc_metadata_from_editions",
+          { p_wallet_address: wallet },
+        )
+        if (updErr) {
+          console.warn(`[${config.pipelineName}] paginated post-pass update failed: ${updErr.message}`)
+        } else if (updResult != null) {
+          postPassUpdated = Number(updResult) || 0
+        }
+      }
+    } catch (err) {
+      console.warn(
+        `[${config.pipelineName}] paginated post-pass update threw: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+
+    await stampLastRefreshed(wallet, config.slug)
+
+    // ok=true even with chunk errors — partial progress is captured and
+    // the next cron pass will re-enrich any wallet still flagged. Only
+    // pagination_failed (zero chunks succeeded) marks ok=false.
+    const allChunksFailed = chunksProcessed === 0 && chunkErrors > 0
+    await logRun({
+      pipelineName: config.pipelineName,
+      collectionSlug: config.slug,
+      startedAt: startedAtIso, wallet,
+      rowsFound: onChainIds.length,
+      rowsWritten: totalUpserted,
+      rowsSkipped: totalSkippedCached,
+      ok: !allChunksFailed,
+      error: allChunksFailed ? "all_pagination_chunks_failed" : null,
+      extra: {
+        on_chain_count: onChainIds.length,
+        skipped_cached: totalSkippedCached,
+        post_pass_metadata_updated: postPassUpdated,
+        terminated_reason: allChunksFailed
+          ? "pagination_failed"
+          : (hitSoftDeadline ? "soft_deadline" : "no_more_moments"),
+        recovered_from: parentTerminatedReason,
+        parent_error_excerpt: parentErrorExcerpt,
+        skip_cached: skipCached,
+        force: !!force,
+        elapsed_ms: Date.now() - startedMs,
+        pagination_chunks: chunksProcessed,
+        pagination_chunk_errors: chunkErrors,
+        pagination_total_ids: onChainIds.length,
+        pagination_chunk_size: PAGINATION_CHUNK_SIZE,
+        pagination_elapsed_ms: Date.now() - paginationStartedMs,
+        mode: fullMode,
+      },
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    await logRun({
+      pipelineName: config.pipelineName,
+      collectionSlug: config.slug,
+      startedAt: startedAtIso, wallet,
+      rowsFound: onChainIds.length,
+      rowsWritten: totalUpserted,
+      rowsSkipped: 0,
+      ok: false, error: msg,
+      extra: {
+        terminated_reason: "pagination_failed",
+        recovered_from: parentTerminatedReason,
+        parent_error_excerpt: parentErrorExcerpt,
+        skip_cached: skipCached,
+        force: !!force,
+        elapsed_ms: Date.now() - startedMs,
+        pagination_chunks: chunksProcessed,
+        pagination_chunk_errors: chunkErrors,
+        pagination_total_ids: onChainIds.length,
+        pagination_chunk_size: PAGINATION_CHUNK_SIZE,
+        pagination_elapsed_ms: Date.now() - paginationStartedMs,
+        mode: fullMode,
+      },
+    })
+    console.error(`[${config.pipelineName}] paginated backfill failed for ${wallet}: ${msg}`)
   }
 }
 

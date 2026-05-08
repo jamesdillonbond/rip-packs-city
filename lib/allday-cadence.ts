@@ -67,6 +67,36 @@ export const GET_UNLOCKED_MOMENT_DETAILS = `
   }
 `
 
+// Paginated variant of GET_UNLOCKED_MOMENT_DETAILS. Walks a window of
+// getIDs()[start..start+count] instead of the full array so mega-wallets
+// (40k+ AllDay moments) stay under Flow's 100k-per-script computation
+// budget. Single-shot script trips Cadence error 1110 (or surfaces as an
+// access-API HTTP 500) on those wallets; chained 1000-NFT chunks fit
+// comfortably (borrowNFT + struct field reads is far cheaper than the
+// per-NFT MetadataViews path Pinnacle uses, but we keep the same chunk
+// size for symmetry). args: address (Address), start (Int), count (Int).
+export const GET_UNLOCKED_MOMENT_DETAILS_RANGE = `
+  import AllDay from 0xe4cf4bdc1751c65d
+  import NonFungibleToken from 0x1d7e57aa55817448
+  access(all) fun main(addr: Address, start: Int, count: Int): [[UInt64]] {
+    let r: [[UInt64]] = []
+    let ref = getAccount(addr).capabilities.borrow<&{NonFungibleToken.Collection}>(/public/AllDayNFTCollection)
+    if ref == nil { return r }
+    let ids = ref!.getIDs()
+    let total = ids.length
+    if start >= total { return r }
+    var endVal = start + count
+    if endVal > total { endVal = total }
+    let window = ids.slice(from: start, upTo: endVal)
+    for id in window {
+      let nft = ref!.borrowNFT(id)!
+      let ad = nft as! &AllDay.NFT
+      r.append([id, ad.editionID, ad.serialNumber])
+    }
+    return r
+  }
+`
+
 export const GET_MOMENT_METADATA = `
   import AllDay from 0xe4cf4bdc1751c65d
   import MetadataViews from 0x1d7e57aa55817448

@@ -15,7 +15,12 @@ import {
 } from "@/lib/wallet-backfill-helpers"
 
 export const dynamic = "force-dynamic"
-export const maxDuration = 120
+// 600s ceiling supports the paginated mega-wallet recovery path
+// (runPaginatedDetailsBackfill). Single-shot details calls finish in
+// ≤ 30s — only the 1110/access-API-500 fall-through to the 1000-NFT
+// chunked walk needs the full ceiling. AllDay top wallets are 40k+
+// moments → ~44 chunks × ~10s each ≈ 450s of wall-clock under load.
+export const maxDuration = 600
 
 // cadenceScript on the config is unused by runAllDayDetailsBackfill —
 // it calls GET_UNLOCKED_MOMENT_DETAILS directly. Kept on the config shape

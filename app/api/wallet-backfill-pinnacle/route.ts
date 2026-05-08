@@ -22,7 +22,12 @@ import {
 } from "@/lib/wallet-backfill-helpers"
 
 export const dynamic = "force-dynamic"
-export const maxDuration = 120
+// 600s ceiling supports the paginated mega-wallet recovery path
+// (runPaginatedDetailsBackfill). Single-shot Pinnacle details finish in
+// ≤ 60s — only mega-wallets like 0x5f71947aea94eb43 (~7,700 NFTs) trip
+// 1110 and need the chunked walk. ~8 chunks × ~15s each ≈ 120s under
+// load; 600s is comfortable headroom.
+export const maxDuration = 600
 
 // cadenceScript on the config is unused by runPinnacleDetailsBackfill —
 // it calls GET_PINNACLE_UNLOCKED_DETAILS directly. Kept on the config
