@@ -25,12 +25,17 @@ function LoginInner() {
   // param name used by older links and by the magic-link callback chain.
   const redirect = params.get("next") ?? params.get("redirect") ?? "/dashboard"
   const urlErrorRaw = params.get("error")
-  const urlError =
-    urlErrorRaw === "access_revoked"
-      ? "Your access has been revoked. Contact support if this is unexpected."
-      : urlErrorRaw === "allowlist_unavailable"
-        ? "Sign-in service is temporarily unavailable. Please try again in a moment."
-        : urlErrorRaw
+  // `access_revoked` is the canonical signal from proxy.ts when the auth gate
+  // bounces a signed-in but non-allow-listed user. We render a dedicated
+  // banner above the form for it (not the inline submit-error div) so the
+  // closed-beta messaging stays visible even after the user resubmits with a
+  // different email.
+  const isClosedBetaBlock = urlErrorRaw === "access_revoked"
+  const urlError = isClosedBetaBlock
+    ? null
+    : urlErrorRaw === "allowlist_unavailable"
+      ? "Sign-in service is temporarily unavailable. Please try again in a moment."
+      : urlErrorRaw
   const [email, setEmail] = useState("")
   const [status, setStatus] = useState<Status>("idle")
   const [error, setError] = useState(urlError ?? "")
@@ -177,6 +182,66 @@ function LoginInner() {
           </div>
         ) : (
           <form onSubmit={handleSubmit}>
+            {isClosedBetaBlock && (
+              <div style={{
+                marginBottom: 18,
+                padding: "14px 16px",
+                background: "rgba(229, 90, 76, 0.08)",
+                border: "1px solid var(--rpc-red)",
+                borderRadius: "var(--radius-sm)",
+                textAlign: "left",
+              }}>
+                <div style={{
+                  fontFamily: "var(--font-display)",
+                  fontWeight: 800,
+                  fontSize: 13,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "var(--rpc-red)",
+                  marginBottom: 6,
+                }}>
+                  Closed beta
+                </div>
+                <div style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  lineHeight: 1.6,
+                  color: "var(--rpc-text-secondary)",
+                }}>
+                  This email isn&apos;t approved for the closed beta yet. Reach out to Trevor on
+                  {" "}
+                  <a
+                    href="https://twitter.com/tdillonbond"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: "var(--rpc-text-primary)", textDecoration: "underline" }}
+                  >
+                    Twitter (@tdillonbond)
+                  </a>
+                  {" "}to request access, or join the public waitlist below.
+                </div>
+                <Link
+                  href="/early-access"
+                  style={{
+                    display: "inline-block",
+                    marginTop: 12,
+                    background: "transparent",
+                    border: "1px solid var(--rpc-red-border)",
+                    color: "var(--rpc-text-primary)",
+                    fontFamily: "var(--font-display)",
+                    fontWeight: 800,
+                    fontSize: 11,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    padding: "8px 14px",
+                    borderRadius: "var(--radius-sm)",
+                    textDecoration: "none",
+                  }}
+                >
+                  Request access →
+                </Link>
+              </div>
+            )}
             <label style={{
               display: "block",
               fontFamily: "var(--font-mono)", fontSize: 10,

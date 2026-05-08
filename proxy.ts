@@ -117,7 +117,9 @@ function hasValidBypassToken(request: NextRequest): boolean {
 // Order doesn't matter — first match wins.
 function isPublicPath(pathname: string): boolean {
   // Exact-match singletons
-  if (pathname === "/") return true
+  // NOTE: `/` is intentionally NOT public — closed-beta lockdown bounces
+  // unauthenticated homepage hits to /login. Re-add only when the marketing
+  // landing surface is meant to be anon-accessible again.
   if (pathname === "/favicon.ico") return true
   if (pathname === "/robots.txt") return true
   if (pathname === "/sitemap.xml") return true
@@ -158,6 +160,8 @@ function isPublicPath(pathname: string): boolean {
   // preview cards. Without this they see a 307→/login redirect and pull a
   // generic Vercel auth thumbnail instead of the branded RPC card.
   if (pathname === "/api/og" || pathname.startsWith("/api/og/")) return true
+  // /api/health — uptime/smoke probes hit this anonymously
+  if (pathname === "/api/health") return true
 
   // ── Framework + static ───────────────────────────────────────────────
   if (pathname === "/_next" || pathname.startsWith("/_next/")) return true
