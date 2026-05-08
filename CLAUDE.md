@@ -505,6 +505,8 @@ Columns: edition_id, fmv_usd, confidence, computed_at. NO source column.
 confidence is a Postgres enum fmv_confidence with UPPERCASE values: HIGH, MEDIUM, LOW.
 Never use .eq("confidence", "high") — always uppercase.
 
+**Two confidence vocabularies (footgun):** `fmv_snapshots.confidence` accepts `HIGH | MEDIUM | LOW`, but `nba_player_projections.confidence` is gated by a different CHECK constraint that allows only `HIGH | MED | LOW` (3-letter MED, not full MEDIUM). Inserting `MEDIUM` to nba_player_projections raises a `confidence_check` violation. Source: 8345e7d fix.
+
 Most recent FMV per edition:
 SELECT DISTINCT ON (edition_id) ... ORDER BY edition_id, computed_at DESC
 
