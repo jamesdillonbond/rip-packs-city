@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 
 // ── On-chain Disney Pinnacle sales indexer ───────────────────────────────────
 // Scans NFTStorefrontV2.ListingCompleted, filters to Pinnacle NFT purchases,
 // resolves nftID → edition_key via pinnacle_nft_map / wallet_moments_cache,
 // and writes dedup'd sales into the pinnacle_sales table. Unresolved nft_ids
 // are stored with edition_id = null and will backfill as the nft_map grows.
+//
+// Chains pinnacle-resolve-buyers on every successful run so the buyer/seller
+// resolver doesn't depend on a separate cron-job.org schedule that can
+// silently die. Pattern mirrors allday-sales-indexer firing
+// allday-unmapped-resolver. The chain is unconditional (true) — resolver
+// has its own batch limit + idempotency, so triggering with no new sales
+// just means an empty drain.
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const STOREFRONT_EVENT = "A.4eb8a10cb9f87357.NFTStorefrontV2.ListingCompleted"
@@ -104,6 +112,9 @@ async function runIndexer(req: NextRequest) {
     let lastBlock = Number(cursorRow?.last_processed_block ?? 0)
     const currentHeight = await getLatestSealedHeight()
     if (lastBlock >= currentHeight) {
+      // Even when there's nothing new to scan, fire the resolver so any
+      // residue from prior ticks gets drained on this cron cycle.
+      await fireNextPipelineStep("/api/pinnacle/resolve-buyers", true)
       return NextResponse.json({ ok: true, message: "already up to date", cursor: lastBlock, elapsed: Date.now() - started })
     }
 
@@ -165,6 +176,7 @@ async function runIndexer(req: NextRequest) {
     console.log(`[pinnacle-sales-indexer] found ${sales.length} Pinnacle sales`)
 
     if (sales.length === 0) {
+      await fireNextPipelineStep("/api/pinnacle/resolve-buyers", true)
       return NextResponse.json({
         ok: true, blocksScanned: targetHeight - lastBlock, eventsFound: 0,
         salesInserted: 0, cursor: lastChunkEnd, elapsed: Date.now() - started,
@@ -248,6 +260,8 @@ async function runIndexer(req: NextRequest) {
     }
 
     const finalUnresolved = sales.filter((s) => !nftToEditionId.has(s.nftID)).length
+
+    await fireNextPipelineStep("/api/pinnacle/resolve-buyers", true)
 
     return NextResponse.json({
       ok: true,
