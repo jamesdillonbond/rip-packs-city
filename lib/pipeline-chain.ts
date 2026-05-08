@@ -7,6 +7,41 @@
 
 import { after } from "next/server"
 
+// Fire-and-forget invocation of a Supabase Edge Function. Used for the
+// allday-unmapped-resolver historical-backlog drain, which lives outside
+// the Vercel base URL and so can't piggyback on `fireNextPipelineStep`.
+// Returns immediately; any failure is logged but never propagates.
+export async function fireSupabaseEdgeFunction(
+  functionName: string,
+  body: Record<string, unknown> = {},
+) {
+  const token = process.env.INGEST_SECRET_TOKEN
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (!token || !supabaseUrl) {
+    console.log(`[PIPELINE-CHAIN] Skipping edge fn ${functionName} — token or supabase URL missing`)
+    return
+  }
+  const url = `${supabaseUrl}/functions/v1/${functionName}`
+  after(async () => {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      })
+      console.log(`[PIPELINE-CHAIN] Fired edge fn ${functionName} — status=${res.status}`)
+    } catch (err) {
+      console.error(
+        `[PIPELINE-CHAIN] Edge fn fetch error for ${functionName}:`,
+        err instanceof Error ? err.message : String(err),
+      )
+    }
+  })
+}
+
 export async function fireNextPipelineStep(nextPath: string, chain: boolean) {
   if (!chain) {
     console.log(`[PIPELINE-CHAIN] Skipping ${nextPath} — chain flag not set`)
