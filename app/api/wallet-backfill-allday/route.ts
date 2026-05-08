@@ -1,24 +1,29 @@
 // app/api/wallet-backfill-allday/route.ts
 //
-// AllDay wallet enricher — thin wrapper over the shared
-// runIdOnlyBackfill helper. See lib/wallet-backfill-helpers.ts for the
-// runner, the cache-diff logic, and the rationale for ID-only writes.
+// AllDay wallet enricher — calls runAllDayDetailsBackfill (NOT the generic
+// runIdOnlyBackfill) so each wmc row lands with edition_key + serial_number
+// populated from a single GET_UNLOCKED_MOMENT_DETAILS Cadence call. After
+// the upsert, the helper triggers a SQL JOIN backfill against editions to
+// fill tier / player_name / set_name. Pre-2026-05-07 this route used
+// runIdOnlyBackfill which left 98.5% of rows NULL on those four columns.
 
 import { NextRequest, NextResponse, after } from "next/server"
 import {
-  runIdOnlyBackfill,
+  runAllDayDetailsBackfill,
   resolveWalletInput,
-  CADENCE_ALLDAY,
   ALLDAY_COLLECTION_UUID,
 } from "@/lib/wallet-backfill-helpers"
 
 export const dynamic = "force-dynamic"
-export const maxDuration = 60
+export const maxDuration = 120
 
+// cadenceScript on the config is unused by runAllDayDetailsBackfill —
+// it calls GET_UNLOCKED_MOMENT_DETAILS directly. Kept on the config shape
+// only because BackfillCollectionConfig requires it.
 const CONFIG = {
   slug: "nfl_all_day",
   collectionUuid: ALLDAY_COLLECTION_UUID,
-  cadenceScript: CADENCE_ALLDAY,
+  cadenceScript: "",
   pipelineName: "wallet-backfill-allday",
 } as const
 
@@ -54,7 +59,7 @@ export async function POST(req: NextRequest) {
   const startedAtIso = new Date(startedMs).toISOString()
 
   after(async () => {
-    await runIdOnlyBackfill({
+    await runAllDayDetailsBackfill({
       config: CONFIG,
       startedAtIso,
       startedMs,
