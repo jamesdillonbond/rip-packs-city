@@ -40,24 +40,19 @@ export default function SiteFooter() {
           </div>
         </div>
 
-        {/* Center — Team Captain credential */}
-        <a
-          href="https://nbatopshot.com/team/portland-trail-blazers"
-          target="_blank"
-          rel="noopener noreferrer"
+        {/* Center — Community tagline */}
+        <span
           style={{
             display: "flex",
             alignItems: "center",
             gap: 6,
             color: "var(--rpc-text-secondary)",
-            textDecoration: "none",
             letterSpacing: "0.08em",
             fontSize: "var(--text-xs)",
           }}
         >
-          <span style={{ color: "var(--rpc-success)" }}>✓</span>
-          OFFICIAL PORTLAND TRAIL BLAZERS TEAM CAPTAIN
-        </a>
+          BUILT FOR COLLECTORS, BY COLLECTORS
+        </span>
 
         {/* Right — Social + Flow badge */}
         <div style={{ display: "flex", alignItems: "center", gap: 16, justifyContent: "flex-end" }}>
