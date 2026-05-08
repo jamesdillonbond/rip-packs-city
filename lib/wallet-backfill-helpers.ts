@@ -16,9 +16,38 @@
 // working ID enumeration).
 
 import { supabaseAdmin } from "@/lib/supabase"
+import {
+  isWalletAddress,
+  resolveTopShotUsernameCacheAware,
+} from "@/lib/topshot-username-resolve"
 
 const FLOW_REST = "https://rest-mainnet.onflow.org/v1/scripts"
 const UPSERT_CHUNK = 200
+
+// Resolve a raw wallet input (0x-address or Top Shot username) to a 16-hex
+// 0x address. Dapper SSO maps username → wallet for all 5 collections, so a
+// TopShot resolution is authoritative for Pinnacle/Golazos/UFC/AllDay too.
+// Without this step, Flow rejects raw usernames with HTTP 400 "Invalid Flow
+// argument" in <100ms — the canonical reproducer being the seeded-wallets
+// cron passing `jamesdillonbond` (username) verbatim through the
+// multicollection orchestrator. Returns either a normalised 0x wallet or a
+// structured error suitable for a 400 response body.
+export type WalletResolution =
+  | { ok: true; wallet: string }
+  | { ok: false; error: string; reason?: string; input: string }
+
+export async function resolveWalletInput(rawInput: string): Promise<WalletResolution> {
+  const input = rawInput.trim()
+  if (!input) return { ok: false, error: "wallet field required", input }
+  if (isWalletAddress(input)) {
+    return { ok: true, wallet: input.startsWith("0x") ? input : `0x${input}` }
+  }
+  const outcome = await resolveTopShotUsernameCacheAware(supabaseAdmin, input)
+  if (!outcome.found) {
+    return { ok: false, error: "could not resolve username", reason: outcome.reason, input }
+  }
+  return { ok: true, wallet: outcome.walletAddress }
+}
 
 export interface BackfillCollectionConfig {
   /** snake_case slug used in pipeline_runs and last_refreshed_per_collection */

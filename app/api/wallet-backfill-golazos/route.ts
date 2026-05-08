@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import {
   runIdOnlyBackfill,
+  resolveWalletInput,
   CADENCE_GOLAZOS,
   GOLAZOS_COLLECTION_UUID,
 } from "@/lib/wallet-backfill-helpers"
@@ -37,10 +38,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const wallet = body.wallet?.trim()
-  if (!wallet) {
+  const rawInput = body.wallet?.trim()
+  if (!rawInput) {
     return NextResponse.json({ error: "wallet field required" }, { status: 400 })
   }
+  const resolved = await resolveWalletInput(rawInput)
+  if (!resolved.ok) {
+    return NextResponse.json(
+      { error: resolved.error, input: resolved.input, reason: resolved.reason },
+      { status: 400 }
+    )
+  }
+  const wallet = resolved.wallet
   const skipCached = body.skip_cached !== false
 
   const startedMs = Date.now()
@@ -61,6 +70,7 @@ export async function POST(req: NextRequest) {
       accepted: true,
       collection: CONFIG.slug,
       wallet_address: wallet,
+      input: rawInput,
       skip_cached: skipCached,
       started_at: startedAtIso,
     },
