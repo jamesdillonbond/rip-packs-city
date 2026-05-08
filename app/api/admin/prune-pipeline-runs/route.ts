@@ -15,6 +15,7 @@ const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const KEEP_DAYS = 7
 
 export const dynamic = "force-dynamic"
+export const maxDuration = 300
 
 export async function POST(req: NextRequest) {
   if (!TOKEN || req.headers.get("authorization") !== `Bearer ${TOKEN}`) {
