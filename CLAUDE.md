@@ -23,6 +23,81 @@ Repo: github.com/jamesdillonbond/rip-packs-city (public)
 
 ## Recent sessions
 
+### May 8, 2026 — Pinnacle wallet-backfill chain enrichment
+
+Shipped
+
+- `lib/cadence/pinnacle-wallet.ts` — new `GET_PINNACLE_UNLOCKED_DETAILS`
+  walks every owned Pinnacle NFT in one Cadence call, derives
+  `editionKey = RoyaltyCodes[0]:Variant:Printing` from MetadataViews
+  traits, returns `[{id, editionKey, serial}]`. Mirrors the per-NFT
+  formula in `cadence/scripts/resolve-pinnacle-nft.cdc`.
+- `lib/wallet-backfill-helpers.ts` — new `runPinnacleDetailsBackfill`
+  parallels `runAllDayDetailsBackfill`: upsert wmc rows with
+  `edition_key` + `serial_number`, then call the Pinnacle JOIN RPC.
+  Adds `isComputationLimitError(err)` helper for graceful handling of
+  Cadence error 1110 on mega-wallets (parallel to `isStorageLimitError`
+  for 1106).
+- `app/api/wallet-backfill-pinnacle/route.ts` — swapped
+  `runIdOnlyBackfill` → `runPinnacleDetailsBackfill`; `maxDuration`
+  60→120 to absorb per-NFT trait inspection cost.
+- New Postgres RPC `backfill_pinnacle_wmc_metadata_from_editions(
+  p_wallet_address)` — JOINs `pinnacle_editions` on `edition_key` to
+  fill `character_name`, `player_name`, `set_name`,
+  `tier` (= `variant_type`), `mint_count`. Pinnacle-flavored sibling
+  of `backfill_wmc_metadata_from_editions`. SECURITY DEFINER + pinned
+  search_path.
+
+Verification (Trevor `0xbd94cade097e50ac`)
+
+- Before: 180 rows / 1 with `edition_key` (0.6%) / 0 with `set_name`
+- After: 180 rows / 180 with `edition_key` (100%) / 163 with `set_name`
+  (90.6%). 17 unmatched rows are 4 unique `edition_keys` not yet in
+  `pinnacle_editions` — they'll resolve as `pinnacle-nft-resolver`
+  catches up.
+- Backfill ran in 2.9s end-to-end.
+
+Mega-wallet edge case
+
+- `0x5f71947aea94eb43` (~7,700 Pinnacle NFTs) hits Cadence error 1110
+  on the first attempt: per-NFT `getTraits` × 7700 blows past Flow's
+  100k computation budget. Now caught by `isComputationLimitError` and
+  logged as `terminated_reason='computation_limit_exceeded'` +
+  `flagged_for_pagination=true`. Long-term fix: paginated
+  `GET_PINNACLE_DETAILS_RANGE(addr, start, count)` chained in chunks
+  of ~1000. Deferred — only blocks the few mega-wallets; everyone else
+  works in one shot.
+
+Cadence borrow-type gotcha (saved to memory)
+
+- First deploy attempt of `GET_PINNACLE_UNLOCKED_DETAILS` failed with
+  `[Error 1101] cannot find type in this scope:
+  MetadataViews.ResolverCollection`. The Pinnacle contract surface
+  doesn't expose `ResolverCollection` at the standard
+  `0x1d7e57aa55817448` MetadataViews address. Fix: borrow plain
+  `&{NonFungibleToken.Collection}`, call `borrowNFT(id)`, pass the
+  NFT ref directly to `MetadataViews.getTraits/getEditions` (NFT itself
+  implements ViewResolver). This is the pattern from
+  `resolve-pinnacle-nft.cdc`. AllDay/TopShot can keep their respective
+  ResolverCollection borrows; Pinnacle is its own animal here. The
+  pre-existing `GET_PINNACLE_METADATA` script in `pinnacle-wallet.ts`
+  uses the broken pattern — verify before relying on it.
+
+Key constants (May 8)
+
+- `pinnacle_editions.edition_key` format:
+  `royalty_code || ':' || variant_type || ':' || printing`. Confirmed
+  exact-match across all 293 currently-keyed rows. The 148 rows still
+  NULL all have `royalty_code IS NULL` too, so a simple SQL backfill
+  from existing columns is a no-op — these rows need source-side
+  ingestion (Pinnacle GQL or chain) to fill `royalty_code` first.
+- `runPinnacleDetailsBackfill` failure modes (in pipeline_runs.extra
+  `terminated_reason`): `no_more_moments` (success),
+  `storage_limit_exceeded` (1106), `computation_limit_exceeded`
+  (1110), `no_collection_capability`, `error` (everything else).
+
+---
+
 ### May 7, 2026 — Multi-collection enrichment Phase 1 close-out
 
 Shipped (continuing the May 6 multi-collection work)
