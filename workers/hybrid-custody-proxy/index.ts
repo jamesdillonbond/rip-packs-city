@@ -141,7 +141,7 @@ async function handleHead(): Promise<Response> {
   if (!Number.isFinite(height) || height <= 0) {
     return jsonResponse({ error: "head_height_missing", upstream: arr[0] ?? null }, 502);
   }
-  return jsonResponse({ height });
+  return jsonResponse({ height }, 200);
 }
 
 export default {
