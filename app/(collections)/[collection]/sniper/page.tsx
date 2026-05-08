@@ -1077,6 +1077,63 @@ export default function SniperPage() {
     flowtyLive: (data?.flowtyCount ?? 0) > 0,
   };
 
+  // ── Empty-sniper diagnostic beacon (beta_feedback_inbox #402) ────────────
+  // Fires once per browser session when the empty-state renders, so we can
+  // distinguish: server returned zero deals, server returned deals but the
+  // visibleDeals filter zeroed them, or fetch failed (auth/cookie/ITP). The
+  // beacon hits /api/public/log/empty-sniper which is outside proxy.ts auth,
+  // so iPhone Safari with broken session cookies still gets through.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (loading) return;
+
+    const isFetchFailed = !data && !!error;
+    const isEmptyAfterFilter = !!data && visibleDeals.length === 0;
+    if (!isFetchFailed && !isEmptyAfterFilter) return;
+
+    const sessionKey = `rpc_empty_sniper_beacon:${collectionSlug}`;
+    try {
+      if (sessionStorage.getItem(sessionKey)) return;
+      sessionStorage.setItem(sessionKey, String(Date.now()));
+    } catch {
+      // sessionStorage blocked (iOS private mode etc.) — fire anyway, single visit.
+    }
+
+    const payload = {
+      ua: navigator.userAgent,
+      viewport: { w: window.innerWidth, h: window.innerHeight },
+      screen: { w: window.screen.width, h: window.screen.height },
+      pixelRatio: window.devicePixelRatio,
+      collection: collectionSlug,
+      feedKey,
+      fetchStatus: isFetchFailed ? "failed" : "ok",
+      fetchError: isFetchFailed ? String(error) : null,
+      serverDealsCount: data?.deals?.length ?? null,
+      visibleDealsCount: visibleDeals.length,
+      tsCount: data?.tsCount ?? null,
+      flowtyCount: data?.flowtyCount ?? null,
+      hasOwnerKey: !!ownerKey,
+      filters: {
+        tierTab, sortBy, minDiscount, maxPrice, serialFilter,
+        badgeOnly, flowWalletOnly, search, showVerifiedOnly, ownedFilter,
+        playerFilter,
+      },
+      pageUrl: window.location.href,
+      clientTs: new Date().toISOString(),
+    };
+
+    try {
+      fetch("/api/public/log/empty-sniper", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {
+      /* noop */
+    }
+  }, [loading, data, error, visibleDeals.length, collectionSlug, feedKey, ownerKey, tierTab, sortBy, minDiscount, maxPrice, serialFilter, badgeOnly, flowWalletOnly, search, showVerifiedOnly, ownedFilter, playerFilter]);
+
   return (
     <div className="rpc-binder-bg" style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)", overflowX: "hidden" }}>
       {/* ── Header ── */}
