@@ -54,7 +54,7 @@ const ERRORS_SAMPLE_CAP = 12
 const FETCH_CONCURRENCY = 3
 const MAX_1015_RETRIES = 3
 const RETRY_BACKOFF_MS = 2000
-const FUNCTION_VERSION = 12
+const FUNCTION_VERSION = 13
 
 const retryEvents: Array<{
   op: string
@@ -630,11 +630,15 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
             payload: ev,
           })
         }
-        // pool_empty is the queue-poisoning case: pack distribution exists
-        // but has zero unopened pack instances on the marketplace. Write a
-        // sentinel pack_ev_history row so pack_ev_latest is no longer NULL
-        // for this dist_id and the targets view stops re-selecting it.
-        if (ev?.reason === "pool_empty") {
+        // Both pool_empty (no unopened packs) and zero_total_weight (drop
+        // pool exists but every edition has weight=0) are queue-poisoning
+        // cases. Write a sentinel pack_ev_history row so pack_ev_latest is
+        // no longer NULL for this dist_id and the targets view stops
+        // re-selecting it on every cron tick. (v13: added zero_total_weight
+        // to the trigger set; v12 added explicit snapshotted_at on the
+        // success path so PostgREST batch inserts don't pad NULL across
+        // rows that originally relied on the column DEFAULT.)
+        if (ev?.reason === "pool_empty" || ev?.reason === "zero_total_weight") {
           counters.pool_empty_sentinels++
           evRows.push({
             pack_listing_id: f.target.pack_listing_uuid,
