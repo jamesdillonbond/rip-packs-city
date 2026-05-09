@@ -169,7 +169,7 @@ async function runBackfill(
   startedMs: number,
   wallet: string,
   skipCached: boolean
-) {
+): Promise<{ rowsFound: number }> {
   let totalFetched = 0
   let totalUpserted = 0
   let batchesFetched = 0
@@ -200,7 +200,7 @@ async function runBackfill(
           elapsed_ms: Date.now() - startedMs,
         },
       })
-      return
+      return { rowsFound: 0 }
     }
 
     const cachedIds = skipCached ? await loadCachedMomentIds(wallet) : new Set<string>()
@@ -327,6 +327,7 @@ async function runBackfill(
         elapsed_ms: Date.now() - startedMs,
       },
     })
+    return { rowsFound: onChainIds.length }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const elapsedMs = Date.now() - startedMs
@@ -352,7 +353,7 @@ async function runBackfill(
         },
       })
       console.log(`[wallet-backfill] wallet_too_large wallet=${wallet} — flagged for future sharded scan`)
-      return
+      return { rowsFound: totalFetched }
     }
     // Wallet has no /public/MomentCollection capability — uncommon for TopShot
     // (it would mean a Flow account that has never touched TopShot at all)
@@ -377,7 +378,7 @@ async function runBackfill(
         },
       })
       console.log(`[wallet-backfill] no_collection_capability wallet=${wallet} — wallet lacks TopShot collection capability`)
-      return
+      return { rowsFound: 0 }
     }
     terminatedReason = "error"
     await logRun({
@@ -397,6 +398,21 @@ async function runBackfill(
       },
     })
     console.error(`[wallet-backfill] error during backfill for ${wallet}: ${msg}`)
+    return { rowsFound: totalFetched }
+  }
+}
+
+async function recordScan(wallet: string, foundCount: number) {
+  try {
+    await (supabaseAdmin as any).rpc("record_wallet_backfill_scan", {
+      p_wallet: wallet,
+      p_collection_slug: COLLECTION_SLUG,
+      p_found_count: foundCount,
+    })
+  } catch (err) {
+    console.warn(
+      `[wallet-backfill] record_wallet_backfill_scan failed wallet=${wallet}: ${err instanceof Error ? err.message : String(err)}`
+    )
   }
 }
 
@@ -449,7 +465,8 @@ export async function POST(req: NextRequest) {
   // wallet has 30k+ moments. Vercel's after() inherits maxDuration, so the
   // soft deadline above keeps the walk under that ceiling.
   after(async () => {
-    await runBackfill(startedAtIso, startedMs, wallet, skipCached)
+    const { rowsFound } = await runBackfill(startedAtIso, startedMs, wallet, skipCached)
+    await recordScan(wallet, rowsFound)
   })
 
   return NextResponse.json(
