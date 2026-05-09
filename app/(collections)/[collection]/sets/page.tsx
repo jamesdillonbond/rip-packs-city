@@ -305,6 +305,10 @@ export default function SetsPage() {
               <SummaryCard label="NOT STARTED" value={String(notStartedSets)} accent={accent} />
             </div>
 
+            <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.5, marginBottom: 16, maxWidth: 880 }}>
+              RPC counts a set complete when you own every play in it. Top Shot&apos;s &ldquo;Completed Sets&rdquo; may include per-set criteria (challenges, badges, parallel collections) this tracker doesn&apos;t model &mdash; gaps are expected.
+            </div>
+
             <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
               <span style={{ fontFamily: monoFont, fontSize: 10, color: colors.muted, letterSpacing: "0.1em", textTransform: "uppercase", alignSelf: "center", marginRight: 4 }}>SORT</span>
               <Pill label="COMPLETION %" active={sortBy === "completion"} onClick={() => setSortBy("completion")} accent={accent} />
