@@ -22,6 +22,7 @@
 //
 // Contract addresses (Flow mainnet):
 //   DapperUtilityCoin:  0xead892083b3e2c6c
+//   FungibleToken:      0xf233dcee88fe0abe
 //   NFTStorefrontV2:    0x4eb8a10cb9f87357  (also at 0x3cdbb3d569211ff3)
 //   TopShot:            0x0b2a3299cc857e29
 //   NonFungibleToken:   0x1d7e57aa55817448
@@ -38,6 +39,7 @@
 
 export const PURCHASE_MOMENT_CADENCE = `
 import DapperUtilityCoin from 0xead892083b3e2c6c
+import FungibleToken from 0xf233dcee88fe0abe
 import NFTStorefrontV2 from 0x4eb8a10cb9f87357
 import NonFungibleToken from 0x1d7e57aa55817448
 import TopShot from 0x0b2a3299cc857e29
@@ -61,25 +63,6 @@ transaction(
       message: "Merchant account does not match expected address"
     )
 
-    // Validate price
-    let price = self.listing.getDetails().salePrice
-    assert(
-      price == expectedPrice,
-      message: "Listing price has changed — expected ".concat(expectedPrice.toString()).concat(" got ").concat(price.toString())
-    )
-
-    // Withdraw DUC from buyer's vault
-    let ducVault = buyer.storage.borrow<auth(FungibleToken.Withdraw) &DapperUtilityCoin.Vault>(
-      from: /storage/dapperUtilityCoinVault
-    ) ?? panic("Cannot borrow DapperUtilityCoin vault from buyer")
-
-    self.paymentVault <- ducVault.withdraw(amount: expectedPrice) as! @DapperUtilityCoin.Vault
-
-    // Borrow buyer's Top Shot collection
-    self.buyerCollection = buyer.capabilities
-      .borrow<&{NonFungibleToken.CollectionPublic}>(/public/MomentCollection)
-      ?? panic("Cannot borrow buyer TopShot collection")
-
     // Borrow storefront
     self.storefront = getAccount(storefrontAddress)
       .capabilities
@@ -89,6 +72,25 @@ transaction(
     // Borrow listing
     self.listing = self.storefront.borrowListing(listingResourceID: listingResourceID)
       ?? panic("No listing with ID ".concat(listingResourceID.toString()))
+
+    // Validate price
+    let price = self.listing.getDetails().salePrice
+    assert(
+      price == expectedPrice,
+      message: "Listing price has changed — expected ".concat(expectedPrice.toString()).concat(" got ").concat(price.toString())
+    )
+
+    // Borrow buyer's Top Shot collection
+    self.buyerCollection = buyer.capabilities
+      .borrow<&{NonFungibleToken.CollectionPublic}>(/public/MomentCollection)
+      ?? panic("Cannot borrow buyer TopShot collection")
+
+    // Withdraw DUC from buyer's vault
+    let ducVault = buyer.storage.borrow<auth(FungibleToken.Withdraw) &DapperUtilityCoin.Vault>(
+      from: /storage/dapperUtilityCoinVault
+    ) ?? panic("Cannot borrow DapperUtilityCoin vault from buyer")
+
+    self.paymentVault <- ducVault.withdraw(amount: expectedPrice) as! @DapperUtilityCoin.Vault
   }
 
   execute {
