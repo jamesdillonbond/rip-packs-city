@@ -1,0 +1,98 @@
+// app/api/admin/apply-fmv-haircut/route.ts
+//
+// POST — wraps the public.fmv_apply_thin_sale_haircut RPC.
+//
+// Modes:
+//   ?mode=dry   → SELECT * FROM fmv_apply_thin_sale_haircut(p_collection_id, true)
+//                 (preview, no writes)
+//   ?mode=live  → SELECT * FROM fmv_apply_thin_sale_haircut(p_collection_id, false)
+//                 (applies the haircut)
+//
+// Optional ?collection=topshot|allday|golazos|ufc|pinnacle resolves to the
+// collection UUID; omit to scope across every collection (NULL).
+//
+// The RPC itself filters to LOW + ASK_ONLY confidence — HIGH/MEDIUM are
+// untouched. Returns rows_examined / rows_haircut / total_dollars_removed.
+//
+// Auth: Bearer RPC_ADMIN_TOKEN (or ?token=) via verifyAdminRequest.
+
+import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase";
+import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
+
+export const maxDuration = 300;
+export const dynamic = "force-dynamic";
+
+// CLAUDE.md infra block — long-form vocabulary keyed by the short-form
+// query-param tokens callers will pass.
+const COLLECTION_UUID: Record<string, string> = {
+  topshot: "95f28a17-224a-4025-96ad-adf8a4c63bfd",
+  allday: "dee28451-5d62-409e-a1ad-a83f763ac070",
+  golazos: "06248cc4-b85f-47cd-af67-1855d14acd75",
+  ufc: "9b4824a8-736d-4a96-b450-8dcc0c46b023",
+  pinnacle: "7dd9dd11-e8b6-45c4-ac99-71331f959714",
+};
+
+export async function POST(req: NextRequest) {
+  if (!verifyAdminRequest(req)) return adminUnauthorizedResponse();
+
+  const mode = (req.nextUrl.searchParams.get("mode") ?? "").toLowerCase();
+  if (mode !== "dry" && mode !== "live") {
+    return NextResponse.json(
+      { error: "mode query param must be 'dry' or 'live'" },
+      { status: 400 }
+    );
+  }
+
+  const collectionParam = req.nextUrl.searchParams.get("collection");
+  let collectionId: string | null = null;
+  if (collectionParam) {
+    const key = collectionParam.toLowerCase();
+    if (!(key in COLLECTION_UUID)) {
+      return NextResponse.json(
+        {
+          error: `unknown collection '${collectionParam}'. Valid: ${Object.keys(
+            COLLECTION_UUID
+          ).join(", ")}`,
+        },
+        { status: 400 }
+      );
+    }
+    collectionId = COLLECTION_UUID[key];
+  }
+
+  const startedAt = Date.now();
+  const { data, error } = await supabaseAdmin.rpc(
+    "fmv_apply_thin_sale_haircut",
+    {
+      p_collection_id: collectionId,
+      p_dry_run: mode === "dry",
+    }
+  );
+
+  if (error) {
+    console.error(
+      `[apply-fmv-haircut] mode=${mode} collection=${collectionParam ?? "all"} error: ${error.message}`
+    );
+    return NextResponse.json(
+      { error: error.message, mode, collection: collectionParam ?? null },
+      { status: 500 }
+    );
+  }
+
+  const row = Array.isArray(data) && data.length > 0 ? data[0] : null;
+  const durationMs = Date.now() - startedAt;
+
+  console.log(
+    `[apply-fmv-haircut] mode=${mode} collection=${collectionParam ?? "all"} examined=${row?.rows_examined ?? 0} haircut=${row?.rows_haircut ?? 0} dollars_removed=${row?.total_dollars_removed ?? 0} duration_ms=${durationMs}`
+  );
+
+  return NextResponse.json({
+    mode,
+    collection: collectionParam ?? null,
+    rows_examined: row?.rows_examined ?? 0,
+    rows_haircut: row?.rows_haircut ?? 0,
+    total_dollars_removed: row?.total_dollars_removed ?? 0,
+    duration_ms: durationMs,
+  });
+}

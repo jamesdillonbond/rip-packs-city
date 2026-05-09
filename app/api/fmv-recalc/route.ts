@@ -818,16 +818,59 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── Step 8: Thin-sale haircut on freshly-recalc'd collections ────────────
+    // fmv_apply_thin_sale_haircut filters internally to LOW + ASK_ONLY, so
+    // HIGH/MEDIUM rows we just wrote are untouched. Calling it inline here
+    // means newly-computed ASK-only FMVs get haircut on the same run instead
+    // of drifting back to floor between recalcs. Scope to the collection set
+    // we actually saw sales for; if the batch was empty (early-return path
+    // wouldn't reach here), fall back to NULL = all collections.
+    let haircutRowsTotal = 0
+    let haircutCollectionsRun = 0
+    try {
+      const collectionIds = new Set<string>()
+      for (const { collectionId } of editionSalesMap.values()) {
+        if (collectionId) collectionIds.add(collectionId)
+      }
+      const targets: (string | null)[] =
+        collectionIds.size > 0 ? [...collectionIds] : [null]
+
+      for (const cid of targets) {
+        const { data: hc, error: hcErr } = await supabaseAdmin.rpc(
+          "fmv_apply_thin_sale_haircut",
+          { p_collection_id: cid, p_dry_run: false }
+        )
+        if (hcErr) {
+          console.warn(
+            `[FMV-RECALC] Haircut RPC error (cid=${cid ?? "all"}): ${hcErr.message}`
+          )
+          continue
+        }
+        const row = Array.isArray(hc) && hc.length > 0 ? hc[0] : null
+        const haircut = Number(row?.rows_haircut ?? 0)
+        haircutRowsTotal += haircut
+        haircutCollectionsRun += 1
+        console.log(
+          `[FMV-RECALC] Haircut applied cid=${cid ?? "all"} examined=${row?.rows_examined ?? 0} haircut=${haircut} dollars_removed=${row?.total_dollars_removed ?? 0}`
+        )
+      }
+    } catch (err) {
+      console.warn(
+        "[FMV-RECALC] Haircut pass error:",
+        err instanceof Error ? err.message : err
+      )
+    }
+
     const hasMore = salesPage.length === limit
     const duration = Date.now() - startTime
 
     console.log(
-      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} integerBridge=${integerBridgeCount} staleTouch=${staleTouchCount} hasMore=${hasMore} duration=${duration}ms`
+      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} integerBridge=${integerBridgeCount} staleTouch=${staleTouchCount} haircut=${haircutRowsTotal} hasMore=${hasMore} duration=${duration}ms`
     )
 
     await fireNextPipelineStep("/api/listing-cache", chain)
     console.log(
-      `[FMV-RECALC] Summary — editionsProcessed=${editionIds.length} snapshotsUpdated=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} integerBridge=${integerBridgeCount} hasMore=${hasMore} nextOffset=${hasMore ? offset + limit : "null"} durationMs=${duration}`
+      `[FMV-RECALC] Summary — editionsProcessed=${editionIds.length} snapshotsUpdated=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} integerBridge=${integerBridgeCount} haircutRows=${haircutRowsTotal} haircutCollectionsRun=${haircutCollectionsRun} hasMore=${hasMore} nextOffset=${hasMore ? offset + limit : "null"} durationMs=${duration}`
     )
     } catch (e) {
       console.error("[FMV-RECALC] Fatal error:", e instanceof Error ? e.message : String(e))
@@ -838,6 +881,7 @@ export async function POST(req: NextRequest) {
     ok: true,
     message: "FMV recalc triggered",
     triggeredAt: new Date().toISOString(),
+    haircut: "scheduled (LOW + ASK_ONLY only; row count in [FMV-RECALC] Summary log)",
   })
 }
 
