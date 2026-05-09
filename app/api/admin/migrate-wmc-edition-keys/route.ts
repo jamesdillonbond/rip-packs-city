@@ -2,9 +2,9 @@
 //
 // POST — drains wallet_moments_cache.edition_key from the legacy integer
 // "set:play" format to the canonical UUID-edition external_id by repeatedly
-// calling SECDEF RPC public.wmc_edition_key_drain_v2(limit). The RPC
-// self-tracks progress via the wmc_dedup_pairs.processed column, so this
-// route no longer manages an offset cursor.
+// calling SECDEF RPC public.wmc_edition_key_drain_v2(p_limit). The RPC
+// returns TABLE(pairs_claimed int, rows_updated bigint, pairs_remaining int)
+// and self-tracks progress via wmc_dedup_pairs.processed.
 //
 // Auth: Bearer RPC_ADMIN_TOKEN (or ?token=) via verifyAdminRequest.
 // Idempotent: re-running drains whatever's left.
@@ -17,11 +17,10 @@ export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
 const BATCH_SIZE = 200;
-// Capped under cron-job.org's 30s request timeout. Loop will return early if
-// drained; if backlog exceeds 25s of work, the next cron tick resumes from
-// wmc_dedup_pairs.processed = false.
+// Capped under cron-job.org's 30s request timeout. Loop returns early when
+// v2 reports pairs_claimed=0 AND pairs_remaining=0 (queue genuinely drained);
+// otherwise the next cron tick resumes from wmc_dedup_pairs.processed=false.
 const TIME_BUDGET_MS = 25_000;
-const DRAIN_WINDOW = 5; // last-N-batches sum-zero ⇒ drained
 
 export async function POST(req: NextRequest) {
   if (!verifyAdminRequest(req)) return adminUnauthorizedResponse();
@@ -30,18 +29,19 @@ export async function POST(req: NextRequest) {
   let batchesProcessed = 0;
   let rowsUpdated = 0;
   let pairsSelfSynced = 0;
-  const recent: number[] = [];
+  let pairsRemaining: number | null = null;
   let drained = false;
 
-  // May 9 dedup project: self-sync newly-paired editions (as the GraphQL
-  // hydrator catches up with the orphan backlog) into wmc_dedup_pairs at
-  // the top of every invocation so the drain loop picks them up without
-  // requiring manual INSERT...WHERE NOT EXISTS migrations.
+  // Self-sync newly-paired editions (as the GraphQL hydrator catches up
+  // with the orphan backlog) into wmc_dedup_pairs at the top of every
+  // invocation so the drain loop picks them up without manual migrations.
+  // Use query_sql (RETURNS jsonb, param `query`) — execute_sql RETURNS void
+  // and would discard the inserted-count.
   try {
     const { data: syncResult, error: syncErr } = await supabaseAdmin.rpc(
-      "execute_sql",
+      "query_sql",
       {
-        sql: `
+        query: `
           WITH inserted AS (
             INSERT INTO wmc_dedup_pairs (
               integer_id, canonical_id, integer_external_id, canonical_external_id
@@ -89,45 +89,28 @@ export async function POST(req: NextRequest) {
           batches_processed: batchesProcessed,
           rows_updated: rowsUpdated,
           pairs_self_synced: pairsSelfSynced,
+          pairs_remaining: pairsRemaining,
           duration_ms: Date.now() - startedAt,
         },
         { status: 500 }
       );
     }
 
-    const updated = Number(data ?? 0);
-    rowsUpdated += updated;
+    // v2 returns TABLE(pairs_claimed int, rows_updated bigint, pairs_remaining int)
+    // — supabase-js surfaces a single-row TABLE as a one-element array.
+    const row = Array.isArray(data) ? data[0] : null;
+    const pairsClaimed = Number(row?.pairs_claimed ?? 0);
+    const rowsThisBatch = Number(row?.rows_updated ?? 0);
+    pairsRemaining = Number(row?.pairs_remaining ?? 0);
+
+    rowsUpdated += rowsThisBatch;
     batchesProcessed += 1;
 
-    recent.push(updated);
-    if (recent.length > DRAIN_WINDOW) recent.shift();
-
-    if (
-      recent.length === DRAIN_WINDOW &&
-      recent.reduce((a, b) => a + b, 0) === 0
-    ) {
+    // No concurrent drainers — single-iteration zero is genuine drain.
+    if (pairsClaimed === 0 && pairsRemaining === 0) {
       drained = true;
       break;
     }
-  }
-
-  let pairsRemaining: number | null = null;
-  try {
-    const { data: cnt, error: cntErr } = await supabaseAdmin.rpc("query_sql", {
-      query: `
-        SELECT COUNT(*)::bigint AS cnt
-        FROM wmc_dedup_pairs
-        WHERE NOT processed
-      `,
-    });
-    if (!cntErr && Array.isArray(cnt) && cnt[0] && typeof cnt[0].cnt !== "undefined") {
-      pairsRemaining = Number(cnt[0].cnt);
-    }
-  } catch (err) {
-    console.warn(
-      "[migrate-wmc-edition-keys] pairs_remaining count failed:",
-      err instanceof Error ? err.message : err
-    );
   }
 
   let wmcIntRemainingOrphans: number | null = null;
