@@ -272,9 +272,6 @@ function buildEditionRow(
   const dateSlice = dateOfMoment ? String(dateOfMoment).slice(0, 10) : null;
   const gameDate = dateSlice && /^\d{4}-\d{2}-\d{2}$/.test(dateSlice) ? dateSlice : null;
 
-  const tierRaw = normalizeTier(e.tier);
-  const tier = tierRaw ? tierRaw.toLowerCase() : null;
-
   return {
     external_id: externalId,
     collection_id: COLLECTION_ID,
@@ -284,7 +281,7 @@ function buildEditionRow(
     player_name: playerName,
     set_name: setName,
     team_name: e.play?.stats?.teamAtMoment ?? null,
-    tier,
+    tier: normalizeTier(e.tier),
     series: e.set?.flowSeriesNumber ?? null,
     circulation_count: e.circulationCount ?? null,
     set_id_onchain: setFlowIdNum,
