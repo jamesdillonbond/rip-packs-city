@@ -7,6 +7,7 @@ import { getCollection } from "@/lib/collections";
 import { getOwnerKey } from "@/lib/owner-key";
 import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection";
 import { slugifyName } from "@/lib/entity-labels";
+import MomentMedia from "@/components/MomentMedia";
 
 // ── Types (mirrors API response) ─────────────────────────────────────────────
 
@@ -38,6 +39,8 @@ type SetTier = "complete" | "almost_there" | "bottleneck" | "completable" | "inc
 interface SetProgress {
   setId: string;
   setName: string;
+  series?: number | null;
+  setTier?: string | null;
   totalEditions: number;
   ownedCount: number;
   missingCount: number;
@@ -62,6 +65,8 @@ interface SetsResponse {
   resolvedAddress: string;
   totalSets: number;
   completeSets: number;
+  inProgressSets?: number;
+  notStartedSets?: number;
   sets: SetProgress[];
   generatedAt: string;
 }
@@ -75,6 +80,19 @@ function fmt$(n: number | null): string {
   if (n === null || n === undefined) return "—";
   if (n >= 1000) return "$" + (n / 1000).toFixed(1) + "k";
   return "$" + n.toFixed(2);
+}
+
+const TIER_STRIPE: Record<string, string> = {
+  COMMON: "#9ca3af",
+  FANDOM: "#60a5fa",
+  RARE: "#a855f7",
+  LEGENDARY: "#fbbf24",
+  ULTIMATE: "#ec4899",
+};
+
+function tierStripeColor(tier: string | null | undefined): string {
+  if (!tier) return TIER_STRIPE.COMMON;
+  return TIER_STRIPE[tier.toUpperCase()] ?? TIER_STRIPE.COMMON;
 }
 
 // ── Styles ───────────────────────────────────────────────────────────────────
@@ -105,7 +123,6 @@ export default function SetsPage() {
   const accent = collectionObj?.accent ?? "#E03A2F";
   const colors = makeColors(accent);
   const isAllDay = collectionSlug === "nfl-all-day";
-  const seriesLabel = isAllDay ? "Season" : "Series";
   const [wallet, setWallet] = useState<string | null>(null);
   const [data, setData] = useState<SetsResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -116,8 +133,6 @@ export default function SetsPage() {
 
   const autoLoadFired = useRef(false);
 
-  // Read wallet from URL params on mount; fall back to owner key; then to the
-  // signed-in user's saved wallet for this collection.
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     const w = p.get("wallet") || p.get("address") || null;
@@ -141,7 +156,6 @@ export default function SetsPage() {
     return () => { cancelled = true; };
   }, [collectionSlug]);
 
-  // Fetch sets when wallet is set
   useEffect(() => {
     if (!wallet) return;
     const w = wallet;
@@ -158,7 +172,7 @@ export default function SetsPage() {
           : `/api/sets-db?collection=${encodeURIComponent(collectionSlug)}&`;
         const url = endpoint.includes("?")
           ? endpoint + "wallet=" + encodeURIComponent(w)
-          : endpoint + "?wallet=" + encodeURIComponent(w) + "&skipAsks=1";
+          : endpoint + "?wallet=" + encodeURIComponent(w);
         const res = await fetch(url);
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
@@ -174,9 +188,8 @@ export default function SetsPage() {
     }
     go();
     return () => { cancelled = true; };
-  }, [wallet]);
+  }, [wallet, collectionSlug, isAllDay]);
 
-  // Modal close on Escape
   useEffect(() => {
     if (!openSet) return;
     function onKeyDown(e: KeyboardEvent) {
@@ -186,17 +199,14 @@ export default function SetsPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [openSet]);
 
-  // ── Filtered + sorted sets ──────────────────────────────────────────────
   const displaySets = useMemo(() => {
     if (!data) return [];
     let sets = [...data.sets];
 
-    // Filter
     if (filter === "complete") sets = sets.filter((s) => s.completionPct === 100);
     else if (filter === "in_progress") sets = sets.filter((s) => s.completionPct > 0 && s.completionPct < 100);
-    else if (filter === "not_started") sets = sets.filter((s) => s.ownedCount === 0);
+    else if (filter === "not_started") sets = sets.filter((s) => s.completionPct === 0);
 
-    // Sort
     sets.sort((a, b) => {
       if (sortBy === "completion") return b.completionPct - a.completionPct;
       if (sortBy === "cost") {
@@ -210,12 +220,12 @@ export default function SetsPage() {
     return sets;
   }, [data, sortBy, filter]);
 
-  const completeSets = data ? data.sets.filter((s) => s.completionPct === 100).length : 0;
-  const completePct = data && data.totalSets > 0
-    ? Math.round((completeSets / data.totalSets) * 100)
-    : 0;
+  const totalSets = data?.totalSets ?? 0;
+  const completeSets = data?.completeSets ?? 0;
+  const inProgressSets = data?.inProgressSets ?? (data ? data.sets.filter((s) => s.completionPct > 0 && s.completionPct < 100).length : 0);
+  const notStartedSets = data?.notStartedSets ?? (data ? data.sets.filter((s) => s.completionPct === 0).length : 0);
+  const completePct = totalSets > 0 ? Math.round((completeSets / totalSets) * 100) : 0;
 
-  // ── No wallet state ─────────────────────────────────────────────────────
   if (wallet === null && !loading) {
     return (
       <div style={{ background: colors.bg, minHeight: "100vh" }}>
@@ -245,22 +255,18 @@ export default function SetsPage() {
     <div style={{ background: colors.bg, minHeight: "100vh" }}>
       <div style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
 
-        {/* Page title */}
         <h1 style={{ fontFamily: displayFont, fontWeight: 900, fontSize: 28, color: colors.text, textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 20px", lineHeight: 1 }}>
           SET TRACKER
         </h1>
 
-        {/* ── Loading skeleton ────────────────────────────────────────────── */}
         {loading && (
           <div>
-            {/* Skeleton summary bar */}
             <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="rpc-skeleton" style={{ width: 120, height: 52, borderRadius: 8 }} />
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="rpc-skeleton" style={{ width: 140, height: 64, borderRadius: 8 }} />
               ))}
             </div>
-            {/* Skeleton cards */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(1, 1fr)", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
               {[1, 2, 3, 4, 5, 6].map((i) => (
                 <div key={i} style={{ background: colors.card, border: "1px solid " + colors.cardBorder, borderRadius: 10, padding: 20 }}>
                   <div className="rpc-skeleton" style={{ width: "60%", height: 18, marginBottom: 14, borderRadius: 4 }} />
@@ -269,11 +275,9 @@ export default function SetsPage() {
                 </div>
               ))}
             </div>
-            <style>{`@media (min-width: 768px) { div[style*="grid-template-columns: repeat(1"] { grid-template-columns: repeat(2, 1fr) !important; } } @media (min-width: 1280px) { div[style*="grid-template-columns: repeat(1"] { grid-template-columns: repeat(3, 1fr) !important; } }`}</style>
           </div>
         )}
 
-        {/* ── Error ───────────────────────────────────────────────────────── */}
         {error && !loading && (
           <div style={{ background: `${accent}14`, border: `1px solid ${accent}40`, borderRadius: 8, padding: "16px 20px", marginBottom: 20 }}>
             <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 14, color: colors.accent, textTransform: "uppercase", marginBottom: 4 }}>ERROR</div>
@@ -281,7 +285,6 @@ export default function SetsPage() {
           </div>
         )}
 
-        {/* ── Empty state ─────────────────────────────────────────────────── */}
         {data && data.sets.length === 0 && !loading && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "40vh", gap: 12 }}>
             <div style={{ fontFamily: displayFont, fontWeight: 800, fontSize: 18, color: colors.text, textTransform: "uppercase" }}>
@@ -293,16 +296,15 @@ export default function SetsPage() {
           </div>
         )}
 
-        {/* ── Data loaded ─────────────────────────────────────────────────── */}
         {data && data.sets.length > 0 && !loading && (
           <>
-            {/* Summary bar */}
             <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-              <SummaryCard label="TOTAL SETS" value={String(data.totalSets)} accent={accent} />
-              <SummaryCard label="COMPLETE" value={completeSets + " / " + data.totalSets} sub={completePct + "%"} accent={accent} />
+              <SummaryCard label="TOTAL SETS" value={String(totalSets)} accent={accent} />
+              <SummaryCard label="COMPLETE" value={String(completeSets)} sub={completePct + "%"} accent={accent} />
+              <SummaryCard label="IN PROGRESS" value={String(inProgressSets)} accent={accent} />
+              <SummaryCard label="NOT STARTED" value={String(notStartedSets)} accent={accent} />
             </div>
 
-            {/* Sort pills */}
             <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
               <span style={{ fontFamily: monoFont, fontSize: 10, color: colors.muted, letterSpacing: "0.1em", textTransform: "uppercase", alignSelf: "center", marginRight: 4 }}>SORT</span>
               <Pill label="COMPLETION %" active={sortBy === "completion"} onClick={() => setSortBy("completion")} accent={accent} />
@@ -310,7 +312,6 @@ export default function SetsPage() {
               <Pill label="NAME A-Z" active={sortBy === "name"} onClick={() => setSortBy("name")} accent={accent} />
             </div>
 
-            {/* Filter pills */}
             <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
               <span style={{ fontFamily: monoFont, fontSize: 10, color: colors.muted, letterSpacing: "0.1em", textTransform: "uppercase", alignSelf: "center", marginRight: 4 }}>FILTER</span>
               <Pill label="ALL" active={filter === "all"} onClick={() => setFilter("all")} accent={accent} />
@@ -319,66 +320,17 @@ export default function SetsPage() {
               <Pill label="NOT STARTED" active={filter === "not_started"} onClick={() => setFilter("not_started")} accent={accent} />
             </div>
 
-            {/* Sets table */}
-            <div className="rpc-card" style={{ overflow: "auto", WebkitOverflowScrolling: "touch", borderRadius: "var(--radius-md)", maxWidth: "100%" }}>
-              <table style={{ width: "100%", minWidth: 640, fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr className="rpc-thead-scanline" style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)" }}>
-                    <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px" }}>Set</th>
-                    <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Owned</th>
-                    <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px" }}>Progress</th>
-                    <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Cost</th>
-                    <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }} />
-                  </tr>
-                </thead>
-                <tbody>
-                  {displaySets.map((set) => {
-                    const isComplete = set.completionPct === 100;
-                    return (
-                      <tr
-                        key={set.setId}
-                        style={{ borderBottom: "1px solid var(--rpc-border)", cursor: "pointer", transition: "background var(--transition-fast)" }}
-                        onClick={() => setOpenSet(set)}
-                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--rpc-surface-hover)"; }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-                      >
-                        <td style={{ padding: "8px 12px", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: colors.text, fontFamily: displayFont, fontWeight: 700, letterSpacing: "0.02em" }}>
-                          <Link
-                            href={`/${collectionSlug}/set/${slugifyName(set.setName)}`}
-                            prefetch={false}
-                            onClick={(e) => e.stopPropagation()}
-                            style={{ color: "inherit", textDecoration: "none" }}
-                          >
-                            {set.setName}
-                          </Link>
-                        </td>
-                        <td style={{ padding: "8px 12px", textAlign: "right", color: colors.text }}>
-                          {set.ownedCount} / {set.totalEditions}
-                        </td>
-                        <td style={{ padding: "8px 12px" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <div style={{ width: 60, height: 6, background: colors.barBg, borderRadius: 3, overflow: "hidden", flexShrink: 0 }}>
-                              <div style={{ width: set.completionPct + "%", height: "100%", background: isComplete ? colors.green : colors.accent }} />
-                            </div>
-                            <span style={{ color: colors.muted, fontSize: "var(--text-xs)" }}>{set.completionPct}%</span>
-                          </div>
-                        </td>
-                        <td style={{ padding: "8px 12px", textAlign: "right", color: colors.text }}>
-                          {fmt$(set.totalMissingCost)}
-                        </td>
-                        <td style={{ padding: "8px 12px", textAlign: "right" }}>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setOpenSet(set); }}
-                            style={{ fontFamily: monoFont, fontSize: 10, padding: "4px 10px", borderRadius: 4, border: "1px solid " + colors.cardBorder, background: "transparent", color: colors.accent, cursor: "pointer", letterSpacing: "0.08em" }}
-                          >
-                            VIEW
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
+              {displaySets.map((set) => (
+                <SetCard
+                  key={set.setId}
+                  set={set}
+                  collectionSlug={collectionSlug}
+                  wallet={wallet ?? ""}
+                  accent={accent}
+                  onView={() => setOpenSet(set)}
+                />
+              ))}
             </div>
 
             {displaySets.length === 0 && (
@@ -390,7 +342,6 @@ export default function SetsPage() {
         )}
       </div>
 
-      {/* ── Owned-pieces modal ─────────────────────────────────────────────── */}
       {openSet && (
         <div
           onClick={() => setOpenSet(null)}
@@ -415,6 +366,12 @@ export default function SetsPage() {
             <div style={{ fontFamily: monoFont, fontSize: 11, color: colors.muted, marginBottom: 14, letterSpacing: "0.05em", textTransform: "uppercase" }}>
               {openSet.ownedCount} / {openSet.totalEditions} OWNED · {openSet.completionPct}%
             </div>
+            <Link
+              href={`/${collectionSlug}/set/${slugifyName(openSet.setName)}`}
+              style={{ display: "inline-block", fontFamily: monoFont, fontSize: 11, color: accent, textDecoration: "none", border: `1px solid ${accent}4D`, padding: "6px 14px", borderRadius: 4, marginBottom: 14, letterSpacing: "0.08em" }}
+            >
+              VIEW FULL SET PAGE →
+            </Link>
             {openSet.owned.length === 0 ? (
               <div style={{ fontFamily: monoFont, fontSize: 12, color: colors.muted, padding: "20px 0", textAlign: "center" }}>
                 No moments owned in this set yet
@@ -431,12 +388,7 @@ export default function SetsPage() {
                     onMouseEnter={(e) => (e.currentTarget.style.borderColor = colors.cardHover)}
                     onMouseLeave={(e) => (e.currentTarget.style.borderColor = colors.cardBorder)}
                   >
-                    {piece.thumbnailUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={piece.thumbnailUrl} alt="" style={{ width: 40, height: 40, borderRadius: 4, objectFit: "cover", flexShrink: 0 }} />
-                    ) : (
-                      <div style={{ width: 40, height: 40, borderRadius: 4, background: colors.barBg, flexShrink: 0 }} />
-                    )}
+                    <MomentMedia thumbnailUrl={piece.thumbnailUrl} alt="" size={40} rounded={4} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 14, color: colors.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {piece.playerName}
@@ -462,7 +414,7 @@ export default function SetsPage() {
 function SummaryCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent: string }) {
   const c = makeColors(accent);
   return (
-    <div style={{ background: c.card, border: "1px solid " + c.cardBorder, borderRadius: 8, padding: "12px 18px", minWidth: 100 }}>
+    <div style={{ background: c.card, border: "1px solid " + c.cardBorder, borderRadius: 8, padding: "12px 18px", minWidth: 120 }}>
       <div style={{ fontFamily: monoFont, fontSize: 9, color: c.muted, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 4 }}>
         {label}
       </div>
@@ -500,5 +452,234 @@ function Pill({ label, active, onClick, accent }: { label: string; active: boole
     >
       {label}
     </button>
+  );
+}
+
+function SetCard({
+  set,
+  collectionSlug,
+  wallet,
+  accent,
+  onView,
+}: {
+  set: SetProgress;
+  collectionSlug: string;
+  wallet: string;
+  accent: string;
+  onView: () => void;
+}) {
+  const c = makeColors(accent);
+  const isComplete = set.completionPct === 100;
+  const inProgress = set.completionPct > 0 && set.completionPct < 100;
+  const stripeColor = tierStripeColor(set.setTier);
+
+  const [expanded, setExpanded] = useState(false);
+  const [detail, setDetail] = useState<SetProgress | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+
+  useEffect(() => {
+    if (!expanded || detail || loadingDetail || !wallet) return;
+    let cancelled = false;
+    setLoadingDetail(true);
+    fetch(`/api/sets?wallet=${encodeURIComponent(wallet)}&set=${encodeURIComponent(set.setId)}`)
+      .then((r) => r.json())
+      .then((j: SetsResponse) => {
+        if (cancelled) return;
+        const s = j?.sets?.[0];
+        if (s) setDetail(s);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoadingDetail(false);
+      });
+    return () => { cancelled = true; };
+  }, [expanded, detail, loadingDetail, wallet, set.setId]);
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        background: c.card,
+        border: "1px solid " + c.cardBorder,
+        borderRadius: 10,
+        overflow: "hidden",
+        transition: "border-color 0.15s ease",
+      }}
+    >
+      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: stripeColor }} />
+
+      <div style={{ padding: "16px 18px 14px" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+          <Link
+            href={`/${collectionSlug}/set/${slugifyName(set.setName)}`}
+            prefetch={false}
+            style={{
+              fontFamily: displayFont, fontWeight: 800, fontSize: 16, color: c.text,
+              textTransform: "uppercase", letterSpacing: "0.02em", lineHeight: 1.15,
+              textDecoration: "none", flex: 1, minWidth: 0, overflow: "hidden",
+              textOverflow: "ellipsis", display: "-webkit-box",
+              WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+            }}
+          >
+            {set.setName}
+          </Link>
+          {set.series != null && (
+            <span style={{
+              fontFamily: monoFont, fontSize: 9, color: c.muted, letterSpacing: "0.08em",
+              padding: "2px 8px", borderRadius: 999,
+              border: "1px solid " + c.cardBorder, background: "rgba(255,255,255,0.03)",
+              flexShrink: 0,
+            }}>
+              S{set.series}
+            </span>
+          )}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          <div style={{ flex: 1, height: 6, background: c.barBg, borderRadius: 3, overflow: "hidden" }}>
+            <div style={{ width: set.completionPct + "%", height: "100%", background: isComplete ? c.green : c.accent }} />
+          </div>
+          <span style={{ fontFamily: monoFont, fontSize: 11, color: c.text, minWidth: 36, textAlign: "right" }}>
+            {set.completionPct}%
+          </span>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+          <span style={{ fontFamily: monoFont, fontSize: 11, color: c.muted, letterSpacing: "0.04em" }}>
+            {set.ownedCount} / {set.totalEditions} OWNED
+          </span>
+          <span style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 14, color: c.text }}>
+            {fmt$(set.totalMissingCost)}
+          </span>
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={onView}
+            style={{ flex: 1, fontFamily: monoFont, fontSize: 10, padding: "6px 10px", borderRadius: 4, border: "1px solid " + c.cardBorder, background: "transparent", color: c.accent, cursor: "pointer", letterSpacing: "0.08em" }}
+          >
+            VIEW
+          </button>
+          {inProgress && (
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              style={{ flex: 1, fontFamily: monoFont, fontSize: 10, padding: "6px 10px", borderRadius: 4, border: "1px solid " + c.cardBorder, background: expanded ? `${accent}14` : "transparent", color: c.muted, cursor: "pointer", letterSpacing: "0.08em" }}
+            >
+              {expanded ? "COLLAPSE ▲" : "EXPAND ▼"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {expanded && (
+        <div style={{ borderTop: "1px solid " + c.cardBorder, padding: "12px 14px 16px", background: "rgba(0,0,0,0.25)" }}>
+          {loadingDetail && !detail && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="rpc-skeleton" style={{ aspectRatio: "1 / 1", borderRadius: 6 }} />
+              ))}
+            </div>
+          )}
+          {detail && (
+            <DetailGrid set={detail} accent={accent} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DetailGrid({ set, accent }: { set: SetProgress; accent: string }) {
+  const c = makeColors(accent);
+  return (
+    <>
+      {set.owned.length > 0 && (
+        <>
+          <div style={{ fontFamily: monoFont, fontSize: 9, color: c.muted, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 8 }}>
+            OWNED ({set.owned.length})
+          </div>
+          <div className="rpc-set-detail-grid" style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+            {set.owned.map((p, i) => (
+              <DetailTile
+                key={`o-${p.playId}-${i}`}
+                thumbnailUrl={p.thumbnailUrl}
+                playerName={p.playerName}
+                badge={p.serialNumber != null ? `#${p.serialNumber}` : null}
+                href={p.topshotUrl}
+                accent={accent}
+              />
+            ))}
+          </div>
+        </>
+      )}
+      {set.missing.length > 0 && (
+        <>
+          <div style={{ fontFamily: monoFont, fontSize: 9, color: c.muted, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 8 }}>
+            MISSING ({set.missing.length})
+          </div>
+          <div className="rpc-set-detail-grid" style={{ display: "grid", gap: 8 }}>
+            {set.missing.map((p, i) => (
+              <DetailTile
+                key={`m-${p.playId}-${i}`}
+                thumbnailUrl={p.thumbnailUrl}
+                playerName={p.playerName}
+                badge={p.lowestAsk != null ? fmt$(p.lowestAsk) : null}
+                href={p.topshotUrl}
+                accent={accent}
+                muted
+              />
+            ))}
+          </div>
+        </>
+      )}
+      <style>{`
+        .rpc-set-detail-grid { grid-template-columns: repeat(3, 1fr); }
+        @media (min-width: 768px) { .rpc-set-detail-grid { grid-template-columns: repeat(6, 1fr); } }
+      `}</style>
+    </>
+  );
+}
+
+function DetailTile({
+  thumbnailUrl,
+  playerName,
+  badge,
+  href,
+  accent,
+  muted,
+}: {
+  thumbnailUrl: string | null;
+  playerName: string;
+  badge: string | null;
+  href: string;
+  accent: string;
+  muted?: boolean;
+}) {
+  const c = makeColors(accent);
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{
+        display: "block", textDecoration: "none",
+        borderRadius: 6, overflow: "hidden",
+        border: "1px solid " + c.cardBorder,
+        opacity: muted ? 0.85 : 1,
+        background: c.card,
+      }}
+    >
+      <MomentMedia thumbnailUrl={thumbnailUrl} alt={playerName} rounded={0} />
+      <div style={{ padding: "6px 8px" }}>
+        <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 11, color: c.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.2 }}>
+          {playerName}
+        </div>
+        {badge && (
+          <div style={{ fontFamily: monoFont, fontSize: 9, color: c.muted, letterSpacing: "0.05em" }}>
+            {badge}
+          </div>
+        )}
+      </div>
+    </a>
   );
 }
