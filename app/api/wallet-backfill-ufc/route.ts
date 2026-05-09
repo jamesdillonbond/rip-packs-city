@@ -7,6 +7,7 @@
 // holdings exist for invitees who collected UFC pre-migration.
 
 import { NextRequest, NextResponse, after } from "next/server"
+import { supabaseAdmin } from "@/lib/supabase"
 import {
   runIdOnlyBackfill,
   resolveWalletInput,
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
   const startedAtIso = new Date(startedMs).toISOString()
 
   after(async () => {
-    await runIdOnlyBackfill({
+    const { rowsFound } = await runIdOnlyBackfill({
       config: CONFIG,
       startedAtIso,
       startedMs,
@@ -73,6 +74,17 @@ export async function POST(req: NextRequest) {
       skipCached,
       force,
     })
+    try {
+      await (supabaseAdmin as any).rpc("record_wallet_backfill_scan", {
+        p_wallet: wallet,
+        p_collection_slug: CONFIG.slug,
+        p_found_count: rowsFound,
+      })
+    } catch (err) {
+      console.warn(
+        `[${CONFIG.pipelineName}] record_wallet_backfill_scan failed wallet=${wallet}: ${err instanceof Error ? err.message : String(err)}`
+      )
+    }
     // Chain into the UFC chain-metadata enricher so wmc rows land with
     // edition_key / player_name / set_name / tier populated rather than
     // sitting NULL. enrich-ufc-wallet is paginated (100 NFTs per page)
