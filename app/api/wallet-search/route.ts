@@ -880,6 +880,10 @@ const walletSearchSchema = z.object({
   collection: z.string().optional(),
   // Phase 2 alias — callers can send either collection or collectionId.
   collectionId: z.string().optional(),
+  // NBA/WNBA filter — only honored for Top Shot. Silently ignored for any
+  // other collection because league has no meaning there. Backed by
+  // wallet_moments_cache.league (NBA, WNBA, or NULL).
+  league: z.enum(["NBA", "WNBA"]).optional(),
 })
 
 export async function POST(req: NextRequest) {
@@ -940,11 +944,15 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { input, offset, limit } = parsed.data
+    const { input, offset, limit, league } = parsed.data
     resolvedInput = input
     // Phase 2: collectionId takes precedence over the legacy collection alias.
     const collection = parsed.data.collectionId ?? parsed.data.collection
     const isAllDay = collection === "nfl-all-day"
+    // league is only meaningful for Top Shot. For other collections wmc.league
+    // is NULL and the filter would produce 0 rows — silently drop instead.
+    const isTopShot = !collection || collection === "nba-top-shot"
+    const effectiveLeague = isTopShot ? (league ?? null) : null
 
     // Collections with their own dedicated wallet routes shouldn't flow
     // through here — the response shapes differ. Return an informative
@@ -1006,6 +1014,37 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       )
     }
+
+    // League filter for Top Shot: intersect on-chain owned ids with wmc rows
+    // for this wallet+collection where league matches. wmc is upserted by this
+    // very route on every successful walk so coverage is high; if a moment is
+    // unindexed we drop it from the filtered view (the "all" view always
+    // includes it). Skipped entirely when the wmc lookup errors so a transient
+    // DB blip doesn't show a false-empty wallet.
+    if (effectiveLeague) {
+      try {
+        const tsCollectionId = await getCollectionId()
+        if (tsCollectionId) {
+          const walletAddr = wallet.startsWith("0x") ? wallet : "0x" + wallet
+          const { data: leagueIds, error: leagueErr } = await (supabaseAdmin as any)
+            .from("wallet_moments_cache")
+            .select("moment_id")
+            .eq("wallet_address", walletAddr)
+            .eq("collection_id", tsCollectionId)
+            .eq("league", effectiveLeague)
+            .limit(10000)
+          if (!leagueErr && Array.isArray(leagueIds)) {
+            const allowed = new Set<string>(leagueIds.map((r: any) => String(r.moment_id)))
+            ids = ids.filter((id) => allowed.has(String(id)))
+          } else if (leagueErr) {
+            console.warn("[wallet-search] league filter wmc lookup failed:", leagueErr.message)
+          }
+        }
+      } catch (err) {
+        console.warn("[wallet-search] league filter threw:", err instanceof Error ? err.message : String(err))
+      }
+    }
+
     const slice = ids.slice(offset, offset + limit)
     topLevelStage = "enrich_moments"
 

@@ -41,6 +41,8 @@ export async function GET(req: NextRequest) {
   const limit = Number.isFinite(limitRaw) && limitRaw > 0 && limitRaw <= 96
     ? Math.floor(limitRaw)
     : 24;
+  const leagueRaw = req.nextUrl.searchParams.get("league");
+  const league = leagueRaw === "NBA" || leagueRaw === "WNBA" ? leagueRaw : null;
 
   const userId = await resolveUserId(ownerKey);
   if (!userId) {
@@ -50,6 +52,7 @@ export async function GET(req: NextRequest) {
   const { data, error } = await supabase.rpc("get_user_top_owned_moments", {
     p_user_id: userId,
     p_limit: limit,
+    p_league: league,
   });
 
   if (error) {

@@ -14,10 +14,15 @@
 // ID lookup, used for gifted moments outside saved wallets).
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter";
 
 const condensedFont = "'Barlow Condensed', sans-serif";
 const monoFont = "'Share Tech Mono', monospace";
 const ACCENT_RED = "#E03A2F";
+
+// Top Shot collection UUID — used to gate the NBA/WNBA league badge so it only
+// renders on Top Shot rows. Other collections store NULL in wmc.league.
+const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 
 // Mirrors the TopMoment shape from /api/profile/top-moments. Sourced from
 // wallet_moments_cache via the get_user_top_owned_moments RPC.
@@ -40,6 +45,7 @@ export interface PickerMoment {
   edition_name?: string | null;
   badges?: string[] | null;
   metadata?: Record<string, unknown> | null;
+  league?: string | null;
 }
 
 type SortKey = "fmv_desc" | "serial_asc" | "tier_rank";
@@ -132,6 +138,7 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
 
   const [sort, setSort] = useState<SortKey>("fmv_desc");
   const [tierFilter, setTierFilter] = useState<TierFilter>("ALL");
+  const [leagueFilter, setLeagueFilter] = useState<LeagueValue>("all");
 
   // Manual entry tab
   const [manualId, setManualId] = useState("");
@@ -148,10 +155,11 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
 
   useEffect(() => {
     let cancelled = false;
-    const url =
-      "/api/profile/top-moments?limit=96" +
-      (ownerKey ? `&ownerKey=${encodeURIComponent(ownerKey)}` : "");
-    fetch(url, { cache: "no-store" })
+    setMoments(null);
+    const params = new URLSearchParams({ limit: "96" });
+    if (ownerKey) params.set("ownerKey", ownerKey);
+    if (leagueFilter !== "all") params.set("league", leagueFilter);
+    fetch(`/api/profile/top-moments?${params.toString()}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (!cancelled) setMoments((d?.moments as PickerMoment[]) ?? []);
@@ -162,7 +170,7 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
     return () => {
       cancelled = true;
     };
-  }, [ownerKey]);
+  }, [ownerKey, leagueFilter]);
 
   const tiersPresent = useMemo<TierFilter[]>(() => {
     if (!moments) return [];
@@ -352,6 +360,20 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
 
         {tab === "grid" && (
           <>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, marginBottom: 4 }}>
+              <span
+                style={{
+                  fontFamily: monoFont,
+                  fontSize: 9,
+                  letterSpacing: "0.18em",
+                  textTransform: "uppercase",
+                  color: "rgba(255,255,255,0.4)",
+                }}
+              >
+                League
+              </span>
+              <LeagueFilter value={leagueFilter} onChange={setLeagueFilter} />
+            </div>
             <FilterChips
               tierFilter={tierFilter}
               onChange={setTierFilter}
@@ -676,6 +698,23 @@ function MomentRow({
               }}
             >
               {tier}
+            </span>
+          )}
+          {m.collection_id === TOPSHOT_COLLECTION_ID && (m.league === "NBA" || m.league === "WNBA") && (
+            <span
+              style={{
+                flex: "0 0 auto",
+                fontFamily: monoFont,
+                fontSize: 9,
+                letterSpacing: "0.1em",
+                color: "rgba(255,255,255,0.6)",
+                background: "rgba(255,255,255,0.04)",
+                border: "1px solid rgba(255,255,255,0.15)",
+                borderRadius: 4,
+                padding: "1px 6px",
+              }}
+            >
+              {m.league}
             </span>
           )}
           {m.serial_number != null && (
