@@ -7,10 +7,18 @@
 // Resolution order for the user_id:
 //   1. ?ownerKey=<wallet_addr | username> query param (when supplied)
 //   2. Authenticated session (requireUser fallback)
+//
+// Optional ?collection=<slug> filters to one collection (e.g. "nba-top-shot")
+// and routes to the 4-arg overload of get_user_top_owned_moments which adds a
+// COALESCE thumbnail fallback chain (wmc.image_url → editions.thumbnail_url →
+// pinnacle_editions.thumbnail_url → topshot CDN derive). The 3-arg overload
+// returned wmc.image_url verbatim, which is NULL for ~all rows and was the
+// reason every pinned trophy ended up with thumbnail_url IS NULL.
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
+import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
 
 async function resolveUserId(ownerKey: string | null): Promise<string | null> {
   if (ownerKey) {
@@ -43,6 +51,8 @@ export async function GET(req: NextRequest) {
     : 24;
   const leagueRaw = req.nextUrl.searchParams.get("league");
   const league = leagueRaw === "NBA" || leagueRaw === "WNBA" ? leagueRaw : null;
+  const collectionSlug = req.nextUrl.searchParams.get("collection");
+  const collectionUuid = collectionSlug ? COLLECTION_UUID_BY_SLUG[collectionSlug] ?? null : null;
 
   const userId = await resolveUserId(ownerKey);
   if (!userId) {
@@ -53,6 +63,7 @@ export async function GET(req: NextRequest) {
     p_user_id: userId,
     p_limit: limit,
     p_league: league,
+    p_collection_id: collectionUuid,
   });
 
   if (error) {
