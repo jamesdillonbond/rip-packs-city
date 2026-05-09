@@ -18,6 +18,7 @@ import { PINNACLE_VARIANT_COLORS, PINNACLE_VARIANT_LABELS } from "@/lib/pinnacle
 import { slugifyName } from "@/lib/entity-labels";
 import MomentDetailModal from "@/components/MomentDetailModal";
 import BadgeIcon from "@/components/BadgeIcon";
+import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter";
 
 function SniperThumbnailPreview({ thumbUrl, playerName, tierColor, backgroundColor, children }: { thumbUrl: string | null; playerName: string; tierColor: string; backgroundColor?: string; children: React.ReactNode }) {
   const [hovered, setHovered] = useState(false);
@@ -568,6 +569,7 @@ export default function SniperPage() {
   const [sortBy, setSortBy] = useState<SortOption>(isAllDay ? "price_asc" : "listed_desc");
   const [minDiscount, setMinDiscount] = useState(0);
   const [maxPrice, setMaxPrice] = useState(0);
+  const [leagueFilter, setLeagueFilter] = useState<LeagueValue>("all");
   const [serialFilter, setSerialFilter] = useState("all");
   const [badgeOnly, setBadgeOnly] = useState(false);
   const [flowWalletOnly, setFlowWalletOnly] = useState(false);
@@ -799,9 +801,10 @@ export default function SniperPage() {
     if (serialFilter !== "all") params.set("serial", serialFilter);
     if (badgeOnly) params.set("badgeOnly", "true");
     if (flowWalletOnly) params.set("flowWalletOnly", "true");
+    if (collectionSlug === "nba-top-shot" && leagueFilter !== "all") params.set("league", leagueFilter);
     params.set("sortBy", sortBy);
     return `${feedEndpoint}?${params}`;
-  }, [tierTab, minDiscount, maxPrice, playerFilter, serialFilter, badgeOnly, flowWalletOnly, sortBy, feedEndpoint, feedCollection]);
+  }, [tierTab, minDiscount, maxPrice, playerFilter, serialFilter, badgeOnly, flowWalletOnly, sortBy, feedEndpoint, feedCollection, collectionSlug, leagueFilter]);
 
   const feedKey = buildFeedUrl();
 
@@ -1275,6 +1278,7 @@ export default function SniperPage() {
               <span>%</span>
             </label>
             )}
+            <LeagueFilter value={leagueFilter} onChange={setLeagueFilter} visible={collectionSlug === "nba-top-shot"} />
           </div>
           )}
 
