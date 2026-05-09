@@ -13,6 +13,7 @@ import PublicTrophyCase from "@/components/profile/PublicTrophyCase";
 import PublicAchievements from "@/components/profile/PublicAchievements";
 import ViewTrophyModal from "@/components/profile/ViewTrophyModal";
 import type { TrophyMoment as ViewTrophyShape } from "@/components/profile/_shared";
+import { LEAGUES, type UserFavoriteTeam } from "@/lib/teams";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface TrophyMoment {
@@ -269,6 +270,7 @@ export default function PublicProfilePage() {
   // Public profile view-trophy modal — read-only, opens on click.
   const [viewTrophy, setViewTrophy] = useState<TrophyMoment | null>(null);
   const [bio, setBio] = useState<ProfileBio | null>(null);
+  const [favoriteTeams, setFavoriteTeams] = useState<UserFavoriteTeam[]>([]);
   const [wallets, setWallets] = useState<SavedWalletPublic[]>([]);
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [sniperDeals, setSniperDeals] = useState<SniperDealPreview[]>([]);
@@ -310,7 +312,16 @@ export default function PublicProfilePage() {
       .then(function(data) { if (data?.snapshots) setSnapshots(data.snapshots); })
       .catch(function() {});
 
-    Promise.all([publicP, historyP]).finally(function() { setLoading(false); });
+    // Structured favorite teams (4-league dropdown picks). Public, ownerKey-
+    // driven. Replaces the legacy free-text profile_bio.favorite_team for
+    // header chip rendering — bio.favorite_team only shows as a (legacy)
+    // fallback when this returns zero rows.
+    const teamsP = fetch("/api/profile/teams?ownerKey=" + enc)
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) { if (Array.isArray(data?.teams)) setFavoriteTeams(data.teams); })
+      .catch(function() {});
+
+    Promise.all([publicP, historyP, teamsP]).finally(function() { setLoading(false); });
   }, [username]);
 
   // Fetch sniper deals
@@ -379,6 +390,49 @@ export default function PublicProfilePage() {
               {bio.tagline}
             </div>
           )}
+          {/* Favorite-team chips — primary gets a colored 1px border in
+              the team's primary_color; others render subtle. Falls back to
+              the legacy free-text bio.favorite_team only when the user has
+              no structured picks yet. */}
+          {favoriteTeams.length > 0 ? (
+            <div style={{ display: "flex", justifyContent: "center", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+              {favoriteTeams.map(function(t) {
+                const meta = LEAGUES.find(function(l) { return l.value === t.league; });
+                const emoji = meta ? meta.emoji : "";
+                return (
+                  <span
+                    key={t.league}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      padding: "3px 8px",
+                      borderRadius: 999,
+                      fontFamily: monoFont,
+                      fontSize: 10,
+                      letterSpacing: "0.08em",
+                      color: "var(--rpc-text-primary)",
+                      background: "var(--rpc-surface)",
+                      border: t.is_primary ? ("1px solid " + t.primary_color) : "1px solid var(--rpc-border)",
+                    }}
+                    title={t.team_name}
+                  >
+                    <span aria-hidden>{emoji}</span>
+                    <span>{t.abbreviation}</span>
+                  </span>
+                );
+              })}
+            </div>
+          ) : bio?.favorite_team ? (
+            <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 8, alignItems: "center" }}>
+              <span style={{ fontSize: 10, fontFamily: monoFont, color: "var(--rpc-text-secondary)", letterSpacing: "0.06em" }}>
+                {bio.favorite_team}
+              </span>
+              <span style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em", padding: "1px 6px", border: "1px solid var(--rpc-border)", borderRadius: 999 }}>
+                LEGACY
+              </span>
+            </div>
+          ) : null}
           <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.15em" }}>
             {"NBA TOP SHOT COLLECTOR · " + filledCount + " / " + MAX_SLOTS + " TROPHY MOMENTS"}
           </div>
