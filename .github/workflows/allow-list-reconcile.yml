@@ -1,0 +1,33 @@
+name: Allow-list Reconcile
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run allow-list reconciliation
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            "https://www.rippackscity.com/api/cron/allow-list-reconcile")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+
+          SKIPPED=$(echo "$BODY" | jq -r '.skipped_count' 2>/dev/null)
+
+          if [ "$SKIPPED" != "0" ] && [ "$SKIPPED" != "null" ] && [ -n "$SKIPPED" ]; then
+            echo "::warning::$SKIPPED allow_list rows skipped during reconcile"
+          fi
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Reconcile returned HTTP $HTTP_CODE"
+            exit 1
+          fi
