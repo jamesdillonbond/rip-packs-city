@@ -18,13 +18,14 @@ import { createHash } from "node:crypto"
 import { supabaseAdmin } from "@/lib/supabase"
 
 const WALLET_RE = /^0x[a-fA-F0-9]{16}$/
-const ALLOWED_COLLECTIONS = new Set([
+const ALL_PUBLISHED_COLLECTIONS = [
   "nba_top_shot",
   "nfl_all_day",
   "laliga_golazos",
   "disney_pinnacle",
   "ufc_strike",
-])
+] as const
+const ALLOWED_COLLECTIONS = new Set<string>(ALL_PUBLISHED_COLLECTIONS)
 
 const SITE_ORIGIN =
   (process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "") ||
@@ -154,7 +155,7 @@ export async function POST(req: NextRequest) {
   }
 
   const collectionsInput = Array.isArray(data.collections) ? data.collections : []
-  const collections = Array.from(
+  const collectionsValidated = Array.from(
     new Set(
       collectionsInput
         .filter((c): c is string => typeof c === "string")
@@ -162,6 +163,15 @@ export async function POST(req: NextRequest) {
         .filter((c) => ALLOWED_COLLECTIONS.has(c))
     )
   )
+  // Form copy is "Pick any that apply. Skip if none." — empty selection is a
+  // valid submission shape, not a validation error. But persisting [] sends a
+  // no-op orchestrator prewarm that finishes in ~0.2s without scanning
+  // anything (see juiceshack 2026-05-09). Default empty → all 5 published
+  // slugs so the prewarm actually walks the wallet across every collection.
+  const collections =
+    collectionsValidated.length > 0
+      ? collectionsValidated
+      : [...ALL_PUBLISHED_COLLECTIONS]
 
   const userAgent = req.headers.get("user-agent") ?? null
   const ipHash = hashIp(getClientIp(req))
