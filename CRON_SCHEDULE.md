@@ -55,6 +55,7 @@ Edge functions:
 |---|---|---|
 | RPC Pinnacle Owner Discovery Forward | edge fn `pinnacle-owner-discovery-forward` | HEALTHY |
 | RPC Pipeline Failure Alerts | edge fn `pipeline-failure-alerts` | HEALTHY |
+| RPC wmc Edition Keys Drain | `/api/admin/migrate-wmc-edition-keys` | **NOT-YET-SCHEDULED** (2026-05-09) | Drains canonical pairs as the hydrator surfaces them; replaces manual MCP intervention. Auth: Bearer `RPC_ADMIN_TOKEN` (or `?token=`). Route is idempotent and self-syncing — top-of-call SQL pulls newly-paired rows from `editions_canonical_pair` into `wmc_dedup_pairs`, then the drain loop chews through `wmc_edition_key_drain_v2(200)` batches up to a 250s wall-clock budget. Steady state ~80 new pairs / 20min from hydrator churn, so 30min cadence keeps `pairs_remaining` near zero without hammering. |
 
 ### Every hour
 
