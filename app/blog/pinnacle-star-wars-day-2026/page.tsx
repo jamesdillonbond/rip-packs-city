@@ -19,7 +19,7 @@ export const metadata = {
     title: "Star Wars Day 2026 on Disney Pinnacle: What's Actually Moving",
     description:
       "Where Mandalorian peak buyers are underwater, the only edition trading below FMV with HIGH confidence, and what we don't know yet.",
-    images: ["https://www.rippackscity.com/api/og/collection/disney-pinnacle"],
+    images: ["https://www.rippackscity.com/api/og/collection?id=disney-pinnacle"],
     type: "article",
   },
   twitter: {
@@ -27,7 +27,7 @@ export const metadata = {
     title: "Star Wars Day 2026 on Disney Pinnacle: What's Actually Moving",
     description:
       "Where Mandalorian peak buyers are underwater, the only edition trading below FMV with HIGH confidence.",
-    images: ["https://www.rippackscity.com/api/og/collection/disney-pinnacle"],
+    images: ["https://www.rippackscity.com/api/og/collection?id=disney-pinnacle"],
   },
 }
 

@@ -223,7 +223,7 @@ async function runSmokeTests() {
       { timeoutMs: 15000 }
     ),
 
-    // 2b. /api/og/collection/[slug] — must return 200 to anonymous
+    // 2b. /api/og/collection?id=... — must return 200 to anonymous
     // crawlers (Twitter / Slack / Discord). Regression guard for the
     // proxy.isPublicPath bypass we added on 2026-05-07; if the bypass
     // breaks again, social previews go back to a generic Vercel auth
@@ -231,11 +231,11 @@ async function runSmokeTests() {
     time(async () => {
       const meta = {
         name: "og/collection/nba-top-shot returns 200 to anon",
-        endpoint: "/api/og/collection/nba-top-shot",
+        endpoint: "/api/og/collection?id=nba-top-shot",
         expected: "200-content-type-image",
         soft: true,
       };
-      const res = await smokeFetch(`${BASE_URL}/api/og/collection/nba-top-shot`, {
+      const res = await smokeFetch(`${BASE_URL}/api/og/collection?id=nba-top-shot`, {
         cache: "no-store",
         redirect: "manual",
         headers: { "User-Agent": BROWSER_UA },
@@ -253,7 +253,7 @@ async function runSmokeTests() {
       };
     }, {
       name: "og/collection/nba-top-shot returns 200 to anon",
-      endpoint: "/api/og/collection/nba-top-shot",
+      endpoint: "/api/og/collection?id=nba-top-shot",
       expected: "200-content-type-image",
       soft: true,
     }),
