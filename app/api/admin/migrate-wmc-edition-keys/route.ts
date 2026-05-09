@@ -35,42 +35,20 @@ export async function POST(req: NextRequest) {
   // Self-sync newly-paired editions (as the GraphQL hydrator catches up
   // with the orphan backlog) into wmc_dedup_pairs at the top of every
   // invocation so the drain loop picks them up without manual migrations.
-  // Use query_sql (RETURNS jsonb, param `query`) — execute_sql RETURNS void
-  // and would discard the inserted-count.
-  try {
-    const { data: syncResult, error: syncErr } = await supabaseAdmin.rpc(
-      "query_sql",
-      {
-        query: `
-          WITH inserted AS (
-            INSERT INTO wmc_dedup_pairs (
-              integer_id, canonical_id, integer_external_id, canonical_external_id
-            )
-            SELECT v.integer_id, v.canonical_id, v.integer_external_id, v.canonical_external_id
-            FROM editions_canonical_pair v
-            WHERE NOT EXISTS (
-              SELECT 1 FROM wmc_dedup_pairs p
-              WHERE p.integer_id = v.integer_id
-            )
-            ON CONFLICT (integer_id) DO NOTHING
-            RETURNING 1
-          )
-          SELECT COUNT(*)::bigint AS cnt FROM inserted
-        `,
-      }
-    );
-    if (syncErr) {
-      console.warn(
-        `[migrate-wmc-edition-keys] self-sync failed: ${syncErr.message}`
-      );
-    } else if (Array.isArray(syncResult) && syncResult[0]?.cnt != null) {
-      pairsSelfSynced = Number(syncResult[0].cnt) || 0;
-    }
-  } catch (err) {
+  // Dedicated RPC because query_sql wraps its argument in `SELECT ... FROM
+  // (<input>) t`, which Postgres rejects when <input> is a CTE containing a
+  // data-modifying statement ("WITH clause containing a data-modifying
+  // statement must be at the top level"). The RPC returns a scalar int.
+  const { data: syncData, error: syncError } = await supabaseAdmin.rpc(
+    "wmc_dedup_pairs_sync_from_view"
+  );
+  if (syncError) {
     console.warn(
-      "[migrate-wmc-edition-keys] self-sync threw:",
-      err instanceof Error ? err.message : err
+      `[migrate-wmc-edition-keys] self-sync error: ${syncError.message}`
     );
+    pairsSelfSynced = 0;
+  } else {
+    pairsSelfSynced = Number(syncData ?? 0);
   }
 
   while (Date.now() - startedAt < TIME_BUDGET_MS) {
