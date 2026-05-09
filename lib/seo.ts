@@ -199,10 +199,10 @@ export function collectionLayoutMetadata(collectionId: string): Metadata {
   }
   const canonical = `${BASE_URL}/${collectionId}`
   const label = COLLECTION_LABELS[collectionId] ?? 'Flow'
-  // Per-collection OG image. /api/og/collection/[slug] renders a branded
-  // 1200×630 card with the collection logo, name, and live edition count.
-  // Falls back to /api/og/default for unknown slugs.
-  const ogImage = `/api/og/collection/${collectionId}`
+  // Per-collection OG image. /api/og/collection?id=<slug> renders a
+  // 1200×630 card branded with the collection's icon, label, accent
+  // color, and chain pill. Returns the generic fallback for unknown ids.
+  const ogImage = `${BASE_URL}/api/og/collection?id=${collectionId}`
   return {
     title: meta.title,
     description: meta.description,
@@ -214,7 +214,7 @@ export function collectionLayoutMetadata(collectionId: string): Metadata {
       url: canonical,
       siteName: 'Rip Packs City',
       type: 'website',
-      images: [{ url: ogImage, width: 1200, height: 630 }],
+      images: [{ url: ogImage, width: 1200, height: 630, alt: label }],
     },
     twitter: {
       card: 'summary_large_image',
