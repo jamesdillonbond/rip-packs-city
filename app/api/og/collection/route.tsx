@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
   const collection = getCollection(id);
 
   const label = collection?.label ?? "Rip Packs City";
-  const icon = collection?.icon ?? "◈"; // ◈
+  const icon = collection?.icon ?? "🎴"; // 🎴
   const accent = collection?.accent ?? "#E03A2F";
   const sport = collection?.sport ?? "Multi-Sport";
   const partner = collection?.partner ?? "RPC";
