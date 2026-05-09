@@ -169,6 +169,10 @@ function SortArrow({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
 // Tier-aware fallback when a pack thumbnail 404s or is null. Renders a
 // solid square with the tier color and the pack title's first letter so
 // the row stays visually anchored even without a real image.
+//
+// width/height set on BOTH inline style AND HTML attributes — iOS Safari
+// skips img layout when only one is present, which broke pack thumbnails
+// in the table on mobile.
 function PackThumb({ url, tier, title, size = 40 }: { url: string | null; tier: string; title: string; size?: number }) {
   const [errored, setErrored] = useState(false)
   const chip = tierChip(tier)
@@ -196,6 +200,10 @@ function PackThumb({ url, tier, title, size = 40 }: { url: string | null; tier: 
     <img
       src={url}
       alt={title}
+      width={size}
+      height={size}
+      loading="lazy"
+      decoding="async"
       className="rounded object-cover flex-shrink-0"
       style={{ width: size, height: size }}
       onError={() => setErrored(true)}
