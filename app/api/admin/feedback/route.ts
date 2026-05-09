@@ -37,6 +37,7 @@ const SELECT_COLUMNS = [
   "shipped_at",
   "owner_key",
   "user_wallet",
+  "user_email",
   "page_context",
   "feedback_type",
   "feedback_summary",

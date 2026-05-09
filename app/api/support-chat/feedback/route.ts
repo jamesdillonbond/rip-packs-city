@@ -11,11 +11,41 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/auth/supabase-server";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+// Resolve the authenticated email + allow_list identity from the cookie so
+// feedback writes backfill user_email / owner_key / user_wallet on rows that
+// were inserted before identity capture landed.
+async function deriveIdentity(): Promise<{
+  email: string | null;
+  ownerKey: string | null;
+  userWallet: string | null;
+}> {
+  try {
+    const sb = await getSupabaseServer();
+    const { data, error } = await sb.auth.getUser();
+    const email = data?.user?.email ?? null;
+    if (error || !email) return { email: null, ownerKey: null, userWallet: null };
+    const { data: row } = await supabase
+      .from("allow_list")
+      .select("username, wallet_addr")
+      .ilike("email", email)
+      .limit(1)
+      .maybeSingle();
+    return {
+      email,
+      ownerKey: row?.username ?? null,
+      userWallet: row?.wallet_addr ?? null,
+    };
+  } catch {
+    return { email: null, ownerKey: null, userWallet: null };
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -29,13 +59,21 @@ export async function POST(req: NextRequest) {
     }
 
     const feedbackValue = `${feedback}${comment ? `: ${comment}` : ""}`;
+    const identity = await deriveIdentity();
+    // Only backfill identity columns when the cookie carries an authed user.
+    // Anonymous feedback writes (rare — proxy.ts gates everything but defensive)
+    // leave existing values untouched.
+    const identityPatch: Record<string, string> = {};
+    if (identity.email) identityPatch.user_email = identity.email;
+    if (identity.ownerKey) identityPatch.owner_key = identity.ownerKey;
+    if (identity.userWallet) identityPatch.user_wallet = identity.userWallet;
 
     // Preferred path: target by primary key id (the streaming meta payload
     // includes the support_conversations row id as messageId).
     if (typeof messageId === "number" && Number.isFinite(messageId)) {
       const { error } = await supabase
         .from("support_conversations")
-        .update({ feedback: feedbackValue })
+        .update({ feedback: feedbackValue, ...identityPatch })
         .eq("id", messageId);
       if (error) {
         console.error("[feedback] update by id failed:", error);
@@ -62,7 +100,7 @@ export async function POST(req: NextRequest) {
 
     const { error: updateErr } = await supabase
       .from("support_conversations")
-      .update({ feedback: feedbackValue })
+      .update({ feedback: feedbackValue, ...identityPatch })
       .eq("id", latest.id);
     if (updateErr) {
       console.error("[feedback] update by latest-id failed:", updateErr);

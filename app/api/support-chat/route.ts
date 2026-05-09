@@ -17,6 +17,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { getCollection, publishedCollections, COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
+import { getSupabaseServer } from "@/lib/auth/supabase-server";
 import {
   isPinnacle,
   searchPinnacleDeals,
@@ -117,6 +118,42 @@ function buildSyntheticError(mode: string): Error & { status?: number; type?: st
   const e: any = new Error("synthetic unknown error");
   e.status = 500;
   return e;
+}
+
+// ── Authenticated identity from cookie ────────────────────────────────────────
+// proxy.ts gates every non-public path through Supabase auth, so any request
+// that reaches a server route handler should carry an authenticated cookie.
+// We trust the cookie — never the client-passed userWallet — and derive
+// owner_key + user_wallet from allow_list keyed on the verified email.
+type AuthedIdentity = {
+  email: string | null;
+  ownerKey: string | null;
+  userWallet: string | null;
+};
+
+async function deriveIdentity(): Promise<AuthedIdentity> {
+  try {
+    const sb = await getSupabaseServer();
+    const { data, error } = await sb.auth.getUser();
+    const email = data?.user?.email ?? null;
+    if (error || !email) {
+      return { email: null, ownerKey: null, userWallet: null };
+    }
+    const { data: row } = await supabase
+      .from("allow_list")
+      .select("username, wallet_addr")
+      .ilike("email", email)
+      .limit(1)
+      .maybeSingle();
+    return {
+      email,
+      ownerKey: row?.username ?? null,
+      userWallet: row?.wallet_addr ?? null,
+    };
+  } catch (err: any) {
+    console.log("[support-chat] deriveIdentity threw:", err?.message ?? String(err));
+    return { email: null, ownerKey: null, userWallet: null };
+  }
 }
 
 // ── Rate limiting (25 req/hr per session) ─────────────────────────────────────
@@ -564,7 +601,7 @@ async function logBetaFeedback(args: {
   feedbackType: "bug" | "feature_request" | "general_feedback";
   summary: string;
   details: string;
-  ctx: { sessionId: string; ownerKey?: string | null; userWallet?: string | null; pageContext?: string | null };
+  ctx: { sessionId: string; ownerKey?: string | null; userWallet?: string | null; userEmail?: string | null; pageContext?: string | null };
 }): Promise<{ id: number | null }> {
   try {
     const { data, error } = await supabase
@@ -579,6 +616,7 @@ async function logBetaFeedback(args: {
         resolved: false,
         owner_key: args.ctx.ownerKey ?? null,
         user_wallet: args.ctx.userWallet ?? null,
+        user_email: args.ctx.userEmail ?? null,
         page_context: args.ctx.pageContext ?? null,
         feedback_type: args.feedbackType,
         feedback_summary: args.summary,
@@ -602,7 +640,7 @@ async function logBetaFeedback(args: {
 async function executeTool(
   toolName: string,
   toolInput: any,
-  ctx: { sessionId: string; ownerKey?: string | null; userWallet?: string | null; collectionId?: string | null; pageContext?: string | null }
+  ctx: { sessionId: string; ownerKey?: string | null; userWallet?: string | null; userEmail?: string | null; collectionId?: string | null; pageContext?: string | null }
 ): Promise<string> {
   const base = siteUrl();
   const effectiveCollectionId: string | undefined = toolInput.collectionId ?? ctx.collectionId ?? undefined;
@@ -647,7 +685,7 @@ async function executeTool(
       feedbackType: "bug",
       summary,
       details: detailsBlock,
-      ctx: { sessionId: ctx.sessionId, ownerKey: ctx.ownerKey, userWallet: ctx.userWallet, pageContext: page },
+      ctx: { sessionId: ctx.sessionId, ownerKey: ctx.ownerKey, userWallet: ctx.userWallet, userEmail: ctx.userEmail, pageContext: page },
     });
     return JSON.stringify({
       status: id ? "logged" : "logged_offline",
@@ -670,7 +708,7 @@ async function executeTool(
       feedbackType: "feature_request",
       summary,
       details: detailsBlock,
-      ctx: { sessionId: ctx.sessionId, ownerKey: ctx.ownerKey, userWallet: ctx.userWallet, pageContext: ctx.pageContext },
+      ctx: { sessionId: ctx.sessionId, ownerKey: ctx.ownerKey, userWallet: ctx.userWallet, userEmail: ctx.userEmail, pageContext: ctx.pageContext },
     });
     return JSON.stringify({
       status: id ? "logged" : "logged_offline",
@@ -692,7 +730,7 @@ async function executeTool(
       feedbackType: "general_feedback",
       summary,
       details: detailsBlock,
-      ctx: { sessionId: ctx.sessionId, ownerKey: ctx.ownerKey, userWallet: ctx.userWallet, pageContext: ctx.pageContext },
+      ctx: { sessionId: ctx.sessionId, ownerKey: ctx.ownerKey, userWallet: ctx.userWallet, userEmail: ctx.userEmail, pageContext: ctx.pageContext },
     });
     return JSON.stringify({
       status: id ? "logged" : "logged_offline",
@@ -1246,6 +1284,7 @@ async function persistConversation(row: {
   category: string;
   user_wallet?: string | null;
   owner_key?: string | null;
+  user_email?: string | null;
   page_context?: string | null;
   is_smoke_test?: boolean;
 }) {
@@ -1286,7 +1325,7 @@ async function updateSession(
   sessionId: string,
   category: string,
   userMessage: string,
-  ctx: { ownerKey?: string | null; userWallet?: string | null; isSmokeTest?: boolean },
+  ctx: { ownerKey?: string | null; userWallet?: string | null; userEmail?: string | null; isSmokeTest?: boolean },
   playerSearched?: string
 ) {
   try {
@@ -1308,6 +1347,7 @@ async function updateSession(
         conversation_count: (existing?.conversation_count ?? 0) + 1,
         owner_key: ctx.ownerKey ?? null,
         user_wallet: ctx.userWallet ?? null,
+        user_email: ctx.userEmail ?? null,
         is_smoke_test: ctx.isSmokeTest ?? false,
       },
       { onConflict: "session_id" }
@@ -1348,6 +1388,7 @@ export async function POST(req: NextRequest) {
   let parsedMessage: string | null = null;
   let parsedOwnerKey: string | null = null;
   let parsedUserWallet: string | null = null;
+  let parsedUserEmail: string | null = null;
   let parsedPageContext: string | null = null;
   // X-RPC-Smoke-Test header carries SMOKE_TEST_SESSION_TOKEN so the
   // smoke-test runner's anonymous traffic gets flagged on
@@ -1355,25 +1396,35 @@ export async function POST(req: NextRequest) {
   // Real anonymous traffic from the in-product chat will not present this
   // header and will continue to land with is_smoke_test=false (the default).
   const isSmokeTest = isSmokeTestRequest(req);
+  // Cookie is the trust boundary — derive the user's email server-side and
+  // resolve owner_key + user_wallet from allow_list. Client-passed values
+  // are intentionally ignored to prevent spoofed identity.
+  const identity = await deriveIdentity();
+  if (!identity.email && !isSmokeTest) {
+    console.log("[support-chat] no authed identity — proxy.ts should have gated this");
+  }
   try {
     const body = await req.json();
     const {
       message,
       sessionId = `anon-${Date.now()}`,
-      ownerKey,
-      userWallet,
       pageContext,
       collectionId,
-      walletConnected,
       conversationHistory = [],
       marketPulse,
       dailyDeal,
       stream: useStream = false,
     } = body;
+    // Server-derived identity wins; client-passed ownerKey/userWallet are dropped.
+    const ownerKey = identity.ownerKey;
+    const userWallet = identity.userWallet;
+    const userEmail = identity.email;
+    const walletConnected = !!userWallet;
     parsedSessionId = sessionId;
     parsedMessage = message;
-    parsedOwnerKey = ownerKey ?? null;
-    parsedUserWallet = userWallet ?? null;
+    parsedOwnerKey = ownerKey;
+    parsedUserWallet = userWallet;
+    parsedUserEmail = userEmail;
     parsedPageContext = pageContext ?? null;
 
     if (!message?.trim()) {
@@ -1436,6 +1487,7 @@ export async function POST(req: NextRequest) {
           category: greetCategory,
           user_wallet: userWallet ?? null,
           owner_key: ownerKey ?? null,
+          user_email: userEmail ?? null,
           page_context: pageContext ?? null,
           is_smoke_test: isSmokeTest,
         })
@@ -1482,8 +1534,8 @@ export async function POST(req: NextRequest) {
     const systemPrompt = buildSystemPrompt({
       pageContext,
       collectionId,
-      ownerKey,
-      userWallet,
+      ownerKey: ownerKey ?? undefined,
+      userWallet: userWallet ?? undefined,
       walletConnected,
       marketPulse,
       dailyDeal,
@@ -1602,6 +1654,7 @@ export async function POST(req: NextRequest) {
                 sessionId,
                 ownerKey: ownerKey ?? null,
                 userWallet: userWallet ?? null,
+                userEmail: userEmail ?? null,
                 collectionId: collectionId ?? null,
                 pageContext: pageContext ?? null,
               }),
@@ -1708,6 +1761,7 @@ export async function POST(req: NextRequest) {
           category,
           user_wallet: userWallet ?? null,
           owner_key: ownerKey ?? null,
+          user_email: userEmail ?? null,
           page_context: pageContext ?? null,
           is_smoke_test: isSmokeTest,
         });
@@ -1715,7 +1769,7 @@ export async function POST(req: NextRequest) {
           sessionId,
           category,
           message,
-          { ownerKey: ownerKey ?? null, userWallet: userWallet ?? null, isSmokeTest },
+          { ownerKey: ownerKey ?? null, userWallet: userWallet ?? null, userEmail: userEmail ?? null, isSmokeTest },
           playerSearched
         ).catch(() => {});
       });
@@ -1769,6 +1823,7 @@ export async function POST(req: NextRequest) {
           category,
           user_wallet: parsedUserWallet,
           owner_key: parsedOwnerKey,
+          user_email: parsedUserEmail,
           page_context: parsedPageContext,
           is_smoke_test: isSmokeTest,
         })

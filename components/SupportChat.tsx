@@ -154,8 +154,8 @@ const PAGE_DEFAULTS: Record<string, string[]> = {
 };
 const DEFAULT_SUGGESTIONS = ["Report a bug", "Suggest a feature", "Something looks off", "How does FMV work?"];
 
-export default function SupportChat({ pageContext, collectionId, userWallet, ownerKey, walletConnected, onAddToCart }: {
-  pageContext?: string; collectionId?: string | null; userWallet?: string | null; ownerKey?: string | null; walletConnected?: boolean; onAddToCart?: (moment: any) => void;
+export default function SupportChat({ pageContext, collectionId, userWallet, ownerKey, walletConnected, signedInLabel, onAddToCart }: {
+  pageContext?: string; collectionId?: string | null; userWallet?: string | null; ownerKey?: string | null; walletConnected?: boolean; signedInLabel?: string | null; onAddToCart?: (moment: any) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -415,7 +415,9 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
             <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg, #E03A2F 0%, #b82e25 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>🏙️</div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", letterSpacing: "-0.01em" }}>RPC Concierge</div>
-              <div style={{ fontSize: 11, color: "#666", marginTop: 1 }}>Beta support · Powered by Claude</div>
+              <div style={{ fontSize: 11, color: "#666", marginTop: 1 }}>
+                {signedInLabel ? `Signed in as ${signedInLabel}` : "Beta support · Powered by Claude"}
+              </div>
             </div>
             <button onClick={() => setIsOpen(false)} aria-label="Close" style={{ background: "none", border: "none", color: "#555", cursor: "pointer", padding: 4, fontSize: 18, lineHeight: 1, borderRadius: 6 }}>✕</button>
           </div>
