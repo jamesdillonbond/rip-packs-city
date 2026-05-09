@@ -26,7 +26,7 @@
 //   TopShot:            0x0b2a3299cc857e29
 //   NonFungibleToken:   0x1d7e57aa55817448
 //   MetadataViews:      0x1d7e57aa55817448
-//   TopShotMarketV3:    0xc1e4f4f4c4257510  ← merchant address
+//   Dapper merchant:    0xc1e4f4f4c4257510  (meta-tx co-signer + commission recipient)
 //
 // Verified from live Flowty transaction:
 //   0x269373489e1c9dba9fde110515826f1b2ca7be4fd1168c10e0081041e28f1912
