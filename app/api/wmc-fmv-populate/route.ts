@@ -9,6 +9,12 @@ import { COLLECTION_UUID_BY_SLUG, publishedCollections } from "@/lib/collections
 // updates wmc.fmv_usd from the latest fmv_snapshots row per
 // (collection_id, edition_key).
 //
+// Default mode (the cron tick): NULL-only fast path. Only fills rows where
+// fmv_usd IS NULL — bounded by the count of newly-inserted moments, not by
+// total wmc cardinality. Pass ?force=true for the full sweep that
+// re-evaluates every row (heavy on TopShot at 1.17M wmc rows; reserved for
+// ad-hoc remediation, not the cron).
+//
 // Trevor manually backfilled wmc.fmv_usd for the active beta cohort during
 // the 2026-05-08 session, but new wallets joining after that hit the gap
 // because there was no recurring job. cron-job.org calls this every 20min.
@@ -16,7 +22,7 @@ import { COLLECTION_UUID_BY_SLUG, publishedCollections } from "@/lib/collections
 // today — the RPC is a no-op there until pinnacle FMV ingestion ships.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const maxDuration = 60
+export const maxDuration = 300
 export const dynamic = "force-dynamic"
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
@@ -31,7 +37,12 @@ type CollectionRunResult = {
   ms: number
 }
 
-async function runOne(slug: string, collectionUuid: string): Promise<CollectionRunResult> {
+async function runOne(
+  slug: string,
+  collectionUuid: string,
+  force: boolean,
+  limit: number
+): Promise<CollectionRunResult> {
   const startedAtIso = new Date().toISOString()
   const t0 = Date.now()
   let rowsUpdated = 0
@@ -41,7 +52,7 @@ async function runOne(slug: string, collectionUuid: string): Promise<CollectionR
   try {
     const { data, error } = await (supabaseAdmin as any).rpc(
       "populate_wmc_fmv_from_snapshots",
-      { p_collection_id: collectionUuid }
+      { p_collection_id: collectionUuid, p_force: force, p_limit: limit }
     )
     if (error) {
       ok = false
@@ -71,6 +82,8 @@ async function runOne(slug: string, collectionUuid: string): Promise<CollectionR
       p_extra: {
         rows_updated: rowsUpdated,
         collection_uuid: collectionUuid,
+        force,
+        limit,
       },
     })
   } catch (e) {
@@ -106,6 +119,12 @@ async function handle(req: NextRequest): Promise<Response> {
   }
 
   const slugParam = req.nextUrl.searchParams.get("collection")?.trim() ?? ""
+  const force = req.nextUrl.searchParams.get("force") === "true"
+  const limitRaw = Number(req.nextUrl.searchParams.get("limit") ?? "")
+  const limit =
+    Number.isFinite(limitRaw) && limitRaw > 0 && limitRaw <= 200000
+      ? Math.floor(limitRaw)
+      : 50000
 
   let targets: Array<{ slug: string; collection_id: string }> = []
   if (slugParam) {
@@ -125,7 +144,7 @@ async function handle(req: NextRequest): Promise<Response> {
 
   const results: CollectionRunResult[] = []
   for (const t of targets) {
-    results.push(await runOne(t.slug, t.collection_id))
+    results.push(await runOne(t.slug, t.collection_id, force, limit))
   }
 
   const totalUpdated = results.reduce((sum, r) => sum + r.rows_updated, 0)
@@ -134,6 +153,8 @@ async function handle(req: NextRequest): Promise<Response> {
   return NextResponse.json({
     ok: allOk,
     total_updated: totalUpdated,
+    force,
+    limit,
     results,
   })
 }
