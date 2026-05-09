@@ -295,7 +295,7 @@ async function stampLastRefreshed(wallet: string, slug: string) {
 // last_refreshed_per_collection. Per-moment metadata is intentionally
 // left null; out-of-band edition resolvers populate player/set/tier on
 // the editions table and reads JOIN at query time.
-export async function runIdOnlyBackfill(args: BackfillArgs): Promise<void> {
+export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound: number }> {
   const { config, startedAtIso, startedMs, wallet, skipCached, force } = args
   let totalUpserted = 0
 
@@ -314,7 +314,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<void> {
           skip_cached: skipCached, force: !!force, elapsed_ms: Date.now() - startedMs,
         },
       })
-      return
+      return { rowsFound: 0 }
     }
 
     const cachedIds = skipCached ? await loadCachedMomentIds(wallet, config.collectionUuid) : new Set<string>()
@@ -369,6 +369,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<void> {
         elapsed_ms: Date.now() - startedMs,
       },
     })
+    return { rowsFound: onChainIds.length }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const elapsedMs = Date.now() - startedMs
@@ -389,7 +390,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<void> {
         },
       })
       console.log(`[${config.pipelineName}] wallet_too_large wallet=${wallet} — flagged for future sharded scan`)
-      return
+      return { rowsFound: 0 }
     }
     if (isNoCollectionCapabilityError(err, elapsedMs)) {
       await logRun({
@@ -408,7 +409,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<void> {
         },
       })
       console.log(`[${config.pipelineName}] no_collection_capability wallet=${wallet} — wallet lacks ${config.slug} collection capability`)
-      return
+      return { rowsFound: 0 }
     }
     await logRun({
       pipelineName: config.pipelineName,
@@ -423,6 +424,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<void> {
       },
     })
     console.error(`[${config.pipelineName}] error during backfill for ${wallet}: ${msg}`)
+    return { rowsFound: 0 }
   }
 }
 
@@ -495,7 +497,7 @@ export async function triggerUfcEnrichmentChain(wallet: string): Promise<{
 // out-of-band resolver populating wmc.edition_key. The editions table has
 // rich per-edition metadata (tier, player_name, set_name, team_name) but no
 // path was wiring it to wmc.
-export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<void> {
+export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<{ rowsFound: number }> {
   const { config, startedAtIso, startedMs, wallet, skipCached, force } = args
   let totalUpserted = 0
   let postPassUpdated = 0
@@ -521,7 +523,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<void
           mode: "details_allday",
         },
       })
-      return
+      return { rowsFound: 0 }
     }
 
     const cachedIds = skipCached ? await loadCachedMomentIds(wallet, config.collectionUuid) : new Set<string>()
@@ -609,6 +611,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<void
         mode: "details_allday",
       },
     })
+    return { rowsFound: triples.length }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const elapsedMs = Date.now() - startedMs
@@ -627,7 +630,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<void
           mode: "details_allday",
         },
       })
-      return
+      return { rowsFound: 0 }
     }
     // Mega-wallet handlers — order matters. Check explicit Cadence 1110
     // first (rare on AllDay but cheap to detect), then the wider AllDay
@@ -638,23 +641,21 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<void
     // the two trigger shapes in pipeline_runs.extra.recovered_from.
     if (isComputationLimitError(err)) {
       console.log(`[${config.pipelineName}] computation_limit wallet=${wallet} — falling through to paginated path`)
-      await runPaginatedDetailsBackfill({
+      return await runPaginatedDetailsBackfill({
         config, startedAtIso, startedMs, wallet, skipCached, force,
         mode: "allday",
         parentTerminatedReason: "computation_limit_exceeded",
         parentErrorExcerpt: msg.slice(0, 200),
       })
-      return
     }
     if (isAccessApiInternalServerError(err)) {
       console.log(`[${config.pipelineName}] access_api_500 wallet=${wallet} — falling through to paginated path`)
-      await runPaginatedDetailsBackfill({
+      return await runPaginatedDetailsBackfill({
         config, startedAtIso, startedMs, wallet, skipCached, force,
         mode: "allday",
         parentTerminatedReason: "access_api_error_likely_computation_limit",
         parentErrorExcerpt: msg.slice(0, 200),
       })
-      return
     }
     if (isNoCollectionCapabilityError(err, elapsedMs)) {
       await logRun({
@@ -671,7 +672,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<void
           mode: "details_allday",
         },
       })
-      return
+      return { rowsFound: 0 }
     }
     await logRun({
       pipelineName: config.pipelineName,
@@ -686,6 +687,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<void
       },
     })
     console.error(`[${config.pipelineName}] error during details backfill for ${wallet}: ${msg}`)
+    return { rowsFound: 0 }
   }
 }
 
@@ -700,7 +702,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<void
 // only catches NFTs that fired recent on-chain Deposit events, so stable
 // holdings (Trevor's 180 Pinnacle moments — only 1 mapped) were invisible
 // to the resolver. Write-time enrichment closes that gap.
-export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<void> {
+export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<{ rowsFound: number }> {
   const { config, startedAtIso, startedMs, wallet, skipCached, force } = args
   let totalUpserted = 0
   let postPassUpdated = 0
@@ -727,7 +729,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<vo
           mode: "details_pinnacle",
         },
       })
-      return
+      return { rowsFound: 0 }
     }
 
     const cachedIds = skipCached ? await loadCachedMomentIds(wallet, config.collectionUuid) : new Set<string>()
@@ -811,6 +813,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<vo
         mode: "details_pinnacle",
       },
     })
+    return { rowsFound: details.length }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const elapsedMs = Date.now() - startedMs
@@ -829,27 +832,25 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<vo
           mode: "details_pinnacle",
         },
       })
-      return
+      return { rowsFound: 0 }
     }
     if (isComputationLimitError(err)) {
       console.log(`[${config.pipelineName}] computation_limit wallet=${wallet} — falling through to paginated path`)
-      await runPaginatedDetailsBackfill({
+      return await runPaginatedDetailsBackfill({
         config, startedAtIso, startedMs, wallet, skipCached, force,
         mode: "pinnacle",
         parentTerminatedReason: "computation_limit_exceeded",
         parentErrorExcerpt: msg.slice(0, 200),
       })
-      return
     }
     if (isAccessApiInternalServerError(err)) {
       console.log(`[${config.pipelineName}] access_api_500 wallet=${wallet} — falling through to paginated path`)
-      await runPaginatedDetailsBackfill({
+      return await runPaginatedDetailsBackfill({
         config, startedAtIso, startedMs, wallet, skipCached, force,
         mode: "pinnacle",
         parentTerminatedReason: "access_api_error_likely_computation_limit",
         parentErrorExcerpt: msg.slice(0, 200),
       })
-      return
     }
     if (isNoCollectionCapabilityError(err, elapsedMs)) {
       await logRun({
@@ -866,7 +867,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<vo
           mode: "details_pinnacle",
         },
       })
-      return
+      return { rowsFound: 0 }
     }
     await logRun({
       pipelineName: config.pipelineName,
@@ -881,6 +882,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<vo
       },
     })
     console.error(`[${config.pipelineName}] error during details backfill for ${wallet}: ${msg}`)
+    return { rowsFound: 0 }
   }
 }
 
@@ -907,7 +909,7 @@ interface PaginatedBackfillArgs extends BackfillArgs {
   parentErrorExcerpt: string
 }
 
-export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): Promise<void> {
+export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): Promise<{ rowsFound: number }> {
   const {
     config, startedAtIso, startedMs, wallet, skipCached, force,
     mode, parentTerminatedReason, parentErrorExcerpt,
@@ -955,7 +957,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
           mode: fullMode,
         },
       })
-      return
+      return { rowsFound: 0 }
     }
 
     const cachedMap = skipCached
@@ -1032,7 +1034,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
             mode: fullMode,
           },
         })
-        return
+        return { rowsFound: onChainIds.length }
       }
     }
 
@@ -1214,6 +1216,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
         mode: fullMode,
       },
     })
+    return { rowsFound: onChainIds.length }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     await logRun({
@@ -1240,6 +1243,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
       },
     })
     console.error(`[${config.pipelineName}] paginated backfill failed for ${wallet}: ${msg}`)
+    return { rowsFound: onChainIds.length }
   }
 }
 
