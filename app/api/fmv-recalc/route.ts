@@ -196,24 +196,8 @@ export async function POST(req: NextRequest) {
     }
 
     if (!salesPage || salesPage.length === 0) {
-      // ── Integer edition FMV bridge (runs even when no sales in this batch) ──
-      let integerBridgeCount = 0
-      try {
-        const { data: bridgeResult, error: bridgeError } = await supabaseAdmin
-          .rpc("bridge_integer_fmv", { p_algo_version: ALGO_VERSION })
-
-        if (bridgeError) {
-          console.warn("[FMV-RECALC] Integer bridge error:", bridgeError.message)
-        } else {
-          integerBridgeCount = typeof bridgeResult === "number" ? bridgeResult : 0
-          console.log(`[FMV-RECALC] Integer edition FMV bridge: ${integerBridgeCount} editions covered`)
-        }
-      } catch (err) {
-        console.warn("[FMV-RECALC] Integer bridge error:", err instanceof Error ? err.message : err)
-      }
-
       console.log(
-        `[FMV-RECALC] No sales found in window — integerBridge=${integerBridgeCount} durationMs=${Date.now() - startTime}`
+        `[FMV-RECALC] No sales found in window — durationMs=${Date.now() - startTime}`
       )
       await fireNextPipelineStep("/api/listing-cache", chain)
       return
@@ -711,28 +695,7 @@ export async function POST(req: NextRequest) {
       console.warn("[FMV-RECALC] Historical fallback error:", err instanceof Error ? err.message : err)
     }
 
-    // ── Step 6: Integer edition FMV bridge ────────────────────────────────────
-    // Integer-format editions (external_id like "84:2892") exist in
-    // wallet_moments_cache but have no direct sales. Bridge FMV from UUID
-    // editions that share the same name + series + circulation_count.
-    // Uses Postgres function bridge_integer_fmv() which handles delete + insert.
-    let integerBridgeCount = 0
-
-    try {
-      const { data: bridgeResult, error: bridgeError } = await supabaseAdmin
-        .rpc("bridge_integer_fmv", { p_algo_version: ALGO_VERSION })
-
-      if (bridgeError) {
-        console.warn("[FMV-RECALC] Integer bridge error:", bridgeError.message)
-      } else {
-        integerBridgeCount = typeof bridgeResult === "number" ? bridgeResult : 0
-        console.log(`[FMV-RECALC] Integer edition FMV bridge: ${integerBridgeCount} editions covered`)
-      }
-    } catch (err) {
-      console.warn("[FMV-RECALC] Integer bridge error:", err instanceof Error ? err.message : err)
-    }
-
-    // ── Step 7: Stale freshness touch (force_stale=true) ──────────────────────
+    // ── Step 6: Stale freshness touch (force_stale=true) ──────────────────────
     // Editions whose most recent fmv_current row has not been touched in >24h
     // and that didn't pick up new sales this run will otherwise show as stale
     // indefinitely. Because WAP over a fixed window is idempotent, re-inserting
@@ -865,12 +828,12 @@ export async function POST(req: NextRequest) {
     const duration = Date.now() - startTime
 
     console.log(
-      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} integerBridge=${integerBridgeCount} staleTouch=${staleTouchCount} haircut=${haircutRowsTotal} hasMore=${hasMore} duration=${duration}ms`
+      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} staleTouch=${staleTouchCount} haircut=${haircutRowsTotal} hasMore=${hasMore} duration=${duration}ms`
     )
 
     await fireNextPipelineStep("/api/listing-cache", chain)
     console.log(
-      `[FMV-RECALC] Summary — editionsProcessed=${editionIds.length} snapshotsUpdated=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} integerBridge=${integerBridgeCount} haircutRows=${haircutRowsTotal} haircutCollectionsRun=${haircutCollectionsRun} hasMore=${hasMore} nextOffset=${hasMore ? offset + limit : "null"} durationMs=${duration}`
+      `[FMV-RECALC] Summary — editionsProcessed=${editionIds.length} snapshotsUpdated=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} haircutRows=${haircutRowsTotal} haircutCollectionsRun=${haircutCollectionsRun} hasMore=${hasMore} nextOffset=${hasMore ? offset + limit : "null"} durationMs=${duration}`
     )
     } catch (e) {
       console.error("[FMV-RECALC] Fatal error:", e instanceof Error ? e.message : String(e))

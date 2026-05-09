@@ -845,11 +845,61 @@ async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
       image_url: r.thumbnailUrl ?? null,
     })
 
+    // May 9 dedup project: prefer canonical UUID-format external_ids over the
+    // integer "set:play" keys we synthesize from on-chain metadata. The
+    // editions table can host both formats for the same edition; picking the
+    // UUID side keeps wmc writes from creating new orphan rows that the
+    // wmc_canonicalize trigger has to chase.
+    const intKeys = Array.from(new Set(
+      rows
+        .map(r => r.editionKey)
+        .filter((k): k is string => !!k && /^\d+:\d+$/.test(k))
+    ))
+    const canonicalKeyByInt = new Map<string, string>()
+    if (intKeys.length > 0) {
+      const tsCollectionId = await getCollectionId()
+      if (tsCollectionId) {
+        for (let i = 0; i < intKeys.length; i += 200) {
+          const chunk = intKeys.slice(i, i + 200)
+          const setPlayPairs = chunk
+            .map(k => k.split(":"))
+            .filter(p => p.length === 2 && p.every(s => /^\d+$/.test(s)))
+            .map(p => ({ set_id_onchain: Number(p[0]), play_id_onchain: Number(p[1]) }))
+          if (setPlayPairs.length === 0) continue
+          const setIds = Array.from(new Set(setPlayPairs.map(p => p.set_id_onchain)))
+          const playIds = Array.from(new Set(setPlayPairs.map(p => p.play_id_onchain)))
+          const { data: edRows } = await (supabaseAdmin as any)
+            .from("editions")
+            .select("external_id, set_id_onchain, play_id_onchain")
+            .eq("collection_id", tsCollectionId)
+            .in("set_id_onchain", setIds)
+            .in("play_id_onchain", playIds)
+          for (const row of (edRows ?? [])) {
+            if (row.set_id_onchain == null || row.play_id_onchain == null) continue
+            const intKey = `${row.set_id_onchain}:${row.play_id_onchain}`
+            const isInt = /^\d+:\d+$/.test(String(row.external_id ?? ""))
+            const existing = canonicalKeyByInt.get(intKey)
+            // Prefer UUID-format external_id; only fall back to int-format
+            // when nothing else has been seen yet. Equivalent to:
+            //   ORDER BY (external_id ~ '^[0-9]+:[0-9]+$') ASC LIMIT 1
+            if (!existing || (!isInt && /^\d+:\d+$/.test(existing))) {
+              canonicalKeyByInt.set(intKey, String(row.external_id))
+            }
+          }
+        }
+      }
+    }
+    const resolveEditionKey = (k: string | null | undefined): string | null => {
+      if (!k) return null
+      const canonical = canonicalKeyByInt.get(k)
+      return canonical ?? k
+    }
+
     // Split rows by edition_key availability so that rows that failed to
     // resolve edition_key don't clobber previously-cached edition_key values.
     const resolvedRows = rows
       .filter(r => r.momentId && r.editionKey)
-      .map(r => ({ ...baseRow(r), edition_key: r.editionKey }))
+      .map(r => ({ ...baseRow(r), edition_key: resolveEditionKey(r.editionKey) }))
     const unresolvedRows = rows
       .filter(r => r.momentId && !r.editionKey)
       .map(r => baseRow(r))
