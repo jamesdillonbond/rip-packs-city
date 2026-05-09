@@ -36,11 +36,10 @@ const PER_REQUEST_TIMEOUT_MS = 12_000;
 // IDs are valid arguments to bySetIDs in the TopShot GQL.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Reuses the safelisted SearchEditionBackfill operation name from
-// lib/editions-hydrate.ts + scripts/rehydrate-null-topshot-editions.mjs
-// (the one allowlisted operation pattern that survived the May 2026 public-api
-// schema lockdown). Field selection is widened to include Edition.id and
-// per-side ids so we can dedup against existing rows by external_id.
+// Allowlisted SearchEditionBackfill operation. No Edition.id / Edition.flowID
+// fields exist in this schema — only set.flowId and play.flowID. The double
+// `data` wrapper inside `... on Editions { data { ... on Edition } }` is
+// intentional and required by the schema.
 const SEARCH_EDITIONS_QUERY = `
   query SearchEditionBackfill($input: SearchEditionsInput!) {
     searchEditions(input: $input) {
@@ -50,26 +49,22 @@ const SEARCH_EDITIONS_QUERY = `
           ... on Editions {
             data {
               ... on Edition {
-                id
                 tier
                 circulationCount
                 set {
-                  id
                   flowId
                   flowName
                   flowSeriesNumber
                 }
                 play {
-                  id
                   flowID
                   stats {
                     playerName
                     teamAtMoment
+                    teamAtMomentNbaId
                     playCategory
                     playType
                     dateOfMoment
-                    homeTeamName
-                    awayTeamName
                   }
                 }
               }
@@ -82,26 +77,22 @@ const SEARCH_EDITIONS_QUERY = `
 `;
 
 interface RawEdition {
-  id?: string | null;
   tier?: string | null;
   circulationCount?: number | null;
   set?: {
-    id?: string | null;
     flowId?: number | string | null;
     flowName?: string | null;
     flowSeriesNumber?: number | null;
   } | null;
   play?: {
-    id?: string | null;
     flowID?: string | null;
     stats?: {
       playerName?: string | null;
       teamAtMoment?: string | null;
+      teamAtMomentNbaId?: string | number | null;
       playCategory?: string | null;
       playType?: string | null;
       dateOfMoment?: string | null;
-      homeTeamName?: string | null;
-      awayTeamName?: string | null;
     } | null;
   } | null;
 }
@@ -136,12 +127,14 @@ function normalizeTier(raw: string | null | undefined): string | null {
   return null;
 }
 
+// Mirrors getImageUrl() in components/MomentMedia.tsx — converts an
+// editions/{flowId}_{flowID}/ prefix into the resize Hero image URL.
 function buildThumbnailUrl(
   setFlowId: string | number | null | undefined,
   playFlowID: string | null | undefined,
 ): string | null {
   if (setFlowId == null || !playFlowID) return null;
-  return `https://assets.nbatopshot.com/resize/editions/${setFlowId}_${playFlowID}/play${playFlowID}_capture_Hero_Black_2880_2880_default.jpg?width=300`;
+  return `https://assets.nbatopshot.com/resize/editions/${setFlowId}_${playFlowID}/Hero_2880_2880_Transparent.png?format=webp&quality=80&width=600`;
 }
 
 function buildAssetPathPrefix(
@@ -172,7 +165,7 @@ async function fetchEditionsPage(
   };
   const body = {
     query: SEARCH_EDITIONS_QUERY,
-    operationName: "SearchEditionsBySetID",
+    operationName: "SearchEditionBackfill",
     variables: {
       input: {
         filters: { bySetIDs: [setUuid] },
@@ -217,7 +210,8 @@ async function walkSet(
     if (!result) break;
     const { editions, nextCursor } = result;
     collected.push(...editions);
-    if (!nextCursor || editions.length < PAGE_LIMIT || nextCursor === cursor) break;
+    // Loop while cursor is truthy and not equal to the previous cursor.
+    if (!nextCursor || nextCursor === cursor) break;
     cursor = nextCursor;
   }
   return { editions: collected, gqlCalls };
@@ -242,8 +236,6 @@ interface EditionUpsertRow {
   play_type: string | null;
   play_category: string | null;
   game_date: string | null;
-  home_team: string | null;
-  away_team: string | null;
   updated_at: string;
 }
 
@@ -252,21 +244,21 @@ function buildEditionRow(
   localSetId: string,
   now: string,
 ): EditionUpsertRow | null {
-  const setUuid = e.set?.id ?? null;
-  const playUuid = e.play?.id ?? null;
-  if (!setUuid || !playUuid) return null;
-  const externalId = `${setUuid}:${playUuid}`;
-
   const setFlowIdRaw = e.set?.flowId ?? null;
-  const setFlowIdNum =
-    setFlowIdRaw != null && Number.isFinite(Number(setFlowIdRaw))
-      ? parseInt(String(setFlowIdRaw), 10)
-      : null;
   const playFlowID = e.play?.flowID ?? null;
-  const playFlowIDNum =
-    playFlowID != null && Number.isFinite(Number(playFlowID))
-      ? parseInt(String(playFlowID), 10)
-      : null;
+  if (setFlowIdRaw == null || !playFlowID) return null;
+
+  // External_id is the integer-pair key (set.flowId:play.flowID), matching
+  // wallet_moments_cache.edition_key — not UUIDs. Aligns the catalog backfill
+  // with the rest of the platform's int-format expectations.
+  const externalId = `${setFlowIdRaw}:${playFlowID}`;
+
+  const setFlowIdNum = Number.isFinite(Number(setFlowIdRaw))
+    ? parseInt(String(setFlowIdRaw), 10)
+    : null;
+  const playFlowIDNum = Number.isFinite(Number(playFlowID))
+    ? parseInt(String(playFlowID), 10)
+    : null;
 
   const playerName = e.play?.stats?.playerName?.trim() ?? null;
   const setName = e.set?.flowName?.trim() ?? null;
@@ -280,6 +272,9 @@ function buildEditionRow(
   const dateSlice = dateOfMoment ? String(dateOfMoment).slice(0, 10) : null;
   const gameDate = dateSlice && /^\d{4}-\d{2}-\d{2}$/.test(dateSlice) ? dateSlice : null;
 
+  const tierRaw = normalizeTier(e.tier);
+  const tier = tierRaw ? tierRaw.toLowerCase() : null;
+
   return {
     external_id: externalId,
     collection_id: COLLECTION_ID,
@@ -289,7 +284,7 @@ function buildEditionRow(
     player_name: playerName,
     set_name: setName,
     team_name: e.play?.stats?.teamAtMoment ?? null,
-    tier: normalizeTier(e.tier),
+    tier,
     series: e.set?.flowSeriesNumber ?? null,
     circulation_count: e.circulationCount ?? null,
     set_id_onchain: setFlowIdNum,
@@ -299,8 +294,6 @@ function buildEditionRow(
     play_type: e.play?.stats?.playType ?? null,
     play_category: e.play?.stats?.playCategory ?? null,
     game_date: gameDate,
-    home_team: e.play?.stats?.homeTeamName ?? null,
-    away_team: e.play?.stats?.awayTeamName ?? null,
     updated_at: now,
   };
 }
