@@ -230,7 +230,9 @@ export default function EarlyAccessPage() {
                   letterSpacing: "0.04em",
                 }}
               >
-                Pick any that apply. Skip if none.
+                {collections.length === 0
+                  ? "Skip to pre-warm all five collections."
+                  : `Pre-warming ${collections.length === 1 ? "this collection" : `${collections.length} collections`} only.`}
               </div>
             </div>
 
