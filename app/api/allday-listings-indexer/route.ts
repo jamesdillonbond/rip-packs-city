@@ -567,7 +567,12 @@ export async function POST(req: NextRequest) {
       cursorAfter = String(targetHeight)
 
       extra.blocks_scanned = targetHeight - lastBlock
-      extra.events_found = rowsFound
+      // events_pre_filter / events_post_filter ratio surfaces over-aggressive
+      // nftType filtering — most NFTStorefrontV2 traffic on 0x3cdbb3d569211ff3
+      // is Top Shot, so a tiny ratio is normal; ratio = 0 with non-zero
+      // pre-filter means the AllDay nftType match is rejecting everything.
+      extra.events_pre_filter = rawAvailable + rawCompleted
+      extra.events_post_filter = rowsFound
       extra.events_filtered_to_allday = listingsAvailableCount + listingsCompletedCount
       extra.listings_available_count = listingsAvailableCount
       extra.listings_completed_count = listingsCompletedCount
