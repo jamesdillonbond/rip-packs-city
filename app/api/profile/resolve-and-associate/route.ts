@@ -16,7 +16,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
-import { requireUser } from "@/lib/auth/supabase-server";
+import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { resolveTopShotUsername } from "@/lib/topshot-username-resolve";
 import { publishedCollections } from "@/lib/collections";
 
@@ -38,11 +38,20 @@ function siteUrl() {
 }
 
 export async function POST(req: NextRequest) {
-  let user;
-  try {
-    user = await requireUser();
-  } catch (res) {
-    return res as Response;
+  // One-shot retry on getCurrentUser: the magic-link → /auth/confirm flow
+  // can land here a few hundred ms before the SSR cookie write settles,
+  // and proxy.ts setAll only writes refreshed Supabase cookies onto the
+  // outgoing response — not back onto the inner request — so the route
+  // can briefly see a stale/missing session even though the proxy gate
+  // accepted the call. wallet-search is in the public bypass and never
+  // triggers this 401, which is why the symptom appears asymmetric.
+  let user = await getCurrentUser();
+  if (!user) {
+    await new Promise((r) => setTimeout(r, 250));
+    user = await getCurrentUser();
+  }
+  if (!user) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
 
   let body: { username?: string };
