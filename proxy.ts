@@ -114,8 +114,10 @@ function hasValidBypassToken(request: NextRequest): boolean {
 
 // ── Public-bypass logic ─────────────────────────────────────────────────────
 // Paths listed here skip both the session check and the allow-list check.
-// Order doesn't matter — first match wins.
-function isPublicPath(pathname: string): boolean {
+// Order doesn't matter — first match wins. `method` is consulted only by the
+// handful of entries that mix safe (GET/HEAD) and mutating (POST/PATCH/DELETE)
+// handlers under one path.
+function isPublicPath(pathname: string, method: string): boolean {
   // Exact-match singletons
   // NOTE: `/` is intentionally NOT public — closed-beta lockdown bounces
   // unauthenticated homepage hits to /login. Re-add only when the marketing
@@ -162,6 +164,35 @@ function isPublicPath(pathname: string): boolean {
   if (pathname === "/api/og" || pathname.startsWith("/api/og/")) return true
   // /api/health — uptime/smoke probes hit this anonymously
   if (pathname === "/api/health") return true
+  // /api/teams — league reference data, served to anon visitors and the
+  // CDN-cached server-component fetch from /profile/[username].
+  if (pathname === "/api/teams") return true
+  // /api/leaderboard/teams — public favorite-team fan counts; same caller
+  // shape as /api/teams (anon + server-fetched).
+  if (pathname === "/api/leaderboard/teams") return true
+  // /api/profile/teams — GET reads any user's selected favorite teams
+  // (public, by ownerKey); POST mutates user_favorite_teams for the signed-
+  // in caller and MUST stay auth-gated. HEAD is included because it's a
+  // semantic GET without body (curl -I, CDN warmers).
+  if (
+    pathname === "/api/profile/teams" &&
+    (method === "GET" || method === "HEAD")
+  ) {
+    return true
+  }
+
+  // ── Public profile pages ─────────────────────────────────────────────
+  // /profile/<username> — shareable read-only profile cards. /profile/edit
+  // is the signed-in user's own bio editor and stays auth-gated. The
+  // dynamic route is hit by anonymous visitors clicking a shared link, so
+  // sending them to /login defeats the share flow.
+  if (
+    pathname.startsWith("/profile/") &&
+    pathname !== "/profile/edit" &&
+    !pathname.startsWith("/profile/edit/")
+  ) {
+    return true
+  }
 
   // ── Framework + static ───────────────────────────────────────────────
   if (pathname === "/_next" || pathname.startsWith("/_next/")) return true
@@ -366,7 +397,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // ── Public-bypass paths skip auth + allow-list ──────────────────────────
-  if (isPublicPath(pathname)) {
+  if (isPublicPath(pathname, request.method)) {
     const passResponse = NextResponse.next()
     applyCorsHeaders(request, passResponse, isCorsApiRoute)
     return applySecurityHeaders(passResponse)
