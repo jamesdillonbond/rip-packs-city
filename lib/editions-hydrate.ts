@@ -40,6 +40,19 @@ export interface HydratedEditionRow {
   away_team?: string | null
   updated_at: string
   ok: boolean
+  // When set, this row was canonical-resolved against an existing UUID-format
+  // TopShot edition. Caller should NOT upsert it; instead, map external_id →
+  // redirect.canonical_id directly. Prevention layer for the editions dedup
+  // project — without it, every TopShot sale on a known play was creating a
+  // fresh int-format orphan row.
+  redirect?: { canonical_id: string; canonical_external_id: string }
+}
+
+export interface HydrateOptions {
+  // Pass a Supabase client to enable canonical-sibling resolution for TopShot
+  // int-pair external_ids. Without it, the hydrator behaves as before.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase?: any
 }
 
 const TS_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
@@ -228,12 +241,67 @@ function splitTsExternalId(extId: string): { setID: string; playID: string } | n
   return { setID, playID }
 }
 
+interface TsCanonicalSibling {
+  id: string
+  external_id: string
+  name: string | null
+  player_name: string | null
+  set_name: string | null
+  team_name: string | null
+  tier: string | null
+  series: number | null
+  circulation_count: number | null
+  set_id_onchain: number | null
+  play_id_onchain: number | null
+  play_type: string | null
+  game_date: string | null
+  home_team: string | null
+  away_team: string | null
+}
+
+// Look up an existing UUID-format TopShot edition row that matches the same
+// (set_id_onchain, play_id_onchain) on-chain coordinates. If found, the
+// hydrator redirects the int-pair input to it instead of inserting a duplicate.
+async function lookupTsCanonicalSibling(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  setIdOnchain: number,
+  playIdOnchain: number,
+): Promise<TsCanonicalSibling | null> {
+  try {
+    const { data } = await supabase
+      .from("editions")
+      .select(
+        "id, external_id, name, player_name, set_name, team_name, tier, series, circulation_count, set_id_onchain, play_id_onchain, play_type, game_date, home_team, away_team",
+      )
+      .eq("collection_id", TS_COLLECTION_ID)
+      .eq("set_id_onchain", setIdOnchain)
+      .eq("play_id_onchain", playIdOnchain)
+      .limit(2)
+    if (!data || data.length === 0) return null
+    // UUID-format external_ids are setUUID:playUUID — both halves contain '-'
+    // and the row contains ':'. Int-pair format ("73:2785") matches '^\d+:\d+$'.
+    // Pick the UUID-format row.
+    const sibling = (data as TsCanonicalSibling[]).find(
+      (r) =>
+        typeof r.external_id === "string" &&
+        r.external_id.includes(":") &&
+        r.external_id.includes("-"),
+    )
+    return sibling ?? null
+  } catch {
+    return null
+  }
+}
+
 export async function hydrateTopShotEditions(
   externalIds: string[],
+  options?: HydrateOptions,
 ): Promise<HydratedEditionRow[]> {
   const now = new Date().toISOString()
   const out: HydratedEditionRow[] = []
   const unique = Array.from(new Set(externalIds.filter(Boolean)))
+  const supabase = options?.supabase ?? null
 
   for (const extId of unique) {
     const split = splitTsExternalId(extId)
@@ -242,16 +310,60 @@ export async function hydrateTopShotEditions(
       continue
     }
     const { setID, playID } = split
+
+    const intPair = /^\d+:\d+$/.test(extId)
+    const setIdOnchain = intPair ? Number(setID) : null
+    const playIdOnchain = intPair ? Number(playID) : null
+
+    // Canonical-resolve: if a UUID-format sibling exists for this on-chain
+    // pair, return a redirect row instead of fetching GQL + creating a new
+    // int-format duplicate. Skipped when no supabase client was passed.
+    if (
+      intPair &&
+      supabase &&
+      setIdOnchain != null &&
+      playIdOnchain != null
+    ) {
+      const sibling = await lookupTsCanonicalSibling(
+        supabase,
+        setIdOnchain,
+        playIdOnchain,
+      )
+      if (sibling) {
+        out.push({
+          external_id: extId,
+          collection_id: TS_COLLECTION_ID,
+          collection: "nba_top_shot",
+          name: sibling.name,
+          player_name: sibling.player_name,
+          set_name: sibling.set_name,
+          team_name: sibling.team_name,
+          tier: sibling.tier,
+          series: sibling.series,
+          circulation_count: sibling.circulation_count,
+          set_id_onchain: sibling.set_id_onchain ?? undefined,
+          play_id_onchain: sibling.play_id_onchain ?? undefined,
+          play_type: sibling.play_type,
+          game_date: sibling.game_date,
+          home_team: sibling.home_team,
+          away_team: sibling.away_team,
+          updated_at: now,
+          ok: true,
+          redirect: {
+            canonical_id: sibling.id,
+            canonical_external_id: sibling.external_id,
+          },
+        })
+        continue
+      }
+    }
+
     const meta = await fetchTsEditionMeta(setID, playID)
 
     const playerName = meta?.playerName ?? null
     const setName = meta?.setName ?? null
     const name =
       playerName && setName ? `${playerName} — ${setName}` : playerName ?? setName
-
-    const intPair = /^\d+:\d+$/.test(extId)
-    const setIdOnchain = intPair ? Number(setID) : null
-    const playIdOnchain = intPair ? Number(playID) : null
 
     out.push({
       external_id: extId,
@@ -476,13 +588,15 @@ function emptyRow(
   }
 }
 
-// Strip the `ok` flag and any undefined onchain-id fields so callers can pass
-// the result straight to .upsert without manual key cleanup.
+// Strip the `ok` flag, the `redirect` side-channel, and any undefined
+// onchain-id fields so callers can pass the result straight to .upsert
+// without manual key cleanup.
 export function toUpsertRow(
   row: HydratedEditionRow,
 ): Record<string, unknown> {
   const clean: Record<string, unknown> = { ...row }
   delete clean.ok
+  delete clean.redirect
   if (clean.set_id_onchain === undefined) delete clean.set_id_onchain
   if (clean.play_id_onchain === undefined) delete clean.play_id_onchain
   return clean

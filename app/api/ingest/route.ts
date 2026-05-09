@@ -562,11 +562,20 @@ export async function POST(req: NextRequest) {
         if (missing.length > 0) {
           const candidates = missing.length
           let hydratedCount = 0
+          let redirectedCount = 0
           let fallbackCount = 0
           const failed: string[] = []
 
-          const hydratedRows = await hydrateTopShotEditions(missing)
-          const upsertRows = hydratedRows.map((r) => {
+          const hydratedRows = await hydrateTopShotEditions(missing, { supabase: supabaseAdmin })
+          const upsertRows: Record<string, unknown>[] = []
+          for (const r of hydratedRows) {
+            if (r.redirect) {
+              // Canonical-resolved against an existing UUID-format edition;
+              // skip upsert. Downstream upsertEdition will re-upsert on the
+              // original key — that's a separate writer outside this fix.
+              redirectedCount++
+              continue
+            }
             if (r.ok) {
               hydratedCount++
             } else {
@@ -576,29 +585,31 @@ export async function POST(req: NextRequest) {
                 `[INGEST] hydrate-at-insert failed for ${r.external_id}; falling through to skeleton`,
               )
             }
-            return toUpsertRow(r)
-          })
+            upsertRows.push(toUpsertRow(r))
+          }
 
-          try {
-            const { error: hydrateErr } = await (supabaseAdmin as any)
-              .from("editions")
-              .upsert(upsertRows, {
-                onConflict: "external_id,collection_id",
-                ignoreDuplicates: false,
-              })
-            if (hydrateErr) {
+          if (upsertRows.length > 0) {
+            try {
+              const { error: hydrateErr } = await (supabaseAdmin as any)
+                .from("editions")
+                .upsert(upsertRows, {
+                  onConflict: "external_id,collection_id",
+                  ignoreDuplicates: false,
+                })
+              if (hydrateErr) {
+                console.warn(
+                  `[INGEST] hydrate-at-insert upsert error: ${hydrateErr.message}`,
+                )
+              }
+            } catch (err) {
               console.warn(
-                `[INGEST] hydrate-at-insert upsert error: ${hydrateErr.message}`,
+                `[INGEST] hydrate-at-insert upsert threw: ${err instanceof Error ? err.message : String(err)}`,
               )
             }
-          } catch (err) {
-            console.warn(
-              `[INGEST] hydrate-at-insert upsert threw: ${err instanceof Error ? err.message : String(err)}`,
-            )
           }
 
           console.log(
-            `[INGEST] hydrate-at-insert: candidates=${candidates} hydrated=${hydratedCount} fallback=${fallbackCount}` +
+            `[INGEST] hydrate-at-insert: candidates=${candidates} hydrated=${hydratedCount} redirected=${redirectedCount} fallback=${fallbackCount}` +
               (failed.length ? ` failed=${failed.slice(0, 5).join(",")}` : ""),
           )
 
@@ -619,6 +630,7 @@ export async function POST(req: NextRequest) {
                 site: "ingest",
                 candidates,
                 hydrated: hydratedCount,
+                redirected: redirectedCount,
                 fallback_skeleton: fallbackCount,
                 failed_sample: failed.slice(0, 10),
               },
