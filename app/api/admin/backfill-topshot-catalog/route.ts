@@ -300,6 +300,11 @@ async function handle(req: NextRequest): Promise<NextResponse> {
 
   const startedAt = Date.now();
   const startedAtIso = new Date(startedAt).toISOString();
+  // NOTE: ?startAfter=<uuid> is technically broken because every walked set
+  // gets its updated_at bumped, so the cursor uuid no longer appears in the
+  // "least-recently-touched" page on the next call — passing the last walked
+  // uuid usually returns "no more sets". The natural-order pattern (no
+  // cursor) sweeps correctly and is how cron uses it. Left in for ad-hoc use.
   const startAfter = req.nextUrl.searchParams.get("startAfter");
   const limitSets = req.nextUrl.searchParams.get("limitSets");
   const limitSetsNum = limitSets ? Math.max(1, parseInt(limitSets, 10) || 1) : null;
