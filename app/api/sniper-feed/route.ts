@@ -6,6 +6,7 @@ import { getOrSetCache } from "@/lib/cache";
 import { z } from "zod";
 import { getCollectionUuid, fromDbSlug } from "@/lib/collections";
 import { computePinnacleSniperFeed } from "@/lib/sniper/pinnacle";
+import { leagueForSetName } from "@/lib/league";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -994,6 +995,7 @@ const feedParamsSchema = z.object({
   // Phase 2 alias: callers may pass collectionId instead of collection.
   // Handled below by overriding `collection` when collectionId is set.
   collectionId: z.string().optional(),
+  league: z.enum(["NBA", "WNBA"]).optional(),
 });
 
 // ─── Route handler ────────────────────────────────────────────────────────────
@@ -1081,7 +1083,7 @@ export async function GET(req: Request) {
     if (collection !== "nba-top-shot") {
       return () => computeCachedSniperFeed({ collection, minDiscount, rarity: effectiveRarity, team, maxPrice, sortBy, serialFilter });
     }
-    return () => computeSniperFeed({ minDiscount, rarity: effectiveRarity, team, badgeOnly, serialFilter, maxPrice, sortBy, flowtyPageCount });
+    return () => computeSniperFeed({ minDiscount, rarity: effectiveRarity, team, badgeOnly, serialFilter, maxPrice, sortBy, flowtyPageCount, league: params.league });
   }
 
   type FeedResult = { count: number; tsCount: number; flowtyCount: number; lastRefreshed: string; deals: SniperDeal[]; cached?: boolean };
@@ -1696,6 +1698,7 @@ async function computeSniperFeed(opts: {
       matches the long-standing baseline; the outer handler pumps this up
       iteratively when filters are aggressive enough to drain the pool. */
   flowtyPageCount?: number;
+  league?: "NBA" | "WNBA";
 }) {
   const { minDiscount, rarity, team, badgeOnly, serialFilter, maxPrice, sortBy } = opts;
   const flowtyPageCount = opts.flowtyPageCount ?? 5;
@@ -2080,7 +2083,7 @@ async function computeSniperFeed(opts: {
 
   // 7. Merge — Flowty wins on dedup by flowId, exclude retired moments
   const seen = new Set<string>();
-  const allDeals: SniperDeal[] = [];
+  let allDeals: SniperDeal[] = [];
   for (const d of [...flowtyDeals, ...tsDeals]) {
     if (!seen.has(d.flowId) && !retiredIds.has(d.flowId)) {
       seen.add(d.flowId);
@@ -2121,6 +2124,13 @@ async function computeSniperFeed(opts: {
     }
   }
 
+  // 8c. League filter (NBA / WNBA) — Top Shot only.
+  if (opts.league) {
+    const before = allDeals.length;
+    allDeals = allDeals.filter((d) => leagueForSetName(d.setName) === opts.league);
+    console.log(`[sniper-feed] league=${opts.league} filtered ${before} → ${allDeals.length}`);
+  }
+
   // 9. Sort
   const sorted = allDeals.sort((a, b) => {
     if (sortBy === "price_asc") return a.askPrice - b.askPrice;
@@ -2151,7 +2161,12 @@ async function computeSniperFeed(opts: {
         // Filter out retired moments from cached deals
         const liveCachedRows = cachedRows.filter((r: any) => !retiredIds.has(String(r.flow_id)));
         console.log("[sniper-feed] Live feeds empty, serving " + liveCachedRows.length + " cached deals (filtered " + (cachedRows.length - liveCachedRows.length) + " retired)");
-        const cachedDeals = liveCachedRows.map(mapCachedListingToDeal);
+        let cachedDeals = liveCachedRows.map(mapCachedListingToDeal);
+        if (opts.league) {
+          const before = cachedDeals.length;
+          cachedDeals = cachedDeals.filter((d) => leagueForSetName(d.setName) === opts.league);
+          console.log(`[sniper-feed] cache fallback league=${opts.league} filtered ${before} → ${cachedDeals.length}`);
+        }
         return {
           count: cachedDeals.length,
           tsCount: 0,
