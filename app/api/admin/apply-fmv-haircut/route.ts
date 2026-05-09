@@ -74,6 +74,27 @@ export async function POST(req: NextRequest) {
     console.error(
       `[apply-fmv-haircut] mode=${mode} collection=${collectionParam ?? "all"} error: ${error.message}`
     );
+    try {
+      await (supabaseAdmin as any).rpc("log_pipeline_run", {
+        p_pipeline: "apply-fmv-haircut",
+        p_started_at: new Date(startedAt).toISOString(),
+        p_rows_found: 0,
+        p_rows_written: 0,
+        p_rows_skipped: 0,
+        p_ok: false,
+        p_error: error.message,
+        p_collection_slug: collectionParam ?? null,
+        p_cursor_before: null,
+        p_cursor_after: null,
+        p_extra: { mode, total_dollars_removed: 0 },
+      });
+    } catch (logErr) {
+      console.warn(
+        `[apply-fmv-haircut] log_pipeline_run err: ${
+          logErr instanceof Error ? logErr.message : String(logErr)
+        }`
+      );
+    }
     return NextResponse.json(
       { error: error.message, mode, collection: collectionParam ?? null },
       { status: 500 }
@@ -86,6 +107,32 @@ export async function POST(req: NextRequest) {
   console.log(
     `[apply-fmv-haircut] mode=${mode} collection=${collectionParam ?? "all"} examined=${row?.rows_examined ?? 0} haircut=${row?.rows_haircut ?? 0} dollars_removed=${row?.total_dollars_removed ?? 0} duration_ms=${durationMs}`
   );
+
+  const rowsExamined = Number(row?.rows_examined ?? 0);
+  const rowsHaircut = Number(row?.rows_haircut ?? 0);
+  const totalDollarsRemoved = Number(row?.total_dollars_removed ?? 0);
+
+  try {
+    await (supabaseAdmin as any).rpc("log_pipeline_run", {
+      p_pipeline: "apply-fmv-haircut",
+      p_started_at: new Date(startedAt).toISOString(),
+      p_rows_found: rowsExamined,
+      p_rows_written: rowsHaircut,
+      p_rows_skipped: Math.max(0, rowsExamined - rowsHaircut),
+      p_ok: true,
+      p_error: null,
+      p_collection_slug: collectionParam ?? null,
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: { mode, total_dollars_removed: totalDollarsRemoved },
+    });
+  } catch (logErr) {
+    console.warn(
+      `[apply-fmv-haircut] log_pipeline_run err: ${
+        logErr instanceof Error ? logErr.message : String(logErr)
+      }`
+    );
+  }
 
   return NextResponse.json({
     mode,
