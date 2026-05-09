@@ -502,7 +502,12 @@ Tracked but intentionally unfixed — revisit when adding a real consumer or a p
 
 Main branch is the canonical clean branch.
 
-1. **Cart execution blocked** — needs `NEXT_PUBLIC_WALLETCONNECT_ID` (register at dashboard.reown.com) + Dapper co-signer registration.
+1. **Cart execution blocked** — two external dependencies and three internal code blockers. External: register `NEXT_PUBLIC_WALLETCONNECT_ID` at dashboard.reown.com, and complete Dapper meta-transaction co-signer registration. Internal blockers are documented in `docs/audits/purchase-moment-2026-05.md` at commit `7ad4c4a`:
+   - **Critical compile errors (C1, C2)** in `lib/cadence/purchase-moment.ts`: `self.listing.getDetails().salePrice` is read before `self.listing` is assigned (uninitialized field access), and the file is missing `import FungibleToken from 0xf233dcee88fe0abe` which is required for the `auth(FungibleToken.Withdraw)` entitlement on the DUC vault borrow.
+   - **High-severity (H1)**: `commissionRecipient: nil` will panic on every Dapper-listed Top Shot moment because Dapper listings always carry a non-zero commission cut.
+   - **High-severity (H2)**: missing `post {}` block enforcing the DUC leak check that the Dapper co-signer requires before it will sign the meta-transaction.
+
+   The transaction has never compiled against a Cadence 1.0 toolchain. Sequence: fix the Cadence first (C1+C2 to compile-clean, then H1+H2 to make it signable), then resolve the external dependencies, then test on emulator and testnet against a real Dapper testnet co-signer before any mainnet attempt.
 
 2. **Sentry error capture inactive** — `@sentry/nextjs ^10.47.0` is wired (sentry.client/server/edge.config.ts all reference `NEXT_PUBLIC_SENTRY_DSN`) but no DSN set in Vercel env. SDK is current; only blocker is creating a Sentry project (or locating the existing one) and pasting its DSN as `NEXT_PUBLIC_SENTRY_DSN` for production/preview/development.
 
