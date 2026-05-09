@@ -104,7 +104,7 @@ export default async function PackPage(props: { params: Promise<{ collection: st
     <div>
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section className="rpc-card" style={{ padding: 18 }}>
-        <div style={{ display: "grid", gridTemplateColumns: image ? "1fr minmax(0,240px)" : "1fr", gap: 24, alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr minmax(0,240px)", gap: 24, alignItems: "start" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
             <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.18em", textTransform: "uppercase" }}>
               Pack · {detail.dist_id}
@@ -120,12 +120,51 @@ export default async function PackPage(props: { params: Promise<{ collection: st
               </div>
             )}
           </div>
-          {image && (
-            <div style={{ width: "100%", maxWidth: 240, aspectRatio: "1 / 1", background: "rgba(0,0,0,0.4)", border: "1px solid var(--rpc-border)", borderRadius: 6, overflow: "hidden", justifySelf: "end" }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={image} alt={detail.title ?? `Pack ${detail.dist_id}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-            </div>
-          )}
+          <div style={{ width: "100%", maxWidth: 240, aspectRatio: "1 / 1", background: "rgba(0,0,0,0.4)", border: "1px solid var(--rpc-border)", borderRadius: 6, overflow: "hidden", justifySelf: "end" }}>
+            {image ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={image}
+                alt={detail.title ?? `Pack ${detail.dist_id}`}
+                width={240}
+                height={240}
+                loading="lazy"
+                decoding="async"
+                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+              />
+            ) : (
+              (() => {
+                const heroTitle = detail.title ?? `Pack ${detail.dist_id}`
+                const initial = heroTitle.trim().charAt(0).toUpperCase() || "?"
+                const heroTier = Array.isArray(detail.distinct_tiers) && detail.distinct_tiers.length > 0
+                  ? detail.distinct_tiers[0].toLowerCase()
+                  : null
+                const tierBg = heroTier
+                  ? `var(--tier-${heroTier}-bg, var(--rpc-red))`
+                  : "var(--rpc-red)"
+                return (
+                  <div
+                    aria-label={heroTitle}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: `linear-gradient(135deg, ${tierBg} 0%, var(--rpc-red) 100%)`,
+                      fontFamily: "'Barlow Condensed', sans-serif",
+                      fontWeight: 900,
+                      fontSize: 96,
+                      color: "rgba(255,255,255,0.85)",
+                      letterSpacing: "0.04em",
+                    }}
+                  >
+                    {initial}
+                  </div>
+                )
+              })()
+            )}
+          </div>
         </div>
       </section>
 
