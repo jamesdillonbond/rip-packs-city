@@ -173,6 +173,44 @@ export async function POST(req: NextRequest) {
       ? collectionsValidated
       : [...ALL_PUBLISHED_COLLECTIONS]
 
+  // Dedup: reject when (lower(username), wallet_addr) already has an active
+  // allow_list row under a different email. Catches the samwise222
+  // typo-fix-double-signup pattern (same wallet, same handle, two emails both
+  // approved). Only fires when both identifiers are present — otherwise we
+  // can't be sure we're matching the same person.
+  if (wallet && username) {
+    // Match the RPC's storage shape: submit_allow_list_request lowercases both
+    // wallet_addr and username at INSERT time. Comparing raw mixed-case form
+    // input against stored lowercase rows would silently miss duplicates.
+    const { data: dupRows, error: dupErr } = await supabaseAdmin
+      .from("allow_list")
+      .select("email")
+      .eq("status", "active")
+      .eq("wallet_addr", wallet.toLowerCase())
+      .ilike("username", username)
+      .limit(1)
+    if (dupErr) {
+      console.error("[early-access/submit] dedup lookup error", dupErr)
+    } else if (dupRows && dupRows.length > 0) {
+      const existingEmail = (dupRows[0] as { email?: string }).email
+      const isSameEmail =
+        typeof existingEmail === "string" &&
+        existingEmail.trim().toLowerCase() === email
+      if (!isSameEmail) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "This wallet and username are already approved under a different email. Sign in with that email instead — we send a magic link.",
+            duplicate: true,
+            existing_account: true,
+          },
+          { status: 409 }
+        )
+      }
+    }
+  }
+
   const userAgent = req.headers.get("user-agent") ?? null
   const ipHash = hashIp(getClientIp(req))
   const source = "early_access_form"
