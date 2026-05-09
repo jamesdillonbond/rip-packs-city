@@ -33,6 +33,13 @@ interface ApiRow {
   value_ratio: number | null
   fmv_coverage_pct: number | null
   depletion_pct: number | null
+  /** Pool-level depletion: % of editions in the drop pool with remaining=0.
+   *  Distinct from depletion_pct (sealed packs sold). High values flag a
+   *  "ghost pack" pool dominated by a few high-FMV survivors. */
+  ev_depletion_pct: number | null
+  /** Total editions in the EV calculation — used with ev_depletion_pct to
+   *  derive the surviving-edition count for the depletion chip. */
+  edition_count: number | null
   is_rare_single_pack?: boolean | null
 }
 
@@ -67,6 +74,8 @@ function toPackRow(r: ApiRow, collectionUrlSlug: string): PackRow {
     evMarginPct: r.ev_margin_pct == null ? null : Number(r.ev_margin_pct),
     fmvCoverage: pctFraction(r.fmv_coverage_pct),
     depletionPct: pctFraction(r.depletion_pct),
+    poolDepletionPct: pctFraction(r.ev_depletion_pct),
+    editionCount: r.edition_count == null ? null : Number(r.edition_count),
     isRareSinglePack: r.is_rare_single_pack === true,
     detailHref: `/${collectionUrlSlug}/pack/${r.dist_id}`,
   }

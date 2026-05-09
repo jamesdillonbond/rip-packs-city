@@ -1690,9 +1690,6 @@ export default function SniperPage() {
             {visibleDeals.map((deal) => {
               const isFlowty = (deal.source ?? "topshot") === "flowty";
               const isPinnacleDeal = deal.source === "pinnacle";
-              const isOwned =
-                (!!deal.intEditionKey && ownedIds.has(deal.intEditionKey)) ||
-                (!!deal.editionKey && ownedIds.has(deal.editionKey));
               return (
                 <div key={`m-${deal.source}-${deal.flowId}`} onClick={(e) => { const t = e.target as HTMLElement; if (t.closest("a,button")) return; setSelectedDeal(deal); }} className="rpc-card p-3 flex flex-col gap-1.5 cursor-pointer">
                   {/* Row 1: Player + Tier + Source */}
@@ -1728,7 +1725,6 @@ export default function SniperPage() {
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1">
                       <span style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)", fontSize: "var(--text-sm)" }}>{deal.serial === 0 ? "Floor" : `#${deal.serial}`}</span>
-                      {!isAllDay && isOwned && <span style={{ color: "var(--rpc-success)", fontSize: 10 }}>✓</span>}
                       <SerialBadge deal={deal} />
                       {deal.isJersey && (
                         <span className="rpc-chip" style={{ background: "rgba(20,184,166,0.15)", borderColor: "rgba(20,184,166,0.3)", color: "#5eead4", fontSize: 9, padding: "1px 5px" }}>Jersey</span>
@@ -1744,7 +1740,22 @@ export default function SniperPage() {
                     <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)" }}>Adj. FMV ${fmt(deal.adjustedFmv)}</span>
                     <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-ghost)" }}>Listed {timeAgo(deal.updatedAt)}</span>
                     {(() => {
-                      if (!ownerKey) return null;
+                      // AllDay + Pinnacle keys don't match wallet_moments_cache.edition_key
+                      // shape today (AllDay sniper feed emits "set:play"; wmc stores plain
+                      // "play". Pinnacle skips the editionStats fetch entirely). Until
+                      // those mappings are unified, hide the chip rather than mislead.
+                      if (isAllDay || isPinnacle) return null;
+                      if (!ownerKey) {
+                        return (
+                          <Link
+                            href={`/${collectionSlug}/collection`}
+                            prefetch={false}
+                            style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)", textDecoration: "underline" }}
+                          >
+                            Sign in to see ownership
+                          </Link>
+                        );
+                      }
                       const eStats =
                         (deal.editionKey && editionStats.get(deal.editionKey)) ||
                         (deal.intEditionKey && editionStats.get(deal.intEditionKey)) ||
@@ -1756,7 +1767,11 @@ export default function SniperPage() {
                           </span>
                         );
                       }
-                      return null;
+                      return (
+                        <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-ghost)" }} title="You don't own any copies of this edition">
+                          Not owned
+                        </span>
+                      );
                     })()}
                     {!isPinnacle && deal.hasBadge && deal.badgeSlugs.length > 0 && (
                       <div className="flex gap-1 flex-wrap items-center">
@@ -2025,12 +2040,24 @@ export default function SniperPage() {
                       {timeAgo(deal.updatedAt)}
                     </td>
 
-                    {/* Own / Lock — "owned / locked" count of this edition the
-                        signed-in wallet holds. Falls back to "—" when not
-                        signed in, no edition match, or the user owns zero. */}
+                    {/* Own / Lock — three explicit states: ownership match
+                        (success "X / Y"), signed-in but no copies ("Not
+                        owned"), or signed-out (link to /collection so the
+                        page can write rpc_owner_key from username lookup). */}
                     <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>
                       {(() => {
-                        if (!ownerKey) return "—";
+                        if (isAllDay || isPinnacle) return "—";
+                        if (!ownerKey) {
+                          return (
+                            <Link
+                              href={`/${collectionSlug}/collection`}
+                              prefetch={false}
+                              style={{ color: "var(--rpc-text-muted)", textDecoration: "underline" }}
+                            >
+                              Sign in
+                            </Link>
+                          );
+                        }
                         const eStats =
                           (deal.editionKey && editionStats.get(deal.editionKey)) ||
                           (deal.intEditionKey && editionStats.get(deal.intEditionKey)) ||
@@ -2042,7 +2069,11 @@ export default function SniperPage() {
                             </span>
                           );
                         }
-                        return "—";
+                        return (
+                          <span style={{ color: "var(--rpc-text-ghost)" }} title="You don't own any copies of this edition">
+                            Not owned
+                          </span>
+                        );
                       })()}
                     </td>
 
