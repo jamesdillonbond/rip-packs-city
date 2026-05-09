@@ -120,7 +120,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  console.log('[allday-fmv-populate] start, proxy=', (process.env.ALLDAY_PROXY_URL ?? '').slice(0, 30))
+  const forceReset = req.nextUrl.searchParams.get("reset") === "true"
+
+  console.log('[allday-fmv-populate] start, proxy=', (process.env.ALLDAY_PROXY_URL ?? '').slice(0, 30), 'reset=', forceReset)
 
   const startedAt = new Date()
   const startedAtIso = startedAt.toISOString()
@@ -152,8 +154,55 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  const cursorBefore: string | null = stateRow?.cursor ?? null
+  let cursorBefore: string | null = stateRow?.cursor ?? null
   const totalIngestedBefore: number = stateRow?.total_ingested ?? 0
+
+  // ── Stall detection ────────────────────────────────────────────────────
+  // The upstream AllDay marketplace GQL occasionally pins on a cursor that
+  // returns 0 edges + the same endCursor every page, so the sweep parks
+  // there indefinitely (observed: cursor `7a7fc7e5-...` stuck since
+  // 2026-03-23). When `?reset=true` is passed OR the last two runs both
+  // had editions_fetched == 0 with cursor_before == cursor_after equal to
+  // our current cursor, drop the cursor and start fresh.
+  let stallReset = false
+  if (forceReset && cursorBefore !== null) {
+    stallReset = true
+    console.log('[allday-fmv-populate] manual reset via ?reset=true (cursor was', cursorBefore?.slice(0, 30), ')')
+  } else if (cursorBefore !== null) {
+    try {
+      const { data: recentRuns } = await supabaseAdmin
+        .from("pipeline_runs")
+        .select("extra")
+        .eq("pipeline", PIPELINE_NAME)
+        .order("started_at", { ascending: false })
+        .limit(2)
+      const stalled =
+        Array.isArray(recentRuns) &&
+        recentRuns.length === 2 &&
+        recentRuns.every((r: any) => {
+          const x = r?.extra ?? {}
+          return (
+            Number(x.editions_fetched ?? 0) === 0 &&
+            x.cursor_before != null &&
+            x.cursor_before === x.cursor_after &&
+            x.cursor_after === cursorBefore
+          )
+        })
+      if (stalled) {
+        stallReset = true
+        console.log('[allday-fmv-populate] stall detected — resetting cursor (was', cursorBefore?.slice(0, 30), ')')
+      }
+    } catch (e) {
+      console.log(`[allday-fmv-populate] stall-detect read err: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+  if (stallReset) {
+    cursorBefore = null
+    await supabaseAdmin
+      .from("backfill_state")
+      .update({ cursor: null, status: "pending" })
+      .eq("id", SWEEP_ID)
+  }
 
   const { error: lockErr } = await supabaseAdmin
     .from("backfill_state")
@@ -251,6 +300,7 @@ export async function GET(req: NextRequest) {
         cursor_before: cursorBefore,
         cursor_after: cursorAfter,
         sweep_complete: sweepComplete,
+        stall_reset: stallReset,
       },
     })
   } catch (e) {
@@ -269,6 +319,7 @@ export async function GET(req: NextRequest) {
     no_edition,
     cursor_after: cursorAfter,
     sweep_complete: sweepComplete,
+    stall_reset: stallReset,
     debug_last_error: lastError ?? null,
     debug_batch_size: nodes.length,
     debug_node_sample: JSON.stringify(nodeSample ?? null),
