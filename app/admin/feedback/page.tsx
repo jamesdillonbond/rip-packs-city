@@ -39,6 +39,7 @@ interface Row {
   shipped_at: string | null;
   owner_key: string | null;
   user_wallet: string | null;
+  user_email: string | null;
   page_context: string | null;
   feedback_type: FeedbackType | null;
   feedback_summary: string | null;
@@ -890,7 +891,7 @@ function FeedbackRowCard({
           flexWrap: "wrap",
         }}
       >
-        <span>{row.owner_key ?? row.user_wallet ?? "anonymous"}</span>
+        <span>{row.user_email ?? row.owner_key ?? row.user_wallet ?? "anonymous"}</span>
         {row.page_context && <span>page: {row.page_context}</span>}
         {row.duplicate_of && <span>dup of #{row.duplicate_of}</span>}
       </div>
