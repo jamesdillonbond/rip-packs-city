@@ -155,6 +155,12 @@ interface TsEditionMeta {
   gameDate: string | null
   homeTeam: string | null
   awayTeam: string | null
+  // On-chain integer IDs surfaced by the GQL response so UUID-format inserts
+  // (where the external_id has no int-pair to parse) still land both columns.
+  // Quirk: TopShot GQL exposes set.flowId (lowercase d) and play.flowID
+  // (uppercase D). Both come back as strings; we coerce to int.
+  setIdOnchain: number | null
+  playIdOnchain: number | null
 }
 
 function normalizeTsTier(raw: string | null | undefined): string | null {
@@ -218,6 +224,16 @@ async function fetchTsEditionMeta(
   const dateOfMoment = s.dateOfMoment ?? null
   const dateSlice = dateOfMoment ? String(dateOfMoment).slice(0, 10) : null
   const gameDate = dateSlice && /^\d{4}-\d{2}-\d{2}$/.test(dateSlice) ? dateSlice : null
+  const setFlowIdRaw = row.set?.flowId ?? null
+  const playFlowIDRaw = row.play?.flowID ?? null
+  const setIdOnchain =
+    setFlowIdRaw != null && Number.isFinite(Number(setFlowIdRaw))
+      ? parseInt(String(setFlowIdRaw), 10)
+      : null
+  const playIdOnchain =
+    playFlowIDRaw != null && Number.isFinite(Number(playFlowIDRaw))
+      ? parseInt(String(playFlowIDRaw), 10)
+      : null
   return {
     playerName: s.playerName ? String(s.playerName).trim() : null,
     setName: row.set?.flowName ? String(row.set.flowName).trim() : null,
@@ -230,6 +246,8 @@ async function fetchTsEditionMeta(
     gameDate,
     homeTeam: s.homeTeamName ?? null,
     awayTeam: s.awayTeamName ?? null,
+    setIdOnchain,
+    playIdOnchain,
   }
 }
 
@@ -365,6 +383,12 @@ export async function hydrateTopShotEditions(
     const name =
       playerName && setName ? `${playerName} — ${setName}` : playerName ?? setName
 
+    // For UUID-format external_ids the int pair isn't in the key, so fall back
+    // to the GQL-returned set.flowId / play.flowID. UUID-format inserts that
+    // omitted these columns were the bug this branch closes (2026-05-09).
+    const resolvedSetIdOnchain = setIdOnchain ?? meta?.setIdOnchain ?? null
+    const resolvedPlayIdOnchain = playIdOnchain ?? meta?.playIdOnchain ?? null
+
     out.push({
       external_id: extId,
       collection_id: TS_COLLECTION_ID,
@@ -376,8 +400,8 @@ export async function hydrateTopShotEditions(
       tier: meta?.tier ?? null,
       series: meta?.series ?? null,
       circulation_count: meta?.circulation ?? null,
-      set_id_onchain: setIdOnchain ?? undefined,
-      play_id_onchain: playIdOnchain ?? undefined,
+      set_id_onchain: resolvedSetIdOnchain ?? undefined,
+      play_id_onchain: resolvedPlayIdOnchain ?? undefined,
       play_type: meta?.playType ?? null,
       game_date: meta?.gameDate ?? null,
       home_team: meta?.homeTeam ?? null,
