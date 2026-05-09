@@ -20,14 +20,22 @@ import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { resolveTopShotUsername } from "@/lib/topshot-username-resolve";
 import { publishedCollections } from "@/lib/collections";
 
-// Marketplaces that share the Dapper SSO username + wallet. UFC Strike is a
-// Flow collection but uses a separate Concept Labs account model, so it is
-// intentionally excluded from the auto-fanout.
-const DAPPER_SSO_SLUGS = new Set([
+// Flow collections that should auto-attach to the resolved wallet on signup.
+// NBA / All Day / Golazos / Pinnacle share Dapper SSO so the username is
+// authoritative across them. UFC Strike runs its own Concept Labs account
+// system, but the wallet address on Flow is the same — verified beta cohort
+// (alxo, mbl267, rigged, samwise222, selanne8kariya9) all hold UFC moments
+// at the wallet returned by the Top Shot resolver, so we add a UFC
+// saved_wallets row too. wallet-search short-circuits with a 400 for UFC,
+// which is why the after() block dispatches to /api/ufc-wallet-scan
+// instead — the saved_wallets row alone is enough for the sidebar to
+// render the collection card.
+const SEED_SLUGS = new Set([
   "nba-top-shot",
   "nfl-all-day",
   "laliga-golazos",
   "disney-pinnacle",
+  "ufc",
 ]);
 
 function siteUrl() {
@@ -94,7 +102,7 @@ export async function POST(req: NextRequest) {
   const username = resolved.username;
 
   const targets = publishedCollections().filter(
-    (c) => DAPPER_SSO_SLUGS.has(c.id) && !!c.supabaseCollectionId
+    (c) => SEED_SLUGS.has(c.id) && !!c.supabaseCollectionId
   );
 
   const rows = targets.map((c) => ({
@@ -130,10 +138,28 @@ export async function POST(req: NextRequest) {
   const userId = user.id;
   after(async () => {
     const base = siteUrl();
+    const ingestToken = process.env.INGEST_SECRET_TOKEN ?? "";
     await Promise.allSettled(
       targets.map(async (c) => {
         const slug = c.id;
         try {
+          // UFC has its own scan route — wallet-search returns 400 for it.
+          // The route is not in proxy.ts public bypass, so we pass the
+          // INGEST bearer to short-circuit the auth gate.
+          if (slug === "ufc") {
+            const res = await fetch(`${base}/api/ufc-wallet-scan`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                ...(ingestToken ? { Authorization: `Bearer ${ingestToken}` } : {}),
+              },
+              body: JSON.stringify({ wallet: walletAddress }),
+            });
+            if (!res.ok) {
+              console.warn(`[resolve-and-associate after] ufc scan HTTP ${res.status}`);
+            }
+            return;
+          }
           const res = await fetch(`${base}/api/wallet-search`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
