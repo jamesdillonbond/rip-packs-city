@@ -18,6 +18,7 @@ import ExplainButton from "@/components/ExplainButton"
 import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
 import MomentDetailModal from "@/components/MomentDetailModal"
 import BadgeIcon from "@/components/BadgeIcon"
+import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter"
 import WalletStatRow from "@/components/wallet-stat-row"
 import { formatCurrency, formatCount } from "@/lib/format"
 import { pickLoading } from "@/lib/schonely"
@@ -498,6 +499,7 @@ export default function WalletPage() {
   const [seriesFilter, setSeriesFilter] = useState("all")
   const [rarityFilter, setRarityFilter] = useState("all")
   const [lockedFilter, setLockedFilter] = useState("all")
+  const [leagueFilter, setLeagueFilter] = useState<LeagueValue>("all")
   const [searchWithin, setSearchWithin] = useState("")
   const [sortKey, setSortKey] = useState<SortKey>("fmv")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
@@ -1162,10 +1164,12 @@ export default function WalletPage() {
       // This runs in parallel as a background fetch — does NOT block the moment display.
       // Skipped for UFC: wallet-search is driven by Top Shot GQL and has no UFC path.
       if (trimmed && collectionSlug !== "ufc") {
+        const walletSearchBody: Record<string, unknown> = { input: trimmed, offset: 0, limit: 50, collection: collectionSlug }
+        if (collectionSlug === "nba-top-shot" && leagueFilter !== "all") walletSearchBody.league = leagueFilter
         fetch("/api/wallet-search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ input: trimmed, offset: 0, limit: 50, collection: collectionSlug }),
+          body: JSON.stringify(walletSearchBody),
         })
           .then(function(r) { return r.ok ? r.json() : null })
           .then(function(json: WalletSearchResponse | null) {
@@ -1216,7 +1220,7 @@ export default function WalletPage() {
     } finally {
       setLoading(false)
     }
-  }, [router, collectionSlug, sortKey, sortDirection, playerFilter, seriesFilter, rarityFilter])
+  }, [router, collectionSlug, sortKey, sortDirection, playerFilter, seriesFilter, rarityFilter, leagueFilter])
 
   // Auto-search on mount: prefer the raw input the user last typed
   // (rpc_last_wallet — username or address) over the resolved 0x ownerKey.
@@ -1808,7 +1812,7 @@ export default function WalletPage() {
 
 
         {/* Filters */}
-        <div className="mb-5 grid gap-2 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
+        <div className="mb-5 grid gap-2 grid-cols-2 sm:grid-cols-3 xl:grid-cols-7">
           <select value={playerFilter} onChange={function(e) { setPlayerFilter(e.target.value) }} className="rpc-filter-select">
             {availablePlayers.map(function(p) { return <option key={p} value={p}>{p === "all" ? "All Players" : p}</option> })}
           </select>
@@ -1827,6 +1831,7 @@ export default function WalletPage() {
             <option value="unlocked">Unlocked</option>
           </select>
           <input value={searchWithin} onChange={function(e) { setSearchWithin(e.target.value) }} placeholder="Filter moments…" className="rpc-filter-input col-span-2 sm:col-span-1" />
+          <LeagueFilter value={leagueFilter} onChange={setLeagueFilter} visible={collectionSlug === "nba-top-shot"} />
         </div>
 
         {/* Sort buttons */}
