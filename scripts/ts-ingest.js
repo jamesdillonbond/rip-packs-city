@@ -171,10 +171,32 @@ async function deleteStale() {
     const resolvedCount = rows.filter(r => r.set_id > 0 && r.play_id > 0).length;
     console.log(`Edition key resolution: ${resolvedCount}/${rows.length} rows have valid set_id/play_id`);
 
-    console.log(`Upserting ${rows.length} rows...`);
+    // Dedup by listing_id (the ts_listings PK). Parallel Flowty pages can
+    // surface the same listing_id twice when the upstream window shifts mid-
+    // run, and Postgres rejects the whole batch with code 21000 ("ON CONFLICT
+    // DO UPDATE command cannot affect row a second time") when that happens.
+    // Keep the row with the lower ask price per listing_id, mirroring the
+    // pattern in app/api/topshot-listing-cache/route.ts.
+    const byListingId = new Map();
+    for (const row of rows) {
+      const prev = byListingId.get(row.listing_id);
+      if (!prev) {
+        byListingId.set(row.listing_id, row);
+        continue;
+      }
+      if (row.price_usd != null && (prev.price_usd == null || row.price_usd < prev.price_usd)) {
+        byListingId.set(row.listing_id, row);
+      }
+    }
+    const dedupedRows = Array.from(byListingId.values());
+    if (dedupedRows.length !== rows.length) {
+      console.log(`Deduped: ${rows.length} -> ${dedupedRows.length} rows (${rows.length - dedupedRows.length} listing_id collisions)`);
+    }
+
+    console.log(`Upserting ${dedupedRows.length} rows...`);
     let upserted = 0;
-    for (let i = 0; i < rows.length; i += 100) {
-      const batch = rows.slice(i, i + 100);
+    for (let i = 0; i < dedupedRows.length; i += 100) {
+      const batch = dedupedRows.slice(i, i + 100);
       await upsert(batch);
       upserted += batch.length;
     }
