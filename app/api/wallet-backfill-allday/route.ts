@@ -8,6 +8,7 @@
 // runIdOnlyBackfill which left 98.5% of rows NULL on those four columns.
 
 import { NextRequest, NextResponse, after } from "next/server"
+import { supabaseAdmin } from "@/lib/supabase"
 import {
   runAllDayDetailsBackfill,
   resolveWalletInput,
@@ -74,7 +75,7 @@ export async function POST(req: NextRequest) {
   const startedAtIso = new Date(startedMs).toISOString()
 
   after(async () => {
-    await runAllDayDetailsBackfill({
+    const { rowsFound } = await runAllDayDetailsBackfill({
       config: CONFIG,
       startedAtIso,
       startedMs,
@@ -82,6 +83,17 @@ export async function POST(req: NextRequest) {
       skipCached,
       force,
     })
+    try {
+      await (supabaseAdmin as any).rpc("record_wallet_backfill_scan", {
+        p_wallet: wallet,
+        p_collection_slug: CONFIG.slug,
+        p_found_count: rowsFound,
+      })
+    } catch (err) {
+      console.warn(
+        `[${CONFIG.pipelineName}] record_wallet_backfill_scan failed wallet=${wallet}: ${err instanceof Error ? err.message : String(err)}`
+      )
+    }
   })
 
   return NextResponse.json(
