@@ -97,6 +97,7 @@ Edge functions:
 | RPC NBA Projections Sync | edge fn `nba-projections-sync` | HEALTHY |
 | RPC Pipeline Runs Cleanup | edge fn `pipeline-runs-cleanup` | **BROKEN** | Dashboard shows `Failed (timeout) (30s)` last Saturday. Same 30s-cap issue we hit on `wmc-fmv-populate`. Needs chunked rewrite. See "Open issues" below. |
 | RPC FMV Thin-Sale Haircut | `/api/admin/apply-fmv-haircut?mode=live` | **NOT-YET-SCHEDULED** (2026-05-09) | New route. Recommended cadence: daily, ~30–60 min after a fmv-recalc-force-stale tick has settled (e.g. 06:30 UTC after the 06:00 UTC stale recalc). Inline haircut also runs at the end of every `/api/fmv-recalc` invocation, so the daily cron is a belt-and-braces sweep that catches LOW/ASK_ONLY rows the inline pass missed. Belongs in this row once the cron-job.org entry is created. |
+| RPC TopShot Catalog Backfill | `/api/admin/backfill-topshot-catalog` | **NOT-YET-SCHEDULED** (2026-05-09) | New route. Recommended cadence: daily at 4am ET (08:00 UTC). Walks UUID-format TopShot sets oldest-first via TS_PROXY_URL and hydrates editions + cover art. `maxDuration=300`, time-budget 270s, paginates with `?startAfter=<set_uuid>` if a single tick can't drain the queue. Closes the 49→87 set-tracker gap and the 23% editions-thumbnail / 100% editions-video gap. Auth: Bearer `RPC_ADMIN_TOKEN` or `?token=`. Logs `pipeline_runs` row with `pipeline=topshot-catalog-backfill`. |
 
 ### Weekly
 
