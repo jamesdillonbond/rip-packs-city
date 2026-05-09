@@ -26,6 +26,7 @@ import {
   buildWelcomeEmailHtml,
   buildWelcomeEmailSubject,
   buildWelcomeEmailText,
+  type PrewarmCollectionMeta,
   type PrewarmStatusValue,
   type PrewarmSummary,
 } from "@/lib/emails/welcome-email"
@@ -68,6 +69,7 @@ export interface ProcessOutcome {
 interface SeedResult {
   status: PrewarmStatusValue
   error?: string | null
+  found?: number
 }
 
 async function runTopShotSeeder(
@@ -89,7 +91,22 @@ async function runTopShotSeeder(
         error: `wallet-search HTTP ${res.status}`,
       }
     }
-    return { status: "complete" }
+    // wallet-search response shape: { summary: { totalMoments: number, ... }, ... }
+    // Read totalMoments so the orchestrator can record a real count in
+    // prewarm_summary._meta and the reconciler can distinguish a truly empty
+    // wallet from a silent scan failure.
+    let found = 0
+    try {
+      const body = (await res.json().catch(() => null)) as {
+        summary?: { totalMoments?: number }
+      } | null
+      const tm = body?.summary?.totalMoments
+      if (typeof tm === "number" && Number.isFinite(tm)) found = tm
+    } catch {
+      // body parse failure is non-fatal — leave found=0 and let the meta line
+      // record scanned=true,found=0 so monitoring can flag the divergence.
+    }
+    return { status: "complete", found }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     if ((err as { name?: string })?.name === "AbortError") {
@@ -257,6 +274,7 @@ export async function processSinglePrewarmRow(
 ): Promise<ProcessOutcome> {
   const flagged = flaggedSet(row)
   const summary: PrewarmSummary = {}
+  const meta: Record<string, PrewarmCollectionMeta> = {}
   let tsError: string | null = null
 
   await resolveUsernameToWallet(row, summary)
@@ -265,17 +283,31 @@ export async function processSinglePrewarmRow(
   if (flagged.has("nba_top_shot")) {
     if (!row.wallet_addr) {
       summary.nba_top_shot = "deferred"
+      meta.nba_top_shot = { scanned: false, found: 0 }
     } else {
       const r = await runTopShotSeeder(origin, row.wallet_addr)
       summary.nba_top_shot = r.status
+      meta.nba_top_shot = {
+        scanned: r.status === "complete",
+        found: typeof r.found === "number" ? r.found : 0,
+      }
       if (r.status === "failed") tsError = r.error ?? "unknown seeder failure"
     }
   }
 
   // Other collections flagged on the form: seeders not yet shipped → deferred.
   for (const key of ["nfl_all_day", "disney_pinnacle", "laliga_golazos", "ufc_strike"] as CollectionKey[]) {
-    if (flagged.has(key)) summary[key] = "deferred"
+    if (flagged.has(key)) {
+      summary[key] = "deferred"
+      meta[key] = { scanned: false, found: 0 }
+    }
   }
+
+  // Stash structured per-collection telemetry in a sibling key. The welcome
+  // email renderer only iterates known collection labels, so `_meta` won't
+  // surface to the user — it exists for the reconciler / monitoring to spot
+  // silent failures (status='complete' but found=0 across the board).
+  if (Object.keys(meta).length > 0) summary._meta = meta
 
   // Determine finish status.
   // - failed if the TS seeder errored out

@@ -26,7 +26,18 @@ export type PrewarmStatusValue =
   | "failed"
   | "skipped"
 
-export type PrewarmSummary = Record<string, PrewarmStatusValue | string>
+export interface PrewarmCollectionMeta {
+  scanned: boolean
+  found: number
+}
+
+// Per-collection status values plus an optional `_meta` bag of structured
+// per-collection telemetry (scanned/found counts) the orchestrator writes so
+// "scanned and empty" is distinguishable from a silent scan failure. Keys
+// other than the known collection labels are ignored by the email renderer.
+export type PrewarmSummary = {
+  _meta?: Record<string, PrewarmCollectionMeta>
+} & Record<string, PrewarmStatusValue | string | Record<string, PrewarmCollectionMeta> | undefined>
 
 export interface WelcomeEmailOpts {
   email: string
