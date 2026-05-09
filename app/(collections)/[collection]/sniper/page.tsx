@@ -1876,6 +1876,7 @@ export default function SniperPage() {
                               height={56}
                               style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 6, flexShrink: 0, background: "#1a1a1a", cursor: "pointer", boxShadow: `0 0 0 1px ${resolveTierColor(deal.tier, isAllDay)}40`, transition: "box-shadow var(--transition-fast)" }}
                               loading="lazy"
+                              decoding="async"
                               onClick={(e) => { e.stopPropagation(); setSelectedDeal(deal); }}
                               onMouseEnter={(e) => { (e.currentTarget as HTMLImageElement).style.boxShadow = `0 0 0 2px ${resolveTierColor(deal.tier, isAllDay)}` }}
                               onMouseLeave={(e) => { (e.currentTarget as HTMLImageElement).style.boxShadow = `0 0 0 1px ${resolveTierColor(deal.tier, isAllDay)}40` }}
@@ -1887,7 +1888,26 @@ export default function SniperPage() {
                             />
                           </SniperThumbnailPreview>
                         ) : (
-                          <div style={{ width: 56, height: 56, borderRadius: 6, background: "var(--rpc-surface-raised)", flexShrink: 0 }} />
+                          <div
+                            aria-label={deal.playerName}
+                            style={{
+                              width: 56,
+                              height: 56,
+                              borderRadius: 6,
+                              flexShrink: 0,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontFamily: "var(--font-display)",
+                              fontWeight: 800,
+                              fontSize: 22,
+                              color: "rgba(255,255,255,0.9)",
+                              background: `linear-gradient(135deg, ${resolveTierColor(deal.tier, isAllDay)}55, ${resolveTierColor(deal.tier, isAllDay)}22)`,
+                              boxShadow: `0 0 0 1px ${resolveTierColor(deal.tier, isAllDay)}40`,
+                            }}
+                          >
+                            {(deal.playerName || "?").trim().charAt(0).toUpperCase() || "?"}
+                          </div>
                         )}
                         <div style={{ minWidth: 0 }}>
                       <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, color: "var(--rpc-text-primary)", lineHeight: 1.2 }}>
