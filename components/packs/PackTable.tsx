@@ -31,6 +31,13 @@ export interface PackRow {
   fmvCoverage: number | null
   /** 0..1 share of the distribution opened so far. */
   depletionPct: number | null
+  /** 0..1 share of the drop pool's editions that have remaining=0 — the
+   *  "ghost pack" signal. Distinct from depletionPct (sealed packs sold).
+   *  ≥0.7 surfaces a "🔥 X/N editions remain" warning chip on the EV cell. */
+  poolDepletionPct?: number | null
+  /** Total editions in the drop pool — used with poolDepletionPct to render
+   *  surviving-edition count in the depletion chip. */
+  editionCount?: number | null
   /** True when the pack draws from a single ultra-rare edition rather than a probabilistic pool. */
   isRareSinglePack?: boolean
   /** Callback to pass through to the action column. */
@@ -138,6 +145,21 @@ function fmtSlots(slots: number | null, packType?: string | null): string {
 
 const RARE_SINGLE_TITLE =
   'EV represents one specific ultra-rare moment rather than a probabilistic pull across a pool.'
+
+const POOL_DEPLETION_THRESHOLD = 0.7
+const POOL_DEPLETION_TITLE =
+  'Pool depletion: most editions in this pack are sold out. The remaining ones skew toward high-FMV survivors, so EV is high but variance is huge — a typical pull is far from average.'
+
+// Surface pool depletion as a "🔥 X/N remain" chip when ≥70% of the drop
+// pool's editions have remaining=0. Mathematically EV is correct, but it's
+// dominated by a few survivors — sophisticated buyers want to know.
+function depletionChip(poolDepletionPct: number | null | undefined, editionCount: number | null | undefined): { label: string; surviving: number; total: number } | null {
+  if (poolDepletionPct == null || !Number.isFinite(poolDepletionPct)) return null
+  if (poolDepletionPct < POOL_DEPLETION_THRESHOLD) return null
+  if (editionCount == null || editionCount <= 0) return null
+  const surviving = Math.max(1, Math.round(editionCount * (1 - poolDepletionPct)))
+  return { label: `🔥 ${surviving}/${editionCount} remain`, surviving, total: editionCount }
+}
 
 function SortArrow({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
   if (!active) return <span className="text-zinc-700 ml-1">↕</span>
@@ -294,7 +316,7 @@ export default function PackTable({
                 <td className="p-3 text-zinc-300">{fmtSlots(r.slots, r.packType)}</td>
                 <td className="p-3 text-zinc-300 tabular-nums">{fmtPrice(r.price)}</td>
                 <td className="p-3 text-zinc-300 tabular-nums">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span>{fmtPrice(r.grossEV)}</span>
                     {r.isRareSinglePack && (
                       <span
@@ -304,6 +326,18 @@ export default function PackTable({
                         Single rare edition
                       </span>
                     )}
+                    {(() => {
+                      const chip = depletionChip(r.poolDepletionPct, r.editionCount)
+                      if (!chip) return null
+                      return (
+                        <span
+                          title={POOL_DEPLETION_TITLE}
+                          className="inline-block rounded border border-orange-900 bg-orange-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-orange-300"
+                        >
+                          {chip.label}
+                        </span>
+                      )
+                    })()}
                   </div>
                 </td>
                 <td className={`p-3 font-semibold tabular-nums ${marginClass(r.evMarginPct)}`}>{fmtPct(r.evMarginPct)}</td>
@@ -368,6 +402,18 @@ export default function PackTable({
                     Single rare edition
                   </div>
                 )}
+                {(() => {
+                  const chip = depletionChip(r.poolDepletionPct, r.editionCount)
+                  if (!chip) return null
+                  return (
+                    <div
+                      title={POOL_DEPLETION_TITLE}
+                      className="mt-1 inline-block rounded border border-orange-900 bg-orange-950/40 px-1.5 py-0.5 text-[9px] font-semibold text-orange-300"
+                    >
+                      {chip.label}
+                    </div>
+                  )
+                })()}
               </div>
             </div>
             <div className="mt-2 flex items-center gap-3 text-xs text-zinc-400">
