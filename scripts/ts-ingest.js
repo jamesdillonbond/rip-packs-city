@@ -102,9 +102,65 @@ async function deleteStale() {
   if (!res.ok) console.error(`Stale delete failed: ${res.status}`);
 }
 
+// Mirror the Vercel routes' pipeline_runs visibility so silent failures from
+// this GH Actions workflow surface in /admin health checks instead of going
+// dark for hours. Best-effort — never throws back into the run.
+async function logPipelineRun(stats) {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/log_pipeline_run`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${SUPABASE_KEY}`,
+        "apikey": SUPABASE_KEY,
+      },
+      body: JSON.stringify({
+        p_pipeline: "ts-listing-ingest",
+        p_started_at: stats.startedAtIso,
+        p_rows_found: stats.rowsFound,
+        p_rows_written: stats.rowsWritten,
+        p_rows_skipped: stats.rowsSkipped,
+        p_ok: stats.ok,
+        p_error: stats.errorMsg,
+        p_collection_slug: "nba_top_shot",
+        p_cursor_before: null,
+        p_cursor_after: null,
+        p_extra: stats.extra,
+      }),
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      console.error(`log_pipeline_run ${res.status}: ${t.slice(0, 200)}`);
+    }
+  } catch (err) {
+    console.error(`log_pipeline_run threw: ${err.message}`);
+  }
+}
+
 (async () => {
+  const startedAt = Date.now();
+  const startedAtIso = new Date(startedAt).toISOString();
+  const stats = {
+    startedAtIso,
+    ok: true,
+    errorMsg: null,
+    rowsFound: 0,
+    rowsWritten: 0,
+    rowsSkipped: 0,
+    extra: {
+      pages_total: 0,
+      pages_failed: 0,
+      page_failure_reasons: [],
+      total_fetched: 0,
+      deduped: 0,
+      resolved_ids: 0,
+      duration_ms: 0,
+    },
+  };
+  let exitCode = 0;
   try {
     const offsets = [0, 24, 48, 72, 96];
+    stats.extra.pages_total = offsets.length;
     const pages = await Promise.allSettled(offsets.map(o => fetchFlowtyPage(o)));
     const all = [];
     let pageFailures = 0;
@@ -114,12 +170,18 @@ async function deleteStale() {
         all.push(...result.value);
       } else {
         pageFailures += 1;
-        console.error(`Page from=${offsets[i]} failed: ${result.reason?.message}`);
+        const reason = result.reason?.message ?? String(result.reason);
+        console.error(`Page from=${offsets[i]} failed: ${reason}`);
+        stats.extra.page_failure_reasons.push(`from=${offsets[i]}: ${reason.slice(0, 160)}`);
       }
     }
+    stats.extra.pages_failed = pageFailures;
     if (pageFailures === offsets.length) {
+      stats.ok = false;
+      stats.errorMsg = `all ${offsets.length} Flowty pages failed via flowty-proxy`;
       console.error(`All ${offsets.length} Flowty pages failed via flowty-proxy — skipping deleteStale to preserve last good data`);
-      process.exit(1);
+      exitCode = 1;
+      return;
     }
 
     // Log first item structure for debugging
@@ -135,6 +197,7 @@ async function deleteStale() {
     }
 
     console.log(`Total fetched: ${all.length}`);
+    stats.extra.total_fetched = all.length;
     const now = new Date().toISOString();
     const rows = [];
     for (const item of all) {
@@ -170,6 +233,8 @@ async function deleteStale() {
     // Log how many rows got valid set/play IDs for monitoring
     const resolvedCount = rows.filter(r => r.set_id > 0 && r.play_id > 0).length;
     console.log(`Edition key resolution: ${resolvedCount}/${rows.length} rows have valid set_id/play_id`);
+    stats.rowsFound = rows.length;
+    stats.extra.resolved_ids = resolvedCount;
 
     // Dedup by listing_id (the ts_listings PK). Parallel Flowty pages can
     // surface the same listing_id twice when the upstream window shifts mid-
@@ -192,6 +257,8 @@ async function deleteStale() {
     if (dedupedRows.length !== rows.length) {
       console.log(`Deduped: ${rows.length} -> ${dedupedRows.length} rows (${rows.length - dedupedRows.length} listing_id collisions)`);
     }
+    stats.extra.deduped = dedupedRows.length;
+    stats.rowsSkipped = rows.length - dedupedRows.length;
 
     console.log(`Upserting ${dedupedRows.length} rows...`);
     let upserted = 0;
@@ -200,6 +267,7 @@ async function deleteStale() {
       await upsert(batch);
       upserted += batch.length;
     }
+    stats.rowsWritten = upserted;
     if (upserted > 0) {
       await deleteStale();
     } else {
@@ -207,7 +275,13 @@ async function deleteStale() {
     }
     console.log(`Done. ${upserted} listings ingested.`);
   } catch (err) {
+    stats.ok = false;
+    stats.errorMsg = err.message;
     console.error("Ingest failed:", err.message);
-    process.exit(1);
+    exitCode = 1;
+  } finally {
+    stats.extra.duration_ms = Date.now() - startedAt;
+    await logPipelineRun(stats);
+    if (exitCode !== 0) process.exit(exitCode);
   }
 })();
