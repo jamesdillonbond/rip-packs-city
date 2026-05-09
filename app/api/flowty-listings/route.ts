@@ -307,29 +307,39 @@ export async function GET(req: NextRequest) {
       if (missingExternalIds.length > 0 && !dryRun) {
         const candidates = missingExternalIds.length;
         let hydratedCount = 0;
+        let redirectedCount = 0;
         let fallbackCount = 0;
         const failed: string[] = [];
 
-        const hydratedRows = await hydrateTopShotEditions(missingExternalIds);
-        const upsertRows = hydratedRows.map((r) => {
-          const row = toUpsertRow(r);
+        const hydratedRows = await hydrateTopShotEditions(missingExternalIds, { supabase });
+        const upsertRows: Record<string, unknown>[] = [];
+        for (const r of hydratedRows) {
+          if (r.redirect) {
+            // Canonical-resolved against an existing UUID-format edition;
+            // map int-pair external_id → canonical id and skip upsert.
+            editionByKey.set(r.external_id, r.redirect.canonical_id);
+            redirectedCount++;
+            continue;
+          }
           if (r.ok) hydratedCount++;
           else {
             fallbackCount++;
             failed.push(r.external_id);
           }
-          return row;
-        });
+          upsertRows.push(toUpsertRow(r));
+        }
 
-        const { data: insertedEditions } = await supabase
-          .from("editions")
-          .upsert(upsertRows, { onConflict: "external_id,collection_id", ignoreDuplicates: false })
-          .select("id, external_id");
-        for (const row of insertedEditions ?? []) {
-          if (row.external_id && row.id) editionByKey.set(row.external_id, row.id);
+        if (upsertRows.length > 0) {
+          const { data: insertedEditions } = await supabase
+            .from("editions")
+            .upsert(upsertRows, { onConflict: "external_id,collection_id", ignoreDuplicates: false })
+            .select("id, external_id");
+          for (const row of insertedEditions ?? []) {
+            if (row.external_id && row.id) editionByKey.set(row.external_id, row.id);
+          }
         }
         console.log(
-          `[flowty-listings] hydrate-at-insert: candidates=${candidates} hydrated=${hydratedCount} fallback=${fallbackCount}` +
+          `[flowty-listings] hydrate-at-insert: candidates=${candidates} hydrated=${hydratedCount} redirected=${redirectedCount} fallback=${fallbackCount}` +
             (failed.length ? ` failed=${failed.slice(0, 5).join(",")}` : ""),
         );
 
@@ -348,6 +358,7 @@ export async function GET(req: NextRequest) {
               site: "flowty-listings",
               candidates,
               hydrated: hydratedCount,
+              redirected: redirectedCount,
               fallback_skeleton: fallbackCount,
               failed_sample: failed.slice(0, 10),
             },
