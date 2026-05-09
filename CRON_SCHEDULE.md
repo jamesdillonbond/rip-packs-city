@@ -39,7 +39,7 @@ These have their own cron entries and also chain together (`fireNextPipelineStep
 | `/api/check-alerts` | `*/20` | HEALTHY | Calls `get_pipeline_alerts()` → fires Telegram + email on critical/high. 60-min debounce. |
 | `/api/admin/prune-pipeline-runs` | daily | HEALTHY | Keeps `pipeline_runs` ~9.5K rows. Bearer `INGEST_SECRET_TOKEN`. |
 | `/api/seed-wallet-refresh` | every 6h | HEALTHY | Orchestrator. Drives the wallet-backfill family. |
-| `/api/wmc-fmv-populate` | `*/20` | NEW (2026-05-08) | Multi-collection sweep — calls `populate_wmc_fmv_from_snapshots(p_collection_id)` for each published collection so `wallet_moments_cache.fmv_usd` keeps current with the latest `fmv_snapshots` row per `(edition_key, collection_id)`. Replaces the manual JOIN UPDATE Trevor ran on 2026-05-08. Logs one `pipeline_runs` entry per collection (pipeline=`wmc-fmv-populate`, `extra.collection_uuid` set). Pinnacle is included but is a no-op until pinnacle FMV ingestion ships. |
+| `/api/wmc-fmv-populate` | `*/20` | NEW (2026-05-08) | Multi-collection sweep. NULL-only chunked path — each tick processes up to `?limit=50000` (default) wmc rows where `fmv_usd IS NULL` per collection, looking up the latest `fmv_snapshots` row per `(edition_key, collection_id)` via the `fmv_snapshots_*_edition_id_computed_at_idx` index. With ~1.09M NULL rows in TopShot at launch, the backlog drains over several ticks and then settles into steady state. `?force=true` runs the full sweep (heavy, only for ad-hoc remediation). Logs one `pipeline_runs` row per collection (pipeline=`wmc-fmv-populate`). Pinnacle is included but is a no-op until pinnacle FMV ingestion ships. |
 
 ### Wallet backfills (6-hour waves)
 
