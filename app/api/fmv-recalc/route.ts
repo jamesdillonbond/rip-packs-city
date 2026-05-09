@@ -11,7 +11,7 @@ import { applyPhantomGuard } from "@/lib/fmv-phantom-guard"
 // Model: trimmed median (drop bottom 10% + top 10% of prices per edition)
 // WAP: recency-weighted average price (7-day half-life exponential decay)
 // Window: 30 days
-// Confidence: HIGH >= 5 sales, MEDIUM >= 2, LOW = 1
+// Confidence: HIGH >= 10 sales/30d, MEDIUM >= 5 sales/30d, otherwise LOW
 // algo_version: "1.3.0"
 //
 // Populates: fmv_usd, floor_price_usd, wap_usd, confidence,
@@ -25,7 +25,7 @@ import { applyPhantomGuard } from "@/lib/fmv-phantom-guard"
 // Paginated — pass { offset, limit } in body to process in chunks.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ALGO_VERSION = "1.5.1"
+const ALGO_VERSION = "1.6.0"
 const WINDOW_DAYS = 30
 const DEFAULT_LIMIT = 500
 
@@ -95,14 +95,22 @@ function wapWithoutOutliers(sales: { price: number; soldAt: Date }[], now: Date)
   return weightedAveragePrice(filtered, now)
 }
 
+// Minimum 30-day sales counts required to assign HIGH / MEDIUM confidence.
+// Anything below MIN_SALES_30D_MEDIUM falls through to LOW so thin-evidence
+// editions (single sales, or stale sales > 30d) cannot be marketed as
+// reliable FMV.
+const MIN_SALES_30D_HIGH = 10
+const MIN_SALES_30D_MEDIUM = 5
+
 function computeConfidence(salesCount: number): "HIGH" | "MEDIUM" | "LOW" {
-  if (salesCount >= 5) return "HIGH"
-  if (salesCount >= 2) return "MEDIUM"
+  if (salesCount >= MIN_SALES_30D_HIGH) return "HIGH"
+  if (salesCount >= MIN_SALES_30D_MEDIUM) return "MEDIUM"
   return "LOW"
 }
 
-// Upward-only confidence escalation based on sales volume and price stability.
-// If LOW + 3+ sales in 30d → MEDIUM. If 8+ sales + stddev < 40% of mean → HIGH.
+// Upward-only confidence escalation based on price stability. Both HIGH and
+// MEDIUM still require their respective 30-day sales floors — escalation
+// cannot bypass the volume gate, only refine within it.
 function escalateConfidence(
   base: "HIGH" | "MEDIUM" | "LOW",
   salesCount30d: number,
@@ -110,13 +118,21 @@ function escalateConfidence(
 ): "HIGH" | "MEDIUM" | "LOW" {
   let confidence = base
 
-  // Escalate LOW → MEDIUM if 3+ sales in 30 days
-  if (confidence === "LOW" && salesCount30d >= 3) {
+  // Escalate LOW → MEDIUM only if the MEDIUM volume gate is met. (No-op in
+  // practice because computeConfidence already promotes here, but kept
+  // explicit so future tweaks to the base function do not silently regress.)
+  if (confidence === "LOW" && salesCount30d >= MIN_SALES_30D_MEDIUM) {
     confidence = "MEDIUM"
   }
 
-  // Escalate to HIGH if 8+ sales and price stability (stddev < 40% of mean)
-  if (confidence !== "HIGH" && salesCount30d >= 8 && prices.length >= 8) {
+  // Escalate to HIGH only when the HIGH volume gate is met AND prices are
+  // tight (stddev < 40% of mean). Below MIN_SALES_30D_HIGH the edition stays
+  // at MEDIUM regardless of price stability.
+  if (
+    confidence !== "HIGH" &&
+    salesCount30d >= MIN_SALES_30D_HIGH &&
+    prices.length >= MIN_SALES_30D_HIGH
+  ) {
     const mean = prices.reduce((a, b) => a + b, 0) / prices.length
     if (mean > 0) {
       const variance = prices.reduce((s, p) => s + (p - mean) ** 2, 0) / prices.length
