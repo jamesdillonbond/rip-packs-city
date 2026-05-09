@@ -1,148 +1,351 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect, useMemo } from "react";
 import { getLastCollection } from "@/lib/active-collection";
-import { getCollection } from "@/lib/collections";
+import {
+  PAGE_LABELS,
+  getCollection,
+  publishedCollections,
+  type CollectionPage,
+} from "@/lib/collections";
 
-const ICON_SIZE = 22;
+// Sheet renders these page chips per collection — order matters and the set
+// is fixed (fast-break / road-to-the-ring / vault are deliberately omitted).
+// "collection" surfaces as "Wallet" to match the bottom-tab vocabulary.
+const SHEET_PAGES: { key: CollectionPage; label: string }[] = [
+  { key: "overview", label: PAGE_LABELS.overview },
+  { key: "sniper", label: PAGE_LABELS.sniper },
+  { key: "packs", label: PAGE_LABELS.packs },
+  { key: "collection", label: "Wallet" },
+  { key: "sets", label: PAGE_LABELS.sets },
+  { key: "badges", label: PAGE_LABELS.badges },
+  { key: "market", label: PAGE_LABELS.market },
+  { key: "analytics", label: PAGE_LABELS.analytics },
+];
 
-function IconHome({ color }: { color: string }) {
-  return (
-    <svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z" />
-      <path d="M9 21V12h6v9" />
-    </svg>
-  );
-}
-
-function IconWallet({ color }: { color: string }) {
-  return (
-    <svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="6" width="20" height="14" rx="2" />
-      <path d="M2 10h20" />
-      <circle cx="17" cy="15" r="1.5" fill={color} stroke="none" />
-    </svg>
-  );
-}
-
-function IconSniper({ color }: { color: string }) {
-  return (
-    <svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="7" />
-      <circle cx="12" cy="12" r="3" />
-      <line x1="12" y1="2" x2="12" y2="5" />
-      <line x1="12" y1="19" x2="12" y2="22" />
-      <line x1="2" y1="12" x2="5" y2="12" />
-      <line x1="19" y1="12" x2="22" y2="12" />
-    </svg>
-  );
-}
-
-function IconProfile({ color }: { color: string }) {
-  return (
-    <svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 21v-1a6 6 0 0112 0v1" />
-    </svg>
-  );
-}
-
-const ICON_COMPONENTS = {
-  home: IconHome,
-  wallet: IconWallet,
-  sniper: IconSniper,
-  profile: IconProfile,
-} as const;
-
-type IconKey = keyof typeof ICON_COMPONENTS;
+const TAB_ICON_FONT = 18;
+const NAV_HEIGHT = 60;
 
 export default function MobileNav() {
   const pathname = usePathname() ?? "/";
+  const router = useRouter();
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [fallbackCollection, setFallbackCollection] = useState("nba-top-shot");
+  const [hoverChip, setHoverChip] = useState<string | null>(null);
 
   useEffect(() => {
     setFallbackCollection(getLastCollection());
   }, []);
 
+  const segments = useMemo(
+    () => pathname.split("/").filter(Boolean),
+    [pathname]
+  );
+
+  // Resolve the active collection from the URL. If we're not in a collection
+  // route (/profile, /admin, /login, /), fall back to the last-visited
+  // collection from localStorage, then nba-top-shot.
   const collection = useMemo(() => {
-    const seg = pathname.split("/").filter(Boolean)[0] ?? "";
-    return getCollection(seg) ? seg : fallbackCollection;
-  }, [pathname, fallbackCollection]);
+    const seg = segments[0] ?? "";
+    if (getCollection(seg)) return seg;
+    if (getCollection(fallbackCollection)) return fallbackCollection;
+    return "nba-top-shot";
+  }, [segments, fallbackCollection]);
 
-  const accent = getCollection(collection)?.accent ?? "#E03A2F";
+  const pageSegment = segments[1] ?? "";
 
-  // Four primary tabs after the Badges page elimination — Sets / Analytics
-  // remain reachable from the per-collection layout nav strip; mobile keeps
-  // the four cross-collection essentials.
-  const tabs: { label: string; iconKey: IconKey; href: string }[] = [
-    { label: "HOME", iconKey: "home", href: "/" },
-    { label: "WALLET", iconKey: "wallet", href: `/${collection}/collection` },
-    { label: "SNIPER", iconKey: "sniper", href: `/${collection}/sniper` },
-    { label: "PROFILE", iconKey: "profile", href: "/dashboard" },
+  const tabs = [
+    {
+      key: "profile",
+      label: "PROFILE",
+      icon: "\u{1F464}",
+      href: "/profile",
+      isActive: pathname.startsWith("/profile"),
+      kind: "link" as const,
+    },
+    {
+      key: "sniper",
+      label: "SNIPER",
+      icon: "⚡",
+      href: `/${collection}/sniper`,
+      isActive: pageSegment === "sniper",
+      kind: "link" as const,
+    },
+    {
+      key: "packs",
+      label: "PACKS",
+      icon: "▣",
+      href: `/${collection}/packs`,
+      isActive: pageSegment === "packs",
+      kind: "link" as const,
+    },
+    {
+      key: "wallet",
+      label: "WALLET",
+      icon: "◈",
+      href: `/${collection}/collection`,
+      isActive: pageSegment === "collection",
+      kind: "link" as const,
+    },
+    {
+      key: "collections",
+      label: "COLLECTIONS",
+      icon: "▦",
+      href: "",
+      isActive: sheetOpen,
+      kind: "button" as const,
+    },
   ];
 
+  const closeSheet = () => setSheetOpen(false);
+
+  const goTo = (href: string) => {
+    closeSheet();
+    router.push(href);
+  };
+
   return (
-    <nav
-      style={{
-        position: "fixed",
-        bottom: 0,
-        left: 0,
-        right: 0,
-        zIndex: 200,
-        background: "var(--rpc-surface)",
-        borderTop: "1px solid var(--rpc-red-border)",
-        height: 60,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-around",
-        fontFamily: "var(--font-mono)",
-      }}
-      className="rpc-mobile-nav"
-    >
-      {tabs.map((tab) => {
-        const isActive =
-          tab.href === "/"
-            ? pathname === "/"
-            : pathname === tab.href || pathname.startsWith(tab.href + "/");
-        const color = isActive ? accent : "var(--rpc-text-ghost)";
-        const Icon = ICON_COMPONENTS[tab.iconKey];
-        return (
-          <Link
-            key={tab.label}
-            href={tab.href}
+    <>
+      {sheetOpen && (
+        <>
+          <div
+            onClick={closeSheet}
             style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 2,
-              textDecoration: "none",
-              color,
-              transition: "color var(--transition-fast)",
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.7)",
+              zIndex: 199,
             }}
+            className="rpc-mobile-sheet"
+            aria-hidden
+          />
+          <div
+            role="dialog"
+            aria-label="Collections"
+            style={{
+              position: "fixed",
+              bottom: NAV_HEIGHT,
+              left: 0,
+              right: 0,
+              background: "var(--rpc-surface)",
+              borderTop: "1px solid var(--rpc-red-border)",
+              zIndex: 201,
+              maxHeight: "70vh",
+              overflowY: "auto",
+              fontFamily: "var(--font-mono)",
+            }}
+            className="rpc-mobile-sheet"
           >
-            <Icon color={color} />
-            <span
+            <div
               style={{
-                fontSize: 8,
-                letterSpacing: "0.12em",
-                fontWeight: isActive ? 700 : 400,
+                position: "sticky",
+                top: 0,
+                background: "var(--rpc-surface)",
+                borderBottom: "1px solid var(--rpc-red-border)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "12px 16px",
               }}
             >
-              {tab.label}
-            </span>
-          </Link>
-        );
-      })}
+              <span
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontWeight: 900,
+                  fontSize: 14,
+                  letterSpacing: "0.16em",
+                  textTransform: "uppercase",
+                  color: "var(--rpc-text-primary)",
+                }}
+              >
+                COLLECTIONS
+              </span>
+              <button
+                onClick={closeSheet}
+                aria-label="Close collections"
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "var(--rpc-text-secondary)",
+                  fontSize: 20,
+                  lineHeight: 1,
+                  cursor: "pointer",
+                  padding: 4,
+                }}
+              >
+                ✕
+              </button>
+            </div>
 
-      {/* Only visible below 768px — hide on desktop via CSS */}
-      <style>{`
-        .rpc-mobile-nav { display: none !important; }
-        @media (max-width: 768px) {
-          .rpc-mobile-nav { display: flex !important; }
-        }
-      `}</style>
-    </nav>
+            <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+              {publishedCollections().map((c) => {
+                const pages = SHEET_PAGES.filter((p) => c.pages.includes(p.key));
+                return (
+                  <div
+                    key={c.id}
+                    style={{
+                      borderLeft: `3px solid ${c.accent}`,
+                      background: "var(--rpc-surface-raised)",
+                      padding: "10px 12px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 18 }}>{c.icon}</span>
+                      <span
+                        style={{
+                          fontFamily: "var(--font-display)",
+                          fontWeight: 700,
+                          fontSize: 14,
+                          letterSpacing: "0.08em",
+                          textTransform: "uppercase",
+                          color: "var(--rpc-text-primary)",
+                        }}
+                      >
+                        {c.label}
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        overflowX: "auto",
+                        paddingBottom: 2,
+                        WebkitOverflowScrolling: "touch",
+                      }}
+                    >
+                      {pages.map((p) => {
+                        const chipKey = `${c.id}:${p.key}`;
+                        const isHover = hoverChip === chipKey;
+                        const href = `/${c.id}/${p.key}`;
+                        return (
+                          <button
+                            key={p.key}
+                            onClick={() => goTo(href)}
+                            onMouseEnter={() => setHoverChip(chipKey)}
+                            onMouseLeave={() => setHoverChip(null)}
+                            style={{
+                              flex: "0 0 auto",
+                              padding: "6px 10px",
+                              fontSize: 10,
+                              fontFamily: "var(--font-display)",
+                              fontWeight: 700,
+                              letterSpacing: "0.1em",
+                              textTransform: "uppercase",
+                              color: isHover ? c.accent : "var(--rpc-text-secondary)",
+                              background: "transparent",
+                              border: `1px solid ${isHover ? c.accent : "var(--rpc-red-border)"}`,
+                              borderRadius: 2,
+                              cursor: "pointer",
+                              transition: "color var(--transition-fast), border-color var(--transition-fast)",
+                            }}
+                          >
+                            {p.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
+      <nav
+        style={{
+          position: "fixed",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 200,
+          background: "var(--rpc-surface)",
+          borderTop: "1px solid var(--rpc-red-border)",
+          height: NAV_HEIGHT,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-around",
+          fontFamily: "var(--font-mono)",
+        }}
+        className="rpc-mobile-nav"
+      >
+        {tabs.map((tab) => {
+          const color = tab.isActive ? "var(--rpc-red)" : "var(--rpc-text-ghost)";
+          const inner = (
+            <>
+              <span
+                style={{
+                  fontSize: TAB_ICON_FONT,
+                  lineHeight: 1,
+                  color,
+                }}
+              >
+                {tab.icon}
+              </span>
+              <span
+                style={{
+                  fontSize: 8,
+                  letterSpacing: "0.12em",
+                  fontWeight: tab.isActive ? 700 : 400,
+                  color,
+                }}
+              >
+                {tab.label}
+              </span>
+            </>
+          );
+
+          const baseStyle: React.CSSProperties = {
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 2,
+            textDecoration: "none",
+            color,
+            transition: "color var(--transition-fast)",
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            padding: 0,
+            fontFamily: "inherit",
+          };
+
+          if (tab.kind === "button") {
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setSheetOpen((v) => !v)}
+                aria-pressed={tab.isActive}
+                style={baseStyle}
+              >
+                {inner}
+              </button>
+            );
+          }
+
+          return (
+            <Link key={tab.key} href={tab.href} style={baseStyle}>
+              {inner}
+            </Link>
+          );
+        })}
+
+        {/* Only visible below 768px — hide on desktop via CSS */}
+        <style>{`
+          .rpc-mobile-nav { display: none !important; }
+          .rpc-mobile-sheet { display: none !important; }
+          @media (max-width: 768px) {
+            .rpc-mobile-nav { display: flex !important; }
+            .rpc-mobile-sheet { display: block !important; }
+          }
+        `}</style>
+      </nav>
+    </>
   );
 }
