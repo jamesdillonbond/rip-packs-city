@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter";
+import { publishedCollections } from "@/lib/collections";
 
 const condensedFont = "'Barlow Condensed', sans-serif";
 const monoFont = "'Share Tech Mono', monospace";
@@ -23,6 +24,8 @@ const ACCENT_RED = "#E03A2F";
 // Top Shot collection UUID — used to gate the NBA/WNBA league badge so it only
 // renders on Top Shot rows. Other collections store NULL in wmc.league.
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
+
+type CollectionFilter = "all" | string; // "all" or collection slug ("nba-top-shot", etc.)
 
 // Mirrors the TopMoment shape from /api/profile/top-moments. Sourced from
 // wallet_moments_cache via the get_user_top_owned_moments RPC.
@@ -139,6 +142,7 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
   const [sort, setSort] = useState<SortKey>("fmv_desc");
   const [tierFilter, setTierFilter] = useState<TierFilter>("ALL");
   const [leagueFilter, setLeagueFilter] = useState<LeagueValue>("all");
+  const [collectionFilter, setCollectionFilter] = useState<CollectionFilter>("all");
 
   // Manual entry tab
   const [manualId, setManualId] = useState("");
@@ -159,6 +163,7 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
     const params = new URLSearchParams({ limit: "96" });
     if (ownerKey) params.set("ownerKey", ownerKey);
     if (leagueFilter !== "all") params.set("league", leagueFilter);
+    if (collectionFilter !== "all") params.set("collection", collectionFilter);
     fetch(`/api/profile/top-moments?${params.toString()}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
@@ -170,7 +175,7 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
     return () => {
       cancelled = true;
     };
-  }, [ownerKey, leagueFilter]);
+  }, [ownerKey, leagueFilter, collectionFilter]);
 
   const tiersPresent = useMemo<TierFilter[]>(() => {
     if (!moments) return [];
@@ -360,20 +365,32 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
 
         {tab === "grid" && (
           <>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, marginBottom: 4 }}>
-              <span
-                style={{
-                  fontFamily: monoFont,
-                  fontSize: 9,
-                  letterSpacing: "0.18em",
-                  textTransform: "uppercase",
-                  color: "rgba(255,255,255,0.4)",
-                }}
-              >
-                League
-              </span>
-              <LeagueFilter value={leagueFilter} onChange={setLeagueFilter} />
-            </div>
+            <CollectionPicker
+              value={collectionFilter}
+              onChange={(c) => {
+                setCollectionFilter(c);
+                // Reset league filter when leaving Top Shot — only TS has NBA/WNBA values.
+                if (c !== "all" && c !== "nba-top-shot" && leagueFilter !== "all") {
+                  setLeagueFilter("all");
+                }
+              }}
+            />
+            {(collectionFilter === "all" || collectionFilter === "nba-top-shot") && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, marginBottom: 4 }}>
+                <span
+                  style={{
+                    fontFamily: monoFont,
+                    fontSize: 9,
+                    letterSpacing: "0.18em",
+                    textTransform: "uppercase",
+                    color: "rgba(255,255,255,0.4)",
+                  }}
+                >
+                  League
+                </span>
+                <LeagueFilter value={leagueFilter} onChange={setLeagueFilter} />
+              </div>
+            )}
             <FilterChips
               tierFilter={tierFilter}
               onChange={setTierFilter}
@@ -790,6 +807,67 @@ function TabBtn({
     >
       {children}
     </button>
+  );
+}
+
+function CollectionPicker({
+  value,
+  onChange,
+}: {
+  value: CollectionFilter;
+  onChange: (v: CollectionFilter) => void;
+}) {
+  const items: { key: CollectionFilter; label: string; icon: string; accent: string }[] = [
+    { key: "all", label: "All", icon: "★", accent: "#9CA3AF" },
+    ...publishedCollections().map((c) => ({
+      key: c.id,
+      label: c.shortLabel,
+      icon: c.icon,
+      accent: c.accent,
+    })),
+  ];
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 6,
+        flexWrap: "wrap",
+        marginTop: 4,
+        marginBottom: 8,
+        paddingBottom: 8,
+        borderBottom: "1px solid #1f1f23",
+      }}
+    >
+      {items.map((it) => {
+        const active = value === it.key;
+        return (
+          <button
+            key={it.key}
+            onClick={() => onChange(it.key)}
+            title={it.label}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              background: active ? `${it.accent}26` : "transparent",
+              border: `1px solid ${active ? it.accent : "#27272a"}`,
+              color: active ? "#fff" : "rgba(255,255,255,0.7)",
+              fontFamily: condensedFont,
+              fontWeight: 800,
+              fontSize: 11,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              padding: "5px 10px",
+              borderRadius: 999,
+              cursor: "pointer",
+            }}
+          >
+            <span aria-hidden>{it.icon}</span>
+            <span>{it.label}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
