@@ -12,6 +12,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:cadence": "node scripts/extract-cadence.mjs && flow cadence lint -f tests/cadence/flow.test.json tests/cadence/fixtures/purchase-moment.cdc",
     "classify:dapper": "node scripts/dapper-csv-classify.mjs",
     "classify:ts-livetoken": "node scripts/classify-ts-livetoken.mjs",
     "seed:usernames": "tsx scripts/seed-wallet-usernames.ts"
