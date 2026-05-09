@@ -2265,6 +2265,9 @@ export default function WalletPage() {
                               {row.badgeInfo?.is_three_star_rookie && row.badgeInfo?.has_rookie_mint && (
                                 <BadgeIcon title="Three-Star Rookie" />
                               )}
+                              {isLocked && (
+                                <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[9px] font-medium text-zinc-400" title="This moment is locked on Dapper">🔒 LOCKED</span>
+                              )}
                             </div>
                             {row.acquisitionMethod && (() => {
                                 const acqConfig: Record<string, { label: string; icon: string; prefix?: string; color: string; title?: string }> = {
@@ -2321,7 +2324,6 @@ export default function WalletPage() {
                       </td>
                       <td className="text-sm hidden lg:table-cell">
                         <div>{editionCounts.owned} / {editionCounts.locked}</div>
-                        {isLocked && <span className="ml-1.5 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">Locked</span>}
                         {row.badgeInfo && row.badgeInfo.circulation_count > 0 && !(row.badgeInfo.circulation_count === 1 || row.tier?.toUpperCase() === "ULTIMATE") && (
                           <div className="mt-1 text-[10px] text-zinc-500 font-mono leading-tight" title={"Minted: " + row.badgeInfo.circulation_count + " · Owned: " + row.badgeInfo.owned + " · For Sale: " + (row.badgeInfo.for_sale_by_collectors ?? "?") + " · In Packs: " + row.badgeInfo.hidden_in_packs + " · Burned: " + row.badgeInfo.burned}>
                             <span>{row.badgeInfo.circulation_count.toLocaleString()} minted</span>
@@ -2363,6 +2365,9 @@ export default function WalletPage() {
                           if (pctDiff <= 1) return null
                           return <div className="text-[10px] text-zinc-500 font-mono">Ask {"$" + ask.toFixed(2)}</div>
                         })()}
+                        {row.lastPurchasePrice != null && row.lastPurchasePrice > 0 && (
+                          <div className="text-[9px] text-zinc-500 font-mono">Paid {formatCurrency(row.lastPurchasePrice)}</div>
+                        )}
                       </td>
                       <td className="text-sm hidden xl:table-cell" title={row.acquisitionMethod === "loan_default" ? "Acquired via loan default. The displayed price is the principal that was lent against this moment in USDCF (1:1 USD)." : undefined}>
                         {(function() {
