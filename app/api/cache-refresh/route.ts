@@ -404,11 +404,54 @@ export async function GET(req: NextRequest) {
         }
       })
 
+      // May 9 dedup project: prefer canonical UUID-format external_ids over
+      // the integer "set:play" keys built from on-chain metadata. One batch
+      // SELECT against editions before the per-moment update loop avoids
+      // landing fresh wmc rows on the int-format key and creating new
+      // orphans for the canonicalize trigger to chase.
+      const canonicalKeyByInt = new Map<string, string>()
+      if (isTopShot) {
+        const intKeys = Array.from(new Set(
+          results
+            .map(r => r.meta ? scripts.buildEditionKey(r.meta) : null)
+            .filter((k): k is string => !!k && /^\d+:\d+$/.test(k))
+        ))
+        for (let i = 0; i < intKeys.length; i += 200) {
+          const chunk = intKeys.slice(i, i + 200)
+          const setIds = Array.from(new Set(
+            chunk.map(k => Number(k.split(":")[0])).filter(n => Number.isFinite(n))
+          ))
+          const playIds = Array.from(new Set(
+            chunk.map(k => Number(k.split(":")[1])).filter(n => Number.isFinite(n))
+          ))
+          if (setIds.length === 0 || playIds.length === 0) continue
+          const { data: edRows } = await supabase
+            .from("editions")
+            .select("external_id, set_id_onchain, play_id_onchain")
+            .eq("collection_id", collectionId)
+            .in("set_id_onchain", setIds)
+            .in("play_id_onchain", playIds)
+          for (const row of edRows ?? []) {
+            if (row.set_id_onchain == null || row.play_id_onchain == null) continue
+            const intKey = `${row.set_id_onchain}:${row.play_id_onchain}`
+            const isInt = /^\d+:\d+$/.test(String(row.external_id ?? ""))
+            const existing = canonicalKeyByInt.get(intKey)
+            // Equivalent to: ORDER BY (external_id ~ '^[0-9]+:[0-9]+$') ASC LIMIT 1
+            if (!existing || (!isInt && /^\d+:\d+$/.test(existing))) {
+              canonicalKeyByInt.set(intKey, String(row.external_id))
+            }
+          }
+        }
+      }
+
       let lockedCount = 0
       const enrichedKeysById = new Map<string, string>()
       for (const { id, meta, gql } of results) {
         if (!meta) continue
-        const editionKey = scripts.buildEditionKey(meta)
+        const rawEditionKey = scripts.buildEditionKey(meta)
+        const editionKey = rawEditionKey
+          ? (canonicalKeyByInt.get(rawEditionKey) ?? rawEditionKey)
+          : rawEditionKey
         const seriesNum = meta.series ? parseInt(meta.series, 10) : null
         const isLocked = gql?.isLocked === true
         if (isLocked) lockedCount++

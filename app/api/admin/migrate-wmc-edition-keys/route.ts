@@ -27,8 +27,49 @@ export async function POST(req: NextRequest) {
   const startedAt = Date.now();
   let batchesProcessed = 0;
   let rowsUpdated = 0;
+  let pairsSelfSynced = 0;
   const recent: number[] = [];
   let drained = false;
+
+  // May 9 dedup project: self-sync newly-paired editions (as the GraphQL
+  // hydrator catches up with the orphan backlog) into wmc_dedup_pairs at
+  // the top of every invocation so the drain loop picks them up without
+  // requiring manual INSERT...WHERE NOT EXISTS migrations.
+  try {
+    const { data: syncResult, error: syncErr } = await supabaseAdmin.rpc(
+      "execute_sql",
+      {
+        sql: `
+          WITH inserted AS (
+            INSERT INTO wmc_dedup_pairs (
+              integer_id, canonical_id, integer_external_id, canonical_external_id
+            )
+            SELECT v.integer_id, v.canonical_id, v.integer_external_id, v.canonical_external_id
+            FROM editions_canonical_pair v
+            WHERE NOT EXISTS (
+              SELECT 1 FROM wmc_dedup_pairs p
+              WHERE p.integer_id = v.integer_id
+            )
+            ON CONFLICT (integer_id) DO NOTHING
+            RETURNING 1
+          )
+          SELECT COUNT(*)::bigint AS cnt FROM inserted
+        `,
+      }
+    );
+    if (syncErr) {
+      console.warn(
+        `[migrate-wmc-edition-keys] self-sync failed: ${syncErr.message}`
+      );
+    } else if (Array.isArray(syncResult) && syncResult[0]?.cnt != null) {
+      pairsSelfSynced = Number(syncResult[0].cnt) || 0;
+    }
+  } catch (err) {
+    console.warn(
+      "[migrate-wmc-edition-keys] self-sync threw:",
+      err instanceof Error ? err.message : err
+    );
+  }
 
   while (Date.now() - startedAt < TIME_BUDGET_MS) {
     const { data, error } = await supabaseAdmin.rpc(
@@ -108,12 +149,13 @@ export async function POST(req: NextRequest) {
   const drainedOrTimedOut = drained ? "drained" : "timed_out";
 
   console.log(
-    `[migrate-wmc-edition-keys] done batches=${batchesProcessed} updated=${rowsUpdated} pairs_remaining=${pairsRemaining} wmc_int_remaining_orphans=${wmcIntRemainingOrphans} status=${drainedOrTimedOut} duration_ms=${durationMs}`
+    `[migrate-wmc-edition-keys] done batches=${batchesProcessed} updated=${rowsUpdated} pairs_self_synced=${pairsSelfSynced} pairs_remaining=${pairsRemaining} wmc_int_remaining_orphans=${wmcIntRemainingOrphans} status=${drainedOrTimedOut} duration_ms=${durationMs}`
   );
 
   return NextResponse.json({
     batches_processed: batchesProcessed,
     rows_updated: rowsUpdated,
+    pairs_self_synced: pairsSelfSynced,
     pairs_remaining: pairsRemaining,
     wmc_int_remaining_orphans: wmcIntRemainingOrphans,
     drained_or_timed_out: drainedOrTimedOut,
