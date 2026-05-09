@@ -117,6 +117,34 @@ export async function POST(req: NextRequest) {
     `[migrate-wmc-edition-keys] done batches=${batchesProcessed} updated=${rowsUpdated} pairs_self_synced=${pairsSelfSynced} pairs_remaining=${pairsRemaining} wmc_int_remaining_orphans=${wmcIntRemainingOrphans} status=${drainedOrTimedOut} duration_ms=${durationMs}`
   );
 
+  // Single pipeline_runs row per invocation — unlocks pipeline_cadence_watchlist
+  // monitoring on the cron schedule. Logging failure must never break the
+  // route's response, so we swallow the error to console.warn.
+  try {
+    await (supabaseAdmin as any).rpc("log_pipeline_run", {
+      p_pipeline: "migrate-wmc-edition-keys",
+      p_started_at: new Date(startedAt).toISOString(),
+      p_rows_found: pairsSelfSynced,
+      p_rows_written: rowsUpdated,
+      p_rows_skipped: pairsRemaining ?? 0,
+      p_ok: drained,
+      p_error: drained ? null : "budget exceeded",
+      p_collection_slug: null,
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: {
+        batches_processed: batchesProcessed,
+        wmc_int_remaining_orphans: wmcIntRemainingOrphans,
+      },
+    });
+  } catch (err) {
+    console.warn(
+      `[migrate-wmc-edition-keys] log_pipeline_run err: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+  }
+
   return NextResponse.json({
     batches_processed: batchesProcessed,
     rows_updated: rowsUpdated,
