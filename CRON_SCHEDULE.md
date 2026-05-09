@@ -95,7 +95,6 @@ Edge functions:
 | RPC Analytics Smoke | `/api/admin/analytics-smoke` | HEALTHY |
 | RPC NBA Player Name Matcher | edge fn `nba-player-name-matcher` | HEALTHY |
 | RPC NBA Projections Sync | edge fn `nba-projections-sync` | HEALTHY |
-| RPC Pipeline Runs Cleanup | edge fn `pipeline-runs-cleanup` | **BROKEN** | Dashboard shows `Failed (timeout) (30s)` last Saturday. Same 30s-cap issue we hit on `wmc-fmv-populate`. Needs chunked rewrite. See "Open issues" below. |
 | RPC FMV Thin-Sale Haircut | `/api/admin/apply-fmv-haircut?mode=live` | **NOT-YET-SCHEDULED** (2026-05-09) | New route. Recommended cadence: daily, ~30–60 min after a fmv-recalc-force-stale tick has settled (e.g. 06:30 UTC after the 06:00 UTC stale recalc). Inline haircut also runs at the end of every `/api/fmv-recalc` invocation, so the daily cron is a belt-and-braces sweep that catches LOW/ASK_ONLY rows the inline pass missed. Belongs in this row once the cron-job.org entry is created. |
 | RPC TopShot Catalog Backfill | `/api/admin/backfill-topshot-catalog` | **NOT-YET-SCHEDULED** (2026-05-09) | New route. Recommended cadence: daily at 4am ET (08:00 UTC). Walks UUID-format TopShot sets oldest-first via TS_PROXY_URL and hydrates editions + cover art. `maxDuration=300`, time-budget 270s, paginates with `?startAfter=<set_uuid>` if a single tick can't drain the queue. Closes the 49→87 set-tracker gap and the 23% editions-thumbnail / 100% editions-video gap. Auth: Bearer `RPC_ADMIN_TOKEN` or `?token=`. Logs `pipeline_runs` row with `pipeline=topshot-catalog-backfill`. |
 
@@ -130,21 +129,13 @@ These do NOT have their own cron entries. They fire as side effects of other pip
 
 ## Open issues
 
-### RPC Pipeline Runs Cleanup — BROKEN
-
-Dashboard shows `Failed (timeout) (30s)` on the last run (last Saturday). Edge function exceeds the 30s ceiling on cron-job.org's free tier. Same root cause as the `wmc-fmv-populate` test failure — needs a chunked NULL-only fast path or per-chunk LIMIT param. Until fixed, `pipeline_runs` table grows unbounded between manual prunes (`/api/admin/prune-pipeline-runs` daily covers most of the cleanup, but the edge function does additional cleanup that's now stalled).
-
 ### RPC All Day FMV Populate — HEALTHY-but-stuck
 
 The route fires every 20 min and returns 200, but the underlying `allday-fmv-populate` Supabase function has been stuck on cursor `7a7fc7e5-6b06-495b-aa85-512ec7cd8557, 2026-03-23T04:33:17` since deployment. Stall-detection + reset shipped 2026-05-09 (commit 62db96f). Cursor now resets. Upstream blocker: `ALLDAY_PROXY_URL` env var on Vercel needs to point at the AllDay GQL worker (currently misconfigured, returning 403). After env fix, this should drain.
 
-### ingest-external-announcements
+### ingest-external-announcements — RETIRED 2026-05-07
 
-Last `pipeline_runs` row 2026-05-07 13:00 UTC (~40h silent). No matching dashboard entry visible in the screenshots. Either:
-- Cron entry exists but is in a folder/view I didn't see — verify in dashboard.
-- Cron entry was deleted; needs recreating with same daily cadence.
-
-If recreating: same pattern as Snapshot Institutional Wallets — `/api/ingest-external-announcements`, daily, Bearer auth, 30s timeout.
+Replaced by external-push webhook at `/api/admin/announcements` (commit 92aa5e8). Edge function and `supabase/functions/ingest-external-announcements/` directory deleted 2026-05-09; deployed Supabase function pending CLI removal (`supabase functions delete ingest-external-announcements`); `app/api/cron/ingest-external-announcements/route.ts` still serves a 410 Gone for any stale cron-job.org entry. The replacement webhook is intentionally external-driven (Discord, Make.com, etc) — `external_announcements` is empty because no upstream is wired up yet, not because the path is broken.
 
 ### Cron entries claimed by old MD that don't exist
 
@@ -155,7 +146,6 @@ These were in v1 of CRON_SCHEDULE.md but aren't in the dashboard. Either they ne
 - `/api/match-topshot-players` — claimed daily; **NBA Player Name Matcher edge fn** likely does this work instead
 - `/api/resolve-topshot-username` — claimed weekly; `pipeline_runs` shows 53h silent (within weekly tolerance)
 - `/api/weekly-db-maintenance` — claimed weekly; `pipeline_runs` shows 158 min ago, so it IS firing — just not visible in screenshots
-- `/api/ingest-external-announcements` — see above
 
 ## Audit query
 
