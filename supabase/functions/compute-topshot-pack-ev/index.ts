@@ -35,11 +35,16 @@ if (!USING_PROXY) {
 const BATCH_SIZE = 8
 const MAX_EDITION_PAGES = 8
 const TIME_BUDGET_MS = 110_000
+// Hard ceiling for the entire run, including the DB compute phase. If we
+// blow past this inside the per-pack RPC loop we break and still flush
+// whatever evRows we've accumulated (v15 graceful early-exit) instead of
+// returning rowsWritten:0 like the pre-DB time-budget check does.
+const HARD_CEILING_MS = 130_000
 const ERRORS_SAMPLE_CAP = 12
 const FETCH_CONCURRENCY = 3
 const MAX_1015_RETRIES = 3
 const RETRY_BACKOFF_MS = 2000
-const FUNCTION_VERSION = 14
+const FUNCTION_VERSION = 15
 
 const retryEvents: Array<{
   op: string
@@ -583,8 +588,18 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     }
 
     const evRows: Array<Record<string, unknown>> = []
+    let dbLoopEarlyExit = false
     const clamp = (v: number) => Math.max(-10000, Math.min(1000000, v))
     for (const f of fetched) {
+      // Graceful early-exit: if the per-pack RPC loop is about to blow the
+      // hard ceiling, stop iterating and let the existing evRows insert
+      // below flush whatever we've already computed. The next cron tick
+      // picks up the unprocessed packs (targets view orders by
+      // last_ev_at NULLS FIRST).
+      if (Date.now() - started > HARD_CEILING_MS) {
+        dbLoopEarlyExit = true
+        break
+      }
       const distId = f.target.dist_id
       const slots = Math.max(1, f.target.slots ?? 1)
       const packPrice = f.target.retail_price_usd != null ? Number(f.target.retail_price_usd) : 0
@@ -713,6 +728,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         function_version: FUNCTION_VERSION,
         using_proxy: USING_PROXY,
         batch_size: BATCH_SIZE,
+        db_loop_early_exit: dbLoopEarlyExit,
       },
     })
   } catch (err) {

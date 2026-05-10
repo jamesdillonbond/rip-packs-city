@@ -51,3 +51,38 @@ export function applyPhantomGuard<T extends Record<string, unknown>>(row: T): T 
     floor_price_usd: null,
   } as T
 }
+
+// Source-side mirror of the SQL apply_fmv_thin_sales_guard cleanup. A
+// snapshot with fmv_usd > 200 and zero 30-day sales is, by definition,
+// not backed by recent evidence — even when the underlying number was
+// derived from a Flowty floor proxy. Mark these STALE proactively at
+// write time so the post-pass guard has nothing to clean up later.
+//
+// Test cases:
+//   1. { fmv_usd: 250, sales_count_30d: 0, confidence: 'LOW'    } → confidence='STALE'
+//   2. { fmv_usd: 250, sales_count_30d: 5, confidence: 'MEDIUM' } → unchanged
+//   3. { fmv_usd: 50,  sales_count_30d: 0, confidence: 'LOW'    } → unchanged (under threshold)
+//   4. { fmv_usd: 250, sales_count_30d: 0, confidence: 'HIGH'   } → unchanged (HIGH never downgrades — caller already broke an invariant)
+
+const STALE_FMV_THRESHOLD_USD = 200
+
+export function applyStaleGuard<T extends Record<string, unknown>>(row: T): T {
+  const fmv = typeof row.fmv_usd === "number" ? row.fmv_usd : null
+  if (fmv === null || !(fmv > STALE_FMV_THRESHOLD_USD)) return row
+  const sales30 =
+    typeof row.sales_count_30d === "number" ? row.sales_count_30d : null
+  if (sales30 === null || sales30 > 0) return row
+  const conf = typeof row.confidence === "string" ? row.confidence : null
+  if (conf === "HIGH") return row
+  if (conf === "STALE") return row
+  return { ...row, confidence: "STALE" } as T
+}
+
+// Convenience wrapper. Both guards are independent and idempotent —
+// composing them lets fmv-recalc's many call sites pass through a single
+// helper rather than nest applyStaleGuard(applyPhantomGuard(...)) at
+// every push site.
+export function applyAllFmvGuards<T extends Record<string, unknown>>(row: T): T {
+  return applyStaleGuard(applyPhantomGuard(row))
+}
+

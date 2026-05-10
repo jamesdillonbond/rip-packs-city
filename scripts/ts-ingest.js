@@ -76,7 +76,14 @@ async function fetchFlowtyPage(from) {
   return json?.nfts ?? json?.data ?? [];
 }
 
-async function upsert(rows) {
+// PostgREST returns PGRST003 ("Timed out acquiring connection from pool")
+// when other pipelines are holding the pool exhausted. Surface as a
+// retryable error and back off twice (5s, then 15s) before giving up.
+function isPgrst003(text) {
+  return typeof text === "string" && text.includes("PGRST003");
+}
+
+async function upsertOnce(rows) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/ts_listings`, {
     method: "POST",
     headers: {
@@ -88,8 +95,39 @@ async function upsert(rows) {
     body: JSON.stringify(rows),
   });
   if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`Supabase upsert ${res.status}: ${t.slice(0, 300)}`);
+    const text = await res.text();
+    const err = new Error(`Supabase upsert ${res.status}: ${text.slice(0, 300)}`);
+    err.status = res.status;
+    err.body = text;
+    err.retryable = res.status === 504 || isPgrst003(text);
+    throw err;
+  }
+}
+
+async function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function upsert(rows) {
+  const backoffsMs = [0, 5000, 15000];
+  for (let attempt = 0; attempt < backoffsMs.length; attempt++) {
+    if (backoffsMs[attempt] > 0) await sleep(backoffsMs[attempt]);
+    try {
+      await upsertOnce(rows);
+      if (attempt > 0) {
+        console.log(`upsert retry succeeded on attempt ${attempt + 1}`);
+      }
+      return;
+    } catch (err) {
+      const last = attempt === backoffsMs.length - 1;
+      if (!err.retryable || last) {
+        if (err.retryable && last) {
+          console.error(`upsert retries exhausted (PGRST003/504): ${err.message}`);
+        }
+        throw err;
+      }
+      console.log(`upsert PGRST003/504 hit, retrying in ${backoffsMs[attempt + 1]}ms (attempt ${attempt + 1}/${backoffsMs.length})`);
+    }
   }
 }
 
