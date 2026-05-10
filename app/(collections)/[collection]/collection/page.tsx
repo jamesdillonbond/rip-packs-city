@@ -112,7 +112,7 @@ type MomentRow = {
   marketDebugReason?: string
   marketSource?: "row" | "edition" | "row+edition" | "edition-sale" | "special-serial" | "none"
   fmvMethod?: "band" | "low-ask-only" | "best-offer-only" | "edition-last-sale" | "special-serial-premium" | "none"
-  marketConfidence?: "high" | "medium" | "low" | "none"
+  marketConfidence?: "high" | "medium" | "low" | "stale" | "none"
   scopeKey?: string
   rowLowAsk?: number | null
   rowBestOffer?: number | null
@@ -316,10 +316,11 @@ function confidenceLabel(conf?: string | null): { label: string; color: string }
   }
 }
 
-function fmvDisplay(row: MomentRow): { text: string; muted: boolean } {
+function fmvDisplay(row: MomentRow): { text: string; muted: boolean; stale: boolean } {
   const fmv = row.fmv ?? (typeof row.fmvUsd === "number" && row.fmvUsd > 0 ? row.fmvUsd : null)
-  if (fmv === null || fmv === undefined || fmv === 0) return { text: "—", muted: true }
-  return { text: "$" + fmv.toFixed(2), muted: false }
+  if (fmv === null || fmv === undefined || fmv === 0) return { text: "—", muted: true, stale: false }
+  const stale = String(row.marketConfidence ?? "").toLowerCase() === "stale"
+  return { text: "$" + fmv.toFixed(2), muted: stale, stale }
 }
 
 type SortKey = "player" | "series" | "set" | "parallel" | "rarity" | "serial" | "fmv" | "bestOffer" | "held" | "badge" | "acquired" | "paid"
@@ -2057,7 +2058,13 @@ export default function WalletPage() {
                   </div>
                   {/* Row 4: FMV, Low Ask, Cost/P&L */}
                   <div className="flex items-center justify-between gap-2">
-                    <span className={"text-sm font-mono " + (fmv.muted ? "text-zinc-500" : "text-green-400")}>{fmv.text}</span>
+                    <span
+                      className={"text-sm font-mono " + (fmv.muted ? "text-zinc-500" : "text-green-400")}
+                      title={fmv.stale ? "No sales in 30+ days — FMV may be inaccurate" : undefined}
+                      style={fmv.stale ? { textDecoration: "underline dotted", textDecorationColor: "rgba(156,163,175,0.5)", textUnderlineOffset: "3px" } : undefined}
+                    >
+                      {fmv.text}
+                    </span>
                     {row.lowAsk != null && (
                       <span className="text-xs text-zinc-400">Ask ${row.lowAsk.toFixed(2)}</span>
                     )}
@@ -2353,7 +2360,13 @@ export default function WalletPage() {
                         })()}
                       </td>
                       <td className="rpc-table-cell--mono min-w-[90px] whitespace-nowrap">
-                        <div className={"font-semibold text-sm " + (fmv.muted ? "text-zinc-500" : "text-white")}>{fmv.text}</div>
+                        <div
+                          className={"font-semibold text-sm " + (fmv.muted ? "text-zinc-500" : "text-white")}
+                          title={fmv.stale ? "No sales in 30+ days — FMV may be inaccurate" : undefined}
+                          style={fmv.stale ? { textDecoration: "underline dotted", textDecorationColor: "rgba(156,163,175,0.5)", textUnderlineOffset: "3px" } : undefined}
+                        >
+                          {fmv.text}
+                        </div>
                         {(function() {
                           if (row.marketConfidence === "none" || !row.fmv || row.fmv <= 0 || row.lowAsk == null) return null
                           const delta = ((row.lowAsk - row.fmv) / row.fmv) * 100
