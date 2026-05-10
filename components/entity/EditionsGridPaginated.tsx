@@ -116,17 +116,42 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
         </div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
-        {sorted.map(e => (
+        {sorted.map((e, idx) => (
           <Link
             key={e.route_slug}
             href={`/${collectionUrlSlug}/edition/${encodeURIComponent(e.route_slug)}`}
             className="rpc-card"
             style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block" }}
           >
-            <div style={{ aspectRatio: "1 / 1", background: "rgba(0,0,0,0.35)", borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
+            {/*
+              minHeight is the iOS Safari ≤ 14 + Chrome ≤ 87 fallback for the
+              tile's aspect-ratio square. Without it, browsers that don't
+              implement `aspect-ratio` collapse the wrapper to 0 height when
+              the column is narrow, which is why thumbnails would silently
+              render at 0×0 in mobile breakpoints. Explicit width/height on
+              <img> + eager loading for the first row also help.
+            */}
+            <div
+              style={{
+                aspectRatio: "1 / 1",
+                minHeight: 160,
+                background: "rgba(0,0,0,0.35)",
+                borderRadius: 4,
+                overflow: "hidden",
+                marginBottom: 8,
+              }}
+            >
               {e.thumbnail_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={e.thumbnail_url} alt={e.player_name ?? e.name ?? "Edition"} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <img
+                  src={e.thumbnail_url}
+                  alt={e.player_name ?? e.name ?? "Edition"}
+                  width={220}
+                  height={220}
+                  loading={idx < 12 ? "eager" : "lazy"}
+                  decoding={idx < 12 ? "sync" : "async"}
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
               ) : (
                 <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontFamily: "'Share Tech Mono', monospace", fontSize: 10 }}>No image</div>
               )}

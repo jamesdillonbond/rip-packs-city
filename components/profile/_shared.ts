@@ -51,6 +51,7 @@ export interface TrophyMoment {
   id?: number;
   slot: number;
   moment_id: string;
+  edition_id?: string | null;
   collection_id?: string | null;
   player_name: string | null;
   set_name: string | null;

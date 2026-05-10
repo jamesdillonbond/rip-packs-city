@@ -2,17 +2,28 @@
 
 // ViewTrophyModal — popup detail view for a pinned trophy moment.
 // Shared by /profile (owner view) and /profile/[username] (public view) so
-// both surfaces show the same moment-detail card. Renders the trophy's
-// video when video_url is present, otherwise falls back to thumbnail.
+// both surfaces show the same moment-detail card.
 //
-// Note that today no rows in trophy_moments carry a video_url (the
-// pin write path doesn't capture it from the picker), so the video
-// branch is future-proofing — once /api/profile/top-moments threads
-// editions.video_url through to the picker, new pins will start
-// playing the actual on-chain animation here without further work.
+// Media: prefer the per-collection animated CDN URL derived from
+// (collection_id, moment_id, edition_id). If we can't derive a video for the
+// collection (Pinnacle, or missing input fields) we render the still
+// thumbnail. The trophy_moments.video_url column wins over the derived URL
+// when populated — that lets ops paste a hand-curated URL for one-offs
+// without changing the resolver.
+//
+// Deeplinks: three text-style links below the media — RPC moment page,
+// Top Shot moment page (TS only), and Flowty asset page. External links
+// open in a new tab with rel noopener noreferrer.
 
 import { useEffect } from "react";
+import Link from "next/link";
 import { monoFont, condensedFont, fmtDollars, TrophyMoment, TIER_COLORS } from "./_shared";
+import {
+  deriveMomentVideoUrl,
+  rpcMomentUrl,
+  topShotMomentUrl,
+  flowtyAssetUrl,
+} from "@/lib/media/momentVideoUrl";
 
 interface ViewTrophyModalProps {
   trophy: TrophyMoment | null;
@@ -41,7 +52,20 @@ export default function ViewTrophyModal({ trophy, onClose, showSlotBadge = true 
     TIER_COLORS[tierKey.charAt(0).toUpperCase() + tierKey.slice(1).toLowerCase()] ??
     "#9CA3AF";
 
-  const hasVideo = !!trophy.video_url;
+  const mediaInputs = {
+    collectionUuid: trophy.collection_id ?? null,
+    momentId: trophy.moment_id ?? null,
+    editionId: trophy.edition_id ?? null,
+    thumbnailUrl: trophy.thumbnail_url ?? null,
+  };
+  const derivedVideo = deriveMomentVideoUrl(mediaInputs);
+  const videoUrl = trophy.video_url ?? derivedVideo;
+  const hasVideo = !!videoUrl;
+
+  const rpcUrl = rpcMomentUrl(mediaInputs);
+  const tsUrl = topShotMomentUrl(mediaInputs);
+  const flowtyUrl = flowtyAssetUrl(mediaInputs);
+
   const slotEmoji = showSlotBadge ? SLOT_LABELS[trophy.slot] ?? "" : "";
 
   const badges = (trophy.badges ?? []).filter(Boolean);
@@ -116,10 +140,11 @@ export default function ViewTrophyModal({ trophy, onClose, showSlotBadge = true 
           {hasVideo ? (
             // eslint-disable-next-line jsx-a11y/media-has-caption
             <video
-              src={trophy.video_url ?? undefined}
+              src={videoUrl ?? undefined}
+              poster={trophy.thumbnail_url ?? undefined}
               autoPlay
-              muted
               loop
+              muted
               playsInline
               style={{ width: "100%", height: "100%", objectFit: "cover" }}
             />
@@ -286,6 +311,65 @@ export default function ViewTrophyModal({ trophy, onClose, showSlotBadge = true 
               }}
             >
               &ldquo;{trophy.note}&rdquo;
+            </div>
+          )}
+
+          {(rpcUrl || tsUrl || flowtyUrl) && (
+            <div
+              style={{
+                marginTop: 16,
+                paddingTop: 14,
+                borderTop: "1px solid rgba(255,255,255,0.08)",
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "6px 14px",
+                fontFamily: monoFont,
+                fontSize: 10,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+              }}
+            >
+              {rpcUrl && (
+                <Link
+                  href={rpcUrl}
+                  onClick={onClose}
+                  style={{
+                    color: "#E03A2F",
+                    textDecoration: "none",
+                    fontWeight: 700,
+                  }}
+                >
+                  View on RPC →
+                </Link>
+              )}
+              {tsUrl && (
+                <a
+                  href={tsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: "rgba(255,255,255,0.85)",
+                    textDecoration: "none",
+                    fontWeight: 700,
+                  }}
+                >
+                  View on Top Shot ↗
+                </a>
+              )}
+              {flowtyUrl && (
+                <a
+                  href={flowtyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: "rgba(255,255,255,0.85)",
+                    textDecoration: "none",
+                    fontWeight: 700,
+                  }}
+                >
+                  View on Flowty ↗
+                </a>
+              )}
             </div>
           )}
         </div>

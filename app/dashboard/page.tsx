@@ -247,6 +247,7 @@ function ProfilePageInner() {
   const search = useSearchParams();
   const [email, setEmail] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [resolvedDisplayName, setResolvedDisplayName] = useState<string | null>(null);
   const [bio, setBio] = useState<Bio | null>(null);
   const [wallets, setWallets] = useState<SavedWallet[]>([]);
   const [trophies, setTrophies] = useState<Trophy[]>([]);
@@ -358,6 +359,7 @@ function ProfilePageInner() {
       const me = meRes.ok ? await meRes.json() : { user: null };
       setEmail(me?.user?.email ?? null);
       setUserId(me?.user?.id ?? null);
+      setResolvedDisplayName(me?.user?.display_name ?? null);
 
       if (bioRes.ok) {
         const b = await bioRes.json();
@@ -661,7 +663,10 @@ function ProfilePageInner() {
             <RpcLogo size={40} />
             <div>
               <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 16, letterSpacing: "0.04em", textTransform: "uppercase" }}>
-                {bio?.display_name ?? (email?.split("@")[0] ?? "Profile")}
+                {/* Server-side resolver chain: user_profiles → profile_bio → allow_list.username
+                    → email-local → short wallet. Profanity-guarded.
+                    See lib/user/resolveDisplayName.ts. */}
+                {resolvedDisplayName ?? bio?.display_name ?? (email?.split("@")[0] ?? "Profile")}
               </div>
               <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: "0.04em", marginTop: 2 }}>
                 {email ?? "Not signed in"}
