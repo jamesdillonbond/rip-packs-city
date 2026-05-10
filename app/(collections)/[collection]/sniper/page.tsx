@@ -19,6 +19,7 @@ import { slugifyName } from "@/lib/entity-labels";
 import MomentDetailModal from "@/components/MomentDetailModal";
 import BadgeIcon from "@/components/BadgeIcon";
 import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter";
+import { track } from "@/lib/telemetry/track";
 
 function SniperThumbnailPreview({ thumbUrl, playerName, tierColor, backgroundColor, children }: { thumbUrl: string | null; playerName: string; tierColor: string; backgroundColor?: string; children: React.ReactNode }) {
   const [hovered, setHovered] = useState(false);
@@ -589,6 +590,23 @@ export default function SniperPage() {
   const [deepLinkResolved, setDeepLinkResolved] = useState<"pending" | "found" | "missing">("pending");
   const [editionStats, setEditionStats] = useState<Map<string, { owned: number; locked: number }>>(new Map());
   const [showFilters, setShowFilters] = useState(false);
+
+  // Telemetry: emit a `sniper-filter-applied` beacon any time the user-facing
+  // filter set changes. The track() helper itself debounces, so a flurry of
+  // input clicks coalesces into one beacon per ~350ms.
+  useEffect(() => {
+    track("sniper-filter-applied", {
+      tier: tierTab,
+      sort: sortBy,
+      min_discount: minDiscount,
+      max_price: maxPrice,
+      league: leagueFilter,
+      serial: serialFilter,
+      badge_only: badgeOnly,
+      verified_only: showVerifiedOnly,
+      owned: ownedFilter,
+    });
+  }, [tierTab, sortBy, minDiscount, maxPrice, leagueFilter, serialFilter, badgeOnly, showVerifiedOnly, ownedFilter]);
 
   // ── Task 10: Tab visibility pause/resume
   const [tabHidden, setTabHidden] = useState(false);
