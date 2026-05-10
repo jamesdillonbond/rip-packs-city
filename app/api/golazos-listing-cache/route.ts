@@ -30,7 +30,12 @@ const PAGE_LIMIT = 50
 // which is why pre-sweep Golazos was pinned at the $0.14–$1 band with zero
 // RARE/LEGENDARY representation. A parallel salePrice desc sweep pulls the
 // expensive tail; dedup by listing_resource_id across both passes.
-const SWEEP_OFFSETS = [0, 50, 100]
+//
+// 2026-05-09 (R1): bumped from 3 offsets (150/dir = 300 total) to 10 offsets
+// (500/dir = 1000 total) to give the LaLiga FMV recalc a deeper ASK pool.
+// Throttled by the existing flowty-proxy worker — no upstream limit to worry
+// about and the ingest is best-effort anyway.
+const SWEEP_OFFSETS = [0, 50, 100, 150, 200, 250, 300, 350, 400, 450]
 const INTER_PAGE_DELAY_MS = 200
 const UPSERT_CHUNK = 50
 const EDITION_LOOKUP_CHUNK = 100
