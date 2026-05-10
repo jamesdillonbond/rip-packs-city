@@ -41,7 +41,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 const SPORTS_PROXY_URL = Deno.env.get("SPORTS_PROXY_URL") ?? ""
 const SPORTS_PROXY_SECRET = Deno.env.get("SPORTS_PROXY_SECRET") ?? ""
 
-const FUNCTION_VERSION = 6
+const FUNCTION_VERSION = 7
 const PIPELINE = "sync-nba-projections"
 const COLLECTION_SLUG = "nba_top_shot"
 
@@ -116,6 +116,19 @@ function normalizeJs(s: string): string {
     .replace(/[̀-ͯ]/g, "")
     .replace(/[^a-zA-Z]/g, "")
     .toLowerCase()
+}
+
+// nba_player_projections.confidence CHECK accepts only HIGH / MED / LOW
+// (3-letter MED) or NULL. Anything else aborts the whole upsert. Normalize
+// upstream-supplied values defensively so an upstream schema drift never
+// poisons the entire batch.
+function normalizeConfidence(raw: unknown): "HIGH" | "MED" | "LOW" | null {
+  if (raw === null || raw === undefined) return null
+  const s = String(raw).toUpperCase().trim()
+  if (s === "HIGH") return "HIGH"
+  if (s === "MED" || s === "MEDIUM") return "MED"
+  if (s === "LOW") return "LOW"
+  return null
 }
 
 function mapInjuryStatus(raw: string | null): string {
@@ -780,9 +793,11 @@ async function runWork(startedAtIso: string, started: number) {
       proj_minutes: m.scraped.proj_minutes ?? null,
       injury_status: mapInjuryStatus(m.scraped.status),
       // Confidence tracks the active upstream: DK's model is MED,
-      // stats.nba.com rolling-5 is LOW, ESPN team-leader is LOW.
-      // Constraint allows HIGH/MED/LOW (3-letter MED, not MEDIUM).
-      confidence: activeConfidence,
+      // stats.nba.com rolling-5 is LOW, ESPN team-leader is LOW. Constraint
+      // allows HIGH/MED/LOW (3-letter MED) or NULL. Defensive normalize
+      // collapses any drift (e.g. "MEDIUM" / lower-case / whitespace) before
+      // the CHECK can fire.
+      confidence: normalizeConfidence(activeConfidence),
       source: activeSource,
       projection_method: activeMethod,
       last_synced_at: nowIso,
