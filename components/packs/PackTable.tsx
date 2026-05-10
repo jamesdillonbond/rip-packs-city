@@ -40,6 +40,12 @@ export interface PackRow {
   editionCount?: number | null
   /** True when the pack draws from a single ultra-rare edition rather than a probabilistic pool. */
   isRareSinglePack?: boolean
+  /** Cached `total_unopened` from pack_ev_latest — packs remaining in the
+   *  distribution. Drives the "remaining" sort. Null when EV not yet computed. */
+  totalUnopened?: number | null
+  /** Cached `pack_ev` (gross_ev − pack_price) in absolute dollars from
+   *  pack_ev_latest. Drives the "packEvDollar" sort. Null when EV not yet computed. */
+  packEvDollar?: number | null
   /** Callback to pass through to the action column. */
   onAction?: () => void
   /** Button label; default 'Analyze'. */
@@ -57,6 +63,12 @@ export type SortKey =
   | 'evMarginPct'
   | 'fmvCoverage'
   | 'depletionPct'
+  // Sort-only keys (no dedicated table column — the existing Depletion column
+  // already shows pack-distributions depletion). Added for the listings page
+  // sort dropdown that wants pool depletion / packs remaining / pack EV $.
+  | 'poolDepletionPct'
+  | 'totalUnopened'
+  | 'packEvDollar'
 
 export interface PackTableProps {
   rows: PackRow[]
@@ -88,7 +100,7 @@ const TIER_DEFAULT: ChipStyle = {
   color: 'rgb(203,213,225)',
 }
 
-function tierChip(tier: string): ChipStyle {
+export function tierChip(tier: string): ChipStyle {
   const t = tier.toUpperCase().replace('MOMENT_TIER_', '')
   return TIER_STYLE[t] ?? TIER_DEFAULT
 }
@@ -173,7 +185,7 @@ function SortArrow({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
 // width/height set on BOTH inline style AND HTML attributes — iOS Safari
 // skips img layout when only one is present, which broke pack thumbnails
 // in the table on mobile.
-function PackThumb({ url, tier, title, size = 40 }: { url: string | null; tier: string; title: string; size?: number }) {
+export function PackThumb({ url, tier, title, size = 40 }: { url: string | null; tier: string; title: string; size?: number }) {
   const [errored, setErrored] = useState(false)
   const chip = tierChip(tier)
   if (!url || errored) {
@@ -226,8 +238,17 @@ export default function PackTable({
     arr.sort((a, b) => {
       const av = (a as unknown as Record<SortKey, unknown>)[sortKey]
       const bv = (b as unknown as Record<SortKey, unknown>)[sortKey]
-      const an = av == null ? -Infinity : typeof av === 'number' ? av : String(av).toLowerCase()
-      const bn = bv == null ? -Infinity : typeof bv === 'number' ? bv : String(bv).toLowerCase()
+      // Null/undefined values always sort to the end regardless of direction
+      // — the asymmetry the previous comparator had (-Infinity sorted to the
+      // top in asc order) made packs missing EV crowd the top of the
+      // "EV margin asc" / "remaining asc" views, which isn't useful.
+      const aNull = av == null
+      const bNull = bv == null
+      if (aNull && bNull) return 0
+      if (aNull) return 1
+      if (bNull) return -1
+      const an = typeof av === 'number' ? av : String(av).toLowerCase()
+      const bn = typeof bv === 'number' ? bv : String(bv).toLowerCase()
       if (an === bn) return 0
       if (sortDir === 'desc') return an > bn ? -1 : 1
       return an < bn ? -1 : 1

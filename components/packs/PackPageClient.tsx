@@ -4,19 +4,29 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import PackTable, { type PackRow, type SortKey as TableSortKey } from './PackTable'
 import { useWarmCache } from '@/lib/warmup/WarmupContext'
 
-// Shared client component for the two static pack pages (nba-top-shot,
-// nfl-all-day). Renders /api/packs (pack_table_rows view) into the unified
-// <PackTable/> with a top filter strip: search, tier chips, type chips,
-// price-range min/max, and a visible sort dropdown. The wallet-driven
-// "My Sealed Packs" strip was removed — auto-firing wallet-packs on mount
-// for signed-in users was the regression that hid the listings.
+// Shared client component for the static pack pages (nba-top-shot,
+// nfl-all-day, la-liga-golazos). Renders /api/packs (pack_table_rows view)
+// into the unified <PackTable/> with a filter strip: search, tier chips,
+// type chips, price-range min/max, and the +EV / Has chasers / Almost-sold-out
+// quick toggles. Sorts include the standard set plus three EV-cache-derived
+// keys: pool depletion, packs remaining, and pack EV in absolute dollars.
 
-type SortKey = 'value_ratio_desc' | 'ev_margin_pct_desc' | 'retail_price_asc' | 'title_asc'
+type SortKey =
+  | 'value_ratio_desc'
+  | 'ev_margin_pct_desc'
+  | 'retail_price_asc'
+  | 'title_asc'
+  | 'pool_depletion_pct_desc'
+  | 'total_unopened_asc'
+  | 'pack_ev_dollar_desc'
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'value_ratio_desc', label: 'Value ratio' },
   { key: 'ev_margin_pct_desc', label: 'EV margin %' },
+  { key: 'pack_ev_dollar_desc', label: 'Pack EV ($)' },
   { key: 'retail_price_asc', label: 'Retail price (low→high)' },
+  { key: 'pool_depletion_pct_desc', label: 'Pool depletion (high→low)' },
+  { key: 'total_unopened_asc', label: 'Packs remaining (low→high)' },
   { key: 'title_asc', label: 'Title (A→Z)' },
 ]
 
@@ -28,6 +38,7 @@ interface ApiRow {
   pack_type: string | null
   slots: number | null
   retail_price_usd: number | null
+  pack_ev: number | null
   gross_ev: number | null
   ev_margin_pct: number | null
   value_ratio: number | null
@@ -40,6 +51,7 @@ interface ApiRow {
   /** Total editions in the EV calculation — used with ev_depletion_pct to
    *  derive the surviving-edition count for the depletion chip. */
   edition_count: number | null
+  total_unopened: number | null
   is_rare_single_pack?: boolean | null
 }
 
@@ -76,6 +88,8 @@ function toPackRow(r: ApiRow, collectionUrlSlug: string): PackRow {
     depletionPct: pctFraction(r.depletion_pct),
     poolDepletionPct: pctFraction(r.ev_depletion_pct),
     editionCount: r.edition_count == null ? null : Number(r.edition_count),
+    totalUnopened: r.total_unopened == null ? null : Number(r.total_unopened),
+    packEvDollar: r.pack_ev == null ? null : Number(r.pack_ev),
     isRareSinglePack: r.is_rare_single_pack === true,
     detailHref: `/${collectionUrlSlug}/pack/${r.dist_id}`,
   }
@@ -96,6 +110,12 @@ export default function PackPageClient({ collection, tiers, title, accent = '#E0
   const [packType, setPackType] = useState<string>('all')
   const [priceMinInput, setPriceMinInput] = useState('')
   const [priceMaxInput, setPriceMaxInput] = useState('')
+  // Quick-toggle chips. NULL values on any of the underlying columns fail the
+  // filter (do NOT pass through) — surfacing not-yet-computed packs in a
+  // "+EV only" view would mislead.
+  const [posEvOnly, setPosEvOnly] = useState(false)
+  const [hasChasers, setHasChasers] = useState(false)
+  const [almostSoldOut, setAlmostSoldOut] = useState(false)
 
   // Debounce search input → search state
   useEffect(() => {
@@ -103,22 +123,25 @@ export default function PackPageClient({ collection, tiers, title, accent = '#E0
     return () => clearTimeout(t)
   }, [searchInput])
 
-  // /api/packs accepts collection+sort+tier+search server-side, so those keys
-  // round-trip into the cache key. Pack-type and price filters apply
-  // client-side against the resulting rows.
-  const filterSuffix = (sort !== 'value_ratio_desc' || tier !== 'all' || search)
-    ? ':' + sort + ':' + tier + ':' + search
+  // /api/packs accepts collection+sort+tier+search server-side. Sort keys
+  // that aren't in /api/packs's ALLOWED_SORTS (the new pack-EV-derived ones)
+  // are sorted client-side, so they all map to a single server fetch keyed
+  // on value_ratio_desc to maximize cache reuse.
+  const SERVER_SORTS = new Set(['value_ratio_desc', 'ev_margin_pct_desc', 'retail_price_asc', 'title_asc'])
+  const serverSort = SERVER_SORTS.has(sort) ? sort : 'value_ratio_desc'
+  const filterSuffix = (serverSort !== 'value_ratio_desc' || tier !== 'all' || search)
+    ? ':' + serverSort + ':' + tier + ':' + search
     : ''
   const packsKey = 'pack-listings:' + collection + filterSuffix
   const packsFetcher = useCallback(async () => {
-    const params = new URLSearchParams({ collection, sort, limit: '500' })
+    const params = new URLSearchParams({ collection, sort: serverSort, limit: '500' })
     if (tier !== 'all') params.set('tier', tier)
     if (search) params.set('search', search)
     const res = await fetch('/api/packs?' + params.toString())
     const json = (await res.json()) as ApiResponse & { error?: string }
     if (!res.ok) throw new Error(json.error || 'Failed to load packs')
     return json
-  }, [collection, sort, tier, search])
+  }, [collection, serverSort, tier, search])
 
   const { data: packsData, loading: packsLoading, error: packsError } = useWarmCache<ApiResponse>(
     packsKey,
@@ -149,11 +172,21 @@ export default function PackPageClient({ collection, tiers, title, accent = '#E0
       if (packType !== 'all' && (r.pack_type ?? '') !== packType) return false
       if (min != null && (r.retail_price_usd == null || Number(r.retail_price_usd) < min)) return false
       if (max != null && (r.retail_price_usd == null || Number(r.retail_price_usd) > max)) return false
+      // +EV only — uses the cached pack_ev column directly. NULL fails the
+      // filter (we don't surface uncomputed packs as +EV).
+      if (posEvOnly && (r.pack_ev == null || Number(r.pack_ev) <= 0)) return false
+      // Has chasers proxy — value_ratio ≥ 1.0. Same NULL handling.
+      if (hasChasers && (r.value_ratio == null || Number(r.value_ratio) < 1.0)) return false
+      // Almost sold out — pool depletion ≥ 80%.
+      if (almostSoldOut && (r.ev_depletion_pct == null || Number(r.ev_depletion_pct) < 80)) return false
       return true
     })
-  }, [rows, packType, priceMinInput, priceMaxInput])
+  }, [rows, packType, priceMinInput, priceMaxInput, posEvOnly, hasChasers, almostSoldOut])
 
   const packRows: PackRow[] = filteredRows.map((r) => toPackRow(r, collection))
+  const tableSortDefault = tableSortFor(sort)
+  const chipBase = 'rounded-lg px-2.5 py-1 text-xs font-semibold transition'
+  const chipInactive = 'border border-zinc-700 text-zinc-400 hover:bg-zinc-900'
 
   return (
     <div className="mx-auto max-w-[1400px] px-3 py-4 md:px-6">
@@ -198,10 +231,7 @@ export default function PackPageClient({ collection, tiers, title, accent = '#E0
           <span className="text-[10px] uppercase tracking-wide text-zinc-500 mr-1">Tier</span>
           <button
             onClick={() => setTier('all')}
-            className={
-              'rounded-lg px-2.5 py-1 text-xs font-semibold transition ' +
-              (tier === 'all' ? 'text-white' : 'border border-zinc-700 text-zinc-400 hover:bg-zinc-900')
-            }
+            className={chipBase + ' ' + (tier === 'all' ? 'text-white' : chipInactive)}
             style={tier === 'all' ? { backgroundColor: accent } : undefined}
           >
             All
@@ -210,10 +240,7 @@ export default function PackPageClient({ collection, tiers, title, accent = '#E0
             <button
               key={t}
               onClick={() => setTier(t)}
-              className={
-                'rounded-lg px-2.5 py-1 text-xs font-semibold capitalize transition ' +
-                (tier === t ? 'text-white' : 'border border-zinc-700 text-zinc-400 hover:bg-zinc-900')
-              }
+              className={chipBase + ' capitalize ' + (tier === t ? 'text-white' : chipInactive)}
               style={tier === t ? { backgroundColor: accent } : undefined}
             >
               {t.replace(/_/g, ' ')}
@@ -221,17 +248,51 @@ export default function PackPageClient({ collection, tiers, title, accent = '#E0
           ))}
         </div>
 
-        {/* Row 3: type chips + price range */}
+        {/* Row 3: quick toggles — +EV / Has chasers / Almost sold out */}
+        <div className="flex flex-wrap items-center gap-1">
+          <span className="text-[10px] uppercase tracking-wide text-zinc-500 mr-1">Quick</span>
+          <button
+            onClick={() => setPosEvOnly((v) => !v)}
+            className={chipBase + ' ' + (posEvOnly ? 'text-white' : chipInactive)}
+            style={posEvOnly ? { backgroundColor: '#10B981' } : undefined}
+            title="Cached pack_ev > 0"
+          >
+            +EV only
+          </button>
+          <button
+            onClick={() => setHasChasers((v) => !v)}
+            className={chipBase + ' ' + (hasChasers ? 'text-white' : chipInactive)}
+            style={hasChasers ? { backgroundColor: accent } : undefined}
+            title="value_ratio ≥ 1.0 — proxy for chaser-heavy pools"
+          >
+            Has chasers <span className="ml-1 text-[9px] opacity-60">(beta)</span>
+          </button>
+          <button
+            onClick={() => setAlmostSoldOut((v) => !v)}
+            className={chipBase + ' ' + (almostSoldOut ? 'text-white' : chipInactive)}
+            style={almostSoldOut ? { backgroundColor: '#F97316' } : undefined}
+            title="Pool depletion ≥ 80% — most editions in the pool are sold out"
+          >
+            Almost sold out
+          </button>
+          {(posEvOnly || hasChasers || almostSoldOut) && (
+            <button
+              onClick={() => { setPosEvOnly(false); setHasChasers(false); setAlmostSoldOut(false) }}
+              className="text-[10px] uppercase tracking-wide text-zinc-500 hover:text-white ml-1"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        {/* Row 4: type chips + price range */}
         <div className="flex flex-wrap items-center gap-3">
           {packTypeOptions.length > 0 && (
             <div className="flex flex-wrap items-center gap-1">
               <span className="text-[10px] uppercase tracking-wide text-zinc-500 mr-1">Type</span>
               <button
                 onClick={() => setPackType('all')}
-                className={
-                  'rounded-lg px-2.5 py-1 text-xs font-semibold transition ' +
-                  (packType === 'all' ? 'text-white' : 'border border-zinc-700 text-zinc-400 hover:bg-zinc-900')
-                }
+                className={chipBase + ' ' + (packType === 'all' ? 'text-white' : chipInactive)}
                 style={packType === 'all' ? { backgroundColor: accent } : undefined}
               >
                 All
@@ -240,10 +301,7 @@ export default function PackPageClient({ collection, tiers, title, accent = '#E0
                 <button
                   key={pt}
                   onClick={() => setPackType(pt)}
-                  className={
-                    'rounded-lg px-2.5 py-1 text-xs font-semibold capitalize transition ' +
-                    (packType === pt ? 'text-white' : 'border border-zinc-700 text-zinc-400 hover:bg-zinc-900')
-                  }
+                  className={chipBase + ' capitalize ' + (packType === pt ? 'text-white' : chipInactive)}
                   style={packType === pt ? { backgroundColor: accent } : undefined}
                 >
                   {pt}
@@ -287,18 +345,19 @@ export default function PackPageClient({ collection, tiers, title, accent = '#E0
 
       <PackTable
         rows={packRows}
-        defaultSort={tableSortFor(sort).key}
-        defaultDir={tableSortFor(sort).dir}
+        defaultSort={tableSortDefault.key}
+        defaultDir={tableSortDefault.dir}
         emptyMessage={loading ? 'Loading packs…' : 'No packs match your filters.'}
       />
     </div>
   )
 }
 
-// Align PackTable's internal default with the server-side /api/packs sort so
-// the two don't fight each other on first paint. value_ratio and
-// ev_margin_pct produce identical orderings (differ by a constant), so both
-// map to PackTable's evMarginPct column.
+// Align PackTable's internal default with the active sort key so the two
+// don't fight each other on first paint. The four classic sorts map to
+// existing PackTable columns; the three new EV-cache sorts map to PackRow
+// fields that don't have dedicated columns yet — PackTable's comparator
+// handles them via the raw [sortKey] lookup.
 function tableSortFor(sort: SortKey): { key: TableSortKey; dir: 'asc' | 'desc' } {
   switch (sort) {
     case 'value_ratio_desc':
@@ -308,5 +367,11 @@ function tableSortFor(sort: SortKey): { key: TableSortKey; dir: 'asc' | 'desc' }
       return { key: 'price', dir: 'asc' }
     case 'title_asc':
       return { key: 'title', dir: 'asc' }
+    case 'pool_depletion_pct_desc':
+      return { key: 'poolDepletionPct', dir: 'desc' }
+    case 'total_unopened_asc':
+      return { key: 'totalUnopened', dir: 'asc' }
+    case 'pack_ev_dollar_desc':
+      return { key: 'packEvDollar', dir: 'desc' }
   }
 }
