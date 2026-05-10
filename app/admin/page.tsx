@@ -33,6 +33,21 @@ const TOOLS: Tool[] = [
     title: "Allow List",
     blurb: "Beta access whitelist + prewarm queue.",
   },
+  {
+    href: "/admin/beta-activity",
+    title: "Beta Activity",
+    blurb: "Per-user 7d page-view + last-seen + top features rollup.",
+  },
+  {
+    href: "/admin/fmv-health",
+    title: "FMV Health",
+    blurb: "Thin-sales guard cap audit — what got downgraded, when, and why.",
+  },
+  {
+    href: "/admin/pipeline-health",
+    title: "Pipeline Health",
+    blurb: "Cron drift surface — every pipeline's last run + cadence vs expected.",
+  },
 ];
 
 export default function AdminIndexPage() {

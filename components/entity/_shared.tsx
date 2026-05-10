@@ -101,7 +101,14 @@ const CONFIDENCE_COLORS: Record<string, { fg: string; bg: string; bd: string }> 
   MEDIUM:    { fg: "#F59E0B", bg: "rgba(245,158,11,0.10)", bd: "rgba(245,158,11,0.30)" },
   LOW:       { fg: "#94A3B8", bg: "rgba(148,163,184,0.10)", bd: "rgba(148,163,184,0.30)" },
   ASK_ONLY:  { fg: "#3B82F6", bg: "rgba(59,130,246,0.10)", bd: "rgba(59,130,246,0.30)" },
+  // STALE = fmv_snapshots.confidence after the thin-sales guard
+  // downgraded an edition with no sales in 30+ days. Muted/desaturated
+  // intentionally so the badge reads as "not actively backed" instead
+  // of competing with HIGH/MEDIUM/LOW for visual weight.
+  STALE:     { fg: "#9CA3AF", bg: "rgba(107,114,128,0.08)", bd: "rgba(107,114,128,0.25)" },
 }
+
+const STALE_TOOLTIP = "No sales in 30+ days — FMV may be inaccurate"
 
 export function ConfidencePill({ confidence }: { confidence: string | null | undefined }) {
   if (!confidence || confidence === "NONE") {
@@ -109,20 +116,38 @@ export function ConfidencePill({ confidence }: { confidence: string | null | und
   }
   const key = confidence.toUpperCase()
   const colors = CONFIDENCE_COLORS[key] ?? GRAY_FALLBACK
+  const isStale = key === "STALE"
   return (
-    <span style={{
-      display: "inline-block",
-      padding: "2px 8px",
-      borderRadius: 999,
-      fontFamily: "'Share Tech Mono', monospace",
-      fontSize: 10,
-      letterSpacing: "0.10em",
-      color: colors.fg,
-      background: colors.bg,
-      border: `1px solid ${colors.bd}`,
-    }}>{key.replace("_", " ")}</span>
+    <span
+      title={isStale ? STALE_TOOLTIP : undefined}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        padding: "2px 8px",
+        borderRadius: 999,
+        fontFamily: "'Share Tech Mono', monospace",
+        fontSize: 10,
+        letterSpacing: "0.10em",
+        color: colors.fg,
+        background: colors.bg,
+        border: `1px solid ${colors.bd}`,
+      }}
+    >
+      {isStale && <span aria-hidden style={{ fontSize: 9, opacity: 0.85 }}>🕒</span>}
+      {key.replace("_", " ")}
+    </span>
   )
 }
+
+// True when the row should render its FMV in muted style (e.g. with a
+// dotted underline hint). Centralized so the wallet/collection page,
+// edition tiles, and trophy modal stay consistent.
+export function isStaleConfidence(confidence: string | null | undefined): boolean {
+  return typeof confidence === "string" && confidence.toUpperCase() === "STALE"
+}
+
+export const STALE_FMV_TOOLTIP = STALE_TOOLTIP
 
 // ── Stat cell ───────────────────────────────────────────────────────────────
 
