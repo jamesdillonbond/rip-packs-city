@@ -57,26 +57,36 @@ async function fetchTopShotEditionsLookup() {
   const url = `${SUPABASE_URL}/rest/v1/editions` +
     `?collection_id=eq.${TS_COLLECTION_ID}` +
     `&set_id_onchain=not.is.null&play_id_onchain=not.is.null` +
-    `&select=player_name,set_name,series,set_id_onchain,play_id_onchain` +
-    `&limit=20000`;
-  const res = await fetch(url, {
-    headers: {
-      "Authorization": `Bearer ${SUPABASE_KEY}`,
-      "apikey": SUPABASE_KEY,
-    },
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`editions lookup HTTP ${res.status}: ${text.slice(0, 200)}`);
-  }
-  const rows = await res.json();
-  for (const row of rows) {
-    if (!row.player_name || !row.set_name) continue;
-    const key = `${row.player_name.toLowerCase()}|${row.set_name.toLowerCase()}|${row.series ?? 0}`;
-    if (!out.has(key)) {
-      out.set(key, { set_id: row.set_id_onchain, play_id: row.play_id_onchain });
+    `&select=player_name,set_name,series,set_id_onchain,play_id_onchain`;
+  // Paginate via Range header — PostgREST caps response size at 1000 rows by
+  // default. NBA TS has ~9200 resolvable editions, so we need ~10 pages.
+  const step = 1000;
+  let from = 0;
+  while (true) {
+    const res = await fetch(url, {
+      headers: {
+        "Authorization": `Bearer ${SUPABASE_KEY}`,
+        "apikey": SUPABASE_KEY,
+        "Range": `${from}-${from + step - 1}`,
+        "Range-Unit": "items",
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`editions lookup HTTP ${res.status} from=${from}: ${text.slice(0, 200)}`);
     }
+    const rows = await res.json();
+    for (const row of rows) {
+      if (!row.player_name || !row.set_name) continue;
+      const key = `${row.player_name.toLowerCase()}|${row.set_name.toLowerCase()}|${row.series ?? 0}`;
+      if (!out.has(key)) {
+        out.set(key, { set_id: row.set_id_onchain, play_id: row.play_id_onchain });
+      }
+    }
+    if (rows.length < step) break;
+    from += step;
+    if (from > 30000) break;
   }
   return out;
 }
