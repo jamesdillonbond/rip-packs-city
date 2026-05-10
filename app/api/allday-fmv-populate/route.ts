@@ -244,8 +244,10 @@ export async function GET(req: NextRequest) {
   let ultimateSkipped = 0
 
   // ULTIMATE rows in fmv_snapshots are owned exclusively by recalc_ultimate_fmv
-  // (the ultimate-v1 algo, which excludes special-serial sales). Drop any
-  // ULTIMATE editions before handing the batch to upsert_allday_marketplace_fmv.
+  // (the ultimate-v1 algo, which excludes special-serial sales). Look up tier
+  // for every fetched row so the write-site guard below can refuse to insert
+  // ULTIMATE rows regardless of what earlier filters did.
+  const tierByExt = new Map<string, string>()
   let filteredNodes: RawNode[] = nodes
   if (nodes.length > 0) {
     try {
@@ -253,7 +255,6 @@ export async function GET(req: NextRequest) {
         .map((n) => (n.editionFlowID != null ? String(n.editionFlowID) : null))
         .filter((s): s is string => !!s)
       if (flowIds.length > 0) {
-        const ultimateExt = new Set<string>()
         const TIER_CHUNK = 200
         for (let i = 0; i < flowIds.length; i += TIER_CHUNK) {
           const chunk = flowIds.slice(i, i + TIER_CHUNK)
@@ -261,28 +262,27 @@ export async function GET(req: NextRequest) {
             .from("editions")
             .select("external_id, tier")
             .in("external_id", chunk)
-            .eq("tier", "ULTIMATE")
           for (const row of tierRows ?? []) {
             const ext = (row as any)?.external_id
-            if (ext != null) ultimateExt.add(String(ext))
+            const tier = (row as any)?.tier
+            if (ext != null && tier != null) tierByExt.set(String(ext), String(tier))
           }
         }
-        if (ultimateExt.size > 0) {
-          filteredNodes = nodes.filter((n) => {
-            const ext = n.editionFlowID != null ? String(n.editionFlowID) : null
-            return !(ext && ultimateExt.has(ext))
-          })
-          ultimateSkipped = nodes.length - filteredNodes.length
-          if (ultimateSkipped > 0) {
-            console.log(
-              `[allday-fmv-populate] skipped ${ultimateSkipped} ULTIMATE editions (owned by recalc_ultimate_fmv)`
-            )
-          }
+        filteredNodes = nodes.filter((n) => {
+          const ext = n.editionFlowID != null ? String(n.editionFlowID) : null
+          return !(ext && tierByExt.get(ext) === "ULTIMATE")
+        })
+        const preFilterSkipped = nodes.length - filteredNodes.length
+        if (preFilterSkipped > 0) {
+          ultimateSkipped += preFilterSkipped
+          console.log(
+            `[allday-fmv-populate] pre-filter skipped ${preFilterSkipped} ULTIMATE editions (owned by recalc_ultimate_fmv)`
+          )
         }
       }
     } catch (err) {
       console.log(
-        `[allday-fmv-populate] ULTIMATE skip lookup failed (non-fatal): ${
+        `[allday-fmv-populate] ULTIMATE tier lookup failed (non-fatal): ${
           err instanceof Error ? err.message : String(err)
         }`
       )
@@ -291,10 +291,31 @@ export async function GET(req: NextRequest) {
 
   console.log('[allday-fmv-populate] batch size:', filteredNodes.length, 'sample:', JSON.stringify(filteredNodes[0] ?? null))
 
-  if (filteredNodes.length > 0) {
+  // ── Write-site ULTIMATE guard ────────────────────────────────────────────
+  // Defense-in-depth: regardless of what earlier filters did, re-check every
+  // row's tier immediately before the RPC call and refuse to insert ULTIMATE
+  // rows. fmv_snapshots ULTIMATE entries are owned by recalc_ultimate_fmv.
+  const safeRows: RawNode[] = []
+  for (const n of filteredNodes) {
+    const ext = n.editionFlowID != null ? String(n.editionFlowID) : null
+    const tier = ext ? tierByExt.get(ext) : undefined
+    if (tier === "ULTIMATE") {
+      ultimateSkipped += 1
+      continue
+    }
+    safeRows.push(n)
+  }
+  const writeGuardSkipped = filteredNodes.length - safeRows.length
+  if (writeGuardSkipped > 0) {
+    console.log(
+      `[allday-fmv-populate] write-site guard skipped ${writeGuardSkipped} ULTIMATE row(s) at upsert boundary`
+    )
+  }
+
+  if (safeRows.length > 0) {
     const { data, error } = await supabaseAdmin.rpc(
       "upsert_allday_marketplace_fmv",
-      { p_rows: filteredNodes as any }
+      { p_rows: safeRows as any }
     )
     if (error) {
       rpcError = error.message
