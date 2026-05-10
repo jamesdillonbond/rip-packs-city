@@ -1,10 +1,21 @@
 // app/api/admin/migrate-wmc-edition-keys/route.ts
 //
 // POST — drains wallet_moments_cache.edition_key from the legacy integer
-// "set:play" format to the canonical UUID-edition external_id by repeatedly
-// calling SECDEF RPC public.wmc_edition_key_drain_v2(p_limit). The RPC
-// returns TABLE(pairs_claimed int, rows_updated bigint, pairs_remaining int)
-// and self-tracks progress via wmc_dedup_pairs.processed.
+// "set:play" format to the canonical UUID-edition external_id by
+// repeatedly calling SECDEF RPC public.wmc_edition_key_drain_v3(p_limit).
+//
+// 2026-05-09 (R9): switched from v2 to v3. v2 looked up via the
+// editions_canonical_pair view, which silently returned zero rows after
+// the int-format editions were deleted in earlier dedup phases — every
+// invocation since was a no-op. v3 reaches through editions.external_id
+// directly and migrated all 201,151 NBA TS orphans in 5s when manually
+// run. Same intent, different lookup path.
+//
+// Return-shape difference: v2 was TABLE(pairs_claimed int, rows_updated
+// bigint, pairs_remaining int); v3 returns jsonb with the same keys plus
+// algo_version='drain-v3-external-id'. supabase-js surfaces the jsonb as
+// the `data` field directly (no array wrapper), so the extraction below
+// handles both shapes for safety.
 //
 // Auth: Bearer RPC_ADMIN_TOKEN (or ?token=) via verifyAdminRequest.
 // Idempotent: re-running drains whatever's left.
@@ -16,9 +27,9 @@ import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth"
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
-const BATCH_SIZE = 200;
+const BATCH_SIZE = 5000;
 // Capped under cron-job.org's 30s request timeout. Loop returns early when
-// v2 reports pairs_claimed=0 AND pairs_remaining=0 (queue genuinely drained);
+// v3 reports pairs_claimed=0 AND pairs_remaining=0 (queue genuinely drained);
 // otherwise the next cron tick resumes from wmc_dedup_pairs.processed=false.
 const TIME_BUDGET_MS = 25_000;
 
@@ -51,9 +62,11 @@ export async function POST(req: NextRequest) {
     pairsSelfSynced = Number(syncData ?? 0);
   }
 
+  let algoVersion: string | null = null;
+
   while (Date.now() - startedAt < TIME_BUDGET_MS) {
     const { data, error } = await supabaseAdmin.rpc(
-      "wmc_edition_key_drain_v2",
+      "wmc_edition_key_drain_v3",
       { p_limit: BATCH_SIZE }
     );
 
@@ -74,12 +87,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // v2 returns TABLE(pairs_claimed int, rows_updated bigint, pairs_remaining int)
-    // — supabase-js surfaces a single-row TABLE as a one-element array.
-    const row = Array.isArray(data) ? data[0] : null;
+    // v3 returns jsonb (object) with { pairs_claimed, rows_updated,
+    // pairs_remaining, algo_version }. supabase-js surfaces a function-
+    // returns-jsonb as the parsed object directly. Defensively support the
+    // legacy v2 array-of-row shape too in case Supabase serializes it
+    // differently in some edge case — first element of array, or object.
+    const row = (Array.isArray(data) ? data[0] : data) as
+      | { pairs_claimed?: number; rows_updated?: number | string; pairs_remaining?: number; algo_version?: string }
+      | null;
     const pairsClaimed = Number(row?.pairs_claimed ?? 0);
     const rowsThisBatch = Number(row?.rows_updated ?? 0);
     pairsRemaining = Number(row?.pairs_remaining ?? 0);
+    if (typeof row?.algo_version === "string") algoVersion = row.algo_version;
 
     rowsUpdated += rowsThisBatch;
     batchesProcessed += 1;
@@ -135,6 +154,7 @@ export async function POST(req: NextRequest) {
       p_extra: {
         batches_processed: batchesProcessed,
         wmc_int_remaining_orphans: wmcIntRemainingOrphans,
+        algo_version: algoVersion,
       },
     });
   } catch (err) {

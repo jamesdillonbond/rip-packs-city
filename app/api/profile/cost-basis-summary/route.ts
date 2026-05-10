@@ -1,15 +1,20 @@
 // app/api/profile/cost-basis-summary/route.ts
 //
-// GET /api/profile/cost-basis-summary?ownerKey=xxx
-// Aggregates cost basis (via get_wallet_cost_basis RPC) across every saved
-// wallet for the owner, returning a single P/L summary.
+// GET /api/profile/cost-basis-summary
+// Aggregates cost basis (via get_wallet_cost_basis RPC) across every
+// saved wallet of the current authenticated user, returning a single
+// P/L summary.
 //
-// Failure mode (2026-05-09 hardening): a saved_wallets fetch error or zero
-// wallets returns a zero-valued shape so the dashboard's CostBasisCard
-// renders an empty state instead of 500ing.
+// Uses the SECDEF helper get_user_saved_wallets(p_user_id) to read the
+// wallet list — bypasses the JWT-forwarding gap that was making the
+// post-R3 endpoints return empty.
+//
+// Failure modes return the empty zero-valued shape so the dashboard's
+// CostBasisCard renders an empty state instead of 500ing.
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { getCurrentUser } from "@/lib/auth/supabase-server";
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 
@@ -21,25 +26,34 @@ const EMPTY_PAYLOAD = {
   plPercent: null,
 };
 
+interface SavedWallet {
+  wallet_addr: string | null;
+  username: string | null;
+  collection_id: string | null;
+  collection_slug: string | null;
+  nickname: string | null;
+  cached_fmv_usd: number | null;
+}
+
 function emptyResponse(meta?: Record<string, unknown>) {
   return NextResponse.json({ ...EMPTY_PAYLOAD, ...(meta ? { meta } : {}) });
 }
 
-export async function GET(req: NextRequest) {
-  const ownerKey = req.nextUrl.searchParams.get("ownerKey");
-  if (!ownerKey) {
-    return NextResponse.json({ error: "ownerKey required" }, { status: 400 });
+export async function GET() {
+  const user = await getCurrentUser();
+  if (!user) {
+    return emptyResponse({ unauthenticated: true });
   }
 
   try {
-    const { data: wallets, error: walletsError } = await supabase
-      .from("saved_wallets")
-      .select("wallet_addr, cached_fmv_usd")
-      .eq("owner_key", ownerKey);
+    const { data: walletsRaw, error: walletsError } = await (supabase as any).rpc(
+      "get_user_saved_wallets",
+      { p_user_id: user.id }
+    );
 
     if (walletsError) {
       console.log(
-        "[cost-basis-summary] saved_wallets fetch failed:",
+        "[cost-basis-summary] get_user_saved_wallets failed:",
         walletsError.message,
         "code:",
         (walletsError as { code?: string }).code ?? "unknown"
@@ -47,7 +61,8 @@ export async function GET(req: NextRequest) {
       return emptyResponse({ saved_wallets_unavailable: true });
     }
 
-    if (!wallets || wallets.length === 0) {
+    const wallets = (walletsRaw ?? []) as SavedWallet[];
+    if (wallets.length === 0) {
       return emptyResponse({ no_wallets: true });
     }
 
@@ -55,12 +70,11 @@ export async function GET(req: NextRequest) {
     let totalPurchases = 0;
     let totalFmv = 0;
 
-    for (const w of wallets as Array<{ wallet_addr: string; cached_fmv_usd: number | null }>) {
+    for (const w of wallets) {
       totalFmv += Number(w.cached_fmv_usd ?? 0) || 0;
 
-      const addr = w.wallet_addr?.startsWith("0x")
-        ? w.wallet_addr
-        : "0x" + (w.wallet_addr ?? "");
+      const raw = w.wallet_addr ?? "";
+      const addr = raw.startsWith("0x") ? raw : raw ? "0x" + raw : "";
       if (!addr || addr === "0x") continue;
 
       const { data: cb, error: cbError } = await (supabase as any).rpc(
