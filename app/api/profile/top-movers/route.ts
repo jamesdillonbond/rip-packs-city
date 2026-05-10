@@ -4,6 +4,11 @@
 // For every saved wallet, calls the get_top_movers RPC and merges the
 // gainers / losers across wallets, returning the top 5 of each by absolute
 // dollar change.
+//
+// Failure mode (2026-05-09 hardening): a saved_wallets fetch error or zero
+// wallets returns the empty shape `{ gainers: [], losers: [] }` so the
+// dashboard's TopMoversCard renders an empty state instead of a broken
+// list.
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
@@ -16,6 +21,10 @@ interface Mover {
   past_fmv: number | null;
   delta: number;
   pct_change: number | null;
+}
+
+function emptyResponse(meta?: Record<string, unknown>) {
+  return NextResponse.json({ gainers: [], losers: [], ...(meta ? { meta } : {}) });
 }
 
 export async function GET(req: NextRequest) {
@@ -36,14 +45,24 @@ export async function GET(req: NextRequest) {
       .eq("owner_key", ownerKey);
 
     if (walletsError) {
-      console.error("[top-movers] wallets error:", walletsError.message);
-      return NextResponse.json({ error: walletsError.message }, { status: 500 });
+      console.log(
+        "[top-movers] saved_wallets fetch failed:",
+        walletsError.message,
+        "code:",
+        (walletsError as { code?: string }).code ?? "unknown"
+      );
+      return emptyResponse({ saved_wallets_unavailable: true });
+    }
+
+    const walletList = (wallets ?? []) as Array<{ wallet_addr: string }>;
+    if (walletList.length === 0) {
+      return emptyResponse({ no_wallets: true });
     }
 
     const allGainers: Mover[] = [];
     const allLosers: Mover[] = [];
 
-    for (const w of (wallets ?? []) as Array<{ wallet_addr: string }>) {
+    for (const w of walletList) {
       const addr = w.wallet_addr?.startsWith("0x")
         ? w.wallet_addr
         : "0x" + (w.wallet_addr ?? "");
@@ -54,7 +73,14 @@ export async function GET(req: NextRequest) {
         p_days: days,
       });
       if (error) {
-        console.error("[top-movers] rpc error:", error.message);
+        console.log(
+          "[top-movers] get_top_movers failed for",
+          addr,
+          "message:",
+          error.message,
+          "code:",
+          error.code ?? "unknown"
+        );
         continue;
       }
       const payload = (data ?? {}) as { gainers?: Mover[]; losers?: Mover[] };
@@ -83,7 +109,12 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ gainers, losers });
   } catch (err: any) {
-    console.error("[top-movers] unexpected:", err?.message);
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    console.log(
+      "[top-movers] unexpected:",
+      err?.message ?? String(err),
+      "code:",
+      err?.code ?? "unknown"
+    );
+    return emptyResponse({ unexpected_error: true });
   }
 }

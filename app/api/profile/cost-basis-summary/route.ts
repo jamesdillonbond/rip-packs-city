@@ -3,11 +3,27 @@
 // GET /api/profile/cost-basis-summary?ownerKey=xxx
 // Aggregates cost basis (via get_wallet_cost_basis RPC) across every saved
 // wallet for the owner, returning a single P/L summary.
+//
+// Failure mode (2026-05-09 hardening): a saved_wallets fetch error or zero
+// wallets returns a zero-valued shape so the dashboard's CostBasisCard
+// renders an empty state instead of 500ing.
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
+
+const EMPTY_PAYLOAD = {
+  totalSpent: 0,
+  totalPurchases: 0,
+  totalFmv: 0,
+  netPL: 0,
+  plPercent: null,
+};
+
+function emptyResponse(meta?: Record<string, unknown>) {
+  return NextResponse.json({ ...EMPTY_PAYLOAD, ...(meta ? { meta } : {}) });
+}
 
 export async function GET(req: NextRequest) {
   const ownerKey = req.nextUrl.searchParams.get("ownerKey");
@@ -22,18 +38,17 @@ export async function GET(req: NextRequest) {
       .eq("owner_key", ownerKey);
 
     if (walletsError) {
-      console.error("[cost-basis-summary] saved-wallets error:", walletsError.message);
-      return NextResponse.json({ error: walletsError.message }, { status: 500 });
+      console.log(
+        "[cost-basis-summary] saved_wallets fetch failed:",
+        walletsError.message,
+        "code:",
+        (walletsError as { code?: string }).code ?? "unknown"
+      );
+      return emptyResponse({ saved_wallets_unavailable: true });
     }
 
     if (!wallets || wallets.length === 0) {
-      return NextResponse.json({
-        totalSpent: 0,
-        totalPurchases: 0,
-        totalFmv: 0,
-        netPL: 0,
-        plPercent: null,
-      });
+      return emptyResponse({ no_wallets: true });
     }
 
     let totalSpent = 0;
@@ -54,7 +69,14 @@ export async function GET(req: NextRequest) {
       );
 
       if (cbError) {
-        console.error("[cost-basis-summary] rpc error:", cbError.message);
+        console.log(
+          "[cost-basis-summary] get_wallet_cost_basis failed for",
+          addr,
+          "message:",
+          cbError.message,
+          "code:",
+          cbError.code ?? "unknown"
+        );
         continue;
       }
 
@@ -79,7 +101,12 @@ export async function GET(req: NextRequest) {
       plPercent: plPercent != null ? Number(plPercent.toFixed(2)) : null,
     });
   } catch (err: any) {
-    console.error("[cost-basis-summary] unexpected:", err?.message);
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    console.log(
+      "[cost-basis-summary] unexpected:",
+      err?.message ?? String(err),
+      "code:",
+      err?.code ?? "unknown"
+    );
+    return emptyResponse({ unexpected_error: true });
   }
 }
