@@ -75,18 +75,25 @@ export default function ConfirmPage() {
           if (!cancelled) router.replace(target.pathname + target.search)
           return
         }
-        // Fire-and-forget: stamp user_profiles.last_active_at so the
-        // display-name resolver, beta-activity dashboard, and any future
-        // last-seen UI have a row to read. The upsert is server-gated by the
-        // auth cookies that setSession just wrote.
+        // Fire-and-forget: stamp user_profiles.last_active_at. setSession()
+        // writes auth cookies but the immediate fetch can race that write, so
+        // we ALSO pass the access_token as a Bearer header — the server's
+        // touch endpoint validates it via supabaseAdmin.auth.getUser(token).
         try {
-          await fetch("/api/profile/touch", {
+          const touchRes = await fetch("/api/profile/touch", {
             method: "POST",
             credentials: "include",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
           })
-        } catch {
-          // Best-effort; we don't want a transient 500 to block sign-in.
+          if (!touchRes.ok) {
+            const detail = await touchRes.text().catch(() => "")
+            console.warn("[auth/confirm] touch failed", touchRes.status, detail.slice(0, 200))
+          }
+        } catch (touchErr) {
+          console.warn("[auth/confirm] touch threw", touchErr instanceof Error ? touchErr.message : String(touchErr))
         }
         if (!cancelled) {
           setMessage("Signed in. Redirecting…")
