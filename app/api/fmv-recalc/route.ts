@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
-import { applyPhantomGuard } from "@/lib/fmv-phantom-guard"
+import { applyAllFmvGuards } from "@/lib/fmv-phantom-guard"
 
 // ── FMV Recalc Route ──────────────────────────────────────────────────────────
 //
@@ -519,7 +519,7 @@ export async function POST(req: NextRequest) {
         continue
       }
 
-      insertRows.push(applyPhantomGuard({
+      insertRows.push(applyAllFmvGuards({
         edition_id: editionId,
         collection_id: collectionId,
         fmv_usd: Number(fmv.toFixed(2)),
@@ -592,7 +592,7 @@ export async function POST(req: NextRequest) {
       if (rows.length > 0) {
         console.log(`[FMV-RECALC] Backfill: ${rows.length} editions with no snapshot`)
 
-        const backfillRows = rows.map((row) => applyPhantomGuard({
+        const backfillRows = rows.map((row) => applyAllFmvGuards({
           edition_id: row.edition_id,
           collection_id: row.collection_id,
           fmv_usd: Number((row.low_ask * 0.90).toFixed(2)),
@@ -686,7 +686,7 @@ export async function POST(req: NextRequest) {
             const daysSinceSale = Math.round(
               (now.getTime() - new Date(row.latest_sold_at).getTime()) / (1000 * 60 * 60 * 24)
             )
-            return applyPhantomGuard({
+            return applyAllFmvGuards({
               edition_id: row.edition_id,
               collection_id: row.collection_id,
               fmv_usd: Number(avgPrice.toFixed(2)),
@@ -775,7 +775,7 @@ export async function POST(req: NextRequest) {
           const skipSet = new Set<string>(insertRows.map((r) => String(r.edition_id)))
           const touchRows = rows
             .filter((r) => !skipSet.has(String(r.edition_id)))
-            .map((r) => applyPhantomGuard({
+            .map((r) => applyAllFmvGuards({
               edition_id: r.edition_id,
               collection_id: r.collection_id,
               fmv_usd: r.fmv_usd,
@@ -863,12 +863,95 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // ── Step 9: Thin-sales guard post-pass ───────────────────────────────────
+    // apply_fmv_thin_sales_guard is the SECDEF cleanup that detects mis-
+    // calibrated FMVs (thin-sales-with-high-fmv, stale-30d-no-ask, etc.)
+    // and writes capped replacement rows into fmv_snapshots. Calling it
+    // immediately after the recalc keeps the cap audit trail aligned with
+    // each run's writes. Failures are non-fatal — the run is still useful
+    // even if the guard times out or errors.
+    let thinSalesCaps: {
+      thin_sales_count?: number
+      stale_count?: number
+      common_outlier_count?: number
+      total_caps_applied?: number
+    } | null = null
+    try {
+      const { data: guardResult, error: guardErr } = await supabaseAdmin.rpc(
+        "apply_fmv_thin_sales_guard",
+        { p_mode: "live" }
+      )
+      if (guardErr) {
+        console.warn(
+          "[FMV-RECALC] thin-sales guard error (non-fatal):",
+          guardErr.message
+        )
+      } else {
+        const row =
+          Array.isArray(guardResult) && guardResult.length > 0
+            ? (guardResult[0] as Record<string, unknown>)
+            : (guardResult as Record<string, unknown> | null)
+        if (row) {
+          thinSalesCaps = {
+            thin_sales_count: Number(row.thin_sales_count ?? 0),
+            stale_count: Number(row.stale_count ?? 0),
+            common_outlier_count: Number(row.common_outlier_count ?? 0),
+            total_caps_applied: Number(row.total_caps_applied ?? 0),
+          }
+          console.log(
+            `[FMV-RECALC] thin-sales guard applied — thin=${thinSalesCaps.thin_sales_count} stale=${thinSalesCaps.stale_count} commonOutlier=${thinSalesCaps.common_outlier_count} totalCaps=${thinSalesCaps.total_caps_applied}`
+          )
+        }
+      }
+    } catch (err) {
+      console.warn(
+        "[FMV-RECALC] thin-sales guard threw (non-fatal):",
+        err instanceof Error ? err.message : err
+      )
+    }
+
     const hasMore = salesPage.length === limit
     const duration = Date.now() - startTime
 
     console.log(
-      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} staleTouch=${staleTouchCount} haircut=${haircutRowsTotal} hasMore=${hasMore} duration=${duration}ms`
+      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} staleTouch=${staleTouchCount} haircut=${haircutRowsTotal} thinSalesCaps=${thinSalesCaps?.total_caps_applied ?? 0} hasMore=${hasMore} duration=${duration}ms`
     )
+
+    // Surface the run + cap counts in pipeline_runs.extra so /admin
+    // pipeline-health and the future fmv-health dashboard can read them
+    // without parsing logs. Best-effort — never throw back into the run.
+    try {
+      await supabaseAdmin.rpc("log_pipeline_run", {
+        p_pipeline: "fmv-recalc",
+        p_started_at: new Date(startTime).toISOString(),
+        p_rows_found: editionIds.length,
+        p_rows_written: snapshotsUpdated,
+        p_rows_skipped: 0,
+        p_ok: true,
+        p_error: null,
+        p_collection_slug: null,
+        p_cursor_before: String(offset),
+        p_cursor_after: hasMore ? String(offset + limit) : null,
+        p_extra: {
+          algo_version: ALGO_VERSION,
+          duration_ms: duration,
+          blended: blendedCount,
+          ask_proxy: askProxyCount,
+          wash_trade_filtered: washTradeEditionCount,
+          backfill: backfillCount,
+          historical_fallback: historicalBackfillCount,
+          stale_touch: staleTouchCount,
+          haircut_rows: haircutRowsTotal,
+          haircut_collections_run: haircutCollectionsRun,
+          thin_sales_caps: thinSalesCaps,
+        },
+      })
+    } catch (err) {
+      console.warn(
+        "[FMV-RECALC] log_pipeline_run failed (non-fatal):",
+        err instanceof Error ? err.message : err
+      )
+    }
 
     await fireNextPipelineStep("/api/listing-cache", chain)
     console.log(
