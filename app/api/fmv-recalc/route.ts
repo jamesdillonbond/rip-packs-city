@@ -311,6 +311,22 @@ export async function POST(req: NextRequest) {
       console.warn("[FMV-RECALC] Edition meta fetch failed (non-fatal):", err instanceof Error ? err.message : err)
     }
 
+    // ULTIMATE rows in fmv_snapshots are owned exclusively by recalc_ultimate_fmv
+    // (the ultimate-v1 algo, which excludes special-serial sales). Drop any
+    // ULTIMATE editions from this run so the legacy WAP+median path cannot
+    // overwrite them with sales-inflated values.
+    let ultimateSkipped = 0
+    for (const edId of [...editionSalesMap.keys()]) {
+      const tierUpper = String(editionMetaById.get(edId)?.tier ?? "").toUpperCase()
+      if (tierUpper === "ULTIMATE") {
+        editionSalesMap.delete(edId)
+        ultimateSkipped++
+      }
+    }
+    if (ultimateSkipped > 0) {
+      console.log(`[FMV-RECALC] Skipped ${ultimateSkipped} ULTIMATE editions (owned by recalc_ultimate_fmv)`)
+    }
+
     // ── Step 2b: Fetch Flowty LiveToken FMVs from cached_listings ────────────
     // cached_listings.fmv contains valuations.blended.usdValue from Flowty's
     // LiveToken feed. We average per edition (multiple listings may exist).
@@ -424,12 +440,14 @@ export async function POST(req: NextRequest) {
     // History matters: yesterday + earlier rows must persist so we can chart
     // price moves, market movers, and trend detection. The 20-min recalc cron
     // overwrites today's row in place.
+    // Use the post-ULTIMATE-skip set so we never delete today's ultimate-v1 row.
+    const editionIdsToWrite = [...editionSalesMap.keys()]
     const todayStart = new Date()
     todayStart.setUTCHours(0, 0, 0, 0)
     const { error: deleteError, status: delStatus } = await supabaseAdmin
       .from("fmv_snapshots")
       .delete()
-      .in("edition_id", editionIds)
+      .in("edition_id", editionIdsToWrite)
       .gte("computed_at", todayStart.toISOString())
 
     if (deleteError) {
@@ -548,6 +566,7 @@ export async function POST(req: NextRequest) {
             FROM editions e
             LEFT JOIN fmv_snapshots fs ON fs.edition_id = e.id
             WHERE fs.edition_id IS NULL
+              AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
           `,
         })
       const missingEditions = (missingCount as { cnt: number }[] | null)?.[0]?.cnt ?? "unknown"
@@ -563,6 +582,7 @@ export async function POST(req: NextRequest) {
             WHERE fs.edition_id IS NULL
               AND be.low_ask IS NOT NULL
               AND be.low_ask > 0
+              AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
             LIMIT 500
           `,
         })
@@ -640,6 +660,7 @@ export async function POST(req: NextRequest) {
             LEFT JOIN fmv_snapshots fs ON fs.edition_id = e.id
             WHERE fs.edition_id IS NULL
               AND s.price_usd > 0
+              AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
             GROUP BY e.id, e.collection_id
             LIMIT 1000
           `,
@@ -737,7 +758,9 @@ export async function POST(req: NextRequest) {
                 fs.sales_count_30d,
                 fs.days_since_sale
               FROM fmv_snapshots fs
+              JOIN editions e ON e.id = fs.edition_id
               WHERE fs.computed_at < now() - interval '24 hours'
+                AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
               ORDER BY fs.edition_id, fs.computed_at DESC
               LIMIT 1000
             `,

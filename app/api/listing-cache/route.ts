@@ -286,10 +286,29 @@ async function backfillAskProxyFmv(listings: any[]): Promise<{ created: number; 
 
   const editionIds = [...minAskByEdition.keys()];
 
-  // Find which of these editions already have an FMV snapshot (any confidence)
-  const existingEditionIds = new Set<string>();
+  // ULTIMATE rows in fmv_snapshots are owned exclusively by recalc_ultimate_fmv.
+  // Drop any ULTIMATE editions before the ask-proxy insert.
+  const ultimateEditionIds = new Set<string>();
   for (let i = 0; i < editionIds.length; i += 200) {
     const chunk = editionIds.slice(i, i + 200);
+    const { data: tierRows } = await supabase
+      .from("editions")
+      .select("id, tier")
+      .in("id", chunk)
+      .eq("tier", "ULTIMATE");
+    for (const row of tierRows ?? []) {
+      if ((row as any)?.id) ultimateEditionIds.add(String((row as any).id));
+    }
+  }
+  for (const edId of ultimateEditionIds) {
+    minAskByEdition.delete(edId);
+  }
+
+  // Find which of these editions already have an FMV snapshot (any confidence)
+  const existingEditionIds = new Set<string>();
+  const nonUltimateIds = [...minAskByEdition.keys()];
+  for (let i = 0; i < nonUltimateIds.length; i += 200) {
+    const chunk = nonUltimateIds.slice(i, i + 200);
     const { data: existing } = await supabase
       .from("fmv_snapshots")
       .select("edition_id")

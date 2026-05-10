@@ -204,17 +204,21 @@ async function persistFloorToSnapshot(
 
     const { data: editionRows } = await supabase
       .from("editions")
-      .select("id, collection_id, external_id")
+      .select("id, collection_id, external_id, tier")
       .in("external_id", editionKeys);
 
     if (!editionRows?.length) return;
 
+    // ULTIMATE rows in fmv_snapshots are owned exclusively by recalc_ultimate_fmv.
+    // Skip them here so floor-only persists never land on an Ultimate row.
     const extToRow = new Map<string, { id: string; collection_id: string }>();
-    for (const row of editionRows as { id: string; collection_id: string; external_id: string }[]) {
+    for (const row of editionRows as { id: string; collection_id: string; external_id: string; tier: string | null }[]) {
+      if (String(row.tier ?? "").toUpperCase() === "ULTIMATE") continue;
       extToRow.set(row.external_id, { id: row.id, collection_id: row.collection_id });
     }
 
-    const editionIds = editionRows.map((r: { id: string }) => r.id);
+    // Use the post-ULTIMATE-skip set so we never read/delete ultimate-v1 rows.
+    const editionIds = [...extToRow.values()].map((r) => r.id);
 
     // Fetch latest snapshots
     const { data: existing } = await supabase
