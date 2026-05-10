@@ -14,6 +14,7 @@ import { publishedCollections, getCollection } from "@/lib/collections";
 import ViewTrophyModal from "@/components/profile/ViewTrophyModal";
 import TrophyPickerModal from "@/components/profile/TrophyPickerModal";
 import type { TrophyMoment as ViewTrophyShape } from "@/components/profile/_shared";
+import InsiderSignals from "@/components/InsiderSignals";
 
 const condensedFont = "'Barlow Condensed', sans-serif";
 const monoFont = "'Share Tech Mono', monospace";
@@ -728,6 +729,9 @@ function ProfilePageInner() {
         {wallets.length > 0 && showHero && (
           <TrophyCaseSection trophies={trophies} onPickSlot={setPinSlot} onView={setViewTrophy} onRemove={handleRemoveTrophy} />
         )}
+
+        {/* ── Insider Signals ── */}
+        <InsiderSignals />
 
         {/* ── Saved Wallets ── */}
         <section className="rpc-section" data-tour-anchor="saved-wallets-card">
