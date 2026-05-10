@@ -44,6 +44,49 @@ const TRAIT_MAP = {
   playID:       ["PlayID", "playID", "Play ID", "play_id"],
 };
 
+// Resolve (player_name, set_name, series) tuples → {set_id, play_id} via the
+// NBA Top Shot editions table. Flowty stopped returning SetID/PlayID as traits
+// at some point before 2026-05-09; the trait-only path resolved 0/120 rows
+// every tick. Editions-table fallback covers ~92% of NBA TS editions (9214 of
+// 9991 have set_id_onchain + play_id_onchain populated). Single round-trip
+// per cron tick.
+const TS_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
+
+async function fetchTopShotEditionsLookup() {
+  const out = new Map();
+  const url = `${SUPABASE_URL}/rest/v1/editions` +
+    `?collection_id=eq.${TS_COLLECTION_ID}` +
+    `&set_id_onchain=not.is.null&play_id_onchain=not.is.null` +
+    `&select=player_name,set_name,series,set_id_onchain,play_id_onchain` +
+    `&limit=20000`;
+  const res = await fetch(url, {
+    headers: {
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "apikey": SUPABASE_KEY,
+    },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`editions lookup HTTP ${res.status}: ${text.slice(0, 200)}`);
+  }
+  const rows = await res.json();
+  for (const row of rows) {
+    if (!row.player_name || !row.set_name) continue;
+    const key = `${row.player_name.toLowerCase()}|${row.set_name.toLowerCase()}|${row.series ?? 0}`;
+    if (!out.has(key)) {
+      out.set(key, { set_id: row.set_id_onchain, play_id: row.play_id_onchain });
+    }
+  }
+  return out;
+}
+
+function lookupEditionKey(map, playerName, setName, seriesNumber) {
+  if (!playerName || !setName) return null;
+  const key = `${playerName.toLowerCase()}|${setName.toLowerCase()}|${seriesNumber ?? 0}`;
+  return map.get(key) ?? null;
+}
+
 async function fetchFlowtyPage(from) {
   const res = await fetch(FLOWTY_PROXY_URL, {
     method: "POST",
@@ -236,8 +279,23 @@ async function logPipelineRun(stats) {
 
     console.log(`Total fetched: ${all.length}`);
     stats.extra.total_fetched = all.length;
+
+    // Fetch the editions lookup map once per run. Used as a fallback when
+    // Flowty doesn't surface SetID/PlayID traits (which has been all of the
+    // time since at least 2026-05-09).
+    let editionsLookup = new Map();
+    try {
+      editionsLookup = await fetchTopShotEditionsLookup();
+      console.log(`Loaded ${editionsLookup.size} TS edition lookup tuples`);
+    } catch (err) {
+      console.error(`editions lookup failed: ${err.message} — falling back to trait-only resolution`);
+    }
+
     const now = new Date().toISOString();
     const rows = [];
+    let skippedNoIds = 0;
+    let traitResolved = 0;
+    let lookupResolved = 0;
     for (const item of all) {
       const order = item.orders?.find(o => (o.salePrice ?? 0) > 0);
       if (!order) continue;
@@ -245,34 +303,73 @@ async function logPipelineRun(stats) {
       if (!serial) continue;
       const traits = flattenTraits(item.nftView?.traits);
 
-      // Extract integer set/play IDs from Flowty NFT traits
-      const rawSetId = parseInt(getTraitMulti(traits, TRAIT_MAP.setID) ?? "0", 10) || 0;
-      const rawPlayId = parseInt(getTraitMulti(traits, TRAIT_MAP.playID) ?? "0", 10) || 0;
+      // First-try: extract integer set/play IDs from Flowty NFT traits. Cheap
+      // and handles the case where Flowty restores the schema upstream.
+      let setId = parseInt(getTraitMulti(traits, TRAIT_MAP.setID) ?? "0", 10) || 0;
+      let playId = parseInt(getTraitMulti(traits, TRAIT_MAP.playID) ?? "0", 10) || 0;
+      const fromTraits = setId > 0 && playId > 0;
+
+      const playerName = item.card?.title ?? null;
+      const setName = getTraitMulti(traits, TRAIT_MAP.setName) ?? null;
+      const seriesNumber = parseInt(getTraitMulti(traits, TRAIT_MAP.seriesNumber) ?? "0", 10) || 0;
+
+      // Fallback: resolve via editions table by (player, set, series) tuple.
+      if (!fromTraits) {
+        const hit = lookupEditionKey(editionsLookup, playerName, setName, seriesNumber);
+        if (hit) {
+          setId = hit.set_id;
+          playId = hit.play_id;
+          lookupResolved += 1;
+        }
+      } else {
+        traitResolved += 1;
+      }
+
+      // Fail-safe: skip the row entirely rather than upsert zeros that
+      // poison downstream FMV joins.
+      if (!(setId > 0 && playId > 0)) {
+        skippedNoIds += 1;
+        if (skippedNoIds <= 3) {
+          console.warn(
+            `[ts-ingest] skipping row: no set_id/play_id for ` +
+            `player="${playerName}" set="${setName}" series=${seriesNumber} flow_id=${item.id}`
+          );
+        }
+        continue;
+      }
 
       rows.push({
         listing_id: order.listingResourceID ?? String(item.id),
         flow_id: String(item.id),
-        set_id: rawSetId,
-        play_id: rawPlayId,
+        set_id: setId,
+        play_id: playId,
         parallel_id: 0,
         serial_number: serial,
         circulation_count: item.card?.max ?? 0,
         price_usd: order.salePrice,
         seller_address: order.storefrontAddress ?? order.flowtyStorefrontAddress ?? null,
-        player_name: item.card?.title ?? null,
-        set_name: getTraitMulti(traits, TRAIT_MAP.setName) ?? null,
+        player_name: playerName,
+        set_name: setName,
         moment_tier: (getTraitMulti(traits, TRAIT_MAP.tier) ?? "COMMON").toUpperCase(),
-        series_number: parseInt(getTraitMulti(traits, TRAIT_MAP.seriesNumber) ?? "0", 10),
+        series_number: seriesNumber,
         is_locked: getTraitMulti(traits, TRAIT_MAP.locked) === "true",
         ingested_at: now,
       });
     }
 
-    // Log how many rows got valid set/play IDs for monitoring
     const resolvedCount = rows.filter(r => r.set_id > 0 && r.play_id > 0).length;
-    console.log(`Edition key resolution: ${resolvedCount}/${rows.length} rows have valid set_id/play_id`);
+    console.log(
+      `Edition key resolution: ${resolvedCount}/${all.length} rows kept ` +
+      `(traits=${traitResolved}, editions-lookup=${lookupResolved}, skipped=${skippedNoIds})`
+    );
+    if (skippedNoIds > 3) {
+      console.warn(`[ts-ingest] ${skippedNoIds - 3} additional skipped rows suppressed`);
+    }
     stats.rowsFound = rows.length;
     stats.extra.resolved_ids = resolvedCount;
+    stats.extra.skipped_no_ids = skippedNoIds;
+    stats.extra.trait_resolved = traitResolved;
+    stats.extra.lookup_resolved = lookupResolved;
 
     // Dedup by listing_id (the ts_listings PK). Parallel Flowty pages can
     // surface the same listing_id twice when the upstream window shifts mid-
