@@ -1,26 +1,27 @@
 // supabase/functions/topshot-stub-resolver/index.ts
 //
-// TS stub-edition auto-resolver. Pulls a batch of UUID-skeleton TopShot
-// editions (player_name / set_name / tier all NULL) via the
-// get_topshot_stub_targets RPC, queries the topshot-proxy worker for
-// each (set_id_onchain, play_id_onchain) pair, parses the GraphQL
-// response, then writes the resolved metadata back through the
-// upsert_topshot_edition_metadata RPC.
+// TS stub-edition auto-resolver. Pulls a batch of integer-pair TopShot edition
+// stubs (player_name / set_name NULL) via the get_topshot_stub_targets RPC and
+// resolves them through the on-chain TopShot contract on Flow mainnet.
 //
-// Why this exists (R2): compute-topshot-pack-ev seeds 4-66 fully-NULL
-// UUID skeleton edition rows per run and the editions-hydrate-at-insert
-// path doesn't always pick them up before the next pack-ev tick. Without
-// a periodic resolver these rows accumulate and the dashboard ends up
-// with hundreds of "missing player_name" TS editions over time.
+// Why Cadence and not GraphQL: Top Shot's public GQL `searchEditions` schema
+// rejects integer on-chain IDs — `bySetIDs: [104]` returns the dal-level error
+// `invalid input syntax for type uuid: "104"`. The integer-pair path is only
+// resolvable on-chain. The previous version of this function called GraphQL
+// and silently skipped 50/50 targets per cron tick because the failure
+// surfaced as a 200-with-errors response that the original code returned null
+// from without logging. Two stacked schema mismatches: (a) the function sent
+// `{input:{bySetIDs}}` but the schema requires `{input:{filters:{bySetIDs},
+// searchInput:{pagination:{...}}}}`, (b) even with the nested shape fixed,
+// `bySetIDs` no longer accepts integers. Per RPC_DESIGN_SYSTEM.md §11, integer
+// editions resolve via Cadence; UUID editions go through GraphQL.
 //
-// Schema quirk: TopShot's public GQL exposes `set.flowId` with a
-// lowercase 'd' but `play.flowID` with an uppercase 'D'. Both come back
-// as strings (sometimes integers); we coerce to int when storing.
+// Targets returned by get_topshot_stub_targets have has_tier=true already, so
+// tier doesn't need to be re-resolved (TopShot.getSetData on-chain doesn't
+// expose tier anyway — it's a GQL-only field).
 //
 // Env:
 //   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY — service-role client
-//   TS_PROXY_URL                            — Cloudflare Worker URL
-//   TS_PROXY_SECRET                         — X-Proxy-Secret header
 //   INGEST_SECRET_TOKEN                     — Bearer auth on the function
 //
 // Deploy with `verify_jwt = false` so cron-job.org can hit it with a
@@ -31,14 +32,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
 const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN")
 if (!INGEST_SECRET_TOKEN) throw new Error("INGEST_SECRET_TOKEN env var required")
 
-const TS_PROXY_URL = Deno.env.get("TS_PROXY_URL") ?? "https://topshot-proxy.tdillonbond.workers.dev"
-const TS_PROXY_SECRET = Deno.env.get("TS_PROXY_SECRET") ?? ""
-if (!TS_PROXY_SECRET) {
-  console.log("[topshot-stub-resolver] WARN: TS_PROXY_SECRET not set — Cloudflare may reject ~50% of requests")
-}
-
+const FLOW_REST = "https://rest-mainnet.onflow.org/v1/scripts?block_height=final"
+const PER_REQUEST_TIMEOUT_MS = 8_000
 const BATCH_LIMIT = 50
-const PER_REQUEST_TIMEOUT_MS = 10_000
 const MAX_BATCH_DURATION_MS = 110_000
 
 const supabase = createClient(
@@ -46,39 +42,28 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
 )
 
-// Minimal SearchEditions query — same allowlisted shape as
-// lib/editions-hydrate.ts uses, sliced down to just the fields we need
-// to populate upsert_topshot_edition_metadata.
-const SEARCH_EDITION_QUERY = `
-  query SearchEditionBackfill($input: SearchEditionsInput!) {
-    searchEditions(input: $input) {
-      searchSummary {
-        data {
-          ... on Editions {
-            data {
-              ... on Edition {
-                tier
-                circulationCount
-                set {
-                  flowId
-                  flowName
-                  flowSeriesNumber
-                }
-                play {
-                  flowID
-                  stats {
-                    playerName
-                    teamAtMoment
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
+// Combined script: pulls the play metadata dict and tacks on the three
+// set-level fields under reserved __ keys to keep the response a flat
+// {String: String}. One Flow REST call per (setID, playID) pair.
+const CADENCE_RESOLVE = `
+import TopShot from 0x0b2a3299cc857e29
+
+access(all) fun main(setID: UInt32, playID: UInt32): {String: String} {
+    let result: {String: String} = TopShot.getPlayMetaData(playID: playID) ?? {}
+
+    if let setName = TopShot.getSetName(setID: setID) {
+        result["__SetName"] = setName
     }
-  }
-`
+    if let series = TopShot.getSetSeries(setID: setID) {
+        result["__SetSeries"] = series.toString()
+    }
+    if let circulation = TopShot.getNumMomentsInEdition(setID: setID, playID: playID) {
+        result["__Circulation"] = circulation.toString()
+    }
+
+    return result
+}
+`.trim()
 
 interface StubTarget {
   edition_id: string
@@ -93,100 +78,104 @@ interface StubTarget {
 interface ResolvedMeta {
   playerName: string | null
   setName: string | null
-  tier: string | null
   circulation: number | null
   team: string | null
+  // Numeric on-chain series (UInt32 cast to JS number). Display mapping
+  // (e.g. 5 → "Series 4") happens at read/render time. Editions.series is
+  // a smallint column.
   series: number | null
-  thumbnailUrl: string | null
-  videoUrl: string | null
 }
 
-function normalizeTier(raw: string | null | undefined): string | null {
-  if (!raw) return null
-  const t = String(raw).toUpperCase()
-  if (t.includes("ULTIMATE")) return "ULTIMATE"
-  if (t.includes("LEGENDARY")) return "LEGENDARY"
-  if (t.includes("RARE")) return "RARE"
-  if (t.includes("FANDOM")) return "FANDOM"
-  if (t.includes("COMMON")) return "COMMON"
-  return null
+function b64Utf8(s: string): string {
+  return btoa(unescape(encodeURIComponent(s)))
 }
 
-async function callProxy(setId: number, playId: number): Promise<ResolvedMeta | null> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    "User-Agent": "rip-packs-city/topshot-stub-resolver",
+function argB64(arg: { type: string; value: string }): string {
+  return btoa(JSON.stringify(arg))
+}
+
+// Cadence's Flow REST encoding for `{String: String}` returns a `value` array
+// of `{key: {value, type}, value: {value, type}}` entries. Flatten to JS dict.
+function flattenCadenceDict(parsed: unknown): Record<string, string> {
+  const out: Record<string, string> = {}
+  // deno-lint-ignore no-explicit-any
+  const v = (parsed as any)?.value
+  if (!Array.isArray(v)) return out
+  for (const entry of v) {
+    const k = entry?.key?.value
+    const val = entry?.value?.value
+    if (typeof k === "string" && typeof val === "string") out[k] = val
   }
-  if (TS_PROXY_SECRET) headers["X-Proxy-Secret"] = TS_PROXY_SECRET
+  return out
+}
+
+// Top Shot's on-chain FullName is occasionally stored as the literal string
+// "<invalid Value>" — fall back to FirstName/LastName when that happens.
+function pickPlayerName(meta: Record<string, string>): string | null {
+  const full = meta.FullName
+  if (full && full !== "<invalid Value>" && full.trim() !== "") return full.trim()
+  const first = (meta.FirstName ?? "").trim()
+  const last = (meta.LastName ?? "").trim()
+  const composed = [first, last].filter(Boolean).join(" ")
+  return composed || null
+}
+
+async function resolveViaCadence(setId: number, playId: number): Promise<ResolvedMeta | { error: string }> {
+  const body = {
+    script: b64Utf8(CADENCE_RESOLVE),
+    arguments: [
+      argB64({ type: "UInt32", value: String(setId) }),
+      argB64({ type: "UInt32", value: String(playId) }),
+    ],
+  }
 
   let res: Response
   try {
-    res = await fetch(TS_PROXY_URL, {
+    res = await fetch(FLOW_REST, {
       method: "POST",
-      headers,
-      body: JSON.stringify({
-        query: SEARCH_EDITION_QUERY,
-        variables: { input: { bySetIDs: [setId], byPlayIDs: [playId] } },
-      }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS),
     })
   } catch (err) {
-    console.log(`[topshot-stub-resolver] proxy fetch failed set=${setId} play=${playId}: ${err}`)
-    return null
+    return { error: `fetch_failed: ${err instanceof Error ? err.message : String(err)}` }
   }
 
   if (!res.ok) {
-    console.log(`[topshot-stub-resolver] proxy HTTP ${res.status} set=${setId} play=${playId}`)
-    return null
+    const txt = await res.text()
+    return { error: `http_${res.status}: ${txt.slice(0, 200)}` }
   }
 
-  type Resp = {
-    data?: {
-      searchEditions?: {
-        searchSummary?: {
-          data?: {
-            data?: Array<{
-              tier?: string | null
-              circulationCount?: number | null
-              set?: {
-                flowId?: number | string | null
-                flowName?: string | null
-                flowSeriesNumber?: number | null
-              } | null
-              play?: {
-                flowID?: string | null
-                stats?: {
-                  playerName?: string | null
-                  teamAtMoment?: string | null
-                } | null
-              } | null
-            }>
-          }
-        }
-      }
-    }
-    errors?: unknown[]
-  }
-
-  let json: Resp
+  let raw: string
   try {
-    json = (await res.json()) as Resp
-  } catch {
-    return null
+    raw = await res.text()
+  } catch (err) {
+    return { error: `read_body_failed: ${err instanceof Error ? err.message : String(err)}` }
   }
-  if (Array.isArray(json.errors) && json.errors.length > 0) return null
-  const node = json.data?.searchEditions?.searchSummary?.data?.data?.[0]
-  if (!node) return null
+
+  let parsed: unknown
+  try {
+    const decoded = atob(raw.replace(/^"|"$/g, "").trim())
+    parsed = JSON.parse(decoded)
+  } catch (err) {
+    return { error: `decode_failed: ${err instanceof Error ? err.message : String(err)}` }
+  }
+
+  const meta = flattenCadenceDict(parsed)
+
+  const seriesRaw = meta.__SetSeries ?? null
+  const seriesNum =
+    seriesRaw != null && Number.isFinite(Number(seriesRaw)) ? Number(seriesRaw) : null
+
+  const circRaw = meta.__Circulation ?? null
+  const circulation = circRaw != null && Number.isFinite(Number(circRaw)) ? Number(circRaw) : null
 
   return {
-    playerName: node.play?.stats?.playerName ?? null,
-    setName: node.set?.flowName ?? null,
-    tier: normalizeTier(node.tier),
-    circulation: node.circulationCount != null ? Number(node.circulationCount) : null,
-    team: node.play?.stats?.teamAtMoment ?? null,
-    series: node.set?.flowSeriesNumber != null ? Number(node.set.flowSeriesNumber) : null,
-    thumbnailUrl: null,
-    videoUrl: null,
+    playerName: pickPlayerName(meta),
+    setName: meta.__SetName?.trim() || null,
+    circulation,
+    team: meta.TeamAtMoment?.trim() || null,
+    series: seriesNum,
   }
 }
 
@@ -239,10 +228,12 @@ Deno.serve(async (req: Request) => {
     targets_processed: 0,
     rows_resolved: 0,
     rows_skipped_no_onchain_ids: 0,
-    rows_skipped_proxy_null: 0,
+    rows_skipped_cadence_err: 0,
+    rows_skipped_no_player_data: 0,
     rows_skipped_upsert_err: 0,
     early_exit: false,
   }
+  const errorSamples: string[] = []
 
   // 1. Pull a batch of stub targets.
   // deno-lint-ignore no-explicit-any
@@ -286,9 +277,9 @@ Deno.serve(async (req: Request) => {
     })
   }
 
-  // 2. Resolve each one. Sequential (not parallel) — the topshot-proxy
-  // worker has a per-IP rate limit and we'd rather pace this conservatively
-  // than chunk and burst.
+  // 2. Resolve each one via Flow REST. Sequential — one Cadence call per
+  // target, ~200-500ms each. 50 targets fit comfortably under the 110s
+  // batch budget.
   for (const t of targets) {
     if (Date.now() - startedAt > MAX_BATCH_DURATION_MS) {
       counters.early_exit = true
@@ -303,9 +294,22 @@ Deno.serve(async (req: Request) => {
       continue
     }
 
-    const meta = await callProxy(setId, playId)
-    if (!meta) {
-      counters.rows_skipped_proxy_null++
+    const resolved = await resolveViaCadence(setId, playId)
+    if ("error" in resolved) {
+      counters.rows_skipped_cadence_err++
+      if (errorSamples.length < 5) {
+        errorSamples.push(`${t.external_id}: ${resolved.error}`)
+      }
+      console.log(`[topshot-stub-resolver] cadence err set=${setId} play=${playId}: ${resolved.error}`)
+      continue
+    }
+
+    // If the on-chain record has no player name AND no set name, there's
+    // nothing to write. Some plays (Redemption, team-moment sets) legitimately
+    // lack player data on chain; track them separately so we don't conflate
+    // them with Cadence failures.
+    if (!resolved.playerName && !resolved.setName) {
+      counters.rows_skipped_no_player_data++
       continue
     }
 
@@ -314,14 +318,14 @@ Deno.serve(async (req: Request) => {
       "upsert_topshot_edition_metadata",
       {
         p_edition_id: t.edition_id,
-        p_player_name: meta.playerName,
-        p_set_name: meta.setName,
-        p_tier: meta.tier,
-        p_circulation_count: meta.circulation,
-        p_thumbnail_url: meta.thumbnailUrl,
-        p_video_url: meta.videoUrl,
-        p_team: meta.team,
-        p_series: meta.series != null ? String(meta.series) : null,
+        p_player_name: resolved.playerName,
+        p_set_name: resolved.setName,
+        p_tier: null,
+        p_circulation_count: resolved.circulation,
+        p_thumbnail_url: null,
+        p_video_url: null,
+        p_team: resolved.team,
+        p_series: resolved.series,
       },
     )
 
@@ -340,13 +344,15 @@ Deno.serve(async (req: Request) => {
     rowsWritten: counters.rows_resolved,
     rowsSkipped:
       counters.rows_skipped_no_onchain_ids +
-      counters.rows_skipped_proxy_null +
+      counters.rows_skipped_cadence_err +
+      counters.rows_skipped_no_player_data +
       counters.rows_skipped_upsert_err,
     errorMsg: null,
     extra: {
       ...counters,
       elapsed_ms: Date.now() - startedAt,
-      function_version: 1,
+      function_version: 3,
+      error_samples: errorSamples,
     },
   })
 

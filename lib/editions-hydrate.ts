@@ -259,6 +259,149 @@ function splitTsExternalId(extId: string): { setID: string; playID: string } | n
   return { setID, playID }
 }
 
+// ── Top Shot int-pair resolver (Cadence) ─────────────────────────────────────
+// The GQL `searchEditions` schema only accepts UUID set/play IDs. For
+// integer-pair external_ids ("104:3659" etc) we have to resolve via the on-chain
+// TopShot contract. Cadence can return play metadata, set name, set series,
+// and circulation; tier and thumbnail aren't on-chain (those stay null and the
+// upstream caller — usually the canonical-sibling redirect or a separate
+// hydrator — fills them in later).
+//
+// Flow REST raw integration intentionally — keeps lib/editions-hydrate free of
+// FCL config side-effects when imported into shared module paths.
+
+const FLOW_REST_SCRIPTS = "https://rest-mainnet.onflow.org/v1/scripts?block_height=final"
+
+const CADENCE_TS_INT_RESOLVE = `
+import TopShot from 0x0b2a3299cc857e29
+
+access(all) fun main(setID: UInt32, playID: UInt32): {String: String} {
+    let result: {String: String} = TopShot.getPlayMetaData(playID: playID) ?? {}
+
+    if let setName = TopShot.getSetName(setID: setID) {
+        result["__SetName"] = setName
+    }
+    if let series = TopShot.getSetSeries(setID: setID) {
+        result["__SetSeries"] = series.toString()
+    }
+    if let circulation = TopShot.getNumMomentsInEdition(setID: setID, playID: playID) {
+        result["__Circulation"] = circulation.toString()
+    }
+
+    return result
+}
+`.trim()
+
+function flattenTsCadenceDict(parsed: unknown): Record<string, string> {
+  const out: Record<string, string> = {}
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const v = (parsed as any)?.value
+  if (!Array.isArray(v)) return out
+  for (const entry of v) {
+    const k = entry?.key?.value
+    const val = entry?.value?.value
+    if (typeof k === "string" && typeof val === "string") out[k] = val
+  }
+  return out
+}
+
+function pickTsPlayerName(meta: Record<string, string>): string | null {
+  const full = meta.FullName
+  if (full && full !== "<invalid Value>" && full.trim() !== "") return full.trim()
+  const first = (meta.FirstName ?? "").trim()
+  const last = (meta.LastName ?? "").trim()
+  const composed = [first, last].filter(Boolean).join(" ")
+  return composed || null
+}
+
+async function fetchTsEditionMetaCadence(
+  setIdOnchain: number,
+  playIdOnchain: number,
+): Promise<TsEditionMeta | null> {
+  const body = {
+    script: Buffer.from(CADENCE_TS_INT_RESOLVE, "utf8").toString("base64"),
+    arguments: [
+      Buffer.from(JSON.stringify({ type: "UInt32", value: String(setIdOnchain) }), "utf8").toString("base64"),
+      Buffer.from(JSON.stringify({ type: "UInt32", value: String(playIdOnchain) }), "utf8").toString("base64"),
+    ],
+  }
+
+  let res: Response
+  try {
+    res = await fetch(FLOW_REST_SCRIPTS, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS),
+    })
+  } catch (err) {
+    console.log(
+      `[editions-hydrate] cadence fetch failed set=${setIdOnchain} play=${playIdOnchain}: ${err instanceof Error ? err.message : String(err)}`,
+    )
+    return null
+  }
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "")
+    console.log(
+      `[editions-hydrate] cadence HTTP ${res.status} set=${setIdOnchain} play=${playIdOnchain}: ${txt.slice(0, 160)}`,
+    )
+    return null
+  }
+
+  let raw: string
+  try {
+    raw = await res.text()
+  } catch {
+    return null
+  }
+
+  let parsed: unknown
+  try {
+    const decoded = Buffer.from(raw.replace(/^"|"$/g, "").trim(), "base64").toString("utf8")
+    parsed = JSON.parse(decoded)
+  } catch (err) {
+    console.log(
+      `[editions-hydrate] cadence decode failed set=${setIdOnchain} play=${playIdOnchain}: ${err instanceof Error ? err.message : String(err)}`,
+    )
+    return null
+  }
+
+  const meta = flattenTsCadenceDict(parsed)
+  if (Object.keys(meta).length === 0) {
+    console.log(
+      `[editions-hydrate] cadence empty result set=${setIdOnchain} play=${playIdOnchain}`,
+    )
+    return null
+  }
+
+  const seriesRaw = meta.__SetSeries ?? null
+  const seriesNum = seriesRaw != null && Number.isFinite(Number(seriesRaw)) ? Number(seriesRaw) : null
+  const circRaw = meta.__Circulation ?? null
+  const circulation = circRaw != null && Number.isFinite(Number(circRaw)) ? Number(circRaw) : null
+  const dateOfMoment = meta.DateOfMoment ?? null
+  const dateSlice = dateOfMoment ? String(dateOfMoment).slice(0, 10) : null
+  const gameDate = dateSlice && /^\d{4}-\d{2}-\d{2}$/.test(dateSlice) ? dateSlice : null
+
+  return {
+    playerName: pickTsPlayerName(meta),
+    setName: meta.__SetName?.trim() || null,
+    series: seriesNum,
+    // Tier is GQL-only; on-chain doesn't carry it. Caller treats null as
+    // "preserve existing" — the upsert RPC uses COALESCE(tier, p_tier).
+    tier: null,
+    circulation,
+    teamName: meta.TeamAtMoment?.trim() || null,
+    playCategory: meta.PlayCategory?.trim() || null,
+    playType: meta.PlayType?.trim() || null,
+    gameDate,
+    homeTeam: meta.HomeTeamName?.trim() || null,
+    awayTeam: meta.AwayTeamName?.trim() || null,
+    setIdOnchain,
+    playIdOnchain,
+  }
+}
+
 interface TsCanonicalSibling {
   id: string
   external_id: string
@@ -376,7 +519,16 @@ export async function hydrateTopShotEditions(
       }
     }
 
-    const meta = await fetchTsEditionMeta(setID, playID)
+    // Branch: int-pair external_ids resolve via Cadence (TopShot's GQL
+    // `searchEditions` rejects integer set/play IDs with a uuid-syntax error).
+    // UUID-pair external_ids stay on the GQL path. Without this branch, the
+    // int-pair fallthrough silently returned null whenever no UUID canonical
+    // sibling existed for the redirect path above to catch — meaning any
+    // int-pair without a sibling produced an empty edition row.
+    const meta =
+      intPair && setIdOnchain != null && playIdOnchain != null
+        ? await fetchTsEditionMetaCadence(setIdOnchain, playIdOnchain)
+        : await fetchTsEditionMeta(setID, playID)
 
     const playerName = meta?.playerName ?? null
     const setName = meta?.setName ?? null
