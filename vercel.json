@@ -4,9 +4,13 @@
       "path": "/api/cron/pinnacle-sync",
       "schedule": "0 6 * * *"
     },
-{
+    {
       "path": "/api/cron/purge-stale-listings",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/compute-laliga-pack-ev",
+      "schedule": "30 5 * * *"
     }
   ]
 }
