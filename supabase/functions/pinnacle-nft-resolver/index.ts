@@ -100,13 +100,27 @@ access(all) fun main(nftID: UInt64, ownerAddress: Address): Resolved {
 
 function sleep(ms: number): Promise<void> { return new Promise((r) => setTimeout(r, ms)) }
 
-interface Target { nft_id: string; owner: string }
+interface Target { nft_id: string; owner: string; source: string }
 interface ResolvedPair { nft_id: string; edition_key: string; owner: string }
 
-async function loadBatch(limit: number): Promise<Target[]> {
-  const { data, error } = await supabase.from("pinnacle_unresolved_with_owner").select("nft_id, owner").limit(limit)
-  if (error) throw new Error(`load batch: ${error.message}`)
-  return (data ?? []) as Target[]
+// v10: switched from the sales-only `pinnacle_unresolved_with_owner` view to
+// `pinnacle_get_unresolved_batch_v2`, which surfaces both sales-table NFTs
+// (hint = last buyer) AND wmc-table NFTs (hint = current owner). The wmc
+// branch was previously invisible to this resolver — 32k+ wmc moments had no
+// path to edition resolution. Rows with NULL hint_address can't be resolved
+// via Cadence (no on-chain account to query) and are filtered out here.
+async function loadBatch(limit: number): Promise<{ targets: Target[]; rawCount: number; noHint: number }> {
+  // deno-lint-ignore no-explicit-any
+  const { data, error } = await (supabase as any).rpc("pinnacle_get_unresolved_batch_v2", { p_limit: limit })
+  if (error) throw new Error(`load batch v2: ${error.message}`)
+  const rows = (data ?? []) as Array<{ nft_id: string; source: string; hint_address: string | null }>
+  let noHint = 0
+  const targets: Target[] = []
+  for (const r of rows) {
+    if (!r.hint_address) { noHint++; continue }
+    targets.push({ nft_id: r.nft_id, owner: r.hint_address, source: r.source })
+  }
+  return { targets, rawCount: rows.length, noHint }
 }
 
 function extractEditionKey(raw: unknown): string | null {
@@ -164,16 +178,18 @@ Deno.serve(async (req: Request) => {
   const started = Date.now()
   const startedAtIso = new Date(started).toISOString()
   try {
-    const targets = await loadBatch(batchSize)
+    const { targets, rawCount, noHint } = await loadBatch(batchSize)
     if (targets.length === 0) {
-      await logPipelineRun({ pipeline: "pinnacle-nft-resolver", startedAt: startedAtIso, ok: true, collectionSlug: "disney-pinnacle", extra: { message: "no unresolved", elapsed_ms: Date.now() - started, resolver_version: 9 } })
-      return new Response(JSON.stringify({ ok: true, message: "no unresolved" }), { headers: { "Content-Type": "application/json" } })
+      await logPipelineRun({ pipeline: "pinnacle-nft-resolver", startedAt: startedAtIso, ok: true, collectionSlug: "disney-pinnacle", extra: { message: "no unresolved", raw_count: rawCount, no_hint: noHint, elapsed_ms: Date.now() - started, resolver_version: 10 } })
+      return new Response(JSON.stringify({ ok: true, message: "no unresolved", raw_count: rawCount, no_hint: noHint }), { headers: { "Content-Type": "application/json" } })
     }
     let queried = 0, nullEdition = 0, failed = 0
+    const sourceCounts: Record<string, number> = {}
     const failures: Array<{ nft_id: string; reason: string }> = []
     const resolvedPairs: ResolvedPair[] = []
     for (const t of targets) {
       queried++
+      sourceCounts[t.source] = (sourceCounts[t.source] ?? 0) + 1
       try {
         const editionKey = await resolveOne(t.nft_id, t.owner)
         if (editionKey == null) { nullEdition++; continue }
@@ -205,18 +221,19 @@ Deno.serve(async (req: Request) => {
       rowsFound: queried, rowsWritten: rowsWrittenEffective, rowsSkipped: nullEdition + failed,
       ok: true, collectionSlug: "disney-pinnacle",
       extra: {
-        resolver_version: 9, resolved_pairs_count: resolvedPairs.length,
+        resolver_version: 10, resolved_pairs_count: resolvedPairs.length,
         batch_upsert_result: batchResult, batch_upsert_err: batchErr,
         stub_editions_result: stubResult, null_edition: nullEdition,
         failed, failures: failures.slice(0, 10),
         promoted: promoted ?? null, promote_err: promoteErr ? promoteErr.message : null,
+        raw_batch_count: rawCount, no_hint_skipped: noHint, source_counts: sourceCounts,
         elapsed_ms: elapsed, batch_size: batchSize,
       },
     })
-    return new Response(JSON.stringify({ ok: true, queried, resolved: resolvedPairs.length, nullEdition, failed, batch_upsert: batchResult, stub_editions: stubResult, promoted: promoted ?? null, elapsed }), { headers: { "Content-Type": "application/json" } })
+    return new Response(JSON.stringify({ ok: true, queried, resolved: resolvedPairs.length, nullEdition, failed, source_counts: sourceCounts, no_hint_skipped: noHint, batch_upsert: batchResult, stub_editions: stubResult, promoted: promoted ?? null, elapsed }), { headers: { "Content-Type": "application/json" } })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    await logPipelineRun({ pipeline: "pinnacle-nft-resolver", startedAt: startedAtIso, ok: false, error: msg, collectionSlug: "disney-pinnacle", extra: { elapsed_ms: Date.now() - started, resolver_version: 9 } })
+    await logPipelineRun({ pipeline: "pinnacle-nft-resolver", startedAt: startedAtIso, ok: false, error: msg, collectionSlug: "disney-pinnacle", extra: { elapsed_ms: Date.now() - started, resolver_version: 10 } })
     return new Response(JSON.stringify({ ok: false, error: msg }), { status: 500, headers: { "Content-Type": "application/json" } })
   }
 })
