@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import type { EmailOtpType } from "@supabase/supabase-js"
+import { supabaseAdmin } from "@/lib/supabase"
 
 const VALID_OTP_TYPES: ReadonlySet<EmailOtpType> = new Set([
   "signup",
@@ -17,6 +18,22 @@ const VALID_OTP_TYPES: ReadonlySet<EmailOtpType> = new Set([
   "email_change",
   "email",
 ])
+
+async function touchUserProfile(userId: string) {
+  // Mirrors /api/profile/touch — kept in-process here so the redirect response
+  // can issue without a second round-trip. ON CONFLICT (id) preserves
+  // user-set fields like display_name, username, wallet_address.
+  const now = new Date().toISOString()
+  const { error } = await (supabaseAdmin as any)
+    .from("user_profiles")
+    .upsert(
+      { id: userId, last_active_at: now, updated_at: now },
+      { onConflict: "id", ignoreDuplicates: false }
+    )
+  if (error) {
+    console.log("[auth/callback] user_profiles upsert failed:", error.message)
+  }
+}
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url)
@@ -71,12 +88,15 @@ export async function GET(req: NextRequest) {
   )
 
   if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
     if (error) {
       const target = new URL("/login", req.url)
       target.searchParams.set("error", "auth_failed")
       target.searchParams.set("description", error.message)
       return NextResponse.redirect(target)
+    }
+    if (data?.user?.id) {
+      await touchUserProfile(data.user.id)
     }
     return response
   }
@@ -90,7 +110,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(target)
   }
 
-  const { error } = await supabase.auth.verifyOtp({
+  const { data, error } = await supabase.auth.verifyOtp({
     token_hash: tokenHash!,
     type: otpType,
   })
@@ -99,6 +119,10 @@ export async function GET(req: NextRequest) {
     target.searchParams.set("error", "auth_failed")
     target.searchParams.set("description", error.message)
     return NextResponse.redirect(target)
+  }
+
+  if (data?.user?.id) {
+    await touchUserProfile(data.user.id)
   }
 
   return response

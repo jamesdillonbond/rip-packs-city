@@ -2,6 +2,20 @@ import type { NextConfig } from "next"
 import { withSentryConfig } from "@sentry/nextjs"
 
 const nextConfig: NextConfig = {
+  images: {
+    remotePatterns: [
+      // Top Shot — primary CDN + the preview/thumbnail host used by pack OG cards
+      { protocol: "https", hostname: "assets.nbatopshot.com", pathname: "/**" },
+      { protocol: "https", hostname: "asset-preview.nbatopshot.com", pathname: "/**" },
+      // NFL All Day
+      { protocol: "https", hostname: "media.nflallday.com", pathname: "/**" },
+      // LaLiga Golazos
+      { protocol: "https", hostname: "assets.laligagolazos.com", pathname: "/**" },
+      // IPFS gateways used for older Pinnacle / UFC artifacts
+      { protocol: "https", hostname: "ipfs.io", pathname: "/**" },
+      { protocol: "https", hostname: "gateway.pinata.cloud", pathname: "/**" },
+    ],
+  },
   async headers() {
     return [
       {
