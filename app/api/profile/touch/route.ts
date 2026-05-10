@@ -1,36 +1,54 @@
 // app/api/profile/touch/route.ts
 //
-// Upserts a row in user_profiles for the current authenticated user.
-// Called from the auth callback paths immediately after sign-in succeeds, and
-// can be called from any client surface that wants to refresh last_active_at.
+// Upserts a row in user_profiles for the current authenticated user. Called
+// from auth-callback paths and from any client surface that wants to refresh
+// last_active_at. Accepts either:
 //
-// ON CONFLICT (id) we only touch last_active_at and updated_at — display_name,
-// username, wallet_address, avatar_url, topshot_username are user-set fields
-// and must be preserved.
+//   (a) Supabase cookie session (set by @supabase/ssr on PKCE callbacks), or
+//   (b) Authorization: Bearer <access_token> header. Required for the
+//       implicit-flow client (/auth/confirm), where the cookies set by
+//       setSession() can race the immediate fetch and the cookie path 401s.
 //
-// This endpoint is the foundation for the display-name resolver and the
-// /admin/beta-activity dashboard. Without it user_profiles is empty.
+// ON CONFLICT (id) only touches last_active_at + updated_at — user-set fields
+// like display_name, username, wallet_address are preserved.
 
-import { NextResponse } from "next/server"
-import { requireUser } from "@/lib/auth/supabase-server"
+import { NextRequest, NextResponse } from "next/server"
+import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { supabaseAdmin } from "@/lib/supabase"
 
 export const dynamic = "force-dynamic"
 
-export async function POST() {
-  let user
+async function resolveUserId(req: NextRequest): Promise<string | null> {
+  const cookieUser = await getCurrentUser()
+  if (cookieUser?.id) return cookieUser.id
+
+  const auth = req.headers.get("authorization") ?? ""
+  const m = auth.match(/^Bearer\s+(.+)$/i)
+  if (!m) return null
   try {
-    user = await requireUser()
-  } catch (res) {
-    return res as Response
+    const { data, error } = await (supabaseAdmin as any).auth.getUser(m[1])
+    if (error) {
+      console.log("[profile/touch] bearer getUser failed:", error.message)
+      return null
+    }
+    return data?.user?.id ?? null
+  } catch (err) {
+    console.log("[profile/touch] bearer getUser threw:", err instanceof Error ? err.message : String(err))
+    return null
+  }
+}
+
+export async function POST(req: NextRequest) {
+  const userId = await resolveUserId(req)
+  if (!userId) {
+    return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 })
   }
 
   const now = new Date().toISOString()
-
   const { error } = await (supabaseAdmin as any)
     .from("user_profiles")
     .upsert(
-      { id: user.id, last_active_at: now, updated_at: now },
+      { id: userId, last_active_at: now, updated_at: now },
       { onConflict: "id", ignoreDuplicates: false }
     )
 
