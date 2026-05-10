@@ -1,19 +1,29 @@
 // app/api/profile/tier-breakdown/route.ts
 //
-// GET /api/profile/tier-breakdown?ownerKey=xxx
+// GET /api/profile/tier-breakdown
 // Aggregates wallet_moments_cache tier counts across every saved wallet for
-// the owner. Uses the get_wallet_tier_counts RPC to bypass PostgREST's 1000
-// row cap.
+// the current authenticated user. Uses the SECDEF helper
+// get_user_saved_wallets(p_user_id) to bypass the saved_wallets RLS gap
+// the dashboard was hitting (post-R3 follow-up, 2026-05-09): the previous
+// queries filtered on `owner_key` and used the service-role client, but
+// saved_wallets rows are keyed on user_id and the JWT-forwarding gap was
+// the actual root cause of the dashboard showing empty data — even after
+// R3 stopped the 500s. The SECDEF helper sidesteps that entirely.
 //
-// Failure mode (2026-05-09 hardening): a saved-wallets fetch error or zero
-// wallets returns the empty shape `{ tiers: [], total: 0 }` so the dashboard
-// renders an empty state instead of a broken chart. We additionally surface
-// `meta.coverage_zero = true` when every wallet returns zero tier counts —
-// the consumer (TierBreakdownCard) can render an explanatory message rather
-// than imply the user owns no moments at all.
+// Failure modes:
+//   - not signed in / cookie missing      → empty shape, meta.unauthenticated
+//   - SECDEF helper RPC errors            → empty shape, meta.saved_wallets_unavailable
+//   - user has zero saved_wallets         → empty shape, meta.no_wallets
+//   - every wallet returns zero counts    → empty shape, meta.coverage_zero (consumer
+//                                            renders explanatory empty state, not a
+//                                            broken chart)
+//
+// Logs include error.message + error.code in plain console.log lines so
+// Vercel log search can pick them up.
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { getCurrentUser } from "@/lib/auth/supabase-server";
 
 const TIER_ORDER = ["Common", "Fandom", "Rare", "Legendary", "Ultimate"];
 
@@ -21,21 +31,30 @@ function emptyResponse(meta?: Record<string, unknown>) {
   return NextResponse.json({ tiers: [], total: 0, ...(meta ? { meta } : {}) });
 }
 
-export async function GET(req: NextRequest) {
-  const ownerKey = req.nextUrl.searchParams.get("ownerKey");
-  if (!ownerKey) {
-    return NextResponse.json({ error: "ownerKey required" }, { status: 400 });
+interface SavedWallet {
+  wallet_addr: string | null;
+  username: string | null;
+  collection_id: string | null;
+  collection_slug: string | null;
+  nickname: string | null;
+  cached_fmv_usd: number | null;
+}
+
+export async function GET() {
+  const user = await getCurrentUser();
+  if (!user) {
+    return emptyResponse({ unauthenticated: true });
   }
 
   try {
-    const { data: wallets, error: walletsError } = await supabase
-      .from("saved_wallets")
-      .select("wallet_addr")
-      .eq("owner_key", ownerKey);
+    const { data: walletsRaw, error: walletsError } = await (supabase as any).rpc(
+      "get_user_saved_wallets",
+      { p_user_id: user.id }
+    );
 
     if (walletsError) {
       console.log(
-        "[tier-breakdown] saved_wallets fetch failed:",
+        "[tier-breakdown] get_user_saved_wallets failed:",
         walletsError.message,
         "code:",
         (walletsError as { code?: string }).code ?? "unknown"
@@ -43,8 +62,8 @@ export async function GET(req: NextRequest) {
       return emptyResponse({ saved_wallets_unavailable: true });
     }
 
-    const walletList = (wallets ?? []) as Array<{ wallet_addr: string }>;
-    if (walletList.length === 0) {
+    const wallets = (walletsRaw ?? []) as SavedWallet[];
+    if (wallets.length === 0) {
       return emptyResponse({ no_wallets: true });
     }
 
@@ -53,10 +72,9 @@ export async function GET(req: NextRequest) {
     let walletsAttempted = 0;
     let walletsWithRpcError = 0;
 
-    for (const w of walletList) {
-      const addr = w.wallet_addr?.startsWith("0x")
-        ? w.wallet_addr
-        : "0x" + (w.wallet_addr ?? "");
+    for (const w of wallets) {
+      const raw = w.wallet_addr ?? "";
+      const addr = raw.startsWith("0x") ? raw : raw ? "0x" + raw : "";
       if (!addr || addr === "0x") continue;
       walletsAttempted += 1;
 
@@ -84,9 +102,6 @@ export async function GET(req: NextRequest) {
     }
 
     if (total === 0 && walletsAttempted > 0) {
-      // Every wallet returned zero counts — likely a wmc tier-coverage gap
-      // for this owner's collections, not "user owns nothing." Flag for the
-      // UI so it can render an explanatory empty state.
       return emptyResponse({
         coverage_zero: true,
         wallets_attempted: walletsAttempted,
@@ -94,7 +109,6 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Order by canonical tier order, then any unknown tiers
     const known = TIER_ORDER
       .filter(function (t) { return aggregate[t]; })
       .map(function (t) { return { tier: t, count: aggregate[t] }; });

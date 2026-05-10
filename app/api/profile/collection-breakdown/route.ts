@@ -1,5 +1,21 @@
-import { NextRequest, NextResponse } from "next/server"
+// app/api/profile/collection-breakdown/route.ts
+//
+// GET /api/profile/collection-breakdown
+// For every saved wallet of the current authenticated user, calls the
+// get_collection_breakdown RPC and merges per-collection moment_count +
+// total_fmv across wallets. Adds a color hint (sourced from the
+// collections table slug) so the dashboard renders consistent
+// per-collection accents.
+//
+// Uses the SECDEF helper get_user_saved_wallets(p_user_id) to read the
+// wallet list — bypasses the JWT-forwarding gap that was making the
+// post-R3 endpoints return empty.
+//
+// Failure modes return { collections: [] } with a meta hint.
+
+import { NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
+import { getCurrentUser } from "@/lib/auth/supabase-server"
 
 // Collection color palette (keyed by slug from collections table)
 const COLLECTION_COLOR: Record<string, string> = {
@@ -18,24 +34,49 @@ type Row = {
   total_fmv: number | string | null
 }
 
-export async function GET(req: NextRequest) {
-  const ownerKey = req.nextUrl.searchParams.get("ownerKey")
-  if (!ownerKey) {
-    return NextResponse.json({ error: "ownerKey required" }, { status: 400 })
+interface SavedWallet {
+  wallet_addr: string | null
+  username: string | null
+  collection_id: string | null
+  collection_slug: string | null
+  nickname: string | null
+  cached_fmv_usd: number | null
+}
+
+function emptyResponse(meta?: Record<string, unknown>) {
+  return NextResponse.json({ collections: [], ...(meta ? { meta } : {}) })
+}
+
+export async function GET() {
+  const user = await getCurrentUser()
+  if (!user) {
+    return emptyResponse({ unauthenticated: true })
   }
 
   try {
-    const { data: wallets, error: walletsErr } = await supabase
-      .from("saved_wallets")
-      .select("wallet_addr")
-      .eq("owner_key", ownerKey)
-    if (walletsErr) {
-      return NextResponse.json({ error: walletsErr.message }, { status: 500 })
+    const { data: walletsRaw, error: walletsError } = await (supabase as any).rpc(
+      "get_user_saved_wallets",
+      { p_user_id: user.id }
+    )
+
+    if (walletsError) {
+      console.log(
+        "[collection-breakdown] get_user_saved_wallets failed:",
+        walletsError.message,
+        "code:",
+        (walletsError as { code?: string }).code ?? "unknown"
+      )
+      return emptyResponse({ saved_wallets_unavailable: true })
     }
 
-    const addrs = (wallets ?? [])
-      .map((w: any) => w.wallet_addr)
-      .filter((a: any): a is string => typeof a === "string" && a.length > 0)
+    const wallets = (walletsRaw ?? []) as SavedWallet[]
+    if (wallets.length === 0) {
+      return emptyResponse({ no_wallets: true })
+    }
+
+    const addrs = wallets
+      .map((w) => w.wallet_addr)
+      .filter((a): a is string => typeof a === "string" && a.length > 0)
 
     const merged = new Map<
       string,
@@ -43,11 +84,18 @@ export async function GET(req: NextRequest) {
     >()
 
     for (const addr of addrs) {
-      const { data, error } = await supabase.rpc("get_collection_breakdown", {
+      const { data, error } = await (supabase as any).rpc("get_collection_breakdown", {
         p_wallet: addr,
       })
       if (error) {
-        console.error("[collection-breakdown rpc]", addr, error.message)
+        console.log(
+          "[collection-breakdown] get_collection_breakdown failed for",
+          addr,
+          "message:",
+          error.message,
+          "code:",
+          error.code ?? "unknown"
+        )
         continue
       }
       const rows: Row[] = Array.isArray(data) ? (data as Row[]) : []
@@ -73,11 +121,11 @@ export async function GET(req: NextRequest) {
     const ids = Array.from(merged.keys()).filter((id) => id !== "unknown")
     const slugMap = new Map<string, string>()
     if (ids.length > 0) {
-      const { data: cols } = await supabase
+      const { data: cols } = await (supabase as any)
         .from("collections")
         .select("id, slug")
         .in("id", ids)
-      for (const c of cols ?? []) {
+      for (const c of (cols ?? []) as Array<{ id: string; slug: string }>) {
         if (c.id && c.slug) slugMap.set(c.id, c.slug)
       }
     }
@@ -91,7 +139,12 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ collections })
   } catch (err: any) {
-    console.error("[collection-breakdown GET]", err?.message)
-    return NextResponse.json({ error: "Internal error" }, { status: 500 })
+    console.log(
+      "[collection-breakdown] unexpected:",
+      err?.message ?? String(err),
+      "code:",
+      err?.code ?? "unknown"
+    )
+    return emptyResponse({ unexpected_error: true })
   }
 }
