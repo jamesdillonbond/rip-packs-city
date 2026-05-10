@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter";
 import { publishedCollections } from "@/lib/collections";
+import { track } from "@/lib/telemetry/track";
 
 const condensedFont = "'Barlow Condensed', sans-serif";
 const monoFont = "'Share Tech Mono', monospace";
@@ -148,6 +149,10 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
   const [manualId, setManualId] = useState("");
   const [manualPreview, setManualPreview] = useState<PickerMoment | null>(null);
   const [manualError, setManualError] = useState<string | null>(null);
+
+  useEffect(() => {
+    track("trophy-modal-open", { slot });
+  }, [slot]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
