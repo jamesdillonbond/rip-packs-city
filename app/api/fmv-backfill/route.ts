@@ -233,6 +233,38 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ULTIMATE rows in fmv_snapshots are owned exclusively by recalc_ultimate_fmv
+    // (the ultimate-v1 algo, which excludes special-serial sales). Drop ULTIMATE
+    // editions from this backfill so legacy WAP+median values cannot land here.
+    let ultimateSkipped = 0
+    try {
+      const ultimateIds = new Set<string>()
+      const mapKeys = [...editionSalesMap.keys()]
+      const TIER_CHUNK = 200
+      for (let i = 0; i < mapKeys.length; i += TIER_CHUNK) {
+        const chunk = mapKeys.slice(i, i + TIER_CHUNK)
+        const { data: tierRows } = await (supabaseAdmin as any)
+          .from("editions")
+          .select("id, tier")
+          .in("id", chunk)
+          .eq("tier", "ULTIMATE")
+        for (const row of tierRows ?? []) {
+          if ((row as any)?.id) ultimateIds.add(String((row as any).id))
+        }
+      }
+      for (const edId of ultimateIds) {
+        if (editionSalesMap.delete(edId)) ultimateSkipped++
+      }
+      if (ultimateSkipped > 0) {
+        console.log(`[FMV-BACKFILL] Skipped ${ultimateSkipped} ULTIMATE editions (owned by recalc_ultimate_fmv)`)
+      }
+    } catch (err) {
+      console.warn(
+        "[FMV-BACKFILL] ULTIMATE skip lookup failed (non-fatal):",
+        err instanceof Error ? err.message : err
+      )
+    }
+
     // Step 4: Compute FMV and insert snapshots
     const insertRows: Record<string, unknown>[] = []
 

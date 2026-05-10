@@ -241,13 +241,60 @@ export async function GET(req: NextRequest) {
   let skipped = 0
   let no_edition = 0
   let rpcError: string | null = null
+  let ultimateSkipped = 0
 
-  console.log('[allday-fmv-populate] batch size:', nodes.length, 'sample:', JSON.stringify(nodes[0] ?? null))
-
+  // ULTIMATE rows in fmv_snapshots are owned exclusively by recalc_ultimate_fmv
+  // (the ultimate-v1 algo, which excludes special-serial sales). Drop any
+  // ULTIMATE editions before handing the batch to upsert_allday_marketplace_fmv.
+  let filteredNodes: RawNode[] = nodes
   if (nodes.length > 0) {
+    try {
+      const flowIds = nodes
+        .map((n) => (n.editionFlowID != null ? String(n.editionFlowID) : null))
+        .filter((s): s is string => !!s)
+      if (flowIds.length > 0) {
+        const ultimateExt = new Set<string>()
+        const TIER_CHUNK = 200
+        for (let i = 0; i < flowIds.length; i += TIER_CHUNK) {
+          const chunk = flowIds.slice(i, i + TIER_CHUNK)
+          const { data: tierRows } = await supabaseAdmin
+            .from("editions")
+            .select("external_id, tier")
+            .in("external_id", chunk)
+            .eq("tier", "ULTIMATE")
+          for (const row of tierRows ?? []) {
+            const ext = (row as any)?.external_id
+            if (ext != null) ultimateExt.add(String(ext))
+          }
+        }
+        if (ultimateExt.size > 0) {
+          filteredNodes = nodes.filter((n) => {
+            const ext = n.editionFlowID != null ? String(n.editionFlowID) : null
+            return !(ext && ultimateExt.has(ext))
+          })
+          ultimateSkipped = nodes.length - filteredNodes.length
+          if (ultimateSkipped > 0) {
+            console.log(
+              `[allday-fmv-populate] skipped ${ultimateSkipped} ULTIMATE editions (owned by recalc_ultimate_fmv)`
+            )
+          }
+        }
+      }
+    } catch (err) {
+      console.log(
+        `[allday-fmv-populate] ULTIMATE skip lookup failed (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      )
+    }
+  }
+
+  console.log('[allday-fmv-populate] batch size:', filteredNodes.length, 'sample:', JSON.stringify(filteredNodes[0] ?? null))
+
+  if (filteredNodes.length > 0) {
     const { data, error } = await supabaseAdmin.rpc(
       "upsert_allday_marketplace_fmv",
-      { p_rows: nodes as any }
+      { p_rows: filteredNodes as any }
     )
     if (error) {
       rpcError = error.message
@@ -297,6 +344,7 @@ export async function GET(req: NextRequest) {
         upserted,
         skipped,
         no_edition,
+        ultimate_skipped: ultimateSkipped,
         cursor_before: cursorBefore,
         cursor_after: cursorAfter,
         sweep_complete: sweepComplete,
@@ -317,11 +365,12 @@ export async function GET(req: NextRequest) {
     upserted,
     skipped,
     no_edition,
+    ultimate_skipped: ultimateSkipped,
     cursor_after: cursorAfter,
     sweep_complete: sweepComplete,
     stall_reset: stallReset,
     debug_last_error: lastError ?? null,
-    debug_batch_size: nodes.length,
+    debug_batch_size: filteredNodes.length,
     debug_node_sample: JSON.stringify(nodeSample ?? null),
     debug_rpc_error: rpcError ?? null,
   })
