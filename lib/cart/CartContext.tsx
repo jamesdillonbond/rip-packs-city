@@ -7,6 +7,7 @@ import React, {
   useReducer,
   useCallback,
 } from 'react'
+import { track } from '@/lib/telemetry/track'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -206,6 +207,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const addToCart = useCallback((item: Omit<CartItem, 'addedAt'>) => {
     dispatch({ type: 'ADD_ITEM', item: { ...item, cartMode: item.cartMode ?? 'buy', addedAt: Date.now() } })
+    track('cart-add', {
+      source: item.source,
+      tier: item.tier,
+      price: item.expectedPrice,
+      mode: item.cartMode ?? 'buy',
+    })
   }, [])
 
   const addOffer = useCallback(
@@ -214,12 +221,19 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         type: 'ADD_ITEM',
         item: { ...item, cartMode: 'offer', addedAt: Date.now() },
       })
+      track('cart-add', {
+        source: item.source,
+        tier: item.tier,
+        offer: item.offerAmount,
+        mode: 'offer',
+      })
     },
     []
   )
 
   const removeFromCart = useCallback((listingResourceID: string) => {
     dispatch({ type: 'REMOVE_ITEM', listingResourceID })
+    track('cart-remove', { listingResourceID })
   }, [])
 
   const clearCart = useCallback(() => {

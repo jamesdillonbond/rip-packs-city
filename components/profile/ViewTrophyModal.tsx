@@ -24,6 +24,7 @@ import {
   topShotMomentUrl,
   flowtyAssetUrl,
 } from "@/lib/media/momentVideoUrl";
+import { track } from "@/lib/telemetry/track";
 
 interface ViewTrophyModalProps {
   trophy: TrophyMoment | null;
@@ -37,6 +38,11 @@ const SLOT_LABELS = ["", "🥇", "🥈", "🥉", "⭐", "⭐", "⭐"];
 export default function ViewTrophyModal({ trophy, onClose, showSlotBadge = true }: ViewTrophyModalProps) {
   useEffect(() => {
     if (!trophy) return;
+    track("trophy-modal-open", {
+      slot: trophy.slot,
+      collection_id: trophy.collection_id ?? null,
+      tier: trophy.tier ?? null,
+    });
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };

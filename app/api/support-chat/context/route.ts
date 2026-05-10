@@ -3,9 +3,18 @@
 // Returns: dailyDeal, marketPulse, returningUser, returningBetaTester,
 // conversationCount, lastTopics, lastPlayerSearched, lastOpenFeedback,
 // pageWelcome, pageSuggestions.
+//
+// User-attribution fix (B3, 2026-05-09): chat_sessions rows used to be
+// created here with all user_wallet / user_email / owner_key columns
+// NULL because the route only trusted the client-passed ?ownerKey
+// querystring. We now derive identity server-side from the auth cookie
+// (same pattern as /api/support-chat) and populate all three columns on
+// both the initial upsert and the update path. The client-supplied
+// ownerKey is ignored — never trusted.
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/auth/supabase-server";
 
 export const maxDuration = 10;
 export const revalidate = 300; // cache 5 min
@@ -14,6 +23,36 @@ const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+type AuthedIdentity = {
+  email: string | null;
+  ownerKey: string | null;
+  userWallet: string | null;
+};
+
+async function deriveIdentity(): Promise<AuthedIdentity> {
+  try {
+    const sb = await getSupabaseServer();
+    const { data, error } = await sb.auth.getUser();
+    const email = data?.user?.email ?? null;
+    if (error || !email) {
+      return { email: null, ownerKey: null, userWallet: null };
+    }
+    const { data: row } = await supabase
+      .from("allow_list")
+      .select("username, wallet_addr")
+      .ilike("email", email)
+      .limit(1)
+      .maybeSingle();
+    return {
+      email,
+      ownerKey: row?.username ?? null,
+      userWallet: row?.wallet_addr ?? null,
+    };
+  } catch {
+    return { email: null, ownerKey: null, userWallet: null };
+  }
+}
 
 function tierLabel(raw: string): string {
   return (
@@ -24,7 +63,6 @@ function tierLabel(raw: string): string {
 
 export async function GET(req: NextRequest) {
   const sessionId = req.nextUrl.searchParams.get("sessionId");
-  const ownerKey = req.nextUrl.searchParams.get("ownerKey");
   // Beta posture: market-status / movers / dailyDeal are NOT included by default.
   // The chat widget no longer auto-fires a market-pulse follow-up message after
   // the greeting, and the bot can fetch live market data via its existing tools
@@ -32,6 +70,12 @@ export async function GET(req: NextRequest) {
   // pulse" widget), pass includeMarketStatus=true.
   const includeMarketStatus =
     req.nextUrl.searchParams.get("includeMarketStatus") === "true";
+
+  // Server-derived identity wins over any client-passed value.
+  const identity = await deriveIdentity();
+  const ownerKey = identity.ownerKey;
+  const userWallet = identity.userWallet;
+  const userEmail = identity.email;
 
   // ── 1. Per-session continuity (chat_sessions) ──────────────────────────────
   let returningUser = false;
@@ -52,13 +96,20 @@ export async function GET(req: NextRequest) {
       lastPlayerSearched = session.last_player_searched ?? null;
       conversationCount = session.conversation_count ?? 1;
 
+      // Update path — only overwrite identity columns when we have a value
+      // so an authenticated row doesn't get clobbered when the user later
+      // opens the chat from an unauthed surface.
+      const update: Record<string, unknown> = {
+        last_seen_at: new Date().toISOString(),
+        conversation_count: (session.conversation_count ?? 1) + 1,
+      };
+      if (ownerKey) update.owner_key = ownerKey;
+      if (userWallet) update.user_wallet = userWallet;
+      if (userEmail) update.user_email = userEmail;
+
       await supabase
         .from("chat_sessions")
-        .update({
-          last_seen_at: new Date().toISOString(),
-          conversation_count: (session.conversation_count ?? 1) + 1,
-          ...(ownerKey ? { owner_key: ownerKey } : {}),
-        })
+        .update(update)
         .eq("session_id", sessionId);
     } else {
       await supabase.from("chat_sessions").upsert(
@@ -67,7 +118,9 @@ export async function GET(req: NextRequest) {
           last_seen_at: new Date().toISOString(),
           first_seen_at: new Date().toISOString(),
           conversation_count: 1,
-          ...(ownerKey ? { owner_key: ownerKey } : {}),
+          owner_key: ownerKey,
+          user_wallet: userWallet,
+          user_email: userEmail,
         },
         { onConflict: "session_id" }
       );
@@ -235,7 +288,6 @@ export async function GET(req: NextRequest) {
   // paint; this pageWelcome is a server-side fallback for clients that consume
   // the field. We keep it terse and beta-flavored so it can't override the
   // client-side voice.
-  const pageContext = req.nextUrl.searchParams.get("pageContext") ?? req.nextUrl.searchParams.get("page") ?? "";
 
   let pageWelcome = "Closed beta — I'm here for support, Q&A, and feedback for Trevor. Deals and FMV too if you want.";
   if (returningBetaTester && lastOpenFeedback?.feedback_summary) {

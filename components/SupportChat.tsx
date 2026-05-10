@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { track } from "@/lib/telemetry/track";
 
 interface MomentCard {
   playerName: string; setName?: string; tier?: string; series?: string;
@@ -284,6 +285,7 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
   const sendMessage = useCallback(async (overrideText?: string) => {
     const trimmed = (overrideText || input).trim();
     if (!trimmed || isLoading) return;
+    track("chat-message-sent", { length: trimmed.length });
     setMessages((prev) => [...prev, { id: `u_${Date.now()}`, role: "user", text: trimmed, timestamp: new Date() }]);
     setInput(""); setIsLoading(true);
     const history = messages

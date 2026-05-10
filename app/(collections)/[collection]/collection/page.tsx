@@ -21,6 +21,7 @@ import BadgeIcon from "@/components/BadgeIcon"
 import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter"
 import WalletStatRow from "@/components/wallet-stat-row"
 import { formatCurrency, formatCount } from "@/lib/format"
+import { track } from "@/lib/telemetry/track"
 import { pickLoading } from "@/lib/schonely"
 
 function ThumbnailPreview({ thumbUrl, playerName, tierColor, children }: { thumbUrl: string | null; playerName: string; tierColor: string; children: React.ReactNode }) {
@@ -1063,6 +1064,10 @@ export default function WalletPage() {
   const runSearch = useCallback(async function(query: string) {
     if (!query.trim()) return
     const trimmed = query.trim()
+    track("search-executed", {
+      collection: collectionSlug,
+      input_kind: trimmed.startsWith("0x") ? "address" : "username",
+    })
     setInput(trimmed)
     setActiveWallet(trimmed)
     lastSearchedRef.current = trimmed

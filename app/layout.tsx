@@ -6,6 +6,7 @@ import { rootMetadata, organizationJsonLd } from "@/lib/seo"
 import WalletPreloader from "@/components/WalletPreloader"
 import OnboardingModal from "@/components/OnboardingModal"
 import ConsoleGreeting from "@/components/visual/ConsoleGreeting"
+import TelemetryPageView from "@/components/TelemetryPageView"
 
 export const metadata: Metadata = rootMetadata
 
@@ -27,6 +28,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
         />
         <ConsoleGreeting />
+        <TelemetryPageView />
         <WarmupProvider>
           <CartProvider>
             <WalletPreloader />
