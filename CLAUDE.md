@@ -63,7 +63,19 @@ Key constants (May 8 latest)
 - AllDay-unmapped-resolver runs every 20min **by design, chained from sales-indexer** — it does NOT have its own cron entry. Drains ~3.9 edition_key mappings per tick. There is a permanent residual of ~30 NFTs that return `flowty_no_edition_id` from upstream and never resolve; the May 8 (late) `tighten_unmapped_resolver_retire_threshold` migration drops the permanent-retire threshold from `retry_count >= 10` to `retry_count >= 5` to cull these faster.
 - UFC Strike status: PUBLISHED + BETA. Coverage: 147 editions / 247 wmc rows. `UNIQUE(wallet_address, collection_id, moment_id)` enforced. Tier vocabulary: `CHALLENGER / CONTENDER / FANDOM`.
 - `runPaginatedDetailsBackfill` `terminated_reason` values: `no_more_moments` (success, walked to end), `all_ids_already_enriched` (success, pre-flight short-circuit), `computation_limit_exceeded` (Cadence 1110 from chunk script), `access_api_error_likely_computation_limit` (Flow access-node surface of the same), `storage_limit_exceeded` (Cadence 1106), `no_collection_capability`, `error` (catchall).
-- Cloudflare Workers (current, all `.tdillonbond.workers.dev`): `topshot-proxy`, `pinnacle-proxy`, `spork-proxy`, `allday-proxy`, `rpc-sports-proxy`, `odds-proxy`, `reddit-proxy`, `hybrid-custody-proxy`. All share `X-Proxy-Secret = TS_PROXY_SECRET` rotation surface; secrets pushed via `wrangler secret put PROXY_SECRET --name <worker>`.
+- Cloudflare Workers (current, all `.tdillonbond.workers.dev`): `topshot-proxy`, `pinnacle-proxy`, `spork-proxy`, `allday-proxy`, `rpc-sports-proxy`, `odds-proxy`, `reddit-proxy`, `hybrid-custody-proxy`.
+
+#### Worker auth surfaces (3 rotation domains)
+
+The "all workers share `TS_PROXY_SECRET`" framing was an oversimplification — there are three independent rotation surfaces. Audit 2026-05-10 confirmed: rpc-sports-proxy was drift (fixed); reddit-proxy phantom secret was deleted; odds-proxy auth gate added with both `PROXY_SECRET` and `ODDS_API_KEY` now present.
+
+(a) **`TS_PROXY_SECRET` via `X-Proxy-Secret` header** — `topshot-proxy`, `allday-proxy`, `pinnacle-proxy`, `reddit-proxy`, `rpc-sports-proxy`, `odds-proxy`. Rotate via `wrangler secret put PROXY_SECRET --name <worker>` for each, plus the matching Vercel env var.
+
+(b) **`INGEST_SECRET_TOKEN` via `Authorization: Bearer` header** — `hybrid-custody-proxy` and Vercel ingest routes. Rotate together; do NOT assume the X-Proxy-Secret rotation covers this.
+
+(c) **`SPORK_PROXY_SECRET`** — `spork-proxy` only (historical block-height reads on port 8070). Rotate independently.
+
+Never assume rotating one surface covers another.
 
 ---
 
@@ -150,12 +162,12 @@ git push origin main
 - `app/api/support-chat/route.ts` — AI concierge (5 tools, Claude Sonnet)
 - `proxy.ts` — site lockdown (Next.js 16 convention, replaces middleware.ts; hardened May 8)
 - `workers/topshot-proxy/` — Cloudflare Worker. Routes: POST / or POST /topshot → public-api.nbatopshot.com/graphql, POST /allday → public-api.nflallday.com/graphql, POST /allday-consumer → nflallday.com/consumer/graphql.
-- `workers/odds-proxy/`, `workers/rpc-sports-proxy/`, `workers/hybrid-custody-proxy/`, etc. — all share `X-Proxy-Secret` rotation surface (`TS_PROXY_SECRET`).
+- `workers/odds-proxy/`, `workers/rpc-sports-proxy/`, `workers/hybrid-custody-proxy/`, etc. — see "Worker auth surfaces (3 rotation domains)" above. `hybrid-custody-proxy` uses `INGEST_SECRET_TOKEN` Bearer; the others use `TS_PROXY_SECRET` via `X-Proxy-Secret`; `spork-proxy` uses `SPORK_PROXY_SECRET`. Don't conflate them.
 - CI/CD: GitHub Actions workflows in `.github/workflows/` — rpc-pipeline.yml, ops-monitor.yml, pipeline-sentinel.yml, alert-checker.yml, allday-ingest.yml, badge-sync.yml, pinnacle-owner-discovery.yml, ts-listing-ingest.yml, smoke-tests.yml.
 
 ### Cloudflare Workers (current full list)
 
-All `.tdillonbond.workers.dev`. Same `X-Proxy-Secret = TS_PROXY_SECRET` rotation surface.
+All `.tdillonbond.workers.dev`. Three independent auth surfaces — see "Worker auth surfaces (3 rotation domains)" above for the split.
 
 | Worker | Purpose |
 |---|---|
