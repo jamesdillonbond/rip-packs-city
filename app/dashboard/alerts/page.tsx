@@ -9,9 +9,13 @@
 // 'custom_alerts_max'). Free plan returns 402; we surface "Upgrade to Pro"
 // with a /pricing link. Pro plan = 25 alerts/wallet.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key";
+import { useProStatus } from "@/lib/hooks/useProStatus";
+
+const PRO_ALERTS_CAP = 25;
+const DELETE_CONFIRM_WINDOW_MS = 2000;
 
 interface Alert {
   id: number | string;
@@ -52,11 +56,25 @@ export default function AlertsPage() {
   const [err, setErr] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [paywall, setPaywall] = useState<string | null>(null);
+  // Inline-confirm delete: a row sits in `deleteArmed` for
+  // DELETE_CONFIRM_WINDOW_MS after the first click; a second click within the
+  // window commits the delete, otherwise the armed state expires. Replaces
+  // the prior browser confirm() prompt.
+  const [deleteArmed, setDeleteArmed] = useState<string | null>(null);
+  const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const proStatus = useProStatus(ownerKey || null);
 
   useEffect(() => {
     setOwnerKey(getOwnerKey());
     const unsubscribe = onOwnerKeyChange((k) => setOwnerKey(k));
     return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+    };
   }, []);
 
   const load = useCallback(async () => {
@@ -106,7 +124,21 @@ export default function AlertsPage() {
   };
 
   const deleteAlert = async (a: Alert) => {
-    if (!confirm(`Delete alert for ${a.player_name ?? a.edition_key}?`)) return;
+    const key = String(a.id);
+    if (deleteArmed !== key) {
+      setDeleteArmed(key);
+      if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+      deleteTimerRef.current = setTimeout(() => {
+        setDeleteArmed(null);
+        deleteTimerRef.current = null;
+      }, DELETE_CONFIRM_WINDOW_MS);
+      return;
+    }
+    if (deleteTimerRef.current) {
+      clearTimeout(deleteTimerRef.current);
+      deleteTimerRef.current = null;
+    }
+    setDeleteArmed(null);
     const url = `/api/alerts?id=${encodeURIComponent(String(a.id))}&owner_key=${encodeURIComponent(a.owner_key)}`;
     const res = await fetch(url, { method: "DELETE", credentials: "include" });
     if (res.ok) void load();
@@ -135,6 +167,14 @@ export default function AlertsPage() {
             discount vs FMV reaches a threshold. Emails go to your saved
             address; Telegram delivery is available too.
           </p>
+          {proStatus.isPro && alerts && (
+            <div className="rpc-al-quota">
+              <span className="rpc-al-quota-count">{alerts.length}</span>
+              <span className="rpc-al-quota-sep"> / </span>
+              <span className="rpc-al-quota-cap">{PRO_ALERTS_CAP}</span>
+              <span className="rpc-al-quota-label">alerts used</span>
+            </div>
+          )}
         </div>
         <div className="rpc-al-actions">
           <button
@@ -175,8 +215,25 @@ export default function AlertsPage() {
       )}
 
       {ownerKey && alerts && alerts.length === 0 && (
-        <div className="rpc-al-empty">
-          No alerts yet. Click <strong>+ Create Alert</strong> to set your first one.
+        <div className="rpc-al-empty-card">
+          <div className="rpc-al-empty-eyebrow">Welcome</div>
+          <div className="rpc-al-empty-title">No alerts yet</div>
+          <div className="rpc-al-empty-body">
+            Custom alerts let you skip the chart-watching. Pick a moment, set a
+            target price (or a % discount vs FMV), and we&apos;ll ping you the
+            instant a listing crosses your threshold — by email, Telegram, or
+            both.
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setPaywall(null);
+              setShowCreate(true);
+            }}
+            className="rpc-al-cta rpc-al-empty-cta"
+          >
+            Create your first alert
+          </button>
         </div>
       )}
 
@@ -231,8 +288,12 @@ export default function AlertsPage() {
                       <button className="rpc-al-iconbtn" onClick={() => toggleActive(a)}>
                         {a.active ? "Pause" : "Resume"}
                       </button>
-                      <button className="rpc-al-iconbtn rpc-al-iconbtn-danger" onClick={() => deleteAlert(a)}>
-                        Delete
+                      <button
+                        className={`rpc-al-iconbtn rpc-al-iconbtn-danger${deleteArmed === String(a.id) ? " rpc-al-iconbtn-armed" : ""}`}
+                        onClick={() => deleteAlert(a)}
+                        title={deleteArmed === String(a.id) ? "Click again within 2s to confirm" : "Delete this alert"}
+                      >
+                        {deleteArmed === String(a.id) ? "Click again to confirm" : "Delete"}
                       </button>
                     </td>
                   </tr>
@@ -306,11 +367,33 @@ function CreateAlertModal({
     }
   };
 
+  // Inline per-field threshold validation. Bounds match Round 8 Item 4 spec:
+  //   below_price: 0 < threshold < 1,000,000
+  //   below_fmv_pct: 0 < threshold < 100
+  // Returns null when valid, otherwise an error string for inline display.
+  const thresholdError: string | null = (() => {
+    if (threshold === "") return null;
+    const thr = Number(threshold);
+    if (!Number.isFinite(thr)) return "Threshold must be a number";
+    if (thr <= 0) return "Threshold must be greater than 0";
+    if (alertType === "below_price" && thr >= 1_000_000) return "Price threshold must be under $1,000,000";
+    if (alertType === "below_fmv_pct" && thr >= 100) return "Discount % must be under 100";
+    return null;
+  })();
+
   const submit = async () => {
     if (!picked) return;
     const thr = Number(threshold);
-    if (isNaN(thr) || thr <= 0) {
+    if (threshold === "" || !Number.isFinite(thr) || thr <= 0) {
       setErr("Threshold must be a positive number");
+      return;
+    }
+    if (alertType === "below_price" && thr >= 1_000_000) {
+      setErr("Price threshold must be under $1,000,000");
+      return;
+    }
+    if (alertType === "below_fmv_pct" && thr >= 100) {
+      setErr("Discount % must be under 100");
       return;
     }
     if ((channel === "email" || channel === "both") && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -448,16 +531,22 @@ function CreateAlertModal({
               <input
                 type="number"
                 step="0.01"
+                min={0}
+                max={alertType === "below_price" ? 999999 : 99.99}
                 value={threshold}
                 onChange={(e) => setThreshold(e.target.value)}
                 placeholder={alertType === "below_price" ? "10.00" : "20"}
-                className="rpc-al-input"
+                className={`rpc-al-input${thresholdError ? " rpc-al-input-invalid" : ""}`}
                 style={{ flex: 1 }}
+                aria-invalid={!!thresholdError}
               />
               <span style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)", fontSize: 12 }}>
                 {alertType === "below_price" ? "USD" : "%"}
               </span>
             </div>
+            {thresholdError && (
+              <div className="rpc-al-field-err">{thresholdError}</div>
+            )}
 
             <div className="rpc-al-label" style={{ marginTop: 14 }}>Channel</div>
             <div className="rpc-al-radio-row">
@@ -493,7 +582,7 @@ function CreateAlertModal({
               <button className="rpc-al-iconbtn" onClick={() => onClose(null, null)} disabled={submitting}>
                 Cancel
               </button>
-              <button className="rpc-al-cta" onClick={submit} disabled={submitting || !threshold}>
+              <button className="rpc-al-cta" onClick={submit} disabled={submitting || !threshold || !!thresholdError}>
                 {submitting ? "Saving…" : "Create alert"}
               </button>
             </div>
@@ -602,7 +691,18 @@ const CSS = `
   }
   .rpc-al-pill-on { background: rgba(52, 211, 153, 0.15); color: #34D399; }
   .rpc-al-pill-off { background: rgba(255,255,255,0.06); color: var(--rpc-text-muted); }
-  .rpc-al-pill-hot { background: rgba(224, 58, 47, 0.15); color: var(--rpc-red, #E03A2F); }
+  .rpc-al-pill-hot {
+    background: rgba(224, 58, 47, 0.15);
+    color: var(--rpc-red, #E03A2F);
+    animation: rpc-al-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes rpc-al-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(224, 58, 47, 0.55); }
+    50%      { box-shadow: 0 0 0 6px rgba(224, 58, 47, 0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .rpc-al-pill-hot { animation: none; }
+  }
   .rpc-al-last-fired {
     font-size: 10px; color: var(--rpc-text-muted); margin-top: 4px;
   }
@@ -667,5 +767,73 @@ const CSS = `
     background: rgba(224, 58, 47, 0.08);
     border: 1px solid rgba(224, 58, 47, 0.25);
     border-radius: 4px; padding: 10px 12px; margin-bottom: 16px;
+  }
+
+  /* Round 8 Item 4 polish additions */
+  .rpc-al-quota {
+    margin-top: 10px;
+    display: inline-flex; align-items: baseline; gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--rpc-text-muted);
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--rpc-border);
+    border-radius: 999px;
+    padding: 4px 12px;
+  }
+  .rpc-al-quota-count {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 800;
+    font-size: 14px;
+    color: var(--rpc-text-primary);
+    letter-spacing: 0.02em;
+  }
+  .rpc-al-quota-sep { color: var(--rpc-text-muted); }
+  .rpc-al-quota-cap { color: var(--rpc-text-secondary); }
+  .rpc-al-quota-label {
+    margin-left: 6px; font-size: 10px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--rpc-text-muted);
+  }
+
+  .rpc-al-empty-card {
+    background: var(--rpc-surface);
+    border: 1px solid var(--rpc-border);
+    border-radius: var(--radius-md, 8px);
+    padding: 32px 28px;
+    text-align: center;
+    max-width: 540px;
+    margin: 24px auto 0;
+  }
+  .rpc-al-empty-eyebrow {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--rpc-red, #E03A2F);
+    margin-bottom: 6px;
+  }
+  .rpc-al-empty-title {
+    font-family: 'Barlow Condensed', sans-serif; font-weight: 900;
+    font-size: 26px; letter-spacing: 0.02em; text-transform: uppercase;
+    margin-bottom: 10px; color: var(--rpc-text-primary);
+  }
+  .rpc-al-empty-body {
+    font-family: var(--font-mono); font-size: 13px; line-height: 1.65;
+    color: var(--rpc-text-secondary); margin-bottom: 20px;
+  }
+  .rpc-al-empty-cta { font-size: 14px; padding: 12px 22px; }
+
+  .rpc-al-iconbtn-armed {
+    background: rgba(248, 113, 113, 0.18);
+    border-color: rgba(248, 113, 113, 0.55);
+    color: #FCA5A5;
+    animation: rpc-al-pulse 1.4s ease-in-out infinite;
+  }
+
+  .rpc-al-input-invalid {
+    border-color: rgba(248, 113, 113, 0.55);
+  }
+  .rpc-al-field-err {
+    color: #F87171;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    margin-top: 6px;
   }
 `;
