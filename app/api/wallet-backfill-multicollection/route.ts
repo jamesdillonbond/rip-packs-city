@@ -88,6 +88,47 @@ interface SyncResult {
   errors: string[]
 }
 
+// Round 12 Item 1: retry+backoff wrapper for log_pipeline_run.
+// supabase-js does NOT throw on RPC errors — it returns {data, error}. Round 11
+// telemetry showed avg dispatch-row write taking 39.5s with ~50% silently
+// dropped when 240 wallets land in the orchestrator within a 5-second window
+// from seed-wallet-refresh. Cause: Supabase PostgREST/pool contention during
+// the burst. Fix: destructure {error}, retry on transient failure with
+// exponential backoff. Three attempts at 100ms / 500ms / 2000ms.
+async function logPipelineRunWithRetry(
+  pipeline: string,
+  args: Record<string, unknown>,
+  context: string,
+): Promise<boolean> {
+  const delaysMs = [100, 500, 2000]
+  let lastErr: string | null = null
+  for (let attempt = 0; attempt <= delaysMs.length; attempt++) {
+    if (attempt > 0) {
+      await new Promise<void>(resolve => setTimeout(resolve, delaysMs[attempt - 1]))
+    }
+    try {
+      const { error } = await (supabaseAdmin as any).rpc("log_pipeline_run", {
+        p_pipeline: pipeline,
+        ...args,
+      })
+      if (!error) return true
+      lastErr = `${error.code ?? "?"}: ${error.message ?? String(error)}`
+      console.warn(
+        `[wallet-backfill-multicollection] ${context} attempt=${attempt} rpc_error=${lastErr}`,
+      )
+    } catch (thrown) {
+      lastErr = thrown instanceof Error ? thrown.message : String(thrown)
+      console.warn(
+        `[wallet-backfill-multicollection] ${context} attempt=${attempt} threw=${lastErr}`,
+      )
+    }
+  }
+  console.warn(
+    `[wallet-backfill-multicollection] ${context} GAVE UP after ${delaysMs.length + 1} attempts last=${lastErr}`,
+  )
+  return false
+}
+
 async function fireOnce(
   origin: string,
   target: FireOnceTarget,
@@ -235,31 +276,59 @@ export async function POST(req: NextRequest) {
   const skipCached = body.skip_cached !== false
   const origin = new URL(req.url).origin
 
-  // Fire-and-forget side fires in parallel; sync side awaits sequentially
-  // (per-wallet) inside the same after() task so the multicollection
-  // lambda holds the wallet's sync round-trips while the other three
-  // children's after() workers run independently in their own lambdas.
+  // Telemetry shape (Round 12 Item 1 — replaces Round 11 layout):
+  //   DISPATCH row (pipeline='wallet-backfill-multicollection-dispatch') is the
+  //   first thing after() does, BEFORE fire-and-forget so no compute path can
+  //   silently drop it. It's a "started" marker. dispatched_per_collection is
+  //   all-zeros at this point — the actual per-collection success/failure
+  //   lands on the COMPLETE row. Pairing key: extra->>'wallet_address'.
   //
-  // Telemetry shape (Round 11 Item 1 — replaces Round 9 single-row layout):
-  // split into START + END rows.
-  //   START row (pipeline='wallet-backfill-multicollection') is written
-  //   IMMEDIATELY after fire-and-forget dispatch, BEFORE the sync-poll loop
-  //   that can pin a lambda for ~580s. Captures wallets_targeted=1 +
-  //   dispatched_per_collection (fire-side only at this point; sync collections
-  //   default to 0 = pending) + dispatch_errors_per_collection. Guarantees we
-  //   always see what was dispatched even if the lambda gets killed mid-sync.
+  //   COMPLETE row (pipeline='wallet-backfill-multicollection-complete') is
+  //   written at the END of after() with the full sync picture (fire_ms,
+  //   sync_round_trips_actual, sync_completed_collections). dispatch row with
+  //   no matching complete row within ~15min = killed lambda — that's the
+  //   visibility we want.
   //
-  //   END row (pipeline='wallet-backfill-multicollection-final') is written at
-  //   the END of after() with the full sync picture (sync_round_trips_actual,
-  //   sync_completed_collections). Pair START → END at query time via
-  //   extra->>'wallet_address'; START with no matching END = killed lambda.
-  //
-  //   wallet_address is the canonical extra key (matches the Round 11
-  //   verification query). Legacy 'wallet' key dropped — telemetry consumers
-  //   should migrate to wallet_address.
+  //   Both writes go through logPipelineRunWithRetry which destructures
+  //   {error} from supabase-js (silently dropped by the prior bare-await
+  //   pattern) and retries 3x with backoff for transient PostgREST contention.
+  //   Round 11 telemetry verification at 18:00 UTC May 11 found 121 final
+  //   rows with no matching dispatch row, all caused by silent RPC error
+  //   drops during the 240-wallet 5-second burst.
   const startedAtIso = new Date().toISOString()
   after(async () => {
     const t0 = Date.now()
+
+    // ---- DISPATCH telemetry row ----
+    // Top of after(). All collections marked 0 = pending; the COMPLETE row
+    // carries actual fire-and-forget + sync outcomes.
+    const initialDispatched: Record<string, number> = {}
+    for (const target of FIRE_AND_FORGET_COLLECTIONS) initialDispatched[target.slug] = 0
+    for (const target of SYNC_COLLECTIONS) initialDispatched[target.slug] = 0
+    await logPipelineRunWithRetry(
+      "wallet-backfill-multicollection-dispatch",
+      {
+        p_started_at: startedAtIso,
+        p_rows_found: 1,
+        p_rows_written: 0,
+        p_rows_skipped: 0,
+        p_ok: true,
+        p_error: null,
+        p_collection_slug: null,
+        p_cursor_before: null,
+        p_cursor_after: null,
+        p_extra: {
+          wallet_address: wallet,
+          wallets_targeted: 1,
+          phase: "dispatch",
+          dispatched_per_collection: initialDispatched,
+          fire_and_forget_collections: FIRE_AND_FORGET_COLLECTIONS.map(t => t.slug),
+          sync_collections_pending: SYNC_COLLECTIONS.map(t => t.slug),
+          sync_round_trip_cap: SYNC_ROUND_TRIP_CAP,
+        },
+      },
+      `dispatch wallet=${wallet}`,
+    )
 
     // ---- Phase 1: fire-and-forget dispatch (parallel) ----
     const fireResults = await Promise.all(
@@ -267,7 +336,6 @@ export async function POST(req: NextRequest) {
     )
     const fireMs = Date.now() - t0
 
-    // Build dispatch-time snapshot. Sync collections marked 0 (= pending).
     const dispatched: Record<string, number> = {}
     const dispatchErrors: Record<string, number> = {}
     const dispatchErrorSamples: Record<string, string[]> = {}
@@ -281,39 +349,6 @@ export async function POST(req: NextRequest) {
     }
     for (const target of SYNC_COLLECTIONS) {
       dispatched[target.slug] = 0
-    }
-
-    // ---- START telemetry row ----
-    // Write BEFORE the sync-poll loop. If the lambda dies during sync, this
-    // row still exists and pinpoints the casualty by absence of the END row.
-    try {
-      await (supabaseAdmin as any).rpc("log_pipeline_run", {
-        p_pipeline: "wallet-backfill-multicollection",
-        p_started_at: startedAtIso,
-        p_rows_found: 1,
-        p_rows_written: Object.values(dispatched).filter(v => v > 0).length,
-        p_rows_skipped: Object.values(dispatchErrors).reduce((a, b) => a + b, 0),
-        p_ok: Object.values(dispatchErrors).length === 0,
-        p_error: null,
-        p_collection_slug: null,
-        p_cursor_before: null,
-        p_cursor_after: null,
-        p_extra: {
-          wallet_address: wallet,
-          wallets_targeted: 1,
-          phase: "dispatch",
-          dispatched_per_collection: dispatched,
-          dispatch_errors_per_collection: dispatchErrors,
-          dispatch_error_samples: dispatchErrorSamples,
-          fire_ms: fireMs,
-          sync_collections_pending: SYNC_COLLECTIONS.map(t => t.slug),
-          sync_round_trip_cap: SYNC_ROUND_TRIP_CAP,
-        },
-      })
-    } catch (logErr) {
-      console.warn(
-        `[wallet-backfill-multicollection] log_pipeline_run (start) failed wallet=${wallet}: ${logErr instanceof Error ? logErr.message : String(logErr)}`
-      )
     }
 
     // ---- Phase 2: sync-poll loop ----
@@ -359,11 +394,11 @@ export async function POST(req: NextRequest) {
     }))
     const syncCompletedCollections = syncResults.filter(r => r.final_complete).map(r => r.collection)
 
-    // ---- END telemetry row ----
-    // Distinct pipeline name so START/END pair cleanly at query time.
-    try {
-      await (supabaseAdmin as any).rpc("log_pipeline_run", {
-        p_pipeline: "wallet-backfill-multicollection-final",
+    // ---- COMPLETE telemetry row ----
+    // Distinct pipeline name so dispatch/complete pair cleanly at query time.
+    await logPipelineRunWithRetry(
+      "wallet-backfill-multicollection-complete",
+      {
         p_started_at: startedAtIso,
         p_rows_found: 1,
         p_rows_written: Object.values(dispatched).reduce((a, b) => a + b, 0),
@@ -376,7 +411,7 @@ export async function POST(req: NextRequest) {
         p_extra: {
           wallet_address: wallet,
           wallets_targeted: 1,
-          phase: "final",
+          phase: "complete",
           dispatched_per_collection: dispatched,
           dispatch_errors_per_collection: dispatchErrors,
           dispatch_error_samples: dispatchErrorSamples,
@@ -385,12 +420,9 @@ export async function POST(req: NextRequest) {
           sync_round_trips_actual: syncRoundTripsActual,
           sync_completed_collections: syncCompletedCollections,
         },
-      })
-    } catch (logErr) {
-      console.warn(
-        `[wallet-backfill-multicollection] log_pipeline_run (final) failed wallet=${wallet}: ${logErr instanceof Error ? logErr.message : String(logErr)}`
-      )
-    }
+      },
+      `complete wallet=${wallet}`,
+    )
   })
 
   return NextResponse.json(
