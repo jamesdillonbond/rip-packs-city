@@ -12,6 +12,7 @@
 
 import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase"
+import StripeSubscribeButton from "@/components/pricing/StripeSubscribeButton"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 60
@@ -167,15 +168,6 @@ const CTA_BTN: React.CSSProperties = {
   marginTop: 6,
 }
 
-const CTA_DISABLED: React.CSSProperties = {
-  ...CTA_BTN,
-  background: "rgba(255,255,255,0.05)",
-  color: "var(--rpc-text-muted)",
-  pointerEvents: "none",
-  cursor: "not-allowed",
-  border: "1px solid var(--rpc-border)",
-}
-
 const STRIPE_GRID: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
@@ -323,9 +315,11 @@ export default async function PricingPage() {
               <div>Lifetime · founders cohort</div>
             </div>
           </div>
-          <span style={CTA_DISABLED} aria-disabled>
-            Available in Phase 3 (June 2026)
-          </span>
+          <StripeSubscribeButton style={{ marginTop: 4 }} />
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", marginTop: -2 }}>
+            Annual + Lifetime tiers coming soon. Phase 1 beta invitees are
+            already grandfathered.
+          </div>
         </div>
       </div>
 
