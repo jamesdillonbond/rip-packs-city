@@ -68,15 +68,55 @@ The original task brief proposed marking unrecoverable rows via `metadata->>'ser
 
 ## Final recovery rate
 
-To be filled in after the recovery script runs (one-shot, not yet executed at the time this audit landed). Expected: high-90s percent — the only rows that should remain stuck are moments deleted/burned since the sale, which is rare on TopShot.
+**Aggregate: 2,471 / 2,471 = 100.00% recovered.** Zero unrecoverable. Cohort closed
+2026-05-11.
 
-Run with:
+The recovery ran in three passes against the 2,471 broken rows in the
+2026-04-10 → 2026-05-07 window. Each pass loaded 1000-row batches (PostgREST's
+`db-max-rows` ceiling) and re-queried the live cohort on the next pass, so
+the script's idempotent shape did the page-skipping automatically.
+
+| Pass | Run started | Rows loaded | Updated | Unrecoverable | Rate |
+|---|---|---:|---:|---:|---:|
+| 1 (Trevor, original f6bed25 ship) | 2026-05-10 | 1,000 | 1,000 | 0 | 100% |
+| 2 (Round 8 Item 5) | 2026-05-11 | 1,000 | 1,000 | 0 | 100% |
+| 3 (Round 8 Item 5) | 2026-05-11 | 471 | 471 | 0 | 100% |
+| **Aggregate** | | **2,471** | **2,471** | **0** | **100.00%** |
+
+The pre-shipping concern in the original audit was that later batches might
+degrade as the cohort skewed older — moments deleted/burned between sale and
+recovery would return null GQL data. **That degradation did not materialize.**
+Top Shot's GraphQL retained `flowSerialNumber` for every momentID in the
+window, including the oldest April 10 sales (~31 days old at recovery time).
+No `unrecoverable_nft_ids` accumulated in `pipeline_runs.extra` across any of
+the three passes.
+
+Verification:
+
+```sql
+SELECT COUNT(*) FROM sales
+WHERE collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'
+  AND serial_number = 0
+  AND sold_at >= '2026-04-10' AND sold_at < '2026-05-08';
+-- 0
+```
+
+Closing observation: the 100% rate at this age window is exceptional and
+likely depends on Top Shot's choice to retain minted-moment metadata
+indefinitely. A similar regression on a chain or marketplace that prunes
+historical data faster could leave a residual unrecoverable cohort. The
+script's `unrecoverable_nft_ids` accumulator in `pipeline_runs.extra` is the
+honest-accounting surface for that scenario — it stayed empty this round,
+but the shape is right.
+
+Re-run command (kept for posterity; no-op against the now-drained cohort):
+
 ```
 node scripts/backfill-ts-serial-zero-sales.mjs --dry-run    # first 20 rows, no writes
 node scripts/backfill-ts-serial-zero-sales.mjs              # full run
 ```
 
-`pipeline_runs` will carry the post-run summary under pipeline name `backfill-ts-serial-zero`:
+`pipeline_runs` carries the post-run summary under pipeline name `backfill-ts-serial-zero`:
 ```sql
 SELECT extra->>'recovery_rate_pct', rows_written, rows_skipped, error
 FROM pipeline_runs
