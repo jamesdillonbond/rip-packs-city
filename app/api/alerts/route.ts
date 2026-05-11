@@ -152,6 +152,39 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "A valid notification_email is required when channel includes email" }, { status: 400 });
     }
 
+    // ── Pro quota gate (custom_alerts_max) ──────────────────────────────
+    // Skipped on upserts of an alert that already exists — we don't want
+    // a Pro downgrade to lock out edits on existing rows.
+    const { data: existingByConflict } = await supabase
+      .from("fmv_alerts")
+      .select("id")
+      .eq("owner_key", owner_key)
+      .eq("edition_key", edition_key)
+      .eq("alert_type", alert_type)
+      .maybeSingle();
+
+    if (!existingByConflict) {
+      const { data: quota, error: quotaError } = await supabase.rpc("check_feature_quota", {
+        p_wallet: owner_key,
+        p_feature: "custom_alerts_max",
+      });
+      if (quotaError) {
+        console.log(`[alerts POST] quota check err: ${quotaError.message}`);
+      } else if (quota?.allowed !== true) {
+        return NextResponse.json(
+          {
+            error: "quota_exceeded",
+            message:
+              quota?.daily_limit === 0
+                ? "Custom alerts are a Pro feature. Upgrade at /pricing to enable alerts."
+                : "You've reached the custom alert limit. Upgrade or delete an existing alert.",
+            quota,
+          },
+          { status: 402 }
+        );
+      }
+    }
+
     const { data, error } = await supabase
       .from("fmv_alerts")
       .upsert(
