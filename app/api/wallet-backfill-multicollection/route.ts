@@ -30,6 +30,7 @@
 //   children (one per parallel wallet).
 
 import { NextRequest, NextResponse, after } from "next/server"
+import { supabaseAdmin } from "@/lib/supabase"
 
 export const dynamic = "force-dynamic"
 // Bumped from 30s to 600s — the orchestrator now blocks on sync-mode
@@ -232,6 +233,19 @@ export async function POST(req: NextRequest) {
   // (per-wallet) inside the same after() task so the multicollection
   // lambda holds the wallet's sync round-trips while the other three
   // children's after() workers run independently in their own lambdas.
+  //
+  // Telemetry note (Round 9 Item 1): every invocation writes one
+  // pipeline_runs row keyed on 'wallet-backfill-multicollection' so the
+  // Round 8 secondary finding (Golazos/UFC fire-and-forget side dropped
+  // at 06:00 UTC tick on 2026-05-11) becomes diagnosable from a single
+  // SELECT. Aggregate across a tick window with:
+  //   SELECT date_trunc('hour', started_at), SUM((extra->'dispatched_per_collection'->>'golazos')::int)
+  //   FROM pipeline_runs WHERE pipeline='wallet-backfill-multicollection' GROUP BY 1;
+  // Pushback: the prompt's wallets_targeted="count from allow_list" framing
+  // implied a sweep-level orchestrator. This orchestrator is per-wallet —
+  // it runs ~200 times per tick from seed-wallet-refresh. We write
+  // wallets_targeted=1 per row; the sweep aggregation lives at query time.
+  const startedAtIso = new Date().toISOString()
   after(async () => {
     const t0 = Date.now()
     const fireResults = await Promise.all(
@@ -259,6 +273,64 @@ export async function POST(req: NextRequest) {
           `errors=${r.errors.join("|")}`
         )
       }
+    }
+
+    // Compose telemetry row. dispatched_per_collection is 0/1 per collection
+    // for this wallet: fire-and-forget = 1 when the child returned 2xx/202,
+    // sync = 1 when final_complete=true. dispatch_errors_per_collection is
+    // the count of dispatch-side exceptions captured (fire-and-forget timeout
+    // or HTTP error; sync round-trip-loop errors). Samples carry the first
+    // 3 error strings per collection for in-row diagnosability.
+    const dispatched: Record<string, number> = {}
+    const dispatchErrors: Record<string, number> = {}
+    const dispatchErrorSamples: Record<string, string[]> = {}
+
+    for (const r of fireResults) {
+      dispatched[r.collection] = r.ok ? 1 : 0
+      if (!r.ok) {
+        dispatchErrors[r.collection] = (dispatchErrors[r.collection] ?? 0) + 1
+        const sample = r.error ?? `HTTP ${r.status}`
+        dispatchErrorSamples[r.collection] = [sample]
+      }
+    }
+    for (const r of syncResults) {
+      dispatched[r.collection] = r.final_complete ? 1 : 0
+      if (r.errors.length > 0) {
+        dispatchErrors[r.collection] = r.errors.length
+        dispatchErrorSamples[r.collection] = r.errors.slice(0, 3)
+      }
+    }
+    const allDispatched =
+      Object.keys(dispatched).length === FIRE_AND_FORGET_COLLECTIONS.length + SYNC_COLLECTIONS.length &&
+      Object.values(dispatched).every(v => v > 0)
+
+    try {
+      await (supabaseAdmin as any).rpc("log_pipeline_run", {
+        p_pipeline: "wallet-backfill-multicollection",
+        p_started_at: startedAtIso,
+        p_rows_found: 1,
+        p_rows_written: Object.values(dispatched).reduce((a, b) => a + b, 0),
+        p_rows_skipped: Object.values(dispatchErrors).reduce((a, b) => a + b, 0),
+        p_ok: allDispatched,
+        p_error: allDispatched ? null : `dispatch gaps: ${Object.entries(dispatched).filter(([, v]) => v === 0).map(([k]) => k).join(",") || "none"}`,
+        p_collection_slug: null,
+        p_cursor_before: null,
+        p_cursor_after: null,
+        p_extra: {
+          wallet,
+          wallets_targeted: 1,
+          dispatched_per_collection: dispatched,
+          dispatch_errors_per_collection: dispatchErrors,
+          dispatch_error_samples: dispatchErrorSamples,
+          fire_ms: fireMs,
+          total_ms: totalMs,
+          sync_round_trips: syncResults.map(r => ({ collection: r.collection, round_trips: r.round_trips, ok: r.ok })),
+        },
+      })
+    } catch (logErr) {
+      console.warn(
+        `[wallet-backfill-multicollection] log_pipeline_run failed wallet=${wallet}: ${logErr instanceof Error ? logErr.message : String(logErr)}`
+      )
     }
   })
 
