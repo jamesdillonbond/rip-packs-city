@@ -1,14 +1,11 @@
 // app/pricing/page.tsx
 //
-// Free vs Pro comparison. Reads from public.feature_quotas at request
-// time so the table self-updates whenever Trevor tunes the limits in
-// Postgres — no redeploy needed.
+// Public conversion surface (proxy.ts allows unauth'd visitors). Reads
+// feature_quotas at request time so quotas reflect Trevor's live tuning.
 //
-// NFT-payment Pro: existing moments_payment flow. Send a moment ≥ minimum
-// FMV → days of Pro proportional to FMV. Linked.
-// Stripe Pro: pricing planned ($9.99/mo, $79/yr, $299 lifetime) but
-// disabled until Phase 3 (June 2026). Disabled buttons + "Available in
-// Phase 3" copy keeps users informed without committing the dates.
+// Layout: hero with price + value prop above the fold, side-by-side Free
+// vs Pro comparison with the 4 differentiators highlighted, then a
+// "What's included" detail section. Brand tokens only.
 
 import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -24,314 +21,439 @@ type QuotaRow = {
   notes: string | null
 }
 
-const FREE_FEATURES = [
-  { label: "Wallet search lookup", available: true },
-  { label: "Public profile pages", available: true },
-  { label: "Basic FMV display on every moment page", available: true },
-  { label: "1 saved wallet", available: true, source: "saved_wallets_max" as const },
-  { label: "5 AI Concierge messages / day", available: true, source: "concierge_messages" as const },
-  { label: "Sniper feed (5-min refresh)", available: true },
-  { label: "Basic Pack EV viewer", available: true },
-]
-
-const PRO_FEATURES = [
-  { label: "Unlimited saved wallets", source: "saved_wallets_max" as const },
-  { label: "200 AI Concierge messages / day", source: "concierge_messages" as const },
-  { label: "Real-time sniper feed (30-sec refresh)" },
-  { label: "All collections fully enabled" },
-  { label: "Full Fast Break optimizer" },
-  { label: "Full Pinnacle FMV including triple-key joins" },
-  { label: "Insider Signals — institutional flow tracking" },
-  { label: "25 custom alerts (price drops, listing alerts, watchlist hits)", source: "custom_alerts_max" as const },
-  { label: "10,000 API requests / day (vs free 100)", source: "api_requests" as const },
-  { label: "Custom Discord roles" },
-  { label: "Pack EV with confidence intervals + depletion forecasting" },
-]
-
 async function loadQuotas(): Promise<QuotaRow[]> {
-  // deno-lint-ignore no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await (supabaseAdmin as any)
     .from("feature_quotas")
     .select("plan, feature_name, daily_limit, notes")
   return (data ?? []) as QuotaRow[]
 }
 
-function quotaText(rows: QuotaRow[], plan: string, feature: string): string {
-  const row = rows.find(r => r.plan === plan && r.feature_name === feature)
-  if (!row) return "—"
-  if (row.daily_limit == null) return "Unlimited"
-  return String(row.daily_limit)
-}
-
-const PAGE: React.CSSProperties = {
-  maxWidth: 980,
-  margin: "0 auto",
-  padding: "48px 20px 72px",
-  color: "var(--rpc-text-primary)",
-}
-
-const H1: React.CSSProperties = {
-  fontFamily: "'Barlow Condensed', sans-serif",
-  fontWeight: 900,
-  fontSize: 42,
-  letterSpacing: "0.04em",
-  textTransform: "uppercase",
-  margin: "0 0 12px",
-  color: "var(--rpc-text-primary)",
-}
-
-const SUB: React.CSSProperties = {
-  fontFamily: "var(--font-mono)",
-  fontSize: 13,
-  color: "var(--rpc-text-secondary)",
-  lineHeight: 1.7,
-  marginBottom: 36,
-  maxWidth: 640,
-}
-
-const GRID: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 20,
-  marginBottom: 36,
-}
-
-const CARD: React.CSSProperties = {
-  background: "var(--rpc-surface)",
-  border: "1px solid var(--rpc-border)",
-  borderRadius: "var(--radius-lg, 12px)",
-  padding: 28,
-  display: "flex",
-  flexDirection: "column",
-  gap: 14,
-  fontFamily: "var(--font-mono)",
-  color: "var(--rpc-text-secondary)",
-}
-
-const CARD_PRO: React.CSSProperties = {
-  ...CARD,
-  borderColor: "var(--rpc-red-border, rgba(224,58,47,0.4))",
-  background: "linear-gradient(180deg, rgba(224,58,47,0.05), var(--rpc-surface))",
-}
-
-const PLAN_NAME: React.CSSProperties = {
-  fontFamily: "'Barlow Condensed', sans-serif",
-  fontWeight: 900,
-  fontSize: 24,
-  letterSpacing: "0.04em",
-  textTransform: "uppercase",
-  color: "var(--rpc-text-primary)",
-}
-
-const PRICE: React.CSSProperties = {
-  fontFamily: "'Barlow Condensed', sans-serif",
-  fontWeight: 900,
-  fontSize: 36,
-  color: "var(--rpc-text-primary)",
-  letterSpacing: "0.02em",
-}
-
-const PRICE_UNIT: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  color: "var(--rpc-text-muted)",
-  letterSpacing: "0.06em",
-  textTransform: "uppercase",
-  marginLeft: 6,
-}
-
-const FEATURE_LIST: React.CSSProperties = {
-  margin: 0,
-  padding: 0,
-  listStyle: "none",
-  display: "flex",
-  flexDirection: "column",
-  gap: 8,
-  fontSize: 12,
-  lineHeight: 1.6,
-}
-
-const CTA_BTN: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  background: "var(--rpc-red, #E03A2F)",
-  color: "#fff",
-  padding: "12px 22px",
-  borderRadius: "var(--radius-sm, 6px)",
-  fontFamily: "'Barlow Condensed', sans-serif",
-  fontWeight: 800,
-  fontSize: 13,
-  letterSpacing: "0.14em",
-  textTransform: "uppercase",
-  textDecoration: "none",
-  marginTop: 6,
-}
-
-const STRIPE_GRID: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: 14,
-  marginTop: 16,
-}
-
-const STRIPE_CARD: React.CSSProperties = {
-  border: "1px solid var(--rpc-border)",
-  borderRadius: "var(--radius-md, 8px)",
-  padding: 18,
-  display: "flex",
-  flexDirection: "column",
-  gap: 6,
-  fontFamily: "var(--font-mono)",
-  fontSize: 12,
-  color: "var(--rpc-text-secondary)",
-}
-
-const PHASE1_BANNER: React.CSSProperties = {
-  background: "rgba(255, 200, 87, 0.08)",
-  border: "1px solid rgba(255, 200, 87, 0.3)",
-  borderRadius: "var(--radius-md, 8px)",
-  padding: 16,
-  fontFamily: "var(--font-mono)",
-  fontSize: 12,
-  color: "var(--rpc-text-secondary)",
-  marginBottom: 28,
-  lineHeight: 1.7,
+function quota(rows: QuotaRow[], plan: string, feature: string): { display: string; raw: number | null } {
+  const row = rows.find((r) => r.plan === plan && r.feature_name === feature)
+  if (!row) return { display: "—", raw: null }
+  if (row.daily_limit === null) return { display: "Unlimited", raw: null }
+  return { display: row.daily_limit.toLocaleString("en-US"), raw: row.daily_limit }
 }
 
 export const metadata = {
   title: "Pricing — Rip Packs City",
-  description: "Free vs Pro comparison for the Bloomberg Terminal of Flow collectibles.",
+  description:
+    "Free vs Pro for the Bloomberg Terminal of Flow collectibles. $9.99/mo unlocks unlimited saved wallets, 200 AI Concierge messages, 25 custom alerts, real-time sniper, and full FMV access.",
 }
 
 export default async function PricingPage() {
   const rows = await loadQuotas()
 
+  const wallets = {
+    free: quota(rows, "free", "saved_wallets_max"),
+    pro: quota(rows, "pro_paid", "saved_wallets_max"),
+  }
+  const concierge = {
+    free: quota(rows, "free", "concierge_messages"),
+    pro: quota(rows, "pro_paid", "concierge_messages"),
+  }
+  const alerts = {
+    free: quota(rows, "free", "custom_alerts_max"),
+    pro: quota(rows, "pro_paid", "custom_alerts_max"),
+  }
+  const api = {
+    free: quota(rows, "free", "api_requests"),
+    pro: quota(rows, "pro_paid", "api_requests"),
+  }
+
   return (
-    <main style={PAGE}>
-      <h1 style={H1}>Pricing</h1>
-      <p style={SUB}>
-        Discovery and sharing stays free. Daily-utility and exclusive intelligence
-        is Pro. We don&apos;t paywall the front door — wallet search, public
-        profiles, FMV on every moment, and the basic sniper are all free, forever.
-      </p>
+    <main style={S.page}>
+      <style>{CSS}</style>
 
-      <div style={PHASE1_BANNER}>
-        <strong style={{ color: "var(--rpc-text-primary)" }}>Phase 1 Beta Invitees</strong> get
-        <strong style={{ color: "var(--rpc-text-primary)" }}> lifetime Pro included</strong>
-        — no payment required, no expiration. Already grandfathered into your account.
-      </div>
+      {/* ── Hero ───────────────────────────────────────────────────────── */}
+      <section className="rpc-pr-hero">
+        <div className="rpc-pr-eyebrow">Rip Packs City Pro</div>
+        <h1 className="rpc-pr-h1">Stop guessing. Start sniping.</h1>
+        <p className="rpc-pr-lede">
+          Real-time FMV across every Flow collection, institutional flow
+          tracking, unlimited wallet analytics, and a Claude-powered concierge
+          that talks to your collection. Built for serious collectors.
+        </p>
 
-      <div style={GRID}>
-        {/* Free */}
-        <div style={CARD}>
-          <div style={PLAN_NAME}>Free</div>
-          <div>
-            <span style={PRICE}>$0</span>
-            <span style={PRICE_UNIT}>/ month</span>
+        <div className="rpc-pr-price-row">
+          <div className="rpc-pr-price">
+            <span className="rpc-pr-price-amount">$9.99</span>
+            <span className="rpc-pr-price-unit">/ month</span>
           </div>
-          <ul style={FEATURE_LIST}>
-            {FREE_FEATURES.map(f => (
-              <li key={f.label} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                <span aria-hidden style={{ color: "var(--rpc-text-muted)" }}>·</span>
-                <span>{f.label}</span>
-              </li>
-            ))}
+          <StripeSubscribeButton />
+        </div>
+
+        <div className="rpc-pr-grandfather">
+          <strong>Phase 1 Beta invitees:</strong> lifetime Pro already
+          activated on your account. No action needed.
+        </div>
+      </section>
+
+      {/* ── Comparison ─────────────────────────────────────────────────── */}
+      <section className="rpc-pr-grid">
+        {/* Free */}
+        <div className="rpc-pr-card">
+          <div className="rpc-pr-plan-name">Free</div>
+          <div className="rpc-pr-price-secondary">
+            <span className="rpc-pr-price-amount-sm">$0</span>
+            <span className="rpc-pr-price-unit">/ month</span>
+          </div>
+          <ul className="rpc-pr-feature-list">
+            <li><Bullet /> Wallet search lookup</li>
+            <li><Bullet /> Public profile pages</li>
+            <li><Bullet /> Basic FMV on every moment page</li>
+            <li><Bullet /> <strong>{wallets.free.display}</strong> saved wallet</li>
+            <li><Bullet /> <strong>{concierge.free.display}</strong> AI Concierge messages / day</li>
+            <li><Bullet /> Sniper feed (5-min refresh)</li>
+            <li><Bullet /> Basic Pack EV viewer</li>
+            <li><Bullet muted /> {alerts.free.raw === 0 ? "No custom alerts" : `${alerts.free.display} custom alerts`}</li>
+            <li><Bullet /> <strong>{api.free.display}</strong> API requests / day</li>
           </ul>
-          <Link href="/login" style={{ ...CTA_BTN, background: "transparent", color: "var(--rpc-text-primary)", border: "1px solid var(--rpc-border)" }}>
-            Sign up
+          <Link
+            href="/login"
+            className="rpc-pr-cta rpc-pr-cta-ghost"
+          >
+            Sign Up
           </Link>
         </div>
 
         {/* Pro */}
-        <div style={CARD_PRO}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={PLAN_NAME}>Pro</span>
-            <span style={{
-              fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase",
-              padding: "2px 7px", borderRadius: 999,
-              background: "var(--rpc-red-bg, rgba(224,58,47,0.1))",
-              border: "1px solid var(--rpc-red-border, rgba(224,58,47,0.3))",
-              color: "var(--rpc-red, #E03A2F)",
-            }}>
-              Recommended
-            </span>
+        <div className="rpc-pr-card rpc-pr-card-pro">
+          <div className="rpc-pr-plan-row">
+            <div className="rpc-pr-plan-name">Pro</div>
+            <span className="rpc-pr-badge">Recommended</span>
           </div>
-          <div>
-            <span style={PRICE}>NFT</span>
-            <span style={PRICE_UNIT}>or Stripe (Phase 3)</span>
+          <div className="rpc-pr-price-secondary">
+            <span className="rpc-pr-price-amount-sm">$9.99</span>
+            <span className="rpc-pr-price-unit">/ month</span>
           </div>
-          <ul style={FEATURE_LIST}>
-            {PRO_FEATURES.map(f => {
-              const cap = f.source ? quotaText(rows, "pro_paid", f.source) : null
-              return (
-                <li key={f.label} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                  <span aria-hidden style={{ color: "var(--rpc-red, #E03A2F)" }}>✓</span>
-                  <span>
-                    {f.label}
-                    {cap && cap !== "—" && cap !== "Unlimited" && (
-                      <span style={{ color: "var(--rpc-text-muted)", marginLeft: 6 }}>
-                        ({cap}/day)
-                      </span>
-                    )}
-                  </span>
-                </li>
-              )
-            })}
+          <ul className="rpc-pr-feature-list">
+            <li><Check /> <strong>{wallets.pro.display}</strong> saved wallets</li>
+            <li><Check /> <strong>{concierge.pro.display}</strong> AI Concierge messages / day</li>
+            <li><Check /> Real-time sniper feed (30-sec refresh)</li>
+            <li><Check /> All collections fully enabled — Top Shot, All Day, Golazos, Pinnacle, UFC</li>
+            <li><Check /> Full Fast Break optimizer + Pack EV w/ confidence intervals</li>
+            <li><Check /> Full Pinnacle FMV (triple-key joins)</li>
+            <li><Check /> <strong>Insider Signals</strong> — institutional flow tracking</li>
+            <li><Check /> <strong>{alerts.pro.display}</strong> custom alerts (price drops, listing hits, watchlist)</li>
+            <li><Check /> <strong>{api.pro.display}</strong> API requests / day</li>
+            <li><Check /> Custom Discord roles</li>
           </ul>
-
-          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-text-primary)", marginTop: 4 }}>
-            Pay with NFTs (live now)
+          <StripeSubscribeButton style={{ marginTop: 4, width: "100%" }} />
+          <div className="rpc-pr-cta-note">
+            Cancel anytime · 30-day money-back · Stripe-secured
           </div>
-          <p style={{ fontSize: 12, lineHeight: 1.6, margin: 0 }}>
-            Send any moment to RPC&apos;s Dapper merchant address. Days of Pro
-            credit unlock proportional to the moment&apos;s FMV — high-value
-            moments translate to months of access.
-          </p>
-          <Link href="/dashboard?tab=upgrade" style={CTA_BTN}>
-            Pay with NFTs
+        </div>
+      </section>
+
+      {/* ── Differentiators table ──────────────────────────────────────── */}
+      <section className="rpc-pr-detail">
+        <h2 className="rpc-pr-h2">The 4 things that change when you go Pro</h2>
+        <div className="rpc-pr-diff-grid">
+          <Diff
+            title="Track everything"
+            free={wallets.free.display + (wallets.free.raw === 1 ? " wallet" : " wallets")}
+            pro={wallets.pro.display}
+            blurb="Watch your whole collection across multiple wallets, plus track competitors and whales."
+          />
+          <Diff
+            title="Custom alerts"
+            free={alerts.free.raw === 0 ? "None" : alerts.free.display}
+            pro={alerts.pro.display + " alerts"}
+            blurb="Price-drop, listing, and watchlist alerts delivered via email or Telegram the moment they fire."
+          />
+          <Diff
+            title="AI Concierge"
+            free={concierge.free.display + " / day"}
+            pro={concierge.pro.display + " / day"}
+            blurb="Ask Claude about your collection: ROI, FMV trends, deal-of-the-day, set completion paths."
+          />
+          <Diff
+            title="API access"
+            free={api.free.display + " / day"}
+            pro={api.pro.display + " / day"}
+            blurb="100x the throughput for building bots, dashboards, and external integrations."
+          />
+        </div>
+      </section>
+
+      {/* ── What's included (deep list) ───────────────────────────────── */}
+      <section className="rpc-pr-detail">
+        <h2 className="rpc-pr-h2">What&apos;s included with Pro</h2>
+        <div className="rpc-pr-included-grid">
+          <Bucket title="Intelligence">
+            <li>Insider Signals — institutional flow tracking</li>
+            <li>Whale Watch — top-buyer leaderboards across 5 collections</li>
+            <li>Hot Editions 24h — emerging-volume detection</li>
+            <li>Daily portfolio FMV snapshots + 30-day history chart</li>
+          </Bucket>
+          <Bucket title="FMV + Pricing">
+            <li>Full FMV across Top Shot, All Day, Golazos, Pinnacle, UFC</li>
+            <li>Pinnacle triple-key joins (royalty:variant:printing)</li>
+            <li>Pack EV with confidence intervals + depletion forecasting</li>
+            <li>Fast Break optimizer (lineup ROI maximization)</li>
+          </Bucket>
+          <Bucket title="Tools">
+            <li>Real-time sniper feed (30-sec refresh vs 5-min)</li>
+            <li>{alerts.pro.display} custom alerts (any channel)</li>
+            <li>Unlimited saved wallets + watchlists</li>
+            <li>{api.pro.display.toLocaleString()} API req/day for automation</li>
+          </Bucket>
+          <Bucket title="Community">
+            <li>{concierge.pro.display} AI Concierge messages / day</li>
+            <li>Custom Discord role</li>
+            <li>Priority support via @tdillonbond</li>
+            <li>Direct line for feature requests</li>
+          </Bucket>
+        </div>
+      </section>
+
+      {/* ── Bottom CTA ─────────────────────────────────────────────────── */}
+      <section className="rpc-pr-bottom-cta">
+        <h2 className="rpc-pr-h2">Ready to upgrade?</h2>
+        <div className="rpc-pr-bottom-row">
+          <StripeSubscribeButton />
+          <Link href="/login" className="rpc-pr-cta-link">
+            Or stay on Free →
           </Link>
-
-          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-text-primary)", marginTop: 12 }}>
-            Pay with Stripe (Phase 3)
-          </div>
-          <div style={STRIPE_GRID}>
-            <div style={STRIPE_CARD}>
-              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 22, color: "var(--rpc-text-primary)" }}>
-                $9.99<span style={PRICE_UNIT}>/ mo</span>
-              </div>
-              <div>Monthly</div>
-            </div>
-            <div style={STRIPE_CARD}>
-              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 22, color: "var(--rpc-text-primary)" }}>
-                $79<span style={PRICE_UNIT}>/ yr</span>
-              </div>
-              <div>Annual · 35% off</div>
-            </div>
-            <div style={STRIPE_CARD}>
-              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 22, color: "var(--rpc-text-primary)" }}>
-                $299
-              </div>
-              <div>Lifetime · founders cohort</div>
-            </div>
-          </div>
-          <StripeSubscribeButton style={{ marginTop: 4 }} />
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", marginTop: -2 }}>
-            Annual + Lifetime tiers coming soon. Phase 1 beta invitees are
-            already grandfathered.
-          </div>
         </div>
-      </div>
-
-      <div style={{ ...CARD, padding: 18, borderColor: "var(--rpc-border)", background: "transparent", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ fontSize: 12 }}>
-          Quotas above are read live from Supabase. If Trevor tunes a limit, this
-          page reflects it within 60 seconds.
-        </div>
-        <Link href="/legal/fmv-methodology" style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-          How is FMV calculated? →
-        </Link>
-      </div>
+        <p className="rpc-pr-footnote">
+          Quotas above are read live from Supabase. If we tune a limit it
+          reflects here within 60 seconds.{" "}
+          <Link href="/legal/fmv-methodology" className="rpc-pr-cta-link">
+            How is FMV calculated? →
+          </Link>
+        </p>
+      </section>
     </main>
   )
 }
+
+// ─── Atoms ────────────────────────────────────────────────────────────────
+
+function Bullet({ muted = false }: { muted?: boolean }) {
+  return (
+    <span
+      aria-hidden
+      style={{
+        color: muted ? "var(--rpc-text-ghost)" : "var(--rpc-text-muted)",
+        marginRight: 6,
+      }}
+    >
+      ·
+    </span>
+  )
+}
+
+function Check() {
+  return (
+    <span aria-hidden style={{ color: "var(--rpc-red, #E03A2F)", marginRight: 6, fontWeight: 700 }}>
+      ✓
+    </span>
+  )
+}
+
+function Diff({ title, free, pro, blurb }: { title: string; free: string; pro: string; blurb: string }) {
+  return (
+    <div className="rpc-pr-diff">
+      <div className="rpc-pr-diff-title">{title}</div>
+      <div className="rpc-pr-diff-row">
+        <span className="rpc-pr-diff-label">Free</span>
+        <span className="rpc-pr-diff-val rpc-pr-diff-free">{free}</span>
+      </div>
+      <div className="rpc-pr-diff-row">
+        <span className="rpc-pr-diff-label">Pro</span>
+        <span className="rpc-pr-diff-val rpc-pr-diff-pro">{pro}</span>
+      </div>
+      <div className="rpc-pr-diff-blurb">{blurb}</div>
+    </div>
+  )
+}
+
+function Bucket({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rpc-pr-bucket">
+      <div className="rpc-pr-bucket-title">{title}</div>
+      <ul className="rpc-pr-bucket-list">{children}</ul>
+    </div>
+  )
+}
+
+// ─── Styles ──────────────────────────────────────────────────────────────
+
+const S: { page: React.CSSProperties } = {
+  page: {
+    maxWidth: 1080,
+    margin: "0 auto",
+    padding: "48px 20px 80px",
+    color: "var(--rpc-text-primary)",
+  },
+}
+
+const CSS = `
+  .rpc-pr-hero { display: flex; flex-direction: column; gap: 12px; margin-bottom: 36px; }
+  .rpc-pr-eyebrow {
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--rpc-red, #E03A2F);
+  }
+  .rpc-pr-h1 {
+    font-family: 'Barlow Condensed', sans-serif; font-weight: 900;
+    font-size: 56px; line-height: 1.05; letter-spacing: 0.02em;
+    text-transform: uppercase; margin: 0; color: var(--rpc-text-primary);
+  }
+  .rpc-pr-lede {
+    font-family: var(--font-mono); font-size: 14px; line-height: 1.7;
+    color: var(--rpc-text-secondary); margin: 4px 0 0; max-width: 680px;
+  }
+  .rpc-pr-price-row {
+    display: flex; align-items: center; gap: 24px; flex-wrap: wrap; margin-top: 10px;
+  }
+  .rpc-pr-price { display: flex; align-items: baseline; gap: 4px; }
+  .rpc-pr-price-amount {
+    font-family: 'Barlow Condensed', sans-serif; font-weight: 900; font-size: 48px;
+    color: var(--rpc-text-primary); letter-spacing: 0.01em;
+  }
+  .rpc-pr-price-amount-sm {
+    font-family: 'Barlow Condensed', sans-serif; font-weight: 900; font-size: 32px;
+    color: var(--rpc-text-primary);
+  }
+  .rpc-pr-price-unit {
+    font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--rpc-text-muted); margin-left: 4px;
+  }
+  .rpc-pr-grandfather {
+    background: rgba(255, 200, 87, 0.08);
+    border: 1px solid rgba(255, 200, 87, 0.3);
+    border-radius: var(--radius-md, 8px);
+    padding: 12px 14px;
+    font-family: var(--font-mono); font-size: 12px;
+    color: var(--rpc-text-secondary); margin-top: 8px;
+  }
+  .rpc-pr-grandfather strong { color: var(--rpc-text-primary); }
+
+  .rpc-pr-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 48px;
+  }
+  .rpc-pr-card {
+    background: var(--rpc-surface); border: 1px solid var(--rpc-border);
+    border-radius: var(--radius-lg, 12px); padding: 28px;
+    display: flex; flex-direction: column; gap: 14px;
+    font-family: var(--font-mono); color: var(--rpc-text-secondary);
+  }
+  .rpc-pr-card-pro {
+    border-color: var(--rpc-red-border, rgba(224,58,47,0.4));
+    background: linear-gradient(180deg, rgba(224,58,47,0.05), var(--rpc-surface));
+  }
+  .rpc-pr-plan-row { display: flex; align-items: center; gap: 10px; }
+  .rpc-pr-plan-name {
+    font-family: 'Barlow Condensed', sans-serif; font-weight: 900; font-size: 24px;
+    letter-spacing: 0.04em; text-transform: uppercase; color: var(--rpc-text-primary);
+  }
+  .rpc-pr-badge {
+    font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.14em;
+    text-transform: uppercase; padding: 2px 7px; border-radius: 999px;
+    background: var(--rpc-red-bg, rgba(224,58,47,0.1));
+    border: 1px solid var(--rpc-red-border, rgba(224,58,47,0.3));
+    color: var(--rpc-red, #E03A2F);
+  }
+  .rpc-pr-price-secondary { display: flex; align-items: baseline; gap: 4px; }
+  .rpc-pr-feature-list {
+    margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column;
+    gap: 9px; font-size: 12.5px; line-height: 1.55;
+  }
+  .rpc-pr-feature-list li { display: flex; align-items: flex-start; gap: 4px; }
+  .rpc-pr-feature-list strong { color: var(--rpc-text-primary); }
+
+  .rpc-pr-cta {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--rpc-red, #E03A2F); color: #fff;
+    padding: 12px 22px; border-radius: var(--radius-sm, 6px);
+    font-family: 'Barlow Condensed', sans-serif; font-weight: 800;
+    font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase;
+    text-decoration: none; margin-top: 6px;
+  }
+  .rpc-pr-cta-ghost {
+    background: transparent; color: var(--rpc-text-primary);
+    border: 1px solid var(--rpc-border);
+  }
+  .rpc-pr-cta-note {
+    font-family: var(--font-mono); font-size: 10px; color: var(--rpc-text-muted);
+    text-align: center; letter-spacing: 0.04em;
+  }
+  .rpc-pr-cta-link {
+    font-family: var(--font-mono); font-size: 12px;
+    color: var(--rpc-text-secondary); text-decoration: none;
+    border-bottom: 1px dotted var(--rpc-text-muted);
+  }
+  .rpc-pr-cta-link:hover { color: var(--rpc-red, #E03A2F); }
+
+  .rpc-pr-detail { margin-bottom: 48px; }
+  .rpc-pr-h2 {
+    font-family: 'Barlow Condensed', sans-serif; font-weight: 900;
+    font-size: 28px; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--rpc-text-primary); margin: 0 0 18px;
+  }
+  .rpc-pr-diff-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+  }
+  .rpc-pr-diff {
+    background: var(--rpc-surface); border: 1px solid var(--rpc-border);
+    border-radius: var(--radius-md, 8px); padding: 16px;
+    display: flex; flex-direction: column; gap: 6px;
+    font-family: var(--font-mono);
+  }
+  .rpc-pr-diff-title {
+    font-family: 'Barlow Condensed', sans-serif; font-weight: 800;
+    font-size: 15px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--rpc-text-primary); margin-bottom: 4px;
+  }
+  .rpc-pr-diff-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; }
+  .rpc-pr-diff-label { color: var(--rpc-text-muted); letter-spacing: 0.08em; text-transform: uppercase; font-size: 10px; }
+  .rpc-pr-diff-val { font-weight: 700; }
+  .rpc-pr-diff-free { color: var(--rpc-text-secondary); }
+  .rpc-pr-diff-pro { color: var(--rpc-red, #E03A2F); }
+  .rpc-pr-diff-blurb { font-size: 11px; line-height: 1.5; color: var(--rpc-text-secondary); margin-top: 6px; }
+
+  .rpc-pr-included-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+  }
+  .rpc-pr-bucket {
+    background: var(--rpc-surface); border: 1px solid var(--rpc-border);
+    border-radius: var(--radius-md, 8px); padding: 16px;
+  }
+  .rpc-pr-bucket-title {
+    font-family: 'Barlow Condensed', sans-serif; font-weight: 800;
+    font-size: 14px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--rpc-red, #E03A2F); margin-bottom: 10px;
+  }
+  .rpc-pr-bucket-list {
+    margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 6px;
+    font-family: var(--font-mono); font-size: 12px; line-height: 1.55;
+    color: var(--rpc-text-secondary);
+  }
+
+  .rpc-pr-bottom-cta {
+    background: var(--rpc-surface); border: 1px solid var(--rpc-border);
+    border-radius: var(--radius-lg, 12px); padding: 28px;
+    text-align: center;
+  }
+  .rpc-pr-bottom-row {
+    display: flex; align-items: center; justify-content: center; gap: 20px;
+    flex-wrap: wrap; margin: 14px 0 8px;
+  }
+  .rpc-pr-footnote {
+    font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted);
+    margin: 8px 0 0; line-height: 1.6;
+  }
+
+  @media (max-width: 700px) {
+    .rpc-pr-h1 { font-size: 36px; }
+    .rpc-pr-h2 { font-size: 22px; }
+    .rpc-pr-grid { grid-template-columns: 1fr; }
+    .rpc-pr-price-row { gap: 14px; }
+    .rpc-pr-price-amount { font-size: 36px; }
+  }
+`
