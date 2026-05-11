@@ -254,6 +254,17 @@ type TierEVSummary = {
   remainingMoments: number
 }
 
+type PriceSource = "primary" | "secondary" | "min" | "none"
+
+type DualPrice = {
+  packPrice: number
+  primaryPrice: number | null
+  secondaryAsk: number | null
+  primaryAvailable: boolean
+  secondaryAvailable: boolean
+  priceSource: PriceSource
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function normalizeTier(tier: string): string {
@@ -276,6 +287,87 @@ function serialPremiumLabel(node: EditionNode): string | null {
   if (node.lastMint) labels.push("Last Mint")
   if (node.jerseyNumber) labels.push("Jersey #" + node.edition.play.stats.jerseyNumber + " Match")
   return labels.length > 0 ? labels.join(" + ") : null
+}
+
+// ─── Secondary ask lookup (P2P market) ───────────────────────────────────────
+//
+// /api/pack-listings paginates Dapper Studio's searchPackNftAggregation and
+// returns a per-distId lowestAsk. We call it internally — pack-listings has a
+// 2-minute in-process cache so cron-tick callers share a single Dapper roundtrip.
+type PackListingsRow = { distId: string; lowestAsk: number; listingCount: number }
+
+async function fetchSecondaryAsk(distId: string | null, reqUrl: string): Promise<number | null> {
+  if (!distId) return null
+  try {
+    const url = new URL("/api/pack-listings", reqUrl)
+    const res = await fetch(url, { cache: "no-store" })
+    if (!res.ok) return null
+    const json = await res.json() as { listings?: PackListingsRow[] }
+    const listings = json?.listings ?? []
+    const match = listings.find((l) => String(l.distId) === String(distId))
+    if (!match) return null
+    if (!Number.isFinite(match.lowestAsk) || match.lowestAsk <= 0) return null
+    return match.lowestAsk
+  } catch (err) {
+    console.warn(`[pack-ev] secondary ask lookup failed for distId=${distId}: ${err instanceof Error ? err.message : String(err)}`)
+    return null
+  }
+}
+
+// Dual-price model — answers "what can I buy this pack for right now?"
+//
+// Anchor priority:
+//   primary  : primary listing still live (totalUnopened > 0 AND forSale)
+//   secondary: P2P low ask exists on the secondary market
+//   min      : both are present and within 1% — show both as anchors in UI
+//   none     : nothing buyable; UI hides EV verdict
+//
+// The chosen anchor becomes the EV denominator. This replaces the old behavior
+// where the caller-supplied primary retail price was always used, which made
+// Series 1 EV ratios meaningless once primary sold out (or once a secondary
+// market formed at a fraction of retail).
+function computeDualPrice(args: {
+  requestedPrice: number
+  totalUnopened: number
+  forSale: boolean
+  secondaryAsk: number | null
+}): DualPrice {
+  const primaryAvailable = args.totalUnopened > 0 && args.forSale === true
+  const secondaryAvailable = args.secondaryAsk != null && args.secondaryAsk > 0
+  const primaryPrice = primaryAvailable && args.requestedPrice > 0 ? args.requestedPrice : null
+  const secondaryAskValue = secondaryAvailable ? args.secondaryAsk : null
+
+  let packPrice = 0
+  let priceSource: PriceSource = "none"
+
+  if (primaryPrice != null && secondaryAskValue != null) {
+    if (primaryPrice <= secondaryAskValue) {
+      packPrice = primaryPrice
+      priceSource = "primary"
+    } else {
+      packPrice = secondaryAskValue
+      priceSource = "secondary"
+    }
+    // Within 1% — render both as anchors so the user knows EV is robust
+    if (primaryPrice > 0 && Math.abs(primaryPrice - secondaryAskValue) / primaryPrice <= 0.01) {
+      priceSource = "min"
+    }
+  } else if (primaryPrice != null) {
+    packPrice = primaryPrice
+    priceSource = "primary"
+  } else if (secondaryAskValue != null) {
+    packPrice = secondaryAskValue
+    priceSource = "secondary"
+  }
+
+  return {
+    packPrice,
+    primaryPrice,
+    secondaryAsk: secondaryAskValue,
+    primaryAvailable,
+    secondaryAvailable,
+    priceSource,
+  }
 }
 
 // ─── Fetch all editions with pagination ─────────────────────────────────────
@@ -405,7 +497,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({})) as { packListingId?: string; packPrice?: number; packName?: string; collectionId?: string; distId?: string | null }
     packListingId = body.packListingId ?? ""
-    const packPrice: number = body.packPrice ?? 0
+    const requestedPrice: number = body.packPrice ?? 0
     const packName: string | null = body.packName ?? null
     const collectionId: string = typeof body.collectionId === "string" ? body.collectionId : "nba-top-shot"
     const distId: string | null = body.distId ? String(body.distId) : null
@@ -424,7 +516,7 @@ export async function POST(req: NextRequest) {
       const forwardRes = await fetch(forwardUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ packListingId, packPrice, packName }),
+        body: JSON.stringify({ packListingId, packPrice: requestedPrice, packName }),
         cache: "no-store",
       })
       const forwardBody = await forwardRes.text()
@@ -440,24 +532,40 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    console.log(`[pack-ev] Request for ${packListingId} price=${packPrice}`)
+    console.log(`[pack-ev] Request for ${packListingId} requestedPrice=${requestedPrice} distId=${distId ?? "null"}`)
 
     // ── Check cache ─────────────────────────────────────────────────────────
+    // grossEV / editions / supply are cached; the dual-price (primary vs.
+    // secondary) is volatile so we re-derive it every request. Cached
+    // supplySnapshot tells us whether the primary listing is still live.
     const cached = packCache.get(packListingId)
     if (cached && cached.expiresAt > Date.now()) {
       const d = cached.data
-      const packEV = Math.round((d.grossEV - packPrice) * 100) / 100
+      const secondaryAsk = await fetchSecondaryAsk(distId, req.url)
+      const dual = computeDualPrice({
+        requestedPrice,
+        totalUnopened: d.supplySnapshot.totalUnopened,
+        forSale: d.supplySnapshot.forSale,
+        secondaryAsk,
+      })
+      const packEV = Math.round((d.grossEV - dual.packPrice) * 100) / 100
+      const isPositiveEV = dual.priceSource !== "none" && packEV > 0
       return NextResponse.json({
         packListingId,
-        packPrice,
+        packPrice: dual.packPrice,
+        primaryPrice: dual.primaryPrice,
+        secondaryAsk: dual.secondaryAsk,
+        priceSource: dual.priceSource,
+        primaryAvailable: dual.primaryAvailable,
+        secondaryAvailable: dual.secondaryAvailable,
         packEV,
         grossEV: d.grossEV,
-        isPositiveEV: packEV > 0,
-        evVerdict: packPrice === 0
-          ? "Set pack price to calculate verdict"
-          : packEV > 0
-          ? "+EV by $" + Math.abs(packEV).toFixed(2) + " — opening beats buying on marketplace"
-          : "-EV by $" + Math.abs(packEV).toFixed(2) + " — cheaper to buy moments directly",
+        isPositiveEV,
+        evVerdict: dual.priceSource === "none"
+          ? "Pack not currently available for purchase"
+          : isPositiveEV
+            ? "+EV by $" + Math.abs(packEV).toFixed(2) + " — opening beats buying on marketplace"
+            : "-EV by $" + Math.abs(packEV).toFixed(2) + " — cheaper to buy moments directly",
         topPulls: d.topPulls,
         serialPremiumAlerts: d.serialPremiumAlerts,
         tierBreakdown: d.tierBreakdown,
@@ -466,7 +574,7 @@ export async function POST(req: NextRequest) {
         fmvCoverage: d.fmvCoverage,
         fmvCoverageNote: d.fmvCoverageNote,
         cached: true,
-        methodology: "EV = Σ(remaining_i / total_unopened × avg_sale_price_i × 0.95) − pack_price",
+        methodology: "EV = Σ(remaining_i / total_unopened × avg_sale_price_i × 0.95) − pack_price. pack_price anchors against the cheaper of primary retail or secondary low ask.",
       })
     }
 
@@ -510,21 +618,21 @@ export async function POST(req: NextRequest) {
     const remainingByTier: TierCounts = contentRemaining?.remainingByTier ?? {} as TierCounts
     const originalByTier: TierCounts = contentRemaining?.originalCountsByTier ?? {} as TierCounts
 
-    if (totalUnopened === 0) {
-      console.warn(`[pack-ev] No unopened packs for ${packListingId}`)
-      return NextResponse.json({ error: "No pack data available" }, { status: 404 })
-    }
+    // ── Resolve dual price (primary listing live? secondary ask?) ───────────
+    const listingData = dynamicData?.getPackListing?.data
+    const forSale = listingData?.forSale === true
+    const secondaryAsk = await fetchSecondaryAsk(distId, req.url)
+    const dual = computeDualPrice({
+      requestedPrice,
+      totalUnopened,
+      forSale,
+      secondaryAsk,
+    })
 
     // ── Fetch RPC FMV data ─────────────────────────────────────────────────
     const rpcFmvMap = await fetchRpcFmvMap(editions)
 
-    console.log(`[pack-ev] Computing EV: ${editions.length} editions, ${totalUnopened} unopened, ${rpcFmvMap.size} RPC FMVs`)
-
-    // Diagnostic: log first 3 edition nodes' raw IDs for key-format analysis
-    for (const node of editions.slice(0, 3)) {
-      const e = node.edition
-      console.log(`[pack-ev] EDITION-DEBUG: edition.id=${e.id} set.id=${e.set?.id} play.id=${e.play?.id} parallelID=${e.parallelID} setFlowName=${e.set?.flowName} player=${e.play?.stats?.playerName}`)
-    }
+    console.log(`[pack-ev] Computing EV: ${editions.length} editions, ${totalUnopened} unopened, ${rpcFmvMap.size} RPC FMVs, priceSource=${dual.priceSource} packPrice=${dual.packPrice}`)
 
     // ── Compute EV per edition ──────────────────────────────────────────────
     let rpcFmvUsed = 0
@@ -577,8 +685,8 @@ export async function POST(req: NextRequest) {
     // ── Total pack EV ───────────────────────────────────────────────────────
     const totalEV = editionEVs.reduce((sum, e) => sum + e.editionEV, 0)
     const grossEV = Math.round(totalEV * 100) / 100
-    const packEV = Math.round((totalEV - packPrice) * 100) / 100
-    const isPositiveEV = packEV > 0
+    const packEV = Math.round((totalEV - dual.packPrice) * 100) / 100
+    const isPositiveEV = dual.priceSource !== "none" && packEV > 0
 
     // ── Top pulls by EV ─────────────────────────────────────────────────────
     const topPulls = [...editionEVs]
@@ -613,14 +721,13 @@ export async function POST(req: NextRequest) {
       ? Math.round(((totalPackCount - totalUnopened) / totalPackCount) * 100)
       : 0
 
-    const listingData = dynamicData?.getPackListing?.data
     const supplySnapshot = {
       totalUnopened,
       totalPackCount,
       depletionPct,
       remainingByTier,
       originalByTier,
-      forSale: listingData?.forSale ?? false,
+      forSale,
       isSoldOut: listingData?.isSoldOut ?? false,
     }
 
@@ -670,7 +777,7 @@ export async function POST(req: NextRequest) {
       expiresAt: Date.now() + CACHE_TTL_MS,
     })
 
-    console.log(`[pack-ev] Done: grossEV=${grossEV} packEV=${packEV} editions=${editionEVs.length} fmvSource=${fmvSource} fmvCoverage=${fmvCoverage}%`)
+    console.log(`[pack-ev] Done: grossEV=${grossEV} packEV=${packEV} priceSource=${dual.priceSource} primary=${dual.primaryPrice ?? "—"} secondary=${dual.secondaryAsk ?? "—"} editions=${editionEVs.length} fmvSource=${fmvSource} fmvCoverage=${fmvCoverage}%`)
 
     // ── EV history snapshot + flip detection (fire-and-forget) ──────────────
     ;(async () => {
@@ -687,7 +794,7 @@ export async function POST(req: NextRequest) {
 
         if (recent && recent.length > 0) return
 
-        const valueRatio = packPrice > 0 ? Math.round((grossEV / packPrice) * 1000) / 1000 : null
+        const valueRatio = dual.packPrice > 0 ? Math.round((grossEV / dual.packPrice) * 1000) / 1000 : null
 
         // Clamp pack_ev / gross_ev to the CHECK-constrained range so a bad
         // FMV reading can't reject the whole insert. Anything outside this
@@ -701,7 +808,12 @@ export async function POST(req: NextRequest) {
           collection_id: TOP_SHOT_COLLECTION_ID,
           dist_id: distId,
           pack_name: packName,
-          pack_price: packPrice,
+          pack_price: dual.packPrice,
+          primary_price: dual.primaryPrice,
+          secondary_ask: dual.secondaryAsk,
+          price_source: dual.priceSource,
+          primary_available: dual.primaryAvailable,
+          secondary_available: dual.secondaryAvailable,
           gross_ev: safeGrossEV,
           pack_ev: safePackEV,
           is_positive_ev: isPositiveEV,
@@ -735,15 +847,20 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       packListingId,
-      packPrice,
+      packPrice: dual.packPrice,
+      primaryPrice: dual.primaryPrice,
+      secondaryAsk: dual.secondaryAsk,
+      priceSource: dual.priceSource,
+      primaryAvailable: dual.primaryAvailable,
+      secondaryAvailable: dual.secondaryAvailable,
       packEV,
       grossEV,
       isPositiveEV,
-      evVerdict: packPrice === 0
-        ? "Set pack price to calculate verdict"
+      evVerdict: dual.priceSource === "none"
+        ? "Pack not currently available for purchase"
         : isPositiveEV
-        ? "+EV by $" + Math.abs(packEV).toFixed(2) + " — opening beats buying on marketplace"
-        : "-EV by $" + Math.abs(packEV).toFixed(2) + " — cheaper to buy moments directly",
+          ? "+EV by $" + Math.abs(packEV).toFixed(2) + " — opening beats buying on marketplace"
+          : "-EV by $" + Math.abs(packEV).toFixed(2) + " — cheaper to buy moments directly",
       topPulls,
       serialPremiumAlerts,
       tierBreakdown,
@@ -753,7 +870,7 @@ export async function POST(req: NextRequest) {
       fmvCoverage,
       fmvCoverageNote,
       cached: false,
-      methodology: "EV = Σ(remaining_i / total_unopened × best_price_i × 0.95) − pack_price. best_price prefers RPC FMV when available.",
+      methodology: "EV = Σ(remaining_i / total_unopened × best_price_i × 0.95) − pack_price. pack_price anchors against the cheaper of primary retail or secondary low ask. best_price prefers RPC FMV when available.",
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)

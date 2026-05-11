@@ -53,6 +53,14 @@ interface ApiRow {
   edition_count: number | null
   total_unopened: number | null
   is_rare_single_pack?: boolean | null
+  /** Dual-price model (May 2026): primary retail when listing still live,
+   *  secondary P2P low ask when collectors are reselling. The chosen EV
+   *  anchor is marked by price_source. */
+  primary_price?: number | null
+  secondary_ask?: number | null
+  price_source?: 'primary' | 'secondary' | 'min' | 'none' | null
+  primary_available?: boolean | null
+  secondary_available?: boolean | null
 }
 
 interface ApiResponse {
@@ -92,6 +100,11 @@ function toPackRow(r: ApiRow, collectionUrlSlug: string): PackRow {
     packEvDollar: r.pack_ev == null ? null : Number(r.pack_ev),
     isRareSinglePack: r.is_rare_single_pack === true,
     detailHref: `/${collectionUrlSlug}/pack/${r.dist_id}`,
+    primaryPrice: r.primary_price == null ? null : Number(r.primary_price),
+    secondaryAsk: r.secondary_ask == null ? null : Number(r.secondary_ask),
+    priceSource: r.price_source ?? null,
+    primaryAvailable: r.primary_available ?? null,
+    secondaryAvailable: r.secondary_available ?? null,
   }
 }
 
