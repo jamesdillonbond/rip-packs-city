@@ -27,10 +27,25 @@ const PIPELINE_NAME = "allday-listings-retry"
 
 const FLOW_REST = "https://rest-mainnet.onflow.org"
 const SCRIPT_TIMEOUT_MS = 15_000
-const CADENCE_FALLBACK_MAX_RETRY = 32
+// Bumped 32 -> 100 (full batch) on 2026-05-11. The post-AllDay-historical
+// backfill (89623423) dumped ~19,600 wmc_miss_historical_backfill rows in
+// 2 hours, far faster than the 32/tick budget could drain. Each Cadence
+// call observes ~500-650ms wall-clock under the 150ms inter-call delay,
+// so 100 calls completes in ~50-65s, well under maxDuration=300.
+const CADENCE_FALLBACK_MAX_RETRY = 100
 const CADENCE_DELAY_MS = 150
 const RETRY_BATCH_LIMIT = 100
 const RETRY_COUNT_CAP = 10
+
+// failure_reasons treated as definitively unrecoverable IF the seller-side
+// Cadence borrow ALSO returns nil. Historical wmc misses on sold-out
+// AllDay moments fall in here — the seller transferred long ago, so
+// borrowMomentNFT will always return nil. Bumping retry_count 10x and
+// waiting 2.5h to retire them just inflates the queue.
+const UNRESOLVABLE_AFTER_CADENCE_FAIL: ReadonlySet<string> = new Set([
+  "wmc_miss_historical_backfill",
+])
+const UNRESOLVABLE_MARKER = "unresolvable_no_chain_data"
 
 const BORROW_MOMENT_SCRIPT = `
 import AllDay from 0xe4cf4bdc1751c65d
@@ -168,6 +183,7 @@ interface QueuedFailure {
     expiry: string | undefined
   }
   retry_count: number
+  failure_reason: string | null
 }
 
 export async function POST(req: NextRequest) {
@@ -191,12 +207,15 @@ export async function POST(req: NextRequest) {
     let cadenceResolved = 0
 
     try {
-      // Drain RETRY_BATCH_LIMIT oldest unresolved + sub-cap rows.
+      // Drain RETRY_BATCH_LIMIT oldest unresolved + sub-cap rows. Exclude
+      // the unresolvable-marker reason so retired rows stay out of the
+      // working set.
       const { data: queueRows, error: qErr } = await (supabaseAdmin as any)
         .from("listing_resolution_failures")
-        .select("id, collection_id, flow_id, listing_resource_id, event_payload, retry_count")
+        .select("id, collection_id, flow_id, listing_resource_id, event_payload, retry_count, failure_reason")
         .eq("collection_id", ALLDAY_COLLECTION_ID)
         .is("resolved_at", null)
+        .neq("failure_reason", UNRESOLVABLE_MARKER)
         .lt("retry_count", RETRY_COUNT_CAP)
         .order("first_seen_at", { ascending: true })
         .limit(RETRY_BATCH_LIMIT)
@@ -242,12 +261,18 @@ export async function POST(req: NextRequest) {
       }
 
       // ── Cadence fallback (retry path uses the bumped cap) ────────────────
+      // Track per-row Cadence outcome so the post-loop bookkeeping can
+      // confidently mark unresolvable for the wmc_miss_historical_backfill
+      // cohort (sold-out moments — seller no longer holds them, by
+      // definition not on chain).
+      const cadenceFailedIds = new Set<number>()
       for (const q of queue) {
         if (cadenceAttempted >= CADENCE_FALLBACK_MAX_RETRY) break
         if (nftToEditionExternalId.has(q.flow_id)) continue
         const seller = q.event_payload?.storefrontAddress
         if (!seller) continue
         cadenceAttempted++
+        let resolvedThisCall = false
         try {
           const result = (await runScript(BORROW_MOMENT_SCRIPT, [
             { type: "Address", value: seller },
@@ -256,6 +281,7 @@ export async function POST(req: NextRequest) {
           if (result && typeof result === "object" && result.editionID) {
             nftToEditionExternalId.set(q.flow_id, String(result.editionID))
             cadenceResolved++
+            resolvedThisCall = true
           }
         } catch (err) {
           console.log(
@@ -263,6 +289,7 @@ export async function POST(req: NextRequest) {
             err instanceof Error ? err.message : String(err)
           )
         }
+        if (!resolvedThisCall) cadenceFailedIds.add(q.id)
         await delay(CADENCE_DELAY_MS)
       }
 
@@ -340,10 +367,49 @@ export async function POST(req: NextRequest) {
         resolved = resolvedIds.length
       }
 
-      // Bump retry_count on stragglers. Read current retry_count and write
-      // +1; rows hitting the cap on this tick are counted separately.
-      if (stillUnresolvedIds.length > 0) {
-        for (const id of stillUnresolvedIds) {
+      // Bookkeeping for the stragglers. Three paths:
+      //   1. Row was Cadence-attempted AND failed AND its original
+      //      failure_reason is in UNRESOLVABLE_AFTER_CADENCE_FAIL ->
+      //      mark unresolvable (resolved_at = now, failure_reason =
+      //      UNRESOLVABLE_MARKER). The chain has spoken; no point
+      //      retrying the same lookup 9 more times over 2.5h.
+      //   2. Row was NOT Cadence-attempted (cap hit before this row) OR
+      //      Cadence failed for a non-historical-backfill reason ->
+      //      bump retry_count + last_retry_at (existing behavior).
+      let unresolvableMarked = 0
+      const unresolvableIds: number[] = []
+      const bumpIds: number[] = []
+      for (const id of stillUnresolvedIds) {
+        const row = queue.find((q) => q.id === id)
+        if (!row) continue
+        const isHistoricalMiss = row.failure_reason
+          && UNRESOLVABLE_AFTER_CADENCE_FAIL.has(row.failure_reason)
+        if (cadenceFailedIds.has(id) && isHistoricalMiss) {
+          unresolvableIds.push(id)
+        } else {
+          bumpIds.push(id)
+        }
+      }
+
+      if (unresolvableIds.length > 0) {
+        const nowIso = new Date().toISOString()
+        const { error } = await (supabaseAdmin as any)
+          .from("listing_resolution_failures")
+          .update({
+            failure_reason: UNRESOLVABLE_MARKER,
+            resolved_at: nowIso,
+            last_retry_at: nowIso,
+          })
+          .in("id", unresolvableIds)
+        if (error) {
+          console.log("[allday-listings-retry] unresolvable-mark err:", error.message)
+        } else {
+          unresolvableMarked = unresolvableIds.length
+        }
+      }
+
+      if (bumpIds.length > 0) {
+        for (const id of bumpIds) {
           const row = queue.find((q) => q.id === id)
           if (!row) continue
           const newCount = row.retry_count + 1
@@ -360,10 +426,11 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      rowsSkipped = stillUnresolved + retryCountHitCap
+      rowsSkipped = stillUnresolved + retryCountHitCap + unresolvableMarked
       extra.resolved = resolved
       extra.still_unresolved = stillUnresolved
       extra.retry_count_hit_cap = retryCountHitCap
+      extra.unresolvable_marked = unresolvableMarked
       extra.cadence_attempted = cadenceAttempted
       extra.cadence_resolved = cadenceResolved
       extra.elapsed_ms = Date.now() - start
