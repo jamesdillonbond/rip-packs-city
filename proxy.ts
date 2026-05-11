@@ -131,6 +131,13 @@ function isPublicPath(pathname: string, method: string): boolean {
   if (pathname === "/login" || pathname.startsWith("/login/")) return true
   // /early-access + subpaths
   if (pathname === "/early-access" || pathname.startsWith("/early-access/")) return true
+  // /pricing — conversion funnel must be reachable unauth'd so prospects
+  // can see what Pro unlocks before signing up.
+  if (pathname === "/pricing" || pathname.startsWith("/pricing/")) return true
+  // /about — marketing surface
+  if (pathname === "/about" || pathname.startsWith("/about/")) return true
+  // /signup — pre-signup landing (sign-in itself is /login)
+  if (pathname === "/signup" || pathname.startsWith("/signup/")) return true
   // /auth + subpaths (covers /auth/confirm and similar)
   if (pathname === "/auth" || pathname.startsWith("/auth/")) return true
   // /admin pages — enforce their own RPC_ADMIN_TOKEN bearer auth at the page
