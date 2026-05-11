@@ -65,3 +65,52 @@ Stub names only — implementations to come, verified against deployed contract 
 - Confirm question 6.3 first — that's the gate.
 - Use Cadence MCP to fetch `Pinnacle.cdc` source from `0xedf9df96c92f4595` and audit the event surface before designing tables.
 - Coordinate with the spork-scan worker (planned in CLAUDE.md "Known issues" item 7) — both want port 8070 access and could share a worker.
+
+---
+
+## 7. 2026-05-12 verification — Round 9 Item 3 (no integration shipped)
+
+Round 9 Item 3 was scoped as "build a direct Pinnacle GQL listings ingest via
+the `pinnacle-proxy` worker". Re-verified the upstream before shipping — the
+premise still doesn't hold:
+
+| Probe | From | Result |
+|---|---|---|
+| `POST https://pinnacle-proxy.tdillonbond.workers.dev/` (X-Proxy-Secret) | Cloudflare Worker IP | 404 nginx (Disney's edge) |
+| `POST https://public-api.disneypinnacle.com/graphql` | Residential IP | 403 "Blocked" page (Disney edge) |
+| Same direct, paths `/`, `/api`, `/api/graphql`, `/v1/graphql`, `/marketplace/graphql` | Residential IP | 403 on every variant |
+
+The 404 nginx (not 403) from the proxy is the key signal: the Worker's IP IS
+allowed past Disney's edge — Disney's nginx then returns 404 because the
+`/graphql` path doesn't exist as a resource. The endpoint isn't merely
+CF-blocked from Vercel; it isn't there at all from any IP we control.
+
+The prompt's premise — "Pinnacle GQL at public-api.disneypinnacle.com/graphql
+is CF-blocked from Vercel, must route through pinnacle-proxy" — was off.
+Reality: the GQL endpoint either was deprecated, moved to a path we can't
+guess, or never existed (the pinnacle-proxy worker hardcodes UPSTREAM=
+public-api.disneypinnacle.com/graphql but predates this verification).
+
+### Decision: do not ship the direct GQL ingest
+
+Section 2 of this doc already concluded "no public REST or GraphQL surface to
+integrate against today." Round 9 Item 3 re-confirmed that. The recommended
+path forward (section 3) — on-chain event streaming via a new
+`pinnacle-events-proxy` Cloudflare Worker — remains the right move. Two-to-
+three days of engineering; no further upstream-discovery work needed before
+starting.
+
+Round 10 Item N can pick up section 3's architecture sketch. Until then,
+Flowty's `upstream_floor_only=true` remains the only Pinnacle ASK signal,
+and Pinnacle sniper deals against `cached_listings` remain unreliable.
+
+### What didn't ship in this round
+
+- No `pinnacle-direct-listings-ingest` edge function.
+- No `pinnacle_cached_listings.source` column.
+- No `lib/sniper/pinnacle.ts` "prefer direct" branch.
+- No cron-job.org wiring.
+
+All four were dependent on a working GQL endpoint. Re-introduce them at the
+same time as the chain-event ingest from section 3, mapping the chain
+events into `pinnacle_cached_listings` directly.
