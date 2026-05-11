@@ -481,6 +481,7 @@ export async function POST(req: NextRequest) {
 
       // ── Build cached_listings_v2 upsert rows ────────────────────────────────
       const v2Rows: any[] = []
+      const failuresToQueue: any[] = []
       for (const a of availableEvents) {
         const editionExternalId = nftToEditionExternalId.get(a.nftID)
         const editionUuid = editionExternalId ? editionExternalIdToUuid.get(editionExternalId) : null
@@ -488,6 +489,21 @@ export async function POST(req: NextRequest) {
         if (!editionUuid) {
           if (unresolvedSample.length < 20) unresolvedSample.push(a.nftID)
           rowsSkipped++
+          // Capture the full event payload into the retry queue. The /15
+          // retry cron pulls these with a bumped CADENCE_FALLBACK_MAX (32)
+          // and replays the resolution. See docs/audits/listing-divergence-2026-05.md.
+          const reason = editionExternalId
+            ? "edition_external_id_not_in_editions_table"
+            : cadenceAttempted >= CADENCE_FALLBACK_MAX
+              ? "cadence_fallback_cap_hit"
+              : "wmc_miss_no_seller_cadence_attempt"
+          failuresToQueue.push({
+            collection_id: ALLDAY_COLLECTION_ID,
+            flow_id: a.nftID,
+            listing_resource_id: a.listingResourceID,
+            event_payload: a,
+            failure_reason: reason,
+          })
           continue
         }
 
@@ -533,6 +549,26 @@ export async function POST(req: NextRequest) {
           rowsWritten += batch.length
         }
       }
+
+      // Persist failed resolutions to listing_resolution_failures so the
+      // /api/allday-listings-retry */15 cron can drain them with a bumped
+      // Cadence cap. Upsert by (collection_id, listing_resource_id) so a
+      // re-observation just refreshes the row instead of duplicating it.
+      let queuedFailures = 0
+      if (failuresToQueue.length > 0) {
+        for (let i = 0; i < failuresToQueue.length; i += 100) {
+          const batch = failuresToQueue.slice(i, i + 100)
+          const { error } = await (supabaseAdmin as any)
+            .from("listing_resolution_failures")
+            .upsert(batch, { onConflict: "collection_id,listing_resource_id", ignoreDuplicates: true })
+          if (error) {
+            console.log("[allday-listings-indexer] failure-queue upsert err:", error.message)
+          } else {
+            queuedFailures += batch.length
+          }
+        }
+      }
+      extra.queued_failures = queuedFailures
 
       // Soft-mark ListingCompleted updates against existing direct rows. If no
       // matching row exists (we missed the corresponding ListingAvailable),
