@@ -123,6 +123,7 @@ export default function SetsPage() {
   const accent = collectionObj?.accent ?? "#E03A2F";
   const colors = makeColors(accent);
   const isAllDay = collectionSlug === "nfl-all-day";
+  const isUfc = collectionSlug === "ufc";
   const [wallet, setWallet] = useState<string | null>(null);
   const [data, setData] = useState<SetsResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -167,7 +168,8 @@ export default function SetsPage() {
       try {
         const isTopShot = collectionSlug === "nba-top-shot";
         const endpoint =
-          isAllDay ? "/api/allday-sets"
+          isAllDay ? "/api/allday-set-progress"
+          : isUfc ? "/api/ufc-set-progress"
           : isTopShot ? "/api/sets"
           : `/api/sets-db?collection=${encodeURIComponent(collectionSlug)}&`;
         const url = endpoint.includes("?")
@@ -188,7 +190,7 @@ export default function SetsPage() {
     }
     go();
     return () => { cancelled = true; };
-  }, [wallet, collectionSlug, isAllDay]);
+  }, [wallet, collectionSlug, isAllDay, isUfc]);
 
   useEffect(() => {
     if (!openSet) return;
