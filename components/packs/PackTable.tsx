@@ -46,6 +46,14 @@ export interface PackRow {
   /** Cached `pack_ev` (gross_ev − pack_price) in absolute dollars from
    *  pack_ev_latest. Drives the "packEvDollar" sort. Null when EV not yet computed. */
   packEvDollar?: number | null
+  /** Dual-price model (May 2026). priceSource = null means the EV cron hasn't
+   *  yet populated the dual-price columns for this distribution; the row
+   *  falls back to the single-price `price` field. */
+  primaryPrice?: number | null
+  secondaryAsk?: number | null
+  priceSource?: 'primary' | 'secondary' | 'min' | 'none' | null
+  primaryAvailable?: boolean | null
+  secondaryAvailable?: boolean | null
   /** Callback to pass through to the action column. */
   onAction?: () => void
   /** Button label; default 'Analyze'. */
@@ -176,6 +184,96 @@ function depletionChip(poolDepletionPct: number | null | undefined, editionCount
 function SortArrow({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
   if (!active) return <span className="text-zinc-700 ml-1">↕</span>
   return <span className="ml-1">{dir === 'desc' ? '↓' : '↑'}</span>
+}
+
+// DualPriceCell — renders PRIMARY + SECONDARY stacked rows with a red accent
+// on whichever side EV is anchored against. When `priceSource` is null, the
+// EV cron hasn't populated the dual-price columns yet, so fall back to the
+// single-price string. When `priceSource === 'none'`, the pack is not buyable
+// on either market — render both sides empty and let upstream verdict UI hide.
+export function DualPriceCell({
+  row,
+  layout = 'inline',
+}: {
+  row: Pick<PackRow, 'price' | 'primaryPrice' | 'secondaryAsk' | 'priceSource' | 'primaryAvailable' | 'secondaryAvailable'>
+  layout?: 'inline' | 'stacked'
+}) {
+  const src = row.priceSource ?? null
+
+  // Legacy fallback: no dual-price columns yet → single price string
+  if (src === null) {
+    return <span style={{ color: 'var(--rpc-text)', fontVariantNumeric: 'tabular-nums' }}>{fmtPrice(row.price)}</span>
+  }
+
+  const primaryLive = row.primaryAvailable === true && row.primaryPrice != null && row.primaryPrice > 0
+  const secondaryLive = row.secondaryAvailable === true && row.secondaryAsk != null && row.secondaryAsk > 0
+
+  // Both anchors when price_source === 'min'; otherwise just the chosen one
+  const primaryAnchor = src === 'primary' || src === 'min'
+  const secondaryAnchor = src === 'secondary' || src === 'min'
+
+  const primaryText = primaryLive ? fmtPrice(row.primaryPrice) : 'SOLD OUT'
+  const secondaryText = secondaryLive ? fmtPrice(row.secondaryAsk) : '—'
+
+  const labelStyle: React.CSSProperties = {
+    fontSize: 9,
+    letterSpacing: '0.14em',
+    textTransform: 'uppercase',
+    color: 'var(--rpc-text-muted, rgba(255,255,255,0.45))',
+    fontFamily: 'var(--font-mono)',
+    minWidth: layout === 'stacked' ? 60 : 56,
+    display: 'inline-block',
+  }
+  const valueBase: React.CSSProperties = {
+    fontVariantNumeric: 'tabular-nums',
+    fontFamily: 'var(--font-mono)',
+    fontSize: layout === 'stacked' ? 13 : 12,
+  }
+
+  const Row = ({
+    label,
+    value,
+    anchor,
+    muted,
+  }: {
+    label: string
+    value: string
+    anchor: boolean
+    muted: boolean
+  }) => (
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, lineHeight: 1.2 }}>
+      <span style={labelStyle}>{label}</span>
+      <span
+        style={{
+          ...valueBase,
+          color: anchor ? 'var(--rpc-red)' : muted ? 'var(--rpc-text-muted, rgba(255,255,255,0.45))' : 'var(--rpc-text, #fff)',
+          fontWeight: anchor ? 700 : 500,
+        }}
+      >
+        {value}
+      </span>
+      {anchor && (
+        <span
+          aria-hidden="true"
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            background: 'var(--rpc-red)',
+            display: 'inline-block',
+            flexShrink: 0,
+          }}
+        />
+      )}
+    </div>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <Row label="Primary" value={primaryText} anchor={primaryAnchor && primaryLive} muted={!primaryLive} />
+      <Row label="Secondary" value={secondaryText} anchor={secondaryAnchor && secondaryLive} muted={!secondaryLive} />
+    </div>
+  )
 }
 
 // Tier-aware fallback when a pack thumbnail 404s or is null. Renders a
@@ -343,7 +441,9 @@ export default function PackTable({
                   </span>
                 </td>
                 <td className="p-3 text-zinc-300">{fmtSlots(r.slots, r.packType)}</td>
-                <td className="p-3 text-zinc-300 tabular-nums">{fmtPrice(r.price)}</td>
+                <td className="p-3">
+                  <DualPriceCell row={r} layout="inline" />
+                </td>
                 <td className="p-3 text-zinc-300 tabular-nums">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span>{fmtPrice(r.grossEV)}</span>
@@ -445,9 +545,10 @@ export default function PackTable({
                 })()}
               </div>
             </div>
+            <div className="mt-2">
+              <DualPriceCell row={r} layout="stacked" />
+            </div>
             <div className="mt-2 flex items-center gap-3 text-xs text-zinc-400">
-              <span className="tabular-nums">{fmtPrice(r.price)}</span>
-              <span>·</span>
               <span className="tabular-nums">{fmtSlots(r.slots, r.packType)} slots</span>
               <span>·</span>
               <span

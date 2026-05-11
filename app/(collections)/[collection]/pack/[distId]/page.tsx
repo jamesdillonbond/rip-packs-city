@@ -49,6 +49,12 @@ interface PackTableRow {
   ev_snapshotted_at: string | null
   ev_margin_pct: string | number | null
   is_rare_single_pack: boolean | null
+  // Dual-price model (May 2026) — see /api/pack-ev for derivation rules.
+  primary_price: string | number | null
+  secondary_ask: string | number | null
+  price_source: "primary" | "secondary" | "min" | "none" | null
+  primary_available: boolean | null
+  secondary_available: boolean | null
 }
 
 interface DistFallbackRow {
@@ -330,6 +336,11 @@ export default async function PackDetailPage(
     ev_snapshotted_at: null,
     ev_margin_pct: null,
     is_rare_single_pack: null,
+    primary_price: null,
+    secondary_ask: null,
+    price_source: null,
+    primary_available: null,
+    secondary_available: null,
   }
 
   const distMetadata = fallback?.metadata ?? (await fetchDistFallback(coll.id, distId))?.metadata ?? null
@@ -352,9 +363,37 @@ export default async function PackDetailPage(
   const editionCount = num(merged.edition_count)
   const retailPrice = num(merged.retail_price_usd)
   const evPackPrice = num(merged.ev_pack_price)
-  const livePrice = evPackPrice ?? retailPrice
+  const primaryPrice = num(merged.primary_price)
+  const secondaryAsk = num(merged.secondary_ask)
+  const priceSource = merged.price_source ?? null
+  const primaryAvailable = merged.primary_available === true
+  const secondaryAvailable = merged.secondary_available === true
+  // EV anchor: prefer the dual-price packPrice when the EV cron has filled in
+  // the new columns; fall back to the cached ev_pack_price, then retail.
+  const livePrice =
+    priceSource === "primary" ? primaryPrice
+    : priceSource === "secondary" ? secondaryAsk
+    : priceSource === "min" ? primaryPrice
+    : evPackPrice ?? retailPrice
   const isPositive = merged.is_positive_ev === true
   const snapshottedAt = merged.ev_snapshotted_at
+
+  // One-line summary above the KPI grid. Names the EV anchor explicitly so
+  // the user knows whether the verdict is computed against retail or P2P ask.
+  // priceSource = 'none' suppresses the verdict entirely.
+  const evAnchorSummary: string | null = (() => {
+    if (priceSource === "none") return "Pack not currently available for purchase"
+    if (priceSource === "primary" && primaryPrice != null) {
+      return `EV computed against [PRIMARY: ${fmtUsd(primaryPrice)}] — primary listing is the cheapest path to acquire this pack right now.`
+    }
+    if (priceSource === "secondary" && secondaryAsk != null) {
+      return `EV computed against [SECONDARY: ${fmtUsd(secondaryAsk)}] — cheapest path to acquire this pack right now.`
+    }
+    if (priceSource === "min" && primaryPrice != null && secondaryAsk != null) {
+      return `Primary (${fmtUsd(primaryPrice)}) and secondary (${fmtUsd(secondaryAsk)}) are within 1% — both are valid EV anchors.`
+    }
+    return null
+  })()
 
   const packListingUuid = typeof distMetadata?.uuid === "string" ? distMetadata.uuid : null
   const buyUrl = collection === "nba-top-shot" && packListingUuid
@@ -466,7 +505,7 @@ export default async function PackDetailPage(
               >
                 {slotsLabel}
               </span>
-              {isPositive && grossEv !== null && (
+              {isPositive && grossEv !== null && priceSource !== "none" && (
                 <span
                   style={{
                     display: "inline-block",
@@ -548,24 +587,61 @@ export default async function PackDetailPage(
         </div>
       </section>
 
+      {/* ── EV anchor summary ────────────────────────────────────────────── */}
+      {evAnchorSummary && (
+        <section
+          style={{
+            background: "rgba(13,13,13,0.92)",
+            border: "1px solid rgba(255,255,255,0.06)",
+            borderRadius: 6,
+            padding: "10px 14px",
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            color: priceSource === "none" ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.75)",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          {priceSource !== "none" && (
+            <span
+              aria-hidden="true"
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: "var(--rpc-red)",
+                flexShrink: 0,
+                display: "inline-block",
+              }}
+            />
+          )}
+          <span>{evAnchorSummary}</span>
+        </section>
+      )}
+
       {/* ── KPI grid ─────────────────────────────────────────────────────── */}
       <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
-        <KpiCell
-          label="Pack price"
-          value={fmtUsd(livePrice)}
-          sub={evPackPrice !== null && retailPrice !== null && retailPrice !== evPackPrice ? `Retail ${fmtUsd(retailPrice)}` : undefined}
+        <DualPriceKpi
+          primaryPrice={primaryPrice}
+          secondaryAsk={secondaryAsk}
+          priceSource={priceSource}
+          primaryAvailable={primaryAvailable}
+          secondaryAvailable={secondaryAvailable}
+          fallbackPrice={livePrice}
+          retailPrice={retailPrice}
         />
         <KpiCell
           label="Gross EV"
           value={fmtUsd(grossEv)}
-          sub={packEv !== null ? `Net ${packEv >= 0 ? "+" : ""}${fmtUsd(Math.abs(packEv))}` : undefined}
-          color={packEv === null ? undefined : packEv >= 0 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
+          sub={priceSource === "none" ? "No anchor — verdict suppressed" : packEv !== null ? `Net ${packEv >= 0 ? "+" : ""}${fmtUsd(Math.abs(packEv))}` : undefined}
+          color={priceSource === "none" || packEv === null ? undefined : packEv >= 0 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
         />
         <KpiCell
           label="Value ratio"
-          value={valueRatio === null ? "—" : `${valueRatio.toFixed(2)}x`}
-          sub={evMargin === null ? undefined : `${fmtPct(evMargin)} margin`}
-          color={valueRatio === null ? undefined : valueRatio >= 1 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
+          value={priceSource === "none" || valueRatio === null ? "—" : `${valueRatio.toFixed(2)}x`}
+          sub={priceSource === "none" || evMargin === null ? undefined : `${fmtPct(evMargin)} margin`}
+          color={priceSource === "none" || valueRatio === null ? undefined : valueRatio >= 1 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
         />
         <KpiCell
           label="FMV coverage"
@@ -712,6 +788,132 @@ function KpiCell({ label, value, sub, color }: { label: string; value: string; s
           {sub}
         </div>
       ) : null}
+    </div>
+  )
+}
+
+function DualPriceKpi({
+  primaryPrice,
+  secondaryAsk,
+  priceSource,
+  primaryAvailable,
+  secondaryAvailable,
+  fallbackPrice,
+  retailPrice,
+}: {
+  primaryPrice: number | null
+  secondaryAsk: number | null
+  priceSource: "primary" | "secondary" | "min" | "none" | null
+  primaryAvailable: boolean
+  secondaryAvailable: boolean
+  fallbackPrice: number | null
+  retailPrice: number | null
+}) {
+  // Legacy fallback: when the EV cron hasn't populated the new columns,
+  // render the single-line "Pack price" KPI as before.
+  if (priceSource === null) {
+    return (
+      <KpiCell
+        label="Pack price"
+        value={fmtUsd(fallbackPrice)}
+        sub={retailPrice !== null && fallbackPrice !== null && retailPrice !== fallbackPrice ? `Retail ${fmtUsd(retailPrice)}` : undefined}
+      />
+    )
+  }
+
+  const primaryLive = primaryAvailable && primaryPrice != null && primaryPrice > 0
+  const secondaryLive = secondaryAvailable && secondaryAsk != null && secondaryAsk > 0
+  const primaryAnchor = priceSource === "primary" || priceSource === "min"
+  const secondaryAnchor = priceSource === "secondary" || priceSource === "min"
+
+  const Row = ({
+    label,
+    value,
+    anchor,
+    muted,
+  }: {
+    label: string
+    value: string
+    anchor: boolean
+    muted: boolean
+  }) => (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 6, lineHeight: 1.25 }}>
+      <span
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 9,
+          letterSpacing: "0.16em",
+          textTransform: "uppercase",
+          color: "rgba(255,255,255,0.45)",
+          minWidth: 64,
+          display: "inline-block",
+        }}
+      >
+        {label}
+      </span>
+      <span
+        style={{
+          fontFamily: "var(--font-display)",
+          fontWeight: anchor ? 800 : 600,
+          fontSize: 18,
+          letterSpacing: "0.02em",
+          fontVariantNumeric: "tabular-nums",
+          color: anchor ? "var(--rpc-red)" : muted ? "rgba(255,255,255,0.45)" : "#fff",
+        }}
+      >
+        {value}
+      </span>
+      {anchor && (
+        <span
+          aria-hidden="true"
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            background: "var(--rpc-red)",
+            display: "inline-block",
+            flexShrink: 0,
+          }}
+        />
+      )}
+    </div>
+  )
+
+  return (
+    <div
+      style={{
+        background: "rgba(13,13,13,0.92)",
+        border: "1px solid rgba(255,255,255,0.06)",
+        borderRadius: 6,
+        padding: 12,
+      }}
+    >
+      <div
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 9,
+          letterSpacing: "0.18em",
+          textTransform: "uppercase",
+          color: "rgba(255,255,255,0.45)",
+          marginBottom: 6,
+        }}
+      >
+        Pack price
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <Row
+          label="Primary"
+          value={primaryLive ? fmtUsd(primaryPrice) : "SOLD OUT"}
+          anchor={primaryAnchor && primaryLive}
+          muted={!primaryLive}
+        />
+        <Row
+          label="Secondary"
+          value={secondaryLive ? fmtUsd(secondaryAsk) : "—"}
+          anchor={secondaryAnchor && secondaryLive}
+          muted={!secondaryLive}
+        />
+      </div>
     </div>
   )
 }
