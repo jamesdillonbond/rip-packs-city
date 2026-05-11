@@ -184,8 +184,24 @@ export async function POST(req: NextRequest) {
         signal: AbortSignal.timeout(280_000),
       })
       if (!proxyRes.ok) {
-        const detail = (await proxyRes.text()).slice(0, 300)
-        throw new Error(`proxy HTTP ${proxyRes.status}: ${detail}`)
+        const rawDetail = await proxyRes.text()
+        const isHtml = rawDetail.startsWith("<!DOCTYPE")
+          || rawDetail.startsWith("<html")
+          || (proxyRes.headers.get("content-type") ?? "").includes("text/html")
+        if (isHtml && proxyRes.status === 404) {
+          throw new Error(
+            `proxy_returned_404_html — worker route not matched OR cloudflare edge unrouted; ` +
+            `verify https://pinnacle-events-proxy.tdillonbond.workers.dev/ health and wrangler deploy state. ` +
+            `range=${startHeight}..${endHeight} sealed_tip=${sealedHeight}`
+          )
+        }
+        if (isHtml) {
+          throw new Error(
+            `proxy_returned_html status=${proxyRes.status} — non-JSON response from worker URL; ` +
+            `likely cloudflare edge or origin error. range=${startHeight}..${endHeight}`
+          )
+        }
+        throw new Error(`proxy HTTP ${proxyRes.status}: ${rawDetail.slice(0, 300)}`)
       }
       const body = (await proxyRes.json()) as {
         events?: ProxyEvent[]
