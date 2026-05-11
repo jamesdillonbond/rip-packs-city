@@ -29,6 +29,13 @@ const ALGO_VERSION = "1.6.0"
 const WINDOW_DAYS = 30
 const DEFAULT_LIMIT = 500
 
+// Disney Pinnacle owns its own FMV table (pinnacle_fmv_snapshots) and edition
+// table (pinnacle_editions). 314 Pinnacle rows pre-dated the split and still
+// live in main `editions`; without this guard, Step 5/5b/6 backfill polluted
+// main fmv_snapshots with LOW-confidence duplicates of pinnacle_fmv_snapshots
+// rows every 20-min tick. See docs/audits/pinnacle-editions-pollution-2026-05.md.
+const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
+
 // WAP half-life in seconds — 7 days means a sale from 7 days ago
 // carries ~37% of the weight of a sale from today.
 const WAP_HALF_LIFE_SECONDS = 7 * 24 * 60 * 60
@@ -203,6 +210,7 @@ export async function POST(req: NextRequest) {
       .select("edition_id, collection_id, price_usd, sold_at")
       .gte("sold_at", windowStart)
       .gt("price_usd", 0)
+      .neq("collection_id", PINNACLE_COLLECTION_ID)
       .range(offset, offset + limit - 1)
       .order("edition_id")
 
@@ -567,6 +575,7 @@ export async function POST(req: NextRequest) {
             LEFT JOIN fmv_snapshots fs ON fs.edition_id = e.id
             WHERE fs.edition_id IS NULL
               AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
+              AND e.collection_id <> '${PINNACLE_COLLECTION_ID}'
           `,
         })
       const missingEditions = (missingCount as { cnt: number }[] | null)?.[0]?.cnt ?? "unknown"
@@ -583,6 +592,7 @@ export async function POST(req: NextRequest) {
               AND be.low_ask IS NOT NULL
               AND be.low_ask > 0
               AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
+              AND e.collection_id <> '${PINNACLE_COLLECTION_ID}'
             LIMIT 500
           `,
         })
@@ -661,6 +671,7 @@ export async function POST(req: NextRequest) {
             WHERE fs.edition_id IS NULL
               AND s.price_usd > 0
               AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
+              AND e.collection_id <> '${PINNACLE_COLLECTION_ID}'
             GROUP BY e.id, e.collection_id
             LIMIT 1000
           `,
@@ -761,6 +772,7 @@ export async function POST(req: NextRequest) {
               JOIN editions e ON e.id = fs.edition_id
               WHERE fs.computed_at < now() - interval '24 hours'
                 AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
+                AND e.collection_id <> '${PINNACLE_COLLECTION_ID}'
               ORDER BY fs.edition_id, fs.computed_at DESC
               LIMIT 1000
             `,
