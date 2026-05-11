@@ -16,13 +16,15 @@ export const dynamic = "force-dynamic"
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const PIPELINE_NAME = "classify-acquisitions-multicollection"
 
-const TARGETS: Array<{ slug: string; collection_id: string }> = [
-  { slug: "nfl_all_day",      collection_id: "dee28451-5d62-409e-a1ad-a83f763ac070" },
+const PER_COLLECTION_LIMIT = 500
+
+const TARGETS: Array<{ slug: string; collection_id: string; limit?: number }> = [
+  // AllDay capped at 300 to stay under cron-job.org's ~30s gateway timeout.
+  // ~3,400 pending rows drain in ~12 hours at hourly cadence.
+  { slug: "nfl_all_day",      collection_id: "dee28451-5d62-409e-a1ad-a83f763ac070", limit: 300 },
   { slug: "laliga_golazos",   collection_id: "06248cc4-b85f-47cd-af67-1855d14acd75" },
   { slug: "ufc_strike",       collection_id: "9b4824a8-736d-4a96-b450-8dcc0c46b023" },
 ]
-
-const PER_COLLECTION_LIMIT = 500
 
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
@@ -42,7 +44,7 @@ export async function POST(req: NextRequest) {
     try {
       const { data, error } = await (supabaseAdmin as any).rpc(
         "backfill_acquisitions_for_collection",
-        { p_collection_id: t.collection_id, p_limit: PER_COLLECTION_LIMIT }
+        { p_collection_id: t.collection_id, p_limit: t.limit ?? PER_COLLECTION_LIMIT }
       )
       if (error) {
         firstError = firstError ?? `${t.slug}: ${error.message}`
