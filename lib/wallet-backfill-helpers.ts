@@ -101,6 +101,23 @@ interface BackfillArgs {
   // re-enrichment sweep from a normal cron pass that happened to receive
   // skip_cached=false.
   force?: boolean
+  // Sync-mode checkpoint inputs. Both optional; when provided, the
+  // paginated runner starts at startIndex and returns early if the
+  // monotonic clock crosses softDeadlineAt. See sync-mode contract in
+  // app/api/wallet-backfill-allday/route.ts.
+  softDeadlineAt?: number
+  startIndex?: number
+}
+
+// Shared return shape across all *DetailsBackfill helpers + the paginated
+// recovery path. `complete=true` means there is no more work for this
+// (wallet, collection). `nextStartIndex` is the chunk-start offset to
+// resume from when complete=false; null when complete=true or when the
+// helper produced no recoverable cursor (e.g. ID list never loaded).
+export interface BackfillRunResult {
+  rowsFound: number
+  complete: boolean
+  nextStartIndex: number | null
 }
 
 export async function fetchOnChainIds(cadence: string, wallet: string): Promise<string[]> {
@@ -497,7 +514,7 @@ export async function triggerUfcEnrichmentChain(wallet: string): Promise<{
 // out-of-band resolver populating wmc.edition_key. The editions table has
 // rich per-edition metadata (tier, player_name, set_name, team_name) but no
 // path was wiring it to wmc.
-export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<{ rowsFound: number }> {
+export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<BackfillRunResult> {
   const { config, startedAtIso, startedMs, wallet, skipCached, force } = args
   let totalUpserted = 0
   let postPassUpdated = 0
@@ -523,7 +540,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<{ ro
           mode: "details_allday",
         },
       })
-      return { rowsFound: 0 }
+      return { rowsFound: 0, complete: true, nextStartIndex: null }
     }
 
     const cachedIds = skipCached ? await loadCachedMomentIds(wallet, config.collectionUuid) : new Set<string>()
@@ -611,7 +628,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<{ ro
         mode: "details_allday",
       },
     })
-    return { rowsFound: triples.length }
+    return { rowsFound: triples.length, complete: true, nextStartIndex: null }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const elapsedMs = Date.now() - startedMs
@@ -630,7 +647,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<{ ro
           mode: "details_allday",
         },
       })
-      return { rowsFound: 0 }
+      return { rowsFound: 0, complete: true, nextStartIndex: null }
     }
     // Mega-wallet handlers — order matters. Check explicit Cadence 1110
     // first (rare on AllDay but cheap to detect), then the wider AllDay
@@ -643,6 +660,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<{ ro
       console.log(`[${config.pipelineName}] computation_limit wallet=${wallet} — falling through to paginated path`)
       return await runPaginatedDetailsBackfill({
         config, startedAtIso, startedMs, wallet, skipCached, force,
+        softDeadlineAt: args.softDeadlineAt, startIndex: args.startIndex,
         mode: "allday",
         parentTerminatedReason: "computation_limit_exceeded",
         parentErrorExcerpt: msg.slice(0, 200),
@@ -652,6 +670,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<{ ro
       console.log(`[${config.pipelineName}] access_api_500 wallet=${wallet} — falling through to paginated path`)
       return await runPaginatedDetailsBackfill({
         config, startedAtIso, startedMs, wallet, skipCached, force,
+        softDeadlineAt: args.softDeadlineAt, startIndex: args.startIndex,
         mode: "allday",
         parentTerminatedReason: "access_api_error_likely_computation_limit",
         parentErrorExcerpt: msg.slice(0, 200),
@@ -672,7 +691,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<{ ro
           mode: "details_allday",
         },
       })
-      return { rowsFound: 0 }
+      return { rowsFound: 0, complete: true, nextStartIndex: null }
     }
     await logRun({
       pipelineName: config.pipelineName,
@@ -687,7 +706,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<{ ro
       },
     })
     console.error(`[${config.pipelineName}] error during details backfill for ${wallet}: ${msg}`)
-    return { rowsFound: 0 }
+    return { rowsFound: 0, complete: true, nextStartIndex: null }
   }
 }
 
@@ -702,7 +721,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<{ ro
 // only catches NFTs that fired recent on-chain Deposit events, so stable
 // holdings (Trevor's 180 Pinnacle moments — only 1 mapped) were invisible
 // to the resolver. Write-time enrichment closes that gap.
-export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<{ rowsFound: number }> {
+export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<BackfillRunResult> {
   const { config, startedAtIso, startedMs, wallet, skipCached, force } = args
   let totalUpserted = 0
   let postPassUpdated = 0
@@ -729,7 +748,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<{ 
           mode: "details_pinnacle",
         },
       })
-      return { rowsFound: 0 }
+      return { rowsFound: 0, complete: true, nextStartIndex: null }
     }
 
     const cachedIds = skipCached ? await loadCachedMomentIds(wallet, config.collectionUuid) : new Set<string>()
@@ -813,7 +832,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<{ 
         mode: "details_pinnacle",
       },
     })
-    return { rowsFound: details.length }
+    return { rowsFound: details.length, complete: true, nextStartIndex: null }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const elapsedMs = Date.now() - startedMs
@@ -832,12 +851,13 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<{ 
           mode: "details_pinnacle",
         },
       })
-      return { rowsFound: 0 }
+      return { rowsFound: 0, complete: true, nextStartIndex: null }
     }
     if (isComputationLimitError(err)) {
       console.log(`[${config.pipelineName}] computation_limit wallet=${wallet} — falling through to paginated path`)
       return await runPaginatedDetailsBackfill({
         config, startedAtIso, startedMs, wallet, skipCached, force,
+        softDeadlineAt: args.softDeadlineAt, startIndex: args.startIndex,
         mode: "pinnacle",
         parentTerminatedReason: "computation_limit_exceeded",
         parentErrorExcerpt: msg.slice(0, 200),
@@ -847,6 +867,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<{ 
       console.log(`[${config.pipelineName}] access_api_500 wallet=${wallet} — falling through to paginated path`)
       return await runPaginatedDetailsBackfill({
         config, startedAtIso, startedMs, wallet, skipCached, force,
+        softDeadlineAt: args.softDeadlineAt, startIndex: args.startIndex,
         mode: "pinnacle",
         parentTerminatedReason: "access_api_error_likely_computation_limit",
         parentErrorExcerpt: msg.slice(0, 200),
@@ -867,7 +888,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<{ 
           mode: "details_pinnacle",
         },
       })
-      return { rowsFound: 0 }
+      return { rowsFound: 0, complete: true, nextStartIndex: null }
     }
     await logRun({
       pipelineName: config.pipelineName,
@@ -882,7 +903,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<{ 
       },
     })
     console.error(`[${config.pipelineName}] error during details backfill for ${wallet}: ${msg}`)
-    return { rowsFound: 0 }
+    return { rowsFound: 0, complete: true, nextStartIndex: null }
   }
 }
 
@@ -909,14 +930,16 @@ interface PaginatedBackfillArgs extends BackfillArgs {
   parentErrorExcerpt: string
 }
 
-export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): Promise<{ rowsFound: number }> {
+export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): Promise<BackfillRunResult> {
   const {
     config, startedAtIso, startedMs, wallet, skipCached, force,
     mode, parentTerminatedReason, parentErrorExcerpt,
+    softDeadlineAt, startIndex,
   } = args
   const paginationStartedMs = Date.now()
   const fullMode = mode === "allday" ? "details_allday_paginated" : "details_pinnacle_paginated"
   const chunkSize = PAGINATION_CHUNK_SIZE_BY_MODE[mode]
+  const resumeFrom = Math.max(0, startIndex ?? 0)
 
   let totalUpserted = 0
   let postPassUpdated = 0
@@ -924,6 +947,10 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
   let chunkErrors = 0
   let onChainIds: string[] = []
   let hitSoftDeadline = false
+  // checkpoint cursor — the chunk-start offset to resume from. Stays null
+  // when the full id list is walked (complete=true). Set by the soft-
+  // deadline branch when work remains.
+  let nextStartIndex: number | null = null
 
   try {
     // Step 1: cheap getIDs() walk. Both CADENCE_ALLDAY and CADENCE_PINNACLE
@@ -957,7 +984,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
           mode: fullMode,
         },
       })
-      return { rowsFound: 0 }
+      return { rowsFound: 0, complete: true, nextStartIndex: null }
     }
 
     const cachedMap = skipCached
@@ -1034,7 +1061,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
             mode: fullMode,
           },
         })
-        return { rowsFound: onChainIds.length }
+        return { rowsFound: onChainIds.length, complete: true, nextStartIndex: null }
       }
     }
 
@@ -1045,10 +1072,23 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
     // mode-specific id window, builds rows, upserts immediately. Per-chunk
     // errors are non-fatal (logged + counted); only a complete inability to
     // proceed throws out to the outer catch.
-    for (let start = 0; start < onChainIds.length; start += chunkSize) {
-      if (Date.now() - startedMs > PAGINATION_SOFT_DEADLINE_MS) {
+    //
+    // Checkpoint contract (sync-mode):
+    //   resumeFrom (= args.startIndex ?? 0)  — start at this chunk-start offset
+    //   softDeadlineAt (epoch ms; optional)   — sync-mode caller's budget; the
+    //     loop breaks before doing more work past this wall-clock. Falls back
+    //     to the legacy PAGINATION_SOFT_DEADLINE_MS guard for fire-and-forget
+    //     callers that don't supply a budget.
+    //   nextStartIndex (closure) — set to `start` when breaking on deadline so
+    //     the caller can resume from this offset on the next round-trip.
+    for (let start = resumeFrom; start < onChainIds.length; start += chunkSize) {
+      const elapsed = Date.now() - startedMs
+      const hitCallerDeadline =
+        softDeadlineAt !== undefined && Date.now() >= softDeadlineAt
+      if (hitCallerDeadline || elapsed > PAGINATION_SOFT_DEADLINE_MS) {
         hitSoftDeadline = true
-        console.log(`[${config.pipelineName}] paginated soft deadline hit at chunk start=${start}/${onChainIds.length}`)
+        nextStartIndex = start
+        console.log(`[${config.pipelineName}] paginated soft deadline hit at chunk start=${start}/${onChainIds.length} (caller_deadline=${hitCallerDeadline})`)
         break
       }
       const count = Math.min(chunkSize, onChainIds.length - start)
@@ -1187,6 +1227,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
     // the next cron pass will re-enrich any wallet still flagged. Only
     // pagination_failed (zero chunks succeeded) marks ok=false.
     const allChunksFailed = chunksProcessed === 0 && chunkErrors > 0
+    const isComplete = !allChunksFailed && nextStartIndex === null
     await logRun({
       pipelineName: config.pipelineName,
       collectionSlug: config.slug,
@@ -1213,10 +1254,12 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
         pagination_total_ids: onChainIds.length,
         pagination_chunk_size: chunkSize,
         pagination_elapsed_ms: Date.now() - paginationStartedMs,
+        pagination_resume_from: resumeFrom,
+        pagination_next_start_index: nextStartIndex,
         mode: fullMode,
       },
     })
-    return { rowsFound: onChainIds.length }
+    return { rowsFound: onChainIds.length, complete: isComplete, nextStartIndex }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     await logRun({
@@ -1243,7 +1286,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
       },
     })
     console.error(`[${config.pipelineName}] paginated backfill failed for ${wallet}: ${msg}`)
-    return { rowsFound: onChainIds.length }
+    return { rowsFound: onChainIds.length, complete: true, nextStartIndex: null }
   }
 }
 
