@@ -11,9 +11,8 @@ import SignOutButton from "@/components/auth/SignOutButton";
 import { ConnectButton } from "@/components/auth/ConnectButton";
 import SignInWithDapper from "@/components/SignInWithDapper";
 import { publishedCollections, getCollection } from "@/lib/collections";
-import ViewTrophyModal from "@/components/profile/ViewTrophyModal";
 import TrophyPickerModal from "@/components/profile/TrophyPickerModal";
-import type { TrophyMoment as ViewTrophyShape } from "@/components/profile/_shared";
+import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import InsiderSignals from "@/components/InsiderSignals";
 import MarketSummary from "@/components/MarketSummary";
 import HotEditions24h from "@/components/HotEditions24h";
@@ -54,21 +53,9 @@ interface SavedWallet {
   verification_method: string | null;
 }
 
-interface Trophy {
-  slot: number;
-  moment_id: string;
-  collection_id: string;
-  player_name: string | null;
-  set_name: string | null;
-  serial_number: number | null;
-  circulation_count: number | null;
-  tier: string | null;
-  thumbnail_url: string | null;
-  video_url: string | null;
-  fmv: number | null;
-  badges: string[] | null;
-  note: string | null;
-}
+// Trophy slab shape comes from the get_trophy_slab_data RPC via
+// /api/profile/trophy-slabs?mine=1. See components/TrophySlab.tsx.
+type Trophy = TrophySlabData;
 
 interface HeroMoment {
   momentId: string;
@@ -255,7 +242,7 @@ function ProfilePageInner() {
   const [resolvedDisplayName, setResolvedDisplayName] = useState<string | null>(null);
   const [bio, setBio] = useState<Bio | null>(null);
   const [wallets, setWallets] = useState<SavedWallet[]>([]);
-  const [trophies, setTrophies] = useState<Trophy[]>([]);
+  const [slabs, setSlabs] = useState<(TrophySlabData | null)[]>([null, null, null, null, null, null]);
   const [hero, setHero] = useState<HeroMoment | null>(null);
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
@@ -278,8 +265,6 @@ function ProfilePageInner() {
 
   // Pin flow: which slot is being filled, and whether the modal is open.
   const [pinSlot, setPinSlot] = useState<number | null>(null);
-  // View flow: which filled trophy is currently expanded in the detail modal.
-  const [viewTrophy, setViewTrophy] = useState<Trophy | null>(null);
   // Hero edit flow: open the same picker but write to profile_bio instead of trophy_moments.
   const [heroEditOpen, setHeroEditOpen] = useState(false);
   // Verification: which wallet is currently in the verify-by-listing modal.
@@ -297,8 +282,12 @@ function ProfilePageInner() {
   // the row from local state so the slot flips back to "empty" immediately,
   // then surfaces a toast on success/failure. Failure rolls the row back.
   const handleRemoveTrophy = useCallback(async (slot: number) => {
-    const previous = trophies;
-    setTrophies((prev) => prev.filter((t) => t.slot !== slot));
+    const previous = slabs;
+    setSlabs((prev) => {
+      const next = prev.slice();
+      if (slot >= 1 && slot <= 6) next[slot - 1] = null;
+      return next;
+    });
     try {
       const res = await fetch("/api/profile/trophy", {
         method: "DELETE",
@@ -311,10 +300,10 @@ function ProfilePageInner() {
       }
       pushToast("Trophy removed", "info");
     } catch (err) {
-      setTrophies(previous);
+      setSlabs(previous);
       pushToast(err instanceof Error ? err.message : "Failed to remove trophy", "info");
     }
-  }, [trophies, pushToast]);
+  }, [slabs, pushToast]);
 
   const refreshStats = useCallback(async (addrs: string[]) => {
     if (addrs.length === 0) {
@@ -352,11 +341,11 @@ function ProfilePageInner() {
 
   const refresh = useCallback(async () => {
     try {
-      const [meRes, bioRes, walletsRes, trophiesRes, favRes, actRes, recRes] = await Promise.all([
+      const [meRes, bioRes, walletsRes, slabsRes, favRes, actRes, recRes] = await Promise.all([
         fetch("/api/profile/me", { cache: "no-store" }),
         fetch("/api/profile/bio", { cache: "no-store" }),
         fetch("/api/profile/saved-wallets", { cache: "no-store" }),
-        fetch("/api/profile/trophy", { cache: "no-store" }),
+        fetch("/api/profile/trophy-slabs?mine=1", { cache: "no-store" }),
         fetch("/api/profile/favorites", { cache: "no-store" }),
         fetch("/api/profile/activity", { cache: "no-store" }),
         fetch("/api/profile/recent-searches", { cache: "no-store" }),
@@ -376,15 +365,19 @@ function ProfilePageInner() {
         walletList = w?.wallets ?? [];
         setWallets(walletList);
       }
-      let trophyList: Trophy[] = [];
-      if (trophiesRes.ok) {
-        const t = await trophiesRes.json();
-        trophyList = t?.trophies ?? [];
-        setTrophies(trophyList);
+      let slabList: TrophySlabData[] = [];
+      if (slabsRes.ok) {
+        const t = await slabsRes.json();
+        slabList = Array.isArray(t?.slabs) ? t.slabs : [];
+        const next: (TrophySlabData | null)[] = [null, null, null, null, null, null];
+        slabList.forEach((s) => {
+          if (s.slot >= 1 && s.slot <= 6) next[s.slot - 1] = s;
+        });
+        setSlabs(next);
       }
       // Hero: only fetch when there are no trophies pinned. The card is gated
-      // by trophyList.length === 0 below, so skipping the round-trip is safe.
-      if (trophyList.length === 0) {
+      // by slabList.length === 0 below, so skipping the round-trip is safe.
+      if (slabList.length === 0) {
         const heroRes = await fetch("/api/profile/hero-moment", { cache: "no-store" });
         if (heroRes.ok) {
           const h = await heroRes.json();
@@ -640,7 +633,8 @@ function ProfilePageInner() {
     );
   }
 
-  const showHero = trophies.filter(Boolean).length === 0 && hero !== null;
+  const filledSlabs = slabs.filter((s): s is TrophySlabData => !!s);
+  const showHero = filledSlabs.length === 0 && hero !== null;
 
   return (
     <div style={{ minHeight: "100vh", background: "#080808", color: "#fff", paddingBottom: 80 }}>
@@ -714,8 +708,8 @@ function ProfilePageInner() {
             hero={hero!}
             onEdit={() => setHeroEditOpen(true)}
           />
-        ) : trophies.length > 0 ? (
-          <TrophyCaseSection trophies={trophies} onPickSlot={setPinSlot} onView={setViewTrophy} onRemove={handleRemoveTrophy} />
+        ) : filledSlabs.length > 0 ? (
+          <TrophyCaseSection slabs={slabs} onPickSlot={setPinSlot} onRemove={handleRemoveTrophy} />
         ) : (
           <EmptyHeroState wallets={wallets} indexing={indexing} onPickSlot={setPinSlot} />
         )}
@@ -731,7 +725,7 @@ function ProfilePageInner() {
             below the stats only when the hero card occupied the top slot, so
             users still get the 6-grid pin UI without scrolling past it. */}
         {wallets.length > 0 && showHero && (
-          <TrophyCaseSection trophies={trophies} onPickSlot={setPinSlot} onView={setViewTrophy} onRemove={handleRemoveTrophy} />
+          <TrophyCaseSection slabs={slabs} onPickSlot={setPinSlot} onRemove={handleRemoveTrophy} />
         )}
 
         {/* ── Insider Signals ── */}
@@ -962,12 +956,6 @@ function ProfilePageInner() {
           ownerKey={userId ? null : (wallets[0]?.wallet_addr ?? null)}
           onClose={() => setPinSlot(null)}
           onPinned={async () => { setPinSlot(null); await refresh(); pushToast("Trophy pinned", "success"); }}
-        />
-      )}
-      {viewTrophy && (
-        <ViewTrophyModal
-          trophy={viewTrophy as unknown as ViewTrophyShape}
-          onClose={() => setViewTrophy(null)}
         />
       )}
       {heroEditOpen && (
@@ -1227,135 +1215,42 @@ function EmptyHeroState({ wallets, indexing, onPickSlot }: { wallets: SavedWalle
 // ── Trophy Case ─────────────────────────────────────────────────────────────
 
 function TrophyCaseSection({
-  trophies,
+  slabs,
   onPickSlot,
-  onView,
   onRemove,
 }: {
-  trophies: Trophy[];
+  slabs: (TrophySlabData | null)[];
   onPickSlot: (slot: number) => void;
-  /** Optional: when set, clicking a filled slot opens the detail modal. */
-  onView?: (trophy: Trophy) => void;
-  /** Optional: when set, an X button appears on hover and removes the slot. */
   onRemove?: (slot: number) => void;
 }) {
-  const emptySlotStyle: React.CSSProperties = {
-    aspectRatio: "1/1",
-    background: "#0d0d0d",
-    border: "1px dashed #27272a",
-    borderRadius: 8,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontFamily: condensedFont,
-    fontWeight: 800,
-    fontSize: 36,
-    color: "rgba(255,255,255,0.3)",
-    textDecoration: "none",
-    cursor: "pointer",
-    width: "100%",
-  };
-
+  const filledCount = slabs.filter(Boolean).length;
   return (
     <section className="rpc-section">
       <style>{`
-        .rpc-trophy-slot .rpc-trophy-actions { opacity: 0; transition: opacity var(--transition-fast); }
-        .rpc-trophy-slot:hover .rpc-trophy-actions { opacity: 1; }
+        @media (max-width: 768px) {
+          .rpc-trophy-slab-grid { grid-template-columns: repeat(2, 1fr) !important; }
+        }
       `}</style>
-      <div className="rpc-section-title">Trophy Case</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <div className="rpc-section-title" style={{ marginBottom: 0 }}>Trophy Case</div>
+        <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: "0.15em" }}>
+          {filledCount} / 6
+        </div>
+      </div>
       <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)", marginBottom: 12, letterSpacing: "0.02em", lineHeight: 1.5 }}>
         Pin your 6 best moments across any collection — your permanent flex.
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
-        {[1, 2, 3, 4, 5, 6].map((slot) => {
-          const t = trophies.find((x) => x.slot === slot);
-          if (!t) {
-            return (
-              <button
-                key={slot}
-                onClick={() => onPickSlot(slot)}
-                className="rpc-binder-slot"
-                style={emptySlotStyle}
-                aria-label={`Pin moment to slot ${slot}`}
-              >
-                +
-              </button>
-            );
-          }
-          const cMeta = collectionMetaByUuid(t.collection_id);
-          const clickable = !!onView;
-          return (
-            <div
-              key={slot}
-              className={`rpc-binder-slot rpc-trophy-slot ${tierHoloClass(t.tier)}`}
-              style={{ position: "relative", aspectRatio: "1/1", background: "#111", border: `1px solid ${tierColor(t.tier)}66`, borderRadius: 8, overflow: "hidden", cursor: clickable ? "pointer" : "default" }}
-              onClick={clickable ? () => onView!(t) : undefined}
-              role={clickable ? "button" : undefined}
-              tabIndex={clickable ? 0 : undefined}
-              onKeyDown={clickable ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onView!(t); } } : undefined}
-              aria-label={clickable ? `View trophy: ${t.player_name ?? "Trophy"}` : undefined}
-            >
-              {t.thumbnail_url && <img src={t.thumbnail_url} alt={t.player_name || ""} style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
-              <div className="rpc-trophy-actions" style={{ position: "absolute", top: 6, right: 6, display: "flex", gap: 4, zIndex: 2 }}>
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onPickSlot(slot); }}
-                  title="Edit pin"
-                  aria-label={`Edit slot ${slot}`}
-                  style={{
-                    width: 24,
-                    height: 24,
-                    borderRadius: "50%",
-                    background: "rgba(0,0,0,0.7)",
-                    border: "1px solid rgba(255,255,255,0.2)",
-                    color: "#fff",
-                    cursor: "pointer",
-                    fontSize: 11,
-                    lineHeight: 1,
-                    padding: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  ✎
-                </button>
-                {onRemove && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); onRemove(slot); }}
-                    title="Remove pin"
-                    aria-label={`Remove slot ${slot}`}
-                    style={{
-                      width: 24,
-                      height: 24,
-                      borderRadius: "50%",
-                      background: "rgba(0,0,0,0.7)",
-                      border: "1px solid rgba(239,68,68,0.45)",
-                      color: "#F87171",
-                      cursor: "pointer",
-                      fontSize: 14,
-                      lineHeight: 1,
-                      padding: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-              <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "6px 8px", background: "linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0))", fontSize: 10, fontFamily: condensedFont, fontWeight: 700 }}>
-                <div style={{ color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.player_name ?? t.moment_id}</div>
-                <div style={{ display: "flex", gap: 6, marginTop: 2, alignItems: "center" }}>
-                  {cMeta && <span style={{ fontSize: 9, letterSpacing: "0.08em", color: cMeta.accent, textTransform: "uppercase" }}>{cMeta.shortLabel}</span>}
-                  <span style={{ fontSize: 9, color: "#34D399", marginLeft: "auto" }}>{t.fmv != null ? fmtUsd(Number(t.fmv)) : ""}</span>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+      <div className="rpc-trophy-slab-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+        {[0, 1, 2, 3, 4, 5].map((i) => (
+          <TrophySlab
+            key={"slab-" + i}
+            slab={slabs[i]}
+            slot={i + 1}
+            mode="owner"
+            onEmptyClick={onPickSlot}
+            onRemove={onRemove}
+          />
+        ))}
       </div>
     </section>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import RpcLogo from "@/components/RpcLogo";
 import CostBasisCard from "@/components/profile/CostBasisCard";
@@ -9,29 +9,11 @@ import TierBreakdownCard from "@/components/profile/TierBreakdownCard";
 import TopMoversCard from "@/components/profile/TopMoversCard";
 import CollectionBreakdownCard from "@/components/profile/CollectionBreakdownCard";
 import PortfolioSparkline from "@/components/profile/PortfolioSparkline";
-import PublicTrophyCase from "@/components/profile/PublicTrophyCase";
 import PublicAchievements from "@/components/profile/PublicAchievements";
-import ViewTrophyModal from "@/components/profile/ViewTrophyModal";
-import type { TrophyMoment as ViewTrophyShape } from "@/components/profile/_shared";
+import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import { LEAGUES, type UserFavoriteTeam } from "@/lib/teams";
 
 // ── Types ─────────────────────────────────────────────────────────
-interface TrophyMoment {
-  id?: number;
-  slot: number;
-  moment_id: string;
-  player_name: string | null;
-  set_name: string | null;
-  serial_number: number | null;
-  circulation_count: number | null;
-  tier: string | null;
-  thumbnail_url: string | null;
-  video_url: string | null;
-  fmv: number | null;
-  badges: string[] | null;
-  note?: string | null;
-}
-
 interface ProfileBio {
   display_name: string | null;
   tagline: string | null;
@@ -90,24 +72,10 @@ function tierColor(t: string | null): string {
   }
 }
 
-function holoClass(t: string | null): string {
-  switch ((t ?? "").toUpperCase()) {
-    case "LEGENDARY": return "rpc-holo-legendary";
-    case "ULTIMATE": return "rpc-holo-ultimate";
-    case "RARE": return "rpc-holo-rare";
-    default: return "";
-  }
-}
-
 function scoreColor(score: number): string {
   if (score >= 800) return "var(--rpc-success)";
   if (score >= 500) return "var(--rpc-warning)";
   return "var(--rpc-danger)";
-}
-
-function thumbnailSrc(url: string | null): string {
-  if (url) return url;
-  return "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Crect fill='%23111' width='200' height='200'/%3E%3C/svg%3E";
 }
 
 // ── Card style ────────────────────────────────────────────────────
@@ -142,68 +110,6 @@ function Sparkline(props: { data: number[]; width?: number; height?: number; col
     <svg width={width} height={height} viewBox={"0 0 " + width + " " + height} style={{ display: "block" }}>
       <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
     </svg>
-  );
-}
-
-// ── Trophy Slot ───────────────────────────────────────────────────
-function PublicTrophySlot(props: { slot: number; trophy: TrophyMoment | null }) {
-  const [hovered, setHovered] = useState(false);
-  const [videoError, setVideoError] = useState(false);
-  const t = props.trophy;
-  const tc = tierColor(t?.tier ?? null);
-  const slotLabels = ["", "🥇", "🥈", "🥉", "⭐", "⭐", "⭐"];
-
-  if (!t) {
-    return (
-      <div style={{ background: "rgba(255,255,255,0.02)", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 10, aspectRatio: "3/4", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
-        <div style={{ fontSize: 24, opacity: 0.15 }}>🏆</div>
-        <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.2)", letterSpacing: "0.1em" }}>EMPTY SLOT</div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className={holoClass(t.tier)}
-      style={{ position: "relative", borderRadius: 10, overflow: "hidden", aspectRatio: "3/4", border: "1px solid " + tc + "44", cursor: "default", transition: "all 0.2s", transform: hovered ? "translateY(-3px)" : "translateY(0)", boxShadow: hovered ? "0 12px 40px " + tc + "22" : "none" }}
-      onMouseEnter={function() { setHovered(true); }}
-      onMouseLeave={function() { setHovered(false); }}
-    >
-      <div style={{ position: "absolute", inset: 0, background: "#111" }}>
-        {t.video_url && !videoError && hovered ? (
-          <video src={t.video_url} autoPlay muted loop playsInline onError={function() { setVideoError(true); }} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-        ) : (
-          <img src={thumbnailSrc(t.thumbnail_url)} alt={t.player_name ?? "Moment"} style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={function(e) { e.currentTarget.style.opacity = "0.3"; }} />
-        )}
-      </div>
-      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.3) 50%, transparent 100%)" }} />
-      <div style={{ position: "absolute", top: 10, left: 10 }}>
-        <span className="rpc-chip" style={{ color: tc, background: tc + "18", borderColor: tc + "44" }}>{(t.tier ?? "COMMON").toUpperCase()}</span>
-      </div>
-      <div style={{ position: "absolute", top: 10, right: 10 }}>
-        <span style={{ fontSize: 14 }}>{slotLabels[props.slot]}</span>
-      </div>
-      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "12px 12px 14px" }}>
-        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 15, color: "#fff", letterSpacing: "0.04em", lineHeight: 1.1, marginBottom: 4 }}>{t.player_name ?? "Unknown"}</div>
-        <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", marginBottom: 6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.set_name ?? ""}</div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: 11, fontFamily: condensedFont, fontWeight: 700, color: tc }}>
-            {t.serial_number != null ? ("#" + t.serial_number + " / " + (t.circulation_count ?? "?")) : ""}
-          </span>
-          {t.fmv != null && <span style={{ fontSize: 10, fontFamily: monoFont, color: "var(--rpc-success)" }}>{fmtDollars(t.fmv)}</span>}
-        </div>
-        {(t.badges ?? []).length > 0 && (
-          <div style={{ display: "flex", gap: 3, marginTop: 5 }}>
-            {(t.badges ?? []).slice(0, 3).map(function(b, i) { return <span key={i} style={{ fontSize: 10 }}>{b}</span>; })}
-          </div>
-        )}
-        {t.note && (
-          <div style={{ marginTop: 5, fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.75)", fontStyle: "italic", lineHeight: 1.3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", textOverflow: "ellipsis" }}>
-            &ldquo;{t.note}&rdquo;
-          </div>
-        )}
-      </div>
-    </div>
   );
 }
 
@@ -261,14 +167,13 @@ function Avatar(props: { username: string; bio: ProfileBio | null; size?: number
 
 // ── Main Page ─────────────────────────────────────────────────────
 export default function PublicProfilePage() {
-  const router = useRouter();
   const params = useParams();
   const username = params?.username as string;
 
   // State
-  const [trophies, setTrophies] = useState<(TrophyMoment | null)[]>([null, null, null, null, null, null]);
-  // Public profile view-trophy modal — read-only, opens on click.
-  const [viewTrophy, setViewTrophy] = useState<TrophyMoment | null>(null);
+  const [slabs, setSlabs] = useState<(TrophySlabData | null)[]>([null, null, null, null, null, null]);
+  const [slabsLoading, setSlabsLoading] = useState(true);
+  const [showAllSlabs, setShowAllSlabs] = useState(false);
   const [bio, setBio] = useState<ProfileBio | null>(null);
   const [favoriteTeams, setFavoriteTeams] = useState<UserFavoriteTeam[]>([]);
   const [wallets, setWallets] = useState<SavedWalletPublic[]>([]);
@@ -289,6 +194,7 @@ export default function PublicProfilePage() {
   useEffect(function() {
     if (!username) return;
     setLoading(true);
+    setSlabsLoading(true);
 
     const enc = encodeURIComponent(username);
 
@@ -296,15 +202,26 @@ export default function PublicProfilePage() {
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(data) {
         if (!data) return;
-        const slots: (TrophyMoment | null)[] = [null, null, null, null, null, null];
-        (data.trophies ?? []).forEach(function(t: TrophyMoment) {
-          if (t.slot >= 1 && t.slot <= MAX_SLOTS) slots[t.slot - 1] = t;
-        });
-        setTrophies(slots);
         if (data.bio) setBio(data.bio);
         if (Array.isArray(data.wallets)) setWallets(data.wallets);
       })
       .catch(function() {});
+
+    // Trophy slabs come from the new enriched RPC, not the legacy
+    // public-profile aggregation. The RPC returns play_description,
+    // collection_display_name, acquired_price, etc. that the slab needs.
+    const slabsP = fetch("/api/profile/trophy-slabs?username=" + enc)
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) {
+        const slots: (TrophySlabData | null)[] = [null, null, null, null, null, null];
+        const list: TrophySlabData[] = Array.isArray(data?.slabs) ? data.slabs : [];
+        list.forEach(function(s) {
+          if (s.slot >= 1 && s.slot <= MAX_SLOTS) slots[s.slot - 1] = s;
+        });
+        setSlabs(slots);
+      })
+      .catch(function() {})
+      .finally(function() { setSlabsLoading(false); });
 
     // Fetch portfolio history for sparkline (public, ownerKey-driven endpoint).
     const historyP = fetch("/api/profile/portfolio-history?ownerKey=" + enc + "&days=30")
@@ -321,7 +238,7 @@ export default function PublicProfilePage() {
       .then(function(data) { if (Array.isArray(data?.teams)) setFavoriteTeams(data.teams); })
       .catch(function() {});
 
-    Promise.all([publicP, historyP, teamsP]).finally(function() { setLoading(false); });
+    Promise.all([publicP, slabsP, historyP, teamsP]).finally(function() { setLoading(false); });
   }, [username]);
 
   // Fetch sniper deals
@@ -341,7 +258,8 @@ export default function PublicProfilePage() {
   const accentColor = bio?.accent_color ?? "#E03A2F";
   const accentBg = hexToRgba(accentColor, 0.15);
   const accentBorder = hexToRgba(accentColor, 0.4);
-  const filledCount = trophies.filter(Boolean).length;
+  const filledCount = slabs.filter(Boolean).length;
+  const hasOverflowSlabs = slabs.slice(3).some(Boolean);
   const totalFmv = wallets.reduce(function(sum, w) { return sum + (w.cached_fmv ?? 0); }, 0);
   const totalMoments = wallets.reduce(function(sum, w) { return sum + (w.cached_moment_count ?? 0); }, 0);
   const totalBadges = wallets.reduce(function(sum, w) { return sum + (w.cached_badges?.length ?? 0); }, 0);
@@ -542,16 +460,63 @@ export default function PublicProfilePage() {
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, justifyContent: "center" }}>
             <span style={labelStyle}>🏆 TROPHY CASE</span>
           </div>
-          {loading ? (
-            <div style={{ padding: "48px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-              {[100, 80, 60].map(function(w, i) {
-                return <div key={i} className="rpc-skeleton" style={{ width: w + "%", maxWidth: 300, height: 14 }} />;
-              })}
-              <p className="rpc-label" style={{ marginTop: 8 }}>LOADING TROPHY CASE&hellip;</p>
-            </div>
-          ) : (
-            <PublicTrophyCase trophies={trophies} onTrophyClick={setViewTrophy} />
+          <div className="rpc-trophy-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+            {[0, 1, 2].map(function(i) {
+              return (
+                <TrophySlab
+                  key={"slab-" + i}
+                  slab={slabs[i]}
+                  slot={i + 1}
+                  mode="public"
+                  loading={slabsLoading}
+                />
+              );
+            })}
+          </div>
+          {hasOverflowSlabs && (
+            <>
+              <div style={{ textAlign: "center", marginTop: 14 }}>
+                <button
+                  type="button"
+                  onClick={function() { setShowAllSlabs(function(v) { return !v; }); }}
+                  style={{
+                    background: "transparent",
+                    border: "1px solid var(--rpc-border)",
+                    borderRadius: "var(--radius-sm)",
+                    padding: "8px 16px",
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10,
+                    letterSpacing: "0.15em",
+                    color: "var(--rpc-text-secondary)",
+                    cursor: "pointer",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {showAllSlabs ? "HIDE EXTRA TROPHIES" : "SHOW ALL TROPHIES"}
+                </button>
+              </div>
+              {showAllSlabs && (
+                <div className="rpc-trophy-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginTop: 16 }}>
+                  {[3, 4, 5].map(function(i) {
+                    return (
+                      <TrophySlab
+                        key={"slab-" + i}
+                        slab={slabs[i]}
+                        slot={i + 1}
+                        mode="public"
+                        loading={slabsLoading}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
+          <style>{`
+            @media (max-width: 768px) {
+              .rpc-trophy-grid { grid-template-columns: repeat(2, 1fr) !important; }
+            }
+          `}</style>
         </section>
 
         {/* ── Saved Wallets ── */}
@@ -660,12 +625,6 @@ export default function PublicProfilePage() {
           </Link>
         </div>
       </main>
-      {viewTrophy && (
-        <ViewTrophyModal
-          trophy={viewTrophy as unknown as ViewTrophyShape}
-          onClose={() => setViewTrophy(null)}
-        />
-      )}
     </div>
   );
 }
