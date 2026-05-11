@@ -50,8 +50,15 @@ export async function POST(req: NextRequest) {
       const subMeta = invoice.subscription_details?.metadata ?? {}
       const invoiceMeta = invoice.metadata ?? {}
       const userId = subMeta.user_id ?? invoiceMeta.user_id ?? null
-      const walletAddress =
+      // Accept both walletAddress (camelCase) and wallet_address (snake_case).
+      // Lowercase at the read site so the activate RPC always sees the
+      // canonical pro_users.wallet_address key shape, regardless of which
+      // checkout build wrote the metadata. The RPC also lowercases as a
+      // last line of defense.
+      const walletRaw =
         subMeta.wallet_address ?? invoiceMeta.wallet_address ?? subMeta.walletAddress ?? invoiceMeta.walletAddress ?? null
+      const walletAddress: string | null =
+        typeof walletRaw === "string" && walletRaw.trim() ? walletRaw.trim().toLowerCase() : null
 
       const lineItem = invoice.lines?.data?.[0]
       const planName = lineItem?.price?.nickname ?? lineItem?.description ?? "pro_monthly"
@@ -82,6 +89,33 @@ export async function POST(req: NextRequest) {
 
       if (error) {
         console.log(`[stripe/webhook] activate_pro_from_stripe error for ${eventId}: ${error.message}`)
+        // Paper trail + retryable response. We write a stripe_payment_log
+        // row with status='handler_error' so post-mortem can find the
+        // failed event without scraping Stripe dashboard, then return 503
+        // so Stripe queues an exponential-backoff retry. 500 triggers
+        // Stripe's "your endpoint is broken" alarm; 503 is the documented
+        // try-again signal.
+        try {
+          await supabaseAdmin.from("stripe_payment_log").insert({
+            user_id: userId,
+            wallet_address: walletAddress,
+            stripe_customer_id: customerId,
+            stripe_subscription_id: subId,
+            stripe_event_id: eventId,
+            amount_usd: amountUsd,
+            plan_name: planName,
+            billing_period_start: periodStart,
+            billing_period_end: periodEnd,
+            status: "handler_error",
+            raw_webhook_payload: { event, handler_error: error.message } as object,
+          })
+        } catch (logErr) {
+          console.log(`[stripe/webhook] paper-trail insert failed for ${eventId}:`, logErr instanceof Error ? logErr.message : String(logErr))
+        }
+        return NextResponse.json(
+          { error: "activate_pro_from_stripe failed — Stripe will retry", detail: error.message },
+          { status: 503 }
+        )
       } else {
         console.log(`[stripe/webhook] activate_pro_from_stripe ${eventId}:`, JSON.stringify(data))
       }
@@ -90,7 +124,13 @@ export async function POST(req: NextRequest) {
 
     case "checkout.session.completed": {
       const session = event.data.object as any
-      const wallet = session.metadata?.walletAddress
+      // Accept both walletAddress (camelCase, legacy) and wallet_address
+      // (snake_case, current checkout route). Either way, lowercase before
+      // any DB write.
+      const walletRaw =
+        session.metadata?.wallet_address ?? session.metadata?.walletAddress ?? null
+      const wallet: string | null =
+        typeof walletRaw === "string" && walletRaw.trim() ? walletRaw.trim().toLowerCase() : null
       if (!wallet) break
 
       const subscriptionId = session.subscription as string
@@ -99,7 +139,7 @@ export async function POST(req: NextRequest) {
 
       await supabase.from("pro_users").upsert(
         {
-          wallet_address: wallet.toLowerCase(),
+          wallet_address: wallet,
           plan: "monthly",
           stripe_subscription_id: subscriptionId,
           stripe_customer_id: session.customer,
