@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server"
+import * as Sentry from "@sentry/nextjs"
 import { supabaseAdmin } from "@/lib/supabase"
 
 // ── On-chain NFL All Day listings indexer (dual-run direct source) ───────────
@@ -554,7 +555,15 @@ export async function POST(req: NextRequest) {
       // /api/allday-listings-retry */15 cron can drain them with a bumped
       // Cadence cap. Upsert by (collection_id, listing_resource_id) so a
       // re-observation just refreshes the row instead of duplicating it.
+      //
+      // Round 11 Item 4: emit per-row Sentry breadcrumbs for every queued
+      // failure plus one summary captureMessage per indexer tick. Breadcrumbs
+      // give the per-row trail; the summary message is what actually surfaces
+      // in the Sentry dashboard. Tagged with collection='nfl_all_day' and a
+      // failure_reason histogram so the "first real failure landed" alert
+      // becomes a single Sentry search.
       let queuedFailures = 0
+      const failureReasonCounts: Record<string, number> = {}
       if (failuresToQueue.length > 0) {
         for (let i = 0; i < failuresToQueue.length; i += 100) {
           const batch = failuresToQueue.slice(i, i + 100)
@@ -565,10 +574,39 @@ export async function POST(req: NextRequest) {
             console.log("[allday-listings-indexer] failure-queue upsert err:", error.message)
           } else {
             queuedFailures += batch.length
+            for (const row of batch) {
+              const reason = String(row.failure_reason)
+              failureReasonCounts[reason] = (failureReasonCounts[reason] ?? 0) + 1
+              Sentry.addBreadcrumb({
+                category: "listing-retry",
+                level: "warning",
+                message: "listing_resolution_failure_inserted",
+                data: {
+                  collection: "nfl_all_day",
+                  flow_id: String(row.flow_id),
+                  failure_reason: reason,
+                  listing_resource_id: String(row.listing_resource_id),
+                },
+              })
+            }
           }
         }
+        // Tag-rich summary message — this is the searchable Sentry event.
+        Sentry.captureMessage("listing_resolution_failures_inserted", {
+          level: "warning",
+          tags: {
+            collection: "nfl_all_day",
+            indexer: "allday-listings-indexer",
+          },
+          extra: {
+            queued_failures: queuedFailures,
+            failure_reason_counts: failureReasonCounts,
+            first_5_flow_ids: failuresToQueue.slice(0, 5).map(r => String(r.flow_id)),
+          },
+        })
       }
       extra.queued_failures = queuedFailures
+      extra.failure_reason_counts = failureReasonCounts
 
       // Soft-mark ListingCompleted updates against existing direct rows. If no
       // matching row exists (we missed the corresponding ListingAvailable),
