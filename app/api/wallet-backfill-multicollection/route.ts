@@ -42,7 +42,13 @@ export const dynamic = "force-dynamic"
 export const maxDuration = 600
 
 const SYNC_MAX_DURATION_MS = 270_000
-const SYNC_ROUND_TRIP_CAP = 6 // safety: max retries per (wallet, sync collection)
+// Round 11 Item 1: cut from 6 → 2.
+// Round 10 telemetry showed max sync-phase wall-clock of ~580s on AllDay pathological
+// wallets, hitting the 600s lambda cap and killing the final log_pipeline_run write.
+// With 2 round-trips × 270s per-trip ceiling = ~540s worst case before the post-loop
+// telemetry row, leaving ~60s of slack inside the 600s lambda budget. Wallets that
+// need more progression simply continue at the next 6h tick.
+const SYNC_ROUND_TRIP_CAP = 2 // safety: max retries per (wallet, sync collection)
 
 interface SyncTarget {
   slug: string
@@ -234,25 +240,83 @@ export async function POST(req: NextRequest) {
   // lambda holds the wallet's sync round-trips while the other three
   // children's after() workers run independently in their own lambdas.
   //
-  // Telemetry note (Round 9 Item 1): every invocation writes one
-  // pipeline_runs row keyed on 'wallet-backfill-multicollection' so the
-  // Round 8 secondary finding (Golazos/UFC fire-and-forget side dropped
-  // at 06:00 UTC tick on 2026-05-11) becomes diagnosable from a single
-  // SELECT. Aggregate across a tick window with:
-  //   SELECT date_trunc('hour', started_at), SUM((extra->'dispatched_per_collection'->>'golazos')::int)
-  //   FROM pipeline_runs WHERE pipeline='wallet-backfill-multicollection' GROUP BY 1;
-  // Pushback: the prompt's wallets_targeted="count from allow_list" framing
-  // implied a sweep-level orchestrator. This orchestrator is per-wallet —
-  // it runs ~200 times per tick from seed-wallet-refresh. We write
-  // wallets_targeted=1 per row; the sweep aggregation lives at query time.
+  // Telemetry shape (Round 11 Item 1 — replaces Round 9 single-row layout):
+  // split into START + END rows.
+  //   START row (pipeline='wallet-backfill-multicollection') is written
+  //   IMMEDIATELY after fire-and-forget dispatch, BEFORE the sync-poll loop
+  //   that can pin a lambda for ~580s. Captures wallets_targeted=1 +
+  //   dispatched_per_collection (fire-side only at this point; sync collections
+  //   default to 0 = pending) + dispatch_errors_per_collection. Guarantees we
+  //   always see what was dispatched even if the lambda gets killed mid-sync.
+  //
+  //   END row (pipeline='wallet-backfill-multicollection-final') is written at
+  //   the END of after() with the full sync picture (sync_round_trips_actual,
+  //   sync_completed_collections). Pair START → END at query time via
+  //   extra->>'wallet_address'; START with no matching END = killed lambda.
+  //
+  //   wallet_address is the canonical extra key (matches the Round 11
+  //   verification query). Legacy 'wallet' key dropped — telemetry consumers
+  //   should migrate to wallet_address.
   const startedAtIso = new Date().toISOString()
   after(async () => {
     const t0 = Date.now()
+
+    // ---- Phase 1: fire-and-forget dispatch (parallel) ----
     const fireResults = await Promise.all(
       FIRE_AND_FORGET_COLLECTIONS.map(t => fireOnce(origin, t, wallet, skipCached, ingestToken))
     )
     const fireMs = Date.now() - t0
 
+    // Build dispatch-time snapshot. Sync collections marked 0 (= pending).
+    const dispatched: Record<string, number> = {}
+    const dispatchErrors: Record<string, number> = {}
+    const dispatchErrorSamples: Record<string, string[]> = {}
+
+    for (const r of fireResults) {
+      dispatched[r.collection] = r.ok ? 1 : 0
+      if (!r.ok) {
+        dispatchErrors[r.collection] = 1
+        dispatchErrorSamples[r.collection] = [r.error ?? `HTTP ${r.status}`]
+      }
+    }
+    for (const target of SYNC_COLLECTIONS) {
+      dispatched[target.slug] = 0
+    }
+
+    // ---- START telemetry row ----
+    // Write BEFORE the sync-poll loop. If the lambda dies during sync, this
+    // row still exists and pinpoints the casualty by absence of the END row.
+    try {
+      await (supabaseAdmin as any).rpc("log_pipeline_run", {
+        p_pipeline: "wallet-backfill-multicollection",
+        p_started_at: startedAtIso,
+        p_rows_found: 1,
+        p_rows_written: Object.values(dispatched).filter(v => v > 0).length,
+        p_rows_skipped: Object.values(dispatchErrors).reduce((a, b) => a + b, 0),
+        p_ok: Object.values(dispatchErrors).length === 0,
+        p_error: null,
+        p_collection_slug: null,
+        p_cursor_before: null,
+        p_cursor_after: null,
+        p_extra: {
+          wallet_address: wallet,
+          wallets_targeted: 1,
+          phase: "dispatch",
+          dispatched_per_collection: dispatched,
+          dispatch_errors_per_collection: dispatchErrors,
+          dispatch_error_samples: dispatchErrorSamples,
+          fire_ms: fireMs,
+          sync_collections_pending: SYNC_COLLECTIONS.map(t => t.slug),
+          sync_round_trip_cap: SYNC_ROUND_TRIP_CAP,
+        },
+      })
+    } catch (logErr) {
+      console.warn(
+        `[wallet-backfill-multicollection] log_pipeline_run (start) failed wallet=${wallet}: ${logErr instanceof Error ? logErr.message : String(logErr)}`
+      )
+    }
+
+    // ---- Phase 2: sync-poll loop ----
     const syncResults: SyncResult[] = []
     for (const target of SYNC_COLLECTIONS) {
       syncResults.push(await syncPoll(origin, target, wallet, skipCached, ingestToken))
@@ -275,24 +339,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Compose telemetry row. dispatched_per_collection is 0/1 per collection
-    // for this wallet: fire-and-forget = 1 when the child returned 2xx/202,
-    // sync = 1 when final_complete=true. dispatch_errors_per_collection is
-    // the count of dispatch-side exceptions captured (fire-and-forget timeout
-    // or HTTP error; sync round-trip-loop errors). Samples carry the first
-    // 3 error strings per collection for in-row diagnosability.
-    const dispatched: Record<string, number> = {}
-    const dispatchErrors: Record<string, number> = {}
-    const dispatchErrorSamples: Record<string, string[]> = {}
-
-    for (const r of fireResults) {
-      dispatched[r.collection] = r.ok ? 1 : 0
-      if (!r.ok) {
-        dispatchErrors[r.collection] = (dispatchErrors[r.collection] ?? 0) + 1
-        const sample = r.error ?? `HTTP ${r.status}`
-        dispatchErrorSamples[r.collection] = [sample]
-      }
-    }
+    // Merge sync outcomes into the dispatched/errors maps for the END row.
     for (const r of syncResults) {
       dispatched[r.collection] = r.final_complete ? 1 : 0
       if (r.errors.length > 0) {
@@ -304,9 +351,19 @@ export async function POST(req: NextRequest) {
       Object.keys(dispatched).length === FIRE_AND_FORGET_COLLECTIONS.length + SYNC_COLLECTIONS.length &&
       Object.values(dispatched).every(v => v > 0)
 
+    const syncRoundTripsActual = syncResults.map(r => ({
+      collection: r.collection,
+      round_trips: r.round_trips,
+      ok: r.ok,
+      final_complete: r.final_complete,
+    }))
+    const syncCompletedCollections = syncResults.filter(r => r.final_complete).map(r => r.collection)
+
+    // ---- END telemetry row ----
+    // Distinct pipeline name so START/END pair cleanly at query time.
     try {
       await (supabaseAdmin as any).rpc("log_pipeline_run", {
-        p_pipeline: "wallet-backfill-multicollection",
+        p_pipeline: "wallet-backfill-multicollection-final",
         p_started_at: startedAtIso,
         p_rows_found: 1,
         p_rows_written: Object.values(dispatched).reduce((a, b) => a + b, 0),
@@ -317,19 +374,21 @@ export async function POST(req: NextRequest) {
         p_cursor_before: null,
         p_cursor_after: null,
         p_extra: {
-          wallet,
+          wallet_address: wallet,
           wallets_targeted: 1,
+          phase: "final",
           dispatched_per_collection: dispatched,
           dispatch_errors_per_collection: dispatchErrors,
           dispatch_error_samples: dispatchErrorSamples,
           fire_ms: fireMs,
           total_ms: totalMs,
-          sync_round_trips: syncResults.map(r => ({ collection: r.collection, round_trips: r.round_trips, ok: r.ok })),
+          sync_round_trips_actual: syncRoundTripsActual,
+          sync_completed_collections: syncCompletedCollections,
         },
       })
     } catch (logErr) {
       console.warn(
-        `[wallet-backfill-multicollection] log_pipeline_run failed wallet=${wallet}: ${logErr instanceof Error ? logErr.message : String(logErr)}`
+        `[wallet-backfill-multicollection] log_pipeline_run (final) failed wallet=${wallet}: ${logErr instanceof Error ? logErr.message : String(logErr)}`
       )
     }
   })
