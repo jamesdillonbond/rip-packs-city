@@ -1,17 +1,24 @@
-// compute-topshot-pack-ev v14 — BATCH_SIZE 12 → 8 to fix ~50% time-budget
-// timeouts. Fetch time scales linearly with batch (BATCH_SIZE / FETCH_CONCURRENCY
-// chunks × ~30s per chunk), so v13's 12-pack batches hit fetch_phase_ms 119–148s
-// against TIME_BUDGET_MS=110000 too often. Dropping to 8 puts typical fetch at
-// ~3 chunks (~90s) with comfortable headroom. Throughput math: 12 packs × 50%
-// success rate = 6/run → 8 packs × ~95% success = 7.6/run, so net throughput
-// holds while reliability jumps. The targets view orders by last_ev_at NULLS
-// FIRST, so any packs not picked up this tick come up next.
+// compute-topshot-pack-ev v16 — dual-price model (primary + secondary).
 //
-// v11–v13 history retained:
-//   v11 — pool_empty sentinel write breaks queue-poisoning on sold-out packs.
-//   v12 — explicit snapshotted_at on the success path (PostgREST batch inserts
-//         were padding NULL across rows that relied on the column DEFAULT).
-//   v13 — added zero_total_weight to the sentinel-trigger reasons.
+// Mirrors app/api/pack-ev/route.ts: every persisted row now carries
+// primary_price, secondary_ask, price_source, primary_available,
+// secondary_available alongside the legacy pack_price. EV is anchored
+// against the cheaper of (a) primary retail if the pack is still selling
+// or (b) the secondary low ask on the P2P market. computeDualPrice() is
+// a verbatim port of the route's function so future devs can grep both
+// paths and confirm a single source of truth for the math.
+//
+// Secondary asks are fetched in one upfront call to Dapper Studio's
+// searchPackNftAggregation (same query the /api/pack-listings route
+// uses, also hit directly by seed-topshot-pack-distributions — Dapper
+// Studio is reachable from Supabase egress without a proxy hop). The
+// result is a Map<distId, lowestAsk> consulted per pack in the loop.
+//
+// v15 history:
+//   v14 BATCH_SIZE 12 → 8 to fix ~50% time-budget timeouts.
+//   v13 added zero_total_weight to sentinel-trigger reasons.
+//   v12 explicit snapshotted_at on success path.
+//   v11 pool_empty sentinel write breaks queue-poisoning on sold-out packs.
 //
 // Outer pack loop still chunks at FETCH_CONCURRENCY=3 to stay under the
 // topshot-proxy Cloudflare Workers per-IP rate limit. gqlCall retries
@@ -32,19 +39,22 @@ if (!USING_PROXY) {
   console.log(`[compute-topshot-pack-ev] WARN: proxy env not set (TS_PROXY_URL=${TS_PROXY_URL ? "set" : "missing"}, TS_PROXY_SECRET=${TS_PROXY_SECRET ? "set" : "missing"}). Falling back to direct GQL — Cloudflare may reject ~50% of requests.`)
 }
 
+// Dapper Studio is the only host that serves searchPackNftAggregation
+// (per-pack listing aggregation with min ask). Reachable from Supabase
+// egress directly — seed-topshot-pack-distributions hits the same host
+// without a proxy. No CF WAF block.
+const STUDIO_GRAPHQL = "https://api.production.studio-platform.dapperlabs.com/graphql"
+
 const BATCH_SIZE = 8
 const MAX_EDITION_PAGES = 8
+const MAX_LISTING_PAGES = 4
 const TIME_BUDGET_MS = 110_000
-// Hard ceiling for the entire run, including the DB compute phase. If we
-// blow past this inside the per-pack RPC loop we break and still flush
-// whatever evRows we've accumulated (v15 graceful early-exit) instead of
-// returning rowsWritten:0 like the pre-DB time-budget check does.
 const HARD_CEILING_MS = 130_000
 const ERRORS_SAMPLE_CAP = 12
 const FETCH_CONCURRENCY = 3
 const MAX_1015_RETRIES = 3
 const RETRY_BACKOFF_MS = 2000
-const FUNCTION_VERSION = 15
+const FUNCTION_VERSION = 16
 
 const retryEvents: Array<{
   op: string
@@ -66,6 +76,13 @@ const GQL_HEADERS: Record<string, string> = {
   "Referer": "https://nbatopshot.com/",
 }
 if (USING_PROXY) GQL_HEADERS["X-Proxy-Secret"] = TS_PROXY_SECRET
+
+const STUDIO_HEADERS: Record<string, string> = {
+  "Content-Type": "application/json",
+  "User-Agent": "RipPacksCity/1.0 (www.rippackscity.com)",
+  "Origin": "https://nbatopshot.com",
+  "Referer": "https://nbatopshot.com/",
+}
 
 const DYNAMIC_QUERY = `
   query GetPackListing_DynamicData($input: GetPackListingInput!) {
@@ -117,9 +134,43 @@ const EDITIONS_QUERY = `
 `
 const EDITIONS_OP = "GetPackEditions"
 
+const STUDIO_PACK_LISTINGS_QUERY = `
+  query searchPackNftAggregation_searchPacks($after: String, $first: Int, $filters: [PackNftFilter!]) {
+    searchPackNftAggregation(searchInput: {after: $after, first: $first, filters: $filters}) {
+      pageInfo { endCursor hasNextPage }
+      totalCount
+      edges {
+        node {
+          dist_id { key value }
+          listing { price { min } }
+        }
+      }
+    }
+  }
+`
+
+const STUDIO_SEALED_FILTERS = [
+  {
+    status: { eq: "Sealed" },
+    listing: {
+      exists: true,
+      ft_vault_type: { eq: "A.ead892083b3e2c6c.DapperUtilityCoin.Vault" },
+    },
+    owner_address: { ne: "0b2a3299cc857e29" },
+    excludeReserved: { eq: true },
+    type_name: { eq: "A.0b2a3299cc857e29.PackNFT.NFT" },
+    distribution: {
+      tier: { ignore_case: true, in: [] },
+      series_ids: { contains: [], contains_type: "ANY" },
+      title: { ignore_case: true, partial_match: true, in: [] },
+    },
+  },
+]
+
 interface DynamicData {
   getPackListing?: {
     data?: {
+      forSale?: boolean
       packListingContentRemaining?: {
         unopened?: number
         totalPackCount?: number
@@ -167,11 +218,66 @@ interface GqlFailure {
 }
 
 type FetchOutcome =
-  | { tag: "success"; target: TargetRow; totalUnopened: number; totalPackCount: number; editions: EditionNode[] }
+  | { tag: "success"; target: TargetRow; totalUnopened: number; totalPackCount: number; forSale: boolean; editions: EditionNode[] }
   | { tag: "no_dynamic"; target: TargetRow }
   | { tag: "no_editions"; target: TargetRow }
   | { tag: "zero_unopened"; target: TargetRow }
   | { tag: "gql_error"; target: TargetRow; failure: GqlFailure }
+
+type PriceSource = "primary" | "secondary" | "min" | "none"
+interface DualPrice {
+  packPrice: number
+  primaryPrice: number | null
+  secondaryAsk: number | null
+  primaryAvailable: boolean
+  secondaryAvailable: boolean
+  priceSource: PriceSource
+}
+
+// Verbatim port of computeDualPrice from app/api/pack-ev/route.ts. Keep
+// the name and shape identical so future audits can grep both paths.
+function computeDualPrice(args: {
+  requestedPrice: number
+  totalUnopened: number
+  forSale: boolean
+  secondaryAsk: number | null
+}): DualPrice {
+  const primaryAvailable = args.totalUnopened > 0 && args.forSale === true
+  const secondaryAvailable = args.secondaryAsk != null && args.secondaryAsk > 0
+  const primaryPrice = primaryAvailable && args.requestedPrice > 0 ? args.requestedPrice : null
+  const secondaryAskValue = secondaryAvailable ? args.secondaryAsk : null
+
+  let packPrice = 0
+  let priceSource: PriceSource = "none"
+
+  if (primaryPrice != null && secondaryAskValue != null) {
+    if (primaryPrice <= secondaryAskValue) {
+      packPrice = primaryPrice
+      priceSource = "primary"
+    } else {
+      packPrice = secondaryAskValue
+      priceSource = "secondary"
+    }
+    if (primaryPrice > 0 && Math.abs(primaryPrice - secondaryAskValue) / primaryPrice <= 0.01) {
+      priceSource = "min"
+    }
+  } else if (primaryPrice != null) {
+    packPrice = primaryPrice
+    priceSource = "primary"
+  } else if (secondaryAskValue != null) {
+    packPrice = secondaryAskValue
+    priceSource = "secondary"
+  }
+
+  return {
+    packPrice,
+    primaryPrice,
+    secondaryAsk: secondaryAskValue,
+    primaryAvailable,
+    secondaryAvailable,
+    priceSource,
+  }
+}
 
 async function gqlCall<T>(
   opName: string,
@@ -270,23 +376,81 @@ async function fetchAllEditions(packListingId: string): Promise<{
   return { ok: true, editions: all }
 }
 
+// Pulls every sealed DUC-denominated pack listing from Dapper Studio and
+// builds Map<distId, lowestAsk>. lowestAsk is normalized from Flow's
+// UFix64 ×1e8 wire format to USD-per-pack. Returns an empty map on
+// failure so the per-pack loop falls back to primary-only pricing
+// (priceSource: "primary" or "none") rather than crashing.
+async function fetchSecondaryAskMap(): Promise<Map<string, number>> {
+  const result = new Map<string, number>()
+  let cursor: string | null = null
+  let pages = 0
+  try {
+    while (pages < MAX_LISTING_PAGES) {
+      pages++
+      const res = await fetch(STUDIO_GRAPHQL, {
+        method: "POST",
+        headers: STUDIO_HEADERS,
+        body: JSON.stringify({
+          operationName: "searchPackNftAggregation_searchPacks",
+          query: STUDIO_PACK_LISTINGS_QUERY,
+          variables: { first: 2000, after: cursor, filters: STUDIO_SEALED_FILTERS },
+        }),
+        signal: AbortSignal.timeout(30_000),
+      })
+      if (!res.ok) {
+        const body = await res.text().catch(() => "")
+        console.log(`[compute-topshot-pack-ev] secondary asks HTTP ${res.status}: ${body.slice(0, 200)}`)
+        return result
+      }
+      // deno-lint-ignore no-explicit-any
+      const json: any = await res.json().catch(() => null)
+      if (!json || json.errors?.length) {
+        const msg = json?.errors?.[0]?.message ?? "no json"
+        console.log(`[compute-topshot-pack-ev] secondary asks gql err: ${msg}`)
+        return result
+      }
+      const conn = json?.data?.searchPackNftAggregation
+      const edges = conn?.edges ?? []
+      for (const e of edges) {
+        const node = e?.node
+        const distId = node?.dist_id?.value
+        if (!distId) continue
+        const askRaw = parseInt(node?.listing?.price?.min ?? "0", 10)
+        const ask = askRaw / 100_000_000
+        if (!Number.isFinite(ask) || ask <= 0) continue
+        const cur = result.get(distId)
+        if (cur === undefined || ask < cur) result.set(distId, ask)
+      }
+      if (conn?.pageInfo?.hasNextPage !== true) break
+      cursor = conn.pageInfo.endCursor ?? null
+      if (!cursor) break
+    }
+  } catch (err) {
+    console.log(`[compute-topshot-pack-ev] secondary asks fetch err: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  return result
+}
+
 async function fetchOnePack(target: TargetRow): Promise<FetchOutcome> {
   const dyn = await gqlCall<DynamicData>(DYNAMIC_OP, DYNAMIC_QUERY, {
     input: { packListingId: target.pack_listing_uuid },
   })
   if (!dyn.ok) return { tag: "gql_error", target, failure: dyn.failure }
 
-  const cr = dyn.data?.getPackListing?.data?.packListingContentRemaining
+  const data = dyn.data?.getPackListing?.data
+  const cr = data?.packListingContentRemaining
   if (!cr) return { tag: "no_dynamic", target }
   const totalUnopened = cr.unopened ?? 0
   const totalPackCount = cr.totalPackCount ?? 0
+  const forSale = data?.forSale === true
   if (totalUnopened === 0) return { tag: "zero_unopened", target }
 
   const eds = await fetchAllEditions(target.pack_listing_uuid)
   if (!eds.ok) return { tag: "gql_error", target, failure: eds.failure }
   if (eds.editions.length === 0) return { tag: "no_editions", target }
 
-  return { tag: "success", target, totalUnopened, totalPackCount, editions: eds.editions }
+  return { tag: "success", target, totalUnopened, totalPackCount, forSale, editions: eds.editions }
 }
 
 async function logPipelineRun(args: {
@@ -328,6 +492,8 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     rpc_not_ok: 0,
     rpc_errors: 0,
     gql_errors: 0,
+    secondary_asks_count: 0,
+    secondary_asks_matched: 0,
   }
 
   const errorsSample: Array<{
@@ -382,6 +548,13 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         batch_size: BATCH_SIZE,
       },
     })
+
+    // Build secondary ask map up front (one Dapper Studio paginated call,
+    // cached for the lifetime of this invocation). Failure here is
+    // non-fatal — the per-pack loop just sees secondaryAsk=null and
+    // falls back to primary-only pricing.
+    const secondaryAskMap = await fetchSecondaryAskMap()
+    counters.secondary_asks_count = secondaryAskMap.size
 
     const fetchStart = Date.now()
     const fetchResults: PromiseSettledResult<FetchOutcome>[] = []
@@ -602,14 +775,29 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       }
       const distId = f.target.dist_id
       const slots = Math.max(1, f.target.slots ?? 1)
-      const packPrice = f.target.retail_price_usd != null ? Number(f.target.retail_price_usd) : 0
+      const retailPrice = f.target.retail_price_usd != null ? Number(f.target.retail_price_usd) : 0
+      const secondaryAsk = secondaryAskMap.get(distId) ?? null
+      if (secondaryAsk != null) counters.secondary_asks_matched++
 
+      const dual = computeDualPrice({
+        requestedPrice: retailPrice,
+        totalUnopened: f.totalUnopened,
+        forSale: f.forSale,
+        secondaryAsk,
+      })
+
+      // Pass the dual-resolved price to the RPC so gross_ev is computed
+      // against the same anchor we'll persist. The RPC also returns
+      // pack_ev and is_positive_ev — we override both in JS below to
+      // match the route's behavior exactly (price_source 'none' must
+      // suppress isPositive, and pack_ev = gross_ev - dual.packPrice
+      // regardless of what the RPC returns).
       const { data: rpcResult, error: rpcErr } = await supabase.rpc(
         "compute_pack_ev_per_edition_weighted",
         {
           p_collection_id: TOPSHOT_COLLECTION_ID,
           p_dist_id: distId,
-          p_pack_price: packPrice,
+          p_pack_price: dual.packPrice,
           p_slots: slots,
         },
       )
@@ -625,19 +813,17 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         if (rpcNotOkSample.length < ERRORS_SAMPLE_CAP) {
           rpcNotOkSample.push({
             dist_id: distId,
-            pack_price: packPrice,
+            pack_price: dual.packPrice,
             slots,
             payload: ev,
           })
         }
-        // Both pool_empty (no unopened packs) and zero_total_weight (drop
-        // pool exists but every edition has weight=0) are queue-poisoning
-        // cases. Write a sentinel pack_ev_history row so pack_ev_latest is
-        // no longer NULL for this dist_id and the targets view stops
-        // re-selecting it on every cron tick. (v13: added zero_total_weight
-        // to the trigger set; v12 added explicit snapshotted_at on the
-        // success path so PostgREST batch inserts don't pad NULL across
-        // rows that originally relied on the column DEFAULT.)
+        // pool_empty / zero_total_weight: drop pool is missing or every
+        // edition has weight=0. Write a sentinel row so pack_ev_latest
+        // is no longer NULL for this dist_id and the targets view stops
+        // re-selecting it on every cron tick. Sentinels still carry the
+        // dual-price columns so the UI shows the live primary/secondary
+        // state even when EV is unavailable.
         if (ev?.reason === "pool_empty" || ev?.reason === "zero_total_weight") {
           counters.pool_empty_sentinels++
           evRows.push({
@@ -645,7 +831,12 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
             collection_id: TOPSHOT_COLLECTION_ID,
             dist_id: distId,
             pack_name: f.target.title,
-            pack_price: f.target.retail_price_usd != null ? Number(f.target.retail_price_usd) : null,
+            pack_price: dual.packPrice,
+            primary_price: dual.primaryPrice,
+            secondary_ask: dual.secondaryAsk,
+            price_source: dual.priceSource,
+            primary_available: dual.primaryAvailable,
+            secondary_available: dual.secondaryAvailable,
             gross_ev: 0,
             pack_ev: 0,
             is_positive_ev: false,
@@ -660,6 +851,13 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         continue
       }
 
+      const grossEv = Number(ev.gross_ev)
+      const packEv = Math.round((grossEv - dual.packPrice) * 100) / 100
+      const isPositiveEv = dual.priceSource !== "none" && packEv > 0
+      const valueRatio = dual.packPrice > 0
+        ? Math.round((grossEv / dual.packPrice) * 1000) / 1000
+        : null
+
       const depletionPct = f.totalPackCount > 0
         ? Math.min(100, Math.max(0, Math.round(((f.totalPackCount - f.totalUnopened) / f.totalPackCount) * 100)))
         : null
@@ -669,11 +867,16 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         collection_id: TOPSHOT_COLLECTION_ID,
         dist_id: distId,
         pack_name: f.target.title,
-        pack_price: packPrice,
-        gross_ev: clamp(Number(ev.gross_ev)),
-        pack_ev: clamp(Number(ev.pack_ev)),
-        is_positive_ev: Boolean(ev.is_positive_ev),
-        value_ratio: ev.value_ratio != null ? Number(ev.value_ratio) : null,
+        pack_price: dual.packPrice,
+        primary_price: dual.primaryPrice,
+        secondary_ask: dual.secondaryAsk,
+        price_source: dual.priceSource,
+        primary_available: dual.primaryAvailable,
+        secondary_available: dual.secondaryAvailable,
+        gross_ev: clamp(grossEv),
+        pack_ev: clamp(packEv),
+        is_positive_ev: isPositiveEv,
+        value_ratio: valueRatio,
         fmv_coverage_pct: Number(ev.fmv_coverage_pct),
         edition_count: Math.min(Number(ev.edition_count), 32767),
         total_unopened: f.totalUnopened,
