@@ -1,62 +1,63 @@
 # Pinnacle Events → Reconciliation Readiness — 2026-05-11
 
-## Status
+## Status (Round 12 re-check)
 
-**Phase 2C (events → cached_listings reconciliation) is gated on event accumulation.**
+**Phase 2C (events → cached_listings reconciliation) remains gated on event accumulation.**
 
-Current accumulation as of 2026-05-11 15:42 UTC:
+Current accumulation as of 2026-05-11 18:34 UTC:
 
 | Source | Count |
 |---|---|
-| `pinnacle_listing_events` total rows | 0 |
-| `pinnacle_event_cursors` rows | 0 (cursor never initialized) |
-| `pipeline_runs WHERE pipeline='pinnacle-events-ingest'` | 0 |
+| `pinnacle_listing_events` total rows | **0** |
+| `pinnacle-events-ingest` runs in last 2h | 2 (one OK, one FAILED) |
 
-## Root cause
+## What changed since the Round 11 readiness doc
 
-The `pinnacle-events-ingest` route at [app/api/cron/pinnacle-events-ingest/route.ts](../../app/api/cron/pinnacle-events-ingest/route.ts) is deployed and the worker (`pinnacle-events-proxy.tdillonbond.workers.dev`) is wired and authed. What's missing: **the cron-job.org schedule has not been created yet.** Round 10 shipped the route with the comment `Schedule (manual, cron-job.org): */15 minutes` — Trevor still needs to add the cron entry.
+The cron-job.org schedule is now live. Cadence: `4,19,34,49 * * * *` (offset from neighboring `*/20` jobs).
 
-Until that cron runs at least once:
+| Run | started_at | ok | rows_written | Notes |
+|---|---|---|---|---|
+| First | 2026-05-11 18:24:01 UTC | true | 0 | Cursor anchored at block 151,205,668. No matching events in the first window. |
+| Second | 2026-05-11 18:34:07 UTC | **false** | 0 | `proxy HTTP 404: <!DOCTYPE html>…` — `pinnacle-events-proxy` worker returned an HTML 404 page. |
 
-- `pinnacle_event_cursors` stays empty.
-- First run will anchor the cursor at the current sealed tip with no backscan (matching `allday-listings-indexer`'s behavior).
-- After that, every */15 tick walks up to 10,000 blocks and writes any matching Pinnacle `ListingAvailable` events.
+The 18:34 failure surfaces a NEW issue independent of Phase 2C: the chain-events proxy is intermittently returning 404 HTML. This needs to be investigated before Phase 2C can reliably accumulate events. Hypotheses to check next session:
 
-## Expected accumulation rate
+1. The worker route pattern doesn't cover the path the cron is calling (404 from CF router).
+2. The worker is up but a downstream Flow REST endpoint returned 404 and we're surfacing it verbatim.
+3. The cron URL was misconfigured at cron-job.org and is hitting a non-route.
 
-Pinnacle has materially lower marketplace velocity than Top Shot / AllDay. Rough order-of-magnitude expectations based on listing-cache observations:
+Pull the worker logs (`wrangler tail pinnacle-events-proxy`) at the next */15 tick to disambiguate.
 
-| Collection | Approx live listings | Approx new listings/hour |
-|---|---|---|
-| Top Shot | ~60K | ~200-500 |
-| AllDay | ~15K | ~50-150 |
-| Pinnacle | ~10K | ~10-30 |
+## Gate criteria (unchanged from Round 11 readiness doc)
 
-A reasonable "ready to ship Phase 2C" threshold is **≥10 ListingAvailable rows** sampled from at least one cron tick. At the lower bound of ~10 listings/hour that requires waiting ~30-60 minutes after the cron is wired. At a more conservative ~3 listings/hour it could take ~3 hours.
+Phase 2C ship requires **≥10 `ListingAvailable` rows** in `pinnacle_listing_events`. Pinnacle marketplace velocity is roughly ~10-30 new listings/hour (vs ~50-150 AllDay, ~200-500 Top Shot), so at the lower bound this could take ~30-60 min once ingest is healthy, and several hours if velocity is at the conservative end.
 
-## Action
+## Action — next round
 
-1. Trevor: create the cron-job.org entry — POST `https://www.rippackscity.com/api/cron/pinnacle-events-ingest` every 15 minutes with `Authorization: Bearer $INGEST_SECRET_TOKEN`. Recommended offset: `*/15 * * * *` starting at minute 7 to avoid collision with the existing `*/20` and `*/15` jobs.
-2. After ≥3 successful runs with `pinnacle_listing_events.total_events >= 10`, Phase 2C goes back on the queue. The reconciliation RPC (`pinnacle_listings_reconcile()`) will:
-   - Read the most recent `ListingAvailable` per `listing_resource_id`.
-   - Join `pinnacle_nft_map.nft_id → pinnacle_editions.edition_key`.
-   - Aggregate per-edition `MIN(price_usd)` for live listings (no subsequent `ListingCompleted` / `ListingRemoved`).
-   - UPSERT into `pinnacle_cached_listings` with `extra.source='pinnacle_direct'` so we can quickly verify the $1-everything Flowty floor signal has been replaced with real upstream data.
+1. **Diagnose the 18:34 proxy 404.** This blocks any further accumulation. Either fix the worker route pattern or correct the cron URL.
+2. After ≥3 consecutive successful runs with `pinnacle_listing_events.total_events >= 10`, ship `pinnacle_listings_reconcile()` per the Round 11 Item 2 spec.
 
-## Verification queries (for use after cron wires up)
+## Verification queries
 
 ```sql
--- Step 1: confirm cron is running.
-SELECT MAX(started_at), COUNT(*), SUM(rows_written)
-FROM pipeline_runs WHERE pipeline = 'pinnacle-events-ingest'
-  AND started_at > NOW() - INTERVAL '2 hours';
+-- Run health
+SELECT pipeline, MAX(started_at), COUNT(*) FILTER (WHERE ok) AS ok_runs,
+       COUNT(*) FILTER (WHERE NOT ok) AS bad_runs, SUM(rows_written) AS total_written
+FROM pipeline_runs
+WHERE pipeline = 'pinnacle-events-ingest'
+  AND started_at > NOW() - INTERVAL '24 hours'
+GROUP BY 1;
 
--- Step 2: confirm events are accumulating.
+-- Event accumulation
 SELECT event_type, COUNT(*), MIN(listed_at), MAX(listed_at)
 FROM pinnacle_listing_events
 GROUP BY 1 ORDER BY 1;
 
--- Step 3 (gates Phase 2C ship): need >=10 ListingAvailable rows.
+-- Gate for Phase 2C ship: need >=10
 SELECT COUNT(*) FROM pinnacle_listing_events
-WHERE event_type = 'A.4eb8a10cb9f87357.NFTStorefrontV2.ListingAvailable';
+WHERE event_type LIKE '%ListingAvailable%';
 ```
+
+## Queued for Round 13+
+
+- Phase 2C reconciliation RPC + */15 cron (offset 9,24,39,54) — ship after proxy is healthy and accumulation crosses 10 events.
