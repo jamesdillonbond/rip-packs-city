@@ -168,7 +168,7 @@ export const COLLECTIONS: Collection[] = [
     partner: "Concept Labs",
     accent: "#EF4444",
     icon: "\u{1F94A}",
-    pages: ["overview", "collection", "sniper", "analytics"],
+    pages: ["overview", "collection", "sniper", "sets", "analytics"],
     published: true,
     badge: "BETA",
     flowContractName: "UFC_NFT",
