@@ -18,6 +18,7 @@ import InsiderSignals from "@/components/InsiderSignals";
 import MarketSummary from "@/components/MarketSummary";
 import HotEditions24h from "@/components/HotEditions24h";
 import WhaleWatch7d from "@/components/WhaleWatch7d";
+import PortfolioChart from "@/components/PortfolioChart";
 
 const condensedFont = "'Barlow Condensed', sans-serif";
 const monoFont = "'Share Tech Mono', monospace";
@@ -740,6 +741,9 @@ function ProfilePageInner() {
         <MarketSummary />
         <HotEditions24h />
         <WhaleWatch7d />
+
+        {/* ── Portfolio history ── */}
+        <PortfolioChart />
 
         {/* ── Saved Wallets ── */}
         <section className="rpc-section" data-tour-anchor="saved-wallets-card">
