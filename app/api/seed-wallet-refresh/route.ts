@@ -3,7 +3,42 @@ import { createClient } from "@supabase/supabase-js"
 
 export const maxDuration = 300
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+// Cap concurrent /api/wallet-backfill-multicollection dispatches at this
+// number. Each dispatch fans out to 5 collection-specific child routes,
+// each of which uses Next.js `after()` to run heavy DB work in the
+// background past response time. With ~200 seeded wallets × 5 children,
+// an unbounded fan-out at HH:00 spawns ~1000 background workers, all
+// competing for the 60-conn Supabase pool — saturation cascades into the
+// other crons that fire at HH:05 (pinnacle-resolver, sync-flowty,
+// wmc-fmv-populate). 8-in-flight keeps the burst absorption window tight
+// without changing the cron schedule.
+//
+// Caveat: this caps in-flight dispatch fetches, NOT the background
+// after() workers each child spawns. Truly throttling pool usage would
+// require children to run synchronously and the orchestrator to await
+// completion (today they return 202 immediately). 8-in-flight smooths the
+// initial burst at HH:00 and is the minimum-blast-radius change that
+// matches the audit ask.
+const DISPATCH_CONCURRENCY = 8
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let nextIndex = 0
+  async function runWorker() {
+    while (true) {
+      const i = nextIndex++
+      if (i >= items.length) return
+      results[i] = await worker(items[i], i)
+    }
+  }
+  const workers = Math.max(1, Math.min(concurrency, items.length))
+  await Promise.all(Array.from({ length: workers }, () => runWorker()))
+  return results
+}
 
 function getSupabase() {
   return createClient(
@@ -146,13 +181,17 @@ export async function GET(req: NextRequest) {
     let usernameResolved = 0
     let resolutionFailed = 0
 
-    for (const row of walletsWithAddress) {
+    // ── Wallets with known address — bounded fan-out ──────────────────
+    // Bounded at DISPATCH_CONCURRENCY (8). Replaces the prior
+    // sequential-with-250ms-sleep loop that, while slow, did not actually
+    // bound peak concurrent /api/wallet-backfill-multicollection requests
+    // (a fast Vercel cold-start could overlap two dispatches; the loop
+    // also didn't gate against the 5x fan-out each multicollection child
+    // does internally).
+    await mapWithConcurrency(walletsWithAddress, DISPATCH_CONCURRENCY, async (row) => {
       try {
         const addr = row.wallet_address!
         const cached = row.cached_moment_count ?? 0
-        // Force a full re-walk when the count is at a known truncation
-        // signature OR is zero. Otherwise the backfill route's default
-        // skip_cached=true keeps refreshes lean.
         const forceFull = cached === 0 || SUSPICIOUS_COUNTS.has(cached)
         const ok = await refreshViaWalletBackfill(origin, addr, ingestToken, forceFull)
         if (ok) {
@@ -172,16 +211,10 @@ export async function GET(req: NextRequest) {
         errors.push(`${row.username}: ${msg}`)
         console.log(`[seed-wallet-refresh] error for ${row.username}: ${msg}`)
       }
+    })
 
-      // Light throttle so we don't spawn 600 concurrent Vercel invocations.
-      // 250ms × 600 wallets = 2.5 minutes to fan out, still inside the 300s
-      // ceiling. The fanned-out backfill calls each have their own 300s
-      // background lifetime, independent of this caller's clock.
-      await sleep(250)
-    }
-
-    // Resolve wallets that only have a username, then fire backfill.
-    for (const row of walletsWithoutAddress) {
+    // ── Wallets with only a username — same bounded fan-out ──────────
+    await mapWithConcurrency(walletsWithoutAddress, DISPATCH_CONCURRENCY, async (row) => {
       try {
         const resolved = await resolveUsernameToAddress(row.username)
         if (!resolved) {
@@ -189,8 +222,7 @@ export async function GET(req: NextRequest) {
           console.log(
             `[seed-wallet-refresh] username resolution failed for ${row.username}`
           )
-          await sleep(250)
-          continue
+          return
         }
 
         await supabase
@@ -217,9 +249,7 @@ export async function GET(req: NextRequest) {
           `[seed-wallet-refresh] error resolving ${row.username}: ${msg}`
         )
       }
-
-      await sleep(250)
-    }
+    })
 
     console.log(
       `[seed-wallet-refresh] done — processed=${
