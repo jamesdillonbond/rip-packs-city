@@ -14,6 +14,11 @@ interface Tool {
 
 const TOOLS: Tool[] = [
   {
+    href: "/admin/analytics",
+    title: "Platform Analytics",
+    blurb: "Single-pane users + monetization + pipelines + signals + engagement.",
+  },
+  {
     href: "/admin/flowty-errors",
     title: "Error Triage",
     blurb: "Pipeline + on-chain failure rollup. Refreshed every 30 min.",
