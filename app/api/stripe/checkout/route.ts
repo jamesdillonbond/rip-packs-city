@@ -32,8 +32,12 @@ export async function POST(req: NextRequest) {
 
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
+    // Metadata keys are snake_case (canonical). The webhook reads both
+    // wallet_address (snake_case) and walletAddress (camelCase, legacy)
+    // for back-compat with old subscriptions in flight. Going forward all
+    // new metadata writes use wallet_address.
     const metadata: Record<string, string> = { user_id: user.id }
-    if (walletAddress) metadata.wallet_address = walletAddress
+    if (walletAddress) metadata.wallet_address = walletAddress.toLowerCase()
 
     const session = await getStripe().checkout.sessions.create({
       mode: "subscription",
