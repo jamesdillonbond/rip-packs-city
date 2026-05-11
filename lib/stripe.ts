@@ -18,6 +18,10 @@ export function getStripe(): Stripe {
 
 /**
  * The Stripe Price ID for the RPC Pro monthly subscription.
- * Set this in your Stripe dashboard and env vars.
+ * STRIPE_PRICE_ID_PRO_MONTHLY is the canonical name; STRIPE_PRO_PRICE_ID
+ * is a back-compat alias for the older webhook scaffold.
  */
-export const PRO_PRICE_ID = process.env.STRIPE_PRO_PRICE_ID || ""
+export const PRO_PRICE_ID =
+  process.env.STRIPE_PRICE_ID_PRO_MONTHLY ||
+  process.env.STRIPE_PRO_PRICE_ID ||
+  ""
