@@ -65,6 +65,14 @@ function evidenceTier(ev: Record<string, unknown> | null): string | null {
   return typeof v === "string" && v.trim() ? v : null
 }
 
+function evidenceEditionId(ev: Record<string, unknown> | null): string | null {
+  if (!ev) return null
+  const v = ev["edition_id"]
+  if (typeof v === "string" && v.trim()) return v
+  if (typeof v === "number" && Number.isFinite(v)) return String(v)
+  return null
+}
+
 export default function InsiderSignalsPanel({
   collection,
   basePath,
@@ -183,10 +191,16 @@ export default function InsiderSignalsPanel({
             const player = evidencePlayer(a.evidence_jsonb)
             const set = evidenceSet(a.evidence_jsonb)
             const tier = evidenceTier(a.evidence_jsonb)
+            const editionId = evidenceEditionId(a.evidence_jsonb)
             const sevColor = severityColor(a.severity)
-            const href = player
-              ? `${basePath}/collection?q=${encodeURIComponent(player)}`
-              : `${basePath}/collection`
+            // Prefer the deeper moment-detail page when the detector supplied an
+            // edition_id; fall back to the collection-scoped filter for older
+            // detectors whose evidence_jsonb predates that field.
+            const href = editionId
+              ? `/moment/${editionId}`
+              : player
+                ? `${basePath}/collection?q=${encodeURIComponent(player)}`
+                : `${basePath}/collection`
 
             return (
               <Link
