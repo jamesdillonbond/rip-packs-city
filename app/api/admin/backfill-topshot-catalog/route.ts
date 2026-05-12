@@ -307,19 +307,14 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   const startAfter = req.nextUrl.searchParams.get("startAfter");
   const limitSets = req.nextUrl.searchParams.get("limitSets");
   const limitSetsNum = limitSets ? Math.max(1, parseInt(limitSets, 10) || 1) : null;
+  // forceRefresh=stale_thumbnails picks sets that contain editions whose
+  // thumbnail_url matches one of three pre-2026-05-12 broken patterns. Targets
+  // the ~8,500-row legacy backfill without disturbing the natural
+  // least-recently-touched sweep used by cron.
+  const forceRefresh = req.nextUrl.searchParams.get("forceRefresh");
+  const staleThumbnailMode = forceRefresh === "stale_thumbnails";
 
-  // Pull the candidate set list. Order least-recently-touched first; resume
-  // by skipping any set whose id sorts before startAfter when provided.
   const supabase: any = supabaseAdmin;
-  const { data: setsRaw, error: setsErr } = await supabase
-    .from("sets")
-    .select("id, external_id, name, set_id_onchain, cover_art_url, asset_path_prefix, updated_at")
-    .eq("collection_id", COLLECTION_ID)
-    .order("updated_at", { ascending: true, nullsFirst: true })
-    .limit(1000);
-  if (setsErr) {
-    return NextResponse.json({ error: setsErr.message }, { status: 500 });
-  }
 
   type SetRow = {
     id: string;
@@ -330,12 +325,59 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     asset_path_prefix: string | null;
     updated_at: string | null;
   };
-  let candidateSets = (setsRaw as SetRow[]).filter(
-    (s) => s.external_id && UUID_RE.test(s.external_id),
-  );
-  if (startAfter) {
-    const idx = candidateSets.findIndex((s) => s.id === startAfter);
-    if (idx >= 0) candidateSets = candidateSets.slice(idx + 1);
+
+  let candidateSets: SetRow[];
+  if (staleThumbnailMode) {
+    // Walk sets in descending order of broken-thumbnail count. Resolves the
+    // worst-affected sets first so any user-visible improvement compounds.
+    const { data: brokenSetsRaw, error: brokenErr } = await supabase.rpc(
+      "topshot_sets_with_stale_thumbnails",
+      { p_limit: 1000 },
+    );
+    if (brokenErr) {
+      return NextResponse.json({ error: brokenErr.message }, { status: 500 });
+    }
+    const ids: string[] = (brokenSetsRaw ?? []).map((r: { set_id: string }) => r.set_id);
+    if (ids.length === 0) {
+      return NextResponse.json({
+        ok: true,
+        pipeline: PIPELINE_NAME,
+        mode: "stale_thumbnails",
+        sets_processed: 0,
+        terminated_reason: "no_stale_thumbnails",
+      });
+    }
+    const { data: setsRaw, error: setsErr } = await supabase
+      .from("sets")
+      .select("id, external_id, name, set_id_onchain, cover_art_url, asset_path_prefix, updated_at")
+      .in("id", ids);
+    if (setsErr) {
+      return NextResponse.json({ error: setsErr.message }, { status: 500 });
+    }
+    // Preserve RPC ordering (most-broken first) inside the JS array.
+    const byId = new Map<string, SetRow>((setsRaw as SetRow[]).map((s) => [s.id, s]));
+    candidateSets = ids
+      .map((id) => byId.get(id))
+      .filter((s): s is SetRow => !!s && !!s.external_id && UUID_RE.test(s.external_id));
+  } else {
+    // Pull the candidate set list. Order least-recently-touched first; resume
+    // by skipping any set whose id sorts before startAfter when provided.
+    const { data: setsRaw, error: setsErr } = await supabase
+      .from("sets")
+      .select("id, external_id, name, set_id_onchain, cover_art_url, asset_path_prefix, updated_at")
+      .eq("collection_id", COLLECTION_ID)
+      .order("updated_at", { ascending: true, nullsFirst: true })
+      .limit(1000);
+    if (setsErr) {
+      return NextResponse.json({ error: setsErr.message }, { status: 500 });
+    }
+    candidateSets = (setsRaw as SetRow[]).filter(
+      (s) => s.external_id && UUID_RE.test(s.external_id),
+    );
+    if (startAfter) {
+      const idx = candidateSets.findIndex((s) => s.id === startAfter);
+      if (idx >= 0) candidateSets = candidateSets.slice(idx + 1);
+    }
   }
 
   const timeBudgetMs = (maxDuration * 1000) - TIME_BUDGET_OVERHEAD_MS;
@@ -452,6 +494,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         terminated_reason: terminatedReason,
         errors_sample: errors.slice(0, 5),
         start_after: startAfter,
+        mode: staleThumbnailMode ? "stale_thumbnails" : "natural",
       },
     });
   } catch {
@@ -461,6 +504,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   return NextResponse.json({
     ok,
     pipeline: PIPELINE_NAME,
+    mode: staleThumbnailMode ? "stale_thumbnails" : "natural",
     sets_processed: setsProcessed,
     sets_with_cover_set: setsWithCoverSet,
     editions_upserted: editionsUpserted,
