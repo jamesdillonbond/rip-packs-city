@@ -207,6 +207,17 @@ function isPublicPath(pathname: string, method: string): boolean {
   // /api/profile/market-pulse — GET-only aggregate floor/index reader,
   // scoped by ?collectionId. Anon-safe; no write handler exists.
   if (pathname === "/api/profile/market-pulse") return true
+  // /api/nba/fast-break/optimize — public Fast Break optimizer endpoint.
+  // Backed by SECDEF optimize_fast_break_lineup RPC granted to anon, so
+  // the route handler does not need a user session. Used by the public
+  // /nba/fast-break page and the home-page widget. (Cache-Control:
+  // public, max-age=900 lives on the route response.)
+  if (pathname === "/api/nba/fast-break/optimize") return true
+
+  // ── Public Fast Break optimizer surface ──────────────────────────────
+  // /nba/fast-break is the public, SEO-targeted Fast Break lineup
+  // optimizer. Anyone (signed-in or not) can reach it.
+  if (pathname === "/nba/fast-break" || pathname.startsWith("/nba/fast-break/")) return true
 
   // ── Public profile pages ─────────────────────────────────────────────
   // /profile/<username> — shareable read-only profile cards. /profile/edit

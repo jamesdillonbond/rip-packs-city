@@ -622,6 +622,46 @@ export default function OverviewPage() {
         </section>
       )}
 
+      {/* ── Fast Break cross-link (Top Shot only) ── */}
+      {collection === "nba-top-shot" && (
+        <section
+          className="rpc-card"
+          style={{ padding: "16px 20px" }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--rpc-red)" }} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 240 }}>
+              <span className="rpc-label" style={{ fontFamily: "var(--font-display)" }}>
+                Fast Break Optimizer
+              </span>
+              <span
+                className="rpc-mono"
+                style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}
+              >
+                Daily optimal Top Shot Fast Break lineup · public, no signup · updated every 15 min
+              </span>
+            </div>
+            <Link
+              href="/nba/fast-break"
+              className="rpc-mono"
+              style={{
+                fontSize: "var(--text-xs)",
+                color: "var(--rpc-red)",
+                textDecoration: "none",
+                padding: "8px 14px",
+                border: "1px solid var(--rpc-red-border)",
+                background: "var(--rpc-red-bg)",
+                borderRadius: "var(--radius-sm)",
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+              }}
+            >
+              Open Optimizer →
+            </Link>
+          </div>
+        </section>
+      )}
+
       {/* ── Tools ── */}
       <section className="rpc-card" style={{ padding: "16px 20px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
