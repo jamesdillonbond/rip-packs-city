@@ -11,6 +11,7 @@ import {
   buildEditionScopeKey,
 } from "@/lib/wallet-normalize"
 import { resolveTopShotUsernameCacheAware } from "@/lib/topshot-username-resolve"
+import { detectAddressChain } from "@/lib/address"
 
 type WalletRow = {
   momentId: string
@@ -996,6 +997,24 @@ export async function POST(req: NextRequest) {
 
     const { input, offset, limit, league } = parsed.data
     resolvedInput = input
+
+    // Soft-recognize Flow EVM addresses (40-hex 0x...) so Beezie-style EVM
+    // wallets don't surface as "Username not found" errors. The structure is
+    // valid, just not yet supported — Phase 1 of Flow EVM scaffolding ships
+    // the detection branch only. Status 200 mirrors the existing
+    // rows:[] + error string contract so the UI's error renderer fires
+    // unchanged without a 4xx redirect.
+    if (detectAddressChain(input) === "evm") {
+      return NextResponse.json(
+        {
+          rows: [],
+          summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+          error: "Flow EVM wallets are not yet supported in RPC. Beezie and other Flow EVM collections are coming soon.",
+        } satisfies WalletSearchResponse,
+        { status: 200 }
+      )
+    }
+
     // Phase 2: collectionId takes precedence over the legacy collection alias.
     const collection = parsed.data.collectionId ?? parsed.data.collection
     const isAllDay = collection === "nfl-all-day"
