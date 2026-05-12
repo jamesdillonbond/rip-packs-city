@@ -40,6 +40,12 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // fields exist in this schema — only set.flowId and play.flowID. The double
 // `data` wrapper inside `... on Editions { data { ... on Edition } }` is
 // intentional and required by the schema.
+//
+// `assetPathPrefix` is the authoritative GQL field for CDN media URLs.
+// Shape: https://assets.nbatopshot.com/editions/{set_int}_{set_slug}_{tier_slug}/{play_uuid}/play_{play_uuid}_{set_int}_{set_slug}_{tier_slug}_capture_
+// Append "Hero_2880_2880_Transparent.png" for image, "Animated_1080_1080_Black.mp4" for video.
+// Synthesizing /resize/editions/{set_int}_{play_int}/... short-path URLs (the
+// pre-2026-05-12 behavior) 404s on the CDN.
 const SEARCH_EDITIONS_QUERY = `
   query SearchEditionBackfill($input: SearchEditionsInput!) {
     searchEditions(input: $input) {
@@ -51,6 +57,7 @@ const SEARCH_EDITIONS_QUERY = `
               ... on Edition {
                 tier
                 circulationCount
+                assetPathPrefix
                 set {
                   flowId
                   flowName
@@ -79,6 +86,7 @@ const SEARCH_EDITIONS_QUERY = `
 interface RawEdition {
   tier?: string | null;
   circulationCount?: number | null;
+  assetPathPrefix?: string | null;
   set?: {
     flowId?: number | string | null;
     flowName?: string | null;
@@ -127,22 +135,13 @@ function normalizeTier(raw: string | null | undefined): string | null {
   return null;
 }
 
-// Mirrors getImageUrl() in components/MomentMedia.tsx — converts an
-// editions/{flowId}_{flowID}/ prefix into the resize Hero image URL.
-function buildThumbnailUrl(
-  setFlowId: string | number | null | undefined,
-  playFlowID: string | null | undefined,
-): string | null {
-  if (setFlowId == null || !playFlowID) return null;
-  return `https://assets.nbatopshot.com/resize/editions/${setFlowId}_${playFlowID}/Hero_2880_2880_Transparent.png?format=webp&quality=80&width=600`;
-}
-
-function buildAssetPathPrefix(
-  setFlowId: string | number | null | undefined,
-  playFlowID: string | null | undefined,
-): string | null {
-  if (setFlowId == null || !playFlowID) return null;
-  return `https://assets.nbatopshot.com/editions/${setFlowId}_${playFlowID}/`;
+// Image/video URLs are built off the GQL `assetPathPrefix` field — never
+// synthesized from set/play integer IDs. The short-path /resize/editions/{set_int}_{play_int}/
+// pattern that this function used to emit 404s on the live CDN; the
+// authoritative GQL prefix is the long /editions/{set_slug}/{play_uuid}/play_..._capture_ form.
+function buildThumbnailUrl(prefix: string | null | undefined): string | null {
+  if (!prefix) return null;
+  return `${prefix}Hero_2880_2880_Transparent.png`;
 }
 
 function buildVideoUrl(prefix: string | null | undefined): string | null {
@@ -264,8 +263,8 @@ function buildEditionRow(
   const setName = e.set?.flowName?.trim() ?? null;
   const name = playerName && setName ? `${playerName} — ${setName}` : playerName ?? setName;
 
-  const prefix = buildAssetPathPrefix(setFlowIdRaw, playFlowID);
-  const thumbnailUrl = buildThumbnailUrl(setFlowIdRaw, playFlowID);
+  const prefix = e.assetPathPrefix ?? null;
+  const thumbnailUrl = buildThumbnailUrl(prefix);
   const videoUrl = buildVideoUrl(prefix);
 
   const dateOfMoment = e.play?.stats?.dateOfMoment ?? null;
@@ -402,8 +401,8 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     // only when missing so we don't churn a hand-set value.
     const sample = editions[0];
     const sampleSetFlowId = sample?.set?.flowId ?? null;
-    const sampleAssetPrefix = buildAssetPathPrefix(sampleSetFlowId, sample?.play?.flowID);
-    const sampleHero = buildThumbnailUrl(sampleSetFlowId, sample?.play?.flowID);
+    const sampleAssetPrefix = sample?.assetPathPrefix ?? null;
+    const sampleHero = buildThumbnailUrl(sampleAssetPrefix);
 
     const setUpdate: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
