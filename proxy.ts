@@ -187,6 +187,26 @@ function isPublicPath(pathname: string, method: string): boolean {
   ) {
     return true
   }
+  // /api/profile/trophy-slabs — GET ?username=<u> is the public read backed
+  // by the SECDEF get_trophy_slab_data_by_username RPC granted to anon;
+  // GET ?mine=1 is owner-scoped and self-gates inside the handler (401 on
+  // no session). The route only exports GET so an exact-path allowlist is
+  // sufficient. Without this entry, anon visitors to /profile/<u> see a
+  // perpetual loading skeleton because the trophy-slab fetch 307→/login.
+  if (pathname === "/api/profile/trophy-slabs") return true
+  // /api/profile/portfolio-history — GET reads portfolio_snapshots by
+  // ownerKey OR derives daily FMV totals from fmv_snapshots by wallet
+  // (both anon-safe). POST upserts a daily snapshot and MUST stay
+  // auth-gated. Same GET/HEAD-only carve-out as /api/profile/teams.
+  if (
+    pathname === "/api/profile/portfolio-history" &&
+    (method === "GET" || method === "HEAD")
+  ) {
+    return true
+  }
+  // /api/profile/market-pulse — GET-only aggregate floor/index reader,
+  // scoped by ?collectionId. Anon-safe; no write handler exists.
+  if (pathname === "/api/profile/market-pulse") return true
 
   // ── Public profile pages ─────────────────────────────────────────────
   // /profile/<username> — shareable read-only profile cards. /profile/edit
