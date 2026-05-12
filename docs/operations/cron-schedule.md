@@ -1,6 +1,6 @@
 # Rip Packs City — Cron Schedule Reference
 
-**Last verified:** May 11, 2026 — 12:43 PM PT (19:45 UTC)
+**Last verified:** May 11, 2026 — 5:45 PM PT (00:45 UTC May 12)
 **Platform:** cron-job.org (free tier, 30s hard timeout)
 
 This is the authoritative inventory of every active cron-job.org entry firing into Rip Packs City. Use this when adding new crons (to find a quiet schedule slot), when something stops working (to confirm a cron is actually scheduled), and when triaging health-probe alerts.
@@ -99,3 +99,11 @@ For staggered scheduling, use these patterns (all proven quiet):
 ## Pending additions
 
 - ⏳ **Pinnacle listings reconcile** (Phase 2C) — once Round 13 ships the reconciliation RPC, wire at `9,24,39,54 * * * *` (offset clear of pinnacle-events-ingest at `4,19,34,49`)
+- ⏳ **FMV cold-tail drain** — route shipped 2026-05-11. Awaits cron-job.org wiring:
+  - Title: `RPC FMV Cold-Tail Drain`
+  - URL: `https://www.rippackscity.com/api/admin/drain-fmv-cold-tail?collection=all&limit=200`
+  - Method: POST
+  - Header: `Authorization: Bearer <INGEST_SECRET_TOKEN>`
+  - Schedule: `17,47 * * * *` (offset clear of HH:00/HH:30 fan-out windows)
+  - Timeout: 30s (cron-job.org cap)
+  - Closes audit §1.1 — drains stale FMV in TS / AllDay / Golazos / UFC. Skips Pinnacle (separate hourly chain).
