@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getChainId, getBlockNumber, getGasPriceWei, FLOW_EVM_MAINNET_CHAIN_ID } from "@/lib/flowevm-rpc";
+import {
+  getChainId,
+  getBlockNumber,
+  getGasPriceWei,
+  getExpectedChainId,
+  SUPPORTED_CHAIN_SLUGS,
+  type ChainSlug,
+} from "@/lib/evm-rpc";
 
 export const dynamic = "force-dynamic";
 
@@ -14,26 +21,44 @@ function authorized(req: NextRequest): boolean {
   return qp === expected;
 }
 
+function isSupportedChain(value: string): value is ChainSlug {
+  return (SUPPORTED_CHAIN_SLUGS as string[]).includes(value);
+}
+
 export async function GET(req: NextRequest) {
   if (!authorized(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  const requested = req.nextUrl.searchParams.get("chain") ?? "flow_evm_mainnet";
+  if (!isSupportedChain(requested)) {
+    return NextResponse.json(
+      {
+        error: `Unsupported chain: ${requested}`,
+        supported: SUPPORTED_CHAIN_SLUGS,
+      },
+      { status: 400 }
+    );
+  }
+  const chainSlug: ChainSlug = requested;
+  const expectedChainId = getExpectedChainId(chainSlug);
+
   const started = Date.now();
   const result: Record<string, unknown> = {
     ok: false,
-    expectedChainId: FLOW_EVM_MAINNET_CHAIN_ID,
+    chain: chainSlug,
+    expectedChainId,
   };
 
   try {
     const [chainId, blockNumber, gasPriceWei] = await Promise.all([
-      getChainId(),
-      getBlockNumber(),
-      getGasPriceWei(),
+      getChainId(chainSlug),
+      getBlockNumber(chainSlug),
+      getGasPriceWei(chainSlug),
     ]);
 
     const latencyMs = Date.now() - started;
-    const chainIdMatches = chainId === FLOW_EVM_MAINNET_CHAIN_ID;
+    const chainIdMatches = chainId === expectedChainId;
     const gasPriceGwei = Number(gasPriceWei) / 1e9;
 
     result.ok = chainIdMatches;
@@ -44,7 +69,7 @@ export async function GET(req: NextRequest) {
     result.gasPriceGwei = gasPriceGwei;
     result.latencyMs = latencyMs;
     if (!chainIdMatches) {
-      result.error = `Expected chain_id ${FLOW_EVM_MAINNET_CHAIN_ID}, got ${chainId}`;
+      result.error = `Expected chain_id ${expectedChainId}, got ${chainId}`;
     }
 
     return NextResponse.json(result, { status: chainIdMatches ? 200 : 500 });
