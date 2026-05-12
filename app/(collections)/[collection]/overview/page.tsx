@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { getCollection } from "@/lib/collections"
+import InsiderSignalsPanel from "@/components/InsiderSignalsPanel"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -516,6 +517,9 @@ export default function OverviewPage() {
           </div>
         </section>
       </div>
+
+      {/* ── Insider Signals (anomaly detection across sales activity) ── */}
+      <InsiderSignalsPanel collection={collection} basePath={basePath} />
 
       {/* ── Recent Top Sales + About the Community ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
