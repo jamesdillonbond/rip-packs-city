@@ -219,6 +219,14 @@ function isPublicPath(pathname: string, method: string): boolean {
   // optimizer. Anyone (signed-in or not) can reach it.
   if (pathname === "/nba/fast-break" || pathname.startsWith("/nba/fast-break/")) return true
 
+  // ── Public moment / edition detail pages ─────────────────────────────
+  // /moment/<id> resolves flow_id | moment_uuid | edition_uuid through
+  // the SECDEF get_moment_detail RPC. Linked from Trophy Slab QR codes,
+  // Insider Signals cards, and (in Phase 2) Fast Break lineup rows.
+  // Public so social-share links work without an account.
+  if (pathname === "/moment" || pathname.startsWith("/moment/")) return true
+  if (pathname === "/api/moment" || pathname.startsWith("/api/moment/")) return true
+
   // ── Public profile pages ─────────────────────────────────────────────
   // /profile/<username> — shareable read-only profile cards. /profile/edit
   // is the signed-in user's own bio editor and stays auth-gated. The

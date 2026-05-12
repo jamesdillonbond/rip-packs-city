@@ -365,6 +365,21 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })
     .filter((x): x is NonNullable<typeof x> => x !== null)
 
+  // /moment/[id] — the cross-collection canonical detail page. Top 200 by
+  // last_updated_at as a coarse popularity proxy until we have a real
+  // sales_count_30d index to sort by. Kept small for this initial cut to
+  // avoid duplicate-URL penalties against the per-collection edition pages
+  // above; expand once /moment/[id] becomes the canonical target (with
+  // <link rel=canonical> set on both surfaces).
+  const momentPages: MetadataRoute.Sitemap = editions
+    .slice(0, 200)
+    .map((e) => ({
+      url: `${BASE_URL}/moment/${e.id}`,
+      lastModified: e.last_updated_at ? new Date(e.last_updated_at) : now,
+      changeFrequency: 'daily' as const,
+      priority: 0.65,
+    }))
+
   // Distinct set / player / team slugs derived from the edition rows above.
   // De-dupe per collection × entity slug; pick the most recent
   // last_updated_at as the lastModified hint.
@@ -444,6 +459,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...walletPages,
     ...profilePages,
     ...editionPages,
+    ...momentPages,
     ...newSetPages,
     ...newPlayerPages,
     ...newTeamPages,
