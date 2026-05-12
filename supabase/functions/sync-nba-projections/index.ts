@@ -41,7 +41,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 const SPORTS_PROXY_URL = Deno.env.get("SPORTS_PROXY_URL") ?? ""
 const SPORTS_PROXY_SECRET = Deno.env.get("SPORTS_PROXY_SECRET") ?? ""
 
-const FUNCTION_VERSION = 7
+const FUNCTION_VERSION = 8
 const PIPELINE = "sync-nba-projections"
 const COLLECTION_SLUG = "nba_top_shot"
 
@@ -54,6 +54,13 @@ const DK_SOURCE = "draftkings"
 const DK_METHOD = "draftkings-model"
 const ESPN_SOURCE = "espn-team-leader"
 const ESPN_METHOD = "espn-season-rating-leader"
+// Roster-stub source fires when ESPN scoreboard returns games but every
+// leader category is empty (common for early-playoff-round days where no
+// games have completed yet). Position-based placeholder projections keep
+// the optimizer pool non-empty so /nba/fast-break renders a lineup rather
+// than going dark. Confidence stays LOW.
+const ESPN_ROSTER_SOURCE = "espn-roster-stub"
+const ESPN_ROSTER_METHOD = "espn-roster-position-stub"
 const ESPN_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
 
 interface ProxyPlayer {
@@ -105,6 +112,29 @@ function todayInET(): string {
   })
   const parts = Object.fromEntries(fmt.formatToParts(new Date()).map(p => [p.type, p.value]))
   return `${parts.year}-${parts.month}-${parts.day}`
+}
+
+// ESPN's scoreboard `?dates=` expects YYYYMMDD (no separators). Pinning the
+// date here forces ESPN to serve the requested ET slate rather than guessing
+// from request time — at 02:00 UTC the no-param call returned yesterday's
+// games (the May 8 outage's downstream symptom).
+function todayCompactET(): string {
+  return todayInET().replace(/-/g, "")
+}
+
+// Position-based placeholder fantasy points for the roster-stub fallback.
+// Rough modern NBA starting-lineup season averages: C carries the highest
+// rebounding floor, G the highest scoring + assists. Used only when ESPN
+// scoreboard returns games but every leader category is empty. Marked
+// confidence=LOW + source=espn-roster-stub so downstream consumers can
+// distinguish from real projections.
+function placeholderFpFromPosition(pos: string | null): number {
+  if (!pos) return 12
+  const p = pos.toUpperCase()
+  if (p.includes("C")) return 22
+  if (p.includes("F")) return 18
+  if (p.includes("G")) return 20
+  return 12
 }
 
 function normalizeJs(s: string): string {
@@ -423,6 +453,38 @@ interface EspnEvent {
 }
 interface EspnScoreboard { events?: EspnEvent[] }
 
+interface EspnRosterAthlete {
+  id?: string | number
+  fullName?: string
+  displayName?: string
+  position?: { abbreviation?: string }
+  jersey?: string
+}
+interface EspnRosterResponse { team?: { athletes?: EspnRosterAthlete[] } }
+
+async function fetchEspnRoster(teamId: string): Promise<EspnRosterAthlete[]> {
+  try {
+    const url = `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/${teamId}/roster`
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; rip-packs-city/1.0; +https://rippackscity.com)",
+      },
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!res.ok) {
+      console.log(`[sync-nba-projections] espn_roster_status=${res.status} teamId=${teamId}`)
+      return []
+    }
+    const json = (await res.json()) as EspnRosterResponse
+    return json.team?.athletes ?? []
+  } catch (err) {
+    console.log(`[sync-nba-projections] espn_roster_fetch_err teamId=${teamId}: ${err instanceof Error ? err.message : String(err)}`)
+    return []
+  }
+}
+
 // Match a "23.9 PPG, 5.5 RPG, 9.9 APG, 1.4 SPG, 0.8 BPG" rating display.
 // Each stat is optional in case ESPN drops one; we treat missing as 0.
 function parseRatingString(s: string): {
@@ -458,9 +520,11 @@ interface EspnFetchOutcome {
 }
 
 async function callEspnScoreboard(): Promise<EspnFetchOutcome> {
+  const dateParam = todayCompactET()
+  const url = `${ESPN_SCOREBOARD_URL}?dates=${dateParam}`
   let res: Response
   try {
-    res = await fetch(ESPN_SCOREBOARD_URL, {
+    res = await fetch(url, {
       method: "GET",
       headers: {
         "Accept": "application/json",
@@ -562,6 +626,92 @@ async function callEspnScoreboard(): Promise<EspnFetchOutcome> {
     }
   }
 
+  // Roster-stub fallback. Scoreboard returned games but no leader rows
+  // populated (typical for early-playoff days before any game has tipped).
+  // Pull each team's roster from ESPN's free /teams/{id}/roster endpoint and
+  // emit position-based placeholder projections so /nba/fast-break has a
+  // non-empty player pool. The optimizer still ranks by proj_fp_dk DESC; the
+  // placeholders give a coarse position-aware ordering. Source is tagged
+  // distinctly so the optimizer UI can render a "PROJECTIONS UPDATING"
+  // banner when this is the active tier.
+  let usedRosterStub = false
+  let stubTeamsFetched = 0
+  let stubPlayersEmitted = 0
+  if (players.length === 0 && games.length > 0) {
+    // Collect unique (teamId, teamAbbr, opponentAbbr, eventDate) per team
+    // across all events. Dedupe by teamId in case the same team appears
+    // (it shouldn't for a single date but defensive).
+    const teamPlan = new Map<string, { teamAbbr: string | null; opponentAbbr: string | null; eventDate: string | null }>()
+    for (const ev of json.events ?? []) {
+      const comp = ev.competitions?.[0]
+      if (!comp) continue
+      const home = comp.competitors?.find(c => c.homeAway === "home")
+      const away = comp.competitors?.find(c => c.homeAway === "away")
+      const homeAbbr = home?.team?.abbreviation?.toUpperCase() ?? null
+      const awayAbbr = away?.team?.abbreviation?.toUpperCase() ?? null
+      for (const c of [home, away]) {
+        const teamId = c?.team?.id != null ? String(c.team.id) : null
+        if (!teamId) continue
+        if (teamPlan.has(teamId)) continue
+        const teamAbbr = c?.team?.abbreviation?.toUpperCase() ?? null
+        const opponentAbbr = c === home ? awayAbbr : homeAbbr
+        teamPlan.set(teamId, { teamAbbr, opponentAbbr, eventDate: ev.date ?? null })
+      }
+    }
+
+    // Parallel roster fetches. ~16 teams worst-case on a full slate; ESPN
+    // doesn't WAF this endpoint and the response is ~30KB per team.
+    const rosters = await Promise.all(
+      [...teamPlan.entries()].map(async ([teamId, meta]) => ({
+        teamId,
+        meta,
+        athletes: await fetchEspnRoster(teamId),
+      })),
+    )
+
+    const seenAthlete = new Set<string>()
+    for (const r of rosters) {
+      stubTeamsFetched++
+      for (const a of r.athletes) {
+        const name = (a.fullName ?? a.displayName ?? "").trim()
+        if (!name) continue
+        const athleteId = a.id != null ? String(a.id) : ""
+        const key = athleteId ? `id:${athleteId}` : `name:${name.toLowerCase()}|team:${r.meta.teamAbbr ?? ""}`
+        if (seenAthlete.has(key)) continue
+        seenAthlete.add(key)
+        const pos = a.position?.abbreviation ?? null
+        players.push({
+          name,
+          teamAbbr: r.meta.teamAbbr,
+          position: pos,
+          salary: null,
+          status: null,
+          projFp: placeholderFpFromPosition(pos),
+          proj_points: null,
+          proj_rebounds: null,
+          proj_assists: null,
+          proj_threes: null,
+          proj_steals: null,
+          proj_blocks: null,
+          proj_turnovers: null,
+          proj_minutes: null,
+          opponentAbbr: r.meta.opponentAbbr,
+          gameStartTime: r.meta.eventDate,
+        })
+        stubPlayersEmitted++
+      }
+    }
+    usedRosterStub = stubPlayersEmitted > 0
+    console.log(`[sync-nba-projections] espn_roster_stub teams=${stubTeamsFetched} players=${stubPlayersEmitted}`)
+  }
+
+  const activeSourceTag = usedRosterStub ? ESPN_ROSTER_SOURCE : ESPN_SOURCE
+  const note = games.length === 0
+    ? "no_nba_slate_today"
+    : usedRosterStub
+      ? `leaders_empty_used_roster_stub teams=${stubTeamsFetched} players=${stubPlayersEmitted}`
+      : undefined
+
   return {
     ok: true,
     status: res.status,
@@ -570,8 +720,8 @@ async function callEspnScoreboard(): Promise<EspnFetchOutcome> {
       gameDate: todayET,
       players,
       games,
-      source: ESPN_SOURCE,
-      note: games.length === 0 ? "no_nba_slate_today" : undefined,
+      source: activeSourceTag,
+      note,
     },
     error: null,
   }
@@ -665,10 +815,16 @@ async function runWork(startedAtIso: string, started: number) {
   } else if (espn && espn.ok && espnPlayers.length > 0) {
     scraped = espnPlayers
     proxyGames = chosenGames
-    activeSource = ESPN_SOURCE
-    activeMethod = ESPN_METHOD
+    // ESPN tier carries an internal split: rating-leader rows tag source as
+    // ESPN_SOURCE (espn-team-leader); roster-stub fallback rows tag as
+    // ESPN_ROSTER_SOURCE (espn-roster-stub). The callEspnScoreboard wrapper
+    // sets body.source per-batch. Honor whichever it returned so the
+    // projection rows record the actual provenance for downstream debugging.
+    const espnSource = espn.body?.source === ESPN_ROSTER_SOURCE ? ESPN_ROSTER_SOURCE : ESPN_SOURCE
+    activeSource = espnSource
+    activeMethod = espnSource === ESPN_ROSTER_SOURCE ? ESPN_ROSTER_METHOD : ESPN_METHOD
     activeConfidence = "LOW"
-    viaTag = `espn+${gamesSource}-games`
+    viaTag = `${espnSource}+${gamesSource}-games`
   } else if (chosenGames.length > 0) {
     // Some upstream produced games but nobody produced players.
     proxyGames = chosenGames
@@ -881,7 +1037,7 @@ Deno.serve(async (req: Request) => {
       started_at: startedAtIso,
       function_version: FUNCTION_VERSION,
       primary_source: ROLLING_SOURCE,
-      fallback_sources: [DK_SOURCE, ESPN_SOURCE],
+      fallback_sources: [DK_SOURCE, ESPN_SOURCE, ESPN_ROSTER_SOURCE],
       note: "Real results will appear in pipeline_runs within ~30-60s.",
     }),
     { headers: { "Content-Type": "application/json" } },
