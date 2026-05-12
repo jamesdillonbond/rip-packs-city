@@ -425,4 +425,59 @@ EVM proxies use a separate `EVM_PROXY_SECRET_<SLUG>` convention.
 
 ---
 
-*Last updated: 2026-05-09 (baseline) · 2026-05-12 (re-committed to repo with sync notes — see banner). Living doc — update when rules change, not when memory drifts.*
+## §12 — MCP Server (Flow Agents Public Surface)
+
+Public Model Context Protocol surface that lets other apps and AI agents read RPC collector intelligence on behalf of a user. Self-serve key issuance at `/dashboard/api-keys`. Shipped Track D + E (2026-05-12).
+
+### Endpoint
+- **URL**: `https://rpc-mcp.tdillonbond.workers.dev/mcp`
+- **Transport**: streamable HTTP per [MCP spec `2025-06-18`](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports). Single POST endpoint, JSON-RPC 2.0. v1 returns plain `application/json` — no SSE, no session management, no KV cache.
+- **Companion endpoints on the worker**: `GET /health` (returns `{ok, version, supabase_reachable, rpcs_reachable, build_sha}`) and `GET /` (minimal HTML landing).
+
+### Authentication
+- Bearer token: `Authorization: Bearer rpc_mcp_live_<token>`.
+- Tokens are issued through `/dashboard/api-keys`. Raw token shown exactly once at issuance, never persisted in plaintext. Worker validates via `mcp_validate_api_key(p_key_hash text)` against sha256-hex of the bearer.
+- Server-side route auth on `/api/mcp/keys` reuses the canonical `getCurrentUser()` + `get_user_saved_wallets(p_user_id)` resolver — the same path `/api/profile/cost-basis-summary` and `/api/profile/verify-challenge` use. Do not invent a parallel session→wallet path anywhere else.
+
+### Quota tiers (`feature_quotas` rows, `feature_name='mcp_query'`)
+| Plan | Daily cap |
+|---|---|
+| `free` | 100 |
+| `pro` | 5000 |
+| `founding` | unlimited |
+| `partner` | unlimited |
+
+Quota exceeded → HTTP 429 with `Retry-After` set to seconds until UTC midnight.
+
+### Six tools
+Worker-facing names and one-line summaries. Full schemas, parameter examples, gap-string vocabulary, and known-coverage gaps live in [`docs/mcp-tool-mapping.md`](docs/mcp-tool-mapping.md) — keep that doc in sync if you change a tool.
+
+| Tool | Summary |
+|---|---|
+| `get_fmv` | FMV and trade-context signals (wap, sales velocity, asks, confidence, liquidity rating) for one moment edition. Requires `(edition_key, collection_slug)` because external_ids collide across collections. |
+| `get_sniper_deals` | Undervalued asks within one collection — discount %, ask, FMV, buy link. TopShot + AllDay backed; others return `supported:false`. |
+| `compute_pack_ev` | Expected value of opening a pack distribution at current pool depletion. |
+| `find_set_completion_path` | For a wallet + set, full missing-edition list with cheapest current ask + source per missing piece. TopShot + AllDay only. |
+| `lookup_wallet` | Cross-collection portfolio summary — per-collection FMV, moment counts, tier breakdowns, diversity score. Composes `holdings_summary` + `get_wallet_portfolio`. |
+| `get_badge_data` | Curated badges for one moment edition (rookie mints, three-star rookies, milestone plays). Backed by `get_edition_badges_unified` after the 2026-05-12 search_path fix. |
+
+### Architectural rules (non-negotiable for any future tool)
+1. **Every tool wraps an existing RPC.** No parallel pricing, no parallel set-progress logic, no second source of truth. If the wrap isn't clean, write an adapter (`mcp_*` SECDEF function) — never reimplement.
+2. **Every tool returns `gaps text[]`.** Honest coverage reporting. Format: `<dimension>_<reason>`. Pad with empty `[]` not zeros.
+3. **The worker never crashes on upstream failure.** Supabase 5xx surfaces as `upstream_supabase_unavailable_*`; adapter exceptions surface as `adapter_exception_*`; unknown slugs surface as `unknown_collection_slug_*`. Hard HTTP 401 / 429 only on the auth and quota paths.
+
+### Observability
+- **`v_mcp_usage_today`** — hourly rollup over the last 24h. Drives the worker's usage telemetry surface.
+- **`usage_events`** — raw log written by `mcp_log_tool_call(wallet, tool_name, metadata)`. Metadata includes `duration_ms`, `gaps_count`, and `error` if applicable. Fired regardless of success/failure (but NOT on the 401 / 429 paths).
+- `pipeline_runs` not applicable — the worker is request-driven, not cron-driven.
+
+### Operational notes
+- **`workers_dev = true`** in `wrangler.toml` is REQUIRED. Without it, deploys succeed silently with no public URL.
+- **`MCP_INTERNAL_SECRET`** is provisioned via `wrangler secret put` but reserved for future inter-worker calls — specifically the cache-flush trigger from `/api/mcp/keys` DELETE to invalidate worker-side state if/when caching ships. v1 has no KV namespace and consumes no internal secret.
+- **`BUILD_SHA`** is embedded via `wrangler deploy --var BUILD_SHA:$(git rev-parse --short HEAD)` (also wired into `npm run deploy` in `workers/rpc-mcp-proxy/package.json`). Reported on `/health`.
+- **No KV / Cache API in v1.** Every request hits Supabase directly. Add caching only if hot-path metrics warrant it; the FMV freshness story is cleaner without a worker-side cache.
+- **No SSE / no session management in v1.** All responses are plain `application/json`. `GET /mcp` and `DELETE /mcp` return HTTP 405.
+
+---
+
+*Last updated: 2026-05-09 (baseline) · 2026-05-12 (re-committed to repo with sync notes — see banner) · 2026-05-12 (Track E: §12 added, MCP public surface complete). Living doc — update when rules change, not when memory drifts.*
