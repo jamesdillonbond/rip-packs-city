@@ -2124,7 +2124,7 @@ export default function WalletPage() {
                       <div className="rpc-expand-section">
                         <div className="rpc-expand-section-eyebrow">Links</div>
                         <div className="flex flex-wrap gap-2">
-                          <Link href={"/" + collectionSlug + "/moment/" + row.momentId} prefetch={false} onClick={function(e) { e.stopPropagation() }} className="rpc-expand-link">View on RPC</Link>
+                          <Link href={"/moment/" + row.momentId} prefetch={false} onClick={function(e) { e.stopPropagation() }} className="rpc-expand-link">View on RPC</Link>
                           <a href={"https://nbatopshot.com/moment/" + row.momentId} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">View on Top Shot</a>
                           <a href={"https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/" + row.momentId} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">View on Flowty</a>
                         </div>
@@ -2699,7 +2699,7 @@ export default function WalletPage() {
                             <div className="rpc-expand-section">
                               <div className="rpc-expand-section-eyebrow">Links</div>
                               <div className="flex flex-wrap gap-2">
-                                <Link href={"/" + collectionSlug + "/moment/" + row.momentId} prefetch={false} className="rpc-expand-link">View on RPC</Link>
+                                <Link href={"/moment/" + row.momentId} prefetch={false} className="rpc-expand-link">View on RPC</Link>
                                 <a href={"https://nbatopshot.com/moment/" + row.momentId} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">View on Top Shot</a>
                                 {row.flowtyListingUrl ? (
                                   <a href={"/out/flowty/" + row.momentId + "?source=wallet-expand&priceAtClick=" + (row.flowtyAsk ?? "")} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">
