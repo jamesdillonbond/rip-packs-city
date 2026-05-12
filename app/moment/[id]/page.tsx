@@ -223,19 +223,21 @@ export async function generateMetadata(
   const serialSuffix = serial ? ` #${serial}/${mint}` : (mint ? ` (${mint} circulation)` : "")
   const title = `${player}${serialSuffix} · ${setName} · ${tier} | Rip Packs City`
   const description = `Live FMV, sale history, and market data for ${player} ${setName}${serialSuffix} on ${collectionLabel(e.collection_slug).toLowerCase().replace(/^\w/, c => c.toUpperCase())}. ${sales30 ? `${sales30} sales in last 30 days. ` : ""}Powered by Rip Packs City.`
+  const ogImage = `/api/og/moment/${encodeURIComponent(id)}`
   return {
     title,
     description,
     openGraph: {
       title,
       description,
-      images: ["/api/og/default"],
+      images: [ogImage],
       type: "website",
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
+      images: [ogImage],
     },
   }
 }
