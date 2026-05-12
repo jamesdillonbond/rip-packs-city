@@ -463,6 +463,45 @@ export default function HomePageMarketing() {
 
       <PinwheelDivider />
 
+      {/* FAST BREAK OPTIMIZER PROMO */}
+      <section
+        className="rpc-home-section"
+        style={{
+          background: "var(--rpc-surface)",
+          borderTop: "1px solid var(--rpc-red-border)",
+          borderBottom: "1px solid var(--rpc-border)",
+        }}
+      >
+        <div style={{ maxWidth: 980, margin: "0 auto", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 18 }}>
+          <div className="rpc-home-eyebrow">◈ FREE TOOL · NO SIGNUP ◈</div>
+          <h2 className="rpc-home-h2">FAST BREAK LINEUP OPTIMIZER</h2>
+          <p className="rpc-home-sub">
+            Daily optimal NBA Top Shot Fast Break lineups for the Playoffs. Top projected fantasy scorers, captain picks, and matchup analysis — refreshed every 15 minutes.
+          </p>
+          <Link
+            href="/nba/fast-break"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "12px 22px",
+              background: "var(--rpc-red)",
+              border: "none",
+              borderRadius: 6,
+              color: "#fff",
+              fontFamily: "var(--font-display)",
+              fontWeight: 800,
+              fontSize: 13,
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              textDecoration: "none",
+            }}
+          >
+            VIEW TODAY&rsquo;S OPTIMAL LINEUP →
+          </Link>
+        </div>
+      </section>
+
       {/* HOW IT WORKS */}
       <section
         id="how-it-works"

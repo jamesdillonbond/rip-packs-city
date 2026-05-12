@@ -267,10 +267,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date()
 
   const staticPages: MetadataRoute.Sitemap = [
-    { url: BASE_URL,             lastModified: now, changeFrequency: 'daily',   priority: 1.0 },
-    { url: `${BASE_URL}/about`,  lastModified: now, changeFrequency: 'monthly', priority: 0.5 },
-    { url: `${BASE_URL}/privacy`,lastModified: now, changeFrequency: 'yearly',  priority: 0.3 },
-    { url: `${BASE_URL}/terms`,  lastModified: now, changeFrequency: 'yearly',  priority: 0.3 },
+    { url: BASE_URL,                       lastModified: now, changeFrequency: 'daily',   priority: 1.0 },
+    { url: `${BASE_URL}/about`,            lastModified: now, changeFrequency: 'monthly', priority: 0.5 },
+    { url: `${BASE_URL}/privacy`,          lastModified: now, changeFrequency: 'yearly',  priority: 0.3 },
+    { url: `${BASE_URL}/terms`,            lastModified: now, changeFrequency: 'yearly',  priority: 0.3 },
+    // Public Fast Break optimizer — SEO-targeted, daily refresh.
+    { url: `${BASE_URL}/nba/fast-break`,   lastModified: now, changeFrequency: 'daily',   priority: 0.9 },
   ]
 
   const featurePages: MetadataRoute.Sitemap = publishedCollections().flatMap((col) => [
