@@ -39,6 +39,100 @@ const CHUNK_SIZE = 250
 const DEFAULT_SCAN_RANGE = 50_000
 const MAX_SCAN_RANGE = 100_000
 const INTER_CHUNK_DELAY_MS = 75
+const CADENCE_FALLBACK_MAX = 12
+const CADENCE_DELAY_MS = 150
+const SCRIPT_TIMEOUT_MS = 15_000
+
+// Sentry alert threshold: emit a searchable captureMessage when this many
+// unresolved editions land in a single indexer tick. Mirrors AllDay's
+// "first real failure landed" alert that triggers on >=3 queued failures.
+const SENTRY_CAPTURE_THRESHOLD = 3
+
+// Single-NFT borrow on the Pinnacle public collection. Builds the
+// composite edition_key (royaltyCode:variant:printing) from on-chain
+// MetadataViews traits exactly the way GET_PINNACLE_UNLOCKED_DETAILS in
+// lib/cadence/pinnacle-wallet.ts does — that's the format every
+// downstream join (pinnacle_nft_map, wmc, editions.external_id) expects.
+//
+// Pinnacle does NOT expose MetadataViews.ResolverCollection at
+// 0x1d7e57aa55817448, so we borrow the plain NonFungibleToken.Collection
+// capability and pass the NFT ref directly into MetadataViews.getTraits.
+// Returns nil if the seller no longer holds the moment (cancelled +
+// transferred), the capability isn't published, or the three required
+// traits aren't all present.
+const BORROW_PINNACLE_NFT_SCRIPT = `
+import NonFungibleToken from 0x1d7e57aa55817448
+import MetadataViews from 0x1d7e57aa55817448
+import Pinnacle from 0xedf9df96c92f4595
+
+access(all) fun main(addr: Address, id: UInt64): {String: String}? {
+    let acct = getAccount(addr)
+    let cap = acct.capabilities.get<&{NonFungibleToken.Collection}>(/public/PinnacleCollection)
+    if !cap.check() { return nil }
+    let col = cap.borrow()
+    if col == nil { return nil }
+    let nftRef = col!.borrowNFT(id)
+    if nftRef == nil { return nil }
+    let nft = nftRef!
+
+    var royaltyCode: String? = nil
+    var variant: String? = nil
+    var printing: UInt64? = nil
+    if let traits = MetadataViews.getTraits(nft) {
+        for trait in traits.traits {
+            if trait.name == "RoyaltyCodes" {
+                if let arr = trait.value as? [String] {
+                    if arr.length > 0 { royaltyCode = arr[0] }
+                }
+            } else if trait.name == "Variant" {
+                if let v = trait.value as? String { variant = v }
+            } else if trait.name == "Printing" {
+                if let p = trait.value as? Int { printing = UInt64(p) }
+                else if let p2 = trait.value as? UInt64 { printing = p2 }
+                else if let p3 = trait.value as? Int32 { printing = UInt64(p3) }
+                else if let p4 = trait.value as? UInt32 { printing = UInt64(p4) }
+            }
+        }
+    }
+
+    if royaltyCode == nil || variant == nil || printing == nil { return nil }
+    let editionKey = royaltyCode!.concat(":").concat(variant!).concat(":").concat(printing!.toString())
+
+    var serial: UInt64? = nil
+    if let editions = MetadataViews.getEditions(nft) {
+        if editions.infoList.length > 0 {
+            serial = editions.infoList[0].number
+        }
+    }
+
+    return {
+        "editionKey": editionKey,
+        "serialNumber": serial == nil ? "" : serial!.toString()
+    }
+}
+`
+
+async function runScript(code: string, args: Array<{ type: string; value: unknown }>): Promise<unknown> {
+  const body = {
+    script: Buffer.from(code, "utf8").toString("base64"),
+    arguments: args.map((a) => Buffer.from(JSON.stringify(a), "utf8").toString("base64")),
+  }
+  const res = await fetch(`${FLOW_REST}/v1/scripts?block_height=sealed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(SCRIPT_TIMEOUT_MS),
+  })
+  if (!res.ok) throw new Error(`script HTTP ${res.status}`)
+  const json = (await res.json()) as { value?: string } | string
+  let raw: string
+  if (typeof json === "string") raw = json
+  else raw = String(json.value ?? "")
+  if (!raw) return null
+  const trimmed = raw.trim().replace(/^"|"$/g, "")
+  const decoded = JSON.parse(Buffer.from(trimmed, "base64").toString("utf8"))
+  return unwrapCdc(decoded)
+}
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -223,6 +317,8 @@ export async function POST(req: NextRequest) {
     let listingsAvailableCount = 0
     let listingsCompletedCount = 0
     let unresolvedEditionCount = 0
+    let cadenceAttempted = 0
+    let cadenceResolved = 0
     const unresolvedSample: string[] = []
 
     try {
@@ -366,11 +462,12 @@ export async function POST(req: NextRequest) {
         `[pinnacle-listings-indexer] range=${lastBlock + 1}-${targetHeight} rawAvail=${rawAvailable} rawCompl=${rawCompleted} availFiltered=${listingsAvailableCount} complFiltered=${listingsCompletedCount}`
       )
 
-      // ── Resolve nftID → editions UUID via pinnacle_nft_map + editions ──────
-      // Pinnacle has no Cadence borrow fallback exposed today; if the maps
-      // miss, we still write the listing row with edition_id NULL so the
-      // pricing surface isn't blocked on the metadata pipeline. The
-      // pinnacle_nft_map cron + wmc backfill independently fill these gaps.
+      // ── Resolve nftID → edition_key via pinnacle_nft_map + wmc ──────────────
+      // Cache-first lookup; we still write the listing row with edition_id
+      // NULL when nothing resolves, but we now also (a) attempt a Cadence
+      // borrow on the seller wallet for unresolved nftIDs and (b) enqueue
+      // anything still missing into listing_resolution_failures so the
+      // pinnacle-listings-retry cron can drain it with a bumped Cadence cap.
       const uniqueNftIds = [...new Set(availableEvents.map((a) => a.nftID))]
       const nftToEditionKey = new Map<string, string>()
 
@@ -403,6 +500,37 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // Cadence borrow fallback against the seller wallet for any nftIDs
+      // pinnacle_nft_map and wmc both missed. Mirrors the AllDay seller-side
+      // borrow but composes the edition_key from MetadataViews traits
+      // (royaltyCode:variant:printing) since Pinnacle stores its edition
+      // identity that way rather than as a raw editionID. CADENCE_FALLBACK_MAX
+      // caps live ingest Flow spend; the retry cron uses a higher cap.
+      const seenForCadence = new Set<string>()
+      for (const a of availableEvents) {
+        if (cadenceAttempted >= CADENCE_FALLBACK_MAX) break
+        if (nftToEditionKey.has(a.nftID)) continue
+        if (seenForCadence.has(a.nftID)) continue
+        seenForCadence.add(a.nftID)
+        cadenceAttempted++
+        try {
+          const result = (await runScript(BORROW_PINNACLE_NFT_SCRIPT, [
+            { type: "Address", value: a.storefrontAddress },
+            { type: "UInt64", value: a.nftID },
+          ])) as Record<string, string> | null
+          if (result && typeof result === "object" && result.editionKey) {
+            nftToEditionKey.set(a.nftID, String(result.editionKey))
+            cadenceResolved++
+          }
+        } catch (err) {
+          console.log(
+            `[pinnacle-listings-indexer] borrow err nft=${a.nftID} seller=${a.storefrontAddress}:`,
+            err instanceof Error ? err.message : String(err)
+          )
+        }
+        await delay(CADENCE_DELAY_MS)
+      }
+
       const editionKeys = [...new Set(nftToEditionKey.values())]
       const editionKeyToUuid = new Map<string, string>()
       if (editionKeys.length > 0) {
@@ -417,8 +545,16 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // ── Build cached_listings_v2 upsert rows ───────────────────────────────
+      // ── Build cached_listings_v2 upsert rows + failure queue ──────────────
+      // Per spec, every ListingAvailable still writes a v2 row even when
+      // edition_id can't be resolved — downstream pricing reads need the
+      // listing visibility immediately. Unresolved rows are ALSO enqueued
+      // into listing_resolution_failures so pinnacle-listings-retry can
+      // backfill the edition_id once the maps catch up. The retry path
+      // UPDATEs the existing v2 row in place.
       const v2Rows: any[] = []
+      const failuresToQueue: any[] = []
+      const cadenceCapHit = cadenceAttempted >= CADENCE_FALLBACK_MAX
       for (const a of availableEvents) {
         const editionKey = nftToEditionKey.get(a.nftID)
         const editionUuid = editionKey ? editionKeyToUuid.get(editionKey) : null
@@ -426,7 +562,27 @@ export async function POST(req: NextRequest) {
         if (!editionUuid) {
           unresolvedEditionCount++
           if (unresolvedSample.length < 20) unresolvedSample.push(a.nftID)
-          // Per spec: write the row anyway with edition_id null.
+          // Classify the failure so the retry cron can decide whether to
+          // bump retry_count (most reasons) or short-circuit to
+          // unresolvable (none of these short-circuit today; everything
+          // gets a retry pass).
+          let reason: string
+          if (!a.storefrontAddress) {
+            reason = "wmc_miss_no_seller"
+          } else if (editionKey && !editionUuid) {
+            reason = "edition_key_not_in_editions_table"
+          } else if (cadenceCapHit && !seenForCadence.has(a.nftID)) {
+            reason = "cadence_capped"
+          } else {
+            reason = "cadence_borrow_failed"
+          }
+          failuresToQueue.push({
+            collection_id: PINNACLE_COLLECTION_ID,
+            flow_id: a.nftID,
+            listing_resource_id: a.listingResourceID,
+            event_payload: a,
+            failure_reason: reason,
+          })
         }
 
         const currency = deriveCurrency(a.salePaymentVaultType)
@@ -472,6 +628,44 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // Persist failed resolutions to listing_resolution_failures so the
+      // /api/pinnacle-listings-retry cron can drain them with a bumped
+      // Cadence cap. Upsert by (collection_id, listing_resource_id) per the
+      // table's real UNIQUE constraint so a re-observed listing refreshes
+      // the row instead of duplicating.
+      let queuedFailures = 0
+      const failureReasonCounts: Record<string, number> = {}
+      if (failuresToQueue.length > 0) {
+        for (let i = 0; i < failuresToQueue.length; i += 100) {
+          const batch = failuresToQueue.slice(i, i + 100)
+          const { error } = await (supabaseAdmin as any)
+            .from("listing_resolution_failures")
+            .upsert(batch, { onConflict: "collection_id,listing_resource_id", ignoreDuplicates: true })
+          if (error) {
+            console.log("[pinnacle-listings-indexer] failure-queue upsert err:", error.message)
+          } else {
+            queuedFailures += batch.length
+            for (const row of batch) {
+              const reason = String(row.failure_reason)
+              failureReasonCounts[reason] = (failureReasonCounts[reason] ?? 0) + 1
+              Sentry.addBreadcrumb({
+                category: "listing-retry",
+                level: "warning",
+                message: "listing_resolution_failure_inserted",
+                data: {
+                  collection: "disney_pinnacle",
+                  flow_id: String(row.flow_id),
+                  failure_reason: reason,
+                  listing_resource_id: String(row.listing_resource_id),
+                },
+              })
+            }
+          }
+        }
+      }
+      extra.queued_failures = queuedFailures
+      extra.failure_reason_counts = failureReasonCounts
+
       // Soft-completion: mark matching direct rows as purchased/cancelled.
       // No-op when no matching listing_resource_id exists yet (dual-run window
       // before the corresponding ListingAvailable was observed).
@@ -513,17 +707,28 @@ export async function POST(req: NextRequest) {
       extra.completed_unmatched = completedSkipped
       extra.unresolved_edition_count = unresolvedEditionCount
       extra.unresolved_sample = unresolvedSample
+      extra.cadence_attempted = cadenceAttempted
+      extra.cadence_resolved = cadenceResolved
       extra.elapsed_ms = Date.now() - start
 
-      if (unresolvedEditionCount > 0) {
-        Sentry.addBreadcrumb({
-          category: "pinnacle-listings-indexer",
-          level: "info",
-          message: "pinnacle_listings_unresolved_editions",
-          data: {
-            unresolved: unresolvedEditionCount,
-            total: listingsAvailableCount,
-            first_5: unresolvedSample.slice(0, 5),
+      // Sentry parity with AllDay: per-row breadcrumbs already emitted on
+      // queue insert above; this summary captureMessage is the searchable
+      // event that surfaces in the Sentry dashboard. Tagged so the
+      // collection + indexer can be filtered without parsing extra blobs.
+      if (queuedFailures >= SENTRY_CAPTURE_THRESHOLD) {
+        Sentry.captureMessage("listing_resolution_failures_inserted", {
+          level: "warning",
+          tags: {
+            collection: "disney_pinnacle",
+            indexer: "pinnacle-listings-indexer",
+          },
+          extra: {
+            queued_failures: queuedFailures,
+            failure_reason_counts: failureReasonCounts,
+            first_5_flow_ids: failuresToQueue.slice(0, 5).map((r) => String(r.flow_id)),
+            unresolved_edition_count: unresolvedEditionCount,
+            cadence_attempted: cadenceAttempted,
+            cadence_resolved: cadenceResolved,
           },
         })
       }
