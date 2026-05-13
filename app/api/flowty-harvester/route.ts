@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
 // ── Flowty API harvester (pre-shutdown data preservation) ───────────────────
@@ -13,9 +13,13 @@ import { supabaseAdmin } from "@/lib/supabase"
 // Auth: Authorization: Bearer ${INGEST_SECRET_TOKEN}  (POST or GET)
 // State: flowty_archive.harvest_state(id='harvester', cursor jsonb)
 //
-// Each invocation runs a bounded amount of work (~50s wall clock) and persists
-// cursor state so the cron can resume on the next tick. Returns a summary +
-// `more_work` boolean — cron should keep calling until it's false.
+// Fire-and-forget: the handler returns {ok:true, message:"harvesting started"}
+// in under a second so cron-job.org's 30s free-tier timeout doesn't fire on
+// every invocation; the actual ~50s harvest runs inside next/server's after()
+// hook and lands in pipeline_runs when complete. Cron monitors should look at
+// pipeline_runs (ok flag, rows_written) rather than the HTTP response body to
+// confirm a run succeeded; `more_work` lives in pipeline_runs.extra for human
+// + admin-dashboard consumption.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const maxDuration = 90
@@ -391,11 +395,54 @@ async function handle(req: NextRequest) {
   }
 
   const reset = req.nextUrl.searchParams.get("reset") === "1"
-  const start = Date.now()
-  const startedAt = new Date(start).toISOString()
-  const deadline = start + TIME_BUDGET_MS
-  const withinBudget = () => Date.now() < deadline
 
+  // Fire-and-forget: kick the work into next/server's after() hook so the
+  // HTTP response returns before any phase work runs. Cron-job.org's free
+  // tier hangs up at 30s; the harvest takes ~50s and still completes
+  // server-side because Vercel's maxDuration (90s) covers after() too.
+  after(async () => {
+    const startedAt = new Date().toISOString()
+    const start = Date.now()
+    const deadline = start + TIME_BUDGET_MS
+    const withinBudget = () => Date.now() < deadline
+    try {
+      await runHarvest(reset, startedAt, start, deadline, withinBudget)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.log(`[flowty-harvester] fatal:`, msg)
+      try {
+        await (supabaseAdmin as any).rpc("log_pipeline_run", {
+          p_pipeline: PIPELINE_NAME,
+          p_started_at: startedAt,
+          p_rows_found: 0,
+          p_rows_written: 0,
+          p_rows_skipped: 1,
+          p_ok: false,
+          p_error: msg.slice(0, 500),
+          p_collection_slug: null,
+          p_cursor_before: null,
+          p_cursor_after: null,
+          p_extra: { fatal: true, elapsed_ms: Date.now() - start },
+        })
+      } catch (logErr) {
+        console.log(
+          `[flowty-harvester] fatal-log err:`,
+          logErr instanceof Error ? logErr.message : String(logErr)
+        )
+      }
+    }
+  })
+
+  return NextResponse.json({ ok: true, message: "harvesting started" })
+}
+
+async function runHarvest(
+  reset: boolean,
+  startedAt: string,
+  start: number,
+  deadline: number,
+  withinBudget: () => boolean,
+) {
   let cursor: HarvestCursor = reset ? {} : await loadCursor()
   if (!cursor.firestore) cursor.firestore = {}
   if (!cursor.collections_sale) cursor.collections_sale = {}
@@ -743,11 +790,6 @@ async function handle(req: NextRequest) {
   } catch (e) {
     console.log(`[flowty-harvester] log_pipeline_run err: ${e instanceof Error ? e.message : String(e)}`)
   }
-
-  return NextResponse.json({
-    ok: errors.length === 0,
-    ...extra,
-  })
 }
 
 export async function POST(req: NextRequest) {
