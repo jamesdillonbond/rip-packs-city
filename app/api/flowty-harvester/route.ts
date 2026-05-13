@@ -35,6 +35,29 @@ const BATCH_FLUSH_SIZE = 20
 const PIPELINE_NAME = "flowty-harvester"
 const CURSOR_ID = "harvester"
 
+// Per-phase budget caps, weighted by priority. Whichever cap trips first
+// (wall time or call count) advances the round-robin to the next phase.
+//
+// HIGH   — probes (fee schedule, lending offers, royalty splits, current
+//          marketplace + loan books). Irreplaceable structural data not
+//          reconstructable from on-chain events.
+// MEDIUM — firestore LISTING_*/LOAN_*/FUNDING_*/OFFER_*/BID_* event types
+//          and collection:*:loan pages. Irreplaceable historical context.
+// LOW    — firestore STOREFRONT_PURCHASED (largely reconstructable from
+//          on-chain sales), nft_details samples, collection:*:sale pages.
+type Priority = "high" | "medium" | "low"
+const PRIORITY_BUDGET_MS: Record<Priority, number> = {
+  high: 8_000,
+  medium: 4_000,
+  low: 2_000,
+}
+const PRIORITY_BUDGET_CALLS: Record<Priority, number> = {
+  high: 30,
+  medium: 15,
+  low: 8,
+}
+const LOW_PRIORITY_FIRESTORE_TYPES = new Set<string>(["STOREFRONT_PURCHASED"])
+
 const FIRESTORE_PAGE_SIZE = 200
 const COLLECTION_PAGE_SIZE = 100
 const NFT_DETAIL_BATCH = 5
@@ -412,155 +435,263 @@ async function handle(req: NextRequest) {
     if (buffer.length >= BATCH_FLUSH_SIZE) await flush()
   }
 
-  // Phase 1 — Firestore events. Paginate each event type backwards in time
-  // via blockTimestamp LESS_THAN cursor until we hit a short page (exhausted).
-  for (const type of FIRESTORE_EVENT_TYPES) {
-    if (!withinBudget()) break
-    const state = cursor.firestore![type] ?? { before: null, exhausted: false }
-    if (state.exhausted) continue
-    let before = state.before
-    while (withinBudget()) {
-      const { status, body } = await fetchFirestorePage(type, before)
-      await archive({
-        endpoint: `firestore:${type}`,
-        query_params: { beforeTs: before, limit: FIRESTORE_PAGE_SIZE },
-        response_payload: body,
-        response_status: status,
-        collection_hint: null,
-      })
-      phases[`firestore:${type}`] = (phases[`firestore:${type}`] ?? 0) + 1
-      const docCount = firestoreDocCount(body)
-      if (docCount === 0) {
-        state.exhausted = true
-        break
-      }
-      const oldest = oldestTimestampFromFirestore(body)
-      if (!oldest || oldest === before) {
-        state.exhausted = true
-        break
-      }
-      before = oldest
-      if (docCount < FIRESTORE_PAGE_SIZE) {
-        state.exhausted = true
-        break
-      }
-      throttleHits++
-      await delay(THROTTLE_MS)
-    }
-    state.before = before
-    cursor.firestore![type] = state
-  }
-
-  // Phase 2 — Collection sale listings per collection. Paginate offset until
-  // a short page comes back. Each page captures the full nfts[] array plus
-  // valuations.blended.usdValue (LiveToken FMV) embedded in each entry.
-  for (const c of COLLECTIONS) {
-    if (!withinBudget()) break
-    const state = cursor.collections_sale![c.slug] ?? { offset: 0, exhausted: false }
-    if (state.exhausted) continue
-    while (withinBudget()) {
-      const { status, body } = await fetchCollectionPage(c, state.offset, "sale")
-      await archive({
-        endpoint: `collection:${c.slug}:sale`,
-        query_params: { offset: state.offset, limit: COLLECTION_PAGE_SIZE },
-        response_payload: body,
-        response_status: status,
-        collection_hint: c.slug,
-      })
-      phases[`collection:${c.slug}:sale`] = (phases[`collection:${c.slug}:sale`] ?? 0) + 1
-      const items = collectionItemCount(body)
-      if (items === 0) {
-        state.exhausted = true
-        break
-      }
-      state.offset += COLLECTION_PAGE_SIZE
-      if (items < COLLECTION_PAGE_SIZE) {
-        state.exhausted = true
-        break
-      }
-      throttleHits++
-      await delay(THROTTLE_MS)
-    }
-    cursor.collections_sale![c.slug] = state
-  }
-
-  // Phase 3 — Loan book per collection. Same endpoint, different payload
-  // (`orderFilters[].kind = "loan"`). Captures the lender offer book which
-  // is the highest-leverage data NOT reconstructable from chain events alone.
-  for (const c of COLLECTIONS) {
-    if (!withinBudget()) break
-    const state = cursor.collections_loan![c.slug] ?? { offset: 0, exhausted: false }
-    if (state.exhausted) continue
-    while (withinBudget()) {
-      const { status, body } = await fetchCollectionPage(c, state.offset, "loan")
-      await archive({
-        endpoint: `collection:${c.slug}:loan`,
-        query_params: { offset: state.offset, limit: COLLECTION_PAGE_SIZE, kind: "loan" },
-        response_payload: body,
-        response_status: status,
-        collection_hint: c.slug,
-      })
-      phases[`collection:${c.slug}:loan`] = (phases[`collection:${c.slug}:loan`] ?? 0) + 1
-      const items = collectionItemCount(body)
-      if (items === 0) {
-        state.exhausted = true
-        break
-      }
-      state.offset += COLLECTION_PAGE_SIZE
-      if (items < COLLECTION_PAGE_SIZE) {
-        state.exhausted = true
-        break
-      }
-      throttleHits++
-      await delay(THROTTLE_MS)
-    }
-    cursor.collections_loan![c.slug] = state
-  }
-
-  // Phase 4 — Per-NFT GETs. Direct from Vercel (no proxy worker). These may
-  // be IP-blocked from Vercel egress; if so the archive will show 403/451 and
-  // the cron can stop sampling. We capture both success and failure so we can
-  // tell from SQL whether to invest in adding a route to the proxy worker.
-  const alreadyDone = new Set<string>(Object.keys(cursor.nft_details_done!))
-  for (const c of COLLECTIONS) {
-    if (!withinBudget()) break
-    const sample = await sampleNftIdsForCollection(c.collectionId, alreadyDone, NFT_DETAIL_BATCH)
-    for (const nftId of sample) {
-      if (!withinBudget()) break
-      const { status, body } = await fetchNftDetail(c, nftId)
-      await archive({
-        endpoint: `nft:${c.slug}`,
-        query_params: { nft_id: nftId },
-        response_payload: body,
-        response_status: status,
-        collection_hint: c.slug,
-      })
-      phases[`nft:${c.slug}`] = (phases[`nft:${c.slug}`] ?? 0) + 1
-      cursor.nft_details_done![`${c.collectionId}:${nftId}`] = true
-      throttleHits++
-      await delay(THROTTLE_MS)
-    }
-  }
-
-  // Phase 5 — One-shot probes against speculative paths. Each probe runs at
-  // most once per cursor reset; the response status + body is archived so we
-  // can audit endpoint surface in SQL without re-poking.
   const probes = buildProbes()
-  for (const p of probes) {
-    if (!withinBudget()) break
-    if (cursor.probes_done![p.key]) continue
-    const { status, body } = await fetchProbe(p.url, p.method, p.body)
-    await archive({
-      endpoint: `probe:${p.key}`,
-      query_params: { url: p.url, method: p.method, body: p.body ?? null },
-      response_payload: body,
-      response_status: status,
-      collection_hint: p.hint ?? null,
+
+  // Build a deterministic phase list and round-robin across it. Each phase
+  // gets a slice budget (wall ms + call count) scaled by its priority. The
+  // orchestration goal: make progress on every phase within a single
+  // invocation instead of letting an effectively-infinite phase (e.g.
+  // firestore:STOREFRONT_PURCHASED) starve everything below it.
+  //
+  // The starting phase rotates each invocation via `run_count % phase_count`
+  // so even when the 50s budget can't cover every phase, no phase is
+  // permanently starved across cron ticks.
+  type PhaseDef = {
+    key: string
+    priority: Priority
+    isExhausted: () => boolean
+    // Receives the slice's wall-clock deadline and call-count budget.
+    // Returns the number of API calls made — 0 means the phase is currently
+    // dry (e.g. NFT sampling found nothing new) and the round-robin treats
+    // it as a no-op for fair-share accounting.
+    run: (sliceDeadline: number, callsBudget: number) => Promise<number>
+  }
+
+  const phaseDefs: PhaseDef[] = []
+
+  // 16 firestore phases — one per event type. Paginate backwards via
+  // blockTimestamp LESS_THAN; short page = exhausted. STOREFRONT_PURCHASED
+  // is LOW priority (reconstructable from on-chain sales); the rest are
+  // MEDIUM (irreplaceable historical listing/loan/offer/bid context).
+  for (const type of FIRESTORE_EVENT_TYPES) {
+    const priority: Priority = LOW_PRIORITY_FIRESTORE_TYPES.has(type) ? "low" : "medium"
+    phaseDefs.push({
+      key: `firestore:${type}`,
+      priority,
+      isExhausted: () => !!cursor.firestore![type]?.exhausted,
+      run: async (sliceDeadline, callsBudget) => {
+        const state = cursor.firestore![type] ?? { before: null, exhausted: false }
+        let calls = 0
+        while (Date.now() < sliceDeadline && calls < callsBudget && !state.exhausted) {
+          const { status, body } = await fetchFirestorePage(type, state.before)
+          await archive({
+            endpoint: `firestore:${type}`,
+            query_params: { beforeTs: state.before, limit: FIRESTORE_PAGE_SIZE },
+            response_payload: body,
+            response_status: status,
+            collection_hint: null,
+          })
+          phases[`firestore:${type}`] = (phases[`firestore:${type}`] ?? 0) + 1
+          calls++
+          const docCount = firestoreDocCount(body)
+          if (docCount === 0) {
+            state.exhausted = true
+            break
+          }
+          const oldest = oldestTimestampFromFirestore(body)
+          if (!oldest || oldest === state.before) {
+            state.exhausted = true
+            break
+          }
+          state.before = oldest
+          if (docCount < FIRESTORE_PAGE_SIZE) {
+            state.exhausted = true
+            break
+          }
+          throttleHits++
+          await delay(THROTTLE_MS)
+        }
+        cursor.firestore![type] = state
+        return calls
+      },
     })
-    phases[`probe`] = (phases[`probe`] ?? 0) + 1
-    cursor.probes_done![p.key] = true
-    throttleHits++
-    await delay(THROTTLE_MS)
+  }
+
+  // 5 sale-listing phases — offset pagination per collection. LOW priority
+  // since the listing facts are largely reconstructable from on-chain
+  // STOREFRONT_PURCHASED + LISTING_AVAILABLE events.
+  for (const c of COLLECTIONS) {
+    phaseDefs.push({
+      key: `collection:${c.slug}:sale`,
+      priority: "low",
+      isExhausted: () => !!cursor.collections_sale![c.slug]?.exhausted,
+      run: async (sliceDeadline, callsBudget) => {
+        const state = cursor.collections_sale![c.slug] ?? { offset: 0, exhausted: false }
+        let calls = 0
+        while (Date.now() < sliceDeadline && calls < callsBudget && !state.exhausted) {
+          const { status, body } = await fetchCollectionPage(c, state.offset, "sale")
+          await archive({
+            endpoint: `collection:${c.slug}:sale`,
+            query_params: { offset: state.offset, limit: COLLECTION_PAGE_SIZE },
+            response_payload: body,
+            response_status: status,
+            collection_hint: c.slug,
+          })
+          phases[`collection:${c.slug}:sale`] = (phases[`collection:${c.slug}:sale`] ?? 0) + 1
+          calls++
+          const items = collectionItemCount(body)
+          if (items === 0) {
+            state.exhausted = true
+            break
+          }
+          state.offset += COLLECTION_PAGE_SIZE
+          if (items < COLLECTION_PAGE_SIZE) {
+            state.exhausted = true
+            break
+          }
+          throttleHits++
+          await delay(THROTTLE_MS)
+        }
+        cursor.collections_sale![c.slug] = state
+        return calls
+      },
+    })
+  }
+
+  // 5 loan-book phases — same endpoint, kind:"loan" payload. MEDIUM priority
+  // because the lender offer book is NOT reconstructable from chain events.
+  for (const c of COLLECTIONS) {
+    phaseDefs.push({
+      key: `collection:${c.slug}:loan`,
+      priority: "medium",
+      isExhausted: () => !!cursor.collections_loan![c.slug]?.exhausted,
+      run: async (sliceDeadline, callsBudget) => {
+        const state = cursor.collections_loan![c.slug] ?? { offset: 0, exhausted: false }
+        let calls = 0
+        while (Date.now() < sliceDeadline && calls < callsBudget && !state.exhausted) {
+          const { status, body } = await fetchCollectionPage(c, state.offset, "loan")
+          await archive({
+            endpoint: `collection:${c.slug}:loan`,
+            query_params: { offset: state.offset, limit: COLLECTION_PAGE_SIZE, kind: "loan" },
+            response_payload: body,
+            response_status: status,
+            collection_hint: c.slug,
+          })
+          phases[`collection:${c.slug}:loan`] = (phases[`collection:${c.slug}:loan`] ?? 0) + 1
+          calls++
+          const items = collectionItemCount(body)
+          if (items === 0) {
+            state.exhausted = true
+            break
+          }
+          state.offset += COLLECTION_PAGE_SIZE
+          if (items < COLLECTION_PAGE_SIZE) {
+            state.exhausted = true
+            break
+          }
+          throttleHits++
+          await delay(THROTTLE_MS)
+        }
+        cursor.collections_loan![c.slug] = state
+        return calls
+      },
+    })
+  }
+
+  // NFT details — samples fresh moment_ids from wmc across all collections.
+  // LOW priority and never "exhausted" (the wmc population keeps growing);
+  // zero-calls in a slice means we've already probed every cached ID and
+  // the round-robin treats this slice as a no-op.
+  phaseDefs.push({
+    key: "nft_details",
+    priority: "low",
+    isExhausted: () => false,
+    run: async (sliceDeadline, callsBudget) => {
+      let calls = 0
+      const alreadyDone = new Set<string>(Object.keys(cursor.nft_details_done!))
+      for (const c of COLLECTIONS) {
+        if (Date.now() >= sliceDeadline || calls >= callsBudget) break
+        const sample = await sampleNftIdsForCollection(c.collectionId, alreadyDone, NFT_DETAIL_BATCH)
+        for (const nftId of sample) {
+          if (Date.now() >= sliceDeadline || calls >= callsBudget) break
+          const { status, body } = await fetchNftDetail(c, nftId)
+          await archive({
+            endpoint: `nft:${c.slug}`,
+            query_params: { nft_id: nftId },
+            response_payload: body,
+            response_status: status,
+            collection_hint: c.slug,
+          })
+          phases[`nft:${c.slug}`] = (phases[`nft:${c.slug}`] ?? 0) + 1
+          cursor.nft_details_done![`${c.collectionId}:${nftId}`] = true
+          alreadyDone.add(`${c.collectionId}:${nftId}`)
+          calls++
+          throttleHits++
+          await delay(THROTTLE_MS)
+        }
+      }
+      return calls
+    },
+  })
+
+  // Probes — walks unfired probe URLs within the slice budget. HIGH priority
+  // because the irreplaceable structural data (fee schedule, lending offer
+  // book, royalty splits, current marketplace + loan listings) is concentrated
+  // here. Each probe runs at most once per cursor reset.
+  phaseDefs.push({
+    key: "probes",
+    priority: "high",
+    isExhausted: () => probes.every((p) => !!cursor.probes_done![p.key]),
+    run: async (sliceDeadline, callsBudget) => {
+      let calls = 0
+      for (const p of probes) {
+        if (Date.now() >= sliceDeadline || calls >= callsBudget) break
+        if (cursor.probes_done![p.key]) continue
+        const { status, body } = await fetchProbe(p.url, p.method, p.body)
+        await archive({
+          endpoint: `probe:${p.key}`,
+          query_params: { url: p.url, method: p.method, body: p.body ?? null },
+          response_payload: body,
+          response_status: status,
+          collection_hint: p.hint ?? null,
+        })
+        phases[`probe`] = (phases[`probe`] ?? 0) + 1
+        cursor.probes_done![p.key] = true
+        calls++
+        throttleHits++
+        await delay(THROTTLE_MS)
+      }
+      return calls
+    },
+  })
+
+  // Rotate the starting phase by the historical run count so no phase is
+  // permanently starved when the 50s global budget can't cover every phase
+  // in a single invocation. Falls back to 0 if the count read fails — even
+  // a fixed start is fine because round-robin still distributes work within
+  // each run; this just shifts which phase eats the "last slice may be short"
+  // hit across consecutive ticks.
+  let runCount = 0
+  try {
+    const { count, error: countErr } = await (supabaseAdmin as any)
+      .from("pipeline_runs")
+      .select("id", { count: "exact", head: true })
+      .eq("pipeline", PIPELINE_NAME)
+    if (!countErr && typeof count === "number") runCount = count
+  } catch {
+    // ignore — runCount=0 is a fine fallback
+  }
+  let phaseIndex = phaseDefs.length > 0 ? runCount % phaseDefs.length : 0
+  let consecutiveNoProgress = 0
+  while (withinBudget()) {
+    const def = phaseDefs[phaseIndex]
+    if (def.isExhausted()) {
+      consecutiveNoProgress++
+      phaseIndex = (phaseIndex + 1) % phaseDefs.length
+      if (consecutiveNoProgress >= phaseDefs.length) break
+      continue
+    }
+    const sliceMs = PRIORITY_BUDGET_MS[def.priority]
+    const sliceCalls = PRIORITY_BUDGET_CALLS[def.priority]
+    const sliceDeadline = Math.min(Date.now() + sliceMs, deadline)
+    const calls = await def.run(sliceDeadline, sliceCalls)
+    phaseIndex = (phaseIndex + 1) % phaseDefs.length
+    if (calls === 0) {
+      consecutiveNoProgress++
+      if (consecutiveNoProgress >= phaseDefs.length) break
+    } else {
+      consecutiveNoProgress = 0
+    }
   }
 
   // Final flush + cursor save.
