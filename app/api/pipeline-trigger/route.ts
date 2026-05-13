@@ -2,10 +2,16 @@ import { NextRequest, NextResponse, after } from "next/server"
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 
-export async function GET(req: NextRequest) {
-  const token = req.nextUrl.searchParams.get("token") ?? ""
+function authorized(req: NextRequest): boolean {
+  if (!TOKEN) return false
+  const auth = req.headers.get("authorization") ?? ""
+  if (auth.startsWith("Bearer ") && auth.slice(7) === TOKEN) return true
+  const qp = req.nextUrl.searchParams.get("token") ?? ""
+  return qp === TOKEN
+}
 
-  if (!TOKEN || token !== TOKEN) {
+export async function GET(req: NextRequest) {
+  if (!authorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
