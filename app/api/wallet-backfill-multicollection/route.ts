@@ -39,7 +39,7 @@ export const dynamic = "force-dynamic"
 // (ceil(on_chain_count / chunk_size) / chunks_per_round) round-trips
 // per wallet × 270s each. Mega-wallet pinnacle (~7700 NFTs at 500/chunk
 // = 16 chunks, ~8s/chunk = ~130s) finishes in a single round-trip.
-export const maxDuration = 600
+export const maxDuration = 900
 
 const SYNC_MAX_DURATION_MS = 270_000
 // Round 11 Item 1: cut from 6 → 2.
@@ -48,7 +48,7 @@ const SYNC_MAX_DURATION_MS = 270_000
 // With 2 round-trips × 270s per-trip ceiling = ~540s worst case before the post-loop
 // telemetry row, leaving ~60s of slack inside the 600s lambda budget. Wallets that
 // need more progression simply continue at the next 6h tick.
-const SYNC_ROUND_TRIP_CAP = 2 // safety: max retries per (wallet, sync collection)
+const SYNC_ROUND_TRIP_CAP = 3 // safety: max retries per (wallet, sync collection)
 
 interface SyncTarget {
   slug: string
@@ -209,7 +209,7 @@ async function syncPoll(
           Authorization: `Bearer ${ingestToken}`,
         },
         body: JSON.stringify({ wallet, skip_cached: skipCached }),
-        signal: AbortSignal.timeout(SYNC_MAX_DURATION_MS + 30_000),
+        signal: AbortSignal.timeout(SYNC_MAX_DURATION_MS + 20_000),
       })
       result.last_status = res.status
       const body = await res.json().catch(() => null) as {
