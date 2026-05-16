@@ -1,6 +1,6 @@
 # Trade Escrow — Status & Handoff
 
-**Last updated:** Sat May 16, 2026 (post Claude Code static audit + column rename)
+**Last updated:** Sat May 16, 2026 (post HTTP smoke test, off-chain plumbing E2E green locally)
 **Owner:** Trevor (single dev)
 **Phase:** 1 (atomic NFT-for-NFT swap via escrow contract)
 **Read this before working on anything in `cadence/contracts/RPCTradeEscrow.cdc` or `app/dashboard/trade-hub/` or `lib/trade-escrow/`.**
@@ -118,8 +118,19 @@ multi-collection swap UX polish, reputation derived from on-chain events.
 
 ## Known issues / things to verify
 
-- **Test API drift.** See item 2 above. The four most likely renames are listed
-  in `cadence/tests/README.md`.
+- **Test API drift — RESOLVED Sat May 16, 2026.** Reconciled
+  `cadence/tests/RPCTradeEscrow_test.cdc` against canonical Cadence
+  Testing Framework docs at cadence-lang.org. Five corrections: removed
+  bogus `import BlockchainHelpers`; rewrote event-extraction in
+  `mintExampleNFT` and `proposeTrade` to use set-difference and
+  `getNextTradeId()` respectively (canonical event API can't downcast to
+  specific event types); `Test.moveTime(by:)` takes `Fix64`, not `UFix64`;
+  bumped two 600.0 expiry literals off the MIN_EXPIRY boundary. See
+  `docs/trade-escrow/CADENCE_TEST_RECONCILIATION.md` for the full diff.
+  Three minor items remain unverified until first `flow test` run
+  (ExampleNFT minter signature, type-identifier resolution timing,
+  `Fix64(700.0)` cast syntax) — all 5-min fixes at the relevant compile
+  error line.
 - **DB column-naming alignment — RESOLVED Sat May 16, 2026.** `trade_chain_state`
   columns originally landed as `party_a_address` (snake_case with underscore
   between `party` and `a`/`b`), while route code and `trade_matches.partya_offer_id`
@@ -130,6 +141,41 @@ multi-collection swap UX polish, reputation derived from on-chain events.
   convention plus the 2 partial-index names. CHECK-constraint expressions
   auto-rewrote; constraint *labels* still reference old convention but that's
   cosmetic. Migration: `rename_trade_chain_state_columns_to_match_route_code`.
+- **README fixture paths + flow.json imports — RESOLVED Sat May 16, 2026.**
+  README path correction committed in d623403. Three import contracts
+  (NonFungibleToken, MetadataViews, ExampleNFT) downloaded to
+  `cadence/contracts/imports/` and confirmed Cadence 1.0. Note:
+  `flow.json` is still gitignored (plaintext hot-wallet key), so its
+  contracts-block edits live only on Trevor's machine. Dependency-manager
+  side-effect: re-running `flow dependencies install` rewrites the
+  dependencies block's aliases (sets NonFungibleToken alias to `{}`).
+  Two-source-of-truth concern that may bite a future test run; consolidate
+  to a single contracts-block declaration when convenient.
+- **Off-chain plumbing untracked on main — DECISION PENDING.**
+  `app/api/trade-chain/`, `app/api/admin/reclaim-expired-trades/`,
+  `app/dashboard/trade-hub/TradeChainPanel.tsx`, and `lib/trade-escrow/`
+  exist on local disk only. Prod 404s the trade-chain routes. Local
+  HTTP smoke test passed end-to-end against Trevor's real prod cookie
+  (May 16, 2026) — propose → partial_a → partial_b → ready → executed
+  with real moment_ids, clean response shapes, no Sentry errors,
+  COLLECTION_META lookup correct, Number() cast safe. Recommendation:
+  commit to main. Risk of "half-feature visible" is minimal (lockdown
+  allowlist gates, UI doesn't link from anywhere yet). Diff cost grows
+  the longer it stays unstable.
+- **HTTP auth path returns 307, not 401, on unauthed requests.**
+  `proxy.ts` site lockdown redirects to `/login?next=...` before the
+  route handler's `requireUser()` 401 path can fire. Fine for browsers,
+  awkward for future programmatic clients (mobile, CLI, webhooks). When
+  programmatic clients land, exempt `/api/*` from the lockdown redirect
+  and let route handlers return clean 401s. ~5-line `proxy.ts` change
+  when the time comes.
+- **moment_id JS safe-integer headroom.** Verified May 16, 2026:
+  `Number(moment_id)` works for all 5 collections today. Pinnacle's
+  largest is 280375467707130 (15 digits); JS safe-integer limit is
+  9007199254740991 (16 digits). ~32x headroom. Trajectory worth
+  watching — Pinnacle's id space is much larger than the others
+  (15 digits vs 8). Long-term defense is `BigInt(moment_id)` everywhere
+  on the JS side. Not blocking today.
 - **`cadence/tests/README.md` has stale fixture paths.** Declares
   `cadence/transactions/` and `cadence/scripts/` but fixtures actually live at
   `cadence/tests/transactions/` and `cadence/tests/scripts/`. 2-line correction
