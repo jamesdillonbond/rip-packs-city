@@ -7,6 +7,7 @@ import { z } from "zod";
 import { getCollectionUuid, fromDbSlug } from "@/lib/collections";
 import { computePinnacleSniperFeed } from "@/lib/sniper/pinnacle";
 import { leagueForSetName } from "@/lib/league";
+import { FLOWTY_MARKETPLACE_ENABLED } from "@/lib/flowty-flags";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1130,14 +1131,31 @@ export async function GET(req: Request) {
     }
 
     return NextResponse.json(
-      { ...result, deals: finalDeals, count: finalDeals.length, iterations: iter },
+      {
+        ...result,
+        deals: finalDeals,
+        count: finalDeals.length,
+        iterations: iter,
+        marketplaceAvailability: {
+          topshot: true,
+          flowty: FLOWTY_MARKETPLACE_ENABLED,
+        },
+      },
       {
         headers: { "Cache-Control": "public, max-age=0, s-maxage=25, stale-while-revalidate=60" },
       }
     );
   } catch (err: any) {
     console.error("[sniper-feed] unhandled error:", err?.message);
-    return NextResponse.json({ error: "Feed unavailable", deals: [], count: 0 }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "Feed unavailable",
+        deals: [],
+        count: 0,
+        marketplaceAvailability: { topshot: true, flowty: FLOWTY_MARKETPLACE_ENABLED },
+      },
+      { status: 500 }
+    );
   }
 }
 

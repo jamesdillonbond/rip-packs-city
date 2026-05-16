@@ -136,6 +136,7 @@ function StatusBadge({ status }: { status: PurchaseStatus }) {
     failed:        { label: '✗ Failed',         classes: 'bg-red-500/20 text-red-300 border border-red-500/30' },
     sniped:        { label: '⚡ Sniped',        classes: 'bg-amber-500/20 text-amber-300 border border-amber-500/30' },
     price_changed: { label: '⚠ Price changed', classes: 'bg-orange-500/20 text-orange-300 border border-orange-500/30' },
+    unavailable:   { label: '○ Unavailable',    classes: 'bg-zinc-500/20 text-zinc-300 border border-zinc-500/30' },
   }
 
   const { label, classes, pulse } = config[status]
@@ -280,7 +281,8 @@ function CartSummary() {
   const failedCount = Object.values(purchaseStatus).filter(
     (s) => s === 'failed' || s === 'sniped' || s === 'price_changed'
   ).length
-  const hasResults = successCount + failedCount > 0 && !isExecuting
+  const unavailableCount = Object.values(purchaseStatus).filter((s) => s === 'unavailable').length
+  const hasResults = successCount + failedCount + unavailableCount > 0 && !isExecuting
 
   const pendingItems = items.filter(
     (i) => !purchaseStatus[i.listingResourceID] || purchaseStatus[i.listingResourceID] === 'idle'
@@ -378,6 +380,15 @@ function CartSummary() {
           {successCount > 0 && <span className="text-emerald-400 font-medium">{successCount} completed</span>}
           {successCount > 0 && failedCount > 0 && <span className="text-slate-500 mx-1">·</span>}
           {failedCount > 0 && <span className="text-red-400 font-medium">{failedCount} failed or sniped</span>}
+          {(successCount > 0 || failedCount > 0) && unavailableCount > 0 && <span className="text-slate-500 mx-1">·</span>}
+          {unavailableCount > 0 && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs bg-zinc-500/20 text-zinc-300 border border-zinc-500/30 align-middle"
+              title="Flowty marketplace is temporarily unavailable"
+            >
+              {unavailableCount} unavailable
+            </span>
+          )}
         </div>
       )}
 

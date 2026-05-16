@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useCart } from "@/lib/cart/CartContext";
 import { useWarmCache } from "@/lib/warmup/WarmupContext";
+import { FLOWTY_MARKETPLACE_ENABLED, FLOWTY_INCIDENT_URL } from "@/lib/flowty-flags";
 import {
   isCartEligible,
   cartEligibilityReason,
@@ -369,6 +370,7 @@ function ActionCell({
     (!!deal.editionKey && ownedIds.has(deal.editionKey));
   const isPinnacleDeal = deal.source === "pinnacle";
   const isFlowty = (deal.source ?? "topshot") === "flowty";
+  const flowtyDisabled = isFlowty && !FLOWTY_MARKETPLACE_ENABLED;
   const eligibilityReason = cartEligibilityReason({
     listingResourceID: deal.listingResourceID,
     storefrontAddress: deal.storefrontAddress,
@@ -383,6 +385,7 @@ function ActionCell({
 
   function handleCart() {
     if (!canCart) return;
+    if (flowtyDisabled) return;
     if (inCart) {
       removeFromCart(deal.listingResourceID!);
       return;
@@ -406,6 +409,7 @@ function ActionCell({
         fmv: deal.adjustedFmv,
         source: "sniper",
         paymentToken: "USDC_E",
+        marketplaceSource: isFlowty ? "flowty" : "topshot",
         offerAmount: localOfferAmt,
         offerExpiry: expiryTimestamp,
       });
@@ -426,6 +430,7 @@ function ActionCell({
         source: "sniper",
         paymentToken: deal.paymentToken ?? "DUC",
         cartMode: "buy",
+        marketplaceSource: isFlowty ? "flowty" : "topshot",
       });
     }
   }
@@ -462,7 +467,7 @@ function ActionCell({
           />
         </div>
       )}
-      {canCart && (
+      {canCart && !flowtyDisabled && (
         <button
           onClick={handleCart}
           className="rpc-chip"
@@ -476,7 +481,22 @@ function ActionCell({
           {inCart ? "✓ IN CART" : offerMode ? "+ OFFER" : "+ CART"}
         </button>
       )}
-      {showIneligibleCartChip && (
+      {flowtyDisabled && (
+        <button
+          disabled
+          title="Flowty marketplace is currently unavailable"
+          aria-label="Flowty marketplace is currently unavailable"
+          className="rpc-chip"
+          style={{
+            opacity: 0.45,
+            cursor: "not-allowed",
+            color: "var(--rpc-text-ghost)",
+          }}
+        >
+          UNAVAILABLE
+        </button>
+      )}
+      {showIneligibleCartChip && !flowtyDisabled && (
         <button
           disabled
           title={ineligibleTooltip}
@@ -491,21 +511,41 @@ function ActionCell({
           + CART
         </button>
       )}
-      <a
-        href={deal.buyUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={handleBuy}
-        className={isFlowty || isPinnacleDeal ? "rpc-chip" : "rpc-btn-ghost"}
-        style={isPinnacleDeal
-          ? { background: "rgba(168,85,247,0.15)", borderColor: "rgba(168,85,247,0.4)", color: "#c084fc", textDecoration: "none", padding: "4px 12px" }
-          : isFlowty
-          ? { background: "rgba(59,130,246,0.15)", borderColor: "rgba(59,130,246,0.4)", color: "var(--rpc-info)", textDecoration: "none", padding: "4px 12px" }
-          : { padding: "4px 12px", textDecoration: "none", borderColor: `${accent}40`, color: accent }
-        }
-      >
-        {isPinnacleDeal ? "BUY ON PINNACLE →" : isFlowty ? "FLOWTY →" : "BUY →"}
-      </a>
+      {flowtyDisabled ? (
+        <span
+          title="Flowty marketplace is currently unavailable"
+          aria-disabled="true"
+          className="rpc-chip"
+          style={{
+            background: "rgba(59,130,246,0.08)",
+            borderColor: "rgba(59,130,246,0.25)",
+            color: "var(--rpc-info)",
+            textDecoration: "none",
+            padding: "4px 12px",
+            opacity: 0.5,
+            cursor: "not-allowed",
+            pointerEvents: "none",
+          }}
+        >
+          FLOWTY UNAVAILABLE
+        </span>
+      ) : (
+        <a
+          href={deal.buyUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={handleBuy}
+          className={isFlowty || isPinnacleDeal ? "rpc-chip" : "rpc-btn-ghost"}
+          style={isPinnacleDeal
+            ? { background: "rgba(168,85,247,0.15)", borderColor: "rgba(168,85,247,0.4)", color: "#c084fc", textDecoration: "none", padding: "4px 12px" }
+            : isFlowty
+            ? { background: "rgba(59,130,246,0.15)", borderColor: "rgba(59,130,246,0.4)", color: "var(--rpc-info)", textDecoration: "none", padding: "4px 12px" }
+            : { padding: "4px 12px", textDecoration: "none", borderColor: `${accent}40`, color: accent }
+          }
+        >
+          {isPinnacleDeal ? "BUY ON PINNACLE →" : isFlowty ? "FLOWTY →" : "BUY →"}
+        </a>
+      )}
     </div>
   );
 }
@@ -1681,6 +1721,36 @@ export default function SniperPage() {
           </div>
         )}
 
+        {!FLOWTY_MARKETPLACE_ENABLED && (data?.deals ?? []).some((d) => (d.source ?? "topshot") === "flowty") && (
+          <div
+            className="rpc-card"
+            style={{
+              margin: "0 0 16px 0",
+              padding: "10px 14px",
+              background: "rgba(59,130,246,0.06)",
+              borderColor: "rgba(59,130,246,0.3)",
+              color: "var(--rpc-text-secondary)",
+              fontSize: "var(--text-xs)",
+              fontFamily: "var(--font-mono)",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <span style={{ color: "var(--rpc-info)", fontWeight: 700 }}>FLOWTY OFFLINE</span>
+            <span>Flowty marketplace is temporarily unavailable — listing data shown for price reference only.</span>
+            <a
+              href={FLOWTY_INCIDENT_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "var(--rpc-info)", textDecoration: "underline" }}
+            >
+              Learn more ↗
+            </a>
+          </div>
+        )}
+
         {!loading && visibleDeals.length === 0 && data && (
           <div style={{ padding: "80px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, textAlign: "center" }}>
             <svg width="40" height="40" viewBox="0 0 100 100" style={{ opacity: 0.3 }}>
@@ -1712,6 +1782,7 @@ export default function SniperPage() {
             {visibleDeals.map((deal) => {
               const isFlowty = (deal.source ?? "topshot") === "flowty";
               const isPinnacleDeal = deal.source === "pinnacle";
+              const flowtyDisabled = isFlowty && !FLOWTY_MARKETPLACE_ENABLED;
               return (
                 <div key={`m-${deal.source}-${deal.flowId}`} onClick={(e) => { const t = e.target as HTMLElement; if (t.closest("a,button")) return; setSelectedDeal(deal); }} className="rpc-card p-3 flex flex-col gap-1.5 cursor-pointer">
                   {/* Row 1: Player + Tier + Source */}
@@ -1802,21 +1873,42 @@ export default function SniperPage() {
                         ))}
                       </div>
                     )}
-                    <a
-                      href={deal.buyUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => { e.stopPropagation(); trackClick(deal, null); }}
-                      className={isFlowty || isPinnacleDeal ? "rpc-chip" : "rpc-btn-ghost"}
-                      style={isPinnacleDeal
-                        ? { background: "rgba(168,85,247,0.15)", borderColor: "rgba(168,85,247,0.4)", color: "#c084fc", textDecoration: "none", padding: "4px 10px", fontSize: "var(--text-xs)" }
-                        : isFlowty
-                        ? { background: "rgba(59,130,246,0.15)", borderColor: "rgba(59,130,246,0.4)", color: "var(--rpc-info)", textDecoration: "none", padding: "4px 10px", fontSize: "var(--text-xs)" }
-                        : { padding: "4px 10px", textDecoration: "none", borderColor: `${accent}40`, color: accent, fontSize: "var(--text-xs)" }
-                      }
-                    >
-                      {isPinnacleDeal ? "BUY ON PINNACLE →" : isFlowty ? "FLOWTY →" : "BUY →"}
-                    </a>
+                    {flowtyDisabled ? (
+                      <span
+                        title="Flowty marketplace is currently unavailable"
+                        aria-disabled="true"
+                        className="rpc-chip"
+                        style={{
+                          background: "rgba(59,130,246,0.08)",
+                          borderColor: "rgba(59,130,246,0.25)",
+                          color: "var(--rpc-info)",
+                          textDecoration: "none",
+                          padding: "4px 10px",
+                          fontSize: "var(--text-xs)",
+                          opacity: 0.5,
+                          cursor: "not-allowed",
+                          pointerEvents: "none",
+                        }}
+                      >
+                        FLOWTY UNAVAILABLE
+                      </span>
+                    ) : (
+                      <a
+                        href={deal.buyUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => { e.stopPropagation(); trackClick(deal, null); }}
+                        className={isFlowty || isPinnacleDeal ? "rpc-chip" : "rpc-btn-ghost"}
+                        style={isPinnacleDeal
+                          ? { background: "rgba(168,85,247,0.15)", borderColor: "rgba(168,85,247,0.4)", color: "#c084fc", textDecoration: "none", padding: "4px 10px", fontSize: "var(--text-xs)" }
+                          : isFlowty
+                          ? { background: "rgba(59,130,246,0.15)", borderColor: "rgba(59,130,246,0.4)", color: "var(--rpc-info)", textDecoration: "none", padding: "4px 10px", fontSize: "var(--text-xs)" }
+                          : { padding: "4px 10px", textDecoration: "none", borderColor: `${accent}40`, color: accent, fontSize: "var(--text-xs)" }
+                        }
+                      >
+                        {isPinnacleDeal ? "BUY ON PINNACLE →" : isFlowty ? "FLOWTY →" : "BUY →"}
+                      </a>
+                    )}
                   </div>
                 </div>
               );

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { createClient } from "@supabase/supabase-js";
 import { fireNextPipelineStep } from "@/lib/pipeline-chain";
+import { isFlowtyIngestEnabled } from "@/lib/flowty-flags";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -429,6 +430,20 @@ export async function POST(req: NextRequest) {
     const auth = req.headers.get("authorization");
     if (auth !== ("Bearer " + process.env.INGEST_SECRET_TOKEN)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Flowty ingest kill-switch — cron-job.org keeps firing on its schedule,
+    // so we return 200 with disabled:true rather than failing. Avoids burning
+    // proxy quota when Flowty's read APIs are down or being wound down.
+    if (!isFlowtyIngestEnabled()) {
+      return NextResponse.json(
+        {
+          ok: true,
+          disabled: true,
+          message: "Flowty ingest disabled via FLOWTY_INGEST_ENABLED flag",
+        },
+        { status: 200 }
+      );
     }
 
     const chain = req.nextUrl.searchParams.get("chain") === "true";

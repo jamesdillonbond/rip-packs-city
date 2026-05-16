@@ -23,6 +23,7 @@ import WalletStatRow from "@/components/wallet-stat-row"
 import { formatCurrency, formatCount } from "@/lib/format"
 import { track } from "@/lib/telemetry/track"
 import { pickLoading } from "@/lib/schonely"
+import { FLOWTY_MARKETPLACE_ENABLED } from "@/lib/flowty-flags"
 
 function ThumbnailPreview({ thumbUrl, playerName, tierColor, children }: { thumbUrl: string | null; playerName: string; tierColor: string; children: React.ReactNode }) {
   const [hovered, setHovered] = useState(false)
@@ -2126,7 +2127,19 @@ export default function WalletPage() {
                         <div className="flex flex-wrap gap-2">
                           <Link href={"/moment/" + row.momentId} prefetch={false} onClick={function(e) { e.stopPropagation() }} className="rpc-expand-link">View on RPC</Link>
                           <a href={"https://nbatopshot.com/moment/" + row.momentId} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">View on Top Shot</a>
-                          <a href={"https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/" + row.momentId} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">View on Flowty</a>
+                          {FLOWTY_MARKETPLACE_ENABLED ? (
+                            <a href={"https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/" + row.momentId} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">View on Flowty</a>
+                          ) : (
+                            <div
+                              role="button"
+                              aria-disabled="true"
+                              title="Flowty marketplace is currently unavailable"
+                              className="rpc-expand-link rpc-expand-link--muted"
+                              style={{ opacity: 0.5, cursor: "not-allowed", pointerEvents: "none" }}
+                            >
+                              Flowty marketplace unavailable
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="rpc-expand-section">
@@ -2701,7 +2714,17 @@ export default function WalletPage() {
                               <div className="flex flex-wrap gap-2">
                                 <Link href={"/moment/" + row.momentId} prefetch={false} className="rpc-expand-link">View on RPC</Link>
                                 <a href={"https://nbatopshot.com/moment/" + row.momentId} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">View on Top Shot</a>
-                                {row.flowtyListingUrl ? (
+                                {!FLOWTY_MARKETPLACE_ENABLED ? (
+                                  <div
+                                    role="button"
+                                    aria-disabled="true"
+                                    title="Flowty marketplace is currently unavailable"
+                                    className="rpc-expand-link rpc-expand-link--muted"
+                                    style={{ opacity: 0.5, cursor: "not-allowed", pointerEvents: "none" }}
+                                  >
+                                    {"Flowty marketplace unavailable" + (row.flowtyAsk ? " (" + formatCurrency(row.flowtyAsk) + ")" : "")}
+                                  </div>
+                                ) : row.flowtyListingUrl ? (
                                   <a href={"/out/flowty/" + row.momentId + "?source=wallet-expand&priceAtClick=" + (row.flowtyAsk ?? "")} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">
                                     {"View on Flowty" + (row.flowtyAsk ? " (" + formatCurrency(row.flowtyAsk) + ")" : "")}
                                   </a>

@@ -3,6 +3,9 @@ import * as fcl from '@onflow/fcl'
 import { useCart, CartItem, PurchaseStatus } from './CartContext'
 import { PURCHASE_MOMENT_FLOW_WALLET_CADENCE } from '@/lib/cadence/purchase-moment-flow-wallet'
 import { MAKE_OFFER_FLOWTY_CADENCE } from '@/lib/cadence/make-offer-flowty'
+import { FLOWTY_MARKETPLACE_ENABLED } from '@/lib/flowty-flags'
+
+const FLOWTY_DISABLED_ERROR = 'Flowty marketplace currently unavailable'
 
 const TX_DELAY_MS = 300
 const DAPPER_NOT_SUPPORTED_MESSAGE =
@@ -201,6 +204,25 @@ export function usePurchaseQueue() {
       }
 
       for (const item of items) {
+        // Flowty kill-switch — skip FCL submit entirely for flowty-sourced
+        // items when the marketplace flag is off. The item is marked
+        // 'unavailable' (a distinct, non-error status) so the cart UI can
+        // surface it differently from real failures.
+        if (item.marketplaceSource === 'flowty' && !FLOWTY_MARKETPLACE_ENABLED) {
+          cart.setItemStatus(item.listingResourceID, 'unavailable')
+          onItemStart?.(item)
+          const unavailableResult: PurchaseResult = {
+            item,
+            status: 'unavailable',
+            error: FLOWTY_DISABLED_ERROR,
+            walletProvider,
+            batchId,
+          }
+          results.push(unavailableResult)
+          onItemComplete?.(unavailableResult)
+          continue
+        }
+
         cart.setItemStatus(item.listingResourceID, 'pending')
         onItemStart?.(item)
 

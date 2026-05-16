@@ -4,6 +4,8 @@
 // Extracted from app/api/flowty-offers/route.ts so sniper-feed can call it directly
 // instead of making an outbound HTTP request to its own domain.
 
+import { isFlowtyIngestEnabled } from "@/lib/flowty-flags";
+
 const FIRESTORE_BASE =
   "https://firestore.googleapis.com/v1/projects/flowty-prod/databases/(default)";
 
@@ -60,6 +62,12 @@ function getStr(f: FirestoreFields, key: string): string {
  * Returns a Map keyed by nftID (Flow NFT ID string).
  */
 export async function fetchOpenOffers(): Promise<Map<string, { amount: number; fmv: number | null }>> {
+  // Flowty ingest kill-switch — short-circuit with an empty Map when disabled
+  // so sniper-feed renders cleanly without burning a Firestore query.
+  if (!isFlowtyIngestEnabled()) {
+    return new Map();
+  }
+
   const [createdDocs, cancelledDocs] = await Promise.all([
     fetchOfferEvents("STOREFRONT_OFFER_CREATED"),
     fetchOfferEvents("STOREFRONT_OFFER_CANCELLED"),

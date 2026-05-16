@@ -17,6 +17,7 @@
 // GET /api/flowty-offers?nftIds=123,456,789       — specific Flow NFT IDs
 
 import { NextRequest, NextResponse } from "next/server";
+import { isFlowtyIngestEnabled } from "@/lib/flowty-flags";
 
 const FIRESTORE_BASE =
   "https://firestore.googleapis.com/v1/projects/flowty-prod/databases/(default)";
@@ -80,6 +81,20 @@ function getStr(f: FirestoreFields, key: string): string {
 }
 
 export async function GET(req: NextRequest) {
+  // Flowty ingest kill-switch — return empty offers when disabled so callers
+  // see a clean "no offers" shape rather than a 500.
+  if (!isFlowtyIngestEnabled()) {
+    return NextResponse.json(
+      {
+        offers: {},
+        count: 0,
+        disabled: true,
+        message: "Flowty ingest disabled via FLOWTY_INGEST_ENABLED flag",
+      },
+      { status: 200 }
+    );
+  }
+
   const url = new URL(req.url);
   const nftIdsParam = url.searchParams.get("nftIds");
   const requestedIds = nftIdsParam
