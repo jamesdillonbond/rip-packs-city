@@ -2594,7 +2594,7 @@ export default function WalletPage() {
                               </button>
                             </div>
                           )}
-                          {isOwnCollection && (
+                          {isOwnCollection && (FLOWTY_MARKETPLACE_ENABLED ? (
                             <a
                               href={"https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/" + row.momentId}
                               target="_blank"
@@ -2605,7 +2605,16 @@ export default function WalletPage() {
                               List
                               <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
                             </a>
-                          )}
+                          ) : (
+                            <span
+                              aria-disabled="true"
+                              title="Flowty marketplace is currently unavailable"
+                              className="hidden group-hover:inline-flex items-center gap-1 rounded-full border border-zinc-800 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-500"
+                              style={{ opacity: 0.5, cursor: "not-allowed", pointerEvents: "none" }}
+                            >
+                              List (Unavailable)
+                            </span>
+                          ))}
                         </div>
                       </td>
                     </tr>
@@ -2870,6 +2879,13 @@ export default function WalletPage() {
           sourceAddress: selectedMoment.sourceAddress ?? null,
           loanPrincipal: selectedMoment.loanPrincipal ?? null,
         } : null}
+        // The buyUrl in this codepath is unconditionally a flowty.io URL —
+        // there is no Top Shot branch — so the modal is always rendering a
+        // Flowty buy CTA when buyUrl is set. Use the buyUrl itself as the
+        // source-of-truth signal rather than `selectedMoment?.flowtyListingUrl`,
+        // which is only populated on rows that came through the wallet-expand
+        // path. See SUMMARY in commit body.
+        marketplaceSource="flowty"
         onClose={function() { setSelectedMoment(null) }}
       />
     </div>
