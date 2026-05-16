@@ -25,7 +25,7 @@ export const maxDuration = 300
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const FLOW_REST = "https://rest-mainnet.onflow.org"
 
-const MAX_BLOCKS_PER_RUN = 600
+const MAX_BLOCKS_PER_RUN = 2500
 const BLOCK_RANGE_CHUNK = 50
 const PARALLEL_RESULT_FETCHES = 30
 const PARALLEL_TX_FETCHES = 15
