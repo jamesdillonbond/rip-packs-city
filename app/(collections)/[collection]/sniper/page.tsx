@@ -2420,6 +2420,7 @@ export default function SniperPage() {
           imageUrlPrefix: null,
           buyUrl: selectedDeal.buyUrl,
         } : null}
+        marketplaceSource={selectedDeal?.source === "flowty" ? "flowty" : "topshot"}
         onClose={() => setSelectedDeal(null)}
       />
     </div>

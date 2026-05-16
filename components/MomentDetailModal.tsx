@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { FLOWTY_MARKETPLACE_ENABLED } from "@/lib/flowty-flags";
 
 const TIER_COLORS: Record<string, string> = {
   COMMON: "#9ca3af",
@@ -41,6 +42,13 @@ export interface MomentDetailModalProps {
     sourceAddress?: string | null;
     loanPrincipal?: number | null;
   } | null;
+  /**
+   * Where buyUrl originates. When 'flowty' (and FLOWTY_MARKETPLACE_ENABLED is
+   * false) the Buy CTA is replaced with a disabled "FLOWTY UNAVAILABLE" chip.
+   * Undefined is treated as 'topshot' to preserve behavior for non-Flowty
+   * callers (e.g. native Top Shot buy URLs).
+   */
+  marketplaceSource?: "topshot" | "flowty";
   onClose: () => void;
 }
 
@@ -64,7 +72,7 @@ function getVideoUrl(prefix: string | null | undefined): string | null {
   return `${prefix}Animated_1080_1080_Black.mp4`;
 }
 
-export default function MomentDetailModal({ moment, onClose }: MomentDetailModalProps) {
+export default function MomentDetailModal({ moment, marketplaceSource, onClose }: MomentDetailModalProps) {
   const [hovered, setHovered] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -340,7 +348,32 @@ export default function MomentDetailModal({ moment, onClose }: MomentDetailModal
             </div>
           )}
 
-          {moment.buyUrl && (
+          {moment.buyUrl && (marketplaceSource === "flowty" && !FLOWTY_MARKETPLACE_ENABLED ? (
+            <span
+              title="Flowty marketplace is currently unavailable"
+              aria-disabled="true"
+              style={{
+                marginTop: "auto",
+                display: "inline-block",
+                textAlign: "center",
+                background: "#E03A2F",
+                color: "#fff",
+                padding: "10px 16px",
+                borderRadius: 4,
+                fontFamily: "'Barlow Condensed', sans-serif",
+                fontWeight: 800,
+                fontSize: 13,
+                letterSpacing: "0.12em",
+                textDecoration: "none",
+                textTransform: "uppercase",
+                opacity: 0.5,
+                cursor: "not-allowed",
+                pointerEvents: "none",
+              }}
+            >
+              Flowty Unavailable
+            </span>
+          ) : (
             <a
               href={moment.buyUrl}
               target="_blank"
@@ -363,7 +396,7 @@ export default function MomentDetailModal({ moment, onClose }: MomentDetailModal
             >
               Buy on Flowty →
             </a>
-          )}
+          ))}
         </div>
       </div>
     </div>
