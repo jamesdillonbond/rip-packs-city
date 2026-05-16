@@ -1,0 +1,19 @@
+name = "pack-events-ingest"
+main = "index.ts"
+compatibility_date = "2026-05-16"
+compatibility_flags = ["nodejs_compat"]
+
+# workers_dev = true is REQUIRED. Omitting it means the *.workers.dev
+# subdomain is unrouted at the Cloudflare edge and every request 404s
+# silently with no log entry. Lesson re-learned from pinnacle-events-proxy.
+workers_dev = true
+
+# Secrets (write-only after creation):
+#   wrangler secret put INGEST_SECRET_TOKEN        --name pack-events-ingest
+#   wrangler secret put SUPABASE_URL                --name pack-events-ingest
+#   wrangler secret put SUPABASE_SERVICE_ROLE_KEY   --name pack-events-ingest
+#
+# INGEST_SECRET_TOKEN is the same rotation surface as the Vercel ingest
+# routes — Bearer-token auth on POST /. SUPABASE_* let the Worker call
+# the project's REST API with service-role privileges; no Vercel route
+# sits between this Worker and Supabase.
