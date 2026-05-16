@@ -352,10 +352,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ---- Phase 2: sync-poll loop ----
-    const syncResults: SyncResult[] = []
-    for (const target of SYNC_COLLECTIONS) {
-      syncResults.push(await syncPoll(origin, target, wallet, skipCached, ingestToken))
-    }
+    const syncResults = await Promise.all(SYNC_COLLECTIONS.map(target => syncPoll(origin, target, wallet, skipCached, ingestToken)))
     const totalMs = Date.now() - t0
 
     console.log(
