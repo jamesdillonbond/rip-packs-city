@@ -10,21 +10,21 @@ end-to-end coverage of the 12 audit scenarios from
 cadence/
 ├── contracts/
 │   └── RPCTradeEscrow.cdc          (already in place)
-├── tests/
-│   └── RPCTradeEscrow_test.cdc     ← test runner
-├── transactions/
-│   ├── admin_set_paused.cdc
-│   ├── cancel_trade.cdc
-│   ├── deposit_to_trade_example_nft.cdc
-│   ├── execute_swap.cdc
-│   ├── mint_example_nft.cdc
-│   ├── propose_trade.cdc
-│   ├── reclaim_expired.cdc
-│   └── setup_example_nft_collection.cdc
-└── scripts/
-    ├── audit_admin_surface.cdc
-    ├── get_example_nft_ids.cdc
-    └── trade_id_exists.cdc
+└── tests/
+    ├── RPCTradeEscrow_test.cdc     ← test runner
+    ├── transactions/
+    │   ├── admin_set_paused.cdc
+    │   ├── cancel_trade.cdc
+    │   ├── deposit_to_trade_example_nft.cdc
+    │   ├── execute_swap.cdc
+    │   ├── mint_example_nft.cdc
+    │   ├── propose_trade.cdc
+    │   ├── reclaim_expired.cdc
+    │   └── setup_example_nft_collection.cdc
+    └── scripts/
+        ├── audit_admin_surface.cdc
+        ├── get_example_nft_ids.cdc
+        └── trade_id_exists.cdc
 ```
 
 ## flow.json additions
