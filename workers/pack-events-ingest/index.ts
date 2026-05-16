@@ -6,11 +6,18 @@
 // moment_acquisitions with verified pack_rip provenance (replacing the
 // 'cache-refresh:%' placeholders left by earlier wallet-walk ingest).
 //
-// Auth:    POST /         Bearer INGEST_SECRET_TOKEN
-// Health:  GET  /health   unauthenticated; returns {ok: true}
+// Auth:    POST /          Bearer INGEST_SECRET_TOKEN  (live ingest)
+//          POST /backfill  Bearer INGEST_SECRET_TOKEN  (historical backfill)
+// Health:  GET  /health    unauthenticated; returns {ok: true}
 //
-// Response shape (always 200, even on per-cursor failure so cron retries
-// cleanly):
+// Live mode (POST /) advances topshot_pack_purchases / topshot_pack_opens
+// toward sealed tip. Backfill mode (POST /backfill) advances
+// topshot_pack_{purchases,opens}_backfill toward TARGET_END_BLOCK
+// (151610000 — the seed point of the live cursors), preventing overlap
+// with the live ingest range.
+//
+// Response shape (both endpoints, always 200, even on per-cursor failure
+// so cron retries cleanly):
 //   {
 //     ok: boolean,                      // false iff one or both cursors errored
 //     purchases: { from_block, to_block, chunks_processed, events_processed, rows_inserted, caught_up },
@@ -21,12 +28,19 @@
 //   }
 //
 // Each invocation loops multiple 250-block chunks per cursor until one
-// of these is true: (a) cursor caught up to within 50 blocks of sealed
-// tip, (b) shared 25,000 ms soft budget across BOTH cursors exceeded,
-// (c) 20 chunks processed for this cursor, or (d) the chunk threw an
-// error (cursor NOT advanced, error recorded, loop breaks for this
-// cursor only). Purchases runs first, then opens — the opens cursor
-// only gets whatever budget remains after purchases.
+// of these is true:
+//   live:     (a) cursor caught up to within 50 blocks of sealed tip,
+//             (b) shared 25,000 ms soft budget across BOTH cursors exceeded,
+//             (c) 20 chunks processed for this cursor,
+//             (d) chunk threw (cursor NOT advanced, error recorded).
+//   backfill: (a) cursor advanced past or equal to TARGET_END_BLOCK,
+//             (b) shared 25,000 ms soft budget across BOTH cursors exceeded,
+//             (c) 40 chunks processed for this cursor (higher cap — backfill
+//                 should grind faster than live since it never waits on tip),
+//             (d) chunk threw.
+// Purchases runs first, then opens — the opens cursor only gets whatever
+// budget remains after purchases. caught_up means cursor within 50 blocks
+// of sealed tip (live) or cursor >= TARGET_END_BLOCK (backfill).
 //
 // Subrequest budget: this worker batches all Supabase writes to keep
 // total subrequests roughly constant per invocation regardless of how
@@ -45,17 +59,26 @@ interface Env {
   SUPABASE_SERVICE_ROLE_KEY: string;
 }
 
+type Mode = "live" | "backfill";
+
 const FLOW_REST = "https://rest-mainnet.onflow.org";
 const COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"; // Top Shot
 const CHUNK_SIZE = 250;
 const REQUEST_TIMEOUT_MS = 20_000;
 const SOFT_BUDGET_MS = 25_000;
-const MAX_CHUNKS_PER_CURSOR = 20;
+const MAX_CHUNKS_PER_CURSOR_LIVE = 20;
+const MAX_CHUNKS_PER_CURSOR_BACKFILL = 40;
 const CAUGHT_UP_THRESHOLD = 50;
 const SEALED_TIP_TTL_MS = 60_000;
 
+// Seed point of the live cursors. Backfill stops here so historical and
+// live ranges never overlap.
+const TARGET_END_BLOCK = 151_610_000;
+
 const CURSOR_PURCHASES = "topshot_pack_purchases";
 const CURSOR_OPENS = "topshot_pack_opens";
+const CURSOR_PURCHASES_BACKFILL = "topshot_pack_purchases_backfill";
+const CURSOR_OPENS_BACKFILL = "topshot_pack_opens_backfill";
 
 const EVT_LISTING_COMPLETED = "A.4eb8a10cb9f87357.NFTStorefrontV2.ListingCompleted";
 const EVT_PACKNFT_DEPOSIT = "A.0b2a3299cc857e29.PackNFT.Deposit";
@@ -80,9 +103,15 @@ function healthOk(): Response {
     JSON.stringify({
       ok: true,
       worker: "pack-events-ingest",
-      cursors: [CURSOR_PURCHASES, CURSOR_OPENS],
+      cursors: [
+        CURSOR_PURCHASES,
+        CURSOR_OPENS,
+        CURSOR_PURCHASES_BACKFILL,
+        CURSOR_OPENS_BACKFILL,
+      ],
       chunk_size: CHUNK_SIZE,
       collection_id: COLLECTION_ID,
+      target_end_block: TARGET_END_BLOCK,
     }),
     { status: 200, headers: { "Content-Type": "application/json" } },
   );
@@ -303,17 +332,17 @@ async function getTransactionPayer(txId: string): Promise<string | null> {
 // Cursor read / write — batched read at start, single write per cursor at end
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function readBothCursors(sb: SupabaseClient): Promise<Record<string, number>> {
+async function readCursors(sb: SupabaseClient, ids: string[]): Promise<Record<string, number>> {
   const { data, error } = await sb
     .from("event_cursor")
     .select("id, last_processed_block")
-    .in("id", [CURSOR_PURCHASES, CURSOR_OPENS]);
+    .in("id", ids);
   if (error) throw new Error(`event_cursor batch read: ${error.message}`);
   const map: Record<string, number> = {};
   for (const row of (data ?? []) as Array<{ id: string; last_processed_block: number }>) {
     map[row.id] = Number(row.last_processed_block);
   }
-  for (const id of [CURSOR_PURCHASES, CURSOR_OPENS]) {
+  for (const id of ids) {
     if (map[id] === undefined) {
       throw new Error(`event_cursor row missing for id=${id} — seed it before deploying`);
     }
@@ -656,6 +685,260 @@ async function flushOpens(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Shared per-cursor loop. Both live and backfill iterate 250-block chunks
+// from initialCursor toward a moving target (sealed tip in live, fixed
+// TARGET_END_BLOCK in backfill). The caller passes a processChunk callback
+// that owns its own accumulator; processCursor only manages the loop, the
+// shared time budget, and the chunk cap. Cursor advance is the caller's
+// responsibility — this function returns the final cursor value reached.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function processCursor(
+  cursorId: string,
+  mode: Mode,
+  initialCursor: number,
+  startedMs: number,
+  getCurrentSealedTip: () => Promise<number>,
+  processChunk: (from: number, to: number) => Promise<void>,
+): Promise<{ target: number; chunks: number; errorMsg: string | null }> {
+  const maxChunks = mode === "live" ? MAX_CHUNKS_PER_CURSOR_LIVE : MAX_CHUNKS_PER_CURSOR_BACKFILL;
+  let target = initialCursor;
+  let chunks = 0;
+  let errorMsg: string | null = null;
+
+  try {
+    while (true) {
+      if (Date.now() - startedMs >= SOFT_BUDGET_MS) break;
+      if (chunks >= maxChunks) break;
+
+      let from: number;
+      let to: number;
+      if (mode === "live") {
+        const tip = await getCurrentSealedTip();
+        if (tip - target <= CAUGHT_UP_THRESHOLD) break;
+        from = target + 1;
+        to = Math.min(target + CHUNK_SIZE, tip);
+      } else {
+        if (target >= TARGET_END_BLOCK) break;
+        from = target + 1;
+        to = Math.min(target + CHUNK_SIZE, TARGET_END_BLOCK);
+      }
+      if (to < from) break;
+
+      await processChunk(from, to);
+      // Defensive clamp: in backfill mode the very last chunk must never
+      // overshoot TARGET_END_BLOCK into live territory. `to` is already
+      // clamped above, but re-applying min here is cheap and survives any
+      // future change that loosens the inner clamp.
+      target = mode === "backfill" ? Math.min(to, TARGET_END_BLOCK) : to;
+      chunks++;
+    }
+  } catch (err) {
+    errorMsg = err instanceof Error ? err.message : String(err);
+    console.log(`[pack-events-ingest] ${cursorId} fetch error: ${errorMsg}`);
+  }
+
+  return { target, chunks, errorMsg };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared request handler — picks cursor pair by mode, runs purchases then
+// opens, flushes batches, advances cursors, returns the same response shape
+// from POST / and POST /backfill.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Response> {
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+    return jsonError(500, "supabase_env_missing", {
+      hint: "wrangler secret put SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY",
+    });
+  }
+
+  const purchasesCursorId = mode === "live" ? CURSOR_PURCHASES : CURSOR_PURCHASES_BACKFILL;
+  const opensCursorId = mode === "live" ? CURSOR_OPENS : CURSOR_OPENS_BACKFILL;
+
+  const sb = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  // Shared sealed-tip cache. Refetched only when older than
+  // SEALED_TIP_TTL_MS so a busy invocation doesn't hammer the
+  // access node once per chunk. Both modes fetch it once at the start
+  // so the response always carries a real sealed_tip value; backfill
+  // never re-fetches because its stop condition is TARGET_END_BLOCK.
+  let cachedSealedTip = await getSealedHeight();
+  let lastTipFetchMs = Date.now();
+  const getCurrentSealedTip = async (): Promise<number> => {
+    if (Date.now() - lastTipFetchMs > SEALED_TIP_TTL_MS) {
+      cachedSealedTip = await getSealedHeight();
+      lastTipFetchMs = Date.now();
+    }
+    return cachedSealedTip;
+  };
+
+  const errors: Array<{ cursor: string; message: string }> = [];
+
+  // Single batched cursor read replaces 2 separate selects.
+  let initialCursors: Record<string, number>;
+  try {
+    initialCursors = await readCursors(sb, [purchasesCursorId, opensCursorId]);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log(`[pack-events-ingest] cursor read fatal: ${msg}`);
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        purchases: zeroPurchases(),
+        opens: zeroOpens(),
+        sealed_tip: cachedSealedTip,
+        duration_ms: Date.now() - startedMs,
+        errors: [{ cursor: "cursor_read", message: msg }],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  // ── purchases: chunk-loop fetch, no DB writes inside the loop ───────
+  const purchasesInitial = initialCursors[purchasesCursorId];
+  let purchasesEvents = 0;
+  const purchasesAccumulated: PurchaseRow[] = [];
+
+  const purchasesLoop = await processCursor(
+    purchasesCursorId,
+    mode,
+    purchasesInitial,
+    startedMs,
+    getCurrentSealedTip,
+    async (from, to) => {
+      const chunk = await fetchPurchasesChunk(from, to);
+      for (const row of chunk.rows) purchasesAccumulated.push(row);
+      purchasesEvents += chunk.events_processed;
+    },
+  );
+  if (purchasesLoop.errorMsg) {
+    errors.push({ cursor: purchasesCursorId, message: purchasesLoop.errorMsg });
+  }
+  const purchasesTarget = purchasesLoop.target;
+  const purchasesChunks = purchasesLoop.chunks;
+
+  // ── purchases flush: single batch insert, deferred cursor advance ───
+  let purchasesActualCursor = purchasesInitial;
+  let purchasesRows = 0;
+  if (purchasesTarget > purchasesInitial) {
+    try {
+      purchasesRows = await flushPurchases(sb, purchasesAccumulated);
+      purchasesActualCursor = purchasesTarget;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log(`[pack-events-ingest] ${purchasesCursorId} flush error: ${msg}`);
+      errors.push({ cursor: purchasesCursorId, message: msg });
+    }
+  }
+
+  // ── opens: chunk-loop fetch, no DB writes inside the loop ───────────
+  const opensInitial = initialCursors[opensCursorId];
+  const opensRips: RipRow[] = [];
+  const opensTemplates: MomentTemplate[] = [];
+  const opensPlaceholders: PlaceholderPair[] = [];
+
+  const opensLoop = await processCursor(
+    opensCursorId,
+    mode,
+    opensInitial,
+    startedMs,
+    getCurrentSealedTip,
+    async (from, to) => {
+      const chunk = await fetchOpensChunk(from, to);
+      for (const r of chunk.rips) opensRips.push(r);
+      for (const t of chunk.momentTemplates) opensTemplates.push(t);
+      for (const p of chunk.placeholders) opensPlaceholders.push(p);
+    },
+  );
+  if (opensLoop.errorMsg) {
+    errors.push({ cursor: opensCursorId, message: opensLoop.errorMsg });
+  }
+  const opensTarget = opensLoop.target;
+  const opensChunks = opensLoop.chunks;
+
+  // ── opens flush: rip upsert + id lookup + placeholder delete + moments
+  let opensActualCursor = opensInitial;
+  let ripsInserted = 0;
+  let momentsLinked = 0;
+  if (opensTarget > opensInitial) {
+    try {
+      const result = await flushOpens(sb, opensRips, opensTemplates, opensPlaceholders);
+      ripsInserted = result.rips_inserted;
+      momentsLinked = result.moments_linked;
+      opensActualCursor = opensTarget;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log(`[pack-events-ingest] ${opensCursorId} flush error: ${msg}`);
+      errors.push({ cursor: opensCursorId, message: msg });
+    }
+  }
+
+  // ── cursor advance: at most 2 writes, run in parallel via allSettled
+  const cursorWrites: Array<{ cursor: string; promise: Promise<void> }> = [];
+  if (purchasesActualCursor > purchasesInitial) {
+    cursorWrites.push({
+      cursor: purchasesCursorId,
+      promise: writeCursor(sb, purchasesCursorId, purchasesActualCursor),
+    });
+  }
+  if (opensActualCursor > opensInitial) {
+    cursorWrites.push({
+      cursor: opensCursorId,
+      promise: writeCursor(sb, opensCursorId, opensActualCursor),
+    });
+  }
+  if (cursorWrites.length > 0) {
+    const results = await Promise.allSettled(cursorWrites.map((w) => w.promise));
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      if (r.status === "rejected") {
+        const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+        console.log(`[pack-events-ingest] cursor advance ${cursorWrites[i].cursor} failed: ${msg}`);
+        errors.push({ cursor: cursorWrites[i].cursor, message: `cursor advance: ${msg}` });
+      }
+    }
+  }
+
+  const isCaughtUp = (cursor: number) =>
+    mode === "live"
+      ? cachedSealedTip - cursor <= CAUGHT_UP_THRESHOLD
+      : cursor >= TARGET_END_BLOCK;
+
+  const purchasesResult = {
+    from_block: purchasesInitial,
+    to_block: purchasesActualCursor,
+    chunks_processed: purchasesChunks,
+    events_processed: purchasesEvents,
+    rows_inserted: purchasesRows,
+    caught_up: isCaughtUp(purchasesActualCursor),
+  };
+  const opensResult = {
+    from_block: opensInitial,
+    to_block: opensActualCursor,
+    chunks_processed: opensChunks,
+    rips_inserted: ripsInserted,
+    moments_linked: momentsLinked,
+    caught_up: isCaughtUp(opensActualCursor),
+  };
+
+  return new Response(
+    JSON.stringify({
+      ok: errors.length === 0,
+      purchases: purchasesResult,
+      opens: opensResult,
+      sealed_tip: cachedSealedTip,
+      duration_ms: Date.now() - startedMs,
+      ...(errors.length > 0 ? { errors } : {}),
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Entrypoint
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -668,9 +951,13 @@ export default {
       if (request.method === "GET" && (url.pathname === "/health" || url.pathname === "/")) {
         return healthOk();
       }
-      if (request.method !== "POST" || url.pathname !== "/") {
+
+      const isLive = request.method === "POST" && url.pathname === "/";
+      const isBackfill = request.method === "POST" && url.pathname === "/backfill";
+      if (!isLive && !isBackfill) {
         return jsonError(405, "method_or_path_not_allowed", {
-          hint: "POST / with Bearer INGEST_SECRET_TOKEN; GET /health for liveness",
+          hint:
+            "POST / (live) or POST /backfill (historical) with Bearer INGEST_SECRET_TOKEN; GET /health for liveness",
         });
       }
 
@@ -679,194 +966,8 @@ export default {
       if (!env.INGEST_SECRET_TOKEN || auth !== expected) {
         return jsonError(401, "unauthorized");
       }
-      if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
-        return jsonError(500, "supabase_env_missing", {
-          hint: "wrangler secret put SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY",
-        });
-      }
 
-      const sb = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
-
-      // Shared sealed-tip cache. Refetched only when older than
-      // SEALED_TIP_TTL_MS so a busy invocation doesn't hammer the
-      // access node once per chunk.
-      let cachedSealedTip = await getSealedHeight();
-      let lastTipFetchMs = Date.now();
-      const getCurrentSealedTip = async (): Promise<number> => {
-        if (Date.now() - lastTipFetchMs > SEALED_TIP_TTL_MS) {
-          cachedSealedTip = await getSealedHeight();
-          lastTipFetchMs = Date.now();
-        }
-        return cachedSealedTip;
-      };
-
-      const errors: Array<{ cursor: string; message: string }> = [];
-
-      // Single batched cursor read replaces 2 separate selects.
-      let initialCursors: Record<string, number>;
-      try {
-        initialCursors = await readBothCursors(sb);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(`[pack-events-ingest] cursor read fatal: ${msg}`);
-        return new Response(
-          JSON.stringify({
-            ok: false,
-            purchases: zeroPurchases(),
-            opens: zeroOpens(),
-            sealed_tip: cachedSealedTip,
-            duration_ms: Date.now() - startedMs,
-            errors: [{ cursor: "cursor_read", message: msg }],
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
-      }
-
-      // ── purchases: chunk-loop fetch, no DB writes inside the loop ───────
-      const purchasesInitial = initialCursors[CURSOR_PURCHASES];
-      let purchasesTarget = purchasesInitial;
-      let purchasesChunks = 0;
-      let purchasesEvents = 0;
-      const purchasesAccumulated: PurchaseRow[] = [];
-
-      try {
-        while (true) {
-          if (Date.now() - startedMs >= SOFT_BUDGET_MS) break;
-          if (purchasesChunks >= MAX_CHUNKS_PER_CURSOR) break;
-          const tip = await getCurrentSealedTip();
-          if (tip - purchasesTarget <= CAUGHT_UP_THRESHOLD) break;
-          const pFrom = purchasesTarget + 1;
-          const pTo = Math.min(purchasesTarget + CHUNK_SIZE, tip);
-          if (pTo < pFrom) break;
-          const chunk = await fetchPurchasesChunk(pFrom, pTo);
-          for (const row of chunk.rows) purchasesAccumulated.push(row);
-          purchasesEvents += chunk.events_processed;
-          purchasesTarget = pTo;
-          purchasesChunks++;
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(`[pack-events-ingest] ${CURSOR_PURCHASES} fetch error: ${msg}`);
-        errors.push({ cursor: CURSOR_PURCHASES, message: msg });
-      }
-
-      // ── purchases flush: single batch insert, deferred cursor advance ───
-      let purchasesActualCursor = purchasesInitial;
-      let purchasesRows = 0;
-      if (purchasesTarget > purchasesInitial) {
-        try {
-          purchasesRows = await flushPurchases(sb, purchasesAccumulated);
-          purchasesActualCursor = purchasesTarget;
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.log(`[pack-events-ingest] ${CURSOR_PURCHASES} flush error: ${msg}`);
-          errors.push({ cursor: CURSOR_PURCHASES, message: msg });
-        }
-      }
-
-      // ── opens: chunk-loop fetch, no DB writes inside the loop ───────────
-      const opensInitial = initialCursors[CURSOR_OPENS];
-      let opensTarget = opensInitial;
-      let opensChunks = 0;
-      const opensRips: RipRow[] = [];
-      const opensTemplates: MomentTemplate[] = [];
-      const opensPlaceholders: PlaceholderPair[] = [];
-
-      try {
-        while (true) {
-          if (Date.now() - startedMs >= SOFT_BUDGET_MS) break;
-          if (opensChunks >= MAX_CHUNKS_PER_CURSOR) break;
-          const tip = await getCurrentSealedTip();
-          if (tip - opensTarget <= CAUGHT_UP_THRESHOLD) break;
-          const oFrom = opensTarget + 1;
-          const oTo = Math.min(opensTarget + CHUNK_SIZE, tip);
-          if (oTo < oFrom) break;
-          const chunk = await fetchOpensChunk(oFrom, oTo);
-          for (const r of chunk.rips) opensRips.push(r);
-          for (const t of chunk.momentTemplates) opensTemplates.push(t);
-          for (const p of chunk.placeholders) opensPlaceholders.push(p);
-          opensTarget = oTo;
-          opensChunks++;
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(`[pack-events-ingest] ${CURSOR_OPENS} fetch error: ${msg}`);
-        errors.push({ cursor: CURSOR_OPENS, message: msg });
-      }
-
-      // ── opens flush: rip upsert + id lookup + placeholder delete + moments
-      let opensActualCursor = opensInitial;
-      let ripsInserted = 0;
-      let momentsLinked = 0;
-      if (opensTarget > opensInitial) {
-        try {
-          const result = await flushOpens(sb, opensRips, opensTemplates, opensPlaceholders);
-          ripsInserted = result.rips_inserted;
-          momentsLinked = result.moments_linked;
-          opensActualCursor = opensTarget;
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.log(`[pack-events-ingest] ${CURSOR_OPENS} flush error: ${msg}`);
-          errors.push({ cursor: CURSOR_OPENS, message: msg });
-        }
-      }
-
-      // ── cursor advance: at most 2 writes, run in parallel via allSettled
-      const cursorWrites: Array<{ cursor: string; promise: Promise<void> }> = [];
-      if (purchasesActualCursor > purchasesInitial) {
-        cursorWrites.push({
-          cursor: CURSOR_PURCHASES,
-          promise: writeCursor(sb, CURSOR_PURCHASES, purchasesActualCursor),
-        });
-      }
-      if (opensActualCursor > opensInitial) {
-        cursorWrites.push({
-          cursor: CURSOR_OPENS,
-          promise: writeCursor(sb, CURSOR_OPENS, opensActualCursor),
-        });
-      }
-      if (cursorWrites.length > 0) {
-        const results = await Promise.allSettled(cursorWrites.map((w) => w.promise));
-        for (let i = 0; i < results.length; i++) {
-          const r = results[i];
-          if (r.status === "rejected") {
-            const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
-            console.log(`[pack-events-ingest] cursor advance ${cursorWrites[i].cursor} failed: ${msg}`);
-            errors.push({ cursor: cursorWrites[i].cursor, message: `cursor advance: ${msg}` });
-          }
-        }
-      }
-
-      const purchasesResult = {
-        from_block: purchasesInitial,
-        to_block: purchasesActualCursor,
-        chunks_processed: purchasesChunks,
-        events_processed: purchasesEvents,
-        rows_inserted: purchasesRows,
-        caught_up: cachedSealedTip - purchasesActualCursor <= CAUGHT_UP_THRESHOLD,
-      };
-      const opensResult = {
-        from_block: opensInitial,
-        to_block: opensActualCursor,
-        chunks_processed: opensChunks,
-        rips_inserted: ripsInserted,
-        moments_linked: momentsLinked,
-        caught_up: cachedSealedTip - opensActualCursor <= CAUGHT_UP_THRESHOLD,
-      };
-
-      return new Response(
-        JSON.stringify({
-          ok: errors.length === 0,
-          purchases: purchasesResult,
-          opens: opensResult,
-          sealed_tip: cachedSealedTip,
-          duration_ms: Date.now() - startedMs,
-          ...(errors.length > 0 ? { errors } : {}),
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      );
+      return await runIngest(env, isBackfill ? "backfill" : "live", startedMs);
     } catch (err) {
       // Fatal pre-processing error (auth, sealed-tip fetch, etc.) — still
       // return 200 so cron-job.org keeps retrying without flagging the job.
