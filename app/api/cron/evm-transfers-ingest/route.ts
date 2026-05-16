@@ -26,7 +26,7 @@ const PIPELINE = "evm-transfers-ingest";
 const TRANSFER_TOPIC =
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
-const BLOCKS_PER_WINDOW = 5000;
+const BLOCKS_PER_WINDOW = 10000;
 const BUDGET_MS = 25_000;
 const UPSERT_CHUNK = 500;
 
