@@ -176,6 +176,7 @@ export type EvmLog = {
   blockHash: string;
   logIndex: string;
   removed: boolean;
+  blockTimestamp?: string;
 };
 
 export async function getLogs(
@@ -183,4 +184,21 @@ export async function getLogs(
   filter: GetLogsFilter
 ): Promise<EvmLog[]> {
   return await evmCall<EvmLog[]>(chainSlug, "eth_getLogs", [filter]);
+}
+
+export type EvmBlockHeader = {
+  number: string;
+  hash: string;
+  timestamp: string;
+};
+
+export async function getBlockByNumber(
+  chainSlug: ChainSlug,
+  blockNumberHex: string
+): Promise<EvmBlockHeader | null> {
+  return await evmCall<EvmBlockHeader | null>(
+    chainSlug,
+    "eth_getBlockByNumber",
+    [blockNumberHex, false]
+  );
 }

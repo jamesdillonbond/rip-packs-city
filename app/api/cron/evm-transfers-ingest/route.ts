@@ -15,7 +15,12 @@
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getLogs, type ChainSlug, type EvmLog } from "@/lib/evm-rpc";
+import {
+  getLogs,
+  getBlockByNumber,
+  type ChainSlug,
+  type EvmLog,
+} from "@/lib/evm-rpc";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -69,6 +74,10 @@ function hexToNumber(hex: string): number {
 
 function numberToHex(n: number): string {
   return "0x" + n.toString(16);
+}
+
+function blockTimestampHexToIso(hex: string): string {
+  return new Date(Number.parseInt(hex, 16) * 1000).toISOString();
 }
 
 async function runIngest(startedAtIso: string, startedMs: number): Promise<void> {
@@ -206,13 +215,49 @@ async function runContract(
     extra.to_block = toBlock;
     extra.logs_returned = logs.length;
 
+    // Resolve block_timestamp per log. block_timestamp is a partition key
+    // column on evm_nft_transfers and rejects NULL. Base RPC includes
+    // `blockTimestamp` (hex unix seconds) on each log; for providers that
+    // don't, fall back to eth_getBlockByNumber batched over unique block
+    // numbers so we don't make one round-trip per log.
+    const tsByBlock = new Map<string, string>(); // blockNumber hex -> ISO
+    const missingBlocks = new Set<string>();
+    for (const log of logs) {
+      if (log.blockTimestamp) {
+        if (!tsByBlock.has(log.blockNumber)) {
+          tsByBlock.set(log.blockNumber, blockTimestampHexToIso(log.blockTimestamp));
+        }
+      } else {
+        missingBlocks.add(log.blockNumber);
+      }
+    }
+    if (missingBlocks.size > 0) {
+      const fetched = await Promise.all(
+        Array.from(missingBlocks).map(async (bn) => {
+          const block = await getBlockByNumber(chainSlug, bn);
+          return [bn, block?.timestamp ?? null] as const;
+        })
+      );
+      for (const [bn, tsHex] of fetched) {
+        if (tsHex) tsByBlock.set(bn, blockTimestampHexToIso(tsHex));
+      }
+      extra.blocks_resolved_via_rpc = missingBlocks.size;
+    }
+
     // Decode + dedup in-memory before upserting.
     const inserts: Array<Record<string, unknown>> = [];
     let skippedNonStandard = 0;
+    let skippedNoTimestamp = 0;
     for (const log of logs) {
       // ERC-721 Transfer = 4 topics. ERC-20 emits 3; skip those defensively.
       if (!log.topics || log.topics.length < 4) {
         skippedNonStandard++;
+        continue;
+      }
+      const blockTs = tsByBlock.get(log.blockNumber);
+      if (!blockTs) {
+        // Partition key column is NOT NULL — skip rather than fail the batch.
+        skippedNoTimestamp++;
         continue;
       }
       inserts.push({
@@ -224,10 +269,11 @@ async function runContract(
         block_number: hexToNumber(log.blockNumber),
         log_index: hexToNumber(log.logIndex),
         transaction_hash: log.transactionHash.toLowerCase(),
-        block_timestamp: null,
+        block_timestamp: blockTs,
       });
     }
     if (skippedNonStandard > 0) extra.skipped_non_standard = skippedNonStandard;
+    if (skippedNoTimestamp > 0) extra.skipped_no_timestamp = skippedNoTimestamp;
 
     for (let i = 0; i < inserts.length; i += UPSERT_CHUNK) {
       const batch = inserts.slice(i, i + UPSERT_CHUNK);
