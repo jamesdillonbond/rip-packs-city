@@ -1,8 +1,8 @@
 // workers/pack-events-ingest/index.ts
 //
-// Top Shot pack lifecycle classifier — runs on a */15 cron, advances two
-// cursors stored in event_cursor (topshot_pack_purchases + topshot_pack_opens),
-// indexes secondary-market pack purchases and pack opens, and backfills
+// Top Shot pack lifecycle classifier — advances two cursors stored in
+// event_cursor (topshot_pack_purchases + topshot_pack_opens), indexes
+// secondary-market pack purchases and pack opens, and backfills
 // moment_acquisitions with verified pack_rip provenance (replacing the
 // 'cache-refresh:%' placeholders left by earlier wallet-walk ingest).
 //
@@ -28,9 +28,14 @@
 // cursor only). Purchases runs first, then opens — the opens cursor
 // only gets whatever budget remains after purchases.
 //
-// Cursor advances ONLY after every write in the chunk succeeds; an
-// exception inside a cursor's loop leaves the cursor in place so the
-// next cron tick re-attempts the same range.
+// Subrequest budget: this worker batches all Supabase writes to keep
+// total subrequests roughly constant per invocation regardless of how
+// many chunks are processed. Per cursor: rows accumulate in-memory
+// during the chunk loop, then flush in a single batch insert after
+// the loop. Cursor advance is deferred to one final write at the very
+// end. If the batch flush throws, the cursor does NOT advance and the
+// next cron tick re-attempts the entire accumulated range (idempotent
+// because every insert uses ON CONFLICT DO NOTHING).
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
@@ -81,6 +86,28 @@ function healthOk(): Response {
     }),
     { status: 200, headers: { "Content-Type": "application/json" } },
   );
+}
+
+function zeroPurchases() {
+  return {
+    from_block: 0,
+    to_block: 0,
+    chunks_processed: 0,
+    events_processed: 0,
+    rows_inserted: 0,
+    caught_up: false,
+  };
+}
+
+function zeroOpens() {
+  return {
+    from_block: 0,
+    to_block: 0,
+    chunks_processed: 0,
+    rips_inserted: 0,
+    moments_linked: 0,
+    caught_up: false,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -273,18 +300,25 @@ async function getTransactionPayer(txId: string): Promise<string | null> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Cursor read / write
+// Cursor read / write — batched read at start, single write per cursor at end
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function readCursor(sb: SupabaseClient, id: string): Promise<number> {
+async function readBothCursors(sb: SupabaseClient): Promise<Record<string, number>> {
   const { data, error } = await sb
     .from("event_cursor")
-    .select("last_processed_block")
-    .eq("id", id)
-    .maybeSingle();
-  if (error) throw new Error(`event_cursor read ${id}: ${error.message}`);
-  if (!data) throw new Error(`event_cursor row missing for id=${id} — seed it before deploying`);
-  return Number((data as { last_processed_block: number }).last_processed_block);
+    .select("id, last_processed_block")
+    .in("id", [CURSOR_PURCHASES, CURSOR_OPENS]);
+  if (error) throw new Error(`event_cursor batch read: ${error.message}`);
+  const map: Record<string, number> = {};
+  for (const row of (data ?? []) as Array<{ id: string; last_processed_block: number }>) {
+    map[row.id] = Number(row.last_processed_block);
+  }
+  for (const id of [CURSOR_PURCHASES, CURSOR_OPENS]) {
+    if (map[id] === undefined) {
+      throw new Error(`event_cursor row missing for id=${id} — seed it before deploying`);
+    }
+  }
+  return map;
 }
 
 async function writeCursor(sb: SupabaseClient, id: string, height: number): Promise<void> {
@@ -295,23 +329,38 @@ async function writeCursor(sb: SupabaseClient, id: string, height: number): Prom
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Cursor 1: topshot_pack_purchases
+// Cursor 1: topshot_pack_purchases — pure event-fetch, no DB writes
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface PurchasesResult {
-  from_block: number;
-  to_block: number;
-  events_processed: number;
-  rows_inserted: number;
+interface PurchaseRow {
+  collection_id: string;
+  pack_nft_id: string;
+  buyer_address: string;
+  seller_address: string | null;
+  storefront_resource_id: string | null;
+  listing_resource_id: string | null;
+  sale_price: number | null;
+  sale_currency: string;
+  payment_vault_type: string | null;
+  custom_id: string | null;
+  commission_amount: number | null;
+  pack_name: null;
+  tx_hash: string;
+  block_height: number;
+  sealed_at: string;
 }
 
-async function processPurchases(
-  sb: SupabaseClient,
+interface PurchasesChunkResult {
+  rows: PurchaseRow[];
+  events_processed: number;
+}
+
+async function fetchPurchasesChunk(
   fromBlock: number,
   toBlock: number,
-): Promise<PurchasesResult> {
+): Promise<PurchasesChunkResult> {
   if (fromBlock > toBlock) {
-    return { from_block: fromBlock, to_block: toBlock, events_processed: 0, rows_inserted: 0 };
+    return { rows: [], events_processed: 0 };
   }
 
   const [listings, packDeposits] = await Promise.all([
@@ -328,7 +377,7 @@ async function processPurchases(
     depositByTxAndId.set(`${dep.transaction_id}:${String(nftId)}`, dep);
   }
 
-  const rows: Array<Record<string, unknown>> = [];
+  const rows: PurchaseRow[] = [];
   let eventsProcessed = 0;
 
   for (const lc of listings) {
@@ -376,46 +425,49 @@ async function processPurchases(
     });
   }
 
-  let rowsInserted = 0;
-  if (rows.length > 0) {
-    // Chunk to keep request bodies bounded.
-    for (let i = 0; i < rows.length; i += 100) {
-      const batch = rows.slice(i, i + 100);
-      const { data, error } = await sb
-        .from("pack_purchases")
-        .upsert(batch, { onConflict: "tx_hash,listing_resource_id", ignoreDuplicates: true })
-        .select("id");
-      if (error) throw new Error(`pack_purchases upsert chunk=${i}: ${error.message}`);
-      rowsInserted += data?.length ?? 0;
-    }
-  }
-
-  return {
-    from_block: fromBlock,
-    to_block: toBlock,
-    events_processed: eventsProcessed,
-    rows_inserted: rowsInserted,
-  };
+  return { rows, events_processed: eventsProcessed };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Cursor 2: topshot_pack_opens
+// Cursor 2: topshot_pack_opens — pure event-fetch, no DB writes
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface OpensResult {
-  from_block: number;
-  to_block: number;
-  rips_inserted: number;
-  moments_linked: number;
+interface RipRow {
+  collection_id: string;
+  pack_nft_id: string;
+  opener_address: string;
+  moments_pulled: number;
+  total_fmv_at_rip: null;
+  tx_hash: string;
+  block_height: number;
+  sealed_at: string;
 }
 
-async function processOpens(
-  sb: SupabaseClient,
+interface MomentTemplate {
+  nft_id: string;
+  wallet: string;
+  source_address: string | null;
+  rip_tx_hash: string;     // join key for source_pack_rip_id resolution
+  acquired_date: string;
+}
+
+interface PlaceholderPair {
+  nft_id: string;
+  wallet: string;
+}
+
+interface OpensChunkResult {
+  rips: RipRow[];
+  momentTemplates: MomentTemplate[];
+  placeholders: PlaceholderPair[];
+}
+
+async function fetchOpensChunk(
   fromBlock: number,
   toBlock: number,
-): Promise<OpensResult> {
+): Promise<OpensChunkResult> {
   if (fromBlock > toBlock) {
-    return { from_block: fromBlock, to_block: toBlock, rips_inserted: 0, moments_linked: 0 };
+    return { rips: [], momentTemplates: [], placeholders: [] };
   }
 
   // TopShot.Withdraw is fetched alongside Deposit so each minted moment
@@ -441,8 +493,9 @@ async function processOpens(
     (withdrawsByTx.get(ev.transaction_id) ?? withdrawsByTx.set(ev.transaction_id, []).get(ev.transaction_id)!).push(ev);
   }
 
-  let ripsInserted = 0;
-  let momentsLinked = 0;
+  const rips: RipRow[] = [];
+  const momentTemplates: MomentTemplate[] = [];
+  const placeholders: PlaceholderPair[] = [];
 
   for (const opened of openedEvents) {
     const txDeposits = depositsByTx.get(opened.transaction_id) ?? [];
@@ -454,7 +507,7 @@ async function processOpens(
     const packNftId = opened.decoded["id"];
     if (packNftId === undefined || packNftId === null) continue;
 
-    const ripRow = {
+    rips.push({
       collection_id: COLLECTION_ID,
       pack_nft_id: String(packNftId),
       opener_address: opener,
@@ -463,31 +516,7 @@ async function processOpens(
       tx_hash: opened.transaction_id,
       block_height: opened.block_height,
       sealed_at: opened.block_timestamp,
-    };
-
-    const { data: ripData, error: ripErr } = await sb
-      .from("pack_rips")
-      .upsert([ripRow], { onConflict: "tx_hash", ignoreDuplicates: true })
-      .select("id");
-    if (ripErr) throw new Error(`pack_rips upsert tx=${opened.transaction_id}: ${ripErr.message}`);
-
-    let packRipId: string;
-    if (ripData && ripData.length > 0) {
-      packRipId = (ripData[0] as { id: string }).id;
-      ripsInserted++;
-    } else {
-      const { data: existing, error: selErr } = await sb
-        .from("pack_rips")
-        .select("id")
-        .eq("tx_hash", opened.transaction_id)
-        .maybeSingle();
-      if (selErr || !existing) {
-        throw new Error(
-          `pack_rips conflict-skip but no existing row for tx=${opened.transaction_id}: ${selErr?.message ?? "missing"}`,
-        );
-      }
-      packRipId = (existing as { id: string }).id;
-    }
+    });
 
     // Index Withdraw events by moment id so each Deposit can find its source.
     const withdrawsForTx = withdrawsByTx.get(opened.transaction_id) ?? [];
@@ -507,54 +536,123 @@ async function processOpens(
         ? (withdraw.decoded["from"] as string)
         : null;
 
-      // Drop any synthetic placeholder row first so the verified row is
-      // the only provenance for this (nft_id, wallet) pair.
-      const { error: delErr } = await sb
-        .from("moment_acquisitions")
-        .delete()
-        .eq("nft_id", nftIdStr)
-        .eq("wallet", opener)
-        .like("transaction_hash", "cache-refresh:%");
-      if (delErr) {
-        throw new Error(
-          `moment_acquisitions delete-placeholder nft=${nftIdStr} wallet=${opener}: ${delErr.message}`,
-        );
-      }
-
-      const { data: insData, error: insErr } = await sb
-        .from("moment_acquisitions")
-        .upsert(
-          [
-            {
-              nft_id: nftIdStr,
-              collection_id: COLLECTION_ID,
-              wallet: opener,
-              acquisition_method: "pack_pull",
-              acquisition_confidence: "verified",
-              acquired_date: opened.block_timestamp,
-              transaction_hash: opened.transaction_id,
-              source_address: sourceAddress,
-              source_pack_rip_id: packRipId,
-            },
-          ],
-          { onConflict: "nft_id,wallet,transaction_hash", ignoreDuplicates: true },
-        )
-        .select("id");
-      if (insErr) {
-        throw new Error(
-          `moment_acquisitions insert nft=${nftIdStr} wallet=${opener}: ${insErr.message}`,
-        );
-      }
-      if (insData && insData.length > 0) momentsLinked++;
+      placeholders.push({ nft_id: nftIdStr, wallet: opener });
+      momentTemplates.push({
+        nft_id: nftIdStr,
+        wallet: opener,
+        source_address: sourceAddress,
+        rip_tx_hash: opened.transaction_id,
+        acquired_date: opened.block_timestamp,
+      });
     }
   }
 
-  return {
-    from_block: fromBlock,
-    to_block: toBlock,
-    rips_inserted: ripsInserted,
-    moments_linked: momentsLinked,
-  };
+  return { rips, momentTemplates, placeholders };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Batch flushers — one Supabase write per group, called after the chunk loop
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function flushPurchases(sb: SupabaseClient, rows: PurchaseRow[]): Promise<number> {
+  if (rows.length === 0) return 0;
+  const { data, error } = await sb
+    .from("pack_purchases")
+    .upsert(rows, { onConflict: "tx_hash,listing_resource_id", ignoreDuplicates: true })
+    .select("id");
+  if (error) throw new Error(`pack_purchases batch upsert (${rows.length} rows): ${error.message}`);
+  return data?.length ?? 0;
+}
+
+async function flushOpens(
+  sb: SupabaseClient,
+  rips: RipRow[],
+  momentTemplates: MomentTemplate[],
+  placeholders: PlaceholderPair[],
+): Promise<{ rips_inserted: number; moments_linked: number }> {
+  if (rips.length === 0) return { rips_inserted: 0, moments_linked: 0 };
+
+  // (1) Upsert all rips. ignoreDuplicates: true preserves the existing
+  //     semantic that rips_inserted counts only newly inserted rows.
+  const { data: insertedRips, error: ripErr } = await sb
+    .from("pack_rips")
+    .upsert(rips, { onConflict: "tx_hash", ignoreDuplicates: true })
+    .select("id, tx_hash");
+  if (ripErr) {
+    throw new Error(`pack_rips batch upsert (${rips.length} rows): ${ripErr.message}`);
+  }
+  const ripsInserted = insertedRips?.length ?? 0;
+
+  // (2) SELECT IDs for ALL rip tx_hashes — conflict-skipped rows weren't
+  //     returned by the upsert, but moment_acquisitions still needs their
+  //     source_pack_rip_id. One SELECT covers the whole batch.
+  const allTxHashes = Array.from(new Set(rips.map((r) => r.tx_hash)));
+  const { data: allRipIds, error: selErr } = await sb
+    .from("pack_rips")
+    .select("id, tx_hash")
+    .in("tx_hash", allTxHashes);
+  if (selErr) {
+    throw new Error(`pack_rips id lookup (${allTxHashes.length} tx_hashes): ${selErr.message}`);
+  }
+  const ripIdByTx = new Map<string, string>();
+  for (const row of (allRipIds ?? []) as Array<{ id: string; tx_hash: string }>) {
+    ripIdByTx.set(row.tx_hash, row.id);
+  }
+
+  // (3) Delete all cache-refresh placeholders in one statement using a
+  //     composite OR filter over the (nft_id, wallet) pairs. Each
+  //     placeholder corresponds to one accumulated moment template, so
+  //     this is bounded by the number of deposits processed.
+  if (placeholders.length > 0) {
+    const orFilter = placeholders
+      .map((p) => `and(nft_id.eq.${p.nft_id},wallet.eq.${p.wallet})`)
+      .join(",");
+    const { error: delErr } = await sb
+      .from("moment_acquisitions")
+      .delete()
+      .like("transaction_hash", "cache-refresh:%")
+      .or(orFilter);
+    if (delErr) {
+      throw new Error(
+        `moment_acquisitions placeholder delete (${placeholders.length} pairs): ${delErr.message}`,
+      );
+    }
+  }
+
+  // (4) Build moment_acquisitions rows now that we have rip IDs and
+  //     insert them in one batch upsert.
+  const momentRows: Array<Record<string, unknown>> = [];
+  for (const t of momentTemplates) {
+    const ripId = ripIdByTx.get(t.rip_tx_hash);
+    if (!ripId) continue; // rip somehow missing — skip rather than corrupt FK
+    momentRows.push({
+      nft_id: t.nft_id,
+      collection_id: COLLECTION_ID,
+      wallet: t.wallet,
+      acquisition_method: "pack_pull",
+      acquisition_confidence: "verified",
+      acquired_date: t.acquired_date,
+      transaction_hash: t.rip_tx_hash,
+      source_address: t.source_address,
+      source_pack_rip_id: ripId,
+    });
+  }
+
+  let momentsLinked = 0;
+  if (momentRows.length > 0) {
+    const { data: insertedMoments, error: insErr } = await sb
+      .from("moment_acquisitions")
+      .upsert(momentRows, { onConflict: "nft_id,wallet,transaction_hash", ignoreDuplicates: true })
+      .select("id");
+    if (insErr) {
+      throw new Error(
+        `moment_acquisitions batch upsert (${momentRows.length} rows): ${insErr.message}`,
+      );
+    }
+    momentsLinked = insertedMoments?.length ?? 0;
+  }
+
+  return { rips_inserted: ripsInserted, moments_linked: momentsLinked };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -606,80 +704,156 @@ export default {
 
       const errors: Array<{ cursor: string; message: string }> = [];
 
-      // ── purchases ───────────────────────────────────────────────────────
-      let purchasesInitial = 0;
-      let purchasesCurrent = 0;
+      // Single batched cursor read replaces 2 separate selects.
+      let initialCursors: Record<string, number>;
+      try {
+        initialCursors = await readBothCursors(sb);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`[pack-events-ingest] cursor read fatal: ${msg}`);
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            purchases: zeroPurchases(),
+            opens: zeroOpens(),
+            sealed_tip: cachedSealedTip,
+            duration_ms: Date.now() - startedMs,
+            errors: [{ cursor: "cursor_read", message: msg }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      // ── purchases: chunk-loop fetch, no DB writes inside the loop ───────
+      const purchasesInitial = initialCursors[CURSOR_PURCHASES];
+      let purchasesTarget = purchasesInitial;
       let purchasesChunks = 0;
       let purchasesEvents = 0;
-      let purchasesRows = 0;
+      const purchasesAccumulated: PurchaseRow[] = [];
+
       try {
-        purchasesInitial = await readCursor(sb, CURSOR_PURCHASES);
-        purchasesCurrent = purchasesInitial;
         while (true) {
           if (Date.now() - startedMs >= SOFT_BUDGET_MS) break;
           if (purchasesChunks >= MAX_CHUNKS_PER_CURSOR) break;
           const tip = await getCurrentSealedTip();
-          if (tip - purchasesCurrent <= CAUGHT_UP_THRESHOLD) break;
-          const pFrom = purchasesCurrent + 1;
-          const pTo = Math.min(purchasesCurrent + CHUNK_SIZE, tip);
+          if (tip - purchasesTarget <= CAUGHT_UP_THRESHOLD) break;
+          const pFrom = purchasesTarget + 1;
+          const pTo = Math.min(purchasesTarget + CHUNK_SIZE, tip);
           if (pTo < pFrom) break;
-          const chunk = await processPurchases(sb, pFrom, pTo);
-          await writeCursor(sb, CURSOR_PURCHASES, pTo);
-          purchasesCurrent = pTo;
-          purchasesChunks++;
+          const chunk = await fetchPurchasesChunk(pFrom, pTo);
+          for (const row of chunk.rows) purchasesAccumulated.push(row);
           purchasesEvents += chunk.events_processed;
-          purchasesRows += chunk.rows_inserted;
+          purchasesTarget = pTo;
+          purchasesChunks++;
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.log(`[pack-events-ingest] ${CURSOR_PURCHASES} error: ${msg}`);
+        console.log(`[pack-events-ingest] ${CURSOR_PURCHASES} fetch error: ${msg}`);
         errors.push({ cursor: CURSOR_PURCHASES, message: msg });
       }
-      const purchasesResult = {
-        from_block: purchasesInitial,
-        to_block: purchasesCurrent,
-        chunks_processed: purchasesChunks,
-        events_processed: purchasesEvents,
-        rows_inserted: purchasesRows,
-        caught_up: cachedSealedTip - purchasesCurrent <= CAUGHT_UP_THRESHOLD,
-      };
 
-      // ── opens ───────────────────────────────────────────────────────────
-      let opensInitial = 0;
-      let opensCurrent = 0;
+      // ── purchases flush: single batch insert, deferred cursor advance ───
+      let purchasesActualCursor = purchasesInitial;
+      let purchasesRows = 0;
+      if (purchasesTarget > purchasesInitial) {
+        try {
+          purchasesRows = await flushPurchases(sb, purchasesAccumulated);
+          purchasesActualCursor = purchasesTarget;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.log(`[pack-events-ingest] ${CURSOR_PURCHASES} flush error: ${msg}`);
+          errors.push({ cursor: CURSOR_PURCHASES, message: msg });
+        }
+      }
+
+      // ── opens: chunk-loop fetch, no DB writes inside the loop ───────────
+      const opensInitial = initialCursors[CURSOR_OPENS];
+      let opensTarget = opensInitial;
       let opensChunks = 0;
-      let opensRips = 0;
-      let opensMoments = 0;
+      const opensRips: RipRow[] = [];
+      const opensTemplates: MomentTemplate[] = [];
+      const opensPlaceholders: PlaceholderPair[] = [];
+
       try {
-        opensInitial = await readCursor(sb, CURSOR_OPENS);
-        opensCurrent = opensInitial;
         while (true) {
           if (Date.now() - startedMs >= SOFT_BUDGET_MS) break;
           if (opensChunks >= MAX_CHUNKS_PER_CURSOR) break;
           const tip = await getCurrentSealedTip();
-          if (tip - opensCurrent <= CAUGHT_UP_THRESHOLD) break;
-          const oFrom = opensCurrent + 1;
-          const oTo = Math.min(opensCurrent + CHUNK_SIZE, tip);
+          if (tip - opensTarget <= CAUGHT_UP_THRESHOLD) break;
+          const oFrom = opensTarget + 1;
+          const oTo = Math.min(opensTarget + CHUNK_SIZE, tip);
           if (oTo < oFrom) break;
-          const chunk = await processOpens(sb, oFrom, oTo);
-          await writeCursor(sb, CURSOR_OPENS, oTo);
-          opensCurrent = oTo;
+          const chunk = await fetchOpensChunk(oFrom, oTo);
+          for (const r of chunk.rips) opensRips.push(r);
+          for (const t of chunk.momentTemplates) opensTemplates.push(t);
+          for (const p of chunk.placeholders) opensPlaceholders.push(p);
+          opensTarget = oTo;
           opensChunks++;
-          opensRips += chunk.rips_inserted;
-          opensMoments += chunk.moments_linked;
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.log(`[pack-events-ingest] ${CURSOR_OPENS} error: ${msg}`);
+        console.log(`[pack-events-ingest] ${CURSOR_OPENS} fetch error: ${msg}`);
         errors.push({ cursor: CURSOR_OPENS, message: msg });
       }
+
+      // ── opens flush: rip upsert + id lookup + placeholder delete + moments
+      let opensActualCursor = opensInitial;
+      let ripsInserted = 0;
+      let momentsLinked = 0;
+      if (opensTarget > opensInitial) {
+        try {
+          const result = await flushOpens(sb, opensRips, opensTemplates, opensPlaceholders);
+          ripsInserted = result.rips_inserted;
+          momentsLinked = result.moments_linked;
+          opensActualCursor = opensTarget;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.log(`[pack-events-ingest] ${CURSOR_OPENS} flush error: ${msg}`);
+          errors.push({ cursor: CURSOR_OPENS, message: msg });
+        }
+      }
+
+      // ── cursor advance: at most 2 writes, run in parallel via allSettled
+      const cursorWrites: Array<{ cursor: string; promise: Promise<void> }> = [];
+      if (purchasesActualCursor > purchasesInitial) {
+        cursorWrites.push({
+          cursor: CURSOR_PURCHASES,
+          promise: writeCursor(sb, CURSOR_PURCHASES, purchasesActualCursor),
+        });
+      }
+      if (opensActualCursor > opensInitial) {
+        cursorWrites.push({
+          cursor: CURSOR_OPENS,
+          promise: writeCursor(sb, CURSOR_OPENS, opensActualCursor),
+        });
+      }
+      if (cursorWrites.length > 0) {
+        const results = await Promise.allSettled(cursorWrites.map((w) => w.promise));
+        for (let i = 0; i < results.length; i++) {
+          const r = results[i];
+          if (r.status === "rejected") {
+            const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+            console.log(`[pack-events-ingest] cursor advance ${cursorWrites[i].cursor} failed: ${msg}`);
+            errors.push({ cursor: cursorWrites[i].cursor, message: `cursor advance: ${msg}` });
+          }
+        }
+      }
+
+      const purchasesResult = {
+        from_block: purchasesInitial,
+        to_block: purchasesActualCursor,
+        chunks_processed: purchasesChunks,
+        events_processed: purchasesEvents,
+        rows_inserted: purchasesRows,
+        caught_up: cachedSealedTip - purchasesActualCursor <= CAUGHT_UP_THRESHOLD,
+      };
       const opensResult = {
         from_block: opensInitial,
-        to_block: opensCurrent,
+        to_block: opensActualCursor,
         chunks_processed: opensChunks,
-        rips_inserted: opensRips,
-        moments_linked: opensMoments,
-        caught_up: cachedSealedTip - opensCurrent <= CAUGHT_UP_THRESHOLD,
+        rips_inserted: ripsInserted,
+        moments_linked: momentsLinked,
+        caught_up: cachedSealedTip - opensActualCursor <= CAUGHT_UP_THRESHOLD,
       };
 
       return new Response(
@@ -701,22 +875,8 @@ export default {
       return new Response(
         JSON.stringify({
           ok: false,
-          purchases: {
-            from_block: 0,
-            to_block: 0,
-            chunks_processed: 0,
-            events_processed: 0,
-            rows_inserted: 0,
-            caught_up: false,
-          },
-          opens: {
-            from_block: 0,
-            to_block: 0,
-            chunks_processed: 0,
-            rips_inserted: 0,
-            moments_linked: 0,
-            caught_up: false,
-          },
+          purchases: zeroPurchases(),
+          opens: zeroOpens(),
           sealed_tip: 0,
           duration_ms: Date.now() - startedMs,
           errors: [{ cursor: "pre_processing", message: msg }],
