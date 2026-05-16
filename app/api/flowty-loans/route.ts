@@ -8,6 +8,7 @@
 // GET /api/flowty-loans?limit=50     — limit results
 
 import { NextRequest, NextResponse } from "next/server";
+import { isFlowtyLoansEnabled } from "@/lib/flowty-flags";
 
 const FLOWTY_ENDPOINT = "https://api2.flowty.io/collection/0x0b2a3299cc857e29/TopShot";
 const FLOWTY_HEADERS = {
@@ -151,6 +152,22 @@ function mapLoanItem(nft: any, now: number): LoanItem | null {
 }
 
 export async function GET(req: NextRequest) {
+  // Flowty loans kill-switch — return an empty book when disabled so the
+  // analytics surfaces render cleanly without a 500.
+  if (!isFlowtyLoansEnabled()) {
+    return NextResponse.json(
+      {
+        count: 0,
+        loans: [],
+        overdueCount: 0,
+        highLtvCount: 0,
+        disabled: true,
+        message: "Flowty loans disabled via FLOWTY_LOANS_ENABLED flag",
+      },
+      { status: 200 }
+    );
+  }
+
   const startTime = Date.now();
   const url = new URL(req.url);
   const limitParam = parseInt(url.searchParams.get("limit") ?? "96");

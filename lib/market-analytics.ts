@@ -1,3 +1,5 @@
+import { FLOWTY_MARKETPLACE_ENABLED } from "@/lib/flowty-flags"
+
 export type UnifiedMarketTruth = {
   marketKey: string
   marketBackedAsk: number | null
@@ -328,6 +330,10 @@ function computeBestMarketplaceForBuy(
   topShotAsk: number | null,
   flowtyAsk: number | null
 ): BestMarketplace {
+  // Flowty kill-switch — when the marketplace is disabled, ignore any Flowty
+  // ask price for "best place to buy" routing. Probe-status scoring on the
+  // truth side still uses raw flowtyAsk to reflect data availability.
+  if (!FLOWTY_MARKETPLACE_ENABLED) flowtyAsk = null
   if (topShotAsk === null && flowtyAsk === null) return "Unknown"
   if (topShotAsk !== null && flowtyAsk === null) return "Top Shot"
   if (topShotAsk === null && flowtyAsk !== null) return "Flowty"

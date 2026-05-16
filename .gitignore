@@ -6,7 +6,13 @@ node_modules/
 # next.js
 /.next/
 /out/
-app/out/
+# Ignore any leaf files under app/out/ (legacy static-export artifacts) but
+# keep the Next.js route handler tree. Git can't un-ignore a file whose
+# parent directory is ignored, so we excluded directories instead of the
+# directory itself.
+app/out/*
+!app/out/flowty/
+!app/out/flowty/**
 
 # production
 /build

@@ -37,6 +37,10 @@ export interface CartItem {
   // Cart mode: "buy" (default) or "offer" (Flowty offer via USDC.e)
   cartMode: CartMode
 
+  // Where the listing originates. Used by the Flowty kill-switch to gate
+  // FCL submission and to surface "unavailable" UI state during the wind-down.
+  marketplaceSource?: 'topshot' | 'flowty'
+
   // Offer-specific fields (only used when cartMode === 'offer')
   offerAmount?: number        // USDC.e amount to offer
   offerExpiry?: number        // Unix timestamp when the offer expires
@@ -52,6 +56,7 @@ export type PurchaseStatus =
   | 'failed'
   | 'sniped'     // listing no longer exists
   | 'price_changed'
+  | 'unavailable' // marketplace gated off via flag (no FCL submit)
 
 export interface CartState {
   items: CartItem[]
@@ -83,6 +88,16 @@ function cartReducer(state: CartState, action: CartAction): CartState {
       return { ...state, items: action.items }
 
     case 'ADD_ITEM': {
+      // Flowty marketplace kill-switch — silently drop adds for flowty-sourced
+      // listings when the marketplace flag is off. UI surfaces are expected to
+      // render an "UNAVAILABLE" affordance and never call this in the first
+      // place; this is a defense-in-depth guard.
+      if (
+        action.item.marketplaceSource === 'flowty' &&
+        process.env.NEXT_PUBLIC_FLOWTY_MARKETPLACE_ENABLED !== 'true'
+      ) {
+        return state
+      }
       // Deduplicate by listingResourceID
       const alreadyIn = state.items.some(
         (i) => i.listingResourceID === action.item.listingResourceID

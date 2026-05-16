@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { hydrateTopShotEditions, toUpsertRow } from "@/lib/editions-hydrate";
+import { isFlowtyIngestEnabled } from "@/lib/flowty-flags";
 
 const FIRESTORE_BASE =
   "https://firestore.googleapis.com/v1/projects/flowty-prod/databases/(default)";
@@ -96,6 +97,19 @@ async function getMintedMomentEditionKey(
 }
 
 export async function GET(req: NextRequest) {
+  // Flowty ingest kill-switch — return 200 disabled so cron keeps firing
+  // without trying to scrape Firestore.
+  if (!isFlowtyIngestEnabled()) {
+    return NextResponse.json(
+      {
+        ok: true,
+        disabled: true,
+        message: "Flowty ingest disabled via FLOWTY_INGEST_ENABLED flag",
+      },
+      { status: 200 }
+    );
+  }
+
   const url = new URL(req.url);
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "100"), 500);
   const after = url.searchParams.get("after");
