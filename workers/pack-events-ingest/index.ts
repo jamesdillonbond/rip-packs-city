@@ -13,16 +13,24 @@
 // cleanly):
 //   {
 //     ok: boolean,                      // false iff one or both cursors errored
-//     purchases: { from_block, to_block, events_processed, rows_inserted },
-//     opens:     { from_block, to_block, rips_inserted, moments_linked },
+//     purchases: { from_block, to_block, chunks_processed, events_processed, rows_inserted, caught_up },
+//     opens:     { from_block, to_block, chunks_processed, rips_inserted, moments_linked, caught_up },
+//     sealed_tip: number,
+//     duration_ms: number,
 //     errors?:   [{ cursor, message }],
-//     duration_ms: number
 //   }
 //
-// Per-tick chunk = 250 blocks per cursor (matches Flow REST /v1/events
-// page limit). Cursor advances ONLY after every write in the chunk
-// succeeds; an exception inside a cursor's block leaves the cursor in
-// place so the next cron tick re-attempts the same range.
+// Each invocation loops multiple 250-block chunks per cursor until one
+// of these is true: (a) cursor caught up to within 50 blocks of sealed
+// tip, (b) shared 25,000 ms soft budget across BOTH cursors exceeded,
+// (c) 20 chunks processed for this cursor, or (d) the chunk threw an
+// error (cursor NOT advanced, error recorded, loop breaks for this
+// cursor only). Purchases runs first, then opens — the opens cursor
+// only gets whatever budget remains after purchases.
+//
+// Cursor advances ONLY after every write in the chunk succeeds; an
+// exception inside a cursor's loop leaves the cursor in place so the
+// next cron tick re-attempts the same range.
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
@@ -36,6 +44,10 @@ const FLOW_REST = "https://rest-mainnet.onflow.org";
 const COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"; // Top Shot
 const CHUNK_SIZE = 250;
 const REQUEST_TIMEOUT_MS = 20_000;
+const SOFT_BUDGET_MS = 25_000;
+const MAX_CHUNKS_PER_CURSOR = 20;
+const CAUGHT_UP_THRESHOLD = 50;
+const SEALED_TIP_TTL_MS = 60_000;
 
 const CURSOR_PURCHASES = "topshot_pack_purchases";
 const CURSOR_OPENS = "topshot_pack_opens";
@@ -579,56 +591,105 @@ export default {
         auth: { persistSession: false, autoRefreshToken: false },
       });
 
-      const sealedTip = await getSealedHeight();
+      // Shared sealed-tip cache. Refetched only when older than
+      // SEALED_TIP_TTL_MS so a busy invocation doesn't hammer the
+      // access node once per chunk.
+      let cachedSealedTip = await getSealedHeight();
+      let lastTipFetchMs = Date.now();
+      const getCurrentSealedTip = async (): Promise<number> => {
+        if (Date.now() - lastTipFetchMs > SEALED_TIP_TTL_MS) {
+          cachedSealedTip = await getSealedHeight();
+          lastTipFetchMs = Date.now();
+        }
+        return cachedSealedTip;
+      };
 
       const errors: Array<{ cursor: string; message: string }> = [];
 
       // ── purchases ───────────────────────────────────────────────────────
-      let purchasesResult: PurchasesResult = {
-        from_block: 0,
-        to_block: 0,
-        events_processed: 0,
-        rows_inserted: 0,
-      };
+      let purchasesInitial = 0;
+      let purchasesCurrent = 0;
+      let purchasesChunks = 0;
+      let purchasesEvents = 0;
+      let purchasesRows = 0;
       try {
-        const purchasesCursor = await readCursor(sb, CURSOR_PURCHASES);
-        const pFrom = purchasesCursor + 1;
-        const pTo = Math.min(purchasesCursor + CHUNK_SIZE, sealedTip);
-        purchasesResult = await processPurchases(sb, pFrom, pTo);
-        if (pTo >= pFrom) await writeCursor(sb, CURSOR_PURCHASES, pTo);
+        purchasesInitial = await readCursor(sb, CURSOR_PURCHASES);
+        purchasesCurrent = purchasesInitial;
+        while (true) {
+          if (Date.now() - startedMs >= SOFT_BUDGET_MS) break;
+          if (purchasesChunks >= MAX_CHUNKS_PER_CURSOR) break;
+          const tip = await getCurrentSealedTip();
+          if (tip - purchasesCurrent <= CAUGHT_UP_THRESHOLD) break;
+          const pFrom = purchasesCurrent + 1;
+          const pTo = Math.min(purchasesCurrent + CHUNK_SIZE, tip);
+          if (pTo < pFrom) break;
+          const chunk = await processPurchases(sb, pFrom, pTo);
+          await writeCursor(sb, CURSOR_PURCHASES, pTo);
+          purchasesCurrent = pTo;
+          purchasesChunks++;
+          purchasesEvents += chunk.events_processed;
+          purchasesRows += chunk.rows_inserted;
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.log(`[pack-events-ingest] ${CURSOR_PURCHASES} error: ${msg}`);
         errors.push({ cursor: CURSOR_PURCHASES, message: msg });
       }
+      const purchasesResult = {
+        from_block: purchasesInitial,
+        to_block: purchasesCurrent,
+        chunks_processed: purchasesChunks,
+        events_processed: purchasesEvents,
+        rows_inserted: purchasesRows,
+        caught_up: cachedSealedTip - purchasesCurrent <= CAUGHT_UP_THRESHOLD,
+      };
 
       // ── opens ───────────────────────────────────────────────────────────
-      let opensResult: OpensResult = {
-        from_block: 0,
-        to_block: 0,
-        rips_inserted: 0,
-        moments_linked: 0,
-      };
+      let opensInitial = 0;
+      let opensCurrent = 0;
+      let opensChunks = 0;
+      let opensRips = 0;
+      let opensMoments = 0;
       try {
-        const opensCursor = await readCursor(sb, CURSOR_OPENS);
-        const oFrom = opensCursor + 1;
-        const oTo = Math.min(opensCursor + CHUNK_SIZE, sealedTip);
-        opensResult = await processOpens(sb, oFrom, oTo);
-        if (oTo >= oFrom) await writeCursor(sb, CURSOR_OPENS, oTo);
+        opensInitial = await readCursor(sb, CURSOR_OPENS);
+        opensCurrent = opensInitial;
+        while (true) {
+          if (Date.now() - startedMs >= SOFT_BUDGET_MS) break;
+          if (opensChunks >= MAX_CHUNKS_PER_CURSOR) break;
+          const tip = await getCurrentSealedTip();
+          if (tip - opensCurrent <= CAUGHT_UP_THRESHOLD) break;
+          const oFrom = opensCurrent + 1;
+          const oTo = Math.min(opensCurrent + CHUNK_SIZE, tip);
+          if (oTo < oFrom) break;
+          const chunk = await processOpens(sb, oFrom, oTo);
+          await writeCursor(sb, CURSOR_OPENS, oTo);
+          opensCurrent = oTo;
+          opensChunks++;
+          opensRips += chunk.rips_inserted;
+          opensMoments += chunk.moments_linked;
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.log(`[pack-events-ingest] ${CURSOR_OPENS} error: ${msg}`);
         errors.push({ cursor: CURSOR_OPENS, message: msg });
       }
+      const opensResult = {
+        from_block: opensInitial,
+        to_block: opensCurrent,
+        chunks_processed: opensChunks,
+        rips_inserted: opensRips,
+        moments_linked: opensMoments,
+        caught_up: cachedSealedTip - opensCurrent <= CAUGHT_UP_THRESHOLD,
+      };
 
       return new Response(
         JSON.stringify({
           ok: errors.length === 0,
           purchases: purchasesResult,
           opens: opensResult,
-          ...(errors.length > 0 ? { errors } : {}),
-          sealed_tip: sealedTip,
+          sealed_tip: cachedSealedTip,
           duration_ms: Date.now() - startedMs,
+          ...(errors.length > 0 ? { errors } : {}),
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
@@ -640,10 +701,25 @@ export default {
       return new Response(
         JSON.stringify({
           ok: false,
-          purchases: { from_block: 0, to_block: 0, events_processed: 0, rows_inserted: 0 },
-          opens: { from_block: 0, to_block: 0, rips_inserted: 0, moments_linked: 0 },
-          errors: [{ cursor: "pre_processing", message: msg }],
+          purchases: {
+            from_block: 0,
+            to_block: 0,
+            chunks_processed: 0,
+            events_processed: 0,
+            rows_inserted: 0,
+            caught_up: false,
+          },
+          opens: {
+            from_block: 0,
+            to_block: 0,
+            chunks_processed: 0,
+            rips_inserted: 0,
+            moments_linked: 0,
+            caught_up: false,
+          },
+          sealed_tip: 0,
           duration_ms: Date.now() - startedMs,
+          errors: [{ cursor: "pre_processing", message: msg }],
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
