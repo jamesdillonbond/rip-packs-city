@@ -517,7 +517,7 @@ async function processOpens(
               nft_id: nftIdStr,
               collection_id: COLLECTION_ID,
               wallet: opener,
-              acquisition_method: "pack_rip",
+              acquisition_method: "pack_pull",
               acquisition_confidence: "verified",
               acquired_date: opened.block_timestamp,
               transaction_hash: opened.transaction_id,
