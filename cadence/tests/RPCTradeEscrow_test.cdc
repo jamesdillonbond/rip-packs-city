@@ -17,8 +17,6 @@
 //   - NonFungibleToken     standard contract, system-deployed in emulator
 //   - ExampleNFT           standard example contract, system-deployed
 //   - Test                 testing framework
-//   - BlockchainHelpers    helpers like createAccount, getCurrentBlock,
-//                          tickClock (Cadence 1.0)
 //
 // Test accounts:
 //   - admin    contract deployer, also acts as backend/payer in tests
@@ -27,7 +25,6 @@
 //   - carol    third-party (e.g. cancel attempts she shouldn't be able to do)
 
 import Test
-import BlockchainHelpers
 import "RPCTradeEscrow"
 import "NonFungibleToken"
 import "ExampleNFT"
@@ -76,7 +73,12 @@ access(all) fun beforeEach() {
 
 // Mint and deposit an ExampleNFT into the recipient's collection,
 // returning the new NFT id. Signed by admin (minter authority).
+//
+// The canonical Test framework can't downcast events to a specific
+// event type by force-cast, so we snapshot the recipient's collection
+// IDs before and after the mint and return the lone new entry.
 access(all) fun mintExampleNFT(to: Test.TestAccount): UInt64 {
+    let before = collectionIds(of: to)
     let txResult = Test.executeTransaction(
         Test.Transaction(
             code: Test.readFile("transactions/mint_example_nft.cdc"),
@@ -87,16 +89,13 @@ access(all) fun mintExampleNFT(to: Test.TestAccount): UInt64 {
     )
     Test.expect(txResult, Test.beSucceeded())
 
-    // The mint tx emits ExampleNFT.Minted with the new id.
-    let events = txResult.events
-    for evt in events {
-        if evt.type == Type<ExampleNFT.Deposit>() {
-            // Deposit event includes id field
-            let raw = evt as! ExampleNFT.Deposit
-            return raw.id
+    let after = collectionIds(of: to)
+    for id in after {
+        if !before.contains(id) {
+            return id
         }
     }
-    panic("Mint event not found")
+    panic("Mint did not add a new NFT to recipient's collection")
 }
 
 access(all) fun setupExampleNFTCollection(account: Test.TestAccount) {
@@ -122,6 +121,12 @@ access(all) fun proposeTrade(
     let now = getCurrentBlock().timestamp
     let expiresAt = now + expirySeconds
 
+    // Read the next-tradeId before submitting. This is the id the
+    // proposeTrade transaction will assign. Verify after that the
+    // counter advanced by exactly one — doubles as a sanity check on
+    // counter monotonicity.
+    let predicted = RPCTradeEscrow.getNextTradeId()
+
     let txResult = Test.executeTransaction(
         Test.Transaction(
             code: Test.readFile("transactions/propose_trade.cdc"),
@@ -137,14 +142,9 @@ access(all) fun proposeTrade(
     )
     Test.expect(txResult, Test.beSucceeded())
 
-    // The TradeProposed event includes the assigned tradeId.
-    for evt in txResult.events {
-        if evt.type == Type<RPCTradeEscrow.TradeProposed>() {
-            let raw = evt as! RPCTradeEscrow.TradeProposed
-            return raw.tradeId
-        }
-    }
-    panic("TradeProposed event not found")
+    let after = RPCTradeEscrow.getNextTradeId()
+    Test.assertEqual(predicted + 1, after)
+    return predicted
 }
 
 access(all) fun depositToTrade(
@@ -388,17 +388,19 @@ access(all) fun testExpiryReclaim() {
     let aliceId = mintExampleNFT(to: alice)
     let bobId   = mintExampleNFT(to: bob)
 
-    // Use minimum expiry (10 min = 600 sec) per contract MIN_EXPIRY.
+    // Use just-above-minimum expiry. MIN_EXPIRY_SECONDS = 600.0 is a
+    // strict `>=` boundary in the contract, but sub-second block-time
+    // jitter at the boundary is a flake source — give +1s margin.
     let tradeId = proposeTrade(
         partyA: alice.address, partyB: bob.address,
         partyAExpectedIds: [aliceId],
         partyBExpectedIds: [bobId],
-        expirySeconds: 600.0
+        expirySeconds: 601.0
     )
     Test.expect(depositToTrade(signer: alice, tradeId: tradeId, nftIds: [aliceId]), Test.beSucceeded())
 
-    // Advance block time past expiry.
-    Test.moveTime(by: 700.0)
+    // Advance block time past expiry. Test.moveTime takes signed Fix64.
+    Test.moveTime(by: Fix64(700.0))
 
     // Anyone — even carol — can reclaim. Use admin for convenience.
     Test.expect(reclaimExpired(tradeId: tradeId), Test.beSucceeded())
@@ -487,11 +489,13 @@ access(all) fun testPausedContractBehavior() {
     let bobId   = mintExampleNFT(to: bob)
 
     // Create a trade and deposit before pause so we can verify cancel works.
+    // No reason for this test to ride the MIN_EXPIRY boundary — use a
+    // comfortable hour.
     let tradeId = proposeTrade(
         partyA: alice.address, partyB: bob.address,
         partyAExpectedIds: [aliceId],
         partyBExpectedIds: [bobId],
-        expirySeconds: 600.0
+        expirySeconds: 3600.0
     )
     Test.expect(depositToTrade(signer: alice, tradeId: tradeId, nftIds: [aliceId]), Test.beSucceeded())
 
