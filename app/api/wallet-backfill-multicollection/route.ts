@@ -39,9 +39,9 @@ export const dynamic = "force-dynamic"
 // (ceil(on_chain_count / chunk_size) / chunks_per_round) round-trips
 // per wallet × 270s each. Mega-wallet pinnacle (~7700 NFTs at 500/chunk
 // = 16 chunks, ~8s/chunk = ~130s) finishes in a single round-trip.
-export const maxDuration = 900
+export const maxDuration = 800
 
-const SYNC_MAX_DURATION_MS = 270_000
+const SYNC_MAX_DURATION_MS = 240_000
 // Round 11 Item 1: cut from 6 → 2.
 // Round 10 telemetry showed max sync-phase wall-clock of ~580s on AllDay pathological
 // wallets, hitting the 600s lambda cap and killing the final log_pipeline_run write.
