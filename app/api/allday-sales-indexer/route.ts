@@ -462,6 +462,13 @@ export async function POST(req: NextRequest) {
       console.log(
         `[allday-sales-indexer] contract=${STOREFRONT_EVENT} range=${lastBlock + 1}-${targetHeight} rawEvents=${rawEventsSeen} found=${sales.length}`
       )
+      // 2026-05-17: surface raw vs filtered counts in pipeline_runs.extra so
+      // "scanner silent" diagnostics can tell "0 events on chain" from
+      // "events emitted but our nftType/purchased predicate filtered them
+      // out" without reading runtime logs.
+      extra.raw_events_seen = rawEventsSeen
+      extra.filtered_in = sales.length
+      extra.filtered_out = rawEventsSeen - sales.length
 
       // Resolve nftID → edition_key (+ serial_number) via wallet_moments_cache
       const uniqueNftIds = [...new Set(sales.map((s) => s.nftID))]
