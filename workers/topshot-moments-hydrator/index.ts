@@ -49,7 +49,10 @@ interface Env {
   INGEST_SECRET_TOKEN: string;
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
-  TS_PROXY_URL: string;
+  // Service binding to the topshot-proxy worker. Worker-to-worker fetch over
+  // the public *.workers.dev URL hits Cloudflare error 1042; the binding
+  // routes internally and bypasses the edge. See wrangler.toml [[services]].
+  TOPSHOT_PROXY: Fetcher;
   TS_PROXY_SECRET: string;
 }
 
@@ -172,16 +175,23 @@ async function fetchChunk(
 
   let res: Response;
   try {
-    res = await fetch(env.TS_PROXY_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Proxy-Secret": env.TS_PROXY_SECRET,
-        "User-Agent": "topshot-moments-hydrator/0.1",
-      },
-      body: JSON.stringify({ query, variables }),
-      signal: AbortSignal.timeout(GQL_TIMEOUT_MS),
-    });
+    // Service binding fetch. The hostname in the Request URL is ignored —
+    // Cloudflare routes via the TOPSHOT_PROXY binding, not the URL. The path
+    // ("/topshot") still matters because the proxy uses it to pick the
+    // upstream from UPSTREAM_MAP. X-Proxy-Secret is still validated by the
+    // proxy on incoming requests.
+    res = await env.TOPSHOT_PROXY.fetch(
+      new Request("https://internal/topshot", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Proxy-Secret": env.TS_PROXY_SECRET,
+          "User-Agent": "topshot-moments-hydrator/0.1",
+        },
+        body: JSON.stringify({ query, variables }),
+        signal: AbortSignal.timeout(GQL_TIMEOUT_MS),
+      }),
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { moments: [], errorMsg: `gql fetch: ${msg.slice(0, 200)}` };
@@ -330,7 +340,7 @@ export default {
       if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
         return jsonError(500, "supabase_env_missing");
       }
-      if (!env.TS_PROXY_URL || !env.TS_PROXY_SECRET) {
+      if (!env.TOPSHOT_PROXY || !env.TS_PROXY_SECRET) {
         return jsonError(500, "ts_proxy_env_missing");
       }
 

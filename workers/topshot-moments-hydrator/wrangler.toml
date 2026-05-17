@@ -8,14 +8,23 @@ compatibility_flags = ["nodejs_compat"]
 # silently with no log entry. Lesson re-learned from pinnacle-events-proxy.
 workers_dev = true
 
+# Service binding to topshot-proxy. Worker-to-worker fetch over the public
+# *.workers.dev URL on the same Cloudflare account hits error 1042 (verified
+# in production via 404+1042). Service bindings route the request internally
+# and bypass the edge entirely. The bound worker's `service` value must match
+# the `name` field in workers/topshot-proxy/wrangler.toml.
+[[services]]
+binding = "TOPSHOT_PROXY"
+service = "topshot-proxy"
+
 # Secrets (write-only after creation):
 #   wrangler secret put INGEST_SECRET_TOKEN        --name topshot-moments-hydrator
 #   wrangler secret put SUPABASE_URL                --name topshot-moments-hydrator
 #   wrangler secret put SUPABASE_SERVICE_ROLE_KEY   --name topshot-moments-hydrator
-#   wrangler secret put TS_PROXY_URL                --name topshot-moments-hydrator
 #   wrangler secret put TS_PROXY_SECRET             --name topshot-moments-hydrator
 #
-# TS_PROXY_URL should point at the topshot-proxy worker /topshot route:
-#   https://topshot-proxy.tdillonbond.workers.dev/topshot
-# TS_PROXY_SECRET must match the topshot-proxy worker's PROXY_SECRET
+# TS_PROXY_SECRET must match the topshot-proxy worker's PROXY_SECRET — the
+# proxy still validates the X-Proxy-Secret header on service-binding calls
 # (same TS_PROXY_SECRET rotation surface — see CLAUDE.md "Worker auth surfaces").
+# TS_PROXY_URL is no longer used (replaced by the service binding above) but
+# leaving the secret in place is harmless.
