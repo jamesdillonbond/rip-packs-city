@@ -36,12 +36,26 @@
 //     candidates_read: int,              // rows returned by v_moments_needing_hydration
 //     fetched_from_graphql: int,         // moments with a non-null GQL data block
 //     editions_resolved: int,            // moments whose (set,play) found an editions row
-//     moments_upserted: int,             // rows the moments upsert actually wrote
+//     moments_written: int,              // rows inserted by replace_topshot_moments_batch
 //     edition_resolution_failures: int,  // GQL-fetched but no editions row matched
 //     graphql_failures: int,             // GQL returned null data for an nft_id
 //     duration_ms: int,
 //     errors?: [{ source, message }],
 //   }
+//
+// Write path — dual-constraint conflict handling:
+//   The moments table has TWO unique constraints:
+//     (a) moments_nft_id_key                  on (nft_id)
+//     (b) moments_edition_id_serial_number_key on (edition_id, serial_number)
+//   A concurrent writer (likely the wallet_moments_cache hydrator) races us
+//   for both surfaces — verified queries showed 1,276 pack-pull candidates
+//   already in moments under the matching nft_id AND some (edition_id,
+//   serial_number) pairs claimed by other nft_ids. The previous
+//   `upsert({onConflict:'nft_id'})` only handled surface (a) and threw a
+//   23505 on surface (b). We now call the server-side RPC
+//   replace_topshot_moments_batch which atomically DELETEs by both lenses
+//   and INSERTs our verified rows (pack-pull provenance + fresh GraphQL =
+//   ground truth, so winning the race is correct).
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
@@ -57,7 +71,6 @@ interface Env {
 }
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
-const TOPSHOT_COLLECTION_SLUG = "nba_top_shot";
 const CANDIDATES_PER_RUN = 300;
 const CHUNK_SIZE = 50;
 const NUM_CHUNKS = CANDIDATES_PER_RUN / CHUNK_SIZE; // 6
@@ -287,30 +300,66 @@ async function resolveEditions(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Moments upsert
+// Moments write — server-side dual-constraint replace via RPC
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface MomentRow {
+// Payload row shape sent to replace_topshot_moments_batch. The RPC owns
+// collection_id (constant = TOPSHOT_COLLECTION_ID) and any other column
+// defaults (is_listed, collection slug) so they don't need to ride on the
+// JSON; keeps the payload tight and the constants pinned in one place.
+interface MomentPayloadRow {
   nft_id: string;
-  collection_id: string;
   edition_id: string;
   serial_number: number;
   owner_address: string | null;
-  is_listed: boolean;
-  collection: string;
 }
 
-async function upsertMoments(sb: SupabaseClient, rows: MomentRow[]): Promise<number> {
+// TODO(supabase-migration): create RPC `replace_topshot_moments_batch(payload jsonb)`
+// in a separate migration (user manages migrations from chat). Expected shape:
+//   CREATE OR REPLACE FUNCTION public.replace_topshot_moments_batch(payload jsonb)
+//   RETURNS int LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+//   DECLARE
+//     v_rows  jsonb := payload;
+//     v_count int;
+//   BEGIN
+//     WITH p AS (
+//       SELECT (e->>'nft_id')::text         AS nft_id,
+//              (e->>'edition_id')::uuid     AS edition_id,
+//              (e->>'serial_number')::int   AS serial_number,
+//              NULLIF(e->>'owner_address','') AS owner_address
+//       FROM jsonb_array_elements(v_rows) AS e
+//     )
+//     DELETE FROM public.moments m
+//      WHERE m.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'
+//        AND (
+//          m.nft_id IN (SELECT nft_id FROM p)
+//          OR (m.edition_id, m.serial_number) IN (SELECT edition_id, serial_number FROM p)
+//        );
+//     WITH p AS (
+//       SELECT (e->>'nft_id')::text         AS nft_id,
+//              (e->>'edition_id')::uuid     AS edition_id,
+//              (e->>'serial_number')::int   AS serial_number,
+//              NULLIF(e->>'owner_address','') AS owner_address
+//       FROM jsonb_array_elements(v_rows) AS e
+//     )
+//     INSERT INTO public.moments (nft_id, collection_id, edition_id, serial_number, owner_address, is_listed, collection)
+//     SELECT nft_id, '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid, edition_id, serial_number, owner_address, false, 'nba_top_shot'
+//       FROM p;
+//     GET DIAGNOSTICS v_count = ROW_COUNT;
+//     RETURN v_count;
+//   END $$;
+//   REVOKE ALL ON FUNCTION public.replace_topshot_moments_batch(jsonb) FROM public, anon;
+//   GRANT EXECUTE ON FUNCTION public.replace_topshot_moments_batch(jsonb) TO service_role;
+// Until that RPC is shipped this call returns a "function not found" error
+// and the worker reports it via the `moments_write` error source — observable
+// failure rather than silent drop.
+async function replaceMomentsBatch(sb: SupabaseClient, rows: MomentPayloadRow[]): Promise<number> {
   if (rows.length === 0) return 0;
-  // ON CONFLICT (nft_id) — moments_nft_id_key is the unique constraint per
-  // spec. updated_at is maintained by a row-level trigger on the moments
-  // table; we don't set it here.
-  const { data, error } = await sb
-    .from("moments")
-    .upsert(rows, { onConflict: "nft_id" })
-    .select("id");
-  if (error) throw new Error(`moments upsert (${rows.length} rows): ${error.message}`);
-  return data?.length ?? 0;
+  const { data, error } = await sb.rpc("replace_topshot_moments_batch", { payload: rows });
+  if (error) throw new Error(`replace_topshot_moments_batch (${rows.length} rows): ${error.message}`);
+  // RPC returns scalar int (rows inserted). Coerce defensively.
+  const n = Number(data);
+  return Number.isFinite(n) ? n : 0;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -363,7 +412,7 @@ export default {
             candidates_read: 0,
             fetched_from_graphql: 0,
             editions_resolved: 0,
-            moments_upserted: 0,
+            moments_written: 0,
             edition_resolution_failures: 0,
             graphql_failures: 0,
             duration_ms: Date.now() - startedMs,
@@ -380,7 +429,7 @@ export default {
             candidates_read: 0,
             fetched_from_graphql: 0,
             editions_resolved: 0,
-            moments_upserted: 0,
+            moments_written: 0,
             edition_resolution_failures: 0,
             graphql_failures: 0,
             duration_ms: Date.now() - startedMs,
@@ -434,8 +483,8 @@ export default {
         }
       }
 
-      // ── 4. Build moment rows; skip rows whose edition didn't resolve ──
-      const momentRows: MomentRow[] = [];
+      // ── 4. Build moment payload rows; skip rows whose edition didn't resolve ──
+      const momentRows: MomentPayloadRow[] = [];
       let editionResolutionFailures = 0;
       for (const m of resolvable) {
         const key = `${m.set_id_onchain}:${m.play_id_onchain}`;
@@ -450,25 +499,22 @@ export default {
         }
         momentRows.push({
           nft_id: m.nft_id,
-          collection_id: TOPSHOT_COLLECTION_ID,
           edition_id: editionId,
           serial_number: m.flowSerialNumber as number,
           owner_address: m.owner_address,
-          is_listed: false,
-          collection: TOPSHOT_COLLECTION_SLUG,
         });
       }
       const editionsResolved = momentRows.length;
 
-      // ── 5. Upsert into moments ────────────────────────────────────────
-      let momentsUpserted = 0;
+      // ── 5. Server-side dual-constraint replace ────────────────────────
+      let momentsWritten = 0;
       if (momentRows.length > 0) {
         try {
-          momentsUpserted = await upsertMoments(sb, momentRows);
+          momentsWritten = await replaceMomentsBatch(sb, momentRows);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          console.log(`[topshot-moments-hydrator] moments upsert error: ${msg}`);
-          errors.push({ source: "moments_upsert", message: msg });
+          console.log(`[topshot-moments-hydrator] moments write error: ${msg}`);
+          errors.push({ source: "moments_write", message: msg });
         }
       }
 
@@ -478,7 +524,7 @@ export default {
           candidates_read: candidates.length,
           fetched_from_graphql: fetchedFromGraphql,
           editions_resolved: editionsResolved,
-          moments_upserted: momentsUpserted,
+          moments_written: momentsWritten,
           edition_resolution_failures: editionResolutionFailures,
           graphql_failures: graphqlFailures,
           duration_ms: Date.now() - startedMs,
@@ -497,7 +543,7 @@ export default {
           candidates_read: 0,
           fetched_from_graphql: 0,
           editions_resolved: 0,
-          moments_upserted: 0,
+          moments_written: 0,
           edition_resolution_failures: 0,
           graphql_failures: 0,
           duration_ms: Date.now() - startedMs,
