@@ -286,6 +286,10 @@ export async function POST(req: NextRequest) {
       console.log(
         `[golazos-sales-indexer] contract=${STOREFRONT_EVENT} range=${lastBlock + 1}-${targetHeight} rawEvents=${rawEventsSeen} found=${sales.length}`
       )
+      // 2026-05-17: surface raw vs filtered counts in pipeline_runs.extra.
+      extra.raw_events_seen = rawEventsSeen
+      extra.filtered_in = sales.length
+      extra.filtered_out = rawEventsSeen - sales.length
 
       const uniqueNftIds = [...new Set(sales.map((s) => s.nftID))]
       const nftToEditionKey = new Map<string, string>()
