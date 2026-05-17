@@ -387,6 +387,50 @@ async function replaceMomentsBatch(sb: SupabaseClient, rows: MomentPayloadRow[])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// pipeline_runs telemetry (2026-05-17). Single row per invocation written at
+// the end with fire-and-forget semantics. The watchlist keys on
+// pipeline='topshot-moments-hydrator'.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PIPELINE = "topshot-moments-hydrator";
+
+async function logPipelineRun(
+  sb: SupabaseClient,
+  args: {
+    startedAtIso: string;
+    rowsFound: number;
+    rowsWritten: number;
+    rowsSkipped: number;
+    ok: boolean;
+    error: string | null;
+    extra: Record<string, unknown>;
+  },
+): Promise<void> {
+  try {
+    const { error } = await sb.rpc("log_pipeline_run", {
+      p_pipeline: PIPELINE,
+      p_started_at: args.startedAtIso,
+      p_rows_found: args.rowsFound,
+      p_rows_written: args.rowsWritten,
+      p_rows_skipped: args.rowsSkipped,
+      p_ok: args.ok,
+      p_error: args.error,
+      p_collection_slug: "nba_top_shot",
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: args.extra,
+    });
+    if (error) {
+      console.log(`[${PIPELINE}] log_pipeline_run err: ${error.message}`);
+    }
+  } catch (err) {
+    console.log(
+      `[${PIPELINE}] log_pipeline_run threw: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Entrypoint
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -420,6 +464,7 @@ export default {
       const sb = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
         auth: { persistSession: false, autoRefreshToken: false },
       });
+      const startedAtIso = new Date(startedMs).toISOString();
 
       const errors: Array<{ source: string; message: string }> = [];
 
@@ -430,6 +475,18 @@ export default {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.log(`[topshot-moments-hydrator] candidate read fatal: ${msg}`);
+        await logPipelineRun(sb, {
+          startedAtIso,
+          rowsFound: 0,
+          rowsWritten: 0,
+          rowsSkipped: 0,
+          ok: false,
+          error: `candidate_read: ${msg}`.slice(0, 500),
+          extra: {
+            candidates_per_run: CANDIDATES_PER_RUN,
+            duration_ms: Date.now() - startedMs,
+          },
+        });
         return new Response(
           JSON.stringify({
             ok: false,
@@ -447,6 +504,20 @@ export default {
       }
 
       if (candidates.length === 0) {
+        const durationMs = Date.now() - startedMs;
+        await logPipelineRun(sb, {
+          startedAtIso,
+          rowsFound: 0,
+          rowsWritten: 0,
+          rowsSkipped: 0,
+          ok: true,
+          error: null,
+          extra: {
+            candidates_per_run: CANDIDATES_PER_RUN,
+            message: "no_candidates",
+            duration_ms: durationMs,
+          },
+        });
         return new Response(
           JSON.stringify({
             ok: true,
@@ -456,7 +527,7 @@ export default {
             moments_written: 0,
             edition_resolution_failures: 0,
             graphql_failures: 0,
-            duration_ms: Date.now() - startedMs,
+            duration_ms: durationMs,
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
@@ -562,6 +633,28 @@ export default {
         graphqlFailures === 0 &&
         (momentsWritten > 0 || candidates.length === 0);
 
+      const durationMs = Date.now() - startedMs;
+      await logPipelineRun(sb, {
+        startedAtIso,
+        rowsFound: candidates.length,
+        rowsWritten: momentsWritten,
+        rowsSkipped: editionResolutionFailures + graphqlFailures,
+        ok,
+        error: errors.length > 0
+          ? errors.map((e) => `${e.source}: ${e.message}`).join(" | ").slice(0, 500)
+          : null,
+        extra: {
+          candidates_per_run: CANDIDATES_PER_RUN,
+          chunk_size: CHUNK_SIZE,
+          fetched_from_graphql: fetchedFromGraphql,
+          editions_resolved: editionsResolved,
+          edition_resolution_failures: editionResolutionFailures,
+          graphql_failures: graphqlFailures,
+          duration_ms: durationMs,
+          errors: errors.length > 0 ? errors.slice(0, 5) : undefined,
+        },
+      });
+
       return new Response(
         JSON.stringify({
           ok,
@@ -571,7 +664,7 @@ export default {
           moments_written: momentsWritten,
           edition_resolution_failures: editionResolutionFailures,
           graphql_failures: graphqlFailures,
-          duration_ms: Date.now() - startedMs,
+          duration_ms: durationMs,
           ...(errors.length > 0 ? { errors } : {}),
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
