@@ -69,6 +69,17 @@ function fmtPrice(n: number | null, currency: string | null | undefined): string
   return currency ? `${formatted} ${currency}` : formatted
 }
 
+/** DUC is a 1:1 USD-pegged stablecoin. When the cost-basis currency is DUC,
+ *  render an inline "($X)" parenthetical so collectors don't have to translate. */
+function fmtPriceWithUsd(n: number | null, currency: string | null | undefined): string {
+  if (n === null) return "—"
+  const base = fmtPrice(n, currency)
+  if (currency && currency.toUpperCase() === "DUC") {
+    return `${base} (${fmtUsd(n)})`
+  }
+  return base
+}
+
 async function fetchLifecycle(packNftId: string): Promise<PackLifecycle | null> {
   const { data, error } = await sb.rpc("get_pack_lifecycle", { p_pack_nft_id: packNftId })
   if (error) {
@@ -108,16 +119,18 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
   let description = `Lifecycle of ${collectionName} pack #${id} on Rip Packs City.`
   if (lifecycle && lifecycle.status === "ripped") {
     const gross = num(lifecycle.stats.gross_pull_value_usd)
-    const basis = num(lifecycle.stats.total_cost_basis_usd)
+    const basis = num(lifecycle.stats.total_cost_basis)
+    const currency = lifecycle.stats.currency
     if (gross !== null && basis !== null) {
-      description = `Pulled ${fmtUsd(gross)} from a ${fmtUsd(basis)} pack. See the full rip on Rip Packs City.`
+      description = `Pulled ${fmtUsd(gross)} from a ${fmtPrice(basis, currency)} pack. See the full rip on Rip Packs City.`
     } else if (gross !== null) {
       description = `Pulled ${fmtUsd(gross)}. See the full rip on Rip Packs City.`
     }
   } else if (lifecycle && lifecycle.status === "sealed") {
-    const basis = num(lifecycle.stats.last_cost_basis_usd)
+    const basis = num(lifecycle.stats.total_cost_basis)
+    const currency = lifecycle.stats.currency
     if (basis !== null) {
-      description = `Sealed ${packLabel} last sold for ${fmtUsd(basis)}. Track the rip on Rip Packs City.`
+      description = `Sealed ${packLabel} last sold for ${fmtPrice(basis, currency)}. Track the rip on Rip Packs City.`
     }
   }
 
@@ -186,33 +199,48 @@ function PackLifecycleView({
   const packLabel = lifecycle.pack_name ?? `Pack #${lifecycle.pack_nft_id}`
 
   const grossUsd = num(lifecycle.stats.gross_pull_value_usd)
-  const totalBasisUsd = num(lifecycle.stats.total_cost_basis_usd)
-  const lastBasisUsd = num(lifecycle.stats.last_cost_basis_usd)
-  const lastBasisCurrency = lifecycle.stats.last_cost_basis_currency
+  const totalBasis = num(lifecycle.stats.total_cost_basis)
+  const basisCurrency = lifecycle.stats.currency
 
-  // Headline + delta — different for sealed vs ripped.
+  // ROI = ((gross - cost) / cost) * 100. DUC is 1:1 USD so we can compare
+  // total_cost_basis directly to gross_pull_value_usd without conversion.
+  // For non-DUC, non-USD currencies a price lookup would be needed; today
+  // every observed pack purchase is DUC, so this matches reality.
+  const roiPct =
+    grossUsd !== null && totalBasis !== null && totalBasis !== 0
+      ? ((grossUsd - totalBasis) / totalBasis) * 100
+      : null
+
+  // Last ownership-chain row backs the "sealed" headline (the RPC no longer
+  // emits a dedicated last_cost_basis field — read from the chain instead).
+  const lastChainRow =
+    lifecycle.ownership_chain.length > 0
+      ? lifecycle.ownership_chain[lifecycle.ownership_chain.length - 1]
+      : null
+
+  // Hero copy
+  //   ripped: two lines via HeroDelta — "PULLED $X" / "FROM A {basis} {currency} PACK"
+  //   sealed w/ history: single-line "Last bought for {price} {currency}"
+  //   sealed w/o history: "First seen sealed"
   let headline: string
+  let subhead: string | null = null
   let delta: string | null = null
   let deltaDir: "up" | "down" | "flat" | null = null
   if (lifecycle.status === "ripped") {
-    headline = `Pack ripped for ${fmtUsd(grossUsd)}`
-    if (grossUsd !== null && totalBasisUsd !== null) {
-      const d = grossUsd - totalBasisUsd
+    headline = `PULLED ${fmtUsd(grossUsd)}`
+    if (totalBasis !== null) {
+      subhead = `FROM A ${fmtPriceWithUsd(totalBasis, basisCurrency)} PACK`
+    }
+    if (grossUsd !== null && totalBasis !== null) {
+      const d = grossUsd - totalBasis
       delta = `${d >= 0 ? "+" : "−"}${fmtUsd(Math.abs(d))} vs cost`
       deltaDir = d > 0 ? "up" : d < 0 ? "down" : "flat"
     }
-  } else if (lifecycle.ownership_chain.length > 0) {
-    headline = `Last bought for ${fmtPrice(lastBasisUsd, lastBasisCurrency)}`
+  } else if (lastChainRow) {
+    headline = `Last bought for ${fmtPriceWithUsd(num(lastChainRow.sale_price), lastChainRow.sale_currency)}`
   } else {
     headline = "First seen sealed"
   }
-
-  const roiPct = (() => {
-    const r = num(lifecycle.stats.roi_pct)
-    if (r === null) return null
-    // RPC may emit ROI as a 0–1 fraction or as a percentage — detect.
-    return Math.abs(r) <= 1 ? r * 100 : r
-  })()
 
   return (
     <article>
@@ -297,7 +325,12 @@ function PackLifecycleView({
             )}
           </div>
         </div>
-        <HeroDelta headline={headline} delta={delta} deltaDirection={deltaDir} />
+        <HeroDelta
+          headline={headline}
+          subhead={subhead}
+          delta={delta}
+          deltaDirection={deltaDir}
+        />
       </header>
 
       {/* Ownership chain */}
@@ -319,7 +352,8 @@ function PackLifecycleView({
 
       {/* Stats footer */}
       <StatsFooter
-        totalCostBasisUsd={totalBasisUsd}
+        totalCostBasis={totalBasis}
+        basisCurrency={basisCurrency}
         grossPullValueUsd={grossUsd}
         roiPct={roiPct}
       />
