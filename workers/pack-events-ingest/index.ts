@@ -583,6 +583,63 @@ async function fetchOpensChunk(
 // Batch flushers — one Supabase write per group, called after the chunk loop
 // ─────────────────────────────────────────────────────────────────────────────
 
+// PostgREST .in() lives in the URL query string. Backfill mode accumulates
+// hundreds of pack-open tx hashes over its 40-chunk budget (one observed run
+// posted 829 tx_hashes), which blows past the URL-length limit and comes back
+// as a 400/HTTP-414 Bad Request. Cap each lookup at 100 tx hashes and run up
+// to 4 in parallel so the wall-clock cost stays bounded.
+const PACK_RIPS_LOOKUP_CHUNK_SIZE = 100;
+const PACK_RIPS_LOOKUP_CONCURRENCY = 4;
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  if (size <= 0) return [arr];
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+async function lookupPackRipIdsByTxHash(
+  sb: SupabaseClient,
+  txHashes: string[],
+): Promise<{ ripIdByTx: Map<string, string>; chunkErrors: Array<{ source: string; message: string }> }> {
+  const ripIdByTx = new Map<string, string>();
+  const chunkErrors: Array<{ source: string; message: string }> = [];
+  if (txHashes.length === 0) return { ripIdByTx, chunkErrors };
+
+  const chunks = chunkArray(txHashes, PACK_RIPS_LOOKUP_CHUNK_SIZE);
+  // Process chunks in waves of PACK_RIPS_LOOKUP_CONCURRENCY. Promise.allSettled
+  // ensures one chunk's failure doesn't sink siblings — partial results still
+  // attribute moment_acquisitions for the rips that did resolve.
+  for (let i = 0; i < chunks.length; i += PACK_RIPS_LOOKUP_CONCURRENCY) {
+    const wave = chunks.slice(i, i + PACK_RIPS_LOOKUP_CONCURRENCY);
+    const settled = await Promise.allSettled(
+      wave.map(async (chunk) => {
+        const { data, error } = await sb
+          .from("pack_rips")
+          .select("id, tx_hash")
+          .in("tx_hash", chunk);
+        if (error) throw new Error(error.message);
+        return { chunk, rows: (data ?? []) as Array<{ id: string; tx_hash: string }> };
+      }),
+    );
+    for (let j = 0; j < settled.length; j++) {
+      const r = settled[j];
+      const chunk = wave[j];
+      if (r.status === "fulfilled") {
+        for (const row of r.value.rows) ripIdByTx.set(row.tx_hash, row.id);
+      } else {
+        const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+        chunkErrors.push({
+          source: "pack_rips_lookup_chunk",
+          message:
+            `size=${chunk.length} first=${chunk[0]} last=${chunk[chunk.length - 1]}: ${msg}`.slice(0, 300),
+        });
+      }
+    }
+  }
+  return { ripIdByTx, chunkErrors };
+}
+
 async function flushPurchases(sb: SupabaseClient, rows: PurchaseRow[]): Promise<number> {
   if (rows.length === 0) return 0;
   const { data, error } = await sb
@@ -598,8 +655,12 @@ async function flushOpens(
   rips: RipRow[],
   momentTemplates: MomentTemplate[],
   placeholders: PlaceholderPair[],
-): Promise<{ rips_inserted: number; moments_linked: number }> {
-  if (rips.length === 0) return { rips_inserted: 0, moments_linked: 0 };
+): Promise<{
+  rips_inserted: number;
+  moments_linked: number;
+  chunk_errors: Array<{ source: string; message: string }>;
+}> {
+  if (rips.length === 0) return { rips_inserted: 0, moments_linked: 0, chunk_errors: [] };
 
   // (1) Upsert all rips. ignoreDuplicates: true preserves the existing
   //     semantic that rips_inserted counts only newly inserted rows.
@@ -614,19 +675,16 @@ async function flushOpens(
 
   // (2) SELECT IDs for ALL rip tx_hashes — conflict-skipped rows weren't
   //     returned by the upsert, but moment_acquisitions still needs their
-  //     source_pack_rip_id. One SELECT covers the whole batch.
+  //     source_pack_rip_id. Chunked + bounded-concurrency so URL-length
+  //     limits don't sink the whole batch (~3M-block backfill iterations
+  //     can accumulate 800+ tx_hashes in a single 25s window). Individual
+  //     chunk failures are collected and returned for pipeline_runs.extra
+  //     rather than aborting downstream moment_acquisitions writes — a
+  //     partial result is better than zero progress.
   const allTxHashes = Array.from(new Set(rips.map((r) => r.tx_hash)));
-  const { data: allRipIds, error: selErr } = await sb
-    .from("pack_rips")
-    .select("id, tx_hash")
-    .in("tx_hash", allTxHashes);
-  if (selErr) {
-    throw new Error(`pack_rips id lookup (${allTxHashes.length} tx_hashes): ${selErr.message}`);
-  }
-  const ripIdByTx = new Map<string, string>();
-  for (const row of (allRipIds ?? []) as Array<{ id: string; tx_hash: string }>) {
-    ripIdByTx.set(row.tx_hash, row.id);
-  }
+  const lookup = await lookupPackRipIdsByTxHash(sb, allTxHashes);
+  const ripIdByTx = lookup.ripIdByTx;
+  const chunkErrors = lookup.chunkErrors;
 
   // (3) Delete all cache-refresh placeholders in one statement using a
   //     composite OR filter over the (nft_id, wallet) pairs. Each
@@ -681,7 +739,7 @@ async function flushOpens(
     momentsLinked = insertedMoments?.length ?? 0;
   }
 
-  return { rips_inserted: ripsInserted, moments_linked: momentsLinked };
+  return { rips_inserted: ripsInserted, moments_linked: momentsLinked, chunk_errors: chunkErrors };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -938,6 +996,13 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
       const result = await flushOpens(sb, opensRips, opensTemplates, opensPlaceholders);
       ripsInserted = result.rips_inserted;
       momentsLinked = result.moments_linked;
+      // pack_rips_lookup_chunk failures are partial — the surviving chunks
+      // still attribute moment_acquisitions correctly, so we surface them
+      // through pipeline_runs.extra.errors but advance the cursor normally.
+      for (const ce of result.chunk_errors) {
+        console.log(`[pack-events-ingest] ${opensCursorId} ${ce.source}: ${ce.message}`);
+        errors.push({ cursor: opensCursorId, message: `${ce.source}: ${ce.message}` });
+      }
       opensActualCursor = opensTarget;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
