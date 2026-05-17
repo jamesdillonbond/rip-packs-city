@@ -353,13 +353,35 @@ interface MomentPayloadRow {
 // Until that RPC is shipped this call returns a "function not found" error
 // and the worker reports it via the `moments_write` error source — observable
 // failure rather than silent drop.
-async function replaceMomentsBatch(sb: SupabaseClient, rows: MomentPayloadRow[]): Promise<number> {
-  if (rows.length === 0) return 0;
+interface ReplaceMomentsResult {
+  count: number;
+  // Populated only when the RPC returned a shape we didn't expect. Surfaced
+  // up to errors[] so we can see what supabase-js actually delivers for a
+  // scalar jsonb RETURNS — the wrapping depends on the function signature
+  // (RETURNS jsonb vs RETURNS TABLE vs RETURNS SETOF) and we want one run's
+  // worth of evidence in the response.
+  unexpectedShape?: string;
+}
+
+async function replaceMomentsBatch(sb: SupabaseClient, rows: MomentPayloadRow[]): Promise<ReplaceMomentsResult> {
+  if (rows.length === 0) return { count: 0 };
   const { data, error } = await sb.rpc("replace_topshot_moments_batch", { payload: rows });
   if (error) throw new Error(`replace_topshot_moments_batch (${rows.length} rows): ${error.message}`);
-  // RPC returns scalar int (rows inserted). Coerce defensively.
-  const n = Number(data);
-  return Number.isFinite(n) ? n : 0;
+  // RPC returns a scalar jsonb object: { rows_inserted: int }. supabase-js
+  // exposes the jsonb directly on `data` (no array wrapping for non-SETOF
+  // returns). Defensive parse: if the shape isn't what we expect, return
+  // count=0 and stash a short description so the caller can log it once.
+  if (data && typeof data === "object" && !Array.isArray(data) && "rows_inserted" in data) {
+    const n = Number((data as { rows_inserted: unknown }).rows_inserted);
+    if (Number.isFinite(n)) return { count: n };
+  }
+  let shape: string;
+  try {
+    shape = JSON.stringify(data).slice(0, 200);
+  } catch {
+    shape = `typeof=${typeof data}`;
+  }
+  return { count: 0, unexpectedShape: `rpc returned unexpected shape: ${shape}` };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -510,7 +532,12 @@ export default {
       let momentsWritten = 0;
       if (momentRows.length > 0) {
         try {
-          momentsWritten = await replaceMomentsBatch(sb, momentRows);
+          const result = await replaceMomentsBatch(sb, momentRows);
+          momentsWritten = result.count;
+          if (result.unexpectedShape) {
+            console.log(`[topshot-moments-hydrator] ${result.unexpectedShape}`);
+            errors.push({ source: "moments_write_shape", message: result.unexpectedShape });
+          }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           console.log(`[topshot-moments-hydrator] moments write error: ${msg}`);
@@ -518,9 +545,20 @@ export default {
         }
       }
 
+      // ok-flag policy: edition_resolution_failures are normal degraded
+      // operation (~1% rate from catalog drift — new on-chain plays the
+      // editions backfill hasn't caught yet), so they don't flip ok:false.
+      // Same for the moments_write_shape diagnostic (one-shot observability).
+      // Only flip on a hard GraphQL miss or a write that didn't produce any
+      // rows when there were rows to write — the latter is captured by
+      // moments_written === 0 with candidates_read > 0.
+      const ok =
+        graphqlFailures === 0 &&
+        (momentsWritten > 0 || candidates.length === 0);
+
       return new Response(
         JSON.stringify({
-          ok: errors.length === 0,
+          ok,
           candidates_read: candidates.length,
           fetched_from_graphql: fetchedFromGraphql,
           editions_resolved: editionsResolved,
