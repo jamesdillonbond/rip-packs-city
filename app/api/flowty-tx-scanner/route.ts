@@ -115,6 +115,7 @@ export async function POST(req: NextRequest) {
   }
 
   const t0 = Date.now()
+  const startedAt = new Date(t0).toISOString()
   const counters = {
     blocksScanned: 0,
     txsScanned: 0,
@@ -124,11 +125,13 @@ export async function POST(req: NextRequest) {
     rowsInserted: 0,
     errors: [] as string[],
   }
+  let postRunHeight: number | null = null
+  let totalFailuresCaptured: number | null = null
 
   try {
     const stateRes = await supabaseAdmin
       .from("flowty_scanner_state")
-      .select("last_scanned_height")
+      .select("last_scanned_height, total_failures_captured")
       .eq("id", 1)
       .single()
     if (stateRes.error) throw stateRes.error
@@ -345,6 +348,34 @@ export async function POST(req: NextRequest) {
       counters.errors.push(`state update: ${updateRes.error.message}`)
     }
 
+    postRunHeight = endHeight
+    totalFailuresCaptured =
+      (stateRes.data?.total_failures_captured ?? 0) + counters.txsFailedFlowty
+
+    try {
+      await (supabaseAdmin as any).from("pipeline_runs").insert({
+        pipeline: "flowty-tx-scanner",
+        collection_slug: null,
+        started_at: startedAt,
+        finished_at: new Date().toISOString(),
+        rows_found: counters.txsScanned,
+        rows_written: counters.txsFailedFlowty,
+        rows_skipped: null,
+        ok: true,
+        error: null,
+        extra: {
+          last_scanned_height: postRunHeight,
+          blocks_scanned: counters.blocksScanned,
+          duration_ms: elapsed,
+          total_failures_captured: totalFailuresCaptured,
+        },
+      })
+    } catch (logErr) {
+      console.log(
+        `[flowty-tx-scanner] pipeline_runs insert (success path) failed: ${String(logErr)}`,
+      )
+    }
+
     after(async () => {
       try {
         await supabaseAdmin.rpc("flowty_scanner_increment", {
@@ -365,12 +396,39 @@ export async function POST(req: NextRequest) {
       elapsed_ms: elapsed,
     })
   } catch (err) {
+    const elapsed = Date.now() - t0
+    const errorMessage = err instanceof Error ? err.message : String(err)
+
+    try {
+      await (supabaseAdmin as any).from("pipeline_runs").insert({
+        pipeline: "flowty-tx-scanner",
+        collection_slug: null,
+        started_at: startedAt,
+        finished_at: new Date().toISOString(),
+        rows_found: counters.txsScanned,
+        rows_written: counters.txsFailedFlowty,
+        rows_skipped: null,
+        ok: false,
+        error: errorMessage,
+        extra: {
+          last_scanned_height: postRunHeight,
+          blocks_scanned: counters.blocksScanned,
+          duration_ms: elapsed,
+          total_failures_captured: totalFailuresCaptured,
+        },
+      })
+    } catch (logErr) {
+      console.log(
+        `[flowty-tx-scanner] pipeline_runs insert (failure path) failed: ${String(logErr)}`,
+      )
+    }
+
     return NextResponse.json(
       {
         ok: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage,
         ...counters,
-        elapsed_ms: Date.now() - t0,
+        elapsed_ms: elapsed,
       },
       { status: 500 },
     )
