@@ -35,6 +35,73 @@ const BLOCKS_PER_WINDOW = 10000;
 const BUDGET_MS = 25_000;
 const UPSERT_CHUNK = 500;
 
+// Rate-limit recovery: on HTTP 429 from the proxy, the contract's
+// getLogs window is retried with exponential backoff and a halved
+// window. 2026-05 telemetry showed base_mainnet proxy occasionally
+// returning 429 for a 10k-block Transfer scan when Beezie has a heavy
+// activity burst; halving to 5k on retry has empirically been below
+// the threshold.
+const LOGS_RETRY_MAX_ATTEMPTS = 3;
+const LOGS_RETRY_BASE_MS = 2000;
+const LOGS_RETRY_JITTER_MS = 500;
+const RETRY_WINDOW_FACTOR = 0.5;
+
+function isRateLimitErr(msg: string): boolean {
+  return msg.includes("429") || /rate.?limit/i.test(msg);
+}
+
+async function fetchLogsWithRateLimitBackoff(
+  chainSlug: ChainSlug,
+  fromBlock: number,
+  initialToBlock: number,
+  contractAddress: string
+): Promise<{
+  logs: EvmLog[];
+  effectiveToBlock: number;
+  attempts: number;
+  rate_limited_attempts: number;
+}> {
+  let toBlock = initialToBlock;
+  let attempts = 0;
+  let rateLimited = 0;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < LOGS_RETRY_MAX_ATTEMPTS; attempt++) {
+    attempts++;
+    try {
+      const logs = await getLogs(chainSlug, {
+        fromBlock: numberToHex(fromBlock),
+        toBlock: numberToHex(toBlock),
+        address: contractAddress,
+        topics: [TRANSFER_TOPIC],
+      });
+      return { logs, effectiveToBlock: toBlock, attempts, rate_limited_attempts: rateLimited };
+    } catch (err) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!isRateLimitErr(msg)) throw err;
+      rateLimited++;
+      // Halve the window from this attempt forward so the next try is
+      // less likely to re-hit the limit. Round down, but keep ≥1 block.
+      toBlock = Math.max(
+        fromBlock,
+        fromBlock + Math.max(1, Math.floor((toBlock - fromBlock + 1) * RETRY_WINDOW_FACTOR) - 1)
+      );
+      if (attempt < LOGS_RETRY_MAX_ATTEMPTS - 1) {
+        const delay =
+          LOGS_RETRY_BASE_MS * Math.pow(2, attempt) +
+          Math.floor(Math.random() * LOGS_RETRY_JITTER_MS);
+        console.log(
+          `[${PIPELINE}] getLogs 429 attempt=${attempt + 1} sleeping=${delay}ms next_window=${fromBlock}..${toBlock}`
+        );
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+  throw lastErr instanceof Error
+    ? lastErr
+    : new Error(`getLogs exhausted ${LOGS_RETRY_MAX_ATTEMPTS} attempts: ${String(lastErr)}`);
+}
+
 const CHAIN_SLUG_BY_ID: Record<number, ChainSlug> = {
   747: "flow_evm_mainnet",
   8453: "base_mainnet",
@@ -201,19 +268,29 @@ async function runContract(
     cursorBefore = String(lastProcessed);
 
     const fromBlock = lastProcessed + 1;
-    const toBlock = lastProcessed + BLOCKS_PER_WINDOW;
+    const requestedToBlock = lastProcessed + BLOCKS_PER_WINDOW;
 
-    // Fetch logs filtered to this contract + Transfer topic.
-    const logs: EvmLog[] = await getLogs(chainSlug, {
-      fromBlock: numberToHex(fromBlock),
-      toBlock: numberToHex(toBlock),
-      address: c.contract_address,
-      topics: [TRANSFER_TOPIC],
-    });
+    // Fetch logs filtered to this contract + Transfer topic. On a 429,
+    // the helper halves the window and retries with backoff; we advance
+    // the cursor to whatever to-block actually succeeded.
+    const logsRes = await fetchLogsWithRateLimitBackoff(
+      chainSlug,
+      fromBlock,
+      requestedToBlock,
+      c.contract_address
+    );
+    const logs: EvmLog[] = logsRes.logs;
+    const toBlock = logsRes.effectiveToBlock;
     rowsFound = logs.length;
     extra.from_block = fromBlock;
     extra.to_block = toBlock;
+    extra.requested_to_block = requestedToBlock;
     extra.logs_returned = logs.length;
+    extra.logs_attempts = logsRes.attempts;
+    if (logsRes.rate_limited_attempts > 0) {
+      extra.rate_limited_attempts = logsRes.rate_limited_attempts;
+      extra.window_halved = toBlock < requestedToBlock;
+    }
 
     // Resolve block_timestamp per log. block_timestamp is a partition key
     // column on evm_nft_transfers and rejects NULL. Base RPC includes
