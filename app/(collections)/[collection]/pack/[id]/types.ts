@@ -82,6 +82,35 @@ export interface PackPull {
   confidence?: string | null
 }
 
+/** Resolved pack-distribution metadata. Two source paths:
+ *
+ *  - `drop_pool`        — full match against pack_distributions. Carries image,
+ *                         title, tier, drop date, retail price, slot count and
+ *                         live mint/open/sealed counters.
+ *  - `purchase_metadata` — sparse fallback when only a pack_name could be
+ *                         derived (e.g. reward packs without a drop_pool row).
+ *                         title is populated; most other fields will be null.
+ *
+ *  When neither path resolves the whole `distribution` field on PackLifecycle
+ *  is null and the page falls back to a bare "Pack #{id}" identity. */
+export interface Distribution {
+  dist_id: string | null
+  title: string
+  image_url: string | null
+  /** Lower- or upper-case tier label, e.g. "common" / "LEGENDARY". */
+  tier: string | null
+  retail_price_usd: number | null
+  /** ISO timestamp of the drop release date. */
+  drop_date: string | null
+  pack_slots: number | null
+  total_minted: number | null
+  total_opened: number | null
+  total_sealed: number | null
+  /** 0–100 percent — share of minted packs that have been opened. */
+  depletion_pct: number | null
+  source: "drop_pool" | "purchase_metadata"
+}
+
 /** Pre-computed rollups returned at the top level.
  *  Field names mirror the snake_case keys emitted by the RPC's jsonb payload. */
 export interface PackStats {
@@ -105,6 +134,9 @@ export interface PackLifecycle {
   collection_slug: string
   /** Display-ready name, e.g. "2024-25 Common Pack". Null when the row is unknown. */
   pack_name: string | null
+  /** Resolved distribution metadata — null when neither drop_pool nor
+   *  purchase_metadata resolution succeeded. See Distribution. */
+  distribution: Distribution | null
   status: PackStatus
   /** ISO timestamp of the first on-chain event observed for this pack. */
   first_seen_at: string | null
