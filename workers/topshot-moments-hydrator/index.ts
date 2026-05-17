@@ -355,33 +355,35 @@ interface MomentPayloadRow {
 // failure rather than silent drop.
 interface ReplaceMomentsResult {
   count: number;
-  // Populated only when the RPC returned a shape we didn't expect. Surfaced
-  // up to errors[] so we can see what supabase-js actually delivers for a
-  // scalar jsonb RETURNS — the wrapping depends on the function signature
-  // (RETURNS jsonb vs RETURNS TABLE vs RETURNS SETOF) and we want one run's
-  // worth of evidence in the response.
+  // RPC returned a Postgres-level error (function missing, permissions,
+  // CHECK constraint, etc.). Caller pushes to errors[] under "moments_write".
+  error?: string;
+  // RPC returned a value that didn't coerce to a finite number. Should not
+  // happen with the current `RETURNS int` contract but kept as a one-shot
+  // shape probe so any future RETURNS-signature drift is observable rather
+  // than silently producing count=0.
   unexpectedShape?: string;
 }
 
 async function replaceMomentsBatch(sb: SupabaseClient, rows: MomentPayloadRow[]): Promise<ReplaceMomentsResult> {
   if (rows.length === 0) return { count: 0 };
   const { data, error } = await sb.rpc("replace_topshot_moments_batch", { payload: rows });
-  if (error) throw new Error(`replace_topshot_moments_batch (${rows.length} rows): ${error.message}`);
-  // RPC returns a scalar jsonb object: { rows_inserted: int }. supabase-js
-  // exposes the jsonb directly on `data` (no array wrapping for non-SETOF
-  // returns). Defensive parse: if the shape isn't what we expect, return
-  // count=0 and stash a short description so the caller can log it once.
-  if (data && typeof data === "object" && !Array.isArray(data) && "rows_inserted" in data) {
-    const n = Number((data as { rows_inserted: unknown }).rows_inserted);
-    if (Number.isFinite(n)) return { count: n };
+  if (error) return { count: 0, error: error.message };
+  // RPC is `RETURNS int` — supabase-js exposes the scalar directly on `data`
+  // (no array wrap, no jsonb wrap). Number(null) is 0, Number(undefined) is
+  // NaN, Number("123") is 123 — so NaN is the only ambiguous bucket we need
+  // to log.
+  const count = Number(data);
+  if (Number.isNaN(count)) {
+    let shape: string;
+    try {
+      shape = JSON.stringify(data).slice(0, 200);
+    } catch {
+      shape = `typeof=${typeof data}`;
+    }
+    return { count: 0, unexpectedShape: `rpc returned non-numeric: ${shape}` };
   }
-  let shape: string;
-  try {
-    shape = JSON.stringify(data).slice(0, 200);
-  } catch {
-    shape = `typeof=${typeof data}`;
-  }
-  return { count: 0, unexpectedShape: `rpc returned unexpected shape: ${shape}` };
+  return { count };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -534,13 +536,17 @@ export default {
         try {
           const result = await replaceMomentsBatch(sb, momentRows);
           momentsWritten = result.count;
+          if (result.error) {
+            console.log(`[topshot-moments-hydrator] moments write error: ${result.error}`);
+            errors.push({ source: "moments_write", message: result.error });
+          }
           if (result.unexpectedShape) {
             console.log(`[topshot-moments-hydrator] ${result.unexpectedShape}`);
             errors.push({ source: "moments_write_shape", message: result.unexpectedShape });
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          console.log(`[topshot-moments-hydrator] moments write error: ${msg}`);
+          console.log(`[topshot-moments-hydrator] moments write throw: ${msg}`);
           errors.push({ source: "moments_write", message: msg });
         }
       }
