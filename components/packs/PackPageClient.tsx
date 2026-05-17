@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import PackTable, { type PackRow, type SortKey as TableSortKey } from './PackTable'
+import GrailsView from './GrailsView'
 import { useWarmCache } from '@/lib/warmup/WarmupContext'
 
 // Shared client component for the static pack pages (nba-top-shot,
@@ -116,6 +117,12 @@ function parsePriceInput(s: string): number | null {
 }
 
 export default function PackPageClient({ collection, tiers, title, accent = '#E03A2F' }: Props) {
+  // View-mode toggle: "Standard" renders the existing pack_table_rows table
+  // with all its filters; "Grails" swaps in <GrailsView/> which queries
+  // pack_grail_metrics_mv for chase-led card rendering. State lives at the
+  // top of the component so the standard-view filters stay mounted (and
+  // thus don't reset) when the user toggles between modes.
+  const [viewMode, setViewMode] = useState<'standard' | 'grails'>('standard')
   const [sort, setSort] = useState<SortKey>('value_ratio_desc')
   const [tier, setTier] = useState<string>('all')
   const [search, setSearch] = useState('')
@@ -213,8 +220,33 @@ export default function PackPageClient({ collection, tiers, title, accent = '#E0
               : `${packRows.length.toLocaleString()} of ${total.toLocaleString()} distributions`}
           </div>
         </div>
+        {/* View-mode toggle. Grails mode reads pack_grail_metrics_mv via
+            /api/packs/grails and ignores the standard-view filters. */}
+        <div className="flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950 p-0.5">
+          <button
+            onClick={() => setViewMode('standard')}
+            className={'rounded-md px-3 py-1 text-xs font-semibold uppercase tracking-wide transition ' + (viewMode === 'standard' ? 'text-white' : 'text-zinc-400 hover:text-white')}
+            style={viewMode === 'standard' ? { backgroundColor: accent } : undefined}
+          >
+            Standard
+          </button>
+          <button
+            onClick={() => setViewMode('grails')}
+            className={'rounded-md px-3 py-1 text-xs font-semibold uppercase tracking-wide transition ' + (viewMode === 'grails' ? 'text-white' : 'text-zinc-400 hover:text-white')}
+            style={viewMode === 'grails' ? { backgroundColor: accent } : undefined}
+            title="Chase-led card grid powered by pack_grail_metrics_mv"
+          >
+            Grails
+          </button>
+        </div>
       </div>
 
+      {viewMode === 'grails' && (
+        <GrailsView collection={collection} accent={accent} />
+      )}
+
+      {viewMode === 'standard' && (
+      <>
       {/* Filters strip */}
       <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-950 p-3 space-y-3">
         {/* Row 1: search + sort */}
@@ -362,6 +394,8 @@ export default function PackPageClient({ collection, tiers, title, accent = '#E0
         defaultDir={tableSortDefault.dir}
         emptyMessage={loading ? 'Loading packs…' : 'No packs match your filters.'}
       />
+      </>
+      )}
     </div>
   )
 }
