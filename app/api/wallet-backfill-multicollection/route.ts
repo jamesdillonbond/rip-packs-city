@@ -40,16 +40,20 @@ export const dynamic = "force-dynamic"
 export const maxDuration = 800
 
 const SYNC_MAX_DURATION_MS = 270_000
-// CAP=2 in tandem with transient-retry-on-5xx-or-network-error inside
-// each round-trip. The 00:00 UTC HH:00 fan-out from seed-wallet-refresh
-// produces ~240 simultaneous orchestrators each spawning 2 sync children
-// (~480 concurrent child lambdas), which overshoots per-function lambda
-// concurrency and produces HTTP 503 within seconds of dispatch — NOT
-// a child-code failure (child success rate is 100% for the children
-// that get through). Treating those 503s as transient and re-issuing
-// after a short backoff converts the failure into a retry rather than
-// a permanent dispatch gap.
-const SYNC_ROUND_TRIP_CAP = 2
+// Per-collection round-trip cap. Default=2. nfl_all_day is consistently
+// the worst offender in pipeline_runs (2026-05-17 audit: 923 runs in
+// last 24h, dispatch gaps overwhelmingly on nfl_all_day with HTTP 500
+// from child or AbortSignal timeout). Extended to 4 so 5xx transient
+// failures during HH:00 fan-out have more headroom to recover before
+// being recorded as a hard dispatch_error.
+const SYNC_ROUND_TRIP_CAP_DEFAULT = 2
+const SYNC_ROUND_TRIP_CAP_BY_COLLECTION: Record<string, number> = {
+  nfl_all_day: 4,
+}
+const SYNC_ROUND_TRIP_CAP_MAX = 4
+function capFor(slug: string): number {
+  return SYNC_ROUND_TRIP_CAP_BY_COLLECTION[slug] ?? SYNC_ROUND_TRIP_CAP_DEFAULT
+}
 
 interface SyncTarget {
   slug: string
@@ -87,6 +91,9 @@ interface SyncResult {
   last_checkpoint: string | null
   last_status: number | null
   errors: string[]
+  transient_retries: number
+  recovered_after_retry: boolean
+  round_trip_cap: number
 }
 
 // Round 12 Item 1: retry+backoff wrapper for log_pipeline_run.
@@ -185,6 +192,7 @@ async function syncPoll(
   skipCached: boolean,
   ingestToken: string,
 ): Promise<SyncResult> {
+  const cap = capFor(target.slug)
   const result: SyncResult = {
     collection: target.slug,
     ok: false,
@@ -194,10 +202,14 @@ async function syncPoll(
     last_checkpoint: null,
     last_status: null,
     errors: [],
+    transient_retries: 0,
+    recovered_after_retry: false,
+    round_trip_cap: cap,
   }
   let checkpoint: string | null = null
+  let priorRtWasTransient = false
 
-  for (let rt = 0; rt < SYNC_ROUND_TRIP_CAP; rt++) {
+  for (let rt = 0; rt < cap; rt++) {
     result.round_trips = rt + 1
     const qs = new URLSearchParams({
       sync: "true",
@@ -255,7 +267,16 @@ async function syncPoll(
     }
 
     if (isTransient) {
-      const backoffMs = 1500 * (rt + 1)
+      result.transient_retries++
+      priorRtWasTransient = true
+      // 3000ms × 2^rt: 3s, 6s, 12s, 24s. Bigger headroom than the
+      // pre-2026-05-17 1500ms × (rt+1) (3s, 4.5s) — fewer retries get
+      // burned to a still-saturated lambda pool. Capped by maxDuration
+      // (800s) and the per-round-trip 270s+30s budget.
+      const backoffMs = 3000 * Math.pow(2, rt)
+      console.warn(
+        `[wallet-backfill-multicollection] sync transient wallet=${wallet} collection=${target.slug} rt=${rt} cap=${cap} backoff_ms=${backoffMs}`
+      )
       await new Promise<void>(resolve => setTimeout(resolve, backoffMs))
       continue
     }
@@ -267,6 +288,12 @@ async function syncPoll(
       result.ok = body.ok !== false
       result.final_complete = true
       result.last_checkpoint = null
+      if (priorRtWasTransient) {
+        result.recovered_after_retry = true
+        console.warn(
+          `[wallet-backfill-multicollection] sync recovered_after_retry wallet=${wallet} collection=${target.slug} transient_retries=${result.transient_retries} final_rt=${result.round_trips}`
+        )
+      }
       return result
     }
 
@@ -281,7 +308,7 @@ async function syncPoll(
   }
 
   if (!result.final_complete && result.errors.length === 0) {
-    result.errors.push(`hit SYNC_ROUND_TRIP_CAP=${SYNC_ROUND_TRIP_CAP} without complete=true`)
+    result.errors.push(`hit SYNC_ROUND_TRIP_CAP=${cap} (${target.slug}) without complete=true`)
   }
   return result
 }
@@ -355,7 +382,9 @@ export async function POST(req: NextRequest) {
           dispatched_per_collection: initialDispatched,
           fire_and_forget_collections: FIRE_AND_FORGET_COLLECTIONS.map(t => t.slug),
           sync_collections_pending: SYNC_COLLECTIONS.map(t => t.slug),
-          sync_round_trip_cap: SYNC_ROUND_TRIP_CAP,
+          sync_round_trip_cap_default: SYNC_ROUND_TRIP_CAP_DEFAULT,
+          sync_round_trip_cap_max: SYNC_ROUND_TRIP_CAP_MAX,
+          sync_round_trip_cap_by_collection: SYNC_ROUND_TRIP_CAP_BY_COLLECTION,
         },
       },
       `dispatch wallet=${wallet}`,
@@ -419,8 +448,13 @@ export async function POST(req: NextRequest) {
       round_trips: r.round_trips,
       ok: r.ok,
       final_complete: r.final_complete,
+      transient_retries: r.transient_retries,
+      recovered_after_retry: r.recovered_after_retry,
+      round_trip_cap: r.round_trip_cap,
     }))
     const syncCompletedCollections = syncResults.filter(r => r.final_complete).map(r => r.collection)
+    const recoveredAfterRetryCount = syncResults.filter(r => r.recovered_after_retry).length
+    const transientRetriesTotal = syncResults.reduce((a, r) => a + r.transient_retries, 0)
 
     // ---- COMPLETE telemetry row ----
     // Distinct pipeline name so dispatch/complete pair cleanly at query time.
@@ -447,6 +481,8 @@ export async function POST(req: NextRequest) {
           total_ms: totalMs,
           sync_round_trips_actual: syncRoundTripsActual,
           sync_completed_collections: syncCompletedCollections,
+          recovered_after_retry: recoveredAfterRetryCount,
+          transient_retries_total: transientRetriesTotal,
         },
       },
       `complete wallet=${wallet}`,
