@@ -1,0 +1,21 @@
+name = "topshot-moments-hydrator"
+main = "index.ts"
+compatibility_date = "2026-05-16"
+compatibility_flags = ["nodejs_compat"]
+
+# workers_dev = true is REQUIRED. Omitting it means the *.workers.dev
+# subdomain is unrouted at the Cloudflare edge and every request 404s
+# silently with no log entry. Lesson re-learned from pinnacle-events-proxy.
+workers_dev = true
+
+# Secrets (write-only after creation):
+#   wrangler secret put INGEST_SECRET_TOKEN        --name topshot-moments-hydrator
+#   wrangler secret put SUPABASE_URL                --name topshot-moments-hydrator
+#   wrangler secret put SUPABASE_SERVICE_ROLE_KEY   --name topshot-moments-hydrator
+#   wrangler secret put TS_PROXY_URL                --name topshot-moments-hydrator
+#   wrangler secret put TS_PROXY_SECRET             --name topshot-moments-hydrator
+#
+# TS_PROXY_URL should point at the topshot-proxy worker /topshot route:
+#   https://topshot-proxy.tdillonbond.workers.dev/topshot
+# TS_PROXY_SECRET must match the topshot-proxy worker's PROXY_SECRET
+# (same TS_PROXY_SECRET rotation surface — see CLAUDE.md "Worker auth surfaces").
