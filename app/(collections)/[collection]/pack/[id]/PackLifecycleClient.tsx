@@ -9,6 +9,7 @@
 // (ownership chain) from the "after rip" half (pulls grid).
 
 import { useEffect, useState } from "react"
+import type { ReactNode } from "react"
 import Link from "next/link"
 import type {
   Distribution,
@@ -539,7 +540,13 @@ function PullCard({ pull, collection }: { pull: PackPull; collection: string }) 
             muted
             loop
             playsInline
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+            }}
           />
         ) : pull.thumbnail_url ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -549,13 +556,19 @@ function PullCard({ pull, collection }: { pull: PackPull; collection: string }) 
             loading="lazy"
             decoding="async"
             sizes="(max-width: 768px) 50vw, 220px"
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+            }}
           />
         ) : (
           <div
             style={{
-              width: "100%",
-              height: "100%",
+              position: "absolute",
+              inset: 0,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -594,15 +607,17 @@ function PullCard({ pull, collection }: { pull: PackPull; collection: string }) 
               position: "absolute",
               top: 6,
               left: 6,
-              padding: "2px 6px",
+              padding: "1px 5px",
               background: `var(--tier-${tierKey}-bg)`,
               border: `1px solid var(--tier-${tierKey}-border)`,
               color: `var(--tier-${tierKey})`,
               fontFamily: "var(--font-display)",
-              fontSize: 10,
+              fontSize: 9,
               textTransform: "uppercase",
-              letterSpacing: "0.08em",
+              letterSpacing: "0.1em",
               borderRadius: "var(--radius-sm)",
+              opacity: 0.85,
+              pointerEvents: "none",
             }}
           >
             {pull.tier}
@@ -821,7 +836,9 @@ export function HeroDelta({
   deltaDirection,
 }: {
   headline: string
-  subhead?: string | null
+  /** Subhead can be a plain string ("NOT YET BOUGHT") or mixed-font JSX such
+   *  as `<>PAID <span className="rpc-hero-sub-amt">$10</span></>`. */
+  subhead?: ReactNode | null
   delta: string | null
   deltaDirection: "up" | "down" | "flat" | null
 }) {
@@ -836,42 +853,13 @@ export function HeroDelta({
   // basis), fall back to primary text so the headline stays legible.
   const headlineColor = deltaDirection ? color : "var(--rpc-text-primary)"
   return (
-    <div style={{ textAlign: "right" }}>
-      <div
-        style={{
-          fontFamily: "var(--font-display)",
-          fontSize: 44,
-          textTransform: "uppercase",
-          letterSpacing: "0.02em",
-          color: headlineColor,
-          lineHeight: 1,
-        }}
-      >
+    <div className="rpc-hero-delta">
+      <div className="rpc-hero-pulled" style={{ color: headlineColor }}>
         {headline}
       </div>
-      {subhead && (
-        <div
-          style={{
-            marginTop: 6,
-            fontFamily: "var(--font-display)",
-            fontSize: 14,
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
-            color: "var(--rpc-text-muted)",
-          }}
-        >
-          {subhead}
-        </div>
-      )}
+      {subhead && <div className="rpc-hero-sub">{subhead}</div>}
       {delta && (
-        <div
-          style={{
-            marginTop: 6,
-            fontFamily: "var(--font-mono)",
-            fontSize: 14,
-            color,
-          }}
-        >
+        <div className="rpc-hero-delta-line" style={{ color }}>
           {delta}
         </div>
       )}
@@ -944,58 +932,72 @@ export function StatusBadge({ status }: { status: PackStatus }) {
 // PackIdentityHero — pack image + title + tier + metadata + on-chain id
 // ─────────────────────────────────────────────────────────────────────────
 //
-// Three rendering modes driven by distribution.source:
+// Two rendering modes:
 //   - drop_pool         → full identity: image, tier, drop date, retail, slots
-//   - purchase_metadata → reward-pack mode: title only + placeholder image
-//   - null              → bare fallback: "Pack #{id}" as the title
+//   - purchase_metadata → reward-pack mode: title + "Reward pack" tag, no image
+//
+// When `distribution` is null the parent (page.tsx) skips this hero entirely
+// and renders a minimal title-only block — see PackIdentityMinimal.
 //
 // StatusBadge sits next to the title so the user sees "what is this pack" and
 // "what state is it in" together at the top of the page.
 
-function MonthYearPill({ value }: { value: string }) {
-  return (
-    <span
-      style={{
-        fontFamily: "var(--font-display)",
-        fontSize: 11,
-        textTransform: "uppercase",
-        letterSpacing: "0.1em",
-        color: "var(--rpc-text-muted)",
-      }}
-    >
-      {value}
-    </span>
-  )
-}
-
 function PackImagePlaceholder({ label }: { label: string }) {
   return (
     <div
+      aria-hidden
       style={{
-        width: "100%",
-        height: "100%",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        gap: 6,
+        gap: 4,
         color: "var(--rpc-text-ghost)",
         background:
           "repeating-linear-gradient(135deg, var(--rpc-surface) 0 10px, var(--rpc-surface-raised) 10px 20px)",
       }}
     >
-      <span style={{ fontFamily: "var(--font-display)", fontSize: 56, lineHeight: 1 }}>?</span>
+      <span style={{ fontFamily: "var(--font-display)", fontSize: 36, lineHeight: 1 }}>?</span>
       <span
         style={{
           fontFamily: "var(--font-display)",
-          fontSize: 10,
+          fontSize: 9,
           textTransform: "uppercase",
           letterSpacing: "0.12em",
+          padding: "0 4px",
+          textAlign: "center",
         }}
       >
         {label}
       </span>
     </div>
+  )
+}
+
+/** Renders the pack image and falls back to the placeholder card if the CDN
+ *  URL 404s or otherwise fails to load. Keeps the parent container the same
+ *  size in both states so layout doesn't shift. */
+function PackHeroImage({
+  src,
+  alt,
+  fallbackLabel,
+}: {
+  src: string
+  alt: string
+  fallbackLabel: string
+}) {
+  const [errored, setErrored] = useState(false)
+  if (errored) return <PackImagePlaceholder label={fallbackLabel} />
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      loading="eager"
+      decoding="async"
+      sizes="(max-width: 640px) 96px, 200px"
+      onError={() => setErrored(true)}
+    />
   )
 }
 
@@ -1006,205 +1008,156 @@ export function PackIdentityHero({
   status,
   firstSeenAt,
 }: {
-  distribution: Distribution | null
+  distribution: Distribution
   packNftId: string
   packName: string | null
   status: PackStatus
   firstSeenAt: string | null
 }) {
-  const isFullDist = distribution?.source === "drop_pool"
-  const isRewardPack = distribution?.source === "purchase_metadata"
-  const title = distribution?.title ?? packName ?? `Pack #${packNftId}`
-  const tier = distribution?.tier ?? null
+  const isFullDist = distribution.source === "drop_pool"
+  const isRewardPack = distribution.source === "purchase_metadata"
+  const title = distribution.title ?? packName ?? `Pack #${packNftId}`
+  const tier = distribution.tier ?? null
   const tierKey = tierTokenKey(tier)
-  const imgUrl = isFullDist ? distribution?.image_url ?? null : null
-  const dropDateFmt = formatMonthYear(distribution?.drop_date)
+  const imgUrl = isFullDist ? distribution.image_url ?? null : null
+  const dropDateFmt = formatMonthYear(distribution.drop_date)
   const retailFmt =
-    distribution?.retail_price_usd !== null && distribution?.retail_price_usd !== undefined
+    distribution.retail_price_usd !== null && distribution.retail_price_usd !== undefined
       ? `${fmtUsd(distribution.retail_price_usd)} retail`
       : null
   const slotsFmt =
-    distribution?.pack_slots !== null && distribution?.pack_slots !== undefined
+    distribution.pack_slots !== null && distribution.pack_slots !== undefined
       ? `${distribution.pack_slots} moments per pack`
       : null
 
   return (
-    <div
-      style={{
-        display: "flex",
-        gap: "var(--space-lg)",
-        alignItems: "flex-start",
-        flexWrap: "wrap",
-      }}
-    >
-      {/* image / placeholder */}
-      <div
-        style={{
-          flexShrink: 0,
-          width: 200,
-          maxWidth: "32vw",
-          aspectRatio: "5 / 7",
-          background: "var(--rpc-surface-raised)",
-          border: "1px solid var(--rpc-border)",
-          borderRadius: "var(--radius-md)",
-          boxShadow: "0 8px 24px rgba(0, 0, 0, 0.35)",
-          overflow: "hidden",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
+    <div className="rpc-pack-id">
+      <div className="rpc-pack-id-image">
         {imgUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <PackHeroImage
             src={imgUrl}
             alt={title}
-            loading="eager"
-            decoding="async"
-            sizes="(max-width: 768px) 32vw, 200px"
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            fallbackLabel={isRewardPack ? "Reward pack" : "Image unavailable"}
           />
         ) : (
           <PackImagePlaceholder label={isRewardPack ? "Reward pack" : "Image unavailable"} />
         )}
       </div>
 
-      {/* text column */}
-      <div style={{ flex: "1 1 320px", minWidth: 0 }}>
-        <div
-          style={{
-            display: "flex",
-            gap: "var(--space-md)",
-            alignItems: "center",
-            flexWrap: "wrap",
-            marginBottom: "var(--space-sm)",
-          }}
-        >
-          <h1
-            style={{
-              margin: 0,
-              fontFamily: "var(--font-display)",
-              fontSize: 36,
-              color: "var(--rpc-text-primary)",
-              textTransform: "uppercase",
-              letterSpacing: "0.02em",
-              lineHeight: 1.05,
-            }}
-          >
-            {title}
-          </h1>
+      <div className="rpc-pack-id-text">
+        <div className="rpc-pack-id-title-row">
+          <h1 className="rpc-pack-id-title">{title}</h1>
           <StatusBadge status={status} />
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            gap: "var(--space-sm)",
-            alignItems: "center",
-            flexWrap: "wrap",
-            marginBottom: "var(--space-md)",
-          }}
-        >
-          {tier && (
-            <span
-              style={{
-                display: "inline-block",
-                padding: "3px 10px",
-                background: `var(--tier-${tierKey}-bg)`,
-                border: `1px solid var(--tier-${tierKey}-border)`,
-                color: `var(--tier-${tierKey})`,
-                fontFamily: "var(--font-display)",
-                fontSize: 11,
-                textTransform: "uppercase",
-                letterSpacing: "0.1em",
-                borderRadius: "var(--radius-sm)",
-              }}
-            >
-              {tier}
-            </span>
-          )}
-          {isRewardPack && (
-            <span
-              style={{
-                display: "inline-block",
-                padding: "3px 10px",
-                background: "transparent",
-                border: "1px dashed var(--rpc-border)",
-                color: "var(--rpc-text-muted)",
-                fontFamily: "var(--font-display)",
-                fontSize: 11,
-                textTransform: "uppercase",
-                letterSpacing: "0.1em",
-                borderRadius: "var(--radius-sm)",
-              }}
-            >
-              Reward pack
-            </span>
-          )}
-        </div>
-
-        {(dropDateFmt || retailFmt || slotsFmt) && (
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: "var(--space-md)",
-              alignItems: "center",
-              marginBottom: "var(--space-md)",
-            }}
-          >
-            {dropDateFmt && <MonthYearPill value={dropDateFmt} />}
-            {retailFmt && (
+        {(tier || isRewardPack) && (
+          <div className="rpc-pack-id-tagrow">
+            {tier && (
               <span
                 style={{
+                  display: "inline-block",
+                  padding: "3px 10px",
+                  background: `var(--tier-${tierKey}-bg)`,
+                  border: `1px solid var(--tier-${tierKey}-border)`,
+                  color: `var(--tier-${tierKey})`,
                   fontFamily: "var(--font-display)",
                   fontSize: 11,
                   textTransform: "uppercase",
                   letterSpacing: "0.1em",
-                  color: "var(--rpc-text-muted)",
+                  borderRadius: "var(--radius-sm)",
                 }}
               >
-                {retailFmt}
+                {tier}
               </span>
             )}
-            {slotsFmt && (
+            {isRewardPack && (
               <span
                 style={{
+                  display: "inline-block",
+                  padding: "3px 10px",
+                  background: "transparent",
+                  border: "1px dashed var(--rpc-border)",
+                  color: "var(--rpc-text-muted)",
                   fontFamily: "var(--font-display)",
                   fontSize: 11,
                   textTransform: "uppercase",
                   letterSpacing: "0.1em",
-                  color: "var(--rpc-text-muted)",
+                  borderRadius: "var(--radius-sm)",
                 }}
               >
-                {slotsFmt}
+                Reward pack
               </span>
             )}
           </div>
         )}
 
-        {/* on-chain id — secondary, still useful for sharing/debugging */}
-        <div
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 0,
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            color: "var(--rpc-text-muted)",
-          }}
-        >
-          <span>#{packNftId}</span>
-          <CopyButton value={packNftId} label="pack id" />
-          {firstSeenAt && (
-            <>
-              <span aria-hidden style={{ color: "var(--rpc-text-ghost)", margin: "0 8px" }}>·</span>
-              <span title={firstSeenAt}>first seen {relativeTime(firstSeenAt)}</span>
-            </>
-          )}
-        </div>
+        {(dropDateFmt || retailFmt || slotsFmt) && (
+          <div className="rpc-pack-id-meta-row">
+            {dropDateFmt && <span className="rpc-pack-id-meta-pill">{dropDateFmt}</span>}
+            {retailFmt && <span className="rpc-pack-id-meta-pill">{retailFmt}</span>}
+            {slotsFmt && <span className="rpc-pack-id-meta-pill">{slotsFmt}</span>}
+          </div>
+        )}
+
+        <PackOnChainIdRow packNftId={packNftId} firstSeenAt={firstSeenAt} />
       </div>
+    </div>
+  )
+}
+
+/** Minimal identity used when `distribution` is null — no image, no tier,
+ *  just the title + status badge + on-chain id. Honest about the fact that
+ *  we don't know what this pack is. */
+export function PackIdentityMinimal({
+  packName,
+  packNftId,
+  status,
+  firstSeenAt,
+}: {
+  packName: string | null
+  packNftId: string
+  status: PackStatus
+  firstSeenAt: string | null
+}) {
+  const title = packName ?? `Pack #${packNftId}`
+  return (
+    <div className="rpc-pack-id-min">
+      <div className="rpc-pack-id-title-row">
+        <h1 className="rpc-pack-id-title">{title}</h1>
+        <StatusBadge status={status} />
+      </div>
+      <PackOnChainIdRow packNftId={packNftId} firstSeenAt={firstSeenAt} />
+    </div>
+  )
+}
+
+function PackOnChainIdRow({
+  packNftId,
+  firstSeenAt,
+}: {
+  packNftId: string
+  firstSeenAt: string | null
+}) {
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: 0,
+        fontFamily: "var(--font-mono)",
+        fontSize: 11,
+        color: "var(--rpc-text-muted)",
+      }}
+    >
+      <span>#{packNftId}</span>
+      <CopyButton value={packNftId} label="pack id" />
+      {firstSeenAt && (
+        <>
+          <span aria-hidden style={{ color: "var(--rpc-text-ghost)", margin: "0 8px" }}>·</span>
+          <span title={firstSeenAt}>first seen {relativeTime(firstSeenAt)}</span>
+        </>
+      )}
     </div>
   )
 }

@@ -28,6 +28,7 @@
 // Currently the metadata uses the generic site OG image.
 
 import type { Metadata } from "next"
+import type { ReactNode } from "react"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -36,6 +37,7 @@ import {
   HeroDelta,
   OwnershipTimeline,
   PackIdentityHero,
+  PackIdentityMinimal,
   PullsGrid,
   RipPerforation,
   StatsFooter,
@@ -211,6 +213,7 @@ function PackLifecycleView({
   const grossUsd = num(lifecycle.stats.gross_pull_value_usd)
   const totalBasis = num(lifecycle.stats.total_cost_basis)
   const basisCurrency = lifecycle.stats.currency
+  const retailUsd = num(lifecycle.distribution?.retail_price_usd ?? null)
 
   // ROI = ((gross - cost) / cost) * 100. DUC is 1:1 USD so we can compare
   // total_cost_basis directly to gross_pull_value_usd without conversion.
@@ -221,25 +224,40 @@ function PackLifecycleView({
       ? ((grossUsd - totalBasis) / totalBasis) * 100
       : null
 
-  // Last ownership-chain row backs the "sealed" headline (the RPC no longer
-  // emits a dedicated last_cost_basis field — read from the chain instead).
+  // Last ownership-chain row backs the "sealed-with-history" headline (the
+  // RPC no longer emits a dedicated last_cost_basis field).
   const lastChainRow =
     lifecycle.ownership_chain.length > 0
       ? lifecycle.ownership_chain[lifecycle.ownership_chain.length - 1]
       : null
 
-  // Hero copy
-  //   ripped: two lines via HeroDelta — "PULLED $X" / "FROM A {basis} {currency} PACK"
-  //   sealed w/ history: single-line "Last bought for {price} {currency}"
-  //   sealed w/o history: "First seen sealed"
+  // Hero copy — four cases.
+  //
+  //   ripped:           "PULLED $X" headline (sign-colored) +
+  //                     "PAID $Y" subhead (display font + mono amount) +
+  //                     "+/-$Z vs cost" delta line (red/green).
+  //   sealed + chain:   "Last bought for $Y" (no subhead, no delta).
+  //   sealed + retail:  "RETAIL $Y" headline + "NOT YET BOUGHT" subhead.
+  //   sealed + nothing: "First seen sealed".
+  //
+  // The PAID vs RETAIL distinction is deliberate — RETAIL is what the pack
+  // cost at drop time and is shown for context in the identity hero; PAID is
+  // what *this user* paid on the secondary market and anchors the ROI math.
   let headline: string
-  let subhead: string | null = null
+  let subhead: ReactNode | null = null
   let delta: string | null = null
   let deltaDir: "up" | "down" | "flat" | null = null
   if (lifecycle.status === "ripped") {
     headline = `PULLED ${fmtUsd(grossUsd)}`
     if (totalBasis !== null) {
-      subhead = `FROM A ${fmtPriceWithUsd(totalBasis, basisCurrency)} PACK`
+      subhead = (
+        <>
+          PAID{" "}
+          <span className="rpc-hero-sub-amt">
+            {fmtPriceWithUsd(totalBasis, basisCurrency)}
+          </span>
+        </>
+      )
     }
     if (grossUsd !== null && totalBasis !== null) {
       const d = grossUsd - totalBasis
@@ -248,12 +266,161 @@ function PackLifecycleView({
     }
   } else if (lastChainRow) {
     headline = `Last bought for ${fmtPriceWithUsd(num(lastChainRow.sale_price), lastChainRow.sale_currency)}`
+  } else if (retailUsd !== null) {
+    headline = `RETAIL ${fmtUsd(retailUsd)}`
+    subhead = "NOT YET BOUGHT"
   } else {
     headline = "First seen sealed"
   }
 
   return (
-    <article>
+    <article style={{ display: "block" }}>
+      {/* Page-scoped responsive CSS. React 19 hoists style tags with
+          `precedence` into <head> so this works in SSR. The `href` acts as
+          a dedup key — duplicate renders share one stylesheet. */}
+      <style href="rpc-pack-lifecycle" precedence="default">{`
+        .rpc-pack-header {
+          display: flex;
+          flex-direction: row;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: var(--space-xl);
+          padding: var(--space-xl) 0;
+          border-bottom: 1px solid var(--rpc-border);
+          margin-bottom: var(--space-2xl);
+          flex-wrap: nowrap;
+        }
+        .rpc-pack-header-id { flex: 1 1 480px; min-width: 0; }
+        .rpc-pack-header-delta { flex: 0 1 auto; align-self: flex-end; }
+
+        @media (max-width: 640px) {
+          .rpc-pack-header {
+            flex-direction: column-reverse;
+            gap: var(--space-lg);
+            padding: var(--space-lg) 0;
+            margin-bottom: var(--space-lg);
+          }
+          .rpc-pack-header-id,
+          .rpc-pack-header-delta {
+            flex: 0 0 auto;
+            align-self: stretch;
+            width: 100%;
+          }
+        }
+
+        .rpc-pack-id {
+          display: flex;
+          gap: var(--space-lg);
+          align-items: flex-start;
+        }
+        @media (max-width: 640px) {
+          .rpc-pack-id { gap: var(--space-md); }
+        }
+
+        .rpc-pack-id-image {
+          flex-shrink: 0;
+          position: relative;
+          width: 200px;
+          aspect-ratio: 5 / 7;
+          background: var(--rpc-surface-raised);
+          border: 1px solid var(--rpc-border);
+          border-radius: var(--radius-md);
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+          overflow: hidden;
+        }
+        .rpc-pack-id-image > img,
+        .rpc-pack-id-image > div {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+        }
+        .rpc-pack-id-image > img { object-fit: cover; }
+        @media (max-width: 640px) {
+          .rpc-pack-id-image { width: 96px; }
+        }
+
+        .rpc-pack-id-text { flex: 1 1 0; min-width: 0; }
+
+        .rpc-pack-id-title-row {
+          display: flex;
+          gap: var(--space-md);
+          align-items: center;
+          flex-wrap: wrap;
+          margin-bottom: var(--space-sm);
+        }
+        .rpc-pack-id-title {
+          margin: 0;
+          font-family: var(--font-display);
+          font-size: 36px;
+          color: var(--rpc-text-primary);
+          text-transform: uppercase;
+          letter-spacing: 0.02em;
+          line-height: 1.05;
+          overflow-wrap: break-word;
+          word-break: break-word;
+        }
+        @media (max-width: 640px) {
+          .rpc-pack-id-title { font-size: 22px; line-height: 1.1; }
+        }
+
+        .rpc-pack-id-tagrow {
+          display: flex;
+          gap: var(--space-sm);
+          align-items: center;
+          flex-wrap: wrap;
+          margin-bottom: var(--space-md);
+        }
+        .rpc-pack-id-meta-row {
+          display: flex;
+          gap: var(--space-md);
+          align-items: center;
+          flex-wrap: wrap;
+          margin-bottom: var(--space-md);
+        }
+        .rpc-pack-id-meta-pill {
+          font-family: var(--font-display);
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: 0.1em;
+          color: var(--rpc-text-muted);
+        }
+
+        .rpc-hero-delta { text-align: right; }
+        @media (max-width: 640px) {
+          .rpc-hero-delta { text-align: left; }
+        }
+        .rpc-hero-pulled {
+          font-family: var(--font-display);
+          font-size: 44px;
+          text-transform: uppercase;
+          letter-spacing: 0.02em;
+          line-height: 1;
+        }
+        @media (max-width: 640px) {
+          .rpc-hero-pulled { font-size: 32px; }
+        }
+        .rpc-hero-sub {
+          margin-top: 6px;
+          font-family: var(--font-display);
+          font-size: 14px;
+          text-transform: uppercase;
+          letter-spacing: 0.1em;
+          color: var(--rpc-text-muted);
+        }
+        .rpc-hero-sub-amt {
+          font-family: var(--font-mono);
+          color: var(--rpc-text-secondary);
+          text-transform: none;
+          letter-spacing: 0;
+        }
+        .rpc-hero-delta-line {
+          margin-top: 6px;
+          font-family: var(--font-mono);
+          font-size: 14px;
+        }
+      `}</style>
+
       {/* Breadcrumb */}
       <nav
         aria-label="Breadcrumb"
@@ -282,30 +449,31 @@ function PackLifecycleView({
         </span>
       </nav>
 
-      {/* Hero — pack identity (image + title + tier + metadata + status) on
-          the left; PULLED/FROM/delta block on the right when ripped. */}
-      <header
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: "var(--space-xl)",
-          padding: "var(--space-xl) 0",
-          borderBottom: "1px solid var(--rpc-border)",
-          marginBottom: "var(--space-2xl)",
-        }}
-      >
-        <div style={{ flex: "1 1 480px", minWidth: 0 }}>
-          <PackIdentityHero
-            distribution={lifecycle.distribution}
-            packNftId={lifecycle.pack_nft_id}
-            packName={lifecycle.pack_name}
-            status={lifecycle.status}
-            firstSeenAt={lifecycle.first_seen_at}
-          />
+      {/* Hero — pack identity on the left, PULLED/PAID/delta block on the
+          right (desktop). On mobile the order flips: PULLED/PAID/delta first
+          so the headline number is above the fold for screenshot-sharing,
+          then identity below. When `distribution` is null we render a
+          minimal title-only identity instead of a "?" placeholder card. */}
+      <header className="rpc-pack-header">
+        <div className="rpc-pack-header-id">
+          {lifecycle.distribution ? (
+            <PackIdentityHero
+              distribution={lifecycle.distribution}
+              packNftId={lifecycle.pack_nft_id}
+              packName={lifecycle.pack_name}
+              status={lifecycle.status}
+              firstSeenAt={lifecycle.first_seen_at}
+            />
+          ) : (
+            <PackIdentityMinimal
+              packName={lifecycle.pack_name}
+              packNftId={lifecycle.pack_nft_id}
+              status={lifecycle.status}
+              firstSeenAt={lifecycle.first_seen_at}
+            />
+          )}
         </div>
-        <div style={{ flex: "0 1 auto", alignSelf: "flex-end" }}>
+        <div className="rpc-pack-header-delta">
           <HeroDelta
             headline={headline}
             subhead={subhead}
