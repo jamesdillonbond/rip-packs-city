@@ -742,6 +742,55 @@ async function processCursor(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// pipeline_runs telemetry (2026-05-17)
+//
+// Both modes (live / backfill) write exactly one row to public.pipeline_runs
+// per invocation, fire-and-forget at the end of runIngest. The watchlist
+// keys on pipeline=`pack-events-ingest` (live) and
+// pipeline=`pack-events-ingest-backfill`. cursor_before / cursor_after carry
+// the purchases cursor; extra.opens_* carries the parallel opens cursor.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function logPipelineRun(
+  sb: SupabaseClient,
+  args: {
+    pipeline: string;
+    startedAtIso: string;
+    rowsFound: number;
+    rowsWritten: number;
+    rowsSkipped: number;
+    ok: boolean;
+    error: string | null;
+    cursorBefore: string | null;
+    cursorAfter: string | null;
+    extra: Record<string, unknown>;
+  },
+): Promise<void> {
+  try {
+    const { error } = await sb.rpc("log_pipeline_run", {
+      p_pipeline: args.pipeline,
+      p_started_at: args.startedAtIso,
+      p_rows_found: args.rowsFound,
+      p_rows_written: args.rowsWritten,
+      p_rows_skipped: args.rowsSkipped,
+      p_ok: args.ok,
+      p_error: args.error,
+      p_collection_slug: "nba_top_shot",
+      p_cursor_before: args.cursorBefore,
+      p_cursor_after: args.cursorAfter,
+      p_extra: args.extra,
+    });
+    if (error) {
+      console.log(`[${args.pipeline}] log_pipeline_run err: ${error.message}`);
+    }
+  } catch (err) {
+    console.log(
+      `[${args.pipeline}] log_pipeline_run threw: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Shared request handler — picks cursor pair by mode, runs purchases then
 // opens, flushes batches, advances cursors, returns the same response shape
 // from POST / and POST /backfill.
@@ -754,6 +803,8 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
     });
   }
 
+  const pipeline = mode === "live" ? "pack-events-ingest" : "pack-events-ingest-backfill";
+  const startedAtIso = new Date(startedMs).toISOString();
   const purchasesCursorId = mode === "live" ? CURSOR_PURCHASES : CURSOR_PURCHASES_BACKFILL;
   const opensCursorId = mode === "live" ? CURSOR_OPENS : CURSOR_OPENS_BACKFILL;
 
@@ -785,6 +836,24 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.log(`[pack-events-ingest] cursor read fatal: ${msg}`);
+    await logPipelineRun(sb, {
+      pipeline,
+      startedAtIso,
+      rowsFound: 0,
+      rowsWritten: 0,
+      rowsSkipped: 0,
+      ok: false,
+      error: `cursor_read: ${msg}`,
+      cursorBefore: null,
+      cursorAfter: null,
+      extra: {
+        mode,
+        sealed_tip: cachedSealedTip,
+        purchases_cursor_id: purchasesCursorId,
+        opens_cursor_id: opensCursorId,
+        duration_ms: Date.now() - startedMs,
+      },
+    });
     return new Response(
       JSON.stringify({
         ok: false,
@@ -925,13 +994,37 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
     caught_up: isCaughtUp(opensActualCursor),
   };
 
+  const durationMs = Date.now() - startedMs;
+  await logPipelineRun(sb, {
+    pipeline,
+    startedAtIso,
+    rowsFound: purchasesEvents + ripsInserted,
+    rowsWritten: purchasesRows + momentsLinked,
+    rowsSkipped: 0,
+    ok: errors.length === 0,
+    error: errors.length > 0 ? errors.map((e) => `${e.cursor}: ${e.message}`).join(" | ").slice(0, 500) : null,
+    cursorBefore: String(purchasesInitial),
+    cursorAfter: String(purchasesActualCursor),
+    extra: {
+      mode,
+      sealed_tip: cachedSealedTip,
+      duration_ms: durationMs,
+      purchases: purchasesResult,
+      opens: opensResult,
+      purchases_cursor_id: purchasesCursorId,
+      opens_cursor_id: opensCursorId,
+      target_end_block: mode === "backfill" ? TARGET_END_BLOCK : null,
+      errors: errors.length > 0 ? errors.slice(0, 5) : undefined,
+    },
+  });
+
   return new Response(
     JSON.stringify({
       ok: errors.length === 0,
       purchases: purchasesResult,
       opens: opensResult,
       sealed_tip: cachedSealedTip,
-      duration_ms: Date.now() - startedMs,
+      duration_ms: durationMs,
       ...(errors.length > 0 ? { errors } : {}),
     }),
     { status: 200, headers: { "Content-Type": "application/json" } },
