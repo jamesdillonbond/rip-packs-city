@@ -11,8 +11,10 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import type {
+  Distribution,
   OwnershipEvent,
   PackPull,
+  PackStatus,
   RipEvent,
 } from "./types"
 
@@ -55,11 +57,21 @@ function relativeTime(iso: string | null | undefined): string {
   return `${Math.floor(diffSec / (365 * 86_400))}y ago`
 }
 
+/** Whole-dollar amounts drop the trailing ".00" so headlines read "$20" rather
+ *  than "$20.00". Sub-dollar amounts keep two decimals. */
 function fmtUsd(n: number | string | null | undefined): string {
   if (n === null || n === undefined || n === "") return "—"
   const v = typeof n === "number" ? n : Number(n)
   if (!Number.isFinite(v)) return "—"
-  return v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 })
+  if (v === Math.trunc(v)) {
+    return `$${v.toLocaleString("en-US")}`
+  }
+  return v.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
 }
 
 function fmtPrice(n: number | string | null | undefined, currency: string | null | undefined): string {
@@ -70,8 +82,10 @@ function fmtPrice(n: number | string | null | undefined, currency: string | null
   return currency ? `${formatted} ${currency}` : formatted
 }
 
-/** DUC is 1:1 USD-pegged. When the currency is DUC append an inline "($X)"
- *  so the value is legible without the reader having to translate. */
+/** DUC is 1:1 USD-pegged, so we render DUC amounts as plain USD and drop the
+ *  "DUC" suffix entirely — every observed Top Shot pack pays in DUC and the
+ *  parenthetical doubles up on the same number. Non-DUC currencies (FLOW,
+ *  USDC, etc.) keep their suffix so the unit isn't lost. */
 function fmtPriceWithUsd(
   n: number | string | null | undefined,
   currency: string | null | undefined,
@@ -79,11 +93,18 @@ function fmtPriceWithUsd(
   if (n === null || n === undefined || n === "") return "—"
   const v = typeof n === "number" ? n : Number(n)
   if (!Number.isFinite(v)) return "—"
-  const base = fmtPrice(v, currency)
   if (currency && currency.toUpperCase() === "DUC") {
-    return `${base} (${fmtUsd(v)})`
+    return fmtUsd(v)
   }
-  return base
+  return fmtPrice(v, currency)
+}
+
+/** "Dec 2022" style month-year for the distribution metadata strip. */
+function formatMonthYear(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (!Number.isFinite(d.getTime())) return null
+  return d.toLocaleDateString("en-US", { month: "short", year: "numeric" })
 }
 
 /** Rewrite a Top Shot CDN /editions/ thumbnail URL through the resize endpoint
@@ -854,6 +875,336 @@ export function HeroDelta({
           {delta}
         </div>
       )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// StatusBadge — sealed / ripped / unknown pill
+// ─────────────────────────────────────────────────────────────────────────
+
+export function StatusBadge({ status }: { status: PackStatus }) {
+  if (status === "ripped") {
+    return (
+      <span
+        style={{
+          fontFamily: "var(--font-display)",
+          textTransform: "uppercase",
+          letterSpacing: "0.14em",
+          fontSize: 12,
+          padding: "4px 10px",
+          background: "var(--rpc-red)",
+          color: "#fff",
+          borderRadius: "var(--radius-sm)",
+        }}
+      >
+        Ripped
+      </span>
+    )
+  }
+  if (status === "sealed") {
+    return (
+      <span
+        style={{
+          fontFamily: "var(--font-display)",
+          textTransform: "uppercase",
+          letterSpacing: "0.14em",
+          fontSize: 12,
+          padding: "4px 10px",
+          background: "transparent",
+          color: "var(--rpc-text-primary)",
+          border: "1px solid var(--rpc-text-primary)",
+          borderRadius: "var(--radius-sm)",
+        }}
+      >
+        Sealed
+      </span>
+    )
+  }
+  return (
+    <span
+      style={{
+        fontFamily: "var(--font-display)",
+        textTransform: "uppercase",
+        letterSpacing: "0.14em",
+        fontSize: 12,
+        padding: "4px 10px",
+        background: "transparent",
+        color: "var(--rpc-text-muted)",
+        border: "1px dashed var(--rpc-border)",
+        borderRadius: "var(--radius-sm)",
+      }}
+    >
+      Unknown
+    </span>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// PackIdentityHero — pack image + title + tier + metadata + on-chain id
+// ─────────────────────────────────────────────────────────────────────────
+//
+// Three rendering modes driven by distribution.source:
+//   - drop_pool         → full identity: image, tier, drop date, retail, slots
+//   - purchase_metadata → reward-pack mode: title only + placeholder image
+//   - null              → bare fallback: "Pack #{id}" as the title
+//
+// StatusBadge sits next to the title so the user sees "what is this pack" and
+// "what state is it in" together at the top of the page.
+
+function MonthYearPill({ value }: { value: string }) {
+  return (
+    <span
+      style={{
+        fontFamily: "var(--font-display)",
+        fontSize: 11,
+        textTransform: "uppercase",
+        letterSpacing: "0.1em",
+        color: "var(--rpc-text-muted)",
+      }}
+    >
+      {value}
+    </span>
+  )
+}
+
+function PackImagePlaceholder({ label }: { label: string }) {
+  return (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 6,
+        color: "var(--rpc-text-ghost)",
+        background:
+          "repeating-linear-gradient(135deg, var(--rpc-surface) 0 10px, var(--rpc-surface-raised) 10px 20px)",
+      }}
+    >
+      <span style={{ fontFamily: "var(--font-display)", fontSize: 56, lineHeight: 1 }}>?</span>
+      <span
+        style={{
+          fontFamily: "var(--font-display)",
+          fontSize: 10,
+          textTransform: "uppercase",
+          letterSpacing: "0.12em",
+        }}
+      >
+        {label}
+      </span>
+    </div>
+  )
+}
+
+export function PackIdentityHero({
+  distribution,
+  packNftId,
+  packName,
+  status,
+  firstSeenAt,
+}: {
+  distribution: Distribution | null
+  packNftId: string
+  packName: string | null
+  status: PackStatus
+  firstSeenAt: string | null
+}) {
+  const isFullDist = distribution?.source === "drop_pool"
+  const isRewardPack = distribution?.source === "purchase_metadata"
+  const title = distribution?.title ?? packName ?? `Pack #${packNftId}`
+  const tier = distribution?.tier ?? null
+  const tierKey = tierTokenKey(tier)
+  const imgUrl = isFullDist ? distribution?.image_url ?? null : null
+  const dropDateFmt = formatMonthYear(distribution?.drop_date)
+  const retailFmt =
+    distribution?.retail_price_usd !== null && distribution?.retail_price_usd !== undefined
+      ? `${fmtUsd(distribution.retail_price_usd)} retail`
+      : null
+  const slotsFmt =
+    distribution?.pack_slots !== null && distribution?.pack_slots !== undefined
+      ? `${distribution.pack_slots} moments per pack`
+      : null
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: "var(--space-lg)",
+        alignItems: "flex-start",
+        flexWrap: "wrap",
+      }}
+    >
+      {/* image / placeholder */}
+      <div
+        style={{
+          flexShrink: 0,
+          width: 200,
+          maxWidth: "32vw",
+          aspectRatio: "5 / 7",
+          background: "var(--rpc-surface-raised)",
+          border: "1px solid var(--rpc-border)",
+          borderRadius: "var(--radius-md)",
+          boxShadow: "0 8px 24px rgba(0, 0, 0, 0.35)",
+          overflow: "hidden",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {imgUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={imgUrl}
+            alt={title}
+            loading="eager"
+            decoding="async"
+            sizes="(max-width: 768px) 32vw, 200px"
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+        ) : (
+          <PackImagePlaceholder label={isRewardPack ? "Reward pack" : "Image unavailable"} />
+        )}
+      </div>
+
+      {/* text column */}
+      <div style={{ flex: "1 1 320px", minWidth: 0 }}>
+        <div
+          style={{
+            display: "flex",
+            gap: "var(--space-md)",
+            alignItems: "center",
+            flexWrap: "wrap",
+            marginBottom: "var(--space-sm)",
+          }}
+        >
+          <h1
+            style={{
+              margin: 0,
+              fontFamily: "var(--font-display)",
+              fontSize: 36,
+              color: "var(--rpc-text-primary)",
+              textTransform: "uppercase",
+              letterSpacing: "0.02em",
+              lineHeight: 1.05,
+            }}
+          >
+            {title}
+          </h1>
+          <StatusBadge status={status} />
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: "var(--space-sm)",
+            alignItems: "center",
+            flexWrap: "wrap",
+            marginBottom: "var(--space-md)",
+          }}
+        >
+          {tier && (
+            <span
+              style={{
+                display: "inline-block",
+                padding: "3px 10px",
+                background: `var(--tier-${tierKey}-bg)`,
+                border: `1px solid var(--tier-${tierKey}-border)`,
+                color: `var(--tier-${tierKey})`,
+                fontFamily: "var(--font-display)",
+                fontSize: 11,
+                textTransform: "uppercase",
+                letterSpacing: "0.1em",
+                borderRadius: "var(--radius-sm)",
+              }}
+            >
+              {tier}
+            </span>
+          )}
+          {isRewardPack && (
+            <span
+              style={{
+                display: "inline-block",
+                padding: "3px 10px",
+                background: "transparent",
+                border: "1px dashed var(--rpc-border)",
+                color: "var(--rpc-text-muted)",
+                fontFamily: "var(--font-display)",
+                fontSize: 11,
+                textTransform: "uppercase",
+                letterSpacing: "0.1em",
+                borderRadius: "var(--radius-sm)",
+              }}
+            >
+              Reward pack
+            </span>
+          )}
+        </div>
+
+        {(dropDateFmt || retailFmt || slotsFmt) && (
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "var(--space-md)",
+              alignItems: "center",
+              marginBottom: "var(--space-md)",
+            }}
+          >
+            {dropDateFmt && <MonthYearPill value={dropDateFmt} />}
+            {retailFmt && (
+              <span
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: 11,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.1em",
+                  color: "var(--rpc-text-muted)",
+                }}
+              >
+                {retailFmt}
+              </span>
+            )}
+            {slotsFmt && (
+              <span
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: 11,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.1em",
+                  color: "var(--rpc-text-muted)",
+                }}
+              >
+                {slotsFmt}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* on-chain id — secondary, still useful for sharing/debugging */}
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 0,
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            color: "var(--rpc-text-muted)",
+          }}
+        >
+          <span>#{packNftId}</span>
+          <CopyButton value={packNftId} label="pack id" />
+          {firstSeenAt && (
+            <>
+              <span aria-hidden style={{ color: "var(--rpc-text-ghost)", margin: "0 8px" }}>·</span>
+              <span title={firstSeenAt}>first seen {relativeTime(firstSeenAt)}</span>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

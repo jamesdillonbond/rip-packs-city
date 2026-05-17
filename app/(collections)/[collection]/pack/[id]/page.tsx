@@ -35,6 +35,7 @@ import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import {
   HeroDelta,
   OwnershipTimeline,
+  PackIdentityHero,
   PullsGrid,
   RipPerforation,
   StatsFooter,
@@ -58,9 +59,17 @@ function num(v: number | string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+/** Whole-dollar amounts drop the trailing ".00" so headlines read "$20"
+ *  rather than "$20.00". Mirrors the client-side helper. */
 function fmtUsd(n: number | null): string {
   if (n === null) return "—"
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 })
+  if (n === Math.trunc(n)) return `$${n.toLocaleString("en-US")}`
+  return n.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
 }
 
 function fmtPrice(n: number | null, currency: string | null | undefined): string {
@@ -69,15 +78,12 @@ function fmtPrice(n: number | null, currency: string | null | undefined): string
   return currency ? `${formatted} ${currency}` : formatted
 }
 
-/** DUC is a 1:1 USD-pegged stablecoin. When the cost-basis currency is DUC,
- *  render an inline "($X)" parenthetical so collectors don't have to translate. */
+/** DUC is 1:1 USD-pegged, so render DUC amounts as plain USD and drop the
+ *  "DUC" suffix entirely. Non-DUC currencies keep their suffix. */
 function fmtPriceWithUsd(n: number | null, currency: string | null | undefined): string {
   if (n === null) return "—"
-  const base = fmtPrice(n, currency)
-  if (currency && currency.toUpperCase() === "DUC") {
-    return `${base} (${fmtUsd(n)})`
-  }
-  return base
+  if (currency && currency.toUpperCase() === "DUC") return fmtUsd(n)
+  return fmtPrice(n, currency)
 }
 
 async function fetchLifecycle(packNftId: string): Promise<PackLifecycle | null> {
@@ -113,16 +119,22 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
   const collectionName = coll?.displayName ?? "Rip Packs City"
   const lifecycle = coll ? await fetchLifecycle(id) : null
 
-  const packLabel = lifecycle?.pack_name ?? `Pack #${id}`
-  const metaTitle = `Pack #${id} — ${packLabel} | Rip Packs City`
+  const distTitle = lifecycle?.distribution?.title ?? null
+  const packLabel = distTitle ?? lifecycle?.pack_name ?? `Pack #${id}`
+  const metaTitle = distTitle
+    ? `${distTitle} — Pack #${id} | Rip Packs City`
+    : `Pack #${id} — ${packLabel} | Rip Packs City`
 
   let description = `Lifecycle of ${collectionName} pack #${id} on Rip Packs City.`
   if (lifecycle && lifecycle.status === "ripped") {
     const gross = num(lifecycle.stats.gross_pull_value_usd)
     const basis = num(lifecycle.stats.total_cost_basis)
     const currency = lifecycle.stats.currency
-    if (gross !== null && basis !== null) {
-      description = `Pulled ${fmtUsd(gross)} from a ${fmtPrice(basis, currency)} pack. See the full rip on Rip Packs City.`
+    const retail = num(lifecycle.distribution?.retail_price_usd ?? null)
+    if (gross !== null && distTitle && retail !== null) {
+      description = `Pulled ${fmtUsd(gross)} from a ${distTitle} (${fmtUsd(retail)} retail). See the full rip on Rip Packs City.`
+    } else if (gross !== null && basis !== null) {
+      description = `Pulled ${fmtUsd(gross)} from a ${fmtPriceWithUsd(basis, currency)} pack. See the full rip on Rip Packs City.`
     } else if (gross !== null) {
       description = `Pulled ${fmtUsd(gross)}. See the full rip on Rip Packs City.`
     }
@@ -130,7 +142,7 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
     const basis = num(lifecycle.stats.total_cost_basis)
     const currency = lifecycle.stats.currency
     if (basis !== null) {
-      description = `Sealed ${packLabel} last sold for ${fmtPrice(basis, currency)}. Track the rip on Rip Packs City.`
+      description = `Sealed ${packLabel} last sold for ${fmtPriceWithUsd(basis, currency)}. Track the rip on Rip Packs City.`
     }
   }
 
@@ -196,8 +208,6 @@ function PackLifecycleView({
   routeSlug: string
   collectionName: string
 }) {
-  const packLabel = lifecycle.pack_name ?? `Pack #${lifecycle.pack_nft_id}`
-
   const grossUsd = num(lifecycle.stats.gross_pull_value_usd)
   const totalBasis = num(lifecycle.stats.total_cost_basis)
   const basisCurrency = lifecycle.stats.currency
@@ -272,65 +282,37 @@ function PackLifecycleView({
         </span>
       </nav>
 
-      {/* Hero strip */}
+      {/* Hero — pack identity (image + title + tier + metadata + status) on
+          the left; PULLED/FROM/delta block on the right when ripped. */}
       <header
         style={{
-          display: "grid",
-          gridTemplateColumns: "1fr auto",
-          alignItems: "end",
-          gap: "var(--space-lg)",
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: "var(--space-xl)",
           padding: "var(--space-xl) 0",
           borderBottom: "1px solid var(--rpc-border)",
           marginBottom: "var(--space-2xl)",
         }}
       >
-        <div>
-          <div
-            style={{
-              display: "flex",
-              gap: "var(--space-md)",
-              alignItems: "center",
-              flexWrap: "wrap",
-              marginBottom: "var(--space-sm)",
-            }}
-          >
-            <h1
-              style={{
-                margin: 0,
-                fontFamily: "var(--font-display)",
-                fontSize: 40,
-                color: "var(--rpc-text-primary)",
-                textTransform: "uppercase",
-                letterSpacing: "0.02em",
-                lineHeight: 1,
-              }}
-            >
-              {packLabel}
-            </h1>
-            <StatusBadge status={lifecycle.status} />
-          </div>
-          <div
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-              color: "var(--rpc-text-muted)",
-            }}
-          >
-            <span>#{lifecycle.pack_nft_id}</span>
-            {lifecycle.first_seen_at && (
-              <span title={lifecycle.first_seen_at}>
-                <span aria-hidden style={{ margin: "0 8px", color: "var(--rpc-text-ghost)" }}>·</span>
-                first seen {relativeFromIso(lifecycle.first_seen_at)}
-              </span>
-            )}
-          </div>
+        <div style={{ flex: "1 1 480px", minWidth: 0 }}>
+          <PackIdentityHero
+            distribution={lifecycle.distribution}
+            packNftId={lifecycle.pack_nft_id}
+            packName={lifecycle.pack_name}
+            status={lifecycle.status}
+            firstSeenAt={lifecycle.first_seen_at}
+          />
         </div>
-        <HeroDelta
-          headline={headline}
-          subhead={subhead}
-          delta={delta}
-          deltaDirection={deltaDir}
-        />
+        <div style={{ flex: "0 1 auto", alignSelf: "flex-end" }}>
+          <HeroDelta
+            headline={headline}
+            subhead={subhead}
+            delta={delta}
+            deltaDirection={deltaDir}
+          />
+        </div>
       </header>
 
       {/* Ownership chain */}
@@ -375,63 +357,6 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
     >
       {children}
     </h2>
-  )
-}
-
-function StatusBadge({ status }: { status: PackLifecycle["status"] }) {
-  if (status === "ripped") {
-    return (
-      <span
-        style={{
-          fontFamily: "var(--font-display)",
-          textTransform: "uppercase",
-          letterSpacing: "0.14em",
-          fontSize: 12,
-          padding: "4px 10px",
-          background: "var(--rpc-red)",
-          color: "#fff",
-          borderRadius: "var(--radius-sm)",
-        }}
-      >
-        Ripped
-      </span>
-    )
-  }
-  if (status === "sealed") {
-    return (
-      <span
-        style={{
-          fontFamily: "var(--font-display)",
-          textTransform: "uppercase",
-          letterSpacing: "0.14em",
-          fontSize: 12,
-          padding: "4px 10px",
-          background: "transparent",
-          color: "var(--rpc-text-primary)",
-          border: "1px solid var(--rpc-text-primary)",
-          borderRadius: "var(--radius-sm)",
-        }}
-      >
-        Sealed
-      </span>
-    )
-  }
-  return (
-    <span
-      style={{
-        fontFamily: "var(--font-display)",
-        textTransform: "uppercase",
-        letterSpacing: "0.14em",
-        fontSize: 12,
-        padding: "4px 10px",
-        background: "transparent",
-        color: "var(--rpc-text-muted)",
-        border: "1px dashed var(--rpc-border)",
-        borderRadius: "var(--radius-sm)",
-      }}
-    >
-      Unknown
-    </span>
   )
 }
 
@@ -520,21 +445,5 @@ function NotFoundCard({
       </div>
     </article>
   )
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// Local relative-time formatter (mirrors client-side helper for SSR text)
-// ─────────────────────────────────────────────────────────────────────────
-
-function relativeFromIso(iso: string): string {
-  const t = new Date(iso).getTime()
-  if (!Number.isFinite(t)) return ""
-  const diffSec = Math.max(0, (Date.now() - t) / 1000)
-  if (diffSec < 60) return `${Math.floor(diffSec)}s ago`
-  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`
-  if (diffSec < 86_400) return `${Math.floor(diffSec / 3600)}h ago`
-  if (diffSec < 30 * 86_400) return `${Math.floor(diffSec / 86_400)}d ago`
-  if (diffSec < 365 * 86_400) return `${Math.floor(diffSec / (30 * 86_400))}mo ago`
-  return `${Math.floor(diffSec / (365 * 86_400))}y ago`
 }
 
