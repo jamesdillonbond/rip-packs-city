@@ -70,6 +70,39 @@ function fmtPrice(n: number | string | null | undefined, currency: string | null
   return currency ? `${formatted} ${currency}` : formatted
 }
 
+/** DUC is 1:1 USD-pegged. When the currency is DUC append an inline "($X)"
+ *  so the value is legible without the reader having to translate. */
+function fmtPriceWithUsd(
+  n: number | string | null | undefined,
+  currency: string | null | undefined,
+): string {
+  if (n === null || n === undefined || n === "") return "—"
+  const v = typeof n === "number" ? n : Number(n)
+  if (!Number.isFinite(v)) return "—"
+  const base = fmtPrice(v, currency)
+  if (currency && currency.toUpperCase() === "DUC") {
+    return `${base} (${fmtUsd(v)})`
+  }
+  return base
+}
+
+/** Rewrite a Top Shot CDN /editions/ thumbnail URL through the resize endpoint
+ *  so the browser fetches an already-optimized webp at the requested width.
+ *  The raw Hero_2880_2880_Transparent.png is ~2880px square (multi-MB) —
+ *  rendering it directly into a ~220px card is why pull thumbnails look fuzzy.
+ *  Non-Top-Shot CDN URLs pass through unchanged. */
+function resizedThumb(url: string | null | undefined, width: number = 900): string | null {
+  if (!url) return null
+  if (url.includes("assets.nbatopshot.com/editions/")) {
+    const resized = url.replace(
+      "assets.nbatopshot.com/editions/",
+      "assets.nbatopshot.com/resize/editions/",
+    )
+    return `${resized}?format=webp&quality=80&width=${width}`
+  }
+  return url
+}
+
 const TIER_ALIASES: Record<string, string> = {
   COMMON: "common",
   FANDOM: "fandom",
@@ -275,7 +308,7 @@ export function OwnershipTimeline({ events }: { events: OwnershipEvent[] }) {
                     color: "var(--rpc-text-secondary)",
                   }}
                 >
-                  {(ev.event_type ?? "purchase").replace(/_/g, " ")}
+                  {(ev.custom_id ?? "purchase").replace(/_/g, " ").toLowerCase()}
                 </span>
                 <span
                   style={{
@@ -283,9 +316,9 @@ export function OwnershipTimeline({ events }: { events: OwnershipEvent[] }) {
                     fontSize: 11,
                     color: "var(--rpc-text-muted)",
                   }}
-                  title={ev.timestamp}
+                  title={ev.sealed_at}
                 >
-                  {relativeTime(ev.timestamp)}
+                  {relativeTime(ev.sealed_at)}
                 </span>
               </div>
               <div
@@ -303,7 +336,7 @@ export function OwnershipTimeline({ events }: { events: OwnershipEvent[] }) {
                 <AddressChip addr={ev.seller_address} label="seller" />
                 <span style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-display)", textTransform: "uppercase", letterSpacing: "0.06em", fontSize: 10 }}>Price</span>
                 <span style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-primary)" }}>
-                  {fmtPrice(ev.price, ev.currency)}
+                  {fmtPriceWithUsd(ev.sale_price, ev.sale_currency)}
                 </span>
                 <span style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-display)", textTransform: "uppercase", letterSpacing: "0.06em", fontSize: 10 }}>Tx</span>
                 <TxChip hash={ev.tx_hash} />
@@ -490,8 +523,11 @@ function PullCard({ pull, collection }: { pull: PackPull; collection: string }) 
         ) : pull.thumbnail_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={pull.thumbnail_url}
+            src={resizedThumb(pull.thumbnail_url, 900) ?? pull.thumbnail_url}
             alt={pull.player_name ?? `Moment #${pull.nft_id}`}
+            loading="lazy"
+            decoding="async"
+            sizes="(max-width: 768px) 50vw, 220px"
             style={{ width: "100%", height: "100%", objectFit: "cover" }}
           />
         ) : (
@@ -676,11 +712,13 @@ export function PullsGrid({ pulls, collection }: { pulls: PackPull[]; collection
 // ─────────────────────────────────────────────────────────────────────────
 
 export function StatsFooter({
-  totalCostBasisUsd,
+  totalCostBasis,
+  basisCurrency,
   grossPullValueUsd,
   roiPct,
 }: {
-  totalCostBasisUsd: number | null
+  totalCostBasis: number | null
+  basisCurrency: string | null
   grossPullValueUsd: number | null
   roiPct: number | null
 }) {
@@ -705,7 +743,7 @@ export function StatsFooter({
         borderRadius: "var(--radius-md)",
       }}
     >
-      <StatCell label="Cost basis" value={fmtUsd(totalCostBasisUsd)} />
+      <StatCell label="Cost basis" value={fmtPriceWithUsd(totalCostBasis, basisCurrency)} />
       <StatCell label="Gross pull value" value={fmtUsd(grossPullValueUsd)} />
       <StatCell label="ROI" value={roiLabel} color={roiColor} large />
     </div>
@@ -757,10 +795,12 @@ function StatCell({
 
 export function HeroDelta({
   headline,
+  subhead,
   delta,
   deltaDirection,
 }: {
   headline: string
+  subhead?: string | null
   delta: string | null
   deltaDirection: "up" | "down" | "flat" | null
 }) {
@@ -770,24 +810,44 @@ export function HeroDelta({
       : deltaDirection === "down"
         ? "var(--rpc-danger)"
         : "var(--rpc-text-muted)"
+  // Headline color tracks the delta direction so PULLED $X visually reads as
+  // win/loss at a glance; if there's no delta context (sealed pack or null
+  // basis), fall back to primary text so the headline stays legible.
+  const headlineColor = deltaDirection ? color : "var(--rpc-text-primary)"
   return (
-    <div>
+    <div style={{ textAlign: "right" }}>
       <div
         style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 32,
-          color: "var(--rpc-text-primary)",
-          lineHeight: 1.1,
+          fontFamily: "var(--font-display)",
+          fontSize: 44,
+          textTransform: "uppercase",
+          letterSpacing: "0.02em",
+          color: headlineColor,
+          lineHeight: 1,
         }}
       >
         {headline}
       </div>
+      {subhead && (
+        <div
+          style={{
+            marginTop: 6,
+            fontFamily: "var(--font-display)",
+            fontSize: 14,
+            textTransform: "uppercase",
+            letterSpacing: "0.1em",
+            color: "var(--rpc-text-muted)",
+          }}
+        >
+          {subhead}
+        </div>
+      )}
       {delta && (
         <div
           style={{
-            marginTop: 4,
+            marginTop: 6,
             fontFamily: "var(--font-mono)",
-            fontSize: 16,
+            fontSize: 14,
             color,
           }}
         >

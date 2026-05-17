@@ -15,22 +15,27 @@
 /** Status returned by get_pack_lifecycle. */
 export type PackStatus = "sealed" | "ripped" | "unknown"
 
-/** One leg of the ownership chain — a purchase or transfer event before the rip. */
+/** One leg of the ownership chain — a purchase or transfer event before the rip.
+ *  Field names mirror the snake_case keys emitted by the get_pack_lifecycle RPC's
+ *  jsonb payload. supabase-js does NOT camelize jsonb keys, so accessors must
+ *  read snake_case directly. */
 export interface OwnershipEvent {
   /** UTC timestamp ISO string (e.g. "2026-04-12T08:32:11Z"). */
-  timestamp: string
+  sealed_at: string
   /** Buyer 0x address. Always present for purchase rows. */
   buyer_address: string
   /** Seller 0x address. Null for first-mint / off-chain origination. */
   seller_address: string | null
   /** Sale price as a string or number — coerce with Number(). May be null for transfers. */
-  price: number | string | null
+  sale_price: number | string | null
   /** Currency symbol, e.g. "FLOW", "USDC", "DUC". Null on transfers. */
-  currency: string | null
+  sale_currency: string | null
   /** Flow transaction hash (lowercase hex). Used to build a flowscan.io link. */
   tx_hash: string
-  /** "purchase" | "transfer" | "mint" etc. — free-text classification from the indexer. */
-  event_type?: string | null
+  /** Indexer-tagged event class, e.g. "DAPPER_MARKETPLACE". */
+  custom_id?: string | null
+  /** Block height for the on-chain event (optional, indexer-provided). */
+  block_height?: number | null
 }
 
 /** The actual pack-opening event. Only present when status === "ripped". */
@@ -43,6 +48,8 @@ export interface RipEvent {
   sealed_at: string
   /** Count of moments minted/transferred out of the pack. */
   moments_pulled: number
+  /** Block height of the rip transaction (optional). */
+  block_height?: number | null
 }
 
 /** A single moment pulled from the pack. */
@@ -69,20 +76,26 @@ export interface PackPull {
   current_fmv: number | string | null
   /** Current 0x owner address — null when not yet resolved. */
   current_owner: string | null
+  /** Lowest live ASK in USD — optional. */
+  floor_price?: number | string | null
+  /** FMV confidence enum (HIGH / MEDIUM / LOW / SALES_ONLY / ASK_ONLY / NO_DATA / STALE). */
+  confidence?: string | null
 }
 
-/** Pre-computed rollups returned at the top level. */
+/** Pre-computed rollups returned at the top level.
+ *  Field names mirror the snake_case keys emitted by the RPC's jsonb payload. */
 export interface PackStats {
-  /** Sum of all purchase prices in the ownership chain, normalized to USD. */
-  total_cost_basis_usd: number | string | null
-  /** Last purchase price in USD — basis for "delta vs cost". */
-  last_cost_basis_usd: number | string | null
-  /** Currency of last_cost_basis (display only — usd value is canonical). */
-  last_cost_basis_currency: string | null
-  /** Sum of every pulled moment's current_fmv. Null if any pull is unhydrated. */
+  /** Sum of all purchase prices in the ownership chain, in the cost-basis currency.
+   *  For DUC packs this is also USD (DUC is 1:1 USD-pegged). */
+  total_cost_basis: number | string | null
+  /** Currency of total_cost_basis. */
+  currency: string | null
+  /** Sum of every pulled moment's current_fmv in USD. Null if any pull is unhydrated. */
   gross_pull_value_usd: number | string | null
-  /** (gross_pull_value - total_cost_basis) / total_cost_basis. */
-  roi_pct: number | string | null
+  /** Number of pulls in the pack. */
+  pull_count?: number | null
+  /** Pulls that had a current_fmv resolved. */
+  pulls_with_fmv?: number | null
 }
 
 export interface PackLifecycle {
