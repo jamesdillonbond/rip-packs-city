@@ -6,15 +6,27 @@
 // then immediately calls compute_institutional_wallet_diff for every
 // (wallet, collection) pair to detect new arrivals since yesterday.
 //
-// Wallet selection criteria (per Prompt 12 amended):
+// Wallet selection criteria:
 //   * tags @> ARRAY['signal_source']
-//   * fully_enriched_at IS NOT NULL  (avoid mid-enrichment days
-//     producing a flood of fake "arrivals")
+//   * fully_enriched_at IS NOT NULL
 //
-// Two NBATopShotCommunity / NBATopShot_Holdings / TopShot_Buyback_2
-// wallets currently meet criterion 1; criterion 2 fires once their
-// initial enrichment crosses the 95%-of-expected threshold (the
-// mark_signal_wallets_fully_enriched RPC checks this).
+// Resilience contract (function_version 2, 2026-05-17):
+//   * Heartbeat to public.cron_heartbeats as the first action in
+//     runWork, so even an immediate panic still proves the function
+//     started. The Vercel route also heartbeats — both rows mean
+//     cron-job.org fired AND the edge function spun up.
+//   * Every Supabase call (RPC + table read + upsert) is wrapped in
+//     withRetry: 3 attempts, 1500 * 2^rt + 250ms jitter.
+//   * wallet_moments_cache reads are paginated in PAGE_SIZE chunks
+//     via .range(). The pre-2026-05-17 single-shot read was being
+//     silently clipped at 1000 rows by PostgREST's default cap (that
+//     is why prior runs showed moments_snapshotted=1000 even for
+//     wallets with >>1000 holdings).
+//   * On retry exhaustion of any wrapped op, a pipeline_runs row is
+//     written immediately with ok=false tagging the failed op, IN
+//     ADDITION to the final aggregate row. That preserves "one
+//     row per overall run" for legacy callers while surfacing the
+//     specific failure boundary for the watchlist.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
 
@@ -25,29 +37,23 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? ""
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-const FUNCTION_VERSION = 1
+const FUNCTION_VERSION = 2
 const PIPELINE = "snapshot-institutional-wallets"
 const COLLECTION_SLUG = "nba_top_shot"
+const PAGE_SIZE = 250
+const RETRY_MAX = 3
+const RETRY_BASE_MS = 1500
+const RETRY_JITTER_MS = 250
 
 interface SignalWallet {
   username: string | null
   wallet_address: string
 }
 
-async function loadSignalWallets(): Promise<SignalWallet[]> {
-  // deno-lint-ignore no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from("seeded_wallets")
-    .select("username, wallet_address")
-    .contains("tags", ["signal_source"])
-    .not("fully_enriched_at", "is", null)
-    .not("wallet_address", "is", null)
-
-  if (error) {
-    console.log(`[${PIPELINE}] loadSignalWallets err: ${error.message}`)
-    return []
-  }
-  return (data ?? []) as SignalWallet[]
+interface MomentRow {
+  collection_id: string
+  moment_id: string
+  fmv_usd: number | null
 }
 
 interface SnapshotRow {
@@ -59,24 +65,179 @@ interface SnapshotRow {
   total_fmv_usd: number
 }
 
-async function captureSnapshot(wallet: string, todayUtc: string): Promise<{ collections_captured: number; total_moments: number; errors: string[] }> {
-  // deno-lint-ignore no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from("wallet_moments_cache")
-    .select("collection_id, moment_id, fmv_usd")
-    .eq("wallet_address", wallet)
+function isTransientErr(msg: string): boolean {
+  const m = msg.toLowerCase()
+  return (
+    m.includes("timeout") ||
+    m.includes("timed out") ||
+    m.includes("connection pool") ||
+    m.includes("upstream request") ||
+    m.includes("network") ||
+    m.includes("temporarily") ||
+    m.includes("503") ||
+    m.includes("502") ||
+    m.includes("504") ||
+    m.includes("429")
+  )
+}
 
-  if (error) {
-    return { collections_captured: 0, total_moments: 0, errors: [`load: ${error.message}`] }
+async function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+async function withRetry<T>(
+  label: string,
+  op: () => Promise<{ data: T | null; error: { message: string } | null }>,
+): Promise<{ data: T | null; error: string | null; attempts: number }> {
+  let lastErr: string | null = null
+  for (let attempt = 0; attempt < RETRY_MAX; attempt++) {
+    try {
+      const { data, error } = await op()
+      if (!error) {
+        return { data, error: null, attempts: attempt + 1 }
+      }
+      lastErr = error.message
+      if (!isTransientErr(error.message)) {
+        // Non-transient — fail fast.
+        return { data: null, error: error.message, attempts: attempt + 1 }
+      }
+      console.log(`[${PIPELINE}] ${label} attempt ${attempt + 1} transient: ${error.message}`)
+    } catch (err) {
+      lastErr = err instanceof Error ? err.message : String(err)
+      console.log(`[${PIPELINE}] ${label} attempt ${attempt + 1} threw: ${lastErr}`)
+    }
+    if (attempt < RETRY_MAX - 1) {
+      const delay = RETRY_BASE_MS * Math.pow(2, attempt) + Math.floor(Math.random() * RETRY_JITTER_MS)
+      await sleep(delay)
+    }
   }
+  return { data: null, error: lastErr ?? "unknown", attempts: RETRY_MAX }
+}
 
-  const rows = (data ?? []) as Array<{ collection_id: string; moment_id: string; fmv_usd: number | null }>
+async function logExhaustionRun(args: {
+  startedAt: string
+  label: string
+  err: string
+  attempts: number
+  walletHint?: string
+}) {
+  try {
+    // deno-lint-ignore no-explicit-any
+    await (supabase as any).rpc("log_pipeline_run", {
+      p_pipeline: PIPELINE,
+      p_started_at: args.startedAt,
+      p_rows_found: 0,
+      p_rows_written: 0,
+      p_rows_skipped: 0,
+      p_ok: false,
+      p_error: `${args.label} exhausted retries: ${args.err}`,
+      p_collection_slug: COLLECTION_SLUG,
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: {
+        function_version: FUNCTION_VERSION,
+        partial: true,
+        op_label: args.label,
+        op_attempts: args.attempts,
+        wallet_hint: args.walletHint ?? null,
+      },
+    })
+  } catch (err) {
+    console.log(`[${PIPELINE}] logExhaustionRun failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
+async function emitHeartbeat(source: string): Promise<void> {
+  try {
+    // deno-lint-ignore no-explicit-any
+    const { error } = await (supabase as any).rpc("upsert_cron_heartbeat", {
+      p_pipeline: PIPELINE,
+      p_source: source,
+    })
+    if (error) {
+      console.log(`[${PIPELINE}] heartbeat err: ${error.message}`)
+    }
+  } catch (err) {
+    console.log(`[${PIPELINE}] heartbeat threw: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
+async function loadSignalWallets(startedAtIso: string): Promise<SignalWallet[]> {
+  const res = await withRetry<SignalWallet[]>("loadSignalWallets", async () => {
+    // deno-lint-ignore no-explicit-any
+    const { data, error } = await (supabase as any)
+      .from("seeded_wallets")
+      .select("username, wallet_address")
+      .contains("tags", ["signal_source"])
+      .not("fully_enriched_at", "is", null)
+      .not("wallet_address", "is", null)
+    return { data: data as SignalWallet[] | null, error }
+  })
+  if (res.error) {
+    await logExhaustionRun({
+      startedAt: startedAtIso,
+      label: "loadSignalWallets",
+      err: res.error,
+      attempts: res.attempts,
+    })
+    return []
+  }
+  return res.data ?? []
+}
+
+async function loadAllMomentsForWallet(wallet: string, startedAtIso: string): Promise<{ rows: MomentRow[]; err?: string }> {
+  const all: MomentRow[] = []
+  let from = 0
+  // Defensive ceiling — 200 pages * 250 = 50k moments per wallet. If
+  // any wallet exceeds this the snapshot is truncated and the run is
+  // logged as ok=false; we want to know.
+  const MAX_PAGES = 200
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const to = from + PAGE_SIZE - 1
+    const res = await withRetry<MomentRow[]>(`wmc.range(${wallet.slice(0, 8)},${from})`, async () => {
+      // deno-lint-ignore no-explicit-any
+      const { data, error } = await (supabase as any)
+        .from("wallet_moments_cache")
+        .select("collection_id, moment_id, fmv_usd")
+        .eq("wallet_address", wallet)
+        .range(from, to)
+      return { data: data as MomentRow[] | null, error }
+    })
+    if (res.error) {
+      await logExhaustionRun({
+        startedAt: startedAtIso,
+        label: `wmc_load_page_${page}`,
+        err: res.error,
+        attempts: res.attempts,
+        walletHint: wallet,
+      })
+      return { rows: all, err: `wmc load page ${page}: ${res.error}` }
+    }
+    const batch = res.data ?? []
+    all.push(...batch)
+    if (batch.length < PAGE_SIZE) {
+      return { rows: all }
+    }
+    from += PAGE_SIZE
+  }
+  return { rows: all, err: `truncated_at_${MAX_PAGES * PAGE_SIZE}` }
+}
+
+async function captureSnapshot(
+  wallet: string,
+  todayUtc: string,
+  startedAtIso: string,
+): Promise<{ collections_captured: number; total_moments: number; pages_walked: number; errors: string[] }> {
+  const load = await loadAllMomentsForWallet(wallet, startedAtIso)
+  const rows = load.rows
+  const errors: string[] = []
+  if (load.err) errors.push(`load: ${load.err}`)
   if (rows.length === 0) {
-    return { collections_captured: 0, total_moments: 0, errors: [] }
+    return { collections_captured: 0, total_moments: 0, pages_walked: 0, errors }
   }
 
-  // Group by collection_id; for each, collect moment_ids (sorted for
-  // deterministic snapshot equality) + count + total_fmv.
+  const pagesWalked = Math.ceil(rows.length / PAGE_SIZE)
+
   const byCollection = new Map<string, { ids: string[]; total_fmv: number }>()
   for (const r of rows) {
     const bucket = byCollection.get(r.collection_id) ?? { ids: [], total_fmv: 0 }
@@ -85,63 +246,95 @@ async function captureSnapshot(wallet: string, todayUtc: string): Promise<{ coll
     byCollection.set(r.collection_id, bucket)
   }
 
-  const snapshotRows: SnapshotRow[] = []
+  // One snapshot row per collection. Upsert sequentially with retry so
+  // a transient pool-exhaustion on one collection's huge moment_ids
+  // array does not cancel the whole wallet.
+  let written = 0
   for (const [collection_id, { ids, total_fmv }] of byCollection.entries()) {
     ids.sort()
-    snapshotRows.push({
+    const row: SnapshotRow = {
       wallet_address: wallet,
       collection_id,
       snapshot_at: todayUtc,
       moment_ids: ids,
       moment_count: ids.length,
       total_fmv_usd: Math.round(total_fmv * 100) / 100,
+    }
+    const res = await withRetry<unknown>(`whs.upsert(${collection_id.slice(0, 8)})`, async () => {
+      // deno-lint-ignore no-explicit-any
+      const { data, error } = await (supabase as any)
+        .from("wallet_holdings_snapshot")
+        .upsert([row], { onConflict: "wallet_address,collection_id,snapshot_at" })
+      return { data, error }
     })
+    if (res.error) {
+      errors.push(`upsert(${collection_id.slice(0, 8)}, ${ids.length}ids): ${res.error}`)
+      await logExhaustionRun({
+        startedAt: startedAtIso,
+        label: `whs_upsert_${collection_id.slice(0, 8)}`,
+        err: res.error,
+        attempts: res.attempts,
+        walletHint: wallet,
+      })
+      continue
+    }
+    written++
   }
 
-  const { error: upsertErr } = await (supabase as any)
-    .from("wallet_holdings_snapshot")
-    .upsert(snapshotRows, { onConflict: "wallet_address,collection_id,snapshot_at" })
-
-  if (upsertErr) {
-    return { collections_captured: 0, total_moments: rows.length, errors: [`upsert: ${upsertErr.message}`] }
-  }
-
-  return { collections_captured: snapshotRows.length, total_moments: rows.length, errors: [] }
+  return { collections_captured: written, total_moments: rows.length, pages_walked: pagesWalked, errors }
 }
 
-async function diffAllPairs(wallet: string): Promise<{ inserted_buybacks: number; pairs_diffed: number; errors: string[] }> {
-  // Pull today's snapshot rows for this wallet so we know which
-  // (wallet, collection) pairs to diff. Same source-of-truth as the
-  // snapshot we just wrote, so the loop covers exactly the data that
-  // was just captured.
+async function diffAllPairs(
+  wallet: string,
+  startedAtIso: string,
+): Promise<{ inserted_buybacks: number; pairs_diffed: number; errors: string[] }> {
   const todayUtc = (new Date()).toISOString().slice(0, 10)
-  // deno-lint-ignore no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from("wallet_holdings_snapshot")
-    .select("collection_id")
-    .eq("wallet_address", wallet)
-    .eq("snapshot_at", todayUtc)
-
-  if (error) {
-    return { inserted_buybacks: 0, pairs_diffed: 0, errors: [`pairs_load: ${error.message}`] }
+  const res = await withRetry<Array<{ collection_id: string }>>("whs.pairs_load", async () => {
+    // deno-lint-ignore no-explicit-any
+    const { data, error } = await (supabase as any)
+      .from("wallet_holdings_snapshot")
+      .select("collection_id")
+      .eq("wallet_address", wallet)
+      .eq("snapshot_at", todayUtc)
+    return { data: data as Array<{ collection_id: string }> | null, error }
+  })
+  if (res.error) {
+    await logExhaustionRun({
+      startedAt: startedAtIso,
+      label: "whs_pairs_load",
+      err: res.error,
+      attempts: res.attempts,
+      walletHint: wallet,
+    })
+    return { inserted_buybacks: 0, pairs_diffed: 0, errors: [`pairs_load: ${res.error}`] }
   }
 
   let totalInserted = 0
   const errors: string[] = []
   let pairsDiffed = 0
 
-  for (const row of (data ?? []) as Array<{ collection_id: string }>) {
+  for (const row of (res.data ?? [])) {
     pairsDiffed++
-    // deno-lint-ignore no-explicit-any
-    const { data: diffResult, error: diffErr } = await (supabase as any).rpc(
-      "compute_institutional_wallet_diff",
-      { p_wallet: wallet, p_collection_id: row.collection_id }
-    )
-    if (diffErr) {
-      errors.push(`diff(${row.collection_id.slice(0, 8)}): ${diffErr.message}`)
+    const diffRes = await withRetry<{ inserted?: number } | null>(`diff(${row.collection_id.slice(0, 8)})`, async () => {
+      // deno-lint-ignore no-explicit-any
+      const { data, error } = await (supabase as any).rpc(
+        "compute_institutional_wallet_diff",
+        { p_wallet: wallet, p_collection_id: row.collection_id }
+      )
+      return { data: data as { inserted?: number } | null, error }
+    })
+    if (diffRes.error) {
+      errors.push(`diff(${row.collection_id.slice(0, 8)}): ${diffRes.error}`)
+      await logExhaustionRun({
+        startedAt: startedAtIso,
+        label: `diff_${row.collection_id.slice(0, 8)}`,
+        err: diffRes.error,
+        attempts: diffRes.attempts,
+        walletHint: wallet,
+      })
       continue
     }
-    const inserted = Number(diffResult?.inserted ?? 0)
+    const inserted = Number(diffRes.data?.inserted ?? 0)
     if (Number.isFinite(inserted)) totalInserted += inserted
   }
 
@@ -178,21 +371,33 @@ async function logRun(args: {
 }
 
 async function runWork(startedAtIso: string, started: number) {
+  await emitHeartbeat("edge_runwork_start")
+
   // Step 1: opportunistically promote any signal_source wallets that
-  // have crossed the 95%-of-expected enrichment threshold so they enter
-  // tomorrow's snapshot pool.
-  // deno-lint-ignore no-explicit-any
-  const { data: promoted } = await (supabase as any).rpc(
-    "mark_signal_wallets_fully_enriched"
-  )
-  const promotedCount = Array.isArray(promoted) ? promoted.length : 0
+  // have crossed the enrichment threshold so they enter tomorrow's pool.
+  const promoteRes = await withRetry<unknown[]>("mark_signal_wallets_fully_enriched", async () => {
+    // deno-lint-ignore no-explicit-any
+    const { data, error } = await (supabase as any).rpc("mark_signal_wallets_fully_enriched")
+    return { data: data as unknown[] | null, error }
+  })
+  if (promoteRes.error) {
+    await logExhaustionRun({
+      startedAt: startedAtIso,
+      label: "mark_signal_wallets_fully_enriched",
+      err: promoteRes.error,
+      attempts: promoteRes.attempts,
+    })
+  }
+  const promotedCount = Array.isArray(promoteRes.data) ? promoteRes.data.length : 0
 
   // Step 2: load the snapshot pool (wallets that ARE fully enriched).
-  const wallets = await loadSignalWallets()
+  const wallets = await loadSignalWallets(startedAtIso)
   if (wallets.length === 0) {
     await logRun({
       startedAt: startedAtIso,
-      rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
+      rowsFound: 0,
+      rowsWritten: 0,
+      rowsSkipped: 0,
       ok: true,
       extra: {
         function_version: FUNCTION_VERSION,
@@ -210,16 +415,18 @@ async function runWork(startedAtIso: string, started: number) {
   let totalMomentsSnapshotted = 0
   let totalBuybacksInserted = 0
   let totalPairsDiffed = 0
+  let totalPagesWalked = 0
   const errors: string[] = []
 
   for (const w of wallets) {
-    const snap = await captureSnapshot(w.wallet_address, todayUtc)
+    const snap = await captureSnapshot(w.wallet_address, todayUtc, startedAtIso)
     totalCollectionsSnapshotted += snap.collections_captured
     totalMomentsSnapshotted += snap.total_moments
+    totalPagesWalked += snap.pages_walked
     if (snap.errors.length > 0) errors.push(`${w.username}: ${snap.errors.join("; ")}`)
 
     if (snap.collections_captured > 0) {
-      const diff = await diffAllPairs(w.wallet_address)
+      const diff = await diffAllPairs(w.wallet_address, startedAtIso)
       totalBuybacksInserted += diff.inserted_buybacks
       totalPairsDiffed += diff.pairs_diffed
       if (diff.errors.length > 0) errors.push(`${w.username}: ${diff.errors.join("; ")}`)
@@ -240,6 +447,8 @@ async function runWork(startedAtIso: string, started: number) {
       wallets_promoted_to_fully_enriched: promotedCount,
       collections_snapshotted: totalCollectionsSnapshotted,
       moments_snapshotted: totalMomentsSnapshotted,
+      pages_walked: totalPagesWalked,
+      page_size: PAGE_SIZE,
       pairs_diffed: totalPairsDiffed,
       buybacks_inserted: totalBuybacksInserted,
       error_count: errors.length,
@@ -260,11 +469,23 @@ Deno.serve(async (req: Request) => {
 
   // deno-lint-ignore no-explicit-any
   const edgeRuntime = (globalThis as any).EdgeRuntime
-  const workPromise = runWork(startedAtIso, started)
+  const workPromise = runWork(startedAtIso, started).catch((e) => {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.log(`[${PIPELINE}] runWork uncaught: ${msg}`)
+    // Best-effort: surface uncaught panics as a pipeline_runs row so
+    // they aren't completely invisible.
+    return logRun({
+      startedAt: startedAtIso,
+      rowsFound: 0,
+      rowsWritten: 0,
+      rowsSkipped: 0,
+      ok: false,
+      error: `runWork uncaught: ${msg}`,
+      extra: { function_version: FUNCTION_VERSION, panicked: true, elapsed_ms: Date.now() - started },
+    })
+  })
   if (edgeRuntime && typeof edgeRuntime.waitUntil === "function") {
     edgeRuntime.waitUntil(workPromise)
-  } else {
-    workPromise.catch(e => console.log(`[${PIPELINE}] waitUntil fallback err: ${e instanceof Error ? e.message : String(e)}`))
   }
 
   return new Response(
