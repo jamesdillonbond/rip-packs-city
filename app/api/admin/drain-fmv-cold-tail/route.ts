@@ -102,8 +102,15 @@ export async function POST(req: NextRequest) {
   const durationMs = Date.now() - startedAt
 
   try {
+    // started_at is NOT NULL on pipeline_runs. The 2026-05-17 pg_log
+    // "null value in column started_at violates not-null constraint"
+    // alert traced back to this insert. We use startedAt (the run-begin
+    // marker captured at the top of POST handler) so the row is
+    // chronologically correct rather than now()-only.
     await (supabaseAdmin as any).from("pipeline_runs").insert({
       pipeline: "drain-fmv-cold-tail",
+      started_at: new Date(startedAt).toISOString(),
+      finished_at: new Date().toISOString(),
       ok: allOk,
       extra: {
         collection_filter: collection,
