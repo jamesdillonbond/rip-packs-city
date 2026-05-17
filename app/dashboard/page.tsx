@@ -672,7 +672,24 @@ function ProfilePageInner() {
               </div>
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <Link
+              href="/dashboard/packs"
+              style={{
+                fontFamily: condensedFont,
+                fontWeight: 700,
+                fontSize: 11,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: "rgba(255,255,255,0.85)",
+                textDecoration: "none",
+                padding: "7px 12px",
+                border: `1px solid ${ACCENT_RED}66`,
+                borderRadius: 5,
+              }}
+            >
+              Pack History
+            </Link>
             <Link
               href="/profile/edit"
               style={{
