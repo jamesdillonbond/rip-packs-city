@@ -367,7 +367,7 @@ export default async function EditionPage(
             {packs.map(p => (
               <Link
                 key={p.dist_id}
-                href={`/${collection}/pack/${encodeURIComponent(p.dist_id)}`}
+                href={`/${collection}/pack/dist/${encodeURIComponent(p.dist_id)}`}
                 className="rpc-card"
                 style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block" }}
               >

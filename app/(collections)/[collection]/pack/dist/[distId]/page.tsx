@@ -1,8 +1,13 @@
-// app/(collections)/[collection]/pack/[distId]/page.tsx
+// app/(collections)/[collection]/pack/dist/[distId]/page.tsx
 //
-// Pack detail surface — server-rendered from cached EV snapshots
-// (pack_table_rows ← pack_ev_latest ← pack_ev_history) plus the
-// pack_drop_pool → editions → fmv join for the top-pulls table.
+// Pack DISTRIBUTION (template) detail surface — server-rendered from cached
+// EV snapshots (pack_table_rows ← pack_ev_latest ← pack_ev_history) plus
+// the pack_drop_pool → editions → fmv join for the top-pulls table.
+//
+// This route describes a pack TEMPLATE (e.g. "Series 5 Common Pack"), not a
+// specific minted pack instance. For an individual on-chain pack NFT (the
+// lifecycle / rip view) see /[collection]/pack/[id]/page.tsx, which uses the
+// get_pack_lifecycle RPC keyed on the pack NFT id.
 //
 // All three pack-eligible collections (Top Shot, All Day, Golazos) reach
 // this route. PackTable already routes its row click here via detailHref.
@@ -258,7 +263,7 @@ export async function generateMetadata(
     ratio !== null ? `Value ratio ${ratio.toFixed(2)}x.` : null,
     "Pack EV, top pulls, and depletion based on Rip Packs City's cached snapshot.",
   ].filter(Boolean) as string[]
-  const canonical = `${BASE_URL}/${collection}/pack/${encodeURIComponent(distId)}`
+  const canonical = `${BASE_URL}/${collection}/pack/dist/${encodeURIComponent(distId)}`
   const ogImage = `${BASE_URL}/api/og/pack?distId=${encodeURIComponent(distId)}&collection=${encodeURIComponent(collection)}`
   return {
     title: metaTitle,
@@ -562,7 +567,7 @@ export default async function PackDetailPage(
                   Buy on Top Shot
                 </a>
               ) : null}
-              <PackShareButton url={`${BASE_URL}/${collection}/pack/${encodeURIComponent(distId)}`} />
+              <PackShareButton url={`${BASE_URL}/${collection}/pack/dist/${encodeURIComponent(distId)}`} />
               <Link
                 href={`/${collection}/packs`}
                 style={{
