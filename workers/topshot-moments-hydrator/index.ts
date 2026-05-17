@@ -579,18 +579,64 @@ export default {
       }
 
       // ── 4. Build moment payload rows; skip rows whose edition didn't resolve ──
+      //
+      // Self-healing fallback: when the editions table has no row for a
+      // (set_id_onchain, play_id_onchain) pair the catalog backfill hasn't
+      // reached yet, call the SECDEF service_role RPC
+      // ensure_topshot_edition_stub which atomically creates a minimal stub
+      // edition row inheriting tier/series/set_name from the parent set and
+      // returns the resolved uuid (or NULL when the parent set is unknown
+      // too — a real catalog gap that needs human intervention).
+      //
+      // We dedupe RPC calls by pair key in stubResolutionCache because the
+      // same (set, play) can back multiple moments in a single batch (300
+      // candidates frequently span only 10-20 distinct editions).
       const momentRows: MomentPayloadRow[] = [];
       let editionResolutionFailures = 0;
+      let stubsCreated = 0;
+      const stubResolutionCache = new Map<string, string | null>();
       for (const m of resolvable) {
         const key = `${m.set_id_onchain}:${m.play_id_onchain}`;
-        const editionId = editionMap.get(key);
+        let editionId = editionMap.get(key);
         if (!editionId) {
-          editionResolutionFailures++;
-          errors.push({
-            source: "edition_resolution",
-            message: `no editions row for nft_id=${m.nft_id} set_id_onchain=${m.set_id_onchain} play_id_onchain=${m.play_id_onchain}`,
-          });
-          continue;
+          let stubResult: string | null;
+          if (stubResolutionCache.has(key)) {
+            stubResult = stubResolutionCache.get(key) ?? null;
+          } else {
+            try {
+              const { data, error } = await sb.rpc("ensure_topshot_edition_stub", {
+                p_set_id_onchain: m.set_id_onchain,
+                p_play_id_onchain: m.play_id_onchain,
+              });
+              if (error) {
+                stubResult = null;
+                errors.push({
+                  source: "ensure_topshot_edition_stub",
+                  message: `pair=${key} nft_id=${m.nft_id}: ${error.message}`.slice(0, 300),
+                });
+              } else {
+                stubResult = typeof data === "string" && data.length > 0 ? data : null;
+                if (stubResult !== null) stubsCreated++;
+              }
+            } catch (err) {
+              stubResult = null;
+              const msg = err instanceof Error ? err.message : String(err);
+              errors.push({
+                source: "ensure_topshot_edition_stub",
+                message: `pair=${key} nft_id=${m.nft_id}: ${msg}`.slice(0, 300),
+              });
+            }
+            stubResolutionCache.set(key, stubResult);
+          }
+          if (stubResult === null) {
+            editionResolutionFailures++;
+            errors.push({
+              source: "catalog_gap",
+              message: `parent set unknown for nft_id=${m.nft_id} set_id_onchain=${m.set_id_onchain} play_id_onchain=${m.play_id_onchain}`,
+            });
+            continue;
+          }
+          editionId = stubResult;
         }
         momentRows.push({
           nft_id: m.nft_id,
@@ -650,6 +696,7 @@ export default {
           editions_resolved: editionsResolved,
           edition_resolution_failures: editionResolutionFailures,
           graphql_failures: graphqlFailures,
+          stubs_created: stubsCreated,
           duration_ms: durationMs,
           errors: errors.length > 0 ? errors.slice(0, 5) : undefined,
         },
@@ -664,6 +711,7 @@ export default {
           moments_written: momentsWritten,
           edition_resolution_failures: editionResolutionFailures,
           graphql_failures: graphqlFailures,
+          stubs_created: stubsCreated,
           duration_ms: durationMs,
           ...(errors.length > 0 ? { errors } : {}),
         }),
