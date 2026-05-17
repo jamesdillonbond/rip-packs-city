@@ -33,22 +33,23 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
 export const dynamic = "force-dynamic"
-// Bumped from 30s to 600s — the orchestrator now blocks on sync-mode
-// AllDay + Pinnacle children inside its own after() task. Each child
-// round-trip is bounded at SYNC_MAX_DURATION_MS so the worst case is
-// (ceil(on_chain_count / chunk_size) / chunks_per_round) round-trips
-// per wallet × 270s each. Mega-wallet pinnacle (~7700 NFTs at 500/chunk
-// = 16 chunks, ~8s/chunk = ~130s) finishes in a single round-trip.
+// 800s ceiling gives ~180s of headroom over the worst-case
+// 2 round-trips × (270s child budget + 30s slack) + transient-retry
+// backoff budget (~18s across both round-trips). See syncPoll() below
+// for the transient-retry behavior.
 export const maxDuration = 800
 
-const SYNC_MAX_DURATION_MS = 240_000
-// Round 11 Item 1: cut from 6 → 2.
-// Round 10 telemetry showed max sync-phase wall-clock of ~580s on AllDay pathological
-// wallets, hitting the 600s lambda cap and killing the final log_pipeline_run write.
-// With 2 round-trips × 270s per-trip ceiling = ~540s worst case before the post-loop
-// telemetry row, leaving ~60s of slack inside the 600s lambda budget. Wallets that
-// need more progression simply continue at the next 6h tick.
-const SYNC_ROUND_TRIP_CAP = 3 // safety: max retries per (wallet, sync collection)
+const SYNC_MAX_DURATION_MS = 270_000
+// CAP=2 in tandem with transient-retry-on-5xx-or-network-error inside
+// each round-trip. The 00:00 UTC HH:00 fan-out from seed-wallet-refresh
+// produces ~240 simultaneous orchestrators each spawning 2 sync children
+// (~480 concurrent child lambdas), which overshoots per-function lambda
+// concurrency and produces HTTP 503 within seconds of dispatch — NOT
+// a child-code failure (child success rate is 100% for the children
+// that get through). Treating those 503s as transient and re-issuing
+// after a short backoff converts the failure into a retry rather than
+// a permanent dispatch gap.
+const SYNC_ROUND_TRIP_CAP = 2
 
 interface SyncTarget {
   slug: string
@@ -168,6 +169,15 @@ async function fireOnce(
 // on the first round-trip) and waits for the child to either complete or
 // hit its caller-supplied wall-clock budget. ok=true requires the final
 // round-trip's body.complete=true.
+//
+// Transient-retry behavior: HTTP 5xx, missing status, parse-failed body,
+// or network/timeout exceptions are treated as transient (most often
+// lambda-concurrency-exhaustion HTTP 503 during HH:00 fan-out). They
+// push an error sample, sleep 1500ms × (rt+1) of backoff, and continue
+// the next iteration WITHOUT advancing checkpoint — the child is
+// idempotent and re-resumes from whatever it last committed. Only 4xx
+// status codes break the loop (real client/auth bugs that won't resolve
+// by retrying).
 async function syncPoll(
   origin: string,
   target: SyncTarget,
@@ -196,6 +206,16 @@ async function syncPoll(
     if (checkpoint !== null) qs.set("checkpoint", checkpoint)
     const url = `${origin}${target.path}?${qs.toString()}`
 
+    type SyncChildResponse = {
+      ok?: boolean
+      complete?: boolean
+      next_checkpoint?: string | null
+      rows_processed?: number
+      error?: string
+    }
+    let isTransient = false
+    let parsedBody: SyncChildResponse | null = null
+
     try {
       // Per-round-trip timeout = sync budget + 30s slack for post-pass +
       // log_pipeline_run. Children write their own pipeline_runs row, so
@@ -209,44 +229,55 @@ async function syncPoll(
           Authorization: `Bearer ${ingestToken}`,
         },
         body: JSON.stringify({ wallet, skip_cached: skipCached }),
-        signal: AbortSignal.timeout(SYNC_MAX_DURATION_MS + 20_000),
+        signal: AbortSignal.timeout(SYNC_MAX_DURATION_MS + 30_000),
       })
       result.last_status = res.status
-      const body = await res.json().catch(() => null) as {
-        ok?: boolean
-        complete?: boolean
-        next_checkpoint?: string | null
-        rows_processed?: number
-        error?: string
-      } | null
+      parsedBody = await res.json().catch(() => null) as SyncChildResponse | null
 
-      if (!res.ok || body === null) {
-        result.errors.push(`rt=${rt} HTTP ${res.status} body=${body?.error ?? "(no body)"}`)
-        break
+      if (parsedBody === null) {
+        result.errors.push(`rt=${rt} HTTP ${res.status} body=(parse failed) — transient, retrying`)
+        isTransient = true
+      } else if (!res.ok) {
+        const status = res.status
+        if (status >= 500 && status < 600) {
+          result.errors.push(`rt=${rt} HTTP ${status} body=${parsedBody.error ?? "(no body)"} — transient (5xx), retrying`)
+          isTransient = true
+        } else {
+          // 4xx — real client/auth bug. Retrying won't help.
+          result.errors.push(`rt=${rt} HTTP ${status} body=${parsedBody.error ?? "(no body)"}`)
+          break
+        }
       }
-
-      if (typeof body.rows_processed === "number") result.rows_processed_total += body.rows_processed
-
-      if (body.complete === true) {
-        result.ok = body.ok !== false
-        result.final_complete = true
-        result.last_checkpoint = null
-        return result
-      }
-
-      // Not complete — re-loop with the returned checkpoint. Reject if the
-      // child returned complete=false but no checkpoint (treat as fatal).
-      if (body.next_checkpoint == null) {
-        result.errors.push(`rt=${rt} complete=false but next_checkpoint=null — aborting loop`)
-        break
-      }
-      checkpoint = body.next_checkpoint
-      result.last_checkpoint = checkpoint
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      result.errors.push(`rt=${rt} ${msg}`)
+      result.errors.push(`rt=${rt} ${msg} — network/timeout transient, retrying`)
+      isTransient = true
+    }
+
+    if (isTransient) {
+      const backoffMs = 1500 * (rt + 1)
+      await new Promise<void>(resolve => setTimeout(resolve, backoffMs))
+      continue
+    }
+
+    const body = parsedBody!
+    if (typeof body.rows_processed === "number") result.rows_processed_total += body.rows_processed
+
+    if (body.complete === true) {
+      result.ok = body.ok !== false
+      result.final_complete = true
+      result.last_checkpoint = null
+      return result
+    }
+
+    // Not complete — re-loop with the returned checkpoint. Reject if the
+    // child returned complete=false but no checkpoint (treat as fatal).
+    if (body.next_checkpoint == null) {
+      result.errors.push(`rt=${rt} complete=false but next_checkpoint=null — aborting loop`)
       break
     }
+    checkpoint = body.next_checkpoint
+    result.last_checkpoint = checkpoint
   }
 
   if (!result.final_complete && result.errors.length === 0) {
