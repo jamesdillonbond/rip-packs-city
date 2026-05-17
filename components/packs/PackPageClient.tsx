@@ -99,7 +99,7 @@ function toPackRow(r: ApiRow, collectionUrlSlug: string): PackRow {
     totalUnopened: r.total_unopened == null ? null : Number(r.total_unopened),
     packEvDollar: r.pack_ev == null ? null : Number(r.pack_ev),
     isRareSinglePack: r.is_rare_single_pack === true,
-    detailHref: `/${collectionUrlSlug}/pack/${r.dist_id}`,
+    detailHref: `/${collectionUrlSlug}/pack/dist/${r.dist_id}`,
     primaryPrice: r.primary_price == null ? null : Number(r.primary_price),
     secondaryAsk: r.secondary_ask == null ? null : Number(r.secondary_ask),
     priceSource: r.price_source ?? null,
