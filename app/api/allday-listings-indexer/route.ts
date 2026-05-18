@@ -2,29 +2,41 @@ import { NextRequest, NextResponse, after } from "next/server"
 import * as Sentry from "@sentry/nextjs"
 import { supabaseAdmin } from "@/lib/supabase"
 
-// ── On-chain NFL All Day listings indexer (dual-run direct source) ───────────
+// ── On-chain NFL All Day listings indexer (dual storefront scan) ─────────────
 //
-// Scans Flowty's NFTStorefrontV2 fork (0x3cdbb3d569211ff3) for ListingAvailable
-// (new listings) and ListingCompleted (purchased=true OR purchased=false →
-// cancelled). Filters to AllDay nftType, resolves nftID → editions UUID via
-// wallet_moments_cache (with a Cadence borrow fallback against the seller
-// wallet), and writes rows into cached_listings_v2 with source='direct' so
-// they can coexist with source='flowty' rows for divergence reconciliation.
+// Scans FOUR event types per tick under a single cursor:
 //
-// First run initializes the cursor at the current sealed block height — no
-// historical backscan. Subsequent cron ticks walk forward. The 137,390,146
-// spork boundary is therefore never crossed in practice, so this route hits
-// rest-mainnet.onflow.org directly without a spork-proxy branch.
+//   V1 (primary): A.4eb8a10cb9f87357.NFTStorefront — original Dapper-deployed
+//     storefront where AllDay native listings actually live. ListingAvailable
+//     payload carries `storefrontAddress / listingResourceID / nftType / nftID
+//     / ftVaultType (Type) / price (UFix64)` — full pricing inline, no aux
+//     fetch needed. ListingCompleted carries `listingResourceID /
+//     storefrontResourceID / purchased / nftType / nftID` (reduced).
+//
+//   V2 (legacy Flowty fork): A.3cdbb3d569211ff3.NFTStorefrontV2 — dormant
+//     since 2026-05-14 but kept for the tail of legitimate cancellations.
+//     V2 ListingAvailable payload is the same shape as V1.
+//
+// V1 chain rows land in cached_listings_v2 with source='direct_v1'; V2 chain
+// rows with source='direct' (unchanged). The two share the listing_resource_id
+// space without collision because resource UUIDs are globally unique across
+// Flow contracts.
+//
+// First run anchors cursor at sealed tip — no historical backscan. Subsequent
+// ticks walk forward up to MAX_SCAN_RANGE.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const COLLECTION_SLUG = "nfl_all_day"
 const PIPELINE_NAME = "allday-listings-indexer"
-const ALLDAY_NFT_TYPE_ID = "A.e4cf4bdc1751c65d.AllDay.NFT"
+const ALLDAY_NFT_TYPE_SUFFIX = ".AllDay.NFT"
 
-const STOREFRONT_LISTING_AVAILABLE = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingAvailable"
-const STOREFRONT_LISTING_COMPLETED = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted"
+const V1_LISTING_AVAILABLE = "A.4eb8a10cb9f87357.NFTStorefront.ListingAvailable"
+const V1_LISTING_COMPLETED = "A.4eb8a10cb9f87357.NFTStorefront.ListingCompleted"
+const V2_LISTING_AVAILABLE = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingAvailable"
+const V2_LISTING_COMPLETED = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted"
+
 const FLOW_REST = "https://rest-mainnet.onflow.org"
 const CHUNK_SIZE = 250
 const DEFAULT_SCAN_RANGE = 50_000
@@ -131,12 +143,6 @@ async function getLatestSealedHeight(): Promise<number> {
   return Number(json[0]?.header?.height ?? 0)
 }
 
-// Seller-side AllDay-typed borrow. Mirrors the buyer-side borrow in
-// allday-sales-indexer but targets the seller's address, since for an active
-// listing the seller still holds the NFT in their AllDay collection (Flowty's
-// storefront uses capability-based listings, not escrow). Returns nil if the
-// seller doesn't hold the NFT (e.g. cancelled and moved before we read), in
-// which case we skip the row.
 const BORROW_MOMENT_SCRIPT = `
 import AllDay from 0xe4cf4bdc1751c65d
 access(all) fun main(seller: Address, id: UInt64): {String: String}? {
@@ -196,23 +202,20 @@ function deriveCurrency(vaultTypeId: string | undefined): string {
   return vaultTypeId
 }
 
-// Dapper utility coins are minted 1:1 against USD in production, so salePrice
-// in those vaults is already the USD figure. FLOW / FUSD denominated listings
-// require live FX, which this pipeline does not perform — store currency tag
-// + raw price metadata via custom_id and leave price_usd null for those.
 function isUsdEquivalent(currency: string): boolean {
   return currency === "DUC" || currency === "FUT"
 }
 
-// Flowty's expiry field on ListingAvailable is `expiry: UInt64` — Unix epoch
-// seconds. Convert to ISO timestamp; treat zero / unset as no expiry.
 function epochSecondsToIso(raw: unknown): string | null {
   const n = Number(raw)
   if (!Number.isFinite(n) || n <= 0) return null
   return new Date(n * 1000).toISOString()
 }
 
+type StorefrontVersion = "v1" | "v2"
+
 interface ListingAvailableEvent {
+  storefrontVersion: StorefrontVersion
   blockHeight: number
   blockTimestamp: string
   txHash: string
@@ -227,12 +230,17 @@ interface ListingAvailableEvent {
 }
 
 interface ListingCompletedEvent {
+  storefrontVersion: StorefrontVersion
   blockHeight: number
   blockTimestamp: string
   txHash: string
   eventIndex: number
   listingResourceID: string
   purchased: boolean
+}
+
+function sourceFor(v: StorefrontVersion): "direct_v1" | "direct" {
+  return v === "v1" ? "direct_v1" : "direct"
 }
 
 export async function POST(req: NextRequest) {
@@ -257,8 +265,6 @@ export async function POST(req: NextRequest) {
     let errorMsg: string | null = null
     const extra: Record<string, unknown> = {}
 
-    let listingsAvailableCount = 0
-    let listingsCompletedCount = 0
     let cadenceAttempted = 0
     let cadenceResolved = 0
     const unresolvedSample: string[] = []
@@ -277,9 +283,6 @@ export async function POST(req: NextRequest) {
       let lastBlock = Number(cursorRow?.last_processed_block ?? 0)
       const currentHeight = await getLatestSealedHeight()
 
-      // First-run init: anchor the cursor at the current sealed height and
-      // exit. No historical backscan — we only care about listing churn from
-      // ship-time forward. Subsequent ticks walk forward from here.
       if (lastBlock === 0) {
         await (supabaseAdmin as any)
           .from("event_cursor")
@@ -301,108 +304,116 @@ export async function POST(req: NextRequest) {
         return
       }
 
-      console.log(
-        `[allday-listings-indexer] scanning ${lastBlock + 1} → ${targetHeight} (${targetHeight - lastBlock} blocks)`
-      )
+      console.log(`[allday-listings-indexer] scanning ${lastBlock + 1} → ${targetHeight} (${targetHeight - lastBlock} blocks)`)
 
       const availableEvents: ListingAvailableEvent[] = []
       const completedEvents: ListingCompletedEvent[] = []
-
-      let rawAvailable = 0
-      let rawCompleted = 0
+      let rawV1Avail = 0
+      let rawV1Compl = 0
+      let rawV2Avail = 0
+      let rawV2Compl = 0
 
       for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
         const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
         try {
-          const [availBlocks, complBlocks] = await Promise.all([
-            fetchEventRange(STOREFRONT_LISTING_AVAILABLE, s, e),
-            fetchEventRange(STOREFRONT_LISTING_COMPLETED, s, e),
+          const [v1AvailBlocks, v1ComplBlocks, v2AvailBlocks, v2ComplBlocks] = await Promise.all([
+            fetchEventRange(V1_LISTING_AVAILABLE, s, e),
+            fetchEventRange(V1_LISTING_COMPLETED, s, e),
+            fetchEventRange(V2_LISTING_AVAILABLE, s, e),
+            fetchEventRange(V2_LISTING_COMPLETED, s, e),
           ])
 
-          for (const blk of availBlocks) {
-            const bh = Number(blk.block_height)
-            const bts = blk.block_timestamp
-            for (const evt of blk.events ?? []) {
-              rawAvailable++
-              try {
-                const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
-                const payload = unwrapCdc(raw) as Record<string, any>
-                const nftTypeId = extractTypeId(payload?.nftType)
-                if (!nftTypeId || !nftTypeId.includes("AllDay")) continue
-                if (nftTypeId !== ALLDAY_NFT_TYPE_ID && !nftTypeId.includes(".AllDay.NFT")) continue
+          const processAvailable = (blocks: FlowEventBlock[], version: StorefrontVersion, rawIncr: () => void) => {
+            for (const blk of blocks) {
+              const bh = Number(blk.block_height)
+              const bts = blk.block_timestamp
+              for (const evt of blk.events ?? []) {
+                rawIncr()
+                try {
+                  const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
+                  const payload = unwrapCdc(raw) as Record<string, any>
+                  const nftTypeId = extractTypeId(payload?.nftType)
+                  if (!nftTypeId || !nftTypeId.endsWith(ALLDAY_NFT_TYPE_SUFFIX)) continue
 
-                const storefrontAddress =
-                  typeof payload.storefrontAddress === "string" ? payload.storefrontAddress : null
-                if (!storefrontAddress) continue
+                  const storefrontAddress =
+                    typeof payload.storefrontAddress === "string" ? payload.storefrontAddress : null
+                  if (!storefrontAddress) continue
 
-                availableEvents.push({
-                  blockHeight: bh,
-                  blockTimestamp: bts,
-                  txHash: evt.transaction_id,
-                  eventIndex: evt.event_index,
-                  listingResourceID: String(payload.listingResourceID),
-                  storefrontAddress,
-                  nftID: String(payload.nftID),
-                  salePrice: String(payload.salePrice ?? "0"),
-                  salePaymentVaultType: extractTypeId(payload.salePaymentVaultType),
-                  customID: typeof payload.customID === "string" ? payload.customID : null,
-                  expiry: payload.expiry !== undefined && payload.expiry !== null ? String(payload.expiry) : undefined,
-                })
-              } catch (err) {
-                console.log(
-                  "[allday-listings-indexer] available decode err:",
-                  err instanceof Error ? err.message : String(err)
-                )
+                  // V1 emits `price` (UFix64); V2 emits `salePrice`. Both
+                  // emit `ftVaultType` for V1 and `salePaymentVaultType` for V2.
+                  const priceField = payload.price ?? payload.salePrice
+                  const vaultField = payload.ftVaultType ?? payload.salePaymentVaultType
+
+                  availableEvents.push({
+                    storefrontVersion: version,
+                    blockHeight: bh,
+                    blockTimestamp: bts,
+                    txHash: evt.transaction_id,
+                    eventIndex: evt.event_index,
+                    listingResourceID: String(payload.listingResourceID),
+                    storefrontAddress,
+                    nftID: String(payload.nftID),
+                    salePrice: String(priceField ?? "0"),
+                    salePaymentVaultType: extractTypeId(vaultField),
+                    customID: typeof payload.customID === "string" ? payload.customID : null,
+                    expiry: payload.expiry !== undefined && payload.expiry !== null ? String(payload.expiry) : undefined,
+                  })
+                } catch (err) {
+                  console.log("[allday-listings-indexer] available decode err:", err instanceof Error ? err.message : String(err))
+                }
               }
             }
           }
 
-          for (const blk of complBlocks) {
-            const bh = Number(blk.block_height)
-            const bts = blk.block_timestamp
-            for (const evt of blk.events ?? []) {
-              rawCompleted++
-              try {
-                const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
-                const payload = unwrapCdc(raw) as Record<string, any>
-                const nftTypeId = extractTypeId(payload?.nftType)
-                if (!nftTypeId || !nftTypeId.includes("AllDay")) continue
-                if (nftTypeId !== ALLDAY_NFT_TYPE_ID && !nftTypeId.includes(".AllDay.NFT")) continue
+          const processCompleted = (blocks: FlowEventBlock[], version: StorefrontVersion, rawIncr: () => void) => {
+            for (const blk of blocks) {
+              const bh = Number(blk.block_height)
+              const bts = blk.block_timestamp
+              for (const evt of blk.events ?? []) {
+                rawIncr()
+                try {
+                  const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
+                  const payload = unwrapCdc(raw) as Record<string, any>
+                  const nftTypeId = extractTypeId(payload?.nftType)
+                  if (!nftTypeId || !nftTypeId.endsWith(ALLDAY_NFT_TYPE_SUFFIX)) continue
 
-                completedEvents.push({
-                  blockHeight: bh,
-                  blockTimestamp: bts,
-                  txHash: evt.transaction_id,
-                  eventIndex: evt.event_index,
-                  listingResourceID: String(payload.listingResourceID),
-                  purchased: payload.purchased === true,
-                })
-              } catch (err) {
-                console.log(
-                  "[allday-listings-indexer] completed decode err:",
-                  err instanceof Error ? err.message : String(err)
-                )
+                  completedEvents.push({
+                    storefrontVersion: version,
+                    blockHeight: bh,
+                    blockTimestamp: bts,
+                    txHash: evt.transaction_id,
+                    eventIndex: evt.event_index,
+                    listingResourceID: String(payload.listingResourceID),
+                    purchased: payload.purchased === true,
+                  })
+                } catch (err) {
+                  console.log("[allday-listings-indexer] completed decode err:", err instanceof Error ? err.message : String(err))
+                }
               }
             }
           }
+
+          processAvailable(v1AvailBlocks, "v1", () => rawV1Avail++)
+          processCompleted(v1ComplBlocks, "v1", () => rawV1Compl++)
+          processAvailable(v2AvailBlocks, "v2", () => rawV2Avail++)
+          processCompleted(v2ComplBlocks, "v2", () => rawV2Compl++)
         } catch (err) {
-          console.log(
-            `[allday-listings-indexer] chunk ${s}-${e} error:`,
-            err instanceof Error ? err.message : String(err)
-          )
+          console.log(`[allday-listings-indexer] chunk ${s}-${e} error:`, err instanceof Error ? err.message : String(err))
         }
         if (s + CHUNK_SIZE <= targetHeight) await delay(INTER_CHUNK_DELAY_MS)
       }
 
-      listingsAvailableCount = availableEvents.length
-      listingsCompletedCount = completedEvents.length
-      rowsFound = listingsAvailableCount + listingsCompletedCount
+      const v1AvailCount = availableEvents.filter((a) => a.storefrontVersion === "v1").length
+      const v2AvailCount = availableEvents.length - v1AvailCount
+      const v1ComplCount = completedEvents.filter((c) => c.storefrontVersion === "v1").length
+      const v2ComplCount = completedEvents.length - v1ComplCount
+      rowsFound = availableEvents.length + completedEvents.length
 
       console.log(
-        `[allday-listings-indexer] range=${lastBlock + 1}-${targetHeight} rawAvail=${rawAvailable} rawCompl=${rawCompleted} availFiltered=${listingsAvailableCount} complFiltered=${listingsCompletedCount}`
+        `[allday-listings-indexer] range=${lastBlock + 1}-${targetHeight} rawV1Avail=${rawV1Avail} rawV1Compl=${rawV1Compl} rawV2Avail=${rawV2Avail} rawV2Compl=${rawV2Compl} v1Avail=${v1AvailCount} v2Avail=${v2AvailCount} v1Compl=${v1ComplCount} v2Compl=${v2ComplCount}`
       )
 
-      // ── Resolve nftID → editions UUID for ListingAvailable events ──────────
+      // ── Edition resolution (shared across V1 + V2 availables) ──────────────
       const uniqueNftIds = [...new Set(availableEvents.map((a) => a.nftID))]
       const nftToEditionExternalId = new Map<string, string>()
 
@@ -419,9 +430,6 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // nft_edition_map (populated by sales-indexer's resolver) is a richer
-        // source than wmc for hot nfts that have been sold — check it for any
-        // residual misses before falling back to Cadence.
         const stillMissing = uniqueNftIds.filter((id) => !nftToEditionExternalId.has(id))
         if (stillMissing.length > 0) {
           for (let i = 0; i < stillMissing.length; i += 500) {
@@ -438,7 +446,6 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Cadence fallback against seller wallet for nftIDs the cache missed.
       const seenSeller = new Set<string>()
       for (const a of availableEvents) {
         if (cadenceAttempted >= CADENCE_FALLBACK_MAX) break
@@ -465,7 +472,6 @@ export async function POST(req: NextRequest) {
         await delay(CADENCE_DELAY_MS)
       }
 
-      // Resolve edition_external_id → editions.id (UUID).
       const editionExternalIds = [...new Set(nftToEditionExternalId.values())]
       const editionExternalIdToUuid = new Map<string, string>()
       if (editionExternalIds.length > 0) {
@@ -480,7 +486,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // ── Build cached_listings_v2 upsert rows ────────────────────────────────
+      // ── Build cached_listings_v2 upserts ───────────────────────────────────
       const v2Rows: any[] = []
       const failuresToQueue: any[] = []
       for (const a of availableEvents) {
@@ -490,9 +496,6 @@ export async function POST(req: NextRequest) {
         if (!editionUuid) {
           if (unresolvedSample.length < 20) unresolvedSample.push(a.nftID)
           rowsSkipped++
-          // Capture the full event payload into the retry queue. The /15
-          // retry cron pulls these with a bumped CADENCE_FALLBACK_MAX (32)
-          // and replays the resolution. See docs/audits/listing-divergence-2026-05.md.
           const reason = editionExternalId
             ? "edition_external_id_not_in_editions_table"
             : cadenceAttempted >= CADENCE_FALLBACK_MAX
@@ -514,7 +517,7 @@ export async function POST(req: NextRequest) {
 
         v2Rows.push({
           listing_resource_id: a.listingResourceID,
-          source: "direct",
+          source: sourceFor(a.storefrontVersion),
           flow_id: a.nftID,
           edition_id: editionUuid,
           collection_id: ALLDAY_COLLECTION_ID,
@@ -532,7 +535,6 @@ export async function POST(req: NextRequest) {
         })
       }
 
-      // Insert ListingAvailable rows.
       for (let i = 0; i < v2Rows.length; i += 100) {
         const batch = v2Rows.slice(i, i + 100)
         const { error } = await (supabaseAdmin as any)
@@ -551,17 +553,6 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Persist failed resolutions to listing_resolution_failures so the
-      // /api/allday-listings-retry */15 cron can drain them with a bumped
-      // Cadence cap. Upsert by (collection_id, listing_resource_id) so a
-      // re-observation just refreshes the row instead of duplicating it.
-      //
-      // Round 11 Item 4: emit per-row Sentry breadcrumbs for every queued
-      // failure plus one summary captureMessage per indexer tick. Breadcrumbs
-      // give the per-row trail; the summary message is what actually surfaces
-      // in the Sentry dashboard. Tagged with collection='nfl_all_day' and a
-      // failure_reason histogram so the "first real failure landed" alert
-      // becomes a single Sentry search.
       let queuedFailures = 0
       const failureReasonCounts: Record<string, number> = {}
       if (failuresToQueue.length > 0) {
@@ -591,7 +582,6 @@ export async function POST(req: NextRequest) {
             }
           }
         }
-        // Tag-rich summary message — this is the searchable Sentry event.
         Sentry.captureMessage("listing_resolution_failures_inserted", {
           level: "warning",
           tags: {
@@ -601,25 +591,24 @@ export async function POST(req: NextRequest) {
           extra: {
             queued_failures: queuedFailures,
             failure_reason_counts: failureReasonCounts,
-            first_5_flow_ids: failuresToQueue.slice(0, 5).map(r => String(r.flow_id)),
+            first_5_flow_ids: failuresToQueue.slice(0, 5).map((r) => String(r.flow_id)),
           },
         })
       }
       extra.queued_failures = queuedFailures
       extra.failure_reason_counts = failureReasonCounts
 
-      // Soft-mark ListingCompleted updates against existing direct rows. If no
-      // matching row exists (we missed the corresponding ListingAvailable),
-      // .update is a no-op which is the correct behaviour during dual-run.
+      // ── Cancellation marking (V1 + V2 separately, source-scoped) ───────────
       let completedMatched = 0
       let completedSkipped = 0
       for (const c of completedEvents) {
         const status = c.purchased ? "purchased" : "cancelled"
+        const targetSource = sourceFor(c.storefrontVersion)
         const { data: updated, error: updErr } = await (supabaseAdmin as any)
           .from("cached_listings_v2")
           .update({ completed_at: c.blockTimestamp, completed_status: status })
           .eq("listing_resource_id", c.listingResourceID)
-          .eq("source", "direct")
+          .eq("source", targetSource)
           .is("completed_at", null)
           .select("listing_resource_id")
         if (updErr) {
@@ -633,7 +622,6 @@ export async function POST(req: NextRequest) {
         else completedSkipped++
       }
 
-      // Advance cursor.
       await (supabaseAdmin as any)
         .from("event_cursor")
         .update({ last_processed_block: targetHeight, updated_at: new Date().toISOString() })
@@ -641,15 +629,12 @@ export async function POST(req: NextRequest) {
       cursorAfter = String(targetHeight)
 
       extra.blocks_scanned = targetHeight - lastBlock
-      // events_pre_filter / events_post_filter ratio surfaces over-aggressive
-      // nftType filtering — most NFTStorefrontV2 traffic on 0x3cdbb3d569211ff3
-      // is Top Shot, so a tiny ratio is normal; ratio = 0 with non-zero
-      // pre-filter means the AllDay nftType match is rejecting everything.
-      extra.events_pre_filter = rawAvailable + rawCompleted
+      extra.events_pre_filter = rawV1Avail + rawV1Compl + rawV2Avail + rawV2Compl
       extra.events_post_filter = rowsFound
-      extra.events_filtered_to_allday = listingsAvailableCount + listingsCompletedCount
-      extra.listings_available_count = listingsAvailableCount
-      extra.listings_completed_count = listingsCompletedCount
+      extra.v1_available_count = v1AvailCount
+      extra.v2_available_count = v2AvailCount
+      extra.v1_completed_count = v1ComplCount
+      extra.v2_completed_count = v2ComplCount
       extra.completed_matched = completedMatched
       extra.completed_unmatched = completedSkipped
       extra.cadence_attempted = cadenceAttempted

@@ -2,17 +2,42 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep, fireSupabaseEdgeFunction } from "@/lib/pipeline-chain"
 import { hydrateAllDayEditions, toUpsertRow } from "@/lib/editions-hydrate"
+import { decodeV1SaleTx } from "@/lib/dapper-v1-tx-decode"
 import crypto from "crypto"
 
 // ── On-chain NFL All Day sales indexer ───────────────────────────────────────
 //
-// Scans Flow NFTStorefrontV2.ListingCompleted events via the Flow REST API,
-// filters to AllDay NFT purchases, maps nftID → edition via wallet_moments_cache
-// (with a Cadence borrowMomentNFT fallback against the buyer wallet), and
-// writes dedup'd rows into the partitioned `sales` table. Sales whose buyer
-// wallet no longer holds the NFT (relisted instantly) fall through to
-// `unmapped_sales` for later promotion. Every run logs both the scanner and
-// the edition-resolver via pipeline_runs so silent failures surface.
+// Scans TWO storefront contracts per tick under a single cursor:
+//
+//   V1 (primary, A.4eb8a10cb9f87357.NFTStorefront) — the original Dapper-
+//     deployed storefront that AllDay (Golazos, UFC Strike) native sales have
+//     always routed through. Its ListingCompleted payload is REDUCED
+//     (listingResourceID / storefrontResourceID / purchased / nftType / nftID)
+//     — no buyer, seller, or price. Those must be recovered from the tx's
+//     auxiliary events (AllDay.Deposit.to / AllDay.Withdraw.from / DUC
+//     TokensWithdrawn). Pre-2026-05-17 we mistakenly indexed only V2 (Flowty
+//     fork) and missed every native AllDay sale; the JJLSmith $2,999 Marquee
+//     Ultimate trace on Flowscan surfaced the V1 contract.
+//
+//   V2 (legacy, A.3cdbb3d569211ff3.NFTStorefrontV2) — Flowty's NFTStorefrontV2
+//     fork. Dormant since 2026-05-14 but kept in the scan so cancellations
+//     still land. V2 ListingCompleted DOES carry buyer/seller/price inline.
+//
+// Both event types live in the same block range, so one cursor on
+// event_cursor.id='allday_sales' advances both — splitting would double the
+// cron infrastructure for no operational benefit.
+//
+// Price-resolution chain for V1 sales:
+//   1. Try cached_listings_v2 lookup by listing_resource_id (the listings-
+//      indexer populates this from ListingAvailable's inline price field).
+//   2. Fall back to decodeV1SaleTx, which fetches the tx and sums DUC
+//      TokensWithdrawn from the DUC contract address `0xead892083b3e2c6c`.
+//      A sanity check (split amounts must sum to gross within 1¢) flags
+//      uncertain extractions — those route to unmapped_sales with a
+//      resolution_hint rather than recording a guessed price.
+//
+// Edition resolution (wmc → Cadence borrow → AllDay GQL relay → on-chain
+// getEditionData) is unchanged from the pre-V1 implementation.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
@@ -20,11 +45,21 @@ const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const COLLECTION_SLUG = "nfl_all_day"
 const PIPELINE_NAME = "allday-sales-indexer"
 const RESOLVER_PIPELINE_NAME = "allday-edition-resolver"
-// Flowty's NFTStorefrontV2 fork (0x3cdbb3d569211ff3) is where AllDay moments
-// actually trade — the Dapper StorefrontV2 (0x4eb8a10cb9f87357) only carries
-// TopShot PackNFT / Pinnacle / MFL packs. Flowty's fork also emits `nftType`
-// as a plain String (not a Type), so payload parsing differs.
-const STOREFRONT_EVENT = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted"
+
+// V1 Dapper NFTStorefront — primary path for AllDay native sales.
+const V1_LISTING_COMPLETED = "A.4eb8a10cb9f87357.NFTStorefront.ListingCompleted"
+// V2 Flowty fork — dormant but kept for cancellation tail. `nftType` payload
+// shape differs from V1 (V2 also emits a Type wrapper, but its other fields
+// are richer — buyer, seller, salePrice all inline).
+const V2_LISTING_COMPLETED = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted"
+
+// Use endsWith() instead of includes() — A.e4cf4bdc1751c65d.PackNFT.NFT lives
+// at the same address but is a separate contract; a .includes("AllDay") guard
+// would not catch a future "AllDayBundle.NFT" variant either.
+const ALLDAY_NFT_TYPE_SUFFIX = ".AllDay.NFT"
+const ALLDAY_DEPOSIT_EVENT = "A.e4cf4bdc1751c65d.AllDay.Deposit"
+const ALLDAY_WITHDRAW_EVENT = "A.e4cf4bdc1751c65d.AllDay.Withdraw"
+
 const FLOW_REST = "https://rest-mainnet.onflow.org"
 const CHUNK_SIZE = 250
 const DEFAULT_SCAN_RANGE = 50_000
@@ -32,12 +67,15 @@ const MAX_SCAN_RANGE = 100_000
 const INTER_CHUNK_DELAY_MS = 75
 // Cap Cadence borrow attempts per run. Flow REST shares a 20 req/s budget
 // across the project, and each unresolved sale costs 1-2 script calls
-// (borrow + optional getEditionData). Bumped 5 -> 12 once the topshot-proxy
-// 1015 throttle landed (commit 72ea41b) — the per-tick cap was the bottleneck
-// draining the residual NULL-edition cohorts (62 NBA TS, 36 AllDay).
+// (borrow + optional getEditionData).
 const CADENCE_FALLBACK_MAX = 12
 const CADENCE_DELAY_MS = 150
 const SCRIPT_TIMEOUT_MS = 15_000
+// Cap V1 tx-decode fallback calls per run (1 REST hit per sale not in
+// cached_listings_v2 + buyer/seller/price extraction). Independent budget
+// from the Cadence cap so the two don't starve each other.
+const V1_TX_DECODE_MAX = 25
+const V1_TX_DECODE_DELAY_MS = 100
 
 // Addresses that appear in every Flowty purchase envelope but are never the
 // buyer. Normalised to 0x + 16-hex-chars for set lookups.
@@ -125,6 +163,19 @@ function unwrapCdc(node: unknown): unknown {
   return node
 }
 
+function extractNftTypeId(field: unknown): string | undefined {
+  if (typeof field === "string") return field
+  if (field && typeof field === "object") {
+    const st = (field as Record<string, unknown>).staticType
+    if (typeof st === "string") return st
+    if (st && typeof st === "object") {
+      const id = (st as Record<string, unknown>).typeID
+      if (typeof id === "string") return id
+    }
+  }
+  return undefined
+}
+
 interface FlowEventBlock {
   block_id: string
   block_height: string
@@ -136,7 +187,7 @@ async function fetchEventRange(type: string, start: number, end: number): Promis
   const url = `${FLOW_REST}/v1/events?type=${encodeURIComponent(type)}&start_height=${start}&end_height=${end}`
   const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
   if (!res.ok) {
-    console.log(`[allday-sales-indexer] events ${start}-${end} HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
+    console.log(`[allday-sales-indexer] events ${start}-${end} ${type.split(".").pop()} HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
     return []
   }
   const json = (await res.json()) as FlowEventBlock[]
@@ -150,10 +201,10 @@ async function getLatestSealedHeight(): Promise<number> {
   return Number(json[0]?.header?.height ?? 0)
 }
 
-// Real-buyer resolution: when the storefront event payload doesn't carry an
-// explicit `buyer` field, fall back to the tx's proposer / authorizers /
-// payer. After filtering out the known infra addresses, whatever remains is
-// the wallet that now holds the NFT.
+// Tx-authorizer fallback used by V2 path only — V2 events don't always carry
+// the buyer in the payload, so we walk the tx's proposer/authorizers/payer.
+// V1 path uses decodeV1SaleTx which pulls the buyer from AllDay.Deposit.to
+// directly.
 async function fetchTxBuyers(txId: string): Promise<string[]> {
   try {
     const clean = txId.replace(/^0x/, "")
@@ -178,12 +229,9 @@ async function fetchTxBuyers(txId: string): Promise<string[]> {
 
 // AllDay-typed borrow: the public capability at /public/AllDayNFTCollection is
 // published as a `&AllDay.Collection` (the contract's concrete collection
-// resource), not as the generic `&{NonFungibleToken.Collection}` interface.
-// Borrowing the concrete type lets us call the AllDay-specific
+// resource). Borrowing the concrete type lets us call the AllDay-specific
 // `borrowMomentNFT(id:)` accessor, which returns `&AllDay.NFT?` directly with
-// editionID, serialNumber, and mintingDate fields exposed — no unsafe cast
-// needed. Returns nil if the wallet doesn't hold the NFT (e.g. relisted
-// instantly post-sale), in which case we fall through to unmapped_sales.
+// editionID, serialNumber, and mintingDate fields exposed.
 const BORROW_MOMENT_SCRIPT = `
 import AllDay from 0xe4cf4bdc1751c65d
 access(all) fun main(buyer: Address, id: UInt64): {String: String}? {
@@ -200,9 +248,6 @@ access(all) fun main(buyer: Address, id: UInt64): {String: String}? {
 }
 `
 
-// Stateless edition-data fetch — used when the editions table doesn't already
-// have a row for the resolved editionID. Pulls play / set / series metadata
-// inline so we can upsert a populated edition without a second round trip.
 const GET_EDITION_DATA_SCRIPT = `
 import AllDay from 0xe4cf4bdc1751c65d
 access(all) fun main(editionID: UInt64): {String: String}? {
@@ -252,8 +297,6 @@ async function runScript(code: string, args: Array<{ type: string; value: unknow
   })
   if (!res.ok) throw new Error(`script HTTP ${res.status}`)
   const json = (await res.json()) as { value?: string } | string
-  // Flow REST returns either a quoted base64 JSON-string body or an object
-  // with `value`. Normalize: trim surrounding quotes, base64-decode, JSON.parse.
   let raw: string
   if (typeof json === "string") raw = json
   else raw = String(json.value ?? "")
@@ -317,6 +360,22 @@ function buildOnChainEditionRow(
   }
 }
 
+type SaleSource = "v1_dapper" | "v2_flowty"
+
+interface Sale {
+  saleSource: SaleSource
+  blockHeight: number
+  blockTimestamp: string
+  transactionId: string
+  nftID: string
+  listingResourceID: string
+  // V2 carries these inline; V1 fills them via cached_listings_v2 lookup
+  // or decodeV1SaleTx.
+  salePrice: string | null
+  seller: string | null
+  buyer: string | null
+}
+
 export async function POST(req: NextRequest) {
   const start = Date.now()
   const startedAt = new Date().toISOString()
@@ -340,8 +399,6 @@ export async function POST(req: NextRequest) {
     let errorMsg: string | null = null
     const extra: Record<string, unknown> = {}
 
-    // Edition-resolver counters — separate pipeline_runs row so we can monitor
-    // the borrowMomentNFT path independent of the scanner's totals.
     const resolverStartedAt = new Date().toISOString()
     let resolverAttempted = 0
     let resolverResolved = 0
@@ -373,9 +430,6 @@ export async function POST(req: NextRequest) {
       cursorAfter = String(lastBlock)
 
       if (lastBlock >= currentHeight) {
-        // Even when the cursor is at the chain tip, fire the historical-backlog
-        // drainer so the 2,900+ residue from before the inline resolver shipped
-        // gets nibbled at every cron cycle. Edge function returns 202 instantly.
         await fireSupabaseEdgeFunction("allday-unmapped-resolver", { batch_size: 5 })
         await fireNextPipelineStep("/api/fmv-recalc", chain)
         extra.message = "already up to date"
@@ -384,66 +438,91 @@ export async function POST(req: NextRequest) {
 
       console.log(`[allday-sales-indexer] scanning ${lastBlock + 1} → ${targetHeight} (${targetHeight - lastBlock} blocks)`)
 
-      interface Sale {
-        blockHeight: number
-        blockTimestamp: string
-        transactionId: string
-        nftID: string
-        salePrice: string
-        storefrontResourceID?: string
-        seller: string | null
-        buyer: string | null
-      }
-
       const sales: Sale[] = []
+      let rawV1 = 0
+      let rawV2 = 0
+      let v1FilteredIn = 0
+      let v2FilteredIn = 0
+      let v1NonAllDay = 0
+      let v1Cancellations = 0
 
-      let rawEventsSeen = 0
       for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
         const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
         try {
-          const blocks = await fetchEventRange(STOREFRONT_EVENT, s, e)
-          for (const blk of blocks) {
+          const [v1Blocks, v2Blocks] = await Promise.all([
+            fetchEventRange(V1_LISTING_COMPLETED, s, e),
+            fetchEventRange(V2_LISTING_COMPLETED, s, e),
+          ])
+
+          // ── V1 (primary) ───────────────────────────────────────────────────
+          for (const blk of v1Blocks) {
             const bh = Number(blk.block_height)
             const bts = blk.block_timestamp
             for (const evt of blk.events ?? []) {
-              rawEventsSeen++
+              rawV1++
               try {
                 const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
                 const payload = unwrapCdc(raw) as Record<string, any>
-                const nftTypeField = payload?.nftType
-                let typeID: string | undefined
-                if (typeof nftTypeField === "string") typeID = nftTypeField
-                else if (nftTypeField && typeof nftTypeField === "object") {
-                  const st = (nftTypeField as Record<string, unknown>).staticType
-                  if (typeof st === "string") typeID = st
-                  else if (st && typeof st === "object")
-                    typeID = (st as Record<string, unknown>).typeID as string | undefined
+                const typeId = extractNftTypeId(payload?.nftType)
+                if (!typeId || !typeId.endsWith(ALLDAY_NFT_TYPE_SUFFIX)) {
+                  v1NonAllDay++
+                  continue
                 }
-                if (!typeID || !typeID.includes("AllDay")) continue
-                if (payload.purchased !== true) continue
-
-                // storefrontAddress and buyer are both Optional<Address> in the
-                // ListingCompleted payload — unwrapCdc resolves them to either
-                // the bare address string or null. These are the canonical
-                // seller/buyer for Flowty AllDay sales; commissionReceiver is
-                // the Flowty fee router (0x3cdbb3d569211ff3), not the buyer.
-                const sellerVal = payload.storefrontAddress
-                const buyerVal = payload.buyer
+                if (payload.purchased !== true) {
+                  v1Cancellations++
+                  continue
+                }
                 sales.push({
+                  saleSource: "v1_dapper",
                   blockHeight: bh,
                   blockTimestamp: bts,
                   transactionId: evt.transaction_id,
                   nftID: String(payload.nftID),
+                  listingResourceID: String(payload.listingResourceID),
+                  salePrice: null,
+                  seller: null,
+                  buyer: null,
+                })
+                v1FilteredIn++
+              } catch (err) {
+                console.log(
+                  "[allday-sales-indexer] V1 decode err:",
+                  err instanceof Error ? err.message : String(err)
+                )
+              }
+            }
+          }
+
+          // ── V2 (legacy Flowty fork) ─────────────────────────────────────────
+          for (const blk of v2Blocks) {
+            const bh = Number(blk.block_height)
+            const bts = blk.block_timestamp
+            for (const evt of blk.events ?? []) {
+              rawV2++
+              try {
+                const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
+                const payload = unwrapCdc(raw) as Record<string, any>
+                const typeId = extractNftTypeId(payload?.nftType)
+                if (!typeId || !typeId.endsWith(ALLDAY_NFT_TYPE_SUFFIX)) continue
+                if (payload.purchased !== true) continue
+
+                const sellerVal = payload.storefrontAddress
+                const buyerVal = payload.buyer
+                sales.push({
+                  saleSource: "v2_flowty",
+                  blockHeight: bh,
+                  blockTimestamp: bts,
+                  transactionId: evt.transaction_id,
+                  nftID: String(payload.nftID),
+                  listingResourceID: String(payload.listingResourceID ?? ""),
                   salePrice: String(payload.salePrice ?? "0"),
-                  storefrontResourceID: payload.storefrontResourceID
-                    ? String(payload.storefrontResourceID)
-                    : undefined,
                   seller: typeof sellerVal === "string" ? sellerVal : null,
                   buyer: typeof buyerVal === "string" ? buyerVal : null,
                 })
+                v2FilteredIn++
               } catch (err) {
                 console.log(
-                  "[allday-sales-indexer] decode err:",
+                  "[allday-sales-indexer] V2 decode err:",
                   err instanceof Error ? err.message : String(err)
                 )
               }
@@ -460,15 +539,108 @@ export async function POST(req: NextRequest) {
 
       rowsFound = sales.length
       console.log(
-        `[allday-sales-indexer] contract=${STOREFRONT_EVENT} range=${lastBlock + 1}-${targetHeight} rawEvents=${rawEventsSeen} found=${sales.length}`
+        `[allday-sales-indexer] range=${lastBlock + 1}-${targetHeight} rawV1=${rawV1} rawV2=${rawV2} v1Sales=${v1FilteredIn} v2Sales=${v2FilteredIn}`
       )
-      // 2026-05-17: surface raw vs filtered counts in pipeline_runs.extra so
-      // "scanner silent" diagnostics can tell "0 events on chain" from
-      // "events emitted but our nftType/purchased predicate filtered them
-      // out" without reading runtime logs.
-      extra.raw_events_seen = rawEventsSeen
-      extra.filtered_in = sales.length
-      extra.filtered_out = rawEventsSeen - sales.length
+      extra.raw_v1_events = rawV1
+      extra.raw_v2_events = rawV2
+      extra.v1_filtered_in = v1FilteredIn
+      extra.v2_filtered_in = v2FilteredIn
+      extra.v1_non_allday = v1NonAllDay
+      extra.v1_cancellations = v1Cancellations
+
+      // ── V1 price + buyer + seller enrichment ───────────────────────────────
+      const v1Sales = sales.filter((s) => s.saleSource === "v1_dapper")
+      const v1UncertainPriceSales: Array<{ sale: Sale; reason: string; samples: number[] }> = []
+
+      if (v1Sales.length > 0) {
+        // Step 1: bulk lookup cached_listings_v2 by listing_resource_id.
+        const lrids = [...new Set(v1Sales.map((s) => s.listingResourceID))].filter((x) => x.length > 0)
+        const cachedByLrid = new Map<string, { price_usd: number | null; seller_address: string | null }>()
+        if (lrids.length > 0) {
+          for (let i = 0; i < lrids.length; i += 500) {
+            const batch = lrids.slice(i, i + 500)
+            const { data } = await (supabaseAdmin as any)
+              .from("cached_listings_v2")
+              .select("listing_resource_id, price_usd, seller_address")
+              .eq("collection_id", ALLDAY_COLLECTION_ID)
+              .in("listing_resource_id", batch)
+            for (const row of data ?? []) {
+              // Multiple source rows could collide on listing_resource_id;
+              // first-non-null-price wins (direct listings carry real prices,
+              // flowty mirrors sometimes don't).
+              const existing = cachedByLrid.get(row.listing_resource_id)
+              if (!existing || (existing.price_usd == null && row.price_usd != null)) {
+                cachedByLrid.set(row.listing_resource_id, {
+                  price_usd: row.price_usd,
+                  seller_address: row.seller_address,
+                })
+              }
+            }
+          }
+        }
+
+        let v1TxDecodeUsed = 0
+        let v1CacheHits = 0
+        let v1UncertainCount = 0
+
+        for (const sale of v1Sales) {
+          const cached = cachedByLrid.get(sale.listingResourceID)
+          if (cached && cached.price_usd != null) {
+            // Cache hit: take price + seller from cached listing, still need
+            // to fetch tx for buyer (cached_listings_v2 has no buyer field).
+            sale.salePrice = String(cached.price_usd)
+            sale.seller = cached.seller_address ?? sale.seller
+            v1CacheHits++
+            if (v1TxDecodeUsed < V1_TX_DECODE_MAX) {
+              v1TxDecodeUsed++
+              const decoded = await decodeV1SaleTx(sale.transactionId, {
+                depositEventType: ALLDAY_DEPOSIT_EVENT,
+                withdrawEventType: ALLDAY_WITHDRAW_EVENT,
+                nftId: sale.nftID,
+              })
+              sale.buyer = decoded.buyer ?? sale.buyer
+              if (!sale.seller) sale.seller = decoded.seller ?? null
+              await delay(V1_TX_DECODE_DELAY_MS)
+            }
+            continue
+          }
+
+          // Cache miss: full tx decode for buyer/seller/price.
+          if (v1TxDecodeUsed >= V1_TX_DECODE_MAX) {
+            v1UncertainPriceSales.push({
+              sale,
+              reason: "v1_tx_decode_budget_exhausted",
+              samples: [],
+            })
+            v1UncertainCount++
+            continue
+          }
+          v1TxDecodeUsed++
+          const decoded = await decodeV1SaleTx(sale.transactionId, {
+            depositEventType: ALLDAY_DEPOSIT_EVENT,
+            withdrawEventType: ALLDAY_WITHDRAW_EVENT,
+            nftId: sale.nftID,
+          })
+          await delay(V1_TX_DECODE_DELAY_MS)
+
+          sale.buyer = decoded.buyer ?? null
+          sale.seller = decoded.seller ?? null
+          if (decoded.priceCertain && decoded.priceDuc != null) {
+            sale.salePrice = String(decoded.priceDuc)
+          } else {
+            v1UncertainPriceSales.push({
+              sale,
+              reason: decoded.priceReason,
+              samples: decoded.sampleAmounts,
+            })
+            v1UncertainCount++
+          }
+        }
+
+        extra.v1_cache_hits = v1CacheHits
+        extra.v1_tx_decode_used = v1TxDecodeUsed
+        extra.v1_uncertain_count = v1UncertainCount
+      }
 
       // Resolve nftID → edition_key (+ serial_number) via wallet_moments_cache
       const uniqueNftIds = [...new Set(sales.map((s) => s.nftID))]
@@ -490,21 +662,13 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Cadence borrow fallback: for sales that missed wallet_moments_cache,
-      // call borrowMomentNFT against the buyer wallet (authoritative from the
-      // event payload). Buyer-side borrow is reliable because the buyer holds
-      // the NFT post-sale by definition; the only failure mode is an instant
-      // relist that moves the NFT back into a Flowty escrow before the next
-      // sealed block — those fall through to unmapped_sales.
+      // Cadence borrow fallback against buyer wallet for sales the cache
+      // missed. V1 sales whose buyer was resolved via decodeV1SaleTx use that
+      // buyer; V2 sales fall back to tx authorizers as before.
       const unresolvedSales = sales.filter((s) => !nftToEditionKey.has(s.nftID))
-      const newlyResolved: Array<{
-        nft_id: string
-        edition_external_id: string
-        serial_number: number
-      }> = []
+      const newlyResolved: Array<{ nft_id: string; edition_external_id: string; serial_number: number }> = []
       const seen = new Set<string>()
       const editionsToHydrate = new Set<string>()
-      const editionsByExternalId = new Map<string, string>() // external_id → uuid (newly inserted)
 
       for (const sale of unresolvedSales) {
         if (resolverAttempted >= CADENCE_FALLBACK_MAX) break
@@ -512,9 +676,6 @@ export async function POST(req: NextRequest) {
         seen.add(sale.nftID)
         resolverAttempted++
 
-        // Prefer the event-payload buyer; fall back to tx authorizers/proposer
-        // when the event didn't carry one (rare with Flowty's fork but possible
-        // for direct storefront purchases).
         const candidates: string[] = []
         if (sale.buyer) candidates.push(normalizeAddress(sale.buyer))
         if (candidates.length === 0) {
@@ -550,8 +711,6 @@ export async function POST(req: NextRequest) {
         }
 
         if (!resolvedEditionID) {
-          // Buyer no longer holds the NFT (instant relist) — fall through to
-          // unmapped_sales for later promotion via promote_unmapped_sales.
           resolverSkipped++
           continue
         }
@@ -595,15 +754,12 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // For newly resolved editions that aren't in the editions table yet,
-      // hydrate via the AllDay GraphQL relay first; if that returns ok=false
-      // (relay hasn't ingested the edition yet), fall back to a stateless
-      // on-chain getEditionData call. Either way, upsert and pick up the UUID.
+      // Hydrate newly resolved editions via AllDay relay → on-chain fallback.
       const missingExternalIds = [...editionsToHydrate].filter((k) => !editionKeyToId.has(k))
       if (missingExternalIds.length > 0) {
         const now = new Date().toISOString()
         const upsertRows: Record<string, unknown>[] = []
-        let hydratedHits: HydratedHit[] = []
+        const hydratedHits: HydratedHit[] = []
         try {
           const hydrated = await hydrateAllDayEditions(missingExternalIds)
           for (const r of hydrated) {
@@ -654,22 +810,35 @@ export async function POST(req: NextRequest) {
             console.log(`[allday-sales-indexer] editions upsert err: ${upErr.message}`)
           }
           for (const row of inserted ?? []) {
-            if (row.external_id && row.id) {
-              editionKeyToId.set(row.external_id, row.id)
-              editionsByExternalId.set(row.external_id, row.id)
-            }
+            if (row.external_id && row.id) editionKeyToId.set(row.external_id, row.id)
           }
         }
       }
 
+      // ── Build sales + unmapped rows ─────────────────────────────────────────
       const salesRows: any[] = []
       const unmappedRows: any[] = []
       const unresolvedNftIds: string[] = []
+      const ingestedAt = new Date().toISOString()
+
+      // Build a fast lookup for V1 sales flagged as price-uncertain so we
+      // don't write them to `sales` with a guessed price — they go straight
+      // to unmapped_sales with a resolution_hint capturing the sample DUC
+      // amounts so offline investigation can identify the pattern.
+      const uncertainTxToReason = new Map<string, { reason: string; samples: number[] }>()
+      for (const u of v1UncertainPriceSales) {
+        uncertainTxToReason.set(u.sale.transactionId, { reason: u.reason, samples: u.samples })
+      }
+
       for (const s of sales) {
         const editionKey = nftToEditionKey.get(s.nftID) ?? null
         const editionId = editionKey ? editionKeyToId.get(editionKey) : null
-        const price = parseFloat(s.salePrice) || 0
-        if (editionId) {
+        const priceCertain = !uncertainTxToReason.has(s.transactionId)
+        const price = priceCertain && s.salePrice !== null ? parseFloat(s.salePrice) || 0 : 0
+        const marketplace = s.saleSource === "v1_dapper" ? "nflallday" : "flowty"
+        const source = s.saleSource === "v1_dapper" ? "onchain_dapper_v1" : "onchain"
+
+        if (editionId && priceCertain) {
           salesRows.push({
             id: crypto.randomUUID(),
             edition_id: editionId,
@@ -679,30 +848,37 @@ export async function POST(req: NextRequest) {
             price_usd: price,
             serial_number: nftToSerial.get(s.nftID) ?? 0,
             sold_at: s.blockTimestamp,
-            marketplace: "flowty",
-            source: "onchain",
+            marketplace,
+            source,
             block_height: s.blockHeight,
             transaction_hash: s.transactionId,
             buyer_address: s.buyer,
             seller_address: s.seller,
-            ingested_at: new Date().toISOString(),
+            ingested_at: ingestedAt,
           })
         } else {
           unresolvedNftIds.push(s.nftID)
-          const hint: Record<string, unknown> = { nft_id: s.nftID }
+          const hint: Record<string, unknown> = { nft_id: s.nftID, sale_source: s.saleSource }
           if (editionKey) hint.edition_id = editionKey
+          if (!priceCertain) {
+            const u = uncertainTxToReason.get(s.transactionId)
+            if (u) {
+              hint.price_extraction = u.reason
+              hint.sample_duc_amounts = u.samples
+            }
+          }
           unmappedRows.push({
             id: crypto.randomUUID(),
             collection_id: ALLDAY_COLLECTION_ID,
             nft_id: s.nftID,
             serial_number: 0,
-            price_usd: price,
-            marketplace: "flowty",
+            price_usd: priceCertain && s.salePrice !== null ? price : 0,
+            marketplace,
             transaction_hash: s.transactionId,
             block_height: s.blockHeight,
             sold_at: s.blockTimestamp,
-            ingested_at: new Date().toISOString(),
-            source: "onchain",
+            ingested_at: ingestedAt,
+            source,
             buyer_address: s.buyer,
             seller_address: s.seller,
             resolution_hint: hint,
@@ -710,13 +886,12 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Insert resolved sales
       for (let i = 0; i < salesRows.length; i += 100) {
         const batch = salesRows.slice(i, i + 100)
         const { error } = await (supabaseAdmin as any).from("sales").insert(batch)
         if (error) {
           if (error.code === "23505") {
-            // dupes — not new writes, not skipped
+            // dupes — not new writes
           } else {
             console.log("[allday-sales-indexer] sales batch insert err:", error.message)
             for (const row of batch) {
@@ -729,13 +904,12 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Insert unmapped sales (service_role only)
       for (let i = 0; i < unmappedRows.length; i += 100) {
         const batch = unmappedRows.slice(i, i + 100)
         const { error } = await (supabaseAdmin as any).from("unmapped_sales").insert(batch)
         if (error) {
           if (error.code === "23505") {
-            // already recorded — don't count
+            // dupes
           } else {
             console.log("[allday-sales-indexer] unmapped batch insert err:", error.message)
             for (const row of batch) {
@@ -748,7 +922,6 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Advance cursor
       await (supabaseAdmin as any)
         .from("event_cursor")
         .update({ last_processed_block: targetHeight, updated_at: new Date().toISOString() })
@@ -761,11 +934,11 @@ export async function POST(req: NextRequest) {
       extra.editions_hydrated_from_relay = resolverNewEditionsHydrated
       extra.editions_hydrated_from_chain = resolverNewEditionsOnchain
       extra.unresolved_sample = unresolvedNftIds.slice(0, 20)
+      extra.v1_uncertain_sample = v1UncertainPriceSales
+        .slice(0, 10)
+        .map((u) => ({ tx: u.sale.transactionId, reason: u.reason, samples: u.samples }))
       extra.elapsed_ms = Date.now() - start
 
-      // Drain a batch of the historical unmapped_sales backlog (~2,900 rows
-      // dating back to 2026-04-16, before the inline resolver shipped) on
-      // every cron cycle. ~50 rows per 20 min = full drain in <24 hours.
       await fireSupabaseEdgeFunction("allday-unmapped-resolver", { batch_size: 5 })
       await fireNextPipelineStep("/api/fmv-recalc", chain)
     } catch (err) {
@@ -804,8 +977,6 @@ export async function POST(req: NextRequest) {
         )
       }
 
-      // Independent observability for the borrowMomentNFT path. duration_ms
-      // is a generated column on pipeline_runs, so omit it.
       try {
         const { error } = await (supabaseAdmin as any).from("pipeline_runs").insert({
           pipeline: RESOLVER_PIPELINE_NAME,

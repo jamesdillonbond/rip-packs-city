@@ -24,7 +24,38 @@ LLC: Oregon, filed May 3 2026.
 
 ## Recent sessions
 
-### May 8, 2026 (latest) — Account linking + site lockdown hardening + paginated wallet recovery
+### May 18, 2026 (latest) — V1 Dapper NFTStorefront indexer refactor
+
+Discovered via Flowscan trace of a $2,999 JJLSmith Mahomes Marquee Ultimate purchase (NFT id 9430364, edition 4097, wallet `0xc579f9caeac49f95`) that AllDay / Golazos / UFC native sales route through **V1 Dapper NFTStorefront** at `A.4eb8a10cb9f87357.NFTStorefront` (no V2 suffix). The V2 Dapper storefront at the same address (`A.4eb8a10cb9f87357.NFTStorefrontV2`) only carries TopShot PackNFT / Pinnacle / MFL packs; the V2 Flowty fork at `0x3cdbb3d569211ff3` has been dormant since 2026-05-14. Our DB confirmed the blind spot was lifetime-wide — 153 AllDay-holding wallets had never been seen as buyer in `sales`, and the JJLSmith wallet held 105 AllDay moments with zero `moment_acquisitions` rows.
+
+Shipped
+
+- **New helper** [lib/dapper-v1-tx-decode.ts](lib/dapper-v1-tx-decode.ts) — fetches `/v1/transaction_results/{txId}` and parses three auxiliary events per V1 sale:
+  - `<collection>.Deposit (.to)` → buyer
+  - `<collection>.Withdraw (.from)` → seller
+  - `DapperUtilityCoin.TokensWithdrawn` where `from = 0xead892083b3e2c6c` → gross sale price
+  - Sanity check: split-sum (TokensWithdrawn from non-contract sources) must equal gross within 1¢; mismatch flags the tx as price-uncertain so it routes to `unmapped_sales` instead of recording a guessed price. Sample DUC amounts captured in `resolution_hint` for offline investigation.
+
+- **Sales indexers** (allday / golazos / ufc) — single cursor scans BOTH `A.4eb8a10cb9f87357.NFTStorefront.ListingCompleted` (V1 primary) AND `A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted` (V2 legacy) per tick. V1 sales follow: cached_listings_v2 lookup by listing_resource_id → `decodeV1SaleTx` fallback → `unmapped_sales` for uncertain price. V1 rows write `marketplace='nflallday'|'laligagolazos'|'ufcstrike'` + `source='onchain_dapper_v1'`; V2 rows keep existing `marketplace='flowty'` + `source='onchain'` semantics.
+
+- **Listings indexers** (allday / golazos / ufc) — single cursor scans all FOUR event types per tick (V1 ListingAvailable + V1 ListingCompleted + V2 ListingAvailable + V2 ListingCompleted). V1 ListingAvailable payload carries `price (UFix64)` + `ftVaultType (Type)` inline — no aux fetch needed. V1 rows land in `cached_listings_v2` with `source='direct_v1'`; V2 chain rows keep `source='direct'`. Cancellation marking is source-scoped per version.
+
+- **nftType filter precision** — switched from `.includes("AllDay")` to `.endsWith(".AllDay.NFT")` (and `.endsWith(".Golazos.NFT")` / `.endsWith(".UFC_NFT.NFT")`) to prevent false matches against hypothetical sibling contracts at the same address.
+
+Key constants (May 18)
+
+- V1 Dapper NFTStorefront: `A.4eb8a10cb9f87357.NFTStorefront` — native marketplace for AllDay/Golazos/UFC.
+- V2 Flowty fork: `A.3cdbb3d569211ff3.NFTStorefrontV2` — dormant since 2026-05-14, kept for cancellation tail.
+- V2 Dapper storefront: `A.4eb8a10cb9f87357.NFTStorefrontV2` — carries TopShot PackNFT / Pinnacle / MFL packs only.
+- DUC contract: `0xead892083b3e2c6c`. Gross sale price = sum of `TokensWithdrawn` where `from == DUC_contract`.
+- New `sales.source` value: `onchain_dapper_v1` (distinct from existing `onchain` for V2 fork).
+- New `cached_listings_v2.source` value: `direct_v1` (distinct from existing `direct` for V2 chain ingestion).
+- `unmapped_sales.resolution_hint` for V1 price-uncertain: `{ nft_id, sale_source: 'v1_dapper', price_extraction: 'no_duc_from_contract' | 'split_sum_mismatch' | 'tx_fetch_failed' | 'tx_no_events' | 'v1_tx_decode_budget_exhausted', sample_duc_amounts: [...] }`.
+- V1 tx-decode budget per tick: 25 calls (independent from Cadence borrow budget). Cache-hit path: 1 REST per sale for buyer (cached_listings_v2 doesn't store buyer_address). Cache-miss: 1 REST per sale for full decode.
+
+Verification: monitor `pipeline_runs.extra` within 30 minutes of deploy for `v1_filtered_in > 0`. Pre-deploy this was always 0 (V2 fork dormant); post-deploy expect ~5-25/tick across all three sales indexers. The `v1_uncertain_sample` array in extras surfaces price-extraction failure patterns to investigate.
+
+### May 8, 2026 — Account linking + site lockdown hardening + paginated wallet recovery
 
 Shipped
 
@@ -332,8 +363,9 @@ File: `app/api/sniper-feed/route.ts`
 
 - Dapper merchant: `0xc1e4f4f4c4257510`
 - DUC payment: `0xead892083b3e2c6c` (NOT `0x82ec283f88a62e65` — that was an older alias)
-- NFTStorefrontV2 (Dapper): `0x4eb8a10cb9f87357`
-- NFTStorefrontV2 (Flowty fork — AllDay/Golazos/UFC): `0x3cdbb3d569211ff3`
+- **NFTStorefront V1 (Dapper, native AllDay/Golazos/UFC marketplace): `A.4eb8a10cb9f87357.NFTStorefront`** (no V2 suffix) — primary path discovered 2026-05-18
+- NFTStorefrontV2 (Dapper, TopShot PackNFT / Pinnacle / MFL packs only): `A.4eb8a10cb9f87357.NFTStorefrontV2`
+- NFTStorefrontV2 (Flowty fork, dormant since 2026-05-14): `A.3cdbb3d569211ff3.NFTStorefrontV2`
 - NonFungibleToken + MetadataViews: `0x1d7e57aa55817448`
 - FungibleToken: `0xf233dcee88fe0abe`
 - HybridCustody: `0xd8a7e05a7ac670c0`
@@ -352,7 +384,7 @@ File: `app/api/sniper-feed/route.ts`
 ### Per-collection Cadence gotchas
 
 - **TopShot**: `TopShot.QuerySetData` exposes only `setID/name/series` — no `tier` field. Tier must come from GQL or per-NFT MetadataViews.
-- **AllDay**: `borrowMomentNFT` does NOT exist; use `borrowNFT(id)! as! &AllDay.NFT`. Buyer in `allday_sales` = contract address `0xedf9df96c92f4595`, NOT real buyer.
+- **AllDay**: `borrowMomentNFT` DOES exist on `&AllDay.Collection` (concrete type at `/public/AllDayNFTCollection`) — prefer it over the generic `borrowNFT(id)! as! &AllDay.NFT` cast since the typed return directly exposes `editionID / serialNumber / mintingDate`. For V2 Flowty fork sales, `buyer` field on the event payload is the Flowty fee router (`0x3cdbb3d569211ff3`) not the real buyer — recover via `fetchTxBuyers` (proposer/authorizers/payer minus EXCLUDED_ADDRESSES). For V1 Dapper sales, the real buyer comes from `A.e4cf4bdc1751c65d.AllDay.Deposit.to`; do NOT rely on the contract address parenthetical.
 - **Pinnacle**: borrow plain `&{NonFungibleToken.Collection}`, call `borrowNFT(id)`, pass NFT ref directly to `MetadataViews.getTraits/getEditions`. `MetadataViews.ResolverCollection` is NOT exposed at the standard MetadataViews address for Pinnacle.
 - **UFC**: Import `UFC_NFT` only for `CollectionPublicPath`; borrow as generic `NonFungibleToken.CollectionPublic` + `borrowNFT(id)!` force-unwrap. `Traits` FAILS (AnyStruct `.toString()`). Fighter from edition name split `"|"`. 0% series characteristic.
 
