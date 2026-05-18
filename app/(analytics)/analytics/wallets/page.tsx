@@ -19,6 +19,7 @@ import NetMarketplaceLeaderboard from "@/components/analytics/NetMarketplaceLead
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
 import type { WalletDirectoryRow } from "@/lib/analytics-types"
 
+export const dynamic = 'force-dynamic'
 export const revalidate = 600
 
 export const metadata: Metadata = analyticsMetadata({
