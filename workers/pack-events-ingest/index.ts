@@ -1,55 +1,92 @@
 // workers/pack-events-ingest/index.ts
 //
-// Top Shot pack lifecycle classifier — advances two cursors stored in
-// event_cursor (topshot_pack_purchases + topshot_pack_opens), indexes
-// secondary-market pack purchases and pack opens, and backfills
-// moment_acquisitions with verified pack_rip provenance (replacing the
-// 'cache-refresh:%' placeholders left by earlier wallet-walk ingest).
+// Pack lifecycle classifier — advances multiple cursors in event_cursor,
+// indexes pack purchases (TS secondary + TS primary + AllDay primary) and
+// TS pack opens, then backfills moment_acquisitions with verified pack_rip
+// provenance (replacing the 'cache-refresh:%' placeholders left by earlier
+// wallet-walk ingest).
 //
 // Auth:    POST /          Bearer INGEST_SECRET_TOKEN  (live ingest)
 //          POST /backfill  Bearer INGEST_SECRET_TOKEN  (historical backfill)
-// Health:  GET  /health    unauthenticated; returns {ok: true}
+// Health:  GET  /health    unauthenticated; returns {ok: true, ...}
 //
-// Live mode (POST /) advances topshot_pack_purchases / topshot_pack_opens
-// toward sealed tip. Backfill mode (POST /backfill) advances
-// topshot_pack_{purchases,opens}_backfill toward TARGET_END_BLOCK
-// (151610000 — the seed point of the live cursors), preventing overlap
-// with the live ingest range.
+// Live mode (POST /) advances three cursors toward sealed tip:
+//   topshot_pack_purchases   — TS secondary (ListingCompleted) + TS primary
+//                              (PackNFT.Withdraw from contract self-address)
+//   topshot_pack_opens       — TS pack opens (PackNFT.Opened + moment splits)
+//   allday_pack_purchases    — AllDay primary (PackNFT.Mint)
 //
-// Response shape (both endpoints, always 200, even on per-cursor failure
-// so cron retries cleanly):
+// Backfill mode (POST /backfill) advances four cursors. The first two
+// retain the original TARGET_END_BLOCK boundary; the latter two have their
+// own per-cursor stop conditions:
+//   topshot_pack_purchases_backfill           — full TS coverage; stops at
+//                                               TARGET_END_BLOCK (151_610_000)
+//   topshot_pack_opens_backfill               — TS opens; stops at
+//                                               TARGET_END_BLOCK
+//   topshot_pack_purchases_primary_backfill   — TS primary-only gap-fill,
+//                                               148_969_696 → 151_848_205.
+//                                               Secondary rows in this range
+//                                               are already covered by the
+//                                               forward cursor's prior runs,
+//                                               so this cursor only queries
+//                                               PackNFT.Withdraw + Deposit.
+//                                               Once cursor >= end block,
+//                                               the worker logs "primary
+//                                               backfill complete" and skips
+//                                               the cursor on subsequent
+//                                               runs.
+//   allday_pack_purchases_backfill            — AllDay backfill, walks
+//                                               forward from 148_969_696
+//                                               until within 1000 blocks
+//                                               of the live AllDay forward
+//                                               cursor; then logs "allday
+//                                               backfill caught up to
+//                                               forward cursor" and skips
+//                                               on subsequent runs.
+//
+// Cursor ordering inside an invocation matters when several cursors share
+// SOFT_BUDGET_MS. Backfill mode runs the NEW cursors first because the
+// existing topshot_pack_purchases_backfill has millions of blocks left to
+// grind and would otherwise starve them every tick. Live mode keeps the
+// existing ordering — the TS forward cursors are typically within
+// CAUGHT_UP_THRESHOLD of tip and yield quickly, leaving the bulk of the
+// budget for allday_pack_purchases.
+//
+// Response payload (always 200, even on per-cursor failure so cron retries
+// cleanly):
 //   {
-//     ok: boolean,                      // false iff one or both cursors errored
-//     purchases: { from_block, to_block, chunks_processed, events_processed, rows_inserted, caught_up },
-//     opens:     { from_block, to_block, chunks_processed, rips_inserted, moments_linked, caught_up },
-//     sealed_tip: number,
-//     duration_ms: number,
-//     errors?:   [{ cursor, message }],
+//     ok: boolean,                  // false iff any cursor errored
+//     purchases:        {...},      // TS forward purchases (both modes)
+//     opens:            {...},      // TS opens (both modes)
+//     allday_forward:   {...},      // live mode only
+//     primary_backfill: {...},      // backfill mode only
+//     allday_backfill:  {...},      // backfill mode only
+//     sealed_tip:       number,
+//     duration_ms:      number,
+//     errors?:          [{ cursor, message }],
 //   }
 //
-// Each invocation loops multiple 250-block chunks per cursor until one
-// of these is true:
-//   live:     (a) cursor caught up to within 50 blocks of sealed tip,
-//             (b) shared 25,000 ms soft budget across BOTH cursors exceeded,
-//             (c) 20 chunks processed for this cursor,
-//             (d) chunk threw (cursor NOT advanced, error recorded).
-//   backfill: (a) cursor advanced past or equal to TARGET_END_BLOCK,
-//             (b) shared 25,000 ms soft budget across BOTH cursors exceeded,
-//             (c) 40 chunks processed for this cursor (higher cap — backfill
-//                 should grind faster than live since it never waits on tip),
-//             (d) chunk threw.
-// Purchases runs first, then opens — the opens cursor only gets whatever
-// budget remains after purchases. caught_up means cursor within 50 blocks
-// of sealed tip (live) or cursor >= TARGET_END_BLOCK (backfill).
+// Subrequest budget: all Supabase writes batched per cursor. Each cursor
+// accumulates rows in-memory during its chunk loop, then flushes in a
+// single batch upsert after the loop exits. Cursor advance is deferred
+// to the very end and runs across all cursors in parallel via
+// allSettled. If a batch flush throws, that cursor does NOT advance and
+// the next cron tick re-attempts the entire accumulated range
+// (idempotent because pack_purchases uses ON CONFLICT
+// (tx_hash, pack_nft_id) DO NOTHING).
 //
-// Subrequest budget: this worker batches all Supabase writes to keep
-// total subrequests roughly constant per invocation regardless of how
-// many chunks are processed. Per cursor: rows accumulate in-memory
-// during the chunk loop, then flush in a single batch insert after
-// the loop. Cursor advance is deferred to one final write at the very
-// end. If the batch flush throws, the cursor does NOT advance and the
-// next cron tick re-attempts the entire accumulated range (idempotent
-// because every insert uses ON CONFLICT DO NOTHING).
+// Stop conditions per cursor's chunk loop:
+//   live cursors (effectiveEnd = null):
+//     (a) within CAUGHT_UP_THRESHOLD of sealed tip,
+//     (b) shared SOFT_BUDGET_MS exhausted across this invocation,
+//     (c) MAX_CHUNKS_PER_CURSOR_LIVE chunks processed,
+//     (d) chunk threw.
+//   backfill cursors (effectiveEnd = some number):
+//     (a) cursor >= effectiveEnd,
+//     (b) shared SOFT_BUDGET_MS exhausted,
+//     (c) MAX_CHUNKS_PER_CURSOR_BACKFILL chunks processed,
+//     (d) chunk threw.
+// caught_up in the response means the cursor reached its stop block.
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
@@ -72,14 +109,35 @@ const MAX_CHUNKS_PER_CURSOR_BACKFILL = 40;
 const CAUGHT_UP_THRESHOLD = 50;
 const SEALED_TIP_TTL_MS = 60_000;
 
-// Seed point of the live cursors. Backfill stops here so historical and
-// live ranges never overlap.
+// Seed point of the live TS purchases/opens cursors. The existing TS
+// backfill stops here so historical and live ranges never overlap. The
+// new primary-only backfill extends PAST this boundary up to
+// TS_PRIMARY_BACKFILL_END_BLOCK — that's deliberate, since the live
+// forward cursor has already covered the slice
+// (151_610_000 → 151_848_205) and the (tx_hash, pack_nft_id) ON CONFLICT
+// target makes the overlap idempotent.
 const TARGET_END_BLOCK = 151_610_000;
+
+// Hard stop for the TS primary-only backfill cursor. Once
+// last_processed_block >= this, the cursor is skipped on subsequent
+// invocations with a single "primary backfill complete" log line.
+const TS_PRIMARY_BACKFILL_END_BLOCK = 151_848_205;
+
+// AllDay backfill auto-stop threshold. When
+// allday_pack_purchases_backfill.last_processed_block >=
+// allday_pack_purchases.last_processed_block - ALLDAY_BACKFILL_CATCHUP_THRESHOLD,
+// the backfill cursor has effectively caught up to the live cursor and
+// is skipped on subsequent invocations with a single
+// "allday backfill caught up to forward cursor" log line.
+const ALLDAY_BACKFILL_CATCHUP_THRESHOLD = 1000;
 
 const CURSOR_PURCHASES = "topshot_pack_purchases";
 const CURSOR_OPENS = "topshot_pack_opens";
 const CURSOR_PURCHASES_BACKFILL = "topshot_pack_purchases_backfill";
 const CURSOR_OPENS_BACKFILL = "topshot_pack_opens_backfill";
+const CURSOR_TS_PRIMARY_BACKFILL = "topshot_pack_purchases_primary_backfill";
+const CURSOR_ALLDAY_FORWARD = "allday_pack_purchases";
+const CURSOR_ALLDAY_BACKFILL = "allday_pack_purchases_backfill";
 
 const EVT_LISTING_COMPLETED = "A.4eb8a10cb9f87357.NFTStorefrontV2.ListingCompleted";
 const EVT_PACKNFT_DEPOSIT = "A.0b2a3299cc857e29.PackNFT.Deposit";
@@ -95,7 +153,11 @@ const PACK_NFT_TYPE_ID = "A.0b2a3299cc857e29.PackNFT.NFT";
 // Top Shot's Withdraw path, where the same event also fires on secondary
 // sales and must be filtered by from = contract addr). The Mint event
 // carries {id: UInt64, commitHash: String, distId: String}; buyer
-// address comes from the matching same-tx PackNFT.Deposit.
+// address comes from the matching same-tx PackNFT.Deposit. seller_address
+// is NULL because Mint has no prior holder; the
+// pack_purchases.seller_address_format CHECK accepts NULL or a real Flow
+// address, and the row trigger flips is_primary_drop based on
+// event_kind = 'primary_mint'.
 const EVT_ALLDAY_PACKNFT_MINT = "A.e4cf4bdc1751c65d.PackNFT.Mint";
 const EVT_ALLDAY_PACKNFT_DEPOSIT = "A.e4cf4bdc1751c65d.PackNFT.Deposit";
 
@@ -123,7 +185,7 @@ function jsonError(status: number, error: string, extra?: Record<string, unknown
 // stale bundle (observed 2026-05-18: deployed binary kept emitting the
 // Prompt-13-removed legacy lookup throw despite source on main being clean).
 // Format: ISO-date + short tag.
-const WORKER_BUILD_TAG = "2026-05-18-p17-acquisitions-chunked-and-health-fix";
+const WORKER_BUILD_TAG = "2026-05-18-p18-primary-backfill-and-allday-cursors";
 
 function healthOk(): Response {
   return new Response(
@@ -136,6 +198,9 @@ function healthOk(): Response {
         CURSOR_OPENS,
         CURSOR_PURCHASES_BACKFILL,
         CURSOR_OPENS_BACKFILL,
+        CURSOR_TS_PRIMARY_BACKFILL,
+        CURSOR_ALLDAY_FORWARD,
+        CURSOR_ALLDAY_BACKFILL,
       ],
       block_chunk_size: CHUNK_SIZE,
       // Prompt 13: pack_rips lookup chunking — these constants need to be
@@ -151,7 +216,10 @@ function healthOk(): Response {
       // pre-Prompt-13.
       moment_acquisitions_delete_chunk_size: MOMENT_ACQUISITIONS_DELETE_CHUNK_SIZE,
       collection_id: COLLECTION_ID,
+      allday_collection_id: ALLDAY_COLLECTION_ID,
       target_end_block: TARGET_END_BLOCK,
+      ts_primary_backfill_end_block: TS_PRIMARY_BACKFILL_END_BLOCK,
+      allday_backfill_catchup_threshold: ALLDAY_BACKFILL_CATCHUP_THRESHOLD,
     }),
     { status: 200, headers: { "Content-Type": "application/json" } },
   );
@@ -179,6 +247,45 @@ function zeroOpens() {
     rips_inserted: 0,
     moments_linked: 0,
     caught_up: false,
+  };
+}
+
+function zeroAllDayForward() {
+  return {
+    from_block: 0,
+    to_block: 0,
+    chunks_processed: 0,
+    events_processed: 0,
+    rows_inserted: 0,
+    primary_mint_rows: 0,
+    caught_up: false,
+  };
+}
+
+function zeroPrimaryBackfill() {
+  return {
+    from_block: 0,
+    to_block: 0,
+    chunks_processed: 0,
+    events_processed: 0,
+    rows_inserted: 0,
+    primary_withdraw_rows: 0,
+    complete: false,
+    end_block: TS_PRIMARY_BACKFILL_END_BLOCK,
+  };
+}
+
+function zeroAllDayBackfill() {
+  return {
+    from_block: 0,
+    to_block: 0,
+    chunks_processed: 0,
+    events_processed: 0,
+    rows_inserted: 0,
+    primary_mint_rows: 0,
+    caught_up_to_forward: false,
+    catchup_target_block: 0,
+    allday_forward_cursor: 0,
   };
 }
 
@@ -401,7 +508,19 @@ async function writeCursor(sb: SupabaseClient, id: string, height: number): Prom
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Cursor 1: topshot_pack_purchases — pure event-fetch, no DB writes
+// Purchase-row builders. Three fetchers share the PurchaseRow shape:
+//   fetchTopShotPurchasesChunk    — TS secondary (ListingCompleted) + TS
+//                                   primary (PackNFT.Withdraw from contract)
+//   fetchTopShotPrimaryOnlyChunk  — TS primary only (PackNFT.Withdraw +
+//                                   Deposit). Used by the primary-only
+//                                   backfill cursor that fills the historical
+//                                   gap below TS_PRIMARY_BACKFILL_END_BLOCK
+//                                   without re-processing secondary sales
+//                                   the forward cursor already covered.
+//   fetchAllDayPurchasesChunk     — AllDay primary (PackNFT.Mint + Deposit).
+//                                   Used by both AllDay forward and backfill
+//                                   cursors.
+// All three return a flat array of PurchaseRow + events_processed count.
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface PurchaseRow {
@@ -429,7 +548,7 @@ interface PurchasesChunkResult {
   events_processed: number;
 }
 
-async function fetchPurchasesChunk(
+async function fetchTopShotPurchasesChunk(
   fromBlock: number,
   toBlock: number,
 ): Promise<PurchasesChunkResult> {
@@ -437,23 +556,17 @@ async function fetchPurchasesChunk(
     return { rows: [], events_processed: 0 };
   }
 
-  // Five parallel event scans cover the full pack-purchase universe:
-  //   ListingCompleted         → TS secondary marketplace sales (existing)
-  //   TS PackNFT.Deposit       → buyer-side address resolution for TS
-  //   TS PackNFT.Withdraw      → TS primary Studio drops (from = contract)
-  //   AllDay PackNFT.Mint      → AllDay primary Studio drops (all = primary)
-  //   AllDay PackNFT.Deposit   → buyer-side address resolution for AllDay
-  // Same chunked block range applies to all five so they pair within tx.
-  const [listings, packDeposits, packWithdraws, alldayMints, alldayDeposits] =
-    await Promise.all([
-      fetchEventChunk(EVT_LISTING_COMPLETED, fromBlock, toBlock),
-      fetchEventChunk(EVT_PACKNFT_DEPOSIT, fromBlock, toBlock),
-      fetchEventChunk(EVT_PACKNFT_WITHDRAW, fromBlock, toBlock),
-      fetchEventChunk(EVT_ALLDAY_PACKNFT_MINT, fromBlock, toBlock),
-      fetchEventChunk(EVT_ALLDAY_PACKNFT_DEPOSIT, fromBlock, toBlock),
-    ]);
+  // Three parallel event scans cover the full TS pack-purchase universe:
+  //   ListingCompleted    → secondary marketplace sales
+  //   PackNFT.Deposit     → buyer-side address resolution
+  //   PackNFT.Withdraw    → primary Studio drops (from = contract addr)
+  const [listings, packDeposits, packWithdraws] = await Promise.all([
+    fetchEventChunk(EVT_LISTING_COMPLETED, fromBlock, toBlock),
+    fetchEventChunk(EVT_PACKNFT_DEPOSIT, fromBlock, toBlock),
+    fetchEventChunk(EVT_PACKNFT_WITHDRAW, fromBlock, toBlock),
+  ]);
 
-  // Index TS PackNFT.Deposit by (tx_id, nft_id) so each ListingCompleted
+  // Index PackNFT.Deposit by (tx_id, nft_id) so each ListingCompleted
   // (secondary) and each contract-self PackNFT.Withdraw (primary) can pair
   // with the same-tx deposit that hands the pack to the buyer.
   const depositByTxAndId = new Map<string, FlatEvent>();
@@ -463,19 +576,10 @@ async function fetchPurchasesChunk(
     depositByTxAndId.set(`${dep.transaction_id}:${String(nftId)}`, dep);
   }
 
-  // Index AllDay PackNFT.Deposit by (tx_id, nft_id) so each AllDay Mint
-  // can pair with the same-tx deposit that hands the pack to the buyer.
-  const alldayDepositByTxAndId = new Map<string, FlatEvent>();
-  for (const dep of alldayDeposits) {
-    const nftId = dep.decoded["id"];
-    if (nftId === undefined || nftId === null) continue;
-    alldayDepositByTxAndId.set(`${dep.transaction_id}:${String(nftId)}`, dep);
-  }
-
   const rows: PurchaseRow[] = [];
   let eventsProcessed = 0;
 
-  // ── (1) Secondary sales: ListingCompleted + matching PackNFT.Deposit ─
+  // ── Secondary sales: ListingCompleted + matching PackNFT.Deposit ────
   for (const lc of listings) {
     eventsProcessed++;
     const d = lc.decoded;
@@ -523,53 +627,121 @@ async function fetchPurchasesChunk(
     });
   }
 
-  // ── (2) Top Shot primary drops: PackNFT.Withdraw where from = contract
-  //        account (pack pre-minted into the reserve, delivered to buyer).
-  //        Buyer address comes from the matching same-tx PackNFT.Deposit.
-  //        Secondary sales also emit a PackNFT.Withdraw but with
-  //        from = seller's storefront owner, so the contract-self filter
-  //        excludes them and there's no double-emit hazard.
+  // ── Primary drops: PackNFT.Withdraw where from = contract self-addr ──
   for (const wd of packWithdraws) {
     eventsProcessed++;
-    const from = wd.decoded["from"];
-    if (typeof from !== "string" || from !== TS_PACKNFT_CONTRACT_ADDR) continue;
-
-    const nftID = wd.decoded["id"];
-    if (nftID === undefined || nftID === null) continue;
-    const nftIdStr = String(nftID);
-
-    const dep = depositByTxAndId.get(`${wd.transaction_id}:${nftIdStr}`);
-    if (!dep) continue; // withdraw without matching deposit — pack didn't land
-    const buyerAddress = dep.decoded["to"];
-    if (typeof buyerAddress !== "string") continue;
-
-    rows.push({
-      collection_id: COLLECTION_ID,
-      pack_nft_id: nftIdStr,
-      buyer_address: buyerAddress.toLowerCase(),
-      seller_address: TS_PACKNFT_CONTRACT_ADDR, // contract reserve = "seller"
-      storefront_resource_id: null,
-      listing_resource_id: null,
-      sale_price: null,                          // off-chain Dapper purchase
-      sale_currency: null,
-      payment_vault_type: null,
-      custom_id: null,
-      commission_amount: null,
-      pack_name: null,
-      tx_hash: wd.transaction_id,
-      block_height: wd.block_height,
-      sealed_at: wd.block_timestamp,
-      event_kind: "primary_withdraw",
-      pack_dist_id: null, // dist_id resolves at pack-open time via pack_rips
-    });
+    const row = buildTopShotPrimaryRow(wd, depositByTxAndId);
+    if (row) rows.push(row);
   }
 
-  // ── (3) AllDay primary drops: PackNFT.Mint events carry the distId of
-  //        the Studio drop directly, and every Mint is by definition
-  //        primary (only the contract can emit it). Buyer address comes
-  //        from the matching same-tx AllDay PackNFT.Deposit. seller_address
-  //        is NULL — Mint has no prior holder, which matches the
-  //        seller_address_format CHECK (NULL or real Flow address).
+  return { rows, events_processed: eventsProcessed };
+}
+
+async function fetchTopShotPrimaryOnlyChunk(
+  fromBlock: number,
+  toBlock: number,
+): Promise<PurchasesChunkResult> {
+  if (fromBlock > toBlock) {
+    return { rows: [], events_processed: 0 };
+  }
+
+  // Two parallel event scans — secondary (ListingCompleted) is intentionally
+  // omitted because the forward cursor already covered this block range and
+  // re-processing would be wasted subrequest budget. PackNFT.Withdraw fires
+  // on BOTH primary and secondary, but the from = TS_PACKNFT_CONTRACT_ADDR
+  // filter inside buildTopShotPrimaryRow strips secondaries cleanly.
+  const [packDeposits, packWithdraws] = await Promise.all([
+    fetchEventChunk(EVT_PACKNFT_DEPOSIT, fromBlock, toBlock),
+    fetchEventChunk(EVT_PACKNFT_WITHDRAW, fromBlock, toBlock),
+  ]);
+
+  const depositByTxAndId = new Map<string, FlatEvent>();
+  for (const dep of packDeposits) {
+    const nftId = dep.decoded["id"];
+    if (nftId === undefined || nftId === null) continue;
+    depositByTxAndId.set(`${dep.transaction_id}:${String(nftId)}`, dep);
+  }
+
+  const rows: PurchaseRow[] = [];
+  let eventsProcessed = 0;
+  for (const wd of packWithdraws) {
+    eventsProcessed++;
+    const row = buildTopShotPrimaryRow(wd, depositByTxAndId);
+    if (row) rows.push(row);
+  }
+
+  return { rows, events_processed: eventsProcessed };
+}
+
+// Pair a PackNFT.Withdraw with its same-tx PackNFT.Deposit and emit a
+// primary_withdraw row. Returns null if the withdraw is a secondary
+// (from != contract), or if the deposit/buyer can't be resolved. seller is
+// the contract self-address since the pack came from the on-chain reserve;
+// price/vault are null because primary sales settle off-chain via Dapper.
+function buildTopShotPrimaryRow(
+  wd: FlatEvent,
+  depositByTxAndId: Map<string, FlatEvent>,
+): PurchaseRow | null {
+  const from = wd.decoded["from"];
+  if (typeof from !== "string" || from !== TS_PACKNFT_CONTRACT_ADDR) return null;
+
+  const nftID = wd.decoded["id"];
+  if (nftID === undefined || nftID === null) return null;
+  const nftIdStr = String(nftID);
+
+  const dep = depositByTxAndId.get(`${wd.transaction_id}:${nftIdStr}`);
+  if (!dep) return null; // withdraw without matching deposit — pack didn't land
+  const buyerAddress = dep.decoded["to"];
+  if (typeof buyerAddress !== "string") return null;
+
+  return {
+    collection_id: COLLECTION_ID,
+    pack_nft_id: nftIdStr,
+    buyer_address: buyerAddress.toLowerCase(),
+    seller_address: TS_PACKNFT_CONTRACT_ADDR, // contract reserve = "seller"
+    storefront_resource_id: null,
+    listing_resource_id: null,
+    sale_price: null,                          // off-chain Dapper purchase
+    sale_currency: null,
+    payment_vault_type: null,
+    custom_id: null,
+    commission_amount: null,
+    pack_name: null,
+    tx_hash: wd.transaction_id,
+    block_height: wd.block_height,
+    sealed_at: wd.block_timestamp,
+    event_kind: "primary_withdraw",
+    pack_dist_id: null, // dist_id resolves at pack-open time via pack_rips
+  };
+}
+
+async function fetchAllDayPurchasesChunk(
+  fromBlock: number,
+  toBlock: number,
+): Promise<PurchasesChunkResult> {
+  if (fromBlock > toBlock) {
+    return { rows: [], events_processed: 0 };
+  }
+
+  // Two parallel event scans — AllDay primaries are emitted exclusively
+  // by PackNFT.Mint (no secondary-vs-primary disambiguation needed). Mint
+  // carries distId directly; buyer comes from the matching same-tx
+  // PackNFT.Deposit.
+  const [alldayMints, alldayDeposits] = await Promise.all([
+    fetchEventChunk(EVT_ALLDAY_PACKNFT_MINT, fromBlock, toBlock),
+    fetchEventChunk(EVT_ALLDAY_PACKNFT_DEPOSIT, fromBlock, toBlock),
+  ]);
+
+  const alldayDepositByTxAndId = new Map<string, FlatEvent>();
+  for (const dep of alldayDeposits) {
+    const nftId = dep.decoded["id"];
+    if (nftId === undefined || nftId === null) continue;
+    alldayDepositByTxAndId.set(`${dep.transaction_id}:${String(nftId)}`, dep);
+  }
+
+  const rows: PurchaseRow[] = [];
+  let eventsProcessed = 0;
+
   for (const mint of alldayMints) {
     eventsProcessed++;
     const nftID = mint.decoded["id"];
@@ -860,12 +1032,19 @@ interface PurchasesFlushCounts {
   primary_mint: number;
 }
 
+const EMPTY_PURCHASES_COUNTS: PurchasesFlushCounts = {
+  total: 0,
+  secondary: 0,
+  primary_withdraw: 0,
+  primary_mint: 0,
+};
+
 async function flushPurchases(
   sb: SupabaseClient,
   rows: PurchaseRow[],
 ): Promise<PurchasesFlushCounts> {
   if (rows.length === 0) {
-    return { total: 0, secondary: 0, primary_withdraw: 0, primary_mint: 0 };
+    return { ...EMPTY_PURCHASES_COUNTS };
   }
   // Conflict target switched from (tx_hash, listing_resource_id) to
   // (tx_hash, pack_nft_id) — necessary because primary drops have NULL
@@ -878,7 +1057,7 @@ async function flushPurchases(
     .upsert(rows, { onConflict: "tx_hash,pack_nft_id", ignoreDuplicates: true })
     .select("event_kind");
   if (error) throw new Error(`pack_purchases batch upsert (${rows.length} rows): ${error.message}`);
-  const counts: PurchasesFlushCounts = { total: 0, secondary: 0, primary_withdraw: 0, primary_mint: 0 };
+  const counts: PurchasesFlushCounts = { ...EMPTY_PURCHASES_COUNTS };
   for (const r of (data ?? []) as Array<{ event_kind: string }>) {
     counts.total++;
     if (r.event_kind === "secondary_sale") counts.secondary++;
@@ -972,23 +1151,24 @@ async function flushOpens(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared per-cursor loop. Both live and backfill iterate 250-block chunks
-// from initialCursor toward a moving target (sealed tip in live, fixed
-// TARGET_END_BLOCK in backfill). The caller passes a processChunk callback
-// that owns its own accumulator; processCursor only manages the loop, the
-// shared time budget, and the chunk cap. Cursor advance is the caller's
-// responsibility — this function returns the final cursor value reached.
+// Shared per-cursor loop. Iterates 250-block chunks from initialCursor
+// toward either sealed tip (effectiveEndBlock = null) or a fixed end
+// (effectiveEndBlock = number). The caller passes a processChunk callback
+// that owns its own accumulator; processCursor only manages the loop,
+// the shared time budget, and the chunk cap. Cursor advance is the
+// caller's responsibility — this function returns the final cursor value
+// reached.
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function processCursor(
   cursorId: string,
-  mode: Mode,
   initialCursor: number,
   startedMs: number,
+  maxChunks: number,
+  effectiveEndBlock: number | null,
   getCurrentSealedTip: () => Promise<number>,
   processChunk: (from: number, to: number) => Promise<void>,
 ): Promise<{ target: number; chunks: number; errorMsg: string | null }> {
-  const maxChunks = mode === "live" ? MAX_CHUNKS_PER_CURSOR_LIVE : MAX_CHUNKS_PER_CURSOR_BACKFILL;
   let target = initialCursor;
   let chunks = 0;
   let errorMsg: string | null = null;
@@ -1000,24 +1180,23 @@ async function processCursor(
 
       let from: number;
       let to: number;
-      if (mode === "live") {
+      if (effectiveEndBlock === null) {
         const tip = await getCurrentSealedTip();
         if (tip - target <= CAUGHT_UP_THRESHOLD) break;
         from = target + 1;
         to = Math.min(target + CHUNK_SIZE, tip);
       } else {
-        if (target >= TARGET_END_BLOCK) break;
+        if (target >= effectiveEndBlock) break;
         from = target + 1;
-        to = Math.min(target + CHUNK_SIZE, TARGET_END_BLOCK);
+        to = Math.min(target + CHUNK_SIZE, effectiveEndBlock);
       }
       if (to < from) break;
 
       await processChunk(from, to);
-      // Defensive clamp: in backfill mode the very last chunk must never
-      // overshoot TARGET_END_BLOCK into live territory. `to` is already
-      // clamped above, but re-applying min here is cheap and survives any
-      // future change that loosens the inner clamp.
-      target = mode === "backfill" ? Math.min(to, TARGET_END_BLOCK) : to;
+      // Defensive clamp: the last chunk must never overshoot effectiveEnd.
+      // `to` is already clamped above, but re-applying min here is cheap
+      // and survives any future change that loosens the inner clamp.
+      target = effectiveEndBlock !== null ? Math.min(to, effectiveEndBlock) : to;
       chunks++;
     }
   } catch (err) {
@@ -1035,7 +1214,8 @@ async function processCursor(
 // per invocation, fire-and-forget at the end of runIngest. The watchlist
 // keys on pipeline=`pack-events-ingest` (live) and
 // pipeline=`pack-events-ingest-backfill`. cursor_before / cursor_after carry
-// the purchases cursor; extra.opens_* carries the parallel opens cursor.
+// the purchases cursor; extra.opens_* + extra.allday_forward / extra.primary_backfill
+// / extra.allday_backfill carry the parallel cursors.
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function logPipelineRun(
@@ -1078,9 +1258,9 @@ async function logPipelineRun(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared request handler — picks cursor pair by mode, runs purchases then
-// opens, flushes batches, advances cursors, returns the same response shape
-// from POST / and POST /backfill.
+// Shared request handler — picks cursor set by mode, runs each cursor's
+// chunk loop, flushes accumulators, advances cursors, returns the same
+// response shape from POST / and POST /backfill.
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Response> {
@@ -1094,6 +1274,10 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
   const startedAtIso = new Date(startedMs).toISOString();
   const purchasesCursorId = mode === "live" ? CURSOR_PURCHASES : CURSOR_PURCHASES_BACKFILL;
   const opensCursorId = mode === "live" ? CURSOR_OPENS : CURSOR_OPENS_BACKFILL;
+  const maxChunks = mode === "live" ? MAX_CHUNKS_PER_CURSOR_LIVE : MAX_CHUNKS_PER_CURSOR_BACKFILL;
+  // Existing-cursor effective end: null for live (sealed-tip), TARGET_END_BLOCK
+  // for backfill. The new cursors compute their own ends below.
+  const existingEffectiveEnd = mode === "live" ? null : TARGET_END_BLOCK;
 
   const sb = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -1103,7 +1287,7 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
   // SEALED_TIP_TTL_MS so a busy invocation doesn't hammer the
   // access node once per chunk. Both modes fetch it once at the start
   // so the response always carries a real sealed_tip value; backfill
-  // never re-fetches because its stop condition is TARGET_END_BLOCK.
+  // never re-fetches because its stop condition is a fixed end block.
   let cachedSealedTip = await getSealedHeight();
   let lastTipFetchMs = Date.now();
   const getCurrentSealedTip = async (): Promise<number> => {
@@ -1116,10 +1300,24 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
 
   const errors: Array<{ cursor: string; message: string }> = [];
 
-  // Single batched cursor read replaces 2 separate selects.
+  // Cursor IDs to read up front (single batched select).
+  //   live mode:     purchases, opens, allday_forward
+  //   backfill mode: purchases_backfill, opens_backfill, ts_primary_backfill,
+  //                  allday_backfill, allday_forward (read-only, for
+  //                                                   catchup threshold)
+  const cursorsToRead = mode === "live"
+    ? [CURSOR_PURCHASES, CURSOR_OPENS, CURSOR_ALLDAY_FORWARD]
+    : [
+        CURSOR_PURCHASES_BACKFILL,
+        CURSOR_OPENS_BACKFILL,
+        CURSOR_TS_PRIMARY_BACKFILL,
+        CURSOR_ALLDAY_BACKFILL,
+        CURSOR_ALLDAY_FORWARD,
+      ];
+
   let initialCursors: Record<string, number>;
   try {
-    initialCursors = await readCursors(sb, [purchasesCursorId, opensCursorId]);
+    initialCursors = await readCursors(sb, cursorsToRead);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.log(`[pack-events-ingest] cursor read fatal: ${msg}`);
@@ -1146,6 +1344,10 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
         ok: false,
         purchases: zeroPurchases(),
         opens: zeroOpens(),
+        ...(mode === "live" ? { allday_forward: zeroAllDayForward() } : {}),
+        ...(mode === "backfill"
+          ? { primary_backfill: zeroPrimaryBackfill(), allday_backfill: zeroAllDayBackfill() }
+          : {}),
         sealed_tip: cachedSealedTip,
         duration_ms: Date.now() - startedMs,
         errors: [{ cursor: "cursor_read", message: msg }],
@@ -1154,19 +1356,138 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
     );
   }
 
-  // ── purchases: chunk-loop fetch, no DB writes inside the loop ───────
+  // ── Backfill mode: run the NEW cursors first ─────────────────────────
+  //
+  // topshot_pack_purchases_backfill has millions of blocks left to grind
+  // and would otherwise exhaust the shared 25s budget every tick, starving
+  // the new cursors. Running ts_primary_backfill + allday_backfill first
+  // guarantees they advance at least one chunk per invocation. Existing
+  // cursors then absorb whatever budget remains.
+  //
+  // Live mode keeps the original ordering — the TS forward cursors are
+  // typically within CAUGHT_UP_THRESHOLD of tip and finish their loop in
+  // a few hundred ms, leaving the bulk of the budget for allday_forward.
+
+  // ── (A) TS primary-only backfill (backfill only) ───────────────────
+  let primaryBackfillInitial = 0;
+  let primaryBackfillTarget = 0;
+  let primaryBackfillChunks = 0;
+  let primaryBackfillEvents = 0;
+  let primaryBackfillComplete = false;
+  let primaryBackfillActualCursor = 0;
+  let primaryBackfillCounts: PurchasesFlushCounts = { ...EMPTY_PURCHASES_COUNTS };
+  const primaryBackfillAccumulated: PurchaseRow[] = [];
+
+  if (mode === "backfill") {
+    primaryBackfillInitial = initialCursors[CURSOR_TS_PRIMARY_BACKFILL];
+    primaryBackfillTarget = primaryBackfillInitial;
+    primaryBackfillActualCursor = primaryBackfillInitial;
+
+    if (primaryBackfillInitial >= TS_PRIMARY_BACKFILL_END_BLOCK) {
+      console.log(
+        `[pack-events-ingest] ${CURSOR_TS_PRIMARY_BACKFILL} primary backfill complete (cursor=${primaryBackfillInitial} >= end=${TS_PRIMARY_BACKFILL_END_BLOCK})`,
+      );
+      primaryBackfillComplete = true;
+    } else {
+      const loop = await processCursor(
+        CURSOR_TS_PRIMARY_BACKFILL,
+        primaryBackfillInitial,
+        startedMs,
+        maxChunks,
+        TS_PRIMARY_BACKFILL_END_BLOCK,
+        getCurrentSealedTip,
+        async (from, to) => {
+          const chunk = await fetchTopShotPrimaryOnlyChunk(from, to);
+          for (const row of chunk.rows) primaryBackfillAccumulated.push(row);
+          primaryBackfillEvents += chunk.events_processed;
+        },
+      );
+      primaryBackfillTarget = loop.target;
+      primaryBackfillChunks = loop.chunks;
+      if (loop.errorMsg) errors.push({ cursor: CURSOR_TS_PRIMARY_BACKFILL, message: loop.errorMsg });
+      if (primaryBackfillTarget >= TS_PRIMARY_BACKFILL_END_BLOCK) primaryBackfillComplete = true;
+    }
+
+    if (primaryBackfillTarget > primaryBackfillInitial) {
+      try {
+        primaryBackfillCounts = await flushPurchases(sb, primaryBackfillAccumulated);
+        primaryBackfillActualCursor = primaryBackfillTarget;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`[pack-events-ingest] ${CURSOR_TS_PRIMARY_BACKFILL} flush error: ${msg}`);
+        errors.push({ cursor: CURSOR_TS_PRIMARY_BACKFILL, message: msg });
+      }
+    }
+  }
+
+  // ── (B) AllDay backfill (backfill only) ────────────────────────────
+  let alldayBackfillInitial = 0;
+  let alldayBackfillTarget = 0;
+  let alldayBackfillChunks = 0;
+  let alldayBackfillEvents = 0;
+  let alldayBackfillCaughtUp = false;
+  let alldayBackfillCatchupTarget = 0;
+  let alldayBackfillActualCursor = 0;
+  let alldayBackfillCounts: PurchasesFlushCounts = { ...EMPTY_PURCHASES_COUNTS };
+  const alldayBackfillAccumulated: PurchaseRow[] = [];
+
+  if (mode === "backfill") {
+    alldayBackfillInitial = initialCursors[CURSOR_ALLDAY_BACKFILL];
+    alldayBackfillTarget = alldayBackfillInitial;
+    alldayBackfillActualCursor = alldayBackfillInitial;
+    const alldayForwardCursor = initialCursors[CURSOR_ALLDAY_FORWARD];
+    alldayBackfillCatchupTarget = alldayForwardCursor - ALLDAY_BACKFILL_CATCHUP_THRESHOLD;
+
+    if (alldayBackfillInitial >= alldayBackfillCatchupTarget) {
+      console.log(
+        `[pack-events-ingest] ${CURSOR_ALLDAY_BACKFILL} allday backfill caught up to forward cursor (cursor=${alldayBackfillInitial} >= forward-${ALLDAY_BACKFILL_CATCHUP_THRESHOLD}=${alldayBackfillCatchupTarget})`,
+      );
+      alldayBackfillCaughtUp = true;
+    } else {
+      const loop = await processCursor(
+        CURSOR_ALLDAY_BACKFILL,
+        alldayBackfillInitial,
+        startedMs,
+        maxChunks,
+        alldayBackfillCatchupTarget,
+        getCurrentSealedTip,
+        async (from, to) => {
+          const chunk = await fetchAllDayPurchasesChunk(from, to);
+          for (const row of chunk.rows) alldayBackfillAccumulated.push(row);
+          alldayBackfillEvents += chunk.events_processed;
+        },
+      );
+      alldayBackfillTarget = loop.target;
+      alldayBackfillChunks = loop.chunks;
+      if (loop.errorMsg) errors.push({ cursor: CURSOR_ALLDAY_BACKFILL, message: loop.errorMsg });
+      if (alldayBackfillTarget >= alldayBackfillCatchupTarget) alldayBackfillCaughtUp = true;
+    }
+
+    if (alldayBackfillTarget > alldayBackfillInitial) {
+      try {
+        alldayBackfillCounts = await flushPurchases(sb, alldayBackfillAccumulated);
+        alldayBackfillActualCursor = alldayBackfillTarget;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`[pack-events-ingest] ${CURSOR_ALLDAY_BACKFILL} flush error: ${msg}`);
+        errors.push({ cursor: CURSOR_ALLDAY_BACKFILL, message: msg });
+      }
+    }
+  }
+
+  // ── (C) TS forward purchases (both modes) ──────────────────────────
   const purchasesInitial = initialCursors[purchasesCursorId];
   let purchasesEvents = 0;
   const purchasesAccumulated: PurchaseRow[] = [];
-
   const purchasesLoop = await processCursor(
     purchasesCursorId,
-    mode,
     purchasesInitial,
     startedMs,
+    maxChunks,
+    existingEffectiveEnd,
     getCurrentSealedTip,
     async (from, to) => {
-      const chunk = await fetchPurchasesChunk(from, to);
+      const chunk = await fetchTopShotPurchasesChunk(from, to);
       for (const row of chunk.rows) purchasesAccumulated.push(row);
       purchasesEvents += chunk.events_processed;
     },
@@ -1177,14 +1498,8 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
   const purchasesTarget = purchasesLoop.target;
   const purchasesChunks = purchasesLoop.chunks;
 
-  // ── purchases flush: single batch insert, deferred cursor advance ───
   let purchasesActualCursor = purchasesInitial;
-  let purchasesCounts: PurchasesFlushCounts = {
-    total: 0,
-    secondary: 0,
-    primary_withdraw: 0,
-    primary_mint: 0,
-  };
+  let purchasesCounts: PurchasesFlushCounts = { ...EMPTY_PURCHASES_COUNTS };
   if (purchasesTarget > purchasesInitial) {
     try {
       purchasesCounts = await flushPurchases(sb, purchasesAccumulated);
@@ -1196,7 +1511,7 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
     }
   }
 
-  // ── opens: chunk-loop fetch, no DB writes inside the loop ───────────
+  // ── (D) TS opens (both modes) ──────────────────────────────────────
   const opensInitial = initialCursors[opensCursorId];
   const opensRips: RipRow[] = [];
   const opensTemplates: MomentTemplate[] = [];
@@ -1204,9 +1519,10 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
 
   const opensLoop = await processCursor(
     opensCursorId,
-    mode,
     opensInitial,
     startedMs,
+    maxChunks,
+    existingEffectiveEnd,
     getCurrentSealedTip,
     async (from, to) => {
       const chunk = await fetchOpensChunk(from, to);
@@ -1221,7 +1537,6 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
   const opensTarget = opensLoop.target;
   const opensChunks = opensLoop.chunks;
 
-  // ── opens flush: rip upsert + id lookup + placeholder delete + moments
   let opensActualCursor = opensInitial;
   let ripsInserted = 0;
   let momentsLinked = 0;
@@ -1245,7 +1560,49 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
     }
   }
 
-  // ── cursor advance: at most 2 writes, run in parallel via allSettled
+  // ── (E) AllDay forward (live only) ─────────────────────────────────
+  let alldayForwardInitial = 0;
+  let alldayForwardTarget = 0;
+  let alldayForwardChunks = 0;
+  let alldayForwardEvents = 0;
+  let alldayForwardActualCursor = 0;
+  let alldayForwardCounts: PurchasesFlushCounts = { ...EMPTY_PURCHASES_COUNTS };
+  const alldayForwardAccumulated: PurchaseRow[] = [];
+
+  if (mode === "live") {
+    alldayForwardInitial = initialCursors[CURSOR_ALLDAY_FORWARD];
+    alldayForwardTarget = alldayForwardInitial;
+    alldayForwardActualCursor = alldayForwardInitial;
+    const loop = await processCursor(
+      CURSOR_ALLDAY_FORWARD,
+      alldayForwardInitial,
+      startedMs,
+      maxChunks,
+      null,
+      getCurrentSealedTip,
+      async (from, to) => {
+        const chunk = await fetchAllDayPurchasesChunk(from, to);
+        for (const row of chunk.rows) alldayForwardAccumulated.push(row);
+        alldayForwardEvents += chunk.events_processed;
+      },
+    );
+    alldayForwardTarget = loop.target;
+    alldayForwardChunks = loop.chunks;
+    if (loop.errorMsg) errors.push({ cursor: CURSOR_ALLDAY_FORWARD, message: loop.errorMsg });
+
+    if (alldayForwardTarget > alldayForwardInitial) {
+      try {
+        alldayForwardCounts = await flushPurchases(sb, alldayForwardAccumulated);
+        alldayForwardActualCursor = alldayForwardTarget;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`[pack-events-ingest] ${CURSOR_ALLDAY_FORWARD} flush error: ${msg}`);
+        errors.push({ cursor: CURSOR_ALLDAY_FORWARD, message: msg });
+      }
+    }
+  }
+
+  // ── Cursor advance: dispatch all eligible writes in parallel ────────
   const cursorWrites: Array<{ cursor: string; promise: Promise<void> }> = [];
   if (purchasesActualCursor > purchasesInitial) {
     cursorWrites.push({
@@ -1257,6 +1614,24 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
     cursorWrites.push({
       cursor: opensCursorId,
       promise: writeCursor(sb, opensCursorId, opensActualCursor),
+    });
+  }
+  if (mode === "live" && alldayForwardActualCursor > alldayForwardInitial) {
+    cursorWrites.push({
+      cursor: CURSOR_ALLDAY_FORWARD,
+      promise: writeCursor(sb, CURSOR_ALLDAY_FORWARD, alldayForwardActualCursor),
+    });
+  }
+  if (mode === "backfill" && primaryBackfillActualCursor > primaryBackfillInitial) {
+    cursorWrites.push({
+      cursor: CURSOR_TS_PRIMARY_BACKFILL,
+      promise: writeCursor(sb, CURSOR_TS_PRIMARY_BACKFILL, primaryBackfillActualCursor),
+    });
+  }
+  if (mode === "backfill" && alldayBackfillActualCursor > alldayBackfillInitial) {
+    cursorWrites.push({
+      cursor: CURSOR_ALLDAY_BACKFILL,
+      promise: writeCursor(sb, CURSOR_ALLDAY_BACKFILL, alldayBackfillActualCursor),
     });
   }
   if (cursorWrites.length > 0) {
@@ -1271,7 +1646,7 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
     }
   }
 
-  const isCaughtUp = (cursor: number) =>
+  const isCaughtUpExisting = (cursor: number) =>
     mode === "live"
       ? cachedSealedTip - cursor <= CAUGHT_UP_THRESHOLD
       : cursor >= TARGET_END_BLOCK;
@@ -1284,8 +1659,11 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
     rows_inserted: purchasesCounts.total,
     secondary_rows: purchasesCounts.secondary,
     primary_withdraw_rows: purchasesCounts.primary_withdraw,
+    // AllDay primary_mint rows now flow through CURSOR_ALLDAY_FORWARD /
+    // CURSOR_ALLDAY_BACKFILL — kept at 0 here for response-shape stability
+    // with the pre-Prompt-18 payload that watchers may key on.
     primary_mint_rows: purchasesCounts.primary_mint,
-    caught_up: isCaughtUp(purchasesActualCursor),
+    caught_up: isCaughtUpExisting(purchasesActualCursor),
   };
   const opensResult = {
     from_block: opensInitial,
@@ -1293,15 +1671,58 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
     chunks_processed: opensChunks,
     rips_inserted: ripsInserted,
     moments_linked: momentsLinked,
-    caught_up: isCaughtUp(opensActualCursor),
+    caught_up: isCaughtUpExisting(opensActualCursor),
   };
+  const alldayForwardResult = mode === "live" ? {
+    from_block: alldayForwardInitial,
+    to_block: alldayForwardActualCursor,
+    chunks_processed: alldayForwardChunks,
+    events_processed: alldayForwardEvents,
+    rows_inserted: alldayForwardCounts.total,
+    primary_mint_rows: alldayForwardCounts.primary_mint,
+    caught_up: cachedSealedTip - alldayForwardActualCursor <= CAUGHT_UP_THRESHOLD,
+  } : null;
+  const primaryBackfillResult = mode === "backfill" ? {
+    from_block: primaryBackfillInitial,
+    to_block: primaryBackfillActualCursor,
+    chunks_processed: primaryBackfillChunks,
+    events_processed: primaryBackfillEvents,
+    rows_inserted: primaryBackfillCounts.total,
+    primary_withdraw_rows: primaryBackfillCounts.primary_withdraw,
+    complete: primaryBackfillComplete,
+    end_block: TS_PRIMARY_BACKFILL_END_BLOCK,
+  } : null;
+  const alldayBackfillResult = mode === "backfill" ? {
+    from_block: alldayBackfillInitial,
+    to_block: alldayBackfillActualCursor,
+    chunks_processed: alldayBackfillChunks,
+    events_processed: alldayBackfillEvents,
+    rows_inserted: alldayBackfillCounts.total,
+    primary_mint_rows: alldayBackfillCounts.primary_mint,
+    caught_up_to_forward: alldayBackfillCaughtUp,
+    catchup_target_block: alldayBackfillCatchupTarget,
+    allday_forward_cursor: initialCursors[CURSOR_ALLDAY_FORWARD] ?? 0,
+  } : null;
 
   const durationMs = Date.now() - startedMs;
+  const totalRowsFound =
+    purchasesEvents +
+    ripsInserted +
+    alldayForwardEvents +
+    primaryBackfillEvents +
+    alldayBackfillEvents;
+  const totalRowsWritten =
+    purchasesCounts.total +
+    momentsLinked +
+    alldayForwardCounts.total +
+    primaryBackfillCounts.total +
+    alldayBackfillCounts.total;
+
   await logPipelineRun(sb, {
     pipeline,
     startedAtIso,
-    rowsFound: purchasesEvents + ripsInserted,
-    rowsWritten: purchasesCounts.total + momentsLinked,
+    rowsFound: totalRowsFound,
+    rowsWritten: totalRowsWritten,
     rowsSkipped: 0,
     ok: errors.length === 0,
     error: errors.length > 0 ? errors.map((e) => `${e.cursor}: ${e.message}`).join(" | ").slice(0, 500) : null,
@@ -1313,6 +1734,9 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
       duration_ms: durationMs,
       purchases: purchasesResult,
       opens: opensResult,
+      ...(alldayForwardResult ? { allday_forward: alldayForwardResult } : {}),
+      ...(primaryBackfillResult ? { primary_backfill: primaryBackfillResult } : {}),
+      ...(alldayBackfillResult ? { allday_backfill: alldayBackfillResult } : {}),
       purchases_cursor_id: purchasesCursorId,
       opens_cursor_id: opensCursorId,
       target_end_block: mode === "backfill" ? TARGET_END_BLOCK : null,
@@ -1325,6 +1749,9 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
       ok: errors.length === 0,
       purchases: purchasesResult,
       opens: opensResult,
+      ...(alldayForwardResult ? { allday_forward: alldayForwardResult } : {}),
+      ...(primaryBackfillResult ? { primary_backfill: primaryBackfillResult } : {}),
+      ...(alldayBackfillResult ? { allday_backfill: alldayBackfillResult } : {}),
       sealed_tip: cachedSealedTip,
       duration_ms: durationMs,
       ...(errors.length > 0 ? { errors } : {}),
