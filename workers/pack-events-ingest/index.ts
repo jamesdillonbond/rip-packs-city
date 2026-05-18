@@ -63,6 +63,7 @@ type Mode = "live" | "backfill";
 
 const FLOW_REST = "https://rest-mainnet.onflow.org";
 const COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"; // Top Shot
+const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070";
 const CHUNK_SIZE = 250;
 const REQUEST_TIMEOUT_MS = 20_000;
 const SOFT_BUDGET_MS = 25_000;
@@ -82,10 +83,18 @@ const CURSOR_OPENS_BACKFILL = "topshot_pack_opens_backfill";
 
 const EVT_LISTING_COMPLETED = "A.4eb8a10cb9f87357.NFTStorefrontV2.ListingCompleted";
 const EVT_PACKNFT_DEPOSIT = "A.0b2a3299cc857e29.PackNFT.Deposit";
+const EVT_PACKNFT_WITHDRAW = "A.0b2a3299cc857e29.PackNFT.Withdraw";
 const EVT_PACKNFT_OPENED = "A.0b2a3299cc857e29.PackNFT.Opened";
 const EVT_TOPSHOT_DEPOSIT = "A.0b2a3299cc857e29.TopShot.Deposit";
 const EVT_TOPSHOT_WITHDRAW = "A.0b2a3299cc857e29.TopShot.Withdraw";
 const PACK_NFT_TYPE_ID = "A.0b2a3299cc857e29.PackNFT.NFT";
+
+// Top Shot PackNFT contract self-address. A PackNFT.Withdraw event whose
+// `from` field equals this address means the pack is being delivered out
+// of the reserve held in the contract account itself — i.e. a primary
+// drop from Top Shot Studio, not a seller's storefront. Confirmed via
+// tx 114ca189f266eaeab87eac2f218cc57a3b31630fdf1a61333d7eb249394dffd7.
+const TS_PACKNFT_CONTRACT_ADDR = "0x0b2a3299cc857e29";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HTTP helpers
@@ -104,7 +113,7 @@ function jsonError(status: number, error: string, extra?: Record<string, unknown
 // stale bundle (observed 2026-05-18: deployed binary kept emitting the
 // Prompt-13-removed legacy lookup throw despite source on main being clean).
 // Format: ISO-date + short tag.
-const WORKER_BUILD_TAG = "2026-05-18-p16-chunked-lookup";
+const WORKER_BUILD_TAG = "2026-05-18-p17-ts-primary-withdraw";
 
 function healthOk(): Response {
   return new Response(
@@ -139,6 +148,9 @@ function zeroPurchases() {
     chunks_processed: 0,
     events_processed: 0,
     rows_inserted: 0,
+    secondary_rows: 0,
+    primary_withdraw_rows: 0,
+    primary_mint_rows: 0,
     caught_up: false,
   };
 }
@@ -384,7 +396,7 @@ interface PurchaseRow {
   storefront_resource_id: string | null;
   listing_resource_id: string | null;
   sale_price: number | null;
-  sale_currency: string;
+  sale_currency: string | null;
   payment_vault_type: string | null;
   custom_id: string | null;
   commission_amount: number | null;
@@ -392,6 +404,8 @@ interface PurchaseRow {
   tx_hash: string;
   block_height: number;
   sealed_at: string;
+  event_kind: "secondary_sale" | "primary_withdraw" | "primary_mint";
+  pack_dist_id: string | null;
 }
 
 interface PurchasesChunkResult {
@@ -407,13 +421,20 @@ async function fetchPurchasesChunk(
     return { rows: [], events_processed: 0 };
   }
 
-  const [listings, packDeposits] = await Promise.all([
+  // Three parallel event scans cover the full pack-purchase universe:
+  //   ListingCompleted   → secondary marketplace sales (existing)
+  //   PackNFT.Deposit    → buyer-side address resolution, shared by both
+  //   PackNFT.Withdraw   → primary Top Shot Studio drops (from = contract addr)
+  // Same chunked block range applies to all three so they pair within tx.
+  const [listings, packDeposits, packWithdraws] = await Promise.all([
     fetchEventChunk(EVT_LISTING_COMPLETED, fromBlock, toBlock),
     fetchEventChunk(EVT_PACKNFT_DEPOSIT, fromBlock, toBlock),
+    fetchEventChunk(EVT_PACKNFT_WITHDRAW, fromBlock, toBlock),
   ]);
 
   // Index PackNFT.Deposit by (tx_id, nft_id) so each ListingCompleted
-  // can pair with the same-tx deposit that hands the pack to the buyer.
+  // (secondary) and each contract-self PackNFT.Withdraw (primary) can pair
+  // with the same-tx deposit that hands the pack to the buyer.
   const depositByTxAndId = new Map<string, FlatEvent>();
   for (const dep of packDeposits) {
     const nftId = dep.decoded["id"];
@@ -424,6 +445,7 @@ async function fetchPurchasesChunk(
   const rows: PurchaseRow[] = [];
   let eventsProcessed = 0;
 
+  // ── (1) Secondary sales: ListingCompleted + matching PackNFT.Deposit ─
   for (const lc of listings) {
     eventsProcessed++;
     const d = lc.decoded;
@@ -466,6 +488,49 @@ async function fetchPurchasesChunk(
       tx_hash: lc.transaction_id,
       block_height: lc.block_height,
       sealed_at: lc.block_timestamp,
+      event_kind: "secondary_sale",
+      pack_dist_id: null,
+    });
+  }
+
+  // ── (2) Top Shot primary drops: PackNFT.Withdraw where from = contract
+  //        account (pack pre-minted into the reserve, delivered to buyer).
+  //        Buyer address comes from the matching same-tx PackNFT.Deposit.
+  //        Secondary sales also emit a PackNFT.Withdraw but with
+  //        from = seller's storefront owner, so the contract-self filter
+  //        excludes them and there's no double-emit hazard.
+  for (const wd of packWithdraws) {
+    eventsProcessed++;
+    const from = wd.decoded["from"];
+    if (typeof from !== "string" || from !== TS_PACKNFT_CONTRACT_ADDR) continue;
+
+    const nftID = wd.decoded["id"];
+    if (nftID === undefined || nftID === null) continue;
+    const nftIdStr = String(nftID);
+
+    const dep = depositByTxAndId.get(`${wd.transaction_id}:${nftIdStr}`);
+    if (!dep) continue; // withdraw without matching deposit — pack didn't land
+    const buyerAddress = dep.decoded["to"];
+    if (typeof buyerAddress !== "string") continue;
+
+    rows.push({
+      collection_id: COLLECTION_ID,
+      pack_nft_id: nftIdStr,
+      buyer_address: buyerAddress.toLowerCase(),
+      seller_address: TS_PACKNFT_CONTRACT_ADDR, // contract reserve = "seller"
+      storefront_resource_id: null,
+      listing_resource_id: null,
+      sale_price: null,                          // off-chain Dapper purchase
+      sale_currency: null,
+      payment_vault_type: null,
+      custom_id: null,
+      commission_amount: null,
+      pack_name: null,
+      tx_hash: wd.transaction_id,
+      block_height: wd.block_height,
+      sealed_at: wd.block_timestamp,
+      event_kind: "primary_withdraw",
+      pack_dist_id: null, // dist_id resolves at pack-open time via pack_rips
     });
   }
 
@@ -655,14 +720,39 @@ async function lookupPackRipIdsByTxHash(
   return { ripIdByTx, chunkErrors };
 }
 
-async function flushPurchases(sb: SupabaseClient, rows: PurchaseRow[]): Promise<number> {
-  if (rows.length === 0) return 0;
+interface PurchasesFlushCounts {
+  total: number;
+  secondary: number;
+  primary_withdraw: number;
+  primary_mint: number;
+}
+
+async function flushPurchases(
+  sb: SupabaseClient,
+  rows: PurchaseRow[],
+): Promise<PurchasesFlushCounts> {
+  if (rows.length === 0) {
+    return { total: 0, secondary: 0, primary_withdraw: 0, primary_mint: 0 };
+  }
+  // Conflict target switched from (tx_hash, listing_resource_id) to
+  // (tx_hash, pack_nft_id) — necessary because primary drops have NULL
+  // listing_resource_id and NULL-vs-NULL never compares equal in a unique
+  // index, so re-runs would dup primary rows under the old key. Migration
+  // 2026-05-18 added idx_pack_purchases_tx_pack to back this conflict
+  // target. Secondary rows are also uniquely identified by this pair.
   const { data, error } = await sb
     .from("pack_purchases")
-    .upsert(rows, { onConflict: "tx_hash,listing_resource_id", ignoreDuplicates: true })
-    .select("id");
+    .upsert(rows, { onConflict: "tx_hash,pack_nft_id", ignoreDuplicates: true })
+    .select("event_kind");
   if (error) throw new Error(`pack_purchases batch upsert (${rows.length} rows): ${error.message}`);
-  return data?.length ?? 0;
+  const counts: PurchasesFlushCounts = { total: 0, secondary: 0, primary_withdraw: 0, primary_mint: 0 };
+  for (const r of (data ?? []) as Array<{ event_kind: string }>) {
+    counts.total++;
+    if (r.event_kind === "secondary_sale") counts.secondary++;
+    else if (r.event_kind === "primary_withdraw") counts.primary_withdraw++;
+    else if (r.event_kind === "primary_mint") counts.primary_mint++;
+  }
+  return counts;
 }
 
 async function flushOpens(
@@ -965,10 +1055,15 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
 
   // ── purchases flush: single batch insert, deferred cursor advance ───
   let purchasesActualCursor = purchasesInitial;
-  let purchasesRows = 0;
+  let purchasesCounts: PurchasesFlushCounts = {
+    total: 0,
+    secondary: 0,
+    primary_withdraw: 0,
+    primary_mint: 0,
+  };
   if (purchasesTarget > purchasesInitial) {
     try {
-      purchasesRows = await flushPurchases(sb, purchasesAccumulated);
+      purchasesCounts = await flushPurchases(sb, purchasesAccumulated);
       purchasesActualCursor = purchasesTarget;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1062,7 +1157,10 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
     to_block: purchasesActualCursor,
     chunks_processed: purchasesChunks,
     events_processed: purchasesEvents,
-    rows_inserted: purchasesRows,
+    rows_inserted: purchasesCounts.total,
+    secondary_rows: purchasesCounts.secondary,
+    primary_withdraw_rows: purchasesCounts.primary_withdraw,
+    primary_mint_rows: purchasesCounts.primary_mint,
     caught_up: isCaughtUp(purchasesActualCursor),
   };
   const opensResult = {
@@ -1079,7 +1177,7 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
     pipeline,
     startedAtIso,
     rowsFound: purchasesEvents + ripsInserted,
-    rowsWritten: purchasesRows + momentsLinked,
+    rowsWritten: purchasesCounts.total + momentsLinked,
     rowsSkipped: 0,
     ok: errors.length === 0,
     error: errors.length > 0 ? errors.map((e) => `${e.cursor}: ${e.message}`).join(" | ").slice(0, 500) : null,
