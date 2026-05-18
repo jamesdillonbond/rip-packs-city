@@ -59,7 +59,31 @@ export async function POST(req: NextRequest) {
 
   const startedAtIso = new Date().toISOString()
   const startedMs = Date.now()
-  const batchSize = Math.max(100, Math.min(20000, Number(req.nextUrl.searchParams.get("batch_size") ?? 5000)))
+
+  // Accept batch_size from EITHER the JSON body (cron-job.org convention)
+  // or the query string. The audit caught the route falling back to the
+  // default 5000 because cron-job.org was sending {"p_batch_size": 150} in
+  // the request body and the route only inspected ?batch_size=. With
+  // batch_size=5000 the DB function takes >30s and cron-job.org's HTTP
+  // budget expires before Vercel finishes, so every tick logged as
+  // "upstream request timeout".
+  let bodyBatchSize: number | undefined
+  try {
+    const ct = req.headers.get("content-type") ?? ""
+    if (ct.includes("application/json")) {
+      const body = await req.json().catch(() => null) as Record<string, unknown> | null
+      if (body && typeof body === "object") {
+        const raw = body.p_batch_size ?? body.batch_size
+        const parsed = Number(raw)
+        if (Number.isFinite(parsed)) bodyBatchSize = parsed
+      }
+    }
+  } catch {
+    // body parse failed (empty body, malformed JSON, etc.) — fall through
+    // to query param + default.
+  }
+  const requestedBatch = bodyBatchSize ?? Number(req.nextUrl.searchParams.get("batch_size") ?? 5000)
+  const batchSize = Math.max(100, Math.min(20000, requestedBatch || 5000))
 
   let ok = true
   let errMsg: string | null = null
