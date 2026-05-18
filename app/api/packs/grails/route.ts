@@ -1,15 +1,20 @@
 // app/api/packs/grails/route.ts
 //
 // GET /api/packs/grails?collection=<slug>&sort=<key>&minGrails100=<n>
-//                       &minMaxPull=<n>&limit=<n>
+//                       &minMaxPull=<n>&limit=<n>&buyableOnly=true
 //
 // Returns grail-focused pack metrics joined to the listing-row metadata
 // (title, image_url, primary_price, secondary_ask, pack_ev, value_ratio,
-// total_sealed, depletion_pct, slots). Backs the "Grails" view mode on the
-// packs page.
+// total_sealed, depletion_pct, slots, primary_available, secondary_available).
+// Backs the "Grails" view mode on the packs page.
 //
 // pack_grail_metrics_mv and pack_table_rows are both views, so PostgREST
 // can't auto-embed them — we fetch the two sides and join client-side here.
+//
+// When `buyableOnly=true`, the pack_table_rows side is filtered to rows where
+// primary_available or secondary_available is true, then grail rows whose
+// dist_id doesn't survive that filter are dropped. The flag is sticky in the
+// URL so the leaderboard is shareable in either state.
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -62,6 +67,8 @@ interface PackRowMeta {
   total_sealed: number | null
   depletion_pct: number | null
   slots: number | null
+  primary_available: boolean | null
+  secondary_available: boolean | null
 }
 
 export async function GET(req: NextRequest) {
@@ -71,6 +78,7 @@ export async function GET(req: NextRequest) {
   const minGrails100 = parseInt(url.searchParams.get("minGrails100") ?? "1", 10)
   const minMaxPull = parseFloat(url.searchParams.get("minMaxPull") ?? "0")
   const limitRaw = parseInt(url.searchParams.get("limit") ?? "25", 10)
+  const buyableOnly = (url.searchParams.get("buyableOnly") ?? "").toLowerCase() === "true"
 
   if (!collectionRaw) {
     return NextResponse.json({ error: "collection required" }, { status: 400 })
@@ -120,11 +128,17 @@ export async function GET(req: NextRequest) {
     }
 
     const distIds = grailRows.map((g) => g.dist_id)
-    const { data: meta, error: mErr } = await sb
+    let metaQuery = sb
       .from("pack_table_rows")
-      .select("dist_id, title, image_url, primary_price, secondary_ask, pack_ev, value_ratio, total_sealed, depletion_pct, slots")
+      .select("dist_id, title, image_url, primary_price, secondary_ask, pack_ev, value_ratio, total_sealed, depletion_pct, slots, primary_available, secondary_available")
       .eq("collection_id", collectionUuid)
       .in("dist_id", distIds)
+
+    if (buyableOnly) {
+      metaQuery = metaQuery.or("primary_available.eq.true,secondary_available.eq.true")
+    }
+
+    const { data: meta, error: mErr } = await metaQuery
 
     if (mErr) {
       console.error("[packs/grails] meta read", mErr.message)
@@ -133,12 +147,16 @@ export async function GET(req: NextRequest) {
     const metaMap = new Map<string, PackRowMeta>()
     for (const m of (meta ?? []) as PackRowMeta[]) metaMap.set(m.dist_id, m)
 
-    const rows = grailRows.map((g) => ({
-      ...g,
-      meta: metaMap.get(g.dist_id) ?? null,
-    }))
+    const rows = grailRows
+      .map((g) => ({
+        ...g,
+        meta: metaMap.get(g.dist_id) ?? null,
+      }))
+      // When buyableOnly is on, drop grail rows whose dist didn't survive the
+      // pack_table_rows availability filter.
+      .filter((r) => !buyableOnly || r.meta !== null)
 
-    return NextResponse.json({ rows, collection_id: collectionUuid, sort, limit }, {
+    return NextResponse.json({ rows, collection_id: collectionUuid, sort, limit, buyableOnly }, {
       headers: { "Cache-Control": "s-maxage=60, stale-while-revalidate=300" },
     })
   } catch (err) {
