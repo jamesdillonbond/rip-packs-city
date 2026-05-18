@@ -17,13 +17,15 @@ import crypto from "crypto"
 //     TokensWithdrawn).
 //
 //   V2 Dapper (A.4eb8a10cb9f87357.NFTStorefrontV2) — Dapper's NFTStorefrontV2
-//     deployment. This is the actual primary venue today for AllDay/Golazos/
-//     UFC native sales (customID = "DAPPER_MARKETPLACE"). Verified 2026-05-18
-//     via Trevor's Golazos + AllDay pack test purchases. ListingCompleted
-//     carries salePrice / nftType / nftID / customID / commissionReceiver
-//     inline. Buyer/seller still resolve via auxiliary Deposit.to /
-//     Withdraw.from events (the payload has no buyer field, only
-//     commissionReceiver which is the commission recipient, not the buyer).
+//     deployment. In production traffic this storefront carries TopShot
+//     PackNFT / Pinnacle / MFL pack listings, NOT AllDay/Golazos/UFC moments
+//     (diagnostic-confirmed 2026-05-18: every V2 Dapper nftType observed by
+//     this indexer across multiple ticks was MFLPack.NFT / Pinnacle.NFT /
+//     A.0b2a3299cc857e29.PackNFT.NFT). The scan branch is kept armed because
+//     it is zero-cost when the traffic pattern holds, and the
+//     `v2_dapper_typeids_seen` extra surfaces the actual mix per tick so a
+//     future venue shift would flag immediately. ListingCompleted carries
+//     salePrice / nftType / nftID / customID / commissionReceiver inline.
 //
 //   V2 Flowty (A.3cdbb3d569211ff3.NFTStorefrontV2) — Flowty's NFTStorefrontV2
 //     fork. Dormant since 2026-05-14 but kept in the scan so cancellations
@@ -458,12 +460,9 @@ export async function POST(req: NextRequest) {
       let v2FlowtyFilteredIn = 0
       let v1NonAllDay = 0
       let v1Cancellations = 0
-      // ── DIAGNOSTIC (temporary, 2026-05-18): capture first 3 raw V2 Dapper
-      // decoded payloads + the set of distinct nftTypeIds we observe. Lifetime
-      // 0 direct_v2 rows in cached_listings_v2 — need to see what the payload
-      // actually looks like to localize whether the .AllDay.NFT filter is
-      // wrong, the field path is wrong, or the events are genuinely non-AllDay.
-      const v2DapperRawSamples: Array<Record<string, unknown>> = []
+      // Track distinct V2 Dapper nftTypeIds observed per tick. As of 2026-05-18
+      // V2 Dapper carries MFLPack.NFT / Pinnacle.NFT / TopShot PackNFT.NFT only;
+      // a future shift that surfaces .AllDay.NFT here would flag a venue change.
       const v2DapperTypeIds = new Set<string>()
 
       for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
@@ -525,16 +524,6 @@ export async function POST(req: NextRequest) {
                 const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
                 const payload = unwrapCdc(raw) as Record<string, any>
                 const typeId = extractNftTypeId(payload?.nftType)
-                if (v2DapperRawSamples.length < 3) {
-                  v2DapperRawSamples.push({
-                    extracted_nft_type_id: typeId ?? null,
-                    purchased: payload?.purchased,
-                    payload_keys: payload && typeof payload === "object" ? Object.keys(payload) : [],
-                    nft_type_field: payload?.nftType,
-                    tx: evt.transaction_id,
-                    block: bh,
-                  })
-                }
                 if (typeId) v2DapperTypeIds.add(typeId)
                 if (!typeId || !typeId.endsWith(ALLDAY_NFT_TYPE_SUFFIX)) continue
                 if (payload.purchased !== true) continue
@@ -618,7 +607,6 @@ export async function POST(req: NextRequest) {
       extra.v2_flowty_filtered_in = v2FlowtyFilteredIn
       extra.v1_non_allday = v1NonAllDay
       extra.v1_cancellations = v1Cancellations
-      extra.v2_dapper_first_3_raw = v2DapperRawSamples
       extra.v2_dapper_typeids_seen = Array.from(v2DapperTypeIds).slice(0, 10)
 
       // ── V1 + V2 Dapper enrichment ──────────────────────────────────────────

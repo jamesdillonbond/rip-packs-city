@@ -13,11 +13,13 @@ import { supabaseAdmin } from "@/lib/supabase"
 //     carries `listingResourceID / storefrontResourceID / purchased / nftType
 //     / nftID` (reduced).
 //
-//   V2 Dapper: A.4eb8a10cb9f87357.NFTStorefrontV2 — actual primary venue
-//     today (customID = "DAPPER_MARKETPLACE"). ListingAvailable carries
-//     `salePrice / salePaymentVaultType / customID / expiry` inline plus the
-//     V1-style identity fields. Verified 2026-05-18 via Trevor's Golazos
-//     test purchase.
+//   V2 Dapper: A.4eb8a10cb9f87357.NFTStorefrontV2 — in production traffic
+//     this carries TopShot PackNFT / Pinnacle / MFL pack listings, not
+//     AllDay moments (diagnostic-confirmed 2026-05-18 via
+//     `v2_dapper_typeids_seen`). Branch kept armed because it is zero-cost
+//     and the per-tick typeid roster surfaces any future venue shift.
+//     ListingAvailable carries `salePrice / salePaymentVaultType / customID
+//     / expiry` inline plus the V1-style identity fields.
 //
 //   V2 Flowty: A.3cdbb3d569211ff3.NFTStorefrontV2 — dormant since 2026-05-14
 //     but kept for the cancellation tail.
@@ -323,11 +325,9 @@ export async function POST(req: NextRequest) {
       let rawV2DapperCompl = 0
       let rawV2FlowtyAvail = 0
       let rawV2FlowtyCompl = 0
-      // ── DIAGNOSTIC (temporary, 2026-05-18): capture first 3 raw V2 Dapper
-      // payloads (available + completed combined) plus the set of distinct
-      // nftTypeIds. Lifetime 0 direct_v2 rows in cached_listings_v2; need to
-      // see actual payload shape before patching the filter.
-      const v2DapperRawSamples: Array<Record<string, unknown>> = []
+      // Track distinct V2 Dapper nftTypeIds observed per tick. As of 2026-05-18
+      // V2 Dapper carries MFLPack.NFT / Pinnacle.NFT / TopShot PackNFT.NFT only;
+      // a future shift that surfaces .AllDay.NFT here would flag a venue change.
       const v2DapperTypeIds = new Set<string>()
 
       for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
@@ -359,19 +359,7 @@ export async function POST(req: NextRequest) {
                   const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
                   const payload = unwrapCdc(raw) as Record<string, any>
                   const nftTypeId = extractTypeId(payload?.nftType)
-                  if (version === "v2_dapper") {
-                    if (v2DapperRawSamples.length < 3) {
-                      v2DapperRawSamples.push({
-                        event_kind: "ListingAvailable",
-                        extracted_nft_type_id: nftTypeId ?? null,
-                        payload_keys: payload && typeof payload === "object" ? Object.keys(payload) : [],
-                        nft_type_field: payload?.nftType,
-                        tx: evt.transaction_id,
-                        block: bh,
-                      })
-                    }
-                    if (nftTypeId) v2DapperTypeIds.add(nftTypeId)
-                  }
+                  if (version === "v2_dapper" && nftTypeId) v2DapperTypeIds.add(nftTypeId)
                   if (!nftTypeId || !nftTypeId.endsWith(ALLDAY_NFT_TYPE_SUFFIX)) continue
 
                   const storefrontAddress =
@@ -414,20 +402,7 @@ export async function POST(req: NextRequest) {
                   const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
                   const payload = unwrapCdc(raw) as Record<string, any>
                   const nftTypeId = extractTypeId(payload?.nftType)
-                  if (version === "v2_dapper") {
-                    if (v2DapperRawSamples.length < 3) {
-                      v2DapperRawSamples.push({
-                        event_kind: "ListingCompleted",
-                        extracted_nft_type_id: nftTypeId ?? null,
-                        purchased: payload?.purchased,
-                        payload_keys: payload && typeof payload === "object" ? Object.keys(payload) : [],
-                        nft_type_field: payload?.nftType,
-                        tx: evt.transaction_id,
-                        block: bh,
-                      })
-                    }
-                    if (nftTypeId) v2DapperTypeIds.add(nftTypeId)
-                  }
+                  if (version === "v2_dapper" && nftTypeId) v2DapperTypeIds.add(nftTypeId)
                   if (!nftTypeId || !nftTypeId.endsWith(ALLDAY_NFT_TYPE_SUFFIX)) continue
 
                   completedEvents.push({
@@ -700,7 +675,6 @@ export async function POST(req: NextRequest) {
       extra.v2_dapper_completed_count = v2DapperComplCount
       extra.v2_flowty_available_count = v2FlowtyAvailCount
       extra.v2_flowty_completed_count = v2FlowtyComplCount
-      extra.v2_dapper_first_3_raw = v2DapperRawSamples
       extra.v2_dapper_typeids_seen = Array.from(v2DapperTypeIds).slice(0, 10)
       extra.completed_matched = completedMatched
       extra.completed_unmatched = completedSkipped

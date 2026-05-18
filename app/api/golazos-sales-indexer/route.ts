@@ -7,9 +7,11 @@ import crypto from "crypto"
 // ── On-chain LaLiga Golazos sales indexer ────────────────────────────────────
 //
 // Mirrors allday-sales-indexer's triple-path design (see that file's header
-// for the full architecture rationale): scans V1 Dapper NFTStorefront, V2
-// Dapper NFTStorefrontV2 (actual primary venue today, customID =
-// "DAPPER_MARKETPLACE"), and the V2 Flowty fork under one cursor.
+// for the full architecture rationale): scans V1 Dapper NFTStorefront (native
+// venue for Golazos moments), V2 Dapper NFTStorefrontV2 (kept armed, but in
+// practice carries TopShot PackNFT / Pinnacle / MFL packs only — confirmed
+// 2026-05-18 by `v2_dapper_typeids_seen` extra), and the V2 Flowty fork
+// under one cursor.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
@@ -261,8 +263,6 @@ export async function POST(req: NextRequest) {
       let v2FlowtyFilteredIn = 0
       let v1NonGolazos = 0
       let v1Cancellations = 0
-      // ── DIAGNOSTIC (temporary, 2026-05-18): see allday-sales-indexer note.
-      const v2DapperRawSamples: Array<Record<string, unknown>> = []
       const v2DapperTypeIds = new Set<string>()
 
       for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
@@ -321,16 +321,6 @@ export async function POST(req: NextRequest) {
                 const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
                 const payload = unwrapCdc(raw) as Record<string, any>
                 const typeId = extractNftTypeId(payload?.nftType)
-                if (v2DapperRawSamples.length < 3) {
-                  v2DapperRawSamples.push({
-                    extracted_nft_type_id: typeId ?? null,
-                    purchased: payload?.purchased,
-                    payload_keys: payload && typeof payload === "object" ? Object.keys(payload) : [],
-                    nft_type_field: payload?.nftType,
-                    tx: evt.transaction_id,
-                    block: bh,
-                  })
-                }
                 if (typeId) v2DapperTypeIds.add(typeId)
                 if (!typeId || !typeId.endsWith(GOLAZOS_NFT_TYPE_SUFFIX)) continue
                 if (payload.purchased !== true) continue
@@ -404,7 +394,6 @@ export async function POST(req: NextRequest) {
       extra.v2_flowty_filtered_in = v2FlowtyFilteredIn
       extra.v1_non_golazos = v1NonGolazos
       extra.v1_cancellations = v1Cancellations
-      extra.v2_dapper_first_3_raw = v2DapperRawSamples
       extra.v2_dapper_typeids_seen = Array.from(v2DapperTypeIds).slice(0, 10)
 
       // ── V1 + V2 Dapper enrichment ──────────────────────────────────────────
