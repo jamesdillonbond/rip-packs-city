@@ -85,3 +85,6 @@ logs/
 .env.sentry-build-plugin
 .env.production
 sweep-*.log
+
+# Worker package-lock.json files — workers manage their own deps inline
+workers/**/package-lock.json
