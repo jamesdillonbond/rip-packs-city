@@ -29,6 +29,10 @@ interface SummaryTotals {
   packs_purchased: number
   packs_ripped: number
   packs_sold: number
+  primary_drops: number
+  secondary_buys: number
+  primary_spent_usd?: number
+  primary_spend_unknown_count?: number
   first_event_at: string | null
   last_event_at: string | null
 }
@@ -80,6 +84,7 @@ interface HistoryRow {
   buy_currency: string | null
   bought_at: string | null
   bought_from: string | null
+  event_kind: "secondary_sale" | "primary_withdraw" | "primary_mint" | null
   sell_price: number | null
   sell_currency: string | null
   sold_at: string | null
@@ -374,6 +379,12 @@ export default function PackHistoryDashboard() {
         ) : summary ? (
           <>
             <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+              <PacksPurchasedStat
+                purchased={summary.totals.packs_purchased}
+                primary={summary.totals.primary_drops}
+                secondary={summary.totals.secondary_buys}
+                unpriced={summary.totals.primary_spend_unknown_count ?? 0}
+              />
               <HeroStat label="Total spent" value={summary.totals.spent_usd} tint={summary.totals.spent_usd > 0 ? "var(--rpc-red, #E03A2F)" : "#fff"} />
               <HeroStat label="Sold proceeds" value={summary.totals.sold_proceeds_usd} tint="#34D399" />
               <HeroStat label="Ripped value" value={summary.totals.ripped_value_usd} tint="#34D399" />
@@ -508,6 +519,25 @@ function HeroStat({ label, value, tint }: { label: string; value: number; tint: 
   )
 }
 
+// Splits the "Packs Purchased" headline count into Studio drops (primary) vs
+// marketplace buys (secondary). primary_spend_unknown_count is surfaced as a
+// trailing "+ N unpriced drops" note when retail_price_usd couldn't be
+// resolved via pack_distributions — see get_wallet_pack_summary RPC.
+function PacksPurchasedStat({ purchased, primary, secondary, unpriced }: { purchased: number; primary: number; secondary: number; unpriced: number }) {
+  return (
+    <div style={{ background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 8, padding: "14px 16px" }}>
+      <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.12em", textTransform: "uppercase" }}>Packs purchased</div>
+      <div className="rpc-pack-stat-num" style={{ color: "#fff", marginTop: 4 }}>{purchased.toLocaleString("en-US")}</div>
+      <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.6)", marginTop: 6, letterSpacing: "0.04em" }}>
+        {primary.toLocaleString("en-US")} Studio · {secondary.toLocaleString("en-US")} marketplace
+        {unpriced > 0 && (
+          <span style={{ color: "rgba(255,255,255,0.4)" }}> · +{unpriced} unpriced</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function CollectionTab({ active, label, sub, pl, onClick }: { active: boolean; label: string; sub?: string; pl?: number; onClick: () => void }) {
   const positive = pl != null && pl >= 0
   return (
@@ -607,8 +637,35 @@ function LifecycleDetail({ lifecycle, row }: { lifecycle: any; row: HistoryRow }
   }
   const pulls: Array<any> = Array.isArray(lifecycle.pulls) ? lifecycle.pulls : []
   const chain: Array<any> = Array.isArray(lifecycle.ownership_chain) ? lifecycle.ownership_chain : []
+  // event_kind comes from the wallet's most recent buy for this pack
+  // (see get_wallet_pack_history → latest_buys.bought_event_kind). primary_*
+  // values are Studio drops (TS PackNFT.Withdraw / AllDay PackNFT.Mint);
+  // secondary_sale is a peer-to-peer NFTStorefrontV2 buy.
+  const isStudioDrop = row.event_kind != null && row.event_kind.startsWith("primary_")
+  const acquiredLine = row.has_buy
+    ? isStudioDrop
+      ? "Studio drop"
+      : row.bought_from
+        ? `Marketplace buy from ${row.bought_from}`
+        : "Marketplace buy"
+    : null
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {acquiredLine && (
+        <div>
+          <div style={{ fontFamily: condensedFont, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", marginBottom: 6 }}>How acquired</div>
+          <span
+            className="rpc-pack-chip"
+            style={{
+              background: isStudioDrop ? "rgba(168,85,247,0.15)" : "rgba(52,211,153,0.12)",
+              color: isStudioDrop ? "#C084FC" : "#34D399",
+              border: `1px solid ${isStudioDrop ? "rgba(168,85,247,0.4)" : "rgba(52,211,153,0.4)"}`,
+            }}
+          >
+            {acquiredLine}
+          </span>
+        </div>
+      )}
       {chain.length > 0 && (
         <div>
           <div style={{ fontFamily: condensedFont, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", marginBottom: 6 }}>Ownership chain</div>
