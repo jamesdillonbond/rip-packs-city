@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { getCollection } from "@/lib/collections"
 import InsiderSignalsPanel from "@/components/InsiderSignalsPanel"
+import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -303,6 +304,9 @@ export default function OverviewPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+      {/* ── Marketplace Status Banner — shown only when not healthy ── */}
+      <MarketplaceStatusBanner collectionSlug={collection} />
 
       {/* ── Wallet-Connect Hero CTA ── */}
       {!hasWallet && !submitted && (

@@ -9,6 +9,12 @@ import { useCart } from "@/lib/cart/CartContext";
 import { useWarmCache } from "@/lib/warmup/WarmupContext";
 import { FLOWTY_MARKETPLACE_ENABLED, FLOWTY_INCIDENT_URL } from "@/lib/flowty-flags";
 import {
+  MarketplaceStatusBanner,
+  MarketplaceUnavailablePill,
+  FlowtyDormancyChip,
+  useMarketplaceStatus,
+} from "@/components/marketplace-status";
+import {
   isCartEligible,
   cartEligibilityReason,
   cartIneligibleTooltip,
@@ -350,12 +356,16 @@ function ActionCell({
   accent,
   offerMode,
   offerDurationDays,
+  marketplaceBuyDisabled,
+  marketplaceNotes,
 }: {
   deal: SniperDeal;
   ownedIds: Set<string>;
   accent: string;
   offerMode: boolean;
   offerDurationDays: number;
+  marketplaceBuyDisabled?: boolean;
+  marketplaceNotes?: string | null;
 }) {
   const { addToCart, addOffer, removeFromCart, isInCart } = useCart();
   const [localOfferAmt, setLocalOfferAmt] = useState<number>(
@@ -511,7 +521,9 @@ function ActionCell({
           + CART
         </button>
       )}
-      {flowtyDisabled ? (
+      {marketplaceBuyDisabled ? (
+        <MarketplaceUnavailablePill notes={marketplaceNotes} />
+      ) : flowtyDisabled ? (
         <span
           title="Flowty marketplace is currently unavailable"
           aria-disabled="true"
@@ -589,6 +601,18 @@ export default function SniperPage() {
   const isPinnacle = collectionSlug === "pinnacle" || collectionSlug === "disney-pinnacle";
   const isGolazos = collectionSlug === "laliga-golazos";
   const isUfc = collectionSlug === "ufc";
+
+  // Per-collection marketplace status. When `buyCtasEnabled === false`, every
+  // BUY / FLOWTY → CTA on the page is swapped for a disabled-state pill that
+  // surfaces the reason via its tooltip. Optimistic during the initial fetch
+  // window so we don't flicker the BUY buttons on healthy collections.
+  const { status: marketplaceStatus, loaded: marketplaceStatusLoaded } =
+    useMarketplaceStatus(collectionSlug);
+  const marketplaceBuyDisabled =
+    marketplaceStatusLoaded && marketplaceStatus
+      ? !marketplaceStatus.buyCtasEnabled
+      : false;
+  const marketplaceNotes = marketplaceStatus?.notes ?? null;
   // Phase 5: every collection now flows through the unified endpoint. The
   // per-collection dispatch lives server-side in /api/sniper-feed and reuses
   // the existing dedicated handlers via shared compute functions.
@@ -1197,6 +1221,12 @@ export default function SniperPage() {
 
   return (
     <div className="rpc-binder-bg" style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)", overflowX: "hidden" }}>
+      {/* ── Marketplace Status Banner — shown only when not healthy ── */}
+      {marketplaceStatusLoaded && marketplaceStatus && marketplaceStatus.status !== "healthy" && (
+        <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "16px 16px 0" }}>
+          <MarketplaceStatusBanner collectionSlug={collectionSlug} />
+        </div>
+      )}
       {/* ── Header ── */}
       <div style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-black)", padding: "16px", width: "100%", boxSizing: "border-box", overflowX: "hidden" }}>
         <div style={{ maxWidth: "var(--max-width)", margin: "0 auto" }}>
@@ -1631,6 +1661,13 @@ export default function SniperPage() {
           </div>
         )}
 
+        {/* Subtle info chip when Flowty (our secondary-listing pool) is dormant
+            but the collection is otherwise healthy — explains thin listing
+            depth so users don't think the sniper is broken. */}
+        <div style={{ margin: "0 0 12px" }}>
+          <FlowtyDormancyChip collectionSlug={collectionSlug} />
+        </div>
+
         {/* ── Relative-deals fallback for ASK_ONLY collections ─────────────── */}
         {(isGolazos || isUfc) && !loading && relativeDeals !== null && (
           <div style={{ marginBottom: 24 }}>
@@ -1676,7 +1713,13 @@ export default function SniperPage() {
                             <td style={{ padding: "6px 8px", textAlign: "right", color: "var(--rpc-text-muted)" }}>${med.toFixed(2)}</td>
                             <td style={{ padding: "6px 8px", textAlign: "right", color: "#00e882" }}>{disc}%</td>
                             <td style={{ padding: "6px 8px" }}>
-                              {d.buy_url ? (
+                              {marketplaceBuyDisabled ? (
+                                <MarketplaceUnavailablePill
+                                  notes={marketplaceNotes}
+                                  label="UNAVAILABLE"
+                                  style={{ fontSize: "var(--text-xs)", padding: "2px 8px" }}
+                                />
+                              ) : d.buy_url ? (
                                 <a href={d.buy_url} target="_blank" rel="noreferrer" className="rpc-chip" style={{ borderColor: `${accent}66`, color: accent, padding: "2px 8px", fontSize: "var(--text-xs)" }}>
                                   BUY
                                 </a>
@@ -1873,7 +1916,12 @@ export default function SniperPage() {
                         ))}
                       </div>
                     )}
-                    {flowtyDisabled ? (
+                    {marketplaceBuyDisabled ? (
+                      <MarketplaceUnavailablePill
+                        notes={marketplaceNotes}
+                        style={{ fontSize: "var(--text-xs)", padding: "4px 10px" }}
+                      />
+                    ) : flowtyDisabled ? (
                       <span
                         title="Flowty marketplace is currently unavailable"
                         aria-disabled="true"
@@ -2255,6 +2303,8 @@ export default function SniperPage() {
                         accent={accent}
                         offerMode={offerMode}
                         offerDurationDays={offerDurationDays}
+                        marketplaceBuyDisabled={marketplaceBuyDisabled}
+                        marketplaceNotes={marketplaceNotes}
                       />
                     </td>
                   </tr>
@@ -2319,7 +2369,15 @@ export default function SniperPage() {
                                     </span>
                                     <span style={{ color: "var(--rpc-text-ghost)", minWidth: 50 }}>{dd.source === "flowty" ? "Flowty" : "TS"}</span>
                                     <span style={{ color: "var(--rpc-text-ghost)", minWidth: 60 }}>{timeAgo(dd.updatedAt)}</span>
-                                    <a href={dd.buyUrl} target="_blank" rel="noopener noreferrer" style={{ color: accent, textDecoration: "none" }}>BUY →</a>
+                                    {marketplaceBuyDisabled ? (
+                                      <MarketplaceUnavailablePill
+                                        notes={marketplaceNotes}
+                                        label="UNAVAILABLE"
+                                        style={{ fontSize: "var(--text-xs)", padding: "2px 8px" }}
+                                      />
+                                    ) : (
+                                      <a href={dd.buyUrl} target="_blank" rel="noopener noreferrer" style={{ color: accent, textDecoration: "none" }}>BUY →</a>
+                                    )}
                                   </div>
                                 ))}
                               </>

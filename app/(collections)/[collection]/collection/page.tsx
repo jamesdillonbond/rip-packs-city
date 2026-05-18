@@ -24,6 +24,7 @@ import { formatCurrency, formatCount } from "@/lib/format"
 import { track } from "@/lib/telemetry/track"
 import { pickLoading } from "@/lib/schonely"
 import { FLOWTY_MARKETPLACE_ENABLED } from "@/lib/flowty-flags"
+import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 
 function ThumbnailPreview({ thumbUrl, playerName, tierColor, children }: { thumbUrl: string | null; playerName: string; tierColor: string; children: React.ReactNode }) {
   const [hovered, setHovered] = useState(false)
@@ -1570,6 +1571,13 @@ export default function WalletPage() {
       </Suspense>
 
       <div className="mx-auto max-w-[1600px] px-3 py-4 md:px-6">
+
+        {/* Marketplace status banner — shown only when not healthy. Surfaces
+            UFC/Golazos sunset language so collectors viewing their wallet
+            understand why buy-flow CTAs elsewhere on RPC are disabled. */}
+        <div style={{ marginBottom: 16 }}>
+          <MarketplaceStatusBanner collectionSlug={collectionSlug} />
+        </div>
 
         {/* Profile key indicator */}
         {ownerKey && (
