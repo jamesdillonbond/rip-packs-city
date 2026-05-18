@@ -2,25 +2,30 @@ import { NextRequest, NextResponse, after } from "next/server"
 import * as Sentry from "@sentry/nextjs"
 import { supabaseAdmin } from "@/lib/supabase"
 
-// ── On-chain NFL All Day listings indexer (dual storefront scan) ─────────────
+// ── On-chain NFL All Day listings indexer (triple storefront scan) ───────────
 //
-// Scans FOUR event types per tick under a single cursor:
+// Scans SIX event types per tick under a single cursor:
 //
-//   V1 (primary): A.4eb8a10cb9f87357.NFTStorefront — original Dapper-deployed
-//     storefront where AllDay native listings actually live. ListingAvailable
-//     payload carries `storefrontAddress / listingResourceID / nftType / nftID
-//     / ftVaultType (Type) / price (UFix64)` — full pricing inline, no aux
-//     fetch needed. ListingCompleted carries `listingResourceID /
-//     storefrontResourceID / purchased / nftType / nftID` (reduced).
+//   V1 Dapper: A.4eb8a10cb9f87357.NFTStorefront — original Dapper-deployed
+//     storefront. ListingAvailable payload carries `storefrontAddress /
+//     listingResourceID / nftType / nftID / ftVaultType (Type) / price
+//     (UFix64)` — full pricing inline, no aux fetch needed. ListingCompleted
+//     carries `listingResourceID / storefrontResourceID / purchased / nftType
+//     / nftID` (reduced).
 //
-//   V2 (legacy Flowty fork): A.3cdbb3d569211ff3.NFTStorefrontV2 — dormant
-//     since 2026-05-14 but kept for the tail of legitimate cancellations.
-//     V2 ListingAvailable payload is the same shape as V1.
+//   V2 Dapper: A.4eb8a10cb9f87357.NFTStorefrontV2 — actual primary venue
+//     today (customID = "DAPPER_MARKETPLACE"). ListingAvailable carries
+//     `salePrice / salePaymentVaultType / customID / expiry` inline plus the
+//     V1-style identity fields. Verified 2026-05-18 via Trevor's Golazos
+//     test purchase.
 //
-// V1 chain rows land in cached_listings_v2 with source='direct_v1'; V2 chain
-// rows with source='direct' (unchanged). The two share the listing_resource_id
-// space without collision because resource UUIDs are globally unique across
-// Flow contracts.
+//   V2 Flowty: A.3cdbb3d569211ff3.NFTStorefrontV2 — dormant since 2026-05-14
+//     but kept for the cancellation tail.
+//
+// V1 chain rows land in cached_listings_v2 with source='direct_v1'; V2 Dapper
+// with source='direct_v2'; V2 Flowty with source='direct' (legacy). The three
+// share the listing_resource_id space without collision because resource UUIDs
+// are globally unique across Flow contracts.
 //
 // First run anchors cursor at sealed tip — no historical backscan. Subsequent
 // ticks walk forward up to MAX_SCAN_RANGE.
@@ -34,8 +39,10 @@ const ALLDAY_NFT_TYPE_SUFFIX = ".AllDay.NFT"
 
 const V1_LISTING_AVAILABLE = "A.4eb8a10cb9f87357.NFTStorefront.ListingAvailable"
 const V1_LISTING_COMPLETED = "A.4eb8a10cb9f87357.NFTStorefront.ListingCompleted"
-const V2_LISTING_AVAILABLE = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingAvailable"
-const V2_LISTING_COMPLETED = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted"
+const V2_DAPPER_LISTING_AVAILABLE = "A.4eb8a10cb9f87357.NFTStorefrontV2.ListingAvailable"
+const V2_DAPPER_LISTING_COMPLETED = "A.4eb8a10cb9f87357.NFTStorefrontV2.ListingCompleted"
+const V2_FLOWTY_LISTING_AVAILABLE = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingAvailable"
+const V2_FLOWTY_LISTING_COMPLETED = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted"
 
 const FLOW_REST = "https://rest-mainnet.onflow.org"
 const CHUNK_SIZE = 250
@@ -212,7 +219,7 @@ function epochSecondsToIso(raw: unknown): string | null {
   return new Date(n * 1000).toISOString()
 }
 
-type StorefrontVersion = "v1" | "v2"
+type StorefrontVersion = "v1" | "v2_dapper" | "v2_flowty"
 
 interface ListingAvailableEvent {
   storefrontVersion: StorefrontVersion
@@ -239,8 +246,10 @@ interface ListingCompletedEvent {
   purchased: boolean
 }
 
-function sourceFor(v: StorefrontVersion): "direct_v1" | "direct" {
-  return v === "v1" ? "direct_v1" : "direct"
+function sourceFor(v: StorefrontVersion): "direct_v1" | "direct_v2" | "direct" {
+  if (v === "v1") return "direct_v1"
+  if (v === "v2_dapper") return "direct_v2"
+  return "direct"
 }
 
 export async function POST(req: NextRequest) {
@@ -310,17 +319,28 @@ export async function POST(req: NextRequest) {
       const completedEvents: ListingCompletedEvent[] = []
       let rawV1Avail = 0
       let rawV1Compl = 0
-      let rawV2Avail = 0
-      let rawV2Compl = 0
+      let rawV2DapperAvail = 0
+      let rawV2DapperCompl = 0
+      let rawV2FlowtyAvail = 0
+      let rawV2FlowtyCompl = 0
 
       for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
         const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
         try {
-          const [v1AvailBlocks, v1ComplBlocks, v2AvailBlocks, v2ComplBlocks] = await Promise.all([
+          const [
+            v1AvailBlocks,
+            v1ComplBlocks,
+            v2DapperAvailBlocks,
+            v2DapperComplBlocks,
+            v2FlowtyAvailBlocks,
+            v2FlowtyComplBlocks,
+          ] = await Promise.all([
             fetchEventRange(V1_LISTING_AVAILABLE, s, e),
             fetchEventRange(V1_LISTING_COMPLETED, s, e),
-            fetchEventRange(V2_LISTING_AVAILABLE, s, e),
-            fetchEventRange(V2_LISTING_COMPLETED, s, e),
+            fetchEventRange(V2_DAPPER_LISTING_AVAILABLE, s, e),
+            fetchEventRange(V2_DAPPER_LISTING_COMPLETED, s, e),
+            fetchEventRange(V2_FLOWTY_LISTING_AVAILABLE, s, e),
+            fetchEventRange(V2_FLOWTY_LISTING_COMPLETED, s, e),
           ])
 
           const processAvailable = (blocks: FlowEventBlock[], version: StorefrontVersion, rawIncr: () => void) => {
@@ -395,8 +415,10 @@ export async function POST(req: NextRequest) {
 
           processAvailable(v1AvailBlocks, "v1", () => rawV1Avail++)
           processCompleted(v1ComplBlocks, "v1", () => rawV1Compl++)
-          processAvailable(v2AvailBlocks, "v2", () => rawV2Avail++)
-          processCompleted(v2ComplBlocks, "v2", () => rawV2Compl++)
+          processAvailable(v2DapperAvailBlocks, "v2_dapper", () => rawV2DapperAvail++)
+          processCompleted(v2DapperComplBlocks, "v2_dapper", () => rawV2DapperCompl++)
+          processAvailable(v2FlowtyAvailBlocks, "v2_flowty", () => rawV2FlowtyAvail++)
+          processCompleted(v2FlowtyComplBlocks, "v2_flowty", () => rawV2FlowtyCompl++)
         } catch (err) {
           console.log(`[allday-listings-indexer] chunk ${s}-${e} error:`, err instanceof Error ? err.message : String(err))
         }
@@ -404,13 +426,20 @@ export async function POST(req: NextRequest) {
       }
 
       const v1AvailCount = availableEvents.filter((a) => a.storefrontVersion === "v1").length
-      const v2AvailCount = availableEvents.length - v1AvailCount
+      const v2DapperAvailCount = availableEvents.filter((a) => a.storefrontVersion === "v2_dapper").length
+      const v2FlowtyAvailCount = availableEvents.filter((a) => a.storefrontVersion === "v2_flowty").length
       const v1ComplCount = completedEvents.filter((c) => c.storefrontVersion === "v1").length
-      const v2ComplCount = completedEvents.length - v1ComplCount
+      const v2DapperComplCount = completedEvents.filter((c) => c.storefrontVersion === "v2_dapper").length
+      const v2FlowtyComplCount = completedEvents.filter((c) => c.storefrontVersion === "v2_flowty").length
       rowsFound = availableEvents.length + completedEvents.length
 
       console.log(
-        `[allday-listings-indexer] range=${lastBlock + 1}-${targetHeight} rawV1Avail=${rawV1Avail} rawV1Compl=${rawV1Compl} rawV2Avail=${rawV2Avail} rawV2Compl=${rawV2Compl} v1Avail=${v1AvailCount} v2Avail=${v2AvailCount} v1Compl=${v1ComplCount} v2Compl=${v2ComplCount}`
+        `[allday-listings-indexer] range=${lastBlock + 1}-${targetHeight} ` +
+          `rawV1Avail=${rawV1Avail} rawV1Compl=${rawV1Compl} ` +
+          `rawV2DapperAvail=${rawV2DapperAvail} rawV2DapperCompl=${rawV2DapperCompl} ` +
+          `rawV2FlowtyAvail=${rawV2FlowtyAvail} rawV2FlowtyCompl=${rawV2FlowtyCompl} ` +
+          `v1Avail=${v1AvailCount} v2DapperAvail=${v2DapperAvailCount} v2FlowtyAvail=${v2FlowtyAvailCount} ` +
+          `v1Compl=${v1ComplCount} v2DapperCompl=${v2DapperComplCount} v2FlowtyCompl=${v2FlowtyComplCount}`
       )
 
       // ── Edition resolution (shared across V1 + V2 availables) ──────────────
@@ -629,12 +658,15 @@ export async function POST(req: NextRequest) {
       cursorAfter = String(targetHeight)
 
       extra.blocks_scanned = targetHeight - lastBlock
-      extra.events_pre_filter = rawV1Avail + rawV1Compl + rawV2Avail + rawV2Compl
+      extra.events_pre_filter =
+        rawV1Avail + rawV1Compl + rawV2DapperAvail + rawV2DapperCompl + rawV2FlowtyAvail + rawV2FlowtyCompl
       extra.events_post_filter = rowsFound
       extra.v1_available_count = v1AvailCount
-      extra.v2_available_count = v2AvailCount
       extra.v1_completed_count = v1ComplCount
-      extra.v2_completed_count = v2ComplCount
+      extra.v2_dapper_available_count = v2DapperAvailCount
+      extra.v2_dapper_completed_count = v2DapperComplCount
+      extra.v2_flowty_available_count = v2FlowtyAvailCount
+      extra.v2_flowty_completed_count = v2FlowtyComplCount
       extra.completed_matched = completedMatched
       extra.completed_unmatched = completedSkipped
       extra.cadence_attempted = cadenceAttempted

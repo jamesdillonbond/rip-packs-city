@@ -6,11 +6,10 @@ import crypto from "crypto"
 
 // ── On-chain LaLiga Golazos sales indexer ────────────────────────────────────
 //
-// Mirrors allday-sales-indexer's dual-path design (see that file's header for
-// the full architecture rationale): scans the V1 Dapper NFTStorefront
-// (A.4eb8a10cb9f87357.NFTStorefront) for native sales alongside the V2 Flowty
-// fork (A.3cdbb3d569211ff3.NFTStorefrontV2) under one cursor. Pre-2026-05-17
-// only V2 was scanned, which silently missed every native Golazos sale.
+// Mirrors allday-sales-indexer's triple-path design (see that file's header
+// for the full architecture rationale): scans V1 Dapper NFTStorefront, V2
+// Dapper NFTStorefrontV2 (actual primary venue today, customID =
+// "DAPPER_MARKETPLACE"), and the V2 Flowty fork under one cursor.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
@@ -19,7 +18,8 @@ const COLLECTION_SLUG = "laliga_golazos"
 const PIPELINE_NAME = "golazos-sales-indexer"
 
 const V1_LISTING_COMPLETED = "A.4eb8a10cb9f87357.NFTStorefront.ListingCompleted"
-const V2_LISTING_COMPLETED = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted"
+const V2_DAPPER_LISTING_COMPLETED = "A.4eb8a10cb9f87357.NFTStorefrontV2.ListingCompleted"
+const V2_FLOWTY_LISTING_COMPLETED = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted"
 
 const GOLAZOS_NFT_TYPE_SUFFIX = ".Golazos.NFT"
 const GOLAZOS_DEPOSIT_EVENT = "A.87ca73a41bb50ad5.Golazos.Deposit"
@@ -185,7 +185,7 @@ async function runScript(code: string, args: Array<{ type: string; value: unknow
   return unwrapCdc(decoded)
 }
 
-type SaleSource = "v1_dapper" | "v2_flowty"
+type SaleSource = "v1_dapper" | "v2_dapper" | "v2_flowty"
 
 interface Sale {
   saleSource: SaleSource
@@ -194,6 +194,7 @@ interface Sale {
   transactionId: string
   nftID: string
   listingResourceID: string
+  customID: string | null
   salePrice: string | null
   seller: string | null
   buyer: string | null
@@ -253,18 +254,21 @@ export async function POST(req: NextRequest) {
 
       const sales: Sale[] = []
       let rawV1 = 0
-      let rawV2 = 0
+      let rawV2Dapper = 0
+      let rawV2Flowty = 0
       let v1FilteredIn = 0
-      let v2FilteredIn = 0
+      let v2DapperFilteredIn = 0
+      let v2FlowtyFilteredIn = 0
       let v1NonGolazos = 0
       let v1Cancellations = 0
 
       for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
         const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
         try {
-          const [v1Blocks, v2Blocks] = await Promise.all([
+          const [v1Blocks, v2DapperBlocks, v2FlowtyBlocks] = await Promise.all([
             fetchEventRange(V1_LISTING_COMPLETED, s, e),
-            fetchEventRange(V2_LISTING_COMPLETED, s, e),
+            fetchEventRange(V2_DAPPER_LISTING_COMPLETED, s, e),
+            fetchEventRange(V2_FLOWTY_LISTING_COMPLETED, s, e),
           ])
 
           for (const blk of v1Blocks) {
@@ -291,6 +295,7 @@ export async function POST(req: NextRequest) {
                   transactionId: evt.transaction_id,
                   nftID: String(payload.nftID),
                   listingResourceID: String(payload.listingResourceID),
+                  customID: typeof payload.customID === "string" ? payload.customID : null,
                   salePrice: null,
                   seller: null,
                   buyer: null,
@@ -302,11 +307,44 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          for (const blk of v2Blocks) {
+          // V2 Dapper (actual primary venue today; salePrice inline,
+          // buyer/seller still need decodeV1SaleTx).
+          for (const blk of v2DapperBlocks) {
             const bh = Number(blk.block_height)
             const bts = blk.block_timestamp
             for (const evt of blk.events ?? []) {
-              rawV2++
+              rawV2Dapper++
+              try {
+                const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
+                const payload = unwrapCdc(raw) as Record<string, any>
+                const typeId = extractNftTypeId(payload?.nftType)
+                if (!typeId || !typeId.endsWith(GOLAZOS_NFT_TYPE_SUFFIX)) continue
+                if (payload.purchased !== true) continue
+
+                sales.push({
+                  saleSource: "v2_dapper",
+                  blockHeight: bh,
+                  blockTimestamp: bts,
+                  transactionId: evt.transaction_id,
+                  nftID: String(payload.nftID),
+                  listingResourceID: String(payload.listingResourceID ?? ""),
+                  customID: typeof payload.customID === "string" ? payload.customID : null,
+                  salePrice: String(payload.salePrice ?? "0"),
+                  seller: null,
+                  buyer: null,
+                })
+                v2DapperFilteredIn++
+              } catch (err) {
+                console.log("[golazos-sales-indexer] V2 Dapper decode err:", err instanceof Error ? err.message : String(err))
+              }
+            }
+          }
+
+          for (const blk of v2FlowtyBlocks) {
+            const bh = Number(blk.block_height)
+            const bts = blk.block_timestamp
+            for (const evt of blk.events ?? []) {
+              rawV2Flowty++
               try {
                 const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
                 const payload = unwrapCdc(raw) as Record<string, any>
@@ -321,6 +359,7 @@ export async function POST(req: NextRequest) {
                   transactionId: evt.transaction_id,
                   nftID: String(payload.nftID),
                   listingResourceID: String(payload.listingResourceID ?? ""),
+                  customID: typeof payload.customID === "string" ? payload.customID : null,
                   salePrice: String(payload.salePrice ?? "0"),
                   // V2 Flowty events historically didn't carry buyer/seller
                   // cleanly — the legacy code stored commissionReceiver as
@@ -329,9 +368,9 @@ export async function POST(req: NextRequest) {
                   seller: null,
                   buyer: typeof payload.commissionReceiver === "string" ? payload.commissionReceiver : null,
                 })
-                v2FilteredIn++
+                v2FlowtyFilteredIn++
               } catch (err) {
-                console.log("[golazos-sales-indexer] V2 decode err:", err instanceof Error ? err.message : String(err))
+                console.log("[golazos-sales-indexer] V2 Flowty decode err:", err instanceof Error ? err.message : String(err))
               }
             }
           }
@@ -342,16 +381,19 @@ export async function POST(req: NextRequest) {
       }
 
       rowsFound = sales.length
-      console.log(`[golazos-sales-indexer] range=${lastBlock + 1}-${targetHeight} rawV1=${rawV1} rawV2=${rawV2} v1Sales=${v1FilteredIn} v2Sales=${v2FilteredIn}`)
+      console.log(`[golazos-sales-indexer] range=${lastBlock + 1}-${targetHeight} rawV1=${rawV1} rawV2Dapper=${rawV2Dapper} rawV2Flowty=${rawV2Flowty} v1Sales=${v1FilteredIn} v2DapperSales=${v2DapperFilteredIn} v2FlowtySales=${v2FlowtyFilteredIn}`)
       extra.raw_v1_events = rawV1
-      extra.raw_v2_events = rawV2
+      extra.raw_v2_dapper_events = rawV2Dapper
+      extra.raw_v2_flowty_events = rawV2Flowty
       extra.v1_filtered_in = v1FilteredIn
-      extra.v2_filtered_in = v2FilteredIn
+      extra.v2_dapper_filtered_in = v2DapperFilteredIn
+      extra.v2_flowty_filtered_in = v2FlowtyFilteredIn
       extra.v1_non_golazos = v1NonGolazos
       extra.v1_cancellations = v1Cancellations
 
-      // ── V1 enrichment: cached_listings_v2 → tx-decode → unmapped ───────────
+      // ── V1 + V2 Dapper enrichment ──────────────────────────────────────────
       const v1Sales = sales.filter((s) => s.saleSource === "v1_dapper")
+      const v2DapperSales = sales.filter((s) => s.saleSource === "v2_dapper")
       const v1UncertainPriceSales: Array<{ sale: Sale; reason: string; samples: number[] }> = []
 
       if (v1Sales.length > 0) {
@@ -427,6 +469,29 @@ export async function POST(req: NextRequest) {
         extra.v1_cache_hits = v1CacheHits
         extra.v1_tx_decode_used = v1TxDecodeUsed
         extra.v1_uncertain_count = v1UncertainCount
+      }
+
+      // V2 Dapper: buyer/seller only (salePrice inline). Independent budget.
+      if (v2DapperSales.length > 0) {
+        let v2DapperTxDecodeUsed = 0
+        let v2DapperUnenriched = 0
+        for (const sale of v2DapperSales) {
+          if (v2DapperTxDecodeUsed >= V1_TX_DECODE_MAX) {
+            v2DapperUnenriched++
+            continue
+          }
+          v2DapperTxDecodeUsed++
+          const decoded = await decodeV1SaleTx(sale.transactionId, {
+            depositEventType: GOLAZOS_DEPOSIT_EVENT,
+            withdrawEventType: GOLAZOS_WITHDRAW_EVENT,
+            nftId: sale.nftID,
+          })
+          sale.buyer = decoded.buyer ?? null
+          sale.seller = decoded.seller ?? null
+          await delay(V1_TX_DECODE_DELAY_MS)
+        }
+        extra.v2_dapper_tx_decode_used = v2DapperTxDecodeUsed
+        extra.v2_dapper_unenriched = v2DapperUnenriched
       }
 
       // ── Edition resolution via wmc → Cadence borrow ────────────────────────
@@ -526,8 +591,14 @@ export async function POST(req: NextRequest) {
         const editionId = editionKey ? editionKeyToId.get(editionKey) : null
         const priceCertain = !uncertainTxToReason.has(s.transactionId)
         const price = priceCertain && s.salePrice !== null ? parseFloat(s.salePrice) || 0 : 0
-        const marketplace = s.saleSource === "v1_dapper" ? "laligagolazos" : "flowty"
-        const source = s.saleSource === "v1_dapper" ? "onchain_dapper_v1" : "onchain"
+        const marketplace =
+          s.saleSource === "v2_flowty" ? "flowty" : "laligagolazos"
+        const source =
+          s.saleSource === "v1_dapper"
+            ? "onchain_dapper_v1"
+            : s.saleSource === "v2_dapper"
+              ? "onchain_dapper_v2"
+              : "onchain"
 
         if (editionId && priceCertain) {
           salesRows.push({

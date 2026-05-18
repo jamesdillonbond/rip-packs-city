@@ -7,34 +7,43 @@ import crypto from "crypto"
 
 // ── On-chain NFL All Day sales indexer ───────────────────────────────────────
 //
-// Scans TWO storefront contracts per tick under a single cursor:
+// Scans THREE storefront contracts per tick under a single cursor:
 //
-//   V1 (primary, A.4eb8a10cb9f87357.NFTStorefront) — the original Dapper-
-//     deployed storefront that AllDay (Golazos, UFC Strike) native sales have
-//     always routed through. Its ListingCompleted payload is REDUCED
+//   V1 (Dapper original, A.4eb8a10cb9f87357.NFTStorefront) — the original
+//     Dapper-deployed storefront. ListingCompleted payload is REDUCED
 //     (listingResourceID / storefrontResourceID / purchased / nftType / nftID)
 //     — no buyer, seller, or price. Those must be recovered from the tx's
 //     auxiliary events (AllDay.Deposit.to / AllDay.Withdraw.from / DUC
-//     TokensWithdrawn). Pre-2026-05-17 we mistakenly indexed only V2 (Flowty
-//     fork) and missed every native AllDay sale; the JJLSmith $2,999 Marquee
-//     Ultimate trace on Flowscan surfaced the V1 contract.
+//     TokensWithdrawn).
 //
-//   V2 (legacy, A.3cdbb3d569211ff3.NFTStorefrontV2) — Flowty's NFTStorefrontV2
+//   V2 Dapper (A.4eb8a10cb9f87357.NFTStorefrontV2) — Dapper's NFTStorefrontV2
+//     deployment. This is the actual primary venue today for AllDay/Golazos/
+//     UFC native sales (customID = "DAPPER_MARKETPLACE"). Verified 2026-05-18
+//     via Trevor's Golazos + AllDay pack test purchases. ListingCompleted
+//     carries salePrice / nftType / nftID / customID / commissionReceiver
+//     inline. Buyer/seller still resolve via auxiliary Deposit.to /
+//     Withdraw.from events (the payload has no buyer field, only
+//     commissionReceiver which is the commission recipient, not the buyer).
+//
+//   V2 Flowty (A.3cdbb3d569211ff3.NFTStorefrontV2) — Flowty's NFTStorefrontV2
 //     fork. Dormant since 2026-05-14 but kept in the scan so cancellations
-//     still land. V2 ListingCompleted DOES carry buyer/seller/price inline.
+//     still land. V2 Flowty ListingCompleted DOES carry buyer/seller/price
+//     inline via its custom payload shape.
 //
-// Both event types live in the same block range, so one cursor on
-// event_cursor.id='allday_sales' advances both — splitting would double the
-// cron infrastructure for no operational benefit.
+// All three event sources live in the same block range, so one cursor on
+// event_cursor.id='allday_sales' advances all of them — splitting would
+// triple the cron infrastructure for no operational benefit.
 //
-// Price-resolution chain for V1 sales:
-//   1. Try cached_listings_v2 lookup by listing_resource_id (the listings-
-//      indexer populates this from ListingAvailable's inline price field).
-//   2. Fall back to decodeV1SaleTx, which fetches the tx and sums DUC
-//      TokensWithdrawn from the DUC contract address `0xead892083b3e2c6c`.
-//      A sanity check (split amounts must sum to gross within 1¢) flags
-//      uncertain extractions — those route to unmapped_sales with a
-//      resolution_hint rather than recording a guessed price.
+// Price-resolution chain:
+//   V1 (Dapper original) sales — payload reduced, full enrichment required:
+//     1. Try cached_listings_v2 lookup by listing_resource_id.
+//     2. Fall back to decodeV1SaleTx, which fetches the tx and sums DUC
+//        TokensWithdrawn from the DUC contract address `0xead892083b3e2c6c`.
+//        A sanity check flags uncertain extractions → unmapped_sales.
+//   V2 Dapper sales — salePrice inline; only buyer/seller need aux enrichment.
+//     Reuses decodeV1SaleTx for the auxiliary event walk; the priceDuc field
+//     it returns is ignored because the payload's salePrice is authoritative.
+//   V2 Flowty sales — buyer/seller/salePrice all inline.
 //
 // Edition resolution (wmc → Cadence borrow → AllDay GQL relay → on-chain
 // getEditionData) is unchanged from the pre-V1 implementation.
@@ -46,12 +55,12 @@ const COLLECTION_SLUG = "nfl_all_day"
 const PIPELINE_NAME = "allday-sales-indexer"
 const RESOLVER_PIPELINE_NAME = "allday-edition-resolver"
 
-// V1 Dapper NFTStorefront — primary path for AllDay native sales.
+// V1 Dapper NFTStorefront — original Dapper storefront, reduced payload.
 const V1_LISTING_COMPLETED = "A.4eb8a10cb9f87357.NFTStorefront.ListingCompleted"
-// V2 Flowty fork — dormant but kept for cancellation tail. `nftType` payload
-// shape differs from V1 (V2 also emits a Type wrapper, but its other fields
-// are richer — buyer, seller, salePrice all inline).
-const V2_LISTING_COMPLETED = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted"
+// V2 Dapper NFTStorefrontV2 — actual primary venue today; rich inline payload.
+const V2_DAPPER_LISTING_COMPLETED = "A.4eb8a10cb9f87357.NFTStorefrontV2.ListingCompleted"
+// V2 Flowty fork — dormant but kept for cancellation tail.
+const V2_FLOWTY_LISTING_COMPLETED = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted"
 
 // Use endsWith() instead of includes() — A.e4cf4bdc1751c65d.PackNFT.NFT lives
 // at the same address but is a separate contract; a .includes("AllDay") guard
@@ -360,7 +369,7 @@ function buildOnChainEditionRow(
   }
 }
 
-type SaleSource = "v1_dapper" | "v2_flowty"
+type SaleSource = "v1_dapper" | "v2_dapper" | "v2_flowty"
 
 interface Sale {
   saleSource: SaleSource
@@ -369,8 +378,10 @@ interface Sale {
   transactionId: string
   nftID: string
   listingResourceID: string
+  customID: string | null
   // V2 carries these inline; V1 fills them via cached_listings_v2 lookup
-  // or decodeV1SaleTx.
+  // or decodeV1SaleTx. V2 Dapper carries salePrice inline but buyer/seller
+  // still require aux-event enrichment (decodeV1SaleTx).
   salePrice: string | null
   seller: string | null
   buyer: string | null
@@ -440,21 +451,24 @@ export async function POST(req: NextRequest) {
 
       const sales: Sale[] = []
       let rawV1 = 0
-      let rawV2 = 0
+      let rawV2Dapper = 0
+      let rawV2Flowty = 0
       let v1FilteredIn = 0
-      let v2FilteredIn = 0
+      let v2DapperFilteredIn = 0
+      let v2FlowtyFilteredIn = 0
       let v1NonAllDay = 0
       let v1Cancellations = 0
 
       for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
         const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
         try {
-          const [v1Blocks, v2Blocks] = await Promise.all([
+          const [v1Blocks, v2DapperBlocks, v2FlowtyBlocks] = await Promise.all([
             fetchEventRange(V1_LISTING_COMPLETED, s, e),
-            fetchEventRange(V2_LISTING_COMPLETED, s, e),
+            fetchEventRange(V2_DAPPER_LISTING_COMPLETED, s, e),
+            fetchEventRange(V2_FLOWTY_LISTING_COMPLETED, s, e),
           ])
 
-          // ── V1 (primary) ───────────────────────────────────────────────────
+          // ── V1 Dapper ─────────────────────────────────────────────────────
           for (const blk of v1Blocks) {
             const bh = Number(blk.block_height)
             const bts = blk.block_timestamp
@@ -479,6 +493,7 @@ export async function POST(req: NextRequest) {
                   transactionId: evt.transaction_id,
                   nftID: String(payload.nftID),
                   listingResourceID: String(payload.listingResourceID),
+                  customID: typeof payload.customID === "string" ? payload.customID : null,
                   salePrice: null,
                   seller: null,
                   buyer: null,
@@ -493,12 +508,47 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          // ── V2 (legacy Flowty fork) ─────────────────────────────────────────
-          for (const blk of v2Blocks) {
+          // ── V2 Dapper (actual primary today) ──────────────────────────────
+          for (const blk of v2DapperBlocks) {
             const bh = Number(blk.block_height)
             const bts = blk.block_timestamp
             for (const evt of blk.events ?? []) {
-              rawV2++
+              rawV2Dapper++
+              try {
+                const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
+                const payload = unwrapCdc(raw) as Record<string, any>
+                const typeId = extractNftTypeId(payload?.nftType)
+                if (!typeId || !typeId.endsWith(ALLDAY_NFT_TYPE_SUFFIX)) continue
+                if (payload.purchased !== true) continue
+
+                sales.push({
+                  saleSource: "v2_dapper",
+                  blockHeight: bh,
+                  blockTimestamp: bts,
+                  transactionId: evt.transaction_id,
+                  nftID: String(payload.nftID),
+                  listingResourceID: String(payload.listingResourceID ?? ""),
+                  customID: typeof payload.customID === "string" ? payload.customID : null,
+                  salePrice: String(payload.salePrice ?? "0"),
+                  seller: null,
+                  buyer: null,
+                })
+                v2DapperFilteredIn++
+              } catch (err) {
+                console.log(
+                  "[allday-sales-indexer] V2 Dapper decode err:",
+                  err instanceof Error ? err.message : String(err)
+                )
+              }
+            }
+          }
+
+          // ── V2 Flowty (legacy fork) ───────────────────────────────────────
+          for (const blk of v2FlowtyBlocks) {
+            const bh = Number(blk.block_height)
+            const bts = blk.block_timestamp
+            for (const evt of blk.events ?? []) {
+              rawV2Flowty++
               try {
                 const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
                 const payload = unwrapCdc(raw) as Record<string, any>
@@ -515,14 +565,15 @@ export async function POST(req: NextRequest) {
                   transactionId: evt.transaction_id,
                   nftID: String(payload.nftID),
                   listingResourceID: String(payload.listingResourceID ?? ""),
+                  customID: typeof payload.customID === "string" ? payload.customID : null,
                   salePrice: String(payload.salePrice ?? "0"),
                   seller: typeof sellerVal === "string" ? sellerVal : null,
                   buyer: typeof buyerVal === "string" ? buyerVal : null,
                 })
-                v2FilteredIn++
+                v2FlowtyFilteredIn++
               } catch (err) {
                 console.log(
-                  "[allday-sales-indexer] V2 decode err:",
+                  "[allday-sales-indexer] V2 Flowty decode err:",
                   err instanceof Error ? err.message : String(err)
                 )
               }
@@ -539,17 +590,25 @@ export async function POST(req: NextRequest) {
 
       rowsFound = sales.length
       console.log(
-        `[allday-sales-indexer] range=${lastBlock + 1}-${targetHeight} rawV1=${rawV1} rawV2=${rawV2} v1Sales=${v1FilteredIn} v2Sales=${v2FilteredIn}`
+        `[allday-sales-indexer] range=${lastBlock + 1}-${targetHeight} rawV1=${rawV1} rawV2Dapper=${rawV2Dapper} rawV2Flowty=${rawV2Flowty} v1Sales=${v1FilteredIn} v2DapperSales=${v2DapperFilteredIn} v2FlowtySales=${v2FlowtyFilteredIn}`
       )
       extra.raw_v1_events = rawV1
-      extra.raw_v2_events = rawV2
+      extra.raw_v2_dapper_events = rawV2Dapper
+      extra.raw_v2_flowty_events = rawV2Flowty
       extra.v1_filtered_in = v1FilteredIn
-      extra.v2_filtered_in = v2FilteredIn
+      extra.v2_dapper_filtered_in = v2DapperFilteredIn
+      extra.v2_flowty_filtered_in = v2FlowtyFilteredIn
       extra.v1_non_allday = v1NonAllDay
       extra.v1_cancellations = v1Cancellations
 
-      // ── V1 price + buyer + seller enrichment ───────────────────────────────
+      // ── V1 + V2 Dapper enrichment ──────────────────────────────────────────
+      // V1: payload reduced → need cached_listings_v2 / decodeV1SaleTx for
+      //     price + buyer + seller.
+      // V2 Dapper: salePrice inline; only buyer + seller need decodeV1SaleTx
+      //     (the payload has no buyer field; commissionReceiver is the
+      //     commission recipient, not the buyer).
       const v1Sales = sales.filter((s) => s.saleSource === "v1_dapper")
+      const v2DapperSales = sales.filter((s) => s.saleSource === "v2_dapper")
       const v1UncertainPriceSales: Array<{ sale: Sale; reason: string; samples: number[] }> = []
 
       if (v1Sales.length > 0) {
@@ -640,6 +699,31 @@ export async function POST(req: NextRequest) {
         extra.v1_cache_hits = v1CacheHits
         extra.v1_tx_decode_used = v1TxDecodeUsed
         extra.v1_uncertain_count = v1UncertainCount
+      }
+
+      // V2 Dapper: buyer/seller only. Independent budget from V1 so a busy
+      // V1 tick doesn't starve V2 Dapper enrichment, since V2 Dapper is the
+      // actual current primary venue.
+      if (v2DapperSales.length > 0) {
+        let v2DapperTxDecodeUsed = 0
+        let v2DapperUnenriched = 0
+        for (const sale of v2DapperSales) {
+          if (v2DapperTxDecodeUsed >= V1_TX_DECODE_MAX) {
+            v2DapperUnenriched++
+            continue
+          }
+          v2DapperTxDecodeUsed++
+          const decoded = await decodeV1SaleTx(sale.transactionId, {
+            depositEventType: ALLDAY_DEPOSIT_EVENT,
+            withdrawEventType: ALLDAY_WITHDRAW_EVENT,
+            nftId: sale.nftID,
+          })
+          sale.buyer = decoded.buyer ?? null
+          sale.seller = decoded.seller ?? null
+          await delay(V1_TX_DECODE_DELAY_MS)
+        }
+        extra.v2_dapper_tx_decode_used = v2DapperTxDecodeUsed
+        extra.v2_dapper_unenriched = v2DapperUnenriched
       }
 
       // Resolve nftID → edition_key (+ serial_number) via wallet_moments_cache
@@ -835,8 +919,17 @@ export async function POST(req: NextRequest) {
         const editionId = editionKey ? editionKeyToId.get(editionKey) : null
         const priceCertain = !uncertainTxToReason.has(s.transactionId)
         const price = priceCertain && s.salePrice !== null ? parseFloat(s.salePrice) || 0 : 0
-        const marketplace = s.saleSource === "v1_dapper" ? "nflallday" : "flowty"
-        const source = s.saleSource === "v1_dapper" ? "onchain_dapper_v1" : "onchain"
+        // v1_dapper + v2_dapper both route to the AllDay-native marketplace
+        // tag; v2_flowty stays on the legacy 'flowty' marketplace tag for
+        // analytics continuity. source distinguishes the storefront version.
+        const marketplace =
+          s.saleSource === "v2_flowty" ? "flowty" : "nflallday"
+        const source =
+          s.saleSource === "v1_dapper"
+            ? "onchain_dapper_v1"
+            : s.saleSource === "v2_dapper"
+              ? "onchain_dapper_v2"
+              : "onchain"
 
         if (editionId && priceCertain) {
           salesRows.push({
