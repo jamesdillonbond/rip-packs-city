@@ -51,7 +51,29 @@ export async function POST(req: NextRequest) {
 
   const startedAtIso = new Date().toISOString()
   const startedMs = Date.now()
-  const batchSize = Math.max(100, Math.min(20000, Number(req.nextUrl.searchParams.get("batch_size") ?? 5000)))
+
+  // Accept batch_size from EITHER the JSON body (cron-job.org convention)
+  // or the query string. Same fix as extract-flowty-purchases — see that
+  // route for the audit context. cron-job.org sends {"p_batch_size": 150}
+  // in the body; without this branch the route fell back to the default
+  // 5000 and timed out at 30s every tick.
+  let bodyBatchSize: number | undefined
+  try {
+    const ct = req.headers.get("content-type") ?? ""
+    if (ct.includes("application/json")) {
+      const body = await req.json().catch(() => null) as Record<string, unknown> | null
+      if (body && typeof body === "object") {
+        const raw = body.p_batch_size ?? body.batch_size
+        const parsed = Number(raw)
+        if (Number.isFinite(parsed)) bodyBatchSize = parsed
+      }
+    }
+  } catch {
+    // body parse failed (empty body, malformed JSON, etc.) — fall through
+    // to query param + default.
+  }
+  const requestedBatch = bodyBatchSize ?? Number(req.nextUrl.searchParams.get("batch_size") ?? 5000)
+  const batchSize = Math.max(100, Math.min(20000, requestedBatch || 5000))
 
   let ok = true
   let errMsg: string | null = null
