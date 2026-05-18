@@ -123,7 +123,7 @@ function jsonError(status: number, error: string, extra?: Record<string, unknown
 // stale bundle (observed 2026-05-18: deployed binary kept emitting the
 // Prompt-13-removed legacy lookup throw despite source on main being clean).
 // Format: ISO-date + short tag.
-const WORKER_BUILD_TAG = "2026-05-18-p17-primary-drops-ts-allday";
+const WORKER_BUILD_TAG = "2026-05-18-p17-acquisitions-chunked-and-health-fix";
 
 function healthOk(): Response {
   return new Response(
@@ -144,6 +144,12 @@ function healthOk(): Response {
       // is running pre-Prompt-13 code regardless of what wrangler reported.
       pack_rips_lookup_chunk_size: PACK_RIPS_LOOKUP_CHUNK_SIZE,
       pack_rips_lookup_concurrency: PACK_RIPS_LOOKUP_CONCURRENCY,
+      // Prompt 17: moment_acquisitions placeholder delete chunking. Same
+      // architectural pattern as Prompt 13. If this field is missing, the
+      // deployed binary is pre-Prompt-17 and backfill will throw at the
+      // ~2500-pair URL-length limit just like it threw at ~800 hashes
+      // pre-Prompt-13.
+      moment_acquisitions_delete_chunk_size: MOMENT_ACQUISITIONS_DELETE_CHUNK_SIZE,
       collection_id: COLLECTION_ID,
       target_end_block: TARGET_END_BLOCK,
     }),
@@ -736,6 +742,17 @@ async function fetchOpensChunk(
 const PACK_RIPS_LOOKUP_CHUNK_SIZE = 100;
 const PACK_RIPS_LOOKUP_CONCURRENCY = 4;
 
+// Same URL-length problem hits the moment_acquisitions placeholder delete:
+// .or() encodes each (nft_id, wallet) pair as ~100 chars of query string, so
+// 2533 pairs (observed 2026-05-18 03:16 UTC) is ~250KB of URL and gets
+// rejected as Bad Request. Same fix: chunk the pairs at 100 per DELETE,
+// dispatch waves of 4, collect partial failures into chunk_errors so the
+// cursor still advances. Leftover placeholder rows from a failed chunk are
+// orphaned-but-harmless: moment_acquisitions writes use
+// onConflict='nft_id,wallet,transaction_hash' and the new rip rows carry a
+// real tx hash (not 'cache-refresh:%'), so they don't collide.
+const MOMENT_ACQUISITIONS_DELETE_CHUNK_SIZE = 100;
+
 function chunkArray<T>(arr: T[], size: number): T[][] {
   if (size <= 0) return [arr];
   const out: T[][] = [];
@@ -783,6 +800,57 @@ async function lookupPackRipIdsByTxHash(
     }
   }
   return { ripIdByTx, chunkErrors };
+}
+
+// Chunked DELETE for the moment_acquisitions placeholder cleanup. Same
+// architectural shape as lookupPackRipIdsByTxHash — PostgREST .or() encodes
+// each (nft_id, wallet) pair as ~100 chars of query string, so a 2533-pair
+// delete generated ~250KB of URL and returned Bad Request (observed
+// 2026-05-18 03:16 UTC). Per-chunk failures are collected for
+// pipeline_runs.extra rather than aborting; leftover placeholder rows are
+// orphaned-but-harmless because the downstream moment_acquisitions insert
+// uses onConflict='nft_id,wallet,transaction_hash' and the new row's tx
+// hash is the real rip tx, not 'cache-refresh:%'.
+async function deleteMomentAcquisitionsPlaceholders(
+  sb: SupabaseClient,
+  pairs: PlaceholderPair[],
+): Promise<{ chunkErrors: Array<{ source: string; message: string }> }> {
+  const chunkErrors: Array<{ source: string; message: string }> = [];
+  if (pairs.length === 0) return { chunkErrors };
+
+  const chunks = chunkArray(pairs, MOMENT_ACQUISITIONS_DELETE_CHUNK_SIZE);
+  for (let i = 0; i < chunks.length; i += PACK_RIPS_LOOKUP_CONCURRENCY) {
+    const wave = chunks.slice(i, i + PACK_RIPS_LOOKUP_CONCURRENCY);
+    const settled = await Promise.allSettled(
+      wave.map(async (chunk) => {
+        const orFilter = chunk
+          .map((p) => `and(nft_id.eq.${p.nft_id},wallet.eq.${p.wallet})`)
+          .join(",");
+        const { error } = await sb
+          .from("moment_acquisitions")
+          .delete()
+          .like("transaction_hash", "cache-refresh:%")
+          .or(orFilter);
+        if (error) throw new Error(error.message);
+      }),
+    );
+    for (let j = 0; j < settled.length; j++) {
+      const r = settled[j];
+      const chunk = wave[j];
+      if (r.status === "rejected") {
+        const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+        const first = chunk[0] ? `${chunk[0].nft_id}:${chunk[0].wallet}` : "?";
+        const last = chunk[chunk.length - 1]
+          ? `${chunk[chunk.length - 1].nft_id}:${chunk[chunk.length - 1].wallet}`
+          : "?";
+        chunkErrors.push({
+          source: "moment_acquisitions_placeholder_delete_chunk",
+          message: `size=${chunk.length} first=${first} last=${last}: ${msg}`.slice(0, 300),
+        });
+      }
+    }
+  }
+  return { chunkErrors };
 }
 
 interface PurchasesFlushCounts {
@@ -856,24 +924,15 @@ async function flushOpens(
   const ripIdByTx = lookup.ripIdByTx;
   const chunkErrors = lookup.chunkErrors;
 
-  // (3) Delete all cache-refresh placeholders in one statement using a
-  //     composite OR filter over the (nft_id, wallet) pairs. Each
-  //     placeholder corresponds to one accumulated moment template, so
-  //     this is bounded by the number of deposits processed.
+  // (3) Delete all cache-refresh placeholders via chunked DELETE waves so
+  //     a 2533-pair payload doesn't bust the PostgREST URL-length limit.
+  //     Per-chunk failures land in chunkErrors (source =
+  //     'moment_acquisitions_placeholder_delete_chunk') and the cursor still
+  //     advances — leftover placeholder rows are orphaned-but-harmless per
+  //     deleteMomentAcquisitionsPlaceholders' header comment.
   if (placeholders.length > 0) {
-    const orFilter = placeholders
-      .map((p) => `and(nft_id.eq.${p.nft_id},wallet.eq.${p.wallet})`)
-      .join(",");
-    const { error: delErr } = await sb
-      .from("moment_acquisitions")
-      .delete()
-      .like("transaction_hash", "cache-refresh:%")
-      .or(orFilter);
-    if (delErr) {
-      throw new Error(
-        `moment_acquisitions placeholder delete (${placeholders.length} pairs): ${delErr.message}`,
-      );
-    }
+    const delResult = await deleteMomentAcquisitionsPlaceholders(sb, placeholders);
+    for (const ce of delResult.chunkErrors) chunkErrors.push(ce);
   }
 
   // (4) Build moment_acquisitions rows now that we have rip IDs and
