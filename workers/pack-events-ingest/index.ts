@@ -89,6 +89,16 @@ const EVT_TOPSHOT_DEPOSIT = "A.0b2a3299cc857e29.TopShot.Deposit";
 const EVT_TOPSHOT_WITHDRAW = "A.0b2a3299cc857e29.TopShot.Withdraw";
 const PACK_NFT_TYPE_ID = "A.0b2a3299cc857e29.PackNFT.NFT";
 
+// AllDay PackNFT (NFL All Day). Every PackNFT.Mint emission is by
+// definition a primary Studio drop — the AllDay contract is the only
+// thing that can emit Mint, so no signer/from filter is required (unlike
+// Top Shot's Withdraw path, where the same event also fires on secondary
+// sales and must be filtered by from = contract addr). The Mint event
+// carries {id: UInt64, commitHash: String, distId: String}; buyer
+// address comes from the matching same-tx PackNFT.Deposit.
+const EVT_ALLDAY_PACKNFT_MINT = "A.e4cf4bdc1751c65d.PackNFT.Mint";
+const EVT_ALLDAY_PACKNFT_DEPOSIT = "A.e4cf4bdc1751c65d.PackNFT.Deposit";
+
 // Top Shot PackNFT contract self-address. A PackNFT.Withdraw event whose
 // `from` field equals this address means the pack is being delivered out
 // of the reserve held in the contract account itself — i.e. a primary
@@ -113,7 +123,7 @@ function jsonError(status: number, error: string, extra?: Record<string, unknown
 // stale bundle (observed 2026-05-18: deployed binary kept emitting the
 // Prompt-13-removed legacy lookup throw despite source on main being clean).
 // Format: ISO-date + short tag.
-const WORKER_BUILD_TAG = "2026-05-18-p17-ts-primary-withdraw";
+const WORKER_BUILD_TAG = "2026-05-18-p17-primary-drops-ts-allday";
 
 function healthOk(): Response {
   return new Response(
@@ -421,18 +431,23 @@ async function fetchPurchasesChunk(
     return { rows: [], events_processed: 0 };
   }
 
-  // Three parallel event scans cover the full pack-purchase universe:
-  //   ListingCompleted   → secondary marketplace sales (existing)
-  //   PackNFT.Deposit    → buyer-side address resolution, shared by both
-  //   PackNFT.Withdraw   → primary Top Shot Studio drops (from = contract addr)
-  // Same chunked block range applies to all three so they pair within tx.
-  const [listings, packDeposits, packWithdraws] = await Promise.all([
-    fetchEventChunk(EVT_LISTING_COMPLETED, fromBlock, toBlock),
-    fetchEventChunk(EVT_PACKNFT_DEPOSIT, fromBlock, toBlock),
-    fetchEventChunk(EVT_PACKNFT_WITHDRAW, fromBlock, toBlock),
-  ]);
+  // Five parallel event scans cover the full pack-purchase universe:
+  //   ListingCompleted         → TS secondary marketplace sales (existing)
+  //   TS PackNFT.Deposit       → buyer-side address resolution for TS
+  //   TS PackNFT.Withdraw      → TS primary Studio drops (from = contract)
+  //   AllDay PackNFT.Mint      → AllDay primary Studio drops (all = primary)
+  //   AllDay PackNFT.Deposit   → buyer-side address resolution for AllDay
+  // Same chunked block range applies to all five so they pair within tx.
+  const [listings, packDeposits, packWithdraws, alldayMints, alldayDeposits] =
+    await Promise.all([
+      fetchEventChunk(EVT_LISTING_COMPLETED, fromBlock, toBlock),
+      fetchEventChunk(EVT_PACKNFT_DEPOSIT, fromBlock, toBlock),
+      fetchEventChunk(EVT_PACKNFT_WITHDRAW, fromBlock, toBlock),
+      fetchEventChunk(EVT_ALLDAY_PACKNFT_MINT, fromBlock, toBlock),
+      fetchEventChunk(EVT_ALLDAY_PACKNFT_DEPOSIT, fromBlock, toBlock),
+    ]);
 
-  // Index PackNFT.Deposit by (tx_id, nft_id) so each ListingCompleted
+  // Index TS PackNFT.Deposit by (tx_id, nft_id) so each ListingCompleted
   // (secondary) and each contract-self PackNFT.Withdraw (primary) can pair
   // with the same-tx deposit that hands the pack to the buyer.
   const depositByTxAndId = new Map<string, FlatEvent>();
@@ -440,6 +455,15 @@ async function fetchPurchasesChunk(
     const nftId = dep.decoded["id"];
     if (nftId === undefined || nftId === null) continue;
     depositByTxAndId.set(`${dep.transaction_id}:${String(nftId)}`, dep);
+  }
+
+  // Index AllDay PackNFT.Deposit by (tx_id, nft_id) so each AllDay Mint
+  // can pair with the same-tx deposit that hands the pack to the buyer.
+  const alldayDepositByTxAndId = new Map<string, FlatEvent>();
+  for (const dep of alldayDeposits) {
+    const nftId = dep.decoded["id"];
+    if (nftId === undefined || nftId === null) continue;
+    alldayDepositByTxAndId.set(`${dep.transaction_id}:${String(nftId)}`, dep);
   }
 
   const rows: PurchaseRow[] = [];
@@ -531,6 +555,47 @@ async function fetchPurchasesChunk(
       sealed_at: wd.block_timestamp,
       event_kind: "primary_withdraw",
       pack_dist_id: null, // dist_id resolves at pack-open time via pack_rips
+    });
+  }
+
+  // ── (3) AllDay primary drops: PackNFT.Mint events carry the distId of
+  //        the Studio drop directly, and every Mint is by definition
+  //        primary (only the contract can emit it). Buyer address comes
+  //        from the matching same-tx AllDay PackNFT.Deposit. seller_address
+  //        is NULL — Mint has no prior holder, which matches the
+  //        seller_address_format CHECK (NULL or real Flow address).
+  for (const mint of alldayMints) {
+    eventsProcessed++;
+    const nftID = mint.decoded["id"];
+    if (nftID === undefined || nftID === null) continue;
+    const nftIdStr = String(nftID);
+
+    const dep = alldayDepositByTxAndId.get(`${mint.transaction_id}:${nftIdStr}`);
+    if (!dep) continue; // mint without matching deposit — pack didn't land
+    const buyerAddress = dep.decoded["to"];
+    if (typeof buyerAddress !== "string") continue;
+
+    const distId = mint.decoded["distId"];
+    const distIdStr = distId === undefined || distId === null ? null : String(distId);
+
+    rows.push({
+      collection_id: ALLDAY_COLLECTION_ID,
+      pack_nft_id: nftIdStr,
+      buyer_address: buyerAddress.toLowerCase(),
+      seller_address: null,                       // no prior holder
+      storefront_resource_id: null,
+      listing_resource_id: null,
+      sale_price: null,                           // off-chain Dapper purchase
+      sale_currency: null,
+      payment_vault_type: null,
+      custom_id: null,
+      commission_amount: null,
+      pack_name: null,
+      tx_hash: mint.transaction_id,
+      block_height: mint.block_height,
+      sealed_at: mint.block_timestamp,
+      event_kind: "primary_mint",
+      pack_dist_id: distIdStr,
     });
   }
 
