@@ -37,6 +37,7 @@ const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.c
 
 // Wallet directory grows slowly — 6h cache keeps the build fast without
 // stale wallet entries lingering forever.
+export const dynamic = 'force-dynamic'
 export const revalidate = 21600
 
 const ANALYTICS_STUBS = [

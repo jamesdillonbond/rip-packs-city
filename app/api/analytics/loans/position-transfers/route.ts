@@ -8,6 +8,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import type { PositionTransfersSummaryResponse } from "@/lib/analytics-types"
 
+export const dynamic = 'force-dynamic'
 export const revalidate = 600
 
 export async function GET() {
