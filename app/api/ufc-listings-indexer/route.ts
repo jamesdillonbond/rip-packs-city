@@ -1,31 +1,31 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
-// ── On-chain UFC Strike listings indexer ─────────────────────────────────────
+// ── On-chain UFC Strike listings indexer (dual storefront scan) ──────────────
 //
-// Slim clone of allday-listings-indexer for UFC Strike. Same Flowty
-// NFTStorefrontV2 fork at 0x3cdbb3d569211ff3 — only the nftType filter,
-// collection_id, and cursor id differ. Drops the listing_resolution_failures
-// retry queue + the seller-borrow Cadence fallback that the AllDay route
-// carries (v1 lean; graft them back if production diverges).
+// Mirrors allday-listings-indexer's dual-scan design (see that file's header
+// for the full architecture rationale). v1-lean shape: no Sentry breadcrumbs,
+// no listing_resolution_failures retry queue, no Cadence seller-borrow
+// fallback. UFC Strike is migrating to Aptos so listing churn on Flow is
+// minimal anyway.
 //
-// Resolution chain (UFC): on-chain nftID → wmc.edition_key (slug, e.g.
-// "ABUS-MAGOMEDOV-UFC-FIGHT-NIGHT-SEP-03-2022-KO-TKO-1000") →
-// editions.external_id → editions.id. `.in("external_id", batch)` works
-// identically for slug-shaped external_ids since it's string equality.
+// V1 (primary): A.4eb8a10cb9f87357.NFTStorefront — native UFC Strike listings.
+// V2 (legacy):  A.3cdbb3d569211ff3.NFTStorefrontV2 — dormant Flowty fork.
 //
-// First run anchors cursor at sealed tip. Subsequent ticks walk forward
-// up to MAX_SCAN_RANGE blocks.
+// V1 rows land with source='direct_v1'; V2 rows with source='direct'.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const UFC_COLLECTION_ID = "9b4824a8-736d-4a96-b450-8dcc0c46b023"
 const COLLECTION_SLUG = "ufc_strike"
 const PIPELINE_NAME = "ufc-listings-indexer"
-const UFC_NFT_TYPE_ID = "A.329feb3ab062d289.UFC_NFT.NFT"
+const UFC_NFT_TYPE_SUFFIX = ".UFC_NFT.NFT"
 
-const STOREFRONT_LISTING_AVAILABLE = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingAvailable"
-const STOREFRONT_LISTING_COMPLETED = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted"
+const V1_LISTING_AVAILABLE = "A.4eb8a10cb9f87357.NFTStorefront.ListingAvailable"
+const V1_LISTING_COMPLETED = "A.4eb8a10cb9f87357.NFTStorefront.ListingCompleted"
+const V2_LISTING_AVAILABLE = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingAvailable"
+const V2_LISTING_COMPLETED = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted"
+
 const FLOW_REST = "https://rest-mainnet.onflow.org"
 const CHUNK_SIZE = 250
 const DEFAULT_SCAN_RANGE = 50_000
@@ -87,7 +87,7 @@ async function fetchEventRange(type: string, start: number, end: number): Promis
   const url = `${FLOW_REST}/v1/events?type=${encodeURIComponent(type)}&start_height=${start}&end_height=${end}`
   const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
   if (!res.ok) {
-    console.log(`[${PIPELINE_NAME}] events ${start}-${end} HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
+    console.log(`[${PIPELINE_NAME}] events ${start}-${end} ${type.split(".").pop()} HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
     return []
   }
   const json = (await res.json()) as FlowEventBlock[]
@@ -133,7 +133,10 @@ function epochSecondsToIso(raw: unknown): string | null {
   return new Date(n * 1000).toISOString()
 }
 
+type StorefrontVersion = "v1" | "v2"
+
 interface ListingAvailableEvent {
+  storefrontVersion: StorefrontVersion
   blockHeight: number
   blockTimestamp: string
   txHash: string
@@ -148,9 +151,14 @@ interface ListingAvailableEvent {
 }
 
 interface ListingCompletedEvent {
+  storefrontVersion: StorefrontVersion
   blockTimestamp: string
   listingResourceID: string
   purchased: boolean
+}
+
+function sourceFor(v: StorefrontVersion): "direct_v1" | "direct" {
+  return v === "v1" ? "direct_v1" : "direct"
 }
 
 export async function POST(req: NextRequest) {
@@ -174,9 +182,6 @@ export async function POST(req: NextRequest) {
     let ok = true
     let errorMsg: string | null = null
     const extra: Record<string, unknown> = {}
-
-    let listingsAvailableCount = 0
-    let listingsCompletedCount = 0
     const unresolvedSample: string[] = []
 
     try {
@@ -216,81 +221,103 @@ export async function POST(req: NextRequest) {
 
       const availableEvents: ListingAvailableEvent[] = []
       const completedEvents: ListingCompletedEvent[] = []
-      let rawAvailable = 0
-      let rawCompleted = 0
+      let rawV1Avail = 0
+      let rawV1Compl = 0
+      let rawV2Avail = 0
+      let rawV2Compl = 0
 
       for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
         const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
         try {
-          const [availBlocks, complBlocks] = await Promise.all([
-            fetchEventRange(STOREFRONT_LISTING_AVAILABLE, s, e),
-            fetchEventRange(STOREFRONT_LISTING_COMPLETED, s, e),
+          const [v1AvailBlocks, v1ComplBlocks, v2AvailBlocks, v2ComplBlocks] = await Promise.all([
+            fetchEventRange(V1_LISTING_AVAILABLE, s, e),
+            fetchEventRange(V1_LISTING_COMPLETED, s, e),
+            fetchEventRange(V2_LISTING_AVAILABLE, s, e),
+            fetchEventRange(V2_LISTING_COMPLETED, s, e),
           ])
 
-          for (const blk of availBlocks) {
-            const bh = Number(blk.block_height)
-            const bts = blk.block_timestamp
-            for (const evt of blk.events ?? []) {
-              rawAvailable++
-              try {
-                const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
-                const payload = unwrapCdc(raw) as Record<string, any>
-                const nftTypeId = extractTypeId(payload?.nftType)
-                if (!nftTypeId || (nftTypeId !== UFC_NFT_TYPE_ID && !nftTypeId.includes(".UFC_NFT.NFT"))) continue
+          const processAvail = (blocks: FlowEventBlock[], version: StorefrontVersion, incr: () => void) => {
+            for (const blk of blocks) {
+              const bh = Number(blk.block_height)
+              const bts = blk.block_timestamp
+              for (const evt of blk.events ?? []) {
+                incr()
+                try {
+                  const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
+                  const payload = unwrapCdc(raw) as Record<string, any>
+                  const nftTypeId = extractTypeId(payload?.nftType)
+                  if (!nftTypeId || !nftTypeId.endsWith(UFC_NFT_TYPE_SUFFIX)) continue
 
-                const storefrontAddress = typeof payload.storefrontAddress === "string" ? payload.storefrontAddress : null
-                if (!storefrontAddress) continue
+                  const storefrontAddress = typeof payload.storefrontAddress === "string" ? payload.storefrontAddress : null
+                  if (!storefrontAddress) continue
 
-                availableEvents.push({
-                  blockHeight: bh,
-                  blockTimestamp: bts,
-                  txHash: evt.transaction_id,
-                  eventIndex: evt.event_index,
-                  listingResourceID: String(payload.listingResourceID),
-                  storefrontAddress,
-                  nftID: String(payload.nftID),
-                  salePrice: String(payload.salePrice ?? "0"),
-                  salePaymentVaultType: extractTypeId(payload.salePaymentVaultType),
-                  customID: typeof payload.customID === "string" ? payload.customID : null,
-                  expiry: payload.expiry !== undefined && payload.expiry !== null ? String(payload.expiry) : undefined,
-                })
-              } catch (err) {
-                console.log(`[${PIPELINE_NAME}] available decode err:`, err instanceof Error ? err.message : String(err))
+                  const priceField = payload.price ?? payload.salePrice
+                  const vaultField = payload.ftVaultType ?? payload.salePaymentVaultType
+
+                  availableEvents.push({
+                    storefrontVersion: version,
+                    blockHeight: bh,
+                    blockTimestamp: bts,
+                    txHash: evt.transaction_id,
+                    eventIndex: evt.event_index,
+                    listingResourceID: String(payload.listingResourceID),
+                    storefrontAddress,
+                    nftID: String(payload.nftID),
+                    salePrice: String(priceField ?? "0"),
+                    salePaymentVaultType: extractTypeId(vaultField),
+                    customID: typeof payload.customID === "string" ? payload.customID : null,
+                    expiry: payload.expiry !== undefined && payload.expiry !== null ? String(payload.expiry) : undefined,
+                  })
+                } catch (err) {
+                  console.log(`[${PIPELINE_NAME}] available decode err:`, err instanceof Error ? err.message : String(err))
+                }
               }
             }
           }
 
-          for (const blk of complBlocks) {
-            const bts = blk.block_timestamp
-            for (const evt of blk.events ?? []) {
-              rawCompleted++
-              try {
-                const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
-                const payload = unwrapCdc(raw) as Record<string, any>
-                const nftTypeId = extractTypeId(payload?.nftType)
-                if (!nftTypeId || (nftTypeId !== UFC_NFT_TYPE_ID && !nftTypeId.includes(".UFC_NFT.NFT"))) continue
+          const processCompl = (blocks: FlowEventBlock[], version: StorefrontVersion, incr: () => void) => {
+            for (const blk of blocks) {
+              const bts = blk.block_timestamp
+              for (const evt of blk.events ?? []) {
+                incr()
+                try {
+                  const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
+                  const payload = unwrapCdc(raw) as Record<string, any>
+                  const nftTypeId = extractTypeId(payload?.nftType)
+                  if (!nftTypeId || !nftTypeId.endsWith(UFC_NFT_TYPE_SUFFIX)) continue
 
-                completedEvents.push({
-                  blockTimestamp: bts,
-                  listingResourceID: String(payload.listingResourceID),
-                  purchased: payload.purchased === true,
-                })
-              } catch (err) {
-                console.log(`[${PIPELINE_NAME}] completed decode err:`, err instanceof Error ? err.message : String(err))
+                  completedEvents.push({
+                    storefrontVersion: version,
+                    blockTimestamp: bts,
+                    listingResourceID: String(payload.listingResourceID),
+                    purchased: payload.purchased === true,
+                  })
+                } catch (err) {
+                  console.log(`[${PIPELINE_NAME}] completed decode err:`, err instanceof Error ? err.message : String(err))
+                }
               }
             }
           }
+
+          processAvail(v1AvailBlocks, "v1", () => rawV1Avail++)
+          processCompl(v1ComplBlocks, "v1", () => rawV1Compl++)
+          processAvail(v2AvailBlocks, "v2", () => rawV2Avail++)
+          processCompl(v2ComplBlocks, "v2", () => rawV2Compl++)
         } catch (err) {
           console.log(`[${PIPELINE_NAME}] chunk ${s}-${e} error:`, err instanceof Error ? err.message : String(err))
         }
         if (s + CHUNK_SIZE <= targetHeight) await delay(INTER_CHUNK_DELAY_MS)
       }
 
-      listingsAvailableCount = availableEvents.length
-      listingsCompletedCount = completedEvents.length
-      rowsFound = listingsAvailableCount + listingsCompletedCount
+      const v1AvailCount = availableEvents.filter((a) => a.storefrontVersion === "v1").length
+      const v2AvailCount = availableEvents.length - v1AvailCount
+      const v1ComplCount = completedEvents.filter((c) => c.storefrontVersion === "v1").length
+      const v2ComplCount = completedEvents.length - v1ComplCount
+      rowsFound = availableEvents.length + completedEvents.length
 
-      console.log(`[${PIPELINE_NAME}] range=${lastBlock + 1}-${targetHeight} rawAvail=${rawAvailable} rawCompl=${rawCompleted} availFiltered=${listingsAvailableCount} complFiltered=${listingsCompletedCount}`)
+      console.log(
+        `[${PIPELINE_NAME}] range=${lastBlock + 1}-${targetHeight} rawV1Avail=${rawV1Avail} rawV1Compl=${rawV1Compl} rawV2Avail=${rawV2Avail} rawV2Compl=${rawV2Compl} v1Avail=${v1AvailCount} v2Avail=${v2AvailCount} v1Compl=${v1ComplCount} v2Compl=${v2ComplCount}`
+      )
 
       const uniqueNftIds = [...new Set(availableEvents.map((a) => a.nftID))]
       const nftToEditionExternalId = new Map<string, string>()
@@ -334,7 +361,7 @@ export async function POST(req: NextRequest) {
 
         v2Rows.push({
           listing_resource_id: a.listingResourceID,
-          source: "direct",
+          source: sourceFor(a.storefrontVersion),
           flow_id: a.nftID,
           edition_id: editionUuid,
           collection_id: UFC_COLLECTION_ID,
@@ -375,11 +402,12 @@ export async function POST(req: NextRequest) {
       let completedSkipped = 0
       for (const c of completedEvents) {
         const status = c.purchased ? "purchased" : "cancelled"
+        const targetSource = sourceFor(c.storefrontVersion)
         const { data: updated, error: updErr } = await (supabaseAdmin as any)
           .from("cached_listings_v2")
           .update({ completed_at: c.blockTimestamp, completed_status: status })
           .eq("listing_resource_id", c.listingResourceID)
-          .eq("source", "direct")
+          .eq("source", targetSource)
           .is("completed_at", null)
           .select("listing_resource_id")
         if (updErr) {
@@ -397,10 +425,12 @@ export async function POST(req: NextRequest) {
       cursorAfter = String(targetHeight)
 
       extra.blocks_scanned = targetHeight - lastBlock
-      extra.events_pre_filter = rawAvailable + rawCompleted
+      extra.events_pre_filter = rawV1Avail + rawV1Compl + rawV2Avail + rawV2Compl
       extra.events_post_filter = rowsFound
-      extra.listings_available_count = listingsAvailableCount
-      extra.listings_completed_count = listingsCompletedCount
+      extra.v1_available_count = v1AvailCount
+      extra.v2_available_count = v2AvailCount
+      extra.v1_completed_count = v1ComplCount
+      extra.v2_completed_count = v2ComplCount
       extra.completed_matched = completedMatched
       extra.completed_unmatched = completedSkipped
       extra.unresolved_sample = unresolvedSample
