@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 
 interface GrailRow {
   collection_id: string
@@ -42,6 +43,8 @@ interface GrailRow {
     total_sealed: number | null
     depletion_pct: number | null
     slots: number | null
+    primary_available: boolean | null
+    secondary_available: boolean | null
   } | null
 }
 
@@ -96,16 +99,24 @@ interface Props {
 }
 
 export default function GrailsView({ collection, accent }: Props) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
   const [rows, setRows] = useState<GrailRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [sort, setSort] = useState<SortKey>('weightedGrailValue')
+  const [buyableOnly, setBuyableOnly] = useState<boolean>(
+    (searchParams?.get('buyableOnly') ?? '').toLowerCase() === 'true'
+  )
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const params = new URLSearchParams({ collection, sort, limit: '50', minGrails100: '1' })
+      if (buyableOnly) params.set('buyableOnly', 'true')
       const res = await fetch('/api/packs/grails?' + params.toString())
       const json = await res.json()
       if (!res.ok) {
@@ -119,11 +130,31 @@ export default function GrailsView({ collection, accent }: Props) {
     } finally {
       setLoading(false)
     }
-  }, [collection, sort])
+  }, [collection, sort, buyableOnly])
 
   useEffect(() => { load() }, [load])
 
+  // Server-side filter does the heavy lifting; client-side filter is a
+  // belt-and-suspenders pass that handles stale-cached responses where the
+  // toggle state and the response shape are out of sync.
+  const displayRows = useMemo(() => {
+    if (!buyableOnly) return rows
+    return rows.filter((r) => r.meta?.primary_available === true || r.meta?.secondary_available === true)
+  }, [rows, buyableOnly])
+
   const sortLabel = useMemo(() => SORT_OPTIONS.find((o) => o.key === sort)?.label ?? sort, [sort])
+
+  const toggleBuyable = useCallback(() => {
+    const next = !buyableOnly
+    setBuyableOnly(next)
+    // Sticky in URL so the leaderboard is shareable in either state. Use
+    // replace + scroll:false to avoid history pollution and scroll jumps.
+    const params = new URLSearchParams(searchParams?.toString() ?? '')
+    if (next) params.set('buyableOnly', 'true')
+    else params.delete('buyableOnly')
+    const qs = params.toString()
+    router.replace(qs.length > 0 ? `${pathname}?${qs}` : pathname, { scroll: false })
+  }, [buyableOnly, pathname, router, searchParams])
 
   return (
     <div>
@@ -150,8 +181,27 @@ export default function GrailsView({ collection, accent }: Props) {
             {o.label}
           </button>
         ))}
+        <button
+          onClick={toggleBuyable}
+          aria-pressed={buyableOnly}
+          style={{
+            padding: '6px 12px',
+            background: buyableOnly ? 'var(--rpc-red, #E03A2F)' : '#0d0d0d',
+            color: buyableOnly ? '#fff' : 'rgba(255,255,255,0.75)',
+            border: `1px solid ${buyableOnly ? 'var(--rpc-red, #E03A2F)' : '#27272a'}`,
+            borderRadius: 5,
+            cursor: 'pointer',
+            fontFamily: "'Barlow Condensed', sans-serif",
+            fontWeight: 700,
+            fontSize: 11,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+          }}
+        >
+          Buyable only
+        </button>
         <span style={{ marginLeft: 'auto', fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>
-          {loading ? 'Loading…' : `${rows.length} packs · sorted by ${sortLabel}`}
+          {loading ? 'Loading…' : `${displayRows.length} packs · sorted by ${sortLabel}`}
         </span>
       </div>
 
@@ -162,12 +212,14 @@ export default function GrailsView({ collection, accent }: Props) {
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
-        {rows.map((r) => (
+        {displayRows.map((r) => (
           <GrailCard key={r.dist_id} row={r} accent={accent} collection={collection} />
         ))}
-        {!loading && rows.length === 0 && !error && (
+        {!loading && displayRows.length === 0 && !error && (
           <div style={{ padding: 24, fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: 'rgba(255,255,255,0.5)', textAlign: 'center', border: '1px dashed #27272a', borderRadius: 6, gridColumn: '1 / -1' }}>
-            No grail-bearing packs matched. Try lowering filters or refreshing the MV (refresh_pack_grail_metrics_mv).
+            {buyableOnly
+              ? 'No buyable packs match these grail filters — try toggling Buyable only off to see sold-out chase packs too.'
+              : 'No grail-bearing packs matched. Try lowering filters or refreshing the MV (refresh_pack_grail_metrics_mv).'}
           </div>
         )}
       </div>
