@@ -232,8 +232,6 @@ export async function POST(req: NextRequest) {
       let rawV2DapperCompl = 0
       let rawV2FlowtyAvail = 0
       let rawV2FlowtyCompl = 0
-      // ── DIAGNOSTIC (temporary, 2026-05-18): see allday-listings-indexer note.
-      const v2DapperRawSamples: Array<Record<string, unknown>> = []
       const v2DapperTypeIds = new Set<string>()
 
       for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
@@ -265,19 +263,7 @@ export async function POST(req: NextRequest) {
                   const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
                   const payload = unwrapCdc(raw) as Record<string, any>
                   const nftTypeId = extractTypeId(payload?.nftType)
-                  if (version === "v2_dapper") {
-                    if (v2DapperRawSamples.length < 3) {
-                      v2DapperRawSamples.push({
-                        event_kind: "ListingAvailable",
-                        extracted_nft_type_id: nftTypeId ?? null,
-                        payload_keys: payload && typeof payload === "object" ? Object.keys(payload) : [],
-                        nft_type_field: payload?.nftType,
-                        tx: evt.transaction_id,
-                        block: bh,
-                      })
-                    }
-                    if (nftTypeId) v2DapperTypeIds.add(nftTypeId)
-                  }
+                  if (version === "v2_dapper" && nftTypeId) v2DapperTypeIds.add(nftTypeId)
                   if (!nftTypeId || !nftTypeId.endsWith(GOLAZOS_NFT_TYPE_SUFFIX)) continue
 
                   const storefrontAddress = typeof payload.storefrontAddress === "string" ? payload.storefrontAddress : null
@@ -317,20 +303,7 @@ export async function POST(req: NextRequest) {
                   const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
                   const payload = unwrapCdc(raw) as Record<string, any>
                   const nftTypeId = extractTypeId(payload?.nftType)
-                  if (version === "v2_dapper") {
-                    if (v2DapperRawSamples.length < 3) {
-                      v2DapperRawSamples.push({
-                        event_kind: "ListingCompleted",
-                        extracted_nft_type_id: nftTypeId ?? null,
-                        purchased: payload?.purchased,
-                        payload_keys: payload && typeof payload === "object" ? Object.keys(payload) : [],
-                        nft_type_field: payload?.nftType,
-                        tx: evt.transaction_id,
-                        block: bh,
-                      })
-                    }
-                    if (nftTypeId) v2DapperTypeIds.add(nftTypeId)
-                  }
+                  if (version === "v2_dapper" && nftTypeId) v2DapperTypeIds.add(nftTypeId)
                   if (!nftTypeId || !nftTypeId.endsWith(GOLAZOS_NFT_TYPE_SUFFIX)) continue
 
                   completedEvents.push({
@@ -485,7 +458,6 @@ export async function POST(req: NextRequest) {
       extra.v1_completed_count = v1ComplCount
       extra.v2_dapper_available_count = v2DapperAvailCount
       extra.v2_dapper_completed_count = v2DapperComplCount
-      extra.v2_dapper_first_3_raw = v2DapperRawSamples
       extra.v2_dapper_typeids_seen = Array.from(v2DapperTypeIds).slice(0, 10)
       extra.v2_flowty_available_count = v2FlowtyAvailCount
       extra.v2_flowty_completed_count = v2FlowtyComplCount
