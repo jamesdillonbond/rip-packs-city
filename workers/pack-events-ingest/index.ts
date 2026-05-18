@@ -161,6 +161,14 @@ const PACK_NFT_TYPE_ID = "A.0b2a3299cc857e29.PackNFT.NFT";
 const EVT_ALLDAY_PACKNFT_MINT = "A.e4cf4bdc1751c65d.PackNFT.Mint";
 const EVT_ALLDAY_PACKNFT_DEPOSIT = "A.e4cf4bdc1751c65d.PackNFT.Deposit";
 
+// Secondary AllDay pack sales route through the same V2 Dapper
+// NFTStorefrontV2 contract as TopShot pack secondaries (the address +
+// contract are identical; only the nftType filter changes). Verified
+// 2026-05-18 via Trevor's $1 Regal Rookie pack purchase, customID =
+// "DAPPER_MARKETPLACE". The AllDay PackNFT type identifies the
+// listed asset.
+const ALLDAY_PACK_NFT_TYPE_ID = "A.e4cf4bdc1751c65d.PackNFT.NFT";
+
 // Top Shot PackNFT contract self-address. A PackNFT.Withdraw event whose
 // `from` field equals this address means the pack is being delivered out
 // of the reserve held in the contract account itself — i.e. a primary
@@ -185,7 +193,7 @@ function jsonError(status: number, error: string, extra?: Record<string, unknown
 // stale bundle (observed 2026-05-18: deployed binary kept emitting the
 // Prompt-13-removed legacy lookup throw despite source on main being clean).
 // Format: ISO-date + short tag.
-const WORKER_BUILD_TAG = "2026-05-18-p18-primary-backfill-and-allday-cursors";
+const WORKER_BUILD_TAG = "2026-05-18-p23-allday-secondary-sales";
 
 function healthOk(): Response {
   return new Response(
@@ -723,13 +731,16 @@ async function fetchAllDayPurchasesChunk(
     return { rows: [], events_processed: 0 };
   }
 
-  // Two parallel event scans — AllDay primaries are emitted exclusively
-  // by PackNFT.Mint (no secondary-vs-primary disambiguation needed). Mint
-  // carries distId directly; buyer comes from the matching same-tx
-  // PackNFT.Deposit.
-  const [alldayMints, alldayDeposits] = await Promise.all([
+  // Three parallel event scans — AllDay packs land via two distinct paths:
+  //   primary_mint: PackNFT.Mint (Studio drop) + same-tx PackNFT.Deposit
+  //   secondary_sale: V2 Dapper NFTStorefrontV2.ListingCompleted filtered
+  //     to AllDay PackNFT type + same-tx PackNFT.Deposit for buyer
+  // The Mint and Listing scans share the AllDay PackNFT.Deposit index for
+  // buyer resolution so we only fetch it once.
+  const [alldayMints, alldayDeposits, listings] = await Promise.all([
     fetchEventChunk(EVT_ALLDAY_PACKNFT_MINT, fromBlock, toBlock),
     fetchEventChunk(EVT_ALLDAY_PACKNFT_DEPOSIT, fromBlock, toBlock),
+    fetchEventChunk(EVT_LISTING_COMPLETED, fromBlock, toBlock),
   ]);
 
   const alldayDepositByTxAndId = new Map<string, FlatEvent>();
@@ -742,6 +753,7 @@ async function fetchAllDayPurchasesChunk(
   const rows: PurchaseRow[] = [];
   let eventsProcessed = 0;
 
+  // ── Primary mints ───────────────────────────────────────────────────
   for (const mint of alldayMints) {
     eventsProcessed++;
     const nftID = mint.decoded["id"];
@@ -774,6 +786,56 @@ async function fetchAllDayPurchasesChunk(
       sealed_at: mint.block_timestamp,
       event_kind: "primary_mint",
       pack_dist_id: distIdStr,
+    });
+  }
+
+  // ── Secondary sales (V2 Dapper NFTStorefrontV2 ListingCompleted) ────
+  // Same contract that handles TS pack secondaries; only the nftType
+  // filter distinguishes AllDay pack listings from TS pack listings.
+  for (const lc of listings) {
+    eventsProcessed++;
+    const d = lc.decoded;
+    const nftTypeId = extractTypeId(d["nftType"]);
+    if (nftTypeId !== ALLDAY_PACK_NFT_TYPE_ID) continue;
+    if (d["purchased"] !== true) continue;
+
+    const nftID = d["nftID"];
+    if (nftID === undefined || nftID === null) continue;
+    const nftIdStr = String(nftID);
+
+    const dep = alldayDepositByTxAndId.get(`${lc.transaction_id}:${nftIdStr}`);
+    if (!dep) continue; // pack handover never deposited — not a real purchase
+    const buyerAddress = dep.decoded["to"];
+    if (typeof buyerAddress !== "string") continue;
+
+    const sellerAddress = await getTransactionPayer(lc.transaction_id);
+
+    const vaultTypeId = extractTypeId(d["salePaymentVaultType"]);
+    const salePrice = d["salePrice"] === undefined || d["salePrice"] === null
+      ? null
+      : parseFloat(String(d["salePrice"]));
+    const commissionAmount = d["commissionAmount"] === undefined || d["commissionAmount"] === null
+      ? null
+      : parseFloat(String(d["commissionAmount"]));
+
+    rows.push({
+      collection_id: ALLDAY_COLLECTION_ID,
+      pack_nft_id: nftIdStr,
+      buyer_address: buyerAddress.toLowerCase(),
+      seller_address: sellerAddress,
+      storefront_resource_id: d["storefrontResourceID"] != null ? String(d["storefrontResourceID"]) : null,
+      listing_resource_id: d["listingResourceID"] != null ? String(d["listingResourceID"]) : null,
+      sale_price: Number.isFinite(salePrice as number) ? salePrice : null,
+      sale_currency: deriveCurrency(vaultTypeId),
+      payment_vault_type: vaultTypeId ?? null,
+      custom_id: d["customID"] != null ? String(d["customID"]) : null,
+      commission_amount: Number.isFinite(commissionAmount as number) ? commissionAmount : null,
+      pack_name: null,
+      tx_hash: lc.transaction_id,
+      block_height: lc.block_height,
+      sealed_at: lc.block_timestamp,
+      event_kind: "secondary_sale",
+      pack_dist_id: null,
     });
   }
 
@@ -1680,6 +1742,10 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
     events_processed: alldayForwardEvents,
     rows_inserted: alldayForwardCounts.total,
     primary_mint_rows: alldayForwardCounts.primary_mint,
+    // Prompt 23 (2026-05-18): secondary AllDay pack sales now flow through
+    // this cursor too via V2 Dapper NFTStorefrontV2.ListingCompleted +
+    // PackNFT.Deposit pairing. Verified via Trevor's $1 Regal Rookie pack.
+    secondary_sale_rows: alldayForwardCounts.secondary,
     caught_up: cachedSealedTip - alldayForwardActualCursor <= CAUGHT_UP_THRESHOLD,
   } : null;
   const primaryBackfillResult = mode === "backfill" ? {
@@ -1699,6 +1765,7 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
     events_processed: alldayBackfillEvents,
     rows_inserted: alldayBackfillCounts.total,
     primary_mint_rows: alldayBackfillCounts.primary_mint,
+    secondary_sale_rows: alldayBackfillCounts.secondary,
     caught_up_to_forward: alldayBackfillCaughtUp,
     catchup_target_block: alldayBackfillCatchupTarget,
     allday_forward_cursor: initialCursors[CURSOR_ALLDAY_FORWARD] ?? 0,
