@@ -98,18 +98,33 @@ function jsonError(status: number, error: string, extra?: Record<string, unknown
   });
 }
 
+// Deploy verification sentinel. Bumped any time meaningful behavior changes
+// in this file so curl /health proves which generation is actually on the
+// edge — wrangler reports a deploy as successful even when it uploads a
+// stale bundle (observed 2026-05-18: deployed binary kept emitting the
+// Prompt-13-removed legacy lookup throw despite source on main being clean).
+// Format: ISO-date + short tag.
+const WORKER_BUILD_TAG = "2026-05-18-p16-chunked-lookup";
+
 function healthOk(): Response {
   return new Response(
     JSON.stringify({
       ok: true,
       worker: "pack-events-ingest",
+      build_tag: WORKER_BUILD_TAG,
       cursors: [
         CURSOR_PURCHASES,
         CURSOR_OPENS,
         CURSOR_PURCHASES_BACKFILL,
         CURSOR_OPENS_BACKFILL,
       ],
-      chunk_size: CHUNK_SIZE,
+      block_chunk_size: CHUNK_SIZE,
+      // Prompt 13: pack_rips lookup chunking — these constants need to be
+      // present on the deployed binary for backfill to drain past 100+ tx
+      // hashes per invocation. If they're missing from /health, the worker
+      // is running pre-Prompt-13 code regardless of what wrangler reported.
+      pack_rips_lookup_chunk_size: PACK_RIPS_LOOKUP_CHUNK_SIZE,
+      pack_rips_lookup_concurrency: PACK_RIPS_LOOKUP_CONCURRENCY,
       collection_id: COLLECTION_ID,
       target_end_block: TARGET_END_BLOCK,
     }),
