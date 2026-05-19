@@ -133,6 +133,45 @@ Out of scope for the packs page cleanup since the surface was removed. When Gola
 - Whether the route handler authenticates correctly (Bearer `INGEST_SECRET_TOKEN`)
 - Whether the Golazos PackNFT type / Dapper Studio query returns data
 
+### P5 — FMV coverage on chaser-heavy pools
+
+User-reported on 2026-05-19: certain TS chaser packs show FMV coverage as low as 48% (e.g., "Dereck Lively II Ultimate Chaser Pack"), capping how trustworthy the gross_ev figure is for that pack. Investigated against `fmv_snapshots` at the edition level.
+
+#### Reality vs. perception
+
+`fmv_snapshots` is populated at **100%** for both Top Shot (17,217/17,217 editions) and NFL All Day (6,191/6,191 editions). The "coverage gap" is in confidence quality, not row existence.
+
+Confidence distribution (last row per edition, 2026-05-19):
+
+| Confidence | TS editions | TS % | AllDay editions | AllDay % |
+|---|---:|---:|---:|---:|
+| HIGH | 35 | 0.2% | 551 | 8.9% |
+| MEDIUM | 143 | 0.8% | 22 | 0.4% |
+| LOW | 4,820 | 28.0% | 4,585 | 74.1% |
+| SALES_ONLY | 1,683 | 9.8% | 0 | 0% |
+| ASK_ONLY | **0** | **0%** | 30 | 0.5% |
+| STALE | 38 | 0.2% | 476 | 7.7% |
+| NO_DATA | **10,498** | **61.0%** | 527 | 8.5% |
+
+Two findings:
+
+1. **TS NO_DATA is 61% of the catalog.** Most TS editions never had a sale that the FMV recalc could anchor on, and ASK_ONLY is at 0 — meaning the recalc cron isn't seeding from active listings either. This is the dominant cause of low pack FMV coverage on chaser-heavy pools, because chasers tilt toward the rare-tier editions that disproportionately end up NO_DATA.
+2. **TS ASK_ONLY = 0 and AllDay ASK_ONLY = 30** are both anomalously low. The `fmv_confidence` enum has the state for exactly this case — editions with active listings but no recent sales — but the FMV pipeline isn't writing it.
+
+#### Fixes (P5 priority — moderate lift, broad impact)
+
+**P5a — Ask-floor seeding for NO_DATA editions.** For every edition currently sitting at `confidence='NO_DATA'`, check `cached_listings_v2` for an active listing. If one exists, write a row to `fmv_snapshots` with `fmv_usd = min(ask_price)`, `confidence='ASK_ONLY'`. Daily cron, fires only on NO_DATA→ASK_ONLY transitions. Conservative projection: lifts TS pack FMV coverage by 10-25 percentage points on chaser-heavy pools because Ultimate / Legendary editions typically have at least one optimistic listing even when sales are dry.
+
+**P5b — STALE refresh prioritization.** 38 TS + 476 AllDay editions are STALE. The FMV recalc cron should re-evaluate STALE editions ahead of LOW-confidence ones since a STALE→LOW transition is more likely to be a genuine value change than a LOW→LOW refresh. Single cron change — sort the recalc work queue by `(confidence_priority, computed_at_age)` so STALE > NO_DATA > LOW > MEDIUM > HIGH.
+
+**P5c — Manual seeds for high-rank grails.** The pack_grail_metrics_mv already identifies grails by FMV thresholds ($25/$100/$500/$1000). Any grail edition with `confidence='NO_DATA'` is a known mis-coverage. Build a small admin tool at `/admin/grail-fmv-seed` that lists NO_DATA grails with their drop pool memberships and lets you hand-set an FMV. Scoped to grails only (~50-150 editions), this is cheap labor with high coverage payoff.
+
+**P5d — Lower the pack EV "usable confidence" bar.** The pack-EV cron almost certainly treats only HIGH/MEDIUM/LOW/SALES_ONLY as "usable" for the `fmv_coverage_pct` calculation (excluding NO_DATA/STALE). Once P5a is in place and ASK_ONLY has volume, include it in the usable set. The argument against is that ASK_ONLY can be optimistic (sellers price above realistic clearing price). Counterargument: the user can see the ASK_ONLY annotation per edition on the pack detail page and discount mentally — vs. the current state where NO_DATA editions silently contribute 0 to gross_ev, which is even worse.
+
+#### Expected impact
+
+If P5a ships and 30% of NO_DATA editions get an ASK_ONLY seed (rough estimate based on listing activity), TS edition-level usable coverage goes from 39% (HIGH+MEDIUM+LOW+SALES_ONLY) to ~57%. Pack-level coverage improvement is harder to predict because it depends on which packs include the newly-covered editions, but chaser-heavy pools (where the gap is most painful) benefit disproportionately because the grail editions are exactly the ones with active listings but no sales.
+
 ## Cross-reference
 
 - `pack_table_rows` view (catalog): `pack_distributions pd LEFT JOIN pack_ev_latest pev` — explains why unEV-computed packs appear in the table with NULL EV columns.
