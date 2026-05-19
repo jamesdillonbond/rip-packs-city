@@ -36,23 +36,50 @@ const PACK_LISTINGS_QUERY = `
   }
 `
 
-const ACTIVE_FILTERS = [
-  {
-    status: { eq: "Sealed" },
-    listing: {
-      exists: true,
-      ft_vault_type: { eq: "A.ead892083b3e2c6c.DapperUtilityCoin.Vault" },
-    },
-    owner_address: { ne: "0b2a3299cc857e29" },
-    excludeReserved: { eq: true },
-    type_name: { eq: "A.0b2a3299cc857e29.PackNFT.NFT" },
-    distribution: {
-      tier: { ignore_case: true, in: [] },
-      series_ids: { contains: [], contains_type: "ANY" },
-      title: { ignore_case: true, partial_match: true, in: [] },
-    },
+// COLLECTION_CONFIG drives the per-collection filter shape. The Dapper Studio
+// GraphQL endpoint (api.production.studio-platform.dapperlabs.com) is a
+// unified internal API across all Dapper marketplaces — same searchPackNftAggregation
+// schema, different `type_name` and reserve owner per collection. AllDay was
+// added 2026-05-19 as part of the packs page cleanup: AllDay is secondary-only
+// going forward (no primary pack drops), so the live secondary low ask is
+// the only meaningful price anchor for AllDay pack EV.
+//
+// reserveOwner: the contract account address (without 0x) that holds
+// pre-minted PackNFTs before sale. We exclude listings from this address so
+// the lowest ask reflects collector-held secondary listings, not primary
+// retail inventory.
+const COLLECTION_CONFIG: Record<string, { typeName: string; reserveOwner: string; cacheKey: string }> = {
+  "nba-top-shot": {
+    typeName: "A.0b2a3299cc857e29.PackNFT.NFT",
+    reserveOwner: "0b2a3299cc857e29",
+    cacheKey: "listings:nba-top-shot",
   },
-]
+  "nfl-all-day": {
+    typeName: "A.e4cf4bdc1751c65d.PackNFT.NFT",
+    reserveOwner: "e4cf4bdc1751c65d",
+    cacheKey: "listings:nfl-all-day",
+  },
+}
+
+function buildFilters(cfg: { typeName: string; reserveOwner: string }) {
+  return [
+    {
+      status: { eq: "Sealed" },
+      listing: {
+        exists: true,
+        ft_vault_type: { eq: "A.ead892083b3e2c6c.DapperUtilityCoin.Vault" },
+      },
+      owner_address: { ne: cfg.reserveOwner },
+      excludeReserved: { eq: true },
+      type_name: { eq: cfg.typeName },
+      distribution: {
+        tier: { ignore_case: true, in: [] },
+        series_ids: { contains: [], contains_type: "ANY" },
+        title: { ignore_case: true, partial_match: true, in: [] },
+      },
+    },
+  ]
+}
 
 type PackDistribution = {
   id: { value: string }
@@ -115,6 +142,8 @@ function seriesLabelFromStartTime(startTime: string): string {
   return "Series 2025-26"
 }
 
+// Per-collection cache. Keyed by COLLECTION_CONFIG.cacheKey, not just
+// "listings", so the AllDay and TS responses don't stomp each other.
 const listingsCache = new Map<string, { data: PackListing[]; expiresAt: number }>()
 const CACHE_TTL_MS = 2 * 60 * 1000
 
@@ -144,13 +173,24 @@ function classifyPackType(title: string, slots: number, retailPrice: number): Pa
   return "standard"
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const cached = listingsCache.get("listings")
-    if (cached && cached.expiresAt > Date.now()) {
-      return NextResponse.json({ listings: cached.data, cached: true })
+    const url = new URL(req.url)
+    const collection = url.searchParams.get("collection") ?? "nba-top-shot"
+    const cfg = COLLECTION_CONFIG[collection]
+    if (!cfg) {
+      return NextResponse.json(
+        { error: `Unsupported collection '${collection}'. Allowed: ${Object.keys(COLLECTION_CONFIG).join(", ")}` },
+        { status: 400 },
+      )
     }
 
+    const cached = listingsCache.get(cfg.cacheKey)
+    if (cached && cached.expiresAt > Date.now()) {
+      return NextResponse.json({ listings: cached.data, cached: true, collection })
+    }
+
+    const filters = buildFilters(cfg)
     const allNodes: PackNode[] = []
     let cursor: string | undefined = undefined
     let hasMore = true
@@ -162,7 +202,7 @@ export async function GET() {
         body: JSON.stringify({
           operationName: "searchPackNftAggregation_searchPacks",
           query: PACK_LISTINGS_QUERY,
-          variables: { first: 2000, after: cursor, filters: ACTIVE_FILTERS },
+          variables: { first: 2000, after: cursor, filters },
         }),
       })
 
@@ -226,8 +266,8 @@ export async function GET() {
       return (a.lowestAsk || 99999) - (b.lowestAsk || 99999)
     })
 
-    listingsCache.set("listings", { data: listings, expiresAt: Date.now() + CACHE_TTL_MS })
-    return NextResponse.json({ listings, cached: false, totalPacks: listings.length })
+    listingsCache.set(cfg.cacheKey, { data: listings, expiresAt: Date.now() + CACHE_TTL_MS })
+    return NextResponse.json({ listings, cached: false, totalPacks: listings.length, collection })
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "pack-listings failed" },

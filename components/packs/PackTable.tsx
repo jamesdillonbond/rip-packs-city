@@ -51,6 +51,16 @@ export interface PackRow {
    *  falls back to the single-price `price` field. */
   primaryPrice?: number | null
   secondaryAsk?: number | null
+  /** Whether the secondaryAsk in this row came from live /api/pack-listings
+   *  data (TS only) or from the cached pack_ev_latest snapshot. Drives the
+   *  small "LIVE" pip rendered next to the secondary ask in DualPriceCell.
+   *  'cached' when the value originated from pack_ev_latest.secondary_ask,
+   *  'live' when overlaid from current Dapper Studio GraphQL listings,
+   *  null when no secondary ask is known at all. */
+  secondaryAskSource?: 'live' | 'cached' | null
+  /** Number of currently-active listings backing the live secondaryAsk.
+   *  Surfaced as a tooltip on the LIVE pip so the user can gauge market depth. */
+  secondaryListingCount?: number | null
   priceSource?: 'primary' | 'secondary' | 'min' | 'none' | null
   primaryAvailable?: boolean | null
   secondaryAvailable?: boolean | null
@@ -195,7 +205,7 @@ export function DualPriceCell({
   row,
   layout = 'inline',
 }: {
-  row: Pick<PackRow, 'price' | 'primaryPrice' | 'secondaryAsk' | 'priceSource' | 'primaryAvailable' | 'secondaryAvailable'>
+  row: Pick<PackRow, 'price' | 'primaryPrice' | 'secondaryAsk' | 'priceSource' | 'primaryAvailable' | 'secondaryAvailable' | 'secondaryAskSource' | 'secondaryListingCount'>
   layout?: 'inline' | 'stacked'
 }) {
   const src = row.priceSource ?? null
@@ -268,10 +278,41 @@ export function DualPriceCell({
     </div>
   )
 
+  // LIVE pip — appears next to the secondary ask when the value came from the
+  // current /api/pack-listings overlay rather than the cached pack_ev_latest
+  // snapshot. Hover-title carries the listing count for market-depth context.
+  const isLive = row.secondaryAskSource === 'live' && secondaryLive
+  const listingCount = row.secondaryListingCount ?? null
+  const livePipTitle = listingCount != null
+    ? `Live secondary low ask · ${listingCount} active listing${listingCount === 1 ? '' : 's'}`
+    : 'Live secondary low ask'
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       <Row label="Primary" value={primaryText} anchor={primaryAnchor && primaryLive} muted={!primaryLive} />
-      <Row label="Secondary" value={secondaryText} anchor={secondaryAnchor && secondaryLive} muted={!secondaryLive} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <Row label="Secondary" value={secondaryText} anchor={secondaryAnchor && secondaryLive} muted={!secondaryLive} />
+        {isLive && (
+          <span
+            title={livePipTitle}
+            style={{
+              fontSize: 8,
+              fontFamily: 'var(--font-mono)',
+              letterSpacing: '0.12em',
+              fontWeight: 700,
+              color: '#10B981',
+              border: '1px solid rgba(16,185,129,0.5)',
+              padding: '1px 4px',
+              borderRadius: 3,
+              lineHeight: 1,
+              textTransform: 'uppercase',
+              flexShrink: 0,
+            }}
+          >
+            LIVE
+          </span>
+        )}
+      </div>
     </div>
   )
 }

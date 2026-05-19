@@ -12,7 +12,9 @@ const supabase: any = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 )
 
-const ALLOWED_COLLECTIONS = new Set(["nba-top-shot", "nfl-all-day", "la-liga-golazos"])
+// la-liga-golazos packs surface removed 2026-05-19 — see lib/collections.ts.
+// pack_table_rows still returns Golazos rows but no UI surface consumes them.
+const ALLOWED_COLLECTIONS = new Set(["nba-top-shot", "nfl-all-day"])
 
 type SortKey = "value_ratio_desc" | "ev_margin_pct_desc" | "retail_price_asc" | "title_asc"
 const ALLOWED_SORTS = new Set<SortKey>([
