@@ -553,7 +553,7 @@ Main branch is the canonical clean branch.
 
    The transaction has never compiled against a Cadence 1.0 toolchain. Sequence: fix the Cadence first (C1+C2 to compile-clean, then H1+H2 to make it signable), then resolve the external dependencies, then test on emulator and testnet against a real Dapper testnet co-signer before any mainnet attempt.
 
-2. **Sentry error capture inactive** — `@sentry/nextjs ^10.47.0` is wired (sentry.client/server/edge.config.ts all reference `NEXT_PUBLIC_SENTRY_DSN`) but no DSN set in Vercel env. SDK is current; only blocker is creating a Sentry project (or locating the existing one) and pasting its DSN as `NEXT_PUBLIC_SENTRY_DSN` for production/preview/development.
+2. **Sentry error capture inactive** — `@sentry/nextjs ^10.47.0` is wired (sentry.client/server/edge.config.ts all reference `NEXT_PUBLIC_SENTRY_DSN`) but no DSN set in Vercel env. SDK is current; only blocker is creating a Sentry project (or locating the existing one) and pasting its DSN as `NEXT_PUBLIC_SENTRY_DSN` for production/preview/development. Separately, `SENTRY_AUTH_TOKEN` is also missing from Vercel env — the token lives in local `.env.sentry-build-plugin` (gitignored) so source-map uploads work locally but not on Vercel deploys; add via `/v10/projects/{id}/env` then redeploy. See `docs/audits/audit-2026-05-18-handoff.md` §3.1.
 
 3. **External Flowty event indexer regression** — `flowty_loan_events` ingest dropped ~99% on 2026-04-28. Selective failure: all `FUNDING_AVAILABLE`, `FUNDING_REPAID`, `FUNDING_SETTLED` events stopped completely; `LISTING_*` events still trickle at <1% of pre-cliff volume. Writer is external to this repo. The April 28 cutoff also matches the staleness of `storefront_audit_wallets` (last write 2026-04-28 11:35 UTC), suggesting a shared upstream Flow access node or event subscription change.
 
@@ -574,6 +574,14 @@ Main branch is the canonical clean branch.
 11. **Brand punch list**: per-collection OG cards (clone `/api/og/deal`); `/home-fmv-preview.png` screenshot on home; Fast Break / RTR / admin tokenize once stable.
 
 12. **Blazers trivia** (`lib/blazers-trivia.ts`) — 29 items shelved, no UI yet.
+
+13. **`flowty_archive` growth strategy** — 9.6 GB / 74% of total DB, 44K+ unextracted rows (93% are `collection:*:sale`). Pick A (build extractors for high-volume endpoints, ~5× ~100 LOC each), B (extend `prune_flowty_archive_api_harvest` to delete unextracted rows past cutoff for low-priority endpoints), or C (accept ~1.5 GB/month growth on Pro Micro). See `docs/audits/audit-2026-05-19-day2.md` Thread 2.
+
+14. **Monolith page refactor** — `collection/page.tsx` (2,900 lines, 59 useState), `sniper/page.tsx` (2,485 lines, 50 useState), `analytics/page.tsx` (2,203 lines, 36 useState). Phase 1 is zero-risk (~1h, extract leaf components from `collection/page.tsx` lines 29-430). Full plan in `docs/audits/refactor-plan-monolith-pages-2026-05.md`.
+
+15. **`livetoken-portfolio*.json` fixtures committed in tree** — 12 fixtures from a one-off Flowty harvest experiment. Decision needed: keep as docs, move to a gitignored `scratch/` folder, or delete. Flagged in `docs/audits/audit-2026-05-18-handoff.md` §3.6.
+
+16. **Wire `flow test` into a GitHub Action** — Cadence test harness exists (`npm run test:cadence`) but isn't gated by CI; the purchase-moment regression net only catches breakage when a human runs it locally. See `project_cadence_test_harness.md` memory entry + audit handoff §3.6.
 
 ---
 
