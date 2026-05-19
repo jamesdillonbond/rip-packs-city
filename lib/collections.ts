@@ -143,7 +143,10 @@ export const COLLECTIONS: Collection[] = [
     accent: "#22C55E",
     accentSoft: "#4ADE80",
     icon: "⚽",
-    pages: ["overview", "collection", "market", "packs", "sniper", "sets", "analytics"],
+    // Packs surface removed 2026-05-19: Golazos has no live pack distribution
+    // and the compute-laliga-pack-ev cron has populated 0/224 rows in
+    // pack_ev_latest. Surface re-enables once the pipeline produces real EV.
+    pages: ["overview", "collection", "market", "sniper", "sets", "analytics"],
     published: true,
     graphqlUrl: "https://public-api.laligagolazos.com/graphql",
     flowContractName: "Golazos",

@@ -9,8 +9,9 @@
 // lifecycle / rip view) see /[collection]/pack/[id]/page.tsx, which uses the
 // get_pack_lifecycle RPC keyed on the pack NFT id.
 //
-// All three pack-eligible collections (Top Shot, All Day, Golazos) reach
-// this route. PackTable already routes its row click here via detailHref.
+// Top Shot and All Day reach this route today. PackTable routes its row
+// click here via detailHref. Golazos packs surface was removed 2026-05-19
+// — see lib/collections.ts pages array.
 
 import type { Metadata } from "next"
 import Link from "next/link"

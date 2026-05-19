@@ -6,11 +6,14 @@ import GrailsView from './GrailsView'
 import { useWarmCache } from '@/lib/warmup/WarmupContext'
 
 // Shared client component for the static pack pages (nba-top-shot,
-// nfl-all-day, la-liga-golazos). Renders /api/packs (pack_table_rows view)
-// into the unified <PackTable/> with a filter strip: search, tier chips,
-// type chips, price-range min/max, and the +EV / Has chasers / Almost-sold-out
-// quick toggles. Sorts include the standard set plus three EV-cache-derived
+// nfl-all-day). Renders /api/packs (pack_table_rows view) into the
+// unified <PackTable/> with a filter strip: search, tier chips, type chips,
+// price-range min/max, and the +EV / Has chasers / Almost-sold-out quick
+// toggles. Sorts include the standard set plus three EV-cache-derived
 // keys: pool depletion, packs remaining, and pack EV in absolute dollars.
+//
+// Golazos packs surface removed 2026-05-19 — Golazos EV pipeline has 0
+// populated rows in pack_ev_latest; surface re-enables when that changes.
 
 type SortKey =
   | 'value_ratio_desc'
@@ -70,6 +73,23 @@ interface ApiResponse {
   collection_slug: string
 }
 
+// Live pack listings shape — /api/pack-listings returns one row per distId
+// with the current secondary low ask from Dapper Studio GraphQL
+// (api.production.studio-platform.dapperlabs.com, NOT the CF-blocked
+// public-api.nbatopshot.com). Top Shot only; the AllDay analogue is wired
+// separately. See app/api/pack-listings/route.ts.
+interface LiveListing {
+  distId: string
+  lowestAsk: number
+  listingCount: number
+}
+interface LiveListingsResponse {
+  listings: LiveListing[]
+  cached?: boolean
+  totalPacks?: number
+  error?: string
+}
+
 interface Props {
   collection: 'nba-top-shot' | 'nfl-all-day'
   tiers: string[]
@@ -82,7 +102,44 @@ function pctFraction(pct: number | null | undefined): number | null {
   return pct / 100
 }
 
-function toPackRow(r: ApiRow, collectionUrlSlug: string): PackRow {
+function toPackRow(
+  r: ApiRow,
+  collectionUrlSlug: string,
+  liveOverlay: LiveListing | null,
+): PackRow {
+  // Live overlay path: when /api/pack-listings returned a current lowestAsk
+  // for this distId, override secondary_ask AND recompute pack_ev,
+  // ev_margin_pct, value_ratio against the live price so every sort that
+  // depends on those fields reflects the live secondary marketplace. Anchor
+  // for "best return" was the goal of this overlay — see Phase 3 of the
+  // 2026-05-19 packs page cleanup. liveOverlay is null on non-TS collections
+  // and on TS rows that aren't currently listed on the secondary market.
+  const grossEV = r.gross_ev == null ? null : Number(r.gross_ev)
+  const cachedSecondary = r.secondary_ask == null ? null : Number(r.secondary_ask)
+
+  let secondaryAsk = cachedSecondary
+  let secondarySource: 'live' | 'cached' | null = cachedSecondary != null ? 'cached' : null
+  let priceSource = r.price_source ?? null
+  let secondaryAvailable = r.secondary_available ?? null
+  let packEvDollar = r.pack_ev == null ? null : Number(r.pack_ev)
+  let evMarginPct = r.ev_margin_pct == null ? null : Number(r.ev_margin_pct)
+
+  if (liveOverlay && liveOverlay.lowestAsk > 0) {
+    secondaryAsk = liveOverlay.lowestAsk
+    secondarySource = 'live'
+    secondaryAvailable = true
+    // Recompute pack EV anchor against the live secondary. Pin priceSource
+    // to 'secondary' since we have a real live ask — the cached
+    // 'primary'/'min' path was rendering against stale (or never-populated)
+    // primary data. If grossEV is null we can't derive an EV; downstream
+    // cells display "—" which is correct.
+    priceSource = 'secondary'
+    if (grossEV != null) {
+      packEvDollar = grossEV - liveOverlay.lowestAsk
+      evMarginPct = liveOverlay.lowestAsk > 0 ? (packEvDollar / liveOverlay.lowestAsk) * 100 : null
+    }
+  }
+
   return {
     id: r.dist_id,
     title: r.title ?? `Pack #${r.dist_id}`,
@@ -91,21 +148,23 @@ function toPackRow(r: ApiRow, collectionUrlSlug: string): PackRow {
     slots: r.slots,
     packType: r.pack_type,
     price: r.retail_price_usd == null ? 0 : Number(r.retail_price_usd),
-    grossEV: r.gross_ev == null ? null : Number(r.gross_ev),
-    evMarginPct: r.ev_margin_pct == null ? null : Number(r.ev_margin_pct),
+    grossEV,
+    evMarginPct,
     fmvCoverage: pctFraction(r.fmv_coverage_pct),
     depletionPct: pctFraction(r.depletion_pct),
     poolDepletionPct: pctFraction(r.ev_depletion_pct),
     editionCount: r.edition_count == null ? null : Number(r.edition_count),
     totalUnopened: r.total_unopened == null ? null : Number(r.total_unopened),
-    packEvDollar: r.pack_ev == null ? null : Number(r.pack_ev),
+    packEvDollar,
     isRareSinglePack: r.is_rare_single_pack === true,
     detailHref: `/${collectionUrlSlug}/pack/dist/${r.dist_id}`,
     primaryPrice: r.primary_price == null ? null : Number(r.primary_price),
-    secondaryAsk: r.secondary_ask == null ? null : Number(r.secondary_ask),
-    priceSource: r.price_source ?? null,
+    secondaryAsk,
+    secondaryAskSource: secondarySource,
+    secondaryListingCount: liveOverlay?.listingCount ?? null,
+    priceSource,
     primaryAvailable: r.primary_available ?? null,
-    secondaryAvailable: r.secondary_available ?? null,
+    secondaryAvailable,
   }
 }
 
@@ -173,6 +232,39 @@ export default function PackPageClient({ collection, tiers, title, accent = '#E0
   const loading = packsLoading
   const error = packsError ? (packsError instanceof Error ? packsError.message : String(packsError)) : ''
 
+  // Live secondary-ask overlay. /api/pack-listings hits Dapper Studio
+  // GraphQL with a PackNFT-scoped searchPackNftAggregation query
+  // parametrized by collection. As of 2026-05-19 the route supports both
+  // nba-top-shot and nfl-all-day. The endpoint caches server-side for
+  // 2 min, so the useWarmCache TTL of 120s matches and we never thrash
+  // the upstream. When the fetch fails (network blip, upstream timeout,
+  // or the upstream returns no AllDay pack listings because there's no
+  // active secondary market that minute) we silently fall back to the
+  // cached secondary_ask from pack_table_rows — the table still renders,
+  // sorts still work, just with stale prices.
+  const liveListingsFetcher = useCallback(async (): Promise<LiveListingsResponse | null> => {
+    const res = await fetch('/api/pack-listings?collection=' + encodeURIComponent(collection))
+    if (!res.ok) {
+      // Don't throw — degrade gracefully to cached. The 400 case
+      // (collection not in COLLECTION_CONFIG) is intentional.
+      return null
+    }
+    return (await res.json()) as LiveListingsResponse
+  }, [collection])
+  const { data: liveListingsData } = useWarmCache<LiveListingsResponse | null>(
+    'pack-live-listings:' + collection,
+    liveListingsFetcher,
+    { ttlMs: 120_000 },
+  )
+  const liveOverlayMap = useMemo(() => {
+    const m = new Map<string, LiveListing>()
+    const list = liveListingsData?.listings ?? []
+    for (const l of list) {
+      if (l.distId && l.lowestAsk > 0) m.set(l.distId, l)
+    }
+    return m
+  }, [liveListingsData])
+
   // Discover pack_type values present in the current result set so the chip
   // row only surfaces options that actually filter something (the column is
   // null for ~85% of TS rows; offering "all/pack/box/case" by default keeps
@@ -203,7 +295,10 @@ export default function PackPageClient({ collection, tiers, title, accent = '#E0
     })
   }, [rows, packType, priceMinInput, priceMaxInput, posEvOnly, hasChasers, almostSoldOut])
 
-  const packRows: PackRow[] = filteredRows.map((r) => toPackRow(r, collection))
+  const packRows: PackRow[] = filteredRows.map((r) =>
+    toPackRow(r, collection, liveOverlayMap.get(r.dist_id) ?? null),
+  )
+  const liveOverlayHits = packRows.reduce((n, r) => n + (r.secondaryAskSource === 'live' ? 1 : 0), 0)
   const tableSortDefault = tableSortFor(sort)
   const chipBase = 'rounded-lg px-2.5 py-1 text-xs font-semibold transition'
   const chipInactive = 'border border-zinc-700 text-zinc-400 hover:bg-zinc-900'
@@ -218,6 +313,16 @@ export default function PackPageClient({ collection, tiers, title, accent = '#E0
             {loading ? 'Loading…' : packRows.length === total
               ? `${total.toLocaleString()} distributions`
               : `${packRows.length.toLocaleString()} of ${total.toLocaleString()} distributions`}
+            {/* Live overlay counter — only renders when at least one row in the
+                currently-filtered view got a live secondary ask from
+                /api/pack-listings. Helps the user trust the "best return"
+                sort: rows with the green LIVE pip are anchored against the
+                current Dapper Studio low ask, not the cron snapshot. */}
+            {liveOverlayHits > 0 && (
+              <span style={{ marginLeft: 8, color: '#10B981', fontFamily: 'var(--font-mono)', letterSpacing: '0.1em', fontSize: 10 }}>
+                · {liveOverlayHits} LIVE
+              </span>
+            )}
           </div>
         </div>
         {/* View-mode toggle. Grails mode reads pack_grail_metrics_mv via
