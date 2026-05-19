@@ -16,6 +16,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { parseCollections } from "@/lib/analytics/window"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 
+export const dynamic = 'force-dynamic'
 export const revalidate = 600
 
 function parseHours(raw: string | null): number {
