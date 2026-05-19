@@ -166,6 +166,17 @@ function toPackRow(
     detailHref: `/${collectionUrlSlug}/pack/dist/${r.dist_id}`,
     primaryPrice: r.primary_price == null ? null : Number(r.primary_price),
     secondaryAsk,
+    // displayPrice mirrors DualPriceCell's fallback chain so the Price column
+    // sort matches what the user sees. Primary while inventory lasts, then
+    // secondary, then retail. Null only when none of those are present.
+    displayPrice: ((): number | null => {
+      const primary = r.primary_price == null ? null : Number(r.primary_price)
+      const primaryLive = r.primary_available === true && primary != null && primary > 0
+      if (primaryLive) return primary
+      if (secondaryAvailable === true && secondaryAsk != null && secondaryAsk > 0) return secondaryAsk
+      const retail = r.retail_price_usd == null ? null : Number(r.retail_price_usd)
+      return retail != null && retail > 0 ? retail : null
+    })(),
     secondaryAskSource: secondarySource,
     secondaryListingCount: liveOverlay?.listingCount ?? null,
     priceSource,
