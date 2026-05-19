@@ -51,6 +51,12 @@ export interface PackRow {
    *  falls back to the single-price `price` field. */
   primaryPrice?: number | null
   secondaryAsk?: number | null
+  /** The value actually rendered in the Price column — same fallback chain as
+   *  DualPriceCell (primary if primaryAvailable && >0, else secondary if
+   *  available, else `price`). Exposed so the Price column header sorts on
+   *  the displayed value rather than the underlying retail. Computed in
+   *  toPackRow (see PackPageClient.tsx) so the sort + display stay in sync. */
+  displayPrice?: number | null
   /** Whether the secondaryAsk in this row came from live /api/pack-listings
    *  data (TS only) or from the cached pack_ev_latest snapshot. Drives the
    *  small "LIVE" pip rendered next to the secondary ask in DualPriceCell.
@@ -77,6 +83,7 @@ export type SortKey =
   | 'tier'
   | 'slots'
   | 'price'
+  | 'displayPrice'
   | 'grossEV'
   | 'evMarginPct'
   | 'fmvCoverage'
@@ -399,7 +406,7 @@ export default function PackTable({
               <HeaderCell k="title" label="Pack" />
               <HeaderCell k="tier" label="Tier" />
               <HeaderCell k="slots" label="Slots" />
-              <HeaderCell k="price" label="Price" />
+              <HeaderCell k="displayPrice" label="Price" />
               <HeaderCell k="grossEV" label="Gross EV" />
               <HeaderCell k="evMarginPct" label="EV Margin %" />
               <HeaderCell k="fmvCoverage" label="FMV Coverage" />
