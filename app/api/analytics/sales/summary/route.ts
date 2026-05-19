@@ -14,6 +14,7 @@ import { parseWindow, windowRange, parseCollections } from "@/lib/analytics/wind
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import type { SalesSummaryResponse } from "@/lib/analytics-types"
 
+export const dynamic = 'force-dynamic'
 export const revalidate = 600
 
 export async function GET(req: NextRequest) {

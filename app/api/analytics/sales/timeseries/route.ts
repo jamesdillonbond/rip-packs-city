@@ -15,6 +15,7 @@ import { parseWindow, windowRange, parseCollections } from "@/lib/analytics/wind
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import type { SalesTimeseriesRow } from "@/lib/analytics-types"
 
+export const dynamic = 'force-dynamic'
 export const revalidate = 600
 
 function parseBucket(raw: string | null): "auto" | "day" | "week" {

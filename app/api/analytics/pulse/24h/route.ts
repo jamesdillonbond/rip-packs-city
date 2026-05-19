@@ -17,6 +17,7 @@ import { parseCollections } from "@/lib/analytics/window"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import type { Pulse24hResponse } from "@/lib/analytics-types"
 
+export const dynamic = 'force-dynamic'
 export const revalidate = 60
 
 export async function GET(req: NextRequest) {

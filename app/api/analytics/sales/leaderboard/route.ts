@@ -24,6 +24,7 @@ import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { resolveUsernames, displayName } from "@/lib/flowty-username"
 import type { SalesLeaderboardRow } from "@/lib/analytics-types"
 
+export const dynamic = 'force-dynamic'
 export const revalidate = 600
 
 function parseLimit(raw: string | null): number {

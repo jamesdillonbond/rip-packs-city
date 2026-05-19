@@ -16,6 +16,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import type { NetMarketplaceRow, NetMarketplaceResponse } from "@/lib/analytics-types"
 
+export const dynamic = 'force-dynamic'
 export const revalidate = 300
 
 const ALLOWED_COLLECTIONS = new Set(["topshot", "allday", "golazos", "pinnacle", "ufc", "all"])
