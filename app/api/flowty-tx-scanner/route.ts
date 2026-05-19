@@ -134,7 +134,12 @@ export async function POST(req: NextRequest) {
       .select("last_scanned_height, total_failures_captured")
       .eq("id", 1)
       .single()
-    if (stateRes.error) throw stateRes.error
+    if (stateRes.error) {
+      // PostgrestError is a plain object, not an Error instance — wrap so the
+      // catcher's `err instanceof Error` branch fires and pipeline_runs.error
+      // records the actual message instead of "[object Object]".
+      throw new Error(`flowty_scanner_state load: ${stateRes.error.message}`)
+    }
 
     const sealed = await fetchJSON<FlowBlock[]>(
       `${FLOW_REST}/v1/blocks?height=sealed`,
@@ -397,7 +402,14 @@ export async function POST(req: NextRequest) {
     })
   } catch (err) {
     const elapsed = Date.now() - t0
-    const errorMessage = err instanceof Error ? err.message : String(err)
+    // Belt + suspenders: handle Error, PostgrestError ({ message, code, details, hint }),
+    // and arbitrary thrown values without ever logging "[object Object]".
+    const errorMessage =
+      err instanceof Error
+        ? err.message
+        : err && typeof err === "object" && "message" in err && typeof (err as { message: unknown }).message === "string"
+          ? (err as { message: string }).message
+          : (() => { try { return JSON.stringify(err) } catch { return String(err) } })()
 
     try {
       await (supabaseAdmin as any).from("pipeline_runs").insert({

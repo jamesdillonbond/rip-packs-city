@@ -15,6 +15,7 @@ import { parseCollections } from "@/lib/analytics/window"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import type { LenderPerformanceRow } from "@/lib/analytics-types"
 
+export const dynamic = 'force-dynamic'
 export const revalidate = 600
 
 function parseInt32(raw: string | null, dflt: number, min: number, max: number): number {

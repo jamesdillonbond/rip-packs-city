@@ -28,7 +28,7 @@ const nextConfig: NextConfig = {
               "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
-              "img-src 'self' data: blob: https: http:",
+              "img-src 'self' data: blob: https:",
               "connect-src 'self' https: wss:",
               "frame-src 'self' https:",
               "media-src 'self' https:",
@@ -56,7 +56,7 @@ export default withSentryConfig(nextConfig, {
 
   org: "rip-packs-city",
 
-  project: "javascript-nextjs",
+  project: "rip-packs-city",
 
   // Only print logs for uploading source maps in CI
   silent: !process.env.CI,
