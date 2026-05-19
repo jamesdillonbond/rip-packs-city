@@ -122,7 +122,12 @@ function toPackRow(
   let priceSource = r.price_source ?? null
   let secondaryAvailable = r.secondary_available ?? null
   let packEvDollar = r.pack_ev == null ? null : Number(r.pack_ev)
-  let evMarginPct = r.ev_margin_pct == null ? null : Number(r.ev_margin_pct)
+  // pack_table_rows.ev_margin_pct is already a percentage value (33000 means
+  // 33000%) per the view's `(pack_ev/pack_price)*100` CASE expression, but
+  // PackRow.evMarginPct is documented as a fraction (0.12 = +12%) and
+  // PackTable's fmtPct multiplies by 100 on display. Divide here so the
+  // pipeline is consistent and the cell doesn't display 100x the true value.
+  let evMarginPct = r.ev_margin_pct == null ? null : Number(r.ev_margin_pct) / 100
 
   if (liveOverlay && liveOverlay.lowestAsk > 0) {
     secondaryAsk = liveOverlay.lowestAsk
@@ -136,7 +141,8 @@ function toPackRow(
     priceSource = 'secondary'
     if (grossEV != null) {
       packEvDollar = grossEV - liveOverlay.lowestAsk
-      evMarginPct = liveOverlay.lowestAsk > 0 ? (packEvDollar / liveOverlay.lowestAsk) * 100 : null
+      // Fraction, not percent — fmtPct multiplies by 100 on display.
+      evMarginPct = liveOverlay.lowestAsk > 0 ? packEvDollar / liveOverlay.lowestAsk : null
     }
   }
 

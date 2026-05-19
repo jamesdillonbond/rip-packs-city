@@ -196,123 +196,83 @@ function SortArrow({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
   return <span className="ml-1">{dir === 'desc' ? '↓' : '↑'}</span>
 }
 
-// DualPriceCell — renders PRIMARY + SECONDARY stacked rows with a red accent
-// on whichever side EV is anchored against. When `priceSource` is null, the
-// EV cron hasn't populated the dual-price columns yet, so fall back to the
-// single-price string. When `priceSource === 'none'`, the pack is not buyable
-// on either market — render both sides empty and let upstream verdict UI hide.
+// PriceCell — renders a single price line. Strategy:
+//   primary if it's still on sale (primaryAvailable && primaryPrice > 0),
+//   otherwise the secondary low ask. Most packs have sold their primary
+//   inventory out, so secondary is the dominant display. When the value
+//   came from the live /api/pack-listings overlay (TS or AllDay), a small
+//   green LIVE pip renders next to the number with a hover-title showing
+//   active listing count.
+//
+// Renamed from DualPriceCell on 2026-05-19; the old Primary/Secondary
+// stacked layout was noisy and didn't add information since primary is
+// universally NULL in pack_ev_latest today and most TS rows display SOLD OUT
+// on the primary line. Component is still exported as DualPriceCell for
+// backward compat with existing imports.
 export function DualPriceCell({
   row,
-  layout = 'inline',
 }: {
   row: Pick<PackRow, 'price' | 'primaryPrice' | 'secondaryAsk' | 'priceSource' | 'primaryAvailable' | 'secondaryAvailable' | 'secondaryAskSource' | 'secondaryListingCount'>
+  // `layout` prop retained-but-ignored so callers don't break. Single-line
+  // layout looks the same in both stacked and inline contexts now.
   layout?: 'inline' | 'stacked'
 }) {
   const src = row.priceSource ?? null
-
-  // Legacy fallback: no dual-price columns yet → single price string
-  if (src === null) {
-    return <span style={{ color: 'var(--rpc-text)', fontVariantNumeric: 'tabular-nums' }}>{fmtPrice(row.price)}</span>
-  }
-
   const primaryLive = row.primaryAvailable === true && row.primaryPrice != null && row.primaryPrice > 0
   const secondaryLive = row.secondaryAvailable === true && row.secondaryAsk != null && row.secondaryAsk > 0
 
-  // Both anchors when price_source === 'min'; otherwise just the chosen one
-  const primaryAnchor = src === 'primary' || src === 'min'
-  const secondaryAnchor = src === 'secondary' || src === 'min'
-
-  const primaryText = primaryLive ? fmtPrice(row.primaryPrice) : 'SOLD OUT'
-  const secondaryText = secondaryLive ? fmtPrice(row.secondaryAsk) : '—'
-
-  const labelStyle: React.CSSProperties = {
-    fontSize: 9,
-    letterSpacing: '0.14em',
-    textTransform: 'uppercase',
-    color: 'var(--rpc-text-muted, rgba(255,255,255,0.45))',
-    fontFamily: 'var(--font-mono)',
-    minWidth: layout === 'stacked' ? 60 : 56,
-    display: 'inline-block',
-  }
-  const valueBase: React.CSSProperties = {
-    fontVariantNumeric: 'tabular-nums',
-    fontFamily: 'var(--font-mono)',
-    fontSize: layout === 'stacked' ? 13 : 12,
+  // Legacy fallback when no dual-price columns are populated yet (priceSource
+  // null AND no primary/secondary numbers). Fall back to the single-price
+  // string from the row.
+  if (src === null && !primaryLive && !secondaryLive) {
+    return <span style={{ color: 'var(--rpc-text)', fontVariantNumeric: 'tabular-nums' }}>{fmtPrice(row.price)}</span>
   }
 
-  const Row = ({
-    label,
-    value,
-    anchor,
-    muted,
-  }: {
-    label: string
-    value: string
-    anchor: boolean
-    muted: boolean
-  }) => (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, lineHeight: 1.2 }}>
-      <span style={labelStyle}>{label}</span>
-      <span
-        style={{
-          ...valueBase,
-          color: anchor ? 'var(--rpc-red)' : muted ? 'var(--rpc-text-muted, rgba(255,255,255,0.45))' : 'var(--rpc-text, #fff)',
-          fontWeight: anchor ? 700 : 500,
-        }}
-      >
-        {value}
-      </span>
-      {anchor && (
-        <span
-          aria-hidden="true"
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: '50%',
-            background: 'var(--rpc-red)',
-            display: 'inline-block',
-            flexShrink: 0,
-          }}
-        />
-      )}
-    </div>
-  )
+  // Pick the display price: primary takes precedence while inventory lasts,
+  // then secondary takes over.
+  const displayPrimary = primaryLive
+  const displayValue = displayPrimary ? fmtPrice(row.primaryPrice) : (secondaryLive ? fmtPrice(row.secondaryAsk) : '—')
 
-  // LIVE pip — appears next to the secondary ask when the value came from the
-  // current /api/pack-listings overlay rather than the cached pack_ev_latest
-  // snapshot. Hover-title carries the listing count for market-depth context.
-  const isLive = row.secondaryAskSource === 'live' && secondaryLive
+  // LIVE pip applies only when we're displaying a live secondary value.
+  const isLive = !displayPrimary && row.secondaryAskSource === 'live' && secondaryLive
   const listingCount = row.secondaryListingCount ?? null
   const livePipTitle = listingCount != null
     ? `Live secondary low ask · ${listingCount} active listing${listingCount === 1 ? '' : 's'}`
     : 'Live secondary low ask'
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      <Row label="Primary" value={primaryText} anchor={primaryAnchor && primaryLive} muted={!primaryLive} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <Row label="Secondary" value={secondaryText} anchor={secondaryAnchor && secondaryLive} muted={!secondaryLive} />
-        {isLive && (
-          <span
-            title={livePipTitle}
-            style={{
-              fontSize: 8,
-              fontFamily: 'var(--font-mono)',
-              letterSpacing: '0.12em',
-              fontWeight: 700,
-              color: '#10B981',
-              border: '1px solid rgba(16,185,129,0.5)',
-              padding: '1px 4px',
-              borderRadius: 3,
-              lineHeight: 1,
-              textTransform: 'uppercase',
-              flexShrink: 0,
-            }}
-          >
-            LIVE
-          </span>
-        )}
-      </div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <span
+        style={{
+          fontVariantNumeric: 'tabular-nums',
+          fontFamily: 'var(--font-mono)',
+          fontSize: 13,
+          color: 'var(--rpc-text, #fff)',
+          fontWeight: 600,
+        }}
+      >
+        {displayValue}
+      </span>
+      {isLive && (
+        <span
+          title={livePipTitle}
+          style={{
+            fontSize: 8,
+            fontFamily: 'var(--font-mono)',
+            letterSpacing: '0.12em',
+            fontWeight: 700,
+            color: '#10B981',
+            border: '1px solid rgba(16,185,129,0.5)',
+            padding: '1px 4px',
+            borderRadius: 3,
+            lineHeight: 1,
+            textTransform: 'uppercase',
+            flexShrink: 0,
+          }}
+        >
+          LIVE
+        </span>
+      )}
     </div>
   )
 }
