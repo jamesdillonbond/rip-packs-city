@@ -18,6 +18,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { parseCollections } from "@/lib/analytics/window"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 
+export const dynamic = 'force-dynamic'
 export const revalidate = 600
 
 const ALLOWED_DIRECTIONS = new Set(["pumping", "dumping", "fresh"])

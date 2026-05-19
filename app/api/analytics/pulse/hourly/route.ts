@@ -14,6 +14,7 @@ import { parseCollections } from "@/lib/analytics/window"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import type { PulseHourlyRow } from "@/lib/analytics-types"
 
+export const dynamic = 'force-dynamic'
 export const revalidate = 60
 
 function parseHours(raw: string | null): number {

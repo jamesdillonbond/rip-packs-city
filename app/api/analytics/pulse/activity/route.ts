@@ -17,6 +17,7 @@ import { parseCollections } from "@/lib/analytics/window"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import type { PulseActivityRow } from "@/lib/analytics-types"
 
+export const dynamic = 'force-dynamic'
 export const revalidate = 30
 
 const ALLOWED_KINDS = new Set(["loan_originated", "loan_repaid", "loan_settled", "sale"])

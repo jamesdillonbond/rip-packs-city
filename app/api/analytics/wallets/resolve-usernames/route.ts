@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 
+export const dynamic = 'force-dynamic'
 export const revalidate = 3600
 
 const MAX_ADDRS = 100

@@ -56,7 +56,7 @@ export default withSentryConfig(nextConfig, {
 
   org: "rip-packs-city",
 
-  project: "rip-packs-city",
+  project: "javascript-nextjs",
 
   // Only print logs for uploading source maps in CI
   silent: !process.env.CI,

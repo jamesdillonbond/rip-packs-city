@@ -17,6 +17,7 @@ import { parseCollections } from "@/lib/analytics/window"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import type { SetsDirectoryRow, SetsDirectorySort } from "@/lib/analytics-types"
 
+export const dynamic = 'force-dynamic'
 export const revalidate = 600
 
 const ALLOWED_SORTS: ReadonlyArray<SetsDirectorySort> = [

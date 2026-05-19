@@ -16,6 +16,7 @@ import { parseCollections } from "@/lib/analytics/window"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import type { FmvTopMoverRow } from "@/lib/analytics-types"
 
+export const dynamic = 'force-dynamic'
 export const revalidate = 600
 
 const ALLOWED_WINDOWS = new Set([1, 7, 30])
