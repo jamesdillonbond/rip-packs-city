@@ -188,10 +188,14 @@ async function loadSignalWallets(startedAtIso: string): Promise<SignalWallet[]> 
 async function loadAllMomentsForWallet(wallet: string, startedAtIso: string): Promise<{ rows: MomentRow[]; err?: string }> {
   const all: MomentRow[] = []
   let from = 0
-  // Defensive ceiling — 200 pages * 250 = 50k moments per wallet. If
-  // any wallet exceeds this the snapshot is truncated and the run is
-  // logged as ok=false; we want to know.
-  const MAX_PAGES = 200
+  // Defensive ceiling — 500 pages * 250 = 125k moments per wallet.
+  // Raised 2026-05-19 from 200 (50k) because NBATopShotCommunity at
+  // 51,352 moments was getting truncated and the run logged ok=false
+  // every day. The ceiling exists to bound pathological input — if
+  // ANY wallet ever needs >125k moments captured in one snapshot,
+  // that's almost certainly a data bug worth investigating, and the
+  // run will correctly log ok=false with the truncated_at_125000 err.
+  const MAX_PAGES = 500
   for (let page = 0; page < MAX_PAGES; page++) {
     const to = from + PAGE_SIZE - 1
     const res = await withRetry<MomentRow[]>(`wmc.range(${wallet.slice(0, 8)},${from})`, async () => {
