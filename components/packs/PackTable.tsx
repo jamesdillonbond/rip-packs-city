@@ -76,6 +76,15 @@ export interface PackRow {
   actionLabel?: string
   /** When set, the title cell links here (the pack detail page). */
   detailHref?: string
+  /** Internal href to the rip simulator for this distribution. Always set
+   *  when toPackRow runs over a row from /api/packs; used by the Action
+   *  cell when no external Buy link is available. */
+  simulatorHref?: string | null
+  /** External marketplace URL for this pack. Set only when an active live
+   *  secondary listing exists AND the collection has a known marketplace
+   *  URL pattern (Top Shot today via nbatopshot.com/listings/p2p). When
+   *  present, the Action cell renders a "Buy" link instead of "Simulate". */
+  buyUrl?: string | null
 }
 
 export type SortKey =
@@ -495,6 +504,25 @@ export default function PackTable({
                     >
                       {r.actionLabel ?? 'Analyze'}
                     </button>
+                  ) : r.buyUrl ? (
+                    <a
+                      href={r.buyUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded border border-emerald-700 bg-emerald-900/40 px-3 py-1 text-xs font-semibold text-emerald-200 hover:bg-emerald-900/70 transition inline-block"
+                      title="Open active listing on the marketplace"
+                    >
+                      Buy ↗
+                    </a>
+                  ) : r.simulatorHref ? (
+                    <Link
+                      href={r.simulatorHref}
+                      prefetch={false}
+                      className="rounded border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs font-semibold text-white hover:bg-zinc-700 transition inline-block"
+                      title="Rip simulator — sample pulls weighted by drop probability"
+                    >
+                      Simulate
+                    </Link>
                   ) : (
                     <span className="text-xs text-zinc-600">—</span>
                   )}
@@ -565,14 +593,31 @@ export default function PackTable({
               >
                 Cov {r.fmvCoverage == null ? '—' : fmtPct(r.fmvCoverage)}
               </span>
-              {r.onAction && (
+              {r.onAction ? (
                 <button
                   onClick={r.onAction}
                   className="ml-auto rounded border border-zinc-700 bg-zinc-800 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-zinc-700 transition"
                 >
                   {r.actionLabel ?? 'Analyze'}
                 </button>
-              )}
+              ) : r.buyUrl ? (
+                <a
+                  href={r.buyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-auto rounded border border-emerald-700 bg-emerald-900/40 px-2.5 py-1 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-900/70 transition"
+                >
+                  Buy ↗
+                </a>
+              ) : r.simulatorHref ? (
+                <Link
+                  href={r.simulatorHref}
+                  prefetch={false}
+                  className="ml-auto rounded border border-zinc-700 bg-zinc-800 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-zinc-700 transition"
+                >
+                  Simulate
+                </Link>
+              ) : null}
             </div>
           </div>
         ))}

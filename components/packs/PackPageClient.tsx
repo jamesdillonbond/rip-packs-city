@@ -82,6 +82,12 @@ interface LiveListing {
   distId: string
   lowestAsk: number
   listingCount: number
+  /** packListingId from Dapper Studio — the UUID used in
+   *  https://nbatopshot.com/listings/p2p?packListingId=<uuid> to deep-link
+   *  the user to the actual secondary marketplace listing on Top Shot.
+   *  Returned by /api/pack-listings (TS only); AllDay analogue would need
+   *  a per-collection URL template added to lib/collections.ts. */
+  packListingId: string
 }
 interface LiveListingsResponse {
   listings: LiveListing[]
@@ -164,6 +170,17 @@ function toPackRow(
     packEvDollar,
     isRareSinglePack: r.is_rare_single_pack === true,
     detailHref: `/${collectionUrlSlug}/pack/dist/${r.dist_id}`,
+    // Simulator deep-link — always available since the simulator works for
+    // any dist_id that has a populated drop pool (which is most TS+AllDay).
+    simulatorHref: `/${collectionUrlSlug}/packs/simulator/${r.dist_id}`,
+    // Buy link — only set when we have a live overlay (so the listing is
+    // confirmed active) AND the collection has a known marketplace URL
+    // pattern. Top Shot uses the /listings/p2p?packListingId= deep link
+    // matching the pack/dist detail page (see lines 405-407 there).
+    // AllDay equivalent not yet identified — falls back to Simulate.
+    buyUrl: (collectionUrlSlug === 'nba-top-shot' && liveOverlay?.packListingId)
+      ? `https://nbatopshot.com/listings/p2p?packListingId=${liveOverlay.packListingId}`
+      : null,
     primaryPrice: r.primary_price == null ? null : Number(r.primary_price),
     secondaryAsk,
     // displayPrice mirrors DualPriceCell's fallback chain so the Price column
