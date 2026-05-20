@@ -274,7 +274,7 @@ export default function SalesDashboard({
 
       <div className="rounded-lg border border-amber-900/40 bg-amber-950/20 p-3 flex items-start gap-2.5">
         <Info size={16} className="text-amber-400 flex-shrink-0 mt-0.5" />
-        <p className="text-xs text-slate-300 leading-relaxed">
+        <p className="text-xs text-zinc-300 leading-relaxed">
           Buyer and seller counts reflect on-chain marketplace activity only. NBA Top Shot’s centralized
           marketplace (~94% of total volume) doesn’t expose participant wallets, so leaderboard data is
           concentrated on Flowty and direct on-chain Pinnacle sales. Total volume figures include all
@@ -288,11 +288,11 @@ export default function SalesDashboard({
         </p>
       </div>
 
-      <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-slate-100">Volume over time</h2>
-            <p className="text-xs text-slate-500">
+            <h2 className="text-lg font-semibold text-zinc-100">Volume over time</h2>
+            <p className="text-xs text-zinc-500">
               {isPinned ? `${pinnedCollections.join(", ")} · ` : "Stacked by collection · "}
               {windowLabel}
             </p>
@@ -323,8 +323,8 @@ export default function SalesDashboard({
 
       <section>
         <div className="mb-4">
-          <h2 className="text-lg font-semibold text-slate-100">Biggest sales</h2>
-          <p className="text-xs text-slate-500">
+          <h2 className="text-lg font-semibold text-zinc-100">Biggest sales</h2>
+          <p className="text-xs text-zinc-500">
             Largest individual sales in {windowLabel.toLowerCase()} · USD-pegged
           </p>
         </div>
@@ -363,12 +363,12 @@ export default function SalesDashboard({
         />
       )}
 
-      <footer className="flex flex-wrap items-center gap-3 text-xs text-slate-500 pt-2 border-t border-slate-800">
+      <footer className="flex flex-wrap items-center gap-3 text-xs text-zinc-500 pt-2 border-t border-zinc-800">
         <span className="inline-flex items-center gap-1.5">
           <Activity size={12} className="text-emerald-500" />
           {loading ? "Refreshing…" : refreshedAt ? `Refreshed ${new Date(refreshedAt).toLocaleTimeString()}` : "Idle"}
         </span>
-        <span className="text-slate-700">·</span>
+        <span className="text-zinc-700">·</span>
         <a
           href="/analytics/methodology/sales"
           className="hover:text-emerald-400 transition-colors inline-flex items-center gap-1"
@@ -376,12 +376,12 @@ export default function SalesDashboard({
           <BarChart3 size={12} />
           Methodology
         </a>
-        <span className="text-slate-700">·</span>
+        <span className="text-zinc-700">·</span>
         <span className="inline-flex items-center gap-1.5">
           <CircleDollarSign size={12} />
           USD-pegged token volumes
         </span>
-        <span className="text-slate-700">·</span>
+        <span className="text-zinc-700">·</span>
         <span className="inline-flex items-center gap-1.5">
           <TimerReset size={12} />
           10-min refresh

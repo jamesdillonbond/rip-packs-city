@@ -32,7 +32,7 @@ const COLLECTION_LABEL: Record<string, string> = {
 }
 
 const TIER_COLOR: Record<string, string> = {
-  Common: "bg-slate-500/20 text-slate-300 border-slate-500/40",
+  Common: "bg-zinc-500/20 text-zinc-300 border-zinc-500/40",
   Fandom: "bg-sky-500/15 text-sky-300 border-sky-500/40",
   Rare: "bg-cyan-500/15 text-cyan-300 border-cyan-500/40",
   Legendary: "bg-amber-500/15 text-amber-300 border-amber-500/40",
@@ -159,7 +159,7 @@ export default async function SetDetailPage({ params }: PageParams) {
     data.tier && data.tier in TIER_COLOR ? (data.tier as keyof typeof TIER_COLOR) : null
   const tierCls = tierKey
     ? TIER_COLOR[tierKey]
-    : "bg-slate-700/40 text-slate-300 border-slate-600/40"
+    : "bg-zinc-700/40 text-zinc-300 border-zinc-600/40"
 
   const datasetJsonLd = {
     "@context": "https://schema.org",
@@ -177,10 +177,10 @@ export default async function SetDetailPage({ params }: PageParams) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
       />
       <div className="space-y-8">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
           <Link
             href="/analytics/sets"
-            className="text-xs text-slate-500 hover:text-violet-400 transition-colors inline-block mb-3"
+            className="text-xs text-zinc-500 hover:text-violet-400 transition-colors inline-block mb-3"
           >
             ← Back to Sets
           </Link>
@@ -188,7 +188,7 @@ export default async function SetDetailPage({ params }: PageParams) {
             <span className="rounded border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wider font-semibold text-violet-300">
               {collectionLabel}
             </span>
-            <span className="rounded border border-slate-700 px-2 py-0.5 text-[10px] uppercase tracking-wider font-semibold text-slate-300">
+            <span className="rounded border border-zinc-700 px-2 py-0.5 text-[10px] uppercase tracking-wider font-semibold text-zinc-300">
               {series}
             </span>
             {data.tier ? (
@@ -203,29 +203,29 @@ export default async function SetDetailPage({ params }: PageParams) {
             ) : null}
           </div>
 
-          <h1 className="text-3xl font-bold tracking-tight text-slate-50 mb-2">
+          <h1 className="text-3xl font-bold tracking-tight text-zinc-50 mb-2">
             {data.set_name}
           </h1>
           {data.set_external_id ? (
-            <p className="text-xs text-slate-500 font-mono">
+            <p className="text-xs text-zinc-500 font-mono">
               External ID · {data.set_external_id}
             </p>
           ) : null}
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-4">
-              <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4">
+              <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
                 Editions
               </div>
-              <div className="text-2xl font-bold text-slate-50 tabular-nums">
+              <div className="text-2xl font-bold text-zinc-50 tabular-nums">
                 {formatNumber(editionCount)}
               </div>
             </div>
-            <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-4">
-              <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4">
+              <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
                 Robust total FMV
               </div>
-              <div className="text-2xl font-bold text-slate-50 tabular-nums">
+              <div className="text-2xl font-bold text-zinc-50 tabular-nums">
                 {formatUsd(robustTotal)}
               </div>
               {hasOutlier ? (
@@ -237,22 +237,22 @@ export default async function SetDetailPage({ params }: PageParams) {
                 </div>
               ) : null}
             </div>
-            <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-4">
-              <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4">
+              <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
                 Median FMV
               </div>
-              <div className="text-2xl font-bold text-slate-50 tabular-nums">
+              <div className="text-2xl font-bold text-zinc-50 tabular-nums">
                 {formatUsd(median)}
               </div>
             </div>
-            <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-4">
-              <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4">
+              <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
                 Raw total FMV
               </div>
-              <div className="text-2xl font-bold text-slate-300 tabular-nums">
+              <div className="text-2xl font-bold text-zinc-300 tabular-nums">
                 {formatUsd(totalRaw)}
               </div>
-              <div className="text-[10px] text-slate-500 mt-1">
+              <div className="text-[10px] text-zinc-500 mt-1">
                 Pre-cap reference value
               </div>
             </div>
@@ -264,7 +264,7 @@ export default async function SetDetailPage({ params }: PageParams) {
           collection={data.collection}
         />
 
-        <footer className="flex flex-wrap items-center gap-3 text-xs text-slate-500 pt-4 border-t border-slate-800">
+        <footer className="flex flex-wrap items-center gap-3 text-xs text-zinc-500 pt-4 border-t border-zinc-800">
           <Link
             href="/analytics/methodology/sets"
             className="hover:text-violet-400 transition-colors"
@@ -273,7 +273,7 @@ export default async function SetDetailPage({ params }: PageParams) {
           </Link>
           {data.as_of ? (
             <>
-              <span className="text-slate-700">·</span>
+              <span className="text-zinc-700">·</span>
               <span>As of {new Date(data.as_of).toLocaleString()}</span>
             </>
           ) : null}

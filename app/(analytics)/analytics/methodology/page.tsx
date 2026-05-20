@@ -19,8 +19,8 @@ export default function MethodologyIndexPage() {
           <Book size={18} className="text-emerald-400" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-slate-50 tracking-tight">Methodology</h1>
-          <p className="text-sm text-slate-400">
+          <h1 className="text-2xl font-bold text-zinc-50 tracking-tight">Methodology</h1>
+          <p className="text-sm text-zinc-400">
             How every metric on Rip Packs City Analytics is computed.
           </p>
         </div>
@@ -31,17 +31,17 @@ export default function MethodologyIndexPage() {
           <Link
             key={m.slug}
             href={`/analytics/methodology/${m.slug}`}
-            className="group rounded-xl border border-slate-800 bg-slate-900/40 p-5 transition-all hover:border-emerald-500/40 hover:bg-slate-900/70"
+            className="group rounded-xl border border-zinc-800 bg-zinc-900/40 p-5 transition-all hover:border-emerald-500/40 hover:bg-zinc-900/70"
           >
             <div className="flex items-start justify-between mb-2">
-              <h2 className="font-semibold text-slate-100">{m.title}</h2>
+              <h2 className="font-semibold text-zinc-100">{m.title}</h2>
               <ArrowUpRight
                 size={14}
-                className="text-slate-600 group-hover:text-emerald-400 transition-colors mt-1"
+                className="text-zinc-600 group-hover:text-emerald-400 transition-colors mt-1"
               />
             </div>
-            <p className="text-sm text-slate-400 leading-relaxed mb-3">{m.blurb}</p>
-            <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+            <p className="text-sm text-zinc-400 leading-relaxed mb-3">{m.blurb}</p>
+            <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
               Refresh · {m.refresh}
             </div>
           </Link>

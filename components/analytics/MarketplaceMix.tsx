@@ -45,7 +45,7 @@ function fmtCount(n: number): string {
 export default function MarketplaceMix({ data }: MarketplaceMixProps) {
   if (!data || Object.keys(data).length === 0) {
     return (
-      <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-900/20 text-sm text-slate-500">
+      <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-zinc-800 bg-zinc-900/20 text-sm text-zinc-500">
         No marketplace activity in this window yet.
       </div>
     )
@@ -65,7 +65,7 @@ export default function MarketplaceMix({ data }: MarketplaceMixProps) {
   const total = Object.values(merged).reduce((acc, v) => acc + v.usd, 0)
   if (total <= 0) {
     return (
-      <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-900/20 text-sm text-slate-500">
+      <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-zinc-800 bg-zinc-900/20 text-sm text-zinc-500">
         No marketplace volume in this window yet.
       </div>
     )
@@ -95,18 +95,18 @@ export default function MarketplaceMix({ data }: MarketplaceMixProps) {
       label: "Other",
       count: otherCount,
       usd: otherUsd,
-      color: "#64748b",
-      className: "bg-slate-500",
+      color: "#71717a",
+      className: "bg-zinc-500",
     })
   }
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
       <div className="flex items-center justify-between mb-1">
-        <h2 className="text-lg font-semibold text-slate-100">Marketplace mix</h2>
-        <div className="text-xs text-slate-500 tabular-nums">{fmtUsd(total)} total</div>
+        <h2 className="text-lg font-semibold text-zinc-100">Marketplace mix</h2>
+        <div className="text-xs text-zinc-500 tabular-nums">{fmtUsd(total)} total</div>
       </div>
-      <p className="text-xs text-slate-500 mb-4">
+      <p className="text-xs text-zinc-500 mb-4">
         Where the volume came from. Top Shot’s centralized market, Flowty (NFTStorefrontV2 fork), and direct
         on-chain Pinnacle sales.
       </p>
@@ -126,23 +126,23 @@ export default function MarketplaceMix({ data }: MarketplaceMixProps) {
           return (
             <li
               key={s.key}
-              className="flex items-center gap-2.5 rounded-md border border-slate-800/60 bg-slate-950/40 px-3 py-2"
+              className="flex items-center gap-2.5 rounded-md border border-zinc-800/60 bg-zinc-950/40 px-3 py-2"
             >
               <span
                 className="h-2.5 w-2.5 flex-shrink-0 rounded-sm"
                 style={{ background: s.color }}
               />
               <div className="min-w-0 flex-1">
-                <div className="text-xs font-medium text-slate-200 truncate">{s.label}</div>
-                <div className="text-[10px] text-slate-500 tabular-nums">
+                <div className="text-xs font-medium text-zinc-200 truncate">{s.label}</div>
+                <div className="text-[10px] text-zinc-500 tabular-nums">
                   {fmtCount(s.count)} sales
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-sm font-semibold text-slate-100 tabular-nums">
+                <div className="text-sm font-semibold text-zinc-100 tabular-nums">
                   {fmtUsd(s.usd)}
                 </div>
-                <div className="text-[10px] text-slate-500 tabular-nums">{pct.toFixed(1)}%</div>
+                <div className="text-[10px] text-zinc-500 tabular-nums">{pct.toFixed(1)}%</div>
               </div>
             </li>
           )

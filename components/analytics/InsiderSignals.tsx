@@ -54,10 +54,10 @@ export default function InsiderSignals() {
   const { alerts, buybacks, announcements } = resp
 
   return (
-    <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+    <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
       <div className="mb-4 flex items-center gap-2">
         <ShieldAlert size={16} className="text-emerald-400" />
-        <h2 className="text-lg font-semibold text-slate-100">Insider Signals</h2>
+        <h2 className="text-lg font-semibold text-zinc-100">Insider Signals</h2>
         <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-amber-300 border border-amber-500/30">
           BETA
         </span>
@@ -66,29 +66,29 @@ export default function InsiderSignals() {
       <div className="grid gap-4 md:grid-cols-3">
         {/* Alerts */}
         <div>
-          <h3 className="mb-2 text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+          <h3 className="mb-2 text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
             Alerts
           </h3>
           {alerts.length === 0 ? (
-            <p className="text-[12px] text-slate-500">No active alerts.</p>
+            <p className="text-[12px] text-zinc-500">No active alerts.</p>
           ) : (
             <ul className="space-y-2">
               {alerts.map((a) => (
-                <li key={a.id} className="rounded border border-slate-800 bg-slate-950 p-2.5">
+                <li key={a.id} className="rounded border border-zinc-800 bg-zinc-950 p-2.5">
                   <div className="flex items-center gap-1.5">
                     <span
                       className="inline-block h-2 w-2 flex-shrink-0 rounded-full"
                       style={{ background: severityColor(a.severity) }}
                       aria-hidden
                     />
-                    <span className="text-sm font-semibold text-slate-100 truncate">
+                    <span className="text-sm font-semibold text-zinc-100 truncate">
                       {a.title ?? "Insider alert"}
                     </span>
                   </div>
                   {a.summary ? (
-                    <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">{a.summary}</p>
+                    <p className="mt-1 text-[11px] text-zinc-400 leading-relaxed">{a.summary}</p>
                   ) : null}
-                  <div className="mt-1 text-[10px] text-slate-500">{fmtRelative(a.generated_at)}</div>
+                  <div className="mt-1 text-[10px] text-zinc-500">{fmtRelative(a.generated_at)}</div>
                 </li>
               ))}
             </ul>
@@ -97,26 +97,26 @@ export default function InsiderSignals() {
 
         {/* Recent Buybacks */}
         <div>
-          <h3 className="mb-2 text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+          <h3 className="mb-2 text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
             Recent Buybacks
           </h3>
           {buybacks.length === 0 ? (
-            <p className="text-[12px] text-slate-500">No recent buybacks detected.</p>
+            <p className="text-[12px] text-zinc-500">No recent buybacks detected.</p>
           ) : (
             <ul className="space-y-2">
               {buybacks.map((b) => (
-                <li key={b.id} className="rounded border border-slate-800 bg-slate-950 p-2.5">
-                  <div className="text-sm font-semibold text-slate-100">Insider buyback detected</div>
-                  <div className="mt-1 truncate text-[11px] text-slate-400">
+                <li key={b.id} className="rounded border border-zinc-800 bg-zinc-950 p-2.5">
+                  <div className="text-sm font-semibold text-zinc-100">Insider buyback detected</div>
+                  <div className="mt-1 truncate text-[11px] text-zinc-400">
                     {b.player_name ?? "Unknown moment"}
-                    {b.set_name ? <span className="text-slate-500"> · {b.set_name}</span> : null}
-                    {b.serial_number ? <span className="text-slate-500"> · #{b.serial_number}</span> : null}
+                    {b.set_name ? <span className="text-zinc-500"> · {b.set_name}</span> : null}
+                    {b.serial_number ? <span className="text-zinc-500"> · #{b.serial_number}</span> : null}
                   </div>
                   <div className="mt-1 flex items-center justify-between">
                     <span className="text-[12px] font-bold text-white tabular-nums" style={{ fontFamily: "var(--font-mono)" }}>
                       {fmtUsd(b.price_usd)}
                     </span>
-                    <span className="text-[10px] text-slate-500">{fmtRelative(b.sold_at)}</span>
+                    <span className="text-[10px] text-zinc-500">{fmtRelative(b.sold_at)}</span>
                   </div>
                 </li>
               ))}
@@ -126,27 +126,27 @@ export default function InsiderSignals() {
 
         {/* External Announcements */}
         <div>
-          <h3 className="mb-2 text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+          <h3 className="mb-2 text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
             External Announcements
           </h3>
           {announcements.length === 0 ? (
-            <p className="text-[12px] text-slate-500">No recent announcements.</p>
+            <p className="text-[12px] text-zinc-500">No recent announcements.</p>
           ) : (
             <ul className="space-y-2">
               {announcements.map((a) => (
-                <li key={a.id} className="rounded border border-slate-800 bg-slate-950 p-2.5">
+                <li key={a.id} className="rounded border border-zinc-800 bg-zinc-950 p-2.5">
                   <div className="flex items-center gap-1.5">
                     {a.source ? (
-                      <span className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-slate-300">
+                      <span className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-zinc-300">
                         {a.source}
                       </span>
                     ) : null}
-                    <span className="text-sm font-semibold text-slate-100 truncate">
+                    <span className="text-sm font-semibold text-zinc-100 truncate">
                       {a.title ?? "Announcement"}
                     </span>
                   </div>
                   <div className="mt-1 flex items-center justify-between">
-                    <span className="text-[10px] text-slate-500">{fmtRelative(a.posted_at)}</span>
+                    <span className="text-[10px] text-zinc-500">{fmtRelative(a.posted_at)}</span>
                     {a.source_url ? (
                       <a
                         href={a.source_url}

@@ -136,8 +136,8 @@ const KIND_CONFIG: Record<PulseActivityKind, KindConfig> = {
   sale: {
     label: "Sale",
     icon: ShoppingCart,
-    className: "border-slate-700 bg-slate-800/40",
-    iconClassName: "text-slate-300",
+    className: "border-zinc-700 bg-zinc-800/40",
+    iconClassName: "text-zinc-300",
   },
 }
 
@@ -239,16 +239,16 @@ function HourlyTooltip({
 }) {
   if (!active || !payload || payload.length === 0) return null
   return (
-    <div className="rounded-md border border-slate-700 bg-slate-950/95 px-3 py-2 text-xs text-slate-200">
-      <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">
+    <div className="rounded-md border border-zinc-700 bg-zinc-950/95 px-3 py-2 text-xs text-zinc-200">
+      <div className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1">
         {label ?? ""} UTC
       </div>
       <div className="space-y-0.5">
         {payload.map((p, i) => (
           <div key={i} className="flex items-center gap-2">
             <span className="inline-block h-2 w-2 rounded" style={{ background: p.color }} />
-            <span className="text-slate-300">{p.name}</span>
-            <span className="ml-auto tabular-nums text-slate-100">
+            <span className="text-zinc-300">{p.name}</span>
+            <span className="ml-auto tabular-nums text-zinc-100">
               {formatNumber(Number(p.value) || 0)}
             </span>
           </div>
@@ -262,7 +262,7 @@ function HourlySparkline({ rows }: { rows: PulseHourlyRow[] }) {
   const points = useMemo(() => reshapeHourly(rows), [rows])
   if (!points || points.length === 0) {
     return (
-      <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-slate-800 bg-slate-900/20 text-xs text-slate-500">
+      <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-zinc-800 bg-zinc-900/20 text-xs text-zinc-500">
         Hourly buckets populate as activity arrives.
       </div>
     )
@@ -271,23 +271,23 @@ function HourlySparkline({ rows }: { rows: PulseHourlyRow[] }) {
     <div style={{ width: "100%", height: 128 }}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={points} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
           <XAxis
             dataKey="hourLabel"
-            tick={{ fill: "#64748b", fontSize: 10 }}
+            tick={{ fill: "#71717a", fontSize: 10 }}
             axisLine={false}
             tickLine={false}
             minTickGap={20}
           />
           <YAxis
-            tick={{ fill: "#64748b", fontSize: 10 }}
+            tick={{ fill: "#71717a", fontSize: 10 }}
             axisLine={false}
             tickLine={false}
             width={30}
           />
           <Tooltip content={<HourlyTooltip />} />
           <Legend
-            wrapperStyle={{ fontSize: 10, color: "#94a3b8" }}
+            wrapperStyle={{ fontSize: 10, color: "#a1a1aa" }}
             iconSize={8}
             verticalAlign="top"
             align="right"
@@ -319,7 +319,7 @@ function ActivityRow({
   return (
     <article
       className={
-        "flex items-start gap-3 rounded-lg border border-slate-800 bg-slate-900/40 p-3 transition-colors " +
+        "flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 transition-colors " +
         (isFresh ? "ring-1 ring-emerald-500/30 bg-emerald-500/5" : "")
       }
     >
@@ -333,56 +333,56 @@ function ActivityRow({
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <p className="text-sm text-slate-100 font-medium">{summary}</p>
+          <p className="text-sm text-zinc-100 font-medium">{summary}</p>
           {anon ? (
-            <span className="rounded border border-slate-700 px-1.5 py-px text-[9px] uppercase tracking-wider font-semibold text-slate-400">
+            <span className="rounded border border-zinc-700 px-1.5 py-px text-[9px] uppercase tracking-wider font-semibold text-zinc-400">
               Centralized · anon
             </span>
           ) : null}
         </div>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 mt-1">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-500 mt-1">
           <span>{relativeFromNow(row.occurred_at)}</span>
           {!anon && row.primary_addr ? (
             <span className="flex items-center gap-1">
-              <span className="text-slate-600">addr</span>
+              <span className="text-zinc-600">addr</span>
               {isLinkableAddr(row.primary_addr) ? (
                 <Link
                   href={`/analytics/wallets/${row.primary_addr}`}
-                  className="font-mono text-slate-300 hover:text-emerald-400 transition-colors"
+                  className="font-mono text-zinc-300 hover:text-emerald-400 transition-colors"
                 >
                   {truncateAddr(row.primary_addr)}
                 </Link>
               ) : (
-                <span className="font-mono text-slate-400">{truncateAddr(row.primary_addr)}</span>
+                <span className="font-mono text-zinc-400">{truncateAddr(row.primary_addr)}</span>
               )}
             </span>
           ) : null}
           {!anon && row.counterparty ? (
             <span className="flex items-center gap-1">
-              <span className="text-slate-600">cp</span>
+              <span className="text-zinc-600">cp</span>
               {isLinkableAddr(row.counterparty) ? (
                 <Link
                   href={`/analytics/wallets/${row.counterparty}`}
-                  className="font-mono text-slate-300 hover:text-emerald-400 transition-colors"
+                  className="font-mono text-zinc-300 hover:text-emerald-400 transition-colors"
                 >
                   {truncateAddr(row.counterparty)}
                 </Link>
               ) : (
-                <span className="font-mono text-slate-400">{truncateAddr(row.counterparty)}</span>
+                <span className="font-mono text-zinc-400">{truncateAddr(row.counterparty)}</span>
               )}
             </span>
           ) : null}
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
-            className="ml-auto inline-flex items-center gap-0.5 text-slate-500 hover:text-emerald-400 transition-colors"
+            className="ml-auto inline-flex items-center gap-0.5 text-zinc-500 hover:text-emerald-400 transition-colors"
           >
             {open ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
             details
           </button>
         </div>
         {open ? (
-          <pre className="mt-2 overflow-x-auto rounded border border-slate-800 bg-slate-950/80 p-2 text-[10px] text-slate-400 font-mono">
+          <pre className="mt-2 overflow-x-auto rounded border border-zinc-800 bg-zinc-950/80 p-2 text-[10px] text-zinc-400 font-mono">
             {JSON.stringify(row.details ?? {}, null, 2)}
           </pre>
         ) : null}
@@ -547,11 +547,11 @@ export default function PulseDashboard() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="flex items-center gap-2 mb-1.5">
-              <h1 className="text-2xl font-bold text-slate-50 tracking-tight">
+              <h1 className="text-2xl font-bold text-zinc-50 tracking-tight">
                 Pulse — Live Flow NFT Activity
               </h1>
               <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
@@ -562,7 +562,7 @@ export default function PulseDashboard() {
                 Live
               </span>
             </div>
-            <p className="text-sm text-slate-400 max-w-2xl">
+            <p className="text-sm text-zinc-400 max-w-2xl">
               Real-time transaction stream across loans, sales, and listings on the Flow blockchain.
               Refreshes automatically every {Math.round(REFRESH_MS / 1000)} seconds.
             </p>
@@ -577,7 +577,7 @@ export default function PulseDashboard() {
               "rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
               (activeCollections.length === 0
                 ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-                : "border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-200")
+                : "border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200")
             }
           >
             All collections
@@ -593,7 +593,7 @@ export default function PulseDashboard() {
                   "rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
                   (active
                     ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-                    : "border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-200")
+                    : "border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200")
                 }
               >
                 {c.label}
@@ -644,7 +644,7 @@ export default function PulseDashboard() {
       </section>
 
       {/* "as_of" caption */}
-      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
         <span className="inline-flex items-center gap-1.5">
           <span className="relative flex h-1.5 w-1.5">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
@@ -652,16 +652,16 @@ export default function PulseDashboard() {
           </span>
           Updated {relativeFromNow(prior?.as_of ?? new Date(tickRefreshedAt).toISOString())}
         </span>
-        <span className="text-slate-700">·</span>
+        <span className="text-zinc-700">·</span>
         <span>{loading ? "Refreshing…" : "Auto-refresh on"}</span>
       </div>
 
       {/* Hourly sparkline */}
-      <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h2 className="text-sm font-semibold text-slate-100">Last 24 hours</h2>
-            <p className="text-xs text-slate-500">Hourly buckets · sales vs loans</p>
+            <h2 className="text-sm font-semibold text-zinc-100">Last 24 hours</h2>
+            <p className="text-xs text-zinc-500">Hourly buckets · sales vs loans</p>
           </div>
         </div>
         <HourlySparkline rows={hourly} />
@@ -682,7 +682,7 @@ export default function PulseDashboard() {
                     "rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
                     (active
                       ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-                      : "border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-200")
+                      : "border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200")
                   }
                 >
                   {f.label}
@@ -690,8 +690,8 @@ export default function PulseDashboard() {
               )
             })}
           </div>
-          <label className="flex items-center gap-2 text-xs text-slate-400">
-            <span className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+          <label className="flex items-center gap-2 text-xs text-zinc-400">
+            <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
               Min size
             </span>
             <input
@@ -700,14 +700,14 @@ export default function PulseDashboard() {
               value={minSize}
               onChange={(e) => setMinSize(e.target.value)}
               placeholder="$"
-              className="w-20 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-200 placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none"
+              className="w-20 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500/50 focus:outline-none"
             />
           </label>
         </div>
 
-        <div className="rounded-lg border border-slate-800 bg-amber-950/10 border-amber-900/30 p-3 flex items-start gap-2 mb-3">
+        <div className="rounded-lg border border-zinc-800 bg-amber-950/10 border-amber-900/30 p-3 flex items-start gap-2 mb-3">
           <Info size={14} className="text-amber-400 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-slate-300 leading-relaxed">
+          <p className="text-xs text-zinc-300 leading-relaxed">
             Top Shot marketplace sales appear without buyer/seller wallets — that marketplace doesn&apos;t
             expose participant addresses. Prices and volume are accurate; counterparty data is only
             available for Flowty + Pinnacle.{" "}
@@ -722,7 +722,7 @@ export default function PulseDashboard() {
 
         <div className="space-y-2">
           {visibleActivity.length === 0 ? (
-            <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-slate-800 bg-slate-900/20 text-sm text-slate-500">
+            <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-zinc-800 bg-zinc-900/20 text-sm text-zinc-500">
               {loading ? "Loading activity…" : "No events match the current filters."}
             </div>
           ) : (
@@ -735,12 +735,12 @@ export default function PulseDashboard() {
       </section>
 
       {/* Footer */}
-      <footer className="flex flex-wrap items-center gap-3 text-xs text-slate-500 pt-4 border-t border-slate-800">
+      <footer className="flex flex-wrap items-center gap-3 text-xs text-zinc-500 pt-4 border-t border-zinc-800">
         <span className="inline-flex items-center gap-1.5">
           <ArrowUp size={12} className="text-emerald-500" />
           Most recent first
         </span>
-        <span className="text-slate-700">·</span>
+        <span className="text-zinc-700">·</span>
         <Link
           href="/analytics/methodology/pulse"
           className="hover:text-emerald-400 transition-colors inline-flex items-center gap-1"
@@ -748,7 +748,7 @@ export default function PulseDashboard() {
           <BarChart3 size={12} />
           Methodology
         </Link>
-        <span className="text-slate-700">·</span>
+        <span className="text-zinc-700">·</span>
         <span className="inline-flex items-center gap-1.5">
           <ArrowDown size={12} />
           Older events scroll off after 100

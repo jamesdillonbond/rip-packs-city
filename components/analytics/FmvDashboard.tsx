@@ -50,12 +50,12 @@ const LIMIT_OPTIONS = [25, 50, 100]
 
 const TIER_ORDER = ["Common", "Fandom", "Rare", "Legendary", "Ultimate"]
 const TIER_COLOR: Record<string, string> = {
-  Common: "#94A3B8",
+  Common: "#a1a1aa",
   Fandom: "#60A5FA",
   Rare: "#22D3EE",
   Legendary: "#F59E0B",
   Ultimate: "#F43F5E",
-  Other: "#475569",
+  Other: "#52525b",
 }
 
 const CONFIDENCE_STYLE: Record<
@@ -72,7 +72,7 @@ const CONFIDENCE_STYLE: Record<
   },
   LOW: {
     label: "Low",
-    cls: "border-slate-600 bg-slate-800/60 text-slate-300",
+    cls: "border-zinc-600 bg-zinc-800/60 text-zinc-300",
   },
   ASK_ONLY: {
     label: "Ask only",
@@ -129,7 +129,7 @@ function formatMinutesAgo(mins: number | null | undefined): string {
 }
 
 function ConfidenceBadge({ value }: { value: FmvConfidence | null }) {
-  if (!value) return <span className="text-slate-600">—</span>
+  if (!value) return <span className="text-zinc-600">—</span>
   const s = CONFIDENCE_STYLE[value] ?? CONFIDENCE_STYLE.LOW
   return (
     <span
@@ -152,11 +152,11 @@ function PipelineHealthPanel({
 }) {
   const label = COLLECTION_LABEL[collectionKey] ?? collectionKey
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6">
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
       <div className="flex items-start justify-between gap-3 mb-4">
         <div>
-          <h3 className="text-base font-semibold text-slate-100">{label}</h3>
-          <p className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mt-0.5">
+          <h3 className="text-base font-semibold text-zinc-100">{label}</h3>
+          <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold mt-0.5">
             Updated {formatMinutesAgo(stats.minutes_since_refresh)}
           </p>
         </div>
@@ -164,13 +164,13 @@ function PipelineHealthPanel({
       </div>
 
       <div className="mb-1">
-        <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mb-1">
+        <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold mb-1">
           Reliable total FMV
         </div>
-        <div className="text-4xl font-bold text-slate-50 tabular-nums leading-none">
+        <div className="text-4xl font-bold text-zinc-50 tabular-nums leading-none">
           {formatUsd(stats.reliable_total_fmv_usd)}
         </div>
-        <div className="text-xs text-slate-400 mt-2">
+        <div className="text-xs text-zinc-400 mt-2">
           Avg {formatUsd(stats.reliable_avg_fmv_usd)} per edition · {formatNumber(stats.editions_total)} editions tracked
         </div>
       </div>
@@ -182,7 +182,7 @@ function PipelineHealthPanel({
         <span className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[10px] uppercase tracking-wider font-semibold text-amber-400">
           {formatNumber(stats.medium_confidence)} Med
         </span>
-        <span className="rounded border border-slate-600 bg-slate-800/60 px-2 py-1 text-[10px] uppercase tracking-wider font-semibold text-slate-300">
+        <span className="rounded border border-zinc-600 bg-zinc-800/60 px-2 py-1 text-[10px] uppercase tracking-wider font-semibold text-zinc-300">
           {formatNumber(stats.low_confidence)} Low
         </span>
         <span
@@ -219,8 +219,8 @@ function TopMoversTable({
 }) {
   if (rows.length === 0) {
     return (
-      <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-8 text-center">
-        <p className="text-sm text-slate-500">
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-8 text-center">
+        <p className="text-sm text-zinc-500">
           {loading
             ? "Loading movers…"
             : "No significant movers in this window — try a longer time range or lower min FMV floor."}
@@ -230,11 +230,11 @@ function TopMoversTable({
   }
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 overflow-hidden">
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-[10px] uppercase tracking-widest text-slate-500 font-semibold border-b border-slate-800 bg-slate-900/60">
+            <tr className="text-left text-[10px] uppercase tracking-widest text-zinc-500 font-semibold border-b border-zinc-800 bg-zinc-900/60">
               <th className="py-2.5 px-4">#</th>
               <th className="py-2.5 px-3">Collection</th>
               <th className="py-2.5 px-3">Edition</th>
@@ -256,10 +256,10 @@ function TopMoversTable({
               const linkable = UUID_RE.test(row.edition_id || "")
               const editionLabel = (
                 <div className="flex flex-col leading-tight">
-                  <span className="text-slate-100 font-medium">
+                  <span className="text-zinc-100 font-medium">
                     {row.player_name || "—"}
                   </span>
-                  <span className="text-[11px] text-slate-500">
+                  <span className="text-[11px] text-zinc-500">
                     {row.set_name || "—"}
                   </span>
                 </div>
@@ -268,13 +268,13 @@ function TopMoversTable({
               return (
                 <tr
                   key={row.edition_id}
-                  className="border-b border-slate-800/60 hover:bg-slate-900/40 transition-colors"
+                  className="border-b border-zinc-800/60 hover:bg-zinc-900/40 transition-colors"
                 >
-                  <td className="py-3 px-4 text-slate-500 tabular-nums">
+                  <td className="py-3 px-4 text-zinc-500 tabular-nums">
                     {row.rank}
                   </td>
                   <td className="py-3 px-3">
-                    <span className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wider font-semibold text-slate-300">
+                    <span className="rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wider font-semibold text-zinc-300">
                       {collectionLabel}
                     </span>
                   </td>
@@ -290,10 +290,10 @@ function TopMoversTable({
                       editionLabel
                     )}
                   </td>
-                  <td className="py-3 px-3 text-right text-slate-100 font-semibold tabular-nums">
+                  <td className="py-3 px-3 text-right text-zinc-100 font-semibold tabular-nums">
                     {formatUsd(row.current_fmv_usd)}
                   </td>
-                  <td className="py-3 px-3 text-right text-slate-400 tabular-nums">
+                  <td className="py-3 px-3 text-right text-zinc-400 tabular-nums">
                     {formatUsd(row.prior_fmv_usd)}
                   </td>
                   <td
@@ -318,7 +318,7 @@ function TopMoversTable({
                   <td className="py-3 px-3">
                     <ConfidenceBadge value={row.current_confidence} />
                   </td>
-                  <td className="py-3 px-3 text-right text-slate-300 tabular-nums">
+                  <td className="py-3 px-3 text-right text-zinc-300 tabular-nums">
                     <span className="inline-flex items-center gap-1.5">
                       {isThinData ? (
                         <span
@@ -356,8 +356,8 @@ function TierPulseSection({ rows }: { rows: FmvTierPulseRow[] }) {
 
   if (byCollection.size === 0) {
     return (
-      <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-8 text-center">
-        <p className="text-sm text-slate-500">No tier data available.</p>
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-8 text-center">
+        <p className="text-sm text-zinc-500">No tier data available.</p>
       </div>
     )
   }
@@ -392,25 +392,25 @@ function TierPulseSection({ rows }: { rows: FmvTierPulseRow[] }) {
         return (
           <div
             key={collectionKey}
-            className="rounded-xl border border-slate-800 bg-slate-900/40 p-6"
+            className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6"
           >
             <div className="flex items-baseline justify-between mb-4">
-              <h3 className="text-base font-semibold text-slate-100">{label}</h3>
-              <span className="text-xs text-slate-500">
+              <h3 className="text-base font-semibold text-zinc-100">{label}</h3>
+              <span className="text-xs text-zinc-500">
                 {formatUsd(total)} total reliable FMV
               </span>
             </div>
 
             {/* Stacked bar */}
             <div className="mb-3">
-              <div className="flex h-8 w-full overflow-hidden rounded-md border border-slate-800">
+              <div className="flex h-8 w-full overflow-hidden rounded-md border border-zinc-800">
                 {visible.map((r) => {
                   const pct = total > 0 ? (r.total_fmv_usd / total) * 100 : 0
                   if (pct <= 0) return null
                   return (
                     <div
                       key={r.tier ?? "Other"}
-                      className="flex items-center justify-center text-[10px] font-semibold text-slate-900"
+                      className="flex items-center justify-center text-[10px] font-semibold text-zinc-900"
                       style={{
                         width: `${pct}%`,
                         backgroundColor:
@@ -427,7 +427,7 @@ function TierPulseSection({ rows }: { rows: FmvTierPulseRow[] }) {
                 {visible.map((r) => (
                   <div
                     key={r.tier ?? "Other"}
-                    className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold text-slate-400"
+                    className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold text-zinc-400"
                   >
                     <span
                       className="inline-block h-2 w-2 rounded-sm"
@@ -446,7 +446,7 @@ function TierPulseSection({ rows }: { rows: FmvTierPulseRow[] }) {
             <div className="overflow-x-auto mt-4">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-[10px] uppercase tracking-widest text-slate-500 font-semibold border-b border-slate-800">
+                  <tr className="text-left text-[10px] uppercase tracking-widest text-zinc-500 font-semibold border-b border-zinc-800">
                     <th className="py-2 pr-3">Tier</th>
                     <th className="py-2 pr-3 text-right">Editions</th>
                     <th className="py-2 pr-3 text-right">Total FMV</th>
@@ -464,7 +464,7 @@ function TierPulseSection({ rows }: { rows: FmvTierPulseRow[] }) {
                     return (
                       <tr
                         key={r.tier ?? "Other"}
-                        className="border-b border-slate-800/60"
+                        className="border-b border-zinc-800/60"
                       >
                         <td className="py-2 pr-3">
                           <span className="inline-flex items-center gap-2">
@@ -476,24 +476,24 @@ function TierPulseSection({ rows }: { rows: FmvTierPulseRow[] }) {
                                   TIER_COLOR.Other,
                               }}
                             />
-                            <span className="text-slate-200 font-medium">
+                            <span className="text-zinc-200 font-medium">
                               {r.tier ?? "Other"}
                             </span>
                           </span>
                         </td>
-                        <td className="py-2 pr-3 text-right text-slate-300 tabular-nums">
+                        <td className="py-2 pr-3 text-right text-zinc-300 tabular-nums">
                           {formatNumber(r.edition_count)}
                         </td>
-                        <td className="py-2 pr-3 text-right text-slate-100 tabular-nums">
+                        <td className="py-2 pr-3 text-right text-zinc-100 tabular-nums">
                           {formatUsd(r.total_fmv_usd)}
                         </td>
-                        <td className="py-2 pr-3 text-right text-slate-300 tabular-nums">
+                        <td className="py-2 pr-3 text-right text-zinc-300 tabular-nums">
                           {formatUsd(r.avg_fmv_usd)}
                         </td>
-                        <td className="py-2 pr-3 text-right text-slate-300 tabular-nums">
+                        <td className="py-2 pr-3 text-right text-zinc-300 tabular-nums">
                           {formatUsd(r.median_fmv_usd)}
                         </td>
-                        <td className="py-2 pr-0 text-right text-slate-300 tabular-nums">
+                        <td className="py-2 pr-0 text-right text-zinc-300 tabular-nums">
                           {formatPct(pctHigh, 0)}
                         </td>
                       </tr>
@@ -614,20 +614,20 @@ export default function FmvDashboard() {
   return (
     <div className="space-y-10">
       {/* Header + filter chips */}
-      <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6">
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-bold text-slate-50 tracking-tight">
+          <h1 className="text-2xl font-bold text-zinc-50 tracking-tight">
             FMV Index — Fair Market Value Across Flow NFTs
           </h1>
-          <p className="text-sm text-slate-400 max-w-2xl">
+          <p className="text-sm text-zinc-400 max-w-2xl">
             Algorithmic pricing across Top Shot, All Day, Pinnacle, Golazos, and UFC Strike editions.
             Refreshes every 10 minutes.
           </p>
         </div>
 
-        <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950/50 p-3 flex items-start gap-2">
+        <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-950/50 p-3 flex items-start gap-2">
           <Info size={14} className="text-teal-400 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-slate-400 leading-relaxed">
+          <p className="text-xs text-zinc-400 leading-relaxed">
             Aggregates exclude{" "}
             <code className="font-mono text-rose-300">ASK_ONLY</code> confidence
             editions (unsold inventory with farming-tier asks).{" "}
@@ -649,7 +649,7 @@ export default function FmvDashboard() {
               "rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
               (activeCollections.length === 0
                 ? "border-teal-500/40 bg-teal-500/10 text-teal-400"
-                : "border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-200")
+                : "border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200")
             }
           >
             All collections
@@ -665,7 +665,7 @@ export default function FmvDashboard() {
                   "rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
                   (active
                     ? "border-teal-500/40 bg-teal-500/10 text-teal-400"
-                    : "border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-200")
+                    : "border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200")
                 }
               >
                 {c.label}
@@ -678,17 +678,17 @@ export default function FmvDashboard() {
       {/* Pipeline health */}
       <section>
         <div className="mb-4">
-          <h2 className="text-lg font-semibold text-slate-100">Pipeline health</h2>
-          <p className="text-xs text-slate-500">
+          <h2 className="text-lg font-semibold text-zinc-100">Pipeline health</h2>
+          <p className="text-xs text-zinc-500">
             Per-collection confidence breakdown and refresh state
           </p>
         </div>
         {healthLoading && !health ? (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-8 text-center text-sm text-slate-500">
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-8 text-center text-sm text-zinc-500">
             Loading pipeline health…
           </div>
         ) : healthEntries.length === 0 ? (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-8 text-center text-sm text-slate-500">
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-8 text-center text-sm text-zinc-500">
             No pipeline data available.
           </div>
         ) : (
@@ -709,16 +709,16 @@ export default function FmvDashboard() {
       <section>
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-slate-100">Top movers</h2>
-            <p className="text-xs text-slate-500">
+            <h2 className="text-lg font-semibold text-zinc-100">Top movers</h2>
+            <p className="text-xs text-zinc-500">
               Editions with the largest FMV changes in the selected window
             </p>
           </div>
         </div>
 
         {/* Filters */}
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:flex-wrap">
-          <div className="inline-flex rounded-md border border-slate-800 bg-slate-950 p-0.5">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:flex-wrap">
+          <div className="inline-flex rounded-md border border-zinc-800 bg-zinc-950 p-0.5">
             <button
               type="button"
               onClick={() => setDirection("gainers")}
@@ -726,7 +726,7 @@ export default function FmvDashboard() {
                 "px-3 py-1.5 text-xs font-semibold rounded transition-colors inline-flex items-center gap-1.5 " +
                 (direction === "gainers"
                   ? "bg-emerald-500/15 text-emerald-400"
-                  : "text-slate-400 hover:text-slate-200")
+                  : "text-zinc-400 hover:text-zinc-200")
               }
             >
               <ArrowUp size={12} />
@@ -739,7 +739,7 @@ export default function FmvDashboard() {
                 "px-3 py-1.5 text-xs font-semibold rounded transition-colors inline-flex items-center gap-1.5 " +
                 (direction === "losers"
                   ? "bg-rose-500/15 text-rose-400"
-                  : "text-slate-400 hover:text-slate-200")
+                  : "text-zinc-400 hover:text-zinc-200")
               }
             >
               <ArrowDown size={12} />
@@ -748,10 +748,10 @@ export default function FmvDashboard() {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+            <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
               Window
             </span>
-            <div className="inline-flex rounded-md border border-slate-800 bg-slate-950 p-0.5">
+            <div className="inline-flex rounded-md border border-zinc-800 bg-zinc-950 p-0.5">
               {WINDOW_OPTIONS.map((opt) => (
                 <button
                   key={opt.value}
@@ -761,7 +761,7 @@ export default function FmvDashboard() {
                     "px-2.5 py-1 text-xs font-semibold rounded transition-colors " +
                     (windowDays === opt.value
                       ? "bg-teal-500/15 text-teal-400"
-                      : "text-slate-400 hover:text-slate-200")
+                      : "text-zinc-400 hover:text-zinc-200")
                   }
                 >
                   {opt.label}
@@ -773,7 +773,7 @@ export default function FmvDashboard() {
           <div className="flex items-center gap-2">
             <label
               htmlFor="fmv-min"
-              className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold"
+              className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold"
             >
               Min FMV
             </label>
@@ -781,7 +781,7 @@ export default function FmvDashboard() {
               id="fmv-min"
               value={minFmv}
               onChange={(e) => setMinFmv(Number(e.target.value))}
-              className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-teal-500/50"
+              className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm text-zinc-200 focus:outline-none focus:border-teal-500/50"
             >
               {MIN_FMV_OPTIONS.map((v) => (
                 <option key={v} value={v}>
@@ -794,7 +794,7 @@ export default function FmvDashboard() {
           <div className="flex items-center gap-2">
             <label
               htmlFor="fmv-limit"
-              className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold"
+              className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold"
             >
               Limit
             </label>
@@ -802,7 +802,7 @@ export default function FmvDashboard() {
               id="fmv-limit"
               value={limit}
               onChange={(e) => setLimit(Number(e.target.value))}
-              className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-teal-500/50"
+              className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm text-zinc-200 focus:outline-none focus:border-teal-500/50"
             >
               {LIMIT_OPTIONS.map((v) => (
                 <option key={v} value={v}>
@@ -824,13 +824,13 @@ export default function FmvDashboard() {
       {/* Tier pulse */}
       <section>
         <div className="mb-4">
-          <h2 className="text-lg font-semibold text-slate-100">Tier pulse</h2>
-          <p className="text-xs text-slate-500">
+          <h2 className="text-lg font-semibold text-zinc-100">Tier pulse</h2>
+          <p className="text-xs text-zinc-500">
             FMV distribution across rarity tiers per collection
           </p>
         </div>
         {tierLoading && !tierResp ? (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-8 text-center text-sm text-slate-500">
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-8 text-center text-sm text-zinc-500">
             Loading tier data…
           </div>
         ) : (
@@ -838,12 +838,12 @@ export default function FmvDashboard() {
         )}
       </section>
 
-      <footer className="flex flex-wrap items-center gap-3 text-xs text-slate-500 pt-4 border-t border-slate-800">
+      <footer className="flex flex-wrap items-center gap-3 text-xs text-zinc-500 pt-4 border-t border-zinc-800">
         <span className="inline-flex items-center gap-1.5">
           <TimerReset size={12} />
           Refreshes every 10 min
         </span>
-        <span className="text-slate-700">·</span>
+        <span className="text-zinc-700">·</span>
         <Link
           href="/analytics/methodology/fmv"
           className="hover:text-teal-400 transition-colors inline-flex items-center gap-1"
@@ -853,7 +853,7 @@ export default function FmvDashboard() {
         </Link>
         {health?.as_of ? (
           <>
-            <span className="text-slate-700">·</span>
+            <span className="text-zinc-700">·</span>
             <span>
               Pipeline as of {new Date(health.as_of).toLocaleString()}
             </span>

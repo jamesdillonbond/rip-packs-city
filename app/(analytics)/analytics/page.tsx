@@ -384,16 +384,16 @@ export default async function AnalyticsOverviewPage() {
   return (
     <div className="space-y-10">
       {/* Hero */}
-      <section className="rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 px-6 py-8 sm:px-8 sm:py-10">
+      <section className="rounded-xl border border-zinc-800 bg-gradient-to-br from-zinc-900 to-zinc-950 px-6 py-8 sm:px-8 sm:py-10">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-widest text-emerald-400 mb-2 font-semibold">
               Rip Packs City Analytics
             </div>
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-50 mb-3">
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-zinc-50 mb-3">
               Analytics
             </h1>
-            <p className="text-slate-300 max-w-2xl leading-relaxed">
+            <p className="text-zinc-300 max-w-2xl leading-relaxed">
               Comprehensive on-chain analytics across Flow&apos;s largest digital collectibles
               platforms. Loan books, sales, listings, wallet cohorts, and FMV indices —
               updated continuously from chain events.
@@ -408,14 +408,14 @@ export default async function AnalyticsOverviewPage() {
 
       {/* Section grid */}
       <section>
-        <h2 className="text-lg font-semibold text-slate-100 mb-4">Sections</h2>
+        <h2 className="text-lg font-semibold text-zinc-100 mb-4">Sections</h2>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {cards.map((c) => {
             const Icon = c.icon
             return (
               <div
                 key={c.href}
-                className="group relative rounded-xl border border-slate-800 bg-slate-900/40 p-5 transition-all hover:border-emerald-500/40 hover:bg-slate-900/70"
+                className="group relative rounded-xl border border-zinc-800 bg-zinc-900/40 p-5 transition-all hover:border-emerald-500/40 hover:bg-zinc-900/70"
               >
                 <Link href={c.href} className="block">
                   <div className="flex items-start gap-3 mb-3">
@@ -424,7 +424,7 @@ export default async function AnalyticsOverviewPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <h3 className="font-semibold text-slate-100">{c.label}</h3>
+                        <h3 className="font-semibold text-zinc-100">{c.label}</h3>
                         <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-emerald-400 border border-emerald-500/30">
                           Live
                         </span>
@@ -432,20 +432,20 @@ export default async function AnalyticsOverviewPage() {
                     </div>
                     <ArrowUpRight
                       size={14}
-                      className="text-slate-600 group-hover:text-emerald-400 transition-colors"
+                      className="text-zinc-600 group-hover:text-emerald-400 transition-colors"
                     />
                   </div>
-                  <p className="text-sm leading-relaxed mb-3 text-slate-400">
+                  <p className="text-sm leading-relaxed mb-3 text-zinc-400">
                     {c.description}
                   </p>
                   {c.metrics ? (
-                    <div className="flex gap-4 pt-3 border-t border-slate-800/80">
+                    <div className="flex gap-4 pt-3 border-t border-zinc-800/80">
                       {c.metrics.map((m) => (
                         <div key={m.label}>
-                          <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+                          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
                             {m.label}
                           </div>
-                          <div className="text-base font-semibold tabular-nums text-slate-100">
+                          <div className="text-base font-semibold tabular-nums text-zinc-100">
                             {m.value}
                           </div>
                         </div>
@@ -456,7 +456,7 @@ export default async function AnalyticsOverviewPage() {
                 {c.methodologyTopic ? (
                   <Link
                     href={`/analytics/methodology/${c.methodologyTopic}`}
-                    className="mt-3 inline-block text-[11px] uppercase tracking-widest text-slate-500 hover:text-emerald-300 transition-colors"
+                    className="mt-3 inline-block text-[11px] uppercase tracking-widest text-zinc-500 hover:text-emerald-300 transition-colors"
                   >
                     Methodology →
                   </Link>
@@ -472,15 +472,15 @@ export default async function AnalyticsOverviewPage() {
 
       {/* Recent updates timeline */}
       <section>
-        <h2 className="text-lg font-semibold text-slate-100 mb-4">Recent updates</h2>
-        <ol className="relative border-l border-slate-800 pl-6 space-y-4">
+        <h2 className="text-lg font-semibold text-zinc-100 mb-4">Recent updates</h2>
+        <ol className="relative border-l border-zinc-800 pl-6 space-y-4">
           {TIMELINE.map((t) => (
             <li key={t.date} className="relative">
-              <span className="absolute -left-[27px] top-1.5 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-slate-950" />
-              <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+              <span className="absolute -left-[27px] top-1.5 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-zinc-950" />
+              <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
                 {t.date}
               </div>
-              <div className="text-sm text-slate-200">{t.title}</div>
+              <div className="text-sm text-zinc-200">{t.title}</div>
             </li>
           ))}
         </ol>
