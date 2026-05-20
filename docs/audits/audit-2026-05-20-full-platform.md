@@ -37,11 +37,11 @@ Nothing here is an emergency, but items 1–5 are worth scheduling deliberately.
 | F8 | High | Brand | Analytics section uses a different design system than the rest of the app | Open |
 | F9 | High | Eng | Git working tree wedged — 269-file CRLF churn + stale `index.lock` | **Partially fixed — `.gitattributes` policy added** |
 | F10 | Medium | DB | Connection-pool exhaustion across ~8 pipelines | Open |
-| F11 | Medium | DB | FMV quality thin — 49% `NO_DATA`, 2.5% `HIGH`; "100% coverage" is misleading | Open |
+| F11 | Medium | DB | FMV quality thin — 49% `NO_DATA`, 2.5% `HIGH`; "100% coverage" is misleading | **Metric fixed (May 20 follow-up) — coverage now counts priced editions only; HIGH-confidence investment still open** |
 | F12 | Medium | DB | ~920 Top Shot editions missing on-chain IDs; ~1,036 missing thumbnails | Open |
 | F13 | Medium | DB | `editions.collection` text column drift vs `collection_id` (~590 rows) | Open |
-| F14 | Medium | UI | AllDay collection page P&L row shows inconsistent "Current FMV" | Open |
-| F15 | Medium | UI | Disney Pinnacle collection page — Wallet FMV blank despite 181 pins loaded | Open |
+| F14 | Medium | UI | AllDay collection page P&L row shows inconsistent "Current FMV" | **Fixed (May 20 follow-up) — binds cost-basis-subset FMV** |
+| F15 | Medium | UI | Disney Pinnacle collection page — Wallet FMV blank despite 181 pins loaded | **Fixed (May 20 follow-up) — RPC column fix + route shape adapters** |
 | F16 | Medium | Brand | `disney-pinnacle/` split-brain route (static override + dynamic) | Open |
 | F17 | Medium | Brand | `panini-blockchain/` dead, unpublished, off-platform route reachable in prod | **Fixed — redirect added** |
 | F18 | Medium | Brand | `global-error.tsx` off-brand (orange, not RPC red) | **Fixed** |

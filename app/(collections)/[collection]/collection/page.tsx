@@ -475,6 +475,7 @@ export default function WalletPage() {
     locked_fmv: number
     locked_count: number
     cost_basis: number
+    current_fmv: number
     pnl: number
   } | null>(null)
   const [walletSummaryLoading, setWalletSummaryLoading] = useState(false)
@@ -1154,6 +1155,7 @@ export default function WalletPage() {
             locked_fmv: Number(json.locked_fmv) || 0,
             locked_count: Number(json.locked_count) || 0,
             cost_basis: Number(json.cost_basis) || 0,
+            current_fmv: Number(json.current_fmv) || 0,
             pnl: Number(json.pnl) || 0,
           })
           if (typeof json.wallet_fmv === "number" && json.wallet_fmv > 0) {
@@ -1769,7 +1771,7 @@ export default function WalletPage() {
           let count = 0
           if (walletSummary && walletSummary.cost_basis > 0) {
             totalCost = walletSummary.cost_basis
-            totalFmv = walletSummary.wallet_fmv
+            totalFmv = walletSummary.current_fmv
             totalPl = walletSummary.pnl
             for (const row of rows) {
               const cb = costBasis.get(row.flowId ?? "")
