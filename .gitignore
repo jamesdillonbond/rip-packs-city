@@ -88,3 +88,9 @@ sweep-*.log
 
 # Worker package-lock.json files — workers manage their own deps inline
 workers/**/package-lock.json
+
+# one-off harvest fixtures / scratch dumps (audit 2026-05-20 - git rm --cached, then delete)
+livetoken-portfolio*.json
+test-gql.json
+sniper.json
+/Invoke-RestMethod

@@ -153,7 +153,10 @@ export default function ListingsDashboard() {
 
   const loanOffers = summary?.loan_offers
   const orderbook = summary?.topshot_orderbook
-  const marketplace = summary?.marketplace_listings ?? []
+  // Audit 2026-05-20: analytics_listings_summary RPC can return marketplace_listings
+  // as {} (not []) when empty; ?? [] only catches null/undefined, so .map would throw.
+  const marketplaceRaw = summary?.marketplace_listings
+  const marketplace = Array.isArray(marketplaceRaw) ? marketplaceRaw : []
   const sortOption = SORT_OPTIONS.find((o) => o.value === sort) ?? SORT_OPTIONS[0]
 
   return (

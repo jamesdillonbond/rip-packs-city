@@ -49,6 +49,10 @@ const SYNC_MAX_DURATION_MS = 270_000
 const SYNC_ROUND_TRIP_CAP_DEFAULT = 2
 const SYNC_ROUND_TRIP_CAP_BY_COLLECTION: Record<string, number> = {
   nfl_all_day: 4,
+  // Audit 2026-05-20 (F4): disney_pinnacle was the #1 dispatch-gap source (~134 fails/24h) -
+  // its sync child intermittently exceeds the per-round-trip timeout. Extended to 4 so
+  // intermittent-slow wallets get more checkpoint-resumed attempts (deeper fix = Pinnacle sync perf).
+  disney_pinnacle: 4,
 }
 const SYNC_ROUND_TRIP_CAP_MAX = 4
 function capFor(slug: string): number {
