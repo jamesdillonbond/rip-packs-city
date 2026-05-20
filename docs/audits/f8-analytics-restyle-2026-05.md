@@ -9,74 +9,89 @@ The analytics section reads as a different product: cool blue `slate` palette,
 the brand's `zinc`/black neutral, red accent, Barlow Condensed display font, and
 uppercase tracked labels.
 
-This is a multi-day epic. It is being done in phases so each phase is a safe,
-reviewable diff rather than one risky one-pass rewrite.
+Done in phases so each is a safe, reviewable diff rather than one risky rewrite.
 
 ---
 
-## Phase 1 — DONE (2026-05-20)
+## Phase 1 — DONE (commit `7727ac7`)
 
-The mechanical, zero-risk, fully tsc-verified part — done blind, safely, because
-every change is a same-scale 1:1 token substitution with no structural impact.
+- **`slate-*` → `zinc-*`** — 1,088 class tokens + 41 slate hex literals across
+  **39 files**. Pure same-scale hue shift to the brand neutral.
+- **`emerald` → brand red, navigation chrome** — `AnalyticsSidebar` active item
+  + `AnalyticsBreadcrumb` hover.
 
-- **`slate-*` → `zinc-*`** — 1,088 Tailwind class tokens + 41 slate hex literals,
-  across **39 files** in `app/(analytics)/` and `components/analytics/`. Every
-  `slate-N` step has an exact `zinc-N` counterpart, so this is a pure hue shift
-  from cool blue-grey to the brand neutral. Diff is 823 insertions / 823
-  deletions — perfectly balanced, no lines added or removed.
-- **`emerald` → brand red, navigation accent only** — `AnalyticsSidebar` active
-  item (5 tokens) and `AnalyticsBreadcrumb` hover (1 token). Both files are pure
-  navigation chrome with no data-semantic greens, so the swap is exact. The
-  active nav item now reads as brand red, consistent with the layout's existing
-  `text-red-500` wordmark.
+Verified live: sidebar active item renders brand red, palette is zinc-neutral,
+no breakage.
 
-`tsc --noEmit` passes clean. No structural, layout, or logic changes.
+## Phase 2 (partial) — DONE: the `/analytics` landing page
+
+- **`app/(analytics)/analytics/page.tsx`** — 11 `emerald-` → `red-`. All uses on
+  the hub page are decorative brand-accent (eyebrow label, nav-card hovers, icon
+  chip, "Live" badge, arrow, methodology link, changelog dot) — no data-semantic
+  greens, so a clean file-wide swap.
+- **`components/analytics/InsiderSignals.tsx`** — 3 `emerald-` → `red-` (the
+  `ShieldAlert` section icon and a link). The only analytics component the
+  landing page renders.
+
+The `/analytics` landing page is now fully brand-unified. `tsc` clean.
 
 ---
 
-## Phase 2 — REMAINING (needs a browser, signed in)
+## Phase 2 (remaining) — the 8 dashboard sub-pages
 
-Everything below is context-sensitive and should be done with the rendered pages
-open — it is not safe to do blind.
+~100 `emerald` tokens remain across the dashboard components. **They are NOT a
+mechanical swap** — emerald is data-semantic in many places (green = up / gain /
+healthy / live). Below is the per-occurrence classification so the next pass is
+deliberate. Do it **one screen at a time** (each dashboard is one route + one
+component) so no screen is left with a mixed accent.
 
-### 1. The other ~206 `emerald` tokens (~1 day)
+### KEEP green — data-semantic (do NOT convert)
 
-`emerald` still appears ~206× across the dashboard components. These are **mixed
-intent** and must be judged per occurrence:
+| File:line | Why |
+|---|---|
+| `KpiCard.tsx:41` | `positive ? emerald : rose` — delta sign |
+| `FmvDashboard.tsx:302,311` | `positive ? emerald : rose` — delta sign |
+| `LenderPerformanceTable.tsx:42` | `n > 0.01 ? emerald` — positive value |
+| `WalletProfile.tsx:890` | `isOutgoing ? rose : emerald` — transfer direction |
+| `EditionGrid.tsx:30`, `FmvDashboard.tsx:67` | HIGH-confidence tier color |
+| `HealthBar.tsx:34` | health-bar fill — green = healthy |
+| `PipelineHealthBadge.tsx:29,39` | healthy pipeline status |
+| `PulseDashboard.tsx:323,557-560,650-651,740` | live/fresh ping indicators, ArrowUp |
+| `PositionTransfersCard.tsx:77` | "Repaid" status — good outcome |
+| `MarketplaceMix.tsx:25`, `BiggestSales.tsx:50`, `LeaderboardTable.tsx:67,69` | categorical chart / collection-identity colors |
 
-- **Keep green** — data-semantic "up / positive / gain" indicators (positive
-  deltas, gainer rows, healthy-status pills). Green-for-up is correct universal
-  financial UI.
-- **Switch to red** — decorative brand-accent uses (section highlights, the
-  `KpiCard` default accent, non-semantic badges).
+### CONVERT → red — decorative brand-accent
 
-A blind global `emerald→red` would wrongly turn every "gain is green" into red.
-This needs a human pass.
+- **All `hover:` / `focus:` emerald states** (~25 occurrences, every dashboard) —
+  pure UI accent. Safe regex: `(hover|focus):([a-z]+-)emerald-` → `\1\2red-`.
+- **`KpiCard.tsx` accent system** — rename the `Accent` type member
+  `"emerald"` → `"red"`, the `ACCENT_BG` key, the `accent = "emerald"` default,
+  and the ~12 callers passing `accent="emerald"` (`LoansDashboard`,
+  `ListingsDashboard`, `SalesDashboard`, `PulseDashboard`, `WalletProfile`,
+  `WalletsHubOverview`). This makes the primary KPI accent brand red everywhere.
+- **Active / selected filter & tab states** — `FilterBar.tsx:95,114,130`,
+  `ListingsDashboard.tsx:183,199,295`, `PacksDashboard.tsx:204,220`,
+  `PulseDashboard.tsx:579,595,684`, `NetMarketplaceLeaderboard.tsx:84,104`.
+- **Non-conditional section icons** — `LoansDashboard.tsx:392` (ShieldCheck),
+  `NetMarketplaceLeaderboard.tsx:65` (TrendingUp), `WalletProfile.tsx:303`
+  (HandCoins), `SalesDashboard.tsx:368` / `LoansDashboard.tsx:601` (Activity).
+- **Section eyebrow labels** — `LoansDashboard.tsx:395`,
+  `WalletsHubOverview.tsx:233,273`.
+- **Decorative cards / dots** — `LoansDashboard.tsx:388` (emerald gradient
+  section card), `ComingSoon.tsx:17,37`.
 
-### 2. Typography — Barlow Condensed / Share Tech Mono (~1 day)
+### Needs a visual check (ambiguous)
 
-Analytics headings and labels render in the default sans. The brand uses
-`var(--font-display)` (Barlow Condensed) for display headings and
-`var(--font-mono)` (Share Tech Mono) for mono/tracked labels. Apply the brand
-fonts to the analytics heading/label scale (start with `KpiCard`, the dashboard
-section headers, and `AnalyticsSidebar` group titles).
+`FmvDashboard.tsx:179,728` — badge styling that may be confidence-related; decide
+with the page open.
 
-### 3. Sentence-case → uppercase copy (~0.5 day)
+### Remaining, not yet started
 
-Brand labels are uppercase with letter-spacing. Several analytics labels and
-section headers are sentence case. Cosmetic pass once typography lands.
-
-### 4. `--rpc-red` token purification (~0.5 day)
-
-Phase 1 (and the pre-existing analytics layout) use Tailwind `red-500`
-(`#ef4444`). The brand red is `var(--rpc-red)` (`#E03A2F`) — CLAUDE.md mandates
-the token, never a Tailwind/hex literal. Folding the analytics red onto the token
-should be done together with the broader brand-token cleanup epic (audit F8
-detail: `#E03A2F` hardcoded ~80×, brand fonts ~284×).
-
-### 5. Primitives — radius / spacing (~minor)
-
-`rounded-xl` / `rounded-md` etc. vs brand `var(--radius-*)`. Low priority.
+- **Typography** — Barlow Condensed display headings + Share Tech Mono labels
+  (~1 day).
+- **Sentence-case → uppercase copy** (~0.5 day).
+- **`--rpc-red` token purification** — Phase 1/2 use Tailwind `red-*`; the brand
+  red token is `var(--rpc-red)`. Fold into the global brand-token epic.
 
 ---
 
@@ -84,13 +99,10 @@ detail: `#E03A2F` hardcoded ~80×, brand fonts ~284×).
 
 | Phase | Effort | Status |
 |---|---|---|
-| 1 — palette + nav accent | ~0.5 day | **Done** |
-| 2.1 — emerald per-context pass | ~1 day | Open |
-| 2.2 — typography | ~1 day | Open |
-| 2.3 — copy casing | ~0.5 day | Open |
-| 2.4 — token purification | ~0.5 day | Open (fold into brand-token epic) |
+| 1 — palette + nav accent | ~0.5 day | **Done** (`7727ac7`) |
+| 2 — `/analytics` landing page | ~0.25 day | **Done** |
+| 2 — 8 dashboard sub-pages (emerald, per classification above) | ~1 day | Open |
+| 2 — typography | ~1 day | Open |
+| 2 — copy casing | ~0.5 day | Open |
+| 2 — `--rpc-red` token purification | ~0.5 day | Open (fold into brand-token epic) |
 | **Remaining total** | **~3 days** | |
-
-Phase 1 already removes the single most pervasive "different product" signal
-(the slate palette). Phase 2 is best tackled in one focused stretch with the
-analytics pages open in a browser for visual verification screen by screen.
