@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { computeConfidence, escalateConfidence } from "@/lib/fmv-confidence"
 
 // ── FMV Backfill Route ───────────────────────────────────────────────────────
 //
@@ -45,29 +46,8 @@ function weightedAveragePrice(sales: { price: number; soldAt: Date }[], now: Dat
   return totalWeight > 0 ? weightedSum / totalWeight : 0
 }
 
-function computeConfidence(salesCount: number): "HIGH" | "MEDIUM" | "LOW" {
-  if (salesCount >= 5) return "HIGH"
-  if (salesCount >= 2) return "MEDIUM"
-  return "LOW"
-}
-
-function escalateConfidence(
-  base: "HIGH" | "MEDIUM" | "LOW",
-  salesCount30d: number,
-  prices: number[]
-): "HIGH" | "MEDIUM" | "LOW" {
-  let confidence = base
-  if (confidence === "LOW" && salesCount30d >= 3) confidence = "MEDIUM"
-  if (confidence !== "HIGH" && salesCount30d >= 8 && prices.length >= 8) {
-    const mean = prices.reduce((a, b) => a + b, 0) / prices.length
-    if (mean > 0) {
-      const variance = prices.reduce((s, p) => s + (p - mean) ** 2, 0) / prices.length
-      const stddev = Math.sqrt(variance)
-      if (stddev / mean < 0.4) confidence = "HIGH"
-    }
-  }
-  return confidence
-}
+// FMV confidence-tier logic lives in lib/fmv-confidence.ts — shared with
+// fmv-recalc so the HIGH/MEDIUM/LOW thresholds stay consistent (audit F11).
 
 export async function POST(req: NextRequest) {
   const ingestToken = process.env.INGEST_SECRET_TOKEN

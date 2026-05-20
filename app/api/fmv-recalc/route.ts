@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import { applyAllFmvGuards } from "@/lib/fmv-phantom-guard"
+import { computeConfidence, escalateConfidence } from "@/lib/fmv-confidence"
 
 // ── FMV Recalc Route ──────────────────────────────────────────────────────────
 //
@@ -11,8 +12,8 @@ import { applyAllFmvGuards } from "@/lib/fmv-phantom-guard"
 // Model: trimmed median (drop bottom 10% + top 10% of prices per edition)
 // WAP: recency-weighted average price (7-day half-life exponential decay)
 // Window: 30 days
-// Confidence: HIGH >= 10 sales/30d, MEDIUM >= 5 sales/30d, otherwise LOW
-// algo_version: "1.3.0"
+// Confidence: HIGH = >=7 sales/30d AND price dispersion <40%; MEDIUM >=5 sales/30d; else LOW
+// algo_version: "1.7.0"
 //
 // Populates: fmv_usd, floor_price_usd, wap_usd, confidence,
 //            sales_count_7d (30d window), sales_count_30d, days_since_sale
@@ -25,7 +26,7 @@ import { applyAllFmvGuards } from "@/lib/fmv-phantom-guard"
 // Paginated — pass { offset, limit } in body to process in chunks.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ALGO_VERSION = "1.6.0"
+const ALGO_VERSION = "1.7.0"
 const WINDOW_DAYS = 30
 const DEFAULT_LIMIT = 500
 
@@ -102,56 +103,9 @@ function wapWithoutOutliers(sales: { price: number; soldAt: Date }[], now: Date)
   return weightedAveragePrice(filtered, now)
 }
 
-// Minimum 30-day sales counts required to assign HIGH / MEDIUM confidence.
-// Anything below MIN_SALES_30D_MEDIUM falls through to LOW so thin-evidence
-// editions (single sales, or stale sales > 30d) cannot be marketed as
-// reliable FMV.
-const MIN_SALES_30D_HIGH = 10
-const MIN_SALES_30D_MEDIUM = 5
-
-function computeConfidence(salesCount: number): "HIGH" | "MEDIUM" | "LOW" {
-  if (salesCount >= MIN_SALES_30D_HIGH) return "HIGH"
-  if (salesCount >= MIN_SALES_30D_MEDIUM) return "MEDIUM"
-  return "LOW"
-}
-
-// Upward-only confidence escalation based on price stability. Both HIGH and
-// MEDIUM still require their respective 30-day sales floors — escalation
-// cannot bypass the volume gate, only refine within it.
-function escalateConfidence(
-  base: "HIGH" | "MEDIUM" | "LOW",
-  salesCount30d: number,
-  prices: number[]
-): "HIGH" | "MEDIUM" | "LOW" {
-  let confidence = base
-
-  // Escalate LOW → MEDIUM only if the MEDIUM volume gate is met. (No-op in
-  // practice because computeConfidence already promotes here, but kept
-  // explicit so future tweaks to the base function do not silently regress.)
-  if (confidence === "LOW" && salesCount30d >= MIN_SALES_30D_MEDIUM) {
-    confidence = "MEDIUM"
-  }
-
-  // Escalate to HIGH only when the HIGH volume gate is met AND prices are
-  // tight (stddev < 40% of mean). Below MIN_SALES_30D_HIGH the edition stays
-  // at MEDIUM regardless of price stability.
-  if (
-    confidence !== "HIGH" &&
-    salesCount30d >= MIN_SALES_30D_HIGH &&
-    prices.length >= MIN_SALES_30D_HIGH
-  ) {
-    const mean = prices.reduce((a, b) => a + b, 0) / prices.length
-    if (mean > 0) {
-      const variance = prices.reduce((s, p) => s + (p - mean) ** 2, 0) / prices.length
-      const stddev = Math.sqrt(variance)
-      if (stddev / mean < 0.4) {
-        confidence = "HIGH"
-      }
-    }
-  }
-
-  return confidence
-}
+// FMV confidence-tier logic (computeConfidence / escalateConfidence) lives in
+// lib/fmv-confidence.ts — the single source of truth shared with fmv-backfill
+// so the HIGH/MEDIUM/LOW thresholds can never drift again (audit 2026-05-20 F11).
 
 export async function POST(req: NextRequest) {
   const ingestToken = process.env.INGEST_SECRET_TOKEN
