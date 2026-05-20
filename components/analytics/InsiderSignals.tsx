@@ -56,7 +56,7 @@ export default function InsiderSignals() {
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
       <div className="mb-4 flex items-center gap-2">
-        <ShieldAlert size={16} className="text-emerald-400" />
+        <ShieldAlert size={16} className="text-red-400" />
         <h2 className="text-lg font-semibold text-zinc-100">Insider Signals</h2>
         <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-amber-300 border border-amber-500/30">
           BETA
@@ -152,7 +152,7 @@ export default function InsiderSignals() {
                         href={a.source_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300"
+                        className="inline-flex items-center gap-1 text-[10px] text-red-400 hover:text-red-300"
                       >
                         Open <ExternalLink size={10} />
                       </a>
