@@ -41,10 +41,27 @@ export async function GET(req: NextRequest) {
       : typeof totalJson?.count === "number" ? totalJson.count
       : moments.length
 
-    const variants = Array.isArray(variantsRes?.data) ? variantsRes.data
-      : Array.isArray(variantsRes?.data?.variants) ? variantsRes.data.variants : []
-    const franchises = Array.isArray(franchisesRes?.data) ? franchisesRes.data
-      : Array.isArray(franchisesRes?.data?.franchises) ? franchisesRes.data.franchises : []
+    // get_pinnacle_variant_counts returns a JSON object { "<UPPERCASE TIER>": count }.
+    // The wallet page expects an array of { variant_type, count, total_fmv } and keys
+    // its colour/rank maps by Title-Case names, so normalise the casing here.
+    const toTitleCase = (s: string) => s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
+    const variantObj = variantsRes?.data && typeof variantsRes.data === "object" && !Array.isArray(variantsRes.data)
+      ? (variantsRes.data as Record<string, number>)
+      : {}
+    const variants = Object.entries(variantObj).map(([tier, count]) => ({
+      variant_type: toTitleCase(String(tier)),
+      count: Number(count) || 0,
+      total_fmv: null as number | null,
+    }))
+
+    // get_pinnacle_franchise_breakdown returns [{ franchise, pin_count, total_fmv }];
+    // the wallet page's FranchiseBucket expects `count`, not `pin_count`.
+    const franchisesRaw = Array.isArray(franchisesRes?.data) ? franchisesRes.data : []
+    const franchises = franchisesRaw.map((f: any) => ({
+      franchise: f?.franchise ?? "Unknown",
+      count: Number(f?.pin_count ?? f?.count) || 0,
+      total_fmv: f?.total_fmv ?? null,
+    }))
 
     // Pinnacle has no locking concept — every pin in wallet_moments_cache
     // for collection 7dd9dd11... has is_locked = false. Return null (not 0)
