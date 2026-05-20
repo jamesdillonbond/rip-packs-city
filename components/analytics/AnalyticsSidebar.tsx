@@ -90,8 +90,8 @@ function ItemRow({ item, pathname }: { item: NavItem; pathname: string }) {
       className={
         "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm border transition-colors " +
         (active
-          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-          : "text-slate-400 border-transparent hover:bg-slate-900/60 hover:text-slate-100")
+          ? "bg-red-500/10 text-red-400 border-red-500/20"
+          : "text-zinc-400 border-transparent hover:bg-zinc-900/60 hover:text-zinc-100")
       }
     >
       <Icon size={16} strokeWidth={2} />
@@ -101,8 +101,8 @@ function ItemRow({ item, pathname }: { item: NavItem; pathname: string }) {
           className={
             "rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold border " +
             (active
-              ? "border-emerald-500/40 text-emerald-300"
-              : "border-slate-700 text-slate-500")
+              ? "border-red-500/40 text-red-300"
+              : "border-zinc-700 text-zinc-500")
           }
         >
           {item.badge}
@@ -130,7 +130,7 @@ export default function AnalyticsSidebar() {
         {GROUPS.map((group, gi) => (
           <div key={gi} className="flex flex-col gap-1">
             {group.title ? (
-              <div className="px-3 py-1 text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+              <div className="px-3 py-1 text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
                 {group.title}
               </div>
             ) : null}
@@ -139,9 +139,9 @@ export default function AnalyticsSidebar() {
             ))}
           </div>
         ))}
-        <div className="my-2 border-t border-slate-800" />
+        <div className="my-2 border-t border-zinc-800" />
         <div className="flex flex-col gap-1">
-          <div className="px-3 py-1 text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+          <div className="px-3 py-1 text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
             Resources
           </div>
           {RESOURCES.map((item) => (

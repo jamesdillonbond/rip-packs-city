@@ -385,7 +385,7 @@ export default function LoansDashboard({
           The naming was previously "Limbo recovery cohort" which oversold
           what's actually a mostly-normal-repayment story plus 348 closures
           during Flowty's official Limbo grace period (Jan 30 – Feb 13). */}
-      <section className="rounded-xl border border-emerald-900/40 bg-gradient-to-br from-emerald-950/40 to-slate-950/40 p-5">
+      <section className="rounded-xl border border-emerald-900/40 bg-gradient-to-br from-emerald-950/40 to-zinc-950/40 p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex items-start gap-3 max-w-2xl">
             <div className="flex h-9 w-9 items-center justify-center rounded-md bg-emerald-500/10 border border-emerald-500/20 flex-shrink-0">
@@ -395,14 +395,14 @@ export default function LoansDashboard({
               <div className="text-[10px] uppercase tracking-widest text-emerald-400 font-semibold mb-1">
                 Pre-window loan closures
               </div>
-              <h2 className="text-lg font-semibold text-slate-100">
+              <h2 className="text-lg font-semibold text-zinc-100">
                 {totalPreWindow != null
                   ? `${formatNumber(totalPreWindow)} pre-window loan closures`
                   : "—"}
               </h2>
-              <p className="text-sm text-slate-400 mt-1 leading-relaxed">
+              <p className="text-sm text-zinc-400 mt-1 leading-relaxed">
                 Loans whose origination predates our scan window (Dec 29 2025). Includes{" "}
-                <span className="text-slate-200">
+                <span className="text-zinc-200">
                   {graceSettlements != null && graceRepayments != null
                     ? formatNumber(graceSettlements + graceRepayments)
                     : "—"}
@@ -410,7 +410,7 @@ export default function LoansDashboard({
                 closures during Flowty&apos;s official Limbo grace period (Jan 30 – Feb 13 2026).
               </p>
               {limboFreshnessLabel ? (
-                <p className="text-[11px] text-slate-500 mt-2 italic">
+                <p className="text-[11px] text-zinc-500 mt-2 italic">
                   Data freshness: {limboFreshnessLabel}.
                 </p>
               ) : null}
@@ -418,40 +418,40 @@ export default function LoansDashboard({
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 lg:flex-shrink-0 lg:max-w-xl">
             <div>
-              <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mb-1">
+              <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold mb-1">
                 Grace settlements
               </div>
               <div className="text-xl font-semibold text-rose-300 tabular-nums">
                 {graceSettlements != null ? formatNumber(graceSettlements) : "—"}
               </div>
-              <div className="text-[10px] text-slate-500 mt-0.5">platform recovery</div>
+              <div className="text-[10px] text-zinc-500 mt-0.5">platform recovery</div>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mb-1">
+              <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold mb-1">
                 Grace repayments
               </div>
               <div className="text-xl font-semibold text-emerald-300 tabular-nums">
                 {graceRepayments != null ? formatNumber(graceRepayments) : "—"}
               </div>
-              <div className="text-[10px] text-slate-500 mt-0.5">borrower-driven</div>
+              <div className="text-[10px] text-zinc-500 mt-0.5">borrower-driven</div>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mb-1">
+              <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold mb-1">
                 Pre-reopen repayments
               </div>
-              <div className="text-xl font-semibold text-slate-100 tabular-nums">
+              <div className="text-xl font-semibold text-zinc-100 tabular-nums">
                 {preReopenRepayments != null ? formatNumber(preReopenRepayments) : "—"}
               </div>
-              <div className="text-[10px] text-slate-500 mt-0.5">before Jan 30</div>
+              <div className="text-[10px] text-zinc-500 mt-0.5">before Jan 30</div>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mb-1">
+              <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold mb-1">
                 Repayment rate
               </div>
               <div className="text-xl font-semibold text-emerald-400 tabular-nums">
                 {limbo ? formatPct(limbo.repayment_rate_pct) : "—"}
               </div>
-              <div className="text-[10px] text-slate-500 mt-0.5">repaid / total</div>
+              <div className="text-[10px] text-zinc-500 mt-0.5">repaid / total</div>
             </div>
           </div>
         </div>
@@ -484,11 +484,11 @@ export default function LoansDashboard({
         ]}
       />
 
-      <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-slate-100">Volume over time</h2>
-            <p className="text-xs text-slate-500">
+            <h2 className="text-lg font-semibold text-zinc-100">Volume over time</h2>
+            <p className="text-xs text-zinc-500">
               {isPinned ? `${pinnedCollections.join(", ")} · ` : "Stacked by collection · "}
               {windowLabel}
             </p>
@@ -503,16 +503,16 @@ export default function LoansDashboard({
       </section>
 
       <section className="grid gap-6 lg:grid-cols-1 xl:grid-cols-2">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
-          <h2 className="text-lg font-semibold text-slate-100 mb-1">New wallet acquisition</h2>
-          <p className="text-xs text-slate-500 mb-4">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+          <h2 className="text-lg font-semibold text-zinc-100 mb-1">New wallet acquisition</h2>
+          <p className="text-xs text-zinc-500 mb-4">
             Weekly first-time lenders and borrowers · cumulative on right axis
           </p>
           <NewWalletsChart rows={newWallets?.rows ?? []} />
         </div>
         <div>
-          <h2 className="text-lg font-semibold text-slate-100 mb-1">Cohort activity</h2>
-          <p className="text-xs text-slate-500 mb-4">
+          <h2 className="text-lg font-semibold text-zinc-100 mb-1">Cohort activity</h2>
+          <p className="text-xs text-zinc-500 mb-4">
             Monthly cohorts · % of cohort active in subsequent months (not strict retention — wallets can return after a gap)
           </p>
           <CohortRetention rows={cohorts?.rows ?? []} />
@@ -521,7 +521,7 @@ export default function LoansDashboard({
 
       <section className="grid gap-6 lg:grid-cols-2">
         <div className="flex flex-col gap-3">
-          <div className="inline-flex self-start rounded-lg border border-slate-800 bg-slate-900/60 p-1 text-xs">
+          <div className="inline-flex self-start rounded-lg border border-zinc-800 bg-zinc-900/60 p-1 text-xs">
             <button
               type="button"
               onClick={() => setLenderTab("volume")}
@@ -529,7 +529,7 @@ export default function LoansDashboard({
                 "px-3 py-1.5 rounded-md transition-colors " +
                 (lenderTab === "volume"
                   ? "bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-semibold"
-                  : "text-slate-400 hover:text-slate-200")
+                  : "text-zinc-400 hover:text-zinc-200")
               }
             >
               Volume
@@ -541,7 +541,7 @@ export default function LoansDashboard({
                 "px-3 py-1.5 rounded-md transition-colors " +
                 (lenderTab === "yield"
                   ? "bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-semibold"
-                  : "text-slate-400 hover:text-slate-200")
+                  : "text-zinc-400 hover:text-zinc-200")
               }
             >
               Realized yield
@@ -596,12 +596,12 @@ export default function LoansDashboard({
         />
       )}
 
-      <footer className="flex flex-wrap items-center gap-3 text-xs text-slate-500 pt-2 border-t border-slate-800">
+      <footer className="flex flex-wrap items-center gap-3 text-xs text-zinc-500 pt-2 border-t border-zinc-800">
         <span className="inline-flex items-center gap-1.5">
           <Activity size={12} className="text-emerald-500" />
           {loading ? "Refreshing…" : refreshedAt ? `Refreshed ${new Date(refreshedAt).toLocaleTimeString()}` : "Idle"}
         </span>
-        <span className="text-slate-700">·</span>
+        <span className="text-zinc-700">·</span>
         <a
           href="/analytics/methodology/loans"
           className="hover:text-emerald-400 transition-colors inline-flex items-center gap-1"
@@ -609,12 +609,12 @@ export default function LoansDashboard({
           <Percent size={12} />
           Methodology
         </a>
-        <span className="text-slate-700">·</span>
+        <span className="text-zinc-700">·</span>
         <span className="inline-flex items-center gap-1.5">
           <CircleDollarSign size={12} />
           USD-pegged token volumes (USDCf, USDC, FUSD, TUSDT, DUC)
         </span>
-        <span className="text-slate-700">·</span>
+        <span className="text-zinc-700">·</span>
         <span className="inline-flex items-center gap-1.5">
           <TimerReset size={12} />
           10-min refresh

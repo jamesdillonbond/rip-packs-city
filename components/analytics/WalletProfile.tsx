@@ -51,7 +51,7 @@ const COLLECTION_COLORS: Record<string, string> = {
   golazos: "#f59e0b",
   pinnacle: "#a78bfa",
   ufc: "#fb7185",
-  other: "#64748b",
+  other: "#71717a",
 }
 
 function fmtUsd(n: number | null | undefined): string {
@@ -153,12 +153,12 @@ function statusBadge(status: string): { label: string; cls: string } {
   if (s === "canceled" || s === "cancelled") {
     return {
       label: "Cancelled",
-      cls: "border-slate-500/30 bg-slate-500/10 text-slate-400",
+      cls: "border-zinc-500/30 bg-zinc-500/10 text-zinc-400",
     }
   }
   return {
     label: status || "—",
-    cls: "border-slate-700 bg-slate-800/40 text-slate-400",
+    cls: "border-zinc-700 bg-zinc-800/40 text-zinc-400",
   }
 }
 
@@ -262,7 +262,7 @@ export default function WalletProfile({
         <WalletIdenticon addr={addr} size={64} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold text-slate-100">{display}</h1>
+            <h1 className="text-2xl font-bold text-zinc-100">{display}</h1>
             <span
               className={
                 "rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wider font-semibold " +
@@ -273,11 +273,11 @@ export default function WalletProfile({
             </span>
           </div>
           <div className="flex items-center gap-2 mt-1.5">
-            <code className="text-xs text-slate-400 font-mono break-all">{addr}</code>
+            <code className="text-xs text-zinc-400 font-mono break-all">{addr}</code>
             <button
               type="button"
               onClick={handleCopy}
-              className="inline-flex items-center gap-1 rounded border border-slate-700 bg-slate-900/40 px-1.5 py-0.5 text-[10px] text-slate-400 hover:border-emerald-500/40 hover:text-emerald-400 transition-colors"
+              className="inline-flex items-center gap-1 rounded border border-zinc-700 bg-zinc-900/40 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:border-emerald-500/40 hover:text-emerald-400 transition-colors"
               aria-label="Copy address"
             >
               <Copy size={10} />
@@ -287,7 +287,7 @@ export default function WalletProfile({
               href={`https://flowscan.io/account/${addr}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 rounded border border-slate-700 bg-slate-900/40 px-1.5 py-0.5 text-[10px] text-slate-400 hover:border-emerald-500/40 hover:text-emerald-400 transition-colors"
+              className="inline-flex items-center gap-1 rounded border border-zinc-700 bg-zinc-900/40 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:border-emerald-500/40 hover:text-emerald-400 transition-colors"
             >
               <ExternalLink size={10} />
               FlowScan
@@ -355,27 +355,27 @@ export default function WalletProfile({
         />
       ) : null}
 
-      <section className="rounded-xl border border-slate-800 bg-slate-900/40 overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b border-slate-800">
+      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b border-zinc-800">
           <div>
-            <h2 className="text-lg font-semibold text-slate-100">Recent loan activity</h2>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <h2 className="text-lg font-semibold text-zinc-100">Recent loan activity</h2>
+            <p className="text-xs text-zinc-500 mt-0.5">
               Last {Math.min(20, mergedLoans.length)} loans, newest first · click a row to expand
             </p>
           </div>
-          <span className="rounded border border-slate-700 bg-slate-800/40 px-2 py-0.5 text-[10px] uppercase tracking-wider font-semibold text-slate-400">
+          <span className="rounded border border-zinc-700 bg-zinc-800/40 px-2 py-0.5 text-[10px] uppercase tracking-wider font-semibold text-zinc-400">
             {mergedLoans.length} loans
           </span>
         </div>
         {mergedLoans.length === 0 ? (
-          <div className="p-8 text-center text-sm text-slate-500">
+          <div className="p-8 text-center text-sm text-zinc-500">
             No funded loans in this wallet&apos;s history.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[640px]">
               <thead>
-                <tr className="text-[10px] uppercase tracking-widest text-slate-500 border-b border-slate-800">
+                <tr className="text-[10px] uppercase tracking-widest text-zinc-500 border-b border-zinc-800">
                   <th className="py-2 px-3 text-left font-semibold">Collection</th>
                   <th className="py-2 px-3 text-left font-semibold">Side</th>
                   <th className="py-2 px-3 text-left font-semibold">Counterparty</th>
@@ -395,7 +395,7 @@ export default function WalletProfile({
                       key={key}
                       loan={loan}
                       collectionLabel={COLLECTION_LABEL[collKey] ?? collKey}
-                      collectionColor={COLLECTION_COLORS[collKey] ?? "#64748b"}
+                      collectionColor={COLLECTION_COLORS[collKey] ?? "#71717a"}
                       statusLabel={sb.label}
                       statusCls={sb.cls}
                       open={isOpen}
@@ -413,7 +413,7 @@ export default function WalletProfile({
         )}
       </section>
 
-      <footer className="flex flex-wrap items-center gap-3 text-xs text-slate-500 pt-2 border-t border-slate-800">
+      <footer className="flex flex-wrap items-center gap-3 text-xs text-zinc-500 pt-2 border-t border-zinc-800">
         <Link
           href="/analytics/wallets"
           className="inline-flex items-center gap-1 hover:text-emerald-400 transition-colors"
@@ -421,7 +421,7 @@ export default function WalletProfile({
           <Wallet size={12} />
           Wallet directory
         </Link>
-        <span className="text-slate-700">·</span>
+        <span className="text-zinc-700">·</span>
         <Link
           href="/analytics/loans"
           className="inline-flex items-center gap-1 hover:text-emerald-400 transition-colors"
@@ -429,7 +429,7 @@ export default function WalletProfile({
           <Activity size={12} />
           Loan analytics
         </Link>
-        <span className="text-slate-700">·</span>
+        <span className="text-zinc-700">·</span>
         <a
           href="/analytics/methodology/wallet-profiles"
           className="inline-flex items-center gap-1 hover:text-emerald-400 transition-colors"
@@ -451,16 +451,16 @@ interface KpiCellProps {
 
 function KpiCell({ label, value, sublabel, icon }: KpiCellProps) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
       <div className="mb-2">{icon}</div>
-      <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+      <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
         {label}
       </div>
-      <div className="text-xl font-bold text-slate-100 tabular-nums leading-tight mt-0.5">
+      <div className="text-xl font-bold text-zinc-100 tabular-nums leading-tight mt-0.5">
         {value}
       </div>
       {sublabel ? (
-        <div className="text-[11px] text-slate-500 mt-1">{sublabel}</div>
+        <div className="text-[11px] text-zinc-500 mt-1">{sublabel}</div>
       ) : null}
     </div>
   )
@@ -524,10 +524,10 @@ function RolePanel({
     : []
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-4">
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5 space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold text-slate-100">{title}</h2>
+          <h2 className="text-sm font-semibold text-zinc-100">{title}</h2>
           {preWindowOnly ? (
             <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-amber-400">
               Pre-window only
@@ -573,16 +573,16 @@ function RolePanel({
         )}
       </div>
 
-      <div className="flex items-center gap-2 pt-3 border-t border-slate-800/60 text-xs">
-        <Users size={12} className="text-slate-500" />
-        <span className="text-slate-400">
+      <div className="flex items-center gap-2 pt-3 border-t border-zinc-800/60 text-xs">
+        <Users size={12} className="text-zinc-500" />
+        <span className="text-zinc-400">
           {fmtNumber(uniqueCount)} {uniqueLabel.toLowerCase()}
         </span>
       </div>
 
       {collections.length > 0 ? (
-        <div className="space-y-1.5 pt-3 border-t border-slate-800/60">
-          <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+        <div className="space-y-1.5 pt-3 border-t border-zinc-800/60">
+          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
             Collection mix
           </div>
           {collections.map(([key, val]) => {
@@ -592,15 +592,15 @@ function RolePanel({
               <div key={key} className="flex items-center gap-2 text-xs">
                 <span
                   className="inline-block h-2 w-2 rounded"
-                  style={{ background: COLLECTION_COLORS[key.toLowerCase()] ?? "#64748b" }}
+                  style={{ background: COLLECTION_COLORS[key.toLowerCase()] ?? "#71717a" }}
                 />
-                <span className="text-slate-300">
+                <span className="text-zinc-300">
                   {COLLECTION_LABEL[key.toLowerCase()] ?? key}
                 </span>
-                <span className="ml-auto text-slate-400 tabular-nums">
+                <span className="ml-auto text-zinc-400 tabular-nums">
                   {fmtUsd(val?.principal_usd ?? 0)}
                 </span>
-                <span className="text-slate-500 tabular-nums w-12 text-right">
+                <span className="text-zinc-500 tabular-nums w-12 text-right">
                   {pct.toFixed(0)}%
                 </span>
               </div>
@@ -610,17 +610,17 @@ function RolePanel({
       ) : null}
 
       {limboCount > 0 ? (
-        <div className="rounded-lg border border-slate-800/60 bg-slate-950/40 p-3 text-xs space-y-1">
-          <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+        <div className="rounded-lg border border-zinc-800/60 bg-zinc-950/40 p-3 text-xs space-y-1">
+          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
             Pre-window activity
           </div>
-          <div className="text-slate-400">
+          <div className="text-zinc-400">
             {fmtNumber(limboCount)} loans whose origination predates our scan window — terminal
             events captured.
           </div>
-          <div className="flex items-center gap-3 text-slate-500 tabular-nums">
-            <span>Repaid: <span className="text-slate-300">{fmtNumber(limbo?.repaid_count ?? 0)}</span></span>
-            <span>Settled: <span className="text-slate-300">{fmtNumber(limbo?.settled_count ?? 0)}</span></span>
+          <div className="flex items-center gap-3 text-zinc-500 tabular-nums">
+            <span>Repaid: <span className="text-zinc-300">{fmtNumber(limbo?.repaid_count ?? 0)}</span></span>
+            <span>Settled: <span className="text-zinc-300">{fmtNumber(limbo?.settled_count ?? 0)}</span></span>
           </div>
         </div>
       ) : null}
@@ -638,10 +638,10 @@ function Cell({
   accent?: "rose"
 }) {
   const valueCls =
-    accent === "rose" ? "text-rose-300" : "text-slate-100"
+    accent === "rose" ? "text-rose-300" : "text-zinc-100"
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+      <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
         {label}
       </div>
       <div className={`text-base font-semibold tabular-nums ${valueCls}`}>
@@ -690,7 +690,7 @@ function RowGroup({
   return (
     <>
       <tr
-        className="border-b border-slate-800/40 last:border-b-0 cursor-pointer hover:bg-slate-900/40 transition-colors"
+        className="border-b border-zinc-800/40 last:border-b-0 cursor-pointer hover:bg-zinc-900/40 transition-colors"
         onClick={onToggle}
       >
         <td className="py-2.5 px-3">
@@ -699,7 +699,7 @@ function RowGroup({
               className="h-2.5 w-2.5 rounded"
               style={{ background: collectionColor }}
             />
-            <span className="text-slate-300 text-xs">{collectionLabel}</span>
+            <span className="text-zinc-300 text-xs">{collectionLabel}</span>
           </div>
         </td>
         <td className="py-2.5 px-3">
@@ -715,7 +715,7 @@ function RowGroup({
         <td className="py-2.5 px-3">
           <Link
             href={`/analytics/wallets/${loan.counterparty_addr}`}
-            className="text-slate-400 hover:text-emerald-400 transition-colors text-xs"
+            className="text-zinc-400 hover:text-emerald-400 transition-colors text-xs"
             onClick={(e) => e.stopPropagation()}
             title={loan.counterparty_addr}
           >
@@ -723,14 +723,14 @@ function RowGroup({
               className={
                 counterpartyDisplay === truncateAddress(loan.counterparty_addr)
                   ? "font-mono"
-                  : "font-medium text-slate-300"
+                  : "font-medium text-zinc-300"
               }
             >
               {counterpartyDisplay}
             </span>
           </Link>
         </td>
-        <td className="py-2.5 px-3 text-right text-slate-100 tabular-nums">
+        <td className="py-2.5 px-3 text-right text-zinc-100 tabular-nums">
           {fmtUsd(loan.principal_usd)}
         </td>
         <td className="py-2.5 px-3 text-center">
@@ -743,13 +743,13 @@ function RowGroup({
             {statusLabel}
           </span>
         </td>
-        <td className="py-2.5 px-3 text-right text-slate-400 tabular-nums text-xs">
+        <td className="py-2.5 px-3 text-right text-zinc-400 tabular-nums text-xs">
           {fmtRelative(loan.funded_at)}
         </td>
       </tr>
       {open ? (
-        <tr className="bg-slate-950/40 border-b border-slate-800/40">
-          <td colSpan={6} className="py-3 px-5 text-xs text-slate-400">
+        <tr className="bg-zinc-950/40 border-b border-zinc-800/40">
+          <td colSpan={6} className="py-3 px-5 text-xs text-zinc-400">
             <div className="grid gap-y-1 gap-x-6 sm:grid-cols-2 lg:grid-cols-4">
               <Detail label="Funded" value={fmtDate(loan.funded_at)} />
               <Detail label="Matures" value={fmtDate(loan.matures_at)} />
@@ -799,7 +799,7 @@ function PositionTransfersSection({
   )
 
   return (
-    <section className="rounded-xl border border-amber-900/40 bg-gradient-to-br from-amber-950/20 to-slate-950/40 overflow-hidden">
+    <section className="rounded-xl border border-amber-900/40 bg-gradient-to-br from-amber-950/20 to-zinc-950/40 overflow-hidden">
       <div className="flex items-center justify-between p-4 border-b border-amber-900/30">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-amber-500/10 border border-amber-500/20">
@@ -807,15 +807,15 @@ function PositionTransfersSection({
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <h2 className="text-lg font-semibold text-slate-100">Position transfers</h2>
+              <h2 className="text-lg font-semibold text-zinc-100">Position transfers</h2>
               <span
-                className="inline-flex items-center text-slate-500 hover:text-slate-300 cursor-help"
+                className="inline-flex items-center text-zinc-500 hover:text-zinc-300 cursor-help"
                 title="HybridCustody loans where this wallet was either the origination lender (transferred out) or settlement lender (transferred in). Reflects parent/child account reassignment within Flow's HybridCustody hierarchy."
               >
                 <HelpCircle size={12} />
               </span>
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-zinc-500 mt-0.5">
               Loans whose at-settlement lender differs from origination lender — almost always
               HybridCustody parent/child reassignment.
             </p>
@@ -884,11 +884,11 @@ function PositionTransferPanel({
   const title = isOutgoing ? "Transferred out" : "Transferred in"
 
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-4 space-y-3">
+    <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Icon size={14} className={isOutgoing ? "text-rose-400" : "text-emerald-400"} />
-          <h3 className="text-sm font-semibold text-slate-100">{title}</h3>
+          <h3 className="text-sm font-semibold text-zinc-100">{title}</h3>
         </div>
         <span
           className={
@@ -899,19 +899,19 @@ function PositionTransferPanel({
           {fmtNumber(count)} loans
         </span>
       </div>
-      <div className="flex items-baseline gap-2 text-slate-300 text-sm">
-        <span className="text-lg font-semibold tabular-nums text-slate-100">
+      <div className="flex items-baseline gap-2 text-zinc-300 text-sm">
+        <span className="text-lg font-semibold tabular-nums text-zinc-100">
           {fmtUsd(principal)}
         </span>
-        <span className="text-xs text-slate-500">{uniqueLabel}</span>
+        <span className="text-xs text-zinc-500">{uniqueLabel}</span>
       </div>
       {loans.length === 0 ? (
-        <div className="text-xs text-slate-500">No transfers in this direction.</div>
+        <div className="text-xs text-zinc-500">No transfers in this direction.</div>
       ) : (
         <div className="overflow-x-auto -mx-1">
           <table className="w-full text-xs min-w-[420px]">
             <thead>
-              <tr className="text-[9px] uppercase tracking-widest text-slate-500 border-b border-slate-800">
+              <tr className="text-[9px] uppercase tracking-widest text-zinc-500 border-b border-zinc-800">
                 <th className="py-1.5 px-2 text-left font-semibold">Collection</th>
                 <th className="py-1.5 px-2 text-left font-semibold">
                   {isOutgoing ? "Recipient" : "Origin"}
@@ -932,17 +932,17 @@ function PositionTransferPanel({
                 return (
                   <tr
                     key={`${loan.listing_resource_id}-${idx}`}
-                    className="border-b border-slate-800/40 last:border-b-0"
+                    className="border-b border-zinc-800/40 last:border-b-0"
                   >
                     <td className="py-1.5 px-2">
                       <div className="flex items-center gap-1.5">
                         <span
                           className="h-2 w-2 rounded"
                           style={{
-                            background: COLLECTION_COLORS[collKey] ?? "#64748b",
+                            background: COLLECTION_COLORS[collKey] ?? "#71717a",
                           }}
                         />
-                        <span className="text-slate-300">
+                        <span className="text-zinc-300">
                           {COLLECTION_LABEL[collKey] ?? loan.collection}
                         </span>
                       </div>
@@ -950,7 +950,7 @@ function PositionTransferPanel({
                     <td className="py-1.5 px-2">
                       <Link
                         href={`/analytics/wallets/${otherAddr}`}
-                        className="text-slate-400 hover:text-emerald-400 transition-colors"
+                        className="text-zinc-400 hover:text-emerald-400 transition-colors"
                         title={otherAddr}
                       >
                         {resolveDisplayName(otherAddr, names)}
@@ -959,13 +959,13 @@ function PositionTransferPanel({
                     <td className="py-1.5 px-2">
                       <Link
                         href={`/analytics/wallets/${loan.borrower_addr}`}
-                        className="text-slate-400 hover:text-emerald-400 transition-colors"
+                        className="text-zinc-400 hover:text-emerald-400 transition-colors"
                         title={loan.borrower_addr}
                       >
                         {resolveDisplayName(loan.borrower_addr, names)}
                       </Link>
                     </td>
-                    <td className="py-1.5 px-2 text-right text-slate-100 tabular-nums">
+                    <td className="py-1.5 px-2 text-right text-zinc-100 tabular-nums">
                       {fmtUsd(loan.principal_usd)}
                     </td>
                     <td className="py-1.5 px-2 text-center">
@@ -978,7 +978,7 @@ function PositionTransferPanel({
                         {sb.label}
                       </span>
                     </td>
-                    <td className="py-1.5 px-2 text-right text-slate-400 tabular-nums">
+                    <td className="py-1.5 px-2 text-right text-zinc-400 tabular-nums">
                       {fmtRelative(loan.funded_at)}
                     </td>
                   </tr>
@@ -1003,12 +1003,12 @@ function Detail({
 }) {
   return (
     <div className="flex items-baseline gap-2 min-w-0">
-      <span className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold flex-shrink-0">
+      <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold flex-shrink-0">
         {label}
       </span>
       <span
         className={
-          "text-slate-300 truncate " + (mono ? "font-mono text-[11px]" : "")
+          "text-zinc-300 truncate " + (mono ? "font-mono text-[11px]" : "")
         }
       >
         {value}

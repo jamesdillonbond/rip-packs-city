@@ -37,8 +37,8 @@ function CustomTooltip({
 }) {
   if (!active || !payload || payload.length === 0) return null
   return (
-    <div className="rounded-md border border-slate-700 bg-slate-950/95 px-3 py-2 text-xs text-slate-200">
-      <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">
+    <div className="rounded-md border border-zinc-700 bg-zinc-950/95 px-3 py-2 text-xs text-zinc-200">
+      <div className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1">
         Week of {label}
       </div>
       <div className="space-y-1">
@@ -48,8 +48,8 @@ function CustomTooltip({
               className="inline-block h-2 w-2 rounded"
               style={{ background: p.color }}
             />
-            <span className="text-slate-400">{p.name}</span>
-            <span className="ml-auto tabular-nums text-slate-200">
+            <span className="text-zinc-400">{p.name}</span>
+            <span className="ml-auto tabular-nums text-zinc-200">
               {Number(p.value).toLocaleString()}
             </span>
           </div>
@@ -62,7 +62,7 @@ function CustomTooltip({
 export default function NewWalletsChart({ rows, height = 320 }: NewWalletsChartProps) {
   if (!rows || rows.length === 0) {
     return (
-      <div className="flex h-80 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-900/20 text-sm text-slate-500">
+      <div className="flex h-80 items-center justify-center rounded-xl border border-dashed border-zinc-800 bg-zinc-900/20 text-sm text-zinc-500">
         No new-wallet data yet — populating as loan history arrives.
       </div>
     )
@@ -77,16 +77,16 @@ export default function NewWalletsChart({ rows, height = 320 }: NewWalletsChartP
     <div style={{ width: "100%", height }}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
           <XAxis
             dataKey="week"
-            tick={{ fill: "#64748b", fontSize: 11 }}
+            tick={{ fill: "#71717a", fontSize: 11 }}
             axisLine={false}
             tickLine={false}
           />
           <YAxis
             yAxisId="left"
-            tick={{ fill: "#64748b", fontSize: 11 }}
+            tick={{ fill: "#71717a", fontSize: 11 }}
             axisLine={false}
             tickLine={false}
             width={32}
@@ -94,7 +94,7 @@ export default function NewWalletsChart({ rows, height = 320 }: NewWalletsChartP
           <YAxis
             yAxisId="right"
             orientation="right"
-            tick={{ fill: "#64748b", fontSize: 11 }}
+            tick={{ fill: "#71717a", fontSize: 11 }}
             axisLine={false}
             tickLine={false}
             width={40}
@@ -133,7 +133,7 @@ export default function NewWalletsChart({ rows, height = 320 }: NewWalletsChartP
                 key={ev.date}
                 x={ev.date}
                 yAxisId="left"
-                stroke="#475569"
+                stroke="#52525b"
                 strokeDasharray="4 4"
               />
             )

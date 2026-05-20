@@ -90,11 +90,11 @@ function CustomTooltip({
   if (!active || !payload || payload.length === 0) return null
   const total = payload.reduce((acc, p) => acc + (Number(p.value) || 0), 0)
   return (
-    <div className="rounded-md border border-slate-700 bg-slate-950/95 px-3 py-2 text-xs text-slate-200">
-      <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">
+    <div className="rounded-md border border-zinc-700 bg-zinc-950/95 px-3 py-2 text-xs text-zinc-200">
+      <div className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1">
         {label ? fmtDateShort(label, true) : ""}
       </div>
-      <div className="font-semibold text-slate-50 mb-1.5">{fmtUsd(total)}</div>
+      <div className="font-semibold text-zinc-50 mb-1.5">{fmtUsd(total)}</div>
       <div className="space-y-1">
         {payload.map((p, i) => (
           <div key={i} className="flex items-center gap-2">
@@ -102,8 +102,8 @@ function CustomTooltip({
               className="inline-block h-2 w-2 rounded"
               style={{ background: p.color }}
             />
-            <span className="capitalize text-slate-400">{p.name}</span>
-            <span className="ml-auto tabular-nums text-slate-200">
+            <span className="capitalize text-zinc-400">{p.name}</span>
+            <span className="ml-auto tabular-nums text-zinc-200">
               {fmtUsd(Number(p.value) || 0)}
             </span>
           </div>
@@ -167,7 +167,7 @@ export default function VolumeChart({
 
   if (!points || points.length === 0) {
     return (
-      <div className="flex h-80 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-900/20 text-sm text-slate-500">
+      <div className="flex h-80 items-center justify-center rounded-xl border border-dashed border-zinc-800 bg-zinc-900/20 text-sm text-zinc-500">
         Backfill in progress — chart populates as loan history arrives.
       </div>
     )
@@ -205,17 +205,17 @@ export default function VolumeChart({
               </linearGradient>
             ))}
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
           <XAxis
             dataKey="date"
-            tick={{ fill: "#64748b", fontSize: 11 }}
+            tick={{ fill: "#71717a", fontSize: 11 }}
             axisLine={false}
             tickLine={false}
             tickFormatter={tickFormatter}
             minTickGap={24}
           />
           <YAxis
-            tick={{ fill: "#64748b", fontSize: 11 }}
+            tick={{ fill: "#71717a", fontSize: 11 }}
             axisLine={false}
             tickLine={false}
             tickFormatter={(v) => fmtUsd(Number(v))}
@@ -254,14 +254,14 @@ export default function VolumeChart({
               <ReferenceLine
                 key={ev.date}
                 x={ev.date}
-                stroke="#64748b"
+                stroke="#71717a"
                 strokeDasharray="4 4"
                 strokeWidth={1}
                 ifOverflow="extendDomain"
                 label={{
                   value: ev.label,
                   position: "top",
-                  fill: "#94a3b8",
+                  fill: "#a1a1aa",
                   fontSize: 10,
                   offset: 6,
                 }}
@@ -271,7 +271,7 @@ export default function VolumeChart({
         </AreaChart>
       </ResponsiveContainer>
       {weekly ? (
-        <div className="text-[10px] text-slate-500 mt-1.5 text-right">Bucketed by week</div>
+        <div className="text-[10px] text-zinc-500 mt-1.5 text-right">Bucketed by week</div>
       ) : null}
     </div>
   )

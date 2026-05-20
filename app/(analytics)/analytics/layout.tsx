@@ -12,7 +12,7 @@ import AnalyticsBreadcrumb from "@/components/analytics/AnalyticsBreadcrumb"
 
 export default function AnalyticsLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100">
       <SiteHeader />
       <div className="mx-auto w-full max-w-[1440px] px-4 lg:px-6 py-6 flex gap-8">
         <AnalyticsSidebar />
@@ -31,7 +31,7 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
 function SiteHeader() {
   return (
     <header
-      className="sticky top-0 z-50 border-b border-slate-800/60 bg-slate-950/95 backdrop-blur"
+      className="sticky top-0 z-50 border-b border-zinc-800/60 bg-zinc-950/95 backdrop-blur"
     >
       <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-4 px-5">
         <Link href="/" className="flex flex-shrink-0 items-center gap-2.5 no-underline">

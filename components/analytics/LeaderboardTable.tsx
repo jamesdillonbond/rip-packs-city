@@ -87,11 +87,11 @@ export default function LeaderboardTable({ rows, role, window }: LeaderboardTabl
   const resolved = useResolveUsernames(addrs)
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 flex flex-col">
-      <div className="flex items-center justify-between p-4 border-b border-slate-800">
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 flex flex-col">
+      <div className="flex items-center justify-between p-4 border-b border-zinc-800">
         <div>
-          <h3 className="font-semibold text-slate-100">{TITLE[role]}</h3>
-          <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mt-0.5">
+          <h3 className="font-semibold text-zinc-100">{TITLE[role]}</h3>
+          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold mt-0.5">
             {window}
           </div>
         </div>
@@ -103,13 +103,13 @@ export default function LeaderboardTable({ rows, role, window }: LeaderboardTabl
       </div>
       <div className="overflow-y-auto" style={{ maxHeight: 420 }}>
         {rows.length === 0 ? (
-          <div className="p-6 text-center text-sm text-slate-500">
+          <div className="p-6 text-center text-sm text-zinc-500">
             No {role} activity in this window yet.
           </div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-slate-900/80 backdrop-blur">
-              <tr className="text-[10px] uppercase tracking-widest text-slate-500 border-b border-slate-800">
+            <thead className="sticky top-0 bg-zinc-900/80 backdrop-blur">
+              <tr className="text-[10px] uppercase tracking-widest text-zinc-500 border-b border-zinc-800">
                 <th className="py-2 px-3 text-left font-semibold w-8">#</th>
                 <th className="py-2 px-3 text-left font-semibold">Wallet</th>
                 <th className="py-2 px-3 text-right font-semibold">{COUNT_LABEL[role]}</th>
@@ -128,24 +128,24 @@ export default function LeaderboardTable({ rows, role, window }: LeaderboardTabl
                   (r.username && r.username !== truncated ? r.username : null) ||
                   truncated
                 return (
-                <tr key={r.addr} className="border-b border-slate-800/40 last:border-b-0">
-                  <td className="py-2.5 px-3 text-slate-500 tabular-nums">{r.rank}</td>
+                <tr key={r.addr} className="border-b border-zinc-800/40 last:border-b-0">
+                  <td className="py-2.5 px-3 text-zinc-500 tabular-nums">{r.rank}</td>
                   <td className="py-2.5 px-3">
                     <div className="flex items-center gap-2 min-w-0">
                       <span
-                        className="h-5 w-5 rounded-full flex-shrink-0 ring-1 ring-slate-700"
+                        className="h-5 w-5 rounded-full flex-shrink-0 ring-1 ring-zinc-700"
                         style={{ background: identicon(r.addr) }}
                       />
                       <div className="min-w-0">
                         <Link
                           href={`/analytics/wallets/${r.addr}`}
-                          className="text-slate-200 truncate hover:text-emerald-400 transition-colors block"
+                          className="text-zinc-200 truncate hover:text-emerald-400 transition-colors block"
                           title={r.addr}
                         >
                           {display}
                         </Link>
                         {display !== truncated ? (
-                          <div className="text-[10px] text-slate-500 font-mono truncate">
+                          <div className="text-[10px] text-zinc-500 font-mono truncate">
                             {truncated}
                           </div>
                         ) : null}
@@ -157,10 +157,10 @@ export default function LeaderboardTable({ rows, role, window }: LeaderboardTabl
                       ) : null}
                     </div>
                   </td>
-                  <td className="py-2.5 px-3 text-right text-slate-300 tabular-nums">
+                  <td className="py-2.5 px-3 text-right text-zinc-300 tabular-nums">
                     {activityCount(r)}
                   </td>
-                  <td className="py-2.5 px-3 text-right text-slate-100 tabular-nums font-medium">
+                  <td className="py-2.5 px-3 text-right text-zinc-100 tabular-nums font-medium">
                     {formatUsd(volumeUsd(r))}
                   </td>
                 </tr>

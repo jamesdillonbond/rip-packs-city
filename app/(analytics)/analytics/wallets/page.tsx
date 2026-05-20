@@ -115,10 +115,10 @@ export default async function WalletsIndexPage() {
       />
       <div className="space-y-10">
         <header className="space-y-2">
-          <h1 className="text-2xl font-bold text-slate-100">
+          <h1 className="text-2xl font-bold text-zinc-100">
             Wallets — Loan-Book Lender &amp; Borrower Hub
           </h1>
-          <p className="text-sm text-slate-400 max-w-2xl">
+          <p className="text-sm text-zinc-400 max-w-2xl">
             Every wallet active on the Flowty NFT-collateralized loan book, with a
             hub-level view of segments, role splits, and activity recency above
             the per-wallet directory.
@@ -131,33 +131,33 @@ export default async function WalletsIndexPage() {
 
         <div className="space-y-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-100">
+            <h2 className="text-lg font-semibold text-zinc-100">
               Wallet directory
             </h2>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-zinc-500">
               Per-wallet detail — sorted by total volume. Each profile is a
               standalone page with role-specific stats and recent loan activity.
             </p>
           </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 overflow-hidden">
-          <div className="flex items-center justify-between p-4 border-b border-slate-800">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 overflow-hidden">
+          <div className="flex items-center justify-between p-4 border-b border-zinc-800">
             <div className="flex items-center gap-2">
               <Wallet size={16} className="text-emerald-400" />
-              <span className="text-sm font-semibold text-slate-100">
+              <span className="text-sm font-semibold text-zinc-100">
                 {enriched.length} wallets
               </span>
             </div>
           </div>
           {enriched.length === 0 ? (
-            <div className="p-8 text-center text-sm text-slate-500">
+            <div className="p-8 text-center text-sm text-zinc-500">
               No wallet activity to display.
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[640px]">
                 <thead>
-                  <tr className="text-[10px] uppercase tracking-widest text-slate-500 border-b border-slate-800">
+                  <tr className="text-[10px] uppercase tracking-widest text-zinc-500 border-b border-zinc-800">
                     <th className="py-2 px-3 text-left font-semibold w-10">#</th>
                     <th className="py-2 px-3 text-left font-semibold">Wallet</th>
                     <th className="py-2 px-3 text-left font-semibold">Role</th>
@@ -181,9 +181,9 @@ export default async function WalletsIndexPage() {
                     return (
                       <tr
                         key={row.addr}
-                        className="border-b border-slate-800/40 last:border-b-0 hover:bg-slate-900/40 transition-colors"
+                        className="border-b border-zinc-800/40 last:border-b-0 hover:bg-zinc-900/40 transition-colors"
                       >
-                        <td className="py-2.5 px-3 text-slate-500 tabular-nums">
+                        <td className="py-2.5 px-3 text-zinc-500 tabular-nums">
                           {i + 1}
                         </td>
                         <td className="py-2.5 px-3">
@@ -193,11 +193,11 @@ export default async function WalletsIndexPage() {
                           >
                             <WalletIdenticon addr={row.addr} size={28} />
                             <div className="min-w-0">
-                              <div className="text-slate-200 truncate group-hover:text-emerald-400">
+                              <div className="text-zinc-200 truncate group-hover:text-emerald-400">
                                 {display}
                               </div>
                               {display !== truncated ? (
-                                <div className="text-[10px] text-slate-500 font-mono truncate">
+                                <div className="text-[10px] text-zinc-500 font-mono truncate">
                                   {truncated}
                                 </div>
                               ) : null}
@@ -214,19 +214,19 @@ export default async function WalletsIndexPage() {
                             {role}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3 text-right text-slate-300 tabular-nums">
+                        <td className="py-2.5 px-3 text-right text-zinc-300 tabular-nums">
                           {row.total_loans}
                         </td>
-                        <td className="py-2.5 px-3 text-right text-slate-100 tabular-nums font-medium">
+                        <td className="py-2.5 px-3 text-right text-zinc-100 tabular-nums font-medium">
                           {fmtUsd(row.total_volume)}
                         </td>
-                        <td className="py-2.5 px-3 text-right text-slate-400 tabular-nums text-xs">
+                        <td className="py-2.5 px-3 text-right text-zinc-400 tabular-nums text-xs">
                           {fmtRelative(row.last_active_at)}
                         </td>
                         <td className="py-2.5 px-3 text-right">
                           <Link
                             href={`/analytics/wallets/${row.addr}`}
-                            className="inline-flex items-center text-slate-500 hover:text-emerald-400 transition-colors"
+                            className="inline-flex items-center text-zinc-500 hover:text-emerald-400 transition-colors"
                             aria-label={`View ${display} profile`}
                           >
                             <ArrowRight size={14} />

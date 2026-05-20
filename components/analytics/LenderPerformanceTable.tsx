@@ -38,17 +38,17 @@ function identicon(addr: string): string {
 }
 
 function yieldClass(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "text-slate-300"
+  if (n == null || !Number.isFinite(n)) return "text-zinc-300"
   if (n > 0.01) return "text-emerald-400"
   if (n < -0.01) return "text-rose-400"
-  return "text-slate-300"
+  return "text-zinc-300"
 }
 
 function defaultRateClass(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "text-slate-300"
+  if (n == null || !Number.isFinite(n)) return "text-zinc-300"
   if (n >= 20) return "text-rose-400"
   if (n >= 10) return "text-amber-400"
-  return "text-slate-300"
+  return "text-zinc-300"
 }
 
 export default function LenderPerformanceTable({
@@ -89,11 +89,11 @@ export default function LenderPerformanceTable({
   const names = useResolveUsernames(addrs)
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 flex flex-col">
-      <div className="flex items-center justify-between p-4 border-b border-slate-800">
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 flex flex-col">
+      <div className="flex items-center justify-between p-4 border-b border-zinc-800">
         <div>
-          <h3 className="font-semibold text-slate-100">Top Lenders by realized yield</h3>
-          <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mt-0.5">
+          <h3 className="font-semibold text-zinc-100">Top Lenders by realized yield</h3>
+          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold mt-0.5">
             Completed loans
           </div>
         </div>
@@ -101,22 +101,22 @@ export default function LenderPerformanceTable({
           Realized yield
         </span>
       </div>
-      <div className="px-4 py-2 border-b border-slate-800 text-[11px] text-slate-500 leading-relaxed">
+      <div className="px-4 py-2 border-b border-zinc-800 text-[11px] text-zinc-500 leading-relaxed">
         Realized yield = (interest earned − principal lost to defaults) / principal at risk.
         Reflects completed loans only. Active loans excluded since their outcomes are pending.
         Lenders with fewer than 5 completed loans excluded.
       </div>
       <div className="overflow-x-auto" style={{ maxHeight: 420 }}>
         {loading ? (
-          <div className="p-6 text-center text-sm text-slate-500">Loading…</div>
+          <div className="p-6 text-center text-sm text-zinc-500">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="p-6 text-center text-sm text-slate-500">
+          <div className="p-6 text-center text-sm text-zinc-500">
             No qualifying lenders in this filter.
           </div>
         ) : (
           <table className="w-full text-sm min-w-[680px]">
-            <thead className="sticky top-0 bg-slate-900/80 backdrop-blur">
-              <tr className="text-[10px] uppercase tracking-widest text-slate-500 border-b border-slate-800">
+            <thead className="sticky top-0 bg-zinc-900/80 backdrop-blur">
+              <tr className="text-[10px] uppercase tracking-widest text-zinc-500 border-b border-zinc-800">
                 <th className="py-2 px-3 text-left font-semibold w-8">#</th>
                 <th className="py-2 px-3 text-left font-semibold">Wallet</th>
                 <th className="py-2 px-3 text-right font-semibold">Loans</th>
@@ -134,13 +134,13 @@ export default function LenderPerformanceTable({
                 return (
                   <tr
                     key={r.addr}
-                    className="border-b border-slate-800/40 last:border-b-0"
+                    className="border-b border-zinc-800/40 last:border-b-0"
                   >
-                    <td className="py-2.5 px-3 text-slate-500 tabular-nums">{r.rank}</td>
+                    <td className="py-2.5 px-3 text-zinc-500 tabular-nums">{r.rank}</td>
                     <td className="py-2.5 px-3">
                       <div className="flex items-center gap-2 min-w-0">
                         <span
-                          className="h-5 w-5 rounded-full flex-shrink-0 ring-1 ring-slate-700"
+                          className="h-5 w-5 rounded-full flex-shrink-0 ring-1 ring-zinc-700"
                           style={{ background: identicon(r.addr) }}
                         />
                         <Link
@@ -148,22 +148,22 @@ export default function LenderPerformanceTable({
                           className="min-w-0 hover:text-emerald-400 transition-colors"
                           title={r.addr}
                         >
-                          <div className="text-slate-200 truncate">{display}</div>
+                          <div className="text-zinc-200 truncate">{display}</div>
                           {display !== truncated ? (
-                            <div className="text-[10px] text-slate-500 font-mono truncate">
+                            <div className="text-[10px] text-zinc-500 font-mono truncate">
                               {truncated}
                             </div>
                           ) : null}
                         </Link>
                       </div>
                     </td>
-                    <td className="py-2.5 px-3 text-right text-slate-300 tabular-nums">
+                    <td className="py-2.5 px-3 text-right text-zinc-300 tabular-nums">
                       {fmtNumber(r.total_loans)}
                     </td>
-                    <td className="py-2.5 px-3 text-right text-slate-100 tabular-nums">
+                    <td className="py-2.5 px-3 text-right text-zinc-100 tabular-nums">
                       {fmtUsd(r.total_principal_usd)}
                     </td>
-                    <td className="py-2.5 px-3 text-right text-slate-300 tabular-nums">
+                    <td className="py-2.5 px-3 text-right text-zinc-300 tabular-nums">
                       {fmtUsd(r.interest_earned_usd)}
                     </td>
                     <td
@@ -182,7 +182,7 @@ export default function LenderPerformanceTable({
                     >
                       {fmtPct(r.default_rate_pct)}
                     </td>
-                    <td className="py-2.5 px-3 text-right text-slate-400 tabular-nums">
+                    <td className="py-2.5 px-3 text-right text-zinc-400 tabular-nums">
                       {fmtNumber(r.active_loans)}
                     </td>
                   </tr>

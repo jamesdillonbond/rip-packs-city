@@ -15,7 +15,7 @@ function colorFromHex(hex: string, light = false): string {
   const g = parseInt(hex.slice(2, 4) || "b9", 16)
   const b = parseInt(hex.slice(4, 6) || "81", 16)
   if (light) {
-    // shift toward background by mixing with slate-900 (#0f172a)
+    // shift toward background by mixing with zinc-900 (#18181b)
     const mix = (c: number) => Math.round(c * 0.55 + 15 * 0.45)
     return `rgb(${mix(r)},${mix(g)},${mix(b)})`
   }
@@ -52,7 +52,7 @@ export default function WalletIdenticon({
   return (
     <div
       className={
-        "rounded-md ring-1 ring-slate-700 overflow-hidden flex-shrink-0 " +
+        "rounded-md ring-1 ring-zinc-700 overflow-hidden flex-shrink-0 " +
         (className ?? "")
       }
       style={{ width: size, height: size, background: secondary }}

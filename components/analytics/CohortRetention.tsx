@@ -30,12 +30,12 @@ function monthLabel(iso: string): string {
 }
 
 function colorFor(pct: number): { bg: string; text: string } {
-  if (pct < 10) return { bg: "rgba(16,185,129,0.06)", text: "#94a3b8" }
-  if (pct < 25) return { bg: "rgba(16,185,129,0.15)", text: "#cbd5e1" }
-  if (pct < 40) return { bg: "rgba(16,185,129,0.28)", text: "#e2e8f0" }
-  if (pct < 60) return { bg: "rgba(16,185,129,0.45)", text: "#0f172a" }
-  if (pct < 80) return { bg: "rgba(16,185,129,0.7)", text: "#0f172a" }
-  return { bg: "rgba(16,185,129,0.95)", text: "#0f172a" }
+  if (pct < 10) return { bg: "rgba(16,185,129,0.06)", text: "#a1a1aa" }
+  if (pct < 25) return { bg: "rgba(16,185,129,0.15)", text: "#d4d4d8" }
+  if (pct < 40) return { bg: "rgba(16,185,129,0.28)", text: "#e4e4e7" }
+  if (pct < 60) return { bg: "rgba(16,185,129,0.45)", text: "#18181b" }
+  if (pct < 80) return { bg: "rgba(16,185,129,0.7)", text: "#18181b" }
+  return { bg: "rgba(16,185,129,0.95)", text: "#18181b" }
 }
 
 const LEGEND = [
@@ -91,7 +91,7 @@ export default function CohortRetention({ rows }: CohortRetentionProps) {
 
   if (!cohorts || cohorts.length === 0) {
     return (
-      <div className="flex h-80 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-900/20 text-sm text-slate-500">
+      <div className="flex h-80 items-center justify-center rounded-xl border border-dashed border-zinc-800 bg-zinc-900/20 text-sm text-zinc-500">
         Cohort table populates after the first monthly cohort completes.
       </div>
     )
@@ -100,11 +100,11 @@ export default function CohortRetention({ rows }: CohortRetentionProps) {
   const offsets = Array.from({ length: maxOffset + 1 }, (_, i) => i)
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="text-[10px] uppercase tracking-widest text-slate-500">
+            <tr className="text-[10px] uppercase tracking-widest text-zinc-500">
               <th className="pb-3 pr-4 text-left font-semibold">Cohort</th>
               <th className="pb-3 pr-3 text-right font-semibold">Size</th>
               {offsets.map((o) => (
@@ -116,18 +116,18 @@ export default function CohortRetention({ rows }: CohortRetentionProps) {
           </thead>
           <tbody>
             {cohorts.map((c) => (
-              <tr key={c.cohort_month} className="border-t border-slate-800/60">
-                <td className="py-2 pr-4 text-slate-200 whitespace-nowrap">
+              <tr key={c.cohort_month} className="border-t border-zinc-800/60">
+                <td className="py-2 pr-4 text-zinc-200 whitespace-nowrap">
                   {monthLabel(c.cohort_month)}
                 </td>
-                <td className="py-2 pr-3 text-right text-slate-400 tabular-nums">
+                <td className="py-2 pr-3 text-right text-zinc-400 tabular-nums">
                   {c.size.toLocaleString()}
                 </td>
                 {offsets.map((o) => {
                   const cell = c.cells.get(o)
                   if (!cell) {
                     return (
-                      <td key={o} className="py-2 px-1 text-center text-slate-700">
+                      <td key={o} className="py-2 px-1 text-center text-zinc-700">
                         ·
                       </td>
                     )
@@ -151,8 +151,8 @@ export default function CohortRetention({ rows }: CohortRetentionProps) {
         </table>
       </div>
 
-      <div className="flex flex-col gap-2 mt-4 pt-3 border-t border-slate-800/60 sm:flex-row sm:items-center">
-        <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+      <div className="flex flex-col gap-2 mt-4 pt-3 border-t border-zinc-800/60 sm:flex-row sm:items-center">
+        <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
           % active in month
         </div>
         <div className="flex items-center gap-1 sm:ml-auto">
@@ -164,13 +164,13 @@ export default function CohortRetention({ rows }: CohortRetentionProps) {
                   className="inline-block h-3 w-4 rounded"
                   style={{ background: bg }}
                 />
-                <span className="text-[9px] text-slate-500 tabular-nums">{l.range}</span>
+                <span className="text-[9px] text-zinc-500 tabular-nums">{l.range}</span>
               </div>
             )
           })}
         </div>
       </div>
-      <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
+      <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed">
         M0 is the cohort&apos;s first month, M1 the next month, etc. Cells show the % of that
         cohort active in month N — not strict retention; wallets can come back after a gap.
       </p>

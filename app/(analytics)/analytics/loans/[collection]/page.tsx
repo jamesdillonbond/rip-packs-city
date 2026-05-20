@@ -135,7 +135,7 @@ export default async function CollectionLoansPage({ params }: PageParams) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
       />
       <div className="space-y-6">
-        <nav className="flex items-center gap-2 text-xs text-slate-500">
+        <nav className="flex items-center gap-2 text-xs text-zinc-500">
           <Link
             href="/analytics/loans"
             className="inline-flex items-center gap-1 hover:text-emerald-400 transition-colors"
@@ -143,8 +143,8 @@ export default async function CollectionLoansPage({ params }: PageParams) {
             <ChevronLeft size={12} />
             All loans
           </Link>
-          <span className="text-slate-700">·</span>
-          <span className="text-slate-300">{cfg.label}</span>
+          <span className="text-zinc-700">·</span>
+          <span className="text-zinc-300">{cfg.label}</span>
         </nav>
 
         <LoansDashboard

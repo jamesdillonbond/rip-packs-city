@@ -60,7 +60,7 @@ function isLinkableAddr(a: string | null | undefined): a is string {
 export default function BiggestSales({ rows }: BiggestSalesProps) {
   if (!rows || rows.length === 0) {
     return (
-      <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-900/20 text-sm text-slate-500">
+      <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-zinc-800 bg-zinc-900/20 text-sm text-zinc-500">
         No sales in this window yet.
       </div>
     )
@@ -72,7 +72,7 @@ export default function BiggestSales({ rows }: BiggestSalesProps) {
         const collectionLabel = COLLECTION_LABEL[r.collection?.toLowerCase()] ?? r.collection
         const mp = MARKETPLACE_LABEL[r.marketplace?.toLowerCase()] ?? {
           label: r.marketplace,
-          className: "border-slate-700 text-slate-400",
+          className: "border-zinc-700 text-zinc-400",
         }
         const title = r.player_name || `${collectionLabel} #${r.serial_number ?? "—"}`
         const subtitle = r.player_name
@@ -82,18 +82,18 @@ export default function BiggestSales({ rows }: BiggestSalesProps) {
         return (
           <article
             key={`${r.transaction_hash ?? r.rank}-${r.rank}`}
-            className="group relative rounded-xl border border-slate-800 bg-slate-900/40 p-4 transition-colors hover:border-emerald-500/40"
+            className="group relative rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 transition-colors hover:border-emerald-500/40"
           >
             <div className="flex items-start justify-between gap-2 mb-2">
               <div className="min-w-0 flex-1">
-                <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+                <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
                   #{r.rank} · {collectionLabel}
                 </div>
-                <h3 className="font-semibold text-slate-100 truncate" title={title}>
+                <h3 className="font-semibold text-zinc-100 truncate" title={title}>
                   {title}
                 </h3>
                 {subtitle ? (
-                  <div className="text-xs text-slate-400 truncate" title={subtitle}>
+                  <div className="text-xs text-zinc-400 truncate" title={subtitle}>
                     {subtitle}
                   </div>
                 ) : null}
@@ -105,41 +105,41 @@ export default function BiggestSales({ rows }: BiggestSalesProps) {
               </span>
             </div>
             <div className="flex items-baseline justify-between mb-2">
-              <div className="text-2xl font-bold text-slate-50 tabular-nums">
+              <div className="text-2xl font-bold text-zinc-50 tabular-nums">
                 {fmtUsd(Number(r.price_usd) || 0)}
               </div>
               {r.serial_number != null ? (
-                <div className="text-xs text-slate-400 tabular-nums">#{r.serial_number}</div>
+                <div className="text-xs text-zinc-400 tabular-nums">#{r.serial_number}</div>
               ) : null}
             </div>
-            <div className="flex flex-col gap-0.5 text-[11px] text-slate-500">
+            <div className="flex flex-col gap-0.5 text-[11px] text-zinc-500">
               <div className="flex items-center gap-1.5">
-                <span className="text-slate-600">Buyer</span>
+                <span className="text-zinc-600">Buyer</span>
                 {isLinkableAddr(r.buyer_address) ? (
                   <Link
                     href={`/analytics/wallets/${r.buyer_address}`}
-                    className="font-mono text-slate-300 hover:text-emerald-400 transition-colors"
+                    className="font-mono text-zinc-300 hover:text-emerald-400 transition-colors"
                   >
                     {truncate(r.buyer_address)}
                   </Link>
                 ) : (
-                  <span className="font-mono text-slate-400">{truncate(r.buyer_address)}</span>
+                  <span className="font-mono text-zinc-400">{truncate(r.buyer_address)}</span>
                 )}
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="text-slate-600">Seller</span>
+                <span className="text-zinc-600">Seller</span>
                 {isLinkableAddr(r.seller_address) ? (
                   <Link
                     href={`/analytics/wallets/${r.seller_address}`}
-                    className="font-mono text-slate-300 hover:text-emerald-400 transition-colors"
+                    className="font-mono text-zinc-300 hover:text-emerald-400 transition-colors"
                   >
                     {truncate(r.seller_address)}
                   </Link>
                 ) : (
-                  <span className="font-mono text-slate-400">{truncate(r.seller_address)}</span>
+                  <span className="font-mono text-zinc-400">{truncate(r.seller_address)}</span>
                 )}
               </div>
-              <div className="text-slate-600 mt-0.5">{relativeTime(r.sold_at)}</div>
+              <div className="text-zinc-600 mt-0.5">{relativeTime(r.sold_at)}</div>
             </div>
           </article>
         )
