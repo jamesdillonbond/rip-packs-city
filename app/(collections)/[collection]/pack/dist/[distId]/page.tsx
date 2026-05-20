@@ -444,7 +444,7 @@ export default async function PackDetailPage(
             <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
               <span
                 style={{
-                  fontFamily: "'Share Tech Mono', monospace",
+                  fontFamily: "var(--font-mono)",
                   fontSize: 9,
                   letterSpacing: "0.2em",
                   color: "rgba(255,255,255,0.4)",
@@ -457,7 +457,7 @@ export default async function PackDetailPage(
             <h1
               style={{
                 margin: 0,
-                fontFamily: "'Barlow Condensed', sans-serif",
+                fontFamily: "var(--font-display)",
                 fontWeight: 900,
                 fontSize: 32,
                 letterSpacing: "0.04em",
@@ -504,7 +504,7 @@ export default async function PackDetailPage(
               )}
               <span
                 style={{
-                  fontFamily: "'Share Tech Mono', monospace",
+                  fontFamily: "var(--font-mono)",
                   fontSize: 11,
                   color: "rgba(255,255,255,0.55)",
                 }}
@@ -554,9 +554,9 @@ export default async function PackDetailPage(
                   style={{
                     display: "inline-block",
                     padding: "8px 16px",
-                    background: "#E03A2F",
+                    background: "var(--rpc-red)",
                     color: "#fff",
-                    fontFamily: "'Barlow Condensed', sans-serif",
+                    fontFamily: "var(--font-display)",
                     fontWeight: 700,
                     letterSpacing: "0.06em",
                     textTransform: "uppercase",
@@ -576,7 +576,7 @@ export default async function PackDetailPage(
                   padding: "8px 16px",
                   background: "transparent",
                   color: "rgba(255,255,255,0.7)",
-                  fontFamily: "'Barlow Condensed', sans-serif",
+                  fontFamily: "var(--font-display)",
                   fontWeight: 700,
                   letterSpacing: "0.06em",
                   textTransform: "uppercase",
@@ -672,7 +672,7 @@ export default async function PackDetailPage(
           <h2
             style={{
               margin: 0,
-              fontFamily: "'Barlow Condensed', sans-serif",
+              fontFamily: "var(--font-display)",
               fontWeight: 800,
               fontSize: 18,
               letterSpacing: "0.06em",
@@ -682,7 +682,7 @@ export default async function PackDetailPage(
           >
             Top pulls by EV
           </h2>
-          <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
             {topPulls.length === 0 ? "computing pack contents…" : `top ${topPulls.length} of ${editionCount ?? "?"}`}
           </span>
         </div>
@@ -693,7 +693,7 @@ export default async function PackDetailPage(
               border: "1px dashed rgba(255,255,255,0.1)",
               borderRadius: 6,
               color: "rgba(255,255,255,0.4)",
-              fontFamily: "'Share Tech Mono', monospace",
+              fontFamily: "var(--font-mono)",
               fontSize: 11,
             }}
           >
@@ -701,7 +701,7 @@ export default async function PackDetailPage(
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "'Share Tech Mono', monospace", fontSize: 12 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
                   <Th>Player</Th>
@@ -737,7 +737,7 @@ export default async function PackDetailPage(
             </table>
           </div>
         )}
-        <div style={{ marginTop: 10, fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.35)" }}>
+        <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.35)" }}>
           EV = Σ(drop_weight × FMV) over the indexed drop pool. Snapshotted{" "}
           {snapshottedAt ? new Date(snapshottedAt).toLocaleString() : "—"}. Methodology: cached pack_ev_history via the
           compute-pack-ev edge function.
@@ -761,7 +761,7 @@ function KpiCell({ label, value, sub, color }: { label: string; value: string; s
     >
       <div
         style={{
-          fontFamily: "'Share Tech Mono', monospace",
+          fontFamily: "var(--font-mono)",
           fontSize: 9,
           letterSpacing: "0.18em",
           textTransform: "uppercase",
@@ -772,7 +772,7 @@ function KpiCell({ label, value, sub, color }: { label: string; value: string; s
       </div>
       <div
         style={{
-          fontFamily: "'Barlow Condensed', sans-serif",
+          fontFamily: "var(--font-display)",
           fontWeight: 800,
           fontSize: 22,
           letterSpacing: "0.02em",
@@ -785,7 +785,7 @@ function KpiCell({ label, value, sub, color }: { label: string; value: string; s
       {sub ? (
         <div
           style={{
-            fontFamily: "'Share Tech Mono', monospace",
+            fontFamily: "var(--font-mono)",
             fontSize: 10,
             color: "rgba(255,255,255,0.45)",
             marginTop: 2,

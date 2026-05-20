@@ -97,8 +97,8 @@ function tierStripeColor(tier: string | null | undefined): string {
 
 // ── Styles ───────────────────────────────────────────────────────────────────
 
-const displayFont = "'Barlow Condensed', sans-serif";
-const monoFont = "'Share Tech Mono', monospace";
+const displayFont = "var(--font-display)";
+const monoFont = "var(--font-mono)";
 
 function makeColors(accent: string) {
   return {
@@ -131,6 +131,7 @@ export default function SetsPage() {
   const [sortBy, setSortBy] = useState<SortKey>("completion");
   const [filter, setFilter] = useState<FilterKey>("all");
   const [openSet, setOpenSet] = useState<SetProgress | null>(null);
+  const [openSetDetail, setOpenSetDetail] = useState<SetProgress | null>(null);
 
   const autoLoadFired = useRef(false);
 
@@ -200,6 +201,24 @@ export default function SetsPage() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [openSet]);
+
+  // Top Shot's list response omits per-set owned moments — fetch the detail
+  // view so the modal can show them. Other collections carry whatever
+  // moment-level detail they have inline on the set object already.
+  useEffect(() => {
+    if (!openSet) { setOpenSetDetail(null); return; }
+    if (collectionSlug !== "nba-top-shot" || !wallet) { setOpenSetDetail(null); return; }
+    let cancelled = false;
+    fetch(`/api/sets?wallet=${encodeURIComponent(wallet)}&set=${encodeURIComponent(openSet.setId)}`)
+      .then((r) => r.json())
+      .then((j: SetsResponse) => {
+        if (cancelled) return;
+        const s = j?.sets?.[0];
+        if (s) setOpenSetDetail(s);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [openSet, collectionSlug, wallet]);
 
   const displaySets = useMemo(() => {
     if (!data) return [];
@@ -348,7 +367,11 @@ export default function SetsPage() {
         )}
       </div>
 
-      {openSet && (
+      {openSet && (() => {
+        const modalSet = openSetDetail ?? openSet;
+        const mOwned = modalSet.owned ?? [];
+        const mMissing = modalSet.missing ?? [];
+        return (
         <div
           onClick={() => setOpenSet(null)}
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
@@ -378,39 +401,59 @@ export default function SetsPage() {
             >
               VIEW FULL SET PAGE →
             </Link>
-            {openSet.owned.length === 0 ? (
+            {mOwned.length === 0 && mMissing.length === 0 ? (
               <div style={{ fontFamily: monoFont, fontSize: 12, color: colors.muted, padding: "20px 0", textAlign: "center" }}>
-                No moments owned in this set yet
+                {openSet.ownedCount > 0
+                  ? "Moment-level detail isn't available for this set yet"
+                  : "No moments owned in this set yet"}
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {openSet.owned.map((piece, idx) => (
-                  <a
-                    key={`${piece.playId}-${piece.serialNumber ?? idx}`}
-                    href={piece.topshotUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ display: "flex", alignItems: "center", gap: 12, padding: 8, borderRadius: 6, background: colors.card, border: "1px solid " + colors.cardBorder, textDecoration: "none", transition: "border-color 0.15s ease" }}
-                    onMouseEnter={(e) => (e.currentTarget.style.borderColor = colors.cardHover)}
-                    onMouseLeave={(e) => (e.currentTarget.style.borderColor = colors.cardBorder)}
-                  >
-                    <MomentMedia thumbnailUrl={piece.thumbnailUrl} alt="" size={40} rounded={4} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 14, color: colors.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {piece.playerName}
-                      </div>
-                      <div style={{ fontFamily: monoFont, fontSize: 10, color: colors.muted, letterSpacing: "0.05em", textTransform: "uppercase" }}>
-                        #{piece.serialNumber ?? "—"} · {piece.tier}
-                      </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {mOwned.length > 0 && (
+                  <div>
+                    <div style={{ fontFamily: monoFont, fontSize: 9, color: colors.muted, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 8 }}>
+                      OWNED ({mOwned.length})
                     </div>
-                    <span style={{ fontFamily: monoFont, fontSize: 10, color: colors.accent, letterSpacing: "0.08em", flexShrink: 0 }}>VIEW →</span>
-                  </a>
-                ))}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {mOwned.map((piece, idx) => (
+                        <ModalRow
+                          key={`o-${piece.playId}-${piece.serialNumber ?? idx}`}
+                          href={piece.topshotUrl}
+                          thumbnailUrl={piece.thumbnailUrl}
+                          playerName={piece.playerName}
+                          meta={`#${piece.serialNumber ?? "—"} · ${piece.tier}`}
+                          colors={colors}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {mMissing.length > 0 && (
+                  <div>
+                    <div style={{ fontFamily: monoFont, fontSize: 9, color: colors.muted, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 8 }}>
+                      MISSING ({mMissing.length})
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {mMissing.map((piece, idx) => (
+                        <ModalRow
+                          key={`m-${piece.playId}-${idx}`}
+                          href={piece.topshotUrl}
+                          thumbnailUrl={piece.thumbnailUrl}
+                          playerName={piece.playerName}
+                          meta={`${piece.tier}${piece.lowestAsk != null ? ` · ${fmt$(piece.lowestAsk)}` : ""}`}
+                          colors={colors}
+                          muted
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
@@ -435,6 +478,44 @@ function SummaryCard({ label, value, sub, accent }: { label: string; value: stri
         )}
       </div>
     </div>
+  );
+}
+
+function ModalRow({
+  href,
+  thumbnailUrl,
+  playerName,
+  meta,
+  colors,
+  muted,
+}: {
+  href: string;
+  thumbnailUrl: string | null;
+  playerName: string;
+  meta: string;
+  colors: ReturnType<typeof makeColors>;
+  muted?: boolean;
+}) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{ display: "flex", alignItems: "center", gap: 12, padding: 8, borderRadius: 6, background: colors.card, border: "1px solid " + colors.cardBorder, textDecoration: "none", opacity: muted ? 0.85 : 1, transition: "border-color 0.15s ease" }}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = colors.cardHover)}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = colors.cardBorder)}
+    >
+      <MomentMedia thumbnailUrl={thumbnailUrl} alt="" size={40} rounded={4} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 14, color: colors.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {playerName}
+        </div>
+        <div style={{ fontFamily: monoFont, fontSize: 10, color: colors.muted, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+          {meta}
+        </div>
+      </div>
+      <span style={{ fontFamily: monoFont, fontSize: 10, color: colors.accent, letterSpacing: "0.08em", flexShrink: 0 }}>VIEW →</span>
+    </a>
   );
 }
 
@@ -485,6 +566,13 @@ function SetCard({
 
   useEffect(() => {
     if (!expanded || detail || loadingDetail || !wallet) return;
+    // Only Top Shot exposes a per-set detail endpoint (/api/sets?set=).
+    // Other collections already carry their preview data inline on the
+    // set object from the list response — render that directly.
+    if (collectionSlug !== "nba-top-shot") {
+      setDetail(set);
+      return;
+    }
     let cancelled = false;
     setLoadingDetail(true);
     fetch(`/api/sets?wallet=${encodeURIComponent(wallet)}&set=${encodeURIComponent(set.setId)}`)
@@ -499,7 +587,7 @@ function SetCard({
         if (!cancelled) setLoadingDetail(false);
       });
     return () => { cancelled = true; };
-  }, [expanded, detail, loadingDetail, wallet, set.setId]);
+  }, [expanded, detail, loadingDetail, wallet, set, collectionSlug]);
 
   return (
     <div
