@@ -94,7 +94,7 @@ export default async function SetPage(props: { params: Promise<{ collection: str
     <div>
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section className="rpc-card" style={{ padding: 18 }}>
-        <h1 style={{ margin: 0, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 32, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", lineHeight: 1.05, textTransform: "uppercase" }}>
+        <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 32, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", lineHeight: 1.05, textTransform: "uppercase" }}>
           {detail.set_name}
         </h1>
         {detail.set_name_variants && detail.set_name_variants.length > 1 && (
@@ -142,6 +142,11 @@ export default async function SetPage(props: { params: Promise<{ collection: str
               </div>
             ))}
           </div>
+          {detail.edition_count !== null && detail.edition_count > editions.length && (
+            <div className="rpc-mono" style={{ marginTop: 8, fontSize: 10, color: "var(--rpc-text-muted)" }}>
+              Mix sampled from the first {fmtCount(editions.length)} of {fmtCount(detail.edition_count)} editions.
+            </div>
+          )}
         </Section>
       )}
 

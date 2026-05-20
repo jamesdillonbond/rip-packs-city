@@ -250,21 +250,21 @@ export default async function EditionPage(
               // eslint-disable-next-line @next/next/no-img-element
               <img src={detail.thumbnail_url} alt={detail.player_name ?? detail.name ?? "Edition"} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
             ) : (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--rpc-text-muted)", fontFamily: "'Share Tech Mono', monospace", fontSize: 11 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
                 No image
               </div>
             )}
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-            <h1 style={{ margin: 0, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 36, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", lineHeight: 1.05, textTransform: "uppercase" }}>
+            <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 36, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", lineHeight: 1.05, textTransform: "uppercase" }}>
               {playerHref ? (
                 <Link href={playerHref} style={{ color: "inherit", textDecoration: "none" }}>{detail.player_name ?? detail.name ?? "Edition"}</Link>
               ) : (detail.player_name ?? detail.name ?? "Edition")}
             </h1>
 
             {(detail.set_name || setHref) && (
-              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 18, fontWeight: 600, letterSpacing: "0.04em", color: "var(--rpc-text-secondary)" }}>
+              <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 600, letterSpacing: "0.04em", color: "var(--rpc-text-secondary)" }}>
                 {setHref ? (
                   <Link href={setHref} style={{ color: "inherit", textDecoration: "none" }}>{detail.set_name}</Link>
                 ) : detail.set_name}
@@ -376,10 +376,10 @@ export default async function EditionPage(
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={p.pack_image_url} alt={p.pack_title ?? "Pack"} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   ) : (
-                    <span style={{ color: "var(--rpc-text-ghost)", fontFamily: "'Share Tech Mono', monospace", fontSize: 10 }}>Pack</span>
+                    <span style={{ color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", fontSize: 10 }}>Pack</span>
                   )}
                 </div>
-                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2, marginBottom: 4 }}>
+                <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2, marginBottom: 4 }}>
                   {p.pack_title ?? "Pack"}
                 </div>
                 <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)" }}>
@@ -399,7 +399,7 @@ export default async function EditionPage(
             Tracked owners of #1, jersey-match, and perfect-mint serials.
           </div>
           {specialSerials.length === 0 ? (
-            <div style={{ padding: "12px 14px", border: "1px dashed var(--rpc-border)", borderRadius: 6, color: "var(--rpc-text-muted)", fontFamily: "'Share Tech Mono', monospace", fontSize: 11 }}>
+            <div style={{ padding: "12px 14px", border: "1px dashed var(--rpc-border)", borderRadius: 6, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
               Cadence sweep in progress — owner data populating
             </div>
           ) : (
