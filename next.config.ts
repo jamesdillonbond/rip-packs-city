@@ -45,6 +45,10 @@ const nextConfig: NextConfig = {
       { source: "/sniper",  destination: "/nba-top-shot/sniper",     permanent: false },
       { source: "/sets",    destination: "/nba-top-shot/sets",       permanent: false },
       { source: "/undefined/:path*", destination: "/nba-top-shot/:path*", permanent: false },
+      // Audit 2026-05-20 (F7): canonical UFC route is /ufc; /ufc-strike rendered a broken hybrid.
+      { source: "/ufc-strike/:path*", destination: "/ufc/:path*", permanent: true },
+      // Audit 2026-05-20 (F17): panini-blockchain is unpublished + off-platform; neutralize the dead route.
+      { source: "/panini-blockchain/:path*", destination: "/nba-top-shot/overview", permanent: false },
       { source: "/profile", destination: "/dashboard", permanent: true },
     ]
   },

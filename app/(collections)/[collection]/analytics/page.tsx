@@ -557,7 +557,12 @@ function OrderBookCard({ short }: { short: string }) {
   }, [short])
 
   const orderbook = data?.topshot_orderbook
-  const fromMarket = data?.marketplace_listings?.find((m) => (m.collection || "").toLowerCase() === short)
+  // Audit 2026-05-20: marketplace_listings can arrive as {} (not []) from the
+  // analytics_listings_summary RPC; guard the shape so .find never throws.
+  const marketplaceListings = data?.marketplace_listings
+  const fromMarket = Array.isArray(marketplaceListings)
+    ? marketplaceListings.find((m) => (m.collection || "").toLowerCase() === short)
+    : undefined
   // For Top Shot prefer the orderbook block (locked-aware); for others read from marketplace_listings.
   const isTs = short === "topshot"
   const count = isTs ? (orderbook?.count ?? 0) : (fromMarket?.count ?? 0)

@@ -230,9 +230,9 @@ type Freshness = { color: string; label: string; loading?: boolean }
 function freshnessFromAge(minutes: number | null, loading: boolean): Freshness {
   if (loading) return { color: "var(--rpc-text-muted)", label: "Loading…", loading: true }
   if (minutes == null) return { color: "var(--rpc-text-ghost)", label: "UNKNOWN" }
-  if (minutes < 30) return { color: "#34D399", label: "HEALTHY" }
-  if (minutes < 60) return { color: "#F59E0B", label: "STALE" }
-  return { color: "#E03A2F", label: "CRITICAL" }
+  if (minutes < 30) return { color: "#34D399", label: "LIVE" }
+  if (minutes < 60) return { color: "#F59E0B", label: "DELAYED" }
+  return { color: "#E03A2F", label: "OUTDATED" }
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
