@@ -24,7 +24,27 @@ LLC: Oregon, filed May 3 2026.
 
 ## Recent sessions
 
-### May 18, 2026 (latest) — V1 Dapper NFTStorefront indexer refactor
+### May 23, 2026 (latest) — Cowork platform health audit + FMV confidence overhaul
+
+Platform health + cron audit, then an FMV-confidence improvement pass.
+
+Shipped
+
+- **listing-divergence-snapshot Flowty-offline guard** ([app/api/listing-divergence-snapshot/route.ts](app/api/listing-divergence-snapshot/route.ts)) — was failing ~80% of runs (75-135s `compute_listing_divergence` scans timing out) because Flowty is dead (8 stale listings vs 34k direct). Added a pre-check: open Flowty listings for the collection < `FLOWTY_OFFLINE_THRESHOLD` (50) → skip the heavy RPC, log `ok=true` + `skip_reason='flowty_offline'`. Self-healing.
+- **FMV serial-residual confidence gate** ([lib/fmv-confidence.ts](lib/fmv-confidence.ts)) — the HIGH gate (CV<0.40) ran on raw sale prices, so legitimate serial-driven spread (#1 vs #25000 of a moment) read as noise and capped HIGH at ~2%. `escalateConfidence` now takes an optional `serials` array and gates HIGH on the residual of a per-edition `ln(price)~ln(serial)` OLS fit (`serialResidualDispersion`), falling back to raw CV when serials absent. `fmv-recalc` + `fmv-backfill` select + pass `sales.serial_number`. Modelled HIGH-eligible ~900 → ~1,260.
+- **FMV recalc pagination fix** ([app/api/fmv-recalc/route.ts](app/api/fmv-recalc/route.ts)) — the route paginates its sales scan by `{offset,limit}` but cron/chains always called it with no offset → it reprocessed page 0 forever (~41 editions). Now resumes from the previous run's `cursor_after` in `pipeline_runs`, wraps to 0 at table end (empty-page guard logs `sweep_wrapped`). `DEFAULT_LIMIT` 500→1000, `export const maxDuration = 300`. Full sweep ≈ 4-5 days at the observed ~12-16 recalc triggers/day.
+- **drain_fmv_cold_tail ASK_ONLY fallback** (migration `audit_20260523_drain_cold_tail_ask_only_fallback`) — the RPC wrote `NO_DATA` for every zero-sale edition; now checks `cached_listings_v2` for a live ask and writes `ASK_ONLY` when one exists.
+- Live Cowork health dashboard artifact built; `docs/cadence-testing.md` "RED on purpose" claim corrected (harness is GREEN since the C1/C2 fix).
+
+Key findings — the FMV pipeline is fragmented
+
+- `fmv_snapshots.algo_version` is written by ≥5 distinct pipelines and "latest by `computed_at`" wins: `1.7.0` (fmv-recalc), `allday-gql-v1` (allday-fmv-populate, AllDay marketplace GQL), `cold-tail-1.0` (drain-fmv-cold-tail), `sales_wap_v1`, `thin-sales-guard-v3`, plus obsolete `1.1.0`/`1.5.0`. Only `fmv-recalc`/`fmv-backfill` use the shared `lib/fmv-confidence.ts`.
+- `allday-gql-v1` already does ask-based pricing (`averageSale` → LOW, `lowestPrice` → ASK_ONLY, ≤$5000 ceiling). AllDay is essentially fully priced — only 531 AllDay editions are genuinely `NO_DATA`.
+- The ~10.8k Top Shot `NO_DATA` editions are structurally unpriceable: cohort/comparable pricing was modelled and rejected (set+tier cohorts too dispersed; player+tier cohorts have no coverage). The real FMV lever now is *primary data* — a live Top Shot listings feed — not more inference.
+
+Docs added: `docs/audits/fmv-confidence-improvement-2026-05.md`, `docs/audits/flowty-teardown-plan-2026-05.md`.
+
+### May 18, 2026 — V1 Dapper NFTStorefront indexer refactor
 
 Discovered via Flowscan trace of a $2,999 JJLSmith Mahomes Marquee Ultimate purchase (NFT id 9430364, edition 4097, wallet `0xc579f9caeac49f95`) that AllDay / Golazos / UFC native sales route through **V1 Dapper NFTStorefront** at `A.4eb8a10cb9f87357.NFTStorefront` (no V2 suffix). The V2 Dapper storefront at the same address (`A.4eb8a10cb9f87357.NFTStorefrontV2`) only carries TopShot PackNFT / Pinnacle / MFL packs; the V2 Flowty fork at `0x3cdbb3d569211ff3` has been dormant since 2026-05-14. Our DB confirmed the blind spot was lifetime-wide — 153 AllDay-holding wallets had never been seen as buyer in `sales`, and the JJLSmith wallet held 105 AllDay moments with zero `moment_acquisitions` rows.
 
