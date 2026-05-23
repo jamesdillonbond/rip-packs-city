@@ -10,6 +10,9 @@ const TIER_COLORS: Record<string, string> = {
   RARE: "#38bdf8",
   LEGENDARY: "#fbbf24",
   ULTIMATE: "#c084fc",
+  CHALLENGER: "var(--tier-challenger)",
+  CONTENDER: "var(--tier-contender)",
+  CHAMPION: "var(--tier-champion)",
 };
 
 const BADGE_ICONS: Record<string, string> = {
@@ -187,7 +190,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, onClose }
         <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12, overflowY: "auto" }}>
           <div
             style={{
-              fontFamily: "'Barlow Condensed', sans-serif",
+              fontFamily: "var(--font-display)",
               fontWeight: 900,
               fontSize: 26,
               lineHeight: 1.1,
@@ -221,7 +224,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, onClose }
           )}
 
           {(moment.serialNumber != null || moment.mintSize != null) && (
-            <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 13 }}>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}>
               #{moment.serialNumber ?? "?"}
               {moment.mintSize != null && <span style={{ color: "rgba(255,255,255,0.45)" }}> / {moment.mintSize}</span>}
             </div>
@@ -230,7 +233,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, onClose }
           {moment.fmv != null && (
             <div>
               <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.1em" }}>FMV</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: "#22c55e", fontFamily: "'Share Tech Mono', monospace" }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: "#22c55e", fontFamily: "var(--font-mono)" }}>
                 ${moment.fmv.toFixed(2)}
               </div>
             </div>
@@ -239,7 +242,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, onClose }
           {moment.listingPrice != null && (
             <div>
               <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.1em" }}>LIST PRICE</div>
-              <div style={{ fontSize: 16, fontFamily: "'Share Tech Mono', monospace" }}>
+              <div style={{ fontSize: 16, fontFamily: "var(--font-mono)" }}>
                 ${moment.listingPrice.toFixed(2)}
               </div>
             </div>
@@ -318,7 +321,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, onClose }
             >
               <div
                 style={{
-                  fontFamily: "'Share Tech Mono', monospace",
+                  fontFamily: "var(--font-mono)",
                   fontSize: 9,
                   letterSpacing: "0.12em",
                   color: "#ef4444",
@@ -333,7 +336,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, onClose }
                   Defaulted by{" "}
                   <a
                     href={`/analytics/wallets/${encodeURIComponent(moment.sourceAddress)}`}
-                    style={{ color: "#fff", fontFamily: "'Share Tech Mono', monospace", textDecoration: "underline" }}
+                    style={{ color: "#fff", fontFamily: "var(--font-mono)", textDecoration: "underline" }}
                   >
                     {truncateAddress(moment.sourceAddress)}
                   </a>
@@ -356,11 +359,11 @@ export default function MomentDetailModal({ moment, marketplaceSource, onClose }
                 marginTop: "auto",
                 display: "inline-block",
                 textAlign: "center",
-                background: "#E03A2F",
+                background: "var(--rpc-red)",
                 color: "#fff",
                 padding: "10px 16px",
                 borderRadius: 4,
-                fontFamily: "'Barlow Condensed', sans-serif",
+                fontFamily: "var(--font-display)",
                 fontWeight: 800,
                 fontSize: 13,
                 letterSpacing: "0.12em",
@@ -382,11 +385,11 @@ export default function MomentDetailModal({ moment, marketplaceSource, onClose }
                 marginTop: "auto",
                 display: "inline-block",
                 textAlign: "center",
-                background: "#E03A2F",
+                background: "var(--rpc-red)",
                 color: "#fff",
                 padding: "10px 16px",
                 borderRadius: 4,
-                fontFamily: "'Barlow Condensed', sans-serif",
+                fontFamily: "var(--font-display)",
                 fontWeight: 800,
                 fontSize: 13,
                 letterSpacing: "0.12em",
