@@ -84,10 +84,15 @@ function fmt$(n: number | null): string {
 
 const TIER_STRIPE: Record<string, string> = {
   COMMON: "#9ca3af",
+  UNCOMMON: "var(--tier-uncommon)",
   FANDOM: "#60a5fa",
   RARE: "#a855f7",
   LEGENDARY: "#fbbf24",
   ULTIMATE: "#ec4899",
+  // UFC Strike tier vocabulary
+  CHALLENGER: "var(--tier-challenger)",
+  CONTENDER: "var(--tier-contender)",
+  CHAMPION: "var(--tier-champion)",
 };
 
 function tierStripeColor(tier: string | null | undefined): string {
@@ -245,7 +250,7 @@ export default function SetsPage() {
   const completeSets = data?.completeSets ?? 0;
   const inProgressSets = data?.inProgressSets ?? (data ? data.sets.filter((s) => s.completionPct > 0 && s.completionPct < 100).length : 0);
   const notStartedSets = data?.notStartedSets ?? (data ? data.sets.filter((s) => s.completionPct === 0).length : 0);
-  const completePct = totalSets > 0 ? Math.round((completeSets / totalSets) * 100) : 0;
+  const completePct = totalSets > 0 ? Math.min(100, Math.max(0, Math.round((completeSets / totalSets) * 100))) : 0;
 
   if (wallet === null && !loading) {
     return (
@@ -312,7 +317,7 @@ export default function SetsPage() {
               NO SETS FOUND
             </div>
             <div style={{ fontFamily: monoFont, fontSize: 12, color: colors.muted }}>
-              {isAllDay ? "No NFL All Day moments found in this wallet" : "No Top Shot moments found in this wallet"}
+              {`No ${collectionObj?.label ?? "this collection"} moments found in this wallet`}
             </div>
           </div>
         )}

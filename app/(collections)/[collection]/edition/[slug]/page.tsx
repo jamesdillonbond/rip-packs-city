@@ -328,7 +328,7 @@ export default async function EditionPage(
         />
         <StatCell
           label="Floor"
-          value={fmtUsd(fmv?.floor_price_usd ?? fmv?.fmv_usd ?? null)}
+          value={fmtUsd(fmv?.floor_price_usd ?? null)}
         />
         <StatCell
           label="30d Sales"
@@ -383,7 +383,7 @@ export default async function EditionPage(
                   {p.pack_title ?? "Pack"}
                 </div>
                 <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)" }}>
-                  {p.drop_weight !== null ? `${p.drop_weight} slot${(p.drop_weight ?? 0) === 1 ? "" : "s"}` : "1 slot"}
+                  {p.drop_weight !== null ? `${p.drop_weight} slot${p.drop_weight === 1 ? "" : "s"}` : "weight unknown"}
                   {p.depletion_pct !== null && p.depletion_pct !== undefined ? <> · {Math.round(p.depletion_pct)}% depleted</> : null}
                 </div>
               </Link>

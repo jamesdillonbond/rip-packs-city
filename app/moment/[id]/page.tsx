@@ -181,6 +181,26 @@ function tierColorVar(tier: string | null | undefined): string {
   return "var(--rpc-text-muted)"
 }
 
+// Top Shot encodes series as a raw on-chain UInt32 where 0 = Series 1 — there
+// is no on-chain series 1 (see the CLAUDE.md series map). Other collections'
+// series encodings are not verified, so they fall back to the raw "Series N".
+const SERIES_DISPLAY: Record<number, string> = {
+  0: "Series 1",
+  2: "Series 2",
+  3: "Summer 2021",
+  4: "Series 3",
+  5: "Series 4",
+  6: "Series 2023-24",
+  7: "Series 2024-25",
+  8: "Series 2025-26",
+}
+
+function seriesDisplay(n: number, collectionSlug: string | null | undefined): string {
+  const isTopShot = collectionSlug === "nba_top_shot" || collectionSlug === "nba-top-shot"
+  if (isTopShot) return SERIES_DISPLAY[n] ?? `Series ${n}`
+  return `Series ${n}`
+}
+
 function collectionLabel(slug: string | null | undefined): string {
   switch (slug) {
     case "nba_top_shot": return "NBA TOP SHOT"
@@ -362,7 +382,7 @@ export default async function MomentPage(
         }}
       >
         {[
-          e.series ? `Series ${e.series}` : null,
+          e.series != null ? seriesDisplay(e.series, e.collection_slug) : null,
           e.play_type ?? null,
           fmtAbsDate(e.game_date),
         ]
@@ -539,7 +559,7 @@ export default async function MomentPage(
             }}
           >
             <StatCell label="Owner" value={ss.owner_address ?? "—"} />
-            <StatCell label="Listed" value={ss.is_listed ? "YES" : "NO"} />
+            <StatCell label="Listed" value={ss.is_listed === true ? "YES" : ss.is_listed === false ? "NO" : "—"} />
             <StatCell label="List price" value={fmtUsd(ss.list_price)} />
             <StatCell
               label="Last sale"
@@ -584,7 +604,7 @@ export default async function MomentPage(
               </thead>
               <tbody>
                 {recentSales.map((s, i) => (
-                  <tr key={i} style={{ borderBottom: "1px solid var(--rpc-border, rgba(255,255,255,0.04))" }}>
+                  <tr key={`${s.sold_at}-${s.serial_number}-${i}`} style={{ borderBottom: "1px solid var(--rpc-border, rgba(255,255,255,0.04))" }}>
                     <Td>{s.serial_number != null ? `#${s.serial_number}` : "—"}</Td>
                     <Td>{fmtUsd(s.price_usd)}</Td>
                     <Td>
@@ -680,7 +700,7 @@ export default async function MomentPage(
       >
         <StatCell label="Mint count" value={mint ? mint.toLocaleString() : "—"} />
         <StatCell label="Tier" value={tier || "—"} />
-        <StatCell label="Series" value={e.series != null ? String(e.series) : "—"} />
+        <StatCell label="Series" value={e.series != null ? seriesDisplay(e.series, e.collection_slug) : "—"} />
         <StatCell label="Team" value={e.team_name ?? "—"} />
         <StatCell label="Play type" value={e.play_type ?? "—"} />
         <StatCell label="Game date" value={fmtAbsDate(e.game_date) || "—"} />
