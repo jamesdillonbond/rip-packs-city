@@ -55,6 +55,15 @@ transaction(
   let buyerCollection: &{NonFungibleToken.CollectionPublic}
   let storefront: &{NFTStorefrontV2.StorefrontPublic}
   let listing: &{NFTStorefrontV2.ListingPublic}
+  // H1: every Dapper-published Top Shot listing carries a non-zero commissionAmount,
+  // so NFTStorefrontV2.purchase() panics on commissionRecipient: nil. Capture the
+  // merchant's published DUC receiver capability up front and pass it through.
+  let commissionRecipientCap: Capability<&{FungibleToken.Receiver}>
+  // H2: the Dapper meta-tx co-signer requires a post-condition asserting the buyer's
+  // DUC vault decreased by exactly expectedPrice. Capture pre-state in prepare so
+  // the post block can reconcile it.
+  let buyerDUCVault: &DapperUtilityCoin.Vault
+  let balanceBeforePurchase: UFix64
 
   prepare(buyer: auth(BorrowValue) &Account, dapperAccount: auth(BorrowValue) &Account) {
     // Validate merchant
@@ -83,25 +92,44 @@ transaction(
     // Borrow buyer's Top Shot collection
     self.buyerCollection = buyer.capabilities
       .borrow<&{NonFungibleToken.CollectionPublic}>(/public/MomentCollection)
-      ?? panic("Cannot borrow buyer TopShot collection")
+      ?? panic("Buyer is missing /public/MomentCollection — run setup_topshot_account first")
 
-    // Withdraw DUC from buyer's vault
+    // Borrow buyer's DUC vault and snapshot opening balance for the post-condition leak check
     let ducVault = buyer.storage.borrow<auth(FungibleToken.Withdraw) &DapperUtilityCoin.Vault>(
       from: /storage/dapperUtilityCoinVault
     ) ?? panic("Cannot borrow DapperUtilityCoin vault from buyer")
+    self.buyerDUCVault = ducVault
+    self.balanceBeforePurchase = ducVault.balance
 
+    // Withdraw payment
     self.paymentVault <- ducVault.withdraw(amount: expectedPrice) as! @DapperUtilityCoin.Vault
+
+    // H1: resolve the commission receiver capability published by the merchant at the
+    // standard Dapper path. NFTStorefrontV2.purchase only consumes this when
+    // self.details.commissionAmount > 0 (contract lines 355-378), so a valid cap is
+    // also safe for zero-commission listings.
+    self.commissionRecipientCap = getAccount(merchantAccountAddress)
+      .capabilities
+      .get<&{FungibleToken.Receiver}>(/public/dapperUtilityCoinReceiver)
   }
 
   execute {
-    // Execute the purchase — NFT flows to buyer, DUC flows to seller + fees
+    // Execute the purchase — NFT flows to buyer, DUC flows to seller + fees + commission
     let nft <- self.listing.purchase(
       payment: <-self.paymentVault,
-      commissionRecipient: nil
+      commissionRecipient: self.commissionRecipientCap
     )
 
     // Deposit NFT into buyer's collection
     self.buyerCollection.deposit(token: <-nft)
+  }
+
+  // H2: Dapper meta-tx co-signer leak check. The only DUC that should leave the
+  // buyer's vault is exactly expectedPrice; the storefront draws commission and
+  // sale cuts from the payment vault we already moved.
+  post {
+    self.buyerDUCVault.balance == self.balanceBeforePurchase - expectedPrice:
+      "DUC balance leak — buyer DUC vault did not decrease by exactly expectedPrice"
   }
 }
 `
