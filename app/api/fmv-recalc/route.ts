@@ -28,7 +28,11 @@ import { computeConfidence, escalateConfidence } from "@/lib/fmv-confidence"
 
 const ALGO_VERSION = "1.7.0"
 const WINDOW_DAYS = 30
-const DEFAULT_LIMIT = 500
+const DEFAULT_LIMIT = 1000
+
+// Route-segment config: the paginated sweep plus the haircut pass can run
+// well past the platform default, so pin the Vercel Pro maximum.
+export const maxDuration = 300
 
 // Disney Pinnacle owns its own FMV table (pinnacle_fmv_snapshots) and edition
 // table (pinnacle_editions). 314 Pinnacle rows pre-dated the split and still
@@ -139,7 +143,32 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}))
   const limit = Math.min(Number(body.limit ?? DEFAULT_LIMIT), 2000)
-  const offset = Number(body.offset ?? 0)
+
+  // Resume the paginated sweep from the previous run's cursor. The cron and the
+  // sales-indexer chains call this route with no explicit offset; without a
+  // persisted cursor every run reprocessed page 0, so ~95% of editions were
+  // never recomputed by the current algo and stayed labelled by stale /
+  // cold-tail pipelines (audit 2026-05-23). The route logs cursor_after as null
+  // at the end of the table, which naturally wraps the sweep back to 0. An
+  // explicit body.offset still overrides (used by force_stale / manual calls).
+  let offset = 0
+  if (body.offset != null && Number.isFinite(Number(body.offset))) {
+    offset = Number(body.offset)
+  } else {
+    try {
+      const { data: cursorRow } = await (supabaseAdmin as any)
+        .from("pipeline_runs")
+        .select("cursor_after")
+        .eq("pipeline", "fmv-recalc")
+        .order("started_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const prev = Number(cursorRow?.cursor_after)
+      if (Number.isFinite(prev) && prev > 0) offset = prev
+    } catch (err) {
+      console.warn("[FMV-RECALC] cursor read failed, starting at offset 0:", err)
+    }
+  }
 
   // Recalc pages can exceed cron-job.org's 30s timeout. Run the heavy work
   // after the response is sent so callers get an immediate ack.
@@ -177,6 +206,28 @@ export async function POST(req: NextRequest) {
       console.log(
         `[FMV-RECALC] No sales found in window — durationMs=${Date.now() - startTime}`
       )
+      // If the paginated sweep walked off the end of the table, log a null
+      // cursor so the next run wraps back to offset 0 instead of getting stuck
+      // re-reading the empty page past the end.
+      if (offset > 0) {
+        try {
+          await supabaseAdmin.rpc("log_pipeline_run", {
+            p_pipeline: "fmv-recalc",
+            p_started_at: new Date(startTime).toISOString(),
+            p_rows_found: 0,
+            p_rows_written: 0,
+            p_rows_skipped: 0,
+            p_ok: true,
+            p_error: null,
+            p_collection_slug: null,
+            p_cursor_before: String(offset),
+            p_cursor_after: null,
+            p_extra: { algo_version: ALGO_VERSION, sweep_wrapped: true },
+          })
+        } catch (err) {
+          console.warn("[FMV-RECALC] sweep-wrap log failed:", err)
+        }
+      }
       await fireNextPipelineStep("/api/listing-cache", chain)
       return
     }

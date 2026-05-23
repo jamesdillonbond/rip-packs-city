@@ -77,12 +77,14 @@ Shipped: `serialResidualDispersion()` added to `lib/fmv-confidence.ts`; `escalat
 - **Impact:** HIGH-eligible editions ~899 → ~1,261. Labelled HIGH (493 today, lagged behind eligibility) climbs toward ~1,150–1,260 (**≈4.5–5%**) as the recalc cron cycles through.
 - **Verified:** the algorithm was unit-tested against the SQL model on a real edition (8 sales, raw CV 0.62 → residual 0.35 → correctly promoted to HIGH); 9/9 cases pass, including the raw-CV fallback path.
 
-### Lever 2 (quick win) — clear the recalc lag
+### Lever 2 (root cause) — fix the recalc pagination · ✅ FIXED 2026-05-23
 
-~411 editions already qualify for HIGH but sit `STALE`. Confirm the `/api/fmv-recalc?force_stale=true` path (6-hourly cron) is actually draining; if pagination can't keep up with 24.7k editions, raise the chunk size or cadence.
+Investigation found something bigger than "lag". `fmv-recalc` paginates its sales scan by `{offset, limit}`, but the cron and the sales-indexer chains call it with **no offset — so every run reprocessed page 0**. It only ever recomputed ~41 editions (the lowest edition_ids). Of the 1,768 editions with ≥7 sales in 30 days, only **90** were actually owned by the current `1.7.0` algo; the rest were left labelled by whatever pipeline last touched them — **842 by `drain-fmv-cold-tail`** (which gives them 0 HIGH / 0 MEDIUM despite heavy trading) and **612 by the obsolete `1.1.0`** algo. This — not a STALE queue — is why labelled HIGH (493) lags the ~900 raw-eligible, and it means the Lever 1 serial-residual gate would otherwise never reach most editions.
 
-- **Impact:** ~+400 HIGH with **zero logic change**.
-- **Effort:** Small — config/verification.
+Fixed: `fmv-recalc` now resumes the sweep from the previous run's `cursor_after` (already logged in `pipeline_runs`), wrapping to 0 at the end of the table; page size raised 500 → 1000. With ~28 triggers/day the route now sweeps all ~58k window sales — every edition — roughly every **2 days**, recomputing each under the current `1.7.0` algo + the serial-residual gate.
+
+- **Impact:** ~1,450 well-traded editions migrate off `cold-tail` / `1.1.0` onto the current algo over ~2 days — this is what makes Lever 1's +362 actually land.
+- **Effort:** Small — one route, no schema, no new cron.
 
 ### Lever 3 — consume asks for zero-sale editions
 
@@ -102,4 +104,4 @@ The 14,384 genuinely-dark editions can only be priced by inference — a cohort 
 3. **Lever 3** — priced coverage up ~1,400 editions; reframes the misleading "100% coverage" metric honestly.
 4. **Lever 4** — later.
 
-After Levers 1+2, HIGH-confidence FMV moves from **2.0% → roughly 4.5–5%** of editions — a ~2.3–2.5× improvement in the metric the Pro tier is sold on, with no new data sources required. Lever 1 is shipped; Lever 2 (clearing the recalc lag) is what realises the gain as the cron cycles.
+After Levers 1+2, HIGH-confidence FMV moves from **2.0% → roughly 4.5–5%** of editions — a ~2.3–2.5× improvement in the metric the Pro tier is sold on, with no new data sources required. Levers 1 and 2 are both shipped (2026-05-23); the gain materialises over ~2 days as the recalc sweep cycles through every edition.
