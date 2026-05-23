@@ -12,6 +12,8 @@
 //
 //   searchMarketplaceEditions(input: SearchMarketplaceEditionsInput!)
 //     input.filters      MarketplaceEditionsFilterInput!  -- {} is valid (no required fields)
+//     input.sortBy       MarketplaceEditionsSortType  -- REQUIRED: without a stable sort the
+//                        rightCursor never advances and the API re-returns page 1
 //     input.searchInput  BaseSearchInput!  -- { pagination: { cursor, direction, limit } }
 //   -> data            SearchMarketplaceEditionsSummary
 //      -> searchSummary SearchSummary
@@ -49,6 +51,10 @@ const SWEEP_ID = "topshot-fmv-sweep"
 
 const TS_PROXY_URL_DEFAULT = "https://public-api.nbatopshot.com/graphql"
 const PAGE_LIMIT = 100
+// A stable sort is mandatory: without it the rightCursor does not advance and
+// searchMarketplaceEditions re-returns page 1 indefinitely. UPDATED_AT_DESC is
+// a verified member of the MarketplaceEditionsSortType enum.
+const SORT_BY = "UPDATED_AT_DESC"
 const PAGE_DELAY_MS = 250
 const TIME_BUDGET_OVERHEAD_MS = 45_000
 const PER_REQUEST_TIMEOUT_MS = 12_000
@@ -147,6 +153,7 @@ async function fetchPage(cursor: string): Promise<PageResult> {
     variables: {
       input: {
         filters: {},
+        sortBy: SORT_BY,
         searchInput: {
           pagination: { cursor, direction: "RIGHT", limit: PAGE_LIMIT },
         },
