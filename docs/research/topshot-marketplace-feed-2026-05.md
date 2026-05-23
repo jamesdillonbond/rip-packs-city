@@ -35,7 +35,7 @@ query SearchEditions($setID: ID, $playID: ID, $first: Int!) {
 
 `stats.lowestAsk` is the live lowest ask; `stats.averagePrice` / `totalSales` are marketplace sale stats. This is the direct analog of AllDay's `searchMarketplaceEditions` (`lowestPrice` / `averageSale` / `totalListings`) that `allday-fmv-populate` already sweeps. One call per set returns every play in that set (`first: 250`).
 
-**Add one field:** the query as written selects `set.id` + `play.id` but not the edition's own id — request `id` (or `editionID`) on the edition node so results match `editions.external_id` directly (see §6).
+**Extend the selection:** the query as written selects only `set.id` + `play.id`. Add whatever fields expose the **on-chain integer setID / playID** — that integer pair is the reliable join key (see §6). Confirm the available fields against a live response.
 
 ## 3. Architecture — mirror `allday-fmv-populate`
 
@@ -65,13 +65,23 @@ Mirror `upsert_allday_marketplace_fmv` (read its source first). Per edition:
 
 This feed only ever writes `LOW` / `ASK_ONLY`, and only for editions not already `HIGH`/`MEDIUM`. It is strictly additive — it cannot degrade the serial-residual HIGH work shipped 2026-05-23. The thin-sale haircut cron already targets `LOW` + `ASK_ONLY`, so ask-derived values get discounted downstream automatically.
 
-## 6. The hard part — edition matching
+## 6. The crux — edition matching
 
-This is the one genuine unknown and must be verified before building. `searchEditions` returns Top Shot's GraphQL UUIDs for `set` and `play`. Our `editions` table keys Top Shot rows by `external_id` (edition UUID), plus `set_id_onchain` / `play_id_onchain` (UInt32 integers) and a `set_id` FK.
+Verified against the production DB (2026-05-23). Top Shot has **17,495 editions** and `editions.external_id` comes in **two formats**:
 
-Recommended path: add `id` to the `searchEditions` edition node so each result carries its **edition UUID**, then match `editions.external_id` directly — a clean 1:1 join, no set/play resolution needed. Verify against the live schema (via the Cadence/GQL tooling or a `topshot-proxy` probe) that the edition node exposes `id`. Fallback: match on `(set UUID, play UUID)` via the `sets` table — messier, confirm the join exists.
+- `setUUID:playUUID` — 8,500 editions (the GQL-catalog path; these external_ids are literally `searchEditions` `set.id` + `:` + `play.id`).
+- `setIDint:playIDint` — 8,993 editions (the Cadence path).
 
-Editions returned by the API with no `editions` row are new editions — log a counter (`no_edition`) like `allday-fmv-populate` does; the catalog backfill handles seeding them.
+So `external_id` alone is **not a reliable single join key** — a `searchEditions` result only matches the ~half of editions whose external_id happens to be in the matching format. Do not key the RPC on `external_id`.
+
+The reliable key is the integer pair: **`editions.set_id_onchain` + `editions.play_id_onchain` is populated for 16,519 of 17,495 editions (94%)**, across *both* external_id formats. So:
+
+- If `searchEditions` `set.id` / `play.id` are the on-chain integer IDs → join `(set_id_onchain, play_id_onchain)` directly. 94% coverage. Best case.
+- If they are UUIDs → the route must also pull whatever on-chain integer IDs the edition / `setPlay` node exposes (Top Shot GQL edition nodes usually carry a `flowID` / on-chain id), and join on those. Resolving set UUID → `set_id_onchain` via the `sets` table works, but there is **no stored play UUID → int mapping**, so the pure-UUID path is incomplete.
+
+**Build prerequisite (the one real blocker):** capture one real `searchEditions` response and inspect the `set` / `play` / `setPlay` nodes — confirm whether those IDs are integers or UUIDs, and which field carries the on-chain integers. This needs a single call through the `topshot-proxy` worker (it holds the `X-Proxy-Secret`; the API is Cloudflare-blocked otherwise). That one check unblocks the RPC's resolution logic — everything else (route, cursor, cron, the LOW/ASK_ONLY confidence rules) can be built against `allday-fmv-populate` as the template without it.
+
+The ~976 editions with NULL on-chain IDs (the F12 audit gap) won't match on any key — they need the catalog backfill to seed their IDs first; log them as a `no_edition` counter like `allday-fmv-populate` does.
 
 ## 7. Cron & scope
 
