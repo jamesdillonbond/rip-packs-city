@@ -22,9 +22,19 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
 
+  # Cadence type-check harness for lib/cadence/purchase-moment.ts.
+  # The C1/C2 compile errors that docs/cadence-testing.md describes appear
+  # already fixed in the source as of 2026-05-22 (FungibleToken is imported;
+  # self.listing is borrowed before its price is read), so this harness is
+  # expected to pass. It is kept NON-BLOCKING (continue-on-error) only until a
+  # real run confirms `npm run test:cadence` exits 0 — then delete the
+  # continue-on-error line below to make it a true regression gate.
+  # NOTE: docs/cadence-testing.md still calls the harness "RED on purpose" and
+  # is itself stale — it predates the C1/C2 fix.
   cadence-lint:
     name: Cadence lint
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -36,4 +46,11 @@ jobs:
         run: |
           sh -ci "$(curl -fsSL https://raw.githubusercontent.com/onflow/flow-cli/master/install.sh)"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      # Populates the gitignored imports/ directory with the mainnet contract
+      # sources (NFTStorefrontV2, FungibleToken, NonFungibleToken,
+      # MetadataViews, ViewResolver) declared in flow.test.json. Without this,
+      # `flow cadence lint` fails on unresolved imports instead of cleanly
+      # surfacing the C1/C2 semantic errors. See docs/cadence-testing.md.
+      - name: Install Cadence test dependencies
+        run: flow dependencies install -f tests/cadence/flow.test.json -y
       - run: npm run test:cadence

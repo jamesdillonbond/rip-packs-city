@@ -91,7 +91,7 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial 
           >{r.label}</button>
         ))}
         {loading && (
-          <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "var(--rpc-text-muted)", marginLeft: 8, alignSelf: "center" }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", marginLeft: 8, alignSelf: "center" }}>
             loading…
           </span>
         )}
@@ -101,7 +101,7 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial 
           padding: "32px 16px",
           textAlign: "center",
           color: "var(--rpc-text-muted)",
-          fontFamily: "'Share Tech Mono', monospace",
+          fontFamily: "var(--font-mono)",
           fontSize: 12,
           border: "1px dashed var(--rpc-border)",
           borderRadius: 6,
@@ -134,7 +134,7 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial 
                   background: "rgba(13,13,13,0.96)",
                   border: "1px solid var(--rpc-border)",
                   borderRadius: 6,
-                  fontFamily: "'Share Tech Mono', monospace",
+                  fontFamily: "var(--font-mono)",
                   fontSize: 11,
                 }}
                 labelStyle={{ color: "var(--rpc-text-secondary)" }}

@@ -120,7 +120,7 @@ export default function SetsPage() {
   const params = useParams();
   const collectionSlug = (params?.collection as string) ?? "nba-top-shot";
   const collectionObj = getCollection(collectionSlug);
-  const accent = collectionObj?.accent ?? "#E03A2F";
+  const accent = collectionObj?.accent ?? "var(--rpc-red)";
   const colors = makeColors(accent);
   const isAllDay = collectionSlug === "nfl-all-day";
   const isUfc = collectionSlug === "ufc";

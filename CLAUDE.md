@@ -547,52 +547,54 @@ Tracked but intentionally unfixed — revisit when adding a real consumer or a p
 
 Main branch is the canonical clean branch.
 
-1. **Cart execution blocked** — two external dependencies and three internal code blockers. External: register `NEXT_PUBLIC_WALLETCONNECT_ID` at dashboard.reown.com, and complete Dapper meta-transaction co-signer registration. Internal blockers are documented in `docs/audits/purchase-moment-2026-05.md` at commit `7ad4c4a`:
-   - **Critical compile errors (C1, C2)** in `lib/cadence/purchase-moment.ts`: `self.listing.getDetails().salePrice` is read before `self.listing` is assigned (uninitialized field access), and the file is missing `import FungibleToken from 0xf233dcee88fe0abe` which is required for the `auth(FungibleToken.Withdraw)` entitlement on the DUC vault borrow.
-   - **High-severity (H1)**: `commissionRecipient: nil` will panic on every Dapper-listed Top Shot moment because Dapper listings always carry a non-zero commission cut.
-   - **High-severity (H2)**: missing `post {}` block enforcing the DUC leak check that the Dapper co-signer requires before it will sign the meta-transaction.
+**Status reconciled 2026-05-23** against the codebase + production DB. Full verification table: `PROJECT_HEALTH_2026-05-22.md` §9. Item numbers below are stable (they match the report); resolved items are listed at the end under their original numbers.
 
-   The transaction has never compiled against a Cadence 1.0 toolchain. Sequence: fix the Cadence first (C1+C2 to compile-clean, then H1+H2 to make it signable), then resolve the external dependencies, then test on emulator and testnet against a real Dapper testnet co-signer before any mainnet attempt.
+### Platform changes (May 2026) — these make several sections of this file stale
 
-2. **Sentry error capture inactive** — `@sentry/nextjs ^10.47.0` is wired (sentry.client/server/edge.config.ts all reference `NEXT_PUBLIC_SENTRY_DSN`) but no DSN set in Vercel env. SDK is current; only blocker is creating a Sentry project (or locating the existing one) and pasting its DSN as `NEXT_PUBLIC_SENTRY_DSN` for production/preview/development. Separately, `SENTRY_AUTH_TOKEN` is also missing from Vercel env — the token lives in local `.env.sentry-build-plugin` (gitignored) so source-map uploads work locally but not on Vercel deploys; add via `/v10/projects/{id}/env` then redeploy. See `docs/audits/audit-2026-05-18-handoff.md` §3.1.
+- **Flowty shut down its NFT marketplace (~2026-05-13).** The external Flowty event indexer, `flowty_loans` / `flowty_loan_events` ingest, the Flowty analytics materialized views, the Flowty leg of the sniper feed, the `flowty-proxy` edge function, and all Flowty-sourced ASK/FMV inputs are now frozen. The "Flowty API", sniper-feed, and worker sections of this file describe what is now legacy/dead infrastructure pending a deliberate teardown. `flowty_loan_events` going cold on 2026-05-11 is expected behaviour, not a regression.
+- **NFL All Day ended primary pack sales.** AllDay `PackNFT.Mint` ingestion and AllDay pack-EV are historical-only; AllDay is a secondary-market collection going forward.
 
-3. **External Flowty event indexer regression** — `flowty_loan_events` ingest dropped ~99% on 2026-04-28. Selective failure: all `FUNDING_AVAILABLE`, `FUNDING_REPAID`, `FUNDING_SETTLED` events stopped completely; `LISTING_*` events still trickle at <1% of pre-cliff volume. Writer is external to this repo. The April 28 cutoff also matches the staleness of `storefront_audit_wallets` (last write 2026-04-28 11:35 UTC), suggesting a shared upstream Flow access node or event subscription change.
+### Open
 
-4. **Pinnacle direct integration** — replace Flowty-sourced ASK prices (uniform $1 floor) with direct data feed.
+1. **Cart execution — partial.** C1 and C2 (the Cadence compile errors) are FIXED in `lib/cadence/purchase-moment.ts` (`FungibleToken` is imported; `self.listing` is borrowed before its price is read). Still open: H1 (`commissionRecipient: nil` panics on every Dapper-listed TS moment), H2 (missing `post {}` DUC-leak block), and the external deps (`NEXT_PUBLIC_WALLETCONNECT_ID`, Dapper co-signer registration). Verify any Cadence change against the live contract via the Cadence MCP first. See `docs/audits/purchase-moment-2026-05.md`.
 
-5. **AllDay/UFC editions cleanup** — ~454 mis-categorized AllDay/UFC editions in the TopShot collection. FK impact analysis required before mutations.
+4. **Pinnacle direct integration — partial.** The uniform $1 Flowty floor is gone — Pinnacle listings now show varied prices ($1–$9,999, ingesting daily). But Pinnacle still has 0 FMV editions; FMV integration is incomplete. With Flowty down, confirm the current source of Pinnacle ASK data.
 
-6. **WarmupContext key mismatch** — prefetcher + consumer must agree on cache-key shape; mismatched keys silently render 0 rows (works logged-out, fails signed-in).
+7. **Historical spork scan — partial.** The spork-proxy worker exists (`infrastructure/spork-proxy-worker`, `workers/spork-proxy`). The unified spork-scan resolver still needs to run to clear the unresolved AllDay + Pinnacle sales backlog.
 
-7. **Historical spork scan** — blocked from Supabase egress (port 8070). Resolution: a 6th Cloudflare Worker proxy on the same pattern as `topshot-proxy`, then run the unified spork-scan resolver to clear the ~3,400 AllDay + Pinnacle unresolved sales backlog.
+9. **Storefront audit pipeline cold** since 2026-04-28 — confirmed: `storefront_audit_wallets` last row created 2026-04-28 11:35 UTC, nothing since. Predates the Flowty shutdown; investigate or formally retire.
 
-8. **NBA stats.nba.com unreachable from CF Workers** (Cloudflare-on-Cloudflare origin block) — projections stuck at 0 rows/day. Resolution path: move the player-stats ingress off CF (Deno Deploy / Render / Fly.io), use balldontlie.io paid tier, or route through residential-IP proxy.
+10. **`/dashboard` token migration** — `app/dashboard/page.tsx` ~1,750 lines. Big lift, defer until stable.
 
-9. **Storefront audit pipeline cold** since 2026-04-28 (paired with item 3) — investigate before resuming.
+11. **Brand punch list — partial.** Per-feature OG cards exist (`/api/og/{collection,deal,moment,pack,profile,fast-break,default}`). Still missing: the `/home-fmv-preview.png` home screenshot. Fast Break / RTR / admin tokenize once stable.
 
-10. **`/dashboard` 1816-line token migration** — big lift, defer until stable.
+12. **Blazers trivia** (`lib/blazers-trivia.ts`) — 29 items shelved, still no UI.
 
-11. **Brand punch list**: per-collection OG cards (clone `/api/og/deal`); `/home-fmv-preview.png` screenshot on home; Fast Break / RTR / admin tokenize once stable.
+14. **Monolith page refactor** — `collection/page.tsx` (~2,900 lines), `sniper/page.tsx` (~2,485), `analytics/page.tsx` (~2,208). Phase 1 plan in `docs/audits/refactor-plan-monolith-pages-2026-05.md`.
 
-12. **Blazers trivia** (`lib/blazers-trivia.ts`) — 29 items shelved, no UI yet.
+15. **`livetoken-portfolio*.json` fixtures** — 11 files are still git-tracked despite the `.gitignore` entry; the planned `git rm --cached` was never run.
 
-13. **`flowty_archive` growth strategy — RESOLVED 2026-05-23.** Chose option B (hedge): pruned the ~40.6K already-extracted redundant rows + `VACUUM FULL`. `api_harvest_20260512` went 9.9 GB → 2.6 GB; total DB 13.8 GB → 6.5 GB. Kept the ~33K unextracted `collection:*:sale` preservation rows; did NOT build extractors. Daily prune cron (7-day extracted retention) keeps it bounded going forward.
+17. **Pack / Moment / Set page tune-up — ongoing.** Comprehensive audits with file:line findings in `PACK_PAGES_AUDIT_2026-05-22.md`, `MOMENT_PAGES_AUDIT_2026-05-22.md`, and `SET_PAGES_AUDIT_2026-05-22.md`. Done: the Pack surface's AllDay-context banner and brand-token cleanup. Remaining (incl. brand-token cleanup for `components/entity/_shared.tsx` + `EditionsGridPaginated.tsx` and the Moment/Set data-accuracy fixes) is tracked in those docs.
 
-14. **Monolith page refactor** — `collection/page.tsx` (2,900 lines, 59 useState), `sniper/page.tsx` (2,485 lines, 50 useState), `analytics/page.tsx` (2,203 lines, 36 useState). Phase 1 is zero-risk (~1h, extract leaf components from `collection/page.tsx` lines 29-430). Full plan in `docs/audits/refactor-plan-monolith-pages-2026-05.md`.
+### Resolved (verified 2026-05-23)
 
-15. **`livetoken-portfolio*.json` fixtures committed in tree** — 12 fixtures from a one-off Flowty harvest experiment. Decision needed: keep as docs, move to a gitignored `scratch/` folder, or delete. Flagged in `docs/audits/audit-2026-05-18-handoff.md` §3.6.
-
-16. **Wire `flow test` into a GitHub Action** — Cadence test harness exists (`npm run test:cadence`) but isn't gated by CI; the purchase-moment regression net only catches breakage when a human runs it locally. See `project_cadence_test_harness.md` memory entry + audit handoff §3.6.
+- **#2 Sentry error capture** — `NEXT_PUBLIC_SENTRY_DSN` confirmed set in Vercel env + redeployed. SDK wired (org `rip-packs-city`, project `javascript-nextjs`).
+- **#3 Flowty event indexer "regression"** — not a bug; Flowty's marketplace shut down (see Platform changes above).
+- **#5 AllDay/UFC mis-categorized editions** — only 8 stray editions remain under the TopShot collection_id (all `disney_pinnacle`), not ~454. Effectively resolved.
+- **#6 WarmupContext key mismatch** — `WarmupContext.tsx` now prefetches `/api/packs` into the key `PackPageClient` reads.
+- **#8 NBA stats / projections** — `nba_player_projections` is syncing again (no longer 0 rows/day).
+- **#13 `flowty_archive` growth** — resolved (option-B prune + `VACUUM FULL`; total DB 13.8 → 6.5 GB).
+- **#16 `flow test` CI gating** — `.github/workflows/ci.yml` gates `tsc` + the Cadence harness. The `cadence-lint` job's missing `flow dependencies install` step was fixed 2026-05-22; it runs `continue-on-error` (non-blocking) pending a confirmed green run.
 
 ---
 
 ## Prioritized next actions
 
-1. Cart execution (WalletConnect ID + Dapper registration).
+1. Cart execution — H1 + H2 Cadence fixes (C1/C2 are already done), then external deps (WalletConnect ID + Dapper registration).
 2. Austin Kline FMV API outreach (demo URL live).
-3. RPC Pro monetization ($9/month freemium gate).
-4. Locate external Flowty event indexer and diagnose the April 28 cliff (Known issues item 3).
-5. Spork-proxy worker for historical scan (Known issues item 7).
+3. RPC Pro monetization ($9/month freemium gate; `lib/pro/gate.tsx` `ProGate` is currently a pass-through stub).
+4. Flowty teardown — Flowty's marketplace shut down ~2026-05-13; archive the now-dead Flowty indexer / analytics MVs / `flowty-proxy` / sniper-leg infrastructure.
+5. Run the spork-scan resolver to clear the unresolved-sales backlog (the spork-proxy worker now exists).
 
 ---
 

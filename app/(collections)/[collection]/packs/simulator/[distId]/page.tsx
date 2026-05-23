@@ -174,7 +174,7 @@ export default function PackSimulatorPage({ params }: PageProps) {
   const { collection: collectionSlug, distId } = use(params)
   const collectionObj = getCollection(collectionSlug)
   const collectionUuid = COLLECTION_UUID_BY_SLUG[collectionSlug] ?? null
-  const accent = collectionObj?.accent ?? "#E03A2F"
+  const accent = collectionObj?.accent ?? "var(--rpc-red)"
 
   const [payload, setPayload] = useState<SimulatorPayload | null>(null)
   const [loading, setLoading] = useState(true)
@@ -326,15 +326,15 @@ export default function PackSimulatorPage({ params }: PageProps) {
   if (error || !payload || payload.error || !payload.pack || !payload.pool || payload.pool.length === 0) {
     return (
       <div style={{ maxWidth: 640, margin: "40px auto", padding: 24, border: "1px solid var(--rpc-border, #27272a)", borderRadius: 10, background: "var(--rpc-surface, #0d0d0d)", textAlign: "center" }}>
-        <div style={{ fontFamily: "var(--font-display, 'Barlow Condensed', sans-serif)", fontSize: 22, fontWeight: 800, color: "#fff", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 12 }}>
+        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, color: "#fff", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 12 }}>
           Drop pool not indexed
         </div>
-        <div style={{ fontFamily: "var(--font-mono, 'Share Tech Mono', monospace)", fontSize: 12, lineHeight: 1.6, color: "rgba(255,255,255,0.65)" }}>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.6, color: "rgba(255,255,255,0.65)" }}>
           This pack&apos;s drop pool isn&apos;t indexed — usually because it&apos;s sold out and being secondary-traded.
           The simulator works on active drops.
         </div>
         <div style={{ marginTop: 18 }}>
-          <Link href={`/${collectionSlug}/packs`} style={{ display: "inline-block", padding: "8px 16px", background: accent, color: "#fff", borderRadius: 6, fontFamily: "var(--font-display, 'Barlow Condensed', sans-serif)", fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}>
+          <Link href={`/${collectionSlug}/packs`} style={{ display: "inline-block", padding: "8px 16px", background: accent, color: "#fff", borderRadius: 6, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}>
             Back to packs
           </Link>
         </div>
@@ -349,8 +349,8 @@ export default function PackSimulatorPage({ params }: PageProps) {
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 18px 80px" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Share+Tech+Mono&display=swap');
-        .rpc-sim-stat { font-family: 'Share Tech Mono', monospace; }
-        .rpc-sim-header { font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.06em; }
+        .rpc-sim-stat { font-family: var(--font-mono); }
+        .rpc-sim-header { font-family: var(--font-display); text-transform: uppercase; letter-spacing: 0.06em; }
         .rpc-sim-button { transition: transform 120ms ease, background 120ms ease; cursor: pointer; }
         .rpc-sim-button:hover:not(:disabled) { transform: translateY(-1px); }
         .rpc-sim-button:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -417,7 +417,7 @@ export default function PackSimulatorPage({ params }: PageProps) {
         <RipButton disabled={ripping || !slots} onClick={() => runRips(10)} accent={accent} label="Rip 10" />
         <RipButton disabled={ripping || !slots} onClick={() => runRips(100)} accent={accent} label="Rip 100" />
         {result && (
-          <button onClick={() => { setResult(null); setFlipIndex(0) }} className="rpc-sim-button" style={{ padding: "10px 16px", background: "transparent", color: "rgba(255,255,255,0.7)", border: "1px solid #444", borderRadius: 6, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase" }}>
+          <button onClick={() => { setResult(null); setFlipIndex(0) }} className="rpc-sim-button" style={{ padding: "10px 16px", background: "transparent", color: "rgba(255,255,255,0.7)", border: "1px solid #444", borderRadius: 6, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase" }}>
             Reset
           </button>
         )}
@@ -434,7 +434,7 @@ export default function PackSimulatorPage({ params }: PageProps) {
       )}
 
       {/* Disclaimer */}
-      <div style={{ marginTop: 32, padding: "12px 14px", borderTop: "1px solid #27272a", color: "rgba(255,255,255,0.5)", fontFamily: "'Share Tech Mono', monospace", fontSize: 11, lineHeight: 1.7 }}>
+      <div style={{ marginTop: 32, padding: "12px 14px", borderTop: "1px solid #27272a", color: "rgba(255,255,255,0.5)", fontFamily: "var(--font-mono)", fontSize: 11, lineHeight: 1.7 }}>
         Simulation uses stored drop weights from when the pack was indexed; real pack odds shift slightly as packs are opened. EV per slot here uses weighted sampling (metrics.ev_per_slot); the canonical trimmed-mean pack EV shown on the pack listing page may differ.
         {payload.note && <div style={{ marginTop: 6, opacity: 0.8 }}>{payload.note}</div>}
         {payload.computed_at && <div style={{ marginTop: 4, opacity: 0.7 }}>Pool computed: {new Date(payload.computed_at).toLocaleString()}</div>}
@@ -448,8 +448,8 @@ export default function PackSimulatorPage({ params }: PageProps) {
 function Stat({ label, value, accent }: { label: string; value: string; accent: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-      <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, color: accent, letterSpacing: "0.12em", textTransform: "uppercase" }}>{label}</div>
-      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 18, fontWeight: 700, color: "#fff" }}>{value}</div>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: accent, letterSpacing: "0.12em", textTransform: "uppercase" }}>{label}</div>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 700, color: "#fff" }}>{value}</div>
     </div>
   )
 }
@@ -457,9 +457,9 @@ function Stat({ label, value, accent }: { label: string; value: string; accent: 
 function ProbCard({ label, prob, accent, count }: { label: string; prob: number | null | undefined; accent: string; count: number | null | undefined }) {
   return (
     <div style={{ padding: "10px 12px", background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 6 }}>
-      <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, color: "rgba(255,255,255,0.55)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</div>
-      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 22, fontWeight: 800, color: "#fff", marginTop: 2 }}>{fmtPct(prob)}</div>
-      {count != null && <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: accent, marginTop: 1 }}>{count} editions</div>}
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "rgba(255,255,255,0.55)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</div>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, color: "#fff", marginTop: 2 }}>{fmtPct(prob)}</div>
+      {count != null && <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: accent, marginTop: 1 }}>{count} editions</div>}
     </div>
   )
 }
@@ -470,7 +470,7 @@ function RipButton({ onClick, label, accent, disabled }: { onClick: () => void; 
       onClick={onClick}
       disabled={disabled}
       className="rpc-sim-button"
-      style={{ padding: "12px 22px", background: accent, color: "#fff", border: "none", borderRadius: 6, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 14, letterSpacing: "0.12em", textTransform: "uppercase" }}
+      style={{ padding: "12px 22px", background: accent, color: "#fff", border: "none", borderRadius: 6, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 14, letterSpacing: "0.12em", textTransform: "uppercase" }}
     >
       {label}
     </button>
@@ -484,7 +484,7 @@ function AggregateCard({ result, accent }: { result: RipResult; accent: string }
   const beatPct = a.retail != null && a.totalRips > 0 ? (a.ripsBeatRetail / a.totalRips) * 100 : null
   return (
     <div style={{ marginTop: 18, padding: 14, background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 8 }}>
-      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 800, color: accent, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 10 }}>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 800, color: accent, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 10 }}>
         Aggregate · {a.totalRips} rip{a.totalRips === 1 ? "" : "s"} · {a.totalSlots} slots
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
@@ -512,8 +512,8 @@ function AggregateCard({ result, accent }: { result: RipResult; accent: string }
 function Metric({ label, value, accent }: { label: string; value: string; accent: string }) {
   return (
     <div>
-      <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, color: "rgba(255,255,255,0.5)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</div>
-      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 20, fontWeight: 800, color: accent }}>{value}</div>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "rgba(255,255,255,0.5)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</div>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 800, color: accent }}>{value}</div>
     </div>
   )
 }
@@ -521,8 +521,8 @@ function Metric({ label, value, accent }: { label: string; value: string; accent
 function HitMetric({ label, hits, rate }: { label: string; hits: number; rate: number }) {
   return (
     <div style={{ background: "#080808", border: "1px solid #1f1f22", padding: "6px 10px", borderRadius: 4 }}>
-      <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, color: "rgba(255,255,255,0.5)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</div>
-      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 16, fontWeight: 700, color: "#fff" }}>{hits} <span style={{ fontSize: 10, color: "rgba(255,255,255,0.55)" }}>({rate.toFixed(2)}%)</span></div>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "rgba(255,255,255,0.5)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</div>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 700, color: "#fff" }}>{hits} <span style={{ fontSize: 10, color: "rgba(255,255,255,0.55)" }}>({rate.toFixed(2)}%)</span></div>
     </div>
   )
 }
@@ -536,10 +536,10 @@ function PullsGrid({ result, accent, flipIndex, slots }: { result: RipResult; ac
         return (
           <div key={ri} style={{ background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 8, padding: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", color: accent, textTransform: "uppercase" }}>
+              <div style={{ fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", color: accent, textTransform: "uppercase" }}>
                 Rip #{ri + 1}
               </div>
-              <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 13, color: "#fff" }}>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "#fff" }}>
                 {fmtUsd(packValue)}
                 {result.aggregate.retail != null && (
                   <span style={{ marginLeft: 8, color: packValue >= result.aggregate.retail ? "#34D399" : "#F87171", fontSize: 11 }}>
@@ -566,13 +566,13 @@ function PullsGrid({ result, accent, flipIndex, slots }: { result: RipResult; ac
                       <div style={{ width: "100%", aspectRatio: "1 / 1", background: "#0d0d0d" }} />
                     )}
                     <div style={{ padding: "4px 5px" }}>
-                      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <div style={{ fontFamily: "var(--font-display)", fontSize: 11, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {pull.edition.player_name ?? "—"}
                       </div>
-                      <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, color: tierColor(tier), textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: tierColor(tier), textTransform: "uppercase", letterSpacing: "0.06em" }}>
                         {(tier || "").replace(/_/g, " ")}
                       </div>
-                      <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "#fff", marginTop: 1 }}>
+                      <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#fff", marginTop: 1 }}>
                         {fmtUsd(pull.edition.fmv_usd)}
                       </div>
                     </div>

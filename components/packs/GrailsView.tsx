@@ -159,7 +159,7 @@ export default function GrailsView({ collection, accent }: Props) {
   return (
     <div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 14 }}>
-        <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Sort</span>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Sort</span>
         {SORT_OPTIONS.map((o) => (
           <button
             key={o.key}
@@ -171,7 +171,7 @@ export default function GrailsView({ collection, accent }: Props) {
               border: `1px solid ${sort === o.key ? accent : '#27272a'}`,
               borderRadius: 5,
               cursor: 'pointer',
-              fontFamily: "'Barlow Condensed', sans-serif",
+              fontFamily: "var(--font-display)",
               fontWeight: 700,
               fontSize: 11,
               letterSpacing: '0.08em',
@@ -186,12 +186,12 @@ export default function GrailsView({ collection, accent }: Props) {
           aria-pressed={buyableOnly}
           style={{
             padding: '6px 12px',
-            background: buyableOnly ? 'var(--rpc-red, #E03A2F)' : '#0d0d0d',
+            background: buyableOnly ? 'var(--rpc-red)' : '#0d0d0d',
             color: buyableOnly ? '#fff' : 'rgba(255,255,255,0.75)',
-            border: `1px solid ${buyableOnly ? 'var(--rpc-red, #E03A2F)' : '#27272a'}`,
+            border: `1px solid ${buyableOnly ? 'var(--rpc-red)' : '#27272a'}`,
             borderRadius: 5,
             cursor: 'pointer',
-            fontFamily: "'Barlow Condensed', sans-serif",
+            fontFamily: "var(--font-display)",
             fontWeight: 700,
             fontSize: 11,
             letterSpacing: '0.08em',
@@ -200,13 +200,13 @@ export default function GrailsView({ collection, accent }: Props) {
         >
           Buyable only
         </button>
-        <span style={{ marginLeft: 'auto', fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>
+        <span style={{ marginLeft: 'auto', fontFamily: "var(--font-mono)", fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>
           {loading ? 'Loading…' : `${displayRows.length} packs · sorted by ${sortLabel}`}
         </span>
       </div>
 
       {error && (
-        <div style={{ padding: 12, background: 'rgba(127,29,29,0.2)', border: '1px solid #7f1d1d', borderRadius: 6, fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: '#F87171', marginBottom: 12 }}>
+        <div style={{ padding: 12, background: 'rgba(127,29,29,0.2)', border: '1px solid #7f1d1d', borderRadius: 6, fontFamily: "var(--font-mono)", fontSize: 12, color: '#F87171', marginBottom: 12 }}>
           {error}
         </div>
       )}
@@ -216,10 +216,10 @@ export default function GrailsView({ collection, accent }: Props) {
           <GrailCard key={r.dist_id} row={r} accent={accent} collection={collection} />
         ))}
         {!loading && displayRows.length === 0 && !error && (
-          <div style={{ padding: 24, fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: 'rgba(255,255,255,0.5)', textAlign: 'center', border: '1px dashed #27272a', borderRadius: 6, gridColumn: '1 / -1' }}>
+          <div style={{ padding: 24, fontFamily: "var(--font-mono)", fontSize: 12, color: 'rgba(255,255,255,0.5)', textAlign: 'center', border: '1px dashed #27272a', borderRadius: 6, gridColumn: '1 / -1' }}>
             {buyableOnly
               ? 'No buyable packs match these grail filters — try toggling Buyable only off to see sold-out chase packs too.'
-              : 'No grail-bearing packs matched. Try lowering filters or refreshing the MV (refresh_pack_grail_metrics_mv).'}
+              : 'No grail-bearing packs matched. Try lowering the filters.'}
           </div>
         )}
       </div>
@@ -244,31 +244,31 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
         {row.meta?.image_url ? (
           <img src={row.meta.image_url} alt={row.meta?.title ?? row.dist_id} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.25)', fontFamily: "'Share Tech Mono', monospace", fontSize: 28 }}>?</div>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.25)', fontFamily: "var(--font-mono)", fontSize: 28 }}>?</div>
         )}
         {/* Chase ribbon */}
         {row.max_pull_fmv != null && (
-          <div style={{ position: 'absolute', bottom: 8, left: 8, right: 8, background: 'var(--rpc-red, #E03A2F)', color: '#fff', padding: '6px 9px', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 14px rgba(0,0,0,0.5)' }}>
+          <div style={{ position: 'absolute', bottom: 8, left: 8, right: 8, background: 'var(--rpc-red)', color: '#fff', padding: '6px 9px', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 14px rgba(0,0,0,0.5)' }}>
             {row.max_pull_thumbnail && (
               <img src={row.max_pull_thumbnail} alt="" style={{ width: 30, height: 30, objectFit: 'cover', borderRadius: 2, border: `2px solid ${tierBorder}`, flexShrink: 0 }} />
             )}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', opacity: 0.9 }}>CHASE</div>
-              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 13, lineHeight: 1.1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', opacity: 0.9 }}>CHASE</div>
+              <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 13, lineHeight: 1.1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {row.max_pull_player ?? '—'}
               </div>
             </div>
-            <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 13, fontWeight: 700 }}>{fmtUsd(row.max_pull_fmv)}</div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700 }}>{fmtUsd(row.max_pull_fmv)}</div>
           </div>
         )}
       </div>
 
       <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div>
-          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 14, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.04em', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 14, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.04em', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {row.meta?.title ?? `Pack #${row.dist_id}`}
           </div>
-          <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
             {row.max_pull_set ?? '—'}
           </div>
         </div>
@@ -291,8 +291,8 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
         {/* Price + CTA */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
           <div>
-            <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>{priceLabel ?? 'PRICE'}</div>
-            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 18, fontWeight: 800, color: '#fff' }}>{fmtUsd(price)}</div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>{priceLabel ?? 'PRICE'}</div>
+            <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 800, color: '#fff' }}>{fmtUsd(price)}</div>
           </div>
           <Link
             href={`/${collection}/packs/simulator/${encodeURIComponent(row.dist_id)}`}
@@ -301,7 +301,7 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
               background: accent,
               color: '#fff',
               borderRadius: 5,
-              fontFamily: "'Barlow Condensed', sans-serif",
+              fontFamily: "var(--font-display)",
               fontWeight: 700,
               fontSize: 11,
               letterSpacing: '0.1em',
@@ -319,7 +319,7 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
 
 function Pill({ label, accent }: { label: string; accent: string }) {
   return (
-    <span style={{ padding: '3px 8px', background: accent + '22', border: `1px solid ${accent}55`, color: accent, borderRadius: 999, fontFamily: "'Share Tech Mono', monospace", fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+    <span style={{ padding: '3px 8px', background: accent + '22', border: `1px solid ${accent}55`, color: accent, borderRadius: 999, fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
       {label}
     </span>
   )
@@ -328,10 +328,10 @@ function Pill({ label, accent }: { label: string; accent: string }) {
 function ProbCell({ label, value, approx }: { label: string; value: number | null; approx: boolean }) {
   return (
     <div style={{ background: '#080808', border: '1px solid #1f1f22', borderRadius: 4, padding: '5px 6px', textAlign: 'center' }}>
-      <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 8, color: 'rgba(255,255,255,0.45)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 8, color: 'rgba(255,255,255,0.45)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
         {label}{approx && <span style={{ marginLeft: 3, color: '#F59E0B' }}>~</span>}
       </div>
-      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 14, fontWeight: 800, color: '#fff', marginTop: 1 }}>{fmtPct(value)}</div>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 800, color: '#fff', marginTop: 1 }}>{fmtPct(value)}</div>
     </div>
   )
 }

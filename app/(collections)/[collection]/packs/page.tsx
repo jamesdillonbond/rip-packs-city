@@ -20,16 +20,35 @@ export default function PacksPage() {
   const params = useParams()
   const collection = (params?.collection as string) ?? "nba-top-shot"
   const collectionObj = getCollection(collection)
-  const accent = collectionObj?.accent ?? "#E03A2F"
+  const accent = collectionObj?.accent ?? "var(--rpc-red)"
 
   if (collection === "nfl-all-day") {
     return (
-      <PackPageClient
-        collection="nfl-all-day"
-        tiers={ALLDAY_TIERS}
-        title="NFL All Day — Pack Distributions"
-        accent={accent}
-      />
+      <>
+        <div
+          role="note"
+          style={{
+            margin: "0 0 16px",
+            padding: "10px 14px",
+            background: "var(--rpc-red-bg)",
+            border: "1px solid var(--rpc-red-border)",
+            borderRadius: 6,
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+            lineHeight: 1.6,
+            color: "rgba(255,255,255,0.75)",
+          }}
+        >
+          NFL All Day has ended primary pack sales — there are no new primary
+          drops. Pack prices below reflect the secondary market only.
+        </div>
+        <PackPageClient
+          collection="nfl-all-day"
+          tiers={ALLDAY_TIERS}
+          title="NFL All Day — Pack Market"
+          accent={accent}
+        />
+      </>
     )
   }
 

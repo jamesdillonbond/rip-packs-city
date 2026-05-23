@@ -175,6 +175,9 @@ function tierColorVar(tier: string | null | undefined): string {
   if (t === "RARE") return "var(--rpc-rare, var(--rpc-text-primary))"
   if (t === "FANDOM") return "var(--rpc-fandom, var(--rpc-text-muted))"
   if (t === "COMMON") return "var(--rpc-common, var(--rpc-text-muted))"
+  // UFC Strike tier vocabulary (CHALLENGER / CONTENDER / FANDOM).
+  if (t === "CHALLENGER") return "var(--tier-challenger, var(--rpc-red))"
+  if (t === "CONTENDER") return "var(--tier-contender, var(--rpc-text-muted))"
   return "var(--rpc-text-muted)"
 }
 
@@ -501,7 +504,6 @@ export default async function MomentPage(
             <StatCell label="Floor" value={fmtUsd(f?.floor_price_usd)} />
             <StatCell label="WAP" value={fmtUsd(f?.wap_usd)} />
             <StatCell label="Top Shot ask" value={fmtUsd(f?.top_shot_ask)} />
-            <StatCell label="Flowty ask" value={fmtUsd(f?.flowty_ask)} />
           </div>
 
           {serial === 1 ? (

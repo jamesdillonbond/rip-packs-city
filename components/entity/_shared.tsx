@@ -83,7 +83,7 @@ export function TierBadge({ tier, label }: { tier: string | null | undefined; la
       display: "inline-block",
       padding: "2px 8px",
       borderRadius: 4,
-      fontFamily: "'Share Tech Mono', monospace",
+      fontFamily: "var(--font-mono)",
       fontSize: 10,
       letterSpacing: "0.12em",
       textTransform: "uppercase",
@@ -112,7 +112,7 @@ const STALE_TOOLTIP = "No sales in 30+ days — FMV may be inaccurate"
 
 export function ConfidencePill({ confidence }: { confidence: string | null | undefined }) {
   if (!confidence || confidence === "NONE") {
-    return <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.08em" }}>no FMV</span>
+    return <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.08em" }}>no FMV</span>
   }
   const key = confidence.toUpperCase()
   const colors = CONFIDENCE_COLORS[key] ?? GRAY_FALLBACK
@@ -126,7 +126,7 @@ export function ConfidencePill({ confidence }: { confidence: string | null | und
         gap: 4,
         padding: "2px 8px",
         borderRadius: 999,
-        fontFamily: "'Share Tech Mono', monospace",
+        fontFamily: "var(--font-mono)",
         fontSize: 10,
         letterSpacing: "0.10em",
         color: colors.fg,
@@ -154,10 +154,10 @@ export const STALE_FMV_TOOLTIP = STALE_TOOLTIP
 export function StatCell({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
   return (
     <div className="rpc-card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>{label}</div>
-      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 22, color: "var(--rpc-text-primary)", lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>{label}</div>
+      <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 22, color: "var(--rpc-text-primary)", lineHeight: 1.1 }}>{value}</div>
       {sub !== undefined && (
-        <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "var(--rpc-text-secondary)", letterSpacing: "0.06em" }}>{sub}</div>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-secondary)", letterSpacing: "0.06em" }}>{sub}</div>
       )}
     </div>
   )
@@ -169,7 +169,7 @@ export function WalletLink({ address }: { address: string | null | undefined }) 
   if (!address) return <span style={{ color: "var(--rpc-text-muted)" }}>{EM_DASH}</span>
   const lower = address.toLowerCase().startsWith("0x") ? address.toLowerCase() : `0x${address.toLowerCase()}`
   return (
-    <Link href={`/profile/${lower}`} style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontFamily: "'Share Tech Mono', monospace", fontSize: 11 }}>
+    <Link href={`/profile/${lower}`} style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontFamily: "var(--font-mono)", fontSize: 11 }}>
       {truncWallet(address)}
     </Link>
   )
@@ -181,7 +181,7 @@ export function Section({ title, action, children }: { title: string; action?: R
   return (
     <section className="rpc-card" style={{ padding: 18, marginTop: 14 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
-        <h2 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 16, letterSpacing: "0.10em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: 0 }}>{title}</h2>
+        <h2 style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, letterSpacing: "0.10em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: 0 }}>{title}</h2>
         {action}
       </div>
       {children}
@@ -199,7 +199,7 @@ export function marketplaceLabel(raw: string | null | undefined): string {
   if (k === "golazos" || k === "laliga_golazos") return "Golazos"
   if (k === "ufc" || k === "ufc_strike") return "UFC Strike"
   if (k === "pinnacle" || k === "disney_pinnacle") return "Pinnacle"
-  if (k === "flowty") return "Flowty"
+  if (k === "flowty") return "Flowty (historical)"
   if (k === "onchain") return "On-chain"
   return raw[0].toUpperCase() + raw.slice(1)
 }

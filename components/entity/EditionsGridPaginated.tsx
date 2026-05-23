@@ -87,7 +87,7 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
   }
 
   if (rows.length === 0) {
-    return <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "'Share Tech Mono', monospace", fontSize: 12 }}>No editions yet.</div>
+    return <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>No editions yet.</div>
   }
 
   return (
@@ -153,10 +153,10 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
                   style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                 />
               ) : (
-                <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontFamily: "'Share Tech Mono', monospace", fontSize: 10 }}>No image</div>
+                <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", fontSize: 10 }}>No image</div>
               )}
             </div>
-            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2, marginBottom: 4 }}>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2, marginBottom: 4 }}>
               {e.player_name ?? e.name ?? "Edition"}
             </div>
             {showSetLink && e.set_name && (
@@ -169,7 +169,7 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
               <div>
                 <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.14em" }}>FMV</div>
-                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 16, color: "var(--rpc-text-primary)" }}>{fmtUsd(e.fmv_usd)}</div>
+                <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 16, color: "var(--rpc-text-primary)" }}>{fmtUsd(e.fmv_usd)}</div>
               </div>
               <div style={{ textAlign: "right" }}>
                 <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.14em" }}>Floor</div>
