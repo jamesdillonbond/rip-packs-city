@@ -67,7 +67,7 @@ export default function PlayersGridPaginated({ collectionUrlSlug, fetchUrl, init
   }
 
   if (rows.length === 0) {
-    return <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "'Share Tech Mono', monospace", fontSize: 12 }}>No entries yet.</div>
+    return <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>No entries yet.</div>
   }
 
   return (
@@ -105,10 +105,10 @@ export default function PlayersGridPaginated({ collectionUrlSlug, fetchUrl, init
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={(p.headshot_url ?? p.portrait_thumbnail) ?? undefined} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               ) : (
-                <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontFamily: "'Share Tech Mono', monospace", fontSize: 10 }}>No image</div>
+                <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", fontSize: 10 }}>No image</div>
               )}
             </div>
-            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2, marginBottom: 4 }}>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2, marginBottom: 4 }}>
               {p.name}
             </div>
             {(p.jersey_number !== null || p.position) && (
@@ -123,7 +123,7 @@ export default function PlayersGridPaginated({ collectionUrlSlug, fetchUrl, init
               </div>
               <div style={{ textAlign: "right" }}>
                 <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.14em" }}>FMV</div>
-                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)" }}>{fmtUsd(p.fmv_total_usd)}</div>
+                <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)" }}>{fmtUsd(p.fmv_total_usd)}</div>
               </div>
             </div>
           </Link>

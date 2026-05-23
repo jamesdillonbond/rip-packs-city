@@ -88,7 +88,7 @@ export default async function CollectionSegmentLayout(props: any) {
 // ── Ticker ─────────────────────────────────────────────────────────────────────
 const TICKER_ITEMS: Record<string, string[]> = {
   "nba-top-shot": [
-    "⚡ COLLECTION ANALYZER — FMV + Flowty asks + badge intel",
+    "⚡ COLLECTION ANALYZER — FMV + marketplace asks + badge intel",
     "⚡ PACK EV CALCULATOR — expected value vs price",
     "⚡ SNIPER — real-time deals below FMV",
     "⚡ BADGE TRACKER — Top Shot Debut · Fresh · Rookie Year",

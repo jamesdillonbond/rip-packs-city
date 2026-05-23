@@ -113,7 +113,7 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
     <div>
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section className="rpc-card" style={{ padding: 18 }}>
-        <h1 style={{ margin: 0, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 36, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", lineHeight: 1.05, textTransform: "uppercase" }}>
+        <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 36, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", lineHeight: 1.05, textTransform: "uppercase" }}>
           {detail.display_label}
         </h1>
         {detail.season && (
@@ -133,7 +133,7 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
       </section>
 
       {isEmpty ? (
-        <div className="rpc-card" style={{ marginTop: 14, padding: "22px 18px", textAlign: "center", color: "var(--rpc-text-muted)", fontFamily: "'Share Tech Mono', monospace", fontSize: 12 }}>
+        <div className="rpc-card" style={{ marginTop: 14, padding: "22px 18px", textAlign: "center", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
           No editions in this series yet
         </div>
       ) : (
@@ -161,7 +161,7 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
                     className="rpc-card"
                     style={{ padding: 12, textDecoration: "none", color: "inherit", display: "block" }}
                   >
-                    <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 15, color: "var(--rpc-text-primary)", marginBottom: 6, lineHeight: 1.2 }}>{s.setName}</div>
+                    <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15, color: "var(--rpc-text-primary)", marginBottom: 6, lineHeight: 1.2 }}>{s.setName}</div>
                     <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>
                       {fmtCount(s.count)} edition{s.count === 1 ? "" : "s"} · {fmtUsd(s.fmvTotal)}
                     </div>
@@ -182,7 +182,7 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
                     className="rpc-card"
                     style={{ padding: 12, textDecoration: "none", color: "inherit", display: "block" }}
                   >
-                    <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", marginBottom: 6, lineHeight: 1.2 }}>{p.playerName}</div>
+                    <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", marginBottom: 6, lineHeight: 1.2 }}>{p.playerName}</div>
                     <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>
                       {fmtCount(p.count)} edition{p.count === 1 ? "" : "s"} · {fmtUsd(p.fmvTotal)}
                     </div>

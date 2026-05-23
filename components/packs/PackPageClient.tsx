@@ -209,7 +209,7 @@ function parsePriceInput(s: string): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null
 }
 
-export default function PackPageClient({ collection, tiers, title, accent = '#E03A2F' }: Props) {
+export default function PackPageClient({ collection, tiers, title, accent = 'var(--rpc-red)' }: Props) {
   // View-mode toggle: "Standard" renders the existing pack_table_rows table
   // with all its filters; "Grails" swaps in <GrailsView/> which queries
   // pack_grail_metrics_mv for chase-led card rendering. State lives at the

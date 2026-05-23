@@ -91,12 +91,12 @@ const PAGE_META: Record<string, PageMeta> = {
   collection: {
     title: 'Wallet Analytics — Track Your {label} Collection Value',
     description:
-      'Analyze any Flow blockchain wallet across Top Shot, All Day, Pinnacle, Golazos, and UFC — real-time FMV, badge detection, serial premiums, and Flowty ask prices for {label}.',
+      'Analyze any Flow blockchain wallet across Top Shot, All Day, Pinnacle, Golazos, and UFC — real-time FMV, badge detection, serial premiums, and marketplace ask prices for {label}.',
   },
   sniper: {
     title: 'Sniper — {label} Deals Below FMV',
     description:
-      'Live deals below FMV across Top Shot, All Day, Pinnacle, Golazos, and UFC. Real-time FMV, Flowty marketplace intelligence, and per-edition discount scoring for {label}.',
+      'Live deals below FMV across Top Shot, All Day, Pinnacle, Golazos, and UFC. Real-time FMV, marketplace intelligence, and per-edition discount scoring for {label}.',
   },
   packs: {
     title: 'Pack Drop Tools — {label} Pack Analysis & EV Calculator',

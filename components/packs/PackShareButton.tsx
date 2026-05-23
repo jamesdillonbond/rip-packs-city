@@ -38,7 +38,7 @@ export default function PackShareButton({ url }: { url: string }) {
         padding: "8px 16px",
         background: "transparent",
         color: copied ? "rgb(110,231,183)" : "rgba(255,255,255,0.85)",
-        fontFamily: "'Barlow Condensed', sans-serif",
+        fontFamily: "var(--font-display)",
         fontWeight: 700,
         letterSpacing: "0.06em",
         textTransform: "uppercase",

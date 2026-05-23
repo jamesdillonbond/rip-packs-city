@@ -29,7 +29,7 @@ interface Props {
 }
 
 const TH: React.CSSProperties = {
-  fontFamily: "'Share Tech Mono', monospace",
+  fontFamily: "var(--font-mono)",
   fontSize: 9,
   letterSpacing: "0.14em",
   textTransform: "uppercase",
@@ -40,7 +40,7 @@ const TH: React.CSSProperties = {
 }
 
 const TD: React.CSSProperties = {
-  fontFamily: "'Share Tech Mono', monospace",
+  fontFamily: "var(--font-mono)",
   fontSize: 11,
   color: "var(--rpc-text-primary)",
   padding: "8px 10px",
@@ -84,7 +84,7 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
   }
 
   if (rows.length === 0) {
-    return <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "'Share Tech Mono', monospace", fontSize: 12 }}>No sales yet.</div>
+    return <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>No sales yet.</div>
   }
 
   return (

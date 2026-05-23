@@ -75,8 +75,10 @@ export default async function SetPage(props: { params: Promise<{ collection: str
 
   const editions = await fetchEditions(coll.id, slug, PAGE_SIZE, 0)
 
-  const seriesLabel = detail.min_series !== null && detail.max_series !== null
-    ? (detail.min_series === detail.max_series ? `Series ${detail.min_series}` : `Series ${detail.min_series}–${detail.max_series}`)
+  const minLabel = detail.min_series !== null ? seriesDisplay(detail.min_series, collection) : null
+  const maxLabel = detail.max_series !== null ? seriesDisplay(detail.max_series, collection) : null
+  const seriesLabel = minLabel !== null && maxLabel !== null
+    ? (minLabel === maxLabel ? minLabel : `${minLabel} – ${maxLabel}`)
     : null
 
   // Tier-mix breakdown derived client-side from the editions list (server here).
@@ -179,4 +181,25 @@ function tierBgFor(tier: string): string {
     case "COMMON":     return "var(--tier-common)"
     default:           return "rgba(255,255,255,0.18)"
   }
+}
+
+// Top Shot encodes series as a raw on-chain UInt32 where 0 = Series 1, and
+// there is no on-chain series 1 (see the CLAUDE.md series map). The
+// sets_summary view carries that raw value, so it must be mapped before
+// display. Other collections' series encodings are not verified here, so
+// they fall back to the raw "Series N" form unchanged.
+const SERIES_DISPLAY: Record<number, string> = {
+  0: "Series 1",
+  2: "Series 2",
+  3: "Summer 2021",
+  4: "Series 3",
+  5: "Series 4",
+  6: "Series 2023-24",
+  7: "Series 2024-25",
+  8: "Series 2025-26",
+}
+
+function seriesDisplay(n: number, collectionUrlSlug: string): string {
+  if (collectionUrlSlug === "nba-top-shot") return SERIES_DISPLAY[n] ?? `Series ${n}`
+  return `Series ${n}`
 }
