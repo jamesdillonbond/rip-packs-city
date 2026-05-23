@@ -324,6 +324,26 @@ export default function SetsPage() {
 
         {data && data.sets.length > 0 && !loading && (
           <>
+            {isAllDay && (
+              <div
+                role="note"
+                style={{
+                  marginBottom: 16,
+                  padding: "10px 14px",
+                  background: `${accent}14`,
+                  border: `1px solid ${accent}40`,
+                  borderRadius: 8,
+                  fontFamily: monoFont,
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                  color: colors.muted,
+                }}
+              >
+                NFL All Day has ended primary pack sales — completing a set is now a
+                secondary-market purchase. Cost-to-complete figures below reflect
+                secondary prices only.
+              </div>
+            )}
             <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
               <SummaryCard label="TOTAL SETS" value={String(totalSets)} accent={accent} />
               <SummaryCard label="COMPLETE" value={String(completeSets)} sub={completePct + "%"} accent={accent} />
@@ -445,7 +465,7 @@ export default function SetsPage() {
                           href={piece.topshotUrl}
                           thumbnailUrl={piece.thumbnailUrl}
                           playerName={piece.playerName}
-                          meta={`${piece.tier}${piece.lowestAsk != null ? ` · ${fmt$(piece.lowestAsk)}` : ""}`}
+                          meta={`${piece.tier}${piece.lowestAsk != null ? ` · ~${fmt$(piece.lowestAsk)}` : ""}`}
                           colors={colors}
                           muted
                         />
@@ -722,7 +742,7 @@ function DetailGrid({ set, accent }: { set: SetProgress; accent: string }) {
                 key={`m-${p.playId}-${i}`}
                 thumbnailUrl={p.thumbnailUrl}
                 playerName={p.playerName}
-                badge={p.lowestAsk != null ? fmt$(p.lowestAsk) : null}
+                badge={p.lowestAsk != null ? `~${fmt$(p.lowestAsk)}` : null}
                 href={p.topshotUrl}
                 accent={accent}
                 muted

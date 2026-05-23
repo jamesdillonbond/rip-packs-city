@@ -349,7 +349,7 @@ export default async function EditionPage(
       </Section>
 
       {/* ── Recent sales ─────────────────────────────────────────────────── */}
-      <Section title={`Recent Sales${sales.length ? ` (${sales.length}${sales.length === SALES_PAGE_SIZE ? "+" : ""})` : ""}`}>
+      <Section title="Recent Sales">
         <SalesTablePaginated
           collectionUrlSlug={collection}
           routeSlug={detail.route_slug ?? slug}
