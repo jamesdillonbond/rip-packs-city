@@ -86,12 +86,19 @@ Fixed: `fmv-recalc` now resumes the sweep from the previous run's `cursor_after`
 - **Impact:** ~1,450 well-traded editions migrate off `cold-tail` / `1.1.0` onto the current algo over ~2 days — this is what makes Lever 1's +362 actually land.
 - **Effort:** Small — one route, no schema, no new cron.
 
-### Lever 3 — consume asks for zero-sale editions
+### Lever 3 — ask-based pricing for unpriced editions · partially done
 
-1,487 zero-sale editions have an open priced ask; only 56 are `ASK_ONLY`. The no-sales path in `fmv-backfill` should emit `ASK_ONLY` using the floor ask from `cached_listings_v2`.
+1,487 editions have zero sales in 30 days but a live priced ask in `cached_listings_v2`. The plan first assumed they were `NO_DATA` editions to "rescue" — investigation on 2026-05-23 corrected that:
 
-- **Impact:** ~+1,400 editions move `NO_DATA → ASK_ONLY` (priced, low confidence). Improves honest coverage and the overview metric; does **not** lift HIGH.
-- **Effort:** Small–Medium.
+- All 1,487 are **NFL All Day** — `cached_listings_v2` only carries AllDay listings; TopShot / Golazos / UFC have ~0 rows there.
+- They are **not `NO_DATA`** — they are mostly `LOW`, priced day-to-day by the separate **`allday-gql-v1`** algorithm, which owns AllDay FMV and does not consult `cached_listings_v2` asks.
+
+So ask-integration for AllDay belongs **inside the `allday-gql-v1` pipeline**, not in the sales-window routes — that is the open piece of this lever. (A one-time bulk relabel to `ASK_ONLY` was tried and reverted: it was a lateral `LOW → ASK_ONLY` move that `allday-gql-v1` would overwrite within a day, not a real `NO_DATA` rescue.)
+
+**Shipped:** the `drain_fmv_cold_tail` RPC — which prices genuinely-stale / never-priced editions across all four non-Pinnacle collections — now checks `cached_listings_v2` and emits `ASK_ONLY` (instead of `NO_DATA`) when a live ask exists (migration `audit_20260523_drain_cold_tail_ask_only_fallback`). Correct and future-proof, but low-impact today: `allday-gql-v1` keeps AllDay editions fresh enough that `drain` rarely sees them, and the other collections have no asks in `cached_listings_v2`.
+
+- **Impact:** small now; unlocks ~1,400 AllDay editions once `allday-gql-v1` is taught to read asks.
+- **Effort:** Medium — requires understanding and modifying the `allday-gql-v1` pipeline.
 
 ### Lever 4 (defer) — comparable-edition / cohort pricing
 
@@ -101,7 +108,7 @@ The 14,384 genuinely-dark editions can only be priced by inference — a cohort 
 
 1. **Lever 2** — quick, no-risk, ~+400 HIGH.
 2. **Lever 1** — the headline; HIGH to ~1,300–1,600.
-3. **Lever 3** — priced coverage up ~1,400 editions; reframes the misleading "100% coverage" metric honestly.
+3. **Lever 3** — drain-RPC ask fallback shipped; the ~1,400-edition AllDay gain is still open and needs `allday-gql-v1` to read asks.
 4. **Lever 4** — later.
 
 After Levers 1+2, HIGH-confidence FMV moves from **2.0% → roughly 4.5–5%** of editions — a ~2.3–2.5× improvement in the metric the Pro tier is sold on, with no new data sources required. Levers 1 and 2 are both shipped (2026-05-23); the gain materialises over ~2 days as the recalc sweep cycles through every edition.
