@@ -65,13 +65,17 @@ For serially-numbered NFTs this is expected structure, not noise: a `#1` serial 
 
 ## 4. Improvement plan — by impact ÷ effort
 
-### Lever 1 (headline) — serial-normalize the dispersion gate
+### Lever 1 (headline) — serial-aware dispersion gate · ✅ IMPLEMENTED 2026-05-23
 
-Compute the HIGH dispersion check on **serial-adjusted** prices: divide each sale price by its serial multiplier before taking mean/stddev. RPC already has this concept — the FMV API returns `serialMult` / `adjustedFmv`, and `lib/fmv-engine.ts` computes serial multipliers. Thread a normalized price array into `escalateConfidence` (extend its signature, update both call sites in `fmv-recalc` and `fmv-backfill`).
+Two approaches were modelled against live production sales before building:
 
-- **Impact:** recovers most of the 835 serial-blocked editions. HIGH could roughly **triple, to ~1,300–1,600 editions (≈5–6%)**.
-- **Effort:** Medium. One signature change + two call sites + the serial-multiplier lookup.
-- **Risk:** this is the paid metric — ship behind a before/after edition count and spot-check ~10 editions by hand. Keep the 0.40 CV threshold; only change the input from raw to serial-normalized prices.
+- **Global power-law normalization** — divide each sale price by a modelled serial multiplier (the `lib/market-compute.ts` power law) before measuring dispersion. Result: only **+132 net** HIGH, *and 189 demotions* — the global model mis-corrects editions whose real serial premium differs from the model. **Rejected.**
+- **Per-edition regression (chosen)** — fit `ln(price) = a + b·ln(serial)` over each edition's *own* sales and gate HIGH on the residual spread. Self-calibrating, so it never mis-corrects: **+362 net** (1,261 editions pass vs 899 on raw prices) with only **21 demotions**.
+
+Shipped: `serialResidualDispersion()` added to `lib/fmv-confidence.ts`; `escalateConfidence()` now takes an optional `serials` array and gates HIGH on the residual log-dispersion when serials are present, falling back to the raw coefficient of variation otherwise. Both call sites (`fmv-recalc`, `fmv-backfill`) updated to select and pass per-sale `serial_number`. The `HIGH_MAX_DISPERSION = 0.40` threshold is unchanged.
+
+- **Impact:** HIGH-eligible editions ~899 → ~1,261. Labelled HIGH (493 today, lagged behind eligibility) climbs toward ~1,150–1,260 (**≈4.5–5%**) as the recalc cron cycles through.
+- **Verified:** the algorithm was unit-tested against the SQL model on a real edition (8 sales, raw CV 0.62 → residual 0.35 → correctly promoted to HIGH); 9/9 cases pass, including the raw-CV fallback path.
 
 ### Lever 2 (quick win) — clear the recalc lag
 
@@ -98,4 +102,4 @@ The 14,384 genuinely-dark editions can only be priced by inference — a cohort 
 3. **Lever 3** — priced coverage up ~1,400 editions; reframes the misleading "100% coverage" metric honestly.
 4. **Lever 4** — later.
 
-After Levers 1+2, HIGH-confidence FMV moves from **2.0% → roughly 5–6%** of editions — a 2.5–3× improvement in the metric the Pro tier is sold on, with no new data sources required.
+After Levers 1+2, HIGH-confidence FMV moves from **2.0% → roughly 4.5–5%** of editions — a ~2.3–2.5× improvement in the metric the Pro tier is sold on, with no new data sources required. Lever 1 is shipped; Lever 2 (clearing the recalc lag) is what realises the gain as the cron cycles.

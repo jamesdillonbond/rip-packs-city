@@ -160,13 +160,13 @@ export async function POST(req: NextRequest) {
 
     // Step 2: Fetch all sales for these editions within the window
     const CHUNK = 50
-    const allSales: { edition_id: string; collection_id: string; price_usd: number; sold_at: string }[] = []
+    const allSales: { edition_id: string; collection_id: string; price_usd: number; sold_at: string; serial_number: number | null }[] = []
 
     for (let i = 0; i < editionIds.length; i += CHUNK) {
       const chunk = editionIds.slice(i, i + CHUNK)
       const { data: salesData } = await (supabaseAdmin as any)
         .from("sales")
-        .select("edition_id, collection_id, price_usd, sold_at")
+        .select("edition_id, collection_id, price_usd, sold_at, serial_number")
         .in("edition_id", chunk)
         .gte("sold_at", windowStart)
         .gt("price_usd", 0)
@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
         const chunk = editionIds.slice(i, i + CHUNK)
         const { data: salesData } = await (supabaseAdmin as any)
           .from("sales")
-          .select("edition_id, collection_id, price_usd, sold_at")
+          .select("edition_id, collection_id, price_usd, sold_at, serial_number")
           .in("edition_id", chunk)
           .gt("price_usd", 0)
           .order("sold_at", { ascending: false })
@@ -192,7 +192,7 @@ export async function POST(req: NextRequest) {
 
     // Step 3: Group sales by edition
     const editionSalesMap = new Map<string, {
-      sales: { price: number; soldAt: Date }[]
+      sales: { price: number; soldAt: Date; serial: number | null }[]
       collectionId: string
       latestSoldAt: Date
     }>()
@@ -200,13 +200,14 @@ export async function POST(req: NextRequest) {
     for (const row of allSales) {
       const price = Number(row.price_usd)
       const soldAt = new Date(row.sold_at)
+      const serial = row.serial_number == null ? null : Number(row.serial_number)
       const existing = editionSalesMap.get(row.edition_id)
       if (existing) {
-        existing.sales.push({ price, soldAt })
+        existing.sales.push({ price, soldAt, serial })
         if (soldAt > existing.latestSoldAt) existing.latestSoldAt = soldAt
       } else {
         editionSalesMap.set(row.edition_id, {
-          sales: [{ price, soldAt }],
+          sales: [{ price, soldAt, serial }],
           collectionId: row.collection_id,
           latestSoldAt: soldAt,
         })
@@ -250,11 +251,13 @@ export async function POST(req: NextRequest) {
 
     for (const [editionId, { sales, collectionId, latestSoldAt }] of editionSalesMap.entries()) {
       const prices = sales.map(s => s.price)
+      const serials = sales.map(s => s.serial)
       const median = trimmedMedian(prices)
       const wap = weightedAveragePrice(sales, now)
       const floor = Math.min(...prices)
       const baseConfidence = computeConfidence(sales.length)
-      const confidence = escalateConfidence(baseConfidence, sales.length, prices)
+      // serials enable the serial-residual HIGH dispersion gate (see lib/fmv-confidence.ts).
+      const confidence = escalateConfidence(baseConfidence, sales.length, prices, serials)
       const daysSinceSale = Math.round(
         (now.getTime() - latestSoldAt.getTime()) / (1000 * 60 * 60 * 24)
       )
