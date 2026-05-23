@@ -134,7 +134,7 @@ export async function GET(req: NextRequest) {
       const missing: MissingPiece[] = (s.missingPreview ?? []).map((m, i) => ({
         playId: `${s.setId}:preview:${i}`,
         playerName: m.playerName ?? "—",
-        tier: (m.tier ?? "CHALLENGER").toUpperCase(),
+        tier: (m.tier ?? "FANDOM").toUpperCase(),
         lowestAsk: null,
         thumbnailUrl: m.thumbnailUrl ?? null,
         topshotUrl: `https://ufcstrike.com/search?query=${encodeURIComponent(m.playerName ?? "")}`,
