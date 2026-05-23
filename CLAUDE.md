@@ -516,6 +516,7 @@ Order:
 ## Hot wallet & secrets
 
 - Flow CLI hot wallet: `0x3aa11c84d776838f` (Key 0, ECDSA_secp256k1, SHA2_256). NOT account-linked. `flow.json` gitignored. NEVER use a HybridCustody / linked wallet as the hot wallet.
+- Cadence service payer wallet: `0x73f55c4450b8d466` — the account designated as `payer` (gas) for backend-submitted Cadence transactions; distinct from the hot wallet above (Flow allows a separate proposer/authorizer vs. payer). Monitored every 30min by `/api/cron/cadence-payer-balance-check`, which alerts below 0.05 FLOW. If it runs dry, every Cadence transaction fails pre-execution with `INSUFFICIENT_GAS_FUNDS` (Flow error 1118).
 - Key env vars: `INGEST_SECRET_TOKEN`, `CRON_SECRET`, `FLOWTY_PROXY_TOKEN`, `TS_PROXY_SECRET`, `RPC_ADMIN_TOKEN`, `SPORTS_PROXY_URL`, `SPORTS_PROXY_SECRET`, `ANTHROPIC_API_KEY`.
 
 ---
@@ -575,7 +576,7 @@ Main branch is the canonical clean branch.
 
 12. **Blazers trivia** (`lib/blazers-trivia.ts`) — 29 items shelved, no UI yet.
 
-13. **`flowty_archive` growth strategy** — 9.6 GB / 74% of total DB, 44K+ unextracted rows (93% are `collection:*:sale`). Pick A (build extractors for high-volume endpoints, ~5× ~100 LOC each), B (extend `prune_flowty_archive_api_harvest` to delete unextracted rows past cutoff for low-priority endpoints), or C (accept ~1.5 GB/month growth on Pro Micro). See `docs/audits/audit-2026-05-19-day2.md` Thread 2.
+13. **`flowty_archive` growth strategy — RESOLVED 2026-05-23.** Chose option B (hedge): pruned the ~40.6K already-extracted redundant rows + `VACUUM FULL`. `api_harvest_20260512` went 9.9 GB → 2.6 GB; total DB 13.8 GB → 6.5 GB. Kept the ~33K unextracted `collection:*:sale` preservation rows; did NOT build extractors. Daily prune cron (7-day extracted retention) keeps it bounded going forward.
 
 14. **Monolith page refactor** — `collection/page.tsx` (2,900 lines, 59 useState), `sniper/page.tsx` (2,485 lines, 50 useState), `analytics/page.tsx` (2,203 lines, 36 useState). Phase 1 is zero-risk (~1h, extract leaf components from `collection/page.tsx` lines 29-430). Full plan in `docs/audits/refactor-plan-monolith-pages-2026-05.md`.
 
@@ -598,6 +599,7 @@ Main branch is the canonical clean branch.
 ## Architecture notes
 
 - FMV recalc v1.5.0 live (WAP + days_since_sale + sales_count_30d).
+- TopShot sets catalog: the GQL editions-catalog creates `sets` rows keyed by the TopShot UUID (`external_id`) but does NOT populate `set_id_onchain`. `ensure_topshot_edition_stub` self-heals this on the set-lookup miss path — it bridges UUID→`set_id_onchain` via a sibling edition and backfills the `sets` row (migration `audit_20260523_ensure_topshot_edition_stub_self_heal`). New TopShot sets resolve with no manual seeding.
 - Pack EV pipeline v11: queue-poisoning bug fixed — `topshot_pack_ev_targets` view filters zero-priced reward distributions; sentinel rows write to `pack_ev_history` on `pool_empty` with non-NULL `pack_ev` (0 works; view has `BETWEEN -10000 AND 1000000` filter). 0% pipeline failure rate across 23 active pipelines.
 - WMC backfill (May 7): TS 99.8% tier / 100% set / 89.6% mint via `UPDATE FROM editions JOIN`. AllDay/UFC limited by editions-table coverage gap. 18 RPCs read `wmc.tier` directly — backfill approach preferred over per-RPC patches.
 - Flowty analytics (May 6/7): `/admin/flowty-analytics` with `RPC_ADMIN_TOKEN`. 3 materialized views (`mv_flowty_sales/loans_daily`, `mv_flowty_first_activations`) + 5 RPCs (`flowty_top_{buyers, sellers, net_marketplace, lenders, borrowers}`). `refresh_flowty_analytics()` ~1s. UFC/Golazos at 0 in MV until spork. Pinnacle uses `pinnacle_sales` separately.
