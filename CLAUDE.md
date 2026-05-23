@@ -574,7 +574,13 @@ Main branch is the canonical clean branch.
 
 15. **`livetoken-portfolio*.json` fixtures** — 11 files are still git-tracked despite the `.gitignore` entry; the planned `git rm --cached` was never run.
 
-17. **Pack / Moment / Set page tune-up — ongoing.** Comprehensive audits with file:line findings in `PACK_PAGES_AUDIT_2026-05-22.md`, `MOMENT_PAGES_AUDIT_2026-05-22.md`, and `SET_PAGES_AUDIT_2026-05-22.md`. Done: the Pack surface's AllDay-context banner and brand-token cleanup. Remaining (incl. brand-token cleanup for `components/entity/_shared.tsx` + `EditionsGridPaginated.tsx` and the Moment/Set data-accuracy fixes) is tracked in those docs.
+17. **Pack / Moment / Set page tune-up — ongoing.** File:line audit findings live in `PACK_PAGES_AUDIT_2026-05-22.md`, `MOMENT_PAGES_AUDIT_2026-05-22.md`, `SET_PAGES_AUDIT_2026-05-22.md` — those docs are point-in-time and now partially superseded; the current state is here.
+
+   *Shipped* (commits `5c0af8a` → `8d8721e` → `2b7ce7f` → `61f5586`): brand-token consistency is complete across the three page templates, every `components/entity/*` and `components/packs/*` component, and `MomentDetailModal` — the lone exception is the `FmvHistoryChart` recharts `stroke` (SVG presentation attributes can't resolve a CSS var). Also shipped: the Pack AllDay-context banner and the AllDay set-tracker banner; stale-Flowty UI removed (dead "Flowty ask" stat, SEO + ticker copy, `marketplaceLabel` relabelled "Flowty (historical)"); `loading.tsx` skeletons for the moment / edition / set / series routes; and per-collection data-accuracy fixes — Top Shot series-label mapping, UFC tier vocab in `tierColorVar` / `TIER_STRIPE` / `TIER_COLORS`, three-way `is_listed`, honest null handling for Floor / drop_weight / completion-%, FMV-vs-ask labelling.
+
+   *Correction*: the audit docs flag `MomentDetailModal.tsx` / `MomentMedia.tsx` as possible dead code — that is WRONG. A repo-wide grep confirms both are live: `MomentDetailModal` is used by `sniper/page.tsx` and `collection/page.tsx`; `MomentMedia` by `sets/page.tsx`. Their findings are normal fixes, not delete-candidates.
+
+   *Remaining* (the harder tier — each has a real reason it is not a quick safe edit): modal accessibility (Moment V3 / Set V5 — `role="dialog"`, focus trap; wants browser verification); mount `MarketplaceStatusBanner` on the edition page (Moment S5); `app/api/sets*` route-layer bugs (Set B2 `lowestSingleAsk` ordering, B3 duplicate fetch, B6); Pack B1-B3 (runtime-test-needed data bugs); plus scattered smaller items (Moment B7 JSON-LD `availability`, B9 owner-as-link; Set S2 / S4) — all with file:line refs in the audit docs.
 
 ### Resolved (verified 2026-05-23)
 
