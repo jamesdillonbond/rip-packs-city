@@ -1,0 +1,101 @@
+# FMV Confidence — Diagnosis & Improvement Plan
+
+**Date:** 2026-05-23
+**Author:** Claude (Cowork session)
+**Scope:** Why HIGH-confidence FMV sits at ~2% of editions, and a prioritized plan to lift it.
+**Method:** Read-only queries against production Supabase `bxcqstmqfzmuolpuynti` (`fmv_snapshots`, `sales`, `editions`, `cached_listings_v2`) + the confidence logic in `lib/fmv-confidence.ts` and `app/api/fmv-recalc/route.ts`.
+
+---
+
+## 1. The number
+
+FMV is what the Pro tier sells. Latest-snapshot confidence across **24,713 editions**:
+
+| Confidence | Editions | Share |
+|---|---:|---:|
+| NO_DATA | 12,323 | 49.9% |
+| LOW | 9,722 | 39.3% |
+| SALES_ONLY | 1,404 | 5.7% |
+| STALE | 504 | 2.0% |
+| **HIGH** | **493** | **2.0%** |
+| MEDIUM | 210 | 0.8% |
+| ASK_ONLY | 56 | 0.2% |
+
+HIGH + MEDIUM together is **2.8%**. For a product whose pitch is "real-time FMV across every Flow collection," this is the single most important number to move.
+
+## 2. How a HIGH rating is earned
+
+From `lib/fmv-confidence.ts` (the shared source of truth for `fmv-recalc` and `fmv-backfill`):
+
+- **HIGH** = ≥ 7 sales in the 30-day window **AND** price dispersion (coefficient of variation = stddev ÷ mean) < **0.40**.
+- **MEDIUM** = ≥ 5 sales, not HIGH.
+- **LOW** = everything else with sales.
+
+## 3. The funnel — where editions fall out
+
+Measured against the live 30-day `sales` window:
+
+| Stage | Editions | Note |
+|---|---:|---|
+| All editions | 24,713 | |
+| Zero sales in 30d | 15,871 (64%) | Cannot be priced from sales at all |
+| 1–4 sales | 6,205 | → LOW |
+| 5–6 sales | 835 | → MEDIUM |
+| **≥7 sales (HIGH-eligible by volume)** | **1,768** | |
+| &nbsp;&nbsp;↳ pass the <40% dispersion gate | 904 | → HIGH-eligible |
+| &nbsp;&nbsp;↳ **blocked by the dispersion gate** | **864** | stay MEDIUM |
+
+So there are **two ceilings**, and they need different fixes.
+
+### Ceiling A — liquidity (64% of editions never trade)
+
+15,871 editions had zero sales in 30 days. No sales-based method can price them. Of those, **1,487 do have an open priced ask** in `cached_listings_v2` — but only 56 editions are currently labeled `ASK_ONLY`, so ~1,431 priceable-by-ask editions are sitting in `NO_DATA`. The remaining **14,384 are genuinely dark** (no sales, no asks).
+
+### Ceiling B — the dispersion gate mismeasures serial spread
+
+864 editions trade enough (≥7 sales) but fail the 40% dispersion gate. The critical finding:
+
+> **835 of the 864 blocked editions (97%) fail because their sales span a wide serial range** (max serial number > 5× the min). Only 29 fail with a narrow serial span.
+
+For serially-numbered NFTs this is expected structure, not noise: a `#1` serial and a `#25000` serial of the same moment legitimately trade 10×+ apart. The dispersion gate runs CV on **raw** prices, so it reads that legitimate serial-driven spread as "unreliable FMV" and caps the edition at MEDIUM. **The gate is penalizing structure it should be normalizing out.**
+
+### A third, smaller gap — recalc lag
+
+904 editions already satisfy ≥7 sales + CV<0.40 on raw prices, but only 493 are *labeled* HIGH. The ~411-edition gap is almost certainly recalc lag: `fmv-recalc` is paginated (500 editions/tick) and editions awaiting recompute sit as `STALE`. This is HIGH coverage we already earned but haven't written.
+
+## 4. Improvement plan — by impact ÷ effort
+
+### Lever 1 (headline) — serial-normalize the dispersion gate
+
+Compute the HIGH dispersion check on **serial-adjusted** prices: divide each sale price by its serial multiplier before taking mean/stddev. RPC already has this concept — the FMV API returns `serialMult` / `adjustedFmv`, and `lib/fmv-engine.ts` computes serial multipliers. Thread a normalized price array into `escalateConfidence` (extend its signature, update both call sites in `fmv-recalc` and `fmv-backfill`).
+
+- **Impact:** recovers most of the 835 serial-blocked editions. HIGH could roughly **triple, to ~1,300–1,600 editions (≈5–6%)**.
+- **Effort:** Medium. One signature change + two call sites + the serial-multiplier lookup.
+- **Risk:** this is the paid metric — ship behind a before/after edition count and spot-check ~10 editions by hand. Keep the 0.40 CV threshold; only change the input from raw to serial-normalized prices.
+
+### Lever 2 (quick win) — clear the recalc lag
+
+~411 editions already qualify for HIGH but sit `STALE`. Confirm the `/api/fmv-recalc?force_stale=true` path (6-hourly cron) is actually draining; if pagination can't keep up with 24.7k editions, raise the chunk size or cadence.
+
+- **Impact:** ~+400 HIGH with **zero logic change**.
+- **Effort:** Small — config/verification.
+
+### Lever 3 — consume asks for zero-sale editions
+
+1,487 zero-sale editions have an open priced ask; only 56 are `ASK_ONLY`. The no-sales path in `fmv-backfill` should emit `ASK_ONLY` using the floor ask from `cached_listings_v2`.
+
+- **Impact:** ~+1,400 editions move `NO_DATA → ASK_ONLY` (priced, low confidence). Improves honest coverage and the overview metric; does **not** lift HIGH.
+- **Effort:** Small–Medium.
+
+### Lever 4 (defer) — comparable-edition / cohort pricing
+
+The 14,384 genuinely-dark editions can only be priced by inference — a cohort median over the same set / player / tier / series. Real project; defer until 1–3 land.
+
+## 5. Recommended order & outcome
+
+1. **Lever 2** — quick, no-risk, ~+400 HIGH.
+2. **Lever 1** — the headline; HIGH to ~1,300–1,600.
+3. **Lever 3** — priced coverage up ~1,400 editions; reframes the misleading "100% coverage" metric honestly.
+4. **Lever 4** — later.
+
+After Levers 1+2, HIGH-confidence FMV moves from **2.0% → roughly 5–6%** of editions — a 2.5–3× improvement in the metric the Pro tier is sold on, with no new data sources required.
