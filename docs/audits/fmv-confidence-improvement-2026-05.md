@@ -100,15 +100,26 @@ So AllDay is already fully priced. Of 6,191 AllDay editions only **531 are genui
 
 The genuinely unpriced bulk is **~11,000 Top Shot `NO_DATA` editions**, which have no ask data in `cached_listings_v2` at all. Pricing that illiquid tail is Lever 4 territory (cohort / comparable-edition pricing) — a real, separate effort.
 
-### Lever 4 (defer) — comparable-edition / cohort pricing
+### Lever 4 — comparable-edition / cohort pricing · investigated, not viable
 
-The 14,384 genuinely-dark editions can only be priced by inference — a cohort median over the same set / player / tier / series. Real project; defer until 1–3 land.
+Modelled on 2026-05-23 against the ~10,858 Top Shot `NO_DATA` editions. Cohort pricing borrows a median FMV from priced "comparable" editions; it only works if within-cohort prices are tight **and** most unpriced editions actually have comparables. Neither holds:
+
+| Cohort definition | `NO_DATA` editions with ≥3 priced comps | …of which in a tight cohort (CV < 0.5) |
+|---|---:|---:|
+| set + tier | 9,667 | 651 |
+| player + tier | 458 | 105 |
+
+`set + tier` has coverage but the cohorts are wildly dispersed — a star's Common and a bench player's Common in the same set differ many-fold, so a cohort median is near-meaningless (only 36 of 211 cohorts are tight). `player + tier` is tight but has almost no coverage — only 458 `NO_DATA` editions even have three priced same-player comps, because `NO_DATA` editions are by nature obscure players whose *other* editions are also untraded.
+
+**Conclusion: not viable.** At best ~650 editions could be given a rough estimate; the other ~10,000 are the genuinely dead tail with no comparable signal. Fabricating cohort prices for them would degrade FMV trust, not improve it. The honest call — consistent with the roadmap's "report confidence honestly / reframe the misleading 100%-coverage metric" — is to **leave the dead tail labelled `NO_DATA`**. No build.
 
 ## 5. Recommended order & outcome
 
 1. **Lever 2** — quick, no-risk, ~+400 HIGH.
 2. **Lever 1** — the headline; HIGH to ~1,300–1,600.
 3. **Lever 3** — closed: investigation showed `allday-gql-v1` already prices AllDay editions from asks + sale averages; no gap to fix.
-4. **Lever 4** — later.
+4. **Lever 4** — closed: cohort pricing modelled and found not viable for the dead tail.
 
-After Levers 1+2, HIGH-confidence FMV moves from **2.0% → roughly 4.5–5%** of editions — a ~2.3–2.5× improvement in the metric the Pro tier is sold on, with no new data sources required. Levers 1 and 2 are both shipped (2026-05-23); the gain materialises over ~2 days as the recalc sweep cycles through every edition.
+After Levers 1+2, HIGH-confidence FMV moves from **2.0% → roughly 4.5–5%** of editions — a ~2.3–2.5× improvement in the metric the Pro tier is sold on, with no new data sources required. Levers 1 and 2 are both shipped (2026-05-23); the gain materialises over the recalc sweep's full cycle (~4–5 days at the observed ~12–16 recalc triggers/day).
+
+**Net:** the FMV-confidence effort is complete. Levers 1 & 2 are the real wins (shipped); Lever 3 was a non-issue; Lever 4 is not viable. The honest end state — ~5% HIGH, ~half the catalogue genuinely unpriceable and labelled `NO_DATA` — is the accurate picture, and the remaining lever for FMV quality is not more inference but more *primary data* (a live Top Shot listings feed, or deeper sales history via the spork scan).
