@@ -10,7 +10,7 @@ What the harness does:
 - Resolves those imports against committed stubs (for `DapperUtilityCoin` and `TopShot`) and against `flow dependencies install`-cached mainnet sources (for `NFTStorefrontV2`, `FungibleToken`, `NonFungibleToken`, `MetadataViews`, `ViewResolver`).
 - Runs the Cadence linter / type-checker against the fixture and fails the build if `purchase-moment.ts` fails to type-check.
 
-The current state of the harness is **RED on purpose** — it surfaces the C1 and C2 audit findings from `docs/audits/purchase-moment-2026-05.md` as `semantic-error` lines. When those bugs are fixed in a future session, the harness flips GREEN.
+The harness is **GREEN as of 2026-05-22** — the C1 and C2 audit findings from `docs/audits/purchase-moment-2026-05.md` are fixed in `lib/cadence/purchase-moment.ts` (`FungibleToken` is imported; `self.listing` is borrowed before its price is read), so `npm run test:cadence` exits 0. The H1 and H2 runtime findings were subsequently fixed too (commit `e5c36a8`), but those are not type-check-detectable and the harness never covered them (see "Flipping the harness GREEN" below). From here the harness acts as a true regression net: any future type error in the production transaction flips it RED. The "Interpreting the current RED output" section below is **historical** — retained to document what the original C1/C2 failure looked like.
 
 ## Prerequisites
 
@@ -86,7 +86,9 @@ Exit codes:
 - **0** — no semantic errors (warnings are allowed). The harness is GREEN; `purchase-moment.ts` type-checks cleanly.
 - **1** — at least one `semantic-error` line in the lint output. The harness is RED; either the audit findings are still unfixed or a regression has been introduced.
 
-## Interpreting the current RED output
+## Interpreting the current RED output (HISTORICAL — C1/C2 are fixed)
+
+> This section describes the original RED state before the C1/C2 fixes landed. The harness is GREEN now; this is kept only as a record of what the failure looked like.
 
 ```
 fixtures/purchase-moment.cdc:30:21: semantic-error: cannot access uninitialized field: `listing`
