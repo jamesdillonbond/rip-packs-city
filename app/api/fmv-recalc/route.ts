@@ -22,8 +22,14 @@ import { computeConfidence, escalateConfidence } from "@/lib/fmv-confidence"
 // Upsert with onConflict does not work without a unique constraint covering
 // all partition columns. We use delete-then-insert instead.
 //
+// Pagination: by distinct edition_id ordered by MAX(sold_at) DESC, so the
+// most-recently-traded editions price first. `limit` counts distinct editions,
+// not sales rows. The route then fetches ALL in-window sales for that edition
+// set — sales rows for a single edition must never split across pages, since
+// each page does delete-then-insert and a partial page would clobber a fuller
+// snapshot.
+//
 // Run via POST /api/fmv-recalc (token-gated, same as ingest)
-// Paginated — pass { offset, limit } in body to process in chunks.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ALGO_VERSION = "1.7.0"
@@ -182,33 +188,47 @@ export async function POST(req: NextRequest) {
     ).toISOString()
 
     console.log(
-      `[FMV-RECALC] Starting — offset=${offset} limit=${limit} window=${WINDOW_DAYS}d since=${windowStart}`
+      `[FMV-RECALC] Starting — offset=${offset} editionLimit=${limit} window=${WINDOW_DAYS}d since=${windowStart}`
     )
     console.log(`[FMV-RECALC] SUPABASE_SERVICE_ROLE_KEY set: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}, length: ${process.env.SUPABASE_SERVICE_ROLE_KEY?.length ?? 0}`)
 
-    // ── Step 1: Get sales rows in window (paginated) ──────────────────────────
-    // Also fetching sold_at for WAP and days_since_sale computation
-    const { data: salesPage, error: pageError } = await supabaseAdmin
-      .from("sales")
-      .select("edition_id, collection_id, price_usd, sold_at, serial_number")
-      .gte("sold_at", windowStart)
-      .gt("price_usd", 0)
-      .neq("collection_id", PINNACLE_COLLECTION_ID)
-      .range(offset, offset + limit - 1)
-      .order("edition_id")
+    // ── Step 1a: Page through distinct edition_ids by recency ────────────────
+    // Ordered by MAX(sold_at) DESC so recently-traded editions price first
+    // during the initial sweep. Pagination unit is distinct editions — never
+    // sales rows — because the per-page delete-then-insert flow requires an
+    // edition's full sales set to land in the same chunk.
+    type EditionPageRow = { edition_id: string }
+    const { data: editionPage, error: editionPageError } = await (supabaseAdmin as any)
+      .rpc("query_sql", {
+        query: `
+          SELECT edition_id
+          FROM sales
+          WHERE sold_at >= '${windowStart}'
+            AND price_usd > 0
+            AND collection_id <> '${PINNACLE_COLLECTION_ID}'
+            AND edition_id IS NOT NULL
+          GROUP BY edition_id
+          ORDER BY MAX(sold_at) DESC NULLS LAST
+          LIMIT ${limit} OFFSET ${offset}
+        `,
+      })
 
-    if (pageError) {
-      console.error("[FMV-RECALC] Sales page fetch error:", pageError.message)
+    if (editionPageError) {
+      console.error("[FMV-RECALC] Edition page fetch error:", editionPageError.message)
       return
     }
 
-    if (!salesPage || salesPage.length === 0) {
+    const pageEditionIds: string[] = ((editionPage as EditionPageRow[] | null) ?? [])
+      .map((r) => r.edition_id)
+      .filter((id): id is string => !!id)
+
+    if (pageEditionIds.length === 0) {
       console.log(
-        `[FMV-RECALC] No sales found in window — durationMs=${Date.now() - startTime}`
+        `[FMV-RECALC] No editions found in window at offset ${offset} — durationMs=${Date.now() - startTime}`
       )
-      // If the paginated sweep walked off the end of the table, log a null
-      // cursor so the next run wraps back to offset 0 instead of getting stuck
-      // re-reading the empty page past the end.
+      // If the paginated sweep walked off the end, log a null cursor so the
+      // next run wraps back to offset 0 instead of getting stuck on the empty
+      // page past the end.
       if (offset > 0) {
         try {
           await supabaseAdmin.rpc("log_pipeline_run", {
@@ -228,6 +248,46 @@ export async function POST(req: NextRequest) {
           console.warn("[FMV-RECALC] sweep-wrap log failed:", err)
         }
       }
+      await fireNextPipelineStep("/api/listing-cache", chain)
+      return
+    }
+
+    // ── Step 1b: Fetch ALL in-window sales for this edition set ──────────────
+    // .in() caps around 1000 elements per PostgREST request, so chunk the IDs.
+    type SaleRow = {
+      edition_id: string
+      collection_id: string
+      price_usd: number | string
+      sold_at: string
+      serial_number: number | null
+    }
+    const salesPage: SaleRow[] = []
+    const IN_CHUNK = 500
+    for (let i = 0; i < pageEditionIds.length; i += IN_CHUNK) {
+      const slice = pageEditionIds.slice(i, i + IN_CHUNK)
+      const { data: chunkSales, error: chunkErr } = await supabaseAdmin
+        .from("sales")
+        .select("edition_id, collection_id, price_usd, sold_at, serial_number")
+        .gte("sold_at", windowStart)
+        .gt("price_usd", 0)
+        .neq("collection_id", PINNACLE_COLLECTION_ID)
+        .in("edition_id", slice)
+      if (chunkErr) {
+        console.error(
+          `[FMV-RECALC] Sales fetch error for edition slice ${i}-${i + slice.length}:`,
+          chunkErr.message
+        )
+        continue
+      }
+      if (chunkSales && chunkSales.length > 0) {
+        salesPage.push(...(chunkSales as SaleRow[]))
+      }
+    }
+
+    if (salesPage.length === 0) {
+      console.warn(
+        `[FMV-RECALC] Edition page returned ${pageEditionIds.length} ids but no in-window sales survived re-fetch — skipping`
+      )
       await fireNextPipelineStep("/api/listing-cache", chain)
       return
     }
@@ -805,7 +865,9 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const hasMore = salesPage.length === limit
+    // hasMore is keyed on the distinct-edition page size — never the sales
+    // count — since pagination unit is distinct editions.
+    const hasMore = pageEditionIds.length === limit
     const duration = Date.now() - startTime
 
     console.log(
