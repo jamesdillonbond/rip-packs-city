@@ -165,9 +165,24 @@ async function hydrateOne(extId) {
   const dateSlice = dateOfMoment ? String(dateOfMoment).slice(0, 10) : null
   const gameDate = dateSlice && /^\d{4}-\d{2}-\d{2}$/.test(dateSlice) ? dateSlice : null
 
+  // Bug fix (2026-05-24): the GQL response carries the on-chain integer IDs
+  // in row.set.flowId / row.play.flowID regardless of external_id format, so
+  // UUID:UUID rows can be fully hydrated with set_id_onchain / play_id_onchain
+  // without a second lookup. The old code only filled these when external_id
+  // matched ^\d+:\d+$ and silently left UUID:UUID rows with NULL integer
+  // columns — the very state that caused 992 stubs to leak past
+  // topshot-stub-resolver in the first place.
   const intPair = /^\d+:\d+$/.test(extId)
-  const setIdOnchain = intPair ? Number(setID) : null
-  const playIdOnchain = intPair ? Number(playID) : null
+  const setFromExt = intPair && /^\d+$/.test(setID) ? Number(setID) : null
+  const playFromExt = intPair && /^\d+$/.test(playID) ? Number(playID) : null
+  const setFromGql = row.set?.flowId != null && Number.isFinite(Number(row.set.flowId))
+    ? Number(row.set.flowId)
+    : null
+  const playFromGql = row.play?.flowID != null && Number.isFinite(Number(row.play.flowID))
+    ? Number(row.play.flowID)
+    : null
+  const setIdOnchain = setFromGql ?? setFromExt
+  const playIdOnchain = playFromGql ?? playFromExt
 
   const name = playerName && setName ? `${playerName} — ${setName}` : (playerName ?? setName)
 
@@ -189,12 +204,19 @@ async function hydrateOne(extId) {
 }
 
 async function loadCohort() {
+  // Pulls every TopShot edition still missing at least one of: set_name,
+  // player_name, circulation_count, tier, set_id_onchain, play_id_onchain.
+  // The trailing two were added 2026-05-24 to catch UUID:UUID rows where
+  // the old script had populated metadata but skipped the integer columns
+  // (the leak that left topshot-stub-resolver staring at a 992-row cohort
+  // it could never match).
   const { data, error } = await supabase
     .from("editions")
     .select("id, external_id")
     .eq("collection_id", TS_COLLECTION_ID)
-    .or("set_name.is.null,player_name.is.null,circulation_count.is.null,tier.is.null")
+    .or("set_name.is.null,player_name.is.null,circulation_count.is.null,tier.is.null,set_id_onchain.is.null,play_id_onchain.is.null")
     .order("created_at", { ascending: false })
+    .limit(2000)
   if (error) throw new Error(`cohort load: ${error.message}`)
   return data ?? []
 }
