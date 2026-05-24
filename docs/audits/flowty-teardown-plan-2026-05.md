@@ -1,16 +1,22 @@
 # Flowty Teardown — Inventory & Plan
 
-**Date:** 2026-05-23
+**Date:** 2026-05-23 (updated 2026-05-24)
 **Author:** Claude (Cowork session)
 **Scope:** A complete inventory of Flowty-dependent infrastructure and a sequenced, risk-rated plan to retire it.
-**Context:** Flowty shut down its NFT marketplace ~2026-05-13. `flowty_loan_events` went cold 2026-05-11. UFC Strike also left Flow for Aptos. All Flowty-derived data is now frozen by design — this is `CLAUDE.md` Prioritized Next Action #4.
+**Context:** Flowty shut down its NFT marketplace ~2026-05-13. `flowty_loan_events` went cold 2026-05-11. UFC Strike also left Flow for Aptos. All Flowty-derived data is now frozen by design.
 
 ---
 
 ## 1. Already done
 
-- **`api_harvest_20260512`** (the 9.9 GB Flowty archive harvest table) has already been pruned — total DB went 13.8 GB → 6.5 GB.
-- **`listing-divergence-snapshot`** got a Flowty-offline guard this session (commit `6e37a79`) — it no longer fails ~80% of runs or burns 75–135s of DB time comparing against a dead feed.
+- **`api_harvest_20260512`** (the 9.9 GB Flowty archive harvest table) was pruned earlier — total DB went 13.8 GB to 6.5 GB.
+- **`listing-divergence-snapshot`** got a Flowty-offline guard (commit `6e37a79`) — it no longer fails ~80% of runs.
+
+### Update 2026-05-24 — Phase 0 + Phase 1 executed
+
+- **Retention decisions settled (Trevor):** (1) hard-delete the `unmapped_sales` archive rows; (2) keep all Flowty *history* — loan/transaction tables, the 3 MVs, the `flowty_top_*`/`flowty_analytics_*` RPCs, and `/admin/flowty-analytics` — frozen as a historical record (Phase 3 reframe path, not the drop path).
+- **Phase 0 (workflow):** the 3 dead Flowty steps (`Flowty Sales`, `Flowty Enrich`, `Flowty Listings`) removed from `.github/workflows/rpc-pipeline.yml`. cron-job.org entries still need deleting by Trevor (see Phase 0 list below).
+- **Phase 1 (DB prune):** all 1,973,983 `flowty_archive_extractor` rows hard-deleted from `unmapped_sales` + `VACUUM FULL` — table went 1,432 MB to 2.8 MB, database total ~6.5 GB to 5.05 GB. 4,582 genuine on-chain unmapped rows retained. The MVs / RPCs / loan tables were kept per the retention decision.
 
 ## 2. Inventory of what remains
 
@@ -32,54 +38,58 @@
 
 ### Supabase edge function
 
-`flowty-proxy` (Flowty blocked Vercel IPs; this proxied around it — now moot)
+`flowty-proxy` (Flowty blocked Vercel IPs; this proxied around it — now moot). `flowty-loan-indexer` (cold since 2026-05-11).
 
-### `lib/`
+### lib/
 
 `lib/flowty/` (directory), `flowty-flags.ts`, `flowty-market-truth.ts`, `flowty-tx-classifier.ts`, `flowty-username.ts`
 
 ### GitHub Actions
 
-`rpc-pipeline.yml` carries 3 dead Flowty steps: **"Flowty Sales"**, **"Flowty Enrich"**, **"Flowty Listings"** (all `continue-on-error`, all hitting now-dead endpoints).
+`rpc-pipeline.yml` carried 3 dead Flowty steps: "Flowty Sales", "Flowty Enrich", "Flowty Listings" — all hitting now-dead endpoints. Removed 2026-05-24 (see Phase 0).
 
 ### Database objects
 
 | Object | Type | Size | Disposition |
 |---|---|---:|---|
-| `unmapped_sales` | table | **1.4 GB** | ~1.97M rows are `flowty_archive_extractor` source that structurally never resolve (May 20 audit) — the one real space win |
-| `flowty_loan_events` | table | 23 MB | Historical — keep or export+drop |
-| `flowty_transactions` | table | 11 MB | Historical — keep or export+drop |
-| `flowty_loans` | table | 5.4 MB | Historical — keep or export+drop |
-| `unmapped_sales_resolution_failures` | table | 552 KB | Drop with the prune |
-| `mv_flowty_first_activations` | mat. view | 256 KB | Drop |
-| `mv_flowty_sales_daily` | mat. view | 96 KB | Drop |
-| `mv_flowty_loans_daily` | mat. view | 64 KB | Drop |
-| `flowty_scanner_state` | table | 56 KB | Drop |
+| `unmapped_sales` | table | 1.4 GB | ~1.97M `flowty_archive_extractor` rows pruned 2026-05-24 |
+| `flowty_loan_events` | table | 23 MB | Historical — KEPT (retention decision) |
+| `flowty_transactions` | table | 11 MB | Historical — KEPT (retention decision) |
+| `flowty_loans` | table | 5.4 MB | Historical — KEPT (retention decision) |
+| `unmapped_sales_resolution_failures` | table | 552 KB | Candidate drop (Phase 2) |
+| `mv_flowty_first_activations` | mat. view | 256 KB | KEPT — backs /admin/flowty-analytics |
+| `mv_flowty_sales_daily` | mat. view | 96 KB | KEPT — backs /admin/flowty-analytics |
+| `mv_flowty_loans_daily` | mat. view | 64 KB | KEPT — backs /admin/flowty-analytics |
+| `flowty_scanner_state` | table | 56 KB | Candidate drop (Phase 2) |
 | `flowty_excluded_addresses` | table | 32 KB | Keep (tiny, may be reusable) |
 
-Plus the `refresh_flowty_analytics()` function and 5 `flowty_top_*` RPCs.
+Plus `refresh_flowty_analytics()` and 5 `flowty_top_*` RPCs — KEPT (retention decision).
 
 ### Frontend
 
-**46 `.tsx` files** reference Flowty — the Sniper feed, the Market tab, `/admin/flowty-analytics`, and assorted badges/labels. This is the largest surface and overlaps the roadmap's "decide the marketplace messaging" decision.
+46 `.tsx` files reference Flowty. The Market/Sniper buy-leg was already reframed to outbound links (commit `b19d8f2`); the remaining surface is the analytics dashboards + status components, which get *relabelled* as historical, not deleted.
 
 ## 3. Teardown plan — sequenced & risk-rated
 
 ### Phase 0 — stop the bleeding · low risk
 
-- Delete the cron-job.org entries: `RPC Flowty Loan Indexer`, `RPC Flowty Analytics Refresh`, `sync-flowty-listings`, `flowty-harvester`, `flowty-tx-scanner`, and the `extract-flowty-*` jobs. *(Requires the cron-job.org dashboard — Trevor.)*
-- Remove the 3 dead Flowty steps from `.github/workflows/rpc-pipeline.yml`. *(Scoped, reversible — but it edits the critical data-pipeline workflow, so do it deliberately with the rest of Phase 0, not as a drive-by.)*
+- DONE 2026-05-24: removed the 3 dead Flowty steps from `.github/workflows/rpc-pipeline.yml`.
+- TREVOR — cron-job.org dashboard: delete the entries `sync-flowty-listings`, `flowty-harvester`, `flowty-tx-scanner`, `extract-flowty-offers`, `extract-flowty-purchases`, `RPC Flowty Loan Indexer`, `RPC Flowty Analytics Refresh` (MV refresh). Also retire `prune-flowty-archive-api-harvest` — its target table is already gone.
 
-### Phase 1 — reclaim database space · medium risk, needs a retention decision
+### Phase 1 — reclaim database space · DONE 2026-05-24
 
-- **`unmapped_sales`:** prune the ~1.97M `flowty_archive_extractor` rows → reclaims **~1.4 GB**, the single biggest remaining DB lever. Decide first: hard delete, or move to a cold/exported archive.
-- Drop `mv_flowty_sales_daily`, `mv_flowty_loans_daily`, `mv_flowty_first_activations`, the `refresh_flowty_analytics()` function, and the 5 `flowty_top_*` RPCs.
-- `flowty_loan_events` / `flowty_transactions` / `flowty_loans` total only ~40 MB — cheap to keep as a historical record; export + drop only if you want a clean schema.
+- DONE: `unmapped_sales` pruned — 1,973,983 `flowty_archive_extractor` rows hard-deleted + `VACUUM FULL`. Table 1,432 MB to 2.8 MB; DB total ~6.5 GB to 5.05 GB. 4,582 genuine on-chain unmapped rows kept.
+- Not done, by decision: the MVs, `refresh_flowty_analytics()`, and the 5 `flowty_top_*` RPCs are kept — the retention decision is keep-frozen-historical, so they back `/admin/flowty-analytics`. The refresh simply stops once its cron is deleted (Phase 0).
+- `flowty_loan_events` / `flowty_transactions` / `flowty_loans` (~40 MB) kept as the historical record.
 
-### Phase 2 — code removal · larger, after Phases 0–1 settle
+### Phase 2 — code removal · NEXT — larger, focused pass
 
-- Delete the 10 `flowty-*` API routes, the `flowty-proxy` edge function, and `lib/flowty*`.
-- Work through the 46 `.tsx` files. This is where the teardown meets the **roadmap's strategic fork**: Market/Sniper should be reframed as "FMV + historical + outbound buy links" rather than a live Flowty feed. Treat this as the marketing-messaging change, not just a code delete.
+Scope is narrowed by two settled facts: (a) the Market/Sniper frontend reframe to outbound "View Listing" links already shipped (commit `b19d8f2`, 2026-05-23); (b) the retention decision is keep-frozen-historical, so reader code stays.
+
+- Delete only the dead *ingest* surface: the `flowty-*` API routes that the now-deleted crons fired (`sync-flowty-listings`, `flowty-harvester`, `flowty-tx-scanner`, `flowty-offers`, `flowty-sales`, `flowty-enrich`/`wallet-enrich-flowty`, `flowty-monitor`). Verify each is ingest-only (not read by the frontend) before deleting.
+- Keep reader routes/RPCs that back `/admin/flowty-analytics` and the historical analytics dashboards — relabel, don't delete.
+- Investigate first: `/api/listing-cache` + `/api/topshot-listing-cache` / `allday` / `golazos` (the 4 "via flowty-proxy" steps still in `rpc-pipeline.yml`) — confirm whether they hit the dead Flowty API or live per-collection APIs before touching them.
+- Relabel the remaining `.tsx` touch-points (analytics dashboards, marketplace-status components, badges) as "historical — Flowty closed May 2026".
 
 ### Phase 3 — reframe, don't delete
 
@@ -87,9 +97,9 @@ Plus the `refresh_flowty_analytics()` function and 5 `flowty_top_*` RPCs.
 
 ## 4. What was / wasn't done autonomously
 
-- **Done:** the `listing-divergence-snapshot` Flowty-offline guard (shipped, commit `6e37a79`).
-- **Not done autonomously, by design:** route deletions, table/MV drops, the `unmapped_sales` prune, and cron removal. These are irreversible and/or need the cron-job.org dashboard, and the roadmap explicitly frames the teardown as a deliberate decision. A teardown should be **one planned sweep**, not piecemeal edits that risk colliding with the larger marketplace-messaging change. This document is that plan.
+- Done: the `listing-divergence-snapshot` Flowty-offline guard (commit `6e37a79`); Phase 0 workflow edit + Phase 1 DB prune (2026-05-24).
+- Gated on a decision, by design: the `unmapped_sales` prune and the keep-vs-drop call on the historical tables/MVs/analytics were surfaced to Trevor before execution — they are irreversible. cron removal still needs the cron-job.org dashboard (Trevor).
 
-## 5. The decision that gates Phase 2
+## 5. The strategic fork — SETTLED
 
-Per `docs/roadmap-2026-05.md`, the open fork: **is live buy / cart / snipe still a product goal?** If the answer is "intelligence-first," Phase 2 simplifies dramatically — Market/Sniper collapse to FMV + outbound links and most of the 46 `.tsx` touch-points get reframed in one pass. Settle that decision before starting Phase 2.
+The gating decision (live buy / cart / snipe as a product goal) is settled: intelligence-first. Cart is shelved; Market/Sniper reframed to FMV + outbound links (shipped `b19d8f2`). Phase 2 is the narrowed pass described in section 3 — no further strategic decision needed to proceed.
