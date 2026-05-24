@@ -28,7 +28,7 @@ import { computeConfidence, escalateConfidence } from "@/lib/fmv-confidence"
 
 const ALGO_VERSION = "1.7.0"
 const WINDOW_DAYS = 30
-const DEFAULT_LIMIT = 1000
+const DEFAULT_LIMIT = 2500
 
 // Route-segment config: the paginated sweep plus the haircut pass can run
 // well past the platform default, so pin the Vercel Pro maximum.
@@ -142,7 +142,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => ({}))
-  const limit = Math.min(Number(body.limit ?? DEFAULT_LIMIT), 2000)
+  const limit = Math.min(Number(body.limit ?? DEFAULT_LIMIT), 5000)
 
   // Resume the paginated sweep from the previous run's cursor. The cron and the
   // sales-indexer chains call this route with no explicit offset; without a
