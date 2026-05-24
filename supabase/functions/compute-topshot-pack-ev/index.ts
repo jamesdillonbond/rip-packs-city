@@ -1,16 +1,33 @@
-// compute-topshot-pack-ev v18 — inline UUID:UUID skeleton hydration.
+// compute-topshot-pack-ev v19 — v17 queue-poison sentinels + v18 inline hydration.
 //
-// v18 (2026-05-24): the seed_topshot_editions RPC creates skeleton rows with
-// set_id_onchain/play_id_onchain populated ONLY for integer-pair external_ids.
-// Every external_id this function seeds is `{setUUID}:{playUUID}`, so the
-// integer columns stay NULL and the topshot-stub-resolver pipeline (which
-// requires set_id_onchain IS NOT NULL on its target query) never touches
-// them — backlog was 992 and growing ~10/day, and topshot-moments-hydrator
-// failed ~16x/day on the same catalog gap. v18 hydrates the just-seeded
-// UUID:UUID rows inline via Top Shot's searchEditions GQL, populating
-// set_id_onchain / play_id_onchain / name / player_name / set_name / tier
-// / circulation_count in the same invocation. Runs AFTER the EV insert with
-// a strict time budget so the critical EV path is never blocked.
+// v19 (2026-05-24) merges the inline UUID:UUID skeleton hydration on top of
+// the v17 queue-poison sentinel writes that were deployed live but never
+// committed back to the repo. See history blocks below for each layer.
+//
+// v18 (2026-05-24) — inline UUID:UUID skeleton hydration. seed_topshot_editions
+//   populates set_id_onchain/play_id_onchain ONLY for integer-pair external_ids.
+//   Every external_id this function seeds is `{setUUID}:{playUUID}`, so the
+//   integer columns stay NULL and the topshot-stub-resolver pipeline (which
+//   requires set_id_onchain IS NOT NULL on its target query) never touches
+//   them — backlog was 992 and growing ~10/day, and topshot-moments-hydrator
+//   failed ~16x/day on the same catalog gap. v18 hydrates the just-seeded
+//   UUID:UUID rows inline via Top Shot's searchEditions GQL, populating
+//   set_id_onchain / play_id_onchain / name / player_name / set_name / tier
+//   / circulation_count in the same invocation. Runs AFTER the EV insert with
+//   a strict time budget so the critical EV path is never blocked.
+//
+// v17 (2026-05-24) — queue-poison fix. Un-resolvable packs (no editions
+//   exposed by the TS API, no dynamic data, fully depleted) and RPC
+//   not-ok packs (no_fmv_coverage etc.) now get a sentinel row written
+//   to pack_ev_history so their last_ev_at advances. Before this fix the
+//   8 stalest un-resolvable packs were re-selected on every run, wrote
+//   zero EV rows, and starved the other ~1,100 TS packs indefinitely.
+//   NOTE: this fix is partially superseded by the DB migration
+//   audit_20260524_pack_ev_targets_unpoison_via_history, which reads
+//   last_ev_at from pack_ev_history.max(snapshotted_at) directly. The
+//   sentinel writes here are now redundant but harmless — we keep them so
+//   the targets view filter can be tightened in the future without losing
+//   queue advance.
 //
 // Mirrors app/api/pack-ev/route.ts: every persisted row carries primary_price,
 // secondary_ask, price_source, primary_available, secondary_available
@@ -26,7 +43,7 @@
 // Studio is reachable from Supabase egress without a proxy hop). The
 // result is a Map<distId, lowestAsk> consulted per pack in the loop.
 //
-// v15 history:
+// Older v15 history:
 //   v14 BATCH_SIZE 12 → 8 to fix ~50% time-budget timeouts.
 //   v13 added zero_total_weight to sentinel-trigger reasons.
 //   v12 explicit snapshotted_at on success path.
@@ -66,7 +83,7 @@ const ERRORS_SAMPLE_CAP = 12
 const FETCH_CONCURRENCY = 3
 const MAX_1015_RETRIES = 3
 const RETRY_BACKOFF_MS = 2000
-const FUNCTION_VERSION = 18
+const FUNCTION_VERSION = 19
 
 // Hydration safety margin: leave this many ms of HARD_CEILING headroom for
 // the GQL+update loop so it can short-circuit cleanly without dragging the
@@ -74,7 +91,7 @@ const FUNCTION_VERSION = 18
 const HYDRATE_BUDGET_RESERVE_MS = 8_000
 const HYDRATE_PER_CALL_TIMEOUT_MS = 8_000
 
-// UUID character class (no anchors so it can be used inline in colon-split keys).
+// UUID character class (anchored — used to gate UUID-only hydration paths).
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const retryEvents: Array<{
@@ -188,40 +205,6 @@ const STUDIO_SEALED_FILTERS = [
   },
 ]
 
-interface DynamicData {
-  getPackListing?: {
-    data?: {
-      forSale?: boolean
-      packListingContentRemaining?: {
-        unopened?: number
-        totalPackCount?: number
-      }
-    }
-  }
-}
-
-interface EditionNode {
-  count: number
-  remaining: number
-  edition: {
-    id: string
-    tier: string
-    set: { id: string } | null
-    play: { id: string } | null
-  }
-}
-
-interface EditionsResponse {
-  getPackListing?: {
-    data?: {
-      packEditionsV3?: {
-        pageInfo: { endCursor: string; hasNextPage: boolean }
-        edges: Array<{ node: EditionNode }>
-      }
-    }
-  }
-}
-
 // SearchEditionBackfill — same GQL shape used by scripts/rehydrate-null-topshot-editions.mjs.
 // Hydrates UUID:UUID skeleton edition rows that seed_topshot_editions could
 // not populate (it only parses set_id_onchain / play_id_onchain when external_id
@@ -286,6 +269,40 @@ interface SearchEditionsResp {
   searchEditions?: {
     searchSummary?: {
       data?: { data?: EditionGqlRow[] }
+    }
+  }
+}
+
+interface DynamicData {
+  getPackListing?: {
+    data?: {
+      forSale?: boolean
+      packListingContentRemaining?: {
+        unopened?: number
+        totalPackCount?: number
+      }
+    }
+  }
+}
+
+interface EditionNode {
+  count: number
+  remaining: number
+  edition: {
+    id: string
+    tier: string
+    set: { id: string } | null
+    play: { id: string } | null
+  }
+}
+
+interface EditionsResponse {
+  getPackListing?: {
+    data?: {
+      packEditionsV3?: {
+        pageInfo: { endCursor: string; hasNextPage: boolean }
+        edges: Array<{ node: EditionNode }>
+      }
     }
   }
 }
@@ -538,15 +555,11 @@ function normalizeTier(raw: unknown): string | null {
 // NOT NULL) and the manual rehydrate script is the only fallback.
 //
 // Time-budgeted against HARD_CEILING_MS so the EV path always wins — stops
-// cleanly when budget is exhausted and reports the unprocessed count so the
-// next run can pick up the slack via its own seed cycle (any external_id not
-// hydrated this tick will reappear as `unseeded` again next tick because
-// editionByExternalId is rebuilt from get_topshot_editions_by_setplay, which
-// matches on external_id only — a NULL-metadata row resolves but the inline
-// hydration loop below will still attempt it on subsequent runs via the
-// safety filter `.is("set_id_onchain", null)` on the update). Defensive: the
-// update is conditional on set_id_onchain still being NULL so we never
-// overwrite a row that was hydrated by some other path.
+// cleanly when budget is exhausted and reports the unprocessed count. The
+// editions update is conditional on set_id_onchain still being NULL so we
+// never overwrite a row that was hydrated by some other path. Any external_id
+// that doesn't get processed this tick will reappear as `unseeded` on a
+// subsequent run if the pack listing surfaces it again.
 async function hydrateSeededEditions(
   externalIds: string[],
   startedAt: number,
@@ -749,6 +762,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     editions_hydration_skipped_budget: 0,
     ev_rows_written: 0,
     pool_empty_sentinels: 0,
+    unresolvable_sentinels: 0,
     rpc_not_ok: 0,
     rpc_errors: 0,
     gql_errors: 0,
@@ -770,6 +784,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     slots: number
     payload: unknown
   }> = []
+  const hydrationErrors: Array<{ external_id: string; reason: string }> = []
 
   try {
     const { data: targets, error: targetsErr } = await supabase
@@ -827,6 +842,10 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
 
     const fetched: Array<Extract<FetchOutcome, { tag: "success" }>> = []
     const seenExternalIds = new Set<string>()
+    // Packs that resolved to a deterministic dead-end this run. They get a
+    // sentinel row so last_ev_at advances and they rotate to the back of
+    // the targets queue instead of being re-selected every run.
+    const sentinelTargets: Array<{ target: TargetRow; kind: "no_dynamic" | "no_editions" | "zero_unopened" }> = []
 
     for (const r of fetchResults) {
       counters.nodes_processed++
@@ -856,13 +875,16 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
           break
         case "no_dynamic":
           counters.nodes_no_dynamic++
+          sentinelTargets.push({ target: o.target, kind: "no_dynamic" })
           break
         case "no_editions":
           counters.nodes_no_editions++
+          sentinelTargets.push({ target: o.target, kind: "no_editions" })
           console.log(`[compute-topshot-pack-ev] bundle dist=${o.target.dist_id} listing=${o.target.pack_listing_uuid}`)
           break
         case "zero_unopened":
           counters.nodes_zero_unopened++
+          sentinelTargets.push({ target: o.target, kind: "zero_unopened" })
           break
         case "gql_error":
           counters.gql_errors++
@@ -879,6 +901,44 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
           console.log(`[compute-topshot-pack-ev] gql err op=${o.failure.opName} dist=${o.target.dist_id}: ${o.failure.error}`)
           break
       }
+    }
+
+    // ── Queue-poison fix (v17) ───────────────────────────────────────────
+    // Write a sentinel pack_ev_history row for every deterministically
+    // un-resolvable pack so its last_ev_at advances. Without this the 8
+    // stalest un-resolvable packs (depleted, or no editions exposed by the
+    // TS API) are re-selected on every run, write zero EV rows, and starve
+    // the other ~1,100 TS packs indefinitely. gql_error packs are NOT
+    // sentinelled — those are transient and should retry next run.
+    if (sentinelTargets.length > 0) {
+      const sentinelIso = new Date().toISOString()
+      const sentinelRows = sentinelTargets.map(s => {
+        const ask = secondaryAskMap.get(s.target.dist_id) ?? null
+        return {
+          pack_listing_id: s.target.pack_listing_uuid,
+          collection_id: TOPSHOT_COLLECTION_ID,
+          dist_id: s.target.dist_id,
+          pack_name: s.target.title,
+          pack_price: 0,
+          primary_price: null,
+          secondary_ask: ask,
+          price_source: "none",
+          primary_available: false,
+          secondary_available: ask != null && ask > 0,
+          gross_ev: 0,
+          pack_ev: 0,
+          is_positive_ev: false,
+          value_ratio: null,
+          fmv_coverage_pct: null,
+          edition_count: 0,
+          total_unopened: 0,
+          depletion_pct: s.kind === "zero_unopened" ? 100 : null,
+          snapshotted_at: sentinelIso,
+        }
+      })
+      const { error: sErr } = await supabase.from("pack_ev_history").insert(sentinelRows)
+      if (!sErr) counters.unresolvable_sentinels = sentinelRows.length
+      else console.log(`[compute-topshot-pack-ev] sentinel insert err: ${sErr.message}`)
     }
 
     if (fetched.length === 0) {
@@ -1078,13 +1138,13 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
             payload: ev,
           })
         }
-        // pool_empty / zero_total_weight: drop pool is missing or every
-        // edition has weight=0. Write a sentinel row so pack_ev_latest
-        // is no longer NULL for this dist_id and the targets view stops
-        // re-selecting it on every cron tick. Sentinels still carry the
-        // dual-price columns so the UI shows the live primary/secondary
-        // state even when EV is unavailable.
-        if (ev?.reason === "pool_empty" || ev?.reason === "zero_total_weight") {
+        // Any RPC not-ok that carries a reason (pool_empty, zero_total_weight,
+        // no_fmv_coverage, ...) means the pack cannot be priced this run.
+        // Write a sentinel row so pack_ev_latest is no longer NULL for this
+        // dist_id and the targets view stops re-selecting it on every cron
+        // tick. Sentinels still carry the dual-price columns so the UI shows
+        // the live primary/secondary state even when EV is unavailable.
+        if (ev?.reason) {
           counters.pool_empty_sentinels++
           evRows.push({
             pack_listing_id: f.target.pack_listing_uuid,
@@ -1167,13 +1227,12 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       }
     }
 
-    // ── Inline UUID:UUID skeleton hydration ─────────────────────────────────
+    // ── Inline UUID:UUID skeleton hydration (v18) ───────────────────────────
     // Runs LAST so the EV write path is never blocked. Hydrates the rows that
     // seed_topshot_editions just inserted with NULL metadata (because its
     // integer-pair regex doesn't match UUID:UUID external_ids). One Top Shot
     // GQL call per row; time-budgeted, short-circuits cleanly if HARD_CEILING
     // is approached. See docs/code-todos.md item #1.
-    const hydrationErrors: Array<{ external_id: string; reason: string }> = []
     if (unseededExternalIds.length > 0) {
       const hydrateResult = await hydrateSeededEditions(unseededExternalIds, started)
       counters.editions_hydrated = hydrateResult.hydrated
