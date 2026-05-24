@@ -55,7 +55,6 @@ Edge functions:
 |---|---|---|
 | RPC Pinnacle Owner Discovery Forward | edge fn `pinnacle-owner-discovery-forward` | HEALTHY |
 | RPC Pipeline Failure Alerts | edge fn `pipeline-failure-alerts` | HEALTHY |
-| RPC wmc Edition Keys Drain | `/api/admin/migrate-wmc-edition-keys` | **NOT-YET-SCHEDULED** (2026-05-09) | Drains canonical pairs as the hydrator surfaces them; replaces manual MCP intervention. Auth: Bearer `RPC_ADMIN_TOKEN` (or `?token=`). Route is idempotent and self-syncing — top-of-call SQL pulls newly-paired rows from `editions_canonical_pair` into `wmc_dedup_pairs`, then the drain loop chews through `wmc_edition_key_drain_v2(200)` batches up to a 250s wall-clock budget. Steady state ~80 new pairs / 20min from hydrator churn, so 30min cadence keeps `pairs_remaining` near zero without hammering. |
 
 ### Every hour
 
@@ -133,6 +132,10 @@ These do NOT have their own cron entries. They fire as side effects of other pip
 ### RPC All Day FMV Populate — HEALTHY-but-stuck
 
 The route fires every 20 min and returns 200, but the underlying `allday-fmv-populate` Supabase function has been stuck on cursor `7a7fc7e5-6b06-495b-aa85-512ec7cd8557, 2026-03-23T04:33:17` since deployment. Stall-detection + reset shipped 2026-05-09 (commit 62db96f). Cursor now resets. Upstream blocker: `ALLDAY_PROXY_URL` env var on Vercel needs to point at the AllDay GQL worker (currently misconfigured, returning 403). After env fix, this should drain.
+
+### migrate-wmc-edition-keys — RETIRED 2026-05-24
+
+Drain pipeline (`/api/admin/migrate-wmc-edition-keys` + `wmc_edition_key_drain_v3` RPC) was corrupting `wallet_moments_cache.edition_key` — it rewrote valid `set:play` keys to `editions.id` UUIDs, breaking every reader that joins on `editions.external_id = wmc.edition_key`. The v3 SQL function has been neutralized to a no-op in the DB and ~200k corrupted rows were repaired. Route file + directory deleted, `scripts/cleanup-wmc-int-orphans.mjs` deleted. **Trevor: delete the `RPC Migrate wmc Edition Keys` entry from cron-job.org dashboard.** Invariant going forward: `wmc.edition_key` must always equal `editions.external_id`. Full audit: `docs/audits/wmc-edition-key-corruption-2026-05-24.md`.
 
 ### ingest-external-announcements — RETIRED 2026-05-07
 

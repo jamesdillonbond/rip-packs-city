@@ -40,7 +40,6 @@ For staggered scheduling, use these patterns (all proven quiet):
 | RPC League Drift Detection | `/api/admin/cron/detect-league-drift` | weekly Sunday 07:00 | Bearer RPC_ADMIN_TOKEN |
 | RPC Listing Divergence AllDay | `/api/listing-divergence?collection=nfl_all_day` | `*/30` (offset?) | Bearer INGEST_SECRET_TOKEN |
 | RPC Lock Check Batch | `/api/cron/lock-check-batch` | `*/30` ⚠️ | Bearer INGEST_SECRET_TOKEN |
-| RPC Migrate wmc Edition Keys | `/api/admin/migrate-wmc-edition-keys` | `7,37 * * * *` | Bearer RPC_ADMIN_TOKEN |
 | RPC Pinnacle Events Ingest | `/api/cron/pinnacle-events-ingest` | `4,19,34,49 * * * *` | Bearer INGEST_SECRET_TOKEN |
 | RPC Pinnacle Listing Cache | `/api/pinnacle-listing-cache` | `*/20` | Bearer INGEST_SECRET_TOKEN |
 | RPC Pinnacle Sales Indexer | `/api/pinnacle-sales-indexer` | `*/20` | Bearer INGEST_SECRET_TOKEN |
@@ -91,6 +90,7 @@ For staggered scheduling, use these patterns (all proven quiet):
 - ❌ **RPC Badge Sync** — May 11. Route never existed; badge sync is a manual browser-console script (`scripts/topshot-badge-sync.js`).
 - ❌ **RPC Classify Acquisitions** (legacy single-collection, 2 entries) — May 11. Replaced by `classify-acquisitions-multicollection`.
 - ❌ **RPC wmc Edition Keys Drain** (legacy route) — May 11. Replaced by `migrate-wmc-edition-keys`.
+- ❌ **RPC Migrate wmc Edition Keys** — May 24. Was corrupting `wallet_moments_cache.edition_key` (rewriting valid `set:play` keys to `editions.id` UUIDs). v3 SQL function neutralized to a no-op, ~200k rows repaired, route + script deleted. **Trevor: delete this entry from cron-job.org dashboard.** See `docs/audits/wmc-edition-key-corruption-2026-05-24.md`.
 
 ## Pending cleanups
 

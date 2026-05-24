@@ -61,7 +61,6 @@ const EXPECTED_INTERVAL_MIN: Record<string, number> = {
   // Other
   "classify-acquisitions": 20,
   "check-alerts": 20,
-  "migrate-wmc-edition-keys": 20,
   "editions-hydrate-at-insert": 30,
   "sync-nba-projections": 60,
   "sync-nba-odds": 60,
