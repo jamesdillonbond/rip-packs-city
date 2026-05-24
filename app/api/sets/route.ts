@@ -178,9 +178,12 @@ function mapSetSummary(s: RpcSetSummary): SetProgress {
   const estimatedCost = toNum(s.estimatedCostToComplete) ?? 0;
   const missing = (s.missingPreview ?? []).map(mapMissing);
   const listedCount = missing.filter((m) => m.lowestAsk !== null).length;
-  const lowestSingleAsk = missing.length > 0 && missing[0].lowestAsk != null
-    ? missing[0].lowestAsk
-    : null;
+  // Explicit min across the whole missing array — relying on `missing[0]` was an
+  // implicit dependency on RPC ordering (Set audit B2).
+  const lowestSingleAsk = missing
+    .map((m) => m.lowestAsk)
+    .filter((v): v is number => v !== null)
+    .reduce<number | null>((min, v) => (min === null || v < min ? v : min), null);
   const bn = bottleneckOf(missing);
   return {
     setId: s.setId,

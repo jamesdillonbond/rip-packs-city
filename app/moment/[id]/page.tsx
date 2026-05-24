@@ -292,7 +292,13 @@ export default async function MomentPage(
 
   // Schema.org Product JSON-LD — gives crawlers a structured snapshot of the
   // moment as a saleable item with current FMV as the price hint.
+  // Availability reflects real listing state: a live ask (serial-specific
+  // is_listed=true with a list_price, or an edition-level top_shot_ask) is
+  // InStock; otherwise OutOfStock. FMV alone is not a listing (Moment audit B7).
   const priceForSchema = f?.fmv_usd ?? f?.floor_price_usd ?? null
+  const hasLiveListing =
+    (ss?.is_listed === true && (ss.list_price ?? 0) > 0) ||
+    (f?.top_shot_ask != null && f.top_shot_ask > 0)
   const productLd = {
     "@context": "https://schema.org",
     "@type": "Product",
@@ -306,7 +312,9 @@ export default async function MomentPage(
           "@type": "Offer",
           priceCurrency: "USD",
           price: priceForSchema.toFixed(2),
-          availability: "https://schema.org/InStock",
+          availability: hasLiveListing
+            ? "https://schema.org/InStock"
+            : "https://schema.org/OutOfStock",
         }
       : undefined,
   }
@@ -558,7 +566,7 @@ export default async function MomentPage(
               gap: 12,
             }}
           >
-            <StatCell label="Owner" value={ss.owner_address ?? "—"} />
+            <StatCell label="Owner" value={<OwnerLink address={ss.owner_address} />} />
             <StatCell label="Listed" value={ss.is_listed === true ? "YES" : ss.is_listed === false ? "NO" : "—"} />
             <StatCell label="List price" value={fmtUsd(ss.list_price)} />
             <StatCell
@@ -755,7 +763,8 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   )
 }
 
-function StatCell({ label, value }: { label: string; value: string }) {
+function StatCell({ label, value }: { label: string; value: React.ReactNode }) {
+  const titleAttr = typeof value === "string" ? value : undefined
   return (
     <div
       style={{
@@ -790,11 +799,28 @@ function StatCell({ label, value }: { label: string; value: string }) {
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
         }}
-        title={value}
+        title={titleAttr}
       >
         {value}
       </div>
     </div>
+  )
+}
+
+// Owner addresses get a truncated link to /profile/<address> (Moment audit B9).
+// Kept local to avoid pulling in the entity `_shared.tsx` runtime here.
+function OwnerLink({ address }: { address: string | null | undefined }) {
+  if (!address) return <span style={{ color: "var(--rpc-text-muted)" }}>—</span>
+  const lower = address.toLowerCase().startsWith("0x") ? address.toLowerCase() : `0x${address.toLowerCase()}`
+  const trunc = address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address
+  return (
+    <Link
+      href={`/profile/${lower}`}
+      title={address}
+      style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}
+    >
+      {trunc}
+    </Link>
   )
 }
 
