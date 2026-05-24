@@ -10,7 +10,7 @@
 ## 1. Already done
 
 - **`api_harvest_20260512`** (the 9.9 GB Flowty archive harvest table) was pruned earlier — total DB went 13.8 GB to 6.5 GB.
-- **`listing-divergence-snapshot`** got a Flowty-offline guard (commit `6e37a79`) — it no longer fails ~80% of runs.
+- **`listing-divergence-snapshot`** — the commit `6e37a79` Flowty-offline guard does NOT skip the AllDay run. Verified 2026-05-24: still fails ~80% of runs (75-135s `compute_listing_divergence` timeouts against a dead feed). It measures on-chain-vs-Flowty divergence — meaningless now. Folded into Phase 2 for full retirement.
 
 ### Update 2026-05-24 — Phase 0 + Phase 1 executed
 
@@ -74,7 +74,8 @@ Plus `refresh_flowty_analytics()` and 5 `flowty_top_*` RPCs — KEPT (retention 
 ### Phase 0 — stop the bleeding · low risk
 
 - DONE 2026-05-24: removed the 3 dead Flowty steps from `.github/workflows/rpc-pipeline.yml`.
-- TREVOR — cron-job.org dashboard: delete the entries `sync-flowty-listings`, `flowty-harvester`, `flowty-tx-scanner`, `extract-flowty-offers`, `extract-flowty-purchases`, `RPC Flowty Loan Indexer`, `RPC Flowty Analytics Refresh` (MV refresh). Also retire `prune-flowty-archive-api-harvest` — its target table is already gone.
+- DONE 2026-05-24 (Trevor): deleted the cron-job.org entries `sync-flowty-listings`, `flowty-harvester`, `flowty-tx-scanner`, `extract-flowty-offers`, `extract-flowty-purchases`, `RPC Flowty Loan Indexer`, `RPC Flowty Analytics Refresh`, `prune-flowty-archive-api-harvest` — confirmed gone.
+- TREVOR — one more: delete the `RPC Listing Divergence AllDay` cron (still failing ~80%, see section 1).
 
 ### Phase 1 — reclaim database space · DONE 2026-05-24
 
@@ -89,6 +90,7 @@ Scope is narrowed by two settled facts: (a) the Market/Sniper frontend reframe t
 - Delete only the dead *ingest* surface: the `flowty-*` API routes that the now-deleted crons fired (`sync-flowty-listings`, `flowty-harvester`, `flowty-tx-scanner`, `flowty-offers`, `flowty-sales`, `flowty-enrich`/`wallet-enrich-flowty`, `flowty-monitor`). Verify each is ingest-only (not read by the frontend) before deleting.
 - Keep reader routes/RPCs that back `/admin/flowty-analytics` and the historical analytics dashboards — relabel, don't delete.
 - Investigate first: `/api/listing-cache` + `/api/topshot-listing-cache` / `allday` / `golazos` (the 4 "via flowty-proxy" steps still in `rpc-pipeline.yml`) — confirm whether they hit the dead Flowty API or live per-collection APIs before touching them.
+- Retire `listing-divergence-snapshot`: delete the route + the `RPC Listing Divergence AllDay` cron + the `compute_listing_divergence` RPC — it benchmarks on-chain listings against the dead Flowty feed.
 - Relabel the remaining `.tsx` touch-points (analytics dashboards, marketplace-status components, badges) as "historical — Flowty closed May 2026".
 
 ### Phase 3 — reframe, don't delete
