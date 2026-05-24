@@ -39,6 +39,10 @@ interface CollectionStats {
   edition_count: number
   fmv_covered?: number
   fmv_pct: number
+  // % of editions whose latest FMV snapshot is HIGH or MEDIUM confidence.
+  // Reframes the older fmv_pct, which counted any snapshot — including NO_DATA.
+  fmv_high_medium_count?: number | null
+  fmv_high_medium_pct?: number | null
   fmv_age_minutes: number | null
   volume_24h: number
   sales_24h?: number
@@ -391,11 +395,17 @@ export default function OverviewPage() {
           value={stats ? (stats.edition_count ?? 0).toLocaleString() : null}
         />
         <KpiCard
-          label="FMV Coverage"
+          label="FMV Confidence"
           accent={accent}
           loading={loading}
           valueColor={accent}
-          value={stats ? `${Math.round(stats.fmv_pct ?? 0)}%` : null}
+          value={
+            stats
+              ? stats.fmv_high_medium_pct != null
+                ? `${Math.round(stats.fmv_high_medium_pct)}% HIGH/MED`
+                : `${Math.round(stats.fmv_pct ?? 0)}%`
+              : null
+          }
         />
         <KpiCard
           label="24h Sales Volume"
