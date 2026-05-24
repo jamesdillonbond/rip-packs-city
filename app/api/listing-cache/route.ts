@@ -36,8 +36,6 @@ type CollectionConfig = {
   pagesToFetch: number;
   // If set, chain to this collection slug after this one completes
   chainNext: string | null;
-  // If true, call fmv_from_cached_listings RPC after inserting listings
-  askOnlyFmv: boolean;
 };
 
 const COLLECTIONS: Record<string, CollectionConfig> = {
@@ -53,7 +51,6 @@ const COLLECTIONS: Record<string, CollectionConfig> = {
     buyUrlBase: "https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/NFT/",
     pagesToFetch: 12,
     chainNext: "nfl-all-day",
-    askOnlyFmv: false,
   },
   "nfl-all-day": {
     slug: "nfl-all-day",
@@ -66,7 +63,6 @@ const COLLECTIONS: Record<string, CollectionConfig> = {
     buyUrlBase: "https://www.flowty.io/asset/0xe4cf4bdc1751c65d/AllDay/NFT/",
     pagesToFetch: 50,
     chainNext: "laliga-golazos",
-    askOnlyFmv: true,
   },
   "laliga-golazos": {
     slug: "laliga-golazos",
@@ -81,7 +77,6 @@ const COLLECTIONS: Record<string, CollectionConfig> = {
     buyUrlBase: "https://www.flowty.io/asset/0x87ca73a41bb50ad5/Golazos/NFT/",
     pagesToFetch: 30,
     chainNext: null,
-    askOnlyFmv: true,
   },
 };
 
@@ -246,129 +241,6 @@ function mapFlowtyListing(nft: any, config: CollectionConfig): any | null {
   } catch (e: any) {
     console.log("[listing-cache] Map error: " + (e.message || "unknown"));
     return null;
-  }
-}
-
-// After cached_listings is refreshed, create LOW-confidence fmv_snapshots for
-// editions that have active listings but NO existing FMV. Uses the minimum
-// Flowty ask price as an ask-proxy value. Never overwrites sales-based FMV.
-// Join path: cached_listings.flow_id → moments.nft_id → moments.edition_id.
-async function backfillAskProxyFmv(listings: any[]): Promise<{ created: number; editionsConsidered: number }> {
-  const flowIds = [...new Set(
-    listings.map(function(l: any) { return l.flow_id; }).filter(Boolean)
-  )] as string[];
-  if (flowIds.length === 0) return { created: 0, editionsConsidered: 0 };
-
-  // Resolve flow_id → edition_id via moments table (populated by sales-indexer + wallet-search)
-  const nftToEdition = new Map<string, string>();
-  for (let i = 0; i < flowIds.length; i += 200) {
-    const chunk = flowIds.slice(i, i + 200);
-    const { data: rows } = await supabase
-      .from("moments")
-      .select("nft_id, edition_id")
-      .in("nft_id", chunk);
-    for (const row of rows ?? []) {
-      if (row.nft_id && row.edition_id) nftToEdition.set(String(row.nft_id), row.edition_id);
-    }
-  }
-  if (nftToEdition.size === 0) return { created: 0, editionsConsidered: 0 };
-
-  // Aggregate min ask per edition_id
-  const minAskByEdition = new Map<string, number>();
-  for (const l of listings) {
-    const editionId = nftToEdition.get(String(l.flow_id));
-    if (!editionId) continue;
-    const price = Number(l.ask_price);
-    if (!Number.isFinite(price) || price <= 0) continue;
-    const current = minAskByEdition.get(editionId);
-    if (current === undefined || price < current) minAskByEdition.set(editionId, price);
-  }
-  if (minAskByEdition.size === 0) return { created: 0, editionsConsidered: 0 };
-
-  const editionIds = [...minAskByEdition.keys()];
-
-  // ULTIMATE rows in fmv_snapshots are owned exclusively by recalc_ultimate_fmv.
-  // Drop any ULTIMATE editions before the ask-proxy insert.
-  const ultimateEditionIds = new Set<string>();
-  for (let i = 0; i < editionIds.length; i += 200) {
-    const chunk = editionIds.slice(i, i + 200);
-    const { data: tierRows } = await supabase
-      .from("editions")
-      .select("id, tier")
-      .in("id", chunk)
-      .eq("tier", "ULTIMATE");
-    for (const row of tierRows ?? []) {
-      if ((row as any)?.id) ultimateEditionIds.add(String((row as any).id));
-    }
-  }
-  for (const edId of ultimateEditionIds) {
-    minAskByEdition.delete(edId);
-  }
-
-  // Find which of these editions already have an FMV snapshot (any confidence)
-  const existingEditionIds = new Set<string>();
-  const nonUltimateIds = [...minAskByEdition.keys()];
-  for (let i = 0; i < nonUltimateIds.length; i += 200) {
-    const chunk = nonUltimateIds.slice(i, i + 200);
-    const { data: existing } = await supabase
-      .from("fmv_snapshots")
-      .select("edition_id")
-      .in("edition_id", chunk);
-    for (const row of existing ?? []) {
-      if (row.edition_id) existingEditionIds.add(row.edition_id);
-    }
-  }
-
-  // Only insert FMV rows for editions with no existing snapshot
-  const now = new Date().toISOString();
-  const newRows: any[] = [];
-  for (const [editionId, minAsk] of minAskByEdition.entries()) {
-    if (existingEditionIds.has(editionId)) continue;
-    // Ask-proxy FMV: discount low ask by 10% to approximate realistic FMV.
-    const fmvUsd = Math.round(minAsk * 0.9 * 100) / 100;
-    newRows.push({
-      edition_id: editionId,
-      fmv_usd: fmvUsd,
-      ask_proxy_fmv: minAsk,
-      confidence: "LOW",
-      algo_version: "v1.5.1_ask_proxy",
-      computed_at: now,
-      listing_count: 1,
-    });
-  }
-
-  let created = 0;
-  for (let i = 0; i < newRows.length; i += 100) {
-    const chunk = newRows.slice(i, i + 100);
-    const { error } = await supabase.from("fmv_snapshots").insert(chunk);
-    if (error) {
-      console.log("[listing-cache] ask-proxy insert error: " + error.message);
-    } else {
-      created += chunk.length;
-    }
-  }
-
-  return { created, editionsConsidered: minAskByEdition.size };
-}
-
-// Call the fmv_from_cached_listings RPC to create ASK_ONLY fmv_snapshots
-// for collections that don't have sales-based FMV (e.g. All Day).
-async function runAskOnlyFmv(collectionId: string): Promise<number> {
-  try {
-    const { data, error } = await supabase.rpc("fmv_from_cached_listings", {
-      p_collection_id: collectionId,
-      p_algo_version: "v1.0_ask_only",
-    });
-    if (error) {
-      console.log("[listing-cache] fmv_from_cached_listings error: " + error.message);
-      return 0;
-    }
-    const count = typeof data === "number" ? data : 0;
-    console.log("[listing-cache] ASK_ONLY FMV snapshots created: " + count);
-    return count;
-  } catch (e: any) {
-    console.log("[listing-cache] fmv_from_cached_listings exception: " + (e.message || "unknown"));
-    return 0;
   }
 }
 
@@ -552,27 +424,6 @@ export async function POST(req: NextRequest) {
 
     console.log("[listing-cache] Done: " + inserted + " upserted, " + insertErrors + " chunk errors");
 
-    // ASK_ONLY FMV for collections without sales-based FMV (e.g. All Day)
-    let askOnlyFmvCount = 0;
-    if (config.askOnlyFmv) {
-      askOnlyFmvCount = await runAskOnlyFmv(config.collectionId);
-    }
-
-    // Ask-proxy FMV backfill — creates LOW-confidence FMV snapshots for editions
-    // with active listings but no existing FMV history (Top Shot only).
-    let askProxyCreated = 0;
-    let askProxyConsidered = 0;
-    if (!config.askOnlyFmv) {
-      try {
-        const result = await backfillAskProxyFmv(listings);
-        askProxyCreated = result.created;
-        askProxyConsidered = result.editionsConsidered;
-        console.log("[listing-cache] ask-proxy FMV: created " + askProxyCreated + " (considered " + askProxyConsidered + ")");
-      } catch (e: any) {
-        console.log("[listing-cache] ask-proxy FMV error: " + (e.message || "unknown"));
-      }
-    }
-
     // Wallet-verification fallback resolver — any open listing-amount
     // challenge whose amount now appears in cached_listings for the claimed
     // wallet flips to verified. Cheap, idempotent. Runs once per Flowty
@@ -602,9 +453,6 @@ export async function POST(req: NextRequest) {
       extra: {
         mapped: listings.length,
         insert_errors: insertErrors,
-        ask_proxy_created: askProxyCreated,
-        ask_proxy_considered: askProxyConsidered,
-        ask_only_fmv_count: askOnlyFmvCount,
       },
     });
 
@@ -617,8 +465,6 @@ export async function POST(req: NextRequest) {
       ok: true, collection: config.slug,
       fetched: allNfts.length, mapped: listings.length,
       cached: inserted, errors: insertErrors,
-      askProxyCreated, askProxyConsidered,
-      askOnlyFmvCount,
       elapsed: Date.now() - startTime,
     });
   } catch (e: any) {

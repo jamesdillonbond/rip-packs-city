@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { topshotGraphql } from "@/lib/topshot";
-import { getFlowtyQuotes } from "@/lib/markets/flowty";
 import type { Badge, MarketMoment } from "@/lib/types";
 
 type MintedMomentGraphqlData = {
@@ -107,40 +106,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const [topshotResults, flowtyResults] = await Promise.all([
-      Promise.all(momentIds.map((momentId) => fetchTopShotMoment(momentId))),
-      getFlowtyQuotes(momentIds),
-    ]);
-
-    const flowtyMap = Object.fromEntries(
-      flowtyResults.map((item) => [item.momentId, item])
+    // Flowty marketplace shut down ~2026-05-13. Quotes are TopShot-only now.
+    const topshotResults = await Promise.all(
+      momentIds.map((momentId) => fetchTopShotMoment(momentId))
     );
 
     const results: MarketMoment[] = topshotResults.map((item) => {
-      const flowty = flowtyMap[item.momentId];
-      const flowtyAsk = flowty?.flowtyAsk ?? null;
       const topshotAsk = item.topshotAsk ?? null;
-
-      let bestAsk: number | null = null;
-      let bestMarket: "Top Shot" | "Flowty" | null = null;
-
-      if (topshotAsk !== null) {
-        bestAsk = topshotAsk;
-        bestMarket = "Top Shot";
-      }
-
-      if (flowtyAsk !== null && (bestAsk === null || flowtyAsk < bestAsk)) {
-        bestAsk = flowtyAsk;
-        bestMarket = "Flowty";
-      }
+      const bestAsk = topshotAsk;
+      const bestMarket = topshotAsk !== null ? "Top Shot" : null;
 
       return {
         ...item,
-        flowtyAsk,
+        flowtyAsk: null,
         bestAsk,
         bestMarket,
-        flowtyListingUrl: flowty?.listingUrl ?? null,
-        updatedAt: flowty?.updatedAt ?? new Date().toISOString(),
+        flowtyListingUrl: null,
+        updatedAt: new Date().toISOString(),
       };
     });
 

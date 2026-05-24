@@ -2,6 +2,11 @@
 
 // app/admin/flowty-analytics/page.tsx
 // Trevor-only Flowty marketplace + lending intelligence dashboard.
+// HISTORICAL: Flowty's NFT marketplace shut down ~2026-05-13 and its loan
+// indexer went cold on 2026-05-11. Data shown here is the frozen archive
+// (kept by retention decision); it does not represent live marketplace
+// state. See docs/audits/flowty-teardown-plan-2026-05.md.
+//
 // Bearer-gated via RPC_ADMIN_TOKEN against /api/admin/flowty-analytics.
 // Token is pasted into a password input on first visit and cached in
 // sessionStorage under "rpc_admin_token" — never read from a public env var.
@@ -281,7 +286,10 @@ function SignInGate({ onSignedIn }: { onSignedIn: (t: string) => void }) {
           Rip Packs City
         </div>
         <div className="rpc-heading" style={{ fontSize: 24, marginBottom: 18 }}>
-          Flowty Analytics — Sign In
+          Flowty Analytics — Historical Archive
+        </div>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", marginBottom: 14, lineHeight: 1.5 }}>
+          Flowty closed its marketplace in May 2026. This dashboard is a frozen historical archive.
         </div>
         <input
           type="password"
@@ -363,11 +371,11 @@ function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void 
           <div>
             <div className="rpc-label">Rip Packs City</div>
             <div className="rpc-heading" style={{ fontSize: 26, marginTop: 2 }}>
-              Flowty Analytics
+              Flowty Analytics — Historical
             </div>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 4 }}>
-              Marketplace + lending intelligence
-              {data?.refreshedAt && <> · refreshed {data.refreshedAt}</>}
+              Frozen archive — Flowty marketplace closed May 2026 (loans cold since 2026-05-11)
+              {data?.refreshedAt && <> · last refresh {data.refreshedAt}</>}
             </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
