@@ -1,25 +1,11 @@
 "use client";
-import OffersTab from "@/components/sniper/OffersTab"
 import React from "react";
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useCart } from "@/lib/cart/CartContext";
 import { useWarmCache } from "@/lib/warmup/WarmupContext";
-import { FLOWTY_MARKETPLACE_ENABLED, FLOWTY_INCIDENT_URL } from "@/lib/flowty-flags";
-import {
-  MarketplaceStatusBanner,
-  MarketplaceUnavailablePill,
-  FlowtyDormancyChip,
-  useMarketplaceStatus,
-} from "@/components/marketplace-status";
-import {
-  isCartEligible,
-  cartEligibilityReason,
-  cartIneligibleTooltip,
-} from "@/lib/cart/eligibility";
-import { getCollection } from "@/lib/collections";
+import { getCollection, marketplaceMomentUrl } from "@/lib/collections";
 import { getOwnerKey } from "@/lib/owner-key";
 import { PINNACLE_VARIANT_COLORS, PINNACLE_VARIANT_LABELS } from "@/lib/pinnacle/pinnacleTypes";
 import { slugifyName } from "@/lib/entity-labels";
@@ -53,9 +39,6 @@ function SniperThumbnailPreview({ thumbUrl, playerName, tierColor, backgroundCol
     </div>
   );
 }
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-const COMMISSION_RECIPIENT = "0xc1e4f4f4c4257510";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -151,6 +134,15 @@ function trackClick(deal: SniperDeal, walletAddress: string | null) {
       buyUrl: deal.buyUrl,
     }),
   }).catch(() => {});
+}
+
+// Resolve the outbound marketplace URL for a deal. Prefer the deal's own
+// listing URL when it points at a live native marketplace; Flowty links are
+// dead, so fall back to the collection's native moment page.
+function resolveViewUrl(deal: SniperDeal, collectionSlug: string): string | null {
+  const url = deal.buyUrl?.trim();
+  if (url && !url.includes("flowty.io")) return url;
+  return marketplaceMomentUrl(collectionSlug, deal.momentId);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -352,213 +344,32 @@ function ShareButton({ deal }: { deal: SniperDeal }) {
 
 function ActionCell({
   deal,
-  ownedIds,
   accent,
-  offerMode,
-  offerDurationDays,
-  marketplaceBuyDisabled,
-  marketplaceNotes,
+  collectionSlug,
 }: {
   deal: SniperDeal;
-  ownedIds: Set<string>;
   accent: string;
-  offerMode: boolean;
-  offerDurationDays: number;
-  marketplaceBuyDisabled?: boolean;
-  marketplaceNotes?: string | null;
+  collectionSlug: string;
 }) {
-  const { addToCart, addOffer, removeFromCart, isInCart } = useCart();
-  const [localOfferAmt, setLocalOfferAmt] = useState<number>(
-    Math.round(deal.adjustedFmv * 0.8 * 100) / 100
-  );
-  const inCart = deal.listingResourceID ? isInCart(deal.listingResourceID) : false;
-  // ownedIds contains integer setID:playID edition keys from on-chain Cadence.
-  // Match against intEditionKey first (always integer-format) and fall back
-  // to editionKey for any deal where the two happen to coincide.
-  const isOwned =
-    (!!deal.intEditionKey && ownedIds.has(deal.intEditionKey)) ||
-    (!!deal.editionKey && ownedIds.has(deal.editionKey));
-  const isPinnacleDeal = deal.source === "pinnacle";
-  const isFlowty = (deal.source ?? "topshot") === "flowty";
-  const flowtyDisabled = isFlowty && !FLOWTY_MARKETPLACE_ENABLED;
-  const eligibilityReason = cartEligibilityReason({
-    listingResourceID: deal.listingResourceID,
-    storefrontAddress: deal.storefrontAddress,
-    expectedPrice: deal.askPrice,
-    source: deal.source ?? "topshot",
-    paymentToken: deal.paymentToken,
-  });
-  const canCart = eligibilityReason === "ok";
-  const showIneligibleCartChip =
-    !canCart && !isPinnacleDeal && !!deal.listingResourceID && !!deal.storefrontAddress;
-  const ineligibleTooltip = cartIneligibleTooltip(eligibilityReason);
-
-  function handleCart() {
-    if (!canCart) return;
-    if (flowtyDisabled) return;
-    if (inCart) {
-      removeFromCart(deal.listingResourceID!);
-      return;
-    }
-
-    if (offerMode) {
-      // Add as offer item
-      const expiryTimestamp = Math.floor(Date.now() / 1000) + offerDurationDays * 24 * 60 * 60;
-      addOffer({
-        listingResourceID: deal.listingResourceID!,
-        storefrontAddress: deal.storefrontAddress!,
-        expectedPrice: deal.askPrice,
-        commissionRecipient: COMMISSION_RECIPIENT,
-        momentId: Number(deal.momentId),
-        playerName: deal.playerName,
-        setName: deal.setName,
-        serialNumber: deal.serial,
-        totalEditions: deal.circulationCount,
-        tier: deal.tier,
-        thumbnailUrl: deal.thumbnailUrl ?? null,
-        fmv: deal.adjustedFmv,
-        source: "sniper",
-        paymentToken: "USDC_E",
-        marketplaceSource: isFlowty ? "flowty" : "topshot",
-        offerAmount: localOfferAmt,
-        offerExpiry: expiryTimestamp,
-      });
-    } else {
-      addToCart({
-        listingResourceID: deal.listingResourceID!,
-        storefrontAddress: deal.storefrontAddress!,
-        expectedPrice: deal.askPrice,
-        commissionRecipient: COMMISSION_RECIPIENT,
-        momentId: Number(deal.momentId),
-        playerName: deal.playerName,
-        setName: deal.setName,
-        serialNumber: deal.serial,
-        totalEditions: deal.circulationCount,
-        tier: deal.tier,
-        thumbnailUrl: deal.thumbnailUrl ?? null,
-        fmv: deal.adjustedFmv,
-        source: "sniper",
-        paymentToken: deal.paymentToken ?? "DUC",
-        cartMode: "buy",
-        marketplaceSource: isFlowty ? "flowty" : "topshot",
-      });
-    }
+  const viewUrl = resolveViewUrl(deal, collectionSlug);
+  if (!viewUrl) {
+    return (
+      <span className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>
+        —
+      </span>
+    );
   }
-
-  function handleBuy() {
-    trackClick(deal, null);
-  }
-
   return (
-    <div className="flex flex-col items-end gap-1.5">
-      {/* Offer amount input — shown when offer mode is active */}
-      {offerMode && canCart && !inCart && (
-        <div className="flex items-center gap-1">
-          <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>$</span>
-          <input
-            type="number"
-            min={0.01}
-            step={0.01}
-            value={localOfferAmt}
-            onChange={(e) => setLocalOfferAmt(Number(e.target.value))}
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: 64,
-              background: "var(--rpc-surface-raised)",
-              border: "1px solid rgba(59,130,246,0.3)",
-              borderRadius: "var(--radius-sm)",
-              padding: "3px 6px",
-              color: "var(--rpc-text-primary)",
-              fontFamily: "var(--font-mono)",
-              fontSize: "var(--text-xs)",
-              outline: "none",
-              textAlign: "right",
-            }}
-          />
-        </div>
-      )}
-      {canCart && !flowtyDisabled && (
-        <button
-          onClick={handleCart}
-          className="rpc-chip"
-          style={inCart
-            ? { background: "rgba(52,211,153,0.15)", borderColor: "rgba(52,211,153,0.4)", color: "var(--rpc-success)" }
-            : offerMode
-            ? { background: "rgba(59,130,246,0.10)", borderColor: "rgba(59,130,246,0.4)", color: "var(--rpc-info)" }
-            : { color: "var(--rpc-text-secondary)" }
-          }
-        >
-          {inCart ? "✓ IN CART" : offerMode ? "+ OFFER" : "+ CART"}
-        </button>
-      )}
-      {flowtyDisabled && (
-        <button
-          disabled
-          title="Flowty marketplace is currently unavailable"
-          aria-label="Flowty marketplace is currently unavailable"
-          className="rpc-chip"
-          style={{
-            opacity: 0.45,
-            cursor: "not-allowed",
-            color: "var(--rpc-text-ghost)",
-          }}
-        >
-          UNAVAILABLE
-        </button>
-      )}
-      {showIneligibleCartChip && !flowtyDisabled && (
-        <button
-          disabled
-          title={ineligibleTooltip}
-          aria-label={ineligibleTooltip}
-          className="rpc-chip"
-          style={{
-            opacity: 0.45,
-            cursor: "not-allowed",
-            color: "var(--rpc-text-ghost)",
-          }}
-        >
-          + CART
-        </button>
-      )}
-      {marketplaceBuyDisabled ? (
-        <MarketplaceUnavailablePill notes={marketplaceNotes} />
-      ) : flowtyDisabled ? (
-        <span
-          title="Flowty marketplace is currently unavailable"
-          aria-disabled="true"
-          className="rpc-chip"
-          style={{
-            background: "rgba(59,130,246,0.08)",
-            borderColor: "rgba(59,130,246,0.25)",
-            color: "var(--rpc-info)",
-            textDecoration: "none",
-            padding: "4px 12px",
-            opacity: 0.5,
-            cursor: "not-allowed",
-            pointerEvents: "none",
-          }}
-        >
-          FLOWTY UNAVAILABLE
-        </span>
-      ) : (
-        <a
-          href={deal.buyUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={handleBuy}
-          className={isFlowty || isPinnacleDeal ? "rpc-chip" : "rpc-btn-ghost"}
-          style={isPinnacleDeal
-            ? { background: "rgba(168,85,247,0.15)", borderColor: "rgba(168,85,247,0.4)", color: "#c084fc", textDecoration: "none", padding: "4px 12px" }
-            : isFlowty
-            ? { background: "rgba(59,130,246,0.15)", borderColor: "rgba(59,130,246,0.4)", color: "var(--rpc-info)", textDecoration: "none", padding: "4px 12px" }
-            : { padding: "4px 12px", textDecoration: "none", borderColor: `${accent}40`, color: accent }
-          }
-        >
-          {isPinnacleDeal ? "BUY ON PINNACLE →" : isFlowty ? "FLOWTY →" : "BUY →"}
-        </a>
-      )}
-    </div>
+    <a
+      href={viewUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={() => trackClick(deal, null)}
+      className="rpc-btn-ghost"
+      style={{ padding: "4px 12px", textDecoration: "none", borderColor: `${accent}40`, color: accent }}
+    >
+      View Listing →
+    </a>
   );
 }
 
@@ -602,17 +413,6 @@ export default function SniperPage() {
   const isGolazos = collectionSlug === "laliga-golazos";
   const isUfc = collectionSlug === "ufc";
 
-  // Per-collection marketplace status. When `buyCtasEnabled === false`, every
-  // BUY / FLOWTY → CTA on the page is swapped for a disabled-state pill that
-  // surfaces the reason via its tooltip. Optimistic during the initial fetch
-  // window so we don't flicker the BUY buttons on healthy collections.
-  const { status: marketplaceStatus, loaded: marketplaceStatusLoaded } =
-    useMarketplaceStatus(collectionSlug);
-  const marketplaceBuyDisabled =
-    marketplaceStatusLoaded && marketplaceStatus
-      ? !marketplaceStatus.buyCtasEnabled
-      : false;
-  const marketplaceNotes = marketplaceStatus?.notes ?? null;
   // Phase 5: every collection now flows through the unified endpoint. The
   // per-collection dispatch lives server-side in /api/sniper-feed and reuses
   // the existing dedicated handlers via shared compute functions.
@@ -623,7 +423,6 @@ export default function SniperPage() {
   const brandLabel = isPinnacle ? "Pinnacle" : collectionObj?.shortLabel ?? "Top Shot";
 
   const isMobile = useMobile();
-  const [mode, setMode] = useState<"deals" | "offers">("deals");
   const [countdown, setCountdown] = useState(REFRESH_INTERVAL);
   const [paused, setPaused] = useState(false);
 
@@ -638,8 +437,6 @@ export default function SniperPage() {
   const [serialFilter, setSerialFilter] = useState("all");
   const [badgeOnly, setBadgeOnly] = useState(false);
   const [flowWalletOnly, setFlowWalletOnly] = useState(false);
-  const [offerMode, setOfferMode] = useState(false);
-  const [offerDurationDays, setOfferDurationDays] = useState(30);
   const [search, setSearch] = useState("");
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(false);
   const [ownedFilter, setOwnedFilter] = useState<"all" | "owned" | "not-owned">("all");
@@ -1157,9 +954,6 @@ export default function SniperPage() {
       visibleDeals.length > 0
         ? visibleDeals.reduce((s, d) => s + d.discount, 0) / visibleDeals.length
         : 0,
-    tsLive: (data?.tsCount ?? 0) > 0,
-    tsCached: !!(data?.cached) && (data?.tsCount ?? 0) === 0,
-    flowtyLive: (data?.flowtyCount ?? 0) > 0,
   };
 
   // ── Empty-sniper diagnostic beacon (beta_feedback_inbox #402) ────────────
@@ -1221,12 +1015,6 @@ export default function SniperPage() {
 
   return (
     <div className="rpc-binder-bg" style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)", overflowX: "hidden" }}>
-      {/* ── Marketplace Status Banner — shown only when not healthy ── */}
-      {marketplaceStatusLoaded && marketplaceStatus && marketplaceStatus.status !== "healthy" && (
-        <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "16px 16px 0" }}>
-          <MarketplaceStatusBanner collectionSlug={collectionSlug} />
-        </div>
-      )}
       {/* ── Header ── */}
       <div style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-black)", padding: "16px", width: "100%", boxSizing: "border-box", overflowX: "hidden" }}>
         <div style={{ maxWidth: "var(--max-width)", margin: "0 auto" }}>
@@ -1237,31 +1025,11 @@ export default function SniperPage() {
               </h1>
               <p className="rpc-label" style={{ marginTop: 2 }}>
                 {isPinnacle
-                  ? "LIVE PINNACLE DEALS BELOW FMV — VARIANT-AWARE, FLOWTY-ONLY"
+                  ? "LIVE PINNACLE DEALS BELOW FMV — VARIANT-AWARE"
                   : "LIVE DEALS BELOW ADJUSTED FMV — BADGE-AWARE, SERIAL-ADJUSTED"}
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                {!isPinnacle && !isAllDay && (
-                <span className={`rpc-chip ${stats.tsCached ? "text-amber-400 border-amber-500/30 bg-amber-500/10" : ""}`} style={stats.tsLive
-                  ? { background: "rgba(52,211,153,0.08)", borderColor: "rgba(52,211,153,0.3)", color: "var(--rpc-success)" }
-                  : stats.tsCached
-                  ? {}
-                  : { background: "rgba(248,113,113,0.08)", borderColor: "rgba(248,113,113,0.2)", color: "var(--rpc-danger)" }
-                }>
-                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${stats.tsLive ? "bg-emerald-400 animate-pulse" : stats.tsCached ? "bg-amber-400 animate-pulse" : "bg-red-400/50"}`} style={{ marginRight: 4 }} />
-                  TS {stats.tsLive ? `(${data?.tsCount})` : stats.tsCached ? "CACHED" : "OFFLINE"}
-                </span>
-                )}
-                <span className="rpc-chip" style={stats.flowtyLive
-                  ? { background: "rgba(59,130,246,0.08)", borderColor: "rgba(59,130,246,0.3)", color: "var(--rpc-info)" }
-                  : { background: "rgba(248,113,113,0.08)", borderColor: "rgba(248,113,113,0.2)", color: "var(--rpc-danger)" }
-                }>
-                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${stats.flowtyLive ? "bg-blue-400 animate-pulse" : "bg-red-400/50"}`} style={{ marginRight: 4 }} />
-                  {isAllDay ? "AD MARKETPLACE" : "FLOWTY"} {stats.flowtyLive ? `(${data?.flowtyCount})` : "OFFLINE"}
-                </span>
-              </div>
               {/* Task 10: Resumed indicator */}
               {resumedIndicator && (
                 <span className="rpc-chip" style={{ background: "rgba(52,211,153,0.10)", borderColor: "rgba(52,211,153,0.3)", color: "var(--rpc-success)", animation: "fadeOut 2s forwards" }}>
@@ -1326,19 +1094,6 @@ export default function SniperPage() {
             </div>
           </div>
 
-          {/* Mode toggle */}
-          <div className="flex items-center gap-2 mb-4">
-            {(["deals", "offers"] as const).map((m) => (
-              <button key={m} onClick={() => setMode(m)}
-                className={`rpc-chip min-h-[44px] ${mode === m ? "active" : ""}`}
-                style={mode === m ? { background: `${accent}1A`, borderColor: `${accent}66`, color: accent } : undefined}>
-                {m === "deals" ? "⚡ DEALS" : "🤝 OFFERS"}
-              </button>
-            ))}
-          </div>
-          {mode === "offers" && <OffersTab />}
-          {mode === "deals" && (
-          <>
           {/* ── Primary Filters (Player input, Min Discount %) — hidden on mobile when filters collapsed ── */}
           {(!isMobile || showFilters) && (
           <div className={isMobile ? "flex flex-col gap-3 mb-4" : "flex flex-wrap items-center gap-3 mb-4"} style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
@@ -1481,51 +1236,6 @@ export default function SniperPage() {
                 <option value="owned">OWNED</option>
               </select>
             )}
-            <button
-              onClick={() => setOfferMode((v) => !v)}
-              className={`rpc-chip ${offerMode ? "active" : ""}`}
-              title="Add items as Flowty offers instead of direct purchases."
-              style={offerMode ? { background: "rgba(59,130,246,0.10)", borderColor: "rgba(59,130,246,0.40)", color: "var(--rpc-info)" } : {}}
-            >
-              <span className="inline-flex items-center gap-1.5">
-                OFFER MODE
-              </span>
-            </button>
-            {offerMode && (
-              <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)" }}>
-                <span>DURATION</span>
-                <select
-                  value={offerDurationDays}
-                  onChange={(e) => setOfferDurationDays(Number(e.target.value))}
-                  style={{
-                    background: "var(--rpc-surface-raised)",
-                    border: "1px solid rgba(59,130,246,0.3)",
-                    borderRadius: "var(--radius-sm)",
-                    padding: "4px 8px",
-                    color: "var(--rpc-text-primary)",
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "var(--text-xs)",
-                    outline: "none",
-                  }}
-                >
-                  <option value={7}>7 days</option>
-                  <option value={14}>14 days</option>
-                  <option value={30}>30 days</option>
-                  <option value={60}>60 days</option>
-                  <option value={90}>90 days</option>
-                </select>
-              </label>
-            )}
-            {flowWalletOnly && !offerMode && (
-              <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", letterSpacing: "0.05em" }}>
-                FLOW &amp; USDC.e listings only — no Dapper Wallet needed.
-              </span>
-            )}
-            {offerMode && (
-              <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", letterSpacing: "0.05em" }}>
-                Click + OFFER to add deals as Flowty USDC.e offers.
-              </span>
-            )}
             {/* Task 5: Save Search button */}
             <button
               onClick={handleSaveSearch}
@@ -1537,11 +1247,9 @@ export default function SniperPage() {
             </button>
           </div>
           )}
-        </>)}
         </div>
       </div>
 
-      {mode === "deals" && (<>
       {/* Stats bar */}
       <div style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface-raised)", padding: "8px 16px" }}>
         <div className="rpc-mono flex items-center gap-6 flex-wrap" style={{ maxWidth: "var(--max-width)", margin: "0 auto", color: "var(--rpc-text-muted)" }}>
@@ -1569,46 +1277,9 @@ export default function SniperPage() {
 
       {/* Table */}
       <div style={{ maxWidth: "100vw", margin: "0 auto", padding: "16px" }}>
-        {isPinnacle && (
-          <div
-            className="rpc-hud"
-            style={{
-              marginBottom: 12,
-              padding: "10px 14px",
-              borderColor: "rgba(168,85,247,0.4)",
-              color: "var(--rpc-text-secondary)",
-              fontSize: "var(--text-sm)",
-              fontFamily: "var(--font-mono)",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              flexWrap: "wrap",
-            }}
-          >
-            <span style={{ color: "#c084fc", fontWeight: 600 }}>ℹ</span>
-            <span>
-              Deals listed on the Disney Pinnacle Marketplace — purchase at{" "}
-              <a
-                href="https://disneypinnacle.com/marketplace"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: "#c084fc", textDecoration: "underline" }}
-              >
-                disneypinnacle.com
-              </a>
-              .
-            </span>
-          </div>
-        )}
         {error && (
           <div className="rpc-hud" style={{ marginBottom: 16, borderColor: "var(--rpc-danger)", color: "var(--rpc-danger)", fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)" }}>
             FEED ERROR: {error}
-          </div>
-        )}
-
-        {data?.cached && (
-          <div className="rpc-hud" style={{ marginBottom: 16, borderColor: "var(--rpc-warning)", color: "var(--rpc-warning)", fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)" }}>
-            LIVE FEEDS OFFLINE — SHOWING CACHED DEALS. PRICES MAY BE STALE.
           </div>
         )}
 
@@ -1661,13 +1332,6 @@ export default function SniperPage() {
           </div>
         )}
 
-        {/* Subtle info chip when Flowty (our secondary-listing pool) is dormant
-            but the collection is otherwise healthy — explains thin listing
-            depth so users don't think the sniper is broken. */}
-        <div style={{ margin: "0 0 12px" }}>
-          <FlowtyDormancyChip collectionSlug={collectionSlug} />
-        </div>
-
         {/* ── Relative-deals fallback for ASK_ONLY collections ─────────────── */}
         {(isGolazos || isUfc) && !loading && relativeDeals !== null && (
           <div style={{ marginBottom: 24 }}>
@@ -1713,15 +1377,9 @@ export default function SniperPage() {
                             <td style={{ padding: "6px 8px", textAlign: "right", color: "var(--rpc-text-muted)" }}>${med.toFixed(2)}</td>
                             <td style={{ padding: "6px 8px", textAlign: "right", color: "#00e882" }}>{disc}%</td>
                             <td style={{ padding: "6px 8px" }}>
-                              {marketplaceBuyDisabled ? (
-                                <MarketplaceUnavailablePill
-                                  notes={marketplaceNotes}
-                                  label="UNAVAILABLE"
-                                  style={{ fontSize: "var(--text-xs)", padding: "2px 8px" }}
-                                />
-                              ) : d.buy_url ? (
-                                <a href={d.buy_url} target="_blank" rel="noreferrer" className="rpc-chip" style={{ borderColor: `${accent}66`, color: accent, padding: "2px 8px", fontSize: "var(--text-xs)" }}>
-                                  BUY
+                              {d.buy_url ? (
+                                <a href={d.buy_url} target="_blank" rel="noopener noreferrer" className="rpc-chip" style={{ borderColor: `${accent}66`, color: accent, padding: "2px 8px", fontSize: "var(--text-xs)" }}>
+                                  View →
                                 </a>
                               ) : null}
                             </td>
@@ -1764,36 +1422,6 @@ export default function SniperPage() {
           </div>
         )}
 
-        {!FLOWTY_MARKETPLACE_ENABLED && (data?.deals ?? []).some((d) => (d.source ?? "topshot") === "flowty") && (
-          <div
-            className="rpc-card"
-            style={{
-              margin: "0 0 16px 0",
-              padding: "10px 14px",
-              background: "rgba(59,130,246,0.06)",
-              borderColor: "rgba(59,130,246,0.3)",
-              color: "var(--rpc-text-secondary)",
-              fontSize: "var(--text-xs)",
-              fontFamily: "var(--font-mono)",
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              flexWrap: "wrap",
-            }}
-          >
-            <span style={{ color: "var(--rpc-info)", fontWeight: 700 }}>FLOWTY OFFLINE</span>
-            <span>Flowty marketplace is temporarily unavailable — listing data shown for price reference only.</span>
-            <a
-              href={FLOWTY_INCIDENT_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: "var(--rpc-info)", textDecoration: "underline" }}
-            >
-              Learn more ↗
-            </a>
-          </div>
-        )}
-
         {!loading && visibleDeals.length === 0 && data && (
           <div style={{ padding: "80px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, textAlign: "center" }}>
             <svg width="40" height="40" viewBox="0 0 100 100" style={{ opacity: 0.3 }}>
@@ -1823,9 +1451,6 @@ export default function SniperPage() {
         {visibleDeals.length > 0 && isMobile && (
           <div className="flex flex-col gap-2">
             {visibleDeals.map((deal) => {
-              const isFlowty = (deal.source ?? "topshot") === "flowty";
-              const isPinnacleDeal = deal.source === "pinnacle";
-              const flowtyDisabled = isFlowty && !FLOWTY_MARKETPLACE_ENABLED;
               return (
                 <div key={`m-${deal.source}-${deal.flowId}`} onClick={(e) => { const t = e.target as HTMLElement; if (t.closest("a,button")) return; setSelectedDeal(deal); }} className="rpc-card p-3 flex flex-col gap-1.5 cursor-pointer">
                   {/* Row 1: Player + Tier + Source */}
@@ -1916,47 +1541,22 @@ export default function SniperPage() {
                         ))}
                       </div>
                     )}
-                    {marketplaceBuyDisabled ? (
-                      <MarketplaceUnavailablePill
-                        notes={marketplaceNotes}
-                        style={{ fontSize: "var(--text-xs)", padding: "4px 10px" }}
-                      />
-                    ) : flowtyDisabled ? (
-                      <span
-                        title="Flowty marketplace is currently unavailable"
-                        aria-disabled="true"
-                        className="rpc-chip"
-                        style={{
-                          background: "rgba(59,130,246,0.08)",
-                          borderColor: "rgba(59,130,246,0.25)",
-                          color: "var(--rpc-info)",
-                          textDecoration: "none",
-                          padding: "4px 10px",
-                          fontSize: "var(--text-xs)",
-                          opacity: 0.5,
-                          cursor: "not-allowed",
-                          pointerEvents: "none",
-                        }}
-                      >
-                        FLOWTY UNAVAILABLE
-                      </span>
-                    ) : (
-                      <a
-                        href={deal.buyUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(e) => { e.stopPropagation(); trackClick(deal, null); }}
-                        className={isFlowty || isPinnacleDeal ? "rpc-chip" : "rpc-btn-ghost"}
-                        style={isPinnacleDeal
-                          ? { background: "rgba(168,85,247,0.15)", borderColor: "rgba(168,85,247,0.4)", color: "#c084fc", textDecoration: "none", padding: "4px 10px", fontSize: "var(--text-xs)" }
-                          : isFlowty
-                          ? { background: "rgba(59,130,246,0.15)", borderColor: "rgba(59,130,246,0.4)", color: "var(--rpc-info)", textDecoration: "none", padding: "4px 10px", fontSize: "var(--text-xs)" }
-                          : { padding: "4px 10px", textDecoration: "none", borderColor: `${accent}40`, color: accent, fontSize: "var(--text-xs)" }
-                        }
-                      >
-                        {isPinnacleDeal ? "BUY ON PINNACLE →" : isFlowty ? "FLOWTY →" : "BUY →"}
-                      </a>
-                    )}
+                    {(() => {
+                      const viewUrl = resolveViewUrl(deal, feedCollection);
+                      if (!viewUrl) return null;
+                      return (
+                        <a
+                          href={viewUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => { e.stopPropagation(); trackClick(deal, null); }}
+                          className="rpc-btn-ghost"
+                          style={{ padding: "4px 10px", textDecoration: "none", borderColor: `${accent}40`, color: accent, fontSize: "var(--text-xs)" }}
+                        >
+                          View Listing →
+                        </a>
+                      );
+                    })()}
                   </div>
                 </div>
               );
@@ -2297,15 +1897,7 @@ export default function SniperPage() {
 
                     {/* Action */}
                     <td style={{ padding: "8px 12px" }} onClick={(e) => e.stopPropagation()}>
-                      <ActionCell
-                        deal={deal}
-                        ownedIds={ownedIds}
-                        accent={accent}
-                        offerMode={offerMode}
-                        offerDurationDays={offerDurationDays}
-                        marketplaceBuyDisabled={marketplaceBuyDisabled}
-                        marketplaceNotes={marketplaceNotes}
-                      />
+                      <ActionCell deal={deal} accent={accent} collectionSlug={feedCollection} />
                     </td>
                   </tr>
                   {/* Task 2: Edition depth panel */}
@@ -2369,15 +1961,12 @@ export default function SniperPage() {
                                     </span>
                                     <span style={{ color: "var(--rpc-text-ghost)", minWidth: 50 }}>{dd.source === "flowty" ? "Flowty" : "TS"}</span>
                                     <span style={{ color: "var(--rpc-text-ghost)", minWidth: 60 }}>{timeAgo(dd.updatedAt)}</span>
-                                    {marketplaceBuyDisabled ? (
-                                      <MarketplaceUnavailablePill
-                                        notes={marketplaceNotes}
-                                        label="UNAVAILABLE"
-                                        style={{ fontSize: "var(--text-xs)", padding: "2px 8px" }}
-                                      />
-                                    ) : (
-                                      <a href={dd.buyUrl} target="_blank" rel="noopener noreferrer" style={{ color: accent, textDecoration: "none" }}>BUY →</a>
-                                    )}
+                                    {(() => {
+                                      const ddUrl = resolveViewUrl(dd, feedCollection);
+                                      return ddUrl ? (
+                                        <a href={ddUrl} target="_blank" rel="noopener noreferrer" style={{ color: accent, textDecoration: "none" }}>View →</a>
+                                      ) : null;
+                                    })()}
                                   </div>
                                 ))}
                               </>
@@ -2415,7 +2004,6 @@ export default function SniperPage() {
           <span className="ml-auto">Adj. FMV = base FMV × serial multiplier</span>
         </div>
       </div>
-      </>)}
 
       {/* Task 7: Listing Suggestions slide-in panel */}
       {showSuggestions && (
@@ -2476,7 +2064,7 @@ export default function SniperPage() {
           badgeTitles: selectedDeal.badgeLabels ?? [],
           officialBadges: [],
           imageUrlPrefix: null,
-          buyUrl: selectedDeal.buyUrl,
+          buyUrl: resolveViewUrl(selectedDeal, feedCollection) ?? selectedDeal.buyUrl,
         } : null}
         marketplaceSource={selectedDeal?.source === "flowty" ? "flowty" : "topshot"}
         onClose={() => setSelectedDeal(null)}

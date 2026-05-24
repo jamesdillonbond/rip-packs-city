@@ -5,7 +5,6 @@ import {
   type PinnacleSniperDeal,
   type PinnacleVariant,
   PINNACLE_VARIANT_COLORS,
-  PINNACLE_MARKETPLACE_URL,
 } from "@/lib/pinnacle/pinnacleTypes";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -188,7 +187,6 @@ export default function PinnacleSniperPage() {
     locked: visibleDeals.filter((d) => d.isLocked).length,
     chasers: 0,
     special: visibleDeals.filter((d) => d.isSpecialSerial).length,
-    flowtyLive: (data?.flowtyTotal ?? 0) > 0,
   };
 
   return (
@@ -206,20 +204,6 @@ export default function PinnacleSniperPage() {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <span
-                className="rpc-chip"
-                style={
-                  stats.flowtyLive
-                    ? { background: "rgba(59,130,246,0.08)", borderColor: "rgba(59,130,246,0.3)", color: "var(--rpc-info)" }
-                    : { background: "rgba(248,113,113,0.08)", borderColor: "rgba(248,113,113,0.2)", color: "var(--rpc-danger)" }
-                }
-              >
-                <span
-                  className={`inline-block w-1.5 h-1.5 rounded-full ${stats.flowtyLive ? "bg-blue-400 animate-pulse" : "bg-red-400/50"}`}
-                  style={{ marginRight: 4 }}
-                />
-                FLOWTY {stats.flowtyLive ? `(${data?.flowtyTotal})` : "OFFLINE"}
-              </span>
               <button onClick={() => setPaused((p) => !p)} className="rpc-chip">
                 {paused ? "▶ RESUME" : `⏸ ${countdown}s`}
               </button>
@@ -394,35 +378,6 @@ export default function PinnacleSniperPage() {
 
       {/* Table area */}
       <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "16px" }}>
-        <div
-          className="rpc-hud"
-          style={{
-            marginBottom: 12,
-            padding: "10px 14px",
-            borderColor: `${ACCENT}40`,
-            color: "var(--rpc-text-secondary)",
-            fontSize: "var(--text-sm)",
-            fontFamily: "var(--font-mono)",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            flexWrap: "wrap",
-          }}
-        >
-          <span style={{ color: ACCENT, fontWeight: 600 }}>ℹ</span>
-          <span>
-            Deals listed on the Disney Pinnacle Marketplace — purchase at{" "}
-            <a
-              href={PINNACLE_MARKETPLACE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: ACCENT, textDecoration: "underline" }}
-            >
-              disneypinnacle.com
-            </a>
-            .
-          </span>
-        </div>
         {error && (
           <div
             className="rpc-hud"
@@ -443,7 +398,7 @@ export default function PinnacleSniperPage() {
             {[100, 85, 70, 55, 40].map((w, i) => (
               <div key={i} className="rpc-skeleton" style={{ width: `${w}%`, height: 14, opacity: 1 - i * 0.15 }} />
             ))}
-            <p className="rpc-label" style={{ marginTop: 12 }}>SCANNING FLOWTY MARKETPLACE...</p>
+            <p className="rpc-label" style={{ marginTop: 12 }}>SCANNING THE PINNACLE MARKETPLACE…</p>
           </div>
         )}
 
@@ -619,19 +574,18 @@ export default function PinnacleSniperPage() {
                     {/* Action */}
                     <td style={{ padding: "8px 12px", textAlign: "right" }}>
                       <a
-                        href={PINNACLE_MARKETPLACE_URL}
+                        href={`https://disneypinnacle.com/pin/${deal.flowId}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="rpc-chip"
+                        className="rpc-btn-ghost"
                         style={{
-                          background: `${ACCENT}15`,
                           borderColor: `${ACCENT}40`,
                           color: ACCENT,
                           textDecoration: "none",
                           padding: "4px 12px",
                         }}
                       >
-                        BUY ON PINNACLE →
+                        View Listing →
                       </a>
                     </td>
                   </tr>

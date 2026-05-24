@@ -19,12 +19,6 @@ import { useCollectionContext } from "@/lib/hooks/useCollectionContext"
 import { getOwnerKey } from "@/lib/owner-key"
 import { slugifyName } from "@/lib/entity-labels"
 import BadgeIcon from "@/components/BadgeIcon"
-import {
-  MarketplaceStatusBanner,
-  MarketplaceUnavailablePill,
-  FlowtyDormancyChip,
-  useMarketplaceStatus,
-} from "@/components/marketplace-status"
 
 type Listing = {
   id: string
@@ -139,21 +133,22 @@ function parseList(value: string | null | undefined): string[] {
   return value.split(",").map(s => s.trim()).filter(Boolean)
 }
 
+// Resolve the outbound marketplace URL for a listing. Flowty links are dead,
+// so prefer a live native link: the listing's own buyUrl when it isn't a
+// Flowty URL, otherwise the collection's native moment page.
+function resolveListingUrl(
+  listing: Listing,
+  momentUrl: (id: string) => string | null,
+): string | null {
+  const url = listing.buyUrl?.trim()
+  if (url && !url.includes("flowty.io")) return url
+  return listing.flowId ? momentUrl(listing.flowId) : null
+}
+
 function MarketInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { collection, collectionId, supabaseCollectionId, accent, momentUrl } = useCollectionContext()
-
-  // Per-collection marketplace status — toggles BUY → MARKETPLACE UNAVAILABLE
-  // for collections where Trevor has marked buy_ctas_enabled=false (ufc_strike,
-  // laliga_golazos as of 2026-05-18).
-  const { status: marketplaceStatus, loaded: marketplaceStatusLoaded } =
-    useMarketplaceStatus(collectionId)
-  const marketplaceBuyDisabled =
-    marketplaceStatusLoaded && marketplaceStatus
-      ? !marketplaceStatus.buyCtasEnabled
-      : false
-  const marketplaceNotes = marketplaceStatus?.notes ?? null
 
   // ── View state (table / grid) — table is the Phase 4 default ──────────
   const [view, setView] = useState<"grid" | "table">(() => {
@@ -371,12 +366,6 @@ function MarketInner() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-
-      {/* ── Marketplace Status Banner — shown only when not healthy ── */}
-      <MarketplaceStatusBanner collectionSlug={collectionId} />
-
-      {/* ── Flowty dormancy info chip — healthy collections only ── */}
-      <FlowtyDormancyChip collectionSlug={collectionId} />
 
       {/* ── Thin-volume notice ── */}
       {thinVolume && (
@@ -600,8 +589,6 @@ function MarketInner() {
               momentUrl={momentUrl}
               editionStats={editionStats}
               showOwned={showOwnedColumn}
-              marketplaceBuyDisabled={marketplaceBuyDisabled}
-              marketplaceNotes={marketplaceNotes}
             />
           ))}
         </div>
@@ -613,8 +600,6 @@ function MarketInner() {
           editionStats={editionStats}
           showOwnedColumn={showOwnedColumn}
           collectionUrlSlug={collectionId}
-          marketplaceBuyDisabled={marketplaceBuyDisabled}
-          marketplaceNotes={marketplaceNotes}
         />
       )}
 
@@ -795,15 +780,14 @@ function ownLockLabel(stats: { owned: number; locked: number } | null | undefine
   return `${stats.owned} / ${stats.locked}`
 }
 
-function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, marketplaceBuyDisabled, marketplaceNotes }: {
+function ListingCard({ listing, accent, momentUrl, editionStats, showOwned }: {
   listing: Listing; accent: string; momentUrl: (id: string) => string | null
   editionStats: Map<string, { owned: number; locked: number }>; showOwned: boolean
-  marketplaceBuyDisabled?: boolean; marketplaceNotes?: string | null
 }) {
   const tier = (listing.tier ?? "").toUpperCase()
   const dot = tierColor(tier)
   const discount = fmtDiscount(listing.discount)
-  const buy = marketplaceBuyDisabled ? null : (listing.buyUrl ?? (listing.flowId ? momentUrl(listing.flowId) : null))
+  const buy = resolveListingUrl(listing, momentUrl)
   const hasThumb = !!listing.thumbnailUrl
   const stats = listing.editionKey ? editionStats.get(listing.editionKey) : null
 
@@ -812,17 +796,14 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, mark
       href={buy ?? "#"}
       target={buy ? "_blank" : undefined}
       rel={buy ? "noopener noreferrer" : undefined}
-      title={marketplaceBuyDisabled ? (marketplaceNotes ?? "Marketplace unavailable for this collection.") : undefined}
       className="rpc-binder-slot"
       style={{
         textDecoration: "none",
         display: "flex",
         flexDirection: "column",
         position: "relative",
-        cursor: buy ? "pointer" : marketplaceBuyDisabled ? "not-allowed" : "default",
-        opacity: marketplaceBuyDisabled ? 0.85 : 1,
+        cursor: buy ? "pointer" : "default",
       }}
-      onClick={marketplaceBuyDisabled ? (e) => { e.preventDefault() } : undefined}
       onMouseEnter={(e) => {
         e.currentTarget.style.boxShadow = `0 0 0 1px ${accent}, 0 0 18px ${accent}33`
       }}
@@ -890,12 +871,10 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, mark
   )
 }
 
-function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColumn, collectionUrlSlug, marketplaceBuyDisabled, marketplaceNotes }: {
+function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColumn, collectionUrlSlug }: {
   listings: Listing[]; accent: string; momentUrl: (id: string) => string | null
   editionStats: Map<string, { owned: number; locked: number }>; showOwnedColumn: boolean
   collectionUrlSlug: string
-  marketplaceBuyDisabled?: boolean
-  marketplaceNotes?: string | null
 }) {
   return (
     <div className="rpc-card" style={{ padding: 0, overflow: "auto" }}>
@@ -923,7 +902,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
             const tier = (l.tier ?? "").toUpperCase()
             const dot = tierColor(tier)
             const discount = fmtDiscount(l.discount)
-            const buy = marketplaceBuyDisabled ? null : (l.buyUrl ?? (l.flowId ? momentUrl(l.flowId) : null))
+            const buy = resolveListingUrl(l, momentUrl)
             const stats = l.editionKey ? editionStats.get(l.editionKey) : null
             const uniqueBadges = Array.from(new Set(l.badgeSlugs))
             return (
@@ -996,13 +975,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                 <td style={{ ...td, color: "var(--rpc-text-secondary)" }}>{sourceLabel(l.source)}</td>
                 <td style={{ ...td, color: "var(--rpc-text-ghost)" }}>{relativeAge(l.listedAt)}</td>
                 <td style={td}>
-                  {marketplaceBuyDisabled ? (
-                    <MarketplaceUnavailablePill
-                      notes={marketplaceNotes}
-                      label="UNAVAILABLE"
-                      style={{ fontSize: 10, padding: "2px 8px" }}
-                    />
-                  ) : buy ? (
+                  {buy ? (
                     <a
                       href={buy}
                       target="_blank"
@@ -1010,7 +983,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                       className="rpc-chip"
                       style={{ color: accent, borderColor: accent, background: `${accent}14` }}
                     >
-                      Buy
+                      View Listing →
                     </a>
                   ) : null}
                 </td>
