@@ -100,6 +100,31 @@ function tierStripeColor(tier: string | null | undefined): string {
   return TIER_STRIPE[tier.toUpperCase()] ?? TIER_STRIPE.COMMON;
 }
 
+// In-memory cache of Top Shot per-set detail (/api/sets?wallet=&set=) keyed by
+// `${wallet}:${setId}`. SetCard expand and the modal both fetch the same row;
+// without a shared cache they double-request whenever the user expands a card
+// then opens it (Set audit B3). Lives for the page lifetime.
+const setDetailCache = new Map<string, SetProgress>();
+
+async function fetchSetDetail(wallet: string, setId: string): Promise<SetProgress | null> {
+  const key = `${wallet}:${setId}`;
+  const cached = setDetailCache.get(key);
+  if (cached) return cached;
+  try {
+    const r = await fetch(`/api/sets?wallet=${encodeURIComponent(wallet)}&set=${encodeURIComponent(setId)}`);
+    if (!r.ok) return null;
+    const j: SetsResponse = await r.json();
+    const s = j?.sets?.[0];
+    if (s) {
+      setDetailCache.set(key, s);
+      return s;
+    }
+  } catch {
+    /* swallow — caller renders the list-level row as fallback */
+  }
+  return null;
+}
+
 // ── Styles ───────────────────────────────────────────────────────────────────
 
 const displayFont = "var(--font-display)";
@@ -137,6 +162,8 @@ export default function SetsPage() {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [openSet, setOpenSet] = useState<SetProgress | null>(null);
   const [openSetDetail, setOpenSetDetail] = useState<SetProgress | null>(null);
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const lastFocusedRef = useRef<HTMLElement | null>(null);
 
   const autoLoadFired = useRef(false);
 
@@ -198,32 +225,65 @@ export default function SetsPage() {
     return () => { cancelled = true; };
   }, [wallet, collectionSlug, isAllDay, isUfc]);
 
+  // Modal a11y: escape-to-close + focus trap (Set audit V5).
   useEffect(() => {
     if (!openSet) return;
+    lastFocusedRef.current = (document.activeElement as HTMLElement | null) ?? null;
+    // Focus the first interactive element in the modal so screen readers and
+    // keyboard users land inside the dialog when it opens.
+    const focusFirst = () => {
+      const root = modalRef.current;
+      if (!root) return;
+      const focusables = root.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"]), input:not([disabled])'
+      );
+      (focusables[0] ?? root).focus();
+    };
+    const raf = requestAnimationFrame(focusFirst);
+
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpenSet(null);
+      if (e.key === "Escape") { setOpenSet(null); return; }
+      if (e.key !== "Tab") return;
+      const root = modalRef.current;
+      if (!root) return;
+      const focusables = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"]), input:not([disabled])'
+        )
+      ).filter((el) => !el.hasAttribute("aria-hidden"));
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
     }
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      cancelAnimationFrame(raf);
+      // Restore focus to whatever opened the modal.
+      lastFocusedRef.current?.focus?.();
+    };
   }, [openSet]);
 
   // Top Shot's list response omits per-set owned moments — fetch the detail
   // view so the modal can show them. Other collections carry whatever
   // moment-level detail they have inline on the set object already.
+  // Depend on `openSet?.setId` (not the whole object) so the effect doesn't
+  // re-fire on unrelated re-renders, and consult the shared cache so we
+  // don't duplicate SetCard's expand fetch (Set audit B3).
+  const openSetId = openSet?.setId ?? null;
   useEffect(() => {
-    if (!openSet) { setOpenSetDetail(null); return; }
+    if (!openSetId) { setOpenSetDetail(null); return; }
     if (collectionSlug !== "nba-top-shot" || !wallet) { setOpenSetDetail(null); return; }
     let cancelled = false;
-    fetch(`/api/sets?wallet=${encodeURIComponent(wallet)}&set=${encodeURIComponent(openSet.setId)}`)
-      .then((r) => r.json())
-      .then((j: SetsResponse) => {
-        if (cancelled) return;
-        const s = j?.sets?.[0];
-        if (s) setOpenSetDetail(s);
-      })
-      .catch(() => {});
+    fetchSetDetail(wallet, openSetId).then((s) => {
+      if (cancelled) return;
+      if (s) setOpenSetDetail(s);
+    });
     return () => { cancelled = true; };
-  }, [openSet, collectionSlug, wallet]);
+  }, [openSetId, collectionSlug, wallet]);
 
   const displaySets = useMemo(() => {
     if (!data) return [];
@@ -402,16 +462,21 @@ export default function SetsPage() {
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
         >
           <div
+            ref={modalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="set-modal-title"
+            tabIndex={-1}
             onClick={(e) => e.stopPropagation()}
-            style={{ background: colors.bg, border: "1px solid " + colors.cardBorder, borderRadius: 10, padding: "20px 24px", maxWidth: 720, maxHeight: "85vh", width: "100%", overflow: "auto" }}
+            style={{ background: colors.bg, border: "1px solid " + colors.cardBorder, borderRadius: 10, padding: "20px 24px", maxWidth: 720, maxHeight: "85vh", width: "100%", overflow: "auto", outline: "none" }}
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
-              <h3 style={{ fontFamily: displayFont, fontWeight: 800, fontSize: 18, color: colors.text, textTransform: "uppercase", letterSpacing: "0.04em", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <h3 id="set-modal-title" style={{ fontFamily: displayFont, fontWeight: 800, fontSize: 18, color: colors.text, textTransform: "uppercase", letterSpacing: "0.04em", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {openSet.setName}
               </h3>
               <button
                 onClick={() => setOpenSet(null)}
-                aria-label="Close"
+                aria-label={`Close ${openSet.setName} details`}
                 style={{ fontFamily: monoFont, fontSize: 14, color: colors.muted, background: "transparent", border: "none", cursor: "pointer", padding: 4, flexShrink: 0 }}
               >
                 ✕
@@ -530,7 +595,7 @@ function ModalRow({
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = colors.cardHover)}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = colors.cardBorder)}
     >
-      <MomentMedia thumbnailUrl={thumbnailUrl} alt="" size={40} rounded={4} />
+      <MomentMedia thumbnailUrl={thumbnailUrl} alt={playerName || "Moment thumbnail"} size={40} rounded={4} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 14, color: colors.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {playerName}
@@ -589,6 +654,11 @@ function SetCard({
   const [detail, setDetail] = useState<SetProgress | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
+  // Depend on stable `set.setId` (not the whole `set` object) — the previous
+  // dep on the whole object made this effect re-fire on every re-render.
+  // Goes through the shared cache so we don't double-fetch what the modal
+  // effect already loaded (Set audit B3).
+  const setId = set.setId;
   useEffect(() => {
     if (!expanded || detail || loadingDetail || !wallet) return;
     // Only Top Shot exposes a per-set detail endpoint (/api/sets?set=).
@@ -600,19 +670,17 @@ function SetCard({
     }
     let cancelled = false;
     setLoadingDetail(true);
-    fetch(`/api/sets?wallet=${encodeURIComponent(wallet)}&set=${encodeURIComponent(set.setId)}`)
-      .then((r) => r.json())
-      .then((j: SetsResponse) => {
+    fetchSetDetail(wallet, setId)
+      .then((s) => {
         if (cancelled) return;
-        const s = j?.sets?.[0];
         if (s) setDetail(s);
       })
-      .catch(() => {})
       .finally(() => {
         if (!cancelled) setLoadingDetail(false);
       });
     return () => { cancelled = true; };
-  }, [expanded, detail, loadingDetail, wallet, set, collectionSlug]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `set` intentionally excluded; setId is the stable identity
+  }, [expanded, detail, loadingDetail, wallet, setId, collectionSlug]);
 
   return (
     <div

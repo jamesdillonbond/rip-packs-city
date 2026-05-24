@@ -142,7 +142,13 @@ export async function GET(req: NextRequest) {
         lowestSingleAsk: null,
         bottleneckPrice: null,
         bottleneckPlayerName: null,
-        tier: completionPct === 100 ? "complete" : "unpriced",
+        // Classify by completion progress, not just by 100%/else — labelling a
+        // half-finished Golazos set "unpriced" hides real progress (Set audit B6).
+        tier:
+          completionPct === 100 ? "complete"
+          : completionPct >= 80 ? "almost_there"
+          : completionPct > 0 ? "incomplete"
+          : "unpriced",
         owned: ownedDedup.map(o => ({
           playId: o.editionId,
           playerName: o.playerName,

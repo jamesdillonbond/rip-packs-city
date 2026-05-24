@@ -91,6 +91,11 @@ interface PullResult {
 interface AggregateStats {
   totalRips: number
   totalSlots: number
+  // How many of `totalSlots` pulled an edition with a real FMV. Slots without
+  // FMV count $0 in `totalValue` and `packValues` — surfacing the coverage
+  // ratio lets the UI honestly say "X/Y pulls had FMV" instead of pretending
+  // the totals are complete (Pack audit B3).
+  fmvCoveredSlots: number
   totalValue: number
   packValues: number[]
   maxPackValue: number
@@ -207,31 +212,11 @@ export default function PackSimulatorPage({ params }: PageProps) {
           setPayload(json)
         } else {
           setPayload(json)
-          // If slots is null, fetch /api/pack-ev for momentsPerPack fallback.
+          // /api/pack-ev requires `packListingId` and returns no `momentsPerPack` /
+          // `slots` field, so the previous fallback path here was dead for 100% of
+          // NFL/UFC/Pinnacle/Golazos packs (Pack audit B1). Go straight to the
+          // 5-slot approximation when the dist doesn't carry a real slot count.
           if (json.pack.slots == null) {
-            try {
-              const evRes = await fetch("/api/pack-ev", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  distId: distId,
-                  collectionId: collectionUuid,
-                  packName: json.pack.title,
-                  packPrice: json.pack.retail_price_usd ?? 0,
-                }),
-              })
-              if (evRes.ok) {
-                const ev = (await evRes.json()) as { momentsPerPack?: number; slots?: number }
-                const mpp = ev?.momentsPerPack ?? ev?.slots ?? null
-                if (mpp && Number.isFinite(mpp) && mpp > 0) {
-                  setSlotsOverride(Math.round(Number(mpp)))
-                  setSlotsApprox(false)
-                  return
-                }
-              }
-            } catch {
-              // ignore — fall through to 5 default
-            }
             setSlotsOverride(5)
             setSlotsApprox(true)
           }
@@ -269,13 +254,16 @@ export default function PackSimulatorPage({ params }: PageProps) {
       const hitCounts: Record<string, number> = {
         "$25+": 0, "$100+": 0, "$500+": 0, "$1000+": 0, ultimate: 0, legendary: 0,
       }
+      let fmvCoveredSlots = 0
       for (let i = 0; i < n; i++) {
         const pulls: PullResult[] = []
         let packVal = 0
         for (let s = 0; s < slots; s++) {
           const edition = sampleEdition(payload.pool, sampler.cdf, sampler.total)
           pulls.push({ edition, ripIndex: s })
-          const fmv = edition.fmv_usd != null ? Number(edition.fmv_usd) : 0
+          const hasFmv = edition.fmv_usd != null && Number.isFinite(Number(edition.fmv_usd))
+          const fmv = hasFmv ? Number(edition.fmv_usd) : 0
+          if (hasFmv) fmvCoveredSlots++
           packVal += fmv
           for (const t of THRESHOLDS) if (fmv >= t.min) hitCounts[t.key]++
           const tier = (edition.tier || "").toLowerCase()
@@ -293,6 +281,7 @@ export default function PackSimulatorPage({ params }: PageProps) {
         aggregate: {
           totalRips: n,
           totalSlots: n * slots,
+          fmvCoveredSlots,
           totalValue,
           packValues,
           maxPackValue,
@@ -482,6 +471,10 @@ function AggregateCard({ result, accent }: { result: RipResult; accent: string }
   const avg = a.totalRips > 0 ? a.totalValue / a.totalRips : 0
   const sd = stddev(a.packValues)
   const beatPct = a.retail != null && a.totalRips > 0 ? (a.ripsBeatRetail / a.totalRips) * 100 : null
+  // FMV coverage: slots without an FMV count $0 in totalValue, so values are
+  // biased low when coverage is partial — surface the ratio honestly.
+  const fmvCovPct = a.totalSlots > 0 ? (a.fmvCoveredSlots / a.totalSlots) * 100 : null
+  const fmvCovPartial = fmvCovPct != null && fmvCovPct < 99.5
   return (
     <div style={{ marginTop: 18, padding: 14, background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 8 }}>
       <div style={{ fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 800, color: accent, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 10 }}>
@@ -494,6 +487,12 @@ function AggregateCard({ result, accent }: { result: RipResult; accent: string }
         {beatPct != null && <Metric label="% beat retail" value={beatPct.toFixed(1) + "%"} accent={beatPct >= 50 ? "#34D399" : accent} />}
         <Metric label="Total pulled" value={fmtUsd(a.totalValue)} accent={accent} />
       </div>
+      {fmvCovPartial && (
+        <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(255,255,255,0.55)", lineHeight: 1.5 }}>
+          {a.fmvCoveredSlots} / {a.totalSlots} pulls had FMV ({fmvCovPct?.toFixed(1)}%). Slots without FMV
+          are counted as $0, so values above (incl. % beat retail) are a lower bound.
+        </div>
+      )}
       <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8 }}>
         {THRESHOLDS.map((t) => {
           const hits = a.hitCounts[t.key] ?? 0

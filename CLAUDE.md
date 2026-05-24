@@ -24,7 +24,30 @@ LLC: Oregon, filed May 3 2026.
 
 ## Recent sessions
 
-### May 23, 2026 (latest) — Market/Sniper reframe to outbound links
+### May 24, 2026 (latest) — Platform audit: FMV / Pack EV / badges
+
+Shipped
+
+- **FMV recalc de-Flowty + invalid-enum fix** ([app/api/fmv-recalc/route.ts](app/api/fmv-recalc/route.ts)) — deleted Step 2b (Flowty LiveToken FMV blend reading `cached_listings.source='flowty'`) and Step 2c (floor-ask proxy reading `cached_listings.ask_price`). `cached_listings` now holds ~24 frozen multi-week-stale rows since the Flowty shutdown; both inputs were dead. Also retired the ask-proxy branch that wrote `confidence = "LOW_ASK_PROXY"` — that value is not in the `fmv_confidence` enum (`HIGH | MEDIUM | LOW | ASK_ONLY | SALES_ONLY | STALE | NO_DATA`), and snapshot inserts chunk 100 rows at a time, so a single LOW_ASK_PROXY row failed the whole chunk and silently dropped ~99 good snapshots. FMV is now purely sales-based (outlier-filtered WAP → trimmed-median fallback).
+- **`/api/badges` play_tag filter** ([app/api/badges/route.ts](app/api/badges/route.ts)) — Top Shot's `play_tags` array mixes ~6 real moment badges with ~25 gameplay descriptors (Jump Shot, Dunk, Block, Steal, Tomahawk Dunk, …). The unified-badges map emitted EVERY tag, so every TS moment showed gameplay tags as badges. Now allowlists `play_tags` to the 9 real badge titles (topshotdebut, rookieyear, rookiemint, rookiepremiere, mvpyear, championshipyear, rookieoftheyear, allstar, threestarrookie) via lowercased + alphanumeric-only normalization. `set_play_tags` stays unfiltered — all real badges.
+- **DB-side counterparts deployed before this session:**
+  - migration `audit_20260524_badge_unified_filter_play_tags` — `get_edition_badges_unified` applies the same play_tag allowlist server-side.
+  - migration `audit_20260524_edition_detail_badges_from_unified` — `get_edition_detail` derives the `badges` field from `get_edition_badges_unified` instead of the always-empty `editions.badges` column (0/24,705 populated).
+  - edge function `compute-topshot-pack-ev` redeployed as v17 — un-resolvable packs (no editions from TS API, no dynamic data, fully depleted) now write a sentinel `pack_ev_history` row so `last_ev_at` advances. Fixes the queue-poison that left ~1,105 of 1,113 Top Shot packs with EV >7 days stale.
+- **Moment / Pack / Set page audit follow-ups** (per "Known issues" item 17 punch list):
+  - Moment modal a11y ([components/MomentDetailModal.tsx](components/MomentDetailModal.tsx)) — `role="dialog"`, `aria-modal`, labelled close button, focus trap (escape + shift-tab wrap), restore-focus-on-close, `aria-hidden` decorative hover video.
+  - Set modal a11y ([app/(collections)/[collection]/sets/page.tsx](app/(collections)/[collection]/sets/page.tsx)) — same `role="dialog"` / `aria-modal` / focus-trap treatment; `ModalRow` thumbnails now use the player name as `alt` instead of empty.
+  - Set audit B2 ([app/api/sets/route.ts](app/api/sets/route.ts)) — `lowestSingleAsk` now an explicit `Math.min` across the missing array instead of trusting `missing[0]` to be cheapest.
+  - Set audit B3 ([app/(collections)/[collection]/sets/page.tsx](app/(collections)/[collection]/sets/page.tsx)) — `SetCard` expand and the modal-open effect now share an in-memory `Map<wallet:setId, SetProgress>` cache via `fetchSetDetail()`; the modal effect depends on `openSet?.setId` (not the whole object) so it doesn't re-fire on re-renders.
+  - Set audit B6 ([app/api/sets-db/route.ts](app/api/sets-db/route.ts)) — Golazos incomplete sets now classify by completion-pct (`complete` / `almost_there` / `incomplete` / `unpriced`) instead of labelling every <100% set "unpriced".
+  - Moment audit B7 ([app/moment/[id]/page.tsx](app/moment/[id]/page.tsx)) — JSON-LD `offers.availability` now reflects real listing state (`is_listed=true && list_price > 0`, or `top_shot_ask > 0`) → `InStock` / `OutOfStock`; FMV alone is no longer treated as a live listing.
+  - Moment audit B9 ([app/moment/[id]/page.tsx](app/moment/[id]/page.tsx)) — owner address renders as a truncated `/profile/<addr>` link via a local `OwnerLink` helper; `StatCell` widened to accept `ReactNode`.
+  - Pack audit B1 ([app/(collections)/[collection]/packs/simulator/[distId]/page.tsx](app/(collections)/[collection]/packs/simulator/[distId]/page.tsx)) — deleted the dead `/api/pack-ev` `{distId}` fetch (route requires `packListingId` and emits no `momentsPerPack` field, so it returned 400 and silently fell to 5-slot anyway for 100% of NFL/UFC/Pinnacle/Golazos packs). Goes straight to the 5-slot approximation when `pack.slots == null`.
+  - Pack audit B2 ([app/(collections)/[collection]/pack/dist/[distId]/page.tsx](app/(collections)/[collection]/pack/dist/[distId]/page.tsx)) — Top-Pulls probability denominator was the sum of the top-50 `drop_weight` rows (the pool query is `.limit(50)`), inflating every displayed Drop %. Added a parallel full-pool `SUM(drop_weight)` query; denom is now `total_unopened` if present, else full-pool weight, else null (no more partial-pool fallback).
+  - Pack audit B3 ([app/(collections)/[collection]/packs/simulator/[distId]/page.tsx](app/(collections)/[collection]/packs/simulator/[distId]/page.tsx)) — simulator now tracks `fmvCoveredSlots` and surfaces an honest "X / Y pulls had FMV (Z%). Slots without FMV are counted as $0, so values above are a lower bound." caption when coverage <99.5%.
+- *Punted, with reasons:* Set S2 (Flowty floor staleness guard — underlying input was the now-removed Step 2b/2c FMV-recalc blend, and the set detail page already shows "Updated {relTime}"). Set S4 (audit which collections still emit `ASK_ONLY` post-Flowty — research, not a code change; the AllDay GQL pipeline `allday-gql-v1` legitimately emits ASK_ONLY from `lowestPrice` and is independent of Flowty).
+
+### May 23, 2026 — Market/Sniper reframe to outbound links
 
 Prioritized Next Action #1 — the "stop looking broken" change. Market and Sniper are reframed from a (now-dead) live-buy surface into FMV + discount intelligence with outbound listing links.
 
@@ -710,7 +733,7 @@ All 7 cursors:
 - `pack_grail_metrics_mv` is a **materialized view** with one row per `(collection_id, dist_id)`, refreshed via the `refresh_pack_grail_metrics_mv()` `SECURITY DEFINER` function doing `REFRESH MATERIALIZED VIEW CONCURRENTLY` on hourly cron at `:23` via `/api/cron/refresh-pack-grail-metrics-mv`.
 - Computed on pullable editions only (`drop_weight > 0`).
 - Exposes `weighting_method` (`'uniform'` for NFL / UFC / Pinnacle / Golazos, `'weighted'` for Top Shot) and per-slot probabilities (`prob_grail_25/100/500/1000_per_slot`, `prob_ultimate_per_slot`).
-- **Note on EV divergence:** `ev_per_slot` here uses `drop_weight`-weighted average and **differs from `pack_ev_latest.gross_ev / slots`** which uses 10% trimmed-mean against equal weights. Two methodologies, two numbers — don't expect them to match.
+- **EV methodology:** `ev_per_slot` here and `pack_ev_latest.gross_ev / slots` both use `drop_weight`-weighted FMV averages via `compute_pack_ev_per_edition_weighted`. The previous "10% trimmed-mean against equal weights" note for `pack_ev_latest` was outdated — both surfaces should now reconcile. (Stale note corrected 2026-05-24.)
 
 ### Pack rip metadata
 

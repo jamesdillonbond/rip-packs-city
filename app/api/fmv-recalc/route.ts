@@ -341,114 +341,11 @@ export async function POST(req: NextRequest) {
       console.log(`[FMV-RECALC] Skipped ${ultimateSkipped} ULTIMATE editions (owned by recalc_ultimate_fmv)`)
     }
 
-    // ── Step 2b: Fetch Flowty LiveToken FMVs from cached_listings ────────────
-    // cached_listings.fmv contains valuations.blended.usdValue from Flowty's
-    // LiveToken feed. We average per edition (multiple listings may exist).
-    // The editions table maps edition_id → external_id; cached_listings uses
-    // flow_id (nft-level), so we join through the moments table.
-    const flowtyFmvByEdition = new Map<string, number>()
-    let flowtyFmvCount = 0
-
-    try {
-      // Get all flow_ids that have a Flowty FMV in cached_listings
-      const { data: fmvListings } = await supabaseAdmin
-        .from("cached_listings")
-        .select("flow_id, fmv")
-        .eq("source", "flowty")
-        .not("fmv", "is", null)
-        .gt("fmv", 0)
-
-      if (fmvListings && fmvListings.length > 0) {
-        // Map flow_id → fmv values
-        const flowIdFmvs = new Map<string, number[]>()
-        for (const row of fmvListings) {
-          if (!row.flow_id || !row.fmv) continue
-          const existing = flowIdFmvs.get(String(row.flow_id))
-          if (existing) existing.push(Number(row.fmv))
-          else flowIdFmvs.set(String(row.flow_id), [Number(row.fmv)])
-        }
-
-        // Look up which editions these flow_ids belong to via moments table
-        const flowIds = [...flowIdFmvs.keys()]
-        const { data: momentRows } = await supabaseAdmin
-          .from("moments")
-          .select("nft_id, edition_id")
-          .in("nft_id", flowIds)
-
-        // Aggregate FMVs per edition_id
-        const editionFmvs = new Map<string, number[]>()
-        for (const row of momentRows ?? []) {
-          if (!row.edition_id) continue
-          const fmvValues = flowIdFmvs.get(String(row.nft_id))
-          if (!fmvValues) continue
-          const existing = editionFmvs.get(row.edition_id)
-          if (existing) existing.push(...fmvValues)
-          else editionFmvs.set(row.edition_id, [...fmvValues])
-        }
-
-        // Average per edition
-        for (const [edId, fmvValues] of editionFmvs.entries()) {
-          if (!editionSalesMap.has(edId)) continue // only blend for editions we're recalcing
-          const avg = fmvValues.reduce((a, b) => a + b, 0) / fmvValues.length
-          if (avg > 0) {
-            flowtyFmvByEdition.set(edId, avg)
-            flowtyFmvCount++
-          }
-        }
-      }
-    } catch (err) {
-      console.warn("[FMV-RECALC] Flowty FMV fetch failed (non-fatal):", err)
-    }
-
-    console.log(`[FMV-RECALC] Flowty LiveToken FMV available for ${flowtyFmvCount} editions`)
-
-    // ── Step 2c: Fetch floor ask prices from cached_listings ────────────────
-    // For LOW confidence editions, floor_ask * 0.90 serves as a provisional
-    // FMV proxy (ask_proxy_fmv) without overwriting the sales-based fmv_usd.
-    const floorAskByEdition = new Map<string, number>()
-
-    try {
-      const { data: askListings } = await supabaseAdmin
-        .from("cached_listings")
-        .select("flow_id, ask_price")
-        .not("ask_price", "is", null)
-        .gt("ask_price", 0)
-
-      if (askListings && askListings.length > 0) {
-        // Map flow_id → minimum ask price
-        const flowIdAsks = new Map<string, number>()
-        for (const row of askListings) {
-          if (!row.flow_id || !row.ask_price) continue
-          const price = Number(row.ask_price)
-          const existing = flowIdAsks.get(String(row.flow_id))
-          if (!existing || price < existing) {
-            flowIdAsks.set(String(row.flow_id), price)
-          }
-        }
-
-        // Look up editions via moments table
-        const askFlowIds = [...flowIdAsks.keys()]
-        const { data: askMomentRows } = await supabaseAdmin
-          .from("moments")
-          .select("nft_id, edition_id")
-          .in("nft_id", askFlowIds)
-
-        // Find minimum ask per edition
-        for (const row of askMomentRows ?? []) {
-          if (!row.edition_id) continue
-          const askPrice = flowIdAsks.get(String(row.nft_id))
-          if (!askPrice) continue
-          const existing = floorAskByEdition.get(row.edition_id)
-          if (!existing || askPrice < existing) {
-            floorAskByEdition.set(row.edition_id, askPrice)
-          }
-        }
-      }
-    } catch (err) {
-      console.warn("[FMV-RECALC] Floor ask fetch failed (non-fatal):", err)
-    }
-
-    console.log(`[FMV-RECALC] Floor ask available for ${floorAskByEdition.size} editions`)
+    // Flowty's marketplace shut down ~2026-05-13. The former Step 2b (Flowty
+    // LiveToken FMV blend) and Step 2c (floor-ask proxy) read from
+    // cached_listings, which now holds only ~24 frozen multi-week-stale rows.
+    // FMV is now purely sales-based (outlier-filtered WAP + trimmed-median
+    // fallback). Both code paths were removed 2026-05-24.
 
     // ── Step 3: Delete TODAY's snapshots for these editions only ─────────────
     // History matters: yesterday + earlier rows must persist so we can chart
@@ -470,13 +367,12 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Step 4: Build and insert fresh snapshots ──────────────────────────────
-    // FMV blending: when a Flowty LiveToken FMV is available and within 3x of
-    // WAP (outlier filter), blend it as a secondary signal:
-    //   blended_fmv = (wap * 0.6) + (livetoken_fmv * 0.4)
-    // Otherwise, use trimmed median as before.
+    // Sales-only FMV: outlier-filtered WAP (LiveToken-style averageWithoutWackos)
+    // with trimmed-median fallback. The Flowty LiveToken blend and floor-ask
+    // proxy paths were removed 2026-05-24 (Flowty marketplace shutdown).
     const insertRows: Record<string, unknown>[] = []
-    let blendedCount = 0
-    let askProxyCount = 0
+    const blendedCount = 0
+    const askProxyCount = 0
 
     for (const [editionId, { sales, collectionId, latestSoldAt }] of editionSalesMap.entries()) {
       const prices = sales.map(s => s.price)
@@ -488,7 +384,7 @@ export async function POST(req: NextRequest) {
       // fmv_confidence is a Postgres enum with UPPERCASE values — never use lowercase strings here.
       const baseConfidence = computeConfidence(sales.length)
       // serials enable the serial-residual HIGH dispersion gate (see lib/fmv-confidence.ts).
-      let confidence: string = escalateConfidence(baseConfidence, sales.length, prices, serials)
+      const confidence: string = escalateConfidence(baseConfidence, sales.length, prices, serials)
       const daysSinceSale = Math.round(
         (now.getTime() - latestSoldAt.getTime()) / (1000 * 60 * 60 * 24)
       )
@@ -497,28 +393,7 @@ export async function POST(req: NextRequest) {
       // averageWithoutWackos. Falls back to trimmed median when the cleaned
       // WAP collapses to 0 (e.g. tiny sales sets all rejected as outliers).
       const cleanWap = wapWithoutOutliers(sales, now)
-      let fmv = cleanWap > 0 ? cleanWap : median
-      const livetokenFmv = flowtyFmvByEdition.get(editionId)
-      if (livetokenFmv && fmv > 0) {
-        const ratio = livetokenFmv / fmv
-        if (ratio >= 1 / 3 && ratio <= 3) {
-          fmv = (fmv * 0.6) + (livetokenFmv * 0.4)
-          blendedCount++
-        }
-      }
-
-      // For LOW confidence editions with a Flowty floor ask, compute a
-      // provisional FMV proxy at 90% of floor ask. This improves sniper deal
-      // matching without corrupting the sales-based fmv_usd.
-      let askProxyFmv: number | null = null
-      if (confidence === "LOW") {
-        const floorAsk = floorAskByEdition.get(editionId)
-        if (floorAsk && floorAsk > 0) {
-          askProxyFmv = Number((floorAsk * 0.90).toFixed(2))
-          confidence = "LOW_ASK_PROXY"
-          askProxyCount++
-        }
-      }
+      const fmv = cleanWap > 0 ? cleanWap : median
 
       // Sanity guard: a single anomalous high-priced sale (e.g. a stale wallet
       // seed or one-off transaction) can produce a wildly inflated LOW
@@ -544,7 +419,7 @@ export async function POST(req: NextRequest) {
         wap_without_outliers: Number(cleanWap.toFixed(2)),
         liquidity_rating: liquidityRating(sales.length),
         confidence,
-        ask_proxy_fmv: askProxyFmv,
+        ask_proxy_fmv: null,
         sales_count_7d: sales.length,    // column name retained for schema compat; reflects 30d window
         sales_count_30d: sales.length,
         days_since_sale: daysSinceSale,

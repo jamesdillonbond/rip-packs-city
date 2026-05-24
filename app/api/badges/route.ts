@@ -124,12 +124,35 @@ export async function GET(req: NextRequest) {
 
     if (dataResult.error) throw dataResult.error
 
+    // Top Shot's play_tags mix ~6 real badges with ~25 gameplay descriptors
+    // (Jump Shot, Dunk, Block, Steal, ...). Only allowlist the titles that
+    // are actually badges; set_play_tags are all real badges and stay unfiltered.
+    // Mirrors get_edition_badges_unified — see migration audit_20260524_badge_unified_filter_play_tags.
+    const PLAY_TAG_BADGE_TITLES = new Set([
+      "topshotdebut",
+      "rookieyear",
+      "rookiemint",
+      "rookiepremiere",
+      "mvpyear",
+      "championshipyear",
+      "rookieoftheyear",
+      "allstar",
+      "threestarrookie",
+    ])
+    const isBadgePlayTag = (title: unknown): boolean => {
+      if (typeof title !== "string") return false
+      const norm = title.toLowerCase().replace(/[^a-z0-9]/g, "")
+      return PLAY_TAG_BADGE_TITLES.has(norm)
+    }
+
     const editions = (dataResult.data ?? []).map((e: any) => {
       // Unified badges array — mirrors what get_edition_badges_unified(edition_id)
       // returns on the Postgres side: play_tags tagged with source 'play',
       // set_play_tags tagged 'set_play'.
       const unifiedBadges = [
-        ...(e.play_tags ?? []).map((t: any) => ({ id: t.id, title: t.title, source: "play" })),
+        ...(e.play_tags ?? [])
+          .filter((t: any) => isBadgePlayTag(t?.title))
+          .map((t: any) => ({ id: t.id, title: t.title, source: "play" })),
         ...(e.set_play_tags ?? []).map((t: any) => ({ id: t.id, title: t.title, source: "set_play" })),
       ]
       const badgeTitles: string[] = unifiedBadges.map(b => b.title)

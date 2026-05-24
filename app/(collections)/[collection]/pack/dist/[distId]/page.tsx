@@ -153,16 +153,31 @@ async function fetchTopPulls(
 
   const editionIds = pool.map((r) => r.edition_id)
 
-  const [editionsRes, fmvRes] = await Promise.all([
+  // Full-pool weight sum for the probability denominator. `pool` is the top-50
+  // by drop_weight, so summing only its rows over-states the probability of
+  // each pull (Pack audit B2). Fall back to that partial sum only as a last
+  // resort, and surface probability as null when we can't compute the real
+  // denominator.
+  const [editionsRes, fmvRes, fullPoolWeightRes] = await Promise.all([
     sb.from("editions").select("id, name, tier, external_id").in("id", editionIds),
     sb.rpc("get_fmv_for_editions", {
       p_collection_id: collectionId,
       p_edition_ids: editionIds,
     }),
+    sb.rpc("query_sql", {
+      query: `
+        SELECT COALESCE(SUM(drop_weight), 0)::numeric AS total_weight
+        FROM pack_drop_pool
+        WHERE dist_id = '${distId.replace(/'/g, "''")}'
+          AND collection_id = '${collectionId.replace(/'/g, "''")}'
+          AND drop_weight > 0
+      `,
+    }),
   ])
 
   if (editionsRes.error) console.error("[pack-detail] editions error", editionsRes.error.message)
   if (fmvRes.error) console.error("[pack-detail] fmv rpc error", fmvRes.error.message)
+  if (fullPoolWeightRes.error) console.error("[pack-detail] full pool weight error", fullPoolWeightRes.error.message)
 
   const editionsById = new Map<string, EditionLite>()
   for (const e of (editionsRes.data ?? []) as EditionLite[]) editionsById.set(e.id, e)
@@ -174,10 +189,16 @@ async function fetchTopPulls(
   }
 
   // Probability denominator: prefer cached total_unopened (true contents
-  // remaining); fall back to summing drop_weight when the cron hasn't
-  // populated total_unopened yet (newly indexed distributions).
-  const totalWeight = pool.reduce((sum, r) => sum + Number(r.drop_weight ?? 0), 0)
-  const denom = totalUnopened && totalUnopened > 0 ? totalUnopened : totalWeight > 0 ? totalWeight : null
+  // remaining); otherwise use the full-pool drop_weight sum we just fetched.
+  // Never fall back to summing only the top-50 weights — that inflates % (B2).
+  const fullPoolWeight = Number(
+    (fullPoolWeightRes.data as Array<{ total_weight: number | string }> | null)?.[0]?.total_weight ?? 0,
+  )
+  const denom = totalUnopened && totalUnopened > 0
+    ? totalUnopened
+    : fullPoolWeight > 0
+      ? fullPoolWeight
+      : null
 
   const pulls: TopPull[] = pool.map((r) => {
     const ed = editionsById.get(r.edition_id)

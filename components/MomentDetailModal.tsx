@@ -78,14 +78,46 @@ function getVideoUrl(prefix: string | null | undefined): string | null {
 export default function MomentDetailModal({ moment, marketplaceSource, onClose }: MomentDetailModalProps) {
   const [hovered, setHovered] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const lastFocusedRef = useRef<HTMLElement | null>(null);
 
+  // Modal a11y: escape-to-close, focus trap, restore focus on close (Moment V3).
   useEffect(() => {
     if (!moment) return;
+    lastFocusedRef.current = (document.activeElement as HTMLElement | null) ?? null;
+    const focusFirst = () => {
+      const root = modalRef.current;
+      if (!root) return;
+      const focusables = root.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"]), input:not([disabled])'
+      );
+      (focusables[0] ?? root).focus();
+    };
+    const raf = requestAnimationFrame(focusFirst);
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") { onClose(); return; }
+      if (e.key !== "Tab") return;
+      const root = modalRef.current;
+      if (!root) return;
+      const focusables = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"]), input:not([disabled])'
+        )
+      ).filter((el) => !el.hasAttribute("aria-hidden"));
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      cancelAnimationFrame(raf);
+      lastFocusedRef.current?.focus?.();
+    };
   }, [moment, onClose]);
 
   useEffect(() => {
@@ -128,6 +160,11 @@ export default function MomentDetailModal({ moment, marketplaceSource, onClose }
       }}
     >
       <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="moment-modal-title"
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         style={{
           background: "var(--rpc-surface, #0f0f0f)",
@@ -140,8 +177,31 @@ export default function MomentDetailModal({ moment, marketplaceSource, onClose }
           display: "grid",
           gridTemplateColumns: "1fr 1fr",
           color: "#fff",
+          outline: "none",
+          position: "relative",
         }}
       >
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={`Close ${moment.playerName} details`}
+          style={{
+            position: "absolute",
+            top: 8,
+            right: 10,
+            zIndex: 2,
+            background: "rgba(0,0,0,0.55)",
+            color: "#fff",
+            border: "1px solid rgba(255,255,255,0.18)",
+            borderRadius: 4,
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+            padding: "4px 8px",
+            cursor: "pointer",
+          }}
+        >
+          ✕
+        </button>
         <div
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
@@ -174,6 +234,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, onClose }
               muted
               loop
               playsInline
+              aria-hidden="true"
               style={{
                 position: "absolute",
                 inset: 0,
@@ -189,6 +250,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, onClose }
 
         <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12, overflowY: "auto" }}>
           <div
+            id="moment-modal-title"
             style={{
               fontFamily: "var(--font-display)",
               fontWeight: 900,
