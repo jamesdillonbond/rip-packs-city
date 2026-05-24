@@ -1,12 +1,24 @@
-// compute-topshot-pack-ev v16 — dual-price model (primary + secondary).
+// compute-topshot-pack-ev v18 — inline UUID:UUID skeleton hydration.
 //
-// Mirrors app/api/pack-ev/route.ts: every persisted row now carries
-// primary_price, secondary_ask, price_source, primary_available,
-// secondary_available alongside the legacy pack_price. EV is anchored
-// against the cheaper of (a) primary retail if the pack is still selling
-// or (b) the secondary low ask on the P2P market. computeDualPrice() is
-// a verbatim port of the route's function so future devs can grep both
-// paths and confirm a single source of truth for the math.
+// v18 (2026-05-24): the seed_topshot_editions RPC creates skeleton rows with
+// set_id_onchain/play_id_onchain populated ONLY for integer-pair external_ids.
+// Every external_id this function seeds is `{setUUID}:{playUUID}`, so the
+// integer columns stay NULL and the topshot-stub-resolver pipeline (which
+// requires set_id_onchain IS NOT NULL on its target query) never touches
+// them — backlog was 992 and growing ~10/day, and topshot-moments-hydrator
+// failed ~16x/day on the same catalog gap. v18 hydrates the just-seeded
+// UUID:UUID rows inline via Top Shot's searchEditions GQL, populating
+// set_id_onchain / play_id_onchain / name / player_name / set_name / tier
+// / circulation_count in the same invocation. Runs AFTER the EV insert with
+// a strict time budget so the critical EV path is never blocked.
+//
+// Mirrors app/api/pack-ev/route.ts: every persisted row carries primary_price,
+// secondary_ask, price_source, primary_available, secondary_available
+// alongside the legacy pack_price. EV is anchored against the cheaper of (a)
+// primary retail if the pack is still selling or (b) the secondary low ask on
+// the P2P market. computeDualPrice() is a verbatim port of the route's
+// function so future devs can grep both paths and confirm a single source of
+// truth for the math.
 //
 // Secondary asks are fetched in one upfront call to Dapper Studio's
 // searchPackNftAggregation (same query the /api/pack-listings route
@@ -54,7 +66,16 @@ const ERRORS_SAMPLE_CAP = 12
 const FETCH_CONCURRENCY = 3
 const MAX_1015_RETRIES = 3
 const RETRY_BACKOFF_MS = 2000
-const FUNCTION_VERSION = 16
+const FUNCTION_VERSION = 18
+
+// Hydration safety margin: leave this many ms of HARD_CEILING headroom for
+// the GQL+update loop so it can short-circuit cleanly without dragging the
+// outer Deno.serve handler past its budget. Tuned for ~5s/call worst case.
+const HYDRATE_BUDGET_RESERVE_MS = 8_000
+const HYDRATE_PER_CALL_TIMEOUT_MS = 8_000
+
+// UUID character class (no anchors so it can be used inline in colon-split keys).
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const retryEvents: Array<{
   op: string
@@ -197,6 +218,74 @@ interface EditionsResponse {
         pageInfo: { endCursor: string; hasNextPage: boolean }
         edges: Array<{ node: EditionNode }>
       }
+    }
+  }
+}
+
+// SearchEditionBackfill — same GQL shape used by scripts/rehydrate-null-topshot-editions.mjs.
+// Hydrates UUID:UUID skeleton edition rows that seed_topshot_editions could
+// not populate (it only parses set_id_onchain / play_id_onchain when external_id
+// is an integer-pair). Returned through the topshot-proxy worker just like the
+// pack-ev queries above so it shares headers, retries, and rate-limit handling.
+const SEARCH_EDITION_QUERY = `
+  query SearchEditionBackfill($input: SearchEditionsInput!) {
+    searchEditions(input: $input) {
+      searchSummary {
+        data {
+          ... on Editions {
+            data {
+              ... on Edition {
+                tier
+                circulationCount
+                set { flowId flowName flowSeriesNumber }
+                play {
+                  flowID
+                  stats {
+                    playerName
+                    teamAtMoment
+                    playCategory
+                    playType
+                    dateOfMoment
+                    homeTeamName
+                    awayTeamName
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`
+const SEARCH_EDITION_OP = "SearchEditionBackfill"
+
+interface EditionGqlRow {
+  tier?: string | null
+  circulationCount?: number | string | null
+  set?: {
+    flowId?: number | string | null
+    flowName?: string | null
+    flowSeriesNumber?: number | string | null
+  } | null
+  play?: {
+    flowID?: number | string | null
+    stats?: {
+      playerName?: string | null
+      teamAtMoment?: string | null
+      playCategory?: string | null
+      playType?: string | null
+      dateOfMoment?: string | null
+      homeTeamName?: string | null
+      awayTeamName?: string | null
+    } | null
+  } | null
+}
+
+interface SearchEditionsResp {
+  searchEditions?: {
+    searchSummary?: {
+      data?: { data?: EditionGqlRow[] }
     }
   }
 }
@@ -432,6 +521,173 @@ async function fetchSecondaryAskMap(): Promise<Map<string, number>> {
   return result
 }
 
+function normalizeTier(raw: unknown): string | null {
+  if (!raw) return null
+  const t = String(raw).toUpperCase()
+  if (t.includes("ULTIMATE")) return "ULTIMATE"
+  if (t.includes("LEGENDARY")) return "LEGENDARY"
+  if (t.includes("RARE")) return "RARE"
+  if (t.includes("FANDOM")) return "FANDOM"
+  if (t.includes("COMMON")) return "COMMON"
+  return null
+}
+
+// Inline hydration for freshly-seeded UUID:UUID edition skeletons. Without
+// this the stubs accumulate (~10/day) and never resolve: topshot-stub-resolver
+// only matches integer-pair stubs (its target RPC requires set_id_onchain IS
+// NOT NULL) and the manual rehydrate script is the only fallback.
+//
+// Time-budgeted against HARD_CEILING_MS so the EV path always wins — stops
+// cleanly when budget is exhausted and reports the unprocessed count so the
+// next run can pick up the slack via its own seed cycle (any external_id not
+// hydrated this tick will reappear as `unseeded` again next tick because
+// editionByExternalId is rebuilt from get_topshot_editions_by_setplay, which
+// matches on external_id only — a NULL-metadata row resolves but the inline
+// hydration loop below will still attempt it on subsequent runs via the
+// safety filter `.is("set_id_onchain", null)` on the update). Defensive: the
+// update is conditional on set_id_onchain still being NULL so we never
+// overwrite a row that was hydrated by some other path.
+async function hydrateSeededEditions(
+  externalIds: string[],
+  startedAt: number,
+): Promise<{
+  hydrated: number
+  failed: number
+  skipped_shape: number
+  skipped_budget: number
+  errors: Array<{ external_id: string; reason: string }>
+}> {
+  const out = {
+    hydrated: 0,
+    failed: 0,
+    skipped_shape: 0,
+    skipped_budget: 0,
+    errors: [] as Array<{ external_id: string; reason: string }>,
+  }
+
+  for (let i = 0; i < externalIds.length; i++) {
+    const ext = externalIds[i]
+    if (Date.now() - startedAt > HARD_CEILING_MS - HYDRATE_BUDGET_RESERVE_MS) {
+      out.skipped_budget = externalIds.length - i
+      break
+    }
+    const parts = ext.split(":")
+    if (parts.length !== 2 || !UUID_RE.test(parts[0]) || !UUID_RE.test(parts[1])) {
+      out.skipped_shape++
+      continue
+    }
+    const [setUuid, playUuid] = parts
+
+    const r = await gqlCall<SearchEditionsResp>(
+      SEARCH_EDITION_OP,
+      SEARCH_EDITION_QUERY,
+      {
+        input: {
+          filters: { bySetIDs: [setUuid], byPlayIDs: [playUuid] },
+          searchInput: { pagination: { cursor: "", direction: "RIGHT", limit: 1 } },
+        },
+      },
+      HYDRATE_PER_CALL_TIMEOUT_MS,
+    )
+    if (!r.ok) {
+      out.failed++
+      if (out.errors.length < ERRORS_SAMPLE_CAP) {
+        out.errors.push({ external_id: ext, reason: r.failure.error.slice(0, 200) })
+      }
+      continue
+    }
+    const row = r.data?.searchEditions?.searchSummary?.data?.data?.[0]
+    if (!row) {
+      out.failed++
+      if (out.errors.length < ERRORS_SAMPLE_CAP) {
+        out.errors.push({ external_id: ext, reason: "no_row" })
+      }
+      continue
+    }
+    const stats = row.play?.stats ?? {}
+    const playerName = stats.playerName ? String(stats.playerName).trim() : null
+    const setName = row.set?.flowName ? String(row.set.flowName).trim() : null
+    if (!playerName && !setName) {
+      out.failed++
+      if (out.errors.length < ERRORS_SAMPLE_CAP) {
+        out.errors.push({ external_id: ext, reason: "no_player_or_set_name" })
+      }
+      continue
+    }
+
+    const setFlowId =
+      row.set?.flowId != null && Number.isFinite(Number(row.set.flowId))
+        ? Number(row.set.flowId)
+        : null
+    const playFlowId =
+      row.play?.flowID != null && Number.isFinite(Number(row.play.flowID))
+        ? Number(row.play.flowID)
+        : null
+    const circulation =
+      row.circulationCount != null && Number.isFinite(Number(row.circulationCount))
+        ? Number(row.circulationCount)
+        : null
+    const series =
+      row.set?.flowSeriesNumber != null && Number.isFinite(Number(row.set.flowSeriesNumber))
+        ? Number(row.set.flowSeriesNumber)
+        : null
+    const tier = normalizeTier(row.tier)
+    const name =
+      playerName && setName
+        ? `${playerName} — ${setName}`
+        : (playerName ?? setName)
+
+    const dateRaw = stats.dateOfMoment ? String(stats.dateOfMoment).slice(0, 10) : null
+    const gameDate = dateRaw && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) ? dateRaw : null
+
+    // deno-lint-ignore no-explicit-any
+    const patch: Record<string, any> = {}
+    if (name) patch.name = name
+    if (playerName) patch.player_name = playerName
+    if (setName) patch.set_name = setName
+    if (stats.teamAtMoment) patch.team_name = String(stats.teamAtMoment).trim()
+    if (tier) patch.tier = tier
+    if (series != null) patch.series = series
+    if (circulation != null) patch.circulation_count = circulation
+    if (setFlowId != null) patch.set_id_onchain = setFlowId
+    if (playFlowId != null) patch.play_id_onchain = playFlowId
+    if (stats.playType ?? stats.playCategory) {
+      patch.play_type = stats.playType ?? stats.playCategory
+    }
+    if (gameDate) patch.game_date = gameDate
+    if (stats.homeTeamName) patch.home_team = String(stats.homeTeamName).trim()
+    if (stats.awayTeamName) patch.away_team = String(stats.awayTeamName).trim()
+
+    if (Object.keys(patch).length === 0) {
+      out.failed++
+      if (out.errors.length < ERRORS_SAMPLE_CAP) {
+        out.errors.push({ external_id: ext, reason: "empty_patch" })
+      }
+      continue
+    }
+
+    const { error: upErr } = await supabase
+      .from("editions")
+      .update(patch)
+      .eq("collection_id", TOPSHOT_COLLECTION_ID)
+      .eq("external_id", ext)
+      .is("set_id_onchain", null)
+    if (upErr) {
+      out.failed++
+      if (out.errors.length < ERRORS_SAMPLE_CAP) {
+        out.errors.push({
+          external_id: ext,
+          reason: `update_err: ${upErr.message.slice(0, 200)}`,
+        })
+      }
+      continue
+    }
+    out.hydrated++
+  }
+
+  return out
+}
+
 async function fetchOnePack(target: TargetRow): Promise<FetchOutcome> {
   const dyn = await gqlCall<DynamicData>(DYNAMIC_OP, DYNAMIC_QUERY, {
     input: { packListingId: target.pack_listing_uuid },
@@ -487,6 +743,10 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     editions_seeded: 0,
     editions_seed_updated: 0,
     editions_resolved_after_seed: 0,
+    editions_hydrated: 0,
+    editions_hydration_failed: 0,
+    editions_hydration_skipped_shape: 0,
+    editions_hydration_skipped_budget: 0,
     ev_rows_written: 0,
     pool_empty_sentinels: 0,
     rpc_not_ok: 0,
@@ -907,6 +1167,25 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       }
     }
 
+    // ── Inline UUID:UUID skeleton hydration ─────────────────────────────────
+    // Runs LAST so the EV write path is never blocked. Hydrates the rows that
+    // seed_topshot_editions just inserted with NULL metadata (because its
+    // integer-pair regex doesn't match UUID:UUID external_ids). One Top Shot
+    // GQL call per row; time-budgeted, short-circuits cleanly if HARD_CEILING
+    // is approached. See docs/code-todos.md item #1.
+    const hydrationErrors: Array<{ external_id: string; reason: string }> = []
+    if (unseededExternalIds.length > 0) {
+      const hydrateResult = await hydrateSeededEditions(unseededExternalIds, started)
+      counters.editions_hydrated = hydrateResult.hydrated
+      counters.editions_hydration_failed = hydrateResult.failed
+      counters.editions_hydration_skipped_shape = hydrateResult.skipped_shape
+      counters.editions_hydration_skipped_budget = hydrateResult.skipped_budget
+      hydrationErrors.push(...hydrateResult.errors)
+      console.log(
+        `[compute-topshot-pack-ev] hydration done — hydrated=${hydrateResult.hydrated} failed=${hydrateResult.failed} skipped_shape=${hydrateResult.skipped_shape} skipped_budget=${hydrateResult.skipped_budget}`,
+      )
+    }
+
     const dbPhaseMs = Date.now() - dbStart
     const elapsed = Date.now() - started
     await logPipelineRun({
@@ -925,6 +1204,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         editions_requested: seenExternalIds.size,
         errors_sample: [...errorsSample, ...retryEvents],
         rpc_not_ok_sample: rpcNotOkSample,
+        hydration_errors_sample: hydrationErrors.slice(0, ERRORS_SAMPLE_CAP),
         elapsed_ms: elapsed,
         fetch_phase_ms: fetchPhaseMs,
         db_phase_ms: dbPhaseMs,
