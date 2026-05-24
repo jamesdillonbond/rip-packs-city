@@ -24,7 +24,21 @@ LLC: Oregon, filed May 3 2026.
 
 ## Recent sessions
 
-### May 23, 2026 (latest) — Cowork platform health audit + FMV confidence overhaul
+### May 23, 2026 (latest) — Market/Sniper reframe to outbound links
+
+Prioritized Next Action #1 — the "stop looking broken" change. Market and Sniper are reframed from a (now-dead) live-buy surface into FMV + discount intelligence with outbound listing links.
+
+Shipped (commit `b19d8f2`, deployed)
+
+- **Sniper** ([app/(collections)/[collection]/sniper/page.tsx](app/(collections)/[collection]/sniper/page.tsx)) — removed the whole in-app buy flow: the DEALS/OFFERS tab + `OffersTab`, the `+ CART` / `+ OFFER` buttons, OFFER MODE + duration, and the `useCart`-based `ActionCell`. Every CTA (desktop row, mobile card, edition-depth panel, relative-deals table, moment modal) is now a single outbound **`View Listing →`** link via a new `resolveViewUrl()` helper — prefers the deal's native marketplace URL, falls back to the native moment page when the stored URL is a dead Flowty link.
+- **Killed every "looking broken" banner** across sniper / market / Pinnacle sniper — top `MarketplaceStatusBanner`, the red TS/FLOWTY **OFFLINE** header chips, the "LIVE FEEDS OFFLINE — cached" banner, `FlowtyDormancyChip`, the "FLOWTY OFFLINE" card, and the Pinnacle info banner.
+- **Market** ([app/(collections)/[collection]/market/page.tsx](app/(collections)/[collection]/market/page.tsx)) — removed the status banner + dormancy chip + `useMarketplaceStatus` hook; `Buy` / `UNAVAILABLE` pill → outbound `View Listing →` via `resolveListingUrl()`. Kept the thin-volume analytics caveat (honest data-confidence copy, not a broken-state banner).
+- **Pinnacle static sniper** ([app/(collections)/disney-pinnacle/sniper/page.tsx](app/(collections)/disney-pinnacle/sniper/page.tsx)) — removed the "FLOWTY OFFLINE" chip + Pinnacle info banner; "SCANNING FLOWTY MARKETPLACE" → "SCANNING THE PINNACLE MARKETPLACE"; action button → outbound per-pin `View Listing →`.
+- Net: 565 lines of cart/offer/banner code removed across 3 files. Discount-vs-FMV deal scoring, confidence dots, serial badges, filters, and ownership tracking all kept.
+
+Note — `disney-pinnacle/sniper/page.tsx` is a static route that shadows the `[collection]` dynamic sniper for Pinnacle; both were reframed.
+
+### May 23, 2026 — Cowork platform health audit + FMV confidence overhaul
 
 Platform health + cron audit, then an FMV-confidence improvement pass.
 
@@ -576,7 +590,7 @@ Main branch is the canonical clean branch.
 
 ### Open
 
-1. **Cart execution — SHELVED (2026-05-24, intelligence-first decision).** RPC is an intelligence product; in-app live-buy is not a goal. The Cadence code in `lib/cadence/purchase-moment.ts` stays in the repo, dormant and revivable, but off the critical path — do NOT pursue H1/H2 or the external deps (`NEXT_PUBLIC_WALLETCONNECT_ID`, Dapper co-signer registration). Market/Sniper become FMV + discount intelligence with outbound "View on Top Shot" links. `docs/audits/purchase-moment-2026-05.md` retains the historical Cadence detail.
+1. **Cart execution — SHELVED (2026-05-24, intelligence-first decision).** RPC is an intelligence product; in-app live-buy is not a goal. The Cadence code in `lib/cadence/purchase-moment.ts` stays in the repo, dormant and revivable, but off the critical path — do NOT pursue H1/H2 or the external deps (`NEXT_PUBLIC_WALLETCONNECT_ID`, Dapper co-signer registration). Market/Sniper were reframed 2026-05-23 (commit `b19d8f2`) to FMV + discount intelligence with outbound "View Listing" links. `docs/audits/purchase-moment-2026-05.md` retains the historical Cadence detail.
 
 4. **Pinnacle direct integration — partial.** The uniform $1 Flowty floor is gone — Pinnacle listings now show varied prices ($1–$9,999, ingesting daily). But Pinnacle still has 0 FMV editions; FMV integration is incomplete. With Flowty down, confirm the current source of Pinnacle ASK data.
 
@@ -618,11 +632,12 @@ Main branch is the canonical clean branch.
 
 **Framing (2026-05-24):** RPC is committed **intelligence-first** — the goal is a product genuinely more useful than nbatopshot.com itself. Cart / live-buy is shelved (see Open #1). **Monetization — the Pro paywall, Stripe, public launch — is tabled until RPC has 50+ weekly active users.** Do not prioritize or propose it before that bar is met.
 
-1. Reframe Market/Sniper — replace in-app buy with outbound "View on Top Shot" links, keep the discount-vs-FMV deal scoring, and delete the "marketplace offline" banners (replace with intentional copy). The "stop looking broken" change.
-2. Flowty teardown — archive the now-dead Flowty indexer / analytics MVs / `flowty-proxy` / sniper buy-leg infrastructure.
-3. Run the spork-scan resolver to clear the unresolved-sales backlog.
-4. Austin Kline FMV API outreach (demo URL live) — FMV data quality.
-5. Harden the core intelligence surfaces — FMV, wallet/portfolio analytics, the concierge, pack EV — so RPC is genuinely differentiated from Top Shot's own site.
+1. Flowty teardown — archive the now-dead Flowty indexer / analytics MVs / `flowty-proxy` / sniper buy-leg infrastructure. (The Market/Sniper frontend Flowty UI was already removed in the May 23 reframe.)
+2. Run the spork-scan resolver to clear the unresolved-sales backlog.
+3. Austin Kline FMV API outreach (demo URL live) — FMV data quality.
+4. Harden the core intelligence surfaces — FMV, wallet/portfolio analytics, the concierge, pack EV — so RPC is genuinely differentiated from Top Shot's own site.
+
+*Done — the Market/Sniper reframe to outbound "View Listing" links shipped 2026-05-23 (commit `b19d8f2`); see Recent sessions.*
 
 ---
 
