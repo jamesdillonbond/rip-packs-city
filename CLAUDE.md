@@ -576,7 +576,7 @@ Main branch is the canonical clean branch.
 
 ### Open
 
-1. **Cart execution — partial.** C1 and C2 (the Cadence compile errors) are FIXED in `lib/cadence/purchase-moment.ts` (`FungibleToken` is imported; `self.listing` is borrowed before its price is read). Still open: H1 (`commissionRecipient: nil` panics on every Dapper-listed TS moment), H2 (missing `post {}` DUC-leak block), and the external deps (`NEXT_PUBLIC_WALLETCONNECT_ID`, Dapper co-signer registration). Verify any Cadence change against the live contract via the Cadence MCP first. See `docs/audits/purchase-moment-2026-05.md`.
+1. **Cart execution — SHELVED (2026-05-24, intelligence-first decision).** RPC is an intelligence product; in-app live-buy is not a goal. The Cadence code in `lib/cadence/purchase-moment.ts` stays in the repo, dormant and revivable, but off the critical path — do NOT pursue H1/H2 or the external deps (`NEXT_PUBLIC_WALLETCONNECT_ID`, Dapper co-signer registration). Market/Sniper become FMV + discount intelligence with outbound "View on Top Shot" links. `docs/audits/purchase-moment-2026-05.md` retains the historical Cadence detail.
 
 4. **Pinnacle direct integration — partial.** The uniform $1 Flowty floor is gone — Pinnacle listings now show varied prices ($1–$9,999, ingesting daily). But Pinnacle still has 0 FMV editions; FMV integration is incomplete. With Flowty down, confirm the current source of Pinnacle ASK data.
 
@@ -616,11 +616,13 @@ Main branch is the canonical clean branch.
 
 ## Prioritized next actions
 
-1. Cart execution — H1 + H2 Cadence fixes (C1/C2 are already done), then external deps (WalletConnect ID + Dapper registration).
-2. Austin Kline FMV API outreach (demo URL live).
-3. RPC Pro monetization ($9/month freemium gate; `lib/pro/gate.tsx` `ProGate` is currently a pass-through stub).
-4. Flowty teardown — Flowty's marketplace shut down ~2026-05-13; archive the now-dead Flowty indexer / analytics MVs / `flowty-proxy` / sniper-leg infrastructure.
-5. Run the spork-scan resolver to clear the unresolved-sales backlog (the spork-proxy worker now exists).
+**Framing (2026-05-24):** RPC is committed **intelligence-first** — the goal is a product genuinely more useful than nbatopshot.com itself. Cart / live-buy is shelved (see Open #1). **Monetization — the Pro paywall, Stripe, public launch — is tabled until RPC has 50+ weekly active users.** Do not prioritize or propose it before that bar is met.
+
+1. Reframe Market/Sniper — replace in-app buy with outbound "View on Top Shot" links, keep the discount-vs-FMV deal scoring, and delete the "marketplace offline" banners (replace with intentional copy). The "stop looking broken" change.
+2. Flowty teardown — archive the now-dead Flowty indexer / analytics MVs / `flowty-proxy` / sniper buy-leg infrastructure.
+3. Run the spork-scan resolver to clear the unresolved-sales backlog.
+4. Austin Kline FMV API outreach (demo URL live) — FMV data quality.
+5. Harden the core intelligence surfaces — FMV, wallet/portfolio analytics, the concierge, pack EV — so RPC is genuinely differentiated from Top Shot's own site.
 
 ---
 
