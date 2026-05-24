@@ -347,70 +347,6 @@ async function upsertSale(
   return true
 }
 
-async function upsertFmvSnapshot(
-  collectionId: string,
-  editionId: string,
-  recentSales: number[]
-): Promise<void> {
-  if (!recentSales.length) return
-
-  // ── FMV Model v1.1 ────────────────────────────────────────────────────────
-  // Window: 30-day (sales_count_7d column retained for schema compatibility,
-  //   value now reflects 30-day count — rename pending future migration)
-  // Confidence thresholds recalibrated for Top Shot's thin market reality:
-  //   HIGH   = 5+ sales  (was 10)
-  //   MEDIUM = 2–4 sales (was 3–9)
-  //   LOW    = 1 sale
-  // ─────────────────────────────────────────────────────────────────────────
-
-  const sorted = [...recentSales].sort((a, b) => a - b)
-  const mid = Math.floor(sorted.length / 2)
-  const median =
-    sorted.length % 2 === 0
-      ? (sorted[mid - 1] + sorted[mid]) / 2
-      : sorted[mid]
-
-  const floor = sorted[0]
-  const confidence =
-    recentSales.length >= 5
-      ? "HIGH"
-      : recentSales.length >= 2
-        ? "MEDIUM"
-        : "LOW"
-
-  // fmv_snapshots is a partitioned table with PK (id, computed_at) — upsert
-  // with onConflict: "edition_id" 400s because no such unique constraint
-  // exists. Delete-then-insert scoped to today keeps history intact while
-  // ensuring the 20-min ingest cycle overwrites the current day's row.
-  const todayStart = new Date()
-  todayStart.setUTCHours(0, 0, 0, 0)
-  const { error: delError } = await supabaseAdmin
-    .from("fmv_snapshots")
-    .delete()
-    .eq("edition_id", editionId)
-    .gte("computed_at", todayStart.toISOString())
-
-  if (delError) {
-    console.error("DB delete failed:", delError)
-  }
-
-  const { error } = await supabaseAdmin
-    .from("fmv_snapshots")
-    .insert({
-      edition_id: editionId,
-      collection_id: collectionId,
-      fmv_usd: Number(median.toFixed(2)),
-      floor_price_usd: Number(floor.toFixed(2)),
-      confidence: confidence as "LOW" | "MEDIUM" | "HIGH",
-      sales_count_7d: recentSales.length,
-      algo_version: "1.1.0",
-    })
-
-  if (error) {
-    console.error("DB write failed:", error)
-  }
-}
-
 // ── Main ingestion logic ──────────────────────────────────────────────────────
 
 async function fetchRecentSales(
@@ -652,9 +588,6 @@ export async function POST(req: NextRequest) {
     let duplicates = 0
     let errors = 0
 
-    // Track sales prices per edition for FMV snapshot computation
-    const editionSalesMap = new Map<string, number[]>()
-
     for (const tx of transactions) {
       try {
         const moment = tx.moment
@@ -693,103 +626,21 @@ export async function POST(req: NextRequest) {
           }
           duplicates++
         }
-
-        // Accumulate prices for FMV
-        const arr = editionSalesMap.get(editionId) ?? []
-        arr.push(price)
-        editionSalesMap.set(editionId, arr)
       } catch (err) {
         console.error("[INGEST] Transaction error:", err)
         errors++
       }
     }
 
-    // Compute and store FMV snapshots
-    let fmvUpdated = 0
-    for (const [editionId, sales] of editionSalesMap.entries()) {
-      try {
-        await upsertFmvSnapshot(collectionId, editionId, sales)
-        fmvUpdated++
-      } catch (err) {
-        console.error("[INGEST] FMV snapshot error:", err)
-      }
-    }
-
-    // ── Proactive FMV pass for integer-format pack editions ────────────────
-    // Ensures all editions seeded by pack-ev (format "digits:digits") get
-    // FMV snapshots computed from their existing sales data, even if they
-    // weren't in this ingest batch.
-    let proactiveFmvProcessed = 0
-    let proactiveFmvUpdated = 0
-
-    try {
-      // Find integer-format editions that don't yet have an FMV snapshot
-      const { data: intEditions } = await supabaseAdmin
-        .from("editions")
-        .select("id, external_id")
-        .like("external_id", "%:%")
-        .not("external_id", "like", "%-%")
-
-      // Filter to true integer-format (digits:digits) and exclude already-processed
-      const candidates = (intEditions ?? []).filter((e: { id: string; external_id: string }) => {
-        return /^\d+:\d+$/.test(e.external_id) && !editionSalesMap.has(e.id)
-      })
-
-      if (candidates.length > 0) {
-        console.log(`[INGEST] Proactive FMV pass: ${candidates.length} integer-format editions to process`)
-
-        const windowStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-        const BATCH_SIZE = 20
-
-        for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
-          const batch = candidates.slice(i, i + BATCH_SIZE)
-          const batchIds = batch.map((e: { id: string }) => e.id)
-
-          // Fetch 30-day sales for this batch of editions
-          const { data: salesRows } = await supabaseAdmin
-            .from("sales")
-            .select("edition_id, price_usd")
-            .in("edition_id", batchIds)
-            .gte("sold_at", windowStart)
-            .gt("price_usd", 0)
-
-          if (!salesRows || salesRows.length === 0) continue
-
-          // Group by edition_id
-          const batchSalesMap = new Map<string, number[]>()
-          for (const row of salesRows as { edition_id: string; price_usd: number }[]) {
-            const arr = batchSalesMap.get(row.edition_id) ?? []
-            arr.push(row.price_usd)
-            batchSalesMap.set(row.edition_id, arr)
-          }
-
-          // Compute and upsert FMV for each edition with sales
-          for (const [editionId, sales] of batchSalesMap.entries()) {
-            try {
-              await upsertFmvSnapshot(collectionId, editionId, sales)
-              proactiveFmvUpdated++
-            } catch {
-              // Non-critical — log and continue
-            }
-            proactiveFmvProcessed++
-          }
-        }
-
-        console.log(`[INGEST] Proactive FMV done: ${proactiveFmvProcessed} processed, ${proactiveFmvUpdated} got fresh FMV snapshots`)
-      }
-    } catch (err) {
-      console.warn("[INGEST] Proactive FMV pass error:", err instanceof Error ? err.message : String(err))
-    }
-
     const duration = Date.now() - startTime
 
     console.log(
-      `[INGEST] Done — sales=${salesIngested} dupes=${duplicates} moments=${momentsWritten} editions=${editionsUpdated} fmv=${fmvUpdated} errors=${errors} duration=${duration}ms`
+      `[INGEST] Done — sales=${salesIngested} dupes=${duplicates} moments=${momentsWritten} editions=${editionsUpdated} errors=${errors} duration=${duration}ms`
     )
 
     await fireNextPipelineStep("/api/sales-indexer", chain)
     console.log(
-      `[INGEST] Summary — sales=${salesIngested} dupes=${duplicates} moments=${momentsWritten} editions=${editionsUpdated} fmv=${fmvUpdated} proactiveFmv=${proactiveFmvUpdated}/${proactiveFmvProcessed} errors=${errors} nextCursor=${nextCursor ?? "null"} durationMs=${duration}`
+      `[INGEST] Summary — sales=${salesIngested} dupes=${duplicates} moments=${momentsWritten} editions=${editionsUpdated} errors=${errors} nextCursor=${nextCursor ?? "null"} durationMs=${duration}`
     )
     } catch (e) {
       console.error("[INGEST] Fatal error:", e instanceof Error ? e.message : String(e))

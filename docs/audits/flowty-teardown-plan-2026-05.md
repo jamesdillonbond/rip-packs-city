@@ -1,6 +1,6 @@
 # Flowty Teardown — Inventory & Plan
 
-**Date:** 2026-05-23 (updated 2026-05-24)
+**Date:** 2026-05-23 (updated 2026-05-24 — Phase 2 + Phase 3 shipped)
 **Author:** Claude (Cowork session)
 **Scope:** A complete inventory of Flowty-dependent infrastructure and a sequenced, risk-rated plan to retire it.
 **Context:** Flowty shut down its NFT marketplace ~2026-05-13. `flowty_loan_events` went cold 2026-05-11. UFC Strike also left Flow for Aptos. All Flowty-derived data is now frozen by design.
@@ -83,19 +83,26 @@ Plus `refresh_flowty_analytics()` and 5 `flowty_top_*` RPCs — KEPT (retention 
 - Not done, by decision: the MVs, `refresh_flowty_analytics()`, and the 5 `flowty_top_*` RPCs are kept — the retention decision is keep-frozen-historical, so they back `/admin/flowty-analytics`. The refresh simply stops once its cron is deleted (Phase 0).
 - `flowty_loan_events` / `flowty_transactions` / `flowty_loans` (~40 MB) kept as the historical record.
 
-### Phase 2 — code removal · NEXT — larger, focused pass
+### Phase 2 — code removal · DONE 2026-05-24 (entangled-paths pass)
 
-Scope is narrowed by two settled facts: (a) the Market/Sniper frontend reframe to outbound "View Listing" links already shipped (commit `b19d8f2`, 2026-05-23); (b) the retention decision is keep-frozen-historical, so reader code stays.
+Scope was narrowed by two settled facts: (a) the Market/Sniper frontend reframe to outbound "View Listing" links already shipped (commit `b19d8f2`, 2026-05-23); (b) the retention decision is keep-frozen-historical, so reader code stays.
 
-- Delete only the dead *ingest* surface: the `flowty-*` API routes that the now-deleted crons fired (`sync-flowty-listings`, `flowty-harvester`, `flowty-tx-scanner`, `flowty-offers`, `flowty-sales`, `flowty-enrich`/`wallet-enrich-flowty`, `flowty-monitor`). Verify each is ingest-only (not read by the frontend) before deleting.
-- Keep reader routes/RPCs that back `/admin/flowty-analytics` and the historical analytics dashboards — relabel, don't delete.
-- Investigate first: `/api/listing-cache` + `/api/topshot-listing-cache` / `allday` / `golazos` (the 4 "via flowty-proxy" steps still in `rpc-pipeline.yml`) — confirm whether they hit the dead Flowty API or live per-collection APIs before touching them.
-- Retire `listing-divergence-snapshot`: delete the route + the `RPC Listing Divergence AllDay` cron + the `compute_listing_divergence` RPC — it benchmarks on-chain listings against the dead Flowty feed.
-- Relabel the remaining `.tsx` touch-points (analytics dashboards, marketplace-status components, badges) as "historical — Flowty closed May 2026".
+Shipped 2026-05-24:
 
-### Phase 3 — reframe, don't delete
+- **`/api/sniper-feed`** — Flowty leg of `computeSniperFeed` deleted: `fetchAllFlowtyListings`, `fetchFlowtyPage`, the Flowty-trait helpers (`flattenTraits`, `getTraitMulti`, `FLOWTY_TRAIT_MAP`), the LiveToken FMV branch, the Flowty enrichment from `badge_editions`, the cross-listed "sub-$1 = Flowty mirror" re-tagging, the `fetchOpenOffers` join, and the `cached_listings` fallback at end-of-pipeline are all gone. The route is Top Shot GQL only. `marketplaceAvailability.flowty` is now hardcoded `false`. The `computeCachedSniperFeed` path (for golazos/ufc) was deleted too — it read the dead `cached_listings` table; those collections now return empty rather than serve frozen rows.
+- **`/api/moment-market`** — the `getFlowtyQuotes` web-prerender scrape branch deleted; response is Top Shot quotes only with `flowtyAsk: null`, `flowtyListingUrl: null`.
+- **`/api/listing-cache`** — `backfillAskProxyFmv` (which wrote `fmv_snapshots` rows tagged `algo_version="v1.5.1_ask_proxy"` from `cached_listings.ask_price`) and `runAskOnlyFmv` (which called the `fmv_from_cached_listings` RPC tagged `"v1.0_ask_only"`) both deleted. The Flowty fetch + `cached_listings` upsert remains as the read-only ingest contract, but is gated off by `isFlowtyIngestEnabled()`.
+- **`/api/ingest`** — `upsertFmvSnapshot` deleted (the per-sale `algo_version="1.1.0"` writer). This was the FMV-fragmentation root cause: each sale clobbered the canonical `fmv-recalc` "1.7.0" snapshot via the latest-`computed_at`-wins resolution. fmv-recalc is now the sole FMV writer on the sales path. A DB stopgap trigger (`fmv_snapshots_block_stale_ingest_algo_trg`, migration `audit_20260524_block_stale_ingest_fmv_algo`) blocks any `algo_version='1.1.0'` insert defensively and stays in place as a permanent guard.
 
-- Keep `/admin/flowty-analytics` as a historical view; relabel it so it doesn't read as a live feed.
+Punted (kept by retention decision, deletion still optional later):
+
+- The dead *ingest* `flowty-*` API routes (`sync-flowty-listings`, `flowty-harvester`, `flowty-tx-scanner`, `flowty-offers`, `flowty-sales`, `flowty-enrich`, `wallet-enrich-flowty`, `flowty-monitor`) — orphaned now that their crons are deleted. Safe to remove in a follow-up.
+- `listing-divergence-snapshot` route + `compute_listing_divergence` RPC — still present; the cron is the active waste, not the code.
+- `lib/flowty/` directory, `lib/flowty-flags.ts`, `lib/flowty-tx-classifier.ts`, the 46 `.tsx` Flowty touch-points — frontend Flowty UI was already removed in commit `b19d8f2`; remaining references are mostly typed `source: "flowty"` enum values that don't render anymore.
+
+### Phase 3 — reframe, don't delete · DONE 2026-05-24
+
+- `/admin/flowty-analytics` relabelled "Historical Archive": file header doc, sign-in screen, and dashboard header now state "Flowty closed May 2026" explicitly and explain the data is a frozen archive, not live.
 
 ## 4. What was / wasn't done autonomously
 
