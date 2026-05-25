@@ -25,7 +25,7 @@
 //
 // Each invocation:
 //   1. Pulls up to N unresolved AllDay nft_ids via get_unmapped_resolver_targets.
-//   2. PRIMARY: one batched searchMomentNFTsV2(byFlowIDs) call per <=200 ids
+//   2. PRIMARY: batched searchMomentNFTsV2(byFlowIDs) calls of 40 ids each
 //      against the worker /allday-consumer route (X-Proxy-Secret auth).
 //   3. FALLBACK: for ids the consumer GQL did not return, GET Flowty's
 //      /nft/{contract}/AllDay/{id} per-NFT endpoint (concurrency 16).
@@ -64,7 +64,10 @@ const FLOWTY_HEADERS: Record<string, string> = {
 const DEFAULT_BATCH_SIZE = 200;
 const MAX_BATCH_SIZE = 200;
 const PROMOTE_LIMIT = 1000;
-const CONSUMER_GQL_CHUNK = 200;       // byFlowIDs ids per consumer-GQL call.
+const CONSUMER_GQL_CHUNK = 40;        // byFlowIDs ids per call. The consumer
+                                      // searchMomentNFTsV2 hard-caps results at
+                                      // 40 edges/page regardless of first:, so
+                                      // chunk the input at 40 (observed 2026-05-25).
 const CONSUMER_GQL_TIMEOUT_MS = 12_000;
 const PER_CALL_TIMEOUT_MS = 8_000;    // Flowty per-NFT call.
 const CONCURRENCY = 16;               // Flowty fan-out.
@@ -73,7 +76,7 @@ const CONCURRENCY = 16;               // Flowty fan-out.
 // nft_id), editionFlowID (the edition's flow id == editions.external_id for
 // AllDay), and serialNumber. byFlowIDs is [Int]!.
 const ALLDAY_GQL_QUERY =
-  `query($ids:[Int]!){searchMomentNFTsV2(input:{first:200,filters:{byFlowIDs:$ids}}){edges{node{flowID editionFlowID serialNumber}}}}`;
+  `query($ids:[Int]!){searchMomentNFTsV2(input:{first:40,filters:{byFlowIDs:$ids}}){edges{node{flowID editionFlowID serialNumber}}}}`;
 
 interface ResolverTarget {
   collection_id: string;
