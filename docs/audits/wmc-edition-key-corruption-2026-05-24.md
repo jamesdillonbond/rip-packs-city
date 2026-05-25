@@ -76,8 +76,66 @@ Do not change get_wallet_moments_with_fmv, get_topshot_set_progress, or get_tops
 
 ---
 
-### Optional follow-ups (not in the handoff above)
+### Optional follow-ups
 
-- Drop or no-op the dormant `wmc_edition_key_drain_batch` and `wmc_edition_key_drain_v2` DB functions (nothing calls them; same destructive pattern — latent footgun).
 - Defense-in-depth: make the three reader RPCs join-tolerant (`e.external_id = wmc.edition_key OR e.id::text = wmc.edition_key`) so a future backfill regression can't silently re-break enrichment.
 - Catalog cleanup: backfill `player_name` for the 1,288 junk Top Shot editions, and audit the 241-set catalog against Top Shot's real set list.
+
+## Update — DB cleanup pass (2026-05-24, later)
+
+App side retired in commit `e349cc1` (route, script, cron entry, docs). DB cleanup pass then ran with a dependency check first — which corrected the rest of the "droppable" list:
+
+**Dropped** (migration `audit_20260524_drop_wmc_edition_key_drain_functions`): `wmc_edition_key_drain_v3`, `wmc_edition_key_drain_v2`, `wmc_edition_key_drain_batch`. Confirmed no DB object referenced any of them.
+
+**NOT dropped — the rest of the list is load-bearing, not dead.** A `BEFORE INSERT OR UPDATE OF edition_key` trigger on `wallet_moments_cache` — `trg_wmc_canonicalize_edition_key` → `canonicalize_wmc_edition_key()` — reads `wmc_dedup_pairs` on every write. It is heavily live: 416,925 rewrites in the last 14 days. It exists because **7,221 of 9,064 Top Shot play keys have duplicate edition rows** (one integer-format `external_id`, one UUID-format) and the trigger normalizes `wmc.edition_key` onto the canonical one. Dropping `wmc_dedup_pairs` would make every wmc write throw.
+
+**Problem the route deletion would have introduced:** the deleted route was the *only* caller of `wmc_dedup_pairs_sync_from_view` — the refresh mechanism for `wmc_dedup_pairs`. That table would have frozen. Resolved below.
+
+## Resolution — canonicalization made self-sufficient (2026-05-24)
+
+Research findings that drove the fix:
+
+- 7,222 of 9,064 Top Shot play keys have duplicate edition rows — one integer-format `external_id`, one UUID-format. Edition creation has two independent paths (GQL catalog → UUID rows; Cadence integer-edition / `ensure_topshot_edition_stub` → integer rows).
+- FMV is computed on the UUID (canonical) edition: 7,096 / 7,222 pairs have real FMV there vs only 395 on the integer edition. So canonicalization is functionally necessary — a wmc row on the integer edition loses FMV.
+- The canonicalization was working well: only 180 wmc rows platform-wide were stranded on an integer edition.
+- The trigger's `wmc_dedup_pairs` lookup is just a materialized cache of a query that runs fine live: `editions` has both needed indexes (`editions_external_id_collection_id_key`, `idx_editions_onchain_pair`).
+
+Chosen path — eliminate the materialized layer rather than re-home its refresh:
+
+- `canonicalize_wmc_edition_key()` rewritten (migration `audit_20260524_canonicalize_wmc_edition_key_self_sufficient`) to resolve the canonical external_id with two index lookups directly against `editions`. Verified identical to the old `editions_canonical_pair` mapping on random samples; live-tested after deploy (integer key in → canonical UUID key out).
+- 180 stray wmc rows canonicalized.
+- Dropped (`audit_20260524_drop_wmc_dedup_pairs_machinery`): `wmc_dedup_pairs` table, `wmc_dedup_pairs_sync_from_view` RPC, `editions_canonical_pair` view.
+
+End state: the canonicalization trigger is self-healing and always live against `editions` — no materialized table, no refresh cron, no frozen-drift risk. `wmc_canonicalize_trigger_stats` kept for observability.
+
+**Still the underlying disease:** Top Shot's `editions` catalog carries two rows per play for ~80% of plays. The canonicalization trigger is a band-aid. See the dedup scoping below.
+
+## Editions dedup — scoped, NOT recommended (2026-05-24)
+
+The full dedup (delete the 7,222 integer edition rows) was scoped in detail. Conclusion: **don't do it.**
+
+Reference surface — what points at the 7,222 integer editions:
+
+| Table | Rows on integer editions |
+|---|---|
+| `moments` | 24,883 |
+| `special_serial_targets` | 14,382 |
+| `fmv_snapshots` | ~7,222 editions × history (mostly NO_DATA) |
+| `fmv_calibration_caps` | 37 |
+| `sales` | 10 → **repointed, now 0** |
+| `price_snapshots` | 6 |
+| `fmv_phantom_attempts` | 6 |
+| `cached_listings_v2`, `marketplace_offers`, `offers`, `pack_drop_pool`, `watchlist_items`, `user_wishlists`, `user_trade_offers`, `trade_matches`, `special_serial_holders`, `portfolio_moments`, `topshot_insider_buybacks` | 0 |
+
+Actual correctness damage from the duplication is small: 50 plays mispriced (canonical edition shows NO_DATA while the integer twin has an FMV) and the 10 stray sales (now fixed). The `moments` / `special_serial_targets` split is internal fragmentation, not a visible break.
+
+Why not recommended:
+
+1. The self-sufficient canonicalization trigger already makes the **user-facing** surface correct — `wmc` → wallet / sets / FMV all resolve to the canonical edition.
+2. A real dedup can't be a DB-only migration. Every pipeline that writes `edition_id` — the moments hydrator, the sales/listing indexers, fmv-recalc, the special-serial pipeline — resolves editions independently. Repointing child rows without first converging all of them onto the canonical edition just re-fragments on the next pipeline run. That convergence is route-code across the stack.
+3. Deleting integer editions also requires rewriting the canonicalization trigger to parse `set:play` by `(set_id_onchain, play_id_onchain)` instead of looking up the integer edition row.
+4. Poor ROI vs. RPC's intelligence-first priorities — the payoff is catalog cosmetics (17.5k → ~10.3k edition rows) for real migration risk on core tables.
+
+Done in this pass: repointed the 10 stray `sales` rows to canonical editions (migration `audit_20260524_repoint_stray_sales_to_canonical_editions`) — durable because sales rows are immutable and new sales resolve `edition_id` via the canonicalized `wmc.edition_key`.
+
+If catalog cleanliness ever matters, the cheap mitigation is one `WHERE` clause in `fmv-recalc` so it skips integer editions that have a canonical sibling — stops the ongoing wasted NO_DATA snapshot writes. Optional, not required.
