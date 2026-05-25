@@ -443,7 +443,7 @@ export async function POST(req: NextRequest) {
       cursorAfter = String(lastBlock)
 
       if (lastBlock >= currentHeight) {
-        await fireSupabaseEdgeFunction("allday-unmapped-resolver", { batch_size: 5 })
+        await fireSupabaseEdgeFunction("allday-unmapped-resolver", { batch_size: 200 })
         await fireNextPipelineStep("/api/fmv-recalc", chain)
         extra.message = "already up to date"
         return
@@ -1040,7 +1040,7 @@ export async function POST(req: NextRequest) {
         .map((u) => ({ tx: u.sale.transactionId, reason: u.reason, samples: u.samples }))
       extra.elapsed_ms = Date.now() - start
 
-      await fireSupabaseEdgeFunction("allday-unmapped-resolver", { batch_size: 5 })
+      await fireSupabaseEdgeFunction("allday-unmapped-resolver", { batch_size: 200 })
       await fireNextPipelineStep("/api/fmv-recalc", chain)
     } catch (err) {
       ok = false
