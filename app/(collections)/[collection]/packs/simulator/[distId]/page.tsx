@@ -320,7 +320,7 @@ export default function PackSimulatorPage({ params }: PageProps) {
         </div>
         <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.6, color: "rgba(255,255,255,0.65)" }}>
           This pack&apos;s drop pool isn&apos;t indexed — usually because it&apos;s sold out and being secondary-traded.
-          The simulator works on active drops.
+          The simulator works on packs with an indexed drop pool.
         </div>
         <div style={{ marginTop: 18 }}>
           <Link href={`/${collectionSlug}/packs`} style={{ display: "inline-block", padding: "8px 16px", background: accent, color: "#fff", borderRadius: 6, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}>
@@ -560,7 +560,7 @@ function PullsGrid({ result, accent, flipIndex, slots }: { result: RipResult; ac
                 return (
                   <div key={si} className="rpc-pull-card" style={{ background: "#080808", border: `2px solid ${tierColor(tier)}`, borderRadius: 4, overflow: "hidden", display: "flex", flexDirection: "column" }}>
                     {pull.edition.thumbnail_url ? (
-                      <img src={pull.edition.thumbnail_url} alt={pull.edition.player_name ?? ""} style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover" }} />
+                      <img src={pull.edition.thumbnail_url} alt={pull.edition.player_name ?? "Pulled moment"} style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover" }} />
                     ) : (
                       <div style={{ width: "100%", aspectRatio: "1 / 1", background: "#0d0d0d" }} />
                     )}

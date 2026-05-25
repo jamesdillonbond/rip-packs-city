@@ -128,6 +128,23 @@ const TIER_STYLE: Record<string, ChipStyle> = {
   COMMON: { background: 'rgba(100,116,139,0.15)', border: '1px solid rgba(100,116,139,0.4)', color: 'rgb(203,213,225)' },
 }
 
+const TIER_RANK: Record<string, number> = {
+  COMMON: 1,
+  FANDOM: 2,
+  UNCOMMON: 3,
+  CONTENDER: 3,
+  RARE: 4,
+  EPIC: 5,
+  CHALLENGER: 5,
+  LEGENDARY: 6,
+  ULTIMATE: 7,
+}
+
+function tierRank(raw: string | null | undefined): number {
+  if (!raw) return 0
+  return TIER_RANK[raw.toUpperCase()] ?? 0
+}
+
 const TIER_DEFAULT: ChipStyle = {
   background: 'rgba(100,116,139,0.15)',
   border: '1px solid rgba(100,116,139,0.4)',
@@ -362,8 +379,18 @@ export default function PackTable({
       if (aNull && bNull) return 0
       if (aNull) return 1
       if (bNull) return -1
-      const an = typeof av === 'number' ? av : String(av).toLowerCase()
-      const bn = typeof bv === 'number' ? bv : String(bv).toLowerCase()
+      // Tier sorts by rarity rank, not alphabetically (Pack audit B6).
+      // common < fandom < rare < legendary < ultimate; UFC tiers map by
+      // rough rarity equivalence.
+      let an: string | number
+      let bn: string | number
+      if (sortKey === 'tier') {
+        an = tierRank(String(av))
+        bn = tierRank(String(bv))
+      } else {
+        an = typeof av === 'number' ? av : String(av).toLowerCase()
+        bn = typeof bv === 'number' ? bv : String(bv).toLowerCase()
+      }
       if (an === bn) return 0
       if (sortDir === 'desc') return an > bn ? -1 : 1
       return an < bn ? -1 : 1

@@ -250,7 +250,7 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
         {row.max_pull_fmv != null && (
           <div style={{ position: 'absolute', bottom: 8, left: 8, right: 8, background: 'var(--rpc-red)', color: '#fff', padding: '6px 9px', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 14px rgba(0,0,0,0.5)' }}>
             {row.max_pull_thumbnail && (
-              <img src={row.max_pull_thumbnail} alt="" style={{ width: 30, height: 30, objectFit: 'cover', borderRadius: 2, border: `2px solid ${tierBorder}`, flexShrink: 0 }} />
+              <img src={row.max_pull_thumbnail} alt={row.max_pull_player ?? 'Chase moment'} style={{ width: 30, height: 30, objectFit: 'cover', borderRadius: 2, border: `2px solid ${tierBorder}`, flexShrink: 0 }} />
             )}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', opacity: 0.9 }}>CHASE</div>

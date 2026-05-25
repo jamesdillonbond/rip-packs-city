@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import PackTable, { type PackRow, type SortKey as TableSortKey } from './PackTable'
 import GrailsView from './GrailsView'
 import { useWarmCache } from '@/lib/warmup/WarmupContext'
@@ -381,7 +381,9 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
       </div>
 
       {viewMode === 'grails' && (
-        <GrailsView collection={collection} accent={accent} />
+        <Suspense fallback={null}>
+          <GrailsView collection={collection} accent={accent} />
+        </Suspense>
       )}
 
       {viewMode === 'standard' && (
