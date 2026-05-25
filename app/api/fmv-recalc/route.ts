@@ -369,17 +369,30 @@ export async function POST(req: NextRequest) {
     // ── Step 2a-bis: Fetch tier + circulation_count for the sanity guard ─────
     // Used downstream to skip anomalous high-priced single-sale snapshots on
     // common editions while preserving legitimate Legendary/Ultimate FMVs.
+    // Chunked .in() to stay under PostgREST URL limits — at limit=2500 a single
+    // .in() of UUIDs blows the request size and supabase-js returns an error.
     const editionMetaById = new Map<string, { tier: string | null; circulationCount: number | null }>()
     try {
-      const { data: edMetaRows } = await supabaseAdmin
-        .from("editions")
-        .select("id, tier, circulation_count")
-        .in("id", editionIds)
-      for (const row of edMetaRows ?? []) {
-        editionMetaById.set(String((row as any).id), {
-          tier: (row as any).tier ?? null,
-          circulationCount: (row as any).circulation_count ?? null,
-        })
+      const META_CHUNK = 500
+      for (let i = 0; i < editionIds.length; i += META_CHUNK) {
+        const slice = editionIds.slice(i, i + META_CHUNK)
+        const { data: edMetaRows, error: edMetaErr } = await supabaseAdmin
+          .from("editions")
+          .select("id, tier, circulation_count")
+          .in("id", slice)
+        if (edMetaErr) {
+          console.warn(
+            `[FMV-RECALC] Edition meta chunk ${i}-${i + slice.length} error:`,
+            edMetaErr.message,
+          )
+          continue
+        }
+        for (const row of edMetaRows ?? []) {
+          editionMetaById.set(String((row as any).id), {
+            tier: (row as any).tier ?? null,
+            circulationCount: (row as any).circulation_count ?? null,
+          })
+        }
       }
     } catch (err) {
       console.warn("[FMV-RECALC] Edition meta fetch failed (non-fatal):", err instanceof Error ? err.message : err)
@@ -412,18 +425,53 @@ export async function POST(req: NextRequest) {
     // price moves, market movers, and trend detection. The 20-min recalc cron
     // overwrites today's row in place.
     // Use the post-ULTIMATE-skip set so we never delete today's ultimate-v1 row.
+    // Chunked .in() — at limit=2500 a single .in() exceeds the PostgREST URL
+    // cap and supabase-js silently returns deleteError, exiting the run with
+    // no pipeline_runs row. Bug from 2026-05-24 (cursor ≥5000 page returned
+    // ~2000 distinct editions and silently stalled the entire pipeline).
     const editionIdsToWrite = [...editionSalesMap.keys()]
     const todayStart = new Date()
     todayStart.setUTCHours(0, 0, 0, 0)
-    const { error: deleteError, status: delStatus } = await supabaseAdmin
-      .from("fmv_snapshots")
-      .delete()
-      .in("edition_id", editionIdsToWrite)
-      .gte("computed_at", todayStart.toISOString())
-
-    if (deleteError) {
-      console.error("DB write failed:", deleteError, { status: delStatus })
-      return
+    {
+      const DEL_CHUNK = 500
+      let chunkFailed = false
+      for (let i = 0; i < editionIdsToWrite.length; i += DEL_CHUNK) {
+        const slice = editionIdsToWrite.slice(i, i + DEL_CHUNK)
+        const { error: deleteError, status: delStatus } = await supabaseAdmin
+          .from("fmv_snapshots")
+          .delete()
+          .in("edition_id", slice)
+          .gte("computed_at", todayStart.toISOString())
+        if (deleteError) {
+          console.error(
+            `[FMV-RECALC] Step 3 delete chunk ${i}-${i + slice.length} failed:`,
+            deleteError.message,
+            { status: delStatus },
+          )
+          chunkFailed = true
+          break
+        }
+      }
+      if (chunkFailed) {
+        try {
+          await supabaseAdmin.rpc("log_pipeline_run", {
+            p_pipeline: "fmv-recalc",
+            p_started_at: new Date(startTime).toISOString(),
+            p_rows_found: editionIds.length,
+            p_rows_written: 0,
+            p_rows_skipped: 0,
+            p_ok: false,
+            p_error: "step3_delete_chunk_failed",
+            p_collection_slug: null,
+            p_cursor_before: String(offset),
+            p_cursor_after: String(offset),
+            p_extra: { algo_version: ALGO_VERSION, stage: "step3_today_purge" },
+          })
+        } catch {
+          // best-effort — main failure is already in console
+        }
+        return
+      }
     }
 
     // ── Step 4: Build and insert fresh snapshots ──────────────────────────────
@@ -915,7 +963,29 @@ export async function POST(req: NextRequest) {
       `[FMV-RECALC] Summary — editionsProcessed=${editionIds.length} snapshotsUpdated=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} haircutRows=${haircutRowsTotal} haircutCollectionsRun=${haircutCollectionsRun} hasMore=${hasMore} nextOffset=${hasMore ? offset + limit : "null"} durationMs=${duration}`
     )
     } catch (e) {
-      console.error("[FMV-RECALC] Fatal error:", e instanceof Error ? e.message : String(e))
+      const errMsg = e instanceof Error ? e.message : String(e)
+      console.error("[FMV-RECALC] Fatal error:", errMsg)
+      // Surface the failure in pipeline_runs so /admin/pipeline-health and
+      // sentinel alerts can detect a silent stall. Before this, a throw in
+      // after() left console.error as the only signal and the pipeline went
+      // dark for 16h on 2026-05-24 with zero pipeline_runs evidence.
+      try {
+        await supabaseAdmin.rpc("log_pipeline_run", {
+          p_pipeline: "fmv-recalc",
+          p_started_at: new Date(startTime).toISOString(),
+          p_rows_found: 0,
+          p_rows_written: 0,
+          p_rows_skipped: 0,
+          p_ok: false,
+          p_error: errMsg.slice(0, 500),
+          p_collection_slug: null,
+          p_cursor_before: String(offset),
+          p_cursor_after: String(offset),
+          p_extra: { algo_version: ALGO_VERSION, stage: "fatal_after_throw" },
+        })
+      } catch {
+        // best-effort — main error already in console
+      }
     }
   })
 
