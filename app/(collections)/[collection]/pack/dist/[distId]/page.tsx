@@ -135,6 +135,7 @@ async function fetchTopPulls(
   collectionId: string,
   distId: string,
   totalUnopened: number | null,
+  slots: number | null,
 ): Promise<TopPull[]> {
   const { data: poolRows, error: poolErr } = await sb
     .from("pack_drop_pool")
@@ -200,12 +201,20 @@ async function fetchTopPulls(
       ? fullPoolWeight
       : null
 
+  // Edition EV = the edition's contribution to one pack's gross EV.
+  //   EV = FMV × (drop_weight / pool_weight) × slots
+  // This reconciles with the cached pack_ev_history Gross EV KPI, which is
+  // slots × Σ(per-edition probability × FMV) over the full pool. Pack D3:
+  // earlier this column was raw fmv × drop_weight, a third EV methodology
+  // that wouldn't sum to Gross EV at any pool size.
   const pulls: TopPull[] = pool.map((r) => {
     const ed = editionsById.get(r.edition_id)
     const dropWeight = Number(r.drop_weight ?? 0)
     const fmv = fmvById.get(r.edition_id) ?? null
-    const ev = fmv === null ? null : fmv * dropWeight
     const probPct = denom ? (dropWeight / denom) * 100 : null
+    const ev = fmv !== null && denom && denom > 0 && slots && slots > 0
+      ? fmv * (dropWeight / denom) * slots
+      : null
     const { player, setName } = splitEditionName(ed?.name ?? null)
     return {
       editionId: r.edition_id,
@@ -372,7 +381,7 @@ export default async function PackDetailPage(
 
   const distMetadata = fallback?.metadata ?? (await fetchDistFallback(coll.id, distId))?.metadata ?? null
 
-  const topPulls = await fetchTopPulls(coll.id, distId, num(merged.total_unopened))
+  const topPulls = await fetchTopPulls(coll.id, distId, num(merged.total_unopened), merged.slots ?? null)
 
   const tier = (merged.tier ?? "common").toLowerCase()
   const chip = tierChip(tier)
@@ -404,11 +413,17 @@ export default async function PackDetailPage(
     : evPackPrice ?? retailPrice
   const isPositive = merged.is_positive_ev === true
   const snapshottedAt = merged.ev_snapshotted_at
+  // Reward / quest packs ship with retail_price_usd = 0 (Pack D1). Value-ratio
+  // and EV-margin verdicts divide by retail, so they produce garbage on free
+  // packs — gate them off and surface a "Reward pack" badge instead.
+  const isRewardPack = retailPrice === 0
+  const showPriceVerdict = !isRewardPack && priceSource !== "none"
 
   // One-line summary above the KPI grid. Names the EV anchor explicitly so
   // the user knows whether the verdict is computed against retail or P2P ask.
   // priceSource = 'none' suppresses the verdict entirely.
   const evAnchorSummary: string | null = (() => {
+    if (isRewardPack) return "Reward pack — distributed for free, no price-based verdict."
     if (priceSource === "none") return "Pack not currently available for purchase"
     if (priceSource === "primary" && primaryPrice != null) {
       return `EV computed against [PRIMARY: ${fmtUsd(primaryPrice)}] — primary listing is the cheapest path to acquire this pack right now.`
@@ -423,9 +438,17 @@ export default async function PackDetailPage(
   })()
 
   const packListingUuid = typeof distMetadata?.uuid === "string" ? distMetadata.uuid : null
-  const buyUrl = collection === "nba-top-shot" && packListingUuid
+  // Pack audit S2: suppress the buy CTA when the EV cron has determined the
+  // pack isn't currently for sale (price_source = "none"); also gate on the
+  // reward-pack flag so we don't tell users to "buy" a free reward pack.
+  const buyUrl = collection === "nba-top-shot" && packListingUuid && !isRewardPack && priceSource !== "none"
     ? `https://nbatopshot.com/listings/p2p?packListingId=${packListingUuid}`
     : null
+  const buyCtaLabel = priceSource === "primary" || priceSource === "min"
+    ? "Buy primary"
+    : priceSource === "secondary"
+      ? "Buy on secondary market"
+      : "Buy on Top Shot"
 
   const tierLabel = tier.charAt(0).toUpperCase() + tier.slice(1)
   const packTypeLabel = (merged.pack_type ?? "").trim()
@@ -532,7 +555,7 @@ export default async function PackDetailPage(
               >
                 {slotsLabel}
               </span>
-              {isPositive && grossEv !== null && priceSource !== "none" && (
+              {isPositive && grossEv !== null && showPriceVerdict && (
                 <span
                   style={{
                     display: "inline-block",
@@ -546,6 +569,23 @@ export default async function PackDetailPage(
                   }}
                 >
                   +EV
+                </span>
+              )}
+              {isRewardPack && (
+                <span
+                  style={{
+                    display: "inline-block",
+                    padding: "3px 10px",
+                    borderRadius: 4,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: "rgb(125,211,252)",
+                    background: "rgba(14,165,233,0.10)",
+                    border: "1px solid rgba(14,165,233,0.40)",
+                  }}
+                  title="Distributed for free (retail price $0)."
+                >
+                  Reward pack
                 </span>
               )}
               {merged.is_rare_single_pack && (
@@ -586,7 +626,7 @@ export default async function PackDetailPage(
                     textDecoration: "none",
                   }}
                 >
-                  Buy on Top Shot
+                  {buyCtaLabel}
                 </a>
               ) : null}
               <PackShareButton url={`${BASE_URL}/${collection}/pack/dist/${encodeURIComponent(distId)}`} />
@@ -624,13 +664,13 @@ export default async function PackDetailPage(
             padding: "10px 14px",
             fontFamily: "var(--font-mono)",
             fontSize: 11,
-            color: priceSource === "none" ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.75)",
+            color: isRewardPack || priceSource === "none" ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.75)",
             display: "flex",
             alignItems: "center",
             gap: 8,
           }}
         >
-          {priceSource !== "none" && (
+          {showPriceVerdict && (
             <span
               aria-hidden="true"
               style={{
@@ -661,14 +701,14 @@ export default async function PackDetailPage(
         <KpiCell
           label="Gross EV"
           value={fmtUsd(grossEv)}
-          sub={priceSource === "none" ? "No anchor — verdict suppressed" : packEv !== null ? `Net ${packEv >= 0 ? "+" : ""}${fmtUsd(Math.abs(packEv))}` : undefined}
-          color={priceSource === "none" || packEv === null ? undefined : packEv >= 0 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
+          sub={isRewardPack ? "Reward pack — net vs $0 retail not meaningful" : priceSource === "none" ? "No anchor — verdict suppressed" : packEv !== null ? `Net ${packEv >= 0 ? "+" : ""}${fmtUsd(Math.abs(packEv))}` : undefined}
+          color={!showPriceVerdict || packEv === null ? undefined : packEv >= 0 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
         />
         <KpiCell
           label="Value ratio"
-          value={priceSource === "none" || valueRatio === null ? "—" : `${valueRatio.toFixed(2)}x`}
-          sub={priceSource === "none" || evMargin === null ? undefined : `${fmtPct(evMargin)} margin`}
-          color={priceSource === "none" || valueRatio === null ? undefined : valueRatio >= 1 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
+          value={!showPriceVerdict || valueRatio === null ? "—" : `${valueRatio.toFixed(2)}x`}
+          sub={isRewardPack ? "Free pack — n/a" : priceSource === "none" || evMargin === null ? undefined : `${fmtPct(evMargin)} margin`}
+          color={!showPriceVerdict || valueRatio === null ? undefined : valueRatio >= 1 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
         />
         <KpiCell
           label="FMV coverage"
@@ -759,7 +799,7 @@ export default async function PackDetailPage(
           </div>
         )}
         <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.35)" }}>
-          EV = Σ(drop_weight × FMV) over the indexed drop pool. Snapshotted{" "}
+          Edition EV = FMV × (drop_weight / pool_weight) × slots. Sums to Gross EV over the full pool. Snapshotted{" "}
           {snapshottedAt ? new Date(snapshottedAt).toLocaleString() : "—"}. Methodology: cached pack_ev_history via the
           compute-pack-ev edge function.
         </div>

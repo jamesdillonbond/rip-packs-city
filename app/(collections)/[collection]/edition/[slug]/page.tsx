@@ -26,6 +26,7 @@ import {
 } from "@/components/entity/_shared"
 import FmvHistoryChart from "@/components/entity/FmvHistoryChart"
 import SalesTablePaginated from "@/components/entity/SalesTablePaginated"
+import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -233,6 +234,10 @@ export default async function EditionPage(
 
   return (
     <div>
+      <div style={{ marginBottom: 14 }}>
+        <MarketplaceStatusBanner collectionSlug={collection} />
+      </div>
+
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section className="rpc-card" style={{ padding: 18 }}>
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,320px) 1fr", gap: 24, alignItems: "start" }}>
