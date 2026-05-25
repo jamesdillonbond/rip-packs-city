@@ -11,7 +11,7 @@
 //   - laliga_golazos → /api/wallet-backfill-golazos    (fire-and-forget)
 //   - ufc_strike     → /api/wallet-backfill-ufc        (fire-and-forget)
 //
-// Pool-saturation context (Round 7 fix):
+// Pool-saturation context (Round 7 fix + 2026-05-24 staggering):
 //   Pre-fix: every child returned 202 immediately and ran an after()
 //   background worker for 100-600s. With seed-wallet-refresh's 8-way
 //   concurrency × 5 children × 200 wallets, the post-burst sustained
@@ -19,8 +19,8 @@
 //   starving the unrelated crons that fire at HH:05 (pinnacle-resolver,
 //   sync-flowty-listings, wmc-fmv-populate).
 //
-//   Post-fix: AllDay + Pinnacle (the two longest-tailed children) run
-//   in sync mode. The orchestrator polls each one sequentially per
+//   Round 7 fix: AllDay + Pinnacle (the two longest-tailed children)
+//   run in sync mode. The orchestrator polls each one sequentially per
 //   wallet inside its own after() task with bounded round-trip budgets.
 //   No background after() leaks past the multicollection lambda — the
 //   sync children either complete or return a next_checkpoint we loop
@@ -28,16 +28,43 @@
 //   refresher, peak pool pressure is bounded to ~24 lambdas
 //   (8 wallets × 3 fire-and-forget children) plus 8 in-flight sync
 //   children (one per parallel wallet).
+//
+//   2026-05-24 stagger: even with the Round 7 fix, all 5 children for a
+//   single wallet still kick off within ~3s of each other (Phase 1
+//   Promise.all + Phase 2 Promise.all). Each child then begins its
+//   heavy Cadence walk at roughly the same instant. CHILD_STAGGER_MS
+//   now spaces them 30s apart — Phase 1 fires sequentially with gaps,
+//   a bridge gap separates Phase 1 from Phase 2, and Phase 2 sync
+//   children are kicked off with staggered start times (still
+//   concurrent execution, just offset starts). Total added lead time
+//   = 4 × stagger = 120s; the route still bounded by maxDuration=900.
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
 export const dynamic = "force-dynamic"
-// 800s ceiling gives ~180s of headroom over the worst-case
-// 2 round-trips × (270s child budget + 30s slack) + transient-retry
-// backoff budget (~18s across both round-trips). See syncPoll() below
-// for the transient-retry behavior.
-export const maxDuration = 800
+// 900s ceiling (Vercel Pro hard cap — can't be raised further).
+// Pre-stagger this was 800s; CHILD_STAGGER_MS × 4 gaps now eats 120s of
+// lead time so the slowest sync child still has ~780s to finish before
+// the lambda is killed — essentially the same Phase-2 budget as
+// pre-stagger. Worst case (4 round-trip cap on Pinnacle) still exceeds
+// budget; sync children are checkpoint-resumable so they pick up cleanly
+// next cycle (surfaces as a dispatch row with no complete row in
+// telemetry, not data loss).
+export const maxDuration = 900
+
+// Stagger between successive child fetches. Spaces the heavy Cadence
+// walks each child performs so the Supabase 60-conn pool doesn't see
+// all 5 children begin work within ~3 seconds. 30s de-correlates the
+// pool load just as effectively as 60s (the children's heavy work runs
+// for minutes) without eating into the Phase-2 sync budget against the
+// unraisable 900s ceiling.
+const CHILD_STAGGER_MS = 30_000
+
+async function sleepMs(ms: number): Promise<void> {
+  if (ms <= 0) return
+  await new Promise<void>(resolve => setTimeout(resolve, ms))
+}
 
 const SYNC_MAX_DURATION_MS = 270_000
 // Per-collection round-trip cap. Default=2. nfl_all_day is consistently
@@ -394,10 +421,18 @@ export async function POST(req: NextRequest) {
       `dispatch wallet=${wallet}`,
     )
 
-    // ---- Phase 1: fire-and-forget dispatch (parallel) ----
-    const fireResults = await Promise.all(
-      FIRE_AND_FORGET_COLLECTIONS.map(t => fireOnce(origin, t, wallet, skipCached, ingestToken))
-    )
+    // ---- Phase 1: fire-and-forget dispatch (STAGGERED, sequential) ----
+    // Was Promise.all. Now sequential with CHILD_STAGGER_MS gaps so each
+    // child's after() background worker doesn't begin its heavy Cadence walk
+    // at the same instant as its siblings. fireMs grows from <10s (parallel)
+    // to ~130s ((children-1) × stagger + dispatch round-trips); telemetry
+    // consumers should treat this as expected.
+    const fireResults: FireOnceResult[] = []
+    for (let i = 0; i < FIRE_AND_FORGET_COLLECTIONS.length; i++) {
+      if (i > 0) await sleepMs(CHILD_STAGGER_MS)
+      const r = await fireOnce(origin, FIRE_AND_FORGET_COLLECTIONS[i], wallet, skipCached, ingestToken)
+      fireResults.push(r)
+    }
     const fireMs = Date.now() - t0
 
     const dispatched: Record<string, number> = {}
@@ -415,8 +450,20 @@ export async function POST(req: NextRequest) {
       dispatched[target.slug] = 0
     }
 
-    // ---- Phase 2: sync-poll loop ----
-    const syncResults = await Promise.all(SYNC_COLLECTIONS.map(target => syncPoll(origin, target, wallet, skipCached, ingestToken)))
+    // Bridge gap between Phase 1 and Phase 2 so the first sync child
+    // doesn't kick off immediately after the last fire-and-forget dispatch.
+    await sleepMs(CHILD_STAGGER_MS)
+
+    // ---- Phase 2: sync-poll loop (STAGGERED starts, concurrent execution) ----
+    // Each sync child still runs concurrently (slow Pinnacle doesn't block
+    // AllDay), but kick-off times are offset by idx × CHILD_STAGGER_MS so
+    // they don't both begin their heavy Cadence walks at the same instant.
+    const syncResults = await Promise.all(
+      SYNC_COLLECTIONS.map((target, idx) => (async () => {
+        if (idx > 0) await sleepMs(CHILD_STAGGER_MS * idx)
+        return syncPoll(origin, target, wallet, skipCached, ingestToken)
+      })())
+    )
     const totalMs = Date.now() - t0
 
     console.log(
