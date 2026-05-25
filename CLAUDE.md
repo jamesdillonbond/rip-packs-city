@@ -24,7 +24,19 @@ LLC: Oregon, filed May 3 2026.
 
 ## Recent sessions
 
-### May 25, 2026 (latest) — Cowork DB session: fmv_from_sales fully retired and dropped
+### May 25, 2026 (latest) — AllDay unmapped-sales resolver: GQL-primary rewrite + batch_size 5→200
+
+Diagnosed the `unmapped_sales` backlog the prior session's 14:53 smoke test flagged (`{still_unresolved: 2580}`). It is **not** a historical-spork problem — every one of the 2,550 NFL All Day rows is under 6 weeks old. Two compounding bugs were starving the resolver:
+
+1. **Batch starvation.** `app/api/allday-sales-indexer/route.ts` was firing `allday-unmapped-resolver` with `batch_size: 5` (both the "already up to date" branch ~L446 and the normal post-scan branch ~L1043). The edge function is built for 200 (`MAX_BATCH_SIZE=200`, concurrency 16). At 5/run × the indexer's tick cadence, 2,112 of 2,519 unmapped AllDay nft_ids had never even been *attempted*.
+2. **Flowty-only edition lookup.** The resolver's primary edition-ID source was Flowty's per-NFT REST. Flowty is a shut-down marketplace; ~60% of AllDay NFT lookups returned `flowty_no_edition_id`, marking the row retired without resolution.
+
+Shipped
+
+- **Edge function rewrite** ([supabase/functions/allday-unmapped-resolver/index.ts](supabase/functions/allday-unmapped-resolver/index.ts)) — deployed live (Supabase project `bxcqstmqfzmuolpuynti`, function v13). Primary edition-ID source is now AllDay's own consumer GraphQL (`searchMomentNFTsV2(byFlowIDs)` → `editionFlowID`, via the `topshot-proxy` `/allday-consumer` route). Flowty's per-NFT REST is kept only as a fallback for ids the consumer GQL doesn't return.
+- **Indexer batch bump** ([app/api/allday-sales-indexer/route.ts](app/api/allday-sales-indexer/route.ts)) — both `fireSupabaseEdgeFunction("allday-unmapped-resolver", …)` call sites changed from `batch_size: 5` to `batch_size: 200`. Expected to drain the ~2.1k untried backlog in roughly a day.
+
+### May 25, 2026 — Cowork DB session: fmv_from_sales fully retired and dropped
 
 DB-side Cowork session. Two migrations applied live. Completes the fmv_from_sales retirement begun 2026-05-24.
 
@@ -36,7 +48,7 @@ Shipped live (3 DB migrations)
 
 After this session `fmv_from_sales` no longer exists in any form. The `algo_version='sales_wap_v1'` rogue-writer path is fully closed — the 2026-05-24 retire-to-no-op + clobber-purge plus this drop mean nothing can write `sales_wap_v1` FMV again. The ~900 `sales_wap_v1`-only editions still self-heal as `fmv-recalc`'s sweep reaches them.
 
-Note — `still_unresolved: 2580` from the smoke test is the structurally-unresolvable `unmapped_sales` backlog (no edition mapping yet); clearing it is the spork-scan resolver work (Known issues #7), not affected by this session.
+Note — `still_unresolved: 2580` from the smoke test is the recent-AllDay `unmapped_sales` backlog (no edition mapping yet); clearing it is the AllDay resolver work shipped in the 2026-05-25 (latest) session above, not affected by this session.
 
 ### May 24, 2026 — Cowork DB session: drain timeout fix, collection-text drift reconcile, fmv_from_sales retired
 
@@ -675,7 +687,7 @@ Main branch is the canonical clean branch.
 
 4. **Pinnacle FMV — RESOLVED (verified 2026-05-24).** The "0 FMV editions" claim was stale. `pinnacle_fmv_snapshots` holds 425 editions (every Pinnacle edition traded in 90d), 84% HIGH+MEDIUM confidence, recomputed daily by algo `pinnacle-1.0.0` and propagated to `wmc` hourly by `populate-pinnacle-wmc-fmv`. Pinnacle ASK now comes from `pinnacle-listings-indexer` (direct-chain), not Flowty. Note: Pinnacle FMV lives in its own `pinnacle_fmv_snapshots` table, NOT the uuid-keyed `fmv_snapshots`.
 
-7. **Historical spork scan — partial.** The spork-proxy worker exists (`infrastructure/spork-proxy-worker`, `workers/spork-proxy`). The unified spork-scan resolver still needs to run to clear the unresolved AllDay + Pinnacle sales backlog.
+7. **AllDay `unmapped_sales` backlog — RESOLVED 2026-05-25.** The earlier "historical spork scan" framing was wrong: the backlog is not spork-era data. All 2,550 NFL All Day unmapped rows are under 6 weeks old and were starved by the resolver running at `batch_size: 5` against a Flowty-only lookup. Fixed by the GQL-primary edge-function rewrite + `batch_size 5→200` bump in the 2026-05-25 (latest) session above. The Pinnacle side is separately covered by the direct ASK pipeline (Phase 2C, 2026-05-11). The `spork-proxy` worker remains live for any genuinely spork-era investigation but no longer blocks the unmapped-sales backlog.
 
 9. **Storefront audit pipeline — RETIRED (verified 2026-05-24).** It is a manual script (`scripts/scan-historical-storefront.mjs`), not a deployed cron or route — not monitored, not read by any frontend code. Cold since 2026-04-28 simply because nobody runs the script. De facto retired; no operational action. `storefront_audit_wallets` (5,365 rows, tiny) is harmless — optional drop candidate.
 
@@ -716,10 +728,9 @@ Main branch is the canonical clean branch.
 **Framing (2026-05-24):** RPC is committed **intelligence-first** — the goal is a product genuinely more useful than nbatopshot.com itself. Cart / live-buy is shelved (see Open #1). **Monetization — the Pro paywall, Stripe, public launch — is tabled until RPC has 50+ weekly active users.** Do not prioritize or propose it before that bar is met.
 
 1. Flowty teardown — archive the now-dead Flowty indexer / analytics MVs / `flowty-proxy` / sniper buy-leg infrastructure. (The Market/Sniper frontend Flowty UI was already removed in the May 23 reframe.)
-2. Run the spork-scan resolver to clear the unresolved-sales backlog.
-3. Harden the core intelligence surfaces — FMV, wallet/portfolio analytics, the concierge, pack EV — so RPC is genuinely differentiated from Top Shot's own site.
+2. Harden the core intelligence surfaces — FMV, wallet/portfolio analytics, the concierge, pack EV — so RPC is genuinely differentiated from Top Shot's own site.
 
-*Done — the Market/Sniper reframe to outbound "View Listing" links shipped 2026-05-23 (commit `b19d8f2`); see Recent sessions.*
+*Done — the Market/Sniper reframe to outbound "View Listing" links shipped 2026-05-23 (commit `b19d8f2`); the AllDay `unmapped_sales` resolver was rewritten + un-starved 2026-05-25; see Recent sessions.*
 
 ---
 
