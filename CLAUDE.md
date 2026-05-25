@@ -610,6 +610,7 @@ Order:
 - Redeployment after env var changes: `POST https://api.vercel.com/v13/deployments` with gitSource ref. Dashboard "Redeploy" reuses cache, doesn't re-bake env vars.
 - `list_deployments` (with `since` timestamp in ms) → get deployment ID → poll `get_deployment` until READY (~30-38s).
 - Free tier: 100 deploys/day limit; rate limiting resolves after ~24h. (RPC is on Pro now.)
+- **Pro Lambda `maxDuration` hard cap is 800s.** Anything higher silently sends the deploy to ERROR state — including docs-only deploys — and the build log shows "Compiled successfully" + Sentry sourcemap upload with no logged error text before transition. Commit 32de87a set `wallet-backfill-multicollection` to 900 thinking it was the ceiling; the next 5 deploys all failed invisibly until `b32102e` reverted to 800. Same flavor of invisible failure as the fmv-recalc silent stall — both class of bug looks healthy from every external signal.
 
 ---
 
@@ -670,8 +671,6 @@ Main branch is the canonical clean branch.
 
 ### Open
 
-**fmv-recalc stalled since 2026-05-24 22:03 — INVESTIGATE.** The fmv-recalc pipeline (sole sales-path FMV owner, algo 1.7.0) last logged a run at 2026-05-24 22:03:03 UTC and has not run since, despite all three sales-indexers firing every ~20min. The chain link to /api/fmv-recalc is broken or the route 500s before logging. Coincides with the May 24 evening route deploy. Until restarted, no new sales-based FMV is computed and the ~259 corrupt-only FMV editions cannot self-heal.
-
 1. **Cart execution — SHELVED (2026-05-24, intelligence-first decision).** RPC is an intelligence product; in-app live-buy is not a goal. The Cadence code in `lib/cadence/purchase-moment.ts` stays in the repo, dormant and revivable, but off the critical path — do NOT pursue H1/H2 or the external deps (`NEXT_PUBLIC_WALLETCONNECT_ID`, Dapper co-signer registration). Market/Sniper were reframed 2026-05-23 (commit `b19d8f2`) to FMV + discount intelligence with outbound "View Listing" links. `docs/audits/purchase-moment-2026-05.md` retains the historical Cadence detail.
 
 4. **Pinnacle FMV — RESOLVED (verified 2026-05-24).** The "0 FMV editions" claim was stale. `pinnacle_fmv_snapshots` holds 425 editions (every Pinnacle edition traded in 90d), 84% HIGH+MEDIUM confidence, recomputed daily by algo `pinnacle-1.0.0` and propagated to `wmc` hourly by `populate-pinnacle-wmc-fmv`. Pinnacle ASK now comes from `pinnacle-listings-indexer` (direct-chain), not Flowty. Note: Pinnacle FMV lives in its own `pinnacle_fmv_snapshots` table, NOT the uuid-keyed `fmv_snapshots`.
@@ -701,6 +700,7 @@ Main branch is the canonical clean branch.
 
 ### Resolved (verified 2026-05-23)
 
+- **fmv-recalc silent stall — RESOLVED 2026-05-25 (`dd84526`).** Stalled 2026-05-24 22:03 → 2026-05-25 14:53. Root cause: unchunked `.in("edition_id", …)` in `/api/fmv-recalc` Step 3 + the Step 2a-bis meta fetch blew past PostgREST's URL cap on a ~1,100-edition page; supabase-js surfaced it as a non-throwing `deleteError` and `if (deleteError) return` exited `after()` before `log_pipeline_run` — route crashed silently inside the lambda while `topshot-listing-cache` still logged `fmv_recalc_called: true`. Fix chunked both `.in()` sites at 500 (matching the file's other 3 delete sites) and added `log_pipeline_run` to the fatal-catch + Step 3 error paths so future silent stalls surface in `pipeline_runs`. Cron and chain were never at fault.
 - **#2 Sentry error capture** — `NEXT_PUBLIC_SENTRY_DSN` confirmed set in Vercel env + redeployed. SDK wired (org `rip-packs-city`, project `javascript-nextjs`).
 - **#3 Flowty event indexer "regression"** — not a bug; Flowty's marketplace shut down (see Platform changes above).
 - **#5 AllDay/UFC mis-categorized editions** — only 8 stray editions remain under the TopShot collection_id (all `disney_pinnacle`), not ~454. Effectively resolved.
