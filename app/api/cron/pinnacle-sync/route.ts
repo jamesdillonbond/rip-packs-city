@@ -30,15 +30,15 @@ export async function GET(request: NextRequest) {
     // keeps fmv_snapshots current without a separate trigger.
     const fmvFromListings = await supabaseAdmin.rpc("pinnacle_fmv_from_listings");
     if (fmvFromListings.error) errors.push(`pinnacle_fmv_from_listings: ${fmvFromListings.error.message}`);
-    const fmvFromSales = await supabaseAdmin.rpc("pinnacle_fmv_recalc_all");
-    if (fmvFromSales.error) errors.push(`pinnacle_fmv_recalc_all: ${fmvFromSales.error.message}`);
+    const fmvRecalcAll = await supabaseAdmin.rpc("pinnacle_fmv_recalc_all");
+    if (fmvRecalcAll.error) errors.push(`pinnacle_fmv_recalc_all: ${fmvRecalcAll.error.message}`);
 
     return NextResponse.json({
       status: "ok",
       editions_upserted: editionResult.editions_upserted,
       listings_upserted: listingResult.listings_upserted,
       fmv_from_listings: fmvFromListings.data ?? 0,
-      fmv_from_sales: fmvFromSales.data ?? 0,
+      fmv_recalc_all: fmvRecalcAll.data ?? 0,
       errors,
     });
   } catch (err) {

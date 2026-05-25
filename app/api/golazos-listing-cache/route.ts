@@ -150,7 +150,6 @@ async function runListingCache() {
     upsertErrors: 0,
     editionsMapped: 0,
     fmvRpcCalled: false,
-    fmvSalesCalled: false,
     badge_low_ask_updated: 0,
   }
 
@@ -376,19 +375,6 @@ async function runListingCache() {
     console.log(`[golazos-listing-cache] fmv rpc threw: ${String(err)}`)
   }
 
-  try {
-    const { error } = await supabaseAdmin.rpc("fmv_from_sales", {
-      p_collection_id: GZ_COLLECTION_ID,
-    })
-    if (error) {
-      console.log(`[golazos-listing-cache] fmv_from_sales error: ${error.message}`)
-    } else {
-      stats.fmvSalesCalled = true
-    }
-  } catch (err) {
-    console.log(`[golazos-listing-cache] fmv_from_sales threw: ${String(err)}`)
-  }
-
   // Backfill badge_editions.low_ask from the cached_listings we just upserted.
   // Golazos has no per-edition GQL marketplace endpoint plumbed yet, and the
   // moment_id field in cached_listings is a compound trait string that does
@@ -441,7 +427,6 @@ async function runListingCache() {
           total_fetched: stats.totalFetched,
           editions_mapped: stats.editionsMapped,
           fmv_rpc_called: stats.fmvRpcCalled,
-          fmv_sales_called: stats.fmvSalesCalled,
           badge_low_ask_updated: stats.badge_low_ask_updated,
           duration_ms: Date.now() - startedAt,
         },

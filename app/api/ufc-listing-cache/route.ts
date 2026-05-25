@@ -139,7 +139,6 @@ async function runListingCache() {
     upsertErrors: 0,
     editionsMapped: 0,
     fmvRpcCalled: false,
-    fmvSalesCalled: false,
   }
 
   try {
@@ -359,19 +358,6 @@ async function runListingCache() {
     console.log(`[ufc-listing-cache] fmv rpc threw: ${String(err)}`)
   }
 
-  try {
-    const { error } = await supabaseAdmin.rpc("fmv_from_sales", {
-      p_collection_id: UFC_COLLECTION_ID,
-    })
-    if (error) {
-      console.log(`[ufc-listing-cache] fmv_from_sales error: ${error.message}`)
-    } else {
-      stats.fmvSalesCalled = true
-    }
-  } catch (err) {
-    console.log(`[ufc-listing-cache] fmv_from_sales threw: ${String(err)}`)
-  }
-
   } catch (err) {
     stats.ok = false
     stats.errorMsg = err instanceof Error ? err.message : String(err)
@@ -393,7 +379,6 @@ async function runListingCache() {
           total_fetched: stats.totalFetched,
           editions_mapped: stats.editionsMapped,
           fmv_rpc_called: stats.fmvRpcCalled,
-          fmv_sales_called: stats.fmvSalesCalled,
           duration_ms: Date.now() - startedAt,
         },
       })
