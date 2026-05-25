@@ -37,28 +37,30 @@
 //   a bridge gap separates Phase 1 from Phase 2, and Phase 2 sync
 //   children are kicked off with staggered start times (still
 //   concurrent execution, just offset starts). Total added lead time
-//   = 4 × stagger = 120s; the route still bounded by maxDuration=900.
+//   = 4 × stagger = 120s; the route still bounded by maxDuration=800.
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
 export const dynamic = "force-dynamic"
-// 900s ceiling (Vercel Pro hard cap — can't be raised further).
-// Pre-stagger this was 800s; CHILD_STAGGER_MS × 4 gaps now eats 120s of
-// lead time so the slowest sync child still has ~780s to finish before
-// the lambda is killed — essentially the same Phase-2 budget as
-// pre-stagger. Worst case (4 round-trip cap on Pinnacle) still exceeds
-// budget; sync children are checkpoint-resumable so they pick up cleanly
-// next cycle (surfaces as a dispatch row with no complete row in
-// telemetry, not data loss).
-export const maxDuration = 900
+// 800s ceiling (Vercel Pro Lambda hard cap).
+// 2026-05-24 commit 32de87a raised this to 900 thinking 900 was the Pro
+// ceiling; deployment validation actually rejects 900 on Pro Lambda and
+// every subsequent deploy (5 in a row including docs-only commits)
+// silently went to ERROR state with no logged build error. Reverted to
+// 800. Trade-off: CHILD_STAGGER_MS × 4 eats 120s of lead time so the
+// slowest sync child has ~680s instead of ~780s — worst-case Pinnacle
+// 4-round-trip can still overrun, but sync children are checkpoint-
+// resumable (next cycle picks up cleanly, surfaces as a dispatch row
+// with no complete row in telemetry, not data loss).
+export const maxDuration = 800
 
 // Stagger between successive child fetches. Spaces the heavy Cadence
 // walks each child performs so the Supabase 60-conn pool doesn't see
 // all 5 children begin work within ~3 seconds. 30s de-correlates the
 // pool load just as effectively as 60s (the children's heavy work runs
 // for minutes) without eating into the Phase-2 sync budget against the
-// unraisable 900s ceiling.
+// 800s ceiling.
 const CHILD_STAGGER_MS = 30_000
 
 async function sleepMs(ms: number): Promise<void> {
