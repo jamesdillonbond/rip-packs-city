@@ -18,7 +18,6 @@ All requests authenticate via `Authorization: Bearer ${INGEST_SECRET_TOKEN}`. Ba
 
 | Dashboard label | URL | Status | Notes |
 |---|---|---|---|
-| Flowty TX Scanner | `/api/flowty-tx-scanner` | HEALTHY | Doesn't write `pipeline_runs`. UNKNOWN cadence-from-DB but dashboard confirms. |
 | RPC Pinnacle NFT Resolver | edge fn `pinnacle-nft-resolver` | HEALTHY | 297 runs/24h confirms. |
 
 ### Every 20 minutes
@@ -41,7 +40,6 @@ App routes:
 | RPC All Day FMV Populate | `/api/allday-fmv-populate` | HEALTHY-but-stuck. Cron fires; cursor stuck since 2026-03-23 (`cursor_before == cursor_after`, `editions_fetched=0`). Stall-detection + reset switch shipped 2026-05-09 (commit 62db96f). Upstream `ALLDAY_PROXY_URL` env var still misconfigured — fetch returns GQL 403 after reset. Trevor open item. |
 | RPC wmc-fmv-populate | `/api/wmc-fmv-populate?limit=5000` | HEALTHY (NEW 2026-05-09) | Multi-collection sweep. NULL-only chunked path, `?limit=5000` keeps each tick under 30s during backlog burns. ~1.09M TS NULL rows at launch; drains in ~69h then settles into subsecond steady state. Logs one `pipeline_runs` row per collection. Pinnacle is a no-op until Pinnacle FMV pipeline ships. |
 | RPC Check Alerts | `/api/check-alerts` | HEALTHY |
-| RPC Flowty Analytics Refresh | `/api/admin/refresh-flowty` | HEALTHY |
 
 Edge functions:
 
@@ -64,9 +62,9 @@ Edge functions:
 
 ### Every 10 minutes
 
-| Dashboard label | URL | Status |
-|---|---|---|
-| RPC Flowty Loan Indexer | edge fn `flowty-loan-indexer` | HEALTHY |
+| Dashboard label | URL | Status | Notes |
+|---|---|---|---|
+| RPC FMV Recalc Force Stale | `/api/fmv-recalc?force=stale` | HEALTHY | Schedule `3,13,23,33,43,53 * * * *`. Temporarily accelerated 2026-05-24 to burn through the first full FMV-recalc sweep. **Dial back to `8,28,48 * * * *` (every 20 min) once that first sweep completes.** |
 
 ### Every 4 hours
 
@@ -81,7 +79,6 @@ Edge functions:
 | Dashboard label | URL | Status |
 |---|---|---|
 | RPC Seed Wallet Refresh | `/api/seed-wallet-refresh` | HEALTHY | 
-| RPC FMV Recalc Force Stale | `/api/fmv-recalc?force=stale` | HEALTHY |
 | RPC AllDay Pack Distributions | edge fn `allday-pack-distributions` | UNKNOWN (doesn't write `pipeline_runs`) |
 | RPC Golazos Pack Distributions | edge fn `golazos-pack-distributions` | UNKNOWN (doesn't write `pipeline_runs`) |
 
@@ -127,15 +124,27 @@ These do NOT have their own cron entries. They fire as side effects of other pip
 | `editions-hydrate-at-insert` (DB trigger) | INSERT on editions | DB-side, not cron. |
 | `/api/cron/allow-list-reconcile` | GitHub Actions (`.github/workflows/allow-list-reconcile.yml`) hourly | Outside cron-job.org. Workflow file shipped commit 1e8fbbc; first auto-fire pending. Manual trigger via `gh workflow run` works. |
 
+## Recently deleted
+
+### 2026-05-24 — Flowty teardown + wmc drain retire
+
+The following cron-job.org entries were deleted from the dashboard as part of the Flowty marketplace shutdown teardown and the wmc edition-key drain retirement. They are no longer firing and the underlying routes/edge functions are either dead or being archived.
+
+- ❌ **RPC Flowty TX Scanner** (`/api/flowty-tx-scanner`, every 5 min)
+- ❌ **RPC Sync Flowty Listings AllDay** (`/api/sync-flowty-listings`)
+- ❌ **RPC Flowty Loan Indexer** (edge fn `flowty-loan-indexer`, every 10 min)
+- ❌ **RPC Flowty Analytics Refresh** (`/api/admin/refresh-flowty`, every 20 min)
+- ❌ **RPC Listing Divergence AllDay** (`/api/listing-divergence?collection=nfl_all_day`)
+- ❌ **RPC Migrate wmc Edition Keys** (`/api/admin/migrate-wmc-edition-keys`) — drain pipeline was corrupting `wallet_moments_cache.edition_key` (rewriting valid `set:play` keys to `editions.id` UUIDs). `wmc_edition_key_drain_v3` SQL function neutralized to a no-op, ~200k rows repaired, route file + directory + `scripts/cleanup-wmc-int-orphans.mjs` deleted. Invariant going forward: `wmc.edition_key` must always equal `editions.external_id`. Full audit: `docs/audits/wmc-edition-key-corruption-2026-05-24.md`.
+- ❌ Any **extract-flowty-\*** / **prune-flowty-archive** entries.
+
+Flowty's marketplace shut down ~2026-05-13. The external Flowty event indexer, `flowty_loans` / `flowty_loan_events` ingest, the Flowty analytics materialized views, the Flowty leg of the sniper feed, the `flowty-proxy` edge function, and all Flowty-sourced ASK/FMV inputs are now frozen.
+
 ## Open issues
 
 ### RPC All Day FMV Populate — HEALTHY-but-stuck
 
 The route fires every 20 min and returns 200, but the underlying `allday-fmv-populate` Supabase function has been stuck on cursor `7a7fc7e5-6b06-495b-aa85-512ec7cd8557, 2026-03-23T04:33:17` since deployment. Stall-detection + reset shipped 2026-05-09 (commit 62db96f). Cursor now resets. Upstream blocker: `ALLDAY_PROXY_URL` env var on Vercel needs to point at the AllDay GQL worker (currently misconfigured, returning 403). After env fix, this should drain.
-
-### migrate-wmc-edition-keys — RETIRED 2026-05-24
-
-Drain pipeline (`/api/admin/migrate-wmc-edition-keys` + `wmc_edition_key_drain_v3` RPC) was corrupting `wallet_moments_cache.edition_key` — it rewrote valid `set:play` keys to `editions.id` UUIDs, breaking every reader that joins on `editions.external_id = wmc.edition_key`. The v3 SQL function has been neutralized to a no-op in the DB and ~200k corrupted rows were repaired. Route file + directory deleted, `scripts/cleanup-wmc-int-orphans.mjs` deleted. **Trevor: delete the `RPC Migrate wmc Edition Keys` entry from cron-job.org dashboard.** Invariant going forward: `wmc.edition_key` must always equal `editions.external_id`. Full audit: `docs/audits/wmc-edition-key-corruption-2026-05-24.md`.
 
 ### ingest-external-announcements — RETIRED 2026-05-07
 
