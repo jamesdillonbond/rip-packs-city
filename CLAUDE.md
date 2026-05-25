@@ -28,10 +28,11 @@ LLC: Oregon, filed May 3 2026.
 
 DB-side Cowork session. Two migrations applied live. Completes the fmv_from_sales retirement begun 2026-05-24.
 
-Shipped live (2 DB migrations)
+Shipped live (3 DB migrations)
 
 - **`audit_20260525_promote_unmapped_sales_drop_fmv_from_sales_call`** — removed the now-no-op `public.fmv_from_sales()` call from `promote_unmapped_sales`. `fmv_from_sales` was neutralized to a retired no-op on 2026-05-24; `fmv-recalc` '1.7.0' is the sole sales-path FMV owner, so the post-promotion FMV-refresh step was dead weight. Also dropped the `v_fmv_result` local and the always-noise `fmv_refresh` key from the return JSONB — no caller reads it (the 3 sales-indexer routes and the allday backfill/buyer-resolve scripts all discard the return value). Same `(uuid, integer)` signature → grants preserved (`postgres` + `service_role` only). Smoke-tested live: `promote_unmapped_sales(NULL, 50)` → `{promoted:0, still_unresolved:2580, archived:0, duration_ms:1090}`.
 - **`audit_20260525_drop_fmv_from_sales_retired_function`** — `DROP FUNCTION public.fmv_from_sales(uuid, integer, text)`. With `promote_unmapped_sales` cleaned up, all 5 historical call sites are clear: the 4 listing-cache routes (allday / golazos / ufc / pinnacle-sync) had the call removed in route code earlier, and `promote_unmapped_sales` was the lone remaining DB-side caller. Verified 0 dependent objects (views, rules, functions) before dropping.
+- **`audit_20260525_purge_corrupt_fmv_clobber_residue_with_canonical`** — purged retired-algo FMV clobber residue for 42 editions (151 rows). After the `fmv_from_sales` drop, 301 editions still won on a retired/blocked algo snapshot (`sales_wap_v1%` rogue unfiltered-AVG writer, or `1.1.0%` blocked ingest-clobber writer); 42 had a trusted snapshot underneath (`allday-gql-v1` / `cold-tail-1.0` / `thin-sales-guard-v3` / `1.5.0`, all <30d old), so deleting their corrupt rows restored the trusted price. Verified: 24,782 editions still have a snapshot (0 orphaned); corrupt-winners 301 -> 259. Mirrors the 2026-05-24 clobber purges. The 259 remaining corrupt-ONLY editions (204 `sales_wap_v1`, 55 `1.1.0`) self-heal once fmv-recalc resumes.
 
 After this session `fmv_from_sales` no longer exists in any form. The `algo_version='sales_wap_v1'` rogue-writer path is fully closed — the 2026-05-24 retire-to-no-op + clobber-purge plus this drop mean nothing can write `sales_wap_v1` FMV again. The ~900 `sales_wap_v1`-only editions still self-heal as `fmv-recalc`'s sweep reaches them.
 
@@ -669,6 +670,8 @@ Main branch is the canonical clean branch.
 
 ### Open
 
+**fmv-recalc stalled since 2026-05-24 22:03 — INVESTIGATE.** The fmv-recalc pipeline (sole sales-path FMV owner, algo 1.7.0) last logged a run at 2026-05-24 22:03:03 UTC and has not run since, despite all three sales-indexers firing every ~20min. The chain link to /api/fmv-recalc is broken or the route 500s before logging. Coincides with the May 24 evening route deploy. Until restarted, no new sales-based FMV is computed and the ~259 corrupt-only FMV editions cannot self-heal.
+
 1. **Cart execution — SHELVED (2026-05-24, intelligence-first decision).** RPC is an intelligence product; in-app live-buy is not a goal. The Cadence code in `lib/cadence/purchase-moment.ts` stays in the repo, dormant and revivable, but off the critical path — do NOT pursue H1/H2 or the external deps (`NEXT_PUBLIC_WALLETCONNECT_ID`, Dapper co-signer registration). Market/Sniper were reframed 2026-05-23 (commit `b19d8f2`) to FMV + discount intelligence with outbound "View Listing" links. `docs/audits/purchase-moment-2026-05.md` retains the historical Cadence detail.
 
 4. **Pinnacle FMV — RESOLVED (verified 2026-05-24).** The "0 FMV editions" claim was stale. `pinnacle_fmv_snapshots` holds 425 editions (every Pinnacle edition traded in 90d), 84% HIGH+MEDIUM confidence, recomputed daily by algo `pinnacle-1.0.0` and propagated to `wmc` hourly by `populate-pinnacle-wmc-fmv`. Pinnacle ASK now comes from `pinnacle-listings-indexer` (direct-chain), not Flowty. Note: Pinnacle FMV lives in its own `pinnacle_fmv_snapshots` table, NOT the uuid-keyed `fmv_snapshots`.
@@ -714,8 +717,7 @@ Main branch is the canonical clean branch.
 
 1. Flowty teardown — archive the now-dead Flowty indexer / analytics MVs / `flowty-proxy` / sniper buy-leg infrastructure. (The Market/Sniper frontend Flowty UI was already removed in the May 23 reframe.)
 2. Run the spork-scan resolver to clear the unresolved-sales backlog.
-3. Austin Kline FMV API outreach (demo URL live) — FMV data quality.
-4. Harden the core intelligence surfaces — FMV, wallet/portfolio analytics, the concierge, pack EV — so RPC is genuinely differentiated from Top Shot's own site.
+3. Harden the core intelligence surfaces — FMV, wallet/portfolio analytics, the concierge, pack EV — so RPC is genuinely differentiated from Top Shot's own site.
 
 *Done — the Market/Sniper reframe to outbound "View Listing" links shipped 2026-05-23 (commit `b19d8f2`); see Recent sessions.*
 
