@@ -24,7 +24,20 @@ LLC: Oregon, filed May 3 2026.
 
 ## Recent sessions
 
-### May 24, 2026 (latest) — Cowork DB session: drain timeout fix, collection-text drift reconcile, fmv_from_sales retired
+### May 25, 2026 (latest) — Cowork DB session: fmv_from_sales fully retired and dropped
+
+DB-side Cowork session. Two migrations applied live. Completes the fmv_from_sales retirement begun 2026-05-24.
+
+Shipped live (2 DB migrations)
+
+- **`audit_20260525_promote_unmapped_sales_drop_fmv_from_sales_call`** — removed the now-no-op `public.fmv_from_sales()` call from `promote_unmapped_sales`. `fmv_from_sales` was neutralized to a retired no-op on 2026-05-24; `fmv-recalc` '1.7.0' is the sole sales-path FMV owner, so the post-promotion FMV-refresh step was dead weight. Also dropped the `v_fmv_result` local and the always-noise `fmv_refresh` key from the return JSONB — no caller reads it (the 3 sales-indexer routes and the allday backfill/buyer-resolve scripts all discard the return value). Same `(uuid, integer)` signature → grants preserved (`postgres` + `service_role` only). Smoke-tested live: `promote_unmapped_sales(NULL, 50)` → `{promoted:0, still_unresolved:2580, archived:0, duration_ms:1090}`.
+- **`audit_20260525_drop_fmv_from_sales_retired_function`** — `DROP FUNCTION public.fmv_from_sales(uuid, integer, text)`. With `promote_unmapped_sales` cleaned up, all 5 historical call sites are clear: the 4 listing-cache routes (allday / golazos / ufc / pinnacle-sync) had the call removed in route code earlier, and `promote_unmapped_sales` was the lone remaining DB-side caller. Verified 0 dependent objects (views, rules, functions) before dropping.
+
+After this session `fmv_from_sales` no longer exists in any form. The `algo_version='sales_wap_v1'` rogue-writer path is fully closed — the 2026-05-24 retire-to-no-op + clobber-purge plus this drop mean nothing can write `sales_wap_v1` FMV again. The ~900 `sales_wap_v1`-only editions still self-heal as `fmv-recalc`'s sweep reaches them.
+
+Note — `still_unresolved: 2580` from the smoke test is the structurally-unresolvable `unmapped_sales` backlog (no edition mapping yet); clearing it is the spork-scan resolver work (Known issues #7), not affected by this session.
+
+### May 24, 2026 — Cowork DB session: drain timeout fix, collection-text drift reconcile, fmv_from_sales retired
 
 DB-side Cowork session. Four migrations applied live; route-code follow-up is the commit chain landing this entry.
 
