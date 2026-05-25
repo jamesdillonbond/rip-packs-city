@@ -1,38 +1,40 @@
 // supabase/functions/allday-unmapped-resolver/index.ts
 //
-// Resolves the AllDay unmapped-sales backlog by hydrating
-// nft_edition_map for nft_ids that hit the on-chain sales indexer
-// before the editions seeder learned about them.
+// Resolves the AllDay unmapped-sales backlog by hydrating nft_edition_map
+// for nft_ids that hit the on-chain sales indexer before the editions
+// seeder learned about them. Once a mapping exists, the embedded
+// promote_unmapped_sales call moves the resolved sale into public.sales.
 //
-// 2026-05-07 rewrite: AllDay's public-api.nflallday.com GraphQL only
-// indexes moments held by indexed wallets, so the previous
-// searchMomentNFTsV2(byFlowIDs:[Int]!) batch query failed 100% with
-// gql_no_data on Flowty-marketplace nft_ids whose owner is outside
-// our 245-wallet index. New approach: call Flowty's per-NFT REST
-// endpoint (GET https://api2.flowty.io/nft/0xe4cf4bdc1751c65d/AllDay/{nft_id}),
-// which Flowty already indexes for the marketplace UI. The response
-// includes nftView.traits.traits[] with editionID + serialNumber.
+// 2026-05-25 rewrite — AllDay's own consumer GraphQL is now the PRIMARY
+// resolver:
+//
+//   topshot-proxy worker /allday-consumer  ->  nflallday.com/consumer/graphql
+//   searchMomentNFTsV2(input:{ filters:{ byFlowIDs:[Int]! } })
+//
+// whose node exposes flowID + editionFlowID + serialNumber. This is
+// AllDay's authoritative index: a byFlowIDs lookup resolves any moment by
+// id regardless of owner — unlike the public-api searchMomentNFTsV2
+// (indexed-wallets only, which is why the 2026-05-07 version abandoned it)
+// and unlike Flowty's third-party index (~60% no-editionID, and Flowty has
+// shut its marketplace down).
+//
+// Flowty's per-NFT REST endpoint is kept ONLY as a fallback for ids the
+// consumer GQL does not return, so this deploy can never resolve fewer ids
+// than the prior Flowty-only version. Once pipeline_runs confirms the
+// consumer-GQL leg carries the load, the Flowty fallback can be deleted.
 //
 // Each invocation:
-//   1. Pulls up to N unresolved AllDay nft_ids from the DB via
-//      get_unmapped_resolver_targets.
-//   2. For each id, GETs Flowty's /nft/{contractAddress}/{contractName}/{id}
-//      endpoint with controlled concurrency (default 8 in flight).
-//      Flowty allows direct egress from Supabase edge functions; no
-//      proxy worker required (same observation backs the listing-cache
-//      flowty-proxy egress note).
-//   3. Builds rowsJson [{nft_id, edition_external_id, serial_number}]
-//      from successful responses.
-//   4. Calls resolve_unmapped_sales_for_collection, which upserts the
-//      mapping rows then immediately runs promote_unmapped_sales to
-//      move resolved rows out of unmapped_sales into the canonical
-//      sales table.
-//   5. Records record_unmapped_resolution_failure for any id that
-//      404'd, returned no editionID, or hit a transport error.
+//   1. Pulls up to N unresolved AllDay nft_ids via get_unmapped_resolver_targets.
+//   2. PRIMARY: one batched searchMomentNFTsV2(byFlowIDs) call per <=200 ids
+//      against the worker /allday-consumer route (X-Proxy-Secret auth).
+//   3. FALLBACK: for ids the consumer GQL did not return, GET Flowty's
+//      /nft/{contract}/AllDay/{id} per-NFT endpoint (concurrency 16).
+//   4. resolve_unmapped_sales_for_collection upserts the mapping rows then
+//      runs promote_unmapped_sales.
+//   5. record_unmapped_resolution_failure for ids resolved by neither source.
 //
-// Auth + structure preserved from the prior version: same
-// INGEST_SECRET_TOKEN bearer, same EdgeRuntime.waitUntil pattern,
-// same log_pipeline_run RPC under pipeline name "allday-unmapped-resolver".
+// Auth + structure preserved: INGEST_SECRET_TOKEN bearer (or ?token=),
+// EdgeRuntime.waitUntil, log_pipeline_run under pipeline "allday-unmapped-resolver".
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -46,25 +48,32 @@ const supabase = createClient(
 );
 
 const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070";
-const FLOWTY_NFT_BASE =
-  "https://api2.flowty.io/nft/0xe4cf4bdc1751c65d/AllDay";
+
+// Primary — AllDay consumer GraphQL via the topshot-proxy worker.
+const ALLDAY_CONSUMER_PROXY_URL = Deno.env.get("ALLDAY_CONSUMER_PROXY_URL")
+  ?? "https://topshot-proxy.tdillonbond.workers.dev/allday-consumer";
+const TS_PROXY_SECRET = Deno.env.get("TS_PROXY_SECRET") ?? "";
+
+// Fallback — Flowty per-NFT REST.
+const FLOWTY_NFT_BASE = "https://api2.flowty.io/nft/0xe4cf4bdc1751c65d/AllDay";
 const FLOWTY_HEADERS: Record<string, string> = {
   "Origin": "https://www.flowty.io",
   "User-Agent": "rip-packs-city/allday-unmapped-resolver",
 };
 
-// Bumped 50→200 on 2026-05-08 to drain the AllDay backlog faster.
-// At ~8% Flowty-edition-id resolution rate, batch=50 yielded ~3.9
-// mappings/run × 58 runs/day = ~227/day against a 2.8k backlog.
-// batch=200 + concurrency=16 expands per-run throughput proportionally
-// while staying under the 8s per-call Flowty timeout (200/16 ≈ 12.5
-// in flight × ~100ms = ~1.3s wall clock for the fan-out). MAX_BATCH_SIZE
-// stays at 200 — the cap is enforced by clampInt below.
 const DEFAULT_BATCH_SIZE = 200;
 const MAX_BATCH_SIZE = 200;
 const PROMOTE_LIMIT = 1000;
-const PER_CALL_TIMEOUT_MS = 8_000;
-const CONCURRENCY = 16;
+const CONSUMER_GQL_CHUNK = 200;       // byFlowIDs ids per consumer-GQL call.
+const CONSUMER_GQL_TIMEOUT_MS = 12_000;
+const PER_CALL_TIMEOUT_MS = 8_000;    // Flowty per-NFT call.
+const CONCURRENCY = 16;               // Flowty fan-out.
+
+// searchMomentNFTsV2 on the consumer schema: node exposes flowID (the moment
+// nft_id), editionFlowID (the edition's flow id == editions.external_id for
+// AllDay), and serialNumber. byFlowIDs is [Int]!.
+const ALLDAY_GQL_QUERY =
+  `query($ids:[Int]!){searchMomentNFTsV2(input:{first:200,filters:{byFlowIDs:$ids}}){edges{node{flowID editionFlowID serialNumber}}}}`;
 
 interface ResolverTarget {
   collection_id: string;
@@ -79,6 +88,99 @@ interface MappingRow {
   serial_number: number | null;
 }
 
+interface FailureBucket {
+  nft_id: string;
+  reason: string;
+  detail: string;
+}
+
+function toSerial(raw: unknown): number | null {
+  if (raw == null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+// ── Primary — AllDay consumer GraphQL batched resolver ───────────────────────
+// Returns a map nft_id -> MappingRow for every id the consumer index knows,
+// plus the first GQL/transport error seen (null if every chunk succeeded).
+async function resolveViaConsumerGql(
+  nftIds: string[],
+): Promise<{ rows: Map<string, MappingRow>; gqlError: string | null }> {
+  const rows = new Map<string, MappingRow>();
+  if (nftIds.length === 0) return { rows, gqlError: null };
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "User-Agent": "rip-packs-city/allday-unmapped-resolver",
+  };
+  if (TS_PROXY_SECRET) headers["X-Proxy-Secret"] = TS_PROXY_SECRET;
+
+  let firstError: string | null = null;
+
+  for (let i = 0; i < nftIds.length; i += CONSUMER_GQL_CHUNK) {
+    const chunk = nftIds.slice(i, i + CONSUMER_GQL_CHUNK);
+    // byFlowIDs is [Int]! — only numeric ids inside Int range are eligible.
+    const numericIds: number[] = [];
+    for (const id of chunk) {
+      const n = Number(id);
+      if (Number.isFinite(n) && n > 0 && n < 2_147_483_647) numericIds.push(n);
+    }
+    if (numericIds.length === 0) continue;
+
+    let res: Response;
+    try {
+      res = await fetch(ALLDAY_CONSUMER_PROXY_URL, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ query: ALLDAY_GQL_QUERY, variables: { ids: numericIds } }),
+        signal: AbortSignal.timeout(CONSUMER_GQL_TIMEOUT_MS),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!firstError) firstError = `fetch:${msg.slice(0, 160)}`;
+      continue;
+    }
+
+    if (!res.ok) {
+      let snippet = "";
+      try { snippet = (await res.text()).slice(0, 160).replace(/\s+/g, " "); } catch { /* ignore */ }
+      if (!firstError) firstError = `http_${res.status}:${snippet}`;
+      continue;
+    }
+
+    let json: any;
+    try { json = await res.json(); }
+    catch (err) {
+      if (!firstError) firstError = `json_parse:${err instanceof Error ? err.message.slice(0, 80) : "err"}`;
+      continue;
+    }
+
+    if (Array.isArray(json?.errors) && json.errors.length > 0) {
+      if (!firstError) {
+        firstError = `gql_errors:${json.errors.map((e: any) => e?.message ?? "?").join("; ").slice(0, 160)}`;
+      }
+      continue;
+    }
+
+    const edges = json?.data?.searchMomentNFTsV2?.edges ?? [];
+    for (const edge of edges) {
+      const node = edge?.node;
+      if (!node) continue;
+      const flowID = node.flowID != null ? String(node.flowID) : null;
+      const editionFlowID = node.editionFlowID != null ? String(node.editionFlowID).trim() : "";
+      if (!flowID || editionFlowID === "") continue;
+      rows.set(flowID, {
+        nft_id: flowID,
+        edition_external_id: editionFlowID,
+        serial_number: toSerial(node.serialNumber),
+      });
+    }
+  }
+
+  return { rows, gqlError: firstError };
+}
+
+// ── Fallback — Flowty per-NFT REST ───────────────────────────────────────────
 type FlowtyOutcome =
   | { kind: "ok"; row: MappingRow }
   | { kind: "missing"; reason: string; detail: string };
@@ -94,7 +196,7 @@ function extractTrait(traits: unknown, name: string): string | null {
   return null;
 }
 
-async function fetchOne(nftId: string): Promise<FlowtyOutcome> {
+async function fetchOneFlowty(nftId: string): Promise<FlowtyOutcome> {
   let res: Response;
   try {
     res = await fetch(`${FLOWTY_NFT_BASE}/${encodeURIComponent(nftId)}`, {
@@ -108,7 +210,7 @@ async function fetchOne(nftId: string): Promise<FlowtyOutcome> {
   }
 
   if (res.status === 404) {
-    return { kind: "missing", reason: "flowty_404", detail: `http_404` };
+    return { kind: "missing", reason: "flowty_404", detail: "http_404" };
   }
   if (!res.ok) {
     let snippet = "";
@@ -119,22 +221,18 @@ async function fetchOne(nftId: string): Promise<FlowtyOutcome> {
   let json: any;
   try { json = await res.json(); }
   catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { kind: "missing", reason: "flowty_json_parse", detail: msg.slice(0, 200) };
+    return { kind: "missing", reason: "flowty_json_parse", detail: err instanceof Error ? err.message.slice(0, 200) : "err" };
   }
 
   const traits = json?.nftView?.traits?.traits;
   const editionID = extractTrait(traits, "editionID");
   const serialStr = extractTrait(traits, "serialNumber");
   if (!editionID) {
-    return { kind: "missing", reason: "flowty_no_edition_id", detail: `id=${nftId} flowty_id=${json?.id ?? "?"}` };
+    return { kind: "missing", reason: "no_edition_id", detail: `flowty_id=${json?.id ?? "?"}` };
   }
-  const serial = serialStr != null && Number.isFinite(Number(serialStr)) && Number(serialStr) > 0
-    ? Number(serialStr)
-    : null;
   return {
     kind: "ok",
-    row: { nft_id: String(nftId), edition_external_id: String(editionID), serial_number: serial },
+    row: { nft_id: String(nftId), edition_external_id: String(editionID), serial_number: toSerial(serialStr) },
   };
 }
 
@@ -145,8 +243,8 @@ async function runWithConcurrency<T, R>(
 ): Promise<R[]> {
   const results: R[] = new Array(items.length);
   let cursor = 0;
-  const workers: Promise<void>[] = [];
   const slot = Math.max(1, Math.min(limit, items.length));
+  const workers: Promise<void>[] = [];
   for (let i = 0; i < slot; i++) {
     workers.push((async () => {
       while (true) {
@@ -160,6 +258,7 @@ async function runWithConcurrency<T, R>(
   return results;
 }
 
+// ── pipeline_runs logging ────────────────────────────────────────────────────
 async function logPipelineRun(args: {
   startedAt: string;
   rowsFound: number;
@@ -189,17 +288,12 @@ async function logPipelineRun(args: {
   }
 }
 
-interface FailureBucket { nft_id: string; reason: string; detail: string; }
-
-async function recordFailures(
-  collectionId: string,
-  failures: FailureBucket[],
-): Promise<number> {
+async function recordFailures(failures: FailureBucket[]): Promise<number> {
   if (failures.length === 0) return 0;
   const calls = failures.map((f) =>
     // deno-lint-ignore no-explicit-any
     (supabase as any).rpc("record_unmapped_resolution_failure", {
-      p_collection_id: collectionId,
+      p_collection_id: ALLDAY_COLLECTION_ID,
       p_nft_id: f.nft_id,
       p_reason: f.reason,
       p_detail: f.detail,
@@ -225,16 +319,15 @@ async function recordFailures(
 interface ResolverSummary {
   batch_requested: number;
   targets_returned: number;
+  consumer_gql_ok: number;
+  consumer_gql_error: string | null;
+  flowty_attempted: number;
   flowty_ok: number;
   flowty_missing: number;
-  flowty_404: number;
-  flowty_no_edition_id: number;
-  flowty_transport_errors: number;
   mappings_written: number;
   sales_promoted: number;
   sales_archived: number;
   failures_recorded: number;
-  promote_raw: unknown;
   fatal: string | null;
 }
 
@@ -242,16 +335,15 @@ async function runResolver(batchSize: number, startedAt: string): Promise<Resolv
   const summary: ResolverSummary = {
     batch_requested: batchSize,
     targets_returned: 0,
+    consumer_gql_ok: 0,
+    consumer_gql_error: null,
+    flowty_attempted: 0,
     flowty_ok: 0,
     flowty_missing: 0,
-    flowty_404: 0,
-    flowty_no_edition_id: 0,
-    flowty_transport_errors: 0,
     mappings_written: 0,
     sales_promoted: 0,
     sales_archived: 0,
     failures_recorded: 0,
-    promote_raw: null,
     fatal: null,
   };
 
@@ -280,61 +372,58 @@ async function runResolver(batchSize: number, startedAt: string): Promise<Resolv
   }
 
   const nftIds = targets.map((t) => t.nft_id);
-  const outcomes = await runWithConcurrency(nftIds, CONCURRENCY, fetchOne);
 
-  const rows: MappingRow[] = [];
+  // PRIMARY — AllDay consumer GraphQL.
+  const { rows: gqlRows, gqlError } = await resolveViaConsumerGql(nftIds);
+  summary.consumer_gql_ok = gqlRows.size;
+  summary.consumer_gql_error = gqlError;
+
+  // FALLBACK — Flowty per-NFT for ids the consumer GQL did not return.
+  const unresolved = nftIds.filter((id) => !gqlRows.has(id));
+  summary.flowty_attempted = unresolved.length;
+  const flowtyOutcomes = await runWithConcurrency(unresolved, CONCURRENCY, fetchOneFlowty);
+
+  const rows: MappingRow[] = [...gqlRows.values()];
   const failures: FailureBucket[] = [];
-  for (let i = 0; i < outcomes.length; i++) {
-    const o = outcomes[i];
-    const id = nftIds[i];
+  for (let i = 0; i < flowtyOutcomes.length; i++) {
+    const o = flowtyOutcomes[i];
+    const id = unresolved[i];
     if (o.kind === "ok") {
       rows.push(o.row);
       summary.flowty_ok++;
     } else {
       summary.flowty_missing++;
-      if (o.reason === "flowty_404") summary.flowty_404++;
-      else if (o.reason === "flowty_no_edition_id") summary.flowty_no_edition_id++;
-      else summary.flowty_transport_errors++;
-      failures.push({ nft_id: id, reason: o.reason, detail: o.detail });
+      failures.push({
+        nft_id: id,
+        reason: o.reason === "no_edition_id" ? "no_edition_id_both_sources" : o.reason,
+        detail: (gqlError ? `consumer_gql:${gqlError}` : "consumer_gql:not_returned") + ` | flowty:${o.detail}`,
+      });
     }
   }
 
   if (failures.length > 0) {
-    summary.failures_recorded = await recordFailures(ALLDAY_COLLECTION_ID, failures);
+    summary.failures_recorded = await recordFailures(failures);
   }
 
   if (rows.length === 0) {
     await logPipelineRun({
-      startedAt,
-      rowsFound: targets.length,
-      rowsWritten: 0,
-      rowsSkipped: targets.length,
-      ok: true,
-      error: null,
-      extra: summary as unknown as Record<string, unknown>,
+      startedAt, rowsFound: targets.length, rowsWritten: 0, rowsSkipped: targets.length,
+      ok: true, error: null, extra: summary as unknown as Record<string, unknown>,
     });
+    console.log(`[allday-unmapped] targets=${targets.length} consumer_gql_ok=0 flowty_ok=0 mappings=0`);
     return summary;
   }
 
   const { data: resolveData, error: resolveErr } = await supabase.rpc(
     "resolve_unmapped_sales_for_collection",
-    {
-      p_collection_id: ALLDAY_COLLECTION_ID,
-      p_rows: rows,
-      p_promote_limit: PROMOTE_LIMIT,
-    },
+    { p_collection_id: ALLDAY_COLLECTION_ID, p_rows: rows, p_promote_limit: PROMOTE_LIMIT },
   );
 
   if (resolveErr) {
     summary.fatal = `resolve_unmapped_sales_for_collection:${resolveErr.message.slice(0, 200)}`;
     await logPipelineRun({
-      startedAt,
-      rowsFound: targets.length,
-      rowsWritten: 0,
-      rowsSkipped: targets.length,
-      ok: false,
-      error: summary.fatal,
-      extra: summary as unknown as Record<string, unknown>,
+      startedAt, rowsFound: targets.length, rowsWritten: 0, rowsSkipped: targets.length,
+      ok: false, error: summary.fatal, extra: summary as unknown as Record<string, unknown>,
     });
     return summary;
   }
@@ -342,7 +431,6 @@ async function runResolver(batchSize: number, startedAt: string): Promise<Resolv
   const resolveJson = (resolveData ?? {}) as Record<string, unknown>;
   summary.mappings_written = Number(resolveJson["mapping_upserted"] ?? 0) || 0;
   const promoteRaw = (resolveJson["promote_result"] ?? null) as Record<string, unknown> | null;
-  summary.promote_raw = promoteRaw;
   if (promoteRaw && typeof promoteRaw === "object") {
     summary.sales_promoted =
       Number(promoteRaw["promoted"] ?? promoteRaw["sales_promoted"] ?? promoteRaw["inserted"] ?? 0) || 0;
@@ -361,7 +449,7 @@ async function runResolver(batchSize: number, startedAt: string): Promise<Resolv
   });
 
   console.log(
-    `[allday-unmapped] targets=${targets.length} flowty_ok=${summary.flowty_ok} mappings=${summary.mappings_written} promoted=${summary.sales_promoted} archived=${summary.sales_archived} failures=${summary.flowty_missing}(404=${summary.flowty_404} no_ed=${summary.flowty_no_edition_id} tx=${summary.flowty_transport_errors})`,
+    `[allday-unmapped] targets=${targets.length} consumer_gql_ok=${summary.consumer_gql_ok} flowty_ok=${summary.flowty_ok} mappings=${summary.mappings_written} promoted=${summary.sales_promoted} failures=${summary.flowty_missing}`,
   );
 
   return summary;
@@ -414,7 +502,7 @@ Deno.serve(async (req: Request) => {
       collection_id: ALLDAY_COLLECTION_ID,
       batch_size: batchSize,
       started_at: startedAt,
-      note: "Real results will appear in pipeline_runs as pipeline=allday-unmapped-resolver within ~10s.",
+      note: "Results appear in pipeline_runs as pipeline=allday-unmapped-resolver within ~10s.",
     }),
     { status: 202, headers: { "Content-Type": "application/json" } },
   );
