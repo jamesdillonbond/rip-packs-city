@@ -24,7 +24,39 @@ LLC: Oregon, filed May 3 2026.
 
 ## Recent sessions
 
-### May 24, 2026 (latest) — Platform audit: FMV / Pack EV / badges + FMV-ingest clobber fix + Flowty teardown finish
+### May 24, 2026 (latest) — Cowork DB session: drain timeout fix, collection-text drift reconcile, fmv_from_sales retired
+
+DB-side Cowork session. Four migrations applied live; route-code follow-up is the commit chain landing this entry.
+
+Shipped live (4 DB migrations)
+
+- **`audit_20260524_drain_cold_tail_candidates_grouped_agg`** — `drain_fmv_cold_tail` candidates CTE rewritten from a per-edition correlated `MAX(computed_at)` subquery to a single `GROUP BY edition_id` aggregate. Same set of rows, dramatically less I/O — fixes the statement-timeout failures on big collections. Provably equivalent: 0 mismatches across the full 24,732-edition population. The function also gets an explicit 120s `statement_timeout` so it can't run wild even on the slow path.
+- **`audit_20260524_editions_collection_text_drift_reconcile`** — 307 editions whose denormalised `editions.collection` text disagreed with their authoritative `collection_id` FK were corrected: 299 UFC editions mislabelled `nba_top_shot`, plus 8 NBA stubs mislabelled `disney_pinnacle`. The text column is reader-facing and trustworthy again; the FK was already correct.
+- **`audit_20260524_retire_fmv_from_sales_sales_wap_v1`** — `public.fmv_from_sales` neutralized to a no-op (now returns `{retired: true, ...}` and writes nothing). It was a rogue sales-path FMV writer tagged `algo_version='sales_wap_v1'`: an unfiltered `AVG(price_usd)` with an upward `GREATEST()` bias and an unconditional HIGH stamp. It owned **242 of 760** HIGH-confidence editions, with values up to ~759× off the real sales mean. The 4 listing-cache routes that still called it (allday / golazos / ufc / pinnacle-sync) get the call removed in the follow-up commit; the lone remaining DB-side caller is `promote_unmapped_sales`, which is a separate task.
+- **`audit_20260524_purge_sales_wap_v1_clobber_with_canonical`** — deleted the `sales_wap_v1` clobber rows for 225 editions that already had a canonical `1.7.0` snapshot underneath, restoring them to honest pricing immediately. The remaining ~900 `sales_wap_v1`-only editions self-heal as `fmv-recalc`'s sweep reaches them.
+
+After this session, `fmv-recalc` '1.7.0' is the sole sales-path FMV owner. Combined with the existing `algo_version LIKE '1.1.0%'` ingest guard, the latest-`computed_at`-wins resolution can no longer be hijacked by an unfiltered-AVG writer.
+
+### May 24, 2026 — Cowork autonomous platform pass: FMV clobber residue + pack EV unpoison + verification sweep
+
+Autonomous Cowork session. Full write-up: [docs/audits/cowork-platform-pass-2026-05-24.md](docs/audits/cowork-platform-pass-2026-05-24.md). Code-side follow-ups: [docs/handoff-2026-05-24.md](docs/handoff-2026-05-24.md).
+
+Shipped live (3 DB migrations)
+
+- **FMV `1.1.0` clobber residue purged** — the earlier `audit_20260524_block_stale_ingest_fmv_algo` trigger blocked *new* `1.1.0` inserts but 613 editions were still *winning* on stale `1.1.0`/`1.1.0_haircut` snapshots (the trigger matched exact `'1.1.0'` only, not the `_haircut` variant). Migration `audit_20260524_block_stale_ingest_fmv_algo_haircut` extends the guard to `algo_version LIKE '1.1.0%'`; `audit_20260524_purge_fmv_1_1_0_clobber_residue` deleted 15,922 clobber rows and restored 549 editions to their canonical snapshot (64 editions with only a `1.1.0*` row left intact to avoid orphaning).
+- **Pack EV queue poison — actually fixed.** The v17 edge-function "sentinel" fix did not work: sentinels are written with `pack_price = 0`, but `pack_ev_latest` filters `WHERE pack_price > 0`, so they never reached the targets view — 1,105 of 1,114 TS packs stayed >7d stale. Migration `audit_20260524_pack_ev_targets_unpoison_via_history` points `topshot_pack_ev_targets.last_ev_at` at `max(snapshotted_at)` from `pack_ev_history` directly. Queue drains now (~2 days, self-healing).
+- **`migrate-wmc-edition-keys`** set `is_active=false` in `pipeline_cadence_watchlist` (cron + route already retired; the watchlist entry would have false-alarmed at the 24h-silence mark).
+
+Verified clean / premise outdated
+
+- wmc `edition_key` corruption — 0 corrupt rows; the 2026-05-24 repair held; `wmc_edition_key_drain_v3` fully dropped.
+- FMV STALE spike (597→1,739) is **not a regression** — `cold-tail-stale-repair-1.0` converted ~1,006 `NO_DATA` editions to STALE (an upgrade); 96.5% of STALE editions haven't traded in 30d.
+- **Pinnacle FMV works** (corrects known-issue #4) — `pinnacle_fmv_snapshots` has 425 editions, 84% HIGH+MEDIUM, recomputed daily by `pinnacle-1.0.0`.
+- Pipeline failures are all transient connection-pool/lock contention — no logic bugs. The 17 anon-SECDEF functions are all intentional public-page/concierge RPCs — no May-3-revoke regression.
+
+Key finding — the FMV HIGH-confidence lever is throughput. `fmv-recalc` has priced only 5,105 editions ever vs 9,273 traded in 30d; it is ~13% through its first full sweep of 262,733 sales (~9 days to finish). Accelerating it (`DEFAULT_LIMIT` raised 1k→2.5k on 2026-05-24, commit `43c8d9c`; recent-edition-first chunking + faster cron still to do) is the single biggest FMV-quality win.
+
+### May 24, 2026 — Platform audit: FMV / Pack EV / badges + FMV-ingest clobber fix + Flowty teardown finish
 
 Shipped (round 2 — 2026-05-24)
 
@@ -626,11 +658,11 @@ Main branch is the canonical clean branch.
 
 1. **Cart execution — SHELVED (2026-05-24, intelligence-first decision).** RPC is an intelligence product; in-app live-buy is not a goal. The Cadence code in `lib/cadence/purchase-moment.ts` stays in the repo, dormant and revivable, but off the critical path — do NOT pursue H1/H2 or the external deps (`NEXT_PUBLIC_WALLETCONNECT_ID`, Dapper co-signer registration). Market/Sniper were reframed 2026-05-23 (commit `b19d8f2`) to FMV + discount intelligence with outbound "View Listing" links. `docs/audits/purchase-moment-2026-05.md` retains the historical Cadence detail.
 
-4. **Pinnacle direct integration — partial.** The uniform $1 Flowty floor is gone — Pinnacle listings now show varied prices ($1–$9,999, ingesting daily). But Pinnacle still has 0 FMV editions; FMV integration is incomplete. With Flowty down, confirm the current source of Pinnacle ASK data.
+4. **Pinnacle FMV — RESOLVED (verified 2026-05-24).** The "0 FMV editions" claim was stale. `pinnacle_fmv_snapshots` holds 425 editions (every Pinnacle edition traded in 90d), 84% HIGH+MEDIUM confidence, recomputed daily by algo `pinnacle-1.0.0` and propagated to `wmc` hourly by `populate-pinnacle-wmc-fmv`. Pinnacle ASK now comes from `pinnacle-listings-indexer` (direct-chain), not Flowty. Note: Pinnacle FMV lives in its own `pinnacle_fmv_snapshots` table, NOT the uuid-keyed `fmv_snapshots`.
 
 7. **Historical spork scan — partial.** The spork-proxy worker exists (`infrastructure/spork-proxy-worker`, `workers/spork-proxy`). The unified spork-scan resolver still needs to run to clear the unresolved AllDay + Pinnacle sales backlog.
 
-9. **Storefront audit pipeline cold** since 2026-04-28 — confirmed: `storefront_audit_wallets` last row created 2026-04-28 11:35 UTC, nothing since. Predates the Flowty shutdown; investigate or formally retire.
+9. **Storefront audit pipeline — RETIRED (verified 2026-05-24).** It is a manual script (`scripts/scan-historical-storefront.mjs`), not a deployed cron or route — not monitored, not read by any frontend code. Cold since 2026-04-28 simply because nobody runs the script. De facto retired; no operational action. `storefront_audit_wallets` (5,365 rows, tiny) is harmless — optional drop candidate.
 
 10. **`/dashboard` token migration** — `app/dashboard/page.tsx` ~1,750 lines. Big lift, defer until stable.
 
@@ -640,7 +672,7 @@ Main branch is the canonical clean branch.
 
 14. **Monolith page refactor** — `collection/page.tsx` (~2,900 lines), `sniper/page.tsx` (~2,485), `analytics/page.tsx` (~2,208). Phase 1 plan in `docs/audits/refactor-plan-monolith-pages-2026-05.md`.
 
-15. **`livetoken-portfolio*.json` fixtures** — 11 files are still git-tracked despite the `.gitignore` entry; the planned `git rm --cached` was never run.
+15. **`livetoken-portfolio*.json` fixtures** — 11 files (plus `test-gql.json`, `sniper.json`, `nftlocker-*.json`, `flowty-locker-test.json`, and the zero-byte `main` / `Invoke-RestMethod` junk) still git-tracked. Bundled into the 2026-05-24 Claude Code handoff (`docs/handoff-2026-05-24.md`) for `git rm --cached`.
 
 17. **Pack / Moment / Set page tune-up — ongoing.** File:line audit findings live in `PACK_PAGES_AUDIT_2026-05-22.md`, `MOMENT_PAGES_AUDIT_2026-05-22.md`, `SET_PAGES_AUDIT_2026-05-22.md` — those docs are point-in-time and now partially superseded; the current state is here.
 
@@ -649,7 +681,6 @@ Main branch is the canonical clean branch.
    *Correction*: the audit docs flag `MomentDetailModal.tsx` / `MomentMedia.tsx` as possible dead code — that is WRONG. A repo-wide grep confirms both are live: `MomentDetailModal` is used by `sniper/page.tsx` and `collection/page.tsx`; `MomentMedia` by `sets/page.tsx`. Their findings are normal fixes, not delete-candidates.
 
    *Shipped 2026-05-24*: Moment S5 — `MarketplaceStatusBanner` now mounts at the top of `app/(collections)/[collection]/edition/[slug]/page.tsx`. Pack D1 — reward / quest packs (`retail_price_usd = 0`) render a "Reward pack" badge and the value-ratio / EV-margin verdicts are suppressed (no more "Net +$X vs $0 retail" garbage). Pack D3 — the dist-page "Edition EV" column was raw `fmv × drop_weight` (un-normalized); now `fmv × (drop_weight / pool_weight) × slots`, reconciling with the Gross-EV KPI. Pack S2 — the "Buy on Top Shot" CTA is now suppressed when `price_source = "none"` and on reward packs, and re-labelled "Buy primary" / "Buy on secondary market" based on `price_source`. Pack S3 — simulator empty-state copy ("active drops" → "packs with an indexed drop pool"). Pack B6 — `PackTable` tier sort is now rarity-ranked instead of alphabetical (covers UFC tiers too). Pack B5 — `GrailsView` (which uses `useSearchParams`) is now wrapped in a `<Suspense>` boundary. Pack V4 — null-name pull cards / grail chase ribbons got non-empty `alt` text.
-
    *Remaining* (lower-value tier — most of the audit docs' bullets verified-shipped or punted): modal accessibility (Moment V3 / Set V5 — `role="dialog"`, focus trap; wants browser verification); Set B5 (series rollups derived from only the first 100 editions — needs an aggregate RPC, not a page-layer fix); Set B7 (client-sort partial-page issue — defer until a real consumer complaint); and the longer-tail Set/Moment/Pack V/D items that the audit docs already classify as low severity.
 
 ### Resolved (verified 2026-05-23)
