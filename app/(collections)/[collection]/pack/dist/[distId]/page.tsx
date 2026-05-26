@@ -283,10 +283,14 @@ async function logCrashToSupabase(
 ): Promise<void> {
   try {
     const e = err as Error
+    const now = new Date().toISOString()
     await sb.from("pipeline_runs").insert({
       pipeline: `pack_dist_${source}_crash`,
+      started_at: now,
+      finished_at: now,
       ok: false,
       duration_ms: 0,
+      error: typeof e?.message === "string" ? e.message.slice(0, 1000) : null,
       extra: {
         name: e?.name ?? null,
         message: e?.message ?? null,
