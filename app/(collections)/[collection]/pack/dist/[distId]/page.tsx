@@ -282,7 +282,7 @@ export async function generateMetadata(
   const fb = row ? null : await fetchDistFallback(coll.id, distId)
   const title = row?.title ?? fb?.title ?? "Pack"
   if (!row && !fb) return {}
-  const tierLabel = row?.tier ? row.tier.charAt(0).toUpperCase() + row.tier.slice(1) : ""
+  const tierLabel = row?.tier ? String(row.tier).charAt(0).toUpperCase() + String(row.tier).slice(1) : ""
   const metaTitle = `${title}${tierLabel ? ` — ${tierLabel}` : ""} | ${coll.displayName} | Rip Packs City`
   const grossEv = num(row?.gross_ev ?? null)
   const price = num(row?.retail_price_usd ?? null)
@@ -383,10 +383,12 @@ export default async function PackDetailPage(
 
   const topPulls = await fetchTopPulls(coll.id, distId, num(merged.total_unopened), merged.slots ?? null)
 
-  const tier = (merged.tier ?? "common").toLowerCase()
+  // Defensive: pack_table_rows.tier is typed string|null but coerce in case
+  // the view ever returns a non-string. Same for title.
+  const tier = String(merged.tier ?? "common").toLowerCase()
   const chip = tierChip(tier)
   const tierAccent = chip.color
-  const title = merged.title ?? "Pack"
+  const title = String(merged.title ?? "Pack")
   const grossEv = num(merged.gross_ev)
   const packEv = num(merged.pack_ev)
   const valueRatio = num(merged.value_ratio)
@@ -451,7 +453,7 @@ export default async function PackDetailPage(
       : "Buy on Top Shot"
 
   const tierLabel = tier.charAt(0).toUpperCase() + tier.slice(1)
-  const packTypeLabel = (merged.pack_type ?? "").trim()
+  const packTypeLabel = String(merged.pack_type ?? "").trim()
   const slotsLabel = merged.slots && merged.slots > 0
     ? `${merged.slots} slot${merged.slots === 1 ? "" : "s"}`
     : (packTypeLabel || "—")
@@ -786,7 +788,7 @@ export default async function PackDetailPage(
                       )}
                     </Td>
                     <Td color="rgba(255,255,255,0.6)">{p.setName || "—"}</Td>
-                    <Td color={p.tier ? tierChip(p.tier).color : undefined}>{p.tier ? p.tier.charAt(0).toUpperCase() + p.tier.slice(1) : "—"}</Td>
+                    <Td color={p.tier ? tierChip(String(p.tier)).color : undefined}>{p.tier ? String(p.tier).charAt(0).toUpperCase() + String(p.tier).slice(1) : "—"}</Td>
                     <Td align="right">{p.probabilityPct === null ? "—" : `${p.probabilityPct.toFixed(2)}%`}</Td>
                     <Td align="right">{fmtUsd(p.fmvUsd)}</Td>
                     <Td align="right" color={p.editionEv !== null && p.editionEv > 0 ? "rgb(110,231,183)" : undefined}>
