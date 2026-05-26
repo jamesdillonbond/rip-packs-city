@@ -18,7 +18,11 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
-import { PackThumb, tierChip } from "@/components/packs/PackTable"
+import { PackThumb } from "@/components/packs/PackTable"
+// tierChip moved to lib/tier-style.ts so this server component can call it;
+// the version exported from PackTable.tsx ('use client') would throw at
+// runtime — that's the bug this page was hitting before 2026-05-26.
+import { tierChip } from "@/lib/tier-style"
 import PackShareButton from "@/components/packs/PackShareButton"
 
 export const revalidate = 600
@@ -270,56 +274,16 @@ function fmtCount(v: number | null | undefined): string {
   return v.toLocaleString()
 }
 
-// TEMP: write crash diagnostics to pipeline_runs so we can SELECT the full
-// error message + stack instead of fighting Vercel's runtime-log viewer
-// (which only surfaces one row per request and truncates messages at
-// ~50 chars). The Vercel log search call kept returning one summary row
-// per request and chunked console.log lines never made it through.
-// Remove once the pack-dist crash is diagnosed and patched.
-async function logCrashToSupabase(
-  source: "meta" | "page",
-  err: unknown,
-  ctx: Record<string, unknown>,
-): Promise<void> {
-  try {
-    const e = err as Error
-    const now = new Date().toISOString()
-    await sb.from("pipeline_runs").insert({
-      pipeline: `pack_dist_${source}_crash`,
-      started_at: now,
-      finished_at: now,
-      ok: false,
-      error: typeof e?.message === "string" ? e.message.slice(0, 1000) : null,
-      extra: {
-        name: e?.name ?? null,
-        message: e?.message ?? null,
-        stack: typeof e?.stack === "string" ? e.stack.slice(0, 4000) : null,
-        ctx,
-      },
-    })
-  } catch {
-    /* swallow — never let the logger mask the real throw */
-  }
-}
-
 // ── Metadata ────────────────────────────────────────────────────────────────
 
 export async function generateMetadata(
   props: { params: Promise<{ collection: string; distId: string }> },
 ): Promise<Metadata> {
-  let collection = ""
-  let distId = ""
-  try {
-    const p = await props.params
-    collection = p.collection
-    distId = p.distId
+  const { collection, distId } = await props.params
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) return {}
-  console.log(`[pack-dist-meta-ckpt] entered distId=${distId}`)
   const row = await fetchPackRow(coll.id, distId)
-  console.log(`[pack-dist-meta-ckpt] after fetchPackRow row=${row ? "hit" : "miss"}`)
   const fb = row ? null : await fetchDistFallback(coll.id, distId)
-  console.log(`[pack-dist-meta-ckpt] after fetchDistFallback fb=${fb ? "hit" : "miss"}`)
   const title = row?.title ?? fb?.title ?? "Pack"
   if (!row && !fb) return {}
   const tierLabel = row?.tier ? String(row.tier).charAt(0).toUpperCase() + String(row.tier).slice(1) : ""
@@ -355,10 +319,6 @@ export async function generateMetadata(
       images: [ogImage],
     },
   }
-  } catch (err) {
-    await logCrashToSupabase("meta", err, { collection, distId })
-    throw err
-  }
 }
 
 // ── Page ────────────────────────────────────────────────────────────────────
@@ -366,20 +326,12 @@ export async function generateMetadata(
 export default async function PackDetailPage(
   props: { params: Promise<{ collection: string; distId: string }> },
 ) {
-  let collection = ""
-  let distId = ""
-  try {
-    const p = await props.params
-    collection = p.collection
-    distId = p.distId
+  const { collection, distId } = await props.params
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) notFound()
 
-  console.log(`[pack-dist-page-ckpt] entered distId=${distId} collection=${collection}`)
   const row = await fetchPackRow(coll.id, distId)
-  console.log(`[pack-dist-page-ckpt] after fetchPackRow row=${row ? "hit" : "miss"}`)
   const fallback = row ? null : await fetchDistFallback(coll.id, distId)
-  console.log(`[pack-dist-page-ckpt] after fetchDistFallback fb=${fallback ? "hit" : "miss"}`)
   if (!row && !fallback) notFound()
 
   // When pack_table_rows misses (newly minted dist the cron hasn't picked up),
@@ -432,10 +384,8 @@ export default async function PackDetailPage(
   }
 
   const distMetadata = fallback?.metadata ?? (await fetchDistFallback(coll.id, distId))?.metadata ?? null
-  console.log(`[pack-dist-page-ckpt] distMetadata=${distMetadata ? "hit" : "miss"}`)
 
   const topPulls = await fetchTopPulls(coll.id, distId, num(merged.total_unopened), merged.slots ?? null)
-  console.log(`[pack-dist-page-ckpt] after fetchTopPulls n=${topPulls.length}`)
 
   // Defensive: pack_table_rows.tier is typed string|null but coerce in case
   // the view ever returns a non-string. Same for title.
@@ -862,10 +812,6 @@ export default async function PackDetailPage(
       </section>
     </div>
   )
-  } catch (err) {
-    await logCrashToSupabase("page", err, { collection, distId })
-    throw err
-  }
 }
 
 // ── Tiny presentational helpers ────────────────────────────────────────────
