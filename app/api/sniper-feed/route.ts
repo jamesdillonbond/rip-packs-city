@@ -1184,6 +1184,89 @@ async function computeSniperFeed(opts: {
 
   console.log(`[sniper-feed] fetched ts=${tsListings.length}`);
 
+  // TS GQL fallback: if the TopShot public marketplace endpoint returned nothing,
+  // serve edition-level deals from get_topshot_sniper_deals (sourced from
+  // badge_editions, which topshot-fmv-populate keeps fresh). Pattern mirrors
+  // the AllDay GQL → RPC fallback above. Per-listing fields (flow_id,
+  // serial_number, listing_resource_id) degrade to NULL because the RPC is
+  // edition-level, not per-moment.
+  if (tsListings.length === 0) {
+    console.log(`[sniper-feed] TS GQL empty — falling back to get_topshot_sniper_deals RPC`);
+    const { data: rpcRows, error: rpcErr } = await (supabase as any).rpc("get_topshot_sniper_deals", {
+      p_min_discount: minDiscount,
+      p_max_price: maxPrice,
+      p_rarity: rarity === "all" ? "all" : rarity,
+      p_team: team === "all" ? "all" : team,
+      p_sort_by: sortBy,
+      p_limit: 200,
+    });
+    if (rpcErr) {
+      console.error(`[sniper-feed] get_topshot_sniper_deals error: ${rpcErr.message}`);
+      return { count: 0, tsCount: 0, flowtyCount: 0, lastRefreshed: new Date().toISOString(), deals: [] };
+    }
+    const fallback: SniperDeal[] = (rpcRows ?? []).map((r: any) => {
+      const tier = String(r.tier ?? "COMMON");
+      const confidence = String(r.confidence ?? "ASK_ONLY");
+      const momentId = r.moment_id ? String(r.moment_id) : "";
+      return {
+        flowId: r.flow_id ?? "",
+        momentId,
+        editionKey: momentId,
+        intEditionKey: /^[0-9]+:[0-9]+$/.test(momentId) ? momentId : null,
+        playerName: r.player_name ?? "",
+        teamName: r.team_name ?? "",
+        setName: r.set_name ?? "",
+        seriesName: r.series_name ?? "",
+        tier,
+        parallel: "Base",
+        parallelId: 0,
+        serial: r.serial_number ?? 0,
+        circulationCount: r.circulation_count ?? 0,
+        askPrice: Number(r.ask_price) || 0,
+        baseFmv: Number(r.fmv_usd) || 0,
+        adjustedFmv: Number(r.fmv_usd) || 0,
+        wapUsd: null,
+        daysSinceSale: null,
+        salesCount30d: null,
+        discount: Number(r.discount_pct) || 0,
+        confidence: confidence.toLowerCase(),
+        confidenceSource: confidence === "ASK_ONLY" ? "ask_fallback" : "fmv_snapshots",
+        hasBadge: false,
+        badgeSlugs: [],
+        badgeLabels: [],
+        badgePremiumPct: 0,
+        serialMult: 1,
+        isSpecialSerial: false,
+        isJersey: false,
+        serialSignal: null,
+        thumbnailUrl: r.thumbnail_url ?? null,
+        isLocked: false,
+        updatedAt: r.listed_at ?? null,
+        packListingId: null,
+        packName: null,
+        packEv: null,
+        packEvRatio: null,
+        buyUrl: r.buy_url ?? "",
+        listingResourceID: r.listing_resource_id ?? null,
+        listingOrderID: null,
+        storefrontAddress: null,
+        source: "topshot",
+        paymentToken: "FLOW",
+        offerAmount: null,
+        offerFmvPct: null,
+        dealRating: (Number(r.discount_pct) || 0) / 100,
+        isLowestAsk: false,
+      };
+    });
+    return {
+      count: fallback.length,
+      tsCount: fallback.length,
+      flowtyCount: 0,
+      lastRefreshed: new Date().toISOString(),
+      deals: fallback,
+    };
+  }
+
   // 2. Build integer edition keys for Supabase FMV lookup
   const tsEditionKeys = new Set<string>();
   for (const l of tsListings) {

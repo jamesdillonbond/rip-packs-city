@@ -123,6 +123,72 @@ async function loadEditionLookup(collectionId: string): Promise<Map<string, Edit
   return map
 }
 
+
+// ── Modern listings helper (Phase 3.5, 2026-05-26) ──────────────────────────
+// The legacy `cached_listings` table the route below reads from is post-Flowty-
+// teardown dead for TS (0 rows) and stale for AllDay (~2 weeks). Modern data
+// lives in `badge_editions` (TS) and `cached_listings_v2` (AllDay/Golazos/UFC).
+// This helper dispatches to the same sniper RPCs the /api/sniper-feed route
+// uses and emits rows in the legacy cached_listings response shape so the
+// downstream clamp / discount / sort / paginate logic stays untouched.
+
+const TS_COLLECTION_ID_FOR_DISPATCH = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+const ALLDAY_COLLECTION_ID_FOR_DISPATCH = "dee28451-5d62-409e-a1ad-a83f763ac070"
+
+async function fetchModernListings(
+  collectionId: string,
+  filters: { tier: string; team: string; maxPrice: number; minDiscount: number; sortBy: string; limit: number }
+): Promise<any[] | null> {
+  let rpcName: string | null = null
+  if (collectionId === TS_COLLECTION_ID_FOR_DISPATCH) rpcName = "get_topshot_sniper_deals"
+  else if (collectionId === ALLDAY_COLLECTION_ID_FOR_DISPATCH) rpcName = "get_allday_sniper_deals"
+  if (!rpcName) return null
+
+  const { data, error } = await (supabaseAdmin as any).rpc(rpcName, {
+    p_min_discount: 0, // Market should NOT pre-filter by discount; that filter is applied later in-app
+    p_max_price: filters.maxPrice > 0 ? filters.maxPrice : 0,
+    p_rarity: filters.tier && filters.tier !== "all" ? filters.tier : "all",
+    p_team: filters.team && filters.team !== "all" ? filters.team : "all",
+    p_sort_by: filters.sortBy.startsWith("price") ? filters.sortBy : "discount_desc",
+    p_limit: Math.max(filters.limit, 500), // pull enough so downstream pagination has headroom
+  })
+  if (error) {
+    console.log(`[/api/market] modern fetch err (${rpcName}):`, error.message)
+    return []
+  }
+
+  // Reshape sniper RPC rows into the cached_listings field shape the rest of
+  // the handler expects.
+  return (data ?? []).map((r: any) => ({
+    id: r.listing_resource_id ?? `${collectionId}:${r.moment_id ?? r.flow_id ?? Math.random()}`,
+    flow_id: r.flow_id ?? null,
+    moment_id: r.moment_id ?? null,
+    player_name: r.player_name ?? null,
+    team_name: r.team_name ?? null,
+    set_name: r.set_name ?? null,
+    series_name: r.series_name ?? null,
+    tier: r.tier ?? null,
+    serial_number: r.serial_number ?? null,
+    circulation_count: r.circulation_count ?? null,
+    ask_price: r.ask_price != null ? Number(r.ask_price) : null,
+    fmv: r.fmv_usd != null ? Number(r.fmv_usd) : null,
+    adjusted_fmv: r.fmv_usd != null ? Number(r.fmv_usd) : null,
+    discount: r.discount_pct != null ? Number(r.discount_pct) : null,
+    confidence: r.confidence ?? null,
+    source: r.source ?? null,
+    buy_url: r.buy_url ?? null,
+    thumbnail_url: r.thumbnail_url ?? null,
+    badge_slugs: null,
+    listing_resource_id: r.listing_resource_id ?? null,
+    storefront_address: null,
+    is_locked: false,
+    raw_data: null,
+    listed_at: r.listed_at ?? null,
+    cached_at: r.listed_at ?? null,
+    collection_id: collectionId,
+  }))
+}
+
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
 
@@ -176,6 +242,116 @@ export async function GET(req: NextRequest) {
   const sort: SortKey = ALLOWED_SORTS.has(sortRaw) ? sortRaw : "recent"
 
   try {
+    // Modern-source dispatch (Phase 3.5). TS + AllDay come from sniper RPCs
+    // that read badge_editions / cached_listings_v2 respectively. Other
+    // collections fall through to the legacy cached_listings query below.
+    const modernRows = await fetchModernListings(collectionId, {
+      tier: tiers[0] ?? "all",
+      team: teams[0] ?? "all",
+      maxPrice: Number.isFinite(maxPrice) ? maxPrice : 0,
+      minDiscount: Number.isFinite(minDiscount) ? minDiscount : 0,
+      sortBy: sort,
+      limit,
+    })
+    if (modernRows !== null) {
+      // Reuse the existing edition-lookup + clamp + discount + sort + paginate
+      // pipeline by stuffing modernRows into the same `data` variable the
+      // downstream code consumes. The DB query is short-circuited.
+      const data = modernRows
+      const count = modernRows.length
+      const editionLookup = await loadEditionLookup(collectionId)
+
+      const clamped = (data ?? []).filter((r: any) => {
+        const tier = typeof r.tier === "string" ? r.tier.toUpperCase() : null
+        const ceiling = tier ? TIER_CEILING[tier] : null
+        if (ceiling != null && Number(r.ask_price) >= ceiling) return false
+        return true
+      })
+
+      const isTopShot = collectionId === TS_COLLECTION_ID
+
+      const enriched = clamped.map((r: any) => {
+        const ask = r.ask_price != null ? Number(r.ask_price) : null
+        const fmv = r.fmv != null ? Number(r.fmv) : null
+        const discount = computeDiscount(ask, fmv)
+        const lookupKey = normJoinKey(r.player_name, r.set_name)
+        const ed = lookupKey ? editionLookup.get(lookupKey) : null
+        let editionKey: string | null = null
+        if (ed) {
+          if (isTopShot && ed.set_id_onchain != null && ed.play_id_onchain != null) {
+            editionKey = `${ed.set_id_onchain}:${ed.play_id_onchain}`
+          } else if (!isTopShot && ed.external_id) {
+            editionKey = ed.external_id
+          } else if (ed.external_id && /^\d+:\d+$/.test(ed.external_id)) {
+            editionKey = ed.external_id
+          }
+        }
+        const editionBadges = ed && Array.isArray(ed.badges) ? ed.badges : []
+        const badgeSlugs = editionBadges
+        const serial = r.serial_number != null ? Number(r.serial_number) : null
+        const circ = r.circulation_count != null ? Number(r.circulation_count) : null
+        const isSpecialSerial =
+          (serial != null && serial === 1) ||
+          (serial != null && circ != null && circ > 0 && serial === circ)
+        return {
+          id: r.id,
+          flowId: r.flow_id,
+          momentId: r.moment_id,
+          playerName: r.player_name,
+          teamName: r.team_name,
+          setName: r.set_name,
+          seriesName: r.series_name,
+          tier: r.tier,
+          serialNumber: serial,
+          circulationCount: circ,
+          askPrice: ask,
+          fmv,
+          discount,
+          confidence: r.confidence,
+          source: r.source,
+          buyUrl: r.buy_url,
+          thumbnailUrl: r.thumbnail_url,
+          badgeSlugs,
+          editionKey,
+          isSpecialSerial,
+          listingResourceId: r.listing_resource_id,
+          storefrontAddress: r.storefront_address,
+          isLocked: r.is_locked,
+          listedAt: r.listed_at,
+          cachedAt: r.cached_at,
+          collectionId: r.collection_id,
+        }
+      })
+
+      const hasMinDiscount = Number.isFinite(minDiscount)
+      const hasMaxDiscount = Number.isFinite(maxDiscount)
+      let postFiltered = enriched
+      if (hasMinDiscount || hasMaxDiscount) {
+        postFiltered = postFiltered.filter(r => {
+          if (r.discount == null) return false
+          if (hasMinDiscount && r.discount < minDiscount) return false
+          if (hasMaxDiscount && r.discount > maxDiscount) return false
+          return true
+        })
+      }
+      if (specialSerials) postFiltered = postFiltered.filter(r => r.isSpecialSerial)
+      if (sort === "discount_desc") postFiltered.sort((a, b) => (b.discount ?? -Infinity) - (a.discount ?? -Infinity))
+      else if (sort === "discount_asc") postFiltered.sort((a, b) => (a.discount ?? Infinity) - (b.discount ?? Infinity))
+
+      const total = postFiltered.length
+      const paged = postFiltered.slice(offset, offset + limit)
+      const hasMore = offset + limit < total
+
+      return NextResponse.json({
+        listings: paged,
+        pagination: { total, page, limit, hasMore },
+        clamp: { applied: true, ceilings: TIER_CEILING },
+        diagnostics: { rawCount: count, postClampCount: clamped.length, postFilterCount: total, source: "modern" },
+      }, {
+        headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60" },
+      })
+    }
+
     // Primary query — pull up to MAX_LIMIT rows for this collection with
     // filters applied. We then compute discount in app code, apply the
     // discount filter + discount sort, and slice for pagination.

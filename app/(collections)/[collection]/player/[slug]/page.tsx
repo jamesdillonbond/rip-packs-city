@@ -220,8 +220,13 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {topSales.map(s => {
               const href = s.route_slug ? `/${collection}/edition/${encodeURIComponent(s.route_slug)}` : null
+              const truncAddr = (a: string | null) => {
+                if (!a) return "—"
+                const lower = a.toLowerCase().startsWith("0x") ? a.toLowerCase() : `0x${a.toLowerCase()}`
+                return lower.length > 12 ? `${lower.slice(0, 6)}…${lower.slice(-4)}` : lower
+              }
               const inner = (
-                <div style={{ display: "grid", gridTemplateColumns: "minmax(110px, auto) 1fr minmax(120px, auto) minmax(110px, auto)", gap: 12, padding: "10px 12px", alignItems: "center" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(90px, auto) 1fr minmax(100px, auto) minmax(110px, auto) minmax(110px, auto) minmax(90px, auto)", gap: 12, padding: "10px 12px", alignItems: "center" }}>
                   <span className="rpc-mono" style={{ fontSize: 11, color: s.serial_number != null && s.serial_number > 0 ? "var(--rpc-text-secondary)" : "var(--rpc-text-muted)", letterSpacing: "0.06em" }}>
                     {s.serial_number != null && s.serial_number > 0 ? `#${s.serial_number}` : "unresolved"}
                   </span>
@@ -229,6 +234,12 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
                     {s.edition_name ?? s.set_name ?? "—"}
                   </span>
                   <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", textAlign: "right" }}>{relTime(s.sold_at)}</span>
+                  <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", textAlign: "right" }} title={s.buyer_address ?? undefined}>
+                    {truncAddr(s.buyer_address)}
+                  </span>
+                  <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", textAlign: "right" }} title={s.seller_address ?? undefined}>
+                    {truncAddr(s.seller_address)}
+                  </span>
                   <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)", textAlign: "right" }}>{fmtUsd(s.price_usd)}</span>
                 </div>
               )
