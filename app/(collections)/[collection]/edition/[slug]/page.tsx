@@ -111,6 +111,24 @@ interface SpecialSerialRow {
   last_verified_at: string | null
 }
 
+interface HighOffer {
+  highest_offer: number | null
+  low_ask: number | null
+  updated_at: string | null
+}
+
+interface ParallelEdition {
+  id: string
+  external_id: string | null
+  set_name: string | null
+  tier: string | null
+  series: number | null
+  circulation_count: number | null
+  thumbnail_url: string | null
+  set_id_onchain: number | null
+  player_name: string | null
+}
+
 const SALES_PAGE_SIZE = 30
 
 type RpcClient = {
@@ -179,6 +197,20 @@ async function fetchSpecialSerials(editionId: string): Promise<SpecialSerialRow[
   return (data ?? []) as SpecialSerialRow[]
 }
 
+async function fetchHighOffer(editionId: string): Promise<HighOffer | null> {
+  const { data, error } = await rpcClient().rpc("get_edition_high_offer", { p_edition_id: editionId })
+  if (error) { console.error("[edition] high_offer", error.message); return null }
+  if (Array.isArray(data) && data.length > 0) return data[0] as HighOffer
+  if (data && typeof data === "object") return data as HighOffer
+  return null
+}
+
+async function fetchParallels(editionId: string): Promise<ParallelEdition[]> {
+  const { data, error } = await rpcClient().rpc("get_edition_parallels", { p_edition_id: editionId })
+  if (error) { console.error("[edition] parallels", error.message); return [] }
+  return Array.isArray(data) ? (data as ParallelEdition[]) : []
+}
+
 // ── Metadata ────────────────────────────────────────────────────────────────
 
 export async function generateMetadata(
@@ -206,11 +238,13 @@ export default async function EditionPage(
 
   const isPinnacle = isPinnacleUrlSlug(collection)
 
-  const [history, sales, packs, specialSerials] = await Promise.all([
+  const [history, sales, packs, specialSerials, highOffer, parallels] = await Promise.all([
     fetchHistory(coll.id, slug, 30),
     fetchSales(coll.id, slug, SALES_PAGE_SIZE, 0),
     fetchPacks(coll.id, slug),
     isPinnacle ? Promise.resolve([] as SpecialSerialRow[]) : fetchSpecialSerials(detail.id),
+    fetchHighOffer(detail.id),
+    fetchParallels(detail.id),
   ])
 
   const fmv = detail.fmv
@@ -336,6 +370,15 @@ export default async function EditionPage(
           value={fmtUsd(fmv?.floor_price_usd ?? null)}
         />
         <StatCell
+          label="Top Shot ask"
+          value={fmtUsd(highOffer?.low_ask ?? null)}
+        />
+        <StatCell
+          label="Best offer"
+          value={fmtUsd(highOffer?.highest_offer ?? null)}
+          sub={highOffer?.updated_at ? relTime(highOffer.updated_at) : undefined}
+        />
+        <StatCell
           label="30d Sales"
           value={fmtCount(fmv?.sales_count_30d ?? null)}
           sub={fmv?.days_since_sale !== null && fmv?.days_since_sale !== undefined ? `${fmv.days_since_sale}d since last` : undefined}
@@ -364,6 +407,36 @@ export default async function EditionPage(
           isAllDay={isAllDay}
         />
       </Section>
+
+      {/* ── Parallels (same player + same play_id_onchain, different set) ── */}
+      {parallels.length > 0 && (
+        <Section title="Parallels">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10 }}>
+            {parallels.map(p => (
+              <Link
+                key={p.id}
+                href={`/moment/${p.id}`}
+                className="rpc-card"
+                style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block", border: "1px solid var(--rpc-red)" }}
+              >
+                <div style={{ aspectRatio: "1 / 1", background: "rgba(0,0,0,0.3)", borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
+                  {p.thumbnail_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={p.thumbnail_url} alt={p.set_name ?? "parallel"} style={{ width: "100%", height: "100%", objectFit: "cover" }} loading="lazy" />
+                  ) : null}
+                </div>
+                <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2, marginBottom: 4 }}>
+                  {p.set_name ?? "—"}
+                </div>
+                <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)" }}>
+                  {(p.tier ?? "").toUpperCase()}
+                  {p.circulation_count != null ? ` · ${fmtCount(p.circulation_count)} mint` : ""}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </Section>
+      )}
 
       {/* ── Found in packs ───────────────────────────────────────────────── */}
       {packs.length > 0 && (
@@ -397,7 +470,7 @@ export default async function EditionPage(
         </Section>
       )}
 
-      {/* ── Special serials (non-Pinnacle) ───────────────────────────────── */}
+      {/* ── Special serials (non-Pinnacle) ───────────────── */}
       {!isPinnacle && (
         <Section title="Special Serials">
           <div className="rpc-mono" style={{ marginTop: -6, marginBottom: 10, fontSize: 11, color: "var(--rpc-text-muted)" }}>
