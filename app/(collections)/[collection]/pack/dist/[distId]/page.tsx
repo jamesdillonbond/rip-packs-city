@@ -270,16 +270,42 @@ function fmtCount(v: number | null | undefined): string {
   return v.toLocaleString()
 }
 
+// TEMP: chunked error logger to defeat the ~50-char message-column truncation
+// in Vercel's runtime-log search. Splits long strings into 30-char slices
+// each on its own indexed console.log line so we can reconstruct the full
+// error.message + stack from the search results. Remove once the pack-dist
+// crash is diagnosed and patched.
+function logChunked(prefix: string, payload: string | undefined): void {
+  if (!payload) {
+    console.log(`${prefix} <empty>`)
+    return
+  }
+  const max = 600
+  const text = payload.slice(0, max)
+  for (let i = 0; i < text.length; i += 30) {
+    const idx = String(i).padStart(3, "0")
+    console.log(`${prefix}[${idx}] ${text.slice(i, i + 30)}`)
+  }
+}
+
 // ── Metadata ────────────────────────────────────────────────────────────────
 
 export async function generateMetadata(
   props: { params: Promise<{ collection: string; distId: string }> },
 ): Promise<Metadata> {
-  const { collection, distId } = await props.params
+  let collection = ""
+  let distId = ""
+  try {
+    const p = await props.params
+    collection = p.collection
+    distId = p.distId
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) return {}
+  console.log(`[pack-dist-meta-ckpt] entered distId=${distId}`)
   const row = await fetchPackRow(coll.id, distId)
+  console.log(`[pack-dist-meta-ckpt] after fetchPackRow row=${row ? "hit" : "miss"}`)
   const fb = row ? null : await fetchDistFallback(coll.id, distId)
+  console.log(`[pack-dist-meta-ckpt] after fetchDistFallback fb=${fb ? "hit" : "miss"}`)
   const title = row?.title ?? fb?.title ?? "Pack"
   if (!row && !fb) return {}
   const tierLabel = row?.tier ? String(row.tier).charAt(0).toUpperCase() + String(row.tier).slice(1) : ""
@@ -315,6 +341,13 @@ export async function generateMetadata(
       images: [ogImage],
     },
   }
+  } catch (err) {
+    const e = err as Error
+    console.log(`[pack-dist-meta-crash] name=${e?.name ?? "?"} distId=${distId}`)
+    logChunked(`[pack-dist-meta-crash-msg]`, e?.message)
+    logChunked(`[pack-dist-meta-crash-stack]`, e?.stack)
+    throw err
+  }
 }
 
 // ── Page ────────────────────────────────────────────────────────────────────
@@ -322,12 +355,20 @@ export async function generateMetadata(
 export default async function PackDetailPage(
   props: { params: Promise<{ collection: string; distId: string }> },
 ) {
-  const { collection, distId } = await props.params
+  let collection = ""
+  let distId = ""
+  try {
+    const p = await props.params
+    collection = p.collection
+    distId = p.distId
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) notFound()
 
+  console.log(`[pack-dist-page-ckpt] entered distId=${distId} collection=${collection}`)
   const row = await fetchPackRow(coll.id, distId)
+  console.log(`[pack-dist-page-ckpt] after fetchPackRow row=${row ? "hit" : "miss"}`)
   const fallback = row ? null : await fetchDistFallback(coll.id, distId)
+  console.log(`[pack-dist-page-ckpt] after fetchDistFallback fb=${fallback ? "hit" : "miss"}`)
   if (!row && !fallback) notFound()
 
   // When pack_table_rows misses (newly minted dist the cron hasn't picked up),
@@ -380,8 +421,10 @@ export default async function PackDetailPage(
   }
 
   const distMetadata = fallback?.metadata ?? (await fetchDistFallback(coll.id, distId))?.metadata ?? null
+  console.log(`[pack-dist-page-ckpt] distMetadata=${distMetadata ? "hit" : "miss"}`)
 
   const topPulls = await fetchTopPulls(coll.id, distId, num(merged.total_unopened), merged.slots ?? null)
+  console.log(`[pack-dist-page-ckpt] after fetchTopPulls n=${topPulls.length}`)
 
   // Defensive: pack_table_rows.tier is typed string|null but coerce in case
   // the view ever returns a non-string. Same for title.
@@ -808,6 +851,13 @@ export default async function PackDetailPage(
       </section>
     </div>
   )
+  } catch (err) {
+    const e = err as Error
+    console.log(`[pack-dist-page-crash] name=${e?.name ?? "?"} distId=${distId} collection=${collection}`)
+    logChunked(`[pack-dist-page-crash-msg]`, e?.message)
+    logChunked(`[pack-dist-page-crash-stack]`, e?.stack)
+    throw err
+  }
 }
 
 // ── Tiny presentational helpers ────────────────────────────────────────────
