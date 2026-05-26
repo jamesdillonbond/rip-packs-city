@@ -14,6 +14,7 @@
 // — see lib/collections.ts pages array.
 
 import type { Metadata } from "next"
+import { topshotPackUrl } from "@/lib/pack-urls"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -448,7 +449,7 @@ export default async function PackDetailPage(
   // pack isn't currently for sale (price_source = "none"); also gate on the
   // reward-pack flag so we don't tell users to "buy" a free reward pack.
   const buyUrl = collection === "nba-top-shot" && packListingUuid && !isRewardPack && priceSource !== "none"
-    ? `https://nbatopshot.com/listings/p2p?packListingId=${packListingUuid}`
+    ? topshotPackUrl({ distId, packListingUuid })
     : null
   const buyCtaLabel = priceSource === "primary" || priceSource === "min"
     ? "Buy primary"
