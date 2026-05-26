@@ -144,12 +144,25 @@ async function fetchModernListings(
   else if (collectionId === ALLDAY_COLLECTION_ID_FOR_DISPATCH) rpcName = "get_allday_sniper_deals"
   if (!rpcName) return null
 
+  // Map Market's SortKey to a value the sniper RPCs understand. The RPC's
+  // own sort vocabulary mirrors /api/sniper-feed: "discount", "price_asc",
+  // "price_desc", "fmv_desc", "serial_asc", "listed_desc". The Market route's
+  // "recent" default maps to "listed_desc" (its closest semantic match);
+  // discount_desc/asc + price + fmv pass through; everything else falls back
+  // to discount_desc.
+  let rpcSort: string
+  if (filters.sortBy === "recent") rpcSort = "listed_desc"
+  else if (filters.sortBy.startsWith("price")) rpcSort = filters.sortBy
+  else if (filters.sortBy.startsWith("fmv")) rpcSort = filters.sortBy
+  else if (filters.sortBy.startsWith("discount")) rpcSort = filters.sortBy
+  else rpcSort = "discount_desc"
+
   const { data, error } = await (supabaseAdmin as any).rpc(rpcName, {
     p_min_discount: 0, // Market should NOT pre-filter by discount; that filter is applied later in-app
     p_max_price: filters.maxPrice > 0 ? filters.maxPrice : 0,
     p_rarity: filters.tier && filters.tier !== "all" ? filters.tier : "all",
     p_team: filters.team && filters.team !== "all" ? filters.team : "all",
-    p_sort_by: filters.sortBy.startsWith("price") ? filters.sortBy : "discount_desc",
+    p_sort_by: rpcSort,
     p_limit: Math.max(filters.limit, 500), // pull enough so downstream pagination has headroom
   })
   if (error) {
@@ -167,7 +180,10 @@ async function fetchModernListings(
     team_name: r.team_name ?? null,
     set_name: r.set_name ?? null,
     series_name: r.series_name ?? null,
-    tier: r.tier ?? null,
+    // Strip the AllDay GQL MOMENT_TIER_ prefix so downstream TIER_CEILING
+    // lookups + UI tier-filter behavior match the canonical short form
+    // ("COMMON" / "RARE" / "LEGENDARY" / "ULTIMATE").
+    tier: r.tier ? String(r.tier).replace("MOMENT_TIER_", "") : null,
     serial_number: r.serial_number ?? null,
     circulation_count: r.circulation_count ?? null,
     ask_price: r.ask_price != null ? Number(r.ask_price) : null,
@@ -253,7 +269,14 @@ export async function GET(req: NextRequest) {
       sortBy: sort,
       limit,
     })
-    if (modernRows !== null) {
+    // Fall through to the legacy cached_listings query when modern returns
+    // empty. The sniper RPCs inner-join FMV, so collections with sparse FMV
+    // (notably AllDay's ~341 priced rows vs ~34k v2 listings) come back 0;
+    // the legacy table is stale-but-non-empty for those cases.
+    if (modernRows !== null && modernRows.length === 0) {
+      console.log(`[/api/market] modern returned 0 rows for ${collectionId} — falling through to cached_listings`)
+    }
+    if (modernRows !== null && modernRows.length > 0) {
       // Reuse the existing edition-lookup + clamp + discount + sort + paginate
       // pipeline by stuffing modernRows into the same `data` variable the
       // downstream code consumes. The DB query is short-circuited.
