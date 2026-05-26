@@ -270,21 +270,32 @@ function fmtCount(v: number | null | undefined): string {
   return v.toLocaleString()
 }
 
-// TEMP: chunked error logger to defeat the ~50-char message-column truncation
-// in Vercel's runtime-log search. Splits long strings into 30-char slices
-// each on its own indexed console.log line so we can reconstruct the full
-// error.message + stack from the search results. Remove once the pack-dist
-// crash is diagnosed and patched.
-function logChunked(prefix: string, payload: string | undefined): void {
-  if (!payload) {
-    console.log(`${prefix} <empty>`)
-    return
-  }
-  const max = 600
-  const text = payload.slice(0, max)
-  for (let i = 0; i < text.length; i += 30) {
-    const idx = String(i).padStart(3, "0")
-    console.log(`${prefix}[${idx}] ${text.slice(i, i + 30)}`)
+// TEMP: write crash diagnostics to pipeline_runs so we can SELECT the full
+// error message + stack instead of fighting Vercel's runtime-log viewer
+// (which only surfaces one row per request and truncates messages at
+// ~50 chars). The Vercel log search call kept returning one summary row
+// per request and chunked console.log lines never made it through.
+// Remove once the pack-dist crash is diagnosed and patched.
+async function logCrashToSupabase(
+  source: "meta" | "page",
+  err: unknown,
+  ctx: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const e = err as Error
+    await sb.from("pipeline_runs").insert({
+      pipeline: `pack_dist_${source}_crash`,
+      ok: false,
+      duration_ms: 0,
+      extra: {
+        name: e?.name ?? null,
+        message: e?.message ?? null,
+        stack: typeof e?.stack === "string" ? e.stack.slice(0, 4000) : null,
+        ctx,
+      },
+    })
+  } catch {
+    /* swallow — never let the logger mask the real throw */
   }
 }
 
@@ -342,10 +353,7 @@ export async function generateMetadata(
     },
   }
   } catch (err) {
-    const e = err as Error
-    console.log(`[pack-dist-meta-crash] name=${e?.name ?? "?"} distId=${distId}`)
-    logChunked(`[pack-dist-meta-crash-msg]`, e?.message)
-    logChunked(`[pack-dist-meta-crash-stack]`, e?.stack)
+    await logCrashToSupabase("meta", err, { collection, distId })
     throw err
   }
 }
@@ -852,10 +860,7 @@ export default async function PackDetailPage(
     </div>
   )
   } catch (err) {
-    const e = err as Error
-    console.log(`[pack-dist-page-crash] name=${e?.name ?? "?"} distId=${distId} collection=${collection}`)
-    logChunked(`[pack-dist-page-crash-msg]`, e?.message)
-    logChunked(`[pack-dist-page-crash-stack]`, e?.stack)
+    await logCrashToSupabase("page", err, { collection, distId })
     throw err
   }
 }
