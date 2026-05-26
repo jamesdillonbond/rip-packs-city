@@ -289,7 +289,6 @@ async function logCrashToSupabase(
       started_at: now,
       finished_at: now,
       ok: false,
-      duration_ms: 0,
       error: typeof e?.message === "string" ? e.message.slice(0, 1000) : null,
       extra: {
         name: e?.name ?? null,
