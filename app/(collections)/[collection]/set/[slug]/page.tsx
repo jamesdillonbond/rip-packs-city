@@ -52,6 +52,31 @@ async function fetchEditions(collectionId: string, slug: string, limit: number, 
   return Array.isArray(data) ? (data as EditionTile[]) : []
 }
 
+// Phase 7 (2026-05-26): full-set tier mix. Queries the editions table directly
+// across all variants (detail.set_name + detail.set_name_variants) so the
+// rendered tier bar is accurate even on sets with > PAGE_SIZE editions, instead
+// of being sampled from the first 100. The new get_set_tier_mix RPC keys by
+// the set's UUID which the SetDetail RPC doesn't surface yet; querying by
+// set_name list works for every collection without a schema change.
+async function fetchFullTierMix(collectionId: string, setNames: string[]): Promise<Array<{ tier: string; n: number }>> {
+  const names = Array.from(new Set(setNames.filter(Boolean)))
+  if (names.length === 0) return []
+  const { data, error } = await (supabaseAdmin as any)
+    .from("editions")
+    .select("tier")
+    .eq("collection_id", collectionId)
+    .in("set_name", names)
+    .limit(10000)
+  if (error) { console.error("[set] tier mix error", error.message); return [] }
+  const counts = new Map<string, number>()
+  for (const row of (data ?? []) as Array<{ tier: string | null }>) {
+    const t = (row.tier ?? "UNKNOWN").toUpperCase()
+    counts.set(t, (counts.get(t) ?? 0) + 1)
+  }
+  return Array.from(counts.entries()).map(([tier, n]) => ({ tier, n }))
+}
+
+
 // ── Metadata ────────────────────────────────────────────────────────────────
 
 export async function generateMetadata(props: { params: Promise<{ collection: string; slug: string }> }): Promise<Metadata> {
@@ -73,7 +98,11 @@ export default async function SetPage(props: { params: Promise<{ collection: str
   const detail = await fetchDetail(coll.id, slug)
   if (!detail) notFound()
 
-  const editions = await fetchEditions(coll.id, slug, PAGE_SIZE, 0)
+  const setNames = [detail.set_name, ...(detail.set_name_variants ?? [])]
+  const [editions, tierMix] = await Promise.all([
+    fetchEditions(coll.id, slug, PAGE_SIZE, 0),
+    fetchFullTierMix(coll.id, setNames),
+  ])
 
   const minLabel = detail.min_series !== null ? seriesDisplay(detail.min_series, collection) : null
   const maxLabel = detail.max_series !== null ? seriesDisplay(detail.max_series, collection) : null
@@ -81,15 +110,24 @@ export default async function SetPage(props: { params: Promise<{ collection: str
     ? (minLabel === maxLabel ? minLabel : `${minLabel} – ${maxLabel}`)
     : null
 
-  // Tier-mix breakdown derived client-side from the editions list (server here).
-  const tierCounts = new Map<string, number>()
-  for (const e of editions) {
-    const t = (e.tier ?? "UNKNOWN").toUpperCase()
-    tierCounts.set(t, (tierCounts.get(t) ?? 0) + 1)
-  }
-  const totalForMix = editions.length
-  const tierMixRows = Array.from(tierCounts.entries())
-    .map(([tier, n]) => ({ tier, n, pct: totalForMix > 0 ? (n / totalForMix) * 100 : 0 }))
+  // Phase 7: tier mix uses the full-set count from fetchFullTierMix (not the
+  // paginated editions). Falls back to the editions-list sample if the full
+  // count came back empty (collection without set_name index, e.g.).
+  const totalForMix = tierMix.length > 0
+    ? tierMix.reduce((s, r) => s + r.n, 0)
+    : editions.length
+  const baseRows = tierMix.length > 0
+    ? tierMix
+    : (() => {
+        const m = new Map<string, number>()
+        for (const e of editions) {
+          const t = (e.tier ?? "UNKNOWN").toUpperCase()
+          m.set(t, (m.get(t) ?? 0) + 1)
+        }
+        return Array.from(m.entries()).map(([tier, n]) => ({ tier, n }))
+      })()
+  const tierMixRows = baseRows
+    .map(r => ({ tier: r.tier, n: r.n, pct: totalForMix > 0 ? (r.n / totalForMix) * 100 : 0 }))
     .sort((a, b) => b.n - a.n)
 
   return (
@@ -144,11 +182,6 @@ export default async function SetPage(props: { params: Promise<{ collection: str
               </div>
             ))}
           </div>
-          {detail.edition_count !== null && detail.edition_count > editions.length && (
-            <div className="rpc-mono" style={{ marginTop: 8, fontSize: 10, color: "var(--rpc-text-muted)" }}>
-              Mix sampled from the first {fmtCount(editions.length)} of {fmtCount(detail.edition_count)} editions.
-            </div>
-          )}
         </Section>
       )}
 
