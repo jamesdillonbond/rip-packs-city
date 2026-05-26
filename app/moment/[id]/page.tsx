@@ -2,7 +2,9 @@
 //
 // Public, server-rendered edition / moment detail page. Resolves [id] as
 // flow nft_id (numeric), moment uuid (serial-specific), or edition uuid
-// (aggregate). Backed by the SECDEF RPC public.get_moment_detail.
+// (aggregate). Backed by the SECDEF RPC public.get_moment_detail, with
+// parallel extras: get_edition_high_offer, get_edition_parallels,
+// get_edition_badges_unified, and a direct special_serial_holders lookup.
 //
 // Targets:
 //   - Trophy Slab QR codes (already shipping)
@@ -10,7 +12,16 @@
 //   - Fast Break lineup rows (Phase 2 wallet-aware)
 //   - SEO: "<player> <set> #<serial>" long-tail queries
 //
-// Phase 1 — public, no auth, no owner-only edit features.
+// Phase 2 (2026-05-26) updates:
+//   - Replaced Marketplace column with Buyer + Seller in Recent Activity.
+//   - Added Top Shot Best Offer cell (next to Top Shot Ask).
+//   - Added Badges row (sourced from get_edition_badges_unified).
+//   - Replaced inline serial===1 check with a special-serial pills row
+//     keyed by (edition_id, serial_number) when kind='moment'.
+//   - Added a Parallels section (same player, same play_id_onchain across
+//     different sets) above Similar Editions.
+//   - Moved the 6-cell info bar from the footer into the body, between
+//     the hero and Recent Activity, with linked Team.
 
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
@@ -20,7 +31,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
-// ── RPC payload shape (matches public.get_moment_detail) ───────────────────
+// ── RPC payload shapes ─────────────────────────────────────────────────────
 
 type Confidence = "HIGH" | "MEDIUM" | "LOW" | "NO_DATA" | "ASK_ONLY" | "SALES_ONLY" | "STALE" | null
 
@@ -115,7 +126,37 @@ interface MomentDetail {
   similar_editions?: SimilarEdition[]
 }
 
-// ── Fetch + formatters ─────────────────────────────────────────────────────
+// New (Phase 2):
+interface HighOffer {
+  highest_offer: number | null
+  low_ask: number | null
+  updated_at: string | null
+}
+
+interface ParallelEdition {
+  id: string
+  external_id: string | null
+  set_name: string | null
+  tier: string | null
+  series: number | null
+  circulation_count: number | null
+  thumbnail_url: string | null
+  set_id_onchain: number | null
+  player_name: string | null
+}
+
+interface EditionBadge {
+  id: string
+  title: string
+  source: string
+}
+
+interface SpecialSerialRow {
+  badge_type: string
+  serial_number: number
+}
+
+// ── Fetch helpers ──────────────────────────────────────────────────────────
 
 async function fetchDetail(id: string): Promise<MomentDetail | null> {
   try {
@@ -134,6 +175,59 @@ async function fetchDetail(id: string): Promise<MomentDetail | null> {
     return null
   }
 }
+
+async function fetchHighOffer(editionId: string): Promise<HighOffer | null> {
+  try {
+    const { data, error } = await (supabaseAdmin as any).rpc("get_edition_high_offer", { p_edition_id: editionId })
+    if (error) { console.warn(`[moment-page] high_offer rpc: ${error.message}`); return null }
+    if (Array.isArray(data) && data.length > 0) return data[0] as HighOffer
+    if (data && typeof data === "object") return data as HighOffer
+    return null
+  } catch (err) {
+    console.warn(`[moment-page] high_offer threw: ${err instanceof Error ? err.message : String(err)}`)
+    return null
+  }
+}
+
+async function fetchParallels(editionId: string): Promise<ParallelEdition[]> {
+  try {
+    const { data, error } = await (supabaseAdmin as any).rpc("get_edition_parallels", { p_edition_id: editionId })
+    if (error) { console.warn(`[moment-page] parallels rpc: ${error.message}`); return [] }
+    return Array.isArray(data) ? (data as ParallelEdition[]) : []
+  } catch (err) {
+    console.warn(`[moment-page] parallels threw: ${err instanceof Error ? err.message : String(err)}`)
+    return []
+  }
+}
+
+async function fetchBadges(editionId: string): Promise<EditionBadge[]> {
+  try {
+    const { data, error } = await (supabaseAdmin as any).rpc("get_edition_badges_unified", { p_edition_id: editionId })
+    if (error) { console.warn(`[moment-page] badges rpc: ${error.message}`); return [] }
+    if (Array.isArray(data)) return data as EditionBadge[]
+    return []
+  } catch (err) {
+    console.warn(`[moment-page] badges threw: ${err instanceof Error ? err.message : String(err)}`)
+    return []
+  }
+}
+
+async function fetchSpecialSerialsForSerial(editionId: string, serial: number): Promise<SpecialSerialRow[]> {
+  try {
+    const { data, error } = await (supabaseAdmin as any)
+      .from("special_serial_holders")
+      .select("badge_type, serial_number")
+      .eq("edition_id", editionId)
+      .eq("serial_number", serial)
+    if (error) { console.warn(`[moment-page] special_serials: ${error.message}`); return [] }
+    return Array.isArray(data) ? (data as SpecialSerialRow[]) : []
+  } catch (err) {
+    console.warn(`[moment-page] special_serials threw: ${err instanceof Error ? err.message : String(err)}`)
+    return []
+  }
+}
+
+// ── Formatters ─────────────────────────────────────────────────────────────
 
 function fmtUsd(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—"
@@ -223,6 +317,29 @@ function urlSlugForCollection(dbSlug: string | null | undefined): string | null 
   }
 }
 
+// Mirror of lib/entity-labels.slugifyName — kept local to avoid pulling in
+// that lib's runtime here (per the same convention as OwnerLink below).
+function slugifyTeam(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+}
+
+// Maps a raw special_serial_holders.badge_type enum to a display label.
+function specialSerialLabel(badge_type: string): string {
+  switch (badge_type) {
+    case "first_serial": return "#1 Serial"
+    case "jersey_match": return "Jersey Match"
+    case "perfect_mint": return "Perfect Mint"
+    case "last_serial": return "Last Serial"
+    case "birthdate_serial": return "Birthdate"
+    default: return badge_type.replace(/_/g, " ")
+  }
+}
+
 // ── Metadata (SEO) ─────────────────────────────────────────────────────────
 
 export async function generateMetadata(
@@ -289,6 +406,21 @@ export default async function MomentPage(
   const tierColor = tierColorVar(e.tier)
   const collectionSlugUrl = urlSlugForCollection(e.collection_slug)
   const collectionDisplay = collectionLabel(e.collection_slug)
+
+  // Parallel extras — all SECDEF RPCs, independent, fan out in one pass.
+  const [highOffer, parallels, badges, specialSerials] = await Promise.all([
+    fetchHighOffer(e.id),
+    fetchParallels(e.id),
+    fetchBadges(e.id),
+    r?.kind === "moment" && serial != null
+      ? fetchSpecialSerialsForSerial(e.id, serial)
+      : Promise.resolve([] as SpecialSerialRow[]),
+  ])
+
+  const teamHref =
+    collectionSlugUrl && e.team_name
+      ? `/${collectionSlugUrl}/team/${encodeURIComponent(slugifyTeam(e.team_name))}`
+      : null
 
   // Schema.org Product JSON-LD — gives crawlers a structured snapshot of the
   // moment as a saleable item with current FMV as the price hint.
@@ -404,7 +536,7 @@ export default async function MomentPage(
           display: "grid",
           gridTemplateColumns: "1fr",
           gap: 24,
-          marginBottom: 32,
+          marginBottom: 24,
         }}
         className="rpc-moment-hero"
       >
@@ -531,31 +663,102 @@ export default async function MomentPage(
           >
             <StatCell label="Floor" value={fmtUsd(f?.floor_price_usd)} />
             <StatCell label="WAP" value={fmtUsd(f?.wap_usd)} />
-            <StatCell label="Top Shot ask" value={fmtUsd(f?.top_shot_ask)} />
+            <StatCell label="Top Shot ask" value={fmtUsd(highOffer?.low_ask ?? f?.top_shot_ask)} />
+            <StatCell
+              label="Best offer"
+              value={
+                highOffer?.highest_offer != null
+                  ? (
+                    <span title={highOffer.updated_at ? fmtAbsDate(highOffer.updated_at) : undefined}>
+                      {fmtUsd(highOffer.highest_offer)}
+                      {highOffer.updated_at ? (
+                        <span style={{ color: "var(--rpc-text-muted)" }}> · {fmtRelDate(highOffer.updated_at)}</span>
+                      ) : null}
+                    </span>
+                  )
+                  : "—"
+              }
+            />
           </div>
 
-          {serial === 1 ? (
-            <div
-              style={{
-                marginTop: 4,
-                display: "inline-block",
-                padding: "4px 10px",
-                background: "var(--rpc-red)",
-                color: "var(--rpc-text-primary, #fff)",
-                fontFamily: "var(--font-mono)",
-                fontSize: "var(--text-xs, 12px)",
-                letterSpacing: "0.18em",
-                textTransform: "uppercase",
-                width: "fit-content",
-              }}
-            >
-              #1 Serial
+          {/* Badges row (edition-wide) + special-serial pills (per-NFT only) */}
+          {(badges.length > 0 || specialSerials.length > 0) && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+              {specialSerials.map(s => (
+                <span
+                  key={`ss-${s.badge_type}-${s.serial_number}`}
+                  style={{
+                    display: "inline-block",
+                    padding: "3px 9px",
+                    background: "var(--rpc-red)",
+                    color: "var(--rpc-text-primary, #fff)",
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "var(--text-xs, 11px)",
+                    letterSpacing: "0.18em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {specialSerialLabel(s.badge_type)}
+                </span>
+              ))}
+              {badges.map(b => (
+                <span
+                  key={`b-${b.id}`}
+                  title={b.source ? `Source: ${b.source}` : undefined}
+                  style={{
+                    display: "inline-block",
+                    padding: "3px 9px",
+                    border: "1px solid var(--rpc-border, rgba(255,255,255,0.18))",
+                    color: "var(--rpc-text-primary)",
+                    background: "rgba(255,255,255,0.04)",
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "var(--text-xs, 11px)",
+                    letterSpacing: "0.18em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {b.title}
+                </span>
+              ))}
             </div>
-          ) : null}
+          )}
         </div>
       </section>
 
-      {/* ── Serial-specific block (when kind='moment') ──────────────────── */}
+      {/* ── Info bar (relocated from footer for visibility) ─────────────── */}
+      <section
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+          gap: 12,
+          marginBottom: 32,
+        }}
+      >
+        <StatCell
+          label="Mint count"
+          value={
+            serial != null && mint
+              ? `#${serial} / ${mint.toLocaleString()}`
+              : mint ? mint.toLocaleString() : "—"
+          }
+        />
+        <StatCell label="Tier" value={tier || "—"} />
+        <StatCell label="Series" value={e.series != null ? seriesDisplay(e.series, e.collection_slug) : "—"} />
+        <StatCell
+          label="Team"
+          value={
+            e.team_name
+              ? (teamHref
+                  ? <Link href={teamHref} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>{e.team_name}</Link>
+                  : e.team_name)
+              : "—"
+          }
+        />
+        <StatCell label="Play type" value={e.play_type && e.play_type !== "Unknown" ? e.play_type : "—"} />
+        <StatCell label="Game date" value={fmtAbsDate(e.game_date) || "—"} />
+      </section>
+
+      {/* Serial-specific block (when kind='moment') */}
       {r?.kind === "moment" && ss ? (
         <section style={{ marginBottom: 32 }}>
           <SectionTitle>Serial #{serial} state</SectionTitle>
@@ -567,21 +770,21 @@ export default async function MomentPage(
             }}
           >
             <StatCell label="Owner" value={<OwnerLink address={ss.owner_address} />} />
-            <StatCell label="Listed" value={ss.is_listed === true ? "YES" : ss.is_listed === false ? "NO" : "—"} />
+            <StatCell label="Listed" value={ss.is_listed === true ? "YES" : ss.is_listed === false ? "NO" : "â"} />
             <StatCell label="List price" value={fmtUsd(ss.list_price)} />
             <StatCell
               label="Last sale"
               value={
                 ss.last_sale?.price_usd != null
-                  ? `${fmtUsd(ss.last_sale.price_usd)} · ${fmtRelDate(ss.last_sale.sold_at)}`
-                  : "—"
+                  ? `${fmtUsd(ss.last_sale.price_usd)} Â· ${fmtRelDate(ss.last_sale.sold_at)}`
+                  : "â"
               }
             />
           </div>
         </section>
       ) : null}
 
-      {/* ── Recent activity ─────────────────────────────────────────────── */}
+      {/* Recent activity */}
       <section style={{ marginBottom: 32 }}>
         <SectionTitle>Recent activity</SectionTitle>
         {recentSales.length === 0 ? (
@@ -607,18 +810,20 @@ export default async function MomentPage(
                   <Th>Serial</Th>
                   <Th>Price</Th>
                   <Th>When</Th>
-                  <Th>Marketplace</Th>
+                  <Th>Buyer</Th>
+                  <Th>Seller</Th>
                 </tr>
               </thead>
               <tbody>
                 {recentSales.map((s, i) => (
                   <tr key={`${s.sold_at}-${s.serial_number}-${i}`} style={{ borderBottom: "1px solid var(--rpc-border, rgba(255,255,255,0.04))" }}>
-                    <Td>{s.serial_number != null ? `#${s.serial_number}` : "—"}</Td>
+                    <Td>{s.serial_number != null ? `#${s.serial_number}` : "â"}</Td>
                     <Td>{fmtUsd(s.price_usd)}</Td>
                     <Td>
                       <span title={fmtAbsDate(s.sold_at)}>{fmtRelDate(s.sold_at)}</span>
                     </Td>
-                    <Td>{s.marketplace ?? "—"}</Td>
+                    <Td><OwnerLink address={s.buyer_address} /></Td>
+                    <Td><OwnerLink address={s.seller_address} /></Td>
                   </tr>
                 ))}
               </tbody>
@@ -627,7 +832,67 @@ export default async function MomentPage(
         )}
       </section>
 
-      {/* ── Similar editions ────────────────────────────────────────────── */}
+      {/* Parallels (same player + same play_id_onchain, different set) */}
+      {parallels.length > 0 ? (
+        <section style={{ marginBottom: 32 }}>
+          <SectionTitle>Parallels</SectionTitle>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
+              gap: 12,
+            }}
+          >
+            {parallels.map((p) => (
+              <Link
+                key={p.id}
+                href={`/moment/${p.id}`}
+                style={{
+                  textDecoration: "none",
+                  color: "inherit",
+                  border: "1px solid var(--rpc-red)",
+                  borderRadius: 8,
+                  overflow: "hidden",
+                  background: "var(--rpc-surface, rgba(255,255,255,0.02))",
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                <div style={{ aspectRatio: "1 / 1", background: "var(--rpc-bg, #000)" }}>
+                  {p.thumbnail_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={p.thumbnail_url}
+                      alt={p.player_name ?? "parallel"}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      loading="lazy"
+                    />
+                  ) : null}
+                </div>
+                <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 4 }}>
+                  <div style={{ fontFamily: "var(--font-display)", fontSize: 15, lineHeight: 1.2 }}>
+                    {p.set_name ?? "â"}
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: "var(--text-xs, 11px)",
+                      color: "var(--rpc-text-muted)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.12em",
+                    }}
+                  >
+                    {(p.tier ?? "").toUpperCase()}
+                    {p.circulation_count != null ? ` Â· ${p.circulation_count.toLocaleString()} mint` : ""}
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {/* Similar editions */}
       {similar.length > 0 ? (
         <section style={{ marginBottom: 32 }}>
           <SectionTitle>Similar editions</SectionTitle>
@@ -666,7 +931,7 @@ export default async function MomentPage(
                 </div>
                 <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 4 }}>
                   <div style={{ fontFamily: "var(--font-display)", fontSize: 15, lineHeight: 1.2 }}>
-                    {s.player_name ?? "—"}
+                    {s.player_name ?? "â"}
                   </div>
                   <div
                     style={{
@@ -677,7 +942,7 @@ export default async function MomentPage(
                       letterSpacing: "0.12em",
                     }}
                   >
-                    {(s.tier ?? "").toUpperCase()} · {s.set_name ?? "—"}
+                    {(s.tier ?? "").toUpperCase()} Â· {s.set_name ?? "â"}
                   </div>
                   <div
                     style={{
@@ -686,7 +951,7 @@ export default async function MomentPage(
                       color: s.fmv_usd != null ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)",
                     }}
                   >
-                    {s.fmv_usd != null ? fmtUsd(s.fmv_usd) : "—"}
+                    {s.fmv_usd != null ? fmtUsd(s.fmv_usd) : "â"}
                   </div>
                 </div>
               </Link>
@@ -695,28 +960,11 @@ export default async function MomentPage(
         </section>
       ) : null}
 
-      {/* ── Footer band: edition stats grid ─────────────────────────────── */}
-      <section
+      <div
         style={{
           marginTop: 48,
           paddingTop: 24,
           borderTop: "1px solid var(--rpc-border, rgba(255,255,255,0.08))",
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-          gap: 12,
-        }}
-      >
-        <StatCell label="Mint count" value={mint ? mint.toLocaleString() : "—"} />
-        <StatCell label="Tier" value={tier || "—"} />
-        <StatCell label="Series" value={e.series != null ? seriesDisplay(e.series, e.collection_slug) : "—"} />
-        <StatCell label="Team" value={e.team_name ?? "—"} />
-        <StatCell label="Play type" value={e.play_type ?? "—"} />
-        <StatCell label="Game date" value={fmtAbsDate(e.game_date) || "—"} />
-      </section>
-
-      <div
-        style={{
-          marginTop: 32,
           fontFamily: "var(--font-mono)",
           fontSize: "var(--text-xs, 11px)",
           letterSpacing: "0.18em",
@@ -744,7 +992,7 @@ export default async function MomentPage(
   )
 }
 
-// ── Tiny presentational helpers ────────────────────────────────────────────
+// Presentational helpers
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
@@ -807,12 +1055,10 @@ function StatCell({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
-// Owner addresses get a truncated link to /profile/<address> (Moment audit B9).
-// Kept local to avoid pulling in the entity `_shared.tsx` runtime here.
 function OwnerLink({ address }: { address: string | null | undefined }) {
-  if (!address) return <span style={{ color: "var(--rpc-text-muted)" }}>—</span>
+  if (!address) return <span style={{ color: "var(--rpc-text-muted)" }}>â</span>
   const lower = address.toLowerCase().startsWith("0x") ? address.toLowerCase() : `0x${address.toLowerCase()}`
-  const trunc = address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address
+  const trunc = address.length > 12 ? `${address.slice(0, 6)}â¦${address.slice(-4)}` : address
   return (
     <Link
       href={`/profile/${lower}`}

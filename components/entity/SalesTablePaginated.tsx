@@ -5,7 +5,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { EM_DASH, fmtUsd, marketplaceLabel, relTime, truncWallet } from "./_shared"
+import { EM_DASH, fmtUsd, relTime, truncWallet } from "./_shared"
 
 interface SaleRow {
   serial_number: number | null
@@ -95,7 +95,6 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
             <tr>
               <th style={TH}>Serial</th>
               <th style={TH}>Price</th>
-              <th style={TH}>Market</th>
               <th style={TH}>Buyer</th>
               <th style={TH}>Seller</th>
               <th style={TH}>When</th>
@@ -120,7 +119,6 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
                 <tr key={`${s.transaction_hash ?? "s"}-${s.serial_number ?? "n"}-${i}`}>
                   <td style={TD}>{serialCell}</td>
                   <td style={TD}>{fmtUsd(s.price_usd)}</td>
-                  <td style={TD}>{marketplaceLabel(s.marketplace)}</td>
                   <td style={TD}><WalletCell address={s.buyer_address} /></td>
                   <td style={TD}><WalletCell address={s.seller_address} /></td>
                   <td style={{ ...TD, color: "var(--rpc-text-secondary)" }}>{relTime(s.sold_at)}</td>
