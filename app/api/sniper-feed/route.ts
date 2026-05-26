@@ -169,6 +169,13 @@ const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET ?? "";
 
 const ALLDAY_PROXY_URL = process.env.ALLDAY_PROXY_URL ?? "";
 
+// When the TS GQL pool returns fewer than this many listings, augment the
+// feed with edition-level rows from get_topshot_sniper_deals (sourced from
+// badge_editions, which topshot-fmv-populate keeps fresh). Threshold sized
+// so a healthy GQL day (~150-220 listings) stays GQL-only, while an
+// anomalously-empty day (0-25 listings) gets the RPC backfill.
+const TS_GQL_SPARSE_THRESHOLD = 25;
+
 const ALLDAY_MARKETPLACE_QUERY = `
   query searchMarketplaceEditions($after: String, $first: Int, $sortBy: MarketplaceEditionSortType) {
     searchMarketplaceEditions(input: { after: $after, first: $first, sortBy: $sortBy, filters: {} }) {
@@ -1184,14 +1191,19 @@ async function computeSniperFeed(opts: {
 
   console.log(`[sniper-feed] fetched ts=${tsListings.length}`);
 
-  // TS GQL fallback: if the TopShot public marketplace endpoint returned nothing,
-  // serve edition-level deals from get_topshot_sniper_deals (sourced from
-  // badge_editions, which topshot-fmv-populate keeps fresh). Pattern mirrors
-  // the AllDay GQL → RPC fallback above. Per-listing fields (flow_id,
-  // serial_number, listing_resource_id) degrade to NULL because the RPC is
-  // edition-level, not per-moment.
-  if (tsListings.length === 0) {
-    console.log(`[sniper-feed] TS GQL empty — falling back to get_topshot_sniper_deals RPC`);
+  // TS GQL sparse-pool augmentation. The TS GQL pool is anomalously small
+  // some days (1-5 listings vs the healthy ~150-220), but get_topshot_sniper_deals
+  // (sourced from badge_editions kept fresh by topshot-fmv-populate) has 2,400+
+  // priced editions on hand. When GQL is below TS_GQL_SPARSE_THRESHOLD we
+  // augment — not replace — the GQL pool with edition-level RPC rows so the
+  // user still sees a populated feed. The merge happens after enrichment and
+  // dedupes by editionKey so a deal that appears in both sources only shows
+  // once (RPC wins on tie since it carries FMV that the GQL pool may lack).
+  // Per-listing fields (serial_number, listing_resource_id) are NULL on RPC
+  // rows because the RPC is edition-level, not per-moment.
+  let rpcDeals: SniperDeal[] = [];
+  if (tsListings.length < TS_GQL_SPARSE_THRESHOLD) {
+    console.log(`[sniper-feed] TS GQL sparse (${tsListings.length} listings) — augmenting with get_topshot_sniper_deals RPC`);
     const { data: rpcRows, error: rpcErr } = await (supabase as any).rpc("get_topshot_sniper_deals", {
       p_min_discount: minDiscount,
       p_max_price: maxPrice,
@@ -1202,69 +1214,63 @@ async function computeSniperFeed(opts: {
     });
     if (rpcErr) {
       console.error(`[sniper-feed] get_topshot_sniper_deals error: ${rpcErr.message}`);
-      return { count: 0, tsCount: 0, flowtyCount: 0, lastRefreshed: new Date().toISOString(), deals: [] };
+    } else {
+      rpcDeals = (rpcRows ?? []).map((r: any) => {
+        const tier = String(r.tier ?? "COMMON");
+        const confidence = String(r.confidence ?? "ASK_ONLY");
+        const momentId = r.moment_id ? String(r.moment_id) : "";
+        return {
+          flowId: r.flow_id ?? "",
+          momentId,
+          editionKey: momentId,
+          intEditionKey: /^[0-9]+:[0-9]+$/.test(momentId) ? momentId : null,
+          playerName: r.player_name ?? "",
+          teamName: r.team_name ?? "",
+          setName: r.set_name ?? "",
+          seriesName: r.series_name ?? "",
+          tier,
+          parallel: "Base",
+          parallelId: 0,
+          serial: r.serial_number ?? 0,
+          circulationCount: r.circulation_count ?? 0,
+          askPrice: Number(r.ask_price) || 0,
+          baseFmv: Number(r.fmv_usd) || 0,
+          adjustedFmv: Number(r.fmv_usd) || 0,
+          wapUsd: null,
+          daysSinceSale: null,
+          salesCount30d: null,
+          discount: Number(r.discount_pct) || 0,
+          confidence: confidence.toLowerCase(),
+          confidenceSource: confidence === "ASK_ONLY" ? "ask_fallback" : "fmv_snapshots",
+          hasBadge: false,
+          badgeSlugs: [],
+          badgeLabels: [],
+          badgePremiumPct: 0,
+          serialMult: 1,
+          isSpecialSerial: false,
+          isJersey: false,
+          serialSignal: null,
+          thumbnailUrl: r.thumbnail_url ?? null,
+          isLocked: false,
+          updatedAt: r.listed_at ?? null,
+          packListingId: null,
+          packName: null,
+          packEv: null,
+          packEvRatio: null,
+          buyUrl: r.buy_url ?? "",
+          listingResourceID: r.listing_resource_id ?? null,
+          listingOrderID: null,
+          storefrontAddress: null,
+          source: "topshot",
+          paymentToken: "FLOW",
+          offerAmount: null,
+          offerFmvPct: null,
+          dealRating: (Number(r.discount_pct) || 0) / 100,
+          isLowestAsk: false,
+        };
+      });
+      console.log(`[sniper-feed] TS RPC augment: ${rpcDeals.length} edition-level rows`);
     }
-    const fallback: SniperDeal[] = (rpcRows ?? []).map((r: any) => {
-      const tier = String(r.tier ?? "COMMON");
-      const confidence = String(r.confidence ?? "ASK_ONLY");
-      const momentId = r.moment_id ? String(r.moment_id) : "";
-      return {
-        flowId: r.flow_id ?? "",
-        momentId,
-        editionKey: momentId,
-        intEditionKey: /^[0-9]+:[0-9]+$/.test(momentId) ? momentId : null,
-        playerName: r.player_name ?? "",
-        teamName: r.team_name ?? "",
-        setName: r.set_name ?? "",
-        seriesName: r.series_name ?? "",
-        tier,
-        parallel: "Base",
-        parallelId: 0,
-        serial: r.serial_number ?? 0,
-        circulationCount: r.circulation_count ?? 0,
-        askPrice: Number(r.ask_price) || 0,
-        baseFmv: Number(r.fmv_usd) || 0,
-        adjustedFmv: Number(r.fmv_usd) || 0,
-        wapUsd: null,
-        daysSinceSale: null,
-        salesCount30d: null,
-        discount: Number(r.discount_pct) || 0,
-        confidence: confidence.toLowerCase(),
-        confidenceSource: confidence === "ASK_ONLY" ? "ask_fallback" : "fmv_snapshots",
-        hasBadge: false,
-        badgeSlugs: [],
-        badgeLabels: [],
-        badgePremiumPct: 0,
-        serialMult: 1,
-        isSpecialSerial: false,
-        isJersey: false,
-        serialSignal: null,
-        thumbnailUrl: r.thumbnail_url ?? null,
-        isLocked: false,
-        updatedAt: r.listed_at ?? null,
-        packListingId: null,
-        packName: null,
-        packEv: null,
-        packEvRatio: null,
-        buyUrl: r.buy_url ?? "",
-        listingResourceID: r.listing_resource_id ?? null,
-        listingOrderID: null,
-        storefrontAddress: null,
-        source: "topshot",
-        paymentToken: "FLOW",
-        offerAmount: null,
-        offerFmvPct: null,
-        dealRating: (Number(r.discount_pct) || 0) / 100,
-        isLowestAsk: false,
-      };
-    });
-    return {
-      count: fallback.length,
-      tsCount: fallback.length,
-      flowtyCount: 0,
-      lastRefreshed: new Date().toISOString(),
-      deals: fallback,
-    };
   }
 
   // 2. Build integer edition keys for Supabase FMV lookup
@@ -1451,6 +1457,22 @@ async function computeSniperFeed(opts: {
   // 6. Exclude retired moments.
   let allDeals: SniperDeal[] = tsDeals.filter((d) => !retiredIds.has(d.flowId));
 
+  // 6b. Merge RPC augment rows when GQL was sparse. Dedup by editionKey so
+  // a deal present in both sources only shows once. RPC entries come first
+  // and win on collision since they carry the FMV the GQL pool may lack.
+  if (rpcDeals.length > 0) {
+    const seenKeys = new Set<string>();
+    const merged: SniperDeal[] = [];
+    for (const d of [...rpcDeals, ...allDeals]) {
+      const key = d.editionKey || d.intEditionKey || d.flowId;
+      if (!key || seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      merged.push(d);
+    }
+    console.log(`[sniper-feed] TS merge: rpc=${rpcDeals.length} gql=${allDeals.length} → ${merged.length}`);
+    allDeals = merged;
+  }
+
   // 7. Mark the lowest ask per edition so the UI can flag the floor listing.
   const lowestAskByEdition = new Map<string, number>();
   for (const d of allDeals) {
@@ -1500,7 +1522,10 @@ async function computeSniperFeed(opts: {
 
   return {
     count: sorted.length,
-    tsCount,
+    // Surface the actual displayed count so the UI badge matches what users
+    // see. After the RPC augment + dedup + filters, this differs from the
+    // raw ts_listings count returned by fetchTopShotPool.
+    tsCount: sorted.length,
     flowtyCount: 0,
     lastRefreshed: new Date().toISOString(),
     deals: sorted,
