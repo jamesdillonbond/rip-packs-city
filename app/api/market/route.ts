@@ -140,22 +140,27 @@ async function fetchModernListings(
   filters: { tier: string; team: string; maxPrice: number; minDiscount: number; sortBy: string; limit: number }
 ): Promise<any[] | null> {
   let rpcName: string | null = null
+  // TS continues to use the FMV-required sniper RPC: its data source is
+  // badge_editions, which only has rows with low_ask + a matching FMV
+  // snapshot, so gating on FMV there drops nothing. AllDay uses the
+  // FMV-OPTIONAL market RPC — Market is a browse surface, not a deal-finder,
+  // and gating it on fmv_snapshots (sparse whenever fmv-recalc lags) silently
+  // empties the feed and falls through to stale Flowty-era cached_listings.
   if (collectionId === TS_COLLECTION_ID_FOR_DISPATCH) rpcName = "get_topshot_sniper_deals"
-  else if (collectionId === ALLDAY_COLLECTION_ID_FOR_DISPATCH) rpcName = "get_allday_sniper_deals"
+  else if (collectionId === ALLDAY_COLLECTION_ID_FOR_DISPATCH) rpcName = "get_allday_market_listings"
   if (!rpcName) return null
 
-  // Map Market's SortKey to a value the sniper RPCs understand. The RPC's
-  // own sort vocabulary mirrors /api/sniper-feed: "discount", "price_asc",
-  // "price_desc", "fmv_desc", "serial_asc", "listed_desc". The Market route's
-  // "recent" default maps to "listed_desc" (its closest semantic match);
-  // discount_desc/asc + price + fmv pass through; everything else falls back
-  // to discount_desc.
+  // Map Market's SortKey to a value the dispatched RPC understands. The sort
+  // vocabulary mirrors /api/sniper-feed: "price_asc", "price_desc",
+  // "fmv_desc", "discount_desc", "listed_desc". The AllDay market RPC defaults
+  // to "listed_desc"; Market's "recent" default maps onto it. price + fmv +
+  // discount pass through; everything else falls back to listed_desc.
   let rpcSort: string
-  if (filters.sortBy === "recent") rpcSort = "listed_desc"
+  if (filters.sortBy === "recent" || filters.sortBy === "listed_desc") rpcSort = "listed_desc"
   else if (filters.sortBy.startsWith("price")) rpcSort = filters.sortBy
-  else if (filters.sortBy.startsWith("fmv")) rpcSort = filters.sortBy
-  else if (filters.sortBy.startsWith("discount")) rpcSort = filters.sortBy
-  else rpcSort = "discount_desc"
+  else if (filters.sortBy === "fmv_desc") rpcSort = "fmv_desc"
+  else if (filters.sortBy === "discount_desc") rpcSort = "discount_desc"
+  else rpcSort = "listed_desc"
 
   const { data, error } = await (supabaseAdmin as any).rpc(rpcName, {
     p_min_discount: 0, // Market should NOT pre-filter by discount; that filter is applied later in-app
