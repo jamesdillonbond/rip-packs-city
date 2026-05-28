@@ -11,6 +11,12 @@ export const maxDuration = 10;
 
 const STALE_THRESHOLD_MINUTES = 45;
 
+// Read the inputs we need directly. The historical health_check() shape this
+// route used to consume (fmv_pipeline.staleness_minutes, sales_pipeline.last_sale_at,
+// data_integrity.orphaned_editions_ok, database.size_mb, database.rls_coverage_pct)
+// no longer exists on the RPC — current health_check() exposes a flat fmv block
+// + per-collection sales_24h and a top-level db_size_mb. Rather than wedging
+// the old keys back onto the RPC, the route just queries each metric directly.
 export async function GET(request: NextRequest) {
   const ingestToken = process.env.INGEST_SECRET_TOKEN;
   if (!ingestToken) {
@@ -28,41 +34,71 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const { data, error } = await supabaseAdmin.rpc("health_check");
+    const [latestFmvRes, latestSaleRes, editionsCountRes, fmvCoverRes, orphanSetRes, orphanPlayerRes] = await Promise.all([
+      supabaseAdmin
+        .from("fmv_snapshots")
+        .select("computed_at")
+        .order("computed_at", { ascending: false })
+        .limit(1),
+      supabaseAdmin
+        .from("sales")
+        .select("sold_at")
+        .order("sold_at", { ascending: false })
+        .limit(1),
+      supabaseAdmin
+        .from("editions")
+        .select("id", { count: "exact", head: true }),
+      supabaseAdmin
+        .from("fmv_snapshots")
+        .select("edition_id", { count: "exact", head: true }),
+      supabaseAdmin
+        .from("editions")
+        .select("id", { count: "exact", head: true })
+        .is("set_id", null),
+      supabaseAdmin
+        .from("editions")
+        .select("id", { count: "exact", head: true })
+        .is("player_id", null),
+    ]);
 
-    if (error) {
-      console.error("[stale-fmv-monitor] health_check RPC failed:", error.message);
-      return NextResponse.json({ status: "error", error: error.message }, { status: 500 });
+    if (latestFmvRes.error || !latestFmvRes.data?.[0]?.computed_at) {
+      return NextResponse.json({ status: "error", error: "no fmv_snapshots rows" }, { status: 500 });
     }
 
-    const staleMinutes = Math.round(data.fmv_pipeline.staleness_minutes);
+    const now = Date.now();
+    const latestFmvMs = new Date(latestFmvRes.data[0].computed_at).getTime();
+    const staleMinutes = Math.round((now - latestFmvMs) / 60000);
     const isStale = staleMinutes > STALE_THRESHOLD_MINUTES;
-    const lastSaleAge = data.sales_pipeline.last_sale_at
-      ? Math.round(
-          (Date.now() - new Date(data.sales_pipeline.last_sale_at).getTime()) /
-            60000
-        )
+
+    const latestSaleAt = latestSaleRes.data?.[0]?.sold_at ?? null;
+    const lastSaleAge = latestSaleAt
+      ? Math.round((now - new Date(latestSaleAt).getTime()) / 60000)
       : null;
+
+    const totalEditions = editionsCountRes.count ?? 0;
+    const fmvCovered = fmvCoverRes.count ?? 0;
+    const coveragePct = totalEditions > 0
+      ? Number(((fmvCovered / totalEditions) * 100).toFixed(1))
+      : 0;
+
+    const orphanSet = orphanSetRes.count ?? 0;
+    const orphanPlayer = orphanPlayerRes.count ?? 0;
+    const dataIntegrityOk = orphanSet === 0 && orphanPlayer === 0;
 
     if (isStale) {
       console.error(
         `[ALERT] FMV STALE — ${staleMinutes} min since last compute (threshold: ${STALE_THRESHOLD_MINUTES} min). ` +
-          `Coverage: ${data.fmv_pipeline.coverage_pct}%. ` +
-          `Last sale: ${lastSaleAge} min ago.`
+          `Coverage: ${coveragePct}%. Last sale: ${lastSaleAge} min ago.`
       );
     } else {
       console.log(
-        `[stale-fmv-monitor] OK — FMV ${staleMinutes} min old, ` +
-          `${data.fmv_pipeline.editions_covered}/${data.fmv_pipeline.total_editions} editions, ` +
-          `${data.sales_pipeline.sales_last_24h} sales/24h`
+        `[stale-fmv-monitor] OK — FMV ${staleMinutes} min old, ${fmvCovered}/${totalEditions} editions covered (${coveragePct}%)`
       );
     }
 
-    if (!data.data_integrity.orphaned_editions_ok) {
+    if (!dataIntegrityOk) {
       console.warn(
-        `[ALERT] DATA INTEGRITY — ` +
-          `${data.data_integrity.editions_no_set} editions missing set, ` +
-          `${data.data_integrity.editions_no_player} editions missing player (non-Unknown)`
+        `[ALERT] DATA INTEGRITY — ${orphanSet} editions missing set, ${orphanPlayer} editions missing player`
       );
     }
 
@@ -70,13 +106,14 @@ export async function GET(request: NextRequest) {
       status: isStale ? "stale" : "ok",
       fmv_staleness_minutes: staleMinutes,
       fmv_threshold_minutes: STALE_THRESHOLD_MINUTES,
-      fmv_coverage_pct: data.fmv_pipeline.coverage_pct,
-      sales_last_24h: data.sales_pipeline.sales_last_24h,
+      fmv_coverage_pct: coveragePct,
+      editions_covered: fmvCovered,
+      total_editions: totalEditions,
       last_sale_age_minutes: lastSaleAge,
-      data_integrity_ok: data.data_integrity.orphaned_editions_ok,
-      db_size_mb: data.database.size_mb,
-      rls_coverage_pct: data.database.rls_coverage_pct,
-      checked_at: data.checked_at,
+      data_integrity_ok: dataIntegrityOk,
+      editions_no_set: orphanSet,
+      editions_no_player: orphanPlayer,
+      checked_at: new Date(now).toISOString(),
     });
   } catch (err: any) {
     console.error("[stale-fmv-monitor] Unexpected error:", err.message);

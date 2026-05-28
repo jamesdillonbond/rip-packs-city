@@ -112,7 +112,12 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { data, error } = await supabase.rpc("sentinel_fmv_confidence");
+    // sentinel_fmv_confidence_rows returns TABLE(confidence text, count bigint)
+    // using DISTINCT ON (edition_id) ORDER BY computed_at DESC — latest-per-edition,
+    // matching the .reduce/.find shape below. The older sentinel_fmv_confidence
+    // RPC returned a single jsonb object (wrong shape for .reduce) AND counted
+    // all-time fmv_snapshots history instead of latest-per-edition.
+    const { data, error } = await supabase.rpc("sentinel_fmv_confidence_rows");
     if (error) {
       checks.push({ name: "FMV Confidence", status: "warn", detail: `RPC not found (${error.message})` });
     } else if (data) {
