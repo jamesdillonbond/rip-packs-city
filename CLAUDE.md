@@ -24,7 +24,40 @@ LLC: Oregon, filed May 3 2026.
 
 ## Recent sessions
 
-### May 28, 2026 (latest) — Cowork DB session + code follow-ups: TS UUID-dupe writer fix + sentinel RPC swap + stale-fmv-monitor rewrite
+### May 28, 2026 (latest, afternoon) — FMV honesty pass: LOW→STALE for stale pricing + AllDay catch-up
+
+Code-side follow-up to the morning's Cowork pass. Two changes to [app/api/fmv-recalc/route.ts](app/api/fmv-recalc/route.ts):
+
+- **Step 5b catch-up:** WHERE predicate changed from `fs.edition_id IS NULL` to a CTE that also matches editions whose latest snapshot's `algo_version NOT LIKE '1.7.%'`. Forces `fmv-recalc` to re-evaluate the 3,369 AllDay editions that have never had a 1.7.0 snapshot (currently stuck on `allday-gql-v1` because `allday-fmv-populate` keeps winning the latest-by-`computed_at` race). Cap is 1000/tick. The downstream delete-then-insert nukes today's snapshot for affected editions so haircut-suffixed variants get replaced.
+- **Step 5b LOW→STALE gate:** `confidence: "LOW"` → `confidence: daysSinceSale >= 60 ? "STALE" : "LOW"`. Honesty-ups editions whose only historical sales are 60+ days old — 60 days mirrors the spirit of `apply_fmv_thin_sales_guard`'s stale-30d-no-ask logic; once an edition hasn't traded in 2 months the single-sale WAP is unreliable signal.
+
+Pre-shipped DB migration `audit_20260528_low_to_stale_topshot_zero_90d_sales` flipped 828 TS LOW-zero-90d-sales editions to STALE inline via fresh snapshots tagged `cold-tail-low-recency-1.0` (STALE 1,673 → 2,505). The matching 1,827 AllDay editions are left for Item 4's catch-up sweep to handle — `allday-fmv-populate` would re-clobber any inline STALE write within 30 min.
+
+Order of operations matters: Items 4 + 5 must ship together. Shipping just Item 5 leaves the AllDay 1,827 stuck on `allday-gql-v1` (which doesn't have the new LOW→STALE gate). Items 4 + 5 together cover both populations.
+
+Expected after 24-48h of cron ticks: AllDay HIGH+MEDIUM% rises from 3.7% toward TS's 6.9% baseline, LOW-zero-90d-sales total drops from 2,759 toward <100, STALE total rises from 2,505 toward ~4,500-5,000.
+
+Verification queries:
+
+```sql
+-- AllDay editions still on allday-gql-v1 (should trend toward 0 over 1-3 days):
+SELECT COUNT(*) FROM (
+  SELECT DISTINCT ON (edition_id) algo_version
+  FROM fmv_snapshots
+  WHERE collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'
+  ORDER BY edition_id, computed_at DESC
+) x WHERE algo_version = 'allday-gql-v1';
+
+-- LOW-zero-90d-sales total (should drop toward <100):
+SELECT COUNT(*) FROM (
+  SELECT DISTINCT ON (edition_id) confidence, days_since_sale
+  FROM fmv_snapshots ORDER BY edition_id, computed_at DESC
+) x WHERE confidence = 'LOW' AND days_since_sale >= 60;
+```
+
+Full handoff: [docs/handoff-2026-05-28-fmv-items-4-5.md](docs/handoff-2026-05-28-fmv-items-4-5.md). Diagnostic basis: `docs/audits/fmv-confidence-decomposition-2026-05-28.md`.
+
+### May 28, 2026 (morning) — Cowork DB session + code follow-ups: TS UUID-dupe writer fix + sentinel RPC swap + stale-fmv-monitor rewrite
 
 DB-side Cowork session shipped 3 migrations live. Code-side follow-ups land in this commit per `docs/handoff-2026-05-28-cowork-pass.md`.
 
