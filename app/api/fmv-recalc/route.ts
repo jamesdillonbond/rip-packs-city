@@ -649,6 +649,11 @@ export async function POST(req: NextRequest) {
       const { data: histRows, error: histErr } = await supabaseAdmin
         .rpc("query_sql", {
           query: `
+            WITH latest_algo AS (
+              SELECT DISTINCT ON (edition_id) edition_id, algo_version
+              FROM fmv_snapshots
+              ORDER BY edition_id, computed_at DESC
+            )
             SELECT
               e.id AS edition_id,
               e.collection_id,
@@ -658,8 +663,8 @@ export async function POST(req: NextRequest) {
               MAX(s.sold_at) AS latest_sold_at
             FROM editions e
             JOIN sales s ON s.edition_id = e.id
-            LEFT JOIN fmv_snapshots fs ON fs.edition_id = e.id
-            WHERE fs.edition_id IS NULL
+            LEFT JOIN latest_algo la ON la.edition_id = e.id
+            WHERE (la.edition_id IS NULL OR la.algo_version NOT LIKE '1.7.%')
               AND s.price_usd > 0
               AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
               AND e.collection_id <> '${PINNACLE_COLLECTION_ID}'
@@ -696,7 +701,10 @@ export async function POST(req: NextRequest) {
               wap_usd: Number(avgPrice.toFixed(2)),
               wap_without_outliers: Number(avgPrice.toFixed(2)),
               liquidity_rating: liquidityRating(Number(row.sales_count)),
-              confidence: "LOW",
+              // Honesty gate: if the edition hasn't traded in 60+ days, label
+              // it STALE rather than LOW — single-sale WAP from 2+ months ago
+              // is unreliable signal, not healthy low-confidence pricing.
+              confidence: daysSinceSale >= 60 ? "STALE" : "LOW",
               sales_count_7d: 0,
               sales_count_30d: 0,
               days_since_sale: daysSinceSale,
