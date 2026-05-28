@@ -24,7 +24,34 @@ LLC: Oregon, filed May 3 2026.
 
 ## Recent sessions
 
-### May 25, 2026 (latest) — AllDay unmapped-sales resolver: GQL-primary rewrite + batch_size 5→200
+### May 28, 2026 (latest) — Cowork DB session + code follow-ups: TS UUID-dupe writer fix + sentinel RPC swap + stale-fmv-monitor rewrite
+
+DB-side Cowork session shipped 3 migrations live. Code-side follow-ups land in this commit per `docs/handoff-2026-05-28-cowork-pass.md`.
+
+Shipped live (3 DB migrations during Cowork)
+
+- **`audit_20260528_editions_block_topshot_uuid_dupe_cover_update`** — extended the dupe-block trigger from `BEFORE INSERT` to `BEFORE INSERT OR UPDATE`. Root cause discovery: 6,409 new UUID-keyed TS edition dupes accumulated between the 2026-05-26 merge (which got TS to 9,535) and this session. 4,250 (66%) matched the bypass pattern INSERT-with-NULL-onchain-ids → UPDATE-backfills-ids within 1 minute. The trigger gates on `set_id_onchain IS NOT NULL AND play_id_onchain IS NOT NULL`, so at INSERT time it's FALSE and the row lands; never fires on UPDATE. New trigger nulls the on-chain ids back on UPDATE-match, leaving the row inert. Real fix is the GQL writer — landed in this commit.
+- **`audit_20260528_unmapped_sales_retire_archival_flowty_rows`** — retired 49 archival `unmapped_sales` rows where `marketplace='flowty'` (2026-04-17 → 2026-05-13). Flowty marketplace shut down 2026-05-13 and no resolver path operates on `marketplace='flowty'` anymore. Open backlog 60 → 11.
+- **`audit_20260528_sentinel_fmv_confidence_rows_rpc`** — new `sentinel_fmv_confidence_rows(p_collection_id uuid)` RPC returning `TABLE(confidence text, count bigint)` based on `DISTINCT ON (edition_id) ORDER BY computed_at DESC`. The existing `sentinel_fmv_confidence` RPC had two bugs: returned a single JSONB object (not the row array the route expects) AND counted all-time `fmv_snapshots` history (324k rows; inflated HIGH to 9,389) instead of latest-per-edition (423). The sister RPC matches the route shape and semantics.
+
+Shipped (code-side follow-ups landing in this commit)
+
+- **GQL editions writer — UUID-dupe root cause fixed** ([app/api/ingest/route.ts](app/api/ingest/route.ts)). The Top Shot ingest GQL query now requests `set.flowId` and `play.flowID` (the on-chain integer ids) alongside the UUIDs. `buildEditionKey` prefers the integer-pair `${set.flowId}:${play.flowID}` (canonical per the 2026-05-26 dedup merge); the previous UUID-pair `${set.id}:${play.id}` is now a defensive fallback only. `upsertEdition` populates `set_id_onchain` / `play_id_onchain` inline so the `editions_block_topshot_uuid_dupe_trg` trigger predicate is satisfied on INSERT. The trigger only fires on UUID-format external_ids (`!~ '^[0-9]+:[0-9]+$'`), so integer-pair writes are completely unaffected — they simply hit the existing integer canonical via `onConflict: "external_id,collection_id"`. Net effect: the ingest path can no longer create UUID-keyed TS edition rows. Verify after deploy: `SELECT COUNT(*) FROM editions WHERE collection_id = '95f28a17-…' AND external_id !~ '^[0-9]+:[0-9]+$' AND created_at >= NOW() - INTERVAL '24 hours'` should drop to ~0.
+- **`/api/sentinel` RPC swap** ([app/api/sentinel/route.ts](app/api/sentinel/route.ts)) — one-line change, `sentinel_fmv_confidence` → `sentinel_fmv_confidence_rows`. Fixes the row-shape mismatch that was tripping the `Pipeline Sentinel` GHA workflow on every run.
+- **`/api/cron/stale-fmv-monitor` rewrite** ([app/api/cron/stale-fmv-monitor/route.ts](app/api/cron/stale-fmv-monitor/route.ts)) — abandoned the `health_check()` RPC. The current RPC shape no longer carries the route's expected `fmv_pipeline.staleness_minutes` / `sales_pipeline.last_sale_at` / `data_integrity.orphaned_editions_ok` / `database.size_mb` / `database.rls_coverage_pct` fields (the RPC's contract drifted to a flat fmv block + per-collection sales). The route now queries each metric directly in a single `Promise.all` (latest fmv_snapshot, latest sale, edition count, fmv coverage, orphaned-set + orphaned-player counts). Fixes the `RPC Ops Monitor` GHA workflow that was throwing HTTP 500 on every run.
+
+Deferred (Items 3-6 in the handoff)
+
+- **Re-merge the 6,949 TS UUID-keyed dupes** (handoff Item 3) — defer until the writer fix is verified to plateau new dupes at ~0/day. Without the writer fix, the merge would just regenerate the dupes.
+- **Items 4-6** (FMV-recalc AllDay throughput, LOW→STALE downgrade, NO_DATA investigation) — documented in `docs/audits/fmv-confidence-decomposition-2026-05-28.md`; touches the complex fmv-recalc path, out of scope for this pass.
+
+FMV diagnostic finding from the Cowork pass: HIGH peaked at 704 on 2026-05-24 then dropped to 423. Looks alarming — actually 203 of the lost editions were on the retired `sales_wap_v1` rogue inflated-AVG algo, so the drop is honest de-inflation. Honest baseline post-clobber-purge is ~501; current 423 is 84% of that. Pinnacle is the FMV quality leader at 53.6% HIGH (vs TS at 2.3% HIGH). Full decomposition in `docs/audits/fmv-confidence-decomposition-2026-05-28.md`.
+
+Edge-function + cron retirement audit confirmed already-clean: all Flowty pipelines stopped 2026-05-24; `topshot-listings-indexer` retired 2026-05-26. Dormant edge functions on Supabase are sleeping idle code, zero ongoing cost.
+
+Full session report: `docs/audits/cowork-platform-pass-2026-05-28.md`. Code-side handoff: `docs/handoff-2026-05-28-cowork-pass.md`. FMV decomposition: `docs/audits/fmv-confidence-decomposition-2026-05-28.md`.
+
+### May 25, 2026 — AllDay unmapped-sales resolver: GQL-primary rewrite + batch_size 5→200
 
 Diagnosed the `unmapped_sales` backlog the prior session's 14:53 smoke test flagged (`{still_unresolved: 2580}`). It is **not** a historical-spork problem — every one of the 2,550 NFL All Day rows is under 6 weeks old. Two compounding bugs were starving the resolver:
 

@@ -20,6 +20,7 @@ type SaleTransaction = {
     parallelID: string | null
     set: {
       id: string
+      flowId: string | number | null
       flowName: string | null
       flowSeriesNumber: number | null
     } | null
@@ -39,6 +40,7 @@ type SaleTransaction = {
     } | null
     play: {
       id: string
+      flowID: string | number | null
       stats: {
         playerID: string | null
         playerName: string | null
@@ -97,6 +99,7 @@ const SEARCH_TRANSACTIONS_QUERY = `
                     parallelID
                     set {
                       id
+                      flowId
                       flowName
                       flowSeriesNumber
                     }
@@ -116,6 +119,7 @@ const SEARCH_TRANSACTIONS_QUERY = `
                     }
                     play {
                       id
+                      flowID
                       stats {
                         playerID
                         playerName
@@ -156,7 +160,14 @@ function formatTier(tier: string | null): string {
   return "COMMON"
 }
 
+// Prefer the integer-pair (set.flowId:play.flowID) on-chain key. That's the
+// canonical TS edition external_id per the 2026-05-26 dedup merge. Falls back
+// to UUID-pair only if the on-chain ids are missing from the GQL response —
+// which shouldn't happen for live transactions but keeps the route resilient.
 function buildEditionKey(tx: SaleTransaction): string | null {
+  const onchain = extractOnchainIds(tx)
+  if (onchain) return `${onchain.setIdOnchain}:${onchain.playIdOnchain}`
+
   const moment = tx.moment
   if (!moment) return null
   const psp = moment.parallelSetPlay
@@ -164,6 +175,18 @@ function buildEditionKey(tx: SaleTransaction): string | null {
   const playId = psp?.playID ?? moment.play?.id
   if (!setId || !playId) return null
   return `${setId}:${playId}`
+}
+
+function extractOnchainIds(
+  tx: SaleTransaction,
+): { setIdOnchain: number; playIdOnchain: number } | null {
+  const setFlowIdRaw = tx.moment?.set?.flowId ?? null
+  const playFlowIdRaw = tx.moment?.play?.flowID ?? null
+  if (setFlowIdRaw == null || playFlowIdRaw == null) return null
+  const setN = Number(setFlowIdRaw)
+  const playN = Number(playFlowIdRaw)
+  if (!Number.isFinite(setN) || !Number.isFinite(playN)) return null
+  return { setIdOnchain: parseInt(String(setFlowIdRaw), 10), playIdOnchain: parseInt(String(playFlowIdRaw), 10) }
 }
 
 // ── Supabase upserts ──────────────────────────────────────────────────────────
@@ -243,6 +266,7 @@ async function upsertEdition(
   const circulations = moment.setPlay?.circulations
   const tier = formatTier(moment.tier)
   const isRetired = moment.setPlay?.flowRetired ?? false
+  const onchain = extractOnchainIds(tx)
 
   const { data, error } = await supabaseAdmin
     .from("editions")
@@ -257,6 +281,11 @@ async function upsertEdition(
         series: toNum(moment.set.flowSeriesNumber),
         edition_kind: isRetired ? "LE" : "CC",
         circulation_count: toNum(circulations?.circulationCount),
+        // On-chain integer ids written inline so editions_block_topshot_uuid_dupe_trg
+        // can match an existing integer canonical on INSERT and block UUID dupes,
+        // instead of letting a NULL-onchain row land and getting clobbered later.
+        set_id_onchain: onchain?.setIdOnchain ?? null,
+        play_id_onchain: onchain?.playIdOnchain ?? null,
         play_category: moment.play.stats?.playCategory ?? null,
         game_date: moment.play.stats?.dateOfMoment
           ? moment.play.stats.dateOfMoment.split("T")[0]
@@ -507,8 +536,9 @@ export async function POST(req: NextRequest) {
           for (const r of hydratedRows) {
             if (r.redirect) {
               // Canonical-resolved against an existing UUID-format edition;
-              // skip upsert. Downstream upsertEdition will re-upsert on the
-              // original key — that's a separate writer outside this fix.
+              // skip upsert. Downstream upsertEdition writes on the editionKey,
+              // which is now integer-pair (see buildEditionKey) and hits the
+              // same canonical row via the (external_id, collection_id) conflict.
               redirectedCount++
               continue
             }
