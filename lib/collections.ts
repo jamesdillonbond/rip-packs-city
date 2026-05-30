@@ -22,12 +22,33 @@ export type CollectionPage =
   | "market"
   | "analytics"
 
+/**
+ * Mirrors the Postgres `chain_type` enum in `public.collections.chain`.
+ * This is the AUTHORITATIVE chain identifier for chain-aware dispatch —
+ * branch on `dbChain`, not the partner/roadmap `chain` label below.
+ * Expand via `ALTER TYPE chain_type ADD VALUE '<name>'` when a new
+ * target chain is approved (e.g. "base" when Beezie is promoted).
+ */
+export type ChainType =
+  | "flow"
+  | "ethereum"
+  | "polygon"
+  | "solana"
+  | "flow_evm"
+
 export interface Collection {
   id: string
   label: string
   shortLabel: string
   sport: string
+  /** Partner / roadmap label — NOT the DB chain. Use `dbChain` for chain dispatch. */
   chain: "flow" | "evm" | "panini" | "candy" | "rwa"
+  /**
+   * Authoritative chain identifier mirroring `collections.chain` in Postgres.
+   * `null` for unpublished placeholders that aren't seeded in the DB yet.
+   * Chain-aware code should branch on this, not `chain`.
+   */
+  dbChain: ChainType | null
   partner: string
   accent: string
   /** Secondary accent for hover states + tier chips. Defaults to accent. */
@@ -62,6 +83,7 @@ export const COLLECTIONS: Collection[] = [
     shortLabel: "Top Shot",
     sport: "NBA",
     chain: "flow",
+    dbChain: "flow",
     partner: "Dapper Labs",
     accent: "#E03A2F",
     accentSoft: "#FF4D40",
@@ -90,6 +112,7 @@ export const COLLECTIONS: Collection[] = [
     shortLabel: "All Day",
     sport: "NFL",
     chain: "flow",
+    dbChain: "flow",
     partner: "Dapper Labs",
     accent: "#4F94D4",
     accentSoft: "#6FAEF0",
@@ -116,6 +139,7 @@ export const COLLECTIONS: Collection[] = [
     shortLabel: "Pinnacle",
     sport: "Entertainment",
     chain: "flow",
+    dbChain: "flow",
     partner: "Dapper Labs",
     accent: "#A855F7",
     accentSoft: "#C084FC",
@@ -139,6 +163,7 @@ export const COLLECTIONS: Collection[] = [
     shortLabel: "Golazos",
     sport: "Soccer",
     chain: "flow",
+    dbChain: "flow",
     partner: "Dapper Labs",
     accent: "#22C55E",
     accentSoft: "#4ADE80",
@@ -168,6 +193,7 @@ export const COLLECTIONS: Collection[] = [
     shortLabel: "Strike",
     sport: "MMA",
     chain: "flow",
+    dbChain: "flow",
     partner: "Concept Labs",
     accent: "#EF4444",
     icon: "\u{1F94A}",
@@ -188,6 +214,7 @@ export const COLLECTIONS: Collection[] = [
     shortLabel: "Panini",
     sport: "Multi-Sport",
     chain: "panini",
+    dbChain: null,
     partner: "Panini America",
     accent: "#C084FC",
     icon: "\u{1F0CF}",
@@ -202,6 +229,7 @@ export const COLLECTIONS: Collection[] = [
     shortLabel: "Candy",
     sport: "MLB",
     chain: "candy",
+    dbChain: null,
     partner: "Futureverse",
     accent: "#FB923C",
     icon: "⚾",
@@ -215,6 +243,7 @@ export const COLLECTIONS: Collection[] = [
     shortLabel: "RWA",
     sport: "Multi-Sport",
     chain: "rwa",
+    dbChain: null,
     partner: "Courtyard / Beezie",
     accent: "#F59E0B",
     icon: "\u{1F3C5}",

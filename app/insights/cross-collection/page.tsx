@@ -253,7 +253,20 @@ export default function CrossCollectionPage() {
             <tbody>
               {overlap.map((o) => (
                 <tr key={o.set_id}>
-                  <td>{o.set_name ?? "—"}</td>
+                  <td>
+                    {o.set_name ? (
+                      <Link
+                        href={`/insights/squeeze?set=${encodeURIComponent(o.set_name)}`}
+                        className="rpc-cc-set-link"
+                        title={`Drill into ${o.set_name} on the squeeze board`}
+                      >
+                        {o.set_name}
+                        <span className="rpc-cc-drill-hint">drill →</span>
+                      </Link>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td className="rpc-cc-td-num rpc-cc-td-emph">{fmtInt(o.cohort_holders)}</td>
                   <td className="rpc-cc-td-num">{fmtInt(o.moments_in_cohort)}</td>
                 </tr>
@@ -342,6 +355,10 @@ const CSS = `
 .rpc-cc-dot-on { background: var(--rpc-red); }
 .rpc-cc-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
 .rpc-cc-td-emph { color: var(--rpc-red); font-weight: 700; }
+.rpc-cc-set-link { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
+.rpc-cc-set-link:hover { color: var(--rpc-red); }
+.rpc-cc-drill-hint { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); opacity: 0.5; transition: color 100ms, opacity 100ms; }
+.rpc-cc-set-link:hover .rpc-cc-drill-hint { color: var(--rpc-red); opacity: 1; }
 
 .rpc-cc-footer { max-width: 1180px; margin: 36px auto 0; display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
 .rpc-cc-method p { font-size: 14px; line-height: 1.65; color: var(--rpc-text-secondary); margin: 0 0 12px; }
