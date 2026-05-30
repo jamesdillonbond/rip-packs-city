@@ -1,10 +1,9 @@
 // app/insights/page.tsx
 //
 // Public landing page for the /insights surface. Free, no signup. Per the
-// 2026-05-29 4-week launch plan: this is the entry door to the three wedge
-// surfaces (squeeze, rookies, pack-reality). Only /insights/squeeze is live
-// today (2026-05-30); the other two are shipped as "coming soon" cards so
-// the index can launch alongside the first wedge.
+// 2026-05-29 4-week launch plan: this is the entry door to the public wedge
+// surfaces. As of 2026-05-30 five surfaces are live — A (squeeze), B
+// (pack-reality), C (rookies), D (first-mint), E (cross-collection).
 
 import Link from "next/link"
 
@@ -56,6 +55,15 @@ const CARDS: Card[] = [
     cta: "Open trophy tracker",
     available: true,
   },
+  {
+    slug: "/insights/cross-collection",
+    eyebrow: "Surface E · Live",
+    title: "Cross-Collection Whale Map",
+    blurb:
+      "143 wallets hold 3+ Flow blockchain collections — Top Shot, AllDay, Golazos, Pinnacle, UFC Strike. Cohort distribution, top wallets, what they actually collect.",
+    cta: "Open whale map",
+    available: true,
+  },
 ]
 
 export default function InsightsIndexPage() {
@@ -68,7 +76,7 @@ export default function InsightsIndexPage() {
         <h1 className="rpc-ins-h1">Things Top Shot won&apos;t tell you.</h1>
         <p className="rpc-ins-lede">
           Free, no signup. Built for the collector who wants the math, not
-          the marketing. Three wedges of intelligence the marketplace
+          the marketing. Five wedges of intelligence the marketplace
           structurally can&apos;t (or won&apos;t) ship.
         </p>
       </section>

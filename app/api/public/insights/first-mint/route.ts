@@ -34,6 +34,12 @@ export async function GET(req: NextRequest) {
   const minMult = url.searchParams.get("min_multiplier")
     ? Number(url.searchParams.get("min_multiplier"))
     : null;
+  // Optional: "trophy-only" view (max_circulation=100 by convention) keeps
+  // the headline-grade scarcity trophies and drops the Common-tier outliers.
+  const maxCirculation = url.searchParams.get("max_circulation")
+    ? Number(url.searchParams.get("max_circulation"))
+    : null;
+  const tier = url.searchParams.get("tier")?.toUpperCase() ?? null;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q = (supabase as any)
@@ -43,6 +49,12 @@ export async function GET(req: NextRequest) {
     );
   if (minMult != null && Number.isFinite(minMult)) {
     q = q.gte("multiplier", minMult);
+  }
+  if (maxCirculation != null && Number.isFinite(maxCirculation)) {
+    q = q.lte("circulation_count", maxCirculation);
+  }
+  if (tier) {
+    q = q.eq("tier", tier);
   }
   q = q.order("multiplier", { ascending: false, nullsFirst: false }).limit(limit);
 
@@ -67,7 +79,7 @@ export async function GET(req: NextRequest) {
       fetched_at: new Date().toISOString(),
       sources: ["topshot_first_mint_trophy_stats", "topshot_first_mint_trophies"],
       elapsed_ms: elapsedMs,
-      filters: { limit, min_multiplier: minMult },
+      filters: { limit, min_multiplier: minMult, max_circulation: maxCirculation, tier },
     },
     stats: statsRes.data?.[0] ?? null,
     trophies: trophiesRes.data ?? [],
