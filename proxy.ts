@@ -219,6 +219,15 @@ function isPublicPath(pathname: string, method: string): boolean {
   // optimizer. Anyone (signed-in or not) can reach it.
   if (pathname === "/nba/fast-break" || pathname.startsWith("/nba/fast-break/")) return true
 
+  // ── Public insights surface ──────────────────────────────────────────
+  // /insights/* is the no-auth-friction public intelligence surface
+  // (squeeze board, rookie index, pack reality) launched per the
+  // 2026-05-29 4-week launch plan. Anyone (signed-in or not) can reach
+  // these pages — they are the wedge content driving Twitter / Reddit
+  // distribution. Backing JSON lives under /api/public/insights/* which
+  // is already covered by the /api/public/* bypass above.
+  if (pathname === "/insights" || pathname.startsWith("/insights/")) return true
+
   // ── Public moment / edition detail pages ─────────────────────────────
   // /moment/<id> resolves flow_id | moment_uuid | edition_uuid through
   // the SECDEF get_moment_detail RPC. Linked from Trophy Slab QR codes,
