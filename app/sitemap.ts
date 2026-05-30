@@ -276,6 +276,30 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE_URL}/nba/fast-break`,   lastModified: now, changeFrequency: 'daily',   priority: 0.9 },
   ]
 
+  // Public /insights/* wedge surfaces — the distribution thesis. robots.txt
+  // allows them and the homepage links them, but they were never advertised
+  // to crawlers. Slugs verified against app/insights/*/page.tsx (9 routes).
+  const INSIGHT_ROUTES = [
+    'squeeze',
+    'pack-reality',
+    'rookies',
+    'first-mint',
+    'cross-collection',
+    'set-squeeze',
+    'pinnacle-scarcity',
+    'squeeze-check',
+    'tc-report',
+  ]
+  const insightsPages: MetadataRoute.Sitemap = [
+    { url: `${BASE_URL}/insights`, lastModified: now, changeFrequency: 'daily', priority: 0.9 },
+    ...INSIGHT_ROUTES.map((r) => ({
+      url: `${BASE_URL}/insights/${r}`,
+      lastModified: now,
+      changeFrequency: 'daily' as const,
+      priority: 0.8,
+    })),
+  ]
+
   const featurePages: MetadataRoute.Sitemap = publishedCollections().flatMap((col) => [
     {
       url: `${BASE_URL}/${col.id}`,
@@ -455,6 +479,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   return [
     ...staticPages,
+    ...insightsPages,
     ...featurePages,
     ...analyticsPages,
     ...walletPages,
