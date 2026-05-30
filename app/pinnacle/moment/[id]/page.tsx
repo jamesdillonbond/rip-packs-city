@@ -50,7 +50,7 @@ type LatestFmv = {
   days_since_sale: number | null
 }
 
-async function load(id: string): Promise<{
+async function load(rawId: string): Promise<{
   ed: PinnacleEdition & { edition_key: string | null }
   fmv: LatestFmv | null
   variant_avg_mint: number | null
@@ -59,14 +59,21 @@ async function load(id: string): Promise<{
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supa = supabaseAdmin as any
 
-  // Single round-trip via SECDEF RPC. The earlier .from() / .eq() / .in()
-  // chain silently returned zero rows for ids containing colons — even
-  // though the underlying DB rows exist (verified via direct SQL). 331/479
-  // pinnacle_editions ids contain colons (e.g. "PIXR-LEV1-INOU:Standard:1"),
-  // so 69% of /pinnacle/moment/<id> links from the scarcity board were
-  // 404ing. The RPC takes p_id as a JSON body parameter, sidestepping any
-  // PostgREST URL-encoding edge case in the wire format. Returns NULL when
-  // no edition row matches.
+  // Next.js 16 / Vercel deliver params.id URL-encoded — `%3A` stays as
+  // `%3A`, not decoded back to `:`. 331/479 pinnacle_editions ids contain
+  // colons (e.g. "PIXR-LEV1-INOU:Standard:1"), so the encoded literal
+  // never matches the DB row. Decode once at the lambda boundary before
+  // any lookup.
+  let id: string
+  try {
+    id = decodeURIComponent(rawId)
+  } catch {
+    id = rawId
+  }
+
+  // Single round-trip via SECDEF RPC — takes p_id as a JSON body
+  // parameter and returns ed + fmv + variant_avg_mint + holders_cached
+  // as one jsonb blob. Returns NULL when no edition row matches.
   const { data: blob } = await supa.rpc("get_pinnacle_moment_detail", { p_id: id })
   if (!blob || !blob.ed) return null
 
