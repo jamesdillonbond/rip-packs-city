@@ -39,6 +39,9 @@ nftlocker-full.json
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+# Ad-hoc per-folder tsc verification configs — kept out of git
+tsconfig.*.json
+!tsconfig.json
 
 # editor / IDE
 .vscode/
