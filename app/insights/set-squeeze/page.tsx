@@ -268,10 +268,13 @@ export default function SetSqueezePage() {
           <h3 className="rpc-ss-h3">Methodology</h3>
           <p>
             <strong>Avg squeeze</strong> = average of <code>(locked + burned)
-            / circulation</code> across every covered edition in the set.
-            Sets with fewer than 5 covered editions are excluded so single-
-            edition outliers don&apos;t dominate. Numbers refresh hourly
-            from on-chain badge ingestion.
+            / circulation</code> across every covered edition in the set —
+            including editions below 50% squeeze. This means a set with a
+            few very-squeezed editions and many low-squeezed editions reads
+            honestly as a moderately-squeezed set, not a hot one. Sets with
+            fewer than 5 covered editions are excluded so single-edition
+            outliers don&apos;t dominate. Numbers refresh hourly from
+            on-chain badge ingestion.
           </p>
           <p>
             <strong>Why "covered editions" might be less than the set&apos;s
