@@ -46,6 +46,7 @@ type Trophy = {
 type ApiResponse = { meta: { fetched_at: string }; stats: Stats; trophies: Trophy[] }
 
 type MultBucket = "ALL" | "5X" | "10X" | "50X" | "100X"
+type TierFilter = "ALL" | "COMMON" | "RARE" | "LEGENDARY" | "FANDOM" | "ULTIMATE"
 
 function fmtInt(n: number | null | undefined): string {
   if (n == null) return "—"
@@ -89,6 +90,7 @@ export default function FirstMintPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [bucket, setBucket] = useState<MultBucket>("ALL")
+  const [tier, setTier] = useState<TierFilter>("ALL")
 
   useEffect(() => {
     const ctrl = new AbortController()
@@ -101,6 +103,7 @@ export default function FirstMintPage() {
         if (bucket === "10X") params.set("min_multiplier", "10")
         if (bucket === "50X") params.set("min_multiplier", "50")
         if (bucket === "100X") params.set("min_multiplier", "100")
+        if (tier !== "ALL") params.set("tier", tier)
         const r = await fetch(`/api/public/insights/first-mint?${params.toString()}`, {
           signal: ctrl.signal,
           cache: "no-store",
@@ -117,7 +120,7 @@ export default function FirstMintPage() {
     }
     run()
     return () => ctrl.abort()
-  }, [bucket])
+  }, [bucket, tier])
 
   const tweetIntent = useMemo(() => {
     const text = `The "first mint" trophy thesis is real and quantifiable.\n\nOn TS, serial #1 typically sells for 8-15× the average serial price. Outliers go up to 248×.\n\nLive tracker:`
@@ -169,17 +172,32 @@ export default function FirstMintPage() {
         </div>
       </section>
 
-      <section className="rpc-fm-controls" aria-label="Multiplier filter">
-        <span className="rpc-fm-pill-label">MIN MULTIPLIER</span>
-        {(["ALL", "5X", "10X", "50X", "100X"] as MultBucket[]).map((b) => (
-          <button
-            key={b}
-            className={`rpc-fm-pill ${bucket === b ? "rpc-fm-pill-active" : ""}`}
-            onClick={() => setBucket(b)}
-          >
-            {b === "ALL" ? "All" : `≥ ${b}`}
-          </button>
-        ))}
+      <section className="rpc-fm-controls" aria-label="Filters">
+        <div className="rpc-fm-pill-group">
+          <span className="rpc-fm-pill-label">MIN MULTIPLIER</span>
+          {(["ALL", "5X", "10X", "50X", "100X"] as MultBucket[]).map((b) => (
+            <button
+              key={b}
+              className={`rpc-fm-pill ${bucket === b ? "rpc-fm-pill-active" : ""}`}
+              onClick={() => setBucket(b)}
+            >
+              {b === "ALL" ? "All" : `≥ ${b}`}
+            </button>
+          ))}
+        </div>
+
+        <div className="rpc-fm-pill-group">
+          <span className="rpc-fm-pill-label">TIER</span>
+          {(["ALL", "COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"] as TierFilter[]).map((t) => (
+            <button
+              key={t}
+              className={`rpc-fm-pill ${tier === t ? "rpc-fm-pill-active" : ""}`}
+              onClick={() => setTier(t)}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
       </section>
 
       <section className="rpc-fm-table-wrap" aria-label="Trophy list">
@@ -284,7 +302,8 @@ const CSS = `
 .rpc-fm-kpi-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 6px; }
 .rpc-fm-kpi-value { font-family: var(--font-display); font-weight: 800; font-size: 26px; color: var(--rpc-red); }
 
-.rpc-fm-controls { max-width: 1180px; margin: 0 auto 18px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.rpc-fm-controls { max-width: 1180px; margin: 0 auto 18px; display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: center; }
+.rpc-fm-pill-group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .rpc-fm-pill-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-right: 4px; }
 .rpc-fm-pill { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; padding: 7px 14px; border: 1px solid var(--rpc-border); background: transparent; color: var(--rpc-text-secondary); cursor: pointer; border-radius: 2px; }
 .rpc-fm-pill:hover { border-color: var(--rpc-border-hover); color: var(--rpc-text-primary); }

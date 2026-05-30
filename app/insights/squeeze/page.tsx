@@ -118,6 +118,9 @@ export default function SqueezePage() {
 
   const [tier, setTier] = useState<TierFilter>("ALL")
   const [maxBuyable, setMaxBuyable] = useState<number | null>(null)
+  // Trophy-circulation filter — exposes the API's max_circulation param so
+  // users can drill straight to LEGENDARY / ULTIMATE-size editions.
+  const [maxCirculation, setMaxCirculation] = useState<number | null>(null)
   const [sort, setSort] = useState<SortKey>("squeeze")
 
   useEffect(() => {
@@ -156,9 +159,10 @@ export default function SqueezePage() {
     return rows.filter((r) => {
       if (tier !== "ALL" && normalizeTier(r.tier) !== tier) return false
       if (maxBuyable != null && (r.effectively_buyable ?? Infinity) > maxBuyable) return false
+      if (maxCirculation != null && (r.circulation ?? Infinity) > maxCirculation) return false
       return true
     })
-  }, [rows, tier, maxBuyable])
+  }, [rows, tier, maxBuyable, maxCirculation])
 
   const kpis = useMemo(() => {
     if (filtered.length === 0) {
@@ -231,6 +235,24 @@ export default function SqueezePage() {
               onClick={() => setMaxBuyable(m)}
             >
               {m == null ? "Any" : `≤ ${m}`}
+            </button>
+          ))}
+        </div>
+
+        <div className="rpc-sq-pill-group" aria-label="Max circulation">
+          <span className="rpc-sq-pill-label">TROPHY-CIRC</span>
+          {[
+            { val: null, label: "Any" },
+            { val: 100, label: "≤ 100" },
+            { val: 75, label: "≤ 75 (Legendary)" },
+            { val: 10, label: "≤ 10 (Ultimate)" },
+          ].map((m) => (
+            <button
+              key={String(m.val)}
+              className={`rpc-sq-pill ${maxCirculation === m.val ? "rpc-sq-pill-active" : ""}`}
+              onClick={() => setMaxCirculation(m.val)}
+            >
+              {m.label}
             </button>
           ))}
         </div>
