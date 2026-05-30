@@ -59,65 +59,23 @@ async function load(id: string): Promise<{
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supa = supabaseAdmin as any
 
-  // .eq("id", value) URL-encodes the value, but PostgREST silently fails to
-  // match rows where the id contains a colon (e.g. "PIXR-LEV1-INOU:Standard:1").
-  // .in("id", [value]) wraps the value in PostgREST's quoted-list syntax
-  // (id=in.("...")), forcing an unambiguous value boundary. 331/479 Pinnacle
-  // edition ids contain colons — this fallback is the difference between
-  // /pinnacle/moment/<id> returning 200 vs 404 for 69% of the catalog.
-  const { data: edRows } = await supa
-    .from("pinnacle_editions")
-    .select(
-      "id, external_id, edition_key, character_name, franchise, set_name, variant_type, edition_type, mint_count, is_chaser, thumbnail_url, studio, materials, effects, size, color, thickness, minting_date, ask_price, ask_source, series_year"
-    )
-    .in("id", [id])
-    .limit(1)
-  const ed = edRows && edRows[0]
-  if (!ed) return null
-
-  // Latest FMV snapshot — same colon-in-id workaround as above.
-  const { data: fmvRows } = await supa
-    .from("pinnacle_fmv_snapshots")
-    .select("fmv_usd, confidence, computed_at, sales_count_30d, days_since_sale")
-    .in("edition_id", [id])
-    .order("computed_at", { ascending: false })
-    .limit(1)
-  const fmv: LatestFmv | null = (fmvRows && fmvRows[0]) ?? null
-
-  // Variant family average mint — direct aggregate via pull-and-average since
-  // PostgREST doesn't expose AVG inline. The variant-family member count is
-  // small (≤158 for Standard, fewer for premium variants) so a full select
-  // is cheap.
-  let variant_avg_mint: number | null = null
-  if (ed.variant_type) {
-    const { data: vAvg } = await supa
-      .from("pinnacle_editions")
-      .select("mint_count")
-      .eq("variant_type", ed.variant_type)
-      .not("mint_count", "is", null)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const nums = ((vAvg as any[]) ?? [])
-      .map((r) => Number(r.mint_count))
-      .filter((n) => Number.isFinite(n))
-    if (nums.length > 0) {
-      variant_avg_mint = nums.reduce((a, b) => a + b, 0) / nums.length
-    }
-  }
-
-  // Holders count from wallet_moments_cache. wmc keys on edition_key text;
-  // fall back to ed.id if edition_key is null. Use .in() for the same
-  // colon-in-value reason as above.
-  const { count: holders_cached } = await supa
-    .from("wallet_moments_cache")
-    .select("wallet_address", { count: "exact", head: true })
-    .eq("collection_id", "7dd9dd11-e8b6-45c4-ac99-71331f959714")
-    .in("edition_key", [ed.edition_key ?? ed.id])
+  // Single round-trip via SECDEF RPC. The earlier .from() / .eq() / .in()
+  // chain silently returned zero rows for ids containing colons — even
+  // though the underlying DB rows exist (verified via direct SQL). 331/479
+  // pinnacle_editions ids contain colons (e.g. "PIXR-LEV1-INOU:Standard:1"),
+  // so 69% of /pinnacle/moment/<id> links from the scarcity board were
+  // 404ing. The RPC takes p_id as a JSON body parameter, sidestepping any
+  // PostgREST URL-encoding edge case in the wire format. Returns NULL when
+  // no edition row matches.
+  const { data: blob } = await supa.rpc("get_pinnacle_moment_detail", { p_id: id })
+  if (!blob || !blob.ed) return null
 
   return {
-    ed: ed as PinnacleEdition & { edition_key: string | null },
-    fmv,
-    variant_avg_mint,
-    holders_cached: holders_cached ?? 0,
+    ed: blob.ed as PinnacleEdition & { edition_key: string | null },
+    fmv: (blob.fmv ?? null) as LatestFmv | null,
+    variant_avg_mint:
+      blob.variant_avg_mint != null ? Number(blob.variant_avg_mint) : null,
+    holders_cached: Number(blob.holders_cached ?? 0),
   }
 }
 
