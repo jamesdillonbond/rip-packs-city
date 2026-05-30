@@ -91,6 +91,15 @@ const CARDS: Card[] = [
     cta: "Check your wallet",
     available: true,
   },
+  {
+    slug: "/insights/tc-report",
+    eyebrow: "Tool · Live",
+    title: "Top Collector Report",
+    blurb:
+      "Full bag analytics for a wallet — squeeze exposure, set completion, cross-collection footprint, rookie + WNBA coverage, and recent acquisitions. Top Shot shows you what you own. We show you what it means.",
+    cta: "Run the report",
+    available: true,
+  },
 ]
 
 export default function InsightsIndexPage() {
