@@ -153,6 +153,32 @@ export async function POST(req: NextRequest) {
     checks.push({ name: "Edition Coverage", status: "warn", detail: `Exception: ${e.message}` });
   }
 
+  // TS edition-writer leak tripwire — inert UUID-keyed Top Shot edition rows
+  // created in the last 48h. Canonical TS external_id is the integer pair
+  // "set:play" (never contains '-'); UUID-keyed rows always do, so '%-%' is an
+  // exact proxy for external_id !~ '^[0-9]+:[0-9]+$'. Those rows are made inert
+  // by editions_block_topshot_uuid_dupe_trg, so a high count means the GQL
+  // ingest writer is hitting the UUID fallback (set.flowId/play.flowID arriving
+  // null from searchMarketplaceTransactions). See handoff 2026-05-29 #2/#4.
+  try {
+    const since48h = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString();
+    const { count: inertUuid } = await supabase
+      .from("editions")
+      .select("id", { count: "exact", head: true })
+      .eq("collection_id", "95f28a17-224a-4025-96ad-adf8a4c63bfd")
+      .like("external_id", "%-%")
+      .gte("created_at", since48h);
+    const n = inertUuid || 0;
+    checks.push({
+      name: "TS Edition Writer Leak (48h)",
+      status: n < 250 ? "ok" : n < 2000 ? "warn" : "critical",
+      detail: `${n} inert UUID-keyed TS edition rows created in last 48h (integer-pair "set:play" is canonical; these get nulled by the dupe trigger). High count = ingest GQL writer hitting the UUID fallback.`,
+      value: n,
+    });
+  } catch (e: any) {
+    checks.push({ name: "TS Edition Writer Leak (48h)", status: "warn", detail: `Exception: ${e.message}` });
+  }
+
   try {
     const { count } = await supabase.from("sales").select("*", { count: "exact", head: true });
     checks.push({ name: "Total Sales", status: "ok", detail: `${(count || 0).toLocaleString()} total sales in database`, value: count || 0 });
