@@ -1,6 +1,38 @@
 # Chain-Abstraction Schema Plan (Draft 2026-05-30)
 
-**Status:** Approved 2026-05-30. Phases A + B shipped (see below). Phases C/D/E in [docs/handoff-2026-05-30-chain-abstraction-phases-cde.md](../handoff-2026-05-30-chain-abstraction-phases-cde.md). CLAUDE.md updated.
+**Status:** Approved 2026-05-30. Phases A + B + C + E shipped. Phase D plan committed (`ce19f35` + `4938fbb`) — execution pending in a clean Claude Code session. Phase F gated on Phase D 48h soak. Handoffs: [Phase D dedicated plan](../handoff-phase-d-lib-chains-flow-reorg.md) (canonical, run from this), [chain-abstraction phases C/D/E](../handoff-2026-05-30-chain-abstraction-phases-cde.md) (historical; Phase D section banner-marked superseded). CLAUDE.md updated.
+
+### Phase status snapshot (2026-05-30 evening)
+
+| Phase | State | Notes |
+|---|---|---|
+| A — `collections.chain` column + enum + check | Shipped | Pre-existed; only the index + comments needed (`audit_20260530_collection_chains_view_and_chain_index`) |
+| B — `collection_chains` view | Shipped | Same migration as A; granted to anon/authenticated/service_role |
+| C — `lib/collections.ts` typing | **Shipped 2026-05-30** | Commit `d9323f9`, deploy `dpl_BZLeeiot4EYSQo6qPeBQENN9cno3` READY. `ChainType` export + optional `dbChain?: ChainType \| null` added; existing `chain` field untouched. `dbChain: 'flow'` on 5 published, `null` on 3 placeholders |
+| D — `lib/chains/flow/` reorg | **Plan shipped 2026-05-30 (`ce19f35` + `4938fbb`)** | [docs/handoff-phase-d-lib-chains-flow-reorg.md](../handoff-phase-d-lib-chains-flow-reorg.md). 833 `@/lib/...` imports → shims bulletproof. Per-file caller counts verified. Default-export trap on `lib/flow.ts` documented. Ready for clean Claude Code session. 2-3 days reorg + 1-day smoke + 24h soak when it runs |
+| E — chain-aware reads audit | **Shipped 2026-05-30 (`205024c`)** | 168 surfaces; only 3 need chain-dispatch. DB-side companion landed alongside |
+| F — drop `chain` DEFAULT | Gated on Phase D | Pre-staged SQL below |
+
+### Beezie/Base parallel data plane — call: keep parallel for now
+
+Discovered during the Phase E DB-side audit: there's a live `evm_chains` / `evm_nft_contracts` / `evm_nft_transfers` registry indexing Beezie Collectibles on Base (1.01M transfers, 1,828 holders, hourly `evm-transfers-ingest` cron since 2026-05-13). This sits outside `collections.chain_type` entirely.
+
+Decision: don't promote yet. Promotion (add `'base'` to the `chain_type` enum, seed a `collections` row for Beezie, bridge `evm_nft_transfers` into the canonical `editions`/`sales` shape) would create two parallel chain-two builds — the strategy doc forbids that. Revisit on either:
+- July 8 Candy/Solana tripwire (if Candy fails, Beezie/Base becomes the chain-two pivot target), OR
+- A real product consumer emerging (concierge wallet query, Beezie-collector portfolio request, etc.).
+
+### Phase F pre-staged SQL (do NOT apply yet)
+
+After Phase D ships and soaks for 48h in production:
+
+```sql
+-- audit_2026XXXX_collections_chain_drop_default
+ALTER TABLE collections ALTER COLUMN chain DROP DEFAULT;
+```
+
+Rollback: `ALTER TABLE collections ALTER COLUMN chain SET DEFAULT 'flow'::chain_type`. Trivial.
+
+Why gated on D, not C: Phase C is additive (new `dbChain` field) and doesn't change inserts into `collections`. Phase D moves the Flow-specific ingest code under `lib/chains/flow/`, which is the moment when "chain dispatch lives in code" becomes true. Dropping the DEFAULT before D would force callers to pass chain explicitly while half the registry still doesn't know about the dbChain field. After D + 48h soak, both halves of the equation are in place.
 
 **Companion doc:** [docs/strategy/multi-chain-thesis-2026-05-30.md](../strategy/multi-chain-thesis-2026-05-30.md)
 
