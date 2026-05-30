@@ -148,7 +148,12 @@ export default function SqueezePage() {
         const params = new URLSearchParams()
         params.set("limit", "200")
         params.set("sort", sort)
-        params.set("min_squeeze", "50")
+        // Default min_squeeze = 50 (the "squeeze board" framing). When the
+        // user arrives via a player or set drill-down, drop the floor to 0
+        // so they see ALL of that player/set's editions, not just the
+        // squeezed ones — e.g. a rookie with max squeeze 48% deserves to
+        // be visible.
+        params.set("min_squeeze", setFilter || playerFilter ? "0" : "50")
         // Set + player filters are server-side (ilike). Push them when
         // present. Tier/buyable/circulation stay client-side over the
         // already-fetched 200.
