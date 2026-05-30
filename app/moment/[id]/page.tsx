@@ -27,6 +27,17 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase"
+import { marketplaceMomentUrl } from "@/lib/collections"
+import TrackedOutboundLink from "@/components/TrackedOutboundLink"
+
+// Display label for the native marketplace per URL slug. Only collections with
+// a marketplaceMomentUrl template can produce a valid deep link.
+const MARKETPLACE_LABEL: Record<string, string> = {
+  "nba-top-shot": "Top Shot",
+  "nfl-all-day": "NFL All Day",
+  "laliga-golazos": "LaLiga Golazos",
+  "disney-pinnacle": "Pinnacle",
+}
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -407,6 +418,19 @@ export default async function MomentPage(
   const collectionSlugUrl = urlSlugForCollection(e.collection_slug)
   const collectionDisplay = collectionLabel(e.collection_slug)
 
+  // Outbound marketplace deep link. marketplaceMomentUrl() builds a
+  // SPECIFIC-moment URL (e.g. nbatopshot.com/moment/<nftId>), so it's only
+  // valid when we have a concrete on-chain NFT id — i.e. a serial-specific
+  // page (kind='moment'). Edition-level pages have no single moment to link
+  // to, so we don't fabricate a URL for them. UFC Strike has no template, so
+  // marketplaceMomentUrl returns null there and the CTA is omitted.
+  const marketplaceNftId = ss?.nft_id ?? (r?.kind === "moment" ? r?.moment_id ?? null : null)
+  const marketplaceUrl =
+    collectionSlugUrl && marketplaceNftId
+      ? marketplaceMomentUrl(collectionSlugUrl, marketplaceNftId)
+      : null
+  const marketplaceName = collectionSlugUrl ? MARKETPLACE_LABEL[collectionSlugUrl] ?? null : null
+
   // Parallel extras — all SECDEF RPCs, independent, fan out in one pass.
   const [highOffer, parallels, badges, specialSerials] = await Promise.all([
     fetchHighOffer(e.id),
@@ -722,6 +746,42 @@ export default async function MomentPage(
               ))}
             </div>
           )}
+
+          {marketplaceUrl && marketplaceName ? (
+            <TrackedOutboundLink
+              href={marketplaceUrl}
+              payload={{
+                surface: "moment",
+                destination: `${collectionSlugUrl}_listing`,
+                editionKey: e.external_id,
+                momentId: marketplaceNftId,
+                playerName: e.player_name,
+                setName: e.set_name,
+                tier: e.tier,
+                serial,
+                fmv: f?.fmv_usd ?? null,
+              }}
+              style={{
+                marginTop: 4,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                padding: "12px 20px",
+                background: "var(--rpc-red)",
+                color: "#fff",
+                borderRadius: 8,
+                textDecoration: "none",
+                fontFamily: "var(--font-display)",
+                fontWeight: 800,
+                fontSize: 14,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+              }}
+            >
+              View on {marketplaceName} →
+            </TrackedOutboundLink>
+          ) : null}
         </div>
       </section>
 
