@@ -191,14 +191,25 @@ export default function RookiesPage() {
               {rows.map((r) => (
                 <tr key={r.player_name}>
                   <td>
-                    <Link
-                      href={`/insights/squeeze?player=${encodeURIComponent(r.player_name)}`}
-                      className="rpc-rk-player-link"
-                      title={`See ${r.player_name}'s editions on the squeeze board`}
-                    >
-                      <span className="rpc-rk-player">{r.player_name}</span>
-                      <span className="rpc-rk-drill-hint">squeeze →</span>
-                    </Link>
+                    <div className="rpc-rk-player-cell">
+                      <Link
+                        href={`/insights/squeeze?player=${encodeURIComponent(r.player_name)}`}
+                        className="rpc-rk-player-link"
+                        title={`See ${r.player_name}'s editions on the squeeze board`}
+                      >
+                        <span className="rpc-rk-player">{r.player_name}</span>
+                        <span className="rpc-rk-drill-hint">squeeze →</span>
+                      </Link>
+                      {Number(r.mint_one_eds_with_history ?? 0) > 0 ? (
+                        <Link
+                          href={`/insights/first-mint?player=${encodeURIComponent(r.player_name)}`}
+                          className="rpc-rk-trophy-link"
+                          title={`See ${r.player_name}'s first-mint trophies`}
+                        >
+                          trophies →
+                        </Link>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="rpc-rk-td-num">{fmtInt(r.edition_count)}</td>
                   <td className="rpc-rk-td-num">{fmtInt(r.sales_30d)}</td>
@@ -286,10 +297,13 @@ const CSS = `
 .rpc-rk-th-num { text-align: right; }
 .rpc-rk-table td { padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); vertical-align: middle; }
 .rpc-rk-player { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); transition: color 100ms; }
+.rpc-rk-player-cell { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .rpc-rk-player-link { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 10px; }
 .rpc-rk-player-link:hover .rpc-rk-player { color: var(--rpc-red); }
 .rpc-rk-player-link:hover .rpc-rk-drill-hint { color: var(--rpc-red); opacity: 1; }
 .rpc-rk-drill-hint { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); opacity: 0.5; transition: color 100ms, opacity 100ms; }
+.rpc-rk-trophy-link { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); text-decoration: none; padding: 4px 8px; border: 1px solid var(--rpc-border); border-radius: 2px; white-space: nowrap; opacity: 0.65; transition: color 100ms, border-color 100ms, opacity 100ms; }
+.rpc-rk-trophy-link:hover { color: var(--rpc-red); border-color: var(--rpc-red); opacity: 1; }
 .rpc-rk-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
 .rpc-rk-td-emph { color: var(--rpc-red); font-weight: 700; }
 

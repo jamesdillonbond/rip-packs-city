@@ -91,6 +91,19 @@ export default function FirstMintPage() {
   const [error, setError] = useState<string | null>(null)
   const [bucket, setBucket] = useState<MultBucket>("ALL")
   const [tier, setTier] = useState<TierFilter>("ALL")
+  // Drill-down filters arriving via URL — typically from /insights/rookies
+  // (player) or /insights/set-squeeze (set). One-shot read on mount.
+  const [playerFilter, setPlayerFilter] = useState<string | null>(null)
+  const [setFilter, setSetFilter] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const url = new URL(window.location.href)
+    const p = url.searchParams.get("player")
+    const s = url.searchParams.get("set")
+    if (p) setPlayerFilter(p)
+    if (s) setSetFilter(s)
+  }, [])
 
   useEffect(() => {
     const ctrl = new AbortController()
@@ -104,6 +117,8 @@ export default function FirstMintPage() {
         if (bucket === "50X") params.set("min_multiplier", "50")
         if (bucket === "100X") params.set("min_multiplier", "100")
         if (tier !== "ALL") params.set("tier", tier)
+        if (playerFilter) params.set("player", playerFilter)
+        if (setFilter) params.set("set", setFilter)
         const r = await fetch(`/api/public/insights/first-mint?${params.toString()}`, {
           signal: ctrl.signal,
           cache: "no-store",
@@ -120,7 +135,7 @@ export default function FirstMintPage() {
     }
     run()
     return () => ctrl.abort()
-  }, [bucket, tier])
+  }, [bucket, tier, playerFilter, setFilter])
 
   const tweetIntent = useMemo(() => {
     const text = `The "first mint" trophy thesis is real and quantifiable.\n\nOn TS, serial #1 typically sells for 8-15× the average serial price. Outliers go up to 248×.\n\nLive tracker:`
@@ -144,6 +159,51 @@ export default function FirstMintPage() {
           vibe — they&apos;re math.
         </p>
       </section>
+
+      {playerFilter || setFilter ? (
+        <section className="rpc-fm-active-filter" aria-label="Active drill-down filter">
+          {playerFilter ? (
+            <>
+              <span className="rpc-fm-active-label">FILTERED TO PLAYER</span>
+              <span className="rpc-fm-active-value">{playerFilter}</span>
+              <button
+                type="button"
+                className="rpc-fm-active-clear"
+                onClick={() => {
+                  setPlayerFilter(null)
+                  if (typeof window !== "undefined") {
+                    const url = new URL(window.location.href)
+                    url.searchParams.delete("player")
+                    window.history.replaceState({}, "", url.toString())
+                  }
+                }}
+              >
+                Clear ✕
+              </button>
+            </>
+          ) : null}
+          {setFilter ? (
+            <>
+              <span className="rpc-fm-active-label">FILTERED TO SET</span>
+              <span className="rpc-fm-active-value">{setFilter}</span>
+              <button
+                type="button"
+                className="rpc-fm-active-clear"
+                onClick={() => {
+                  setSetFilter(null)
+                  if (typeof window !== "undefined") {
+                    const url = new URL(window.location.href)
+                    url.searchParams.delete("set")
+                    window.history.replaceState({}, "", url.toString())
+                  }
+                }}
+              >
+                Clear ✕
+              </button>
+            </>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="rpc-fm-kpi-row" aria-label="Cohort summary">
         <div className="rpc-fm-kpi">
@@ -302,6 +362,11 @@ const styles: Record<string, React.CSSProperties> = {
 
 const CSS = `
 .rpc-fm-hero { max-width: 1180px; margin: 0 auto 28px; padding-bottom: 24px; border-bottom: 1px solid var(--rpc-border-subtle); }
+.rpc-fm-active-filter { max-width: 1180px; margin: 0 auto 14px; display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--rpc-red-bg); border: 1px solid var(--rpc-red-border); border-radius: 2px; flex-wrap: wrap; }
+.rpc-fm-active-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-red); }
+.rpc-fm-active-value { font-family: var(--font-body); font-size: 14px; color: var(--rpc-text-primary); font-weight: 700; }
+.rpc-fm-active-clear { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; background: transparent; border: 1px solid var(--rpc-red-border); color: var(--rpc-red); padding: 4px 8px; border-radius: 2px; cursor: pointer; }
+.rpc-fm-active-clear:hover { background: var(--rpc-red); color: #fff; }
 .rpc-fm-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red); margin-bottom: 12px; }
 .rpc-fm-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(38px, 6vw, 64px); letter-spacing: 0.5px; line-height: 1.02; margin: 0 0 14px; text-transform: uppercase; }
 .rpc-fm-h3 { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 10px; }
