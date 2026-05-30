@@ -119,9 +119,13 @@ function hasValidBypassToken(request: NextRequest): boolean {
 // handlers under one path.
 function isPublicPath(pathname: string, method: string): boolean {
   // Exact-match singletons
-  // NOTE: `/` is intentionally NOT public — closed-beta lockdown bounces
-  // unauthenticated homepage hits to /login. Re-add only when the marketing
-  // landing surface is meant to be anon-accessible again.
+  // `/` (root) is public: it serves the marketing landing (HomePageMarketing)
+  // to anonymous visitors so the canonical URL converts instead of bouncing
+  // straight to /login. Signed-in users are redirected to /dashboard inside
+  // the page component itself. This reverses the earlier closed-beta lockdown
+  // as a deliberate funnel decision (2026-05-30) — the front door now shows
+  // the value prop + links to the free /insights wedge surfaces.
+  if (pathname === "/") return true
   if (pathname === "/favicon.ico") return true
   if (pathname === "/robots.txt") return true
   if (pathname === "/sitemap.xml") return true
@@ -159,6 +163,16 @@ function isPublicPath(pathname: string, method: string): boolean {
   if (pathname === "/api/public" || pathname.startsWith("/api/public/")) return true
   // /api/wallet-search — exact path only; the marketing search box hits it
   if (pathname === "/api/wallet-search") return true
+  // /api/track-click — fire-and-forget outbound-click logger. Anon visitors on
+  // the public /insights surfaces (and the marketing home) fire it when they
+  // click an outbound marketplace / View Listing link, so it must bypass the
+  // auth gate. The route clamps + validates every field server-side; the
+  // proxy /api/ rate limiter (60/min/IP) still applies.
+  if (pathname === "/api/track-click") return true
+  // /api/subscribe + subpaths — anon email / early-access capture (POST) plus
+  // the email-link verify / unsubscribe GETs. The marketing home and /insights
+  // lead-capture band hit POST /api/subscribe unauthenticated.
+  if (pathname === "/api/subscribe" || pathname.startsWith("/api/subscribe/")) return true
   // /api/support-chat + subpaths — concierge is intentionally public so
   // unsigned visitors can ask questions and convert
   if (pathname === "/api/support-chat" || pathname.startsWith("/api/support-chat/")) return true

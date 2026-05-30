@@ -341,8 +341,32 @@ function LoginInner() {
         </div>
       </div>
 
+      <Link
+        href="/insights"
+        style={{
+          marginTop: 22,
+          display: "inline-block",
+          maxWidth: 440,
+          width: "100%",
+          textAlign: "center",
+          padding: "12px 18px",
+          background: "rgba(224,58,47,0.08)",
+          border: "1px solid var(--rpc-red-border)",
+          borderRadius: "var(--radius-sm)",
+          color: "var(--rpc-text-primary)",
+          textDecoration: "none",
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          letterSpacing: "0.06em",
+          lineHeight: 1.5,
+        }}
+      >
+        Explore the public Squeeze Board &amp; insights —{" "}
+        <span style={{ color: "var(--por-red)", whiteSpace: "nowrap" }}>no account needed →</span>
+      </Link>
+
       <div style={{
-        marginTop: 28, fontFamily: "var(--font-mono)",
+        marginTop: 24, fontFamily: "var(--font-mono)",
         fontSize: 10, color: "var(--rpc-text-ghost)",
         letterSpacing: "0.15em",
       }}>

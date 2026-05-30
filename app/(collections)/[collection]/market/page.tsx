@@ -19,6 +19,7 @@ import { useCollectionContext } from "@/lib/hooks/useCollectionContext"
 import { getOwnerKey } from "@/lib/owner-key"
 import { slugifyName } from "@/lib/entity-labels"
 import BadgeIcon from "@/components/BadgeIcon"
+import { trackOutboundClick } from "@/lib/track-click"
 
 type Listing = {
   id: string
@@ -136,6 +137,25 @@ function parseList(value: string | null | undefined): string[] {
 // Resolve the outbound marketplace URL for a listing. Flowty links are dead,
 // so prefer a live native link: the listing's own buyUrl when it isn't a
 // Flowty URL, otherwise the collection's native moment page.
+// Log an outbound "View Listing" click to outbound_clicks. Fire-and-forget.
+function trackListingClick(listing: Listing, buyUrl: string | null) {
+  const isNativeMarketplace = !!listing.buyUrl?.trim() && !listing.buyUrl.includes("flowty.io")
+  trackOutboundClick({
+    surface: "market",
+    destination: isNativeMarketplace ? "topshot_listing" : "native_moment_page",
+    editionKey: listing.editionKey,
+    momentId: listing.momentId,
+    playerName: listing.playerName,
+    setName: listing.setName,
+    tier: listing.tier,
+    serial: listing.serialNumber,
+    askPrice: listing.askPrice,
+    fmv: listing.fmv,
+    discount: listing.discount,
+    buyUrl,
+  })
+}
+
 function resolveListingUrl(
   listing: Listing,
   momentUrl: (id: string) => string | null,
@@ -796,6 +816,7 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned }: {
       href={buy ?? "#"}
       target={buy ? "_blank" : undefined}
       rel={buy ? "noopener noreferrer" : undefined}
+      onClick={buy ? () => trackListingClick(listing, buy) : undefined}
       className="rpc-binder-slot"
       style={{
         textDecoration: "none",
@@ -980,6 +1001,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                       href={buy}
                       target="_blank"
                       rel="noopener noreferrer"
+                      onClick={() => trackListingClick(l, buy)}
                       className="rpc-chip"
                       style={{ color: accent, borderColor: accent, background: `${accent}14` }}
                     >

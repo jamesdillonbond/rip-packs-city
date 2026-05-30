@@ -5,6 +5,7 @@
 // overrides this index-level default.
 
 import type { Metadata } from "next"
+import InsightsEmailCapture from "@/components/insights/InsightsEmailCapture"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -41,5 +42,10 @@ export const metadata: Metadata = {
 }
 
 export default function InsightsLayout({ children }: { children: React.ReactNode }) {
-  return children
+  return (
+    <>
+      {children}
+      <InsightsEmailCapture />
+    </>
+  )
 }

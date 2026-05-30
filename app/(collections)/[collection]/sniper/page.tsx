@@ -13,6 +13,7 @@ import MomentDetailModal from "@/components/MomentDetailModal";
 import BadgeIcon from "@/components/BadgeIcon";
 import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter";
 import { track } from "@/lib/telemetry/track";
+import { trackOutboundClick } from "@/lib/track-click";
 
 function SniperThumbnailPreview({ thumbUrl, playerName, tierColor, backgroundColor, children }: { thumbUrl: string | null; playerName: string; tierColor: string; backgroundColor?: string; children: React.ReactNode }) {
   const [hovered, setHovered] = useState(false);
@@ -115,25 +116,21 @@ function trackClick(deal: SniperDeal, walletAddress: string | null) {
     (deal.source ?? "topshot") === "flowty"
       ? "flowty_listing"
       : "topshot_listing";
-  fetch("/api/track-click", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      surface: "sniper",
-      destination,
-      editionKey: deal.editionKey || null,
-      momentId: deal.momentId,
-      playerName: deal.playerName,
-      setName: deal.setName,
-      tier: deal.tier,
-      serial: deal.serial,
-      askPrice: deal.askPrice,
-      fmv: deal.adjustedFmv,
-      discount: deal.discount,
-      walletAddress,
-      buyUrl: deal.buyUrl,
-    }),
-  }).catch(() => {});
+  trackOutboundClick({
+    surface: "sniper",
+    destination,
+    editionKey: deal.editionKey || null,
+    momentId: deal.momentId,
+    playerName: deal.playerName,
+    setName: deal.setName,
+    tier: deal.tier,
+    serial: deal.serial,
+    askPrice: deal.askPrice,
+    fmv: deal.adjustedFmv,
+    discount: deal.discount,
+    walletAddress,
+    buyUrl: deal.buyUrl,
+  });
 }
 
 // Resolve the outbound marketplace URL for a deal. Prefer the deal's own
