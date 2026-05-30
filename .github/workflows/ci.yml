@@ -17,7 +17,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # Matches package.json engines.node ("24.x") and @types/node ^24.
+          # Previously '20' — Vercel deploys on Node 24 by default so the
+          # build passed there, but tsc against @types/node v24 on Node 20
+          # surfaces type errors in the CI lambda that production never sees.
+          node-version: '24'
           cache: npm
       - run: npm ci
       - run: npx tsc --noEmit
@@ -39,7 +43,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
       - run: npm ci
       - name: Install Flow CLI
