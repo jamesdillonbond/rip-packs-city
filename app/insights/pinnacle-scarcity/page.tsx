@@ -127,6 +127,19 @@ export default function PinnacleScarcityPage() {
         </div>
       </section>
 
+      <section className="rpc-ps-callout" aria-label="Chasers status">
+        <div className="rpc-ps-callout-line">
+          <strong>Chasers note:</strong> Pinnacle has 8 platform-wide chaser
+          editions. They aren&apos;t in this ranking yet — they came in via
+          wallet scans before Pinnacle&apos;s catalog resolver populated
+          their mint counts, so they fall outside the view&apos;s
+          {" "}<code>mint_count IS NOT NULL</code> filter. Same eight names you
+          already know from Pinnacle: Xenomorph, Belle, Cinderella, Monterey
+          Jack &amp; Zipper, Boba Fett, G.N.K, Sally, Bubbles. They&apos;ll
+          appear here once their catalog metadata lands.
+        </div>
+      </section>
+
       <section className="rpc-ps-controls" aria-label="Filters">
         <div className="rpc-ps-pill-group">
           <span className="rpc-ps-pill-label">FRANCHISE</span>
@@ -259,6 +272,26 @@ const CSS = `
 .rpc-ps-lede strong { color: var(--rpc-text-primary); }
 .rpc-ps-meta-row { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); }
 .rpc-ps-meta-sep { margin: 0 8px; color: var(--rpc-text-ghost); }
+
+.rpc-ps-callout { max-width: 1180px; margin: 0 auto 18px; }
+.rpc-ps-callout-line {
+  padding: 12px 14px;
+  background: var(--rpc-red-bg);
+  border-left: 3px solid var(--rpc-red);
+  border-radius: 2px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--rpc-text-secondary);
+}
+.rpc-ps-callout-line strong { color: var(--rpc-text-primary); margin-right: 4px; }
+.rpc-ps-callout-line code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--rpc-text-primary);
+  background: rgba(255,255,255,0.06);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
 
 .rpc-ps-controls { max-width: 1180px; margin: 0 auto 18px; display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: center; }
 .rpc-ps-pill-group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
