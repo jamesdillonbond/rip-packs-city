@@ -64,6 +64,33 @@ const CARDS: Card[] = [
     cta: "Open whale map",
     available: true,
   },
+  {
+    slug: "/insights/set-squeeze",
+    eyebrow: "Surface G · Live",
+    title: "Set Squeeze Leaderboard",
+    blurb:
+      "Drill-down companion to Surface A. Top Shot sets ranked by average lock + burn across editions. WNBA Squad Goals 76% avg, 2023 NBA Playoffs 76%, Metallic Gold LE 74%.",
+    cta: "Open set leaderboard",
+    available: true,
+  },
+  {
+    slug: "/insights/pinnacle-scarcity",
+    eyebrow: "Surface H · Live",
+    title: "Disney Pinnacle Scarcity Board",
+    blurb:
+      "Pinnacle doesn't have lock + burn. Its scarcity is mint count + variant family + chaser status. Editions ranked by how far below their variant family's average mint they sit.",
+    cta: "Open Pinnacle board",
+    available: true,
+  },
+  {
+    slug: "/insights/squeeze-check",
+    eyebrow: "Tool · Live",
+    title: "What's Liquid In Your Bag?",
+    blurb:
+      "Paste your Flow wallet, see how much of your Top Shot collection is actually liquid vs sitting in challenge-locked or burned editions. Personal, free, no signup.",
+    cta: "Check your wallet",
+    available: true,
+  },
 ]
 
 export default function InsightsIndexPage() {
@@ -76,8 +103,9 @@ export default function InsightsIndexPage() {
         <h1 className="rpc-ins-h1">Things Top Shot won&apos;t tell you.</h1>
         <p className="rpc-ins-lede">
           Free, no signup. Built for the collector who wants the math, not
-          the marketing. Five wedges of intelligence the marketplace
-          structurally can&apos;t (or won&apos;t) ship.
+          the marketing. Seven wedges of intelligence the marketplace
+          structurally can&apos;t (or won&apos;t) ship, plus a tool to
+          check your own wallet.
         </p>
       </section>
 
