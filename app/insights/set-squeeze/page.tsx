@@ -217,17 +217,26 @@ export default function SetSqueezePage() {
                 <tr key={r.set_id}>
                   <td className="rpc-ss-td-set">
                     {r.set_name ? (
-                      <Link
-                        href={`/insights/squeeze?set=${encodeURIComponent(r.set_name)}`}
-                        className="rpc-ss-set-link"
-                        title={`Drill into ${r.set_name} on the squeeze board`}
-                      >
-                        <div className="rpc-ss-set-name">{r.set_name}</div>
-                        <div className="rpc-ss-set-sub">
-                          {r.series ? `S${r.series}` : "—"}
-                          <span className="rpc-ss-drill-hint">drill into editions →</span>
-                        </div>
-                      </Link>
+                      <div className="rpc-ss-set-cell">
+                        <Link
+                          href={`/insights/squeeze?set=${encodeURIComponent(r.set_name)}`}
+                          className="rpc-ss-set-link"
+                          title={`Drill into ${r.set_name} on the squeeze board`}
+                        >
+                          <div className="rpc-ss-set-name">{r.set_name}</div>
+                          <div className="rpc-ss-set-sub">
+                            {r.series ? `S${r.series}` : "—"}
+                            <span className="rpc-ss-drill-hint">squeeze →</span>
+                          </div>
+                        </Link>
+                        <Link
+                          href={`/insights/first-mint?set=${encodeURIComponent(r.set_name)}`}
+                          className="rpc-ss-trophy-link"
+                          title={`See first-mint trophies from ${r.set_name}`}
+                        >
+                          trophies →
+                        </Link>
+                      </div>
                     ) : (
                       <>
                         <div className="rpc-ss-set-name">—</div>
@@ -326,12 +335,15 @@ const CSS = `
 .rpc-ss-th-num { text-align: right; }
 .rpc-ss-th-emph { color: var(--rpc-red); }
 .rpc-ss-table td { padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); vertical-align: middle; }
-.rpc-ss-td-set { min-width: 240px; }
-.rpc-ss-set-link { text-decoration: none; color: inherit; display: block; }
+.rpc-ss-td-set { min-width: 280px; }
+.rpc-ss-set-cell { display: flex; align-items: center; gap: 12px; }
+.rpc-ss-set-link { text-decoration: none; color: inherit; display: block; flex: 1; min-width: 0; }
 .rpc-ss-set-link:hover .rpc-ss-set-name { color: var(--rpc-red); }
 .rpc-ss-set-link:hover .rpc-ss-drill-hint { color: var(--rpc-red); opacity: 1; }
 .rpc-ss-set-name { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); transition: color 100ms; }
 .rpc-ss-drill-hint { margin-left: 10px; font-size: 10px; letter-spacing: 1.5px; color: var(--rpc-text-muted); opacity: 0.6; transition: color 100ms, opacity 100ms; }
+.rpc-ss-trophy-link { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); text-decoration: none; padding: 4px 8px; border: 1px solid var(--rpc-border); border-radius: 2px; white-space: nowrap; opacity: 0.65; transition: color 100ms, border-color 100ms, opacity 100ms; }
+.rpc-ss-trophy-link:hover { color: var(--rpc-red); border-color: var(--rpc-red); opacity: 1; }
 .rpc-ss-set-sub { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 2px; }
 .rpc-ss-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
 .rpc-ss-td-emph { color: var(--rpc-red); font-weight: 700; }
