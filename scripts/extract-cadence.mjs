@@ -16,22 +16,47 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
-const sourcePath = join(repoRoot, "lib", "cadence", "purchase-moment.ts");
 const outDir = join(repoRoot, "tests", "cadence", "fixtures");
 const outPath = join(outDir, "purchase-moment.cdc");
 
-const tsSource = readFileSync(sourcePath, "utf8");
+// Chain-abstraction Phase D (2026-05-30) relocated the canonical Cadence to
+// lib/chains/flow/cadence/purchase-moment.ts and left lib/cadence/purchase-moment.ts
+// as a re-export shim (no literal). Resolve whichever path actually holds the
+// PURCHASE_MOMENT_CADENCE template literal — canonical first, old shim path as a
+// fallback so this keeps working if the reorg is reverted.
+const candidatePaths = [
+  join(repoRoot, "lib", "chains", "flow", "cadence", "purchase-moment.ts"),
+  join(repoRoot, "lib", "cadence", "purchase-moment.ts"),
+];
 
-const match = tsSource.match(
-  /export\s+const\s+PURCHASE_MOMENT_CADENCE\s*=\s*`([\s\S]*?)`/
-);
+const LITERAL_RE = /export\s+const\s+PURCHASE_MOMENT_CADENCE\s*=\s*`([\s\S]*?)`/;
+
+let match = null;
+let sourcePath = null;
+for (const candidate of candidatePaths) {
+  let contents;
+  try {
+    contents = readFileSync(candidate, "utf8");
+  } catch {
+    continue;
+  }
+  const m = contents.match(LITERAL_RE);
+  if (m) {
+    match = m;
+    sourcePath = candidate;
+    break;
+  }
+}
+
 if (!match) {
   console.error(
-    "[extract-cadence] could not locate PURCHASE_MOMENT_CADENCE template literal in",
-    sourcePath
+    "[extract-cadence] could not locate PURCHASE_MOMENT_CADENCE template literal in any of:",
+    candidatePaths.join(", ")
   );
   process.exit(1);
 }
+
+console.log("[extract-cadence] source:", sourcePath);
 
 const cadenceRaw = match[1];
 

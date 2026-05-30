@@ -2,15 +2,17 @@
 
 ## Scope
 
-This harness is a **type-check-only regression net** for `lib/cadence/purchase-moment.ts`. It does not execute the transaction on an emulator, does not simulate a Top Shot listing, and does not exercise the Dapper meta-transaction co-signer. Behavioral testing belongs in a future session that has access to a Dapper testnet co-signer; we do not have that today.
+This harness is a **type-check-only regression net** for the purchase-moment Cadence transaction. It does not execute the transaction on an emulator, does not simulate a Top Shot listing, and does not exercise the Dapper meta-transaction co-signer. Behavioral testing belongs in a future session that has access to a Dapper testnet co-signer; we do not have that today.
+
+> **Canonical source (Phase D, 2026-05-30):** the production transaction now lives in `lib/chains/flow/cadence/purchase-moment.ts`. `lib/cadence/purchase-moment.ts` is a re-export shim with no literal. `scripts/extract-cadence.mjs` resolves whichever path actually holds the `PURCHASE_MOMENT_CADENCE` template literal (canonical first, old shim path as a fallback), so the harness keeps working across the reorg.
 
 What the harness does:
 
-- Extracts the Cadence transaction string from `lib/cadence/purchase-moment.ts` into a `.cdc` fixture, rewriting Flow mainnet address-form imports to string-form so `flow cadence lint` can resolve them.
+- Extracts the Cadence transaction string from the canonical `purchase-moment.ts` into a `.cdc` fixture, rewriting Flow mainnet address-form imports to string-form so `flow cadence lint` can resolve them.
 - Resolves those imports against committed stubs (for `DapperUtilityCoin` and `TopShot`) and against `flow dependencies install`-cached mainnet sources (for `NFTStorefrontV2`, `FungibleToken`, `NonFungibleToken`, `MetadataViews`, `ViewResolver`).
 - Runs the Cadence linter / type-checker against the fixture and fails the build if `purchase-moment.ts` fails to type-check.
 
-The harness is **GREEN as of 2026-05-22** — the C1 and C2 audit findings from `docs/audits/purchase-moment-2026-05.md` are fixed in `lib/cadence/purchase-moment.ts` (`FungibleToken` is imported; `self.listing` is borrowed before its price is read), so `npm run test:cadence` exits 0. The H1 and H2 runtime findings were subsequently fixed too (commit `e5c36a8`), but those are not type-check-detectable and the harness never covered them (see "Flipping the harness GREEN" below). From here the harness acts as a true regression net: any future type error in the production transaction flips it RED. The "Interpreting the current RED output" section below is **historical** — retained to document what the original C1/C2 failure looked like.
+The harness is **GREEN and BLOCKING as of 2026-05-30** — the C1 and C2 audit findings from `docs/audits/purchase-moment-2026-05.md` are fixed in the canonical `purchase-moment.ts` (`FungibleToken` is imported; `self.listing` is borrowed before its price is read), so `npm run test:cadence` exits 0 (0 errors, 2 allowed string-template warnings). The H1 and H2 runtime findings were subsequently fixed too (commit `e5c36a8`), but those are not type-check-detectable and the harness never covered them (see "Flipping the harness GREEN" below). The `cadence-lint` job in `.github/workflows/ci.yml` no longer carries `continue-on-error: true` — it is a true blocking regression gate: any future type error in the production transaction fails the build. The "Interpreting the current RED output" section below is **historical** — retained to document what the original C1/C2 failure looked like.
 
 ## Prerequisites
 
@@ -39,11 +41,14 @@ The `flow.test.json` config is committed to the repo and contains no secrets. Th
 ## Layout
 
 ```
-lib/cadence/purchase-moment.ts       Production Cadence — DO NOT modify in
-                                     this harness. Edits land in dedicated
-                                     audit-fix sessions.
+lib/chains/flow/cadence/             Production Cadence (canonical, Phase D) —
+  purchase-moment.ts                 DO NOT modify in this harness. Edits land
+                                     in dedicated audit-fix sessions.
+                                     (lib/cadence/purchase-moment.ts is a
+                                     re-export shim of this file.)
 
-scripts/extract-cadence.mjs          Reads lib/cadence/purchase-moment.ts,
+scripts/extract-cadence.mjs          Reads the canonical purchase-moment.ts
+                                     (resolving the shim/canonical path),
                                      extracts the PURCHASE_MOMENT_CADENCE
                                      template literal, rewrites
                                      `import X from 0x...` to `import "X"`,

@@ -1,6 +1,6 @@
 # Rip Packs City — Cron Schedule Reference
 
-**Last verified:** May 24, 2026 (cron-job.org dashboard sync — Flowty teardown crons removed, Lock Check Batch + Daily Portfolio Snapshot collision moves, FMV Recalc temporarily accelerated)
+**Last verified:** May 30, 2026 (reconciled against `pipeline_runs` 48h activity — FMV Cold-Tail Drain and Pinnacle Listings Reconcile confirmed firing and promoted from Pending to Active)
 **Platform:** cron-job.org (free tier, 30s hard timeout)
 
 This is the authoritative inventory of every active cron-job.org entry firing into Rip Packs City. Use this when adding new crons (to find a quiet schedule slot), when something stops working (to confirm a cron is actually scheduled), and when triaging health-probe alerts.
@@ -31,6 +31,7 @@ For staggered scheduling, use these patterns (all proven quiet):
 | RPC Classify Acquisitions Multi-Collection | `/api/cron/classify-acquisitions-multicollection` | `6 * * * *` | Bearer INGEST_SECRET_TOKEN |
 | RPC Compute Laliga Pack EV | `/api/cron/compute-laliga-pack-ev` | daily 22:00 UTC | Bearer INGEST_SECRET_TOKEN |
 | RPC Daily Portfolio Snapshot | `/api/cron/daily-portfolio-snapshot` | `5 7 * * *` | Bearer INGEST_SECRET_TOKEN |
+| RPC FMV Cold-Tail Drain | `/api/admin/drain-fmv-cold-tail?collection=all&limit=200` | `17,47 * * * *` | Bearer INGEST_SECRET_TOKEN |
 | RPC FMV Recalc Force Stale | `/api/fmv-recalc?force=stale` | `3,13,23,33,43,53 * * * *` ⚡ | Bearer INGEST_SECRET_TOKEN |
 | RPC FMV Thin-Sale Haircut | `/api/admin/apply-fmv-haircut?mode=live` | `30 6 * * *` | Bearer RPC_ADMIN_TOKEN |
 | RPC Golazos Listing Cache | `/api/golazos-listing-cache` | `*/20` | Bearer INGEST_SECRET_TOKEN |
@@ -39,6 +40,7 @@ For staggered scheduling, use these patterns (all proven quiet):
 | RPC Lock Check Batch | `/api/cron/lock-check-batch` | `8,38 * * * *` | Bearer INGEST_SECRET_TOKEN |
 | RPC Pinnacle Events Ingest | `/api/cron/pinnacle-events-ingest` | `4,19,34,49 * * * *` | Bearer INGEST_SECRET_TOKEN |
 | RPC Pinnacle Listing Cache | `/api/pinnacle-listing-cache` | `*/20` | Bearer INGEST_SECRET_TOKEN |
+| RPC Pinnacle Listings Reconcile | `/api/cron/pinnacle-listings-reconcile` | `9,24,39,54 * * * *` | Bearer INGEST_SECRET_TOKEN |
 | RPC Pinnacle Sales Indexer | `/api/pinnacle-sales-indexer` | `*/20` | Bearer INGEST_SECRET_TOKEN |
 | RPC Pipeline | `/api/pipeline-trigger` | `*/20` | Bearer INGEST_SECRET_TOKEN |
 | RPC Populate Pinnacle WMC FMV | `/api/cron/populate-pi…` | `3 * * * *` | Bearer INGEST_SECRET_TOKEN |
@@ -100,12 +102,4 @@ Flowty's marketplace shut down ~2026-05-13. The external Flowty event indexer, `
 
 ## Pending additions
 
-- ⏳ **Pinnacle listings reconcile** (Phase 2C) — once Round 13 ships the reconciliation RPC, wire at `9,24,39,54 * * * *` (offset clear of pinnacle-events-ingest at `4,19,34,49`)
-- ⏳ **FMV cold-tail drain** — route shipped 2026-05-11. Awaits cron-job.org wiring:
-  - Title: `RPC FMV Cold-Tail Drain`
-  - URL: `https://www.rippackscity.com/api/admin/drain-fmv-cold-tail?collection=all&limit=200`
-  - Method: POST
-  - Header: `Authorization: Bearer <INGEST_SECRET_TOKEN>`
-  - Schedule: `17,47 * * * *` (offset clear of HH:00/HH:30 fan-out windows)
-  - Timeout: 30s (cron-job.org cap)
-  - Closes audit §1.1 — drains stale FMV in TS / AllDay / Golazos / UFC. Skips Pinnacle (separate hourly chain).
+_None. (Pinnacle Listings Reconcile and FMV Cold-Tail Drain were both wired and are now in Active above — confirmed firing in `pipeline_runs` over the trailing 48h: drain-fmv-cold-tail 89 runs all-ok, pinnacle-listings-reconcile 185 runs, as of 2026-05-30.)_
