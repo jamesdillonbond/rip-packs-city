@@ -6,6 +6,30 @@ This handoff was rewritten after a deeper investigation surfaced a **new high-im
 
 ## Shipped this pass (DB-only, durable, in production)
 
+### -1. Research integration — squeeze view + cohort artifacts (2026-05-30 evening)
+
+After Items 0–2 stabilized the FMV pipeline, ran a research-integration pass pulling in findings from the parallel "Flow collection research and strategy" thread (`docs/research/wallet-deep-dive-and-pack-strategy-2026-05-29.md` + `rpc-community-strategy-2026-05-29.md`).
+
+DB-side:
+
+- **`audit_20260530_topshot_squeeze_board_view`** — new public view `topshot_squeeze_board` ranking TS editions by effective-supply squeeze (lock + burn %). Joins `badge_editions` (hourly refresh) + `editions` + latest `fmv_snapshots`. Granted to anon so the planned `/insights/squeeze` page can read without auth (matches the research thread's no-auth-friction Week-1 launch guidance). Filtered to `squeeze_pct >= 50` (~3k row source → small result set). Sample top row: Alex Caruso "2025 NBA Playoffs: Legendary" at 156% squeeze (23 locked + 48 burned of 75 = 4 effectively buyable, FMV $765).
+
+Cowork artifacts (live, persistent, re-query on open):
+
+- **`rpc-my-wallet`** — Trevor's personal portfolio. Total moments / FMV per collection, confidence breakdown (moment-weighted, so the 89% LOW reality is honest), top 15 holdings, top 10 sets, tier mix, 24h FMV-write changes on held editions (silent-clobber detector), pack history via `get_wallet_pack_summary`. Wallet hard-coded to `0xbd94cade097e50ac`.
+- **`rpc-cross-collection`** — surfaces the 143-wallet cohort holding 3+ Flow collections (per research: "RPC's natural intelligence-product audience"). Cohort distribution, top 20 multi-collection wallets with present-collections dots, TS set overlap (what the cohort actually collects).
+- **`rpc-trophy-ladder`** — Supernova Ultimate ladder + top mint-#1 trophies + 1-of-1 editions, each row showing copies held in RPC tracked wallets. Surfaces the "First Mint" thesis the research thread flagged as empirically real (Jokić Base #1 → $9k in May).
+
+These are complementary to the parallel research session's `/insights/squeeze` mockup work — squeeze data lives in the DB view; the dashboard surfaces what the research thread isn't building (personal wallet, cohort lens, trophy ladder).
+
+### 0. Round-2 NO_DATA recovery + AllDay batched RPC + defensive temp drops
+
+After Item A (Step 6 fix) shipped at `14ae144` and verified, a residual tail of 44 TS editions remained stuck at NO_DATA — these had been promoted by recovery #1 below, then re-clobbered by the still-buggy Step 6 in the ~3-hour window before Item A deployed. Round-2 recovery (`audit_20260530_recover_topshot_nodata_round2_post_step6_fix`) re-ran the same logic; Step 6 (now honest) doesn't re-clobber. Verification: `active_editions_stuck_at_nodata = 0`.
+
+`audit_20260530_upsert_allday_marketplace_fmv_batched` — same shape rewrite as the TS one (Step 2 below), now applied to `upsert_allday_marketplace_fmv`. Also fixed a latent bug: the legacy function looked up existing confidence with `SELECT ... LIMIT 1` (no `ORDER BY computed_at DESC`), so it could read an arbitrary partition row and clobber a real HIGH/MEDIUM with `allday-gql-v1` LOW. 9 such clobber events observed in last 7d.
+
+`audit_20260530_upsert_marketplace_fmv_defensive_temp_drops` — added `DROP TABLE IF EXISTS` before each `CREATE TEMP TABLE ON COMMIT DROP` in both RPCs so consecutive calls in one transaction (smoke testing, future BEGIN/COMMIT wrappers) don't hit "relation already exists." Production was unaffected (supabase-js `rpc()` is autocommit) but the guard is cheap insurance.
+
 ### 1. `audit_20260530_recover_topshot_nodata_with_recent_sales`
 
 Inserted one fresh `1.7.0` snapshot for **146 Top Shot editions** that were perpetually labelled `NO_DATA` despite 30+ recent sales. 84 went to LOW, 62 to MEDIUM. Top Shot HIGH+MED count jumped 724 → 778 immediately.
