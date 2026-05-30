@@ -59,20 +59,27 @@ async function load(id: string): Promise<{
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supa = supabaseAdmin as any
 
-  const { data: ed } = await supa
+  // .eq("id", value) URL-encodes the value, but PostgREST silently fails to
+  // match rows where the id contains a colon (e.g. "PIXR-LEV1-INOU:Standard:1").
+  // .in("id", [value]) wraps the value in PostgREST's quoted-list syntax
+  // (id=in.("...")), forcing an unambiguous value boundary. 331/479 Pinnacle
+  // edition ids contain colons — this fallback is the difference between
+  // /pinnacle/moment/<id> returning 200 vs 404 for 69% of the catalog.
+  const { data: edRows } = await supa
     .from("pinnacle_editions")
     .select(
       "id, external_id, edition_key, character_name, franchise, set_name, variant_type, edition_type, mint_count, is_chaser, thumbnail_url, studio, materials, effects, size, color, thickness, minting_date, ask_price, ask_source, series_year"
     )
-    .eq("id", id)
-    .maybeSingle()
+    .in("id", [id])
+    .limit(1)
+  const ed = edRows && edRows[0]
   if (!ed) return null
 
-  // Latest FMV snapshot
+  // Latest FMV snapshot — same colon-in-id workaround as above.
   const { data: fmvRows } = await supa
     .from("pinnacle_fmv_snapshots")
     .select("fmv_usd, confidence, computed_at, sales_count_30d, days_since_sale")
-    .eq("edition_id", id)
+    .in("edition_id", [id])
     .order("computed_at", { ascending: false })
     .limit(1)
   const fmv: LatestFmv | null = (fmvRows && fmvRows[0]) ?? null
@@ -98,12 +105,13 @@ async function load(id: string): Promise<{
   }
 
   // Holders count from wallet_moments_cache. wmc keys on edition_key text;
-  // fall back to ed.id if edition_key is null.
+  // fall back to ed.id if edition_key is null. Use .in() for the same
+  // colon-in-value reason as above.
   const { count: holders_cached } = await supa
     .from("wallet_moments_cache")
     .select("wallet_address", { count: "exact", head: true })
     .eq("collection_id", "7dd9dd11-e8b6-45c4-ac99-71331f959714")
-    .eq("edition_key", ed.edition_key ?? ed.id)
+    .in("edition_key", [ed.edition_key ?? ed.id])
 
   return {
     ed: ed as PinnacleEdition & { edition_key: string | null },
