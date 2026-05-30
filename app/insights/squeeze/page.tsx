@@ -333,9 +333,9 @@ export default function SqueezePage() {
           <h3 className="rpc-sq-h3">Methodology</h3>
           <p>
             <strong>Squeeze %</strong> = (locked + burned) / circulation.
-            Above 100% reflects challenge-locked moments that have also been
-            burned in a second challenge — these editions have negative
-            effectively-buyable supply on paper.
+            Lock %, burn %, and effectively-buyable % all share the same
+            denominator (original circulation), so they sum to 100%.
+            Squeeze % is bounded to [50%, 100%].
           </p>
           <p>
             <strong>Effectively buyable</strong> = circulation − locked −
