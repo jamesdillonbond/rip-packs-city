@@ -596,6 +596,43 @@ async function runSmokeTests() {
       expected: "zero-violations",
     }),
 
+    // Public base-table security invariant. Parallel to the SECDEF guard above
+    // but for plain base tables: every public base table must have RLS enabled,
+    // and no base table with RLS off may carry an anon/authenticated write grant
+    // (INSERT/UPDATE/DELETE/TRUNCATE) — either is an anon-write hole. The RPC
+    // inspects pg_catalog/information_schema only (relkind IN ('r','p'), so the
+    // ~49 views are excluded — SECDEF views exist by design and must NOT trip
+    // this) and must return []. Both invariants verified clean (0/0) on
+    // 2026-05-30. Hard test: a non-empty result Sentry-alerts. See migration
+    // audit_20260530_check_public_security_invariants.
+    time(async () => {
+      const meta = {
+        name: "public base tables: RLS on + no anon write",
+        endpoint: "rpc:check_public_security_invariants",
+        expected: "zero-violations",
+      };
+      const { data, error } = await (svc as any).rpc("check_public_security_invariants");
+      if (error) {
+        return { ...meta, passed: false, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
+      }
+      const violations = Array.isArray(data) ? data : [];
+      const passed = violations.length === 0;
+      return {
+        ...meta,
+        passed,
+        detail: passed
+          ? "0 violations — all public base tables have RLS on and no anon write grant"
+          : `${violations.length} violation(s): ${violations.map((v: { kind: string; object_name: string }) => `${v.kind}:${v.object_name}`).join(", ")}`,
+        statusCode: null,
+        bodyExcerpt: passed ? null : JSON.stringify(violations).slice(0, 500),
+        notes: { violation_count: violations.length },
+      };
+    }, {
+      name: "public base tables: RLS on + no anon write",
+      endpoint: "rpc:check_public_security_invariants",
+      expected: "zero-violations",
+    }),
+
     // Phase 4: auth-gated profile routes accept or redirect. 200 OR 401 all OK.
     ...([
       "/api/profile/activity",
