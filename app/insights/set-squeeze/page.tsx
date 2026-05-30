@@ -216,8 +216,24 @@ export default function SetSqueezePage() {
               {rows.map((r) => (
                 <tr key={r.set_id}>
                   <td className="rpc-ss-td-set">
-                    <div className="rpc-ss-set-name">{r.set_name ?? "—"}</div>
-                    <div className="rpc-ss-set-sub">{r.series ? `S${r.series}` : "—"}</div>
+                    {r.set_name ? (
+                      <Link
+                        href={`/insights/squeeze?set=${encodeURIComponent(r.set_name)}`}
+                        className="rpc-ss-set-link"
+                        title={`Drill into ${r.set_name} on the squeeze board`}
+                      >
+                        <div className="rpc-ss-set-name">{r.set_name}</div>
+                        <div className="rpc-ss-set-sub">
+                          {r.series ? `S${r.series}` : "—"}
+                          <span className="rpc-ss-drill-hint">drill into editions →</span>
+                        </div>
+                      </Link>
+                    ) : (
+                      <>
+                        <div className="rpc-ss-set-name">—</div>
+                        <div className="rpc-ss-set-sub">{r.series ? `S${r.series}` : "—"}</div>
+                      </>
+                    )}
                   </td>
                   <td className="rpc-ss-td-num">
                     <span className="rpc-ss-tier" style={{ color: tierColor(r.set_tier) }}>
@@ -311,7 +327,11 @@ const CSS = `
 .rpc-ss-th-emph { color: var(--rpc-red); }
 .rpc-ss-table td { padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); vertical-align: middle; }
 .rpc-ss-td-set { min-width: 240px; }
-.rpc-ss-set-name { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); }
+.rpc-ss-set-link { text-decoration: none; color: inherit; display: block; }
+.rpc-ss-set-link:hover .rpc-ss-set-name { color: var(--rpc-red); }
+.rpc-ss-set-link:hover .rpc-ss-drill-hint { color: var(--rpc-red); opacity: 1; }
+.rpc-ss-set-name { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); transition: color 100ms; }
+.rpc-ss-drill-hint { margin-left: 10px; font-size: 10px; letter-spacing: 1.5px; color: var(--rpc-text-muted); opacity: 0.6; transition: color 100ms, opacity 100ms; }
 .rpc-ss-set-sub { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 2px; }
 .rpc-ss-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
 .rpc-ss-td-emph { color: var(--rpc-red); font-weight: 700; }
