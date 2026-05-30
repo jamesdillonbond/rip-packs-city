@@ -8,7 +8,7 @@
 // burned. No signup. Trust model is identical to nbatopshot.com/profile/<addr>
 // (the user is naming the wallet themselves).
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 
 type Bucket = { editions: number; moments: number }
@@ -70,9 +70,10 @@ export default function SqueezeCheckPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
-    const w = wallet.trim().toLowerCase()
+  // Shared fetcher so the form submit AND the URL-param auto-load can
+  // reuse the same code path.
+  async function runCheck(rawWallet: string) {
+    const w = rawWallet.trim().toLowerCase()
     if (!/^0x[a-f0-9]{16}$/.test(w)) {
       setError("Wallet must look like a Flow address — 0x + 16 hex chars.")
       return
@@ -91,6 +92,23 @@ export default function SqueezeCheckPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // Auto-load when a wallet is pre-filled via ?wallet= URL param (used by
+  // drill-down links from /insights/cross-collection wallet rows).
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const url = new URL(window.location.href)
+    const w = url.searchParams.get("wallet")
+    if (w && /^0x[a-f0-9]{16}$/i.test(w)) {
+      setWallet(w)
+      runCheck(w)
+    }
+  }, [])
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    await runCheck(wallet)
   }
 
   const total = summary?.total_moments ?? 0
