@@ -224,10 +224,21 @@ export default function FirstMintPage() {
               {trophies.map((r) => (
                 <tr key={`${r.edition_id}-${r.mint_one_sold_at}`}>
                   <td className="rpc-fm-td-edition">
-                    <Link href={`/moment/${r.edition_id}`} className="rpc-fm-edition-link">
-                      <div className="rpc-fm-edition-name">{r.player_name ?? "—"}</div>
-                      <div className="rpc-fm-edition-set">{r.set_name ?? "—"}</div>
-                    </Link>
+                    <div className="rpc-fm-edition-cell">
+                      <Link href={`/moment/${r.edition_id}`} className="rpc-fm-edition-link">
+                        <div className="rpc-fm-edition-name">{r.player_name ?? "—"}</div>
+                        <div className="rpc-fm-edition-set">{r.set_name ?? "—"}</div>
+                      </Link>
+                      {r.player_name ? (
+                        <Link
+                          href={`/insights/squeeze?player=${encodeURIComponent(r.player_name)}`}
+                          className="rpc-fm-squeeze-link"
+                          title={`See ${r.player_name}'s editions on the squeeze board`}
+                        >
+                          squeeze →
+                        </Link>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="rpc-fm-td-num">
                     <span className="rpc-fm-tier" style={{ color: tierColor(r.tier) }}>
@@ -317,9 +328,12 @@ const CSS = `
 .rpc-fm-th-emph { color: var(--rpc-red); }
 .rpc-fm-table td { padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); vertical-align: middle; }
 .rpc-fm-td-edition { min-width: 240px; }
-.rpc-fm-edition-link { text-decoration: none; color: inherit; display: block; }
+.rpc-fm-edition-cell { display: flex; align-items: center; gap: 14px; }
+.rpc-fm-edition-link { text-decoration: none; color: inherit; display: block; flex: 1; min-width: 0; }
 .rpc-fm-edition-link:hover .rpc-fm-edition-name { color: var(--rpc-red); }
-.rpc-fm-edition-name { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); }
+.rpc-fm-edition-name { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); transition: color 100ms; }
+.rpc-fm-squeeze-link { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); text-decoration: none; padding: 4px 8px; border: 1px solid var(--rpc-border); border-radius: 2px; white-space: nowrap; opacity: 0.65; transition: color 100ms, border-color 100ms, opacity 100ms; }
+.rpc-fm-squeeze-link:hover { color: var(--rpc-red); border-color: var(--rpc-red); opacity: 1; }
 .rpc-fm-edition-set { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 2px; }
 .rpc-fm-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
 .rpc-fm-td-emph { color: var(--rpc-red); font-weight: 700; font-size: 15px; }

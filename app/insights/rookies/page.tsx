@@ -191,7 +191,14 @@ export default function RookiesPage() {
               {rows.map((r) => (
                 <tr key={r.player_name}>
                   <td>
-                    <div className="rpc-rk-player">{r.player_name}</div>
+                    <Link
+                      href={`/insights/squeeze?player=${encodeURIComponent(r.player_name)}`}
+                      className="rpc-rk-player-link"
+                      title={`See ${r.player_name}'s editions on the squeeze board`}
+                    >
+                      <span className="rpc-rk-player">{r.player_name}</span>
+                      <span className="rpc-rk-drill-hint">squeeze →</span>
+                    </Link>
                   </td>
                   <td className="rpc-rk-td-num">{fmtInt(r.edition_count)}</td>
                   <td className="rpc-rk-td-num">{fmtInt(r.sales_30d)}</td>
@@ -278,7 +285,11 @@ const CSS = `
 .rpc-rk-table th { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); text-align: left; padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); white-space: nowrap; }
 .rpc-rk-th-num { text-align: right; }
 .rpc-rk-table td { padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); vertical-align: middle; }
-.rpc-rk-player { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); }
+.rpc-rk-player { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); transition: color 100ms; }
+.rpc-rk-player-link { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 10px; }
+.rpc-rk-player-link:hover .rpc-rk-player { color: var(--rpc-red); }
+.rpc-rk-player-link:hover .rpc-rk-drill-hint { color: var(--rpc-red); opacity: 1; }
+.rpc-rk-drill-hint { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); opacity: 0.5; transition: color 100ms, opacity 100ms; }
 .rpc-rk-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
 .rpc-rk-td-emph { color: var(--rpc-red); font-weight: 700; }
 
