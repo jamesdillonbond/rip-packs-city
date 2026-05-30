@@ -266,7 +266,27 @@ export default function FirstMintPage() {
         ) : loading ? (
           <div className="rpc-fm-state">Loading…</div>
         ) : trophies.length === 0 ? (
-          <div className="rpc-fm-state">No trophies match.</div>
+          <div className="rpc-fm-state">
+            {playerFilter ? (
+              <>
+                No mint-#1 sales recorded for <strong>{playerFilter}</strong> in the last 90 days.
+                <br />
+                <Link href={`/insights/squeeze?player=${encodeURIComponent(playerFilter)}`} className="rpc-fm-empty-link">
+                  See {playerFilter}&apos;s editions on the squeeze board →
+                </Link>
+              </>
+            ) : setFilter ? (
+              <>
+                No mint-#1 sales recorded for <strong>{setFilter}</strong> in the last 90 days.
+                <br />
+                <Link href={`/insights/squeeze?set=${encodeURIComponent(setFilter)}`} className="rpc-fm-empty-link">
+                  See {setFilter} on the squeeze board →
+                </Link>
+              </>
+            ) : (
+              "No trophies match."
+            )}
+          </div>
         ) : (
           <table className="rpc-fm-table">
             <thead>
@@ -386,7 +406,9 @@ const CSS = `
 .rpc-fm-pill-active { background: var(--rpc-red-bg); border-color: var(--rpc-red); color: var(--rpc-red); }
 
 .rpc-fm-table-wrap { max-width: 1180px; margin: 0 auto; border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface); overflow-x: auto; border-radius: 2px; }
-.rpc-fm-state { padding: 32px; text-align: center; font-family: var(--font-mono); font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); }
+.rpc-fm-state { padding: 32px; text-align: center; font-family: var(--font-mono); font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); line-height: 1.8; }
+.rpc-fm-empty-link { font-family: var(--font-mono); color: var(--rpc-red); text-decoration: none; letter-spacing: 1.5px; display: inline-block; margin-top: 14px; }
+.rpc-fm-empty-link:hover { text-decoration: underline; }
 .rpc-fm-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .rpc-fm-table th { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); text-align: left; padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); white-space: nowrap; }
 .rpc-fm-th-num { text-align: right; }
