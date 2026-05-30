@@ -19,62 +19,123 @@ This handoff covers the three remaining code-side phases. None of them ship from
 
 ---
 
-## Phase C — `lib/collections.ts` chain field
+## Phase C — `lib/collections.ts` two-field model (SHIPPED 2026-05-30, `d9323f9`)
 
-**Goal:** every registry entry carries an explicit `chain: 'flow'`. TS compile pass is the only smoke needed.
+**Status:** complete. Commit `d9323f9` on `main`, deploy `dpl_BZLeeiot4EYSQo6qPeBQENN9cno3` READY in production. What actually landed in [lib/collections.ts](../lib/collections.ts): `ChainType` export mirrors the Postgres `chain_type` enum exactly; `dbChain?: ChainType | null` added to the `Collection` interface (optional, not the non-optional shape the spec below described — safer against any Collection literal in the file not visible at write time); `dbChain: 'flow'` on the 5 published entries (Top Shot, All Day, Pinnacle, Golazos, UFC); `dbChain: null` on the 3 unpublished placeholders (panini, candy, rwa). Existing `chain` field untouched.
+
+**Handoff inaccuracies Trevor caught and adapted around:**
+
+- The spec below described an entry shape with `slug`/`status`/`CollectionRegistryEntry`/`Record` — none of which exist. The real file uses `id`/`published: boolean`/the `Collection` interface and a `COLLECTIONS` array.
+- The spec showed `dbChain: ChainType | null` (non-optional). Trevor shipped it optional (`dbChain?: ChainType | null`) for safety against Collection literals not visible mid-edit. Strictly safer; fully delivers the intent.
+
+The spec below is retained for context but reads as a record of what was asked, not what shipped.
+
+---
+
+**Original framing (now historical):** the handoff that preceded the actual ship.
+
+**Was-blocked-on:** the prior handoff said "set all 8 entries to `chain: 'flow' as const`." That instruction was wrong — `lib/collections.ts` already has a `chain` field typed `"flow" | "evm" | "panini" | "candy" | "rwa"`, where the 3 unpublished placeholders (Panini, Candy MLB, generic RWA) use the non-flow values as roadmap/partner labels. Forcing those to `'flow'` would assert false roadmap info (Candy MLB isn't on Flow).
+
+**Working call (2026-05-30, Trevor approved):** the existing `chain` field stays as the partner/roadmap label. Add a separate `ChainType` export that mirrors the DB `chain_type` enum, plus an optional `dbChain: ChainType | null` field on each entry that mirrors the DB chain for published collections (`null` for unpublished placeholders that aren't seeded in `collections` yet). Two-field model — least disruptive to existing callers of `.chain`, makes the registry honest, and unblocks Phase F.
 
 **Files:**
-- `lib/collections.ts` (the registry array + the entry type definition).
+- `lib/collections.ts` only.
 
 **Changes:**
 
-1. Update the entry-type definition to require `chain` from the `chain_type` enum union:
+1. Add a `ChainType` export matching the Postgres `chain_type` enum exactly:
 
    ```ts
+   /**
+    * Mirrors the Postgres `chain_type` enum in `public.collections.chain`.
+    * Expand via `ALTER TYPE chain_type ADD VALUE '<name>'` when a new
+    * target chain is approved (e.g. `'base'` when Beezie is promoted).
+    */
    export type ChainType =
      | 'flow'
      | 'ethereum'
      | 'polygon'
      | 'solana'
      | 'flow_evm';
-
-   export type CollectionRegistryEntry = {
-     slug: string;
-     chain: ChainType;
-     collectionId: string;
-     // ...existing fields
-   };
    ```
 
-   Match the field name your registry already uses (`CollectionDefinition`, `CollectionConfig`, whatever — read first).
+2. Add an optional `dbChain: ChainType | null` field to the `Collection` interface in the existing definition (around line 25 — alongside `chain`, `partner`, etc.). Keep `chain` exactly as it is:
 
-2. Add `chain: 'flow' as const,` to every entry in the registry array. All 8 entries (5 published, 3 unpublished placeholders) get `'flow'`.
+   ```ts
+   export interface Collection {
+     id: string
+     label: string
+     shortLabel: string
+     sport: string
+     /** Partner / roadmap label — NOT the DB chain. Use `dbChain` for chain dispatch. */
+     chain: "flow" | "evm" | "panini" | "candy" | "rwa"
+     /**
+      * Authoritative chain identifier mirroring `collections.chain` in Postgres.
+      * `null` for unpublished placeholders that aren't seeded in the DB yet.
+      * Chain-aware code should branch on this, not `chain`.
+      */
+     dbChain: ChainType | null
+     // ...rest of existing fields unchanged
+   }
+   ```
 
-3. Export `ChainType` for downstream consumers.
+3. For the 5 published entries (NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, UFC Strike), add `dbChain: 'flow',`. The existing `chain: 'flow'` value already matches the DB so nothing changes semantically; this just makes the field explicit and typed.
 
-**Smoke:** `npx tsc --noEmit` clean. No runtime tests needed — the field is unread.
+4. For the 3 unpublished placeholders (the ones with `chain: 'panini' | 'candy' | 'rwa'`), add `dbChain: null,`. Honest about not being in the DB. When chain two ships, Candy MLB's entry flips to `dbChain: 'solana'`; Beezie if promoted gets `dbChain: 'base'` (and the enum gets `'base'` added first).
 
-**Commit message:** `feat(collections): add chain field to registry entries (chain one of N)`
+5. Export `ChainType` at the top of the file alongside `Collection`.
 
-**Rollback:** revert commit.
+**Smoke:**
+
+- `npx tsc --noEmit` clean.
+- `npm run build` clean.
+- No runtime tests required — `dbChain` is additive and unread until chain two ships.
+
+**What NOT to do in this phase:**
+
+- Do NOT rename `chain` to anything else. That's a separate larger refactor touching every caller.
+- Do NOT change existing `chain` values (`flow` stays `flow`, `candy` stays `candy`, etc.).
+- Do NOT add chain values to the `chain_type` enum (the DB enum doesn't have `'base'` yet — that's deliberately deferred until Beezie is promoted).
+- Do NOT touch route or page code. `lib/collections.ts` only.
+
+**Commit message:** `feat(collections): add ChainType export + dbChain field for chain-abstraction Phase C`
+
+**Rollback:** revert commit. `dbChain` is additive so reverts are clean.
 
 ---
 
-## Phase D — `lib/chains/flow/` reorganization
+## Phase D — `lib/chains/flow/` reorganization (SUPERSEDED — see dedicated doc)
+
+**Plan landed 2026-05-30 in commits `ce19f35` (plan) + `4938fbb` (flow.ts default-export shim correction).** The canonical Phase D handoff is now [docs/handoff-phase-d-lib-chains-flow-reorg.md](handoff-phase-d-lib-chains-flow-reorg.md) — execute from THAT doc, not from the stale spec below.
+
+Key things the dedicated doc gets right that the spec below got wrong:
+
+- **Import alias finding:** 833 imports use `@/lib/...`, 0 use relative `../lib/`. Shim strategy is bulletproof — every caller resolves identically through the alias, so zero caller edits needed.
+- **Default-export trap:** `lib/flow.ts` is the only Tier-1 file with `export default`. `export *` does NOT carry default exports, so its shim needs an explicit `export { default } from "@/lib/chains/flow/flow"` second line or default-importers silently break.
+- **Verified caller counts per file** (highest fan-in: `lib/flow.ts` ~25, `lib/topshot.ts` 16). Shim risk known per file before the reorg starts.
+- **Stay-at-top-level list** explicitly excludes `lib/evm-rpc.ts` from the Flow dir — Base/EVM plane must remain separate per the chain-strategy doc.
+- **Tier 2 deferrals** (badges, dying Flowty helpers, collection subdirs, hooks) documented with reasons.
+- **Execution mechanics tuned to this env's failure modes:** `git mv` for blame, PowerShell `git` for commits (bash silently no-ops on `.git/index.lock`), `git show HEAD:` + Vercel state as ground truth over buffered shell echo, PowerShell `tsc`, `git diff -M` must show pure R100 renames.
+
+The stale spec below is preserved as a record of how the work was originally framed. **Do not execute Phase D from this section.**
+
+---
+
+**Original (stale) spec — historical context only.**
 
 **Goal:** move (don't rewrite) Flow-specific primitives under `lib/chains/flow/`. Maintain re-exports at the original import paths so no caller breaks. Zero behavior change.
 
-**Files to relocate:**
+**Files to relocate (STALE LIST — two of these don't exist; see verified inventory above):**
 
 | From | To | Notes |
 |---|---|---|
-| `lib/flow-helpers.ts` (if it exists by that or similar name — grep first) | `lib/chains/flow/helpers.ts` | |
-| `lib/cadence/*.ts` | `lib/chains/flow/cadence/*.ts` | Whole directory; ~per-collection Cadence scripts |
-| `lib/wallet-backfill-helpers.ts` | `lib/chains/flow/wallet-backfill.ts` | |
-| `lib/topshot-graphql.ts` (or equivalent) | `lib/chains/flow/topshot-graphql.ts` | |
-| `lib/alldayGraphql.ts` | `lib/chains/flow/allday-graphql.ts` | |
-| `lib/dapper-v1-tx-decode.ts` | `lib/chains/flow/dapper-v1-tx-decode.ts` | |
-| `lib/flowty-tx-classifier.ts` | `lib/chains/flow/flowty-tx-classifier.ts` | Historical archive, but Flow-specific |
+| `lib/flow-helpers.ts` ❌ DOES NOT EXIST | `lib/chains/flow/helpers.ts` | Was written from inference; drop |
+| `lib/cadence/*.ts` ✓ | `lib/chains/flow/cadence/*.ts` | Whole directory; ~per-collection Cadence scripts |
+| `lib/wallet-backfill-helpers.ts` ✓ | `lib/chains/flow/wallet-backfill.ts` | |
+| `lib/topshot-graphql.ts` ✓ | `lib/chains/flow/topshot-graphql.ts` | |
+| `lib/alldayGraphql.ts` ✓ | `lib/chains/flow/allday-graphql.ts` | |
+| `lib/dapper-v1-tx-decode.ts` ✓ | `lib/chains/flow/dapper-v1-tx-decode.ts` | |
+| `lib/flowty-tx-classifier.ts` ❌ DOES NOT EXIST | `lib/chains/flow/flowty-tx-classifier.ts` | Likely removed in Flowty teardown; drop |
 
 **Files that STAY at top level (chain-agnostic):**
 
@@ -116,9 +177,19 @@ This handoff covers the three remaining code-side phases. None of them ship from
 
 ---
 
-## Phase E — Chain-aware reads audit
+## Phase E — Chain-aware reads audit (SHIPPED 2026-05-30, `205024c`)
 
-**Goal:** classify every surface that filters by collection so we know what changes (and what doesn't) when chain two arrives. No code change in this phase.
+**Status:** complete. Audit doc landed at [docs/audits/chain-aware-reads-2026-05-30.md](audits/chain-aware-reads-2026-05-30.md). 168 surfaces classified (80 chain-internal / 85 assumes-Flow / 3 needs-chain-dispatch). DB-side companion at [docs/audits/chain-aware-reads-db-2026-05-30.md](audits/chain-aware-reads-db-2026-05-30.md). CLAUDE.md "Chain strategy" section already updated with both links.
+
+**Headline finding:** the read/serve layer keyed by `collection_id` absorbs a new chain with zero change. The 3 code surfaces that genuinely need chain-dispatch are the squeeze-check + tc-report wallet-paste tools and the `lib/collections.ts` URL builders. Everything else either is chain-internal or stays Flow-scoped by design.
+
+**Discovered during the audit (not in the original handoff scope):** there's a live parallel EVM data plane indexing Beezie Collectibles on Base mainnet (1.01M transfers, 1,828 holders) using its own `evm_chains` / `evm_nft_contracts` / `evm_nft_transfers` registry — outside `collections.chain_type`. Working decision: keep parallel until either Beezie gets a real product consumer or the July 8 Candy/Solana tripwire fails. See CLAUDE.md "Beezie/Base parallel data plane" paragraph.
+
+The detail below is preserved for historical context; the Claude Code run that shipped Phase E adapted from this spec.
+
+---
+
+**Original goal (now satisfied):** classify every surface that filters by collection so we know what changes (and what doesn't) when chain two arrives. No code change in this phase.
 
 **Output:** `docs/audits/chain-aware-reads-2026-05-30.md` with a single big table:
 
@@ -177,18 +248,18 @@ This forces every future collection insert to specify chain explicitly. Rollback
 
 ## Verification checklist (for Trevor to gate "phase complete")
 
-- [ ] Phase C: `npx tsc --noEmit` clean; `lib/collections.ts` shows `chain: 'flow' as const` on every entry; `ChainType` exported.
+- [ ] Phase C (revised two-field model): `npx tsc --noEmit` clean; `lib/collections.ts` shows `ChainType` exported, `dbChain: 'flow'` on all 5 published entries, `dbChain: null` on the 3 unpublished placeholders. Existing `chain` field unchanged.
 - [ ] Phase D: `lib/chains/flow/` exists; original import paths still resolve via shims; production deploy green; 24h cron soak clean.
-- [ ] Phase E: `docs/audits/chain-aware-reads-2026-05-30.md` exists with the full surface table; CLAUDE.md "Chain strategy" section updated with the link.
-- [ ] Phase F (separate, deferred): DEFAULT dropped post-soak.
+- [x] Phase E: shipped 2026-05-30 in `205024c`. Audit doc + DB-side companion + CLAUDE.md updated.
+- [ ] Phase F (separate, deferred): DEFAULT dropped post-Phase-D-soak.
 
 ## Rough estimate
 
 | Phase | Estimate |
 |---|---|
-| C | ~1 hour |
+| C | ~30 min (revised two-field model — additive only, no caller changes) |
 | D | 2-3 days reorg + 1-day smoke + 24h soak |
-| E | ~1 day |
+| E | ~1 day (SHIPPED 2026-05-30) |
 | F | ~10 min (separate Cowork session post-soak) |
 
 Total: ~1 week from Phase C start to Phase F apply.
