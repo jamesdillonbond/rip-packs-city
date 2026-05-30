@@ -134,14 +134,14 @@ const COLLECTION_TICKER: Record<string, string[]> = {
     "\u26A1 COLLECTION ANALYZER \u2014 FMV + Flowty asks + badge intel",
     "\u26A1 PACK EV CALCULATOR \u2014 expected value vs price",
     "\u26A1 SNIPER \u2014 real-time deals below FMV",
-    "\u26A1 BADGE TRACKER \u2014 Top Shot Debut \u00B7 Fresh \u00B7 Rookie Year",
+    "\u26A1 BADGE FILTERS \u2014 filter any view by Top Shot Debut \u00B7 Fresh \u00B7 Rookie Year",
     "\u26A1 SET TRACKER \u2014 completion + bottleneck finder",
   ],
   "nfl-all-day": [
     "\u26A1 COLLECTION ANALYZER \u2014 FMV + marketplace asks + badge intel",
     "\u26A1 PACK EV CALCULATOR \u2014 expected value vs drop price",
     "\u26A1 SNIPER \u2014 live deals below FMV",
-    "\u26A1 BADGE TRACKER \u2014 Debut \u00B7 Fresh \u00B7 Rookie Year premiums",
+    "\u26A1 BADGE FILTERS \u2014 Debut \u00B7 Fresh \u00B7 Rookie Year, on any view",
     "\u26A1 SET TRACKER \u2014 completion progress + bottleneck finder",
   ],
   "disney-pinnacle": [

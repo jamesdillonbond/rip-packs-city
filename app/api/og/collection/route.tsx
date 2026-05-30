@@ -33,7 +33,7 @@ const PAGE_TAGLINES: Record<string, string> = {
   collection: "WALLET ANALYTICS & FMV",
   packs: "PACK EV CALCULATOR",
   sniper: "REAL-TIME DEALS BELOW FMV",
-  badges: "BADGE TRACKER & RARE SERIALS",
+  badges: "BADGE & RARE-SERIAL FILTERS",
   sets: "SET COMPLETION TRACKER",
   vault: "VAULTED RWA TRACKER",
 };

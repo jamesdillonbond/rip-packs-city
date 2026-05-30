@@ -1,6 +1,6 @@
 # Rip Packs City
 
-Collector intelligence platform for Flow-blockchain NFTs — FMV pricing, deal sniper, pack EV, badge tracker, and portfolio analytics for serious collectors.
+Collector intelligence platform for Flow-blockchain NFTs — FMV pricing, deal sniper, pack EV, badge-aware filtering, and portfolio analytics for serious collectors.
 
 Live: <https://www.rippackscity.com>
 

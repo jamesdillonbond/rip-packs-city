@@ -91,14 +91,14 @@ const TICKER_ITEMS: Record<string, string[]> = {
     "⚡ COLLECTION ANALYZER — FMV + marketplace asks + badge intel",
     "⚡ PACK EV CALCULATOR — expected value vs price",
     "⚡ SNIPER — real-time deals below FMV",
-    "⚡ BADGE TRACKER — Top Shot Debut · Fresh · Rookie Year",
+    "⚡ BADGE FILTERS — filter any view by Top Shot Debut · Fresh · Rookie Year",
     "⚡ SET TRACKER — completion + bottleneck finder",
   ],
   "nfl-all-day": [
     "⚡ COLLECTION ANALYZER — FMV + marketplace asks + badge intel",
     "⚡ PACK EV CALCULATOR — expected value vs drop price",
     "⚡ SNIPER — live deals below FMV",
-    "⚡ BADGE TRACKER — Debut · Fresh · Rookie Year premiums",
+    "⚡ BADGE FILTERS — Debut · Fresh · Rookie Year, on any view",
     "⚡ SET TRACKER — completion progress + bottleneck finder",
   ],
   "disney-pinnacle": [

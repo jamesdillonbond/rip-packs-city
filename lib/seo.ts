@@ -36,7 +36,7 @@ export const rootMetadata: Metadata = {
     'sniper deals',
     'pack EV',
     'pack EV calculator',
-    'badge tracker',
+    'badge filters',
   ],
   openGraph: {
     type: 'website',

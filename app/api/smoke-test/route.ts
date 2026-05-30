@@ -560,6 +560,42 @@ async function runSmokeTests() {
     checkRlsBlocked("recent_searches", { query: "rls_test", query_type: "wallet" }),
     checkRlsBlocked("trophy_moments", { slot: 1, moment_id: "rls_test_moment" }),
 
+    // SECDEF anon-EXECUTE regression guard. SECDEF functions bypass RLS, so a
+    // destructive/maintenance function with anon EXECUTE is callable via the
+    // bundled anon key through PostgREST rpc/ — TRUNCATE in particular isn't
+    // governed by RLS at all. check_secdef_anon_execute_violations() inspects
+    // pg_proc privileges (never invokes the guarded fns) and must return [].
+    // Hard test: a non-empty result Sentry-alerts. See migration
+    // audit_20260530_secdef_anon_execute_guard_fn + the 2026-05-30 grant
+    // revoke (audit_20260530_revoke_anon_maintenance_secdef_execute).
+    time(async () => {
+      const meta = {
+        name: "anon has no EXECUTE on destructive SECDEF functions",
+        endpoint: "rpc:check_secdef_anon_execute_violations",
+        expected: "zero-violations",
+      };
+      const { data, error } = await (svc as any).rpc("check_secdef_anon_execute_violations");
+      if (error) {
+        return { ...meta, passed: false, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
+      }
+      const violations = Array.isArray(data) ? data : [];
+      const passed = violations.length === 0;
+      return {
+        ...meta,
+        passed,
+        detail: passed
+          ? "0 violations — destructive SECDEF set is service_role-only"
+          : `${violations.length} anon/auth-executable: ${violations.map((v: { function: string }) => v.function).join(", ")}`,
+        statusCode: null,
+        bodyExcerpt: passed ? null : JSON.stringify(violations).slice(0, 500),
+        notes: { violation_count: violations.length },
+      };
+    }, {
+      name: "anon has no EXECUTE on destructive SECDEF functions",
+      endpoint: "rpc:check_secdef_anon_execute_violations",
+      expected: "zero-violations",
+    }),
+
     // Phase 4: auth-gated profile routes accept or redirect. 200 OR 401 all OK.
     ...([
       "/api/profile/activity",
