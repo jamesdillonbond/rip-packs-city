@@ -30,22 +30,31 @@ const CARDS: Card[] = [
     available: true,
   },
   {
-    slug: null,
-    eyebrow: "Surface B · Coming June",
+    slug: "/insights/pack-reality",
+    eyebrow: "Surface B · Live",
     title: "Pack Reality",
     blurb:
-      "We audited every Top Shot pack ripped in the last 60 days. 127,867 rips. Median pull value $0. Honest pack ranker with confidence bands and high-variance flags.",
-    cta: "Coming soon",
-    available: false,
+      "We audited every Top Shot pack ripped in the last 60 days. 128,220 rips. Median pull value $0. Honest pack ranker with confidence flags on every +EV claim.",
+    cta: "Open pack reality",
+    available: true,
   },
   {
-    slug: null,
-    eyebrow: "Surface C · Coming June",
+    slug: "/insights/rookies",
+    eyebrow: "Surface C · Live",
     title: "2025 Rookie Class Index",
     blurb:
-      "The 2025 NBA rookie class as a cohort. 30-day GMV, lock-rate, average price, first-mint trophy multipliers. Kon Knueppel 54% locked, $392 avg. Dylan Harper $21k GMV.",
-    cta: "Coming soon",
-    available: false,
+      "The 2025 NBA rookie class as a cohort. 30-day GMV, lock-rate, average price, first-mint trophy multipliers. Dylan Harper $21k GMV, Kon Knueppel 54% locked.",
+    cta: "Open rookie index",
+    available: true,
+  },
+  {
+    slug: "/insights/first-mint",
+    eyebrow: "Surface D · Live",
+    title: "First-Mint Trophy Tracker",
+    blurb:
+      "Trophies aren't a vibe — they're math. Every TS serial #1 sale of the last 90 days vs the average-serial price for the same edition. Avg 15.8×, max 248×.",
+    cta: "Open trophy tracker",
+    available: true,
   },
 ]
 
@@ -144,8 +153,11 @@ const CSS = `
   max-width: 1180px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
+}
+@media (min-width: 1100px) {
+  .rpc-ins-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 .rpc-ins-card-link {
   text-decoration: none;
