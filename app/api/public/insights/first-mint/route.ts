@@ -40,6 +40,8 @@ export async function GET(req: NextRequest) {
     ? Number(url.searchParams.get("max_circulation"))
     : null;
   const tier = url.searchParams.get("tier")?.toUpperCase() ?? null;
+  const playerFilter = url.searchParams.get("player")?.trim() ?? null;
+  const setFilter = url.searchParams.get("set")?.trim() ?? null;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q = (supabase as any)
@@ -55,6 +57,12 @@ export async function GET(req: NextRequest) {
   }
   if (tier) {
     q = q.eq("tier", tier);
+  }
+  if (playerFilter) {
+    q = q.ilike("player_name", `%${playerFilter}%`);
+  }
+  if (setFilter) {
+    q = q.ilike("set_name", `%${setFilter}%`);
   }
   q = q.order("multiplier", { ascending: false, nullsFirst: false }).limit(limit);
 
@@ -79,7 +87,7 @@ export async function GET(req: NextRequest) {
       fetched_at: new Date().toISOString(),
       sources: ["topshot_first_mint_trophy_stats", "topshot_first_mint_trophies"],
       elapsed_ms: elapsedMs,
-      filters: { limit, min_multiplier: minMult, max_circulation: maxCirculation, tier },
+      filters: { limit, min_multiplier: minMult, max_circulation: maxCirculation, tier, player: playerFilter, set: setFilter },
     },
     stats: statsRes.data?.[0] ?? null,
     trophies: trophiesRes.data ?? [],
