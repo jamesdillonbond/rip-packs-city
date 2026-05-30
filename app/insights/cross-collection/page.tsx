@@ -275,14 +275,23 @@ export default function CrossCollectionPage() {
                 <tr key={o.set_id}>
                   <td>
                     {o.set_name ? (
-                      <Link
-                        href={`/insights/squeeze?set=${encodeURIComponent(o.set_name)}`}
-                        className="rpc-cc-set-link"
-                        title={`Drill into ${o.set_name} on the squeeze board`}
-                      >
-                        {o.set_name}
-                        <span className="rpc-cc-drill-hint">drill →</span>
-                      </Link>
+                      <div className="rpc-cc-set-cell">
+                        <Link
+                          href={`/insights/squeeze?set=${encodeURIComponent(o.set_name)}`}
+                          className="rpc-cc-set-link"
+                          title={`Drill into ${o.set_name} on the squeeze board`}
+                        >
+                          {o.set_name}
+                          <span className="rpc-cc-drill-hint">squeeze →</span>
+                        </Link>
+                        <Link
+                          href={`/insights/first-mint?set=${encodeURIComponent(o.set_name)}`}
+                          className="rpc-cc-trophy-link"
+                          title={`See first-mint trophies from ${o.set_name}`}
+                        >
+                          trophies →
+                        </Link>
+                      </div>
                     ) : (
                       "—"
                     )}
@@ -375,10 +384,13 @@ const CSS = `
 .rpc-cc-dot-on { background: var(--rpc-red); }
 .rpc-cc-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
 .rpc-cc-td-emph { color: var(--rpc-red); font-weight: 700; }
+.rpc-cc-set-cell { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .rpc-cc-set-link { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
 .rpc-cc-set-link:hover { color: var(--rpc-red); }
 .rpc-cc-drill-hint { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); opacity: 0.5; transition: color 100ms, opacity 100ms; }
 .rpc-cc-set-link:hover .rpc-cc-drill-hint { color: var(--rpc-red); opacity: 1; }
+.rpc-cc-trophy-link { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); text-decoration: none; padding: 4px 8px; border: 1px solid var(--rpc-border); border-radius: 2px; white-space: nowrap; opacity: 0.65; transition: color 100ms, border-color 100ms, opacity 100ms; }
+.rpc-cc-trophy-link:hover { color: var(--rpc-red); border-color: var(--rpc-red); opacity: 1; }
 
 .rpc-cc-footer { max-width: 1180px; margin: 36px auto 0; display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
 .rpc-cc-method p { font-size: 14px; line-height: 1.65; color: var(--rpc-text-secondary); margin: 0 0 12px; }
