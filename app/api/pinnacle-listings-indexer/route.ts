@@ -638,14 +638,22 @@ export async function POST(req: NextRequest) {
       if (failuresToQueue.length > 0) {
         for (let i = 0; i < failuresToQueue.length; i += 100) {
           const batch = failuresToQueue.slice(i, i + 100)
-          const { error } = await (supabaseAdmin as any)
+          // ignoreDuplicates → ON CONFLICT DO NOTHING, so .select() returns ONLY the
+          // genuinely-new failure rows; re-observed known-unresolvable Pinnacle listings
+          // (the ~1.5k permanently-capped retry backlog) are skipped and not returned.
+          // Counting actual inserts here — not batch.length — keeps queued_failures and
+          // the Sentry warning reflecting NEW failures, so the warning fires on a real
+          // spike instead of every tick that merely re-sees the steady-state backlog.
+          const { data: inserted, error } = await (supabaseAdmin as any)
             .from("listing_resolution_failures")
             .upsert(batch, { onConflict: "collection_id,listing_resource_id", ignoreDuplicates: true })
+            .select("listing_resource_id,flow_id,failure_reason")
           if (error) {
             console.log("[pinnacle-listings-indexer] failure-queue upsert err:", error.message)
           } else {
-            queuedFailures += batch.length
-            for (const row of batch) {
+            const newRows = inserted ?? []
+            queuedFailures += newRows.length
+            for (const row of newRows) {
               const reason = String(row.failure_reason)
               failureReasonCounts[reason] = (failureReasonCounts[reason] ?? 0) + 1
               Sentry.addBreadcrumb({
