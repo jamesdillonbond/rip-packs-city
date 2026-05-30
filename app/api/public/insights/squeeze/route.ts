@@ -51,6 +51,9 @@ export async function GET(req: NextRequest) {
   const minSqueeze = Number(sp.get("min_squeeze") ?? "50");
   const maxBuyable = sp.get("max_buyable") ? Number(sp.get("max_buyable")) : null;
   const setFilter = sp.get("set")?.trim() ?? null;
+  // Optional: limit to "trophy circ" editions (e.g. max_circulation=100
+  // surfaces only Ultimate/Legendary tier editions).
+  const maxCirculation = sp.get("max_circulation") ? Number(sp.get("max_circulation")) : null;
   const sort = sp.get("sort") ?? "squeeze";
   const limit = Math.max(1, Math.min(200, Number(sp.get("limit") ?? "50")));
 
@@ -81,6 +84,9 @@ export async function GET(req: NextRequest) {
   if (setFilter) q = q.ilike("set_name", `%${setFilter}%`);
   if (maxBuyable != null && Number.isFinite(maxBuyable)) {
     q = q.lte("effectively_buyable", maxBuyable);
+  }
+  if (maxCirculation != null && Number.isFinite(maxCirculation)) {
+    q = q.lte("circulation", maxCirculation);
   }
 
   // Sort: squeeze_pct DESC is the canonical "most squeezed first" ranking.
@@ -119,6 +125,7 @@ export async function GET(req: NextRequest) {
         tier,
         min_squeeze: minSqueeze,
         max_buyable: maxBuyable,
+        max_circulation: maxCirculation,
         set: setFilter,
         sort,
         limit,
