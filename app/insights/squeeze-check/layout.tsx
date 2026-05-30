@@ -21,6 +21,14 @@ export const metadata: Metadata = {
       "Paste your wallet, see how much of your Top Shot bag is actually liquid vs sitting in lock + burn.",
     url: `${SITE_URL}/insights/squeeze-check`,
     siteName: "Rip Packs City",
+    images: [
+      {
+        url: `${SITE_URL}/api/og/insights/squeeze-check`,
+        width: 1200,
+        height: 630,
+        alt: "What's Liquid In Your Bag? — Rip Packs City",
+      },
+    ],
     locale: "en_US",
     type: "website",
   },
@@ -29,6 +37,7 @@ export const metadata: Metadata = {
     title: "What's Liquid In Your Bag?",
     description:
       "Paste your Flow wallet, see your Top Shot lock + burn exposure.",
+    images: [`${SITE_URL}/api/og/insights/squeeze-check`],
     creator: "@RipPacksCity",
   },
 }

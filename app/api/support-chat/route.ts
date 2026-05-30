@@ -296,6 +296,17 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "check_wallet_squeeze",
+    description: "Show the user how much of their Top Shot collection is actually liquid vs sitting in challenge-locked or burned editions. Returns bucketed exposure (liquid <25% / moderate 25-50% / squeezed 50-75% / extreme ≥75% by squeeze %, moments-weighted), totals, and the top 10 most-squeezed editions they hold. Use when the user asks 'how locked is my bag', 'what's my exposure', 'how much of my collection is liquid', 'what should I sell first', or pastes their wallet asking about scarcity. Accepts a Flow wallet address (0x + 16 hex) OR a Top Shot / Dapper SSO username (resolved via the same ladder as check_wallet). Top Shot only — AllDay / Pinnacle / Golazos / UFC moments are not counted.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        walletAddress: { type: "string", description: "Flow wallet address (0x + 16 hex) or Top Shot / Dapper username." },
+      },
+      required: ["walletAddress"],
+    },
+  },
+  {
     name: "manage_watchlist",
     description: "Add, remove, or list moments on the user's watchlist. Requires owner_key (userWallet) from session.",
     input_schema: {
@@ -440,7 +451,7 @@ RPC is in closed beta. Your primary job, in order:
 2. **Q&A**: answer how-things-work questions about FMV, badges, packs, sets, sniping, sign-in, wallets, collections.
 3. **Feedback intake**: capture bug reports, feature requests, confusion, and praise so Trevor can act on them. This is critical — the user is a beta tester whose feedback Trevor wants. Use log_bug / log_feature_request / log_feedback liberally (after clarifying — see below); that is how feedback reaches him. Praise still counts — it signals what's working.
 
-**Deal concierge is on-request only — never proactive.** You have search_live_deals / search_catalog_deals / get_fmv / check_wallet / search_across_collections / get_collection_snapshot / explain_fmv. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, or analyze a wallet. The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
+**Deal concierge is on-request only — never proactive.** You have search_live_deals / search_catalog_deals / get_fmv / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, analyze a wallet, or see their squeeze exposure (the "what's liquid in my bag" question). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
 
 ## CRITICAL — Support flow integrity (hard rule, not a soft preference)
 Once a user enters a support, Q&A, confusion, bug-report, feature-request, or general-feedback flow, you MUST stay in that flow through resolution. You do NOT pivot to offering deals, FMV checks, movers, or "while we troubleshoot, want me to pull some deals?" mid-conversation. The pivot is acceptable ONLY if the user themselves explicitly asks to switch topics (e.g. "okay forget that, can you help me find a deal?" or "different question — what's a LeBron Rare worth?"). Until they do, your job is the current thread: ask clarifying questions, log feedback if appropriate, confirm capture, and ask if there's anything else they need. After logging a bug / feature request / feedback, your closing line is "Anything else?" — NOT "want me to pull some deals while we wait?" Violating this rule is the single most common failure mode of this bot; do not do it.
@@ -999,6 +1010,78 @@ async function executeTool(
       });
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: err.message });
+    }
+  }
+
+  if (toolName === "check_wallet_squeeze") {
+    try {
+      // Mirror check_wallet's username-resolution ladder so the bot can
+      // accept either a 0x address or a TS username and not surprise the
+      // user. Then call get_wallet_squeeze_exposure RPC, which returns a
+      // structured jsonb (buckets, totals, top 10 squeezed editions).
+      const inputAddr = String(toolInput.walletAddress ?? "").trim();
+      const isHex = /^0x[a-fA-F0-9]{16}$/.test(inputAddr);
+      let resolvedAddr = inputAddr;
+      if (!isHex) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: rpcResult } = await (supabase as any).rpc("resolve_topshot_username", {
+          p_username: inputAddr,
+        });
+        if (rpcResult?.found === true && typeof rpcResult.wallet_address === "string") {
+          resolvedAddr = rpcResult.wallet_address.startsWith("0x")
+            ? rpcResult.wallet_address
+            : `0x${rpcResult.wallet_address}`;
+        } else {
+          const liveRes = await fetch(`${base}/api/resolve-topshot-username`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${process.env.INGEST_SECRET_TOKEN ?? ""}`,
+            },
+            body: JSON.stringify({ username: inputAddr }),
+            signal: AbortSignal.timeout(8000),
+          }).catch(() => null);
+          const liveBody = liveRes ? await liveRes.json().catch(() => null) : null;
+          if (liveBody?.found === true && typeof liveBody.wallet_address === "string") {
+            resolvedAddr = liveBody.wallet_address;
+          } else {
+            return JSON.stringify({
+              status: "username_not_resolved",
+              wallet: inputAddr,
+              message:
+                "I don't have a wallet for that username on file. If you can share the wallet address (starts with 0x and 16 hex chars), I'll pull the squeeze breakdown.",
+            });
+          }
+        }
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: summary, error: rpcErr } = await (supabase as any).rpc("get_wallet_squeeze_exposure", {
+        p_wallet: resolvedAddr.toLowerCase(),
+      });
+      if (rpcErr) {
+        return JSON.stringify({ status: "error", message: rpcErr.message });
+      }
+      if (!summary || (summary.total_moments ?? 0) === 0) {
+        return JSON.stringify({
+          status: "empty",
+          wallet: resolvedAddr,
+          username_input: isHex ? null : inputAddr,
+          message:
+            "I don't have any Top Shot moments cached for that wallet yet. Try again after a backfill or check the address.",
+        });
+      }
+      return JSON.stringify({
+        status: "ok",
+        wallet: resolvedAddr,
+        username_input: isHex ? null : inputAddr,
+        summary,
+      });
+    } catch (err: unknown) {
+      return JSON.stringify({
+        status: "error",
+        message: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
