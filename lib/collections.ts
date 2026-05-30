@@ -47,8 +47,10 @@ export interface Collection {
    * Authoritative chain identifier mirroring `collections.chain` in Postgres.
    * `null` for unpublished placeholders that aren't seeded in the DB yet.
    * Chain-aware code should branch on this, not `chain`.
+   * Optional so any Collection literal outside this registry stays valid
+   * (additive, zero caller-breakage); every entry here populates it explicitly.
    */
-  dbChain: ChainType | null
+  dbChain?: ChainType | null
   partner: string
   accent: string
   /** Secondary accent for hover states + tier chips. Defaults to accent. */
