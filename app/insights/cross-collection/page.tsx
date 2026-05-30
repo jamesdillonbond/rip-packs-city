@@ -203,20 +203,31 @@ export default function CrossCollectionPage() {
               {wallets.map((w) => (
                 <tr key={w.wallet_address}>
                   <td>
-                    <Link
-                      href={`/profile/${w.wallet_address}`}
-                      className="rpc-cc-wallet-link"
-                      title={w.wallet_address}
-                    >
-                      <span className="rpc-cc-wallet-addr">{shortAddr(w.wallet_address)}</span>
-                      <span className="rpc-cc-dots" aria-label="Collections held">
-                        <CollDot on={Number(w.ts_moments ?? 0) > 0} label="Top Shot" />
-                        <CollDot on={Number(w.allday_moments ?? 0) > 0} label="AllDay" />
-                        <CollDot on={Number(w.golazos_moments ?? 0) > 0} label="Golazos" />
-                        <CollDot on={Number(w.pinnacle_moments ?? 0) > 0} label="Pinnacle" />
-                        <CollDot on={Number(w.ufc_moments ?? 0) > 0} label="UFC" />
-                      </span>
-                    </Link>
+                    <div className="rpc-cc-wallet-cell">
+                      <Link
+                        href={`/profile/${w.wallet_address}`}
+                        className="rpc-cc-wallet-link"
+                        title={w.wallet_address}
+                      >
+                        <span className="rpc-cc-wallet-addr">{shortAddr(w.wallet_address)}</span>
+                        <span className="rpc-cc-dots" aria-label="Collections held">
+                          <CollDot on={Number(w.ts_moments ?? 0) > 0} label="Top Shot" />
+                          <CollDot on={Number(w.allday_moments ?? 0) > 0} label="AllDay" />
+                          <CollDot on={Number(w.golazos_moments ?? 0) > 0} label="Golazos" />
+                          <CollDot on={Number(w.pinnacle_moments ?? 0) > 0} label="Pinnacle" />
+                          <CollDot on={Number(w.ufc_moments ?? 0) > 0} label="UFC" />
+                        </span>
+                      </Link>
+                      {Number(w.ts_moments ?? 0) > 0 ? (
+                        <Link
+                          href={`/insights/squeeze-check?wallet=${encodeURIComponent(w.wallet_address)}`}
+                          className="rpc-cc-squeeze-link"
+                          title={`See ${shortAddr(w.wallet_address)}'s squeeze exposure`}
+                        >
+                          squeeze →
+                        </Link>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="rpc-cc-td-num">{fmtInt(w.n_collections)}</td>
                   <td className="rpc-cc-td-num">{fmtInt(w.total_moments)}</td>
@@ -347,8 +358,11 @@ const CSS = `
 .rpc-cc-th-num { text-align: right; }
 .rpc-cc-th-emph { color: var(--rpc-red); }
 .rpc-cc-table td { padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); vertical-align: middle; }
-.rpc-cc-wallet-link { text-decoration: none; color: inherit; display: flex; align-items: center; gap: 10px; }
+.rpc-cc-wallet-cell { display: flex; align-items: center; gap: 12px; }
+.rpc-cc-wallet-link { text-decoration: none; color: inherit; display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
 .rpc-cc-wallet-link:hover .rpc-cc-wallet-addr { color: var(--rpc-red); }
+.rpc-cc-squeeze-link { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); text-decoration: none; padding: 4px 8px; border: 1px solid var(--rpc-border); border-radius: 2px; white-space: nowrap; opacity: 0.6; transition: color 100ms, border-color 100ms, opacity 100ms; }
+.rpc-cc-squeeze-link:hover { color: var(--rpc-red); border-color: var(--rpc-red); opacity: 1; }
 .rpc-cc-wallet-addr { font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.5px; color: var(--rpc-text-primary); }
 .rpc-cc-dots { display: inline-flex; gap: 4px; }
 .rpc-cc-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.10); display: inline-block; }
