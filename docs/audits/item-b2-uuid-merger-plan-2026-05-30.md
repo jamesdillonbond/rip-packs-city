@@ -31,9 +31,79 @@ Dependent rows on UUID-keyed editions:
 
 The only working fix is a one-time merge (move dependents to canonical, delete UUID rows) plus a redesign of the seed RPC to not create UUID rows in the first place.
 
-## Phase 1 — One-time merge of 4,985 strict-match rows
+## ⚠️ 2026-05-30 (second-pass) investigation — the loose strict-match key is UNSAFE
 
-Move dependents from each UUID edition_id to its canonical integer-pair edition_id, then delete the UUID rows. Strict match: same `player_name`, `set_name`, `tier`, `circulation_count`.
+Before staging Phase 1, a read-only dry-run (Claude Code) found the drafted strict-match key **`(player_name, set_name, tier, circulation_count)` is not unique** for ~10% of the merge set:
+
+```
+4,985  uuid rows match ≥1 canonical under the loose key (matches the draft count exactly)
+4,490  match exactly ONE canonical (safe 1:1)
+  495  match 2+ DISTINCT canonicals (different play_id_onchain) — ALL of them
+       (canonicals_are_dupes_safe = 0; genuinely_different_plays = 495)
+```
+
+The drafted `Phase 1A` build uses `DISTINCT ON (u.id) ... ORDER BY u.id, c.id`, which for those 495 rows would **arbitrarily** pick one canonical and repoint that uuid row's sales / moments / fmv / pack_drop_pool to possibly the **wrong** edition. That is silent attribution corruption, not cleanup. **Do not run the drafted loose-key build.**
+
+**Fix: add `game_date` to the key.** `game_date` and `name` are 100% populated on all 495 ambiguous rows (`video_url` / `thumbnail_url` / `play_id_onchain` are NOT). Testing the tighter key `(player_name, set_name, tier, circulation_count, name, game_date)`:
+
+```
+491 of 495 ambiguous rows resolve to exactly ONE canonical (different plays = different game dates)
+  2 still-multi  → genuinely indistinguishable: both are Steph Curry "From the Top" LEGENDARY
+                   circ 59, game_date 2020-03-06, canonicals 12:147 vs 12:156 (a real TS
+                   two-play "From the Top" variant). DEFER — needs manual play-id assignment.
+  ~10 drop to 0  → name/game_date formatting mismatch vs their lone canonical. DEFER.
+```
+
+Applied **uniformly across the whole hydrated set**, the tight key yields:
+
+```
+4,976  uuid rows resolve to exactly 1 canonical  → SAFE TO MERGE (correct attribution)
+    2  tight_still_multi (the Steph Curry pair)  → defer
+  ~10  had a loose canonical but tight drops to 0 → defer / investigate name-format drift
+2,045  empty stubs (no metadata)                 → Phase 3 cleanup, unchanged
+ ~200  hydrated but no canonical sibling at all   → NOT dupes; leave in place
+```
+
+Net: the tight key **removes the 495-row corruption risk AND raises safe coverage** (4,976 vs the conservative 4,490 floor). Use the corrected build below for Phase 1A; everything in Phase 1B/1C/2/3 is unchanged except that the map now carries only verified-unique 1:1 targets.
+
+### Corrected Phase 1A build (USE THIS, not the loose-key version below)
+
+```sql
+INSERT INTO _b2_uuid_merge_map (
+  uuid_edition_id, uuid_external_id,
+  canonical_edition_id, canonical_external_id,
+  player_name, set_name, tier, circulation_count
+)
+SELECT u.id, u.external_id::text, c.id, c.external_id::text,
+       u.player_name, u.set_name, u.tier::text, u.circulation_count
+FROM editions u
+JOIN editions c
+  ON c.collection_id = u.collection_id
+ AND c.external_id ~ '^[0-9]+:[0-9]+$'
+ AND c.player_name = u.player_name
+ AND c.set_name    = u.set_name
+ AND c.tier        = u.tier
+ AND c.circulation_count = u.circulation_count
+ AND c.name        = u.name                              -- ADDED
+ AND c.game_date IS NOT DISTINCT FROM u.game_date        -- ADDED (the disambiguator)
+WHERE u.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'
+  AND u.external_id !~ '^[0-9]+:[0-9]+$'
+  AND u.player_name IS NOT NULL
+  AND u.set_name IS NOT NULL
+GROUP BY u.id, u.external_id, c.id, c.external_id,
+         u.player_name, u.set_name, u.tier, u.circulation_count
+HAVING COUNT(*) = 1;   -- ONLY rows with a single unique canonical land in the map
+-- Expect ~4,976 rows. If the count drifts far from this, re-run the dry-run analysis
+-- before continuing — the leak is still accruing so the absolute number moves slowly.
+```
+
+**Status of this pass:** investigation only — NO merge table created, NOTHING repointed or deleted. Awaiting go-ahead to run the corrected Phase 1A→1C.
+
+---
+
+## Phase 1 — One-time merge of strict-match rows  (⚠️ see corrected key above)
+
+Move dependents from each UUID edition_id to its canonical integer-pair edition_id, then delete the UUID rows. ~~Strict match: same `player_name`, `set_name`, `tier`, `circulation_count`.~~ **Corrected match adds `name` + `game_date` — see the investigation block above; the loose build below is retained only for context and must NOT be run as-is.**
 
 ```sql
 -- ── Phase 1A: Build the merge map (idempotent / dry-runnable) ────────────
