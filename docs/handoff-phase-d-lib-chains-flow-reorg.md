@@ -24,9 +24,20 @@ That means a shim file left at the **old path** (`lib/topshot.ts`) re-exporting 
 edits required in this phase. The alias also makes the eventual caller-rename follow-up a
 mechanical find/replace.
 
-**Verified 2026-05-30: none of the Tier-1 candidates have a `export default`** — so every shim
-is a single line `export * from "@/lib/chains/flow/<name>"`. No `export { default } from` needed.
-(Re-check before writing each shim anyway; `export *` does NOT carry a default.)
+**Verified 2026-05-30 (`grep -c "export default"`):** exactly ONE Tier-1 file has a default export
+— **`lib/flow.ts` (default-exports=1)**. Every other Tier-1 file (topshot, topshot-graphql,
+topshot-username-resolve, allday, alldayGraphql, allday-cadence, dapper-v1-tx-decode,
+wallet-backfill-helpers, flow-resolve, fcl-config, and all 7 `cadence/*`) has **zero** defaults.
+
+Consequence for shims: `export *` does NOT re-export a default. So:
+- For all zero-default files, the shim is a single line: `export * from "@/lib/chains/flow/<name>"`.
+- **For `lib/flow.ts` ONLY**, the shim needs BOTH lines, or its ~25 `import flow from "@/lib/flow"`
+  callers break:
+  ```ts
+  export * from "@/lib/chains/flow/flow";
+  export { default } from "@/lib/chains/flow/flow";
+  ```
+  Before writing it, confirm callers actually use the default: `grep -rE "import .* from ['\"]@/lib/flow['\"]" app components lib scripts` — any `import flow from` or `import X, { ... } from` needs the default line. (Re-run `grep -c "export default"` on every file at execution time regardless — a file could gain a default between now and then.)
 
 ---
 
@@ -51,7 +62,7 @@ Caller counts are # of importing files (verified 2026-05-30 via `grep -rl "@/lib
 
 | # | From | To | Callers | LOC | Notes |
 |---|---|---|---|---|---|
-| 1 | `lib/flow.ts` | `lib/chains/flow/flow.ts` | 25* | 44 | Flow core (FCL/REST primitives). Highest fan-in — shim must be perfect. |
+| 1 | `lib/flow.ts` | `lib/chains/flow/flow.ts` | 25* | 44 | Flow core (FCL/REST primitives). Highest fan-in **and the only file with a `export default`** — its shim needs the extra `export { default } from` line. Shim must be perfect. |
 | 2 | `lib/flow-resolve.ts` | `lib/chains/flow/flow-resolve.ts` | 1 | — | Flow address/name resolve. |
 | 3 | `lib/fcl-config.ts` | `lib/chains/flow/fcl-config.ts` | 1 | — | FCL client config. |
 | 4 | `lib/topshot.ts` | `lib/chains/flow/topshot.ts` | 24* (16 exact `@/lib/topshot`) | 47 | TS helpers. The fuzzy 24 includes substring hits (topshot-badges etc.); 16 is the exact-path count. |
@@ -116,9 +127,10 @@ leaving it at top level keeps the parallel-plane separation honest), and all gen
 
 For each Tier-1 entry:
 
-1. **Confirm contents + no default export:**
-   `grep -c "export default" lib/<name>.ts` → expect 0 (verified for all Tier-1 on 2026-05-30,
-   but re-check; a default needs `export { default } from "..."` added to the shim).
+1. **Confirm contents + default-export status:**
+   `grep -c "export default" lib/<name>.ts` → expect 0 for every file EXCEPT `lib/flow.ts`
+   (which is 1). A nonzero count needs `export { default } from "@/lib/chains/flow/<name>"` added
+   to the shim alongside the `export *` line (see the import-alias section for the `flow.ts` shim).
 2. **Move preserving blame:** `git mv lib/<name>.ts lib/chains/flow/<name>.ts`
    (for the cadence dir: `git mv lib/cadence lib/chains/flow/cadence`, then the shims go in a
    recreated `lib/cadence/`).
