@@ -154,6 +154,9 @@ function HomeHeader() {
           className="rpc-home-nav"
           style={{ display: "flex", alignItems: "center", gap: 14 }}
         >
+          <Link href="/insights" style={navLinkStyle}>
+            Insights
+          </Link>
           <a href="#collections" style={navLinkStyle}>
             Collections
           </a>
@@ -462,6 +465,45 @@ export default function HomePageMarketing() {
       </section>
 
       <PinwheelDivider />
+
+      {/* PUBLIC INSIGHTS PROMO */}
+      <section
+        className="rpc-home-section"
+        style={{
+          background: "var(--rpc-surface)",
+          borderTop: "1px solid var(--rpc-red-border)",
+          borderBottom: "1px solid var(--rpc-border)",
+        }}
+      >
+        <div style={{ maxWidth: 980, margin: "0 auto", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 18 }}>
+          <div className="rpc-home-eyebrow">◈ FREE INTELLIGENCE · NO SIGNUP ◈</div>
+          <h2 className="rpc-home-h2">THINGS TOP SHOT WON&rsquo;T TELL YOU</h2>
+          <p className="rpc-home-sub">
+            The Lock-Rate Squeeze Board, Pack Reality, the 2025 Rookie Index, First-Mint Trophy Tracker, and the Cross-Collection Whale Map — the math the marketplace structurally won&rsquo;t ship. Free, no account needed.
+          </p>
+          <Link
+            href="/insights"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "12px 22px",
+              background: "var(--rpc-red)",
+              border: "none",
+              borderRadius: 6,
+              color: "#fff",
+              fontFamily: "var(--font-display)",
+              fontWeight: 800,
+              fontSize: 13,
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              textDecoration: "none",
+            }}
+          >
+            EXPLORE PUBLIC INSIGHTS →
+          </Link>
+        </div>
+      </section>
 
       {/* FAST BREAK OPTIMIZER PROMO */}
       <section

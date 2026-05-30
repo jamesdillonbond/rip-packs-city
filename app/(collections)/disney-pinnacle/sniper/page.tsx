@@ -6,6 +6,7 @@ import {
   type PinnacleVariant,
   PINNACLE_VARIANT_COLORS,
 } from "@/lib/pinnacle/pinnacleTypes";
+import { trackOutboundClick } from "@/lib/track-click";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -577,6 +578,22 @@ export default function PinnacleSniperPage() {
                         href={`https://disneypinnacle.com/pin/${deal.flowId}`}
                         target="_blank"
                         rel="noopener noreferrer"
+                        onClick={() =>
+                          trackOutboundClick({
+                            surface: "pinnacle_sniper",
+                            destination: "pinnacle_listing",
+                            editionKey: deal.editionKey,
+                            momentId: deal.flowId,
+                            playerName: deal.characterName,
+                            setName: deal.setName,
+                            tier: deal.variantType,
+                            serial: deal.serial,
+                            askPrice: deal.askPrice,
+                            fmv: deal.adjustedFmv,
+                            discount: deal.discount,
+                            buyUrl: `https://disneypinnacle.com/pin/${deal.flowId}`,
+                          })
+                        }
                         className="rpc-btn-ghost"
                         style={{
                           borderColor: `${ACCENT}40`,
