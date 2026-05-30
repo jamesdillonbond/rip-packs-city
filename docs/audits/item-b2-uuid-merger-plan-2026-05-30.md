@@ -99,6 +99,54 @@ HAVING COUNT(*) = 1;   -- ONLY rows with a single unique canonical land in the m
 
 **Status of this pass:** investigation only — NO merge table created, NOTHING repointed or deleted. Awaiting go-ahead to run the corrected Phase 1A→1C.
 
+### Readiness gate (run FIRST in any execution session)
+
+Before applying anything, run this single read-only query. It re-validates the dry-run's findings against current state and surfaces drift. If any cell is more than ~5% off from the noted expectation, **stop** and re-run the full investigation before proceeding — the leak is still accruing and an upstream change (e.g., another canonical-merger pass, or new editions hydrated since the dry-run) may have moved the safe-merge surface.
+
+```sql
+WITH uuid_set AS (
+  SELECT id, external_id, player_name, set_name, tier, circulation_count, name, game_date
+  FROM editions
+  WHERE collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'
+    AND external_id !~ '^[0-9]+:[0-9]+$'
+),
+canonical AS (
+  SELECT id, external_id, player_name, set_name, tier, circulation_count, name, game_date
+  FROM editions
+  WHERE collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'
+    AND external_id ~ '^[0-9]+:[0-9]+$'
+),
+matched AS (
+  SELECT u.id AS uuid_id, COUNT(c.id) AS canon_n
+  FROM uuid_set u
+  LEFT JOIN canonical c
+    ON c.player_name = u.player_name
+   AND c.set_name = u.set_name
+   AND c.tier = u.tier
+   AND c.circulation_count = u.circulation_count
+   AND c.name = u.name
+   AND c.game_date IS NOT DISTINCT FROM u.game_date
+  WHERE u.player_name IS NOT NULL AND u.set_name IS NOT NULL
+  GROUP BY u.id
+)
+SELECT
+  (SELECT COUNT(*) FROM uuid_set) AS total_uuid_rows,         -- ~7,230 expected
+  (SELECT COUNT(*) FROM uuid_set WHERE player_name IS NULL AND set_name IS NULL) AS empty_stubs, -- ~1,947
+  (SELECT COUNT(*) FROM matched WHERE canon_n = 1) AS safe_to_merge,  -- ~4,976 — THE KEY NUMBER
+  (SELECT COUNT(*) FROM matched WHERE canon_n > 1) AS ambiguous_tight,   -- expect 2 (Steph Curry pair)
+  (SELECT COUNT(*) FROM matched WHERE canon_n = 0) AS hydrated_no_canon, -- ~210 (the ~10 + 200 buckets)
+  NOW() AS validated_at;
+```
+
+Expected output (within ~5% drift):
+- `total_uuid_rows` ≈ 7,230 (grows with leak; >9,000 means too much drift — investigate)
+- `empty_stubs` ≈ 1,947 (the Phase 3 cleanup bucket)
+- `safe_to_merge` ≈ **4,976** (the count that goes into `_b2_uuid_merge_map`)
+- `ambiguous_tight` ≈ **2** (the deferred Steph Curry pair) — **if this is >5, NEW ambiguities have appeared; re-run the full dry-run**
+- `hydrated_no_canon` ≈ 210 (leave in place, not corruption)
+
+If the gate passes, the Phase 1A INSERT below will land `safe_to_merge` rows. Mismatches between the gate's `safe_to_merge` and the post-INSERT `SELECT COUNT(*) FROM _b2_uuid_merge_map` mean something changed between the validation and the build — stop and investigate.
+
 ---
 
 ## Phase 1 — One-time merge of strict-match rows  (⚠️ see corrected key above)
