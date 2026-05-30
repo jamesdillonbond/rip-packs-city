@@ -122,6 +122,18 @@ export default function SqueezePage() {
   // users can drill straight to LEGENDARY / ULTIMATE-size editions.
   const [maxCirculation, setMaxCirculation] = useState<number | null>(null)
   const [sort, setSort] = useState<SortKey>("squeeze")
+  // Pre-filter to a specific set when arriving from /insights/set-squeeze.
+  // Read from window.location on mount (one-shot — we don't want navigation
+  // changes to refetch since the page re-mounts on hard-link navigation).
+  const [setFilter, setSetFilter] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href)
+      const s = url.searchParams.get("set")
+      if (s) setSetFilter(s)
+    }
+  }, [])
 
   useEffect(() => {
     const ctrl = new AbortController()
@@ -133,9 +145,10 @@ export default function SqueezePage() {
         params.set("limit", "200")
         params.set("sort", sort)
         params.set("min_squeeze", "50")
-        // We send the raw tier filter only if it maps cleanly to the API's
-        // expected vocabulary (the API rejects MOMENT_TIER_* and ALL).
-        // Otherwise we filter client-side after fetching the full 200.
+        // The set filter is server-side (ilike), so push it as a param when
+        // present. Tier/buyable/circulation stay client-side over the
+        // already-fetched 200.
+        if (setFilter) params.set("set", setFilter)
         const r = await fetch(`/api/public/insights/squeeze?${params.toString()}`, {
           signal: ctrl.signal,
           cache: "no-store",
@@ -153,7 +166,7 @@ export default function SqueezePage() {
     }
     run()
     return () => ctrl.abort()
-  }, [sort])
+  }, [sort, setFilter])
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
@@ -209,6 +222,27 @@ export default function SqueezePage() {
           <span className="rpc-sq-meta">No signup</span>
         </div>
       </section>
+
+      {setFilter ? (
+        <section className="rpc-sq-active-filter" aria-label="Active set filter">
+          <span className="rpc-sq-active-label">FILTERED TO SET</span>
+          <span className="rpc-sq-active-value">{setFilter}</span>
+          <button
+            type="button"
+            className="rpc-sq-active-clear"
+            onClick={() => {
+              setSetFilter(null)
+              if (typeof window !== "undefined") {
+                const url = new URL(window.location.href)
+                url.searchParams.delete("set")
+                window.history.replaceState({}, "", url.toString())
+              }
+            }}
+          >
+            Clear ✕
+          </button>
+        </section>
+      ) : null}
 
       {/* ── Filter row ────────────────────────────────────────────────── */}
       <section className="rpc-sq-controls" aria-label="Filters">
@@ -444,6 +478,45 @@ const CSS = `
   color: var(--rpc-text-muted);
 }
 .rpc-sq-meta-sep { margin: 0 8px; color: var(--rpc-text-ghost); }
+
+.rpc-sq-active-filter {
+  max-width: 1180px;
+  margin: 0 auto 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--rpc-red-bg);
+  border: 1px solid var(--rpc-red-border);
+  border-radius: 2px;
+}
+.rpc-sq-active-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--rpc-red);
+}
+.rpc-sq-active-value {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--rpc-text-primary);
+  font-weight: 700;
+}
+.rpc-sq-active-clear {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  background: transparent;
+  border: 1px solid var(--rpc-red-border);
+  color: var(--rpc-red);
+  padding: 4px 8px;
+  border-radius: 2px;
+  cursor: pointer;
+  margin-left: 4px;
+}
+.rpc-sq-active-clear:hover { background: var(--rpc-red); color: #fff; }
 
 .rpc-sq-controls {
   max-width: 1180px;
