@@ -122,16 +122,20 @@ export default function SqueezePage() {
   // users can drill straight to LEGENDARY / ULTIMATE-size editions.
   const [maxCirculation, setMaxCirculation] = useState<number | null>(null)
   const [sort, setSort] = useState<SortKey>("squeeze")
-  // Pre-filter to a specific set when arriving from /insights/set-squeeze.
-  // Read from window.location on mount (one-shot — we don't want navigation
-  // changes to refetch since the page re-mounts on hard-link navigation).
+  // Pre-filter to a specific set or player when arriving from another
+  // surface (set-squeeze / cross-collection / rookies / first-mint).
+  // Read from window.location on mount (one-shot — page re-mounts on
+  // hard-link nav).
   const [setFilter, setSetFilter] = useState<string | null>(null)
+  const [playerFilter, setPlayerFilter] = useState<string | null>(null)
 
   useEffect(() => {
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href)
       const s = url.searchParams.get("set")
+      const p = url.searchParams.get("player")
       if (s) setSetFilter(s)
+      if (p) setPlayerFilter(p)
     }
   }, [])
 
@@ -145,10 +149,11 @@ export default function SqueezePage() {
         params.set("limit", "200")
         params.set("sort", sort)
         params.set("min_squeeze", "50")
-        // The set filter is server-side (ilike), so push it as a param when
+        // Set + player filters are server-side (ilike). Push them when
         // present. Tier/buyable/circulation stay client-side over the
         // already-fetched 200.
         if (setFilter) params.set("set", setFilter)
+        if (playerFilter) params.set("player", playerFilter)
         const r = await fetch(`/api/public/insights/squeeze?${params.toString()}`, {
           signal: ctrl.signal,
           cache: "no-store",
@@ -166,7 +171,7 @@ export default function SqueezePage() {
     }
     run()
     return () => ctrl.abort()
-  }, [sort, setFilter])
+  }, [sort, setFilter, playerFilter])
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
@@ -223,24 +228,48 @@ export default function SqueezePage() {
         </div>
       </section>
 
-      {setFilter ? (
-        <section className="rpc-sq-active-filter" aria-label="Active set filter">
-          <span className="rpc-sq-active-label">FILTERED TO SET</span>
-          <span className="rpc-sq-active-value">{setFilter}</span>
-          <button
-            type="button"
-            className="rpc-sq-active-clear"
-            onClick={() => {
-              setSetFilter(null)
-              if (typeof window !== "undefined") {
-                const url = new URL(window.location.href)
-                url.searchParams.delete("set")
-                window.history.replaceState({}, "", url.toString())
-              }
-            }}
-          >
-            Clear ✕
-          </button>
+      {setFilter || playerFilter ? (
+        <section className="rpc-sq-active-filter" aria-label="Active drill-down filter">
+          {setFilter ? (
+            <>
+              <span className="rpc-sq-active-label">FILTERED TO SET</span>
+              <span className="rpc-sq-active-value">{setFilter}</span>
+              <button
+                type="button"
+                className="rpc-sq-active-clear"
+                onClick={() => {
+                  setSetFilter(null)
+                  if (typeof window !== "undefined") {
+                    const url = new URL(window.location.href)
+                    url.searchParams.delete("set")
+                    window.history.replaceState({}, "", url.toString())
+                  }
+                }}
+              >
+                Clear ✕
+              </button>
+            </>
+          ) : null}
+          {playerFilter ? (
+            <>
+              <span className="rpc-sq-active-label">FILTERED TO PLAYER</span>
+              <span className="rpc-sq-active-value">{playerFilter}</span>
+              <button
+                type="button"
+                className="rpc-sq-active-clear"
+                onClick={() => {
+                  setPlayerFilter(null)
+                  if (typeof window !== "undefined") {
+                    const url = new URL(window.location.href)
+                    url.searchParams.delete("player")
+                    window.history.replaceState({}, "", url.toString())
+                  }
+                }}
+              >
+                Clear ✕
+              </button>
+            </>
+          ) : null}
         </section>
       ) : null}
 

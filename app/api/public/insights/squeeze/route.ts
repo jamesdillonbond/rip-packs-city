@@ -21,7 +21,9 @@
 //   tier=COMMON|RARE|LEGENDARY|FANDOM|ULTIMATE        single tier filter
 //   min_squeeze=<number>                              floor on squeeze_pct (default 50)
 //   max_buyable=<number>                              cap on effectively_buyable (e.g. 10 for trophy-tier)
+//   max_circulation=<number>                          cap on circulation (e.g. 100 for trophies)
 //   set=<text>                                        ilike match on set_name
+//   player=<text>                                     ilike match on player_name
 //   sort=squeeze|circulation|fmv|buyable              default squeeze
 //   limit=<1..200>                                    default 50
 //
@@ -51,6 +53,7 @@ export async function GET(req: NextRequest) {
   const minSqueeze = Number(sp.get("min_squeeze") ?? "50");
   const maxBuyable = sp.get("max_buyable") ? Number(sp.get("max_buyable")) : null;
   const setFilter = sp.get("set")?.trim() ?? null;
+  const playerFilter = sp.get("player")?.trim() ?? null;
   // Optional: limit to "trophy circ" editions (e.g. max_circulation=100
   // surfaces only Ultimate/Legendary tier editions).
   const maxCirculation = sp.get("max_circulation") ? Number(sp.get("max_circulation")) : null;
@@ -82,6 +85,7 @@ export async function GET(req: NextRequest) {
 
   if (tier) q = q.eq("tier", tier);
   if (setFilter) q = q.ilike("set_name", `%${setFilter}%`);
+  if (playerFilter) q = q.ilike("player_name", `%${playerFilter}%`);
   if (maxBuyable != null && Number.isFinite(maxBuyable)) {
     q = q.lte("effectively_buyable", maxBuyable);
   }
@@ -127,6 +131,7 @@ export async function GET(req: NextRequest) {
         max_buyable: maxBuyable,
         max_circulation: maxCirculation,
         set: setFilter,
+        player: playerFilter,
         sort,
         limit,
       },
