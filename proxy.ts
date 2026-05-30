@@ -235,6 +235,11 @@ function isPublicPath(pathname: string, method: string): boolean {
   // Public so social-share links work without an account.
   if (pathname === "/moment" || pathname.startsWith("/moment/")) return true
   if (pathname === "/api/moment" || pathname.startsWith("/api/moment/")) return true
+  // /pinnacle/moment/<id> — Pinnacle-specific per-edition detail page
+  // (Pinnacle uses pinnacle_editions, separate from the shared editions
+  // table the /moment route reads). Linked from /insights/pinnacle-
+  // scarcity per-row drill-downs. Same public-share rationale.
+  if (pathname.startsWith("/pinnacle/moment/")) return true
 
   // ── Public profile pages ─────────────────────────────────────────────
   // /profile/<username> — shareable read-only profile cards. /profile/edit

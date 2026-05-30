@@ -224,10 +224,26 @@ export default function PackRealityPage() {
               {(data?.top_ev ?? []).map((row) => (
                 <tr key={row.pack_listing_id}>
                   <td className="rpc-pr-td-pack">
-                    <div className="rpc-pr-pack-name">{row.pack_name ?? "—"}</div>
-                    <div className="rpc-pr-pack-sub">
-                      {row.price_source ?? "—"} · {row.edition_count ?? "—"} eds
-                    </div>
+                    {row.dist_id ? (
+                      <Link
+                        href={`/nba-top-shot/pack/dist/${encodeURIComponent(row.dist_id)}`}
+                        className="rpc-pr-pack-link"
+                        title={`Open ${row.pack_name ?? "this pack"} distribution page`}
+                      >
+                        <div className="rpc-pr-pack-name">{row.pack_name ?? "—"}</div>
+                        <div className="rpc-pr-pack-sub">
+                          {row.price_source ?? "—"} · {row.edition_count ?? "—"} eds
+                          <span className="rpc-pr-pack-drill">open pack →</span>
+                        </div>
+                      </Link>
+                    ) : (
+                      <>
+                        <div className="rpc-pr-pack-name">{row.pack_name ?? "—"}</div>
+                        <div className="rpc-pr-pack-sub">
+                          {row.price_source ?? "—"} · {row.edition_count ?? "—"} eds
+                        </div>
+                      </>
+                    )}
                   </td>
                   <td className="rpc-pr-td-num">{fmtUsd(row.pack_price)}</td>
                   <td className="rpc-pr-td-num rpc-pr-td-emph">{fmtUsd(row.pack_ev)}</td>
@@ -321,7 +337,11 @@ const CSS = `
 .rpc-pr-th-num { text-align: right; }
 .rpc-pr-table td { padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); vertical-align: middle; }
 .rpc-pr-td-pack { min-width: 260px; }
-.rpc-pr-pack-name { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); }
+.rpc-pr-pack-link { text-decoration: none; color: inherit; display: block; }
+.rpc-pr-pack-link:hover .rpc-pr-pack-name { color: var(--rpc-red); }
+.rpc-pr-pack-link:hover .rpc-pr-pack-drill { color: var(--rpc-red); opacity: 1; }
+.rpc-pr-pack-name { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); transition: color 100ms; }
+.rpc-pr-pack-drill { margin-left: 10px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); opacity: 0.6; transition: color 100ms, opacity 100ms; }
 .rpc-pr-pack-sub { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 2px; }
 .rpc-pr-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
 .rpc-pr-td-emph { color: var(--rpc-red); font-weight: 700; }

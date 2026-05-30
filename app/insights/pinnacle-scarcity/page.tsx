@@ -201,11 +201,17 @@ export default function PinnacleScarcityPage() {
               {rows.map((r) => (
                 <tr key={r.edition_id}>
                   <td className="rpc-ps-td-edition">
-                    <div className="rpc-ps-edition-name">
-                      {r.character_name ?? "—"}
-                      {r.is_chaser ? <span className="rpc-ps-chaser-chip">CHASER</span> : null}
-                    </div>
-                    <div className="rpc-ps-edition-set">{r.set_name ?? "—"}</div>
+                    <Link
+                      href={`/pinnacle/moment/${encodeURIComponent(r.edition_id)}`}
+                      className="rpc-ps-edition-link"
+                      title={`Open ${r.character_name ?? "this Pinnacle"} detail`}
+                    >
+                      <div className="rpc-ps-edition-name">
+                        {r.character_name ?? "—"}
+                        {r.is_chaser ? <span className="rpc-ps-chaser-chip">CHASER</span> : null}
+                      </div>
+                      <div className="rpc-ps-edition-set">{r.set_name ?? "—"}</div>
+                    </Link>
                   </td>
                   <td className="rpc-ps-td-num">{r.variant_type ?? "—"}</td>
                   <td className="rpc-ps-td-num">{fmtInt(r.mint_count)}</td>
@@ -312,7 +318,9 @@ const CSS = `
 .rpc-ps-th-emph { color: var(--rpc-red); }
 .rpc-ps-table td { padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); vertical-align: middle; }
 .rpc-ps-td-edition { min-width: 280px; }
-.rpc-ps-edition-name { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); display: flex; align-items: center; gap: 8px; }
+.rpc-ps-edition-link { text-decoration: none; color: inherit; display: block; }
+.rpc-ps-edition-link:hover .rpc-ps-edition-name { color: var(--rpc-red); }
+.rpc-ps-edition-name { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); display: flex; align-items: center; gap: 8px; transition: color 100ms; }
 .rpc-ps-edition-set { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 2px; }
 .rpc-ps-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
 .rpc-ps-td-emph { color: var(--rpc-red); font-weight: 700; }
