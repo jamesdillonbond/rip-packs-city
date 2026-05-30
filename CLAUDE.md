@@ -24,6 +24,61 @@ LLC: Oregon, filed May 3 2026.
 
 ## Recent sessions
 
+### May 30, 2026 — Cowork full-day pass: FMV recovery, batched RPCs, Step 6 cycle fix, branches, brand pass, research integration
+
+Long Cowork session. Several DB migrations shipped live, one route-code patch shipped via Claude Code (Trevor), CI repaired, dependabot tightened, six live artifacts built, research thread integrated.
+
+Shipped live (5 DB migrations)
+
+- **`audit_20260530_recover_topshot_nodata_with_recent_sales`** — wrote a fresh 1.7.0 snapshot for 146 TS editions that were perpetually NO_DATA despite 30+ recent sales (84 LOW + 62 MEDIUM). TS HIGH+MED 724 → 778 instantly. Chris Youngblood "Rookie Debut" (042c8722, external_id 219:7853): was daily-NO_DATA-restamped since 2026-05-25 23:53; now MEDIUM $8.76 / 30 sales / 4d since.
+- **`audit_20260530_recover_topshot_nodata_round2_post_step6_fix`** — round-2 recovery after Item A shipped. The first migration's promotions were re-clobbered by the still-buggy Step 6 in the ~3h window before commit 14ae144 deployed. After Trevor's fix landed, re-running the same logic was durable. Cleared the residual 44-edition tail (active_nodata_5plus = 0).
+- **`audit_20260530_upsert_topshot_marketplace_fmv_batched`** — rewrote `upsert_topshot_marketplace_fmv(jsonb)` from a row-by-row PL/pgSQL loop into a 5-step set-oriented transaction. Same signature, same return shape, same grants. Fixes the 113-295s connection pool / statement timeout failures observed 3× in last 14d. Reduces transaction ops from ~4N to ~5 regardless of N. The DELETE additionally swapped `computed_at::DATE = CURRENT_DATE` (non-sargable) for a half-open range that hits `idx_fmv_snapshots_2026_edition_id_timezone_idx` cleanly.
+- **`audit_20260530_upsert_allday_marketplace_fmv_batched`** — same shape rewrite for AllDay. Also fixed a latent correctness bug: legacy `SELECT confidence FROM fmv_snapshots ... LIMIT 1` with no `ORDER BY computed_at DESC` was reading an arbitrary partition row, allowing 9 wrongful clobbers on real HIGH/MEDIUM editions in last 7d. New version uses `LATERAL ... ORDER BY computed_at DESC LIMIT 1`.
+- **`audit_20260530_upsert_marketplace_fmv_defensive_temp_drops`** — added `DROP TABLE IF EXISTS` before each `CREATE TEMP TABLE ON COMMIT DROP` in both batched RPCs. Production was unaffected (supabase-js `rpc()` is autocommit per call) but smoke testing in one MCP transaction hit "relation already exists." Cheap guard.
+- **`audit_20260530_topshot_squeeze_board_view`** — public view ranking TS editions by effective-supply squeeze (lock + burn ≥ 50%), backing the planned `/insights/squeeze` page. Joins `badge_editions` (hourly refresh) + `editions` + latest `fmv_snapshots`. 985 rows. Granted to anon. Sample top: Alex Caruso "2025 NBA Playoffs: Legendary" 156% squeeze (4 of 75 buyable, FMV $765 STALE).
+
+Shipped (code-side via Claude Code — commits on main)
+
+- **Item A: fmv-recalc Step 6 pagination bug (Trevor, `14ae144`).** The WHERE filter (`fs.computed_at < now() - interval '24 hours'`) ran BEFORE the `DISTINCT ON (edition_id) ORDER BY computed_at DESC`, picking the newest pre-24h snapshot per edition. On a mixed-history edition (HIGH this week + NO_DATA last week) Step 6 grabbed the old NO_DATA and re-stamped it forward as "today" — creating a self-perpetuating cycle across cron ticks. Fix: `latest` CTE picks true-latest-per-edition first, then filters `l.computed_at < now() - interval '24 hours' AND l.confidence <> 'NO_DATA'`. Live read-only validation: new query touches 5,550 editions correctly and excludes 5,707 stale NO_DATA rows the old one was re-cycling.
+- **CI Node 20 → 24 + lockfile regeneration (Trevor, `2bc776c` + `25ca16a`).** Long-running typecheck red on main was an `npm ci` lockfile drift: package.json had `@types/node@^24` but package-lock.json still pinned `@types/node@20.19.37`. CI was failing with EUSAGE regardless of Node version. Fix: bumped setup-node `node-version: '20'` → `'24'` (matches `engines.node: "24.x"`) and regenerated package-lock.json via `npm install`. Result: CI green (~59s typecheck, 1m3s smoke). Vercel was always READY because Vercel builds on Node 24 by default and resolved the lockfile internally.
+- **Dependabot security-only enforcement** (`.github/dependabot.yml`). The previous `allow: dependency-type: "all"` block was a no-op letting routine semver bumps through. Replaced with a wildcard `ignore: [version-update:semver-patch|minor|major]` so only CVE-driven advisories open PRs. Closed 7 stale dependabot PRs (#9-#15) + pruned remote branches.
+- **`/api/public/insights/squeeze` route** (`672a41d`). Backs the planned `/insights/squeeze` public page. Reads the new `topshot_squeeze_board` view; supports tier / min_squeeze / max_buyable / set / sort / limit filters. 5-minute `Cache-Control: s-maxage=300` (badge_editions refreshes hourly so 5m is safe). Live smoke against production returned top-5 Legendary squeezes in 334ms.
+
+Research integration
+
+Read both files in `docs/research/` and pulled the live transcript of the running "Flow collection research and strategy" session. Top-line findings carried into platform work:
+
+- Target cohort = 100-2,000 moments held (94 wallets in RPC's tracked population + thousands more not yet seen). Whales already have their own tools.
+- Squeeze board = single biggest under-told story on Top Shot. Median lock 38.6%, Wemby RR 81% locked, Origins rookies 60-65% locked. DB-side: shipped `topshot_squeeze_board` view + `/api/public/insights/squeeze` route.
+- Cross-collection cohort = 143 wallets hold 3+ Flow collections. RPC's natural intelligence-product community.
+- Top Shot packs are absolutely back on chain, inflection week-of 2026-04-13 → 2026-04-20 (1,121 → 14,341 primary pack-week, 12× sustained). NFL All Day flat over same window — this is a TS story, not Dapper-wide.
+- Don't promote 200x EV ratios at face value — those are weighted-EV artifacts of one ultra-rare with stale FMV. Rank, not price.
+- Don't optimize for own 14k-moment wallet as product — personal artifact OK as build tool.
+
+Six live Cowork artifacts (persistent, re-query on open)
+
+- `rpc-live-health` — 24h pipeline success, FMV per collection, AllDay catch-up bar chart, freshness, alerts, inert-row counter
+- `rpc-fmv-watch` — 14-day FMV confidence trend per collection, KPI cards with current HIGH+MED %
+- `rpc-my-wallet` — Trevor's portfolio (`0xbd94cade097e50ac`): moments + FMV + confidence breakdown + top holdings + sets + tier + 24h FMV-write changes (silent-clobber detector) + pack history
+- `rpc-cross-collection` — the 143-wallet 3+-collection cohort: distribution, top 20 wallets, TS set overlap
+- `rpc-trophy-ladder` — Supernova Ultimate ladder + top mint-#1 trophies + 1-of-1 editions, each row showing held-in-RPC count
+- `rpc-deploys-and-cost` — Vercel deploys (last 20) + DB size + top 15 tables by size + recent migrations + 7-day pipeline volume
+
+All 6 apply RPC brand standards: RPC Red (`#E03A2F`) accent on KPI values + refresh button + h1 underline, uppercase letter-spaced display treatment on h1/h2/th (Barlow-Condensed-like without external fonts — artifact sandbox doesn't allow Google Fonts), system mono on all numbers + wallets + pills.
+
+Open / deferred
+
+- **TS GQL ingest writer UUID fallback (deferred — inert, sentinel-monitored).** `searchMarketplaceTransactions` returns null for `tx.moment.set.flowId` / `play.flowID`; `searchEditions` returns them populated, so the hydration path can resolve them but `buildEditionKey` has already committed the UUID-pair key by then. ~250 inert UUID rows/6h still accumulating; trigger `editions_block_topshot_uuid_dupe_trg` (BEFORE INSERT OR UPDATE) keeps them inert. Real fix: in `buildEditionKey`, if `extractOnchainIds(tx)` returns null, call `fetchTsEditionMeta(setUUID, playUUID)` and prefer its `setIdOnchain`/`playIdOnchain` over UUID. Full code-side fix in `docs/handoff-2026-05-29-platform-audit.md` Item B.
+- **topshot-fmv-populate next cron tick** — still pending verification of the batched RPC under production load. Next expected ~06:00 UTC. Sentinel tripwire (`9c4adb1`) catches any new failures.
+
+Memory entries written (durable across future sessions)
+
+- `fmv-recalc-step6-self-perpetuating-pattern.md` — recognize "stale-touch" sweeps that filter before DISTINCT ON.
+- `plpgsql-row-by-row-batch-rewrite-pattern.md` — full template for converting FOR-loop RPCs to set-oriented temp tables, with defensive details.
+- `rpc-research-thread-integration.md` — full digest of the Flow collection research thread findings (cohort, surfaces, 4-week plan, what-not-to-do).
+
+Full handoff: `docs/handoff-2026-05-29-platform-audit.md`.
+
 ### May 30, 2026 (latest) — fmv-recalc Step 6 self-perpetuating NO_DATA cycle fixed (handoff Item A)
 
 Code-side execution of `docs/handoff-2026-05-29-platform-audit.md` (UPDATED 2026-05-30). The Cowork pass had already shipped the two DB migrations (NO_DATA recovery for 146 editions + batched `upsert_topshot_marketplace_fmv`); this session lands the one route-code fix.
