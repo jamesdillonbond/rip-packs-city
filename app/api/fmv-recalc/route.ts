@@ -754,25 +754,43 @@ export async function POST(req: NextRequest) {
         const { data: staleRows, error: staleErr } = await supabaseAdmin
           .rpc("query_sql", {
             query: `
-              SELECT DISTINCT ON (fs.edition_id)
-                fs.edition_id,
-                fs.collection_id,
-                fs.fmv_usd,
-                fs.floor_price_usd,
-                fs.wap_usd,
-                fs.wap_without_outliers,
-                fs.liquidity_rating,
-                fs.confidence::text AS confidence,
-                fs.ask_proxy_fmv,
-                fs.sales_count_7d,
-                fs.sales_count_30d,
-                fs.days_since_sale
-              FROM fmv_snapshots fs
-              JOIN editions e ON e.id = fs.edition_id
-              WHERE fs.computed_at < now() - interval '24 hours'
+              WITH latest AS (
+                SELECT DISTINCT ON (fs.edition_id)
+                  fs.edition_id,
+                  fs.collection_id,
+                  fs.fmv_usd,
+                  fs.floor_price_usd,
+                  fs.wap_usd,
+                  fs.wap_without_outliers,
+                  fs.liquidity_rating,
+                  fs.confidence::text AS confidence,
+                  fs.ask_proxy_fmv,
+                  fs.sales_count_7d,
+                  fs.sales_count_30d,
+                  fs.days_since_sale,
+                  fs.computed_at
+                FROM fmv_snapshots fs
+                ORDER BY fs.edition_id, fs.computed_at DESC
+              )
+              SELECT
+                l.edition_id,
+                l.collection_id,
+                l.fmv_usd,
+                l.floor_price_usd,
+                l.wap_usd,
+                l.wap_without_outliers,
+                l.liquidity_rating,
+                l.confidence,
+                l.ask_proxy_fmv,
+                l.sales_count_7d,
+                l.sales_count_30d,
+                l.days_since_sale
+              FROM latest l
+              JOIN editions e ON e.id = l.edition_id
+              WHERE l.computed_at < now() - interval '24 hours'
+                AND l.confidence <> 'NO_DATA'
                 AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
                 AND e.collection_id <> '${PINNACLE_COLLECTION_ID}'
-              ORDER BY fs.edition_id, fs.computed_at DESC
               LIMIT 1000
             `,
           })

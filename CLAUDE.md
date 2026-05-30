@@ -24,7 +24,15 @@ LLC: Oregon, filed May 3 2026.
 
 ## Recent sessions
 
-### May 29, 2026 (latest) — Platform-audit handoff: sentinel leak tripwire shipped; Items 1+3 were misdiagnoses
+### May 30, 2026 (latest) — fmv-recalc Step 6 self-perpetuating NO_DATA cycle fixed (handoff Item A)
+
+Code-side execution of `docs/handoff-2026-05-29-platform-audit.md` (UPDATED 2026-05-30). The Cowork pass had already shipped the two DB migrations (NO_DATA recovery for 146 editions + batched `upsert_topshot_marketplace_fmv`); this session lands the one route-code fix.
+
+- **Item A — fmv-recalc Step 6 pagination bug (SHIPPED).** [app/api/fmv-recalc/route.ts](app/api/fmv-recalc/route.ts) Step 6 "Stale freshness touch" filtered `WHERE fs.computed_at < now() - interval '24 hours'` **before** the `DISTINCT ON (edition_id) ... ORDER BY computed_at DESC`. Semantics was "pick the newest snapshot that is >24h old" not "pick editions whose latest snapshot is >24h old" — so for a mixed-history edition (HIGH this week, NO_DATA last week) it grabbed the OLD NO_DATA and re-stamped it forward as a fresh NO_DATA. The skipSet only excluded same-tick Step-1 writes, so the cycle was durable across cron ticks. Rewrote the query as a `latest` CTE (true latest-per-edition first) → filter `l.computed_at < now() - interval '24 hours' AND l.confidence <> 'NO_DATA'`. Live read-only validation: new query touches **5,550** editions correctly and excludes **5,707** stale NO_DATA rows the old one would have re-cycled.
+  - **Residual:** 44 actively-traded TS editions (5–29 sales/30d) still sit at latest=NO_DATA — below the recovery migration's 30+ threshold. The Step 6 fix stops the *cycle* but does not actively reprice them; they heal as the main cursor sweep (Step 1) reaches them. Not a regression, just an uncovered tail.
+- **Item B — TS GQL ingest writer UUID fallback: STILL DEFERRED (inert-only).** `searchMarketplaceTransactions` returns null `set.flowId`/`play.flowID`; `searchEditions` returns them populated. Fix = add `fetchTsEditionMeta` hydration-as-fallback in `buildEditionKey`. ~5k inert UUID rows/48h still accruing; trigger keeps them inert (no canonical corruption), sentinel tripwire (`9c4adb1`) monitors the rate. Not a fire.
+
+### May 29, 2026 — Platform-audit handoff: sentinel leak tripwire shipped; Items 1+3 were misdiagnoses
 
 Code-side execution of `docs/handoff-2026-05-29-platform-audit.md`. One of four items needed a code change; the rest were stale or external. **Environment warning: the Git Bash mount served null-corrupted reads of `app/api/**` files this session and tool RESULTS buffered across turns, so several mid-session "confirmations" were false. Commit via PowerShell `git` (bash `git commit` silently no-op'd); re-verify every push with `git rev-list --count origin/main..HEAD` (expect 0); trust the Vercel deploy reaching READY over local reads.**
 
