@@ -266,7 +266,20 @@ async function upsertEdition(
   const circulations = moment.setPlay?.circulations
   const tier = formatTier(moment.tier)
   const isRetired = moment.setPlay?.flowRetired ?? false
-  const onchain = extractOnchainIds(tx)
+  // Prefer on-chain ids from the GQL tx. When those are NULL (the
+  // searchMarketplaceTransactions null-flowId quirk) and the editionKey is
+  // integer-pair (post-uuidToInt redirect, or natural int-pair), parse the
+  // pair out of the key directly so we don't UPSERT NULLs over a canonical
+  // row's correct on-chain ids.
+  let onchain = extractOnchainIds(tx)
+  if (!onchain && /^\d+:\d+$/.test(editionKey)) {
+    const [s, p] = editionKey.split(":")
+    const sN = parseInt(s, 10)
+    const pN = parseInt(p, 10)
+    if (Number.isFinite(sN) && Number.isFinite(pN)) {
+      onchain = { setIdOnchain: sN, playIdOnchain: pN }
+    }
+  }
 
   const { data, error } = await supabaseAdmin
     .from("editions")
@@ -498,6 +511,17 @@ export async function POST(req: NextRequest) {
 
     console.log(`[INGEST] Fetched ${transactions.length} transactions`)
 
+    // ── UUID→int-pair redirect map (Item B fix, 2026-05-30) ──────────────────
+    // searchMarketplaceTransactions sometimes returns tx.moment.set.flowId and
+    // tx.moment.play.flowID as NULL, so buildEditionKey falls back to UUID-pair.
+    // searchEditions (the hydrator's GQL path) returns them populated. The
+    // hydrate block below detects when an incoming UUID-pair key has on-chain
+    // ids resolvable via hydration and writes this redirect map; the per-tx
+    // loop below then swaps editionKey UUID→int-pair, so upsertEdition writes
+    // to the canonical integer-keyed row instead of creating an inert UUID one.
+    // Pre-this-fix leak rate: ~1,070 inert UUID rows / 24h per the sentinel.
+    const uuidToInt = new Map<string, string>()
+
     // ── Hydrate-at-insert: pre-populate editions for new external_ids ─────────
     // The downstream upsertEdition path doesn't write player_name/set_name/
     // team_name, so a freshly inserted edition would land with those columns
@@ -533,6 +557,7 @@ export async function POST(req: NextRequest) {
 
           const hydratedRows = await hydrateTopShotEditions(missing, { supabase: supabaseAdmin })
           const upsertRows: Record<string, unknown>[] = []
+          let uuidRedirectedCount = 0
           for (const r of hydratedRows) {
             if (r.redirect) {
               // Canonical-resolved against an existing UUID-format edition;
@@ -540,6 +565,27 @@ export async function POST(req: NextRequest) {
               // which is now integer-pair (see buildEditionKey) and hits the
               // same canonical row via the (external_id, collection_id) conflict.
               redirectedCount++
+              continue
+            }
+            // ── Item B fix: UUID-pair → integer-pair rewrite ────────────────
+            // If the incoming key was UUID-pair (because the marketplace-tx
+            // GQL returned null flowId/flowID) AND the hydrator's
+            // searchEditions call resolved set_id_onchain/play_id_onchain,
+            // upsert against the integer-pair external_id directly. The
+            // canonical row already exists (or will be created by this
+            // upsert via onConflict); no inert UUID-keyed row ever lands.
+            // uuidToInt is read by the per-tx loop to swap editionKey too.
+            const isUuidPairKey = !/^\d+:\d+$/.test(r.external_id)
+            if (
+              isUuidPairKey &&
+              r.set_id_onchain != null &&
+              r.play_id_onchain != null
+            ) {
+              const intKey = `${r.set_id_onchain}:${r.play_id_onchain}`
+              uuidToInt.set(r.external_id, intKey)
+              uuidRedirectedCount++
+              upsertRows.push(toUpsertRow({ ...r, external_id: intKey }))
+              if (r.ok) hydratedCount++
               continue
             }
             if (r.ok) {
@@ -555,10 +601,21 @@ export async function POST(req: NextRequest) {
           }
 
           if (upsertRows.length > 0) {
+            // Dedup by (external_id, collection_id). The Item B redirect can
+            // collapse multiple UUID-pair inputs to the same int-pair target,
+            // and Postgres bulk UPSERT errors when ON CONFLICT sees duplicate
+            // target rows in one statement ("ON CONFLICT DO UPDATE command
+            // cannot affect row a second time"). Keep the last write per key.
+            const dedupMap = new Map<string, Record<string, unknown>>()
+            for (const row of upsertRows) {
+              const key = `${row.collection_id}|${row.external_id}`
+              dedupMap.set(key, row)
+            }
+            const dedupedRows = Array.from(dedupMap.values())
             try {
               const { error: hydrateErr } = await (supabaseAdmin as any)
                 .from("editions")
-                .upsert(upsertRows, {
+                .upsert(dedupedRows, {
                   onConflict: "external_id,collection_id",
                   ignoreDuplicates: false,
                 })
@@ -575,7 +632,7 @@ export async function POST(req: NextRequest) {
           }
 
           console.log(
-            `[INGEST] hydrate-at-insert: candidates=${candidates} hydrated=${hydratedCount} redirected=${redirectedCount} fallback=${fallbackCount}` +
+            `[INGEST] hydrate-at-insert: candidates=${candidates} hydrated=${hydratedCount} redirected=${redirectedCount} uuid_to_int=${uuidRedirectedCount} fallback=${fallbackCount}` +
               (failed.length ? ` failed=${failed.slice(0, 5).join(",")}` : ""),
           )
 
@@ -597,6 +654,7 @@ export async function POST(req: NextRequest) {
                 candidates,
                 hydrated: hydratedCount,
                 redirected: redirectedCount,
+                uuid_to_int_redirected: uuidRedirectedCount,
                 fallback_skeleton: fallbackCount,
                 failed_sample: failed.slice(0, 10),
               },
@@ -626,8 +684,14 @@ export async function POST(req: NextRequest) {
         const price = toNum(tx.price)
         if (!price || price <= 0) continue
 
-        const editionKey = buildEditionKey(tx)
+        let editionKey = buildEditionKey(tx)
         if (!editionKey) continue
+        // Item B fix: swap UUID-pair → integer-pair when the hydrate block
+        // resolved on-chain ids upstream. Without this, upsertEdition would
+        // write a second UUID-keyed row alongside the canonical integer one
+        // (the writer leak the sentinel tripwire monitors).
+        const redirected = uuidToInt.get(editionKey)
+        if (redirected) editionKey = redirected
 
         // Upsert player, set, edition
         const playerId = await upsertPlayer(collectionId, moment.play.stats)
