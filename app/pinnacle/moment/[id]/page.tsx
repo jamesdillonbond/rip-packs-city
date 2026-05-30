@@ -51,24 +51,25 @@ type LatestFmv = {
 }
 
 async function load(id: string): Promise<{
-  ed: PinnacleEdition
+  ed: PinnacleEdition & { edition_key: string | null }
   fmv: LatestFmv | null
   variant_avg_mint: number | null
   holders_cached: number
 } | null> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: ed } = await (supabaseAdmin as any)
+  const supa = supabaseAdmin as any
+
+  const { data: ed } = await supa
     .from("pinnacle_editions")
     .select(
-      "id, external_id, character_name, franchise, set_name, variant_type, edition_type, mint_count, is_chaser, thumbnail_url, studio, materials, effects, size, color, thickness, minting_date, ask_price, ask_source, series_year"
+      "id, external_id, edition_key, character_name, franchise, set_name, variant_type, edition_type, mint_count, is_chaser, thumbnail_url, studio, materials, effects, size, color, thickness, minting_date, ask_price, ask_source, series_year"
     )
     .eq("id", id)
     .maybeSingle()
   if (!ed) return null
 
   // Latest FMV snapshot
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: fmvRows } = await (supabaseAdmin as any)
+  const { data: fmvRows } = await supa
     .from("pinnacle_fmv_snapshots")
     .select("fmv_usd, confidence, computed_at, sales_count_30d, days_since_sale")
     .eq("edition_id", id)
@@ -76,41 +77,40 @@ async function load(id: string): Promise<{
     .limit(1)
   const fmv: LatestFmv | null = (fmvRows && fmvRows[0]) ?? null
 
-  // Variant family average mint (matches the scarcity board metric)
+  // Variant family average mint — direct aggregate via pull-and-average since
+  // PostgREST doesn't expose AVG inline. The variant-family member count is
+  // small (≤158 for Standard, fewer for premium variants) so a full select
+  // is cheap.
   let variant_avg_mint: number | null = null
   if (ed.variant_type) {
+    const { data: vAvg } = await supa
+      .from("pinnacle_editions")
+      .select("mint_count")
+      .eq("variant_type", ed.variant_type)
+      .not("mint_count", "is", null)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: vRow } = await (supabaseAdmin as any).rpc("pg_query_pinnacle_variant_avg", {})
-      .then(() => null, () => null) // RPC may not exist — skip silently
-    // Fallback inline: pull the avg via a direct query
-    if (!vRow) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: vAvg } = await (supabaseAdmin as any)
-        .from("pinnacle_editions")
-        .select("mint_count")
-        .eq("variant_type", ed.variant_type)
-        .not("mint_count", "is", null)
-      if (Array.isArray(vAvg) && vAvg.length > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const nums = (vAvg as any[])
-          .map((r) => Number(r.mint_count))
-          .filter((n) => Number.isFinite(n))
-        if (nums.length > 0) {
-          variant_avg_mint = nums.reduce((a, b) => a + b, 0) / nums.length
-        }
-      }
+    const nums = ((vAvg as any[]) ?? [])
+      .map((r) => Number(r.mint_count))
+      .filter((n) => Number.isFinite(n))
+    if (nums.length > 0) {
+      variant_avg_mint = nums.reduce((a, b) => a + b, 0) / nums.length
     }
   }
 
-  // Holders count from wallet_moments_cache
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { count: holders_cached } = await (supabaseAdmin as any)
+  // Holders count from wallet_moments_cache. wmc keys on edition_key text;
+  // fall back to ed.id if edition_key is null.
+  const { count: holders_cached } = await supa
     .from("wallet_moments_cache")
     .select("wallet_address", { count: "exact", head: true })
     .eq("collection_id", "7dd9dd11-e8b6-45c4-ac99-71331f959714")
     .eq("edition_key", ed.edition_key ?? ed.id)
 
-  return { ed: ed as PinnacleEdition, fmv, variant_avg_mint, holders_cached: holders_cached ?? 0 }
+  return {
+    ed: ed as PinnacleEdition & { edition_key: string | null },
+    fmv,
+    variant_avg_mint,
+    holders_cached: holders_cached ?? 0,
+  }
 }
 
 export async function generateMetadata({
