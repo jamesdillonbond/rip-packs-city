@@ -15,6 +15,21 @@ interface SnapshotData {
   }>
   badgeCount: number
   seriesBreakdown: Record<string, number>
+  perCollection: Array<{
+    slug: string
+    name: string
+    moments: number
+    fmv: number
+  }>
+  rarest: {
+    playerName: string
+    setName: string
+    tier: string | null
+    serial: number | null
+    mintCount: number | null
+    fmv: number
+    thumbnailUrl: string | null
+  } | null
   generatedAt: string
 }
 
@@ -105,6 +120,26 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
           </div>
         </div>
 
+        {/* Per-collection rollup — RPC's cross-collection differentiator. Only
+            shown when the wallet spans more than one Flow collection. */}
+        {(data.perCollection ?? []).length > 1 ? (
+          <div style={{ marginBottom: 32 }}>
+            <div style={{ fontSize: 14, letterSpacing: "0.15em", color: "#666", marginBottom: 16, textTransform: "uppercase" }}>Across Flow Collections</div>
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(data.perCollection.length, 5)}, 1fr)`, gap: 12 }}>
+              {data.perCollection.map((c) => (
+                <div key={c.slug} style={{ border: "1px solid #222", borderRadius: 8, background: "#111", padding: "14px 12px", textAlign: "center" }}>
+                  <div style={{ fontSize: 12, color: "#999", fontFamily: "monospace", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8, minHeight: 30 }}>{c.name}</div>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: "#fff" }}>{c.moments.toLocaleString("en-US")}</div>
+                  <div style={{ fontSize: 11, color: "#666", marginBottom: 6 }}>moments</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#E03A2F", fontFamily: "monospace" }}>
+                    ${c.fmv.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {/* Top 5 moments */}
         <div style={{ marginBottom: 32 }}>
           <div style={{ fontSize: 14, letterSpacing: "0.15em", color: "#666", marginBottom: 16, textTransform: "uppercase" }}>Top Moments by FMV</div>
@@ -127,6 +162,37 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             ))}
           </div>
         </div>
+
+        {/* Rarest moment highlight — lowest mint count in the bag. */}
+        {data.rarest ? (
+          <div style={{ marginBottom: 32 }}>
+            <div style={{ fontSize: 14, letterSpacing: "0.15em", color: "#666", marginBottom: 16, textTransform: "uppercase" }}>Rarest Moment</div>
+            <div style={{ display: "flex", gap: 16, alignItems: "center", border: "1px solid #2a2118", borderRadius: 10, background: "linear-gradient(180deg, rgba(255,215,0,0.06) 0%, #0A0A0A 100%)", padding: 16 }}>
+              {data.rarest.thumbnailUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={data.rarest.thumbnailUrl} alt={data.rarest.playerName} style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 8, flex: "0 0 96px" }} />
+              ) : (
+                <div style={{ width: 96, height: 96, background: "#1A1A1A", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "#333", fontSize: 28, flex: "0 0 96px" }}>?</div>
+              )}
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 800, fontSize: 20, color: "#fff" }}>{data.rarest.playerName}</div>
+                <div style={{ fontSize: 13, color: "#888", fontFamily: "monospace", marginTop: 2 }}>{data.rarest.setName}</div>
+                <div style={{ fontSize: 13, color: TIER_COLORS[data.rarest.tier?.toLowerCase() ?? ""] ?? "#9CA3AF", fontFamily: "monospace", marginTop: 4 }}>
+                  {data.rarest.tier ?? ""}
+                  {data.rarest.serial != null && data.rarest.mintCount != null
+                    ? `  ·  #${data.rarest.serial} / ${data.rarest.mintCount}`
+                    : data.rarest.mintCount != null
+                      ? `  ·  /${data.rarest.mintCount}`
+                      : ""}
+                </div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 20, fontWeight: 800, color: "#E03A2F", fontFamily: "monospace" }}>${data.rarest.fmv.toFixed(2)}</div>
+                <div style={{ fontSize: 11, color: "#666" }}>FMV</div>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {/* Series breakdown bar */}
         <div style={{ marginBottom: 32 }}>

@@ -1,13 +1,75 @@
 // app/insights/page.tsx
 //
-// Public landing page for the /insights surface. Free, no signup. Per the
-// 2026-05-29 4-week launch plan: this is the entry door to the public wedge
-// surfaces. As of 2026-05-30 five surfaces are live — A (squeeze), B
-// (pack-reality), C (rookies), D (first-mint), E (cross-collection).
+// Public landing / index hub for the /insights surface. Free, no signup. The
+// branded front door that ties every public wedge surface together, each card
+// now carrying a LIVE headline stat pulled from its backing view via the
+// get_insights_hub_stats RPC, plus a compact market-overview band. ISR-cached
+// every 30 minutes so the numbers stay current without hitting the DB per hit.
 
 import Link from "next/link"
+import { createClient } from "@supabase/supabase-js"
 
-export const dynamic = "force-static"
+export const revalidate = 1800
+
+type HubStats = {
+  insights: {
+    squeezeEditions: number
+    setSqueezeSets: number
+    pinnacleEditions: number
+    packZeroPct: number
+    packRips60d: number
+    rookieGmv30d: number
+    rookieCount: number
+    firstMintAvg: number
+    firstMintMax: number
+    crossCohort: number
+  }
+  market: { sales24h: number; gmv24h: number; sales7d: number; gmv7d: number }
+  computedAt: string
+}
+
+async function getHubStats(): Promise<HubStats | null> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return null
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sb: any = createClient(url, key)
+    const { data, error } = await sb.rpc("get_insights_hub_stats")
+    if (error || !data) return null
+    return data as HubStats
+  } catch {
+    return null
+  }
+}
+
+function fmtUsd(n: number): string {
+  if (!Number.isFinite(n)) return "$0"
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `$${Math.round(n / 1_000)}K`
+  return `$${Math.round(n)}`
+}
+
+function liveStat(slug: string | null, s: HubStats["insights"]): string | null {
+  switch (slug) {
+    case "/insights/squeeze":
+      return `${s.squeezeEditions.toLocaleString()} editions ≥50% squeezed`
+    case "/insights/pack-reality":
+      return `${s.packZeroPct}% of rips pull $0 · ${s.packRips60d.toLocaleString()} rips/60d`
+    case "/insights/rookies":
+      return `${fmtUsd(s.rookieGmv30d)} GMV/30d · ${s.rookieCount} rookies`
+    case "/insights/first-mint":
+      return `avg ${s.firstMintAvg}× · max ${s.firstMintMax}×`
+    case "/insights/cross-collection":
+      return `${s.crossCohort} wallets hold 3+ collections`
+    case "/insights/set-squeeze":
+      return `${s.setSqueezeSets} sets ranked`
+    case "/insights/pinnacle-scarcity":
+      return `${s.pinnacleEditions} editions ranked`
+    default:
+      return null
+  }
+}
 
 type Card = {
   slug: string | null
@@ -24,7 +86,7 @@ const CARDS: Card[] = [
     eyebrow: "Surface A · Live",
     title: "The Lock-Rate Squeeze Board",
     blurb:
-      "Top Shot's site shows you circulation. We show you effective supply — circulation minus the moments locked in challenges and the moments already burned. Editions over 50% squeeze.",
+      "Top Shot's site shows you circulation. We show you effective supply — circulation minus the moments locked in challenges and the moments already burned. Every edition over 50% squeeze.",
     cta: "Open squeeze board",
     available: true,
   },
@@ -33,7 +95,7 @@ const CARDS: Card[] = [
     eyebrow: "Surface B · Live",
     title: "Pack Reality",
     blurb:
-      "We audited every Top Shot pack ripped in the last 60 days. 128,220 rips. Median pull value $0. Honest pack ranker with confidence flags on every +EV claim.",
+      "We audit every Top Shot pack ripped in the last 60 days. Honest pack ranker with a confidence flag on every +EV claim — and the median pull value the marketplace never advertises.",
     cta: "Open pack reality",
     available: true,
   },
@@ -42,7 +104,7 @@ const CARDS: Card[] = [
     eyebrow: "Surface C · Live",
     title: "2025 Rookie Class Index",
     blurb:
-      "The 2025 NBA rookie class as a cohort. 30-day GMV, lock-rate, average price, first-mint trophy multipliers. Dylan Harper $21k GMV, Kon Knueppel 54% locked.",
+      "The 2025 NBA rookie class as a cohort. 30-day GMV, lock-rate, average price, and first-mint trophy multipliers, player by player.",
     cta: "Open rookie index",
     available: true,
   },
@@ -51,7 +113,7 @@ const CARDS: Card[] = [
     eyebrow: "Surface D · Live",
     title: "First-Mint Trophy Tracker",
     blurb:
-      "Trophies aren't a vibe — they're math. Every TS serial #1 sale of the last 90 days vs the average-serial price for the same edition. Avg 15.8×, max 248×.",
+      "Trophies aren't a vibe — they're math. Every TS serial #1 sale of the last 90 days vs the average-serial price for the same edition.",
     cta: "Open trophy tracker",
     available: true,
   },
@@ -60,7 +122,7 @@ const CARDS: Card[] = [
     eyebrow: "Surface E · Live",
     title: "Cross-Collection Whale Map",
     blurb:
-      "143 wallets hold 3+ Flow blockchain collections — Top Shot, AllDay, Golazos, Pinnacle, UFC Strike. Cohort distribution, top wallets, what they actually collect.",
+      "The wallets that hold 3+ Flow blockchain collections — Top Shot, AllDay, Golazos, Pinnacle, UFC Strike. Cohort distribution, top wallets, what they actually collect.",
     cta: "Open whale map",
     available: true,
   },
@@ -69,7 +131,7 @@ const CARDS: Card[] = [
     eyebrow: "Surface G · Live",
     title: "Set Squeeze Leaderboard",
     blurb:
-      "Drill-down companion to Surface A. Top Shot sets ranked by average lock + burn across editions. WNBA Squad Goals 76% avg, 2023 NBA Playoffs 76%, Metallic Gold LE 74%.",
+      "Drill-down companion to Surface A. Top Shot sets ranked by average lock + burn across their editions. The tightest sets, surfaced.",
     cta: "Open set leaderboard",
     available: true,
   },
@@ -102,7 +164,9 @@ const CARDS: Card[] = [
   },
 ]
 
-export default function InsightsIndexPage() {
+export default async function InsightsIndexPage() {
+  const stats = await getHubStats()
+
   return (
     <main className="rpc-ins-page">
       <style>{CSS}</style>
@@ -112,17 +176,43 @@ export default function InsightsIndexPage() {
         <h1 className="rpc-ins-h1">Things Top Shot won&apos;t tell you.</h1>
         <p className="rpc-ins-lede">
           Free, no signup. Built for the collector who wants the math, not
-          the marketing. Seven wedges of intelligence the marketplace
-          structurally can&apos;t (or won&apos;t) ship, plus a tool to
-          check your own wallet.
+          the marketing. The wedges of intelligence the marketplace
+          structurally can&apos;t (or won&apos;t) ship — plus tools to check
+          your own wallet.
         </p>
       </section>
 
+      {stats?.market ? (
+        <section className="rpc-ins-market" aria-label="Flow market pulse">
+          <div className="rpc-ins-market-label">Flow market pulse</div>
+          <div className="rpc-ins-market-grid">
+            <div className="rpc-ins-market-kpi">
+              <div className="rpc-ins-market-val">{fmtUsd(stats.market.gmv24h)}</div>
+              <div className="rpc-ins-market-cap">GMV · 24h</div>
+            </div>
+            <div className="rpc-ins-market-kpi">
+              <div className="rpc-ins-market-val">{stats.market.sales24h.toLocaleString()}</div>
+              <div className="rpc-ins-market-cap">Sales · 24h</div>
+            </div>
+            <div className="rpc-ins-market-kpi">
+              <div className="rpc-ins-market-val">{fmtUsd(stats.market.gmv7d)}</div>
+              <div className="rpc-ins-market-cap">GMV · 7d</div>
+            </div>
+            <div className="rpc-ins-market-kpi">
+              <div className="rpc-ins-market-val">{stats.market.sales7d.toLocaleString()}</div>
+              <div className="rpc-ins-market-cap">Sales · 7d</div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       <section className="rpc-ins-grid">
         {CARDS.map((c) => {
+          const stat = stats ? liveStat(c.slug, stats.insights) : null
           const Inner = (
             <article className={`rpc-ins-card ${c.available ? "" : "rpc-ins-card-soon"}`}>
               <div className="rpc-ins-card-eyebrow">{c.eyebrow}</div>
+              {stat ? <div className="rpc-ins-card-stat">{stat}</div> : null}
               <h2 className="rpc-ins-card-title">{c.title}</h2>
               <p className="rpc-ins-card-blurb">{c.blurb}</p>
               <div className="rpc-ins-card-cta">
@@ -165,7 +255,7 @@ const CSS = `
 }
 .rpc-ins-hero {
   max-width: 1180px;
-  margin: 0 auto 40px;
+  margin: 0 auto 28px;
   padding-bottom: 24px;
   border-bottom: 1px solid var(--rpc-border-subtle);
 }
@@ -193,6 +283,43 @@ const CSS = `
   color: var(--rpc-text-secondary);
   max-width: 760px;
   margin: 0;
+}
+.rpc-ins-market {
+  max-width: 1180px;
+  margin: 0 auto 32px;
+  border: 1px solid var(--rpc-border);
+  border-radius: 6px;
+  background: var(--rpc-surface);
+  padding: 16px 20px;
+}
+.rpc-ins-market-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--rpc-text-muted);
+  margin-bottom: 12px;
+}
+.rpc-ins-market-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.rpc-ins-market-kpi { text-align: left; }
+.rpc-ins-market-val {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 28px;
+  line-height: 1;
+  color: var(--rpc-text-primary);
+}
+.rpc-ins-market-cap {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--rpc-text-muted);
+  margin-top: 6px;
 }
 .rpc-ins-grid {
   max-width: 1180px;
@@ -229,7 +356,15 @@ const CSS = `
   letter-spacing: 2.5px;
   text-transform: uppercase;
   color: var(--rpc-text-muted);
-  margin-bottom: 14px;
+  margin-bottom: 10px;
+}
+.rpc-ins-card-stat {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.35;
+  letter-spacing: 0.3px;
+  color: var(--rpc-red);
+  margin-bottom: 12px;
 }
 .rpc-ins-card-title {
   font-family: var(--font-display);
@@ -274,5 +409,6 @@ const CSS = `
 
 @media (max-width: 880px) {
   .rpc-ins-grid { grid-template-columns: 1fr; }
+  .rpc-ins-market-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 }
 `

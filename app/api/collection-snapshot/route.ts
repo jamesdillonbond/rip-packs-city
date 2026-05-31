@@ -43,6 +43,8 @@ export async function GET(req: NextRequest) {
           snap.seriesBreakdown && typeof snap.seriesBreakdown === "object"
             ? snap.seriesBreakdown
             : {},
+        perCollection: Array.isArray(snap.perCollection) ? snap.perCollection : [],
+        rarest: snap.rarest ?? null,
         generatedAt: new Date().toISOString(),
       },
       {
