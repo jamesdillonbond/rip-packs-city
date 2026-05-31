@@ -10,9 +10,11 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
-import { seriesPageMetadata } from "@/lib/seo"
+import { seriesPageMetadata, collectionEntityJsonLd, collectionDisplayName, entityUrl } from "@/lib/seo"
 import { Section, StatCell, fmtCount, fmtUsd } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
+import Breadcrumbs from "@/components/entity/Breadcrumbs"
+import HeroMontage from "@/components/entity/HeroMontage"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -113,8 +115,20 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
 
   return (
     <div>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionEntityJsonLd({ name: detail.display_label, url: entityUrl(collection, "series", slug), collectionUrlSlug: collection, eds: top25 as unknown as Array<Record<string, unknown>>, crumbName: detail.display_label })) }}
+      />
+      <Breadcrumbs
+        items={[
+          { name: "Home", href: "/" },
+          { name: collectionDisplayName(collection), href: `/${collection}` },
+          { name: detail.display_label },
+        ]}
+      />
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <section className="rpc-card" style={{ padding: 18 }}>
+      <section className="rpc-card" style={{ padding: 18, display: "flex", gap: 18, alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0, flex: "1 1 auto" }}>
         <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 36, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", lineHeight: 1.05, textTransform: "uppercase" }}>
           {detail.display_label}
         </h1>
@@ -123,6 +137,8 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
             {detail.season}
           </div>
         )}
+        </div>
+        <HeroMontage items={top25} />
       </section>
 
       {/* ── Stat strip ───────────────────────────────────────────────────── */}

@@ -25,6 +25,9 @@ import { PackThumb } from "@/components/packs/PackTable"
 // runtime — that's the bug this page was hitting before 2026-05-26.
 import { tierChip } from "@/lib/tier-style"
 import PackShareButton from "@/components/packs/PackShareButton"
+import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
+import Breadcrumbs from "@/components/entity/Breadcrumbs"
+import { packJsonLd } from "@/lib/seo"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -244,6 +247,23 @@ async function fetchTopPulls(
   return pulls.slice(0, 10)
 }
 
+const PACK_CONTENTS_PAGE_SIZE = 24
+
+// Phase 2 (entity media): the visual "What's Inside" grid. get_pack_contents
+// returns full EditionTile-shaped rows (thumbnail_url, route_slug, fmv_usd,
+// drop_weight, hit_probability, …), so the moment art renders instead of the
+// text-only Top-Pulls table below.
+async function fetchPackContents(collectionId: string, distId: string, limit: number, offset: number): Promise<EditionTile[]> {
+  const { data, error } = await sb.rpc("get_pack_contents", {
+    p_collection_id: collectionId,
+    p_dist_id: distId,
+    p_limit: limit,
+    p_offset: offset,
+  })
+  if (error) { console.error("[pack-detail] get_pack_contents error", error.message); return [] }
+  return Array.isArray(data) ? (data as EditionTile[]) : []
+}
+
 // editions.name is "Player Name — Set Name" (em-dash). Some rows are NULL.
 // Fall back gracefully so the table doesn't render literal "null —" cells.
 function splitEditionName(name: string | null): { player: string; setName: string } {
@@ -386,7 +406,10 @@ export default async function PackDetailPage(
 
   const distMetadata = fallback?.metadata ?? (await fetchDistFallback(coll.id, distId))?.metadata ?? null
 
-  const topPulls = await fetchTopPulls(coll.id, distId, num(merged.total_unopened), merged.slots ?? null)
+  const [topPulls, packContents] = await Promise.all([
+    fetchTopPulls(coll.id, distId, num(merged.total_unopened), merged.slots ?? null),
+    fetchPackContents(coll.id, distId, PACK_CONTENTS_PAGE_SIZE, 0),
+  ])
 
   // Defensive: pack_table_rows.tier is typed string|null but coerce in case
   // the view ever returns a non-string. Same for title.
@@ -472,6 +495,17 @@ export default async function PackDetailPage(
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(packJsonLd({ title, image: merged.image_url, collectionUrlSlug: collection, distId, retailPriceUsd: retailPrice })) }}
+      />
+      <Breadcrumbs
+        items={[
+          { name: "Home", href: "/" },
+          { name: coll.displayName, href: `/${collection}` },
+          { name: title },
+        ]}
+      />
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section style={cardStyle}>
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,260px) 1fr", gap: 24, alignItems: "start" }}>
@@ -733,6 +767,38 @@ export default async function PackDetailPage(
           sub={totalSealed !== null && totalMinted !== null ? `${fmtCount(totalSealed)}/${fmtCount(totalMinted)} sealed` : undefined}
         />
       </section>
+
+      {/* ── What's inside (visual grid) ──────────────────────────────────── */}
+      {packContents.length > 0 && (
+        <section style={cardStyle}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 12 }}>
+            <h2
+              style={{
+                margin: 0,
+                fontFamily: "var(--font-display)",
+                fontWeight: 800,
+                fontSize: 18,
+                letterSpacing: "0.06em",
+                color: "#fff",
+                textTransform: "uppercase",
+              }}
+            >
+              What&apos;s Inside
+            </h2>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+              {editionCount ? `${editionCount} editions in pool` : "pullable editions"}
+            </span>
+          </div>
+          <EditionsGridPaginated
+            collectionUrlSlug={collection}
+            fetchUrl={`/api/entity/pack?collection=${encodeURIComponent(collection)}&dist_id=${encodeURIComponent(distId)}`}
+            initial={packContents}
+            pageSize={PACK_CONTENTS_PAGE_SIZE}
+            showSetLink
+            showSort
+          />
+        </section>
+      )}
 
       {/* ── Top pulls ────────────────────────────────────────────────────── */}
       <section style={cardStyle}>

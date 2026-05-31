@@ -10,7 +10,8 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
-import { editionPageMetadata } from "@/lib/seo"
+import { editionPageMetadata, editionJsonLd, collectionDisplayName } from "@/lib/seo"
+import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import { slugifyName } from "@/lib/entity-labels"
 import {
   ConfidencePill,
@@ -268,8 +269,22 @@ export default async function EditionPage(
   const isAllDay = collection === "nfl-all-day"
   const hasVideo = (collection === "nba-top-shot" || collection === "nfl-all-day") && !!detail.video_url
 
+  const editionTitle = detail.player_name ?? detail.name ?? "Edition"
+
   return (
     <div>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(editionJsonLd(detail as unknown as Record<string, unknown>, collection)) }}
+      />
+      <Breadcrumbs
+        items={[
+          { name: "Home", href: "/" },
+          { name: collectionDisplayName(collection), href: `/${collection}` },
+          ...(setHref && detail.set_name ? [{ name: detail.set_name, href: setHref }] : []),
+          { name: editionTitle },
+        ]}
+      />
       <div style={{ marginBottom: 14 }}>
         <MarketplaceStatusBanner collectionSlug={collection} />
       </div>

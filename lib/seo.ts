@@ -498,3 +498,194 @@ export function seriesPageMetadata(
   const canonical = `${BASE_URL}/${collectionUrlSlug}/series/${encodeURIComponent(seriesSlug)}`
   return buildMeta({ title, description, canonical })
 }
+
+// ── Phase 2B: Entity JSON-LD structured data ─────────────────────────────────
+// One <script type="application/ld+json"> per entity page, rendered server-side
+// in the page body. These return plain objects; the page stringifies them.
+// The detail RPCs already carry every field below — no DB change. BASE_URL and
+// COLLECTION_DISPLAY_NAMES are module-private above; these helpers reuse them.
+
+type LdValue = Record<string, unknown>
+
+// Public accessor for the collection display name used across entity
+// breadcrumbs + JSON-LD (COLLECTION_DISPLAY_NAMES is module-private).
+export function collectionDisplayName(collectionUrlSlug: string): string {
+  return COLLECTION_DISPLAY_NAMES[collectionUrlSlug] ?? "Flow"
+}
+
+export function breadcrumbJsonLd(items: { name: string; url: string }[]): LdValue {
+  return {
+    "@type": "BreadcrumbList",
+    itemListElement: items.map((it, i) => ({ "@type": "ListItem", position: i + 1, name: it.name, item: it.url })),
+  }
+}
+
+// Edition → Product (+ BreadcrumbList). detail = get_edition_detail payload.
+export function editionJsonLd(detail: Payload, collectionUrlSlug: string): LdValue {
+  const label = COLLECTION_DISPLAY_NAMES[collectionUrlSlug] ?? "Flow"
+  const slug = s(detail, "route_slug") ?? s(detail, "external_id") ?? ""
+  const url = `${BASE_URL}/${collectionUrlSlug}/edition/${encodeURIComponent(slug)}`
+  const fmvObj = (detail.fmv as Payload | null | undefined) ?? null
+  const fmv = fmvObj ? n(fmvObj, "fmv_usd") : null
+  const setName = s(detail, "set_name")
+  const setSlug = s(detail, "set_slug")
+  const playerName = s(detail, "player_name") ?? s(detail, "name") ?? "Edition"
+  const tier = s(detail, "tier")
+  const thumb = s(detail, "thumbnail_url")
+  const product: LdValue = {
+    "@type": "Product",
+    "@id": url,
+    url,
+    name: `${playerName} — ${setName ?? label}`,
+    brand: { "@type": "Brand", name: label },
+  }
+  if (thumb) product.image = thumb
+  if (slug) product.sku = slug
+  if (tier) product.category = tier
+  if (fmv !== null && Number.isFinite(fmv) && fmv > 0) {
+    product.offers = {
+      "@type": "Offer",
+      price: Math.round(fmv * 100) / 100,
+      priceCurrency: "USD",
+      availability: "https://schema.org/InStock",
+      url,
+    }
+  }
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      product,
+      breadcrumbJsonLd([
+        { name: "Home", url: BASE_URL },
+        { name: label, url: `${BASE_URL}/${collectionUrlSlug}` },
+        ...(setSlug && setName ? [{ name: setName, url: `${BASE_URL}/${collectionUrlSlug}/set/${encodeURIComponent(setSlug)}` }] : []),
+        { name: playerName, url },
+      ]),
+    ],
+  }
+}
+
+// Player → Person (+ BreadcrumbList).
+export function playerJsonLd(detail: Payload, collectionUrlSlug: string, slug: string): LdValue {
+  const label = COLLECTION_DISPLAY_NAMES[collectionUrlSlug] ?? "Flow"
+  const url = `${BASE_URL}/${collectionUrlSlug}/player/${encodeURIComponent(slug)}`
+  const name = s(detail, "name") ?? "Player"
+  const headshot = s(detail, "headshot_url")
+  const team = s(detail, "team")
+  const person: LdValue = { "@type": "Person", "@id": url, url, name }
+  if (headshot) person.image = headshot
+  if (team) person.affiliation = { "@type": "SportsTeam", name: team }
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      person,
+      breadcrumbJsonLd([
+        { name: "Home", url: BASE_URL },
+        { name: label, url: `${BASE_URL}/${collectionUrlSlug}` },
+        { name, url },
+      ]),
+    ],
+  }
+}
+
+// Team → SportsTeam / Organization (+ BreadcrumbList).
+export function teamJsonLd(detail: Payload, collectionUrlSlug: string, slug: string): LdValue {
+  const label = COLLECTION_DISPLAY_NAMES[collectionUrlSlug] ?? "Flow"
+  const url = `${BASE_URL}/${collectionUrlSlug}/team/${encodeURIComponent(slug)}`
+  const name = s(detail, "team_name") ?? "Team"
+  const isFranchise = detail["is_franchise"] === true
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      { "@type": isFranchise ? "Organization" : "SportsTeam", "@id": url, url, name },
+      breadcrumbJsonLd([
+        { name: "Home", url: BASE_URL },
+        { name: label, url: `${BASE_URL}/${collectionUrlSlug}` },
+        { name, url },
+      ]),
+    ],
+  }
+}
+
+// Set / Series → CollectionPage + ItemList (+ BreadcrumbList). eds = the
+// EditionTile[] the page already fetched; capped at 25.
+export function collectionEntityJsonLd(opts: {
+  name: string
+  url: string
+  collectionUrlSlug: string
+  eds: Array<Payload>
+  crumbName: string
+}): LdValue {
+  const label = COLLECTION_DISPLAY_NAMES[opts.collectionUrlSlug] ?? "Flow"
+  const items = (opts.eds ?? []).slice(0, 25).map((e, i) => {
+    const li: LdValue = {
+      "@type": "ListItem",
+      position: i + 1,
+      url: `${BASE_URL}/${opts.collectionUrlSlug}/edition/${encodeURIComponent(s(e, "route_slug") ?? "")}`,
+    }
+    const nm = s(e, "player_name") ?? s(e, "name")
+    const img = s(e, "thumbnail_url")
+    if (nm) li.name = nm
+    if (img) li.image = img
+    return li
+  })
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "CollectionPage",
+        "@id": opts.url,
+        url: opts.url,
+        name: opts.name,
+        isPartOf: { "@type": "WebSite", name: "Rip Packs City", url: BASE_URL },
+        mainEntity: { "@type": "ItemList", numberOfItems: items.length, itemListElement: items },
+      },
+      breadcrumbJsonLd([
+        { name: "Home", url: BASE_URL },
+        { name: label, url: `${BASE_URL}/${opts.collectionUrlSlug}` },
+        { name: opts.crumbName, url: opts.url },
+      ]),
+    ],
+  }
+}
+
+// Pack distribution → Product (+ BreadcrumbList).
+export function packJsonLd(opts: {
+  title: string
+  image?: string | null
+  collectionUrlSlug: string
+  distId: string
+  retailPriceUsd?: number | null
+}): LdValue {
+  const label = COLLECTION_DISPLAY_NAMES[opts.collectionUrlSlug] ?? "Flow"
+  const url = `${BASE_URL}/${opts.collectionUrlSlug}/pack/dist/${encodeURIComponent(opts.distId)}`
+  const product: LdValue = {
+    "@type": "Product",
+    "@id": url,
+    url,
+    name: opts.title,
+    brand: { "@type": "Brand", name: label },
+  }
+  if (opts.image) product.image = opts.image
+  if (opts.retailPriceUsd && opts.retailPriceUsd > 0) {
+    product.offers = { "@type": "Offer", price: Math.round(opts.retailPriceUsd * 100) / 100, priceCurrency: "USD", url }
+  }
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      product,
+      breadcrumbJsonLd([
+        { name: "Home", url: BASE_URL },
+        { name: label, url: `${BASE_URL}/${opts.collectionUrlSlug}` },
+        { name: opts.title, url },
+      ]),
+    ],
+  }
+}
+
+// Absolute entity URLs — handy for the page-side JSON-LD `url`/breadcrumb args
+// (the helpers above build child URLs themselves, but the CollectionPage
+// helpers need the page's own absolute url).
+export function entityUrl(collectionUrlSlug: string, kind: string, slug: string): string {
+  return `${BASE_URL}/${collectionUrlSlug}/${kind}/${encodeURIComponent(slug)}`
+}

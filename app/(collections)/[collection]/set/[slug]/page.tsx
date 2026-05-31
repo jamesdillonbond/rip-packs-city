@@ -8,9 +8,11 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
-import { setPageMetadata } from "@/lib/seo"
+import { setPageMetadata, collectionEntityJsonLd, collectionDisplayName, entityUrl } from "@/lib/seo"
 import { Section, StatCell, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
+import Breadcrumbs from "@/components/entity/Breadcrumbs"
+import HeroMontage from "@/components/entity/HeroMontage"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -134,8 +136,20 @@ export default async function SetPage(props: { params: Promise<{ collection: str
 
   return (
     <div>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionEntityJsonLd({ name: detail.set_name, url: entityUrl(collection, "set", slug), collectionUrlSlug: collection, eds: editions as unknown as Array<Record<string, unknown>>, crumbName: detail.set_name })) }}
+      />
+      <Breadcrumbs
+        items={[
+          { name: "Home", href: "/" },
+          { name: collectionDisplayName(collection), href: `/${collection}` },
+          { name: detail.set_name },
+        ]}
+      />
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <section className="rpc-card" style={{ padding: 18 }}>
+      <section className="rpc-card" style={{ padding: 18, display: "flex", gap: 18, alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0, flex: "1 1 auto" }}>
         <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 32, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", lineHeight: 1.05, textTransform: "uppercase" }}>
           {detail.set_name}
         </h1>
@@ -154,6 +168,8 @@ export default async function SetPage(props: { params: Promise<{ collection: str
             Updated {relTime(detail.summary_computed_at)}
           </div>
         )}
+        </div>
+        <HeroMontage items={editions} />
       </section>
 
       {/* ── Stat strip ───────────────────────────────────────────────────── */}
