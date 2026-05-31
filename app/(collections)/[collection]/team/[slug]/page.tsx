@@ -17,6 +17,7 @@ import EditionsGridPaginated, { type EditionTile } from "@/components/entity/Edi
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import HeroMontage from "@/components/entity/HeroMontage"
 import TeamHero from "@/components/entity/TeamHero"
+import TeamChecklist from "@/components/entity/TeamChecklist"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -150,6 +151,11 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
         <StatCell label="30d Sales" value={fmtCount(detail.sales_30d)} />
         <StatCell label="30d Volume" value={fmtUsd(detail.volume_30d_usd == null ? null : Number(detail.volume_30d_usd))} />
       </section>
+
+      {/* ── Team Checklist (headline feature) ────────────────────────────── */}
+      <Section title="Team Checklist">
+        <TeamChecklist collectionUrlSlug={collection} teamSlug={slug} />
+      </Section>
 
       {/* ── Top Editions ─────────────────────────────────────────────────── */}
       {topEditions.length > 0 && (
