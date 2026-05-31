@@ -62,7 +62,8 @@ async function resolveEditionRouteSlug(opts: {
 }
 
 export default async function MomentRedirectPage({ params }: PageProps) {
-  const { collection, momentId } = await params
+  const { collection, momentId: rawMomentId } = await params
+  const momentId = decodeURIComponent(rawMomentId)
 
   const c = getCollection(collection)
   if (!c) notFound()
@@ -79,7 +80,7 @@ export default async function MomentRedirectPage({ params }: PageProps) {
     try {
       const slug = await resolveEditionRouteSlug({ collectionUuid, momentId })
       if (slug) {
-        redirect(`/${collection}/edition/${slug}`)
+        redirect(`/${collection}/edition/${encodeURIComponent(slug)}`)
       }
     } catch (err) {
       // Don't unwind a NEXT_REDIRECT thrown by redirect() above — re-throw it.

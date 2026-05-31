@@ -216,7 +216,8 @@ async function fetchParallels(editionId: string): Promise<ParallelEdition[]> {
 export async function generateMetadata(
   props: { params: Promise<{ collection: string; slug: string }> }
 ): Promise<Metadata> {
-  const { collection, slug } = await props.params
+  const { collection, slug: rawSlug } = await props.params
+  const slug = decodeURIComponent(rawSlug)
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) return {}
   const detail = await fetchDetail(coll.id, slug)
@@ -229,7 +230,8 @@ export async function generateMetadata(
 export default async function EditionPage(
   props: { params: Promise<{ collection: string; slug: string }> }
 ) {
-  const { collection, slug } = await props.params
+  const { collection, slug: rawSlug } = await props.params
+  const slug = decodeURIComponent(rawSlug)
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) notFound()
 
