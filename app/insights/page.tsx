@@ -145,6 +145,15 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/market",
+    eyebrow: "Surface I · Live",
+    title: "The RPC Index",
+    blurb:
+      "Top Shot's blended floor is a sub-$1 number dominated by commons. We segment the market by tier and index each to 100 — an honest read of what Legendary, Rare, Fandom, and Common moments are actually doing.",
+    cta: "Open the index",
+    available: true,
+  },
+  {
     slug: "/insights/squeeze-check",
     eyebrow: "Tool · Live",
     title: "What's Liquid In Your Bag?",
