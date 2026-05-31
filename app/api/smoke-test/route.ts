@@ -315,34 +315,43 @@ async function runSmokeTests() {
       expected: "200-html",
     }),
 
-    // 3. Sales pipeline freshness via analytics_pipeline_health RPC.
+    // 3. Sales pipeline freshness — measured from the last successful INDEXER
+    // RUN, not the newest sale. The old analytics_pipeline_health.sales lag is
+    // sale-recency based, so a quiet market (indexer running fine, just nothing
+    // trading) flapped this check to "degraded" while a genuine indexer stall
+    // (e.g. topshot-sales-indexer silent 01:32-08:02 UTC 2026-05-31) could read
+    // healthy if other sales were landing. detect_stalled_pipelines() measures
+    // silence from each pipeline's last run against its per-pipeline
+    // max_silent_minutes (TS 180m, AllDay/Golazos/UFC 90m), so a run-but-no-sales
+    // tick keeps it healthy and a real stall trips. We pass unless a
+    // *-sales-indexer is in the stalled set.
     time(async () => {
       const meta = {
-        name: "sales pipeline healthy (analytics_pipeline_health)",
-        endpoint: "rpc:analytics_pipeline_health.sales",
-        expected: "status=healthy",
+        name: "sales indexers running (detect_stalled_pipelines)",
+        endpoint: "rpc:detect_stalled_pipelines.sales-indexers",
+        expected: "no sales-indexer stalled",
       };
-      const { data, error } = await (svc as any).rpc("analytics_pipeline_health");
+      const { data, error } = await (svc as any).rpc("detect_stalled_pipelines");
       if (error) {
         return { ...meta, passed: false, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
       }
-      const sales = data?.pipelines?.sales;
-      if (!sales) {
-        return { ...meta, passed: false, detail: "missing pipelines.sales in RPC response", statusCode: null, bodyExcerpt: null, notes: null };
-      }
-      const ok = sales.status === "healthy";
+      const stalled: any[] = Array.isArray(data) ? data : [];
+      const salesStalled = stalled.filter((s) => typeof s?.pipeline === "string" && s.pipeline.includes("sales-indexer"));
+      const passed = salesStalled.length === 0;
       return {
         ...meta,
-        passed: ok,
-        detail: `status=${sales.status} lag=${sales.lag_minutes}m (max ${sales.expected_max_lag_min}m)`,
+        passed,
+        detail: passed
+          ? "all sales indexers within their max-silent window"
+          : salesStalled.map((s) => `${s.pipeline} silent ${s.silent_minutes}m (>${s.max_silent_minutes}m)`).join("; "),
         statusCode: null,
         bodyExcerpt: null,
-        notes: { status: sales.status, lag_minutes: sales.lag_minutes, expected_max_lag_min: sales.expected_max_lag_min },
+        notes: { stalled: salesStalled },
       };
     }, {
-      name: "sales pipeline healthy (analytics_pipeline_health)",
-      endpoint: "rpc:analytics_pipeline_health.sales",
-      expected: "status=healthy",
+      name: "sales indexers running (detect_stalled_pipelines)",
+      endpoint: "rpc:detect_stalled_pipelines.sales-indexers",
+      expected: "no sales-indexer stalled",
     }),
 
     // 4. FMV pipeline freshness via analytics_pipeline_health RPC.

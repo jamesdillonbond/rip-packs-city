@@ -169,6 +169,12 @@ function isPublicPath(pathname: string, method: string): boolean {
   // auth gate. The route clamps + validates every field server-side; the
   // proxy /api/ rate limiter (60/min/IP) still applies.
   if (pathname === "/api/track-click") return true
+  // /api/track-funnel — fire-and-forget top-of-funnel logger (home / share /
+  // insights views + wallet-pastes). Anon visitors on the marketing home and
+  // public surfaces fire it, so it must bypass the auth gate. The route
+  // allowlists event_type + clamps every field server-side; the proxy /api/
+  // rate limiter (60/min/IP) still applies.
+  if (pathname === "/api/track-funnel") return true
   // /api/subscribe + subpaths — anon email / early-access capture (POST) plus
   // the email-link verify / unsubscribe GETs. The marketing home and /insights
   // lead-capture band hit POST /api/subscribe unauthenticated.
