@@ -163,6 +163,11 @@ function isPublicPath(pathname: string, method: string): boolean {
   if (pathname === "/api/public" || pathname.startsWith("/api/public/")) return true
   // /api/wallet-search — exact path only; the marketing search box hits it
   if (pathname === "/api/wallet-search") return true
+  // /api/teams/follow — per-league favorite toggle on the team hub. Public at
+  // the proxy so the anon mount-check (GET -> {authed:false}) resolves without a
+  // login bounce; the route ITSELF enforces auth (getUser -> 401) on POST/DELETE
+  // and writes through the user's RLS session, so this adds no anon write access.
+  if (pathname === "/api/teams/follow") return true
   // /api/track-click — fire-and-forget outbound-click logger. Anon visitors on
   // the public /insights surfaces (and the marketing home) fire it when they
   // click an outbound marketplace / View Listing link, so it must bypass the
