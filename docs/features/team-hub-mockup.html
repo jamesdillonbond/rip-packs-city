@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lakers — Team Hub (RPC mockup)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Share+Tech+Mono&display=swap');
+
+  :root{
+    --rpc-red:#E03A2F;
+    --bg:#0a0a0d;
+    --bg2:#111116;
+    --card:#15151c;
+    --card2:#1b1b24;
+    --line:#2a2a35;
+    --text:#f3f3f6;
+    --muted:#9a9aa8;
+    --muted2:#6e6e7c;
+    --lal-purple:#552583;
+    --lal-gold:#FDB927;
+    --green:#33c27f;
+    --display:'Barlow Condensed',system-ui,sans-serif;
+    --mono:'Share Tech Mono',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.45}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 18px 80px}
+
+  /* top bar */
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(10,10,13,.86);backdrop-filter:blur(8px);z-index:50}
+  .brand{font-family:var(--display);font-weight:900;letter-spacing:.06em;text-transform:uppercase;font-size:18px}
+  .brand b{color:var(--rpc-red)}
+  .topnav{font-family:var(--display);text-transform:uppercase;letter-spacing:.12em;font-size:12px;color:var(--muted);display:flex;gap:18px}
+
+  .crumbs{font-family:var(--mono);font-size:11px;color:var(--muted2);letter-spacing:.04em;padding:16px 0 12px;text-transform:uppercase}
+  .crumbs b{color:var(--muted)}
+
+  /* hero */
+  .hero{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:
+      radial-gradient(900px 300px at 0% 0%, rgba(85,37,131,.55), transparent 60%),
+      linear-gradient(120deg, #20102f 0%, #14141b 55%, #14141b 100%);}
+  .hero-inner{display:flex;gap:22px;align-items:center;padding:26px 26px 22px}
+  .logo{width:96px;height:96px;border-radius:14px;background:radial-gradient(circle at 50% 38%, var(--lal-gold), var(--lal-purple));display:flex;align-items:center;justify-content:center;flex:0 0 auto;border:2px solid rgba(253,185,39,.5);box-shadow:0 6px 26px rgba(85,37,131,.5)}
+  .logo span{font-family:var(--display);font-weight:900;font-size:30px;color:#1c0c2c;letter-spacing:.02em}
+  .hero h1{font-family:var(--display);font-weight:900;text-transform:uppercase;font-size:46px;line-height:.96;letter-spacing:.02em;margin:0}
+  .hero .sub{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
+  .chip{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;padding:4px 9px;border-radius:999px;border:1px solid var(--line);color:var(--muted);background:rgba(0,0,0,.25)}
+  .chip.gold{border-color:rgba(253,185,39,.5);color:var(--lal-gold)}
+  .chip.live{border-color:rgba(51,194,127,.5);color:var(--green)}
+  .follow{margin-left:auto;align-self:flex-start}
+  .btn{font-family:var(--display);text-transform:uppercase;letter-spacing:.1em;font-weight:800;font-size:13px;padding:10px 16px;border-radius:9px;border:1px solid var(--rpc-red);background:var(--rpc-red);color:#fff;cursor:pointer}
+  .btn.ghost{background:transparent;color:var(--text);border-color:var(--line)}
+
+  /* stat strip */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:12px 14px}
+  .stat .l{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted2)}
+  .stat .v{font-family:var(--mono);font-size:21px;margin-top:5px}
+  .stat .v.red{color:var(--rpc-red)}
+
+  /* sections */
+  section.block{margin-top:30px}
+  .h2{font-family:var(--display);text-transform:uppercase;font-weight:800;letter-spacing:.06em;font-size:22px;border-bottom:2px solid var(--rpc-red);display:inline-block;padding-bottom:5px;margin:0 0 4px}
+  .sub-note{color:var(--muted);font-size:12.5px;margin:6px 0 16px}
+  .tag-new{font-family:var(--mono);font-size:9px;color:var(--rpc-red);border:1px solid var(--rpc-red);border-radius:4px;padding:1px 5px;letter-spacing:.1em;vertical-align:middle;margin-left:8px}
+
+  /* checklist */
+  .checklist{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}
+  .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .tab{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;font-weight:700;font-size:13px;padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--muted);cursor:pointer}
+  .tab.active{border-color:var(--rpc-red);color:#fff;background:rgba(224,58,47,.12)}
+  .cl-top{display:flex;gap:24px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px}
+  .cl-prog{flex:1 1 320px;min-width:260px}
+  .cl-prog .row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:6px}
+  .bar{height:14px;border-radius:8px;background:var(--bg2);border:1px solid var(--line);overflow:hidden}
+  .bar > i{display:block;height:100%;background:linear-gradient(90deg,var(--green),#7fe3b3)}
+  .cl-cost{background:var(--card2);border:1px solid var(--line);border-radius:11px;padding:12px 16px;min-width:230px}
+  .cl-cost .l{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted2)}
+  .cl-cost .v{font-family:var(--mono);font-size:24px;color:var(--rpc-red);margin-top:4px}
+  .cl-cost .b{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:6px}
+  .paste{display:flex;gap:8px;margin:6px 0 18px;flex-wrap:wrap}
+  .paste input{flex:1 1 280px;background:var(--bg2);border:1px solid var(--line);border-radius:8px;color:var(--text);padding:9px 12px;font-family:var(--mono);font-size:12px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:14px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:13px;height:13px;border-radius:4px;display:inline-block;border:1px solid var(--line)}
+  .dot.g{background:var(--green);border-color:var(--green)}
+  .dot.w{background:#e9e9ef;border-color:#e9e9ef}
+  .dot.x{background:#26262f}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px}
+  .tile{background:var(--card2);border:1px solid var(--line);border-radius:10px;overflow:hidden;position:relative}
+  .tile .art{height:96px;background:linear-gradient(150deg,#2a1640,#3a2358);display:flex;align-items:flex-end;justify-content:flex-start;padding:8px}
+  .tile.missing .art{filter:grayscale(1) brightness(.5)}
+  .tile .tier{font-family:var(--mono);font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:rgba(0,0,0,.45)}
+  .tier.LEG{color:#f6cf6b}
+  .tier.RARE{color:#7fb0ff}
+  .tier.COMMON{color:#c9c9d4}
+  .tier.ULT{color:#ff7b6b}
+  .tile .meta{padding:8px 9px}
+  .tile .pl{font-family:var(--display);font-weight:700;text-transform:uppercase;font-size:13px;letter-spacing:.02em;line-height:1.05}
+  .tile .set{font-size:10.5px;color:var(--muted);margin-top:2px}
+  .tile .fmv{font-family:var(--mono);font-size:11px;margin-top:6px;color:var(--text)}
+  .tile .fmv.miss{color:var(--rpc-red)}
+  .check{position:absolute;top:7px;right:7px;width:20px;height:20px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;border:1px solid var(--line)}
+  .check.g{background:var(--green);color:#06311d;border-color:var(--green)}
+  .check.w{background:#e9e9ef;color:#1a1a22;border-color:#e9e9ef}
+  .check.x{background:#23232c;color:var(--muted2)}
+
+  /* roster */
+  .toggle{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-bottom:14px}
+  .toggle button{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;font-weight:700;font-size:12px;padding:8px 16px;background:var(--bg2);color:var(--muted);border:0;cursor:pointer}
+  .toggle button.active{background:var(--rpc-red);color:#fff}
+  .roster{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+  .pcard{display:flex;gap:11px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:10px 12px}
+  .ph{width:44px;height:44px;border-radius:50%;background:linear-gradient(150deg,#3a2358,#552583);flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-family:var(--display);font-weight:800;color:var(--lal-gold);font-size:15px}
+  .pcard .nm{font-family:var(--display);font-weight:700;text-transform:uppercase;font-size:14px;letter-spacing:.02em;line-height:1.05}
+  .pcard .ln{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:3px}
+  .pcard .ln b{color:var(--text)}
+  .inj{font-family:var(--mono);font-size:9px;padding:1px 5px;border-radius:4px;border:1px solid #b9822e;color:#e0a64a;margin-left:5px}
+
+  /* activity + squeeze tables */
+  .tbl{width:100%;border-collapse:collapse;font-size:13px}
+  .tbl th{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted2);text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  .tbl td{padding:9px 10px;border-bottom:1px solid #1f1f28}
+  .tbl td.num,.tbl th.num{font-family:var(--mono);text-align:right}
+  .tbl tr:hover td{background:var(--card)}
+  .pos{color:var(--green)} .neg{color:var(--rpc-red)}
+  .twocol{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .panel h3{font-family:var(--display);text-transform:uppercase;letter-spacing:.06em;font-size:15px;margin:0 0 10px;color:var(--muted)}
+  .filters{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+  .fchip{font-family:var(--mono);font-size:11px;padding:5px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted);cursor:pointer}
+  .fchip.on{border-color:var(--rpc-red);color:#fff;background:rgba(224,58,47,.12)}
+  .mock-banner{font-family:var(--mono);font-size:11px;color:var(--muted2);text-align:center;padding:14px;border:1px dashed var(--line);border-radius:10px;margin-top:30px}
+  @media(max-width:720px){.stats{grid-template-columns:repeat(2,1fr)}.twocol{grid-template-columns:1fr}.hero h1{font-size:34px}.topnav{display:none}}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">RIP PACKS <b>CITY</b></div>
+    <div class="topnav"><span>Insights</span><span>Sniper</span><span>Packs</span><span>Sets</span><span style="color:var(--rpc-red)">Teams</span></div>
+  </div>
+
+  <div class="wrap">
+    <div class="crumbs">Home <b>›</b> NBA Top Shot <b>›</b> Los Angeles Lakers</div>
+
+    <!-- HERO -->
+    <div class="hero">
+      <div class="hero-inner">
+        <div class="logo"><span>LAL</span></div>
+        <div>
+          <h1>Los Angeles Lakers</h1>
+          <div class="sub">
+            <span class="chip gold">NBA</span>
+            <span class="chip">LAL · Pacific</span>
+            <span class="chip live">● Plays tonight vs GSW · 7:30 PT</span>
+          </div>
+        </div>
+        <div class="follow"><button class="btn">★ Follow</button></div>
+      </div>
+    </div>
+
+    <!-- STAT STRIP -->
+    <div class="stats">
+      <div class="stat"><div class="l">Editions</div><div class="v">522</div></div>
+      <div class="stat"><div class="l">Players (all-time)</div><div class="v">73</div></div>
+      <div class="stat"><div class="l">Total Mint</div><div class="v">2,312,521</div></div>
+      <div class="stat"><div class="l">Aggregate FMV</div><div class="v red">$38,135</div></div>
+      <div class="stat"><div class="l">30d Sales</div><div class="v">1,599</div></div>
+      <div class="stat"><div class="l">30d Volume</div><div class="v">$18,788</div></div>
+      <div class="stat"><div class="l">Floor Total</div><div class="v">$39,333</div></div>
+      <div class="stat"><div class="l">Complete All-Time @ floor</div><div class="v red">$6,480</div></div>
+    </div>
+
+    <!-- TEAM CHECKLIST -->
+    <section class="block">
+      <div class="h2">Team Checklist<span class="tag-new">NEW</span></div>
+      <div class="sub-note">Every Lakers moment, owned vs missing — with the one thing Top Shot won't show you: what it costs to finish.</div>
+      <div class="checklist">
+        <div class="tabs">
+          <button class="tab active" data-scope="all">All-Time Team · 522</button>
+          <button class="tab" data-scope="contemp">Contemporary (S6–8) · 220</button>
+          <button class="tab" data-scope="s8">Series 2025-26 · 70</button>
+        </div>
+
+        <div class="paste">
+          <input value="0xbd94cade097e50ac" />
+          <button class="btn ghost">Track this wallet</button>
+        </div>
+
+        <div class="cl-top">
+          <div class="cl-prog">
+            <div class="row"><span>Owned <b id="cl-owned" style="color:#fff">318</b> / <span id="cl-total">522</span></span><span id="cl-pct">61% complete</span></div>
+            <div class="bar"><i id="cl-bar" style="width:61%"></i></div>
+            <div class="row" style="margin-top:7px"><span id="cl-break">Common 92/118 · Rare 141/214 · Legendary 78/176 · Ultimate 7/14</span></div>
+          </div>
+          <div class="cl-cost">
+            <div class="l">Cost to complete @ floor</div>
+            <div class="v" id="cl-cost">$6,480</div>
+            <div class="b" id="cl-costnote">204 missing · 18% have stale pricing</div>
+          </div>
+        </div>
+
+        <div class="legend">
+          <span><i class="dot g"></i> Owned + locked</span>
+          <span><i class="dot w"></i> Owned</span>
+          <span><i class="dot x"></i> Missing</span>
+          <span style="color:var(--muted2)">— matches Top Shot's green / white / gray</span>
+        </div>
+
+        <div class="grid">
+          <div class="tile"><div class="art"><span class="tier LEG">Legendary</span></div><div class="check g">✓</div><div class="meta"><div class="pl">LeBron James</div><div class="set">2020 NBA Finals</div><div class="fmv">$4,049</div></div></div>
+          <div class="tile"><div class="art"><span class="tier ULT">Ultimate</span></div><div class="check w">✓</div><div class="meta"><div class="pl">Wilt Chamberlain</div><div class="set">Heroes of the Game</div><div class="fmv">$2,149</div></div></div>
+          <div class="tile missing"><div class="art"><span class="tier LEG">Legendary</span></div><div class="check x">+</div><div class="meta"><div class="pl">Magic Johnson</div><div class="set">The Anthology</div><div class="fmv miss">$2,142 to add</div></div></div>
+          <div class="tile"><div class="art"><span class="tier LEG">Legendary</span></div><div class="check g">✓</div><div class="meta"><div class="pl">LeBron James</div><div class="set">Deck the Hoops</div><div class="fmv">$3,240</div></div></div>
+          <div class="tile missing"><div class="art"><span class="tier LEG">Legendary</span></div><div class="check x">+</div><div class="meta"><div class="pl">Rajon Rondo</div><div class="set">2020 NBA Finals</div><div class="fmv miss">$1,170 to add</div></div></div>
+          <div class="tile"><div class="art"><span class="tier RARE">Rare</span></div><div class="check w">✓</div><div class="meta"><div class="pl">Austin Reaves</div><div class="set">Base Set</div><div class="fmv">$326</div></div></div>
+          <div class="tile"><div class="art"><span class="tier LEG">Legendary</span></div><div class="check g">✓</div><div class="meta"><div class="pl">Luka Dončić</div><div class="set">Holo Icon</div><div class="fmv">$372</div></div></div>
+          <div class="tile missing"><div class="art"><span class="tier RARE">Rare</span></div><div class="check x">+</div><div class="meta"><div class="pl">Anthony Davis</div><div class="set">Western Conf Finals</div><div class="fmv miss">$105 to add</div></div></div>
+          <div class="tile"><div class="art"><span class="tier COMMON">Common</span></div><div class="check w">✓</div><div class="meta"><div class="pl">Rui Hachimura</div><div class="set">Base Set</div><div class="fmv">$8.40</div></div></div>
+          <div class="tile missing"><div class="art"><span class="tier COMMON">Common</span></div><div class="check x">+</div><div class="meta"><div class="pl">Dalton Knecht</div><div class="set">Rookie Debut</div><div class="fmv miss">$12 to add</div></div></div>
+          <div class="tile"><div class="art"><span class="tier RARE">Rare</span></div><div class="check g">✓</div><div class="meta"><div class="pl">LeBron James</div><div class="set">Throwdowns</div><div class="fmv">$255</div></div></div>
+          <div class="tile missing"><div class="art"><span class="tier COMMON">Common</span></div><div class="check x">+</div><div class="meta"><div class="pl">Bronny James</div><div class="set">Rookie Debut</div><div class="fmv miss">$95 to add</div></div></div>
+        </div>
+        <div style="text-align:center;margin-top:14px"><button class="btn ghost">Show all 204 missing →</button></div>
+      </div>
+    </section>
+
+    <!-- CURRENT ROSTER -->
+    <section class="block">
+      <div class="h2">Roster<span class="tag-new">CURRENT vs ALL-TIME</span></div>
+      <div class="sub-note">Defaults to the active 2025-26 roster and their moments — toggle to the all-time list.</div>
+      <div class="toggle"><button class="active">Current</button><button>All-Time (73)</button></div>
+      <div class="roster">
+        <div class="pcard"><div class="ph">23</div><div><div class="nm">LeBron James</div><div class="ln"><b>122</b> editions · <b>$19,669</b></div></div></div>
+        <div class="pcard"><div class="ph">77</div><div><div class="nm">Luka Dončić</div><div class="ln"><b>24</b> editions · <b>$795</b></div></div></div>
+        <div class="pcard"><div class="ph">15</div><div><div class="nm">Austin Reaves <span class="inj">GTD</span></div><div class="ln"><b>29</b> editions · <b>$326</b></div></div></div>
+        <div class="pcard"><div class="ph">28</div><div><div class="nm">Rui Hachimura</div><div class="ln"><b>9</b> editions · <b>$13.40</b></div></div></div>
+        <div class="pcard"><div class="ph">11</div><div><div class="nm">Jaxson Hayes</div><div class="ln"><b>7</b> editions · <b>$187</b></div></div></div>
+        <div class="pcard"><div class="ph">9</div><div><div class="nm">Bronny James</div><div class="ln"><b>6</b> editions · <b>$95.15</b></div></div></div>
+        <div class="pcard"><div class="ph">4</div><div><div class="nm">Dalton Knecht</div><div class="ln"><b>6</b> editions · <b>$47.43</b></div></div></div>
+        <div class="pcard"><div class="ph">5</div><div><div class="nm">Jarred Vanderbilt</div><div class="ln"><b>5</b> editions · <b>$2.73</b></div></div></div>
+      </div>
+    </section>
+
+    <!-- ALL MOMENTS -->
+    <section class="block">
+      <div class="h2">All Moments</div>
+      <div class="sub-note">The full Top Editions grid, now filterable.</div>
+      <div class="filters">
+        <span class="fchip on">All</span><span class="fchip">Ultimate</span><span class="fchip">Legendary</span><span class="fchip">Rare</span><span class="fchip">Common</span>
+        <span class="fchip">🔥 Squeeze only</span><span class="fchip">🏅 Rookie</span><span class="fchip">🏆 Championship</span>
+      </div>
+      <div class="grid">
+        <div class="tile"><div class="art"><span class="tier LEG">Legendary</span></div><div class="meta"><div class="pl">LeBron James</div><div class="set">2020 NBA Finals · S5</div><div class="fmv">$4,049 · mint 79</div></div></div>
+        <div class="tile"><div class="art"><span class="tier ULT">Ultimate</span></div><div class="meta"><div class="pl">Wilt Chamberlain</div><div class="set">Heroes of the Game · S7</div><div class="fmv">$2,149 · mint 10</div></div></div>
+        <div class="tile"><div class="art"><span class="tier LEG">Legendary</span></div><div class="meta"><div class="pl">Magic Johnson</div><div class="set">The Anthology · S5</div><div class="fmv">$2,142 · mint 32</div></div></div>
+        <div class="tile"><div class="art"><span class="tier LEG">Legendary</span></div><div class="meta"><div class="pl">LeBron James</div><div class="set">Holo Icon · S8</div><div class="fmv">$527 · mint 45</div></div></div>
+        <div class="tile"><div class="art"><span class="tier RARE">Rare</span></div><div class="meta"><div class="pl">Luka Dončić</div><div class="set">Holo Icon · S7</div><div class="fmv">$273 · mint 50</div></div></div>
+      </div>
+    </section>
+
+    <!-- ACTIVITY + SQUEEZE -->
+    <section class="block">
+      <div class="twocol">
+        <div class="panel">
+          <h3>Recent Market Activity</h3>
+          <table class="tbl">
+            <tr><th>Moment</th><th class="num">Serial</th><th class="num">Price</th><th class="num">When</th></tr>
+            <tr><td>LeBron · Throwdowns</td><td class="num">#113</td><td class="num">$255</td><td class="num">4m</td></tr>
+            <tr><td>Reaves · Base Set</td><td class="num">#1,204</td><td class="num">$31</td><td class="num">22m</td></tr>
+            <tr><td>Luka · Holo Icon</td><td class="num">#18</td><td class="num">$369</td><td class="num">1h</td></tr>
+            <tr><td>Knecht · Rookie Debut</td><td class="num">#3,901</td><td class="num">$12</td><td class="num">2h</td></tr>
+            <tr><td>AD · 2020 Finals</td><td class="num">#41</td><td class="num">$431</td><td class="num">3h</td></tr>
+          </table>
+        </div>
+        <div class="panel">
+          <h3>Squeeze Board — Lakers</h3>
+          <table class="tbl">
+            <tr><th>Edition</th><th class="num">Squeeze</th><th class="num">Buyable</th></tr>
+            <tr><td>LeBron · 2020 Finals (LE)</td><td class="num pos">156%</td><td class="num">4 / 79</td></tr>
+            <tr><td>Magic · Anthology</td><td class="num pos">88%</td><td class="num">6 / 32</td></tr>
+            <tr><td>Wilt · Heroes</td><td class="num pos">71%</td><td class="num">2 / 10</td></tr>
+            <tr><td>AD · West Finals</td><td class="num">54%</td><td class="num">31 / 270</td></tr>
+            <tr><td>Reaves · Holo</td><td class="num">38%</td><td class="num">12 / 50</td></tr>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- SETS -->
+    <section class="block">
+      <div class="h2">Sets featuring the Lakers<span class="tag-new">NEW</span></div>
+      <div class="sub-note">Cross-referenced from team editions — jump to any set and see completion.</div>
+      <table class="tbl">
+        <tr><th>Set</th><th class="num">Lakers editions</th><th class="num">You own</th><th class="num">Cheapest entry</th></tr>
+        <tr><td>2020 NBA Finals</td><td class="num">9</td><td class="num">6 / 9</td><td class="num">$150</td></tr>
+        <tr><td>Holo Icon</td><td class="num">7</td><td class="num">4 / 7</td><td class="num">$321</td></tr>
+        <tr><td>Base Set (2025-26)</td><td class="num">22</td><td class="num">18 / 22</td><td class="num">$1.83</td></tr>
+        <tr><td>The Anthology: Magic Johnson</td><td class="num">5</td><td class="num">2 / 5</td><td class="num">$358</td></tr>
+      </table>
+    </section>
+
+    <div class="mock-banner">STATIC MOCKUP · RPC team-hub proposal · real figures for Los Angeles Lakers pulled 2026-05-31 (ownership states are illustrative). Tabs & toggles are interactive.</div>
+  </div>
+
+<script>
+  // Checklist scope switching
+  var data = {
+    all:    {total:522, owned:318, pct:61, cost:'$6,480', note:'204 missing · 18% have stale pricing', brk:'Common 92/118 · Rare 141/214 · Legendary 78/176 · Ultimate 7/14'},
+    contemp:{total:220, owned:173, pct:79, cost:'$1,920', note:'47 missing · 9% have stale pricing',  brk:'Common 64/74 · Rare 71/92 · Legendary 36/50 · Ultimate 2/4'},
+    s8:     {total:70,  owned:58,  pct:83, cost:'$410',   note:'12 missing · 4% have stale pricing',  brk:'Common 31/35 · Rare 19/24 · Legendary 8/10 · Ultimate 0/1'}
+  };
+  document.querySelectorAll('.tab').forEach(function(t){
+    t.addEventListener('click', function(){
+      document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('active')});
+      t.classList.add('active');
+      var d = data[t.dataset.scope];
+      document.getElementById('cl-total').textContent = d.total;
+      document.getElementById('cl-owned').textContent = d.owned;
+      document.getElementById('cl-pct').textContent = d.pct + '% complete';
+      document.getElementById('cl-bar').style.width = d.pct + '%';
+      document.getElementById('cl-cost').textContent = d.cost;
+      document.getElementById('cl-costnote').textContent = d.note;
+      document.getElementById('cl-break').textContent = d.brk;
+    });
+  });
+  // Roster toggle
+  document.querySelectorAll('.toggle button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('.toggle button').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+    });
+  });
+  // Filter chips
+  document.querySelectorAll('.fchip').forEach(function(c){
+    c.addEventListener('click', function(){ c.classList.toggle('on'); });
+  });
+</script>
+</body>
+</html>

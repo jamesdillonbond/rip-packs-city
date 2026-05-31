@@ -2,6 +2,11 @@
 
 // components/entity/PlayersGridPaginated.tsx
 // Phase 1E. Reusable paginated player tile grid used by Team pages.
+// Team Hub Phase 1 (C3): adds a Current / All-Time roster toggle driven by
+// players.is_active. The toggle only appears when at least one loaded player
+// carries is_active === true — otherwise (Pinnacle franchises, or collections
+// where the active flag isn't populated) it stays hidden and every player is
+// shown, so the roster never renders empty.
 
 import { useState } from "react"
 import Link from "next/link"
@@ -17,9 +22,11 @@ export interface PlayerTile {
   total_circulation: number | null
   fmv_total_usd: number | null
   portrait_thumbnail: string | null
+  is_active?: boolean | null
 }
 
 type SortKey = "fmv_desc" | "editions_desc" | "alpha"
+type RosterView = "current" | "all"
 
 interface Props {
   collectionUrlSlug: string
@@ -43,8 +50,16 @@ export default function PlayersGridPaginated({ collectionUrlSlug, fetchUrl, init
   const [loading, setLoading] = useState(false)
   const [exhausted, setExhausted] = useState(initial.length < pageSize)
   const [sortKey, setSortKey] = useState<SortKey>("fmv_desc")
+  const [view, setView] = useState<RosterView>("current")
+
+  // Only offer the Current/All-Time toggle when we actually have active-roster
+  // data among the loaded rows; otherwise defaulting to "current" would hide
+  // everyone (e.g. Pinnacle, where is_active is always null).
+  const hasActiveData = rows.some(r => r.is_active === true)
+  const currentActive = hasActiveData && view === "current"
 
   const sorted = [...rows].sort((a, b) => compare(a, b, sortKey))
+  const display = currentActive ? sorted.filter(r => r.is_active === true) : sorted
 
   async function loadMore() {
     if (loading || exhausted) return
@@ -72,7 +87,28 @@ export default function PlayersGridPaginated({ collectionUrlSlug, fetchUrl, init
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+        {hasActiveData && (
+          <div style={{ display: "flex", gap: 6, marginRight: 4 }}>
+            {([
+              { v: "current", l: "Current" },
+              { v: "all",     l: "All-Time" },
+            ] as Array<{ v: RosterView; l: string }>).map(({ v, l }) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                className="rpc-chip"
+                style={{
+                  background: view === v ? "var(--rpc-red-bg)" : undefined,
+                  borderColor: view === v ? "var(--rpc-red-border)" : undefined,
+                  color: view === v ? "var(--rpc-red)" : undefined,
+                  cursor: "pointer",
+                }}
+              >{l}</button>
+            ))}
+          </div>
+        )}
         {([
           { k: "fmv_desc",      l: "FMV ↓" },
           { k: "editions_desc", l: "Editions ↓" },
@@ -92,8 +128,13 @@ export default function PlayersGridPaginated({ collectionUrlSlug, fetchUrl, init
           >{l}</button>
         ))}
       </div>
+      {currentActive && (
+        <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", marginBottom: 10, letterSpacing: "0.04em" }}>
+          Current = active per our roster data; some players may be unflagged.
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
-        {sorted.map(p => (
+        {display.map(p => (
           <Link
             key={p.player_slug}
             href={`/${collectionUrlSlug}/player/${encodeURIComponent(p.player_slug)}`}

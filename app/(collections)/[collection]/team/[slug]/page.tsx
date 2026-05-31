@@ -16,6 +16,7 @@ import PlayersGridPaginated, { type PlayerTile } from "@/components/entity/Playe
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import HeroMontage from "@/components/entity/HeroMontage"
+import TeamHero from "@/components/entity/TeamHero"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -34,6 +35,14 @@ interface TeamDetail {
   total_circulation: number | null
   fmv_total_usd: number | null
   floor_total_usd: number | null
+  // Team Hub Phase 1 (D1): branding + 30d activity. Null on Pinnacle / unbranded teams.
+  primary_color?: string | null
+  secondary_color?: string | null
+  abbreviation?: string | null
+  team_external_id?: string | null
+  league?: string | null
+  sales_30d?: number | null
+  volume_30d_usd?: number | string | null
 }
 
 const PAGE_SIZE = 100
@@ -109,23 +118,27 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
           { name: detail.team_name },
         ]}
       />
-      {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <section className="rpc-card" style={{ padding: 18, display: "flex", gap: 18, alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap" }}>
-        <div style={{ minWidth: 0, flex: "1 1 auto" }}>
-        <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 8 }}>
-          {noun}
+      {/* ── Hero (branded when in teams_master, else plain text) ─────────────── */}
+      <TeamHero
+        teamName={detail.team_name}
+        noun={noun}
+        abbreviation={detail.abbreviation}
+        primaryColor={detail.primary_color}
+        secondaryColor={detail.secondary_color}
+        leagueLabel={detail.league}
+        externalId={detail.team_external_id}
+        isFranchise={isFranchise}
+      />
+      {detail.team_name_variants && detail.team_name_variants.length > 1 && (
+        <div className="rpc-mono" style={{ marginTop: 8, fontSize: 11, color: "var(--rpc-text-muted)" }}>
+          Variants merged: {detail.team_name_variants.join(" · ")}
         </div>
-        <h1 style={{ margin: 0, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 32, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", lineHeight: 1.05, textTransform: "uppercase" }}>
-          {detail.team_name}
-        </h1>
-        {detail.team_name_variants && detail.team_name_variants.length > 1 && (
-          <div className="rpc-mono" style={{ marginTop: 6, fontSize: 11, color: "var(--rpc-text-muted)" }}>
-            Variants merged: {detail.team_name_variants.join(" · ")}
-          </div>
-        )}
+      )}
+      {topEditions.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <HeroMontage items={topEditions} />
         </div>
-        <HeroMontage items={topEditions} />
-      </section>
+      )}
 
       {/* ── Stat strip ───────────────────────────────────────────────────── */}
       <section style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
@@ -134,6 +147,8 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
         <StatCell label="Total Mint" value={fmtCount(detail.total_circulation)} />
         <StatCell label="FMV Total" value={fmtUsd(detail.fmv_total_usd)} />
         <StatCell label="Floor Total" value={fmtUsd(detail.floor_total_usd)} />
+        <StatCell label="30d Sales" value={fmtCount(detail.sales_30d)} />
+        <StatCell label="30d Volume" value={fmtUsd(detail.volume_30d_usd == null ? null : Number(detail.volume_30d_usd))} />
       </section>
 
       {/* ── Top Editions ─────────────────────────────────────────────────── */}
