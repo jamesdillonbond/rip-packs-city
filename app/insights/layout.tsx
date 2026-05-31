@@ -6,6 +6,7 @@
 
 import type { Metadata } from "next"
 import InsightsEmailCapture from "@/components/insights/InsightsEmailCapture"
+import FunnelTracker from "@/components/FunnelTracker"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -44,6 +45,10 @@ export const metadata: Metadata = {
 export default function InsightsLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
+      {/* perPath: this single instance (the layout persists across /insights/*
+          navigations) re-fires insights_view for the hub AND each surface as
+          the pathname changes. */}
+      <FunnelTracker eventType="insights_view" perPath />
       {children}
       <InsightsEmailCapture />
     </>

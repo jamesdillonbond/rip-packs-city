@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { trackFunnelEvent } from "@/lib/track-funnel";
 import RpcLogo from "@/components/RpcLogo";
 import SiteFooter from "@/components/SiteFooter";
 import MobileNav from "@/components/MobileNav";
@@ -30,6 +31,10 @@ function WalletSearch({ size = "lg" }: { size?: "lg" | "md" }) {
     async (override?: string) => {
       const raw = (override ?? value).trim();
       if (!raw || pending) return;
+      // Funnel: a visitor used the ANALYZE box. Fire-and-forget; the raw input
+      // doubles as wallet_address (clamped server-side) so we can reconcile
+      // pastes against the resulting share_view downstream.
+      trackFunnelEvent({ eventType: "wallet_paste", walletAddress: raw, surface: "home" });
       setError(null);
       if (FLOW_ADDRESS.test(raw)) {
         router.push(`/share/${encodeURIComponent(raw)}`);
@@ -288,6 +293,11 @@ const TRUST: string[] = [
 
 export default function HomePageMarketing() {
   const collections = publishedCollections();
+
+  // Funnel: log the anon arrival once per mount. Fire-and-forget.
+  useEffect(() => {
+    trackFunnelEvent({ eventType: "home_view", surface: "home" });
+  }, []);
 
   const webApplicationJsonLd = {
     ...organizationJsonLd,

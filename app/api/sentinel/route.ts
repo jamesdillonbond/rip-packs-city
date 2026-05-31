@@ -179,6 +179,33 @@ export async function POST(req: NextRequest) {
     checks.push({ name: "TS Edition Writer Leak (48h)", status: "warn", detail: `Exception: ${e.message}` });
   }
 
+  // Pipeline SILENCE tripwire — absence-of-runs, not failures. The daytime
+  // monitor only scans pipeline_runs for ok=false, so a pipeline whose external
+  // (cron-job.org) trigger stops firing goes undetected (e.g. topshot-sales-
+  // indexer silent 01:32-08:02 UTC on 2026-05-31). detect_stalled_pipelines()
+  // returns active pipeline_cadence_watchlist entries past their
+  // max_silent_minutes as JSON rows {pipeline, severity, silent_minutes,
+  // max_silent_minutes, last_run}. High-severity stalls page (critical).
+  try {
+    const { data, error } = await supabase.rpc("detect_stalled_pipelines");
+    if (error) {
+      checks.push({ name: "Pipeline Silence", status: "warn", detail: `RPC error: ${error.message}` });
+    } else {
+      const stalled: any[] = Array.isArray(data) ? data : [];
+      const high = stalled.filter((s) => s.severity === "high");
+      const status = high.length > 0 ? "critical" : stalled.length > 0 ? "warn" : "ok";
+      const detail =
+        stalled.length === 0
+          ? "All watchlisted pipelines running within their max-silent window"
+          : stalled
+              .map((s) => `${s.pipeline} silent ${s.silent_minutes}m (>${s.max_silent_minutes}m, ${s.severity})`)
+              .join("; ");
+      checks.push({ name: "Pipeline Silence", status, detail, value: stalled.length });
+    }
+  } catch (e: any) {
+    checks.push({ name: "Pipeline Silence", status: "warn", detail: `Exception: ${e.message}` });
+  }
+
   try {
     const { count } = await supabase.from("sales").select("*", { count: "exact", head: true });
     checks.push({ name: "Total Sales", status: "ok", detail: `${(count || 0).toLocaleString()} total sales in database`, value: count || 0 });

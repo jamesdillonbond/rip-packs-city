@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import ShareButton from "./ShareButton"
+import FunnelTracker from "@/components/FunnelTracker"
 
 interface SnapshotData {
   wallet: string
@@ -102,6 +103,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
 
   return (
     <div style={{ minHeight: "100vh", background: "#0A0A0A", color: "#fff", fontFamily: "'Barlow Condensed', sans-serif", padding: "40px 24px" }}>
+      <FunnelTracker eventType="share_view" walletAddress={wallet} surface="share" />
       <div style={{ maxWidth: 900, margin: "0 auto" }}>
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
