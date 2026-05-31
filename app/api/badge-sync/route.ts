@@ -7,6 +7,12 @@ import { supabaseAdmin } from "@/lib/supabase"
 // in parallel, then Rookie Mint as a setplay sweep) and upsert to badge_editions.
 // GET:  read-only — badge_editions count grouped by collection_id.
 
+// Full badge sweeps walk thousands of editions per badge (TS Debut / Rookie
+// Year span all of TS history), so the route needs headroom past Vercel's
+// default function timeout. 300s is well under the Pro 800s hard cap.
+export const maxDuration = 300
+export const dynamic = "force-dynamic"
+
 const COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
 const BADGE = {
@@ -20,9 +26,13 @@ const BADGE = {
 } as const
 
 const PAGE_LIMIT = 100
-const MAX_PAGES = 20
+// Headroom, not a forced walk: sweep() breaks naturally on null/repeat cursor
+// or a short page, so each badge stops at its true end. TS Debut / Rookie Year
+// span the full history (thousands of editions) and were truncated at the old
+// 20-page (2,000-edition) cap, starving older Series 1-4 classics of badge rows.
+const MAX_PAGES = 80
 const BATCH_SIZE = 50
-const PAGE_DELAY_MS = 400
+const PAGE_DELAY_MS = 250
 const BATCH_DELAY_MS = 150
 
 const QUERY = `
