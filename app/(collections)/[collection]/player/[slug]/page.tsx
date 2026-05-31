@@ -95,7 +95,8 @@ async function fetchTopSales(collectionId: string, slug: string, limit: number):
 // ── Metadata ────────────────────────────────────────────────────────────────
 
 export async function generateMetadata(props: { params: Promise<{ collection: string; slug: string }> }): Promise<Metadata> {
-  const { collection, slug } = await props.params
+  const { collection, slug: rawSlug } = await props.params
+  const slug = decodeURIComponent(rawSlug)
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) return {}
   const detail = await fetchDetail(coll.id, slug)
@@ -106,7 +107,8 @@ export async function generateMetadata(props: { params: Promise<{ collection: st
 // ── Page ────────────────────────────────────────────────────────────────────
 
 export default async function PlayerPage(props: { params: Promise<{ collection: string; slug: string }> }) {
-  const { collection, slug } = await props.params
+  const { collection, slug: rawSlug } = await props.params
+  const slug = decodeURIComponent(rawSlug)
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) notFound()
 
