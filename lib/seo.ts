@@ -378,7 +378,10 @@ export function editionPageMetadata(payload: Payload, collectionUrlSlug: string)
   ].filter(Boolean) as string[]
   const description = descParts.join(" ")
   const canonical = `${BASE_URL}/${collectionUrlSlug}/edition/${encodeURIComponent(routeSlug)}`
-  return buildMeta({ title, description, canonical, image: thumbnail })
+  const og = routeSlug
+    ? `${BASE_URL}/api/og/edition?collection=${collectionUrlSlug}&slug=${encodeURIComponent(routeSlug)}`
+    : thumbnail
+  return buildMeta({ title, description, canonical, image: og })
 }
 
 /**
@@ -406,7 +409,8 @@ export function setPageMetadata(
   ].filter(Boolean) as string[]
   const description = descParts.join(" ")
   const canonical = `${BASE_URL}/${collectionUrlSlug}/set/${encodeURIComponent(setSlug)}`
-  return buildMeta({ title, description, canonical })
+  const og = setSlug ? `${BASE_URL}/api/og/set?collection=${collectionUrlSlug}&slug=${encodeURIComponent(setSlug)}` : null
+  return buildMeta({ title, description, canonical, image: og })
 }
 
 /**
@@ -436,7 +440,10 @@ export function playerPageMetadata(
   ].filter(Boolean) as string[]
   const description = descParts.join(" ")
   const canonical = `${BASE_URL}/${collectionUrlSlug}/player/${encodeURIComponent(playerSlug)}`
-  return buildMeta({ title, description, canonical, image: headshot })
+  const og = playerSlug
+    ? `${BASE_URL}/api/og/player?collection=${collectionUrlSlug}&slug=${encodeURIComponent(playerSlug)}`
+    : headshot
+  return buildMeta({ title, description, canonical, image: og })
 }
 
 /**
@@ -464,7 +471,8 @@ export function teamPageMetadata(
   ].filter(Boolean) as string[]
   const description = descParts.join(" ")
   const canonical = `${BASE_URL}/${collectionUrlSlug}/team/${encodeURIComponent(teamSlug)}`
-  return buildMeta({ title, description, canonical })
+  const og = teamSlug ? `${BASE_URL}/api/og/team?collection=${collectionUrlSlug}&slug=${encodeURIComponent(teamSlug)}` : null
+  return buildMeta({ title, description, canonical, image: og })
 }
 
 /**
@@ -496,7 +504,8 @@ export function seriesPageMetadata(
   ].filter(Boolean) as string[]
   const description = descParts.join(" ")
   const canonical = `${BASE_URL}/${collectionUrlSlug}/series/${encodeURIComponent(seriesSlug)}`
-  return buildMeta({ title, description, canonical })
+  const og = seriesSlug ? `${BASE_URL}/api/og/series?collection=${collectionUrlSlug}&slug=${encodeURIComponent(seriesSlug)}` : null
+  return buildMeta({ title, description, canonical, image: og })
 }
 
 // ── Phase 2B: Entity JSON-LD structured data ─────────────────────────────────

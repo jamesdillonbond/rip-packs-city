@@ -5,7 +5,7 @@
 // and Series pages. Each tile links to /[collection]/edition/[route_slug].
 // "Load more" calls the supplied endpoint with offset.
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { ConfidencePill, EM_DASH, TierBadge, fmtCount, fmtUsd } from "./_shared"
 
@@ -22,6 +22,10 @@ export interface EditionTile {
   series_num?: number | null
   circulation_count: number | null
   thumbnail_url: string | null
+  // Phase 2 (hover-video): moment clip. Returned by the entity edition RPCs
+  // for the editions table (Top Shot has video; All Day video_url is null
+  // today, so hover-video is effectively TS-only). undefined for Pinnacle.
+  video_url?: string | null
   team_name?: string | null
   fmv_usd: number | null
   floor_usd?: number | null
@@ -65,6 +69,10 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
   const [sortKey, setSortKey] = useState<SortKey>("fmv_desc")
 
   const sorted = showSort ? [...rows].sort((a, b) => compare(a, b, sortKey)) : rows
+
+  // Hover-video only for collections that actually carry moment clips. All Day
+  // video_url is null in our data today, so this is effectively Top Shot.
+  const videoEnabled = collectionUrlSlug === "nba-top-shot" || collectionUrlSlug === "nfl-all-day"
 
   async function loadMore() {
     if (loading || exhausted) return
@@ -123,39 +131,13 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
             className="rpc-card"
             style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block" }}
           >
-            {/*
-              minHeight is the iOS Safari ≤ 14 + Chrome ≤ 87 fallback for the
-              tile's aspect-ratio square. Without it, browsers that don't
-              implement `aspect-ratio` collapse the wrapper to 0 height when
-              the column is narrow, which is why thumbnails would silently
-              render at 0×0 in mobile breakpoints. Explicit width/height on
-              <img> + eager loading for the first row also help.
-            */}
-            <div
-              style={{
-                aspectRatio: "1 / 1",
-                minHeight: 160,
-                background: "rgba(0,0,0,0.35)",
-                borderRadius: 4,
-                overflow: "hidden",
-                marginBottom: 8,
-              }}
-            >
-              {e.thumbnail_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={e.thumbnail_url}
-                  alt={e.player_name ?? e.name ?? "Edition"}
-                  width={220}
-                  height={220}
-                  loading={idx < 12 ? "eager" : "lazy"}
-                  decoding={idx < 12 ? "sync" : "async"}
-                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                />
-              ) : (
-                <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", fontSize: 10 }}>No image</div>
-              )}
-            </div>
+            <TileMedia
+              thumbnailUrl={e.thumbnail_url}
+              videoUrl={e.video_url ?? null}
+              alt={e.player_name ?? e.name ?? "Edition"}
+              eager={idx < 12}
+              videoEnabled={videoEnabled}
+            />
             <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2, marginBottom: 4 }}>
               {e.player_name ?? e.name ?? "Edition"}
             </div>
@@ -208,6 +190,86 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
             {loading ? "Loading…" : `Load ${pageSize} more`}
           </button>
         </div>
+      )}
+    </div>
+  )
+}
+
+// prefers-reduced-motion guard — SSR-safe (defaults to false until mounted).
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false)
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)")
+    setReduced(mq.matches)
+    const onChange = () => setReduced(mq.matches)
+    mq.addEventListener?.("change", onChange)
+    return () => mq.removeEventListener?.("change", onChange)
+  }, [])
+  return reduced
+}
+
+// Tile media: static thumbnail at rest; on hover, mount a muted/looping clip
+// over it (poster = thumbnail) like nbatopshot.com. The <video> is mounted
+// only on first hover so large grids stay cheap, and never for reduced-motion
+// users or collections without video. Preserves the iOS/Chrome aspect-ratio
+// minHeight fallback the static <img> relied on.
+function TileMedia({
+  thumbnailUrl,
+  videoUrl,
+  alt,
+  eager,
+  videoEnabled,
+}: {
+  thumbnailUrl: string | null
+  videoUrl: string | null
+  alt: string
+  eager: boolean
+  videoEnabled: boolean
+}) {
+  const reduced = usePrefersReducedMotion()
+  const [hover, setHover] = useState(false)
+  const canVideo = videoEnabled && !!videoUrl && !reduced
+
+  return (
+    <div
+      onMouseEnter={canVideo ? () => setHover(true) : undefined}
+      onMouseLeave={canVideo ? () => setHover(false) : undefined}
+      style={{
+        position: "relative",
+        aspectRatio: "1 / 1",
+        minHeight: 160,
+        background: "rgba(0,0,0,0.35)",
+        borderRadius: 4,
+        overflow: "hidden",
+        marginBottom: 8,
+      }}
+    >
+      {thumbnailUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={thumbnailUrl}
+          alt={alt}
+          width={220}
+          height={220}
+          loading={eager ? "eager" : "lazy"}
+          decoding={eager ? "sync" : "async"}
+          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+        />
+      ) : (
+        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", fontSize: 10 }}>No image</div>
+      )}
+      {canVideo && hover && (
+        <video
+          src={videoUrl as string}
+          poster={thumbnailUrl ?? undefined}
+          muted
+          loop
+          autoPlay
+          playsInline
+          preload="none"
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+        />
       )}
     </div>
   )
