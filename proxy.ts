@@ -185,6 +185,19 @@ function isPublicPath(pathname: string, method: string): boolean {
   if (pathname === "/api/og" || pathname.startsWith("/api/og/")) return true
   // /api/health — uptime/smoke probes hit this anonymously
   if (pathname === "/api/health") return true
+  // /api/collection-snapshot — GET-only, wallet-keyed read backing the public
+  // /share/<wallet> card (Total FMV + top moments). The /share server
+  // component fetches this server-side WITHOUT a user cookie, so without this
+  // bypass it 307→/login and every share card renders the empty "not found"
+  // state — defeating the wallet-paste funnel that lands anon here. Read-only,
+  // service-role-backed (wallet_moments_cache + fmv_snapshots), no write
+  // handler exists, no user-private data beyond the public collection snapshot.
+  if (
+    pathname === "/api/collection-snapshot" &&
+    (method === "GET" || method === "HEAD")
+  ) {
+    return true
+  }
   // /api/teams — league reference data, served to anon visitors and the
   // CDN-cached server-component fetch from /profile/[username].
   if (pathname === "/api/teams") return true
