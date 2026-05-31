@@ -58,7 +58,7 @@ const QUERY = `
                 tier
                 parallelID
                 parallelName
-                set { id flowName flowSeriesNumber }
+                set { id flowId flowName flowSeriesNumber }
                 play {
                   id flowID
                   stats {
@@ -101,9 +101,9 @@ type RawEdition = {
   tier: string | null
   parallelID: number | null
   parallelName: string | null
-  set: { id: string; flowName: string; flowSeriesNumber: number | null } | null
+  set: { id: string; flowId: string | number | null; flowName: string; flowSeriesNumber: number | null } | null
   play: {
-    id: string; flowID: string | null
+    id: string; flowID: string | number | null
     stats: {
       playerName: string | null; firstName: string | null; lastName: string | null
       teamAtMoment: string | null; teamAtMomentNbaId: string | null
@@ -192,7 +192,74 @@ function computeBadgeScore(
   return score
 }
 
-function normalizeEdition(e: RawEdition): BadgeRow {
+function intLike(v: string | number | null | undefined): string | null {
+  if (v === null || v === undefined) return null
+  const s = String(v).trim()
+  return /^\d+$/.test(s) ? s : null
+}
+
+// Canonical edition key = the on-chain integer pair "setIDonchain:playIDonchain"
+// (== editions.external_id, what get_edition_badges_unified joins on).
+// searchMarketplaceEditions returns set.id / play.id as GQL UUIDs for most
+// editions, so the old `${set.id}:${play.id}` key produced UUID-pair keys that
+// NEVER joined a canonical integer edition — badges invisible. Prefer the
+// integer fields (set.flowId / play.flowID), fall back to an already-integer id
+// (some editions return integers there), then to the sets-table
+// UUID -> set_id_onchain map. A row that can't yield an integer pair is SKIPPED
+// (a UUID-keyed badge row is useless — it can never join).
+function editionKey(e: RawEdition, setMap: Map<string, string>): string | null {
+  const playStr = intLike(e.play?.flowID) ?? intLike(e.play?.id)
+  let setStr = intLike(e.set?.flowId) ?? intLike(e.set?.id)
+  if (!setStr && e.set?.id) {
+    const mapped = setMap.get(e.set.id)
+    if (mapped) setStr = mapped
+  }
+  if (!setStr || !playStr) return null
+  return `${setStr}:${playStr}`
+}
+
+// Sets table is the authoritative UUID -> set_id_onchain bridge for the cases
+// where the GQL set.flowId comes back null (240/254 TS sets carry it).
+async function fetchSetOnchainMap(): Promise<Map<string, string>> {
+  const map = new Map<string, string>()
+  const { data, error } = await (supabaseAdmin as any)
+    .from("sets")
+    .select("external_id, set_id_onchain")
+    .eq("collection_id", COLLECTION_ID)
+    .not("set_id_onchain", "is", null)
+    .limit(10000)
+  if (error) {
+    console.log("[badge-sync] set onchain map error:", error.message)
+    return map
+  }
+  for (const r of (data as Array<{ external_id: string | null; set_id_onchain: number | null }> | null) ?? []) {
+    if (r.external_id && r.set_id_onchain != null) map.set(r.external_id, String(r.set_id_onchain))
+  }
+  return map
+}
+
+// Merge an edition's (parallel's) play/setPlay tags into an existing row.
+// Badges are play-level (identical across parallels) so union-by-id is lossless;
+// this collapses all parallels of a play into the single per-play row that the
+// (external_id, collection_id) grain demands.
+function mergeTags(existing: BadgeRow, e: RawEdition) {
+  const incomingPlay = (e.play?.tags ?? [])
+    .filter((t) => t.visible && t.id !== BADGE.INTERACTIVE)
+    .map((t) => ({ id: t.id, title: t.title }))
+  const incomingSetPlay = (e.setPlay?.tags ?? [])
+    .filter((t) => t.visible && t.id !== BADGE.INTERACTIVE)
+    .map((t) => ({ id: t.id, title: t.title }))
+  const pIds = new Set(existing.play_tags.map((t) => t.id))
+  for (const t of incomingPlay) if (!pIds.has(t.id)) { existing.play_tags.push(t); pIds.add(t.id) }
+  const sIds = new Set(existing.set_play_tags.map((t) => t.id))
+  for (const t of incomingSetPlay) if (!sIds.has(t.id)) { existing.set_play_tags.push(t); sIds.add(t.id) }
+  if (sIds.has(BADGE.ROOKIE_MINT)) existing.has_rookie_mint = true
+  existing.is_three_star_rookie =
+    pIds.has(BADGE.ROOKIE_YEAR) && pIds.has(BADGE.ROOKIE_PREMIERE) && pIds.has(BADGE.TOP_SHOT_DEBUT)
+  existing.badge_score = computeBadgeScore(pIds, sIds)
+}
+
+function normalizeEdition(e: RawEdition, externalId: string | null): BadgeRow {
   const playTags = (e.play?.tags ?? [])
     .filter((t) => t.visible && t.id !== BADGE.INTERACTIVE)
     .map((t) => ({ id: t.id, title: t.title }))
@@ -208,12 +275,11 @@ function normalizeEdition(e: RawEdition): BadgeRow {
   const owned = circ?.ownedByCollectors ?? 0
   const set_id = e.set?.id ?? null
   const play_id = e.play?.id ?? null
-  const external_id = set_id && play_id ? `${set_id}:${play_id}` : null
 
   return {
     id: e.id,
     collection_id: COLLECTION_ID,
-    external_id,
+    external_id: externalId,
     set_id,
     play_id,
     player_id: e.play?.stats?.playerID ?? null,
@@ -341,39 +407,51 @@ export async function POST(req: NextRequest) {
     "Rookie Mint": rookieMint.length,
   }
 
+  // UUID -> set_id_onchain bridge for editions whose GQL set.flowId is null.
+  const setMap = await fetchSetOnchainMap()
+
+  // Dedupe by the canonical integer pair (one row per play, badges union across
+  // parallels), NOT by the per-parallel GQL e.id. Rows that can't form an
+  // integer pair are skipped (a UUID-keyed badge row never joins).
   const all = new Map<string, BadgeRow>()
-  for (const group of [rookieYear, tsDebut, roty, champYear]) {
-    for (const e of group) {
-      if (!all.has(e.id)) all.set(e.id, normalizeEdition(e))
-    }
+  const seenGqlIds = new Set<string>() // every parallel id we saw this sweep
+  let skippedNoKey = 0
+
+  function ingest(e: RawEdition) {
+    if (e.id) seenGqlIds.add(e.id)
+    const key = editionKey(e, setMap)
+    if (!key) { skippedNoKey++; return }
+    const existing = all.get(key)
+    if (existing) mergeTags(existing, e)
+    else all.set(key, normalizeEdition(e, key))
   }
 
-  // Rookie Mint merge: attach set_play_tags + recompute score if edition exists
-  for (const e of rookieMint) {
-    const incomingSetPlayTags = (e.setPlay?.tags ?? [])
-      .filter((t) => t.visible && t.id !== BADGE.INTERACTIVE)
-      .map((t) => ({ id: t.id, title: t.title }))
-
-    const existing = all.get(e.id)
-    if (existing) {
-      const existingIds = new Set(existing.set_play_tags.map((t) => t.id))
-      for (const t of incomingSetPlayTags) {
-        if (!existingIds.has(t.id)) {
-          existing.set_play_tags.push(t)
-          existingIds.add(t.id)
-        }
-      }
-      if (incomingSetPlayTags.some((t) => t.id === BADGE.ROOKIE_MINT)) {
-        existing.has_rookie_mint = true
-      }
-      const pIds = new Set(existing.play_tags.map((t) => t.id))
-      existing.badge_score = computeBadgeScore(pIds, existingIds)
-    } else {
-      all.set(e.id, normalizeEdition(e))
-    }
+  for (const group of [rookieYear, tsDebut, roty, champYear, rookieMint]) {
+    for (const e of group) ingest(e)
   }
 
   const rows = Array.from(all.values())
+
+  // Free the PK before upserting: the table's per-parallel UUID-keyed rows share
+  // the same id (e.id) as the integer rows we're about to write, so a plain
+  // onConflict:(external_id,collection_id) insert would PK-collide. Delete only
+  // the UUID-keyed rows for editions present in THIS sweep — their replacements
+  // are already computed in `rows`, so no badge is dropped without a fresh
+  // integer-keyed copy taking its place (the per-play dedup the fix intends).
+  let deletedUuidRows = 0
+  const seenIdList = Array.from(seenGqlIds)
+  for (let i = 0; i < seenIdList.length; i += 150) {
+    const idChunk = seenIdList.slice(i, i + 150)
+    const { count, error } = await (supabaseAdmin as any)
+      .from("badge_editions")
+      .delete({ count: "exact" })
+      .eq("collection_id", COLLECTION_ID)
+      .like("external_id", "%-%")
+      .in("id", idChunk)
+    if (error) console.log(`[badge-sync] uuid-row delete chunk ${i} error:`, error.message)
+    else deletedUuidRows += count ?? 0
+  }
+
   let upserted = 0
   let upsertErrors = 0
 
@@ -381,7 +459,7 @@ export async function POST(req: NextRequest) {
     const batch = rows.slice(i, i + BATCH_SIZE)
     const { error } = await (supabaseAdmin as any)
       .from("badge_editions")
-      .upsert(batch, { onConflict: "id" })
+      .upsert(batch, { onConflict: "external_id,collection_id" })
     if (error) {
       console.log(`[badge-sync] upsert batch ${i} error:`, error.message)
       upsertErrors++
@@ -413,6 +491,8 @@ export async function POST(req: NextRequest) {
     collected: rows.length,
     upserted,
     upsertErrors,
+    skippedNoKey,
+    deletedUuidRows,
     sweepCounts,
     seedResults,
     durationMs: Date.now() - startedAt,
