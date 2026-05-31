@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RPC Insights Health</title>
+<style>
+  :root{ color-scheme: light; --rpc-red:#E03A2F; --ink:#15171a; --muted:#6b7280; --line:#e6e8eb; --ok:#15803d; --okbg:#eafaf0; --flag:#b91c1c; --flagbg:#fdecec; --info:#1f4ed8; --infobg:#eef2ff; --card:#fff; --bg:#f7f8fa; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.45}
+  .wrap{max-width:900px;margin:0 auto;padding:18px 16px 40px}
+  h1{font-size:20px;letter-spacing:.06em;text-transform:uppercase;margin:0 0 2px;border-bottom:3px solid var(--rpc-red);padding-bottom:8px;display:inline-block}
+  .sub{color:var(--muted);font-size:12px;margin:8px 0 16px;font-variant-numeric:tabular-nums}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .banner{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card);margin-bottom:16px;font-weight:600}
+  .dot{width:12px;height:12px;border-radius:50%;background:#cbd5e1;flex:0 0 auto}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 6px;margin-bottom:14px}
+  .card h2{font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin:6px 9px 8px;font-weight:700}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:middle}
+  th{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+  td.n{text-align:right;font-family:ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+  tr:last-child td{border-bottom:none}
+  .pill{font-size:11px;font-weight:700;letter-spacing:.04em;padding:3px 9px;border-radius:999px;text-transform:uppercase;white-space:nowrap}
+  .p-ok{color:var(--ok);background:var(--okbg)} .p-empty{color:var(--flag);background:var(--flagbg)} .p-int{color:var(--info);background:var(--infobg)} .p-err{color:var(--flag);background:var(--flagbg)}
+  .route{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px}
+  .view{color:var(--muted);font-size:11.5px;font-family:ui-monospace,Menlo,Consolas,monospace}
+  .fresh{display:flex;gap:18px;flex-wrap:wrap;padding:4px 9px 8px}
+  .fresh div{font-size:12.5px} .fresh b{font-family:ui-monospace,Menlo,Consolas,monospace}
+  .foot{color:var(--muted);font-size:11.5px;margin-top:6px;line-height:1.5}
+  .err{color:var(--flag)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>RPC Insights Health</h1>
+  <div class="sub" id="stamp">Reading backing views…</div>
+  <div class="banner"><span class="dot" id="dot"></span><span id="bannertext">Checking public /insights data sources…</span></div>
+  <div class="card"><h2>Public /insights surfaces — backing data</h2><div id="tbl"><span class="view" style="padding:9px;display:block">loading…</span></div></div>
+  <div class="card"><h2>Upstream freshness</h2><div class="fresh" id="fresh"><span class="view">loading…</span></div></div>
+  <div class="foot">A surface is healthy when its backing view returns rows. This checks the DATA layer (the public HTTP routes can't be fetched from the artifact sandbox); pair with the on-push smoke tests for HTTP-level coverage. squeeze-check &amp; tc-report are wallet-paste tools (no standing dataset). Read-only over project <span class="mono">bxcqstmqfzmuolpuynti</span>. Header Reload to refresh.</div>
+</div>
+<script>
+const TOOL="mcp__24ab6d77-3292-4646-b039-669cc9535ef8__execute_sql", PROJECT="bxcqstmqfzmuolpuynti";
+function extractRows(raw){
+  if(raw==null) return [];
+  if(Array.isArray(raw)) return raw;
+  if(typeof raw==="object"){
+    if(Array.isArray(raw.content)) return extractRows(raw.content.map(c=>typeof c==="string"?c:(c&&c.text)||"").join("\n"));
+    if(typeof raw.result==="string") return extractRows(raw.result);
+    if(typeof raw.text==="string") return extractRows(raw.text);
+    if(typeof raw.data!=="undefined") return extractRows(raw.data);
+    return [raw];
+  }
+  if(typeof raw==="string"){ let s=raw.trim(); try{return extractRows(JSON.parse(s));}catch(e){} const m=s.match(/\[[\s\S]*\]/); if(m){try{return JSON.parse(m[0]);}catch(e){}} return []; }
+  return [];
+}
+async function runSql(sql){ if(!(window.cowork&&window.cowork.callMcpTool)) throw new Error("MCP bridge unavailable (open inside Cowork)."); return extractRows(await window.cowork.callMcpTool(TOOL,{project_id:PROJECT,query:sql})); }
+const esc=s=>String(s==null?"":s).replace(/</g,"&lt;");
+
+const SURFACES=[
+  ["/insights/squeeze","topshot_squeeze_board","squeeze"],
+  ["/insights/set-squeeze","topshot_set_squeeze_board","set_squeeze"],
+  ["/insights/pack-reality","topshot_pack_reality_top_ev","pack_reality_top_ev"],
+  ["/insights/rookies","topshot_2025_rookie_index","rookies"],
+  ["/insights/first-mint","topshot_first_mint_trophies","first_mint"],
+  ["/insights/cross-collection","cross_collection_cohort_stats","cross_collection"],
+  ["/insights/pinnacle-scarcity","pinnacle_scarcity_board","pinnacle_scarcity"]
+];
+const WALLET_TOOLS=[["/insights/squeeze-check","get_wallet_squeeze (RPC)"],["/insights/tc-report","get_wallet_tc_report (RPC)"]];
+const Q_COUNTS="SELECT 'squeeze' surface, count(*) n FROM topshot_squeeze_board UNION ALL SELECT 'set_squeeze', count(*) FROM topshot_set_squeeze_board UNION ALL SELECT 'pack_reality_top_ev', count(*) FROM topshot_pack_reality_top_ev UNION ALL SELECT 'rookies', count(*) FROM topshot_2025_rookie_index UNION ALL SELECT 'first_mint', count(*) FROM topshot_first_mint_trophies UNION ALL SELECT 'cross_collection', count(*) FROM cross_collection_cohort_stats UNION ALL SELECT 'pinnacle_scarcity', count(*) FROM pinnacle_scarcity_board;";
+const Q_FRESH="SELECT 'FMV latest write' k, max(computed_at)::text v FROM fmv_snapshots UNION ALL SELECT 'Pack EV latest', max(snapshotted_at)::text FROM pack_ev_latest;";
+
+function ago(ts){ if(!ts) return ""; const d=new Date(ts.replace(" ","T")+(ts.includes("Z")||ts.includes("+")?"":"Z")); const m=Math.round((Date.now()-d.getTime())/60000); if(isNaN(m)) return ""; if(m<90) return m+"m ago"; const h=Math.round(m/60); return h<48?h+"h ago":Math.round(h/24)+"d ago"; }
+
+(async()=>{
+  document.getElementById("stamp").textContent="As of "+new Date().toLocaleString()+" · live read";
+  let empties=0, errored=false;
+  try{
+    const rows=await runSql(Q_COUNTS); const by={}; rows.forEach(r=>by[r.surface]=+r.n);
+    let h='<table><tr><th>Surface</th><th>Backing view</th><th class="n">Rows</th><th>Status</th></tr>';
+    SURFACES.forEach(([route,view,key])=>{
+      const n=by[key]; const ok=typeof n==="number"&&n>0; if(!ok) empties++;
+      h+='<tr><td class="route">'+esc(route)+'</td><td class="view">'+esc(view)+'</td><td class="n">'+(n==null?"–":n.toLocaleString())+'</td><td><span class="pill '+(ok?"p-ok":"p-empty")+'">'+(ok?"ok":"empty")+'</span></td></tr>';
+    });
+    WALLET_TOOLS.forEach(([route,src])=>{ h+='<tr><td class="route">'+esc(route)+'</td><td class="view">'+esc(src)+'</td><td class="n">—</td><td><span class="pill p-int">interactive</span></td></tr>'; });
+    document.getElementById("tbl").innerHTML=h+'</table>';
+  }catch(e){ errored=true; document.getElementById("tbl").innerHTML='<span class="err" style="padding:9px;display:block">'+esc(e.message||e)+'</span>'; }
+  try{
+    const f=await runSql(Q_FRESH);
+    document.getElementById("fresh").innerHTML=f.map(r=>'<div>'+esc(r.k)+': <b>'+esc((r.v||"").replace("T"," ").slice(0,16))+'</b> <span style="color:var(--muted)">'+ago(r.v)+'</span></div>').join("");
+  }catch(e){ document.getElementById("fresh").innerHTML='<span class="err">'+esc(e.message||e)+'</span>'; }
+  const dot=document.getElementById("dot"), bt=document.getElementById("bannertext");
+  if(errored){ dot.style.background="#cbd5e1"; bt.textContent="Some checks could not run — open inside Cowork and Reload."; }
+  else if(empties){ dot.style.background="var(--flag)"; bt.textContent=empties+" surface(s) have an EMPTY backing view — investigate."; }
+  else { dot.style.background="var(--ok)"; bt.textContent="All public insights surfaces have live backing data."; }
+})();
+</script>
+</body>
+</html>

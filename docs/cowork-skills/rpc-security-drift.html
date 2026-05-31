@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RPC Security Drift</title>
+<style>
+  :root{ color-scheme: light; --rpc-red:#E03A2F; --ink:#15171a; --muted:#6b7280; --line:#e6e8eb; --ok:#15803d; --okbg:#eafaf0; --flag:#b91c1c; --flagbg:#fdecec; --info:#1f4ed8; --infobg:#eef2ff; --card:#ffffff; --bg:#f7f8fa; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.45}
+  .wrap{max-width:920px;margin:0 auto;padding:18px 16px 40px}
+  h1{font-size:20px;letter-spacing:.06em;text-transform:uppercase;margin:0 0 2px;border-bottom:3px solid var(--rpc-red);padding-bottom:8px;display:inline-block}
+  .sub{color:var(--muted);font-size:12px;margin:8px 0 18px;font-variant-numeric:tabular-nums}
+  mono,.mono,.num{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .banner{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card);margin-bottom:16px;font-weight:600}
+  .dot{width:12px;height:12px;border-radius:50%;flex:0 0 auto}
+  .grid{display:grid;grid-template-columns:1fr;gap:12px}
+  @media(min-width:680px){.grid{grid-template-columns:1fr 1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 15px}
+  .card h2{font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;font-weight:700}
+  .row{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+  .big{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:30px;font-weight:600;color:var(--rpc-red);line-height:1}
+  .pill{font-size:11px;font-weight:700;letter-spacing:.05em;padding:3px 9px;border-radius:999px;text-transform:uppercase;white-space:nowrap}
+  .p-ok{color:var(--ok);background:var(--okbg)} .p-flag{color:var(--flag);background:var(--flagbg)} .p-info{color:var(--info);background:var(--infobg)} .p-load{color:var(--muted);background:#f1f3f5}
+  .detail{color:var(--muted);font-size:12.5px;margin-top:8px}
+  .list{margin-top:8px;max-height:150px;overflow:auto;border-top:1px dashed var(--line);padding-top:8px}
+  .list code{display:block;font-size:12px;padding:2px 0;color:var(--ink);word-break:break-all}
+  .base{color:var(--muted);font-size:11.5px;margin-top:8px;border-top:1px dotted var(--line);padding-top:6px}
+  .foot{color:var(--muted);font-size:11.5px;margin-top:18px;line-height:1.5}
+  a{color:var(--rpc-red)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>RPC Security Drift</h1>
+  <div class="sub" id="stamp">Reading live posture from Supabase…</div>
+  <div class="banner" id="banner"><span class="dot" style="background:#cbd5e1"></span><span id="bannertext">Running checks…</span></div>
+  <div class="grid" id="grid"></div>
+  <div class="foot">
+    Read-only catalog SQL against project <span class="mono">bxcqstmqfzmuolpuynti</span> — fills the gap left by <span class="mono">get_advisors</span> overflowing the MCP context limit. Use the view header's Reload to refresh.
+    <br>Baselines: RLS-off base tables = 0 · anon write on base tables = 0 · SECDEF anon-EXECUTE = 0 · SECDEF views ≈ 8 (3 currently Supabase-ERROR, public-insights by design) · unused indexes are a hygiene number.
+  </div>
+</div>
+<script>
+const TOOL = "mcp__24ab6d77-3292-4646-b039-669cc9535ef8__execute_sql";
+const PROJECT = "bxcqstmqfzmuolpuynti";
+
+// Defensive: callMcpTool result shape varies (raw array, {result:string}, {content:[{text}]}, JSON string with an untrusted-data envelope).
+function extractRows(raw){
+  if(raw==null) return [];
+  if(Array.isArray(raw)) return raw;
+  if(typeof raw==="object"){
+    if(Array.isArray(raw.content)){ return extractRows(raw.content.map(c=>typeof c==="string"?c:(c&&c.text)||"").join("\n")); }
+    if(typeof raw.result==="string") return extractRows(raw.result);
+    if(typeof raw.text==="string") return extractRows(raw.text);
+    if(typeof raw.data!=="undefined") return extractRows(raw.data);
+    return [raw];
+  }
+  if(typeof raw==="string"){
+    let s=raw.trim();
+    try{ return extractRows(JSON.parse(s)); }catch(e){}
+    const m=s.match(/\[[\s\S]*\]/);             // first JSON array (the row set)
+    if(m){ try{ return JSON.parse(m[0]); }catch(e){} }
+    return [];
+  }
+  return [];
+}
+async function runSql(sql){
+  if(!(window.cowork && window.cowork.callMcpTool)) throw new Error("MCP bridge unavailable (open inside Cowork).");
+  const res = await window.cowork.callMcpTool(TOOL, {project_id:PROJECT, query:sql});
+  return extractRows(res);
+}
+
+const CHECKS = [
+  { id:"rls", title:"Base tables with RLS off",
+    sql:"SELECT tablename FROM pg_tables WHERE schemaname='public' AND rowsecurity=false ORDER BY tablename;",
+    kind:"gate", value:r=>r.length, list:r=>r.map(x=>x.tablename),
+    detail:n=> n===0?"All public base tables enforce RLS.":n+" public base table(s) have RLS disabled — investigate." },
+
+  { id:"anonwrite", title:"Anon write on RLS-off base tables",
+    sql:"SELECT g.table_name, string_agg(DISTINCT g.privilege_type,',') AS privs FROM information_schema.role_table_grants g JOIN pg_class c ON c.relname=g.table_name AND c.relnamespace='public'::regnamespace WHERE g.table_schema='public' AND g.grantee IN ('anon','authenticated') AND g.privilege_type IN ('INSERT','UPDATE','DELETE','TRUNCATE') AND c.relrowsecurity=false AND c.relkind IN ('r','p') GROUP BY g.table_name ORDER BY g.table_name;",
+    kind:"gate", value:r=>r.length, list:r=>r.map(x=>x.table_name+" ("+x.privs+")"),
+    detail:n=> n===0?"No public-key write hole on any base table.":n+" base table(s) writable by anon/authenticated with RLS off — live hole.",
+    base:"View grants are excluded (relkind r/p only): ~49 views carry inert write grants — views aren't RLS-governed and complex views aren't updatable." },
+
+  { id:"secdefexec", title:"SECDEF anon-EXECUTE violations",
+    sql:"SELECT * FROM check_secdef_anon_execute_violations();",
+    kind:"gate", value:r=>r.length, list:r=>r.map(x=>x.function_name||x.fn||JSON.stringify(x)),
+    detail:n=> n===0?"None of the 9 guarded destructive/maintenance functions are anon-executable.":n+" destructive SECDEF function(s) hold anon EXECUTE — anon-wipe vector." },
+
+  { id:"secdefviews", title:"SECDEF views (no security_invoker)",
+    sql:"SELECT count(*)::int AS n FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='v' AND NOT (coalesce(c.reloptions::text,'') LIKE '%security_invoker=on%' OR coalesce(c.reloptions::text,'') LIKE '%security_invoker=true%');",
+    kind:"info", value:r=>(r[0]&&(r[0].n))||0,
+    detail:n=> n+" view(s) run as definer. Most back public /insights surfaces by design; 3 are currently Supabase-ERROR. Watch for sudden growth — every new public view should ship security_invoker=on." },
+
+  { id:"unusedidx", title:"Unused indexes (idx_scan=0)",
+    sql:"SELECT count(*)::int AS n FROM pg_stat_user_indexes WHERE idx_scan = 0;",
+    kind:"info", value:r=>(r[0]&&(r[0].n))||0,
+    detail:n=> n+" indexes never scanned since stats reset — write/space overhead on a 5.8 GB DB. Hygiene candidate, not urgent." }
+];
+
+const grid=document.getElementById("grid");
+const cards={};
+for(const c of CHECKS){
+  const el=document.createElement("div"); el.className="card";
+  el.innerHTML='<h2>'+c.title+'</h2><div class="row"><div class="big" id="v-'+c.id+'">…</div><span class="pill p-load" id="s-'+c.id+'">loading</span></div><div class="detail" id="d-'+c.id+'"></div>'+(c.base?'<div class="base">'+c.base+'</div>':'')+'<div class="list" id="l-'+c.id+'" style="display:none"></div>';
+  grid.appendChild(el); cards[c.id]=el;
+}
+
+let flags=0, errors=0, done=0;
+function setBanner(){
+  const dot=document.querySelector("#banner .dot"), t=document.getElementById("bannertext");
+  if(done<CHECKS.length){ return; }
+  if(errors){ dot.style.background="#cbd5e1"; t.textContent="Some checks could not run — open inside Cowork and Reload."; }
+  else if(flags){ dot.style.background="var(--flag)"; t.textContent=flags+" item(s) need review."; }
+  else { dot.style.background="var(--ok)"; t.textContent="Clean — no RLS, anon-write, or destructive-EXECUTE drift."; }
+}
+
+async function run(c){
+  const v=document.getElementById("v-"+c.id), s=document.getElementById("s-"+c.id), d=document.getElementById("d-"+c.id), l=document.getElementById("l-"+c.id);
+  try{
+    const rows=await runSql(c.sql);
+    const n=c.value(rows);
+    v.textContent=n;
+    d.textContent=c.detail(n);
+    if(c.kind==="gate"){
+      const ok=n===0; s.textContent=ok?"ok":"review"; s.className="pill "+(ok?"p-ok":"p-flag"); if(!ok) flags++;
+      if(!ok && c.list){ const items=c.list(rows); l.style.display="block"; l.innerHTML=items.map(x=>"<code>"+String(x).replace(/</g,"&lt;")+"</code>").join(""); }
+    } else { s.textContent="info"; s.className="pill p-info"; }
+  }catch(e){
+    errors++; v.textContent="—"; s.textContent="error"; s.className="pill p-flag"; d.textContent=(e&&e.message)||String(e);
+  }finally{
+    done++; setBanner();
+  }
+}
+(async()=>{
+  document.getElementById("stamp").textContent="As of "+new Date().toLocaleString()+" · live read";
+  for(const c of CHECKS){ run(c); }
+})();
+</script>
+</body>
+</html>
