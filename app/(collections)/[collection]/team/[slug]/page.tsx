@@ -16,7 +16,7 @@ import PlayersGridPaginated, { type PlayerTile } from "@/components/entity/Playe
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import HeroMontage from "@/components/entity/HeroMontage"
-import TeamHero from "@/components/entity/TeamHero"
+import TeamHero, { type TeamNextGame } from "@/components/entity/TeamHero"
 import TeamChecklist from "@/components/entity/TeamChecklist"
 import TeamActivity, { type ActivityRow } from "@/components/entity/TeamActivity"
 import TeamSets, { type SetRow } from "@/components/entity/TeamSets"
@@ -47,6 +47,8 @@ interface TeamDetail {
   league?: string | null
   sales_30d?: number | null
   volume_30d_usd?: number | string | null
+  // Team Hub Phase 4 (F1a): teams_master short slug — the follow-write key.
+  team_short_slug?: string | null
 }
 
 const PAGE_SIZE = 100
@@ -92,6 +94,12 @@ async function fetchSqueeze(collectionId: string, slug: string, limit: number): 
   return Array.isArray(data) ? (data as SqueezeRow[]) : []
 }
 
+async function fetchNextGame(collectionId: string, slug: string): Promise<TeamNextGame | null> {
+  const { data, error } = await rpc().rpc("get_team_next_game", { p_collection_id: collectionId, p_team_slug: slug })
+  if (error) { console.error("[team] next game error", error.message); return null }
+  return (data && typeof data === "object" && !Array.isArray(data)) ? (data as TeamNextGame) : null
+}
+
 const TOP_EDITIONS_PAGE_SIZE = 24
 
 // ── Metadata ────────────────────────────────────────────────────────────────
@@ -122,12 +130,13 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
   const noun = isFranchise ? labels.team /* Franchise */ : labels.team /* Team */
   const rosterLabel = labels.roster
 
-  const [players, topEditions, activity, teamSets, squeeze] = await Promise.all([
+  const [players, topEditions, activity, teamSets, squeeze, nextGame] = await Promise.all([
     fetchPlayers(coll.id, slug, PAGE_SIZE, 0),
     fetchTopEditions(coll.id, slug, TOP_EDITIONS_PAGE_SIZE, 0),
     fetchActivity(coll.id, slug, 40),
     fetchSets(coll.id, slug),
     fetchSqueeze(coll.id, slug, 12),
+    fetchNextGame(coll.id, slug),
   ])
 
   return (
@@ -153,6 +162,10 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
         leagueLabel={detail.league}
         externalId={detail.team_external_id}
         isFranchise={isFranchise}
+        nextGame={nextGame}
+        followLeague={detail.league}
+        followShortSlug={detail.team_short_slug}
+        teamPath={`/${collection}/team/${slug}`}
       />
       {detail.team_name_variants && detail.team_name_variants.length > 1 && (
         <div className="rpc-mono" style={{ marginTop: 8, fontSize: 11, color: "var(--rpc-text-muted)" }}>
