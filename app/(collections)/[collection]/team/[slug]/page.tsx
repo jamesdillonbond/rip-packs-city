@@ -9,6 +9,7 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
+import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { teamPageMetadata, teamJsonLd, collectionDisplayName } from "@/lib/seo"
 import { getEntityLabels } from "@/lib/entity-labels"
 import { Section, StatCell, fmtCount, fmtUsd } from "@/components/entity/_shared"
@@ -109,6 +110,8 @@ export async function generateMetadata(props: { params: Promise<{ collection: st
   const slug = decodeURIComponent(rawSlug)
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) return {}
+  // Exhibition / all-star rosters are not real franchises — no hub page.
+  if (isExhibitionTeamSlug(slug)) return {}
   const detail = await fetchDetail(coll.id, slug)
   if (!detail) return {}
   return teamPageMetadata(detail as unknown as Record<string, unknown>, collection, slug)
@@ -121,6 +124,9 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
   const slug = decodeURIComponent(rawSlug)
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) notFound()
+  // Exhibition / all-star rosters are not real franchises — 404 the junk pages
+  // that are already indexed (Team LeBron, Rising Stars, …).
+  if (isExhibitionTeamSlug(slug)) notFound()
 
   const detail = await fetchDetail(coll.id, slug)
   if (!detail) notFound()
