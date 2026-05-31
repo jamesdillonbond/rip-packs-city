@@ -26,6 +26,10 @@ import { topshotSeriesLabel, TOPSHOT_SERIES_ORDER } from "@/lib/analytics/series
 interface ChecklistTile extends EditionTile {
   owned?: boolean | null
   owned_count?: number | null
+  // Team Hub polish (P2): per-wallet lock state from wmc.is_locked. Drives the
+  // green (owned+locked) vs white (owned) tile parity with Top Shot. Null when
+  // no wallet is tracked.
+  owned_locked?: boolean | null
 }
 
 interface TierBreakdown {
@@ -38,6 +42,9 @@ interface TierBreakdown {
 interface Progress {
   total: number
   owned: number
+  // Team Hub polish (P2): owned editions that are locked. Powers the "X locked"
+  // readout next to the owned count.
+  locked_owned?: number | null
   missing_count: number
   completion_pct: number | null
   cost_to_complete_usd: number
@@ -258,6 +265,11 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
                   <span className="rpc-mono" style={{ fontSize: 13, color: "var(--rpc-red)", marginLeft: 8 }}>{pct}%</span>
                 )}
               </div>
+              {hasWallet && progress.locked_owned != null && (
+                <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", marginTop: 2 }}>
+                  {fmtCount(progress.locked_owned)} locked
+                </div>
+              )}
             </div>
             <div style={{ textAlign: "right" }}>
               <div className="rpc-mono" style={{ fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
@@ -350,6 +362,14 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
         <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>No editions for this scope.</div>
       ) : (
         <>
+          {/* Three-state legend (mirrors Top Shot's owned/locked/missing). */}
+          {hasWallet && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 10 }}>
+              <LegendDot kind="locked" label="Owned + locked" />
+              <LegendDot kind="owned" label="Owned" />
+              <LegendDot kind="missing" label="Missing" />
+            </div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
             {rows.map((e, idx) => (
               <ChecklistCard key={`${e.route_slug}-${idx}`} collectionUrlSlug={collectionUrlSlug} e={e} hasWallet={hasWallet} eager={idx < 12} />
@@ -365,6 +385,26 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
         </>
       )}
     </div>
+  )
+}
+
+// ── Ownership tri-state palette (shared by tile badge + legend) ───────────────
+// green = owned + locked, white = owned (unlocked), gray = missing. Mirrors Top
+// Shot's checklist legend.
+type OwnState = "locked" | "owned" | "missing"
+const OWN_STYLE: Record<OwnState, { bg: string; border: string; dot: string; text: string }> = {
+  locked:  { bg: "rgba(52,211,153,0.16)", border: "1px solid rgba(52,211,153,0.45)", dot: "#34D399", text: "#34D399" },
+  owned:   { bg: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", dot: "var(--rpc-text-primary)", text: "var(--rpc-text-primary)" },
+  missing: { bg: "rgba(0,0,0,0.62)", border: "1px solid rgba(255,255,255,0.18)", dot: "var(--rpc-text-muted)", text: "var(--rpc-text-primary)" },
+}
+
+function LegendDot({ kind, label }: { kind: OwnState; label: string }) {
+  const s = OWN_STYLE[kind]
+  return (
+    <span className="rpc-mono" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10, color: "var(--rpc-text-secondary)" }}>
+      <span style={{ width: 10, height: 10, borderRadius: 999, background: s.bg, border: s.border, display: "inline-block" }} />
+      {label}
+    </span>
   )
 }
 
@@ -388,6 +428,9 @@ function ScopeChip({ active, onClick, children }: { active: boolean; onClick: ()
 // ── Checklist tile (mirrors EditionsGridPaginated styling + ownership badge) ───
 function ChecklistCard({ collectionUrlSlug, e, hasWallet, eager }: { collectionUrlSlug: string; e: ChecklistTile; hasWallet: boolean; eager: boolean }) {
   const owned = e.owned === true
+  const locked = owned && e.owned_locked === true
+  const ownState: OwnState = locked ? "locked" : owned ? "owned" : "missing"
+  const badgeStyle = OWN_STYLE[ownState]
   const addCost = e.floor_usd ?? e.fmv_usd ?? null
   // Missing tiles are dimmed slightly so owned pops against them.
   const dim = hasWallet && !owned
@@ -413,16 +456,19 @@ function ChecklistCard({ collectionUrlSlug, e, hasWallet, eager }: { collectionU
         ) : (
           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", fontSize: 10 }}>No image</div>
         )}
-        {/* ownership badge — only when a wallet is tracked */}
+        {/* ownership badge — tri-state (green=owned+locked, white=owned, gray=missing) */}
         {hasWallet && (
-          <div style={{
-            position: "absolute", top: 6, right: 6, padding: "3px 7px", borderRadius: 999,
-            fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.04em",
-            background: owned ? "rgba(52,211,153,0.16)" : "rgba(0,0,0,0.62)",
-            border: owned ? "1px solid rgba(52,211,153,0.45)" : "1px solid rgba(255,255,255,0.18)",
-            color: owned ? "#34D399" : "var(--rpc-text-primary)",
-          }}>
-            {owned ? `✓${e.owned_count && e.owned_count > 1 ? ` ×${e.owned_count}` : ""}` : (addCost ? `+ ${fmtUsd(addCost)}` : "+ add")}
+          <div
+            title={locked ? "Owned + locked" : owned ? "Owned" : "Missing"}
+            style={{
+              position: "absolute", top: 6, right: 6, padding: "3px 7px", borderRadius: 999,
+              fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.04em",
+              background: badgeStyle.bg, border: badgeStyle.border, color: badgeStyle.text,
+            }}
+          >
+            {owned
+              ? `✓${e.owned_count && e.owned_count > 1 ? ` ×${e.owned_count}` : ""}${locked ? " 🔒" : ""}`
+              : (addCost ? `+ ${fmtUsd(addCost)}` : "+ add")}
           </div>
         )}
       </div>

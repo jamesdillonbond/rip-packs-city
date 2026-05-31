@@ -34,6 +34,7 @@ import { createClient } from '@supabase/supabase-js'
 import { publishedCollections } from '@/lib/collections'
 import { listEntityPageCollections, getCollectionByDbSlug, getCollectionByUuid } from '@/lib/collection-slug'
 import { slugifyName } from '@/lib/entity-labels'
+import { isExhibitionTeamSlug } from '@/lib/team-denylist'
 import { METHODOLOGY_LIST } from '@/lib/analytics/methodology'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
@@ -510,9 +511,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       if (!prev || ts > prev) playerMap.set(k, ts)
     }
     if (e.team_name) {
-      const k = `${coll.urlSlug}|${slugifyName(e.team_name)}`
-      const prev = teamMap.get(k)
-      if (!prev || ts > prev) teamMap.set(k, ts)
+      const teamSlug = slugifyName(e.team_name)
+      // Exhibition / all-star rosters (Team LeBron, Rising Stars, …) carry a
+      // team_name but are not real franchises — don't advertise their URLs.
+      if (!isExhibitionTeamSlug(teamSlug)) {
+        const k = `${coll.urlSlug}|${teamSlug}`
+        const prev = teamMap.get(k)
+        if (!prev || ts > prev) teamMap.set(k, ts)
+      }
     }
   }
 
