@@ -1,9 +1,14 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import * as Sentry from "@sentry/nextjs"
 import fcl from "@/lib/flow"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import crypto from "crypto"
+
+// The chain scan + ingest runs in after() so cron-job.org gets a fast 202
+// instead of timing out on the synchronous ~24-33s body. Vercel keeps the
+// after() work running up to maxDuration after the response is sent.
+export const maxDuration = 120
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -118,6 +123,11 @@ export async function POST(req: NextRequest) {
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
   if (!TOKEN || (bearer !== TOKEN && urlToken !== TOKEN)) return unauthorized()
 
+  // Fire-and-forget: schedule the scan + ingest, return 202 immediately so
+  // cron-job.org reports Success instead of a cosmetic timeout. The route is
+  // idempotent (dedups on sales.transaction_hash), so a fast return is safe
+  // even with GH Actions + cron-job.org both firing.
+  after(async () => {
   try {
     // Step 1: Read cursor
     const { data: cursorRow, error: cursorErr } = await (supabaseAdmin as any)
@@ -128,7 +138,7 @@ export async function POST(req: NextRequest) {
 
     if (cursorErr) {
       console.log("[sales-indexer] cursor read error:", cursorErr.message)
-      return NextResponse.json({ error: "Failed to read cursor" }, { status: 500 })
+      return
     }
 
     let lastBlock = Number(cursorRow?.last_processed_block ?? 0)
@@ -159,18 +169,7 @@ export async function POST(req: NextRequest) {
         extra: { reason: "already_up_to_date", current_height: currentHeight },
       })
       await fireNextPipelineStep("/api/fmv-recalc", chain)
-      return NextResponse.json({
-        ok: true,
-        blocksScanned: 0,
-        eventsFound: 0,
-        salesResolved: 0,
-        salesInserted: 0,
-        salesDuped: 0,
-        unresolved: [],
-        cursor: lastBlock,
-        elapsed: Date.now() - start,
-        message: "Already up to date",
-      })
+      return
     }
 
     console.log(`[sales-indexer] scanning blocks ${lastBlock + 1} → ${targetHeight} (${targetHeight - lastBlock} blocks)`)
@@ -299,17 +298,7 @@ export async function POST(req: NextRequest) {
         extra: { reason: "no_events", blocks_scanned: targetHeight - lastBlock },
       })
       await fireNextPipelineStep("/api/fmv-recalc", chain)
-      return NextResponse.json({
-        ok: true,
-        blocksScanned: targetHeight - lastBlock,
-        eventsFound: 0,
-        salesResolved: 0,
-        salesInserted: 0,
-        salesDuped: 0,
-        unresolved: [],
-        cursor: targetHeight,
-        elapsed: Date.now() - start,
-      })
+      return
     }
 
     // Step 4: Resolve nftID to edition
@@ -622,20 +611,8 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    // Step 8: Return summary
+    // Step 8: Fire next pipeline step
     await fireNextPipelineStep("/api/fmv-recalc", chain)
-    return NextResponse.json({
-      ok: true,
-      blocksScanned: targetHeight - lastBlock,
-      eventsFound: matchingEvents.length,
-      salesResolved: salesBatch.length,
-      gqlResolved: gqlResolvedMap.size,
-      salesInserted: inserted,
-      salesDuped: duped,
-      unresolved: unresolvedIds.slice(0, 50),
-      cursor: targetHeight,
-      elapsed: Date.now() - start,
-    })
   } catch (err) {
     Sentry.withScope((scope) => {
       scope.setTag("route", "sales-indexer")
@@ -655,11 +632,10 @@ export async function POST(req: NextRequest) {
       cursorAfter: null,
       extra: { fatal: true },
     })
-    return NextResponse.json(
-      { error: "Internal server error", details: msg },
-      { status: 500 }
-    )
   }
+  })
+
+  return NextResponse.json({ status: "accepted" }, { status: 202 })
 }
 
 export async function GET(req: NextRequest) {
