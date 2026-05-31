@@ -55,6 +55,24 @@ const CADENCE_FALLBACK_MAX = 12
 const CADENCE_DELAY_MS = 150
 const SCRIPT_TIMEOUT_MS = 15_000
 
+// Sentry spike threshold: only page when an ABNORMAL number of genuinely-new
+// resolution failures land in a single indexer tick. AllDay has a permanent
+// unresolvable tail (a few new unmapped listings most ticks), so firing on
+// every tick with >=1 new failure was structural noise. A spike this large in
+// one tick means something upstream changed and is worth a page. Mirrors the
+// pinnacle indexer's gate (commit 48f5a98).
+const SENTRY_SPIKE_THRESHOLD = 25
+
+// Failure reasons that are part of AllDay's expected, permanent unresolvable
+// tail — logged to pipeline_runs for trend visibility but NOT worth a Sentry
+// page on their own. Any reason OUTSIDE this set is an unexpected/new code path
+// (a regression) and DOES page regardless of volume.
+const EXPECTED_FAILURE_REASONS = new Set([
+  "edition_external_id_not_in_editions_table",
+  "cadence_fallback_cap_hit",
+  "wmc_miss_no_seller_cadence_attempt",
+])
+
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 }
@@ -619,18 +637,29 @@ export async function POST(req: NextRequest) {
             }
           }
         }
-        Sentry.captureMessage("listing_resolution_failures_inserted", {
-          level: "warning",
-          tags: {
-            collection: "nfl_all_day",
-            indexer: "allday-listings-indexer",
-          },
-          extra: {
-            queued_failures: queuedFailures,
-            failure_reason_counts: failureReasonCounts,
-            first_5_flow_ids: failuresToQueue.slice(0, 5).map((r) => String(r.flow_id)),
-          },
-        })
+        // Sentry: per-row breadcrumbs already emitted on queue insert above. This
+        // summary captureMessage is the searchable dashboard event — but it is
+        // RATE/REASON-gated, not per-tick. We page only on a real spike OR a
+        // never-before-seen reason (a regression / new code path); the expected
+        // steady-state tail logs to pipeline_runs but does not page. (commit 48f5a98)
+        const hasUnexpectedReason = Object.keys(failureReasonCounts).some(
+          (r) => !EXPECTED_FAILURE_REASONS.has(r)
+        )
+        if (queuedFailures > SENTRY_SPIKE_THRESHOLD || hasUnexpectedReason) {
+          Sentry.captureMessage("listing_resolution_failures_inserted", {
+            level: "warning",
+            tags: {
+              collection: "nfl_all_day",
+              indexer: "allday-listings-indexer",
+            },
+            extra: {
+              queued_failures: queuedFailures,
+              failure_reason_counts: failureReasonCounts,
+              unexpected_reason: hasUnexpectedReason,
+              first_5_flow_ids: failuresToQueue.slice(0, 5).map((r) => String(r.flow_id)),
+            },
+          })
+        }
       }
       extra.queued_failures = queuedFailures
       extra.failure_reason_counts = failureReasonCounts
