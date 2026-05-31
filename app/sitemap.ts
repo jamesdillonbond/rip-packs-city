@@ -128,6 +128,39 @@ const PACK_COLLECTION_IDS = [
   '7dd9dd11-e8b6-45c4-ac99-71331f959714', // disney_pinnacle
 ]
 
+// PostgREST enforces a hard db-max-rows cap (1000 on this project), so a single
+// .limit(50000) silently returns only the first 1000 rows. Page through with
+// .range() in 1000-row windows until a short page signals the end. Stable
+// ordering is required for correct pagination.
+async function fetchAllByCollection(
+  sb: any,
+  table: string,
+  select: string,
+  collectionIds: string[],
+  orderColumn: string,
+  orderAsc: boolean,
+  maxRows = 60000,
+): Promise<any[]> {
+  const PAGE = 1000
+  const out: any[] = []
+  for (let from = 0; from < maxRows; from += PAGE) {
+    const { data, error } = await sb
+      .from(table)
+      .select(select)
+      .in('collection_id', collectionIds)
+      .order(orderColumn, { ascending: orderAsc, nullsFirst: false })
+      .range(from, from + PAGE - 1)
+    if (error) {
+      console.log(`[sitemap] ${table} page ${from} error: ` + error.message)
+      break
+    }
+    const rows = data ?? []
+    out.push(...rows)
+    if (rows.length < PAGE) break
+  }
+  return out
+}
+
 interface EditionRow {
   id: string
   external_id: string | null
@@ -139,27 +172,23 @@ interface EditionRow {
 }
 
 async function getEditionRows(): Promise<EditionRow[]> {
-  // One sitemap entry per edition in a published collection. Service-role
-  // client bypasses RLS; the join is materialised by Supabase via the
-  // foreign-key relation. ~20.5K rows total today.
-  //
-  // We also derive distinct set/player/team slugs from these rows for the
-  // entity sitemap entries — keeps the build-time query count to one.
+  // One sitemap entry per edition in a published collection (~23.5K rows
+  // today). Service-role client bypasses RLS; paginated via fetchAllByCollection
+  // to clear the 1000-row PostgREST cap. We also derive distinct
+  // set/player/team slugs from these rows for the entity sitemap entries.
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) return []
   try {
     const sb: any = createClient(url, key)
-    const { data, error } = await sb
-      .from('editions')
-      .select('id, external_id, last_updated_at, player_name, set_name, team_name, collection_id')
-      .in('collection_id', EDITION_COLLECTION_IDS)
-      .order('last_updated_at', { ascending: false, nullsFirst: false })
-      .limit(50000)
-    if (error) {
-      console.log('[sitemap] editions query error: ' + error.message)
-      return []
-    }
+    const data = await fetchAllByCollection(
+      sb,
+      'editions',
+      'id, external_id, last_updated_at, player_name, set_name, team_name, collection_id',
+      EDITION_COLLECTION_IDS,
+      'last_updated_at',
+      false,
+    )
     return ((data ?? []) as Array<{
       id: string
       external_id: string | null
@@ -237,15 +266,14 @@ async function getPackRows(): Promise<PackRow[]> {
   if (!url || !key) return []
   try {
     const sb: any = createClient(url, key)
-    const { data, error } = await sb
-      .from('pack_distributions')
-      .select('dist_id, collection_id, updated_at')
-      .in('collection_id', PACK_COLLECTION_IDS)
-      .limit(10000)
-    if (error) {
-      console.log('[sitemap] pack_distributions query error: ' + error.message)
-      return []
-    }
+    const data = await fetchAllByCollection(
+      sb,
+      'pack_distributions',
+      'dist_id, collection_id, updated_at',
+      PACK_COLLECTION_IDS,
+      'dist_id',
+      true,
+    )
     return ((data ?? []) as Array<{
       dist_id: string | null
       collection_id: string | null
