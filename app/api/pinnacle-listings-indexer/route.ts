@@ -43,10 +43,23 @@ const CADENCE_FALLBACK_MAX = 12
 const CADENCE_DELAY_MS = 150
 const SCRIPT_TIMEOUT_MS = 15_000
 
-// Sentry alert threshold: emit a searchable captureMessage when this many
-// unresolved editions land in a single indexer tick. Mirrors AllDay's
-// "first real failure landed" alert that triggers on >=3 queued failures.
-const SENTRY_CAPTURE_THRESHOLD = 3
+// Sentry spike threshold: only page when an ABNORMAL number of genuinely-new
+// (non-capped) resolution failures land in a single tick. Pinnacle has a
+// permanent unresolvable tail (a handful of new unmapped listings most ticks),
+// so firing on every tick with >=1 new failure was structural noise. A spike
+// this large in one tick means something upstream changed and is worth a page.
+const SENTRY_SPIKE_THRESHOLD = 25
+
+// Failure reasons that are part of Pinnacle's expected, permanent unresolvable
+// tail — logged to pipeline_runs for trend visibility but NOT worth a Sentry
+// page on their own. Any reason OUTSIDE this set is an unexpected/new code path
+// (a regression) and DOES page regardless of volume.
+const EXPECTED_FAILURE_REASONS = new Set([
+  "edition_key_unmapped",
+  "wmc_miss_no_seller",
+  "cadence_capped",
+  "cadence_borrow_failed",
+])
 
 // Single-NFT borrow on the Pinnacle public collection. Builds the
 // composite edition_key (royaltyCode:variant:printing) from on-chain
@@ -531,17 +544,38 @@ export async function POST(req: NextRequest) {
         await delay(CADENCE_DELAY_MS)
       }
 
+      // Resolve derived edition_keys against BOTH edition tables:
+      //  • editions.external_id → editionKeyToUuid. cached_listings_v2.edition_id
+      //    is a UUID FK to editions.id; Pinnacle has near-zero coverage there
+      //    today (so this is usually empty), but populating it stays forward-safe.
+      //  • pinnacle_editions.edition_key → knownEditionKeys. Pinnacle editions
+      //    live in pinnacle_editions, NOT editions. A hit here means the edition
+      //    IS known — a SUCCESSFUL resolution — even though there is no editions
+      //    UUID to write into edition_id. These must NOT be queued as failures
+      //    (the prior editions-only lookup mis-classified all of them, which is
+      //    what fired the per-tick Sentry noise).
       const editionKeys = [...new Set(nftToEditionKey.values())]
       const editionKeyToUuid = new Map<string, string>()
+      const knownEditionKeys = new Set<string>()
       if (editionKeys.length > 0) {
         for (let i = 0; i < editionKeys.length; i += 500) {
           const batch = editionKeys.slice(i, i + 500)
-          const { data } = await (supabaseAdmin as any)
-            .from("editions")
-            .select("id, external_id")
-            .eq("collection_id", PINNACLE_COLLECTION_ID)
-            .in("external_id", batch)
-          for (const row of data ?? []) editionKeyToUuid.set(row.external_id, row.id)
+          const [edRes, pinRes] = await Promise.all([
+            (supabaseAdmin as any)
+              .from("editions")
+              .select("id, external_id")
+              .eq("collection_id", PINNACLE_COLLECTION_ID)
+              .in("external_id", batch),
+            (supabaseAdmin as any)
+              .from("pinnacle_editions")
+              .select("edition_key")
+              .in("edition_key", batch),
+          ])
+          for (const row of edRes?.data ?? []) {
+            editionKeyToUuid.set(row.external_id, row.id)
+            knownEditionKeys.add(row.external_id)
+          }
+          for (const row of pinRes?.data ?? []) knownEditionKeys.add(String(row.edition_key))
         }
       }
 
@@ -557,20 +591,26 @@ export async function POST(req: NextRequest) {
       const cadenceCapHit = cadenceAttempted >= CADENCE_FALLBACK_MAX
       for (const a of availableEvents) {
         const editionKey = nftToEditionKey.get(a.nftID)
-        const editionUuid = editionKey ? editionKeyToUuid.get(editionKey) : null
+        const editionUuid = editionKey ? editionKeyToUuid.get(editionKey) ?? null : null
+        // For Pinnacle, "resolved" means the edition is KNOWN — its edition_key
+        // exists in pinnacle_editions (or, rarely, editions). The editions UUID
+        // (edition_id) is a bonus that is almost always null for Pinnacle and is
+        // NOT the resolution criterion. The old `!editionUuid` gate treated every
+        // pinnacle_editions-only edition as a failure and re-queued it every tick.
+        const resolved = !!editionKey && knownEditionKeys.has(editionKey)
 
-        if (!editionUuid) {
+        if (!resolved) {
           unresolvedEditionCount++
           if (unresolvedSample.length < 20) unresolvedSample.push(a.nftID)
-          // Classify the failure so the retry cron can decide whether to
-          // bump retry_count (most reasons) or short-circuit to
-          // unresolvable (none of these short-circuit today; everything
-          // gets a retry pass).
+          // Classify the failure so the retry cron can drain it. All of these
+          // get a retry pass (none short-circuit to permanently-unresolvable).
           let reason: string
-          if (!a.storefrontAddress) {
+          if (editionKey) {
+            // We derived an edition_key but it is in NEITHER pinnacle_editions
+            // nor editions — a genuinely unknown edition not yet ingested.
+            reason = "edition_key_unmapped"
+          } else if (!a.storefrontAddress) {
             reason = "wmc_miss_no_seller"
-          } else if (editionKey && !editionUuid) {
-            reason = "edition_key_not_in_editions_table"
           } else if (cadenceCapHit && !seenForCadence.has(a.nftID)) {
             reason = "cadence_capped"
           } else {
@@ -719,11 +759,18 @@ export async function POST(req: NextRequest) {
       extra.cadence_resolved = cadenceResolved
       extra.elapsed_ms = Date.now() - start
 
-      // Sentry parity with AllDay: per-row breadcrumbs already emitted on
-      // queue insert above; this summary captureMessage is the searchable
-      // event that surfaces in the Sentry dashboard. Tagged so the
-      // collection + indexer can be filtered without parsing extra blobs.
-      if (queuedFailures >= SENTRY_CAPTURE_THRESHOLD) {
+      // Sentry: per-row breadcrumbs already emitted on queue insert above. This
+      // summary captureMessage is the searchable dashboard event — but it is
+      // RATE/REASON-gated, not per-tick. `queuedFailures` counts only
+      // genuinely-new inserts (ON CONFLICT DO NOTHING + .select() returns only
+      // inserts), so it already EXCLUDES the permanently-capped re-observed
+      // backlog. We page only on a real spike OR a never-before-seen reason
+      // (a regression / new code path); the expected steady-state tail logs to
+      // pipeline_runs but does not page.
+      const hasUnexpectedReason = Object.keys(failureReasonCounts).some(
+        (r) => !EXPECTED_FAILURE_REASONS.has(r)
+      )
+      if (queuedFailures > SENTRY_SPIKE_THRESHOLD || hasUnexpectedReason) {
         Sentry.captureMessage("listing_resolution_failures_inserted", {
           level: "warning",
           tags: {
@@ -733,6 +780,7 @@ export async function POST(req: NextRequest) {
           extra: {
             queued_failures: queuedFailures,
             failure_reason_counts: failureReasonCounts,
+            unexpected_reason: hasUnexpectedReason,
             first_5_flow_ids: failuresToQueue.slice(0, 5).map((r) => String(r.flow_id)),
             unresolved_edition_count: unresolvedEditionCount,
             cadence_attempted: cadenceAttempted,
