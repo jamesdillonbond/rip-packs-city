@@ -56,13 +56,13 @@ export async function POST(req: NextRequest) {
       referrer: clampStr(body.referrer, 512),
     };
 
-    // Non-blocking — don't await, return 200 immediately.
-    supabase
-      .from("funnel_events")
-      .insert(row)
-      .then(({ error }) => {
-        if (error) console.error("[track-funnel] Supabase insert failed:", error.message);
-      });
+    // Await the insert — on Vercel the lambda is frozen as soon as the response
+    // returns, so a non-awaited (.then) insert never flushes and the row is
+    // silently dropped (this is why outbound_clicks went dead after 2026-04-25).
+    // The client fires this via sendBeacon/keepalive and never waits on the
+    // response, so awaiting a single fast insert costs the user nothing.
+    const { error: insertError } = await supabase.from("funnel_events").insert(row);
+    if (insertError) console.error("[track-funnel] Supabase insert failed:", insertError.message);
 
     return NextResponse.json({ ok: true });
   } catch (e) {
