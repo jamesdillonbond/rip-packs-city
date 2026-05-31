@@ -12,24 +12,27 @@
 //   • /profile/{username} for each profile_bio row that has set a public
 //     username (Phase 4 public profile pages)
 //
-// Deferred — these would multiply the sitemap size but require routes
-// that don't exist yet:
-//   • per-set pages (347 rows)
-//   • per-player pages (1,232 rows)
-//   • per-pack pages (5,149 rows in pack_distributions)
-// When those route segments are built, plug in the queries here. URLs
-// pointing to nonexistent pages would 404 and hurt SEO.
+// Entity + pack pages are now enumerated (the routes exist and render for
+// anon — see proxy.ts public-entity-path rule):
+//   • per-edition pages — every editions row in a published collection (~23.5K)
+//   • per-set / per-player / per-team pages — distinct slugs derived from
+//     those edition rows
+//   • per-series pages — one per collection_series.display_label (~28)
+//   • per-pack pages — every pack_distributions row (~5.2K)
 //
-// Live as of 2026-04-27:
-//   • per-edition pages — every editions row in a published collection.
-//     ~20.5K URLs, well under Google's 50K-per-sitemap limit. When the
-//     other per-entity segments come online and the total exceeds 50K,
-//     split into per-segment sitemap children.
+// Edition collections are filtered by collection_id directly (not via a
+// PostgREST embedded join on collections.slug, which returned 0 rows at
+// generation time). collection_series carries NO timestamp column, so its
+// entries use `now` for lastModified.
+//
+// Combined, entity + pack URLs total ~29K — under Google's 50K-per-sitemap
+// limit. When the total approaches 50K, split into per-segment / per-
+// collection sitemap children via a sitemap index.
 
 import type { MetadataRoute } from 'next'
 import { createClient } from '@supabase/supabase-js'
 import { publishedCollections } from '@/lib/collections'
-import { listEntityPageCollections, getCollectionByDbSlug } from '@/lib/collection-slug'
+import { listEntityPageCollections, getCollectionByDbSlug, getCollectionByUuid } from '@/lib/collection-slug'
 import { slugifyName } from '@/lib/entity-labels'
 import { METHODOLOGY_LIST } from '@/lib/analytics/methodology'
 
@@ -104,15 +107,25 @@ interface DirectoryRow {
   last_active_at: string | null
 }
 
-// DB slugs for collections that have rows in the `editions` table.
-// Pinnacle data lives in `pinnacle_editions` (different schema) and is
-// excluded from sitemap enumeration here — its entity pages are still
-// reachable via in-app navigation and discoverable by GSC after launch.
-const EDITION_COLLECTION_DB_SLUGS = [
-  'nba_top_shot',
-  'nfl_all_day',
-  'laliga_golazos',
-  'ufc_strike',
+// Collection UUIDs that have rows in the `editions` table. We filter by
+// collection_id directly (the canonical FK) rather than via a PostgREST
+// embedded join on `collections.slug` — the embed returned 0 rows at sitemap
+// generation time even though the data + FK exist. Pinnacle data lives in
+// `pinnacle_editions` (different schema) so it's excluded from edition
+// enumeration; its entity pages are still reachable via in-app navigation.
+const EDITION_COLLECTION_IDS = [
+  '95f28a17-224a-4025-96ad-adf8a4c63bfd', // nba_top_shot
+  'dee28451-5d62-409e-a1ad-a83f763ac070', // nfl_all_day
+  '06248cc4-b85f-47cd-af67-1855d14acd75', // laliga_golazos
+  '9b4824a8-736d-4a96-b450-8dcc0c46b023', // ufc_strike
+]
+
+// Pack distributions exist for the edition collections plus Disney Pinnacle.
+// (Pinnacle currently has 0 pack_distributions rows but is included so new
+// Pinnacle drops are picked up automatically.)
+const PACK_COLLECTION_IDS = [
+  ...EDITION_COLLECTION_IDS,
+  '7dd9dd11-e8b6-45c4-ac99-71331f959714', // disney_pinnacle
 ]
 
 interface EditionRow {
@@ -139,8 +152,8 @@ async function getEditionRows(): Promise<EditionRow[]> {
     const sb: any = createClient(url, key)
     const { data, error } = await sb
       .from('editions')
-      .select('id, external_id, last_updated_at, player_name, set_name, team_name, collections!inner(slug)')
-      .in('collections.slug', EDITION_COLLECTION_DB_SLUGS)
+      .select('id, external_id, last_updated_at, player_name, set_name, team_name, collection_id')
+      .in('collection_id', EDITION_COLLECTION_IDS)
       .order('last_updated_at', { ascending: false, nullsFirst: false })
       .limit(50000)
     if (error) {
@@ -154,11 +167,11 @@ async function getEditionRows(): Promise<EditionRow[]> {
       player_name: string | null
       set_name: string | null
       team_name: string | null
-      collections: { slug: string } | null
+      collection_id: string | null
     }>).map((r) => ({
       id: r.id,
       external_id: r.external_id,
-      collection_db_slug: r.collections?.slug ?? '',
+      collection_db_slug: getCollectionByUuid(r.collection_id ?? '')?.dbSlug ?? '',
       player_name: r.player_name,
       set_name: r.set_name,
       team_name: r.team_name,
@@ -182,10 +195,12 @@ async function getCollectionSeries(): Promise<SeriesRow[]> {
   if (!url || !key) return []
   try {
     const sb: any = createClient(url, key)
+    // collection_series carries no timestamp column — select only what exists
+    // and let lastModified fall back to `now` downstream.
     const { data, error } = await sb
       .from('collection_series')
-      .select('display_label, updated_at, collections!inner(slug)')
-      .in('collections.slug', EDITION_COLLECTION_DB_SLUGS)
+      .select('display_label, collection_id')
+      .in('collection_id', EDITION_COLLECTION_IDS)
       .limit(2000)
     if (error) {
       console.log('[sitemap] collection_series query error: ' + error.message)
@@ -193,17 +208,57 @@ async function getCollectionSeries(): Promise<SeriesRow[]> {
     }
     return ((data ?? []) as Array<{
       display_label: string | null
-      updated_at: string | null
-      collections: { slug: string } | null
+      collection_id: string | null
     }>)
       .filter((r) => typeof r.display_label === 'string' && r.display_label.length > 0)
       .map((r) => ({
-        collection_db_slug: r.collections?.slug ?? '',
+        collection_db_slug: getCollectionByUuid(r.collection_id ?? '')?.dbSlug ?? '',
         display_label: r.display_label as string,
-        last_updated_at: r.updated_at,
+        last_updated_at: null,
       }))
   } catch (err) {
     console.log('[sitemap] collection_series query threw: ' + (err instanceof Error ? err.message : String(err)))
+    return []
+  }
+}
+
+interface PackRow {
+  dist_id: string
+  collection_id: string
+  updated_at: string | null
+}
+
+async function getPackRows(): Promise<PackRow[]> {
+  // One sitemap entry per pack distribution → /<collection>/pack/dist/<distId>.
+  // Filtered by collection_id (the canonical FK) over the published
+  // collections. ~5.2K rows today (AllDay + Top Shot + Golazos).
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return []
+  try {
+    const sb: any = createClient(url, key)
+    const { data, error } = await sb
+      .from('pack_distributions')
+      .select('dist_id, collection_id, updated_at')
+      .in('collection_id', PACK_COLLECTION_IDS)
+      .limit(10000)
+    if (error) {
+      console.log('[sitemap] pack_distributions query error: ' + error.message)
+      return []
+    }
+    return ((data ?? []) as Array<{
+      dist_id: string | null
+      collection_id: string | null
+      updated_at: string | null
+    }>)
+      .filter((r) => typeof r.dist_id === 'string' && r.dist_id.length > 0 && !!r.collection_id)
+      .map((r) => ({
+        dist_id: r.dist_id as string,
+        collection_id: r.collection_id as string,
+        updated_at: r.updated_at,
+      }))
+  } catch (err) {
+    console.log('[sitemap] pack_distributions query threw: ' + (err instanceof Error ? err.message : String(err)))
     return []
   }
 }
@@ -474,6 +529,21 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.5,
   }))
 
+  // Pack distribution pages — /<collection>/pack/dist/<distId>.
+  const packRows = await getPackRows()
+  const packPages: MetadataRoute.Sitemap = packRows
+    .map((p) => {
+      const coll = getCollectionByUuid(p.collection_id)
+      if (!coll) return null
+      return {
+        url: `${BASE_URL}/${coll.urlSlug}/pack/dist/${encodeURIComponent(p.dist_id)}`,
+        lastModified: p.updated_at ? new Date(p.updated_at) : now,
+        changeFrequency: 'weekly' as const,
+        priority: 0.5,
+      }
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null)
+
   // Touch the unused import so tsc doesn't complain when no entity rows exist.
   void listEntityPageCollections
 
@@ -491,5 +561,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...newTeamPages,
     ...seriesPages,
     ...legacySetPages,
+    ...packPages,
   ]
 }

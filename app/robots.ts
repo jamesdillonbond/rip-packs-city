@@ -27,7 +27,11 @@ export default function robots(): MetadataRoute.Robots {
           '/admin/',
           '/login',
           '/dashboard',       // authed dashboard — private surface
-          '/profile',         // legacy editor route, now 308s to /dashboard; /profile/* (public profiles) NOT disallowed
+          // NOTE: no bare '/profile' here — robots Disallow is a prefix match,
+          // so '/profile' would block '/profile/<username>' (the public
+          // profile pages) too. Only the authed editor sub-routes are blocked.
+          // The legacy '/profile' editor path 308s to /dashboard (already
+          // disallowed), so it needs no separate rule.
           '/profile/edit',
           '/profile/settings',
           '/auth/',

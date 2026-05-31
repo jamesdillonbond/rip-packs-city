@@ -12,27 +12,53 @@ import { organizationJsonLd } from "@/lib/seo";
 
 const FLOW_ADDRESS = /^0x[0-9a-fA-F]{16}$/;
 
-function classifyAndRoute(raw: string): string | null {
-  const value = raw.trim();
-  if (!value) return null;
-  if (FLOW_ADDRESS.test(value)) {
-    return `/nba-top-shot/collection?wallet=${encodeURIComponent(value)}`;
-  }
-  return `/nba-top-shot/collection?username=${encodeURIComponent(value)}`;
-}
-
 function WalletSearch({ size = "lg" }: { size?: "lg" | "md" }) {
   const router = useRouter();
   const [value, setValue] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const height = size === "lg" ? 56 : 48;
   const fontSize = size === "lg" ? 15 : 13;
 
+  // Route anon visitors to the PUBLIC /share/<wallet> results card (Total FMV
+  // + top moments) — never the auth-gated /<collection>/collection page.
+  // Pasting a wallet into the #1 CTA must show a real free preview, not bounce
+  // to /login. A Flow address routes straight through; a username is resolved
+  // to its wallet via the public /api/wallet-search (which also warms the
+  // snapshot cache the /share page reads) before redirecting.
   const submit = useCallback(
-    (override?: string) => {
-      const target = classifyAndRoute(override ?? value);
-      if (target) router.push(target);
+    async (override?: string) => {
+      const raw = (override ?? value).trim();
+      if (!raw || pending) return;
+      setError(null);
+      if (FLOW_ADDRESS.test(raw)) {
+        router.push(`/share/${encodeURIComponent(raw)}`);
+        return;
+      }
+      setPending(true);
+      try {
+        const res = await fetch("/api/wallet-search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ input: raw, limit: 1 }),
+        });
+        const data = await res.json().catch(() => null);
+        const addr: string | undefined = data?.walletAddress;
+        if (addr && FLOW_ADDRESS.test(addr)) {
+          router.push(`/share/${encodeURIComponent(addr)}`);
+          return;
+        }
+        setError(
+          data?.error ||
+            "Couldn't find that username. Try a Flow wallet address (0x…).",
+        );
+      } catch {
+        setError("Something went wrong resolving that. Try again in a moment.");
+      } finally {
+        setPending(false);
+      }
     },
-    [router, value],
+    [router, value, pending],
   );
 
   return (
@@ -73,6 +99,7 @@ function WalletSearch({ size = "lg" }: { size?: "lg" | "md" }) {
         />
         <button
           type="submit"
+          disabled={pending}
           style={{
             background: "var(--rpc-red)",
             border: "none",
@@ -83,25 +110,42 @@ function WalletSearch({ size = "lg" }: { size?: "lg" | "md" }) {
             fontSize: 12,
             letterSpacing: "0.14em",
             textTransform: "uppercase",
-            cursor: "pointer",
+            cursor: pending ? "wait" : "pointer",
+            opacity: pending ? 0.7 : 1,
             whiteSpace: "nowrap",
           }}
         >
-          ANALYZE →
+          {pending ? "ANALYZING…" : "ANALYZE →"}
         </button>
       </form>
-      <div
-        style={{
-          marginTop: 10,
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          color: "var(--rpc-text-muted)",
-          letterSpacing: "0.04em",
-          textAlign: "center",
-        }}
-      >
-        No signup required. Try a wallet address or username.
-      </div>
+      {error ? (
+        <div
+          role="alert"
+          style={{
+            marginTop: 10,
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            color: "var(--rpc-red)",
+            letterSpacing: "0.04em",
+            textAlign: "center",
+          }}
+        >
+          {error}
+        </div>
+      ) : (
+        <div
+          style={{
+            marginTop: 10,
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            color: "var(--rpc-text-muted)",
+            letterSpacing: "0.04em",
+            textAlign: "center",
+          }}
+        >
+          No signup required. Try a wallet address or username.
+        </div>
+      )}
     </div>
   );
 }
