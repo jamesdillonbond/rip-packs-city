@@ -255,6 +255,24 @@ function isPublicPath(pathname: string, method: string): boolean {
   // scarcity per-row drill-downs. Same public-share rationale.
   if (pathname.startsWith("/pinnacle/moment/")) return true
 
+  // ── Public entity detail pages ───────────────────────────────────────
+  // /<collection>/{edition,set,player,team,series,pack}/<slug> — the
+  // read-only, indexable per-entity detail surfaces (Phase 1B–1F). They are
+  // backed by the same service-role detail RPCs as /moment, carry no
+  // user-private data, and app/sitemap.ts already advertises ~20.5K of these
+  // URLs to crawlers — so they must be reachable anonymously or Googlebot
+  // gets 302→/login (the SEO thesis these pages exist for). GET/HEAD only.
+  // Singular segments only: this opens /…/set/<slug> but NOT the in-app
+  // /…/sets, /…/packs, /…/market, /…/sniper feature pages (those stay behind
+  // the funnel). Unknown collection segments fall through to notFound() in
+  // the page, so no data leaks even on a bogus prefix. (2026-05-30)
+  if (
+    (method === "GET" || method === "HEAD") &&
+    /^\/[^/]+\/(?:edition|set|player|team|series|pack)\//.test(pathname)
+  ) {
+    return true
+  }
+
   // ── Public profile pages ─────────────────────────────────────────────
   // /profile/<username> — shareable read-only profile cards. /profile/edit
   // is the signed-in user's own bio editor and stays auth-gated. The
