@@ -114,7 +114,7 @@ type MomentRow = {
   marketDebugReason?: string
   marketSource?: "row" | "edition" | "row+edition" | "edition-sale" | "special-serial" | "none"
   fmvMethod?: "band" | "low-ask-only" | "best-offer-only" | "edition-last-sale" | "special-serial-premium" | "none"
-  marketConfidence?: "high" | "medium" | "low" | "stale" | "none"
+  marketConfidence?: "high" | "medium" | "low" | "stale" | "ask_only" | "sales_only" | "no_data" | "none"
   scopeKey?: string
   rowLowAsk?: number | null
   rowBestOffer?: number | null
@@ -310,11 +310,17 @@ function debugReasonLabel(reason?: string | null) {
 
 function confidenceLabel(conf?: string | null): { label: string; color: string } {
   switch (conf) {
-    case "high":   return { label: "Liquid",   color: "text-emerald-400" }
-    case "medium": return { label: "Trading",  color: "text-yellow-400" }
-    case "low":    return { label: "Thin",     color: "text-orange-400" }
-    case "none":   return { label: "Illiquid", color: "text-zinc-500" }
-    default:       return { label: "—",        color: "text-zinc-600" }
+    case "high":       return { label: "Liquid",   color: "text-emerald-400" }
+    case "medium":     return { label: "Trading",  color: "text-yellow-400" }
+    case "low":        return { label: "Thin",     color: "text-orange-400" }
+    case "stale":      return { label: "Stale",    color: "text-amber-500" }
+    case "ask_only":   return { label: "Ask only", color: "text-sky-400" }
+    case "sales_only": return { label: "Sales",    color: "text-sky-400" }
+    // NO_DATA editions have no recent sales to price against — keep the moment
+    // visible (a grail shouldn't vanish) but label it honestly as unpriced.
+    case "no_data":    return { label: "Unpriced", color: "text-zinc-500" }
+    case "none":       return { label: "Illiquid", color: "text-zinc-500" }
+    default:           return { label: "—",        color: "text-zinc-600" }
   }
 }
 
@@ -942,7 +948,7 @@ export default function WalletPage() {
       series: m.series_number != null ? String(m.series_number) : undefined,
       thumbnailUrl: m.thumbnail_url,
       acquiredAt: m.acquired_at ?? null,
-      marketConfidence: (m.confidence?.toLowerCase() ?? "none") as "high" | "medium" | "low" | "none",
+      marketConfidence: (m.confidence?.toLowerCase() ?? "none") as MomentRow["marketConfidence"],
       fmvUsd: fmvVal,
       fmvMethod: fmvMethodLabel,
       lowAsk: lowAskVal,
