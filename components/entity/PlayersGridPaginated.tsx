@@ -23,6 +23,7 @@ export interface PlayerTile {
   fmv_total_usd: number | null
   portrait_thumbnail: string | null
   is_active?: boolean | null
+  is_rookie?: boolean | null
 }
 
 type SortKey = "fmv_desc" | "editions_desc" | "alpha"
@@ -149,8 +150,13 @@ export default function PlayersGridPaginated({ collectionUrlSlug, fetchUrl, init
                 <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", fontSize: 10 }}>No image</div>
               )}
             </div>
-            <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2, marginBottom: 4 }}>
-              {p.name}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+              <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2 }}>
+                {p.name}
+              </span>
+              {p.is_rookie === true && (
+                <span className="rpc-mono" style={{ fontSize: 8, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-red)", background: "var(--rpc-red-bg)", border: "1px solid var(--rpc-red-border)", borderRadius: 4, padding: "1px 5px" }}>Rookie</span>
+              )}
             </div>
             {(p.jersey_number !== null || p.position) && (
               <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", marginBottom: 6 }}>

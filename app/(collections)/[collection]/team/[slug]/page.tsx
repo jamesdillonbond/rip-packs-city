@@ -18,6 +18,9 @@ import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import HeroMontage from "@/components/entity/HeroMontage"
 import TeamHero from "@/components/entity/TeamHero"
 import TeamChecklist from "@/components/entity/TeamChecklist"
+import TeamActivity, { type ActivityRow } from "@/components/entity/TeamActivity"
+import TeamSets, { type SetRow } from "@/components/entity/TeamSets"
+import TeamSqueeze, { type SqueezeRow } from "@/components/entity/TeamSqueeze"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -71,6 +74,24 @@ async function fetchTopEditions(collectionId: string, slug: string, limit: numbe
   return Array.isArray(data) ? (data as EditionTile[]) : []
 }
 
+async function fetchActivity(collectionId: string, slug: string, limit: number): Promise<ActivityRow[]> {
+  const { data, error } = await rpc().rpc("get_team_activity", { p_collection_id: collectionId, p_team_slug: slug, p_limit: limit, p_offset: 0 })
+  if (error) { console.error("[team] activity error", error.message); return [] }
+  return Array.isArray(data) ? (data as ActivityRow[]) : []
+}
+
+async function fetchSets(collectionId: string, slug: string): Promise<SetRow[]> {
+  const { data, error } = await rpc().rpc("get_team_sets", { p_collection_id: collectionId, p_team_slug: slug, p_wallet: null })
+  if (error) { console.error("[team] sets error", error.message); return [] }
+  return Array.isArray(data) ? (data as SetRow[]) : []
+}
+
+async function fetchSqueeze(collectionId: string, slug: string, limit: number): Promise<SqueezeRow[]> {
+  const { data, error } = await rpc().rpc("get_team_squeeze", { p_collection_id: collectionId, p_team_slug: slug, p_limit: limit })
+  if (error) { console.error("[team] squeeze error", error.message); return [] }
+  return Array.isArray(data) ? (data as SqueezeRow[]) : []
+}
+
 const TOP_EDITIONS_PAGE_SIZE = 24
 
 // ── Metadata ────────────────────────────────────────────────────────────────
@@ -101,9 +122,12 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
   const noun = isFranchise ? labels.team /* Franchise */ : labels.team /* Team */
   const rosterLabel = labels.roster
 
-  const [players, topEditions] = await Promise.all([
+  const [players, topEditions, activity, teamSets, squeeze] = await Promise.all([
     fetchPlayers(coll.id, slug, PAGE_SIZE, 0),
     fetchTopEditions(coll.id, slug, TOP_EDITIONS_PAGE_SIZE, 0),
+    fetchActivity(coll.id, slug, 40),
+    fetchSets(coll.id, slug),
+    fetchSqueeze(coll.id, slug, 12),
   ])
 
   return (
@@ -168,6 +192,27 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
             showSetLink
             showSort
           />
+        </Section>
+      )}
+
+      {/* ── Market Activity ──────────────────────────────────────────────── */}
+      {activity.length > 0 && (
+        <Section title="Market Activity">
+          <TeamActivity collectionUrlSlug={collection} rows={activity} />
+        </Section>
+      )}
+
+      {/* ── Sets featuring the team ──────────────────────────────────────── */}
+      {teamSets.length > 0 && (
+        <Section title={`Sets featuring ${detail.team_name}`}>
+          <TeamSets collectionUrlSlug={collection} teamSlug={slug} initial={teamSets} />
+        </Section>
+      )}
+
+      {/* ── Squeeze & Scarcity (Top Shot only; self-hides when empty) ─────── */}
+      {squeeze.length > 0 && (
+        <Section title="Squeeze & Scarcity">
+          <TeamSqueeze collectionUrlSlug={collection} rows={squeeze} />
         </Section>
       )}
 
