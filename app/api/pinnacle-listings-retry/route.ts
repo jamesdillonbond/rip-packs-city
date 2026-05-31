@@ -4,20 +4,20 @@ import { supabaseAdmin } from "@/lib/supabase"
 // ── Pinnacle listing-resolution retry cron ──────────────────────────────────
 //
 // Drains the listing_resolution_failures queue populated by the Pinnacle
-// direct indexer when nftID -> edition_key -> editions UUID resolution
-// failed. Bumped Cadence fallback cap (40 vs the live indexer's 12) — wall
-// clock spend on Flow REST is OK here, it cannot bleed into the live
-// ingest tick.
+// direct indexer when nftID -> edition_key resolution failed. Bumped Cadence
+// fallback cap (40 vs the live indexer's 12) — wall clock spend on Flow REST
+// is OK here, it cannot bleed into the live ingest tick.
 //
-// On success, UPDATES the existing cached_listings_v2 row's edition_id in
-// place (the Pinnacle indexer always writes the row with edition_id NULL,
-// unlike AllDay which skips unresolvable rows). Marks the failures row
-// resolved_at = NOW().
+// Resolution = the derived edition_key is KNOWN (present in pinnacle_editions,
+// where Pinnacle editions actually live, or — rarely — in editions). When the
+// key maps to an editions UUID we also backfill cached_listings_v2.edition_id
+// in place (the indexer writes the row with edition_id NULL); for the common
+// pinnacle_editions-only case there is no UUID to write, but the failure is
+// still resolved. Marks the failures row resolved_at = NOW().
 //
-// Caps retry_count at 10 to permanently retire moments that can't be
-// resolved (e.g. the seller transferred before we got here, the contract
-// surface stopped exposing the trait, or the edition_key landed in
-// pinnacle_editions but not in the editions table yet).
+// Caps retry_count at 10 to permanently retire moments that can't be resolved
+// (e.g. the seller transferred before we got here, the contract surface stopped
+// exposing the trait, or the edition isn't in pinnacle_editions OR editions yet).
 //
 // Bearer auth on INGEST_SECRET_TOKEN.
 // Schedule via cron-job.org: */15 minutes.
@@ -293,18 +293,35 @@ export async function POST(req: NextRequest) {
         await delay(CADENCE_DELAY_MS)
       }
 
-      // edition_key -> editions UUID
+      // edition_key resolution against BOTH edition tables. Pinnacle editions
+      // live in pinnacle_editions, NOT editions, and cached_listings_v2.edition_id
+      // is a UUID FK to editions.id — so for the vast majority of Pinnacle rows
+      // there is no UUID to backfill. A pinnacle_editions hit still means the
+      // edition is KNOWN, so the failure is resolved even though edition_id stays
+      // null. The prior editions-only lookup could never resolve these and bumped
+      // every one to the retry cap.
       const editionKeys = [...new Set(nftToEditionKey.values())]
       const editionKeyToUuid = new Map<string, string>()
+      const knownEditionKeys = new Set<string>()
       if (editionKeys.length > 0) {
         for (let i = 0; i < editionKeys.length; i += 500) {
           const batch = editionKeys.slice(i, i + 500)
-          const { data } = await (supabaseAdmin as any)
-            .from("editions")
-            .select("id, external_id")
-            .eq("collection_id", PINNACLE_COLLECTION_ID)
-            .in("external_id", batch)
-          for (const row of data ?? []) editionKeyToUuid.set(row.external_id, row.id)
+          const [edRes, pinRes] = await Promise.all([
+            (supabaseAdmin as any)
+              .from("editions")
+              .select("id, external_id")
+              .eq("collection_id", PINNACLE_COLLECTION_ID)
+              .in("external_id", batch),
+            (supabaseAdmin as any)
+              .from("pinnacle_editions")
+              .select("edition_key")
+              .in("edition_key", batch),
+          ])
+          for (const row of edRes?.data ?? []) {
+            editionKeyToUuid.set(row.external_id, row.id)
+            knownEditionKeys.add(row.external_id)
+          }
+          for (const row of pinRes?.data ?? []) knownEditionKeys.add(String(row.edition_key))
         }
       }
 
@@ -318,25 +335,32 @@ export async function POST(req: NextRequest) {
       for (const q of queue) {
         const editionKey = nftToEditionKey.get(q.flow_id)
         const uuid = editionKey ? editionKeyToUuid.get(editionKey) : null
-        if (!uuid) {
+        const known = !!editionKey && knownEditionKeys.has(editionKey)
+        if (!known) {
+          // edition_key still in neither table (or never derived) — keep retrying.
           stillUnresolvedIds.push(q.id)
           continue
         }
-        const { error: updErr } = await (supabaseAdmin as any)
-          .from("cached_listings_v2")
-          .update({ edition_id: uuid })
-          .eq("listing_resource_id", q.listing_resource_id)
-          .eq("source", "direct")
-        if (updErr) {
-          console.log(
-            `[pinnacle-listings-retry] v2 update err lrid=${q.listing_resource_id}:`,
-            updErr.message
-          )
-          stillUnresolvedIds.push(q.id)
-          continue
+        // Backfill edition_id only when we actually have an editions UUID; for
+        // pinnacle_editions-only hits there is nothing to write, but the failure
+        // is genuinely resolved (the edition is known).
+        if (uuid) {
+          const { error: updErr } = await (supabaseAdmin as any)
+            .from("cached_listings_v2")
+            .update({ edition_id: uuid })
+            .eq("listing_resource_id", q.listing_resource_id)
+            .eq("source", "direct")
+          if (updErr) {
+            console.log(
+              `[pinnacle-listings-retry] v2 update err lrid=${q.listing_resource_id}:`,
+              updErr.message
+            )
+            stillUnresolvedIds.push(q.id)
+            continue
+          }
+          rowsWritten++
         }
         resolvedIds.push(q.id)
-        rowsWritten++
       }
 
       if (resolvedIds.length > 0) {
