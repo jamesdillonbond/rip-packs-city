@@ -1,0 +1,40 @@
+{
+  "captured_at_utc": "2026-05-31T08:10:00Z",
+  "run": "rpc-nightly-autonomous-pass",
+  "mode": "OFF-HOURS monitor (local 08:02) + NO-PUSH (no GitHub creds) + .git locks un-removable; review/queue only; SHIPPED NOTHING",
+  "head_commit": "6c6950b",
+  "latest_production_deploy": {
+    "id": "dpl_9wcL2WjtViVDSFGqBnou9eoXbYUo",
+    "commit": "6c6950b",
+    "state": "READY",
+    "note": "sitemap pagination fix; supersedes the two ERROR deploys b20e483/26fa6be — prod is current"
+  },
+  "fmv_latest_per_edition": {
+    "top_shot": { "HIGH": 201, "MEDIUM": 575, "HIGH_MED": 776, "LOW": 8508, "ASK_ONLY": 114, "SALES_ONLY": 1, "STALE": 825, "NO_DATA": 6055 },
+    "all_day": { "HIGH": 53, "MEDIUM": 190, "HIGH_MED": 243, "LOW": 4893, "ASK_ONLY": 23, "STALE": 510, "NO_DATA": 522 }
+  },
+  "fmv_freshness": { "top_shot_latest_computed_at": "2026-05-31T08:08:25Z", "all_day_latest_computed_at": "2026-05-31T08:08:30Z", "note": "fmv-recalc fresh (<1m) — primary FMV writer healthy" },
+  "editions": { "nba_top_shot": 16279, "nfl_all_day": 6191, "laliga_golazos": 581, "ufc_strike": 446 },
+  "sentinel_ts_uuid_keyed_48h": 1099,
+  "unmapped_sales": { "total": 4559, "open_unresolved": 144, "open_within_7d": 138, "new_24h": 1 },
+  "db_size": "5827 MB",
+  "security": { "rls_off_base_tables": 0, "anon_authenticated_write_grants_on_rls_off_base_tables": 0, "secdef_view_errors": 0, "note": "Q1 verified resolved — topshot_pack_reality_{top_ev,stats,dist} all security_invoker=on; the 46 write-grant rows in the un-filtered check are by-design VIEWS (relkind not in r,p)" },
+  "pipelines_24h_note": "all ok=false rows are low-single-digit transient (connection-pool/statement-timeout/deadlock) with same-tick recovery EXCEPT the stall below. evm-transfers-ingest Base-429 6/21 (known, Beezie/Base parallel plane, no consumer). compute-topshot-pack-ev 6/92 (targets statement timeout, known).",
+  "ALERT_topshot_sales_indexer_stall": {
+    "severity": "HIGH (operational, non-outage)",
+    "detail": "topshot-sales-indexer + topshot-listing-cache chain has NOT been invoked since 2026-05-31 01:32 UTC (~6.5h). Last run succeeded cleanly (26 rows, ok=true, no error) — signature of a stopped external trigger (cron-job.org), NOT a route crash. No TS sales ingested since 01:32:31 (max sold_at 01:31:56). AllDay sales fresh (08:00). Not attributable to any deploy (stall predates the 02:27-06:29 UTC deploys).",
+    "user_impact": "No outage; prod READY, FMV fresh via fmv-recalc. But TS sales-based analytics/FMV freshness degrades the longer it persists.",
+    "owner": "operator (external cron) — off-limits for night pass (ingest route logic + external cron + NO-PUSH)"
+  },
+  "sentry_note": "6 smoke-test issues fired once each ~06:00-06:10 UTC (b20e483/26fa6be failed-deploy window + coincident pool timeouts) — transient, not recurring; security/FMV ones independently verified clean. NEXTJS-B (sales healthy) flapping corroborates the real TS sales stall. NEXTJS-15 (pinnacle listing warn) still firing post-bd4d8c4. NEXTJS-1B resolved, 15h clean.",
+  "shipped_this_run": 0,
+  "queued_open": [
+    "Q1 RESOLVED (pack_reality security_invoker — verified)",
+    "Q2 laliga-pack-ev cadence (ran 05:30, appears active; low priority)",
+    "Q3 NEW: topshot-sales-indexer external-trigger stall (HIGH, operator)",
+    "Q4 NEXTJS-15 pinnacle listing warning still firing post-bd4d8c4 (re-diagnose)",
+    "Q5 smoke sales-lag threshold (do NOT blindly raise — true-positive tonight)",
+    "Q6 evm-transfers-ingest Base-429 backoff (LOW)",
+    "Q7 .git/index.lock + .git/HEAD.lock un-removable (blocks autonomous commits)"
+  ]
+}

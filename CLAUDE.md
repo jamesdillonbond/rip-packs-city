@@ -74,6 +74,15 @@ Working thesis (confirmed 2026-05-30): RPC is a **sports / IP digital collectibl
 
 ## Recent sessions
 
+### May 31, 2026 (overnight pass) — OFF-HOURS + NO-PUSH monitor run; shipped nothing; found a silent TopShot sales-indexer stall
+
+Nightly autonomous pass fired late (local 08:02 UTC, outside the 00:00–06:00 window) → MONITOR-MODE; `git push` also unavailable (no GitHub creds) and `.git/index.lock`+`HEAD.lock` are un-removable from the sandbox (`Operation not permitted`), so this was a review/queue-only run with all outputs written to disk uncommitted. Full handoff: [docs/handoff-2026-05-31-overnight-pass.md](docs/handoff-2026-05-31-overnight-pass.md).
+
+- **Post-ship watch — all green.** `6c6950b` (sitemap pagination fix) deployed READY as `dpl_9wcL2WjtViVDSFGqBnou9eoXbYUo` (current prod); the two ERROR deploys `b20e483`/`26fa6be` are superseded (transient build-infra — `a99ce2f` + `6c6950b` built clean on the same tree), so the funnel+SEO fixes are live. Q1 verified resolved (3 `topshot_pack_reality_*` views `security_invoker=on`; 0 base-table security holes). No regressions, no auto-reverts.
+- **NEW — `topshot-sales-indexer` stalled since 01:32 UTC (~6.5h).** No `pipeline_runs` entries for the TS sales-indexer + listing-cache chain since 01:32/01:35Z; the 01:32 run succeeded cleanly (26 rows, no error) → stopped EXTERNAL trigger (cron-job.org), not a route crash. `sales` max `ingested_at` for `nba_top_shot` = 01:32:31Z; AllDay sales fresh (08:00Z) → TS-specific; not caused by any deploy (predates the 02:27–06:29Z deploys). No outage (prod READY, FMV fresh via fmv-recalc), but TS sales/analytics freshness degrades while it persists. Queued **Q3 (HIGH)** for the operator: re-fire the cron entry. The daytime monitor missed it because it scans `ok=false` only, not absence-of-runs.
+- **Health otherwise clean.** Security 0/0; all pipeline `ok=false` rows transient-with-recovery; FMV flat-to-improving (TS HIGH+MED 776, NO_DATA ↓36 to 6055); sentinel TS-UUID-48h ↓ to 1099 (from 1707); unmapped_sales flat (144 open); DB 5827 MB. Sentry: a 6-issue smoke cluster fired once each in the 06:00–06:10Z bad-deploy window (transient, security/FMV independently verified clean); `NEXTJS-15` pinnacle-listing warning still fires post-`bd4d8c4` (that fix didn't move its metric → re-queued Q4); `NEXTJS-1B` resolved (15h clean). 10 Cowork artifacts all healthy, none repaired.
+- **Queued:** Q3 (TS sales-indexer stall, HIGH), Q4 (`NEXTJS-15` re-diagnose), Q5 (smoke sales-lag threshold — do NOT blindly raise; true-positive tonight), Q6 (`evm-transfers-ingest` Base-429, LOW), Q7 (un-removable `.git` locks — blocks autonomous commits). See [docs/overnight/ledger.md](docs/overnight/ledger.md).
+
 ### May 31, 2026 — Entity detail pages: full handoff shipped (404 fix, entity pages opened to anon, JSON-LD, pack grid, montages, OG cards, hover-video)
 
 Executed the entire code half of [docs/handoff-2026-05-30-entity-pages.md](docs/handoff-2026-05-30-entity-pages.md) (Items 1–8). Four commits, all CI + Smoke green, all deploys READY. The 3 DB migrations from the 2026-05-30 Cowork pass were already live; this session added one more.
