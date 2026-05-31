@@ -10,7 +10,8 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
-import { playerPageMetadata } from "@/lib/seo"
+import { playerPageMetadata, playerJsonLd, collectionDisplayName } from "@/lib/seo"
+import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import { getEntityLabels } from "@/lib/entity-labels"
 import { Section, StatCell, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
@@ -142,6 +143,18 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
 
   return (
     <div>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(playerJsonLd(detail as unknown as Record<string, unknown>, collection, slug)) }}
+      />
+      <Breadcrumbs
+        items={[
+          { name: "Home", href: "/" },
+          { name: collectionDisplayName(collection), href: `/${collection}` },
+          ...(detail.team && teamHref ? [{ name: detail.team, href: teamHref }] : []),
+          { name: detail.name },
+        ]}
+      />
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section className="rpc-card" style={{ padding: 18 }}>
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,240px) 1fr", gap: 24, alignItems: "start" }}>

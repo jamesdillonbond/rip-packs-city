@@ -9,10 +9,13 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
-import { teamPageMetadata } from "@/lib/seo"
+import { teamPageMetadata, teamJsonLd, collectionDisplayName } from "@/lib/seo"
 import { getEntityLabels } from "@/lib/entity-labels"
 import { Section, StatCell, fmtCount, fmtUsd } from "@/components/entity/_shared"
 import PlayersGridPaginated, { type PlayerTile } from "@/components/entity/PlayersGridPaginated"
+import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
+import Breadcrumbs from "@/components/entity/Breadcrumbs"
+import HeroMontage from "@/components/entity/HeroMontage"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -52,6 +55,14 @@ async function fetchPlayers(collectionId: string, slug: string, limit: number, o
   return Array.isArray(data) ? (data as PlayerTile[]) : []
 }
 
+async function fetchTopEditions(collectionId: string, slug: string, limit: number, offset: number): Promise<EditionTile[]> {
+  const { data, error } = await rpc().rpc("get_team_top_editions", { p_collection_id: collectionId, p_team_slug: slug, p_limit: limit, p_offset: offset })
+  if (error) { console.error("[team] top editions error", error.message); return [] }
+  return Array.isArray(data) ? (data as EditionTile[]) : []
+}
+
+const TOP_EDITIONS_PAGE_SIZE = 24
+
 // ── Metadata ────────────────────────────────────────────────────────────────
 
 export async function generateMetadata(props: { params: Promise<{ collection: string; slug: string }> }): Promise<Metadata> {
@@ -80,12 +91,27 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
   const noun = isFranchise ? labels.team /* Franchise */ : labels.team /* Team */
   const rosterLabel = labels.roster
 
-  const players = await fetchPlayers(coll.id, slug, PAGE_SIZE, 0)
+  const [players, topEditions] = await Promise.all([
+    fetchPlayers(coll.id, slug, PAGE_SIZE, 0),
+    fetchTopEditions(coll.id, slug, TOP_EDITIONS_PAGE_SIZE, 0),
+  ])
 
   return (
     <div>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(teamJsonLd(detail as unknown as Record<string, unknown>, collection, slug)) }}
+      />
+      <Breadcrumbs
+        items={[
+          { name: "Home", href: "/" },
+          { name: collectionDisplayName(collection), href: `/${collection}` },
+          { name: detail.team_name },
+        ]}
+      />
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <section className="rpc-card" style={{ padding: 18 }}>
+      <section className="rpc-card" style={{ padding: 18, display: "flex", gap: 18, alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0, flex: "1 1 auto" }}>
         <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 8 }}>
           {noun}
         </div>
@@ -97,6 +123,8 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
             Variants merged: {detail.team_name_variants.join(" · ")}
           </div>
         )}
+        </div>
+        <HeroMontage items={topEditions} />
       </section>
 
       {/* ── Stat strip ───────────────────────────────────────────────────── */}
@@ -107,6 +135,20 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
         <StatCell label="FMV Total" value={fmtUsd(detail.fmv_total_usd)} />
         <StatCell label="Floor Total" value={fmtUsd(detail.floor_total_usd)} />
       </section>
+
+      {/* ── Top Editions ─────────────────────────────────────────────────── */}
+      {topEditions.length > 0 && (
+        <Section title="Top Editions">
+          <EditionsGridPaginated
+            collectionUrlSlug={collection}
+            fetchUrl={`/api/entity/team-editions?collection=${encodeURIComponent(collection)}&slug=${encodeURIComponent(slug)}`}
+            initial={topEditions}
+            pageSize={TOP_EDITIONS_PAGE_SIZE}
+            showSetLink
+            showSort
+          />
+        </Section>
+      )}
 
       {/* ── Roster / Cast grid ───────────────────────────────────────────── */}
       <Section title={rosterLabel}>

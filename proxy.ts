@@ -272,6 +272,16 @@ function isPublicPath(pathname: string, method: string): boolean {
   ) {
     return true
   }
+  // /api/entity/* — GET-only offset pagination backing the entity-detail
+  // grids ("Load more" on set/player/series/team editions). Read-only,
+  // service-role-backed RPCs (get_set_editions, get_team_top_editions, …);
+  // no write handlers. Without this, anon "Load more" fetches 302→/login.
+  if (
+    (method === "GET" || method === "HEAD") &&
+    (pathname === "/api/entity" || pathname.startsWith("/api/entity/"))
+  ) {
+    return true
+  }
 
   // ── Public profile pages ─────────────────────────────────────────────
   // /profile/<username> — shareable read-only profile cards. /profile/edit
