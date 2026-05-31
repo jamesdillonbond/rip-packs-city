@@ -283,6 +283,22 @@ function isPublicPath(pathname: string, method: string): boolean {
     return true
   }
 
+  // ── Public share cards ───────────────────────────────────────────────
+  // /share/<wallet> — the wallet-keyed, read-only collection-snapshot card
+  // (Total FMV hero + top moments). It's the public landing the marketing
+  // home routes anon wallet-paste to, and the target of shared links — both
+  // break if anon gets 302→/login. Read-only, service-role-backed via
+  // /api/collection-snapshot; same share rationale as /profile/<u> and
+  // /moment. GET/HEAD only (the page is a server component, no mutations).
+  // (robots.txt still disallows /share/ so Google doesn't index per-wallet
+  // cards — that's an indexing decision, independent of anon reachability.)
+  if (
+    (method === "GET" || method === "HEAD") &&
+    (pathname === "/share" || pathname.startsWith("/share/"))
+  ) {
+    return true
+  }
+
   // ── Public profile pages ─────────────────────────────────────────────
   // /profile/<username> — shareable read-only profile cards. /profile/edit
   // is the signed-in user's own bio editor and stays auth-gated. The

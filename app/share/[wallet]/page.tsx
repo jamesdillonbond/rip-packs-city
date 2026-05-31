@@ -142,6 +142,31 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
           </div>
         </div>
 
+        {/* Conversion CTA — honest free-preview framing (no paywall language) */}
+        <div
+          style={{
+            marginBottom: 28,
+            padding: "24px 20px",
+            border: "1px solid #E03A2F",
+            borderRadius: 12,
+            background: "linear-gradient(180deg, rgba(224,58,47,0.08) 0%, rgba(224,58,47,0.02) 100%)",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: 13, letterSpacing: "0.12em", color: "#E03A2F", textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>
+            Free preview
+          </div>
+          <div style={{ fontSize: 16, color: "#ccc", lineHeight: 1.5, maxWidth: 540, margin: "0 auto 16px" }}>
+            This is a free snapshot. Sign up to track FMV over time, badges, set completion, and deal alerts for this wallet — free during beta.
+          </div>
+          <a
+            href="/login"
+            style={{ display: "inline-block", padding: "12px 28px", background: "#E03A2F", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 14, textDecoration: "none", letterSpacing: "0.06em" }}
+          >
+            Create a free account →
+          </a>
+        </div>
+
         {/* Action buttons */}
         <div style={{ display: "flex", gap: 12, justifyContent: "center", marginBottom: 32 }}>
           <ShareButton />
