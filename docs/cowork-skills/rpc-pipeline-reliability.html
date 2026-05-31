@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RPC Pipeline Reliability</title>
+<style>
+  :root{ color-scheme: light; --rpc-red:#E03A2F; --ink:#15171a; --muted:#6b7280; --line:#e6e8eb; --ok:#15803d; --warn:#b45309; --flag:#b91c1c; --card:#fff; --bg:#f7f8fa; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.45}
+  .wrap{max-width:960px;margin:0 auto;padding:18px 16px 40px}
+  h1{font-size:20px;letter-spacing:.06em;text-transform:uppercase;margin:0 0 2px;border-bottom:3px solid var(--rpc-red);padding-bottom:8px;display:inline-block}
+  .sub{color:var(--muted);font-size:12px;margin:8px 0 16px;font-variant-numeric:tabular-nums}
+  .mono,.num,td.n,th.n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .kpis{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px}
+  .kpi{flex:1 1 150px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .kpi .lab{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .kpi .val{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:26px;font-weight:600;margin-top:4px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 15px;margin-bottom:14px}
+  .card h2{font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin:0 0 10px;font-weight:700}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+  td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+  .bad{color:var(--flag);font-weight:600}.mid{color:var(--warn)}
+  .tl{display:flex;align-items:flex-end;gap:4px;height:90px;margin-top:6px}
+  .tl .b{flex:1;background:#e6e8eb;border-radius:3px 3px 0 0;position:relative;min-height:2px}
+  .tl .b.has{background:var(--rpc-red)}
+  .tl .b span{position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--muted);white-space:nowrap}
+  .tlwrap{padding-bottom:20px}
+  .pool code{display:block;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;padding:2px 0;color:var(--ink)}
+  .muted{color:var(--muted)} .err{color:var(--flag)}
+  .foot{color:var(--muted);font-size:11.5px;margin-top:14px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>RPC Pipeline Reliability</h1>
+  <div class="sub" id="stamp">Reading pipeline_runs…</div>
+  <div class="kpis">
+    <div class="kpi"><div class="lab">14d success</div><div class="val" id="k-pct">…</div></div>
+    <div class="kpi"><div class="lab">14d runs</div><div class="val" id="k-runs">…</div></div>
+    <div class="kpi"><div class="lab">14d failures</div><div class="val" id="k-fails">…</div></div>
+    <div class="kpi"><div class="lab">pool-pressure fails / 7d</div><div class="val" id="k-pool">…</div></div>
+  </div>
+  <div class="card"><h2>Daily failures (14d)</h2><div class="tlwrap"><div class="tl" id="tl"></div></div></div>
+  <div class="card"><h2>Pipelines by failures (14d)</h2><div id="tbl"><span class="muted">loading…</span></div></div>
+  <div class="card pool"><h2>Recent connection-pool / timeout incidents (7d)</h2><div id="pool"><span class="muted">loading…</span></div></div>
+  <div class="foot">Read-only over <span class="mono">pipeline_runs</span> (project <span class="mono">bxcqstmqfzmuolpuynti</span>). Connection-pool pressure is RPC's documented recurring transient mode — this trends it instead of re-discovering it each sweep. Baseline: ~99% success/24h; flag &lt;97% or any single pipeline &gt;50 fails/wk. Use the header Reload to refresh.</div>
+</div>
+<script>
+const TOOL="mcp__24ab6d77-3292-4646-b039-669cc9535ef8__execute_sql", PROJECT="bxcqstmqfzmuolpuynti";
+function extractRows(raw){
+  if(raw==null) return [];
+  if(Array.isArray(raw)) return raw;
+  if(typeof raw==="object"){
+    if(Array.isArray(raw.content)) return extractRows(raw.content.map(c=>typeof c==="string"?c:(c&&c.text)||"").join("\n"));
+    if(typeof raw.result==="string") return extractRows(raw.result);
+    if(typeof raw.text==="string") return extractRows(raw.text);
+    if(typeof raw.data!=="undefined") return extractRows(raw.data);
+    return [raw];
+  }
+  if(typeof raw==="string"){ let s=raw.trim(); try{return extractRows(JSON.parse(s));}catch(e){} const m=s.match(/\[[\s\S]*\]/); if(m){try{return JSON.parse(m[0]);}catch(e){}} return []; }
+  return [];
+}
+async function runSql(sql){ if(!(window.cowork&&window.cowork.callMcpTool)) throw new Error("MCP bridge unavailable (open inside Cowork)."); return extractRows(await window.cowork.callMcpTool(TOOL,{project_id:PROJECT,query:sql})); }
+const esc=s=>String(s==null?"":s).replace(/</g,"&lt;");
+
+const Q_PIPE="SELECT pipeline, count(*) AS runs, count(*) FILTER (WHERE NOT ok) AS fails, round(100.0*count(*) FILTER (WHERE ok)::numeric/nullif(count(*),0),1) AS ok_pct, max(finished_at) AS last_run FROM pipeline_runs WHERE started_at > now()-interval '14 days' GROUP BY pipeline ORDER BY fails DESC, runs DESC;";
+const Q_DAILY="SELECT to_char(date_trunc('day',started_at),'MM-DD') AS d, count(*) FILTER (WHERE NOT ok) AS fails, count(*) AS runs FROM pipeline_runs WHERE started_at > now()-interval '14 days' GROUP BY date_trunc('day',started_at) ORDER BY date_trunc('day',started_at);";
+const Q_POOL="SELECT to_char(date_trunc('hour',started_at),'MM-DD HH24:00') AS hr, count(*) AS n FROM pipeline_runs WHERE started_at > now()-interval '7 days' AND ok=false AND (error ILIKE '%connection pool%' OR error ILIKE '%statement timeout%' OR error ILIKE '%time_budget%' OR error ILIKE '%timed out%' OR error ILIKE '%canceling statement%') GROUP BY date_trunc('hour',started_at) ORDER BY date_trunc('hour',started_at) DESC LIMIT 24;";
+
+(async()=>{
+  document.getElementById("stamp").textContent="As of "+new Date().toLocaleString()+" · live read";
+  // Pipelines + KPIs
+  try{
+    const rows=await runSql(Q_PIPE);
+    let runs=0,fails=0; rows.forEach(r=>{runs+=+r.runs||0; fails+=+r.fails||0;});
+    document.getElementById("k-runs").textContent=runs.toLocaleString();
+    document.getElementById("k-fails").textContent=fails.toLocaleString();
+    const pct=runs?(100*(runs-fails)/runs):0; const pe=document.getElementById("k-pct");
+    pe.textContent=pct.toFixed(1)+"%"; pe.style.color=pct<97?"var(--flag)":(pct<99?"var(--warn)":"var(--ok)");
+    const shown=rows.filter(r=>(+r.fails||0)>0).slice(0,18);
+    let h='<table><tr><th>Pipeline</th><th class="n">Runs</th><th class="n">Fails</th><th class="n">OK%</th><th>Last run</th></tr>';
+    if(!shown.length) h+='<tr><td colspan="5" class="muted">No failures in 14d.</td></tr>';
+    shown.forEach(r=>{const p=+r.ok_pct; const cls=p<97?"bad":(p<99.5?"mid":""); h+='<tr><td class="mono">'+esc(r.pipeline)+'</td><td class="n">'+(+r.runs).toLocaleString()+'</td><td class="n '+(r.fails>50?"bad":"")+'">'+r.fails+'</td><td class="n '+cls+'">'+(r.ok_pct==null?"–":r.ok_pct)+'</td><td class="mono muted">'+esc((r.last_run||"").replace("T"," ").slice(0,16))+'</td></tr>';});
+    document.getElementById("tbl").innerHTML=h+'</table>';
+  }catch(e){ document.getElementById("tbl").innerHTML='<span class="err">'+esc(e.message||e)+'</span>'; ["k-pct","k-runs","k-fails"].forEach(i=>document.getElementById(i).textContent="—"); }
+  // Daily timeline
+  try{
+    const d=await runSql(Q_DAILY); const max=Math.max(1,...d.map(x=>+x.fails||0));
+    document.getElementById("tl").innerHTML=d.map(x=>{const f=+x.fails||0; const h=Math.round(100*f/max); return '<div class="b '+(f>0?"has":"")+'" style="height:'+(f>0?Math.max(6,h):2)+'%" title="'+esc(x.d)+': '+f+' fails / '+x.runs+' runs"><span>'+esc(x.d.slice(0,5))+'</span></div>';}).join("");
+  }catch(e){ document.getElementById("tl").innerHTML='<span class="err">'+esc(e.message||e)+'</span>'; }
+  // Pool incidents
+  try{
+    const p=await runSql(Q_POOL); const total=p.reduce((a,x)=>a+(+x.n||0),0);
+    const ke=document.getElementById("k-pool"); ke.textContent=total; ke.style.color=total>30?"var(--warn)":"var(--ink)";
+    document.getElementById("pool").innerHTML = p.length? p.map(x=>'<code>'+esc(x.hr)+' &middot; <b>'+x.n+'</b> fail'+(x.n>1?"s":"")+'</code>').join("") : '<span class="muted">None in 7d — pool pressure quiet.</span>';
+  }catch(e){ document.getElementById("pool").innerHTML='<span class="err">'+esc(e.message||e)+'</span>'; document.getElementById("k-pool").textContent="—"; }
+})();
+</script>
+</body>
+</html>

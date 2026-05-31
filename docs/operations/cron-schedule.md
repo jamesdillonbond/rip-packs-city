@@ -98,7 +98,7 @@ Flowty's marketplace shut down ~2026-05-13. The external Flowty event indexer, `
 
 ## Pending cleanups
 
-- ⏳ Duplicate `wmc-fmv-populate` — there's a Supabase edge-function URL version and a Vercel route version both firing. Delete the Supabase edge-function one.
+- _None. (The `wmc-fmv-populate` duplicate concern was verified not-an-issue on 2026-05-30: a single `*/20` Vercel-route source writes 5 rows per tick — one per collection — and no Supabase edge function by that name is deployed.)_
 
 ## Pending additions
 

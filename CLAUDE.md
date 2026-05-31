@@ -74,6 +74,24 @@ Working thesis (confirmed 2026-05-30): RPC is a **sports / IP digital collectibl
 
 ## Recent sessions
 
+### May 30, 2026 (evening) — Cowork ops/QA pass: 3 skills + 4 live artifacts, weekly-check query fix, CI/cron handoff
+
+Ops/QA review of every automation (Cowork artifacts, scheduled tasks, GitHub Actions, cron-job.org, edge functions, workers, plugins/skills) plus a 2-week deploy/audit/thread scan. Full write-up: [docs/ops-qa-improvement-review-2026-05-30.md](docs/ops-qa-improvement-review-2026-05-30.md).
+
+Built Cowork-side (sources + installable `.skill` packages in [docs/cowork-skills/](docs/cowork-skills/)):
+
+- **Skills (installed):** `rpc-migration` (DB migration safety checklist — grant resets on CREATE OR REPLACE, security_invoker on public views, CONCURRENTLY rules, verify-rowcount-before-destructive, two collection vocabularies), `rpc-handoff` (Claude Code handoff packager), `rpc-data` (warehouse context — UUIDs, vocab, enum casing, fmv_snapshots partitioning, canonical patterns).
+- **Artifacts (live, re-query on open):** `rpc-security-drift` (catalog-SQL security board — RLS-off base tables, anon-write on base tables, `check_secdef_anon_execute_violations`, SECDEF-view count, unused indexes; built because `get_advisors` overflows MCP context), `rpc-pipeline-reliability` (14d per-pipeline fail-rate + connection-pool incident timeline), `rpc-insights-health` (backing-view row counts + FMV/pack-EV freshness per public `/insights` surface).
+- **Fixed the `rpc-weekly-health-check` scheduled task:** §7 anon-write query was missing `AND c.relkind IN ('r','p')`, so it false-positived on ~49 public views (verified 0 real base-table holes); also smoke-filtered the §8 concierge count (`is_smoke_test IS NOT TRUE`) and corrected the stale `outbound_clicks` "not wired" note (instrumentation went live 2026-05-30).
+
+Shipped by Claude Code (commit `9172cba`, deploy `dpl_D4zvv2J7WkhAvJLbQLoPvg1D79qn` READY, CI green, smoke 52/0) per [docs/handoff-2026-05-30-ci-cron-cleanups.md](docs/handoff-2026-05-30-ci-cron-cleanups.md):
+
+- **Cadence lint is now a BLOCKING CI gate.** Found the harness was silently broken by the Phase-D reorg — `scripts/extract-cadence.mjs` read the `lib/cadence/purchase-moment.ts` shim (now a re-export with no literal); repointed it to canonical `lib/chains/flow/cadence/purchase-moment.ts` (old shim as fallback). Exits 0 (2 allowed warnings); removed `continue-on-error` in [.github/workflows/ci.yml](.github/workflows/ci.yml). [docs/cadence-testing.md](docs/cadence-testing.md) refreshed (no longer "RED on purpose").
+- **Migration `audit_20260530_check_public_security_invariants`** — read-only SECDEF RPC (`check_public_security_invariants()`, RLS-off + anon-write base-table check, `relkind IN ('r','p')`); live result 0 rows. New hard smoke-test assertion in [app/api/smoke-test/route.ts](app/api/smoke-test/route.ts) mirroring the SECDEF-function guard. Revert: `DROP FUNCTION public.check_public_security_invariants();`
+- **[docs/operations/cron-schedule.md](docs/operations/cron-schedule.md) reconciled:** `drain-fmv-cold-tail` + `pinnacle-listings-reconcile` moved from Pending additions to Active (both verified live in `pipeline_runs`).
+
+Outstanding (operator-side, cron-job.org, optional/non-breaking): (1) dial `RPC FMV Recalc Force Stale` back from `3,13,23,33,43,53` to `8,28,48` — verified safe 2026-05-30 (first full sweep complete: cursor wrapping ~every 50 min; TS NO_DATA flat ~6,068; HIGH+MED 780); (2) confirm no duplicate `wmc-fmv-populate` cron (no edge function by that name is deployed — keep the Vercel route `/api/wmc-fmv-populate`).
+
 ### May 30, 2026 — Cowork full-day pass: FMV recovery, batched RPCs, Step 6 cycle fix, branches, brand pass, research integration
 
 Long Cowork session. Several DB migrations shipped live, one route-code patch shipped via Claude Code (Trevor), CI repaired, dependabot tightened, six live artifacts built, research thread integrated.
