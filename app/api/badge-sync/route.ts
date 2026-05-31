@@ -195,7 +195,11 @@ function computeBadgeScore(
 function intLike(v: string | number | null | undefined): string | null {
   if (v === null || v === undefined) return null
   const s = String(v).trim()
-  return /^\d+$/.test(s) ? s : null
+  // "0" is Top Shot's "unset" sentinel for flowId on searchMarketplaceEditions
+  // (e.g. Run It Back: Origins returns set.flowId=0), NOT a real on-chain id —
+  // set/play on-chain ids start at 1. Reject it so we fall back to the sets map.
+  if (!/^\d+$/.test(s) || s === "0") return null
+  return s
 }
 
 // Canonical edition key = the on-chain integer pair "setIDonchain:playIDonchain"
@@ -209,11 +213,12 @@ function intLike(v: string | number | null | undefined): string | null {
 // (a UUID-keyed badge row is useless — it can never join).
 function editionKey(e: RawEdition, setMap: Map<string, string>): string | null {
   const playStr = intLike(e.play?.flowID) ?? intLike(e.play?.id)
-  let setStr = intLike(e.set?.flowId) ?? intLike(e.set?.id)
-  if (!setStr && e.set?.id) {
-    const mapped = setMap.get(e.set.id)
-    if (mapped) setStr = mapped
-  }
+  // Prefer the authoritative sets-table set_id_onchain (keyed by the GQL set
+  // UUID): set.flowId is unreliable here (returns the 0 sentinel for many
+  // classics, which would mis-key them as "0:<play>" and never join). flowId /
+  // an already-integer id are fallbacks for the ~14 sets the map doesn't cover.
+  let setStr: string | null = e.set?.id ? (setMap.get(e.set.id) ?? null) : null
+  if (!setStr) setStr = intLike(e.set?.flowId) ?? intLike(e.set?.id)
   if (!setStr || !playStr) return null
   return `${setStr}:${playStr}`
 }
@@ -414,13 +419,13 @@ export async function POST(req: NextRequest) {
   // parallels), NOT by the per-parallel GQL e.id. Rows that can't form an
   // integer pair are skipped (a UUID-keyed badge row never joins).
   const all = new Map<string, BadgeRow>()
-  const seenGqlIds = new Set<string>() // every parallel id we saw this sweep
+  const keyedIds = new Set<string>() // every parallel id that produced a valid integer key
   let skippedNoKey = 0
 
   function ingest(e: RawEdition) {
-    if (e.id) seenGqlIds.add(e.id)
     const key = editionKey(e, setMap)
     if (!key) { skippedNoKey++; return }
+    if (e.id) keyedIds.add(e.id)
     const existing = all.get(key)
     if (existing) mergeTags(existing, e)
     else all.set(key, normalizeEdition(e, key))
@@ -432,24 +437,25 @@ export async function POST(req: NextRequest) {
 
   const rows = Array.from(all.values())
 
-  // Free the PK before upserting: the table's per-parallel UUID-keyed rows share
-  // the same id (e.id) as the integer rows we're about to write, so a plain
-  // onConflict:(external_id,collection_id) insert would PK-collide. Delete only
-  // the UUID-keyed rows for editions present in THIS sweep — their replacements
-  // are already computed in `rows`, so no badge is dropped without a fresh
-  // integer-keyed copy taking its place (the per-play dedup the fix intends).
-  let deletedUuidRows = 0
-  const seenIdList = Array.from(seenGqlIds)
-  for (let i = 0; i < seenIdList.length; i += 150) {
-    const idChunk = seenIdList.slice(i, i + 150)
+  // Free the PK before upserting: a table row for one of these editions may
+  // carry the same id (e.id) as the integer row we're about to write but a
+  // different external_id (old UUID-pair key, or a bogus "0:<play>" key from a
+  // flowId=0 sentinel), so a plain onConflict:(external_id,collection_id) insert
+  // would PK-collide. Delete every existing row for editions we RE-KEYED this
+  // sweep (id in keyedIds) — each has a fresh replacement in `rows`, so no badge
+  // is dropped without a correctly-keyed copy taking its place. Editions we
+  // skipped (no integer key) keep their existing row untouched.
+  let deletedStaleRows = 0
+  const keyedIdList = Array.from(keyedIds)
+  for (let i = 0; i < keyedIdList.length; i += 150) {
+    const idChunk = keyedIdList.slice(i, i + 150)
     const { count, error } = await (supabaseAdmin as any)
       .from("badge_editions")
       .delete({ count: "exact" })
       .eq("collection_id", COLLECTION_ID)
-      .like("external_id", "%-%")
       .in("id", idChunk)
-    if (error) console.log(`[badge-sync] uuid-row delete chunk ${i} error:`, error.message)
-    else deletedUuidRows += count ?? 0
+    if (error) console.log(`[badge-sync] stale-row delete chunk ${i} error:`, error.message)
+    else deletedStaleRows += count ?? 0
   }
 
   let upserted = 0
@@ -492,7 +498,7 @@ export async function POST(req: NextRequest) {
     upserted,
     upsertErrors,
     skippedNoKey,
-    deletedUuidRows,
+    deletedStaleRows,
     sweepCounts,
     seedResults,
     durationMs: Date.now() - startedAt,
