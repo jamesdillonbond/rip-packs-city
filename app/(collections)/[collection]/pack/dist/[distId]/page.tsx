@@ -508,7 +508,7 @@ export default async function PackDetailPage(
       />
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section style={cardStyle}>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,260px) 1fr", gap: 24, alignItems: "start" }}>
+        <div className="rpc-entity-hero rpc-entity-hero--260">
           <div
             style={{
               width: 260,

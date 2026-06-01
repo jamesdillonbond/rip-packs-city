@@ -141,7 +141,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
 
   if (!data) {
     return (
-      <div style={{ minHeight: "100vh", background: "#0A0A0A", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontFamily: "'Barlow Condensed', sans-serif" }}>
+      <div style={{ minHeight: "100vh", background: "#0A0A0A", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontFamily: "var(--font-display)" }}>
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>RPC</div>
           <div style={{ fontSize: 18, color: "#666" }}>Collection not found for {wallet}</div>
@@ -155,19 +155,19 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
   const maxSeries = Math.max(...seriesEntries.map(([, v]) => v), 1)
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0A0A0A", color: "#fff", fontFamily: "'Barlow Condensed', sans-serif", padding: "40px 24px" }}>
+    <div style={{ minHeight: "100vh", background: "#0A0A0A", color: "#fff", fontFamily: "var(--font-display)", padding: "40px 24px" }}>
       <FunnelTracker eventType="share_view" walletAddress={wallet} surface="share" />
       <div style={{ maxWidth: 900, margin: "0 auto" }}>
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
-          <div style={{ fontWeight: 900, fontSize: 28, letterSpacing: "0.08em", color: "#E03A2F" }}>RIP PACKS CITY</div>
+          <div style={{ fontWeight: 900, fontSize: 28, letterSpacing: "0.08em", color: "var(--rpc-red)" }}>RIP PACKS CITY</div>
           <div style={{ fontSize: 12, fontFamily: "monospace", color: "#666", letterSpacing: "0.05em" }}>{wallet}</div>
         </div>
 
         {/* Total FMV hero */}
         <div style={{ textAlign: "center", marginBottom: 40, padding: "40px 0", border: "1px solid #222", borderRadius: 12, background: "linear-gradient(180deg, #111 0%, #0A0A0A 100%)" }}>
           <div style={{ fontSize: 14, letterSpacing: "0.15em", color: "#666", marginBottom: 8, textTransform: "uppercase" }}>Total Collection FMV</div>
-          <div style={{ fontSize: 56, fontWeight: 900, color: "#E03A2F", letterSpacing: "0.02em" }}>
+          <div style={{ fontSize: 56, fontWeight: 900, color: "var(--rpc-red)", letterSpacing: "0.02em" }}>
             ${data.totalFmv.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           <div style={{ fontSize: 16, color: "#666", marginTop: 8 }}>
@@ -313,7 +313,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                   <div style={{ fontSize: 12, color: "#999", fontFamily: "monospace", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8, minHeight: 30 }}>{c.name}</div>
                   <div style={{ fontSize: 22, fontWeight: 900, color: "#fff" }}>{c.moments.toLocaleString("en-US")}</div>
                   <div style={{ fontSize: 11, color: "#666", marginBottom: 6 }}>moments</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#E03A2F", fontFamily: "monospace" }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--rpc-red)", fontFamily: "monospace" }}>
                     ${c.fmv.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                   </div>
                 </div>
@@ -338,7 +338,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                   <div style={{ fontWeight: 700, fontSize: 14, color: "#fff", marginBottom: 2 }}>{m.playerName}</div>
                   <div style={{ fontSize: 11, color: TIER_COLORS[m.tier?.toLowerCase()] ?? "#9CA3AF", fontFamily: "monospace" }}>{m.tier}</div>
                   <div style={{ fontSize: 11, color: "#666", fontFamily: "monospace", marginTop: 2 }}>{m.setName}</div>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: "#E03A2F", marginTop: 6 }}>${m.fmv.toFixed(2)}</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "var(--rpc-red)", marginTop: 6 }}>${m.fmv.toFixed(2)}</div>
                 </div>
               </div>
             ))}
@@ -369,7 +369,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: 20, fontWeight: 800, color: "#E03A2F", fontFamily: "monospace" }}>${data.rarest.fmv.toFixed(2)}</div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: "var(--rpc-red)", fontFamily: "monospace" }}>${data.rarest.fmv.toFixed(2)}</div>
                 <div style={{ fontSize: 11, color: "#666" }}>FMV</div>
               </div>
             </div>
@@ -383,7 +383,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             {seriesEntries.map(([label, count]) => (
               <div key={label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
                 <div style={{ fontSize: 11, fontFamily: "monospace", color: "#888" }}>{count}</div>
-                <div style={{ width: "100%", height: Math.max(8, (count / maxSeries) * 60), background: "#E03A2F", borderRadius: 3, opacity: 0.8 }} />
+                <div style={{ width: "100%", height: Math.max(8, (count / maxSeries) * 60), background: "var(--rpc-red)", borderRadius: 3, opacity: 0.8 }} />
                 <div style={{ fontSize: 10, fontFamily: "monospace", color: "#555" }}>{label}</div>
               </div>
             ))}
@@ -395,13 +395,13 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
           style={{
             marginBottom: 28,
             padding: "24px 20px",
-            border: "1px solid #E03A2F",
+            border: "1px solid var(--rpc-red)",
             borderRadius: 12,
             background: "linear-gradient(180deg, rgba(224,58,47,0.08) 0%, rgba(224,58,47,0.02) 100%)",
             textAlign: "center",
           }}
         >
-          <div style={{ fontSize: 13, letterSpacing: "0.12em", color: "#E03A2F", textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>
+          <div style={{ fontSize: 13, letterSpacing: "0.12em", color: "var(--rpc-red)", textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>
             Free preview
           </div>
           <div style={{ fontSize: 16, color: "#ccc", lineHeight: 1.5, maxWidth: 540, margin: "0 auto 16px" }}>
@@ -409,7 +409,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
           </div>
           <a
             href="/login"
-            style={{ display: "inline-block", padding: "12px 28px", background: "#E03A2F", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 14, textDecoration: "none", letterSpacing: "0.06em" }}
+            style={{ display: "inline-block", padding: "12px 28px", background: "var(--rpc-red)", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 14, textDecoration: "none", letterSpacing: "0.06em" }}
           >
             Create a free account →
           </a>
@@ -420,7 +420,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
           <ShareButton />
           <a
             href={`/nba-top-shot/collection?wallet=${encodeURIComponent(wallet)}`}
-            style={{ padding: "12px 24px", border: "1px solid #E03A2F", borderRadius: 8, color: "#E03A2F", fontWeight: 700, fontSize: 14, textDecoration: "none", letterSpacing: "0.04em" }}
+            style={{ padding: "12px 24px", border: "1px solid var(--rpc-red)", borderRadius: 8, color: "var(--rpc-red)", fontWeight: 700, fontSize: 14, textDecoration: "none", letterSpacing: "0.04em" }}
           >
             View Full Collection
           </a>

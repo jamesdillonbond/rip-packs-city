@@ -188,6 +188,7 @@ export default function SqueezeCheckPage() {
                 yet, or you&apos;ve dodged every challenge so far.
               </div>
             ) : (
+              <div className="rpc-scroll-x">
               <table className="rpc-sc-table">
                 <thead>
                   <tr>
@@ -221,6 +222,7 @@ export default function SqueezeCheckPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </section>
         </>

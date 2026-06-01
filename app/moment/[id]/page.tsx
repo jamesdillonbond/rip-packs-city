@@ -830,14 +830,14 @@ export default async function MomentPage(
             }}
           >
             <StatCell label="Owner" value={<OwnerLink address={ss.owner_address} />} />
-            <StatCell label="Listed" value={ss.is_listed === true ? "YES" : ss.is_listed === false ? "NO" : "â"} />
+            <StatCell label="Listed" value={ss.is_listed === true ? "YES" : ss.is_listed === false ? "NO" : "—"} />
             <StatCell label="List price" value={fmtUsd(ss.list_price)} />
             <StatCell
               label="Last sale"
               value={
                 ss.last_sale?.price_usd != null
-                  ? `${fmtUsd(ss.last_sale.price_usd)} Â· ${fmtRelDate(ss.last_sale.sold_at)}`
-                  : "â"
+                  ? `${fmtUsd(ss.last_sale.price_usd)} · ${fmtRelDate(ss.last_sale.sold_at)}`
+                  : "—"
               }
             />
           </div>
@@ -877,7 +877,7 @@ export default async function MomentPage(
               <tbody>
                 {recentSales.map((s, i) => (
                   <tr key={`${s.sold_at}-${s.serial_number}-${i}`} style={{ borderBottom: "1px solid var(--rpc-border, rgba(255,255,255,0.04))" }}>
-                    <Td>{s.serial_number != null ? `#${s.serial_number}` : "â"}</Td>
+                    <Td>{s.serial_number != null ? `#${s.serial_number}` : "—"}</Td>
                     <Td>{fmtUsd(s.price_usd)}</Td>
                     <Td>
                       <span title={fmtAbsDate(s.sold_at)}>{fmtRelDate(s.sold_at)}</span>
@@ -931,7 +931,7 @@ export default async function MomentPage(
                 </div>
                 <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 4 }}>
                   <div style={{ fontFamily: "var(--font-display)", fontSize: 15, lineHeight: 1.2 }}>
-                    {p.set_name ?? "â"}
+                    {p.set_name ?? "—"}
                   </div>
                   <div
                     style={{
@@ -943,7 +943,7 @@ export default async function MomentPage(
                     }}
                   >
                     {(p.tier ?? "").toUpperCase()}
-                    {p.circulation_count != null ? ` Â· ${p.circulation_count.toLocaleString()} mint` : ""}
+                    {p.circulation_count != null ? ` · ${p.circulation_count.toLocaleString()} mint` : ""}
                   </div>
                 </div>
               </Link>
@@ -991,7 +991,7 @@ export default async function MomentPage(
                 </div>
                 <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 4 }}>
                   <div style={{ fontFamily: "var(--font-display)", fontSize: 15, lineHeight: 1.2 }}>
-                    {s.player_name ?? "â"}
+                    {s.player_name ?? "—"}
                   </div>
                   <div
                     style={{
@@ -1002,7 +1002,7 @@ export default async function MomentPage(
                       letterSpacing: "0.12em",
                     }}
                   >
-                    {(s.tier ?? "").toUpperCase()} Â· {s.set_name ?? "â"}
+                    {(s.tier ?? "").toUpperCase()} · {s.set_name ?? "—"}
                   </div>
                   <div
                     style={{
@@ -1011,7 +1011,7 @@ export default async function MomentPage(
                       color: s.fmv_usd != null ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)",
                     }}
                   >
-                    {s.fmv_usd != null ? fmtUsd(s.fmv_usd) : "â"}
+                    {s.fmv_usd != null ? fmtUsd(s.fmv_usd) : "—"}
                   </div>
                 </div>
               </Link>
@@ -1116,9 +1116,9 @@ function StatCell({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 function OwnerLink({ address }: { address: string | null | undefined }) {
-  if (!address) return <span style={{ color: "var(--rpc-text-muted)" }}>â</span>
+  if (!address) return <span style={{ color: "var(--rpc-text-muted)" }}>—</span>
   const lower = address.toLowerCase().startsWith("0x") ? address.toLowerCase() : `0x${address.toLowerCase()}`
-  const trunc = address.length > 12 ? `${address.slice(0, 6)}â¦${address.slice(-4)}` : address
+  const trunc = address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address
   return (
     <Link
       href={`/profile/${lower}`}

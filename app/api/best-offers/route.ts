@@ -1,4 +1,17 @@
 import { NextRequest, NextResponse } from "next/server"
+import { createClient } from "@supabase/supabase-js"
+
+// Edition-level top standing offer, sourced from the live Top Shot offer feed.
+// Primary source is edition_offers (the broad untagged /api/cron/offers-sweep
+// cache, ~all marketplace editions); badge_editions.highest_offer is the
+// fallback for editions the sweep hasn't reached yet. Both are the same
+// `highestOffer` GQL field the moment / edition detail pages read via
+// get_edition_high_offer, so the value returned here is the true MAX standing
+// bid for the edition.
+//
+// These sources only carry Top Shot offers, so non-TS editions (and TS editions
+// Top Shot does not publish an offer for) return bestOffer: null — the
+// collection grid already renders a dash for null.
 
 type BestOfferResult = {
   momentId: string
@@ -8,17 +21,7 @@ type BestOfferResult = {
   bestOfferType: "edition" | "serial" | null
 }
 
-function hashString(input: string) {
-  let hash = 0
-  for (let i = 0; i < input.length; i += 1) {
-    hash = (hash * 33 + input.charCodeAt(i)) >>> 0
-  }
-  return hash
-}
-
-function round2(value: number) {
-  return Number(value.toFixed(2))
-}
+const CHUNK = 500 // PostgREST URL cap on .in() lists
 
 export async function POST(req: NextRequest) {
   try {
@@ -29,13 +32,81 @@ export async function POST(req: NextRequest) {
       : []
 
     const editionKeys = Array.isArray(body.editionKeys) ? body.editionKeys : []
+    const collectionId = typeof body.collectionId === "string" ? body.collectionId : null
+
+    // No collection or no keys → nothing to look up; return null offers.
+    const emptyResults: BestOfferResult[] = momentIds.map((momentId: string, index: number) => ({
+      momentId,
+      editionKey: editionKeys[index] ?? null,
+      bestOffer: null,
+      bestOfferSource: null,
+      bestOfferType: null,
+    }))
+
+    if (!collectionId || !momentIds.length) {
+      return NextResponse.json({ results: emptyResults })
+    }
+
+    // Distinct, non-empty edition keys to look up.
+    const distinctKeys = Array.from(
+      new Set(
+        editionKeys
+          .map((k: unknown) => (typeof k === "string" ? k.trim() : ""))
+          .filter((k: string) => k.length > 0)
+      )
+    ) as string[]
+
+    if (!distinctKeys.length) {
+      return NextResponse.json({ results: emptyResults })
+    }
+
+    const supabase: any = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+
+    // external_id is the integer on-chain pair "setID:playID" for Top Shot —
+    // the same string the collection grid stores as editionKey. Read the broad
+    // edition_offers cache first; fall back to badge_editions for any key the
+    // offers-sweep hasn't populated yet.
+    const offerByKey = new Map<string, number>()
+
+    async function harvest(table: "edition_offers" | "badge_editions", keys: string[]) {
+      for (let i = 0; i < keys.length; i += CHUNK) {
+        const slice = keys.slice(i, i + CHUNK)
+        const { data, error } = await supabase
+          .from(table)
+          .select("external_id, highest_offer")
+          .eq("collection_id", collectionId)
+          .in("external_id", slice)
+          .gt("highest_offer", 0)
+        if (error) throw new Error(error.message)
+        for (const row of data ?? []) {
+          const key = String(row.external_id)
+          const offer = Number(row.highest_offer)
+          if (!Number.isFinite(offer) || offer <= 0) continue
+          const prev = offerByKey.get(key)
+          if (prev == null || offer > prev) offerByKey.set(key, offer)
+        }
+      }
+    }
+
+    try {
+      await harvest("edition_offers", distinctKeys)
+      const missing = distinctKeys.filter((k) => !offerByKey.has(k))
+      if (missing.length) await harvest("badge_editions", missing)
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "offers query failed", results: emptyResults },
+        { status: 500 }
+      )
+    }
 
     const results: BestOfferResult[] = momentIds.map((momentId: string, index: number) => {
       const editionKey = editionKeys[index] ?? null
-      const seed = hashString(`${momentId}:${editionKey ?? "none"}`)
-
-      const shouldHaveOffer = seed % 4 !== 0
-      if (!shouldHaveOffer) {
+      const key = typeof editionKey === "string" ? editionKey.trim() : ""
+      const offer = key ? offerByKey.get(key) : undefined
+      if (offer == null) {
         return {
           momentId,
           editionKey,
@@ -44,26 +115,12 @@ export async function POST(req: NextRequest) {
           bestOfferType: null,
         }
       }
-
-      const offer = round2(1 + ((seed % 2500) / 100))
-
-      const sourceSelector = seed % 3
-      const bestOfferSource =
-        sourceSelector === 0
-          ? "Top Shot Edition"
-          : sourceSelector === 1
-          ? "Top Shot Serial"
-          : "Flowty Serial"
-
-      const bestOfferType =
-        bestOfferSource === "Top Shot Edition" ? "edition" : "serial"
-
       return {
         momentId,
         editionKey,
         bestOffer: offer,
-        bestOfferSource,
-        bestOfferType,
+        bestOfferSource: "Top Shot Edition",
+        bestOfferType: "edition",
       }
     })
 

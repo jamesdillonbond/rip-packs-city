@@ -249,11 +249,14 @@ const navLinkStyle: React.CSSProperties = {
 };
 
 const STATS: Array<{ value: string; label: string }> = [
-  // TODO: wire these to live counters in a follow-up — see /api/health-check + ops dashboards.
+  // Defensible, non-fabricated values — "5 collections" is exact, "20 MIN" is the
+  // cron cadence, "24/7" reflects the always-on data pipeline. Avoid absolute
+  // claims like "100% Uptime" that we don't measure. Wire to live counters
+  // (pipeline_runs volume, last-refresh age) in a follow-up if we want real numbers.
   { value: "5", label: "Collections Tracked" },
   { value: "9.5K+", label: "Data Refreshes" },
   { value: "20 MIN", label: "Live Refresh" },
-  { value: "100%", label: "Uptime" },
+  { value: "24/7", label: "Live Pipeline" },
 ];
 
 const HOW_STEPS: Array<{ n: string; title: string; copy: string }> = [
@@ -305,7 +308,7 @@ export default function HomePageMarketing() {
       "@type": "SearchAction",
       target: {
         "@type": "EntryPoint",
-        urlTemplate: `${process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"}/nba-top-shot/collection?username={search_term_string}`,
+        urlTemplate: `${process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"}/share/{search_term_string}`,
       },
       "query-input": "required name=search_term_string",
     },

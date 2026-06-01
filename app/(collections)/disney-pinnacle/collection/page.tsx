@@ -51,7 +51,7 @@ function variantBadge(variant: string | null | undefined) {
   return (
     <span style={{
       display: "inline-block", padding: "1px 6px", borderRadius: 3,
-      fontSize: 10, fontFamily: "'Share Tech Mono', monospace", fontWeight: 700,
+      fontSize: 10, fontFamily: "var(--font-mono)", fontWeight: 700,
       color, background: `${color}22`, border: `1px solid ${color}55`, letterSpacing: "0.05em",
     }}>{v}</span>
   )
@@ -177,14 +177,14 @@ function PinnacleCollectionPageInner() {
           style={{
             flex: 1, padding: "10px 12px", borderRadius: 4,
             background: "rgba(255,255,255,0.04)", border: `1px solid ${ACCENT}44`,
-            color: "#fff", fontFamily: "'Share Tech Mono', monospace", fontSize: 13,
+            color: "#fff", fontFamily: "var(--font-mono)", fontSize: 13,
           }}
         />
         <button
           onClick={onSearch}
           style={{
             padding: "10px 20px", background: ACCENT, color: "#fff",
-            border: "none", borderRadius: 4, fontFamily: "'Barlow Condensed', sans-serif",
+            border: "none", borderRadius: 4, fontFamily: "var(--font-display)",
             fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer",
           }}>Analyze</button>
       </div>
@@ -226,7 +226,7 @@ function PinnacleCollectionPageInner() {
           {/* Variant breakdown */}
           {sortedVariants.length > 0 && (
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 14, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.6)", marginBottom: 8 }}>
+              <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.6)", marginBottom: 8 }}>
                 Variant Breakdown
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -234,7 +234,7 @@ function PinnacleCollectionPageInner() {
                   <div key={v.variant_type} style={{
                     padding: "6px 10px", background: "rgba(255,255,255,0.03)",
                     border: `1px solid ${PINNACLE_VARIANT_COLORS[v.variant_type] ?? "#6B7280"}66`,
-                    borderRadius: 4, fontSize: 12, fontFamily: "'Share Tech Mono', monospace",
+                    borderRadius: 4, fontSize: 12, fontFamily: "var(--font-mono)",
                   }}>
                     {variantBadge(v.variant_type)}
                     <span style={{ marginLeft: 8, color: "#fff" }}>{v.count}</span>
@@ -250,7 +250,7 @@ function PinnacleCollectionPageInner() {
           {/* Franchise breakdown */}
           {sortedFranchises.length > 0 && (
             <div style={{ marginBottom: 24 }}>
-              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 14, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.6)", marginBottom: 8 }}>
+              <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.6)", marginBottom: 8 }}>
                 Franchise Breakdown
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -258,7 +258,7 @@ function PinnacleCollectionPageInner() {
                   <div key={f.franchise} style={{
                     padding: "6px 10px", background: "rgba(255,255,255,0.04)",
                     border: "1px solid rgba(255,255,255,0.1)", borderRadius: 4,
-                    fontSize: 12, fontFamily: "'Share Tech Mono', monospace",
+                    fontSize: 12, fontFamily: "var(--font-mono)",
                   }}>
                     <span style={{ color: "#fff", fontWeight: 600 }}>{f.franchise}</span>
                     <span style={{ marginLeft: 8, color: ACCENT }}>{f.count}</span>
@@ -273,7 +273,7 @@ function PinnacleCollectionPageInner() {
 
           {/* Pins table */}
           <div style={{ overflow: "auto", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 4 }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: "'Share Tech Mono', monospace" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: "var(--font-mono)" }}>
               <thead>
                 <tr style={{ background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.6)", textAlign: "left" }}>
                   <Th>Character</Th>
@@ -321,10 +321,10 @@ function HeaderCard({ label, value }: { label: string; value: string }) {
       padding: 14, background: "rgba(255,255,255,0.03)",
       border: "1px solid rgba(255,255,255,0.08)", borderRadius: 4,
     }}>
-      <div style={{ fontSize: 10, fontFamily: "'Share Tech Mono', monospace", letterSpacing: "0.1em", color: "rgba(255,255,255,0.4)", textTransform: "uppercase" }}>
+      <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", letterSpacing: "0.1em", color: "rgba(255,255,255,0.4)", textTransform: "uppercase" }}>
         {label}
       </div>
-      <div style={{ fontSize: 22, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, color: "#fff", marginTop: 4 }}>
+      <div style={{ fontSize: 22, fontFamily: "var(--font-display)", fontWeight: 900, color: "#fff", marginTop: 4 }}>
         {value}
       </div>
     </div>
