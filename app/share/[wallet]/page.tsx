@@ -53,6 +53,56 @@ async function fetchSnapshot(wallet: string): Promise<SnapshotData | null> {
   }
 }
 
+// RPC's Top Shot intelligence lens for the wallet — the differentiator Top
+// Shot's own profile doesn't show. TS-scoped (do not imply it covers all 5
+// collections). Backed by the service-role /api/public/wallet-intel route.
+interface WalletIntelHighlight {
+  external_id: string
+  player_name: string | null
+  set_name: string | null
+  tier: string | null
+  serial_number: number | null
+  circulation: number | null
+  squeeze_pct: number | null
+  is_rookie: boolean
+  is_trophy: boolean
+  fmv_usd: number | null
+  confidence: string | null
+  thumbnail_url: string | null
+}
+
+interface WalletIntel {
+  wallet: string
+  ts_moments: number
+  ts_fmv: number
+  squeezed_count: number
+  rookie_count: number
+  trophy_count: number
+  highlights: WalletIntelHighlight[]
+}
+
+async function fetchWalletIntel(wallet: string): Promise<WalletIntel | null> {
+  try {
+    const res = await fetch(`${siteUrl()}/api/public/wallet-intel?wallet=${encodeURIComponent(wallet)}`, {
+      next: { revalidate: 300 },
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    if (!data || typeof data !== "object" || data.error) return null
+    return {
+      wallet: data.wallet ?? wallet,
+      ts_moments: Number(data.ts_moments ?? 0),
+      ts_fmv: Number(data.ts_fmv ?? 0),
+      squeezed_count: Number(data.squeezed_count ?? 0),
+      rookie_count: Number(data.rookie_count ?? 0),
+      trophy_count: Number(data.trophy_count ?? 0),
+      highlights: Array.isArray(data.highlights) ? data.highlights : [],
+    }
+  } catch {
+    return null
+  }
+}
+
 export async function generateMetadata(
   props: { params: Promise<{ wallet: string }> }
 ): Promise<Metadata> {
@@ -84,7 +134,10 @@ const TIER_COLORS: Record<string, string> = {
 export default async function SharePage(props: { params: Promise<{ wallet: string }> }) {
   const params = await props.params
   const wallet = params.wallet
-  const data = await fetchSnapshot(wallet)
+  const [data, intel] = await Promise.all([
+    fetchSnapshot(wallet),
+    fetchWalletIntel(wallet),
+  ])
 
   if (!data) {
     return (
@@ -121,6 +174,133 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             {data.totalMoments} moments &middot; {data.badgeCount} badges
           </div>
         </div>
+
+        {/* Wallet-intel overlay — RPC's Top Shot intelligence lens (rookies /
+            squeezed / trophies + ranked highlights) that Top Shot's own profile
+            doesn't surface. TS-scoped, so framed explicitly as Top Shot (the
+            rest of this card is cross-collection). Hidden entirely when the
+            wallet holds no TS moments — never render "0 rookies". */}
+        {intel && intel.ts_moments > 0 ? (
+          <div style={{ marginBottom: 32 }}>
+            <div style={{ fontSize: 14, letterSpacing: "0.15em", color: "#666", marginBottom: 12, textTransform: "uppercase" }}>
+              Your Top Shot Intelligence
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 10,
+                marginBottom: 16,
+                fontFamily: "var(--font-mono, monospace)",
+                fontSize: 14,
+              }}
+            >
+              <span style={{ padding: "8px 14px", border: "1px solid #222", borderRadius: 999, background: "#111", color: "#ccc" }}>
+                <strong style={{ color: "var(--rpc-red, #E03A2F)" }}>{intel.rookie_count}</strong> rookies
+              </span>
+              <span style={{ padding: "8px 14px", border: "1px solid #222", borderRadius: 999, background: "#111", color: "#ccc" }}>
+                <strong style={{ color: "var(--rpc-red, #E03A2F)" }}>{intel.squeezed_count}</strong> squeezed
+              </span>
+              <span style={{ padding: "8px 14px", border: "1px solid #222", borderRadius: 999, background: "#111", color: "#ccc" }}>
+                <strong style={{ color: "var(--rpc-red, #E03A2F)" }}>{intel.trophy_count}</strong> trophies
+              </span>
+              <span style={{ padding: "8px 14px", borderRadius: 999, color: "#555", alignSelf: "center" }}>
+                across {intel.ts_moments.toLocaleString("en-US")} Top Shot moments
+              </span>
+            </div>
+
+            {intel.highlights.length > 0 ? (
+              <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 4 }}>
+                {intel.highlights.map((h) => {
+                  const tierColor = TIER_COLORS[(h.tier ?? "").toLowerCase()] ?? "#9CA3AF"
+                  const squeeze = h.squeeze_pct == null ? null : Math.max(0, Math.min(100, h.squeeze_pct))
+                  return (
+                    <a
+                      key={h.external_id}
+                      href={`/nba-top-shot/edition/${encodeURIComponent(h.external_id)}`}
+                      style={{
+                        flex: "0 0 168px",
+                        border: "1px solid #222",
+                        borderRadius: 8,
+                        background: "#111",
+                        overflow: "hidden",
+                        textDecoration: "none",
+                        color: "inherit",
+                        display: "block",
+                      }}
+                    >
+                      {h.thumbnail_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={h.thumbnail_url} alt={h.player_name ?? "moment"} style={{ width: "100%", height: 126, objectFit: "cover" }} />
+                      ) : (
+                        <div style={{ width: "100%", height: 126, background: "#1A1A1A", display: "flex", alignItems: "center", justifyContent: "center", color: "#333", fontSize: 32 }}>?</div>
+                      )}
+                      <div style={{ padding: "10px 12px" }}>
+                        <div style={{ display: "flex", gap: 4, marginBottom: 6, flexWrap: "wrap" }}>
+                          {h.is_rookie ? (
+                            <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.06em", color: "#0A0A0A", background: "#FFD700", padding: "2px 6px", borderRadius: 4 }}>ROOKIE</span>
+                          ) : null}
+                          {h.is_trophy ? (
+                            <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.06em", color: "#fff", background: "var(--rpc-red, #E03A2F)", padding: "2px 6px", borderRadius: 4 }}>TROPHY</span>
+                          ) : null}
+                        </div>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: "#fff", marginBottom: 2, fontFamily: "var(--font-display, 'Barlow Condensed', sans-serif)" }}>
+                          {h.player_name ?? "Unknown"}
+                        </div>
+                        <div style={{ fontSize: 11, color: tierColor, fontFamily: "var(--font-mono, monospace)" }}>
+                          {h.tier ?? ""}
+                          {h.serial_number != null && h.circulation != null ? `  ·  #${h.serial_number} / ${h.circulation.toLocaleString("en-US")}` : ""}
+                        </div>
+                        <div style={{ fontSize: 11, color: "#666", fontFamily: "var(--font-mono, monospace)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {h.set_name ?? ""}
+                        </div>
+                        {squeeze != null ? (
+                          <div style={{ marginTop: 8 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#777", fontFamily: "var(--font-mono, monospace)", marginBottom: 2 }}>
+                              <span>SQUEEZE</span>
+                              <span>{squeeze.toFixed(0)}%</span>
+                            </div>
+                            <div style={{ width: "100%", height: 4, background: "#1F1F1F", borderRadius: 2, overflow: "hidden" }}>
+                              <div style={{ width: `${squeeze}%`, height: "100%", background: "var(--rpc-red, #E03A2F)" }} />
+                            </div>
+                          </div>
+                        ) : null}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 8 }}>
+                          <span style={{ fontSize: 16, fontWeight: 800, color: "var(--rpc-red, #E03A2F)", fontFamily: "var(--font-mono, monospace)" }}>
+                            {h.fmv_usd != null ? `$${Number(h.fmv_usd).toFixed(2)}` : "—"}
+                          </span>
+                          {h.confidence ? (
+                            <span style={{ fontSize: 9, color: "#555", fontFamily: "var(--font-mono, monospace)", letterSpacing: "0.04em" }}>{h.confidence}</span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </a>
+                  )
+                })}
+              </div>
+            ) : null}
+
+            {/* Conversion hook tied to the intel surface */}
+            <a
+              href="/login"
+              style={{
+                display: "inline-block",
+                marginTop: 16,
+                padding: "10px 22px",
+                border: "1px solid var(--rpc-red, #E03A2F)",
+                borderRadius: 8,
+                color: "var(--rpc-red, #E03A2F)",
+                fontWeight: 700,
+                fontSize: 13,
+                textDecoration: "none",
+                letterSpacing: "0.05em",
+                fontFamily: "var(--font-mono, monospace)",
+              }}
+            >
+              Track this wallet — get squeeze + deal alerts →
+            </a>
+          </div>
+        ) : null}
 
         {/* Per-collection rollup — RPC's cross-collection differentiator. Only
             shown when the wallet spans more than one Flow collection. */}
