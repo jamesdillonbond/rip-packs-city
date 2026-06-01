@@ -53,16 +53,24 @@ export function applyPhantomGuard<T extends Record<string, unknown>>(row: T): T 
 }
 
 // Source-side mirror of the SQL apply_fmv_thin_sales_guard cleanup. A
-// snapshot with fmv_usd > 200 and zero 30-day sales is, by definition,
-// not backed by recent evidence — even when the underlying number was
-// derived from a Flowty floor proxy. Mark these STALE proactively at
+// sales-derived snapshot with fmv_usd > 200 and zero 30-day sales is, by
+// definition, not backed by recent evidence — mark it STALE proactively at
 // write time so the post-pass guard has nothing to clean up later.
 //
+// ASK_ONLY is exempt: it is an explicitly ask-derived label (priced from a
+// live TS marketplace ask × 0.90, never from sales), so it is already honest
+// about having no recent sales. Re-flagging it STALE would defeat the
+// fmv-recalc source fix that prefers a fresh ask over a stale WAP for editions
+// whose only sales are 60+ days old (Step 5b + Step 5 backfill). Without this
+// exemption, every ASK_ONLY row above ~$222 (low_ask ≥ ~$247) would be flipped
+// back to STALE the instant it was written.
+//
 // Test cases:
-//   1. { fmv_usd: 250, sales_count_30d: 0, confidence: 'LOW'    } → confidence='STALE'
-//   2. { fmv_usd: 250, sales_count_30d: 5, confidence: 'MEDIUM' } → unchanged
-//   3. { fmv_usd: 50,  sales_count_30d: 0, confidence: 'LOW'    } → unchanged (under threshold)
-//   4. { fmv_usd: 250, sales_count_30d: 0, confidence: 'HIGH'   } → unchanged (HIGH never downgrades — caller already broke an invariant)
+//   1. { fmv_usd: 250, sales_count_30d: 0, confidence: 'LOW'      } → confidence='STALE'
+//   2. { fmv_usd: 250, sales_count_30d: 5, confidence: 'MEDIUM'   } → unchanged
+//   3. { fmv_usd: 50,  sales_count_30d: 0, confidence: 'LOW'      } → unchanged (under threshold)
+//   4. { fmv_usd: 250, sales_count_30d: 0, confidence: 'HIGH'     } → unchanged (HIGH never downgrades — caller already broke an invariant)
+//   5. { fmv_usd: 850, sales_count_30d: 0, confidence: 'ASK_ONLY' } → unchanged (honest ask-derived label)
 
 const STALE_FMV_THRESHOLD_USD = 200
 
@@ -75,6 +83,7 @@ export function applyStaleGuard<T extends Record<string, unknown>>(row: T): T {
   const conf = typeof row.confidence === "string" ? row.confidence : null
   if (conf === "HIGH") return row
   if (conf === "STALE") return row
+  if (conf === "ASK_ONLY") return row
   return { ...row, confidence: "STALE" } as T
 }
 
