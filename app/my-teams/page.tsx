@@ -70,12 +70,14 @@ function fmtCount(v: number | null | undefined): string {
   return Number(v).toLocaleString("en-US")
 }
 
-// Mirrors TeamHero: official NBA-CDN logo only for the NBA league (the URL is
-// NBA-specific); every other league falls back to the abbreviation badge.
+// Mirrors TeamHero: official CDN logo for NBA + WNBA (same id family, league-
+// specific CDN host); every other league falls back to the abbreviation badge.
 function logoFor(t: FanTeam): string | null {
-  return t.external_id && t.league.toUpperCase() === "NBA"
-    ? `https://cdn.nba.com/logos/nba/${t.external_id}/global/L/logo.svg`
-    : null
+  if (!t.external_id) return null
+  const league = t.league.toUpperCase()
+  if (league === "NBA") return `https://cdn.nba.com/logos/nba/${t.external_id}/global/L/logo.svg`
+  if (league === "WNBA") return `https://cdn.wnba.com/logos/wnba/${t.external_id}/global/L/logo.svg`
+  return null
 }
 
 async function fetchFanTeams(): Promise<FanTeam[]> {

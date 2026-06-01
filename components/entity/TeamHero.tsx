@@ -176,8 +176,17 @@ export default function TeamHero({
   }
 
   // ── Branded banner ────────────────────────────────────────────────────────
-  const isNba = (leagueLabel ?? "").toUpperCase() === "NBA"
-  const logoUrl = externalId && isNba ? `https://cdn.nba.com/logos/nba/${externalId}/global/L/logo.svg` : null
+  // Official CDN logos: NBA + WNBA share the same id family and path shape on
+  // their respective CDNs. Every other league (NFL/LaLiga) has no external_id
+  // and falls back to the initials badge inside TeamLogo.
+  const league = (leagueLabel ?? "").toUpperCase()
+  const logoUrl = externalId
+    ? league === "NBA"
+      ? `https://cdn.nba.com/logos/nba/${externalId}/global/L/logo.svg`
+      : league === "WNBA"
+        ? `https://cdn.wnba.com/logos/wnba/${externalId}/global/L/logo.svg`
+        : null
+    : null
   const accent = secondaryColor || "var(--rpc-red)"
   const gradient = `linear-gradient(105deg, ${primaryColor} 0%, var(--rpc-surface) 88%)`
 
