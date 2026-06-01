@@ -1,5 +1,7 @@
 # Phase D — `lib/chains/flow/` reorganization (CORRECTED execution plan)
 
+> **Status: EXECUTED 2026-05-30 — soak passed 2026-06-01 17:10 UTC clean. Closeout via scheduled task.** Commits `01b3878` (moves) + `1b7cfde` (shims), deploy `dpl_2weTJexPvEjXaQxjccrEckDctSWB` READY.
+
 **Created 2026-05-30 by Claude Code, from a just-verified `lib/` inventory.**
 Supersedes the Phase D section in
 [docs/handoff-2026-05-30-chain-abstraction-phases-cde.md](handoff-2026-05-30-chain-abstraction-phases-cde.md),
