@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import ShareButton from "./ShareButton"
+import ShareEmptyState from "./ShareEmptyState"
 import FunnelTracker from "@/components/FunnelTracker"
 
 interface SnapshotData {
@@ -140,15 +141,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
   ])
 
   if (!data) {
-    return (
-      <div style={{ minHeight: "100vh", background: "#0A0A0A", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontFamily: "var(--font-display)" }}>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>RPC</div>
-          <div style={{ fontSize: 18, color: "#666" }}>Collection not found for {wallet}</div>
-          <div style={{ marginTop: 16, fontSize: 14, color: "#555" }}>This wallet may not have been analyzed yet.</div>
-        </div>
-      </div>
-    )
+    return <ShareEmptyState wallet={wallet} />
   }
 
   const seriesEntries = Object.entries(data.seriesBreakdown).sort(([a], [b]) => a.localeCompare(b))

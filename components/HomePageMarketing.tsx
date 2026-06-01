@@ -8,6 +8,7 @@ import RpcLogo from "@/components/RpcLogo";
 import SiteFooter from "@/components/SiteFooter";
 import MobileNav from "@/components/MobileNav";
 import PinwheelDivider from "@/components/visual/PinwheelDivider";
+import HomeFmvPreview from "@/components/HomeFmvPreview";
 import { publishedCollections } from "@/lib/collections";
 import { organizationJsonLd } from "@/lib/seo";
 
@@ -249,12 +250,13 @@ const navLinkStyle: React.CSSProperties = {
 };
 
 const STATS: Array<{ value: string; label: string }> = [
-  // Defensible, non-fabricated values — "5 collections" is exact, "20 MIN" is the
-  // cron cadence, "24/7" reflects the always-on data pipeline. Avoid absolute
-  // claims like "100% Uptime" that we don't measure. Wire to live counters
-  // (pipeline_runs volume, last-refresh age) in a follow-up if we want real numbers.
+  // Defensible, non-fabricated values. "5 collections" is exact; "280K+ sales
+  // indexed" is a safe floor (the sales table only grows — verified 283,504 on
+  // 2026-05-31); "20 MIN" is the cron cadence; "24/7" reflects the always-on
+  // pipeline. Avoid absolute/stale claims like "100% Uptime" or a precise
+  // refresh count that drifts.
   { value: "5", label: "Collections Tracked" },
-  { value: "9.5K+", label: "Data Refreshes" },
+  { value: "280K+", label: "Sales Indexed" },
   { value: "20 MIN", label: "Live Refresh" },
   { value: "24/7", label: "Live Pipeline" },
 ];
@@ -291,7 +293,7 @@ const TRUST: string[] = [
   "Built by Trevor Dillon-Bond, an official Portland Trail Blazers Team Captain on NBA Top Shot.",
   "Working partnership with Flowty leadership.",
   "Live pipelines updated every 20 minutes.",
-  "Zero downtime since launch.",
+  "Automated monitoring and alerting on every data pipeline.",
 ];
 
 export default function HomePageMarketing() {
@@ -707,90 +709,10 @@ export default function HomePageMarketing() {
               ))}
             </div>
 
-            {/* TODO: replace this placeholder card with a real screenshot of the wallet analytics view. */}
-            <div
-              style={{
-                background: "var(--rpc-surface-raised)",
-                border: "1px solid var(--rpc-border)",
-                borderRadius: "var(--radius-md)",
-                padding: "20px 18px",
-                minHeight: 360,
-                display: "flex",
-                flexDirection: "column",
-                gap: 14,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  letterSpacing: "0.18em",
-                  color: "var(--rpc-text-muted)",
-                  textTransform: "uppercase",
-                }}
-              >
-                <span
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    background: "var(--rpc-success)",
-                    boxShadow: "0 0 8px var(--rpc-success)",
-                  }}
-                />
-                LIVE FMV PREVIEW
-              </div>
-              <div
-                style={{
-                  flex: 1,
-                  borderRadius: "var(--radius-sm)",
-                  background:
-                    "repeating-linear-gradient(0deg,transparent 0,transparent 23px,rgba(255,255,255,0.04) 23px,rgba(255,255,255,0.04) 24px),repeating-linear-gradient(90deg,transparent 0,transparent 23px,rgba(255,255,255,0.04) 23px,rgba(255,255,255,0.04) 24px)",
-                  border: "1px solid var(--rpc-border)",
-                  padding: 16,
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  color: "var(--rpc-text-muted)",
-                }}
-              >
-                <div>
-                  <div style={{ color: "var(--rpc-text-secondary)" }}>EDITION 84:2892</div>
-                  <div
-                    style={{
-                      fontFamily: "var(--font-display)",
-                      fontSize: 28,
-                      fontWeight: 800,
-                      color: "var(--rpc-text-primary)",
-                      lineHeight: 1.1,
-                    }}
-                  >
-                    $148.00
-                  </div>
-                  <div style={{ color: "var(--rpc-success)" }}>↑ 12.4% / 7D</div>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
-                  <div>
-                    <div style={{ color: "var(--rpc-text-ghost)" }}>P10</div>
-                    <div style={{ color: "var(--rpc-text-secondary)" }}>$112</div>
-                  </div>
-                  <div>
-                    <div style={{ color: "var(--rpc-text-ghost)" }}>P50</div>
-                    <div style={{ color: "var(--rpc-text-secondary)" }}>$148</div>
-                  </div>
-                  <div>
-                    <div style={{ color: "var(--rpc-text-ghost)" }}>P90</div>
-                    <div style={{ color: "var(--rpc-text-secondary)" }}>$210</div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            {/* Live FMV preview — fetches the public /api/fmv/demo endpoint and
+                renders a real recent sample (FMV + confidence + serial-premium
+                math), with a clearly-labelled SAMPLE fallback. */}
+            <HomeFmvPreview />
           </div>
         </div>
       </section>
@@ -828,10 +750,10 @@ export default function HomePageMarketing() {
           <div className="rpc-home-eyebrow">◈ PRICING ◈</div>
           <h2 className="rpc-home-h2">FREE DURING BETA.</h2>
           <p className="rpc-home-sub">
-            RPC is in active development. Sign in to save wallets, set FMV alerts, and track your portfolio over time.
+            Searching wallets, public insights, and Fast Break are free with no signup. An account — to save wallets, set FMV alerts, and track your portfolio over time — is invite-only while we&rsquo;re in closed beta. Request access below.
           </p>
           <Link
-            href="/dashboard"
+            href="/early-access"
             style={{
               marginTop: 8,
               background: "var(--rpc-red)",
@@ -846,7 +768,7 @@ export default function HomePageMarketing() {
               textDecoration: "none",
             }}
           >
-            SIGN IN →
+            REQUEST BETA ACCESS →
           </Link>
         </div>
       </section>
