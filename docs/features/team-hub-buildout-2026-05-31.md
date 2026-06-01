@@ -1,8 +1,10 @@
 # Team Hub Build-Out — Research & Spec
 
 **Date:** 2026-05-31
-**Status:** Research / planning (no code shipped). Scope: **NBA Top Shot first**, generalizes to NFL All Day + LaLiga Golazos.
+**Status:** Phase 1 SHIPPED 2026-05-31 (commit `0f65db8`, deploy READY). Phases 2–4 are planning. Scope: **NBA Top Shot first**, generalizes to NFL All Day + LaLiga Golazos.
 **Author:** Cowork research pass for Trevor.
+
+> **Phase 1 shipped (2026-05-31, `0f65db8`).** Live: branded team-colored hero + NBA-CDN logo + abbreviation/league chips (falls back to the plain hero when unbranded); `get_team_detail` v2 (teams_master branding matched on slugified `team_name` — no cross-league slug collision, no league guard needed — plus `sales_30d`/`volume_30d_usd`); `get_team_players` now surfaces `is_active`; 30d Sales + 30d Volume stat cells (strip is **7** cells — cost-to-complete is Phase 2); Current/All-Time roster toggle. Corrections folded in from the build: logo `onError` lives in a small `TeamLogo` **client island** (an RSC can't take `onError`); the gradient uses the real token **`--rpc-surface`** (`#0D0D0D`), not `--rpc-bg`; the Current toggle only renders when a loaded row has `is_active===true` (Pinnacle/NFL/Golazos `is_active` is null → all players show). Revert: `git revert 0f65db8` + `CREATE OR REPLACE` the prior D1/D2 bodies.
 
 ---
 
@@ -101,8 +103,8 @@ Keep: Players, Editions, Total Mint, FMV Total, Floor Total. Add: **30d Sales** 
 ### C. Team Checklists — the centerpiece **[new]**
 Three tabs mirroring Top Shot's own structure, but public + priced:
 
-- **All-Time Team** — every edition for the team (Lakers: 522).
-- **Contemporary Team** — current era, series 6–8 (Lakers: 220).
+- **All-Time Team** — every edition for the team (Lakers: 522; ~324 shown in the grid after the thumbnail filter).
+- **Contemporary Team** — moments whose play happened in the **same season as the series they were minted in** — i.e. excludes throwback/historical sets (Archive, Run It Back, Vintage Vibes, Heroes of the Game). Computed as `season(game_date) == season(series)`, NOT a series cutoff. Lakers: **372 contemporary** (~238 with art). Verified the test isolates exactly the throwback sets.
 - **By Series** — one checklist per series (Lakers S1 101 · S2 55 · S3 6 · S4 38 · S5 102 · S6 77 · S7 73 · S8 70).
 
 Each checklist:
@@ -194,7 +196,7 @@ Phase 1 is shippable on its own and is the recommended first increment.
 
 ## 9. Open questions
 
-1. **Contemporary definition** — series 6–8 (2023-24 → 2025-26), or a rolling date cutoff? Top Shot's own "Contemporary" excludes retired/throwback sets; we'd approximate by series.
+1. **Contemporary definition** — RESOLVED (2026-05-31): a moment is Contemporary when `season(game_date) == season(series)` (the play happened in the season of the series it was minted in); throwback/historical sets (Archive, Run It Back, Vintage Vibes, Heroes of the Game) are excluded. Verified computable — game_date coverage is high for recent series (S7 ~99.6%, S8 ~92.6%); ~5–8% null-game_date editions are conservatively excluded. SQL in the Phase 2 handoff.
 2. **Checklist tracking gate** — require login, or allow **wallet-paste** (no auth) to compute owned/missing? Wallet-paste matches RPC's onboarding angle and keeps the SEO page useful to anonymous visitors.
 3. **Team Score** — replicate Top Shot's points (10k/20k/25k) for parity/comparison, or lead with our own cost-to-complete metric only?
 4. **Cleanup** — drop the non-team "team" buckets (Team LeBron, Rising Stars) from team-URL generation?
@@ -205,8 +207,20 @@ Phase 1 is shippable on its own and is the recommended first increment.
 ## 10. Appendix — verified figures (2026-05-31, prod DB `bxcqstmqfzmuolpuynti`)
 
 - Lakers: 522 editions · 73 all-time players · 2,312,521 total mint · $38,135 FMV total · $39,333 floor total · 1,599 sales / $18,788 volume (30d).
-- Lakers series split: S1 101 · S2 55 · S3 6 · S4 38 · S5 102 · S6 77 · S7 73 · S8 70 → Contemporary (S6–8) = 220; All-Time = 522.
+- Lakers series split: S1 101 · S2 55 · S3 6 · S4 38 · S5 102 · S6 77 · S7 73 · S8 70. All-Time = 522 (~324 with art). Contemporary (verified `season(game_date)==season(series)`) = 372 (~238 with art) — throwback sets (Archive 112 / Run It Back: Origins 94 / Vintage Vibes 79 / Heroes of the Game / Supernova …) excluded; the test isolates exactly those sets.
 - `teams_master`: 95 rows (NBA + NFL leagues), colors + abbr + external_id present. Sample: Trail Blazers `#E03A3E`/`#000000`, abbr POR, external_id 1610612757.
-- `nba_players`: 174 rows; current_team_abbr + is_active_2026 populated; **headshot_url 0/174**; top teams ~17–20 players each (partial league coverage).
-- `get_team_detail` today returns **no** branding fields (confirmed against live RPC output).
+- `nba_players`: 174 rows; current_team_abbr + is_active_2026 populated; headshot_url 0/174; top teams ~17–20 players each (partial league coverage).
+- `get_team_detail` returned no branding fields at research time (Phase 1 v2 has since added them).
 - Top Shot Team Checklist tiers (from support docs): Team Series 10,000 pts · Contemporary Team 20,000 pts · All-Time Team 25,000 pts; checkmarks green=owned+locked / white=owned / gray=missing.
+
+---
+
+## 11. Cross-collection fan hub — /my-teams (Phase 5; handoff ready 2026-05-31)
+
+**Premise.** `user_favorite_teams` is per-league (NBA / WNBA / NFL / LALIGA), so a logged-in fan holds e.g. Blazers + Liberty (both Top Shot) + Lions (All Day). An auth-gated `/my-teams` hub unifies them — the personalization capstone.
+
+**Decisions (resolved 2026-05-31):** personal `/my-teams` only for v1 (no public "fans" page); auto-bind the user's saved wallet (`saved_wallets`, verified + most-recently-pinned) so completion shows without re-pasting; **WNBA included** — it is part of NBA Top Shot (`teams_master` already holds the 13 current WNBA franchises with branding, the Phase 1 join is league-agnostic so WNBA team pages are already branded, and Phase 4 follow already writes `league='WNBA'`).
+
+**Shape.** New SECDEF `get_my_fan_teams()` (scoped to `auth.uid()`, authenticated-only) resolves each favorite's short slug → route slug + collection + branding via `teams_master`. The `/my-teams` page fans out to the existing `get_team_detail` + `get_team_checklist_progress` per team (≤4 typical) and renders a branded card each: completion % + cost-to-complete + "X locked" + 30d activity + link to the full hub. Mostly composition — one new RPC + one route + one page. Full build spec: `docs/handoff-2026-05-31-team-hub-phase5-fan-hub.md`.
+
+**Deferred (optional):** a combined "recent activity across your teams" feed.
