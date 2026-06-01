@@ -39,6 +39,16 @@ const MARKETPLACE_LABEL: Record<string, string> = {
   "disney-pinnacle": "Pinnacle",
 }
 
+// Collection-aware label for the lowest-ask cell — the value source is not
+// always Top Shot, so "Top Shot ask" must not show on a non-Top-Shot page.
+const ASK_LABEL: Record<string, string> = {
+  "nba-top-shot": "Top Shot ask",
+  "nfl-all-day": "All Day ask",
+  "laliga-golazos": "Golazos ask",
+  "disney-pinnacle": "Pinnacle ask",
+  "ufc-strike": "UFC ask",
+}
+
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
@@ -687,22 +697,23 @@ export default async function MomentPage(
           >
             <StatCell label="Floor" value={fmtUsd(f?.floor_price_usd)} />
             <StatCell label="WAP" value={fmtUsd(f?.wap_usd)} />
-            <StatCell label="Top Shot ask" value={fmtUsd(highOffer?.low_ask ?? f?.top_shot_ask)} />
             <StatCell
-              label="Best offer"
-              value={
-                highOffer?.highest_offer != null
-                  ? (
-                    <span title={highOffer.updated_at ? fmtAbsDate(highOffer.updated_at) : undefined}>
-                      {fmtUsd(highOffer.highest_offer)}
-                      {highOffer.updated_at ? (
-                        <span style={{ color: "var(--rpc-text-muted)" }}> · {fmtRelDate(highOffer.updated_at)}</span>
-                      ) : null}
-                    </span>
-                  )
-                  : "—"
-              }
+              label={ASK_LABEL[collectionSlugUrl ?? ""] ?? "Floor ask"}
+              value={fmtUsd(highOffer?.low_ask ?? f?.top_shot_ask ?? f?.cross_market_ask)}
             />
+            {highOffer?.highest_offer != null && highOffer.highest_offer > 0 && (
+              <StatCell
+                label="Best offer"
+                value={
+                  <span title={highOffer.updated_at ? fmtAbsDate(highOffer.updated_at) : undefined}>
+                    {fmtUsd(highOffer.highest_offer)}
+                    {highOffer.updated_at ? (
+                      <span style={{ color: "var(--rpc-text-muted)" }}> · {fmtRelDate(highOffer.updated_at)}</span>
+                    ) : null}
+                  </span>
+                }
+              />
+            )}
           </div>
 
           {/* Badges row (edition-wide) + special-serial pills (per-NFT only) */}

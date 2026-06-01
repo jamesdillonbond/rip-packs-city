@@ -65,6 +65,7 @@ interface EditionDetail {
     computed_at: string | null
     sales_count_30d: number | null
     days_since_sale: number | null
+    cross_market_ask?: number | null
   } | null
   is_serialized?: boolean
   is_chaser?: boolean
@@ -131,6 +132,17 @@ interface ParallelEdition {
 }
 
 const SALES_PAGE_SIZE = 30
+
+// Collection-aware label for the lowest-ask cell. The value source differs per
+// collection (Top Shot marketplace ask vs the V1-Dapper cross-market ask), so
+// the label must not say "Top Shot ask" on a non-Top-Shot page.
+const ASK_LABEL: Record<string, string> = {
+  "nba-top-shot": "Top Shot ask",
+  "nfl-all-day": "All Day ask",
+  "laliga-golazos": "Golazos ask",
+  "disney-pinnacle": "Pinnacle ask",
+  "ufc-strike": "UFC ask",
+}
 
 type RpcClient = {
   rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>
@@ -271,6 +283,20 @@ export default async function EditionPage(
 
   const editionTitle = detail.player_name ?? detail.name ?? "Edition"
 
+  // Ask cell (H2/H3): prefer the marketplace low_ask; fall back to the
+  // V1-Dapper cross-market ask (populated for ~2.7K All Day editions where
+  // badge_editions.low_ask is null). Label is collection-aware.
+  const askValue = highOffer?.low_ask ?? fmv?.cross_market_ask ?? null
+  const askLabel = ASK_LABEL[collection] ?? "Floor ask"
+  // Best-offer cell (H1): only render when there's a real positive offer.
+  // edition_offers is Top-Shot-only today, so an em-dash here would be a
+  // permanent placeholder on every other collection.
+  const hasBestOffer = typeof highOffer?.highest_offer === "number" && highOffer.highest_offer > 0
+  // H5: only render pack tiles that resolved a real title. Some All Day dist_ids
+  // have no matching pack_distributions row, so get_edition_in_packs returns
+  // pack_title=NULL and the card would render a bare "Pack" placeholder.
+  const namedPacks = packs.filter(p => typeof p.pack_title === "string" && p.pack_title.trim().length > 0)
+
   return (
     <div>
       <script
@@ -387,14 +413,16 @@ export default async function EditionPage(
           value={fmtUsd(fmv?.floor_price_usd ?? null)}
         />
         <StatCell
-          label="Top Shot ask"
-          value={fmtUsd(highOffer?.low_ask ?? null)}
+          label={askLabel}
+          value={fmtUsd(askValue)}
         />
-        <StatCell
-          label="Best offer"
-          value={fmtUsd(highOffer?.highest_offer ?? null)}
-          sub={highOffer?.updated_at ? relTime(highOffer.updated_at) : undefined}
-        />
+        {hasBestOffer && (
+          <StatCell
+            label="Best offer"
+            value={fmtUsd(highOffer?.highest_offer ?? null)}
+            sub={highOffer?.updated_at ? relTime(highOffer.updated_at) : undefined}
+          />
+        )}
         <StatCell
           label="30d Sales"
           value={fmtCount(fmv?.sales_count_30d ?? null)}
@@ -456,10 +484,10 @@ export default async function EditionPage(
       )}
 
       {/* ── Found in packs ───────────────────────────────────────────────── */}
-      {packs.length > 0 && (
+      {namedPacks.length > 0 && (
         <Section title="Found in These Packs">
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10 }}>
-            {packs.map(p => (
+            {namedPacks.map(p => (
               <Link
                 key={p.dist_id}
                 href={`/${collection}/pack/dist/${encodeURIComponent(p.dist_id)}`}

@@ -937,7 +937,7 @@ export default function WalletPage() {
       momentId: m.moment_id,
       playerName: m.player_name ?? "Unknown",
       team: m.team_name ?? undefined,
-      league: "NBA",
+      league: collectionObj?.sport ?? undefined,
       setName: m.set_name ?? "Unknown Set",
       editionKey: m.edition_key,
       fmv: fmvVal,

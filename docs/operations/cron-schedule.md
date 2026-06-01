@@ -1,6 +1,6 @@
 # Rip Packs City — Cron Schedule Reference
 
-**Last verified:** May 30, 2026 (reconciled against `pipeline_runs` 48h activity — FMV Cold-Tail Drain and Pinnacle Listings Reconcile confirmed firing and promoted from Pending to Active)
+**Last verified:** June 1, 2026 (added RPC Offers Sweep + EVM Transfers Ingest to Active — both confirmed firing in `pipeline_runs`; offers-sweep ~43x/24h all-ok)
 **Platform:** cron-job.org (free tier, 30s hard timeout)
 
 This is the authoritative inventory of every active cron-job.org entry firing into Rip Packs City. Use this when adding new crons (to find a quiet schedule slot), when something stops working (to confirm a cron is actually scheduled), and when triaging health-probe alerts.
@@ -31,6 +31,7 @@ For staggered scheduling, use these patterns (all proven quiet):
 | RPC Classify Acquisitions Multi-Collection | `/api/cron/classify-acquisitions-multicollection` | `6 * * * *` | Bearer INGEST_SECRET_TOKEN |
 | RPC Compute Laliga Pack EV | `/api/cron/compute-laliga-pack-ev` | daily 22:00 UTC | Bearer INGEST_SECRET_TOKEN |
 | RPC Daily Portfolio Snapshot | `/api/cron/daily-portfolio-snapshot` | `5 7 * * *` | Bearer INGEST_SECRET_TOKEN |
+| RPC EVM Transfers Ingest | `/api/cron/evm-transfers-ingest` | hourly | Bearer INGEST_SECRET_TOKEN |
 | RPC FMV Cold-Tail Drain | `/api/admin/drain-fmv-cold-tail?collection=all&limit=200` | `17,47 * * * *` | Bearer INGEST_SECRET_TOKEN |
 | RPC FMV Recalc Force Stale | `/api/fmv-recalc?force=stale` | `3,13,23,33,43,53 * * * *` ⚡ | Bearer INGEST_SECRET_TOKEN |
 | RPC FMV Thin-Sale Haircut | `/api/admin/apply-fmv-haircut?mode=live` | `30 6 * * *` | Bearer RPC_ADMIN_TOKEN |
@@ -38,6 +39,7 @@ For staggered scheduling, use these patterns (all proven quiet):
 | RPC Golazos Sales Indexer | `/api/golazos-sales-indexer` | `*/20` | Bearer INGEST_SECRET_TOKEN |
 | RPC League Drift Detection | `/api/admin/cron/detect-league-drift` | weekly Sunday 07:00 | Bearer RPC_ADMIN_TOKEN |
 | RPC Lock Check Batch | `/api/cron/lock-check-batch` | `8,38 * * * *` | Bearer INGEST_SECRET_TOKEN |
+| RPC Offers Sweep | `/api/cron/offers-sweep` | `*/20` | Bearer INGEST_SECRET_TOKEN |
 | RPC Pinnacle Events Ingest | `/api/cron/pinnacle-events-ingest` | `4,19,34,49 * * * *` | Bearer INGEST_SECRET_TOKEN |
 | RPC Pinnacle Listing Cache | `/api/pinnacle-listing-cache` | `*/20` | Bearer INGEST_SECRET_TOKEN |
 | RPC Pinnacle Listings Reconcile | `/api/cron/pinnacle-listings-reconcile` | `9,24,39,54 * * * *` | Bearer INGEST_SECRET_TOKEN |
@@ -79,7 +81,7 @@ For staggered scheduling, use these patterns (all proven quiet):
 
 ### Known issues / watch-list
 
-- ⚡ **`RPC FMV Recalc Force Stale`** temporarily on `3,13,23,33,43,53 * * * *` (every 10 min) 2026-05-24 to burn through the first full FMV-recalc sweep. **Dial back to `8,28,48 * * * *` (every 20 min) once that first sweep completes.**
+- ⚡ **`RPC FMV Recalc Force Stale`** still on `3,13,23,33,43,53 * * * *` (every 10 min, set 2026-05-24 to burn through the first full FMV-recalc sweep). **The first full sweep completed long ago — OPERATOR: dial back to `8,28,48 * * * *` (every 20 min). Verified safe 2026-05-30. Overdue as of 2026-06-01.**
 
 ## Recently deleted
 
