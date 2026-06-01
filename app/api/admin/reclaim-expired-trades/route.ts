@@ -29,6 +29,9 @@ export async function GET(req: NextRequest) {
 }
 
 async function run() {
+  if (!process.env.RPC_TRADE_ESCROW_ADDRESS) {
+    return NextResponse.json({ error: "Trade Hub is not available yet." }, { status: 503 });
+  }
   const startedAt = Date.now();
   try {
     const nowIso = new Date().toISOString();
