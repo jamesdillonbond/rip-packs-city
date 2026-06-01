@@ -31,17 +31,22 @@ const PIPELINE = "evm-transfers-ingest";
 const TRANSFER_TOPIC =
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
-const BLOCKS_PER_WINDOW = 10000;
+// 5k baseline (lowered from 10k on 2026-05-31, Q6). A 10k-block getLogs was
+// the burst that tripped base_mainnet's rate limit in the first place; 5k
+// still vastly outpaces Base's ~1800 blocks/hr so the forward cursor never
+// lags, and the common-case tick now stays under the 429 threshold without
+// needing a retry. Backfill is marginally slower but still makes progress.
+const BLOCKS_PER_WINDOW = 5000;
 const BUDGET_MS = 25_000;
 const UPSERT_CHUNK = 500;
 
 // Rate-limit recovery: on HTTP 429 from the proxy, the contract's
 // getLogs window is retried with exponential backoff and a halved
-// window. 2026-05 telemetry showed base_mainnet proxy occasionally
-// returning 429 for a 10k-block Transfer scan when Beezie has a heavy
-// activity burst; halving to 5k on retry has empirically been below
-// the threshold.
-const LOGS_RETRY_MAX_ATTEMPTS = 3;
+// window. With a 5k baseline the halving walks 5k→2.5k→1.25k→0.625k over
+// four attempts, so even a heavy Beezie activity burst can shrink under the
+// threshold before the helper gives up (the 3-attempt ceiling occasionally
+// still threw ok=false on sustained bursts — Q6).
+const LOGS_RETRY_MAX_ATTEMPTS = 4;
 const LOGS_RETRY_BASE_MS = 2000;
 const LOGS_RETRY_JITTER_MS = 500;
 const RETRY_WINDOW_FACTOR = 0.5;
