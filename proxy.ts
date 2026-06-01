@@ -140,6 +140,11 @@ function isPublicPath(pathname: string, method: string): boolean {
   if (pathname === "/pricing" || pathname.startsWith("/pricing/")) return true
   // /about — marketing surface
   if (pathname === "/about" || pathname.startsWith("/about/")) return true
+  // /privacy + /terms — legal pages. Must be publicly readable (and crawlable;
+  // app/sitemap.ts lists them) — without this anon visitors + Googlebot get
+  // 302→/login on the privacy policy / terms of service. (2026-05-31)
+  if (pathname === "/privacy" || pathname.startsWith("/privacy/")) return true
+  if (pathname === "/terms" || pathname.startsWith("/terms/")) return true
   // /signup — pre-signup landing (sign-in itself is /login)
   if (pathname === "/signup" || pathname.startsWith("/signup/")) return true
   // /auth + subpaths (covers /auth/confirm and similar)

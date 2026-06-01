@@ -1,41 +1,41 @@
 // app/sitemap.ts
 //
-// Enumerates every indexable URL on the site for search-engine crawlers.
-// Currently covers:
-//   • root + static pages (about, privacy, terms)
-//   • /{collection}/{page} for every published collection × every page
-//     listed on that Collection (overview, collection, market, analytics,
-//     sniper, sets, packs)
-//   • /analytics + /analytics/{section} including methodology
-//   • /analytics/loans/{collection} per-collection drill-downs
-//   • /analytics/wallets/{address} for every active Flowty wallet
-//   • /profile/{username} for each profile_bio row that has set a public
-//     username (Phase 4 public profile pages)
+// Enumerates every ANON-INDEXABLE URL on the site for search-engine crawlers.
+// The sitemap must list only routes a logged-out Googlebot can actually fetch
+// (HTTP 200) — anything that 302→/login wastes crawl budget and lands in GSC's
+// "Page with redirect" coverage bucket. The public surface is defined by
+// proxy.ts `isPublicPath`; this file mirrors it. (Pruned 2026-05-31.)
 //
-// Entity + pack pages are now enumerated (the routes exist and render for
-// anon — see proxy.ts public-entity-path rule):
+// Covers:
+//   • root + static legal/marketing pages (about, privacy, terms)
+//   • /nba/fast-break (public optimizer) + /insights/* (public wedge surfaces)
+//   • /{collection}/overview — the ONLY anon-public per-collection page. The
+//     in-app feature tabs (collection / market / sniper / sets / packs) and the
+//     entire /analytics/* section are auth-gated, so they are NOT listed.
 //   • per-edition pages — every editions row in a published collection (~23.5K)
 //   • per-set / per-player / per-team pages — distinct slugs derived from
 //     those edition rows
 //   • per-series pages — one per collection_series.display_label (~28)
 //   • per-pack pages — every pack_distributions row (~5.2K)
+//   • /moment/<id> — top-N cross-collection canonical detail pages
+//   • /profile/<username> — public profile cards (robots allows; /profile/edit
+//     is gated and never listed)
 //
 // Edition collections are filtered by collection_id directly (not via a
 // PostgREST embedded join on collections.slug, which returned 0 rows at
 // generation time). collection_series carries NO timestamp column, so its
 // entries use `now` for lastModified.
 //
-// Combined, entity + pack URLs total ~29K — under Google's 50K-per-sitemap
+// Combined, entity + pack URLs total ~33K — under Google's 50K-per-sitemap
 // limit. When the total approaches 50K, split into per-segment / per-
 // collection sitemap children via a sitemap index.
 
 import type { MetadataRoute } from 'next'
 import { createClient } from '@supabase/supabase-js'
 import { publishedCollections } from '@/lib/collections'
-import { listEntityPageCollections, getCollectionByDbSlug, getCollectionByUuid } from '@/lib/collection-slug'
+import { getCollectionByDbSlug, getCollectionByUuid } from '@/lib/collection-slug'
 import { slugifyName } from '@/lib/entity-labels'
 import { isExhibitionTeamSlug } from '@/lib/team-denylist'
-import { METHODOLOGY_LIST } from '@/lib/analytics/methodology'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
 
@@ -43,39 +43,6 @@ const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.c
 // stale wallet entries lingering forever.
 export const dynamic = 'force-dynamic'
 export const revalidate = 21600
-
-const ANALYTICS_STUBS = [
-  'wallets',
-  'packs',
-  'api',
-]
-
-const LOAN_COLLECTION_SLUGS = ['topshot', 'allday', 'golazos', 'pinnacle', 'ufc']
-const SALES_COLLECTION_SLUGS = ['topshot', 'allday', 'golazos', 'pinnacle', 'ufc']
-
-// Per-page change frequency + priority. Market/analytics/sniper change
-// constantly; static pages are stable.
-const PAGE_FREQ: Record<string, NonNullable<MetadataRoute.Sitemap[number]['changeFrequency']>> = {
-  overview:   'daily',
-  market:     'daily',
-  analytics:  'daily',
-  sniper:     'hourly',
-  packs:      'daily',
-  collection: 'weekly',
-  sets:       'weekly',
-  vault:      'weekly',
-}
-
-const PAGE_PRIORITY: Record<string, number> = {
-  overview:   0.9,
-  market:     0.8,
-  analytics:  0.8,
-  sniper:     0.8,
-  collection: 0.7,
-  packs:      0.7,
-  sets:       0.6,
-  vault:      0.5,
-}
 
 async function getPublicProfiles(): Promise<Array<{ username: string; updated_at: string | null }>> {
   // profile_bio.username is the public handle for /profile/[username]. We
@@ -101,11 +68,6 @@ async function getPublicProfiles(): Promise<Array<{ username: string; updated_at
     console.log('[sitemap] profile_bio query threw: ' + (err instanceof Error ? err.message : String(err)))
     return []
   }
-}
-
-interface DirectoryRow {
-  addr: string
-  last_active_at: string | null
 }
 
 // Collection UUIDs that have rows in the `editions` table. We filter by
@@ -292,62 +254,6 @@ async function getPackRows(): Promise<PackRow[]> {
   }
 }
 
-interface TopSetRow {
-  set_id: string
-  total_fmv_robust_usd: number
-}
-
-async function getTopSets(): Promise<TopSetRow[]> {
-  // Pre-render-friendly URL list of the top-100 sets by robust total FMV.
-  // The /analytics/sets/[set_id] route uses ISR with revalidate=21600;
-  // sitemap entries here ensure the top sets are crawlable from the
-  // sitemap index.
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return []
-  try {
-    const sb: any = createClient(url, key)
-    const { data, error } = await sb.rpc('analytics_sets_directory', {
-      p_collections: null,
-      p_sort: 'value_desc',
-      p_min_coverage: 0,
-      p_limit: 100,
-    })
-    if (error || !Array.isArray(data)) {
-      if (error) console.log('[sitemap] sets_directory error: ' + error.message)
-      return []
-    }
-    return (data as TopSetRow[]).filter(
-      (r) => typeof r.set_id === 'string' && r.set_id.length === 36
-    )
-  } catch (err) {
-    console.log('[sitemap] sets_directory threw: ' + (err instanceof Error ? err.message : String(err)))
-    return []
-  }
-}
-
-async function getLoanWallets(): Promise<DirectoryRow[]> {
-  // Every wallet that's appeared on the Flowty loan book gets one
-  // /analytics/wallets/[address] entry. We use the canonical
-  // flowty_analytics_wallet_directory RPC — same source the directory
-  // page reads — so the sitemap can never disagree with the live UI.
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return []
-  try {
-    const sb: any = createClient(url, key)
-    const { data, error } = await sb.rpc('flowty_analytics_wallet_directory')
-    if (error) {
-      console.log('[sitemap] wallet_directory error: ' + error.message)
-      return []
-    }
-    return ((data ?? []) as DirectoryRow[]).filter((r) => /^0x[0-9a-f]{16}$/i.test(r.addr || ''))
-  } catch (err) {
-    console.log('[sitemap] wallet_directory threw: ' + (err instanceof Error ? err.message : String(err)))
-    return []
-  }
-}
-
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date()
 
@@ -385,68 +291,23 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })),
   ]
 
-  const featurePages: MetadataRoute.Sitemap = publishedCollections().flatMap((col) => [
-    {
-      url: `${BASE_URL}/${col.id}`,
-      lastModified: now,
-      changeFrequency: 'daily',
-      priority: 0.9,
-    },
-    ...col.pages.map((page) => ({
-      url: `${BASE_URL}/${col.id}/${page}`,
-      lastModified: now,
-      changeFrequency: PAGE_FREQ[page] ?? 'weekly',
-      priority: PAGE_PRIORITY[page] ?? 0.6,
-    })),
-  ])
-
-  const analyticsPages: MetadataRoute.Sitemap = [
-    { url: `${BASE_URL}/analytics`,       lastModified: now, changeFrequency: 'daily', priority: 0.9 },
-    { url: `${BASE_URL}/analytics/loans`, lastModified: now, changeFrequency: 'daily', priority: 0.8 },
-    ...LOAN_COLLECTION_SLUGS.map((slug) => ({
-      url: `${BASE_URL}/analytics/loans/${slug}`,
-      lastModified: now,
-      changeFrequency: 'daily' as const,
-      priority: 0.7,
-    })),
-    { url: `${BASE_URL}/analytics/sales`, lastModified: now, changeFrequency: 'daily', priority: 0.8 },
-    ...SALES_COLLECTION_SLUGS.map((slug) => ({
-      url: `${BASE_URL}/analytics/sales/${slug}`,
-      lastModified: now,
-      changeFrequency: 'daily' as const,
-      priority: 0.7,
-    })),
-    { url: `${BASE_URL}/analytics/pulse`, lastModified: now, changeFrequency: 'always', priority: 0.9 },
-    { url: `${BASE_URL}/analytics/listings`, lastModified: now, changeFrequency: 'hourly', priority: 0.8 },
-    { url: `${BASE_URL}/analytics/fmv`, lastModified: now, changeFrequency: 'daily', priority: 0.7 },
-    { url: `${BASE_URL}/analytics/sets`, lastModified: now, changeFrequency: 'weekly', priority: 0.7 },
-    ...ANALYTICS_STUBS.map((slug) => ({
-      url: `${BASE_URL}/analytics/${slug}`,
-      lastModified: now,
-      changeFrequency: 'weekly' as const,
-      priority: 0.6,
-    })),
-    {
-      url: `${BASE_URL}/analytics/methodology`,
-      lastModified: now,
-      changeFrequency: 'monthly',
-      priority: 0.5,
-    },
-    ...METHODOLOGY_LIST.map((m) => ({
-      url: `${BASE_URL}/analytics/methodology/${m.slug}`,
-      lastModified: now,
-      changeFrequency: 'monthly' as const,
-      priority: 0.5,
-    })),
-  ]
-
-  const loanWallets = await getLoanWallets()
-  const walletPages: MetadataRoute.Sitemap = loanWallets.map((w) => ({
-    url: `${BASE_URL}/analytics/wallets/${w.addr}`,
-    lastModified: w.last_active_at ? new Date(w.last_active_at) : now,
-    changeFrequency: 'weekly' as const,
-    priority: 0.6,
+  // Per-collection: ONLY /<collection>/overview is anon-public (proxy.ts opens
+  // the singular-`overview` segment via GET/HEAD). The bare /<collection> root
+  // redirects to /overview but is itself gated (so anon crawlers get 302→/login
+  // on it), and the in-app feature tabs (collection / market / sniper / sets /
+  // packs) are all behind the funnel — none of those are listed. (2026-05-31)
+  const featurePages: MetadataRoute.Sitemap = publishedCollections().map((col) => ({
+    url: `${BASE_URL}/${col.id}/overview`,
+    lastModified: now,
+    changeFrequency: 'daily' as const,
+    priority: 0.9,
   }))
+
+  // NOTE: /analytics + /analytics/* (sales / loans / fmv / sets / pulse /
+  // listings / methodology / wallets) and /analytics/sets/<id> are ALL
+  // auth-gated in proxy.ts, so they are intentionally NOT enumerated here.
+  // Opening any of them to crawlers is a product decision that would also
+  // require an isPublicPath rule — not just a sitemap entry.
 
   const profiles = await getPublicProfiles()
   const profilePages: MetadataRoute.Sitemap = profiles.map((p) => ({
@@ -556,14 +417,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })
     .filter((x): x is NonNullable<typeof x> => x !== null)
 
-  const topSets = await getTopSets()
-  const legacySetPages: MetadataRoute.Sitemap = topSets.map((s) => ({
-    url: `${BASE_URL}/analytics/sets/${s.set_id}`,
-    lastModified: now,
-    changeFrequency: 'weekly' as const,
-    priority: 0.5,
-  }))
-
   // Pack distribution pages — /<collection>/pack/dist/<distId>.
   const packRows = await getPackRows()
   const packPages: MetadataRoute.Sitemap = packRows
@@ -579,15 +432,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })
     .filter((x): x is NonNullable<typeof x> => x !== null)
 
-  // Touch the unused import so tsc doesn't complain when no entity rows exist.
-  void listEntityPageCollections
-
   return [
     ...staticPages,
     ...insightsPages,
     ...featurePages,
-    ...analyticsPages,
-    ...walletPages,
     ...profilePages,
     ...editionPages,
     ...momentPages,
@@ -595,7 +443,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...newPlayerPages,
     ...newTeamPages,
     ...seriesPages,
-    ...legacySetPages,
     ...packPages,
   ]
 }
