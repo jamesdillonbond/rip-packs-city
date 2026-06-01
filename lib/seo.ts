@@ -530,7 +530,9 @@ export function breadcrumbJsonLd(items: { name: string; url: string }[]): LdValu
 }
 
 // Edition → Product (+ BreadcrumbList). detail = get_edition_detail payload.
-export function editionJsonLd(detail: Payload, collectionUrlSlug: string): LdValue {
+// lowAsk (edition_offers.low_ask, threaded from the page) lets NO_DATA editions
+// still satisfy the Product-snippet "offers/review/aggregateRating" requirement.
+export function editionJsonLd(detail: Payload, collectionUrlSlug: string, lowAsk?: number | null): LdValue {
   const label = COLLECTION_DISPLAY_NAMES[collectionUrlSlug] ?? "Flow"
   const slug = s(detail, "route_slug") ?? s(detail, "external_id") ?? ""
   const url = `${BASE_URL}/${collectionUrlSlug}/edition/${encodeURIComponent(slug)}`
@@ -541,20 +543,35 @@ export function editionJsonLd(detail: Payload, collectionUrlSlug: string): LdVal
   const playerName = s(detail, "player_name") ?? s(detail, "name") ?? "Edition"
   const tier = s(detail, "tier")
   const thumb = s(detail, "thumbnail_url")
+  // ~46% of TS editions have a null thumbnail; the OG route always renders a
+  // branded 1200×630, so use it (then a static default) as the image fallback
+  // so every Product carries a non-empty absolute image URL.
+  const ogImage = slug ? `${BASE_URL}/api/og/edition?collection=${collectionUrlSlug}&slug=${encodeURIComponent(slug)}` : null
   const product: LdValue = {
     "@type": "Product",
     "@id": url,
     url,
     name: `${playerName} — ${setName ?? label}`,
     brand: { "@type": "Brand", name: label },
+    image: thumb || ogImage || `${BASE_URL}/api/og/default`,
+    description: `${playerName}${setName ? " — " + setName : ""}${tier ? " (" + tier + ")" : ""} on ${label}. Live FMV, recent sales, price history, and the packs that contained this edition.`,
   }
-  if (thumb) product.image = thumb
-  if (slug) product.sku = slug
+  // Google caps sku length (~50 chars); TS integer pairs ("8:133") keep their
+  // sku, AllDay/UFC long descriptive slugs simply omit the optional field.
+  if (slug && slug.length <= 40) product.sku = slug
   if (tier) product.category = tier
-  if (fmv !== null && Number.isFinite(fmv) && fmv > 0) {
+  // Price from FMV when present, else the live low ask, so structural NO_DATA
+  // editions still emit a valid Offer. No fake review/aggregateRating.
+  const priceUsd =
+    fmv !== null && Number.isFinite(fmv) && fmv > 0
+      ? fmv
+      : lowAsk != null && Number.isFinite(lowAsk) && lowAsk > 0
+        ? lowAsk
+        : null
+  if (priceUsd !== null) {
     product.offers = {
       "@type": "Offer",
-      price: Math.round(fmv * 100) / 100,
+      price: Math.round(priceUsd * 100) / 100,
       priceCurrency: "USD",
       availability: "https://schema.org/InStock",
       url,
@@ -668,14 +685,19 @@ export function packJsonLd(opts: {
 }): LdValue {
   const label = COLLECTION_DISPLAY_NAMES[opts.collectionUrlSlug] ?? "Flow"
   const url = `${BASE_URL}/${opts.collectionUrlSlug}/pack/dist/${encodeURIComponent(opts.distId)}`
+  // Same image+description gap as editionJsonLd — OG pack route is the fallback.
+  const ogImage = opts.distId
+    ? `${BASE_URL}/api/og/pack?collection=${opts.collectionUrlSlug}&distId=${encodeURIComponent(opts.distId)}`
+    : null
   const product: LdValue = {
     "@type": "Product",
     "@id": url,
     url,
     name: opts.title,
     brand: { "@type": "Brand", name: label },
+    image: opts.image || ogImage || `${BASE_URL}/api/og/default`,
+    description: `${opts.title} on ${label}. Pack EV, pull odds, grail chances, and the editions inside this pack.`,
   }
-  if (opts.image) product.image = opts.image
   if (opts.retailPriceUsd && opts.retailPriceUsd > 0) {
     product.offers = { "@type": "Offer", price: Math.round(opts.retailPriceUsd * 100) / 100, priceCurrency: "USD", url }
   }

@@ -275,7 +275,7 @@ export default async function EditionPage(
     <div>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(editionJsonLd(detail as unknown as Record<string, unknown>, collection)) }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(editionJsonLd(detail as unknown as Record<string, unknown>, collection, highOffer?.low_ask ?? null)) }}
       />
       <Breadcrumbs
         items={[
