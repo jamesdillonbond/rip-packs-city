@@ -1,6 +1,6 @@
 # Chain-Abstraction Schema Plan (Draft 2026-05-30)
 
-**Status:** Approved 2026-05-30. Phases A + B + C + E shipped. Phase D plan committed (`ce19f35` + `4938fbb`) — execution pending in a clean Claude Code session. Phase F gated on Phase D 48h soak. Handoffs: [Phase D dedicated plan](../handoff-phase-d-lib-chains-flow-reorg.md) (canonical, run from this), [chain-abstraction phases C/D/E](../handoff-2026-05-30-chain-abstraction-phases-cde.md) (historical; Phase D section banner-marked superseded). CLAUDE.md updated.
+**Status:** Approved 2026-05-30. All phases shipped (A + B + C + D + E + F) — chain-abstraction workstream complete. Phase D shipped 2026-05-30 (`01b3878` + `1b7cfde`, deploy `dpl_2weTJexPvEjXaQxjccrEckDctSWB` READY); Phase F shipped 2026-06-01 (`audit_20260601_collections_chain_drop_default` — `collections.chain` DEFAULT dropped, smoke-verified NULL). Handoffs: [Phase D dedicated plan](../handoff-phase-d-lib-chains-flow-reorg.md), [chain-abstraction phases C/D/E](../handoff-2026-05-30-chain-abstraction-phases-cde.md) (historical). CLAUDE.md updated.
 
 ### Phase status snapshot (2026-05-30 evening)
 
@@ -9,9 +9,9 @@
 | A — `collections.chain` column + enum + check | Shipped | Pre-existed; only the index + comments needed (`audit_20260530_collection_chains_view_and_chain_index`) |
 | B — `collection_chains` view | Shipped | Same migration as A; granted to anon/authenticated/service_role |
 | C — `lib/collections.ts` typing | **Shipped 2026-05-30** | Commit `d9323f9`, deploy `dpl_BZLeeiot4EYSQo6qPeBQENN9cno3` READY. `ChainType` export + optional `dbChain?: ChainType \| null` added; existing `chain` field untouched. `dbChain: 'flow'` on 5 published, `null` on 3 placeholders |
-| D — `lib/chains/flow/` reorg | **Plan shipped 2026-05-30 (`ce19f35` + `4938fbb`)** | [docs/handoff-phase-d-lib-chains-flow-reorg.md](../handoff-phase-d-lib-chains-flow-reorg.md). 833 `@/lib/...` imports → shims bulletproof. Per-file caller counts verified. Default-export trap on `lib/flow.ts` documented. Ready for clean Claude Code session. 2-3 days reorg + 1-day smoke + 24h soak when it runs |
+| D — `lib/chains/flow/` reorg | **Shipped 2026-05-30** | Commits `01b3878` (moves) + `1b7cfde` (shims), deploy `dpl_2weTJexPvEjXaQxjccrEckDctSWB` READY. 18 modules relocated under `lib/chains/flow/`; shim re-exports at every old path (833 `@/lib/...` imports, zero breakage); `lib/flow.ts` default-export trap handled. 48h soak clean 2026-05-30 17:10 -> 2026-06-01 17:10 UTC. [docs/handoff-phase-d-lib-chains-flow-reorg.md](../handoff-phase-d-lib-chains-flow-reorg.md) |
 | E — chain-aware reads audit | **Shipped 2026-05-30 (`205024c`)** | 168 surfaces; only 3 need chain-dispatch. DB-side companion landed alongside |
-| F — drop `chain` DEFAULT | Gated on Phase D | Pre-staged SQL below |
+| F — drop `chain` DEFAULT | **Shipped 2026-06-01** | `audit_20260601_collections_chain_drop_default` — `ALTER TABLE public.collections ALTER COLUMN chain DROP DEFAULT`. `column_default` smoke-verified NULL; column stays NOT NULL so inserts must pass chain. Rollback: `SET DEFAULT 'flow'::chain_type`. Workstream complete |
 
 ### Beezie/Base parallel data plane — call: keep parallel for now
 
