@@ -154,6 +154,24 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/offer-spread",
+    eyebrow: "Surface J · Live",
+    title: "Bid vs Floor",
+    blurb:
+      "Top Shot doesn't show you the top standing offer next to the floor ask. We do — ranked by how tightly the two meet. Liquidity vs a stale price, side by side.",
+    cta: "Open bid vs floor",
+    available: true,
+  },
+  {
+    slug: "/insights/deals",
+    eyebrow: "Surface K · Live",
+    title: "Below FMV",
+    blurb:
+      "The public deals board. Top Shot editions listed below a HIGH/MEDIUM-confidence FMV, ranked by discount. What's actually underpriced right now — the top-of-funnel counterpart to the sniper.",
+    cta: "Open deals board",
+    available: true,
+  },
+  {
     slug: "/insights/squeeze-check",
     eyebrow: "Tool · Live",
     title: "What's Liquid In Your Bag?",
