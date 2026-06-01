@@ -17,10 +17,10 @@ import { supabaseAdmin } from "@/lib/supabase"
 // at the head (a fresh full refresh cycle). Sorting EDITION_CREATED_AT_DESC,
 // newest first.
 //
-// Operator: add a cron-job.org entry hitting POST /api/cron/offers-sweep with
-// Authorization: Bearer $INGEST_SECRET_TOKEN (or ?token=) every ~20 min. A full
-// refresh cycle is ~4 ticks. Until the cron is added, the readers fall back to
-// badge_editions exactly as before.
+// Live cron (cron-job.org): POST /api/cron/offers-sweep with
+// Authorization: Bearer $INGEST_SECRET_TOKEN (or ?token=) every ~20 min —
+// verified firing ~43x/24h, all ok. A full refresh cycle is ~4 ticks. Readers
+// still fall back to badge_editions for any edition the sweep hasn't reached.
 
 export const maxDuration = 300
 export const dynamic = "force-dynamic"
