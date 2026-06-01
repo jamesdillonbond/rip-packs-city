@@ -2,6 +2,8 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useEffect, useState } from "react"
+import { getSupabaseBrowser } from "@/lib/auth/supabase-client"
 
 interface TopNavLink {
   label: string
@@ -19,15 +21,39 @@ const LINKS: TopNavLink[] = [
   { label: "Blog", href: "/blog", matchPrefix: "/blog" },
 ]
 
+// "My Teams" is the auth-gated fan hub (Team Hub Phase 5), so it is only shown
+// to signed-in users — a logged-out visitor would just bounce to /login.
+const MY_TEAMS: TopNavLink = { label: "My Teams", href: "/my-teams", matchPrefix: "/my-teams" }
+
 export default function TopNav() {
   const pathname = usePathname() ?? "/"
+  const [signedIn, setSignedIn] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    const supabase = getSupabaseBrowser()
+    supabase.auth.getUser().then(({ data }: { data: { user: unknown } | null }) => {
+      if (active) setSignedIn(!!data?.user)
+    })
+    const { data: sub } = supabase.auth.onAuthStateChange((_event: string, session: { user?: unknown } | null) => {
+      if (active) setSignedIn(!!session?.user)
+    })
+    return () => {
+      active = false
+      sub?.subscription?.unsubscribe()
+    }
+  }, [])
+
+  const links = signedIn ? [...LINKS, MY_TEAMS] : LINKS
+
   return (
     <nav className="hidden md:flex items-center gap-1 text-sm">
-      {LINKS.map((l) => {
+      {links.map((l) => {
         const active = l.matchPrefix
           ? pathname === l.matchPrefix || pathname.startsWith(l.matchPrefix + "/")
           : pathname === l.href
         const isAnalytics = l.label === "Analytics"
+        const isMyTeams = l.label === "My Teams"
         return (
           <Link
             key={l.href}
@@ -37,7 +63,9 @@ export default function TopNav() {
               (active
                 ? isAnalytics
                   ? "text-emerald-400 bg-emerald-500/10"
-                  : "text-white bg-white/5"
+                  : isMyTeams
+                    ? "text-white bg-[var(--rpc-red)]/15"
+                    : "text-white bg-white/5"
                 : "text-white/55 hover:text-white hover:bg-white/5")
             }
           >
