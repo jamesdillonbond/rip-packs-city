@@ -74,6 +74,15 @@ Working thesis (confirmed 2026-05-30): RPC is a **sports / IP digital collectibl
 
 ## Recent sessions
 
+### June 1, 2026 (overnight pass) — OFF-HOURS + NO-PUSH monitor run; shipped nothing; platform green; fixed a NUL-corrupted .git/config; queued Q10
+
+Nightly autonomous pass fired late (06:54 local PDT, ~54 min past the 00:00–06:00 window) → MONITOR-MODE; `git push` had no credentials → NO-PUSH; Trevor was actively committing (`7c1b81b` landed ~2 min before the run) → queue-only. All outputs written to disk uncommitted. Full handoff: [docs/handoff-2026-06-01-overnight-pass.md](docs/handoff-2026-06-01-overnight-pass.md).
+
+- **Infra: repaired a corrupted `.git/config`.** Every git op failed at start with `fatal: bad config line 18` — the on-disk config had 16 trailing NUL bytes after `name = Trevor` (the exact Windows↔sandbox bridge corruption Q7's 22:30Z note predicted). Backed up to `.git/config.bak-nullfix-20260601` and truncated the NULs; git restored. Local git-internal state only (not tracked, no commit). Reinforces Q7 (sandbox needs a sandbox-native clone, not a Windows-mounted `.git`).
+- **Post-ship watch GREEN — nothing reverted.** Re-measured every metric the last 24–48h of ships targeted (`7c1b81b` sitemap prune, `a79b778` audit follow-ups A1–A6, `65421e26` FMV ask-over-WAP, team-hub Phases 1–5, `/insights/market`, badge-sync). All deploys READY (20/20, zero ERROR), no attributable regression. Early sign `a79b778`'s smoke `rpcRetry` works: the 06:00Z cron rush tripped pipelines but fired no new smoke Sentry.
+- **Health all green.** Security 0/0; `detect_stalled_pipelines()` `[]`; FMV writers fresh (~10m); FMV improving (TS HIGH+MED 776→880, NO_DATA 6055→5109; AllDay HIGH+MED 243→267); sentinel TS-UUID-48h 1099→40; DB 5912 MB; unmapped_sales 147 open (flat). Sentry quiet last 6h except NEXTJS-15 once ~07:54Z (gated AllDay capture, C1 watch).
+- **Queued:** Q10 (NEW — add `topshot-listing-cache`+`-v2` to `pipeline_cadence_watchlist` @360m/medium so `detect_stalled_pipelines()` can see a listing-cache stall; ready migration + revert in handoff/ledger; auto-shippable next true overnight run). Carried: Q2/Q5/Q6/Q7/Q8. Doc-reconciled the rookies view name (live = `topshot_2025_rookie_index`, not `topshot_rookies_board`). Sentry NEXTJS-1B is 24h+ clean → ready for operator to mark resolved; NEXTJS-18/-17 (pack-dist tierChip server/client) real but 6d-stale, operator/CC verify.
+
 ### May 31, 2026 (overnight pass) — OFF-HOURS + NO-PUSH monitor run; shipped nothing; found a silent TopShot sales-indexer stall
 
 Nightly autonomous pass fired late (local 08:02 UTC, outside the 00:00–06:00 window) → MONITOR-MODE; `git push` also unavailable (no GitHub creds) and `.git/index.lock`+`HEAD.lock` are un-removable from the sandbox (`Operation not permitted`), so this was a review/queue-only run with all outputs written to disk uncommitted. Full handoff: [docs/handoff-2026-05-31-overnight-pass.md](docs/handoff-2026-05-31-overnight-pass.md).
