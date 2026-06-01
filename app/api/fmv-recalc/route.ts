@@ -578,10 +578,11 @@ export async function POST(req: NextRequest) {
             SELECT e.id AS edition_id, e.collection_id, be.low_ask
             FROM editions e
             LEFT JOIN fmv_snapshots fs ON fs.edition_id = e.id
-            LEFT JOIN badge_editions be ON be.external_id = e.external_id
+            LEFT JOIN badge_editions be ON be.external_id = e.external_id AND be.collection_id = e.collection_id
             WHERE fs.edition_id IS NULL
               AND be.low_ask IS NOT NULL
               AND be.low_ask > 0
+              AND be.low_ask <= 10000
               AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
               AND e.collection_id <> '${PINNACLE_COLLECTION_ID}'
             LIMIT 500
@@ -593,14 +594,19 @@ export async function POST(req: NextRequest) {
       if (rows.length > 0) {
         console.log(`[FMV-RECALC] Backfill: ${rows.length} editions with no snapshot`)
 
+        // These editions have no snapshot at all and no in-window sales — the
+        // value is purely the live TS ask × 0.90, so ASK_ONLY is the honest
+        // label (was "LOW"; unified with Step 5b / drain / the guard so the
+        // ask-derived class reads consistently and survives applyStaleGuard).
         const backfillRows = rows.map((row) => applyAllFmvGuards({
           edition_id: row.edition_id,
           collection_id: row.collection_id,
           fmv_usd: Number((row.low_ask * 0.90).toFixed(2)),
           floor_price_usd: Number(Number(row.low_ask).toFixed(2)),
           wap_usd: Number((row.low_ask * 0.90).toFixed(2)),
-          confidence: "LOW",
+          confidence: "ASK_ONLY",
           ask_proxy_fmv: Number((row.low_ask * 0.90).toFixed(2)),
+          top_shot_ask: Number(Number(row.low_ask).toFixed(2)),
           sales_count_7d: 0,
           sales_count_30d: 0,
           days_since_sale: null,
@@ -660,10 +666,12 @@ export async function POST(req: NextRequest) {
               AVG(s.price_usd)::numeric AS avg_price,
               MIN(s.price_usd)::numeric AS min_price,
               COUNT(s.id) AS sales_count,
-              MAX(s.sold_at) AS latest_sold_at
+              MAX(s.sold_at) AS latest_sold_at,
+              MAX(be.low_ask) FILTER (WHERE be.low_ask > 0 AND be.low_ask <= 10000) AS low_ask
             FROM editions e
             JOIN sales s ON s.edition_id = e.id
             LEFT JOIN latest_algo la ON la.edition_id = e.id
+            LEFT JOIN badge_editions be ON be.external_id = e.external_id AND be.collection_id = e.collection_id
             WHERE (la.edition_id IS NULL OR la.algo_version NOT LIKE '1.7.%')
               AND s.price_usd > 0
               AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
@@ -683,6 +691,7 @@ export async function POST(req: NextRequest) {
           min_price: number
           sales_count: number
           latest_sold_at: string
+          low_ask: number | string | null
         }> | null) ?? []
 
         if (rows.length > 0) {
@@ -693,6 +702,43 @@ export async function POST(req: NextRequest) {
             const daysSinceSale = Math.round(
               (now.getTime() - new Date(row.latest_sold_at).getTime()) / (1000 * 60 * 60 * 24)
             )
+            const freshAsk = row.low_ask == null ? 0 : Number(row.low_ask)
+
+            // Source-side ask preference: an edition with no in-window (30d)
+            // sales would otherwise be priced off a 30+-day-old WAP — labelled
+            // LOW (then flipped STALE by applyStaleGuard) or STALE outright.
+            // When a fresh TS marketplace ask exists (badge_editions.low_ask,
+            // refreshed every 6h, already filtered to 0 < ask <= 10000 in the
+            // query), price it ASK_ONLY at ask × 0.90 instead — the same proxy
+            // the Step 5 backfill and drain_fmv_cold_tail use. The >= 30 gate
+            // (≡ sales_count_30d = 0, the DB guard's stale-30d rescue domain)
+            // makes the 2026-05-31 thin-sales-guard stopgap durable at the
+            // source: the guard now skips ASK_ONLY rows, so there is no
+            // STALE→ASK_ONLY re-clobber churn. It also covers the sub-$200
+            // stale-WAP class the guard's fmv_usd > 200 filter could never
+            // reach (e.g. LeBron Base S1 2:133 = $78 WAP vs $945 ask). No >200
+            // gate here. Editions with a genuine in-window sale (< 30d) fall
+            // through to sales pricing and are repriced by the main sweep.
+            if (daysSinceSale >= 30 && freshAsk > 0) {
+              const askFmv = Number((freshAsk * 0.90).toFixed(2))
+              return applyAllFmvGuards({
+                edition_id: row.edition_id,
+                collection_id: row.collection_id,
+                fmv_usd: askFmv,
+                floor_price_usd: Number(freshAsk.toFixed(2)),
+                wap_usd: askFmv,
+                wap_without_outliers: askFmv,
+                ask_proxy_fmv: askFmv,
+                top_shot_ask: Number(freshAsk.toFixed(2)),
+                liquidity_rating: liquidityRating(Number(row.sales_count)),
+                confidence: "ASK_ONLY",
+                sales_count_7d: 0,
+                sales_count_30d: 0,
+                days_since_sale: daysSinceSale,
+                algo_version: ALGO_VERSION,
+              })
+            }
+
             return applyAllFmvGuards({
               edition_id: row.edition_id,
               collection_id: row.collection_id,
@@ -701,9 +747,10 @@ export async function POST(req: NextRequest) {
               wap_usd: Number(avgPrice.toFixed(2)),
               wap_without_outliers: Number(avgPrice.toFixed(2)),
               liquidity_rating: liquidityRating(Number(row.sales_count)),
-              // Honesty gate: if the edition hasn't traded in 60+ days, label
-              // it STALE rather than LOW — single-sale WAP from 2+ months ago
-              // is unreliable signal, not healthy low-confidence pricing.
+              // Honesty gate: if the edition hasn't traded in 60+ days (and has
+              // no fresh ask, handled above), label it STALE rather than LOW —
+              // single-sale WAP from 2+ months ago is unreliable signal, not
+              // healthy low-confidence pricing.
               confidence: daysSinceSale >= 60 ? "STALE" : "LOW",
               sales_count_7d: 0,
               sales_count_30d: 0,
