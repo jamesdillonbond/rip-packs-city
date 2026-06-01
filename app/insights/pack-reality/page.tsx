@@ -208,6 +208,7 @@ export default function PackRealityPage() {
         {(data?.top_ev ?? []).length === 0 ? (
           <div className="rpc-pr-state">{loading ? "Loading…" : "No +EV packs right now."}</div>
         ) : (
+          <div className="rpc-scroll-x">
           <table className="rpc-pr-table">
             <thead>
               <tr>
@@ -263,6 +264,7 @@ export default function PackRealityPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </section>
 

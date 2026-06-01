@@ -178,6 +178,27 @@ async function checkRlsBlocked(
   }, meta);
 }
 
+// The DB-backed smoke assertions (detect_stalled_pipelines, analytics_pipeline_
+// health, the two security guards) run at the :00/:06 cron-rush, when Supabase
+// connection-pool pressure makes a single query transiently fail ("Timed out
+// acquiring connection from connection pool" / "canceling statement due to
+// statement timeout"). The underlying state is verified clean every time, so a
+// one-shot failure here is cry-wolf — it desensitizes us to a real
+// security/FMV regression later. Retry once on a transient error before letting
+// the assertion fail. Non-transient errors (and clean results) return
+// immediately. (Item 6 / ledger Q5+Q6, 2026-05-31)
+const TRANSIENT_RX = /connection pool|statement timeout|timed out|ECONNRESET|fetch failed|terminating connection|too many clients/i;
+async function rpcRetry(
+  svc: any,
+  fn: string,
+  args?: Record<string, unknown>
+): Promise<{ data: any; error: { message?: string } | null }> {
+  const first = await svc.rpc(fn, args);
+  if (!first.error || !TRANSIENT_RX.test(first.error.message ?? "")) return first;
+  await new Promise((r) => setTimeout(r, 750));
+  return svc.rpc(fn, args);
+}
+
 async function runSmokeTests() {
   const svc = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
@@ -331,7 +352,7 @@ async function runSmokeTests() {
         endpoint: "rpc:detect_stalled_pipelines.sales-indexers",
         expected: "no sales-indexer stalled",
       };
-      const { data, error } = await (svc as any).rpc("detect_stalled_pipelines");
+      const { data, error } = await rpcRetry(svc, "detect_stalled_pipelines");
       if (error) {
         return { ...meta, passed: false, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
       }
@@ -361,7 +382,7 @@ async function runSmokeTests() {
         endpoint: "rpc:analytics_pipeline_health.fmv",
         expected: "status=healthy",
       };
-      const { data, error } = await (svc as any).rpc("analytics_pipeline_health");
+      const { data, error } = await rpcRetry(svc, "analytics_pipeline_health");
       if (error) {
         return { ...meta, passed: false, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
       }
@@ -583,7 +604,7 @@ async function runSmokeTests() {
         endpoint: "rpc:check_secdef_anon_execute_violations",
         expected: "zero-violations",
       };
-      const { data, error } = await (svc as any).rpc("check_secdef_anon_execute_violations");
+      const { data, error } = await rpcRetry(svc, "check_secdef_anon_execute_violations");
       if (error) {
         return { ...meta, passed: false, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
       }
@@ -620,7 +641,7 @@ async function runSmokeTests() {
         endpoint: "rpc:check_public_security_invariants",
         expected: "zero-violations",
       };
-      const { data, error } = await (svc as any).rpc("check_public_security_invariants");
+      const { data, error } = await rpcRetry(svc, "check_public_security_invariants");
       if (error) {
         return { ...meta, passed: false, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
       }

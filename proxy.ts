@@ -266,6 +266,35 @@ function isPublicPath(pathname: string, method: string): boolean {
   // is already covered by the /api/public/* bypass above.
   if (pathname === "/insights" || pathname.startsWith("/insights/")) return true
 
+  // ── Public per-collection overview landing ───────────────────────────
+  // /<collection>/overview is the per-collection landing the marketing home's
+  // collection tiles (HomePageMarketing) and the (collections) 404 fallback
+  // link to. It's a read-only summary surface: KPIs + top sales + top sniper
+  // deals from /api/collection-stats (collection-level aggregate, no
+  // user-private data) plus static About copy. The wallet-lookup CTA on it
+  // pushes to the auth-gated /dashboard, so connecting a wallet still requires
+  // sign-in — but anon visitors get a compelling per-collection landing
+  // instead of bouncing to /login at the first click. GET/HEAD only; the
+  // in-app feature pages (/collection, /sniper, /sets, /market, /packs,
+  // /analytics) stay behind the funnel. (2026-05-31)
+  if (
+    (method === "GET" || method === "HEAD") &&
+    /^\/[^/]+\/overview$/.test(pathname)
+  ) {
+    return true
+  }
+  // /api/collection-stats — GET-only collection-level aggregate (edition
+  // count, FMV confidence %, 24h volume, top sales, top sniper deals) backing
+  // the public /<collection>/overview landing above. Service-role read, no
+  // wallet/user data, no write handler. Without this the anon overview page
+  // renders its graceful "couldn't load stats" error state.
+  if (
+    pathname === "/api/collection-stats" &&
+    (method === "GET" || method === "HEAD")
+  ) {
+    return true
+  }
+
   // ── Public moment / edition detail pages ─────────────────────────────
   // /moment/<id> resolves flow_id | moment_uuid | edition_uuid through
   // the SECDEF get_moment_detail RPC. Linked from Trophy Slab QR codes,

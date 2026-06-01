@@ -249,6 +249,7 @@ export default function TcReportPage() {
               ) : null}
             </div>
             {sq?.top_squeezed && sq.top_squeezed.length > 0 ? (
+              <div className="rpc-scroll-x">
               <table className="rpc-tc-table">
                 <thead>
                   <tr>
@@ -282,6 +283,7 @@ export default function TcReportPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             ) : null}
           </section>
 
@@ -308,6 +310,7 @@ export default function TcReportPage() {
           {topSets.length > 0 ? (
             <section className="rpc-tc-section">
               <h2 className="rpc-tc-h2">Top Sets In Progress</h2>
+              <div className="rpc-scroll-x">
               <table className="rpc-tc-table">
                 <thead>
                   <tr>
@@ -338,6 +341,7 @@ export default function TcReportPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </section>
           ) : null}
 
@@ -380,6 +384,7 @@ export default function TcReportPage() {
           {acq.length > 0 ? (
             <section className="rpc-tc-section">
               <h2 className="rpc-tc-h2">Recent Acquisitions</h2>
+              <div className="rpc-scroll-x">
               <table className="rpc-tc-table">
                 <thead>
                   <tr>
@@ -416,6 +421,7 @@ export default function TcReportPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </section>
           ) : null}
         </>

@@ -157,13 +157,13 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
       />
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section className="rpc-card" style={{ padding: 18 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,240px) 1fr", gap: 24, alignItems: "start" }}>
+        <div className="rpc-entity-hero rpc-entity-hero--240">
           <div style={{ width: "100%", maxWidth: 240, aspectRatio: "1 / 1", background: "rgba(0,0,0,0.4)", border: "1px solid var(--rpc-border)", borderRadius: 6, overflow: "hidden" }}>
             {portrait ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={portrait} alt={`${detail.name} ${labels.portrait}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
             ) : (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--rpc-text-muted)", fontFamily: "'Share Tech Mono', monospace", fontSize: 11 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
                 No {labels.portrait.toLowerCase()}
               </div>
             )}
@@ -171,7 +171,7 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
             <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.18em", textTransform: "uppercase" }}>{labels.player}</div>
-            <h1 style={{ margin: 0, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 36, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", lineHeight: 1.05, textTransform: "uppercase" }}>
+            <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 36, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", lineHeight: 1.05, textTransform: "uppercase" }}>
               {detail.name}
             </h1>
 
@@ -228,11 +228,11 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
       {/* ── Top sales ────────────────────────────────────────────────────── */}
       <Section title="Top Sales">
         {topSales.length === 0 ? (
-          <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "'Share Tech Mono', monospace", fontSize: 12 }}>
+          <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
             No recorded sales yet
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="rpc-scroll-x" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {topSales.map(s => {
               const href = s.route_slug ? `/${collection}/edition/${encodeURIComponent(s.route_slug)}` : null
               const truncAddr = (a: string | null) => {
@@ -241,11 +241,11 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
                 return lower.length > 12 ? `${lower.slice(0, 6)}…${lower.slice(-4)}` : lower
               }
               const inner = (
-                <div style={{ display: "grid", gridTemplateColumns: "minmax(90px, auto) 1fr minmax(100px, auto) minmax(110px, auto) minmax(110px, auto) minmax(90px, auto)", gap: 12, padding: "10px 12px", alignItems: "center" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(90px, auto) 1fr minmax(100px, auto) minmax(110px, auto) minmax(110px, auto) minmax(90px, auto)", gap: 12, padding: "10px 12px", alignItems: "center", minWidth: 560 }}>
                   <span className="rpc-mono" style={{ fontSize: 11, color: s.serial_number != null && s.serial_number > 0 ? "var(--rpc-text-secondary)" : "var(--rpc-text-muted)", letterSpacing: "0.06em" }}>
                     {s.serial_number != null && s.serial_number > 0 ? `#${s.serial_number}` : "unresolved"}
                   </span>
-                  <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.02em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.02em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {s.edition_name ?? s.set_name ?? "—"}
                   </span>
                   <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", textAlign: "right" }}>{relTime(s.sold_at)}</span>
@@ -255,7 +255,7 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
                   <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", textAlign: "right" }} title={s.seller_address ?? undefined}>
                     {truncAddr(s.seller_address)}
                   </span>
-                  <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)", textAlign: "right" }}>{fmtUsd(s.price_usd)}</span>
+                  <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)", textAlign: "right" }}>{fmtUsd(s.price_usd)}</span>
                 </div>
               )
               return href ? (
@@ -279,7 +279,7 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
                 className="rpc-card"
                 style={{ padding: 12, textDecoration: "none", color: "inherit", display: "block" }}
               >
-                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 15, color: "var(--rpc-text-primary)", marginBottom: 6, lineHeight: 1.2 }}>{s.setName}</div>
+                <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15, color: "var(--rpc-text-primary)", marginBottom: 6, lineHeight: 1.2 }}>{s.setName}</div>
                 <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>
                   {fmtCount(s.count)} edition{s.count === 1 ? "" : "s"} · {fmtUsd(s.fmvTotal)}
                 </div>

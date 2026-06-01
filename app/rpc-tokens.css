@@ -897,3 +897,32 @@
 .rpc-expand-link--muted {
   color: var(--rpc-text-secondary);
 }
+
+/* ── Responsive entity-detail + tabular helpers (mobile overflow fix 2026-05-31) ──
+   Entity detail pages (edition/player/pack/team) use inline-styled 2-col hero
+   grids with no media-query fallback, which overflow ~390px viewports inside
+   the collection chrome's padding. These classes keep the desktop layout
+   identical (the media column is 320px by default, with --240/--260 width
+   variants) and collapse to a single column under 640px. The scroll-x wrapper
+   mirrors the insights board pages' .rpc-sq-table-wrap so wide tables/rows
+   scroll within their container instead of widening the page. */
+.rpc-entity-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) 1fr;
+  gap: 24px;
+  align-items: start;
+}
+.rpc-entity-hero--240 { grid-template-columns: minmax(0, 240px) 1fr; }
+.rpc-entity-hero--260 { grid-template-columns: minmax(0, 260px) 1fr; }
+.rpc-scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+@media (max-width: 640px) {
+  .rpc-entity-hero,
+  .rpc-entity-hero--240,
+  .rpc-entity-hero--260 {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}

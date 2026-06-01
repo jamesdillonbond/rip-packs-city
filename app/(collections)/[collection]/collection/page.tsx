@@ -835,10 +835,11 @@ export default function WalletPage() {
       const chunk = allRows.slice(i, i + CHUNK_SIZE)
       const momentIds = chunk.map(function(r) { return r.momentId })
       const editionKeys = chunk.map(function(r) { return r.editionKey ?? "" })
+      const collectionId = COLLECTION_UUID_BY_SLUG[collectionSlug] ?? ""
       fetch("/api/best-offers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ momentIds, editionKeys }),
+        body: JSON.stringify({ momentIds, editionKeys, collectionId }),
       })
         .then(function(r) { return r.ok ? r.json() : null })
         .then(function(d) {

@@ -291,7 +291,7 @@ export default async function EditionPage(
 
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section className="rpc-card" style={{ padding: 18 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,320px) 1fr", gap: 24, alignItems: "start" }}>
+        <div className="rpc-entity-hero">
           <div style={{ position: "relative", width: "100%", maxWidth: 320, aspectRatio: "1 / 1", background: "rgba(0,0,0,0.4)", border: "1px solid var(--rpc-border)", borderRadius: 6, overflow: "hidden" }}>
             {hasVideo ? (
               <video
@@ -498,9 +498,9 @@ export default async function EditionPage(
               Cadence sweep in progress — owner data populating
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div className="rpc-scroll-x" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {specialSerials.map(r => (
-                <div key={`${r.badge_type}-${r.serial_number}`} style={{ display: "grid", gridTemplateColumns: "minmax(0,160px) 1fr 1fr 120px", gap: 12, alignItems: "center", padding: "8px 10px", border: "1px solid var(--rpc-border)", borderRadius: 4 }}>
+                <div key={`${r.badge_type}-${r.serial_number}`} style={{ display: "grid", gridTemplateColumns: "minmax(0,160px) 1fr 1fr 120px", gap: 12, alignItems: "center", padding: "8px 10px", border: "1px solid var(--rpc-border)", borderRadius: 4, minWidth: 460 }}>
                   <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-primary)", letterSpacing: "0.06em", textTransform: "capitalize" }}>{badgeLabel(r.badge_type)}</span>
                   <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>#{r.serial_number}</span>
                   <WalletLink address={r.holder_address} />
