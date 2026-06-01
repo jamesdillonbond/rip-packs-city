@@ -19,6 +19,9 @@ interface PostBody {
 }
 
 export async function POST(req: NextRequest) {
+  if (!process.env.RPC_TRADE_ESCROW_ADDRESS) {
+    return NextResponse.json({ error: "Trade Hub is not available yet." }, { status: 503 });
+  }
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });

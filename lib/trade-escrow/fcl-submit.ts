@@ -43,6 +43,20 @@ function contractAddress(): string {
   return process.env.RPC_TRADE_ESCROW_ADDRESS ?? "<unset>";
 }
 
+// Trade escrow is on-chain swapping infrastructure that is NOT yet deployed —
+// the RPCTradeEscrow contract has no mainnet address. Until it does, every
+// submitter below would return a fabricated `0xstub_` tx id, implying an
+// on-chain swap that never happened. This guard makes them hard-fail loudly
+// instead. Same shelved-until-real posture as Cart (CLAUDE.md Open #1).
+function ensureLive(verb: string): void {
+  const addr = process.env.RPC_TRADE_ESCROW_ADDRESS;
+  if (!addr || addr === "<unset>") {
+    throw new Error(
+      `Trade escrow unavailable: RPCTradeEscrow contract not deployed (${verb}). Set RPC_TRADE_ESCROW_ADDRESS to enable.`
+    );
+  }
+}
+
 function logCall(verb: string, payload: unknown) {
   console.log(
     `[trade-escrow:stub] ${verb} contract=${contractAddress()} payload=${JSON.stringify(payload)}`
@@ -57,6 +71,7 @@ function depositTemplateName(collection: TradeCollection): string {
 }
 
 export async function submitProposeTrade(args: ProposeTradeArgs): Promise<SubmittedTx> {
+  ensureLive("propose");
   // TODO — replace with the §3a propose_trade.cdc template. Signed by the
   // RPC hot wallet acting as proposer. Returns the assigned chain_trade_id
   // via a TradeProposed event; the route layer must parse the event from the
@@ -66,6 +81,7 @@ export async function submitProposeTrade(args: ProposeTradeArgs): Promise<Submit
 }
 
 export async function submitDepositToTrade(args: DepositToTradeArgs): Promise<SubmittedTx> {
+  ensureLive("deposit");
   // TODO — replace with the per-collection §3b deposit_to_trade_<col>.cdc
   // template. Signed by the depositor (NOT the hot wallet) — so in
   // production this submitter is only invoked by the CLIENT-side helper at
@@ -84,6 +100,7 @@ export async function submitDepositToTrade(args: DepositToTradeArgs): Promise<Su
 }
 
 export async function submitExecuteSwap(args: ExecuteSwapArgs): Promise<SubmittedTx> {
+  ensureLive("execute");
   // TODO — replace with the §3c execute_swap.cdc template. Signed by the
   // RPC hot wallet (anyone can call, but backend pays so users don't).
   logCall("execute", args);
@@ -91,6 +108,7 @@ export async function submitExecuteSwap(args: ExecuteSwapArgs): Promise<Submitte
 }
 
 export async function submitCancelTrade(args: CancelTradeArgs): Promise<SubmittedTx> {
+  ensureLive("cancel");
   // TODO — replace with the §3d cancel_trade.cdc template. Signed by the
   // cancelling party. In a backend-relayed flow this submitter would be
   // called by the client wallet; for now the stub lets the route layer
@@ -100,6 +118,7 @@ export async function submitCancelTrade(args: CancelTradeArgs): Promise<Submitte
 }
 
 export async function submitReclaimExpired(args: ReclaimExpiredArgs): Promise<SubmittedTx> {
+  ensureLive("reclaim");
   // TODO — replace with the §3e reclaim_expired.cdc template. Signed by
   // the RPC hot wallet (janitor role, anyone is permitted on-chain).
   logCall("reclaim", args);
