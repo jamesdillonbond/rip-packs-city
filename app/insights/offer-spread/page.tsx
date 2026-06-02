@@ -285,19 +285,19 @@ export default function OfferSpreadPage() {
       <section className="rpc-os-kpi-row" aria-label="Summary">
         <div className="rpc-os-kpi">
           <div className="rpc-os-kpi-label">Bid ≥ floor</div>
-          <div className="rpc-os-kpi-value">{fmtInt(kpis.bidMeets)}</div>
+          <div className="rpc-os-kpi-value">{loading ? "—" : fmtInt(kpis.bidMeets)}</div>
         </div>
         <div className="rpc-os-kpi">
           <div className="rpc-os-kpi-label">Within 10% of floor</div>
-          <div className="rpc-os-kpi-value">{fmtInt(kpis.within10)}</div>
+          <div className="rpc-os-kpi-value">{loading ? "—" : fmtInt(kpis.within10)}</div>
         </div>
         <div className="rpc-os-kpi">
           <div className="rpc-os-kpi-label">Median spread</div>
-          <div className="rpc-os-kpi-value">{fmtUsd(kpis.medianSpread)}</div>
+          <div className="rpc-os-kpi-value">{loading ? "—" : fmtUsd(kpis.medianSpread)}</div>
         </div>
         <div className="rpc-os-kpi">
           <div className="rpc-os-kpi-label">Rows shown</div>
-          <div className="rpc-os-kpi-value">{fmtInt(kpis.count)}</div>
+          <div className="rpc-os-kpi-value">{loading ? "—" : fmtInt(kpis.count)}</div>
         </div>
       </section>
 

@@ -1,7 +1,7 @@
 # Rip Packs City
 
 ## Overview
-Rip Packs City (RPC) is a collector intelligence platform built for the Flow digital collectibles community. RPC covers NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike — the major collections across the Dapper and Top Shot ecosystem. Built by collectors, for collectors, with the goal of bringing pro-grade analytics to anyone ripping packs and tracking moments on Flow.
+Rip Packs City (RPC) is a collector intelligence platform built for the Flow digital collectibles community. RPC covers NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike — the major collections across the Dapper and Top Shot ecosystem. Built to bring pro-grade analytics to anyone ripping packs and tracking moments on Flow.
 
 Every collection exposes wallet analytics, FMV pricing, marketplace browser, and a sniper feed; pack EV, set completion, and analytics tabs scale across collections as data coverage allows.
 

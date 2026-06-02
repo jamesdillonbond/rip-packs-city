@@ -59,7 +59,7 @@ type AboutBlock = { title: string; body: string }
 const COLLECTION_ABOUT: Record<string, AboutBlock[]> = {
   "nba-top-shot": [
     {
-      title: "Built for Collectors, By Collectors",
+      title: "Collector-grade intelligence",
       body: "Rip Packs City started as a tool for the Portland Trail Blazers community on NBA Top Shot — collectors who care about getting real value from their moments, not just chasing hype. That same obsession with data and fairness drives everything here.",
     },
     {
@@ -82,7 +82,7 @@ const COLLECTION_ABOUT: Record<string, AboutBlock[]> = {
     },
     {
       title: "Intelligence for Every Drop",
-      body: "FMV on All Day reflects real sales data — never ask prices. The sniper works across both the pack-era primary market and secondary marketplaces, so you catch mispriced moments the moment they list. Built for collectors who treat the game like collectors treat the hobby.",
+      body: "FMV on All Day reflects real sales data — never ask prices. The sniper works across both the pack-era primary market and secondary marketplaces, so you catch mispriced moments the moment they list.",
     },
   ],
   "disney-pinnacle": [

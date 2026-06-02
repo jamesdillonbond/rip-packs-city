@@ -926,3 +926,37 @@
     gap: 16px;
   }
 }
+
+/* Site footer — responsive layout. The top row is brand | social (2-col on
+   desktop) and the bottom strip is copyright | links. Both stack and center
+   under 640px so the PRIVACY link no longer clips on phones. Inline styles
+   can't express @media, so the layout lives here while the footer keeps its
+   maxWidth/margin/padding inline. */
+.rpc-footer-top {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 24px;
+}
+.rpc-footer-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+@media (max-width: 640px) {
+  .rpc-footer-top {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+    gap: 12px;
+  }
+  .rpc-footer-bottom {
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  .rpc-footer-bottom > div {
+    justify-content: center;
+  }
+}
