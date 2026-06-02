@@ -278,19 +278,19 @@ export default function DealsPage() {
       <section className="rpc-dl-kpi-row" aria-label="Summary">
         <div className="rpc-dl-kpi">
           <div className="rpc-dl-kpi-label">Deals</div>
-          <div className="rpc-dl-kpi-value">{fmtInt(kpis.count)}</div>
+          <div className="rpc-dl-kpi-value">{loading ? "—" : fmtInt(kpis.count)}</div>
         </div>
         <div className="rpc-dl-kpi">
           <div className="rpc-dl-kpi-label">≥ 25% off</div>
-          <div className="rpc-dl-kpi-value">{fmtInt(kpis.big)}</div>
+          <div className="rpc-dl-kpi-value">{loading ? "—" : fmtInt(kpis.big)}</div>
         </div>
         <div className="rpc-dl-kpi">
           <div className="rpc-dl-kpi-label">Median discount</div>
-          <div className="rpc-dl-kpi-value">{fmtPct(kpis.medianDiscount)}</div>
+          <div className="rpc-dl-kpi-value">{loading ? "—" : fmtPct(kpis.medianDiscount)}</div>
         </div>
         <div className="rpc-dl-kpi">
           <div className="rpc-dl-kpi-label">Rows shown</div>
-          <div className="rpc-dl-kpi-value">{fmtInt(kpis.count)}</div>
+          <div className="rpc-dl-kpi-value">{loading ? "—" : fmtInt(kpis.count)}</div>
         </div>
       </section>
 

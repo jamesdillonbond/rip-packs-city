@@ -13,14 +13,11 @@ export default function SiteFooter() {
       }}
     >
       <div
+        className="rpc-footer-top"
         style={{
           maxWidth: "var(--max-width)",
           margin: "0 auto",
           padding: "24px 24px 16px",
-          display: "grid",
-          gridTemplateColumns: "1fr auto 1fr",
-          alignItems: "center",
-          gap: 24,
         }}
       >
         {/* Left — Logo + wordmark */}
@@ -39,20 +36,6 @@ export default function SiteFooter() {
             </div>
           </div>
         </div>
-
-        {/* Center — Community tagline */}
-        <span
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            color: "var(--rpc-text-secondary)",
-            letterSpacing: "0.08em",
-            fontSize: "var(--text-xs)",
-          }}
-        >
-          BUILT FOR COLLECTORS, BY COLLECTORS
-        </span>
 
         {/* Right — Social + Flow badge */}
         <div style={{ display: "flex", alignItems: "center", gap: 16, justifyContent: "flex-end" }}>
@@ -87,14 +70,12 @@ export default function SiteFooter() {
 
       {/* Bottom strip */}
       <div
+        className="rpc-footer-bottom"
         style={{
           borderTop: "1px solid var(--rpc-border)",
           padding: "10px 24px",
           maxWidth: "var(--max-width)",
           margin: "0 auto",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
           fontSize: "var(--text-xs)",
           color: "var(--rpc-text-ghost)",
           letterSpacing: "0.1em",

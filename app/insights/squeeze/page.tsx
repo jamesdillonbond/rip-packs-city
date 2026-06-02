@@ -344,19 +344,19 @@ export default function SqueezePage() {
       <section className="rpc-sq-kpi-row" aria-label="Summary">
         <div className="rpc-sq-kpi">
           <div className="rpc-sq-kpi-label">Editions</div>
-          <div className="rpc-sq-kpi-value">{fmtInt(kpis.count)}</div>
+          <div className="rpc-sq-kpi-value">{loading ? "—" : fmtInt(kpis.count)}</div>
         </div>
         <div className="rpc-sq-kpi">
           <div className="rpc-sq-kpi-label">Median squeeze</div>
-          <div className="rpc-sq-kpi-value">{fmtPct(kpis.medianSqueeze)}</div>
+          <div className="rpc-sq-kpi-value">{loading ? "—" : fmtPct(kpis.medianSqueeze)}</div>
         </div>
         <div className="rpc-sq-kpi">
           <div className="rpc-sq-kpi-label">Median buyable</div>
-          <div className="rpc-sq-kpi-value">{fmtInt(Math.round(kpis.medianBuyable))}</div>
+          <div className="rpc-sq-kpi-value">{loading ? "—" : fmtInt(Math.round(kpis.medianBuyable))}</div>
         </div>
         <div className="rpc-sq-kpi">
           <div className="rpc-sq-kpi-label">Total locked</div>
-          <div className="rpc-sq-kpi-value">{fmtInt(kpis.totalLocked)}</div>
+          <div className="rpc-sq-kpi-value">{loading ? "—" : fmtInt(kpis.totalLocked)}</div>
         </div>
       </section>
 
