@@ -16,6 +16,7 @@ import { useWarmCache } from '@/lib/warmup/WarmupContext'
 // populated rows in pack_ev_latest; surface re-enables when that changes.
 
 type SortKey =
+  | 'display_price_asc'
   | 'value_ratio_desc'
   | 'ev_margin_pct_desc'
   | 'retail_price_asc'
@@ -25,6 +26,11 @@ type SortKey =
   | 'pack_ev_dollar_desc'
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  // Headline RTR view (2026-06-02): cheapest BUYABLE pack first with EV
+  // visible. displayPrice = live secondary ask > cached secondary_ask >
+  // retail (computed in toPackRow). Client-only sort — not in /api/packs
+  // ALLOWED_SORTS, so it's NOT added to SERVER_SORTS below.
+  { key: 'display_price_asc', label: 'Cheapest pack ($)' },
   { key: 'value_ratio_desc', label: 'Value ratio' },
   { key: 'ev_margin_pct_desc', label: 'EV margin %' },
   { key: 'pack_ev_dollar_desc', label: 'Pack EV ($)' },
@@ -216,7 +222,7 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
   // top of the component so the standard-view filters stay mounted (and
   // thus don't reset) when the user toggles between modes.
   const [viewMode, setViewMode] = useState<'standard' | 'grails'>('standard')
-  const [sort, setSort] = useState<SortKey>('value_ratio_desc')
+  const [sort, setSort] = useState<SortKey>('display_price_asc')
   const [tier, setTier] = useState<string>('all')
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
@@ -358,6 +364,11 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
               </span>
             )}
           </div>
+          {sort === 'display_price_asc' && !loading && (
+            <div className="mt-0.5 text-[11px] text-zinc-500">
+              Sorted cheapest pack first — the EV columns flag a cheap +EV pack at a glance.
+            </div>
+          )}
         </div>
         {/* View-mode toggle. Grails mode reads pack_grail_metrics_mv via
             /api/packs/grails and ignores the standard-view filters. */}
@@ -548,6 +559,8 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
 // handles them via the raw [sortKey] lookup.
 function tableSortFor(sort: SortKey): { key: TableSortKey; dir: 'asc' | 'desc' } {
   switch (sort) {
+    case 'display_price_asc':
+      return { key: 'displayPrice', dir: 'asc' }
     case 'value_ratio_desc':
     case 'ev_margin_pct_desc':
       return { key: 'evMarginPct', dir: 'desc' }
