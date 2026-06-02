@@ -447,7 +447,13 @@ export default function PackTable({
               >
                 <td className="p-3">
                   <div className="flex items-center gap-3">
-                    <PackThumb url={r.thumbnailUrl} tier={r.tier} title={r.title} size={40} />
+                    {r.detailHref ? (
+                      <Link href={r.detailHref} prefetch={false} aria-label={r.title} className="flex-shrink-0">
+                        <PackThumb url={r.thumbnailUrl} tier={r.tier} title={r.title} size={40} />
+                      </Link>
+                    ) : (
+                      <PackThumb url={r.thumbnailUrl} tier={r.tier} title={r.title} size={40} />
+                    )}
                     {r.detailHref ? (
                       <Link href={r.detailHref} prefetch={false} className="font-medium text-white hover:underline">
                         {r.title}
@@ -546,7 +552,13 @@ export default function PackTable({
         {sorted.map((r) => (
           <div key={r.id} className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
             <div className="flex items-start gap-3">
-              <PackThumb url={r.thumbnailUrl} tier={r.tier} title={r.title} size={48} />
+              {r.detailHref ? (
+                <Link href={r.detailHref} prefetch={false} aria-label={r.title} className="flex-shrink-0">
+                  <PackThumb url={r.thumbnailUrl} tier={r.tier} title={r.title} size={48} />
+                </Link>
+              ) : (
+                <PackThumb url={r.thumbnailUrl} tier={r.tier} title={r.title} size={48} />
+              )}
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-semibold text-white truncate">
                   {r.detailHref ? (

@@ -419,7 +419,7 @@ export default function PackSimulatorPage({ params }: PageProps) {
 
       {/* Pulls */}
       {result && (
-        <PullsGrid result={result} accent={accent} flipIndex={flipIndex} slots={slots ?? 1} />
+        <PullsGrid result={result} accent={accent} flipIndex={flipIndex} slots={slots ?? 1} collectionSlug={collectionSlug} />
       )}
 
       {/* Disclaimer */}
@@ -526,7 +526,7 @@ function HitMetric({ label, hits, rate }: { label: string; hits: number; rate: n
   )
 }
 
-function PullsGrid({ result, accent, flipIndex, slots }: { result: RipResult; accent: string; flipIndex: number; slots: number }) {
+function PullsGrid({ result, accent, flipIndex, slots, collectionSlug }: { result: RipResult; accent: string; flipIndex: number; slots: number; collectionSlug: string }) {
   let runningCount = 0
   return (
     <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 14 }}>
@@ -557,8 +557,10 @@ function PullsGrid({ result, accent, flipIndex, slots }: { result: RipResult; ac
                   )
                 }
                 const tier = pull.edition.tier ?? "common"
-                return (
-                  <div key={si} className="rpc-pull-card" style={{ background: "#080808", border: `2px solid ${tierColor(tier)}`, borderRadius: 4, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                const slug = pull.edition.edition_slug
+                const cardStyle = { background: "#080808", border: `2px solid ${tierColor(tier)}`, borderRadius: 4, overflow: "hidden", display: "flex", flexDirection: "column" as const }
+                const cardInner = (
+                  <>
                     {pull.edition.thumbnail_url ? (
                       <img src={pull.edition.thumbnail_url} alt={pull.edition.player_name ?? "Pulled moment"} style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover" }} />
                     ) : (
@@ -575,6 +577,17 @@ function PullsGrid({ result, accent, flipIndex, slots }: { result: RipResult; ac
                         {fmtUsd(pull.edition.fmv_usd)}
                       </div>
                     </div>
+                  </>
+                )
+                // edition_slug is colon-keyed (setID:playID) — MUST URL-encode
+                // or the route 404s (the bf3f4f6 decodeURIComponent lesson).
+                return slug ? (
+                  <Link key={si} href={`/${collectionSlug}/edition/${encodeURIComponent(slug)}`} className="rpc-pull-card" style={{ ...cardStyle, textDecoration: "none", color: "inherit" }}>
+                    {cardInner}
+                  </Link>
+                ) : (
+                  <div key={si} className="rpc-pull-card" style={cardStyle}>
+                    {cardInner}
                   </div>
                 )
               })}
