@@ -405,12 +405,18 @@ async function runSmokeTests() {
       expected: "status=healthy",
     }),
 
-    // 5. Listing cache has rows
+    // 5. Listing cache has rows — SOFT (2026-06-02). cached_listings is the
+    // dead Flowty-era table, frozen at ~24 rows since the Flowty marketplace
+    // shut down (2026-05-13). The live TS/AllDay listing feeds moved to
+    // badge_editions / cached_listings_v2 (see /api/market modern path). This
+    // check now only fails if the frozen rows are purged — not a real
+    // regression — so it's soft (visibility, never Sentry-alerts).
     time(async () => {
       const meta = {
         name: "cached_listings has rows",
         endpoint: "table:cached_listings",
         expected: "row-count>0",
+        soft: true,
       };
       const { count } = await (svc.from("cached_listings") as any)
         .select("*", { count: "exact", head: true });
@@ -418,7 +424,7 @@ async function runSmokeTests() {
       return {
         ...meta,
         passed,
-        detail: `${count} rows`,
+        detail: `${count} rows (frozen Flowty-era cache)`,
         statusCode: null,
         bodyExcerpt: null,
         notes: { count: count ?? 0 },
@@ -427,6 +433,7 @@ async function runSmokeTests() {
       name: "cached_listings has rows",
       endpoint: "table:cached_listings",
       expected: "row-count>0",
+      soft: true,
     }),
 
     // 6. Wallet search responds (soft-fail — depends on Top Shot GQL + Flow)
