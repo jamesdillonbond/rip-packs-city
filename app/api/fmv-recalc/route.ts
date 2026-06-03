@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import { applyAllFmvGuards } from "@/lib/fmv-phantom-guard"
-import { computeConfidence, escalateConfidence } from "@/lib/fmv-confidence"
+import { computeConfidence, escalateConfidence, MIN_SALES_30D_MEDIUM } from "@/lib/fmv-confidence"
 
 // ── FMV Recalc Route ──────────────────────────────────────────────────────────
 //
@@ -414,6 +414,46 @@ export async function POST(req: NextRequest) {
       console.log(`[FMV-RECALC] Skipped ${ultimateSkipped} ULTIMATE editions (owned by recalc_ultimate_fmv)`)
     }
 
+    // ── Step 2a-ter: Mis-key sanity guard (serial > circulation) ─────────────
+    // Drop any sale whose serial_number exceeds the edition's circulation_count.
+    // A serial above the print run is physically impossible for a correctly-keyed
+    // edition — it means an upstream writer mis-attributed a contiguous mint block
+    // of a DIFFERENT moment to this setID:playID (the 2026-06-03 mis-key class,
+    // e.g. De'Andre Hunter "Clamps" sales siphoned onto Giannis "Cosmic" 8:62 of
+    // circ 49). Averaging those prices poisons the WAP. wmc is canonical for
+    // nft_id→edition; until the attribution is repaired we simply exclude the
+    // impossible rows from pricing here, which protects the entire mis-key class
+    // regardless of cleanup status. Null-serial sales are kept (not provably
+    // impossible); editions whose circulation_count is unknown/0 are untouched.
+    // An edition left with zero surviving sales falls out of this run's Step-1
+    // pricing (it keeps its prior snapshot / heals via the Step 5b fallback) —
+    // strictly better than pricing off impossible sales.
+    let miskeyDroppedSales = 0
+    let miskeyEmptiedEditions = 0
+    for (const [edId, edData] of [...editionSalesMap.entries()]) {
+      const circ = editionMetaById.get(edId)?.circulationCount ?? null
+      if (circ == null || circ <= 0) continue
+      const kept = edData.sales.filter((s) => s.serial == null || s.serial <= circ)
+      const dropped = edData.sales.length - kept.length
+      if (dropped === 0) continue
+      miskeyDroppedSales += dropped
+      if (kept.length === 0) {
+        editionSalesMap.delete(edId)
+        miskeyEmptiedEditions++
+      } else {
+        edData.sales = kept
+        edData.latestSoldAt = kept.reduce(
+          (latest, s) => (s.soldAt > latest ? s.soldAt : latest),
+          kept[0].soldAt,
+        )
+      }
+    }
+    if (miskeyDroppedSales > 0) {
+      console.log(
+        `[FMV-RECALC] Mis-key guard: dropped ${miskeyDroppedSales} serial>circulation sales (${miskeyEmptiedEditions} editions emptied)`,
+      )
+    }
+
     // Flowty's marketplace shut down ~2026-05-13. The former Step 2b (Flowty
     // LiveToken FMV blend) and Step 2c (floor-ask proxy) read from
     // cached_listings, which now holds only ~24 frozen multi-week-stale rows.
@@ -656,7 +696,7 @@ export async function POST(req: NextRequest) {
         .rpc("query_sql", {
           query: `
             WITH latest_algo AS (
-              SELECT DISTINCT ON (edition_id) edition_id, algo_version
+              SELECT DISTINCT ON (edition_id) edition_id, algo_version, confidence
               FROM fmv_snapshots
               ORDER BY edition_id, computed_at DESC
             )
@@ -667,12 +707,20 @@ export async function POST(req: NextRequest) {
               MIN(s.price_usd)::numeric AS min_price,
               COUNT(s.id) AS sales_count,
               MAX(s.sold_at) AS latest_sold_at,
+              MAX(la.confidence::text) AS prev_confidence,
               MAX(be.low_ask) FILTER (WHERE be.low_ask > 0 AND be.low_ask <= 10000) AS low_ask
             FROM editions e
             JOIN sales s ON s.edition_id = e.id
             LEFT JOIN latest_algo la ON la.edition_id = e.id
             LEFT JOIN badge_editions be ON be.external_id = e.external_id AND be.collection_id = e.collection_id
-            WHERE (la.edition_id IS NULL OR la.algo_version NOT LIKE '1.7.%')
+            -- Admit editions with no snapshot, or a non-1.7.x snapshot, OR a 1.7.x
+            -- snapshot that is currently NO_DATA (the F5 / corrected-D3 recovery):
+            -- ~38 editions that have sales but were stamped NO_DATA by an earlier
+            -- empty-window pass and then frozen out by the "skip 1.7.x" guard.
+            -- Scoped to confidence='NO_DATA' ONLY — a broader relax would re-admit
+            -- (and risk re-clobbering) good 1.7.x HIGH/MEDIUM rows, the 2026-05-30
+            -- Step 6 self-perpetuating-cycle class.
+            WHERE (la.edition_id IS NULL OR la.algo_version NOT LIKE '1.7.%' OR la.confidence = 'NO_DATA')
               AND s.price_usd > 0
               AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
               AND e.collection_id <> '${PINNACLE_COLLECTION_ID}'
@@ -691,6 +739,7 @@ export async function POST(req: NextRequest) {
           min_price: number
           sales_count: number
           latest_sold_at: string
+          prev_confidence: string | null
           low_ask: number | string | null
         }> | null) ?? []
 
@@ -739,6 +788,16 @@ export async function POST(req: NextRequest) {
               })
             }
 
+            // F5 recovery rows (previously frozen at NO_DATA) carry an honest
+            // sales-derived label: SALES_ONLY when enough sales exist to trust the
+            // average, else STALE — never LOW (LOW implies a healthy in-window
+            // read these don't have). The pre-existing non-1.7.x population keeps
+            // its original daysSinceSale>=60 ? STALE : LOW behavior unchanged.
+            const wasNoData = row.prev_confidence === "NO_DATA"
+            const histConfidence = wasNoData
+              ? (Number(row.sales_count) >= MIN_SALES_30D_MEDIUM ? "SALES_ONLY" : "STALE")
+              : (daysSinceSale >= 60 ? "STALE" : "LOW")
+
             return applyAllFmvGuards({
               edition_id: row.edition_id,
               collection_id: row.collection_id,
@@ -751,7 +810,7 @@ export async function POST(req: NextRequest) {
               // no fresh ask, handled above), label it STALE rather than LOW —
               // single-sale WAP from 2+ months ago is unreliable signal, not
               // healthy low-confidence pricing.
-              confidence: daysSinceSale >= 60 ? "STALE" : "LOW",
+              confidence: histConfidence,
               sales_count_7d: 0,
               sales_count_30d: 0,
               days_since_sale: daysSinceSale,
