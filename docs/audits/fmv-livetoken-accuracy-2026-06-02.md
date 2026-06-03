@@ -109,6 +109,18 @@ The same edition-level failures recur across wallets (`100:3345` NO_DATA on both
 
 These map onto the Stream C recalc-fix handoff. Note: the big wallets (alxo 34K, Rigged 38K moments) freeze LiveToken's FMV_DESC query and need a paginated/gentler pull in a future pass.
 
+## Platform-scope investigation (addendum - pressure-tested)
+
+Investigated whether wallet-2's Giannis `8:62` $1.56-at-MEDIUM points to a widespread "catastrophic error behind a good confidence label" class. Three detectors tested; it does NOT - such errors are rare and isolated:
+- Flat threshold (HIGH/MED, fmv<$25, circ<=300, premium tier) flagged 84 - but most are legitimately-cheap RARE role-player moments (Breakout/Equinox/Playoffs-Rare at $5-10 with real sales). Over-flag.
+- Sales-max-relative (fmv < 0.25 x max90, max90>$100) flagged ~32 - but these are high-circ editions (LeBron Top Shot This circ 3,148; Steph Base circ 60,000) where the TYPICAL serial really is ~$2 and the high "max" is a #1/jersey special serial. FMV correct. Over-flag.
+- Sales-median-relative at circ<=100 (fmv < 0.25 x median90, median>$150): flagged 0.
+- Within set 8 (Cosmic - the clearest premium low-circ set, all serials trade $1000s): 1 of 30 editions is under $100 (the Giannis `8:62` $1.56); the other 29 are correct (up to $9,000).
+
+Root cause of the Giannis case: 39 recorded sales in 120d, ALL <$10 (median $1.00). RPC recalc is FAITHFUL to its sales data; the sales themselves are mis-mapped (cheap-moment sales keyed to a circ-49 Cosmic). This is a sales->edition ingest/mapping issue, isolated - NOT a recalc-logic bug; an outlier-rejection recalc fix would not address it.
+
+Net correction: catastrophic error at HIGH/MEDIUM confidence is RARE (the top-confidence labels are mostly trustworthy - good news). The broad real problems stand: (1) LOW unreliability (71% of editions), (2) NO_DATA on low-circ grails, (3) STALE display, (4) serial-premium blindness, (5) ASK_ONLY drift (realizes ~0.75 via the haircut layer per Stream C verify). Cheap guard worth adding to the daytime monitor: a set-keyed sanity check ("any Cosmic/Holo/Anthology edition priced like a common").
+
 ## Resumable worklist — 10 wallets (wallets 1-2 done)
 
 Method per wallet: navigate `?address=<hex>&mode=portfolio` → FMV_DESC → capture `portfolio.moments` → join setID:playID to RPC. ~4 browser calls + 1 SQL join each.
