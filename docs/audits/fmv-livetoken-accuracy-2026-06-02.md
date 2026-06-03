@@ -90,7 +90,26 @@ Per the FMV patch-restraint rule: one-time DB data fixes are fine, but importing
 
 ---
 
-## Resumable worklist — 10 wallets (Trevor done)
+## Wallet 2 — mbl267 (Mike Levy, 0x11859edcf2f53edd), 2,419 moments
+
+Even more severe than wallet 1, including a confidence-label failure:
+- **CRITICAL (recalc bug): `8:62` Giannis Cosmic — RPC $2 at MEDIUM vs LiveToken ~$4,552.** A $2 price on a ~$4.5K moment, labeled MEDIUM so it isn't even flagged uncertain. Almost certainly a bad outlier sale (wash/gift recorded at $2) the recalc trusted. Edition-level -> hits every holder.
+- **NO_DATA on the biggest holdings:** LeBron Holo `4:133` NO_DATA vs $20,500; LeBron Anthology `100:3919` NO_DATA vs $17,095; Vince Carter `61:2183` NO_DATA vs $4,663; LeBron Anthology `100:3345` NO_DATA vs $2,594 (same edition as wallet 1 - cross-wallet confirm).
+- **ASK_ONLY both directions:** Devin Booker Cosmic `8:110` RPC $6,750 vs $2,317 (+191%); Ja Morant Cosmic `8:137` $1,125 vs $2,260 (-50%); Jokic Cosmic `8:37` $9,000 vs ~$5,784 (+56%).
+- **Serial-premium blind spot:** LeBron Base `2:151` #1/1000 is worth $3,896 on LiveToken; RPC shows its edition-level $178 (-95%). RPC FMV is edition-level and structurally cannot price a #1/low-serial premium - low-serial holders see undervalued portfolios.
+- Accurate: LeBron From the Top `12:151` +10%, Luka Holo `4:136` +6%, From the Top `12:161` -14%.
+
+## Cross-wallet synthesis (wallets 1-2 of 10)
+
+The same edition-level failures recur across wallets (`100:3345` NO_DATA on both; Cosmic/Holo/Anthology low-circ NO_DATA everywhere). Confirmed failure modes, ranked by real-user trust damage:
+1. **MEDIUM/STALE catastrophic outliers** - $2 on a $4.5K Giannis (MEDIUM), $949 on a $113 Wemby (STALE). The confidence label does NOT protect against a single bad/old sale. -> recalc needs an outlier floor/ceiling guard + STALE-value suppression.
+2. **NO_DATA on low-circ high-value editions** - the most valuable moments ($2.5K-$20.5K LeBron/KD) show no price because they trade rarely. -> wider sales lookback for circ <= 150.
+3. **Serial-premium blind spot** - edition-level FMV can't capture #1/low-serial premiums (worth multiples of edition floor). -> serial-curve modeling, or surface a serial-adjusted range rather than one number.
+4. **ASK_ONLY drift** - ±20-60% both directions depending on liquidity. -> liquidity-adjusted multiplier.
+
+These map onto the Stream C recalc-fix handoff. Note: the big wallets (alxo 34K, Rigged 38K moments) freeze LiveToken's FMV_DESC query and need a paginated/gentler pull in a future pass.
+
+## Resumable worklist — 10 wallets (wallets 1-2 done)
 
 Method per wallet: navigate `?address=<hex>&mode=portfolio` → FMV_DESC → capture `portfolio.moments` → join setID:playID to RPC. ~4 browser calls + 1 SQL join each.
 
@@ -98,7 +117,7 @@ Method per wallet: navigate `?address=<hex>&mode=portfolio` → FMV_DESC → cap
 |---|---|---|---|---|---|
 | 1 | 0xbd94cade097e50ac | Trevor (founder) | 18,437 | $77,967 | **DONE** |
 | 2 | 0x8bc1c0249e2ebb3e | alxo | 34,654 | $239,258 | pending |
-| 3 | 0x11859edcf2f53edd | mbl267 (Mike Levy) | 2,629 | $253,944 | pending |
+| 3 | 0x11859edcf2f53edd | mbl267 (Mike Levy) | 2,629 | $253,944 | **DONE** |
 | 4 | 0xad89a78a11e36d68 | scottyj111 | 14,030 | $57,545 | pending |
 | 5 | 0xf77bf547fccf6656 | Rigged | 37,783 | $76,100 | pending |
 | 6 | 0x623412c649a42fdf | arielremer | 5,051 | $74,133 | pending |
