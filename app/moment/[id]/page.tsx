@@ -461,7 +461,11 @@ export default async function MomentPage(
   // Availability reflects real listing state: a live ask (serial-specific
   // is_listed=true with a list_price, or an edition-level top_shot_ask) is
   // InStock; otherwise OutOfStock. FMV alone is not a listing (Moment audit B7).
-  const priceForSchema = f?.fmv_usd ?? f?.floor_price_usd ?? null
+  // A STALE FMV is an unreliable price hint — omit the Offer entirely rather
+  // than let Google index a wrong price (a wrong indexed price is worse than
+  // none). Non-stale FMV / floor still feeds the Offer as before.
+  const priceForSchema =
+    f?.confidence === "STALE" ? null : (f?.fmv_usd ?? f?.floor_price_usd ?? null)
   const hasLiveListing =
     (ss?.is_listed === true && (ss.list_price ?? 0) > 0) ||
     (f?.top_shot_ask != null && f.top_shot_ask > 0)
