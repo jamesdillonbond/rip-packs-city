@@ -8,7 +8,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ## Shipped (autonomous, with revert path)
 
-_None yet._
+- **2026-06-03 · Claude Code (daytime, FMV sweep) · D2 JSON-LD STALE-price gate.** `app/moment/[id]/page.tsx` + `lib/seo.ts` omit `offers.price` when FMV confidence is STALE (keep a live ask). Markup only. Commit `6e90f3f`. Revert: `git revert 6e90f3f`.
+- **2026-06-03 · Claude Code (daytime) · `v_fmv_sanity_flags` v2.** Migration `audit_20260603_v_fmv_sanity_flags_v2_sales_only_baseline` — sales-only set median (was ask-inflated all-confidence) + absolute-$50-gap + confident-cheap gates. Drops the 74:2650 false positive, keeps 8:62. `security_invoker`, service_role only. Revert: restore prior def (flat all-confidence median, >$200 gate). **Operator TODO: wire `SELECT * FROM v_fmv_sanity_flags;` into `rpc-weekly-health-check` and alert on any row.**
+
+---
+
+## Queued from the 2026-06-03 FMV sweep (need Trevor sign-off — pricing/destructive)
+
+Full drafts: `docs/handoff-2026-06-03-fmv-sweep-drafts.md`.
+
+- **F1 · Mis-key batch (data corruption).** `serial > circulation` detector finds ~15 TS editions (≥5 impossible sales) with sales attributed to the wrong edition. 8:62 Giannis Cosmic confirmed (sales belong to Clamps 226:7541); a clean RARE/LEGENDARY sub-batch (127:4681, 127:4683, 29:907, 64:2375, 29:897 …) shares the signature. Investigate the moments-edition writer that mis-keyed contiguous mint blocks. **wmc is canonical over moments/sales for nft_id→edition.**
+- **F2 · 8:62 re-map (DESTRUCTIVE).** Drafted two-tier: Tier A = 22 sales + 16 moments wmc-confirmed → auto-safe UPDATE; Tier B = 78 residual sales (no wmc) need on-chain confirmation. Preview-first SQL in handoff. Do NOT live-patch FMV — reprice via fmv-recalc after re-map.
+- **F3 · Defensive recalc input guard** — drop sales where `serial_number > circulation_count` before WAP. Protects the whole mis-key class. Pricing input → sign-off.
+- **F4 · D1 STALE-in-totals** — drafted + timing-validated (~2.0s on Trevor's 18.5k-moment wallet, <8s). `get_wallet_collection_stats` confidence-aware split (`fmv_total` excl. STALE + `fmv_stale_total`/`stale_count`) + dashboard footnote. Awaiting go before RPC change.
+- **F5 · D3 Step 5b NO_DATA relax** — handoff's "60→90d lookback" premise corrected (no such window; grails have zero sales). Real lever: relax Step 5b guard scoped to `confidence='NO_DATA'` only + tag SALES_ONLY/STALE. Self-perpetuating-cycle risk (2026-05-30 Step 6 class). Sign-off.
+- **F6 · D4 ASK/haircut — NO CHANGE (premise false).** No double-discount: haircut RPC gated by `abs(fmv−floor)<0.01` excludes the ask×0.90 rows. Forcing it drops 209 editions 0.90→0.55. Mark resolved-no-action.
 
 ---
 
