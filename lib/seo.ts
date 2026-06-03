@@ -538,6 +538,7 @@ export function editionJsonLd(detail: Payload, collectionUrlSlug: string, lowAsk
   const url = `${BASE_URL}/${collectionUrlSlug}/edition/${encodeURIComponent(slug)}`
   const fmvObj = (detail.fmv as Payload | null | undefined) ?? null
   const fmv = fmvObj ? n(fmvObj, "fmv_usd") : null
+  const fmvConfidence = fmvObj ? s(fmvObj, "confidence") : null
   const setName = s(detail, "set_name")
   const setSlug = s(detail, "set_slug")
   const playerName = s(detail, "player_name") ?? s(detail, "name") ?? "Edition"
@@ -562,8 +563,11 @@ export function editionJsonLd(detail: Payload, collectionUrlSlug: string, lowAsk
   if (tier) product.category = tier
   // Price from FMV when present, else the live low ask, so structural NO_DATA
   // editions still emit a valid Offer. No fake review/aggregateRating.
+  // A STALE FMV is unreliable — skip it as a price source so we don't index a
+  // wrong price; a live low ask is still a real, reliable price even on STALE.
+  const fmvUsable = fmvConfidence !== "STALE" && fmv !== null && Number.isFinite(fmv) && fmv > 0
   const priceUsd =
-    fmv !== null && Number.isFinite(fmv) && fmv > 0
+    fmvUsable
       ? fmv
       : lowAsk != null && Number.isFinite(lowAsk) && lowAsk > 0
         ? lowAsk
