@@ -110,6 +110,8 @@ interface CollectionStat {
   collection_label: string;
   moment_count: number;
   fmv_total: number;
+  fmv_stale_total: number;
+  stale_count: number;
   fmv_max: number;
   priced_count: number;
   locked_count: number;
@@ -326,6 +328,8 @@ function ProfilePageInner() {
             collection_label: r.collection_label,
             moment_count: Number(r.moment_count) || 0,
             fmv_total: Number(r.fmv_total) || 0,
+            fmv_stale_total: Number(r.fmv_stale_total) || 0,
+            stale_count: Number(r.stale_count) || 0,
             fmv_max: Number(r.fmv_max) || 0,
             priced_count: Number(r.priced_count) || 0,
             locked_count: Number(r.locked_count) || 0,
@@ -578,6 +582,23 @@ function ProfilePageInner() {
         .reduce((s, r) => s + (r.fmv_total ?? 0), 0),
     [statsByWallet]
   );
+  // STALE-confidence FMV is excluded from the headline total (the price hasn't
+  // refreshed recently and over/under-states the holding). Surface it as a
+  // footnote so the number isn't silently lost.
+  const staleFmv = useMemo(
+    () =>
+      Object.values(statsByWallet)
+        .flat()
+        .reduce((s, r) => s + (r.fmv_stale_total ?? 0), 0),
+    [statsByWallet]
+  );
+  const staleCount = useMemo(
+    () =>
+      Object.values(statsByWallet)
+        .flat()
+        .reduce((s, r) => s + (r.stale_count ?? 0), 0),
+    [statsByWallet]
+  );
   const collectionCount = useMemo(() => {
     const ids = new Set<string>();
     for (const stats of Object.values(statsByWallet)) {
@@ -734,7 +755,12 @@ function ProfilePageInner() {
         {/* ── Stats Tiles ── */}
         <section style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 10 }}>
           <StatTile label="Total Moments" value={totalMoments.toLocaleString()} color="#fff" />
-          <StatTile label="Portfolio FMV" value={fmtUsd(totalFmv)} color="#34D399" />
+          <StatTile
+            label="Portfolio FMV"
+            value={fmtUsd(totalFmv)}
+            color="#34D399"
+            caption={staleCount > 0 ? `+ ${fmtUsd(staleFmv)} across ${staleCount.toLocaleString()} stale-priced moments` : undefined}
+          />
           <StatTile label="Collections" value={String(collectionCount)} color="#A855F7" />
         </section>
 
@@ -1715,11 +1741,14 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
   );
 }
 
-function StatTile({ label, value, color }: { label: string; value: string; color: string }) {
+function StatTile({ label, value, color, caption }: { label: string; value: string; color: string; caption?: string }) {
   return (
     <div style={{ background: "#18181b", border: "1px solid #27272a", borderRadius: 10, padding: "12px 16px" }}>
       <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 22, fontFamily: condensedFont, fontWeight: 800, color, lineHeight: 1 }}>{value}</div>
+      {caption ? (
+        <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>{caption}</div>
+      ) : null}
     </div>
   );
 }

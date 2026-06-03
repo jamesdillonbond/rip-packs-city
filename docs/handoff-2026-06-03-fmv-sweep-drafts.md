@@ -239,15 +239,45 @@ D4 item in the 2026-06-02 handoff as resolved-no-action so it isn't re-proposed.
 
 ---
 
+## SHIPPED 2026-06-03 (Claude Code, Trevor-directed, preview-first) — F3/F4/F2-A/F5
+
+- **F3** — serial>circ recalc guard live in `app/api/fmv-recalc/route.ts` (Step 2a-ter). Preview: 102 impossible sales / 26 editions in the 30d window.
+- **F4** — migration `audit_20260603_wallet_collection_stats_split_stale` (STALE split, service_role+postgres only) + dashboard footnote. Live STALE total $5,425.24 / 120 moments.
+- **F2 Tier A** — migration `audit_20260603_remap_cosmic_8_62_tier_a_to_clamps_226_7541`. 22 sales + 16 moments moved Cosmic 8:62 → Clamps 226:7541. **Tier B (65 residual serial>49, no-wmc) still open — needs on-chain confirmation; F3 guard protects WAP meanwhile.**
+- **F5** — Step 5b NO_DATA relax (scoped `confidence='NO_DATA'`) + SALES_ONLY/STALE tagging. Preview: 38 editions → 10 SALES_ONLY + 28 STALE. No window change; grails untouched (zero-sales ingest gap).
+- **F6** — no action (premise false, confirmed).
+
+**F2 Tier A revert (exact row ids):**
+```sql
+-- restore the 22 sales to Cosmic 8:62
+UPDATE sales SET edition_id='5d122b9b-2ee6-4cec-b64e-1b9315d17283' WHERE id IN (
+ '0f203e1d-3800-48d4-a4a7-e0c308ce588d','16243177-1d31-4b87-9942-bf1ee8654740','1dd28304-14f0-4cdc-958e-18514abadaee',
+ '219968f0-3cf5-4c0c-8f14-0a7765989e43','23b66d71-39da-41a0-8824-b46122b2487f','243d255a-39b5-4ac6-aa06-0f60120c145d',
+ '321273ac-29cb-4ce4-b011-fb0436798bd1','3ba28f55-7fbe-4c26-87bb-59282e16ef96','56a9fa60-f531-441f-bdcd-2c58b217f550',
+ '5cd71b24-0640-41aa-b60b-355e59543362','5ee89ab5-2a55-4161-b78f-963421b1d7ce','610706ef-a03a-48c1-9a70-cfff721ba59f',
+ '625009e9-0fdb-4d64-ad0b-4bee3290958d','71247251-e545-4642-9f46-9ffdbcc3c7c8','764623f0-d7cb-4603-abcb-737736aed722',
+ '9201ad81-5e2d-4217-9e47-66bbcea6d0a2','ccf0b040-8862-47ce-8040-af27bf609463','ce11e739-3db7-4cad-8b58-74c084dca982',
+ 'e0e84b15-2eb7-40b1-96d9-563b9ddb9f0e','e13cfe9a-7dad-4e9b-b42e-eda8ae992f15','e96615be-f03b-4b18-98a2-34fb4531bf3b',
+ 'ff428c72-defb-45b8-bc1d-2de5955c68d8');
+-- restore the 16 moments to Cosmic 8:62
+UPDATE moments SET edition_id='5d122b9b-2ee6-4cec-b64e-1b9315d17283' WHERE id IN (
+ '002cc006-d4df-4090-bf6d-ff6490c66366','41fb7780-f557-429b-9adf-6171ac574949','51638a23-1ce8-4725-963d-8381aa7e331f',
+ '705078ba-2edd-4997-b0f2-a0cdd8b9a7b9','80aaadf0-0583-437b-bc6c-754b3a7203ba','8380d5af-d02c-4e8a-a177-21a0daf0fcb9',
+ '93515516-95d6-490e-ad5e-744755353265','9aba14c6-1ab7-425b-b5b4-1a5ab5c41e9f','a6e824b7-e8a3-479c-a8a9-08edf87ab0ca',
+ 'af1bbb9e-173e-4249-a745-792682b74a3c','b4d7184e-df58-45b7-8be1-924030c84d67','b5d98505-6f75-4c70-a83f-a9bbbc6fc6e6',
+ 'cab4c972-805a-4719-a4f1-764e94b5f878','cc7c5ab0-c491-4783-b74f-6b6c9167c95b','ec1219da-8830-4a8b-8b4c-4e53388bbf9b',
+ 'f1a2222b-1786-42c6-83a0-8308599dd3f1');
+```
+
 ## Status summary
 
 | Item | State |
 |---|---|
 | D2 JSON-LD STALE-price gate | ✅ shipped (`6e90f3f`) |
 | v_fmv_sanity_flags v2 | ✅ shipped (migration) |
-| Mis-key batch finding (≥15 editions) | 🔎 surfaced; investigation queued |
-| 8:62 re-map | 📝 drafted (Tier A auto-safe + Tier B on-chain); **needs sign-off** |
-| Defensive `serial > circ` recalc guard | 📝 drafted; **needs sign-off** (pricing input) |
-| D1 STALE-in-totals | 📝 drafted + timing-validated (~2s); **needs go before RPC change** |
-| D3 Step 5b NO_DATA relax | 📝 drafted (premise corrected); **needs sign-off** |
-| D4 ASK/haircut | ❌ no change (premise false) |
+| F3 serial>circ recalc guard | ✅ shipped 2026-06-03 (code) |
+| F4 / D1 STALE-in-totals | ✅ shipped 2026-06-03 (migration + dashboard) |
+| F2 Tier A 8:62 re-map | ✅ shipped 2026-06-03 (migration); Tier B (65 no-wmc) still open |
+| F5 / D3 Step 5b NO_DATA recovery | ✅ shipped 2026-06-03 (code, premise corrected) |
+| F6 / D4 ASK/haircut | ❌ no change (premise false) |
+| F1 broader mis-key batch (~15 editions) | 🔎 open; F3 defends WAP, F2-style re-maps queued for the clean sub-batch |
