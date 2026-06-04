@@ -56,6 +56,7 @@ For staggered scheduling, use these patterns (all proven quiet):
 | RPC Seed Wallet Refresh | `/api/seed-wallet-refresh` | every 6h | Bearer INGEST_SECRET_TOKEN |
 | RPC Snapshot Institutional Wallets | `/api/cron/snapshot-institutional-wallets` | daily | Bearer INGEST_SECRET_TOKEN |
 | RPC Top Shot Listing Cache | `/api/topshot-listing-cache` | `*/20` | Bearer INGEST_SECRET_TOKEN |
+| RPC Top Shot Offers Indexer (NEW 2026-06-03, operator cron pending) | `/api/topshot-offers-indexer` | `12,32,52 * * * *` | Bearer INGEST_SECRET_TOKEN |
 | RPC UFC Strike Pipeline | `/api/ufc-pipeline?t=…` | `*/20` | Bearer INGEST_SECRET_TOKEN |
 | RPC Weekly Digest | `/api/send-digest` | weekly Mon 09:00 PT | Bearer INGEST_SECRET_TOKEN |
 | RPC Weekly Support Report | `/api/support-report` | weekly Mon 07:00 PT | Bearer INGEST_SECRET_TOKEN |
