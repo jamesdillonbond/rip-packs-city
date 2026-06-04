@@ -47,7 +47,7 @@ grep -rln "searchEditions" app/api lib supabase/functions
 # from UUIDs (the dupes' external_id is `<uuid>:<uuid>`).
 grep -rln "external_id" app/api lib supabase/functions | xargs grep -l "from(\"editions\")\|from('editions')"
 
-# The May 26 handoff (`docs/handoff-2026-05-26b-remaining-work.md` Phase 1
+# The May 26 handoff (`docs/archive/handoffs/handoff-2026-05-26b-remaining-work.md` Phase 1
 # "GQL ingest writer" section) called out the same investigation:
 #   "Find the route that writes UUID-keyed editions on the GQL editions-catalog
 #    path. Switch it to upsert against the integer-keyed canonical when
@@ -159,7 +159,7 @@ After deploy, the next `Pipeline Sentinel` and `RPC Ops Monitor` schedule runs s
 
 ### Protocol
 
-Re-run the May 26 merge body against the smaller dupe count. Reference: `docs/audits/editions-merge-dry-run-2026-05-26.md` (the original repoint methodology) and the 11-chunk `wallet_moments_cache` migration sequence:
+Re-run the May 26 merge body against the smaller dupe count. Reference: `docs/archive/audits/editions-merge-dry-run-2026-05-26.md` (the original repoint methodology) and the 11-chunk `wallet_moments_cache` migration sequence:
 
 ```
 audit_20260526_merge_step1_*
