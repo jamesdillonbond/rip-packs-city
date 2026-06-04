@@ -145,8 +145,6 @@ function isPublicPath(pathname: string, method: string): boolean {
   // 302→/login on the privacy policy / terms of service. (2026-05-31)
   if (pathname === "/privacy" || pathname.startsWith("/privacy/")) return true
   if (pathname === "/terms" || pathname.startsWith("/terms/")) return true
-  // /signup — pre-signup landing (sign-in itself is /login)
-  if (pathname === "/signup" || pathname.startsWith("/signup/")) return true
   // /auth + subpaths (covers /auth/confirm and similar)
   if (pathname === "/auth" || pathname.startsWith("/auth/")) return true
   // /admin pages — enforce their own RPC_ADMIN_TOKEN bearer auth at the page
