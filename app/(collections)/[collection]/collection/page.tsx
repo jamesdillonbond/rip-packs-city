@@ -1881,16 +1881,11 @@ export default function WalletPage() {
           {(filterLoanDefaultsOnly || rows.some(function(r) { return r.acquisitionMethod === "loan_default" })) && (
             <button onClick={function() { setFilterLoanDefaultsOnly(function(f) { return !f }) }} className={"rpc-filter-toggle shrink-0" + (filterLoanDefaultsOnly ? " rpc-filter-toggle--active" : "")} title="Show only moments acquired via loan default">⚖ LOAN DEFAULTS</button>
           )}
-          {/* Task 6: CSV Export */}
-          {filteredRows.length > 0 && (
+          {/* Task 6: CSV Export — gated to the Pro allowlist (hidden, not prompted, for others) */}
+          {filteredRows.length > 0 && ["0xbd94cade097e50ac"].includes((connectedWallet || ownerKey || input.trim()).toLowerCase()) && (
             <button
               onClick={function() {
-                const PRO_ALLOWLIST = ["0xbd94cade097e50ac"]
                 const wallet = connectedWallet || ownerKey || input.trim()
-                if (!PRO_ALLOWLIST.includes(wallet.toLowerCase())) {
-                  alert("Export is a Pro feature. Contact trevor@rippackscity.com for early access.")
-                  return
-                }
                 const headers = ["Player","Set","Series","Tier","Parallel","Serial","Circulation","FMV","Low Ask","Best Offer","Badges","Acquired"]
                 const csvRows = filteredRows.map(function(r) {
                   return [
@@ -1924,7 +1919,7 @@ export default function WalletPage() {
               Export CSV
             </button>
           )}
-          {filteredRows.length > 0 && (
+          {filteredRows.length > 0 && ["0xbd94cade097e50ac"].includes((connectedWallet || ownerKey || input.trim()).toLowerCase()) && (
             <a
               href={"/api/portfolio-export?wallet=" + encodeURIComponent(connectedWallet || ownerKey || input.trim()) + "&collection=" + encodeURIComponent(collectionSlug)}
               target="_blank"
@@ -2881,6 +2876,7 @@ export default function WalletPage() {
           mintSize: getMint(selectedMoment) ?? null,
           fmv: selectedMoment.fmv ?? null,
           listingPrice: selectedMoment.lowAsk ?? null,
+          bestOffer: selectedMoment.bestOffer ?? selectedMoment.editionBestOffer ?? null,
           marketConfidence: selectedMoment.marketConfidence ?? null,
           badgeTitles: selectedMoment.badgeInfo?.badge_titles ?? [],
           officialBadges: (selectedMoment.officialBadges ?? []).map(function(b) { return BADGE_TYPE_TO_TITLE[b] ?? b }),
