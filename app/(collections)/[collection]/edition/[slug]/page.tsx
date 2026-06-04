@@ -332,8 +332,11 @@ export default async function EditionPage(
               // eslint-disable-next-line @next/next/no-img-element
               <img src={detail.thumbnail_url} alt={detail.player_name ?? detail.name ?? "Edition"} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
             ) : (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
-                No image
+              // Branded placeholder for artless editions (~54% TS thumbnail coverage)
+              // so the empty media box reads as intentional, not broken.
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, height: "100%", background: "linear-gradient(135deg, rgba(224,58,47,0.08), rgba(0,0,0,0.45))" }}>
+                <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 28, letterSpacing: "0.08em", color: "var(--rpc-red)", opacity: 0.55 }}>RPC</div>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>No preview</div>
               </div>
             )}
           </div>
