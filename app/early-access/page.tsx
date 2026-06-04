@@ -9,8 +9,8 @@
 import { useMemo, useState } from "react"
 import Link from "next/link"
 
-const condensedFont = "'Barlow Condensed', sans-serif"
-const monoFont = "'Share Tech Mono', monospace"
+const condensedFont = "var(--font-display)"
+const monoFont = "var(--font-mono)"
 
 const COLLECTION_OPTIONS: { slug: string; label: string }[] = [
   { slug: "nba_top_shot",   label: "NBA Top Shot" },
@@ -204,8 +204,8 @@ export default function EarlyAccessPage() {
                       onClick={() => toggleCollection(c.slug)}
                       aria-pressed={active}
                       style={{
-                        background: active ? "#E03A2F" : "transparent",
-                        border: `1px solid ${active ? "#E03A2F" : "#27272a"}`,
+                        background: active ? "var(--rpc-red)" : "transparent",
+                        border: `1px solid ${active ? "var(--rpc-red)" : "#27272a"}`,
                         color: active ? "#fff" : "rgba(255,255,255,0.75)",
                         fontFamily: condensedFont,
                         fontWeight: 800,
@@ -272,7 +272,7 @@ export default function EarlyAccessPage() {
               type="submit"
               disabled={status === "submitting" || !!formError}
               style={{
-                background: "#E03A2F",
+                background: "var(--rpc-red)",
                 border: "none",
                 color: "#fff",
                 fontFamily: condensedFont,
@@ -374,7 +374,7 @@ function Field({
     <label style={{ display: "block" }}>
       <Label>
         {label}
-        {required ? <span style={{ color: "#E03A2F", marginLeft: 4 }}>*</span> : null}
+        {required ? <span style={{ color: "var(--rpc-red)", marginLeft: 4 }}>*</span> : null}
       </Label>
       {children}
       {hint ? (

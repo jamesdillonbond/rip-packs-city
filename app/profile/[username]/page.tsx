@@ -51,8 +51,8 @@ interface SniperDealPreview {
 }
 
 // ── Constants ─────────────────────────────────────────────────────
-const monoFont = "'Share Tech Mono', monospace";
-const condensedFont = "'Barlow Condensed', sans-serif";
+const monoFont = "var(--font-mono)";
+const condensedFont = "var(--font-display)";
 const MAX_SLOTS = 6;
 
 // ── Helpers ───────────────────────────────────────────────────────

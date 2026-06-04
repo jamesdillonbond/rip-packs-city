@@ -463,7 +463,7 @@ export default function OverviewPage() {
                     </div>
                     <div className="rpc-mono" style={{ color: "var(--rpc-text-secondary)" }}>{fmtPrice(deal.ask_price)}</div>
                     {hasDiscount && (
-                      <div className="rpc-mono" style={{ color: "#E03A2F", fontWeight: 700 }}>-{Math.round(deal.discount as number)}%</div>
+                      <div className="rpc-mono" style={{ color: "var(--rpc-red)", fontWeight: 700 }}>-{Math.round(deal.discount as number)}%</div>
                     )}
                   </>
                 )

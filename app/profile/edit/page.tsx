@@ -4,9 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { LEAGUES, type League, type TeamMaster, type UserFavoriteTeam } from "@/lib/teams";
 
-const condensedFont = "'Barlow Condensed', sans-serif";
-const monoFont = "'Share Tech Mono', monospace";
-const ACCENT_RED = "#E03A2F";
+const condensedFont = "var(--font-display)";
+const monoFont = "var(--font-mono)";
+const ACCENT_RED = "#E03A2F"; // hex literal: persisted as accent_color data + parsed by hexToRgba — must stay hex, not a CSS var
 
 type BioForm = {
   username: string;

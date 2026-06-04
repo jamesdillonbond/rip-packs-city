@@ -62,11 +62,11 @@ export default function SignOutButton() {
         style={{
           background: "rgba(224,58,47,0.15)",
           border: "1px solid rgba(224,58,47,0.4)",
-          color: "#E03A2F",
+          color: "var(--rpc-red)",
           padding: "4px 10px",
           borderRadius: 4,
           fontSize: 10,
-          fontFamily: "'Barlow Condensed', sans-serif",
+          fontFamily: "var(--font-display)",
           fontWeight: 700,
           letterSpacing: "0.08em",
           textTransform: "uppercase",
@@ -91,11 +91,11 @@ export default function SignOutButton() {
           gap: 6,
           background: "rgba(224,58,47,0.15)",
           border: "1px solid rgba(224,58,47,0.4)",
-          color: "#E03A2F",
+          color: "var(--rpc-red)",
           padding: "4px 8px 4px 6px",
           borderRadius: 4,
           fontSize: 10,
-          fontFamily: "'Barlow Condensed', sans-serif",
+          fontFamily: "var(--font-display)",
           fontWeight: 700,
           letterSpacing: "0.08em",
           textTransform: "uppercase",
@@ -108,7 +108,7 @@ export default function SignOutButton() {
             width: 18,
             height: 18,
             borderRadius: "50%",
-            background: "#E03A2F",
+            background: "var(--rpc-red)",
             color: "#fff",
             display: "inline-flex",
             alignItems: "center",
@@ -140,7 +140,7 @@ export default function SignOutButton() {
           }}
         >
           <div style={{
-            fontFamily: "'Share Tech Mono', monospace",
+            fontFamily: "var(--font-mono)",
             fontSize: 10,
             color: "rgba(255,255,255,0.45)",
             letterSpacing: "0.12em",
@@ -151,7 +151,7 @@ export default function SignOutButton() {
           </div>
           <div
             style={{
-              fontFamily: "'Share Tech Mono', monospace",
+              fontFamily: "var(--font-mono)",
               fontSize: 12,
               color: "#F1F1F1",
               wordBreak: "break-all",
@@ -166,7 +166,7 @@ export default function SignOutButton() {
             onClick={() => setOpen(false)}
             style={{
               display: "block",
-              fontFamily: "'Barlow Condensed', sans-serif",
+              fontFamily: "var(--font-display)",
               fontWeight: 700,
               fontSize: 12,
               letterSpacing: "0.1em",
@@ -187,13 +187,13 @@ export default function SignOutButton() {
             style={{
               display: "block",
               width: "100%",
-              fontFamily: "'Barlow Condensed', sans-serif",
+              fontFamily: "var(--font-display)",
               fontWeight: 800,
               fontSize: 12,
               letterSpacing: "0.1em",
               textTransform: "uppercase",
               color: "#fff",
-              background: "#E03A2F",
+              background: "var(--rpc-red)",
               border: "none",
               padding: "8px 10px",
               borderRadius: 4,

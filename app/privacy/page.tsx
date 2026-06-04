@@ -35,7 +35,7 @@ export default function PrivacyPage() {
 
           <h1
             style={{
-              fontFamily: "'Barlow Condensed', sans-serif",
+              fontFamily: "var(--font-display)",
               fontWeight: 800,
               fontSize: 32,
               textTransform: "uppercase",
@@ -63,7 +63,7 @@ export default function PrivacyPage() {
               href="https://twitter.com/RipPacksCity"
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: "#E03A2F", textDecoration: "none" }}
+              style={{ color: "var(--rpc-red)", textDecoration: "none" }}
             >
               @RipPacksCity
             </a>{" "}
@@ -143,7 +143,7 @@ export default function PrivacyPage() {
               href="https://twitter.com/RipPacksCity"
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: "#E03A2F", textDecoration: "none" }}
+              style={{ color: "var(--rpc-red)", textDecoration: "none" }}
             >
               @RipPacksCity
             </a>{" "}
@@ -193,7 +193,7 @@ function PageHeader() {
           href="/"
           style={{
             marginLeft: "auto",
-            fontFamily: "'Share Tech Mono', monospace",
+            fontFamily: "var(--font-mono)",
             fontSize: 11,
             letterSpacing: "0.12em",
             textTransform: "uppercase",
@@ -212,7 +212,7 @@ function Breadcrumb({ current }: { current: string }) {
   return (
     <div
       style={{
-        fontFamily: "'Share Tech Mono', monospace",
+        fontFamily: "var(--font-mono)",
         fontSize: 11,
         letterSpacing: "0.12em",
         textTransform: "uppercase",
@@ -236,7 +236,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     <section style={{ marginTop: 32 }}>
       <h2
         style={{
-          fontFamily: "'Barlow Condensed', sans-serif",
+          fontFamily: "var(--font-display)",
           fontWeight: 700,
           fontSize: 18,
           textTransform: "uppercase",
@@ -266,7 +266,7 @@ function LastUpdated({ text }: { text: string }) {
     <p
       style={{
         marginTop: 48,
-        fontFamily: "'Share Tech Mono', monospace",
+        fontFamily: "var(--font-mono)",
         fontSize: 11,
         color: "var(--rpc-text-ghost)",
         letterSpacing: "0.06em",
