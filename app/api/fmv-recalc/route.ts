@@ -851,9 +851,24 @@ export async function POST(req: NextRequest) {
     // ── Step 6: Stale freshness touch (force_stale=true) ──────────────────────
     // Editions whose most recent fmv_current row has not been touched in >24h
     // and that didn't pick up new sales this run will otherwise show as stale
-    // indefinitely. Because WAP over a fixed window is idempotent, re-inserting
-    // the current values with a fresh computed_at is a safe way to signal
-    // liveness without changing any downstream consumer of FMV.
+    // indefinitely. Re-inserting the current values with a fresh computed_at is
+    // a safe liveness signal — BUT ONLY for editions that have no in-window
+    // sales. The original premise "WAP over a fixed window is idempotent" is
+    // only true when there is no trading: as soon as an edition has sales in the
+    // last 30 days, its WAP is NOT idempotent (the window rolls, new sales land),
+    // and re-stamping the prior snapshot forward as fake-fresh `1.7.0` pins the
+    // edition to a stale value/confidence forever. That is the Cause-B "fossil"
+    // bug (2026-06-04): actively-traded editions (e.g. Chaz Lanier 219:7409 with
+    // 200+ sales/30d frozen at LOW $6.76 sales_count_30d=0; Neemias Queta 218:7778
+    // frozen at MEDIUM $6.40 while real sales collapsed to ~$0.39) kept alive as
+    // fresh by this touch, never re-priced by Step 1.
+    //
+    // Fix: the `recent_traded` anti-join excludes ANY edition with an in-window
+    // sale from the stale-touch — those are owned by Step 1's sales recompute
+    // (which pages by MAX(sold_at) DESC, so traded editions price first). Step 6
+    // now only refreshes genuinely-cold editions (no recent sales), the exact
+    // population for which the idempotency premise actually holds. This is
+    // collection-agnostic, so it covers Top Shot AND All Day in one shared fix.
     let staleTouchCount = 0
     if (forceStale) {
       try {
@@ -877,6 +892,14 @@ export async function POST(req: NextRequest) {
                   fs.computed_at
                 FROM fmv_snapshots fs
                 ORDER BY fs.edition_id, fs.computed_at DESC
+              ),
+              recent_traded AS (
+                SELECT edition_id
+                FROM sales
+                WHERE sold_at >= now() - interval '30 days'
+                  AND price_usd > 0
+                  AND edition_id IS NOT NULL
+                GROUP BY edition_id
               )
               SELECT
                 l.edition_id,
@@ -893,10 +916,12 @@ export async function POST(req: NextRequest) {
                 l.days_since_sale
               FROM latest l
               JOIN editions e ON e.id = l.edition_id
+              LEFT JOIN recent_traded rt ON rt.edition_id = l.edition_id
               WHERE l.computed_at < now() - interval '24 hours'
                 AND l.confidence <> 'NO_DATA'
                 AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
                 AND e.collection_id <> '${PINNACLE_COLLECTION_ID}'
+                AND rt.edition_id IS NULL
               LIMIT 1000
             `,
           })
