@@ -36,6 +36,7 @@ export interface MomentDetailModalProps {
     fmv?: number | null;
     dealRating?: number | null;
     listingPrice?: number | null;
+    bestOffer?: number | null;
     marketConfidence?: string | null;
     badgeTitles?: string[];
     officialBadges?: string[];
@@ -306,6 +307,15 @@ export default function MomentDetailModal({ moment, marketplaceSource, onClose }
               <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.1em" }}>LIST PRICE</div>
               <div style={{ fontSize: 16, fontFamily: "var(--font-mono)" }}>
                 ${moment.listingPrice.toFixed(2)}
+              </div>
+            </div>
+          )}
+
+          {moment.bestOffer != null && moment.bestOffer > 0 && (
+            <div>
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.1em" }}>BEST OFFER</div>
+              <div style={{ fontSize: 16, fontFamily: "var(--font-mono)" }}>
+                ${moment.bestOffer.toFixed(2)}
               </div>
             </div>
           )}
