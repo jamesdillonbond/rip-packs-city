@@ -11,7 +11,7 @@ import FunnelTracker from "@/components/FunnelTracker"
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
 export const metadata: Metadata = {
-  title: "Public Insights — Rip Packs City",
+  title: "Public Insights",
   description:
     "Free, no-signup intelligence on Flow blockchain digital collectibles. Effective supply, pack reality, rookie cohort tracking, first-mint trophies, cross-collection whales, per-set scarcity, Pinnacle scarcity.",
   alternates: { canonical: `${SITE_URL}/insights` },

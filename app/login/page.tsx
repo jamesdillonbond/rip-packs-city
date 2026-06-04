@@ -370,7 +370,7 @@ function LoginInner() {
         fontSize: 10, color: "var(--rpc-text-ghost)",
         letterSpacing: "0.15em",
       }}>
-        {"⚡ NBA TOP SHOT · NFL ALL DAY · LALIGA GOLAZOS · DISNEY PINNACLE"}
+        {"⚡ NBA TOP SHOT · NFL ALL DAY · LALIGA GOLAZOS · DISNEY PINNACLE · UFC STRIKE"}
       </div>
     </div>
   )
