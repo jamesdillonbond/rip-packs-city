@@ -223,7 +223,7 @@ function LivePickCard({
         >
           {sideTeam.slice(0, 3).toUpperCase()}
         </div>
-        <div style={{ flex: 1, minWidth: 200 }}>
+        <div style={{ flex: 1, minWidth: "min(200px, 100%)" }}>
           <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 22, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", textTransform: "uppercase" }}>
             {sideTeam} ML
           </div>
