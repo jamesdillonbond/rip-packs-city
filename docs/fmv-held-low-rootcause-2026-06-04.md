@@ -83,6 +83,27 @@ from sales, or ask-corroboration) is self-protecting going forward.
 3. **L3 accuracy gates** already partly shipped (F3 serial>circ in recalc; 8:62 re-map). Keep.
 4. **L5 presentation** — only meaningful after Cause B is fixed (else N=0 on the fossils).
 
+## Companion: the "confident but wrong" accuracy cluster (set 218) is mostly Cause B too
+
+The parallel accuracy diagnostic (`docs/fmv-accuracy-targets-2026-06-04.md`) flagged ~78 held MED/HIGH
+editions priced >2× their live ask, concentrated in recent Base Set commons (set 218: 28 editions, ~7.3×).
+Verified the cluster live — it is **mostly another face of Cause B**, plus a false-positive trap for a
+naive clamp:
+
+- `218:7778` Neemias Queta (MEDIUM): FMV **$6.40**, but its 11 recent sales are all $0.25–$0.75
+  (median $0.39, **max $0.75**). A WAP cannot exceed the max sale — so the $6.40 is a **stale/fossil FMV
+  not computed from current sales**, exactly the Cause-B dynamic. Re-pricing from current sales fixes it
+  (→ ~$0.39). Same for most of the cluster.
+- `218:7826` CJ McCollum (MEDIUM): FMV **$4.38**, sales median **$4.00** (legitimate), ask **$0.34**
+  (a lowball listing). A blunt "FMV > 2–3× ask → clamp/demote" rule would **wrongly crush this correct
+  edition**. `edition_offers.low_ask` is a *floor* (anyone can underprice a listing), so it must be a
+  corroborator / sanity-flag — **not** a high-side clamp.
+
+**Conclusion: fixing Cause B is the keystone** — it lifts the held-LOW bucket *and* removes most of the
+confident-wrong inflation, with no clamp false-positives. Use the ask the way Finding-1 of the accuracy
+doc shows it's safe (corroborate when sales ≈ ask; flag, don't clamp, when they diverge — `v_fmv_sanity_flags`
+v2 already does sales-median-based divergence flagging). Do **not** add a blunt FMV/ask high-side clamp.
+
 ## Pointers
 - `app/api/fmv-recalc/route.ts` — Step 1 :255–576 (sales pricing + confidence), Step 5b :790–846
   (historical fallback), **Step 6 :851–950 (stale touch — the re-stamp, :926 hardcodes algo_version)**.
