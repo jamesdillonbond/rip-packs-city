@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation'
 import { publishedCollections } from '@/lib/collections'
 
 const STORAGE_KEY = 'rpc_onboarding_complete'
-const monoFont = "'Share Tech Mono', monospace"
-const condensedFont = "'Barlow Condensed', sans-serif"
+const monoFont = "var(--font-mono)"
+const condensedFont = "var(--font-display)"
 
 export default function OnboardingModal() {
   const router = useRouter()
@@ -71,7 +71,7 @@ export default function OnboardingModal() {
         {step === 1 && (
           <>
             <h2 style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 26, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 8 }}>
-              Welcome to Rip Packs <span style={{ color: '#E03A2F' }}>City</span>
+              Welcome to Rip Packs <span style={{ color: 'var(--rpc-red)' }}>City</span>
             </h2>
             <p style={{ fontFamily: monoFont, fontSize: 12, color: 'rgba(255,255,255,0.6)', lineHeight: 1.65, marginBottom: 20 }}>
               The smartest analytics platform for digital collectibles on Flow blockchain.
@@ -152,7 +152,7 @@ const subStyle: React.CSSProperties = {
   fontFamily: monoFont, fontSize: 12, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6, marginBottom: 18,
 }
 const primaryBtn: React.CSSProperties = {
-  background: 'linear-gradient(135deg, #E03A2F, #B91C1C)', color: '#fff', border: 'none',
+  background: 'linear-gradient(135deg, var(--rpc-red), #B91C1C)', color: '#fff', border: 'none',
   borderRadius: 6, padding: '10px 18px', fontFamily: condensedFont, fontWeight: 800,
   fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer',
 }
