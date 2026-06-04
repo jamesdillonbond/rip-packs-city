@@ -74,6 +74,16 @@ Working thesis (confirmed 2026-05-30): RPC is a **sports / IP digital collectibl
 
 ## Recent sessions
 
+### June 3, 2026 (overnight pass) — GENUINE OVERNIGHT + NO-PUSH; shipped 1 DB monitoring-config migration (destall false-positives); reconciled P1/S1/N1 already-resolved; platform green
+
+Nightly autonomous pass fired in-window (01:03 local PDT) but **NO-PUSH** (scheduled sandbox has no GitHub creds; `rip-packs-city-bot` clone not mounted — only the shared `rip-packs-city` tree). DB migration applied via Supabase connector; all repo outputs written to disk uncommitted. Full handoff: [docs/handoff-2026-06-03-overnight-pass.md](docs/handoff-2026-06-03-overnight-pass.md).
+
+- **SHIPPED (1, subagent-verified PASS):** migration `audit_20260603_watchlist_destall_paused_payer_and_hourly_pinnacle` — two `pipeline_cadence_watchlist` UPDATEs clearing `detect_stalled_pipelines()` false-positives (it went from 1 entry → `[]`). **C-PAYER:** `cadence-payer-balance-check` → `is_active=false` (its cron was intentionally paused 06-03 per `d8cc6c2`/N3/known-issue #9; the active 60m row emitted a permanent HIGH false-positive every sweep). **C-PIN:** `pinnacle-metadata-backfill` `max_silent_minutes` 90 → 200 (healthy hourly :22 whose external cron dropped 2 consecutive ticks = 180m gap; 200m absorbs ≤2 skips, still catches a 3+ hr dead-cron). Reverts + target metric in the handoff/ledger.
+- **Post-ship watch GREEN — nothing reverted.** Recent ships were all Trevor/CC (the night pass shipped nothing 06-01/06-02). Re-measured the 06-03 interactive FMV sweep (`audit_20260603_*` confirmed live: F2 Tier-A 8:62→Clamps re-map @05:34Z, F4 wallet-stats split-STALE, v_fmv_sanity_flags v2) + `6e90f3f` D2 STALE JSON-LD gate: FMV fresh (TS ~1m, AllDay ~1.6m), HIGH+MED flat (TS 932/AllDay 273), NO_DATA improving (TS 4634→4424). F2 re-map landed correctly (Clamps `226:7541` got its 22 sales, 0 impossible serials; Cosmic `8:62` keeps the 65 documented Tier-B impossible-serial sales, excluded from WAP by the F3 guard). **Eyeball-note:** `8:62` Giannis Cosmic (circ 49) resolves to FMV HIGH $2.43 off its 14 serial≤49 sales — reads low for a circ-49 Cosmic; confirm those 14 as part of the open F1/F2 Tier-B cleanup.
+- **Reconciled already-resolved (ledger/metrics lagged; verified live):** **P1** (evm watchlist 60→150m) live via `audit_20260602_evm_transfers_watchlist_threshold_150m`; **S1** (revoke anon `v_moments_needing_hydration`) live via `audit_20260602_revoke_anon_v_moments_needing_hydration` (anon-readable-non-invoker views back to 0); **N1** (`snapshot-institutional-wallets`) self-recovered 06-02 13:55Z. All three landed ~15:01Z 06-02, after that night's 13:42Z baseline.
+- **Health green.** Security 0/0 base tables (the catalog anon-write query needs `relkind IN ('r','p')` — without it 47 views false-positive). Pipelines: only the known transient cron-rush class (N2 hydrator recurred 06:02Z as expected — do NOT revert the CTE fix). Sentinel TS-UUID-48h 43 (<250). Sentry 1 unresolved (NEXTJS-15 = PIN1, not spiking). Vercel 14/14 READY, 0 ERROR (prod `d8cc6c2`). DB 5999 MB. 12/12 Cowork artifacts healthy, none repaired.
+- **Queued:** N2, N3 (C-PAYER shipped its monitoring slice; funding/cron-revival stays operator), L1 (NEW — league-drift-detection cron-wiring intent), PIN1 (NEW — NEXTJS-15 `cadence_capped`-counted-toward-spike route tuning), Q2, Q5, Q6, Q7 (push/bot-clone infra, confirmed again), Q8, F1/F2-TierB. See [docs/overnight/ledger.md](docs/overnight/ledger.md).
+
 ### June 2, 2026 (overnight pass) — OFF-HOURS + NO-PUSH monitor run; shipped nothing; platform green; caught a real stall (institutional-wallets) + re-opened C2; queued P1+S1
 
 Nightly autonomous pass fired 06:29 local PDT (~29 min past the 00:00–06:00 window) → MONITOR-MODE; `git push` had no credentials + bot clone unmounted → NO-PUSH; all outputs written to disk uncommitted. Shipped nothing; no auto-revert warranted. Full handoff: [docs/handoff-2026-06-02-overnight-pass.md](docs/handoff-2026-06-02-overnight-pass.md).
@@ -487,6 +497,8 @@ Archived to `docs/sessions/`:
 
 - `docs/sessions/2026-05.md` — May 8 (late) TS edition seed + resolver tune, May 8 Pinnacle backfill chain, May 7 multi-collection close-out, May 6 ×4 (multi-collection prep, sync-nba-odds, wallet truncation fix, DraftKings retirement), May 2 (schema drift / proxy auth / search_path).
 - `docs/sessions/2026-04.md` — April 26 (Flowty failed-tx monitor), April 21 ×2 (Storefront Audit Pipeline, Phase 4 multi-collection concierge), April 10 (on-chain sales indexer).
+
+**Doc archive layout (2026-06-03 sweep):** shipped dated handoffs/audits (≤ 2026-05-26) live under `docs/archive/handoffs/` and `docs/archive/audits/`; weekly health snapshots (`PROJECT_HEALTH_*.md`) live under `docs/health/`. Links inside `docs/archive/**`, `docs/health/**`, and `docs/sessions/**` are frozen history — don't rewrite them. Active handoffs (last ~7 days of `*-overnight-pass.md`, plus current audit/cleanup handoffs) and living reference docs stay in `docs/`.
 
 ---
 
@@ -919,7 +931,7 @@ Tracked but intentionally unfixed — revisit when adding a real consumer or a p
 
 Main branch is the canonical clean branch.
 
-**Status reconciled 2026-05-23** against the codebase + production DB. Full verification table: `PROJECT_HEALTH_2026-05-22.md` §9. Item numbers below are stable (they match the report); resolved items are listed at the end under their original numbers.
+**Status reconciled 2026-05-23** against the codebase + production DB. Full verification table: `docs/health/PROJECT_HEALTH_2026-05-22.md` §9. Item numbers below are stable (they match the report); resolved items are listed at the end under their original numbers.
 
 ### Platform changes (May 2026) — these make several sections of this file stale
 
@@ -950,7 +962,7 @@ Main branch is the canonical clean branch.
 
 15. **`livetoken-portfolio*.json` fixtures — RESOLVED (verified 2026-06-01).** No longer tracked (`git ls-files` returns none for `livetoken-portfolio*` / `nftlocker-*` / `flowty-locker-test.json` / `test-gql.json`); nothing left to `git rm`.
 
-17. **Pack / Moment / Set page tune-up — ongoing.** File:line audit findings live in `PACK_PAGES_AUDIT_2026-05-22.md`, `MOMENT_PAGES_AUDIT_2026-05-22.md`, `SET_PAGES_AUDIT_2026-05-22.md` — those docs are point-in-time and now partially superseded; the current state is here.
+17. **Pack / Moment / Set page tune-up — ongoing.** File:line audit findings live in `docs/archive/audits/PACK_PAGES_AUDIT_2026-05-22.md`, `docs/archive/audits/MOMENT_PAGES_AUDIT_2026-05-22.md`, `docs/archive/audits/SET_PAGES_AUDIT_2026-05-22.md` — those docs are point-in-time and now partially superseded; the current state is here.
 
    *Shipped* (commits `5c0af8a` → `8d8721e` → `2b7ce7f` → `61f5586`): brand-token consistency is complete across the three page templates, every `components/entity/*` and `components/packs/*` component, and `MomentDetailModal` — the lone exception is the `FmvHistoryChart` recharts `stroke` (SVG presentation attributes can't resolve a CSS var). Also shipped: the Pack AllDay-context banner and the AllDay set-tracker banner; stale-Flowty UI removed (dead "Flowty ask" stat, SEO + ticker copy, `marketplaceLabel` relabelled "Flowty (historical)"); `loading.tsx` skeletons for the moment / edition / set / series routes; and per-collection data-accuracy fixes — Top Shot series-label mapping, UFC tier vocab in `tierColorVar` / `TIER_STRIPE` / `TIER_COLORS`, three-way `is_listed`, honest null handling for Floor / drop_weight / completion-%, FMV-vs-ask labelling.
 

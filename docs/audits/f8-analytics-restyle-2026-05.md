@@ -1,7 +1,7 @@
 # F8 — Analytics design-system re-unification
 
 **Date:** 2026-05-20
-**Audit ref:** `audit-2026-05-20-full-platform.md` F8 — "the entire `(analytics)`
+**Audit ref:** `../archive/audits/audit-2026-05-20-full-platform.md` F8 — "the entire `(analytics)`
 route group uses a different design system than the rest of the app."
 
 The analytics section reads as a different product: cool blue `slate` palette,
