@@ -53,6 +53,15 @@ export default function InsiderSignals() {
 
   const { alerts, buybacks, announcements } = resp
 
+  // Drop buyback rows that resolve to neither a moment name nor a price — they
+  // render as "Insider buyback detected · Unknown moment · —" and carry no
+  // usable signal. A row with either a name or a real price is kept.
+  const visibleBuybacks = buybacks.filter(
+    (b) =>
+      (b.player_name != null && String(b.player_name).trim() !== "") ||
+      (b.price_usd != null && Number(b.price_usd) > 0)
+  )
+
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
       <div className="mb-4 flex items-center gap-2">
@@ -100,11 +109,11 @@ export default function InsiderSignals() {
           <h3 className="mb-2 text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
             Recent Buybacks
           </h3>
-          {buybacks.length === 0 ? (
+          {visibleBuybacks.length === 0 ? (
             <p className="text-[12px] text-zinc-500">No recent buybacks detected.</p>
           ) : (
             <ul className="space-y-2">
-              {buybacks.map((b) => (
+              {visibleBuybacks.map((b) => (
                 <li key={b.id} className="rounded border border-zinc-800 bg-zinc-950 p-2.5">
                   <div className="text-sm font-semibold text-zinc-100">Insider buyback detected</div>
                   <div className="mt-1 truncate text-[11px] text-zinc-400">

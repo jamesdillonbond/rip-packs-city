@@ -411,7 +411,7 @@ export default function PackTable({
     <>
       {/* Desktop / tablet: full table */}
       <div
-        className={`hidden sm:block rpc-card ${className}`}
+        className={`hidden md:block rpc-card ${className}`}
         style={{ overflow: 'auto', borderRadius: 'var(--radius-md)' }}
       >
         <table
@@ -547,8 +547,8 @@ export default function PackTable({
         </table>
       </div>
 
-      {/* Mobile: card layout */}
-      <div className={`sm:hidden space-y-2 ${className}`}>
+      {/* Mobile + small tablet: card layout */}
+      <div className={`md:hidden space-y-2 ${className}`}>
         {sorted.map((r) => (
           <div key={r.id} className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
             <div className="flex items-start gap-3">

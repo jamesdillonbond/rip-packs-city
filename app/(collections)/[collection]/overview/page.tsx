@@ -450,7 +450,11 @@ export default function OverviewPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {(stats?.sniper_deals ?? []).slice(0, 5).map((deal, i) => {
                 const name = nameOrDash(deal.player_name, deal.character_name)
-                const hasDiscount = typeof deal.discount === "number" && deal.discount > 0
+                // Sub-$1 commons render as "$0" via fmtPrice (Math.round) and pair with an
+                // FMV-inflated discount %, which reads as a broken deal. Relabel the ask as
+                // "<$1" and suppress the discount badge for those rows.
+                const askIsSubDollar = deal.ask_price > 0 && deal.ask_price < 1
+                const hasDiscount = typeof deal.discount === "number" && deal.discount > 0 && !askIsSubDollar
                 const gridCols = hasDiscount ? "1fr auto auto" : "1fr auto"
                 const content = (
                   <>
@@ -461,7 +465,7 @@ export default function OverviewPage() {
                         {deal.set_name ? <> &middot; <span style={{ color: "var(--rpc-text-muted)" }}>{deal.set_name}</span></> : null}
                       </div>
                     </div>
-                    <div className="rpc-mono" style={{ color: "var(--rpc-text-secondary)" }}>{fmtPrice(deal.ask_price)}</div>
+                    <div className="rpc-mono" style={{ color: "var(--rpc-text-secondary)" }}>{askIsSubDollar ? "<$1" : fmtPrice(deal.ask_price)}</div>
                     {hasDiscount && (
                       <div className="rpc-mono" style={{ color: "var(--rpc-red)", fontWeight: 700 }}>-{Math.round(deal.discount as number)}%</div>
                     )}
