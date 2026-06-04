@@ -1,11 +1,6 @@
 "use client";
 
 import SupportChat from "@/components/SupportChat";
-import { useCart } from "@/lib/cart/CartContext";
-import {
-  cartEligibilityReason,
-  cartIneligibleTooltip,
-} from "@/lib/cart/eligibility";
 import { useFlowUser } from "@/lib/hooks/useFlowUser";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -17,7 +12,6 @@ type Identity = {
 };
 
 export default function SupportChatConnected() {
-  const { addToCart } = useCart();
   const pathname = usePathname();
   const { user } = useFlowUser();
   const [identity, setIdentity] = useState<Identity>({
@@ -58,29 +52,6 @@ export default function SupportChatConnected() {
     };
   }, [pathname]);
 
-  const handleAddToCart = (moment: any) => {
-    try {
-      const reason = cartEligibilityReason({
-        listingResourceID: moment.listingResourceID,
-        storefrontAddress: moment.storefrontAddress,
-        expectedPrice: moment.expectedPrice,
-        source: moment.source,
-        paymentToken: moment.paymentToken,
-      });
-      if (reason !== "ok") {
-        console.warn(
-          "[concierge] skipping ineligible listing:",
-          cartIneligibleTooltip(reason),
-          moment
-        );
-        return;
-      }
-      addToCart({ ...moment, thumbnailUrl: moment.thumbnailUrl || null });
-    } catch (err) {
-      console.error("[concierge] add to cart failed:", err);
-    }
-  };
-
   // ownerKey defaults to the allow_list username (the canonical handle for the
   // signed-in user). Fall back to the Flow address only when no username has
   // been linked yet so the bot can still address them by something.
@@ -96,7 +67,6 @@ export default function SupportChatConnected() {
       userWallet={userWallet}
       walletConnected={signedIn || user.loggedIn}
       signedInLabel={identity.username ?? identity.email ?? null}
-      onAddToCart={handleAddToCart}
     />
   );
 }
