@@ -24,6 +24,7 @@ For staggered scheduling, use these patterns (all proven quiet):
 | RPC AllDay Listing Cache | `/api/allday-listing-cache` | `*/20` | Bearer INGEST_SECRET_TOKEN |
 | RPC AllDay Listings Indexer | `/api/allday-listings-indexer` | `*/15` | Bearer INGEST_SECRET_TOKEN |
 | RPC AllDay Listings Retry | `/api/allday-listings-retry` | `8,23,38,53 * * * *` | Bearer INGEST_SECRET_TOKEN |
+| RPC AllDay Offers Indexer (NEW 2026-06-03, operator cron pending) | `/api/allday-offers-indexer` | `7,27,47 * * * *` | Bearer INGEST_SECRET_TOKEN |
 | RPC AllDay Pack Listings | `/api/allday-pack-listings` | `*/20` | Bearer INGEST_SECRET_TOKEN |
 | RPC AllDay Sales Indexer | `/api/allday-sales-indexer` | `*/20` | Bearer INGEST_SECRET_TOKEN |
 | RPC Analytics Smoke | `/api/admin/analytics-smoke` | `13,43 * * * *` | Bearer RPC_ADMIN_TOKEN |
