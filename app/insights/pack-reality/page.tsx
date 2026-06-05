@@ -79,6 +79,18 @@ function fmtPct(n: number | null | undefined): string {
   if (n == null) return "—"
   return `${Number(n).toFixed(1)}%`
 }
+// Value ratio is a CONFIDENCE signal, not a price promise. On high-variance
+// packs (FMV coverage < 80%) the gross EV — and therefore the ratio — is
+// dragged up by a handful of stale-priced moments, so a raw "38×"/"69×" reads
+// as a guaranteed multiplier when it is really an artifact. Cap the displayed
+// ratio at 10×+ on flagged packs so the number stays honest; clean packs show
+// their real (already-modest) ratio.
+function fmtRatio(n: number | null | undefined, highVariance: boolean | null): string {
+  if (n == null) return "—"
+  const v = Number(n)
+  if (highVariance && v > 10) return "10×+"
+  return `${v.toFixed(1)}×`
+}
 
 export default function PackRealityPage() {
   const [data, setData] = useState<ApiResponse | null>(null)
@@ -200,10 +212,14 @@ export default function PackRealityPage() {
       <section className="rpc-pr-ranker" aria-label="Top +EV packs">
         <h2 className="rpc-pr-h2">Honest +EV ranker</h2>
         <p className="rpc-pr-sub">
-          Top {data?.top_ev?.length ?? 0} positive-EV TS packs currently listed.{" "}
-          <strong>High-variance</strong> = FMV coverage below 80% — the headline
-          EV rests on a small fraction of priced editions, so treat the number
-          as a lower bound on confidence, not on dollars.
+          {data?.top_ev?.length ?? 0} positive-EV TS packs you can actually rip
+          right now — filtered to packs under 90% sold out, priced in the last
+          48h, with FMV coverage of 40%+. <strong>High-variance</strong> = FMV
+          coverage below 80%, so the EV rests on a small fraction of priced
+          editions; we cap its value ratio and treat the dollar figure as an
+          upper bound, not a guaranteed return. It&rsquo;s a short list on
+          purpose — most listed packs are near sold-out or stale-priced, and
+          we&rsquo;d rather show three honest packs than eighty fossils.
         </p>
         {(data?.top_ev ?? []).length === 0 ? (
           <div className="rpc-pr-state">{loading ? "Loading…" : "No +EV packs right now."}</div>
@@ -247,9 +263,17 @@ export default function PackRealityPage() {
                     )}
                   </td>
                   <td className="rpc-pr-td-num">{fmtUsd(row.pack_price)}</td>
-                  <td className="rpc-pr-td-num rpc-pr-td-emph">{fmtUsd(row.pack_ev)}</td>
-                  <td className="rpc-pr-td-num">
-                    {row.value_ratio != null ? `${Number(row.value_ratio).toFixed(1)}×` : "—"}
+                  <td
+                    className={`rpc-pr-td-num ${row.high_variance ? "rpc-pr-td-soft" : "rpc-pr-td-emph"}`}
+                    title={row.high_variance ? "High variance — treat as an upper bound, not a guaranteed return" : undefined}
+                  >
+                    {fmtUsd(row.pack_ev)}
+                  </td>
+                  <td
+                    className={`rpc-pr-td-num${row.high_variance ? " rpc-pr-td-soft" : ""}`}
+                    title={row.high_variance ? "High variance — EV rests on <80% priced editions; ratio capped" : undefined}
+                  >
+                    {fmtRatio(row.value_ratio, row.high_variance)}
                   </td>
                   <td className="rpc-pr-td-num">{fmtPct(row.fmv_coverage_pct)}</td>
                   <td className="rpc-pr-td-num">{fmtInt(row.total_unopened)}</td>
@@ -281,7 +305,15 @@ export default function PackRealityPage() {
             <strong>Pack EV</strong> uses the existing pack-EV pipeline (gross
             EV − pack price). The high-variance flag fires when{" "}
             <strong>FMV coverage &lt; 80%</strong>; in those cases a single
-            stale-priced moment can dominate the EV calc.
+            stale-priced moment can dominate the EV calc, so we cap the
+            displayed value ratio at <strong>10×+</strong> and mute the dollar
+            figure rather than headline a number we can&rsquo;t stand behind.
+          </p>
+          <p>
+            The ranker only lists packs that are <strong>live and rippable</strong>:
+            under 90% sold out, EV computed in the last 48 hours, and at least
+            40% of the pack&rsquo;s editions priced. Packs that are sold out,
+            stale, or thinly priced drop off rather than show a fossil EV.
           </p>
         </div>
         <div className="rpc-pr-share">
@@ -347,6 +379,7 @@ const CSS = `
 .rpc-pr-pack-sub { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 2px; }
 .rpc-pr-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
 .rpc-pr-td-emph { color: var(--rpc-red); font-weight: 700; }
+.rpc-pr-td-soft { color: var(--rpc-text-muted); }
 .rpc-pr-variance-chip { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; padding: 4px 8px; background: rgba(245,158,11,0.10); color: var(--rpc-warning); border: 1px solid rgba(245,158,11,0.30); border-radius: 2px; }
 .rpc-pr-clean-chip { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; padding: 4px 8px; background: rgba(52,211,153,0.10); color: var(--rpc-success); border: 1px solid rgba(52,211,153,0.30); border-radius: 2px; }
 
