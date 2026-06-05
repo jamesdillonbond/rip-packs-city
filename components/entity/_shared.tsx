@@ -110,16 +110,30 @@ const CONFIDENCE_COLORS: Record<string, { fg: string; bg: string; bd: string }> 
 
 const STALE_TOOLTIP = "No sales in 30+ days — FMV may be inaccurate"
 
-export function ConfidencePill({ confidence }: { confidence: string | null | undefined }) {
+/** Canonical methodology explainer; the confidence chip links here. */
+export const FMV_METHODOLOGY_HREF = "/legal/fmv-methodology"
+
+// When `href` is supplied (default = FMV_METHODOLOGY_HREF) the pill becomes a
+// link to the methodology page so a LOW / ASK_ONLY / STALE chip is one click
+// from "what does this mean?". Pass href={null} on any surface where the pill
+// already sits INSIDE another <a>/<Link> (e.g. a full-card edition tile) to
+// avoid an invalid nested anchor.
+export function ConfidencePill({
+  confidence,
+  href = FMV_METHODOLOGY_HREF,
+}: {
+  confidence: string | null | undefined
+  href?: string | null
+}) {
   if (!confidence || confidence === "NONE") {
     return <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.08em" }}>no FMV</span>
   }
   const key = confidence.toUpperCase()
   const colors = CONFIDENCE_COLORS[key] ?? GRAY_FALLBACK
   const isStale = key === "STALE"
-  return (
+  const pill = (
     <span
-      title={isStale ? STALE_TOOLTIP : undefined}
+      title={isStale ? STALE_TOOLTIP : "How FMV confidence is computed"}
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -136,6 +150,68 @@ export function ConfidencePill({ confidence }: { confidence: string | null | und
     >
       {isStale && <span aria-hidden style={{ fontSize: 9, opacity: 0.85 }}>🕒</span>}
       {key.replace("_", " ")}
+    </span>
+  )
+  if (!href) return pill
+  return (
+    <Link href={href} style={{ textDecoration: "none" }} aria-label={`${key.replace("_", " ")} confidence — how FMV is computed`}>
+      {pill}
+    </Link>
+  )
+}
+
+// ── FMV basis line ────────────────────────────────────────────────────────────
+// One honest sentence describing what backs an FMV value, so even a LOW or
+// ASK_ONLY tile reads as trustworthy. Pure function (server-safe) consumed by
+// FmvBasis below and reusable anywhere the fmv payload is in hand.
+//   sales-based + ask : "12 sales (30d) · ask $45"
+//   sales-based       : "12 sales (30d)"
+//   ASK_ONLY          : "ask-only $45"
+//   STALE             : "no sale in 30d · ask $45"  (or "no sale in 30d")
+//   NO_DATA / none    : "no market data yet"
+export function fmvBasisText({
+  confidence,
+  salesCount30d,
+  ask,
+}: {
+  confidence: string | null | undefined
+  salesCount30d: number | null | undefined
+  ask: number | null | undefined
+}): string | null {
+  const c = (confidence ?? "").toUpperCase()
+  const n = typeof salesCount30d === "number" && Number.isFinite(salesCount30d) ? salesCount30d : 0
+  const hasAsk = typeof ask === "number" && Number.isFinite(ask) && ask > 0
+  const askPart = hasAsk ? `ask ${fmtUsd(ask)}` : null
+
+  if (!confidence || c === "NONE" || c === "NO_DATA") {
+    return hasAsk ? `ask-only ${fmtUsd(ask)}` : "no market data yet"
+  }
+  if (c === "ASK_ONLY") {
+    return hasAsk ? `ask-only ${fmtUsd(ask)}` : "ask-only"
+  }
+  // sales-derived tiers: HIGH / MEDIUM / LOW / SALES_ONLY / STALE
+  const salesPart = n > 0 ? `${n} sale${n === 1 ? "" : "s"} (30d)` : null
+  if (c === "STALE") {
+    if (askPart) return `no sale in 30d · ${askPart}`
+    return "no sale in 30d"
+  }
+  if (salesPart && askPart) return `${salesPart} · ${askPart}`
+  if (salesPart) return salesPart
+  if (askPart) return askPart
+  return null
+}
+
+/** Muted basis sub-line for an FMV value. Renders nothing when there's no basis to show. */
+export function FmvBasis(props: {
+  confidence: string | null | undefined
+  salesCount30d: number | null | undefined
+  ask: number | null | undefined
+}) {
+  const text = fmvBasisText(props)
+  if (!text) return null
+  return (
+    <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.04em" }}>
+      {text}
     </span>
   )
 }
