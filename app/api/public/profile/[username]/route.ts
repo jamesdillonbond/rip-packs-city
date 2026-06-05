@@ -58,7 +58,7 @@ export async function GET(
   const [{ data: bio, error: bioErr }, { data: trophies }, { data: wallets }] = await Promise.all([
     supabase
       .from("profile_bio")
-      .select("username, display_name, tagline, favorite_team, twitter, discord, avatar_url, accent_color")
+      .select("username, display_name, tagline, favorite_team, twitter, discord, avatar_url, accent_color, equipped_border, equipped_banner")
       .eq("user_id", userId)
       .maybeSingle(),
     supabase
@@ -107,6 +107,8 @@ export async function GET(
       discord: bio.discord,
       avatar_url: bio.avatar_url,
       accent_color: bio.accent_color,
+      equipped_border: (bio as { equipped_border?: string | null }).equipped_border ?? null,
+      equipped_banner: (bio as { equipped_banner?: string | null }).equipped_banner ?? null,
     },
     trophies: trophies ?? [],
     wallets: walletSummaries,

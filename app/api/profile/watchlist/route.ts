@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
+import { getCurrentUser } from "@/lib/auth/supabase-server"
+import { awardPoints } from "@/lib/rewards"
 
 type WatchlistRow = {
   id: string
@@ -129,6 +131,14 @@ export async function POST(req: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
+
+    // Rewards: a logged-in user tracking a Moment earns add_watchlist_item
+    // (daily_cap 5). Session-resolved + best-effort — never block the save.
+    try {
+      const u = await getCurrentUser()
+      if (u) await awardPoints(u.id, "add_watchlist_item")
+    } catch { /* rewards must never break the watchlist write */ }
+
     return NextResponse.json({ item: data })
   } catch (err: any) {
     console.error("[watchlist POST]", err?.message)

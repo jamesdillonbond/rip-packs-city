@@ -7,6 +7,8 @@ export const maxDuration = 10;
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getCurrentUser } from "@/lib/auth/supabase-server";
+import { awardPoints } from "@/lib/rewards";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const supabase: any = createClient(
@@ -141,6 +143,14 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (error) throw new Error(error.message);
+
+    // Rewards: a logged-in user tracking a Moment earns add_watchlist_item
+    // (daily_cap 5). Session-resolved + best-effort — never block the save or
+    // trust the client for the user id. Anon callers (no session) are skipped.
+    try {
+      const u = await getCurrentUser();
+      if (u) await awardPoints(u.id, "add_watchlist_item");
+    } catch { /* rewards must never break the watchlist write */ }
 
     return NextResponse.json(data, { status: 201 });
   } catch (err: any) {
