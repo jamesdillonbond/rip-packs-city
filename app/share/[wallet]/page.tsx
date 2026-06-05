@@ -108,6 +108,10 @@ export async function generateMetadata(
   props: { params: Promise<{ wallet: string }> }
 ): Promise<Metadata> {
   const params = await props.params
+  // OG image is served by the /api/og/share route handler — NOT the
+  // opengraph-image.tsx file convention, which renders 0 bytes on edge / 500 on
+  // node in this Next 16 setup (see app/api/og/share/route.tsx header).
+  const ogImage = `${siteUrl()}/api/og/share?wallet=${encodeURIComponent(params.wallet)}`
   return {
     title: `Collection Card — ${params.wallet} — Rip Packs City`,
     description: `View the NBA Top Shot collection for wallet ${params.wallet} on Rip Packs City.`,
@@ -115,10 +119,12 @@ export async function generateMetadata(
       title: `Collection Card — ${params.wallet}`,
       description: `NBA Top Shot collection snapshot for ${params.wallet}`,
       type: "website",
+      images: [{ url: ogImage, width: 1200, height: 630, alt: "Collection Card — Rip Packs City" }],
     },
     twitter: {
       card: "summary_large_image",
       title: `Collection Card — ${params.wallet}`,
+      images: [ogImage],
     },
   }
 }
