@@ -104,6 +104,8 @@ export default function RewardsPage() {
   const [rules, setRules] = useState<Rule[]>([]);
   const [shop, setShop] = useState<ShopItem[]>([]);
   const [redemptions, setRedemptions] = useState<Redemption[]>([]);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [referralCount, setReferralCount] = useState(0);
   const [redeeming, setRedeeming] = useState<number | null>(null);
   const [flash, setFlash] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
 
@@ -120,6 +122,8 @@ export default function RewardsPage() {
       setRules(data.rules ?? []);
       setShop(data.shop ?? []);
       setRedemptions(data.redemptions ?? []);
+      setUserId(data.userId ?? null);
+      setReferralCount(data.referralCount ?? 0);
     } catch {
       setFlash({ kind: "err", msg: "Couldn't load rewards. Try again." });
     } finally {
@@ -308,6 +312,14 @@ export default function RewardsPage() {
                 </div>
               </div>
             </section>
+
+            {/* INVITE */}
+            {userId && (
+              <>
+                <SectionTitle>Invite a collector</SectionTitle>
+                <InviteBlock userId={userId} referralCount={referralCount} />
+              </>
+            )}
 
             {/* EARN */}
             <SectionTitle>Ways to earn</SectionTitle>
@@ -504,6 +516,82 @@ const kickerStyle: React.CSSProperties = {
   color: "#9a9a9a",
   marginBottom: 8,
 };
+
+// Credits awarded per verified referral. Mirrors the points_rules
+// `referral_verified` seed (300); display-only — the server is authoritative.
+const REFERRAL_CREDITS = 300;
+
+function InviteBlock({ userId, referralCount }: { userId: string; referralCount: number }) {
+  const [copied, setCopied] = useState(false);
+  const link = useMemo(() => {
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : "https://www.rippackscity.com";
+    return `${origin}/?ref=${userId}`;
+  }, [userId]);
+
+  const copy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // clipboard can be blocked — non-fatal, user can select the text.
+    }
+  }, [link]);
+
+  return (
+    <div style={{ ...cardStyle, marginBottom: 28 }}>
+      <p style={{ marginTop: 0, color: "#9a9a9a", fontSize: 14 }}>
+        Share your link. When a collector links a verified wallet through it, you earn{" "}
+        <strong style={{ color: "#e7e7e7" }}>{num(REFERRAL_CREDITS)} credits</strong>.
+      </p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <input
+          readOnly
+          value={link}
+          onFocus={(e) => e.currentTarget.select()}
+          style={{
+            flex: "1 1 280px",
+            minWidth: 0,
+            fontFamily: MONO,
+            fontSize: 13,
+            color: "#e7e7e7",
+            background: "#0a0a0a",
+            border: "1px solid #333",
+            borderRadius: 8,
+            padding: "10px 12px",
+          }}
+        />
+        <button
+          type="button"
+          onClick={copy}
+          style={{
+            padding: "10px 18px",
+            borderRadius: 8,
+            border: "none",
+            cursor: "pointer",
+            background: RED,
+            color: "#fff",
+            fontFamily: DISPLAY,
+            textTransform: "uppercase",
+            letterSpacing: "0.05em",
+            fontSize: 13,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {copied ? "Copied!" : "Copy link"}
+        </button>
+      </div>
+      <div style={{ marginTop: 10, fontFamily: MONO, fontSize: 12, color: "#9a9a9a" }}>
+        {referralCount > 0
+          ? `${num(referralCount)} ${referralCount === 1 ? "friend" : "friends"} joined · earned ${num(
+              referralCount * REFERRAL_CREDITS
+            )} credits`
+          : "No referrals yet — be the first to share."}
+      </div>
+    </div>
+  );
+}
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
