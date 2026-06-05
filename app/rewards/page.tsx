@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import MobileNav from "@/components/MobileNav";
 import SupportChatConnected from "@/components/SupportChatConnected";
+import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
 
 const DISPLAY = "var(--font-display)";
 const MONO = "var(--font-mono)";
@@ -85,6 +86,21 @@ interface Redemption {
   status: string;
   requested_at: string;
 }
+interface Cosmetic {
+  sku: string;
+  slot: string;
+  value: string | null;
+  acquired_at: string;
+}
+interface ProStatus {
+  isPro: boolean;
+  plan: string | null;
+  expiresAt: string | null;
+}
+interface Equipped {
+  border: string | null;
+  banner: string | null;
+}
 
 const TYPE_LABEL: Record<string, string> = {
   pro: "Pro",
@@ -106,7 +122,11 @@ export default function RewardsPage() {
   const [redemptions, setRedemptions] = useState<Redemption[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [referralCount, setReferralCount] = useState(0);
+  const [cosmetics, setCosmetics] = useState<Cosmetic[]>([]);
+  const [equipped, setEquipped] = useState<Equipped>({ border: null, banner: null });
+  const [pro, setPro] = useState<ProStatus>({ isPro: false, plan: null, expiresAt: null });
   const [redeeming, setRedeeming] = useState<number | null>(null);
+  const [equipping, setEquipping] = useState<string | null>(null);
   const [flash, setFlash] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
 
   const load = useCallback(async () => {
@@ -124,6 +144,9 @@ export default function RewardsPage() {
       setRedemptions(data.redemptions ?? []);
       setUserId(data.userId ?? null);
       setReferralCount(data.referralCount ?? 0);
+      setCosmetics(data.cosmetics ?? []);
+      setEquipped(data.equipped ?? { border: null, banner: null });
+      setPro(data.pro ?? { isPro: false, plan: null, expiresAt: null });
     } catch {
       setFlash({ kind: "err", msg: "Couldn't load rewards. Try again." });
     } finally {
@@ -147,10 +170,22 @@ export default function RewardsPage() {
         });
         const data = await res.json();
         if (res.ok && data?.redeemed) {
-          setFlash({
-            kind: "ok",
-            msg: `Redeemed "${item.name}". We'll send it to your wallet — track it below.`,
-          });
+          // Digital goods (pro / cosmetic) deliver instantly at redeem
+          // (data.status === "fulfilled"); moment / merch stay pending for
+          // manual fulfillment. Tailor the toast to what actually happened.
+          let msg: string;
+          if (item.type === "pro") {
+            msg = "RPC Pro activated — 30 days. Enjoy.";
+          } else if (item.type === "cosmetic") {
+            msg = `Equipped "${item.name}" on your profile.`;
+          } else if (item.type === "moment") {
+            msg = `Redeemed "${item.name}". We'll transfer it to your verified wallet — track it below.`;
+          } else if (item.type === "merch") {
+            msg = `Redeemed "${item.name}". We'll reach out for shipping details.`;
+          } else {
+            msg = `Redeemed "${item.name}". Track it below.`;
+          }
+          setFlash({ kind: "ok", msg });
           await load();
         } else {
           const reason =
@@ -171,6 +206,32 @@ export default function RewardsPage() {
         setFlash({ kind: "err", msg: "Redeem failed. Try again." });
       } finally {
         setRedeeming(null);
+      }
+    },
+    [load]
+  );
+
+  const equip = useCallback(
+    async (sku: string) => {
+      setEquipping(sku);
+      setFlash(null);
+      try {
+        const res = await fetch("/api/rewards/equip", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sku }),
+        });
+        const data = await res.json();
+        if (res.ok && data?.ok) {
+          setFlash({ kind: "ok", msg: "Equipped! It's live on your profile." });
+          await load();
+        } else {
+          setFlash({ kind: "err", msg: "Couldn't equip that. Try again." });
+        }
+      } catch {
+        setFlash({ kind: "err", msg: "Equip failed. Try again." });
+      } finally {
+        setEquipping(null);
       }
     },
     [load]
@@ -313,11 +374,129 @@ export default function RewardsPage() {
               </div>
             </section>
 
+            {/* PRO STATUS — only when active (granted via the Pro shop item) */}
+            {pro.isPro && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  margin: "0 0 28px",
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  border: `1px solid ${RED}`,
+                  background: "rgba(224,58,47,0.10)",
+                  fontFamily: MONO,
+                  fontSize: 13,
+                }}
+              >
+                <span style={{ color: RED, fontFamily: DISPLAY, letterSpacing: "0.06em" }}>★ RPC PRO</span>
+                <span style={{ color: "#cfcfcf" }}>
+                  {pro.expiresAt
+                    ? `Active until ${new Date(pro.expiresAt).toLocaleDateString()}`
+                    : "Active"}
+                </span>
+              </div>
+            )}
+
             {/* INVITE */}
             {userId && (
               <>
                 <SectionTitle>Invite a collector</SectionTitle>
                 <InviteBlock userId={userId} referralCount={referralCount} />
+              </>
+            )}
+
+            {/* COSMETICS — owned profile cosmetics, with equip/equipped state */}
+            {cosmetics.length > 0 && (
+              <>
+                <SectionTitle>Your cosmetics</SectionTitle>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+                    gap: 12,
+                    marginBottom: 28,
+                  }}
+                >
+                  {cosmetics.map((c) => {
+                    const isBorder = c.slot === "border";
+                    const isBanner = c.slot === "banner";
+                    const bc = isBorder ? borderCosmetic(c.value) : null;
+                    const bn = isBanner ? bannerCosmetic(c.value) : null;
+                    const label = bc?.label ?? bn?.label ?? c.value ?? c.sku;
+                    const equippedNow =
+                      (isBorder && equipped.border === c.value) ||
+                      (isBanner && equipped.banner === c.value);
+                    return (
+                      <div
+                        key={c.sku}
+                        style={{ ...cardStyle, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          {isBanner ? (
+                            <span
+                              style={{
+                                width: 48,
+                                height: 22,
+                                borderRadius: 4,
+                                background: bn?.background ?? "#333",
+                                border: "1px solid #333",
+                                flexShrink: 0,
+                              }}
+                            />
+                          ) : (
+                            <span
+                              style={{
+                                width: 34,
+                                height: 34,
+                                borderRadius: "50%",
+                                border: `3px solid ${bc?.ring ?? "#666"}`,
+                                boxShadow: bc?.glow ? `0 0 10px ${bc.glow}` : undefined,
+                                background: "#0a0a0a",
+                                flexShrink: 0,
+                              }}
+                            />
+                          )}
+                          <div>
+                            <div style={{ fontSize: 14 }}>{label}</div>
+                            <div
+                              style={{
+                                fontFamily: MONO,
+                                fontSize: 10,
+                                textTransform: "uppercase",
+                                letterSpacing: "0.08em",
+                                color: "#7a7a7a",
+                              }}
+                            >
+                              {c.slot}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={equippedNow || equipping === c.sku}
+                          onClick={() => equip(c.sku)}
+                          style={{
+                            padding: "7px 12px",
+                            borderRadius: 8,
+                            border: equippedNow ? "1px solid #2e7d32" : "none",
+                            cursor: equippedNow ? "default" : "pointer",
+                            background: equippedNow ? "transparent" : RED,
+                            color: equippedNow ? "#5cc46a" : "#fff",
+                            fontFamily: DISPLAY,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            fontSize: 12,
+                            opacity: equipping === c.sku ? 0.6 : 1,
+                          }}
+                        >
+                          {equippedNow ? "Equipped" : equipping === c.sku ? "…" : "Equip"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
               </>
             )}
 

@@ -13,6 +13,7 @@ import { NextResponse } from "next/server";
 import { awardPoints, getRewardsSummary } from "@/lib/rewards";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { getProStatus } from "@/lib/pro";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export async function GET() {
   // Capped/cooldowned server-side — safe to fire on every load.
   await awardPoints(user.id, "daily_visit");
 
-  const [summary, rules, shop, redemptions, referrals] = await Promise.all([
+  const [summary, rules, shop, redemptions, referrals, cosmetics, bio, verifiedWallet] = await Promise.all([
     getRewardsSummary(user.id),
     supabase
       .from("points_rules")
@@ -55,7 +56,44 @@ export async function GET() {
       .eq("user_id", user.id)
       .eq("reason", "referral_verified")
       .eq("kind", "earn"),
+    // Cosmetics this user owns (for the equip UI) + their currently-equipped
+    // slots, so the page can render + let them switch.
+    supabase
+      .from("user_cosmetics")
+      .select("sku,slot,value,acquired_at")
+      .eq("user_id", user.id)
+      .order("acquired_at", { ascending: false }),
+    supabase
+      .from("profile_bio")
+      .select("equipped_border,equipped_banner")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    // Most-recent verified wallet → drives the Pro status badge. Matches the
+    // wallet fulfill_redemption grants Pro against (lower(wallet_addr)).
+    supabase
+      .from("saved_wallets")
+      .select("wallet_addr")
+      .eq("user_id", user.id)
+      .not("verified_at", "is", null)
+      .order("verified_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
+
+  // Resolve Pro status from the verified wallet (getProStatus lowercases).
+  let pro: { isPro: boolean; plan: string | null; expiresAt: string | null } = {
+    isPro: false,
+    plan: null,
+    expiresAt: null,
+  };
+  const walletAddr = (verifiedWallet.data as { wallet_addr?: string } | null)?.wallet_addr ?? null;
+  if (walletAddr) {
+    try {
+      pro = await getProStatus(walletAddr);
+    } catch {
+      /* leave pro at default on lookup error */
+    }
+  }
 
   return NextResponse.json({
     userId: user.id,
@@ -64,5 +102,11 @@ export async function GET() {
     shop: shop.data ?? [],
     redemptions: redemptions.data ?? [],
     referralCount: referrals.count ?? 0,
+    cosmetics: cosmetics.data ?? [],
+    equipped: {
+      border: (bio.data as { equipped_border?: string | null } | null)?.equipped_border ?? null,
+      banner: (bio.data as { equipped_banner?: string | null } | null)?.equipped_banner ?? null,
+    },
+    pro,
   });
 }

@@ -49,6 +49,21 @@ interface Pending {
   item_type?: string | null;
   username?: string | null;
 }
+interface Raffle {
+  id: number;
+  sku: string;
+  name: string;
+  active: boolean;
+  entry_count?: number;
+}
+interface Draw {
+  id: number;
+  shop_item_id: number;
+  winner_user_id: string;
+  total_entrants: number;
+  total_credits: number;
+  drawn_at: string;
+}
 
 function num(n: number | null | undefined): string {
   return (n ?? 0).toLocaleString("en-US");
@@ -128,6 +143,8 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
   const [economy, setEconomy] = useState<Economy | null>(null);
   const [balances, setBalances] = useState<Balance[]>([]);
   const [pending, setPending] = useState<Pending[]>([]);
+  const [raffles, setRaffles] = useState<Raffle[]>([]);
+  const [draws, setDraws] = useState<Draw[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [flash, setFlash] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
@@ -153,6 +170,8 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
       setEconomy(data.economy ?? null);
       setBalances(data.balances ?? []);
       setPending(data.pending ?? []);
+      setRaffles(data.raffles ?? []);
+      setDraws(data.draws ?? []);
     } catch {
       setFlash({ kind: "err", msg: "Load failed." });
     } finally {
@@ -180,6 +199,34 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
           await load();
         } else {
           setFlash({ kind: "err", msg: data?.error ?? "Action failed." });
+        }
+      } catch {
+        setFlash({ kind: "err", msg: "Request failed." });
+      } finally {
+        setBusy(null);
+      }
+    },
+    [headers, load]
+  );
+
+  const drawRaffle = useCallback(
+    async (shopItemId: number, name: string) => {
+      if (!window.confirm(`Draw a winner for "${name}"? This is final and recorded.`)) return;
+      setBusy("draw");
+      setFlash(null);
+      try {
+        const res = await fetch("/api/admin/rewards", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ action: "draw_raffle", shopItemId }),
+        });
+        const data = await res.json();
+        if (res.ok && data?.ok) {
+          const w = data.result?.winner_user_id as string | undefined;
+          setFlash({ kind: "ok", msg: w ? `Winner drawn: ${w}` : "Draw complete." });
+          await load();
+        } else {
+          setFlash({ kind: "err", msg: data?.error ?? "Draw failed." });
         }
       } catch {
         setFlash({ kind: "err", msg: "Request failed." });
@@ -323,6 +370,74 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
                   </div>
                 ))}
               </div>
+            )}
+
+            {/* RAFFLES */}
+            {raffles.length > 0 && (
+              <>
+                <H2>Raffles</H2>
+                <div style={{ ...card, padding: 0, overflow: "hidden", marginBottom: draws.length > 0 ? 16 : 28 }}>
+                  {raffles.map((r, i) => {
+                    const entries = r.entry_count ?? 0;
+                    return (
+                      <div
+                        key={r.id}
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          padding: "12px 16px",
+                          borderTop: i === 0 ? "none" : "1px solid #1c1c1c",
+                        }}
+                      >
+                        <div style={{ minWidth: 220 }}>
+                          <div style={{ fontSize: 14 }}>
+                            {r.name}
+                            {!r.active && (
+                              <span style={{ fontFamily: MONO, fontSize: 10, color: "#d6a13a" }}> · inactive</span>
+                            )}
+                          </div>
+                          <div style={{ fontFamily: MONO, fontSize: 11, color: "#7a7a7a" }}>
+                            {num(entries)} {entries === 1 ? "entry" : "entries"}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={busy !== null || entries === 0}
+                          onClick={() => drawRaffle(r.id, r.name)}
+                          style={{ ...btn, opacity: entries === 0 ? 0.5 : 1 }}
+                        >
+                          {busy === "draw" ? "…" : "Draw winner"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+                {draws.length > 0 && (
+                  <div style={{ ...card, marginBottom: 28 }}>
+                    <div
+                      style={{
+                        fontFamily: MONO,
+                        fontSize: 11,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.08em",
+                        color: "#9a9a9a",
+                        marginBottom: 8,
+                      }}
+                    >
+                      Recent draws
+                    </div>
+                    {draws.map((d) => (
+                      <div key={d.id} style={{ fontFamily: MONO, fontSize: 12, color: "#cfcfcf", padding: "4px 0" }}>
+                        {new Date(d.drawn_at).toLocaleDateString()} · winner {d.winner_user_id.slice(0, 8)} ·{" "}
+                        {num(d.total_entrants)} entrants · {num(d.total_credits)} cr
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
 
             {/* MANUAL ADJUST */}

@@ -12,6 +12,8 @@ import {
 } from "@/lib/wallet-normalize"
 import { resolveTopShotUsernameCacheAware } from "@/lib/topshot-username-resolve"
 import { detectAddressChain } from "@/lib/address"
+import { getCurrentUser } from "@/lib/auth/supabase-server"
+import { awardPoints } from "@/lib/rewards"
 
 type WalletRow = {
   momentId: string
@@ -1083,6 +1085,14 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       )
     }
+
+    // Rewards: a logged-in user scouting a collector wallet earns scout_wallet
+    // (daily_cap 5). Session-resolved + best-effort; this route is public, so
+    // anon lookups (no session) are simply skipped. Never block the lookup.
+    try {
+      const scout = await getCurrentUser()
+      if (scout) await awardPoints(scout.id, "scout_wallet")
+    } catch { /* rewards must never break wallet-search */ }
 
     // League filter for Top Shot: intersect on-chain owned ids with wmc rows
     // for this wallet+collection where league matches. wmc is upserted by this

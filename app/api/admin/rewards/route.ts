@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const [economy, balances, pending] = await Promise.all([
+  const [economy, balances, pending, raffles, draws] = await Promise.all([
     supabase.from("v_rewards_economy").select("*").maybeSingle(),
     supabase
       .from("v_rewards_user_balances")
@@ -49,6 +49,18 @@ export async function GET(req: NextRequest) {
       .eq("status", "pending")
       .order("requested_at", { ascending: true })
       .limit(200),
+    // Raffle shop items (active or not — the raffle item is deactivated pending
+    // official rules) + their entry counts, so the console can draw a winner.
+    supabase
+      .from("shop_items")
+      .select("id,sku,name,active,metadata")
+      .eq("type", "raffle")
+      .order("id", { ascending: true }),
+    supabase
+      .from("raffle_draws")
+      .select("id,shop_item_id,winner_user_id,total_entrants,total_credits,drawn_at")
+      .order("drawn_at", { ascending: false })
+      .limit(50),
   ]);
 
   // Decorate pending redemptions with the item name + requester username.
@@ -71,10 +83,28 @@ export async function GET(req: NextRequest) {
     }));
   }
 
+  // Count entries per raffle so the console can show "N entries" before a draw.
+  const raffleRows = (raffles.data ?? []) as Array<Record<string, unknown>>;
+  let raffleDecorated = raffleRows;
+  if (raffleRows.length > 0) {
+    const raffleIds = raffleRows.map((r) => r.id);
+    const { data: entries } = await supabase
+      .from("raffle_entries")
+      .select("shop_item_id")
+      .in("shop_item_id", raffleIds);
+    const counts = new Map<number, number>();
+    for (const e of (entries ?? []) as Array<{ shop_item_id: number }>) {
+      counts.set(e.shop_item_id, (counts.get(e.shop_item_id) ?? 0) + 1);
+    }
+    raffleDecorated = raffleRows.map((r: any) => ({ ...r, entry_count: counts.get(r.id) ?? 0 }));
+  }
+
   return NextResponse.json({
     economy: economy.data ?? null,
     balances: balances.data ?? [],
     pending: decorated,
+    raffles: raffleDecorated,
+    draws: draws.data ?? [],
   });
 }
 
@@ -99,19 +129,37 @@ export async function POST(req: NextRequest) {
         if (!Number.isInteger(redemptionId)) {
           return NextResponse.json({ error: "bad redemptionId" }, { status: 400 });
         }
-        const { error } = await supabase
-          .from("redemptions")
-          .update({
-            status: "fulfilled",
-            fulfilled_at: new Date().toISOString(),
-            fulfilled_by: "owner",
-            fulfillment: { tx: body?.tx ?? null, note: body?.note ?? null },
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", redemptionId)
-          .eq("status", "pending");
+        // Use the SECDEF fulfill_redemption RPC instead of a raw status flip:
+        // for a pro/cosmetic that somehow stayed pending it actually DELIVERS
+        // (grants Pro / equips the cosmetic); for moment/merch it just marks
+        // shipped with the tx/note, same as before.
+        const { data, error } = await (supabase as any).rpc("fulfill_redemption", {
+          p_redemption_id: redemptionId,
+          p_tx: body?.tx ?? null,
+          p_note: body?.note ?? null,
+          p_admin: "owner",
+        });
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-        return NextResponse.json({ ok: true });
+        if (data?.ok === false) {
+          return NextResponse.json({ error: data.error ?? "fulfill failed" }, { status: 400 });
+        }
+        return NextResponse.json({ ok: true, result: data });
+      }
+
+      case "draw_raffle": {
+        const shopItemId = Number(body?.shopItemId);
+        if (!Number.isInteger(shopItemId)) {
+          return NextResponse.json({ error: "bad shopItemId" }, { status: 400 });
+        }
+        const { data, error } = await (supabase as any).rpc("draw_raffle", {
+          p_shop_item_id: shopItemId,
+          p_admin: "owner",
+        });
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        if (data?.ok === false) {
+          return NextResponse.json({ error: data.error ?? "draw failed" }, { status: 400 });
+        }
+        return NextResponse.json({ ok: true, result: data });
       }
 
       case "cancel_refund": {

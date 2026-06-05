@@ -12,6 +12,7 @@ import PortfolioSparkline from "@/components/profile/PortfolioSparkline";
 import PublicAchievements from "@/components/profile/PublicAchievements";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import { LEAGUES, type UserFavoriteTeam } from "@/lib/teams";
+import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface ProfileBio {
@@ -22,6 +23,8 @@ interface ProfileBio {
   discord: string | null;
   avatar_url: string | null;
   accent_color?: string | null;
+  equipped_border?: string | null;
+  equipped_banner?: string | null;
 }
 
 interface SavedWalletPublic {
@@ -126,13 +129,19 @@ function hexToRgba(hex: string, alpha: number): string {
 function Avatar(props: { username: string; bio: ProfileBio | null; size?: number; accent?: string }) {
   const { username, bio, size = 64 } = props;
   const accent = props.accent ?? "#E03A2F";
-  const accentBorder = hexToRgba(accent, 0.4);
   const accentBg = hexToRgba(accent, 0.15);
   const initials = username ? username.slice(0, 2).toUpperCase() : "?";
 
+  // Equipped border cosmetic overrides the accent ring with a colored ring +
+  // outer glow. Falls back to the subtle accent border when none is equipped.
+  const border = borderCosmetic(bio?.equipped_border);
+  const ringColor = border?.ring ?? hexToRgba(accent, 0.4);
+  const ringWidth = border ? 3 : 2;
+  const boxShadow = border?.glow ? "0 0 16px " + border.glow : undefined;
+
   if (bio?.avatar_url) {
     return (
-      <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", border: "2px solid " + accentBorder, flexShrink: 0 }}>
+      <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", border: ringWidth + "px solid " + ringColor, boxShadow, flexShrink: 0 }}>
         <img
           src={bio.avatar_url}
           alt={username}
@@ -159,7 +168,7 @@ function Avatar(props: { username: string; bio: ProfileBio | null; size?: number
   }
 
   return (
-    <div style={{ width: size, height: size, borderRadius: "50%", background: accentBg, border: "2px solid " + accentBorder, display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.35, fontWeight: 800, color: accent, fontFamily: condensedFont, flexShrink: 0 }}>
+    <div style={{ width: size, height: size, borderRadius: "50%", background: accentBg, border: ringWidth + "px solid " + ringColor, boxShadow, display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.35, fontWeight: 800, color: accent, fontFamily: condensedFont, flexShrink: 0 }}>
       {initials}
     </div>
   );
@@ -297,7 +306,18 @@ export default function PublicProfilePage() {
 
         {/* ── Profile Header + Bio ── */}
         <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
+          {(function() {
+            const banner = bannerCosmetic(bio?.equipped_banner);
+            if (!banner) return null;
+            return (
+              <div
+                aria-hidden
+                title={banner.label + " banner"}
+                style={{ height: 88, borderRadius: 12, background: banner.background, marginBottom: -40, border: "1px solid rgba(255,255,255,0.08)" }}
+              />
+            );
+          })()}
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 16, position: "relative" }}>
             <Avatar username={username} bio={bio} size={72} accent={accentColor} />
           </div>
           <h1 style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 32, letterSpacing: "0.06em", color: "var(--rpc-text-primary)", textTransform: "uppercase", lineHeight: 1, marginBottom: 6 }}>

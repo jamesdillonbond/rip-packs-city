@@ -139,6 +139,18 @@ export default function SqueezePage() {
     }
   }, [])
 
+  // Rewards: a logged-in user viewing the squeeze board earns view_squeeze_board
+  // (daily_cap 1, enforced server-side). This is a public surface, so anon
+  // viewers hit the auth gate and simply earn nothing — fire-and-forget, the
+  // result is intentionally ignored and never blocks the page.
+  useEffect(() => {
+    fetch("/api/rewards/track", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event: "view_squeeze" }),
+    }).catch(() => {})
+  }, [])
+
   useEffect(() => {
     const ctrl = new AbortController()
     async function run() {
