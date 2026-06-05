@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from "next/server";
 import * as fcl from "@onflow/fcl";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
+import { awardPoints } from "@/lib/rewards";
 
 const APP_IDENTIFIER = "Rip Packs City";
 
@@ -109,6 +110,9 @@ export async function POST(req: NextRequest) {
       p_wallet_addr: addr,
       p_method: "fcl_dapper",
     });
+    // Rewards: first verified wallet earns link_wallet (per_user_limit=1, so
+    // repeat verifies are no-ops). Fire-and-forget — never blocks auth.
+    await awardPoints(existingUser.id, "link_wallet", addr);
     return NextResponse.json({
       ok: true,
       mode: "linked",
@@ -160,6 +164,16 @@ export async function POST(req: NextRequest) {
       p_wallet_addr: addr,
       p_method: "fcl_dapper",
     });
+    // Rewards: the new collector earns link_wallet for verifying.
+    await awardPoints(newUserId, "link_wallet", addr);
+    // Referral credit goes to the referrer ONLY on this minted (genuinely-new
+    // user) path, so a referral can't be farmed by re-verifying an existing
+    // wallet. body.ref is the referrer's auth user id; ref-tagged with the new
+    // user's id. award_points enforces the rule's own limits.
+    const referrer = typeof body?.ref === "string" ? body.ref.trim() : "";
+    if (referrer && referrer !== newUserId) {
+      await awardPoints(referrer, "referral_verified", newUserId);
+    }
   }
 
   return NextResponse.json({
