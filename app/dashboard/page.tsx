@@ -8,7 +8,6 @@ import SupportChatConnected from "@/components/SupportChatConnected";
 import FirstRunTourMount from "@/components/onboarding/FirstRunTourMount";
 import RpcLogo from "@/components/RpcLogo";
 import SignOutButton from "@/components/auth/SignOutButton";
-import { ConnectButton } from "@/components/auth/ConnectButton";
 import SignInWithDapper from "@/components/SignInWithDapper";
 import { publishedCollections, getCollection } from "@/lib/collections";
 import TrophyPickerModal from "@/components/profile/TrophyPickerModal";
@@ -89,14 +88,6 @@ interface Activity {
   serial_number: number | null;
   price_usd: number | null;
   sold_at: string;
-}
-
-interface RecentSearch {
-  id: number;
-  query: string;
-  query_type: string;
-  collection_id: string | null;
-  searched_at: string;
 }
 
 interface CollectionStat {
@@ -243,7 +234,6 @@ function ProfilePageInner() {
   const [hero, setHero] = useState<HeroMoment | null>(null);
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
-  const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
   const [statsByWallet, setStatsByWallet] = useState<Record<string, CollectionStat[]>>({});
 
   const [loading, setLoading] = useState(true);
@@ -340,14 +330,13 @@ function ProfilePageInner() {
 
   const refresh = useCallback(async () => {
     try {
-      const [meRes, bioRes, walletsRes, slabsRes, favRes, actRes, recRes] = await Promise.all([
+      const [meRes, bioRes, walletsRes, slabsRes, favRes, actRes] = await Promise.all([
         fetch("/api/profile/me", { cache: "no-store" }),
         fetch("/api/profile/bio", { cache: "no-store" }),
         fetch("/api/profile/saved-wallets", { cache: "no-store" }),
         fetch("/api/profile/trophy-slabs?mine=1", { cache: "no-store" }),
         fetch("/api/profile/favorites", { cache: "no-store" }),
         fetch("/api/profile/activity", { cache: "no-store" }),
-        fetch("/api/profile/recent-searches", { cache: "no-store" }),
       ]);
       const me = meRes.ok ? await meRes.json() : { user: null };
       setEmail(me?.user?.email ?? null);
@@ -392,10 +381,6 @@ function ProfilePageInner() {
       if (actRes.ok) {
         const a = await actRes.json();
         setActivity(a?.activity ?? []);
-      }
-      if (recRes.ok) {
-        const r = await recRes.json();
-        setRecentSearches(r?.searches ?? []);
       }
 
       // Per-wallet collection stats (one fetch per unique wallet_addr).
@@ -603,20 +588,6 @@ function ProfilePageInner() {
     }
     return ids.size;
   }, [statsByWallet]);
-
-  // News feed: flatten news from favorited collections, sort by date desc
-  const newsItems = useMemo(() => {
-    const favSet = new Set(favorites.filter((f) => f.favorited).map((f) => f.collection_id));
-    const out: Array<{ title: string; date: string; summary: string; url: string; collectionId: string; collectionLabel: string; accent: string }> = [];
-    for (const col of publishedCollections()) {
-      if (!col.supabaseCollectionId || !favSet.has(col.supabaseCollectionId)) continue;
-      for (const n of col.news ?? []) {
-        out.push({ ...n, collectionId: col.id, collectionLabel: col.shortLabel, accent: col.accent });
-      }
-    }
-    out.sort((a, b) => (a.date < b.date ? 1 : -1));
-    return out;
-  }, [favorites]);
 
   // Group saved_wallets by physical wallet address — one card per unique
   // wallet, with sub-cards from collection-stats inside.

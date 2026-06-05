@@ -480,7 +480,7 @@ export default function PublicProfilePage() {
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, justifyContent: "center" }}>
             <span style={labelStyle}>🏆 TROPHY CASE</span>
           </div>
-          <div className="rpc-trophy-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+          <div className="rpc-trophy-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
             {[0, 1, 2].map(function(i) {
               return (
                 <TrophySlab
@@ -516,7 +516,7 @@ export default function PublicProfilePage() {
                 </button>
               </div>
               {showAllSlabs && (
-                <div className="rpc-trophy-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginTop: 16 }}>
+                <div className="rpc-trophy-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16, marginTop: 16 }}>
                   {[3, 4, 5].map(function(i) {
                     return (
                       <TrophySlab
@@ -534,7 +534,7 @@ export default function PublicProfilePage() {
           )}
           <style>{`
             @media (max-width: 768px) {
-              .rpc-trophy-grid { grid-template-columns: repeat(2, 1fr) !important; }
+              .rpc-trophy-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
             }
           `}</style>
         </section>
