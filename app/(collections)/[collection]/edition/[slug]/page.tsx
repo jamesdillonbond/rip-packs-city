@@ -16,6 +16,7 @@ import { slugifyName } from "@/lib/entity-labels"
 import {
   ConfidencePill,
   EM_DASH,
+  FmvBasis,
   Section,
   StatCell,
   TierBadge,
@@ -401,7 +402,16 @@ export default async function EditionPage(
         <StatCell
           label="Current FMV"
           value={fmtUsd(fmv?.fmv_usd ?? null)}
-          sub={<ConfidencePill confidence={fmv?.confidence ?? null} />}
+          sub={
+            <span style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+              <ConfidencePill confidence={fmv?.confidence ?? null} />
+              <FmvBasis
+                confidence={fmv?.confidence ?? null}
+                salesCount30d={fmv?.sales_count_30d ?? null}
+                ask={askValue}
+              />
+            </span>
+          }
         />
         <StatCell
           label="24h Change"

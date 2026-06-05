@@ -159,7 +159,7 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
               </div>
             </div>
             <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <ConfidencePill confidence={e.fmv_confidence ?? null} />
+              <ConfidencePill confidence={e.fmv_confidence ?? null} href={null} />
               {e.circulation_count !== null && e.circulation_count !== undefined && (
                 <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>
                   Mint {fmtCount(e.circulation_count)}
