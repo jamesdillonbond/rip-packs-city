@@ -13,11 +13,6 @@ import SignInWithDapper from "@/components/SignInWithDapper";
 import { publishedCollections, getCollection } from "@/lib/collections";
 import TrophyPickerModal from "@/components/profile/TrophyPickerModal";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
-import InsiderSignals from "@/components/InsiderSignals";
-import MarketSummary from "@/components/MarketSummary";
-import HotEditions24h from "@/components/HotEditions24h";
-import WhaleWatch7d from "@/components/WhaleWatch7d";
-import PortfolioChart from "@/components/PortfolioChart";
 
 const condensedFont = "'Barlow Condensed', sans-serif";
 const monoFont = "'Share Tech Mono', monospace";
@@ -771,17 +766,6 @@ function ProfilePageInner() {
           <TrophyCaseSection slabs={slabs} onPickSlot={setPinSlot} onRemove={handleRemoveTrophy} />
         )}
 
-        {/* ── Insider Signals ── */}
-        <InsiderSignals />
-
-        {/* ── Market Overview ── */}
-        <MarketSummary />
-        <HotEditions24h />
-        <WhaleWatch7d />
-
-        {/* ── Portfolio history ── */}
-        <PortfolioChart />
-
         {/* ── Saved Wallets ── */}
         <section className="rpc-section" data-tour-anchor="saved-wallets-card">
           <div className="rpc-section-title">Saved Wallets</div>
@@ -913,23 +897,6 @@ function ProfilePageInner() {
             })}
           </div>
 
-          {newsItems.length > 0 && (
-            <div style={{ marginTop: 16 }}>
-              <div className="rpc-section-title">News Feed</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {newsItems.map((n, i) => (
-                  <a key={i} href={n.url} target="_blank" rel="noopener noreferrer" style={{ display: "block", background: "#0d0d0d", border: "1px solid #27272a", borderLeft: `3px solid ${n.accent}`, borderRadius: 6, padding: "10px 12px", textDecoration: "none", color: "#fff" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                      <span style={{ fontFamily: monoFont, fontSize: 10, color: n.accent, letterSpacing: "0.08em", textTransform: "uppercase" }}>{n.collectionLabel}</span>
-                      <span style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.4)" }}>{n.date}</span>
-                    </div>
-                    <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 14, letterSpacing: "0.02em" }}>{n.title}</div>
-                    <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)", marginTop: 4, lineHeight: 1.4 }}>{n.summary}</div>
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
         </section>
 
         {/* ── Friend Activity ── */}
@@ -963,31 +930,6 @@ function ProfilePageInner() {
               })}
             </div>
           )}
-        </section>
-
-        {/* ── Recent Searches ── */}
-        <section className="rpc-section">
-          <div className="rpc-section-title">Recent Searches</div>
-          {recentSearches.length === 0 ? (
-            <div style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.45)" }}>No searches yet.</div>
-          ) : (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {recentSearches.map((s) => (
-                <span key={s.id} style={{ padding: "4px 10px", background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 16, fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.7)" }}>
-                  {s.query}
-                </span>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* ── Link Flow Wallet (on-chain actions) ── */}
-        <section className="rpc-section">
-          <div className="rpc-section-title">Link a Flow Wallet (on-chain actions)</div>
-          <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)", marginBottom: 10, lineHeight: 1.5 }}>
-            Connect a Dapper wallet to execute cart purchases, place offers, or sign on-chain actions. This is separate from email sign-in.
-          </div>
-          <ConnectButton />
         </section>
 
       </main>
@@ -1271,7 +1213,7 @@ function TrophyCaseSection({
     <section className="rpc-section">
       <style>{`
         @media (max-width: 768px) {
-          .rpc-trophy-slab-grid { grid-template-columns: repeat(2, 1fr) !important; }
+          .rpc-trophy-slab-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
         }
       `}</style>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -1283,7 +1225,7 @@ function TrophyCaseSection({
       <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)", marginBottom: 12, letterSpacing: "0.02em", lineHeight: 1.5 }}>
         Pin your 6 best moments across any collection — your permanent flex.
       </div>
-      <div className="rpc-trophy-slab-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+      <div className="rpc-trophy-slab-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
         {[0, 1, 2, 3, 4, 5].map((i) => (
           <TrophySlab
             key={"slab-" + i}
