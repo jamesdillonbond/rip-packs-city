@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { isLeague, type League, type UserFavoriteTeam } from "@/lib/teams";
+import { awardPoints } from "@/lib/rewards";
 
 async function resolveUserId(ownerKey: string): Promise<string | null> {
   const { data, error } = await supabase
@@ -178,6 +179,13 @@ export async function POST(req: NextRequest) {
     primary_color: row.teams_master?.primary_color ?? "#E03A2F",
     is_primary: !!row.is_primary,
   }));
+
+  // Rewards: picking a favorite team earns set_favorite_team (per_user_limit=1).
+  // Only when the save actually leaves the user with at least one team. userId
+  // is the resolved profile owner; the rule's per-user cap bounds any abuse.
+  if (saved.length > 0) {
+    await awardPoints(userId, "set_favorite_team");
+  }
 
   return NextResponse.json({ teams: saved });
 }

@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
+import { awardPoints } from "@/lib/rewards";
 
 function defaultUsernameFromEmail(email: string | null | undefined): string {
   if (!email) return "";
@@ -72,6 +73,10 @@ export async function POST(req: NextRequest) {
     console.error("[profile/bio POST]", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // Rewards: saving a profile earns complete_profile (per_user_limit=1, so only
+  // the first save grants). user.id is session-resolved. Fire-and-forget.
+  await awardPoints(user.id, "complete_profile");
 
   return NextResponse.json({ bio: data });
 }
