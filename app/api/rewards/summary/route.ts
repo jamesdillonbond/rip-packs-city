@@ -27,7 +27,7 @@ export async function GET() {
   // Capped/cooldowned server-side — safe to fire on every load.
   await awardPoints(user.id, "daily_visit");
 
-  const [summary, rules, shop, redemptions] = await Promise.all([
+  const [summary, rules, shop, redemptions, referrals] = await Promise.all([
     getRewardsSummary(user.id),
     supabase
       .from("points_rules")
@@ -47,12 +47,22 @@ export async function GET() {
       .eq("user_id", user.id)
       .order("requested_at", { ascending: false })
       .limit(50),
+    // Referral count: referral_verified earns credited to this user (for the
+    // /rewards invite block). 300 credits each, per the points_rules seed.
+    supabase
+      .from("points_ledger")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("reason", "referral_verified")
+      .eq("kind", "earn"),
   ]);
 
   return NextResponse.json({
+    userId: user.id,
     summary: summary ?? null,
     rules: rules.data ?? [],
     shop: shop.data ?? [],
     redemptions: redemptions.data ?? [],
+    referralCount: referrals.count ?? 0,
   });
 }

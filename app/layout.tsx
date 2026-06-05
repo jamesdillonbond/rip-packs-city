@@ -9,6 +9,7 @@ import WalletPreloader from "@/components/WalletPreloader"
 import OnboardingModal from "@/components/OnboardingModal"
 import ConsoleGreeting from "@/components/visual/ConsoleGreeting"
 import TelemetryPageView from "@/components/TelemetryPageView"
+import RefCapture from "@/components/RefCapture"
 
 export const metadata: Metadata = rootMetadata
 
@@ -31,6 +32,7 @@ export default function RootLayout({
         />
         <ConsoleGreeting />
         <TelemetryPageView />
+        <RefCapture />
         <WarmupProvider>
           <CartProvider>
             <WalletPreloader />

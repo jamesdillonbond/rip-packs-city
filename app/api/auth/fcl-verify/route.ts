@@ -172,7 +172,17 @@ export async function POST(req: NextRequest) {
     // user's id. award_points enforces the rule's own limits.
     const referrer = typeof body?.ref === "string" ? body.ref.trim() : "";
     if (referrer && referrer !== newUserId) {
-      await awardPoints(referrer, "referral_verified", newUserId);
+      // Confirm the referrer is a real user before crediting, so a forged ?ref
+      // uuid can't mint an orphan ledger row (user_id has no FK). Fire-and-
+      // forget — never fail wallet verification on a rewards write.
+      const { data: refUser } = await supabase
+        .from("user_profiles")
+        .select("id")
+        .eq("id", referrer)
+        .maybeSingle();
+      if (refUser) {
+        await awardPoints(referrer, "referral_verified", newUserId);
+      }
     }
   }
 

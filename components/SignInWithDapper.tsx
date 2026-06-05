@@ -58,6 +58,12 @@ export default function SignInWithDapper({ onSuccess, className, variant = "prim
             nonce: data.nonce,
             signatures: data.signatures,
           },
+          // Referral attribution: captured by RefCapture on landing. The server
+          // ignores it on the linked (returning-user) path and blocks
+          // self-referral, so sending it unconditionally is safe.
+          ref:
+            (typeof window !== "undefined" && localStorage.getItem("rpc_ref")) ||
+            undefined,
         }),
       });
       const json = await res.json();
@@ -72,6 +78,13 @@ export default function SignInWithDapper({ onSuccess, className, variant = "prim
           type: "magiclink",
         } as any);
         if (otpErr) throw new Error(otpErr.message);
+        // Minted path = the referral (if any) has now been credited server-side.
+        // Clear the stash so a ref can't be reused on a later verify.
+        try {
+          localStorage.removeItem("rpc_ref");
+        } catch {
+          // ignore
+        }
       }
 
       try {
