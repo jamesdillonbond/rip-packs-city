@@ -910,6 +910,110 @@ export async function POST(req: NextRequest) {
       console.warn("[FMV-RECALC] Historical fallback error:", err instanceof Error ? err.message : err)
     }
 
+    // ── Step 5c: edition_offers ASK fallback (zero-sales NO_DATA tail) ────────
+    // The real no-market NO_DATA tail after the dupe cleanup is tiny (~580
+    // canonical TS editions), and ~480 of them HAVE a live ask in
+    // edition_offers.low_ask (the near-complete TS ask feed from the OffersV2
+    // indexer) yet are stuck NO_DATA: they have zero sales (so Step 5b's
+    // `JOIN sales` never admits them) and they already carry a NO_DATA snapshot
+    // (so Step 5's `fs.edition_id IS NULL` never admits them either). Step 5/5b
+    // only read badge_editions.low_ask, which does not cover this set. Add
+    // edition_offers as an ASK source so these read as honest ASK_ONLY at the
+    // standard ×0.90 haircut instead of NO_DATA. The handful with no ask at all
+    // (and the 3 with an absurd >$10k ask) stay honest NO_DATA — never estimated.
+    //
+    // Scoped to zero-sales editions only: an edition with ANY sale heals to a
+    // sales-based label via Step 5b (strictly better than ask-only), so we must
+    // not steal it here. The same ≤$10k ceiling as the badge/Step-5b ask path
+    // guards against the $5M garbage asks present in edition_offers. Collection-
+    // agnostic; in practice only Top Shot has populated low_ask (All Day's
+    // edition_offers carries the bid side, highest_offer, not low_ask).
+    let askOffersBackfillCount = 0
+    try {
+      const { data: askOnlyRows, error: askOnlyErr } = await supabaseAdmin
+        .rpc("query_sql", {
+          query: `
+            WITH latest AS (
+              SELECT DISTINCT ON (edition_id) edition_id, confidence
+              FROM fmv_snapshots
+              ORDER BY edition_id, computed_at DESC
+            )
+            SELECT e.id AS edition_id, e.collection_id, eo.low_ask
+            FROM editions e
+            JOIN edition_offers eo
+              ON eo.external_id = e.external_id
+             AND eo.collection_id = e.collection_id
+            LEFT JOIN latest l ON l.edition_id = e.id
+            WHERE (l.edition_id IS NULL OR l.confidence = 'NO_DATA')
+              AND eo.low_ask > 0
+              AND eo.low_ask <= 10000
+              AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
+              AND e.collection_id <> '${PINNACLE_COLLECTION_ID}'
+              AND NOT EXISTS (
+                SELECT 1 FROM sales s
+                WHERE s.edition_id = e.id AND s.price_usd > 0
+              )
+            LIMIT 1000
+          `,
+        })
+
+      if (askOnlyErr) {
+        console.warn("[FMV-RECALC] edition_offers ASK fallback query error:", askOnlyErr.message)
+      } else {
+        const rows = (askOnlyRows as { edition_id: string; collection_id: string; low_ask: number | string }[] | null) ?? []
+        if (rows.length > 0) {
+          console.log(`[FMV-RECALC] edition_offers ASK fallback: ${rows.length} zero-sales NO_DATA editions with a live ask`)
+
+          const askRows = rows.map((row) => {
+            const ask = Number(row.low_ask)
+            const askFmv = Number((ask * 0.90).toFixed(2))
+            return applyAllFmvGuards({
+              edition_id: row.edition_id,
+              collection_id: row.collection_id,
+              fmv_usd: askFmv,
+              floor_price_usd: Number(ask.toFixed(2)),
+              wap_usd: askFmv,
+              wap_without_outliers: askFmv,
+              ask_proxy_fmv: askFmv,
+              top_shot_ask: Number(ask.toFixed(2)),
+              liquidity_rating: 0,
+              confidence: "ASK_ONLY",
+              sales_count_7d: 0,
+              sales_count_30d: 0,
+              days_since_sale: null,
+              algo_version: ALGO_VERSION,
+            })
+          })
+
+          // Delete-then-insert — never upsert fmv_snapshots (partitioned table).
+          const askEditionIds = askRows.map((r) => r.edition_id)
+          const DEL_CHUNK = 500
+          for (let i = 0; i < askEditionIds.length; i += DEL_CHUNK) {
+            const slice = askEditionIds.slice(i, i + DEL_CHUNK)
+            const { error: askDelErr } = await supabaseAdmin
+              .from("fmv_snapshots")
+              .delete()
+              .in("edition_id", slice)
+              .gte("computed_at", todayStart.toISOString())
+            if (askDelErr) console.warn("[FMV-RECALC] ASK fallback delete error:", askDelErr.message)
+          }
+
+          for (let i = 0; i < askRows.length; i += CHUNK_SIZE) {
+            const chunk = askRows.slice(i, i + CHUNK_SIZE)
+            const { error: askInsErr } = await supabaseAdmin
+              .from("fmv_snapshots")
+              .insert(chunk)
+            if (!askInsErr) askOffersBackfillCount += chunk.length
+            else console.warn("[FMV-RECALC] ASK fallback insert error:", askInsErr.message)
+          }
+
+          console.log(`[FMV-RECALC] edition_offers ASK fallback complete: ${askOffersBackfillCount} editions covered`)
+        }
+      }
+    } catch (err) {
+      console.warn("[FMV-RECALC] edition_offers ASK fallback error:", err instanceof Error ? err.message : err)
+    }
+
     // ── Step 6: Stale freshness touch (force_stale=true) ──────────────────────
     // Editions whose most recent fmv_current row has not been touched in >24h
     // and that didn't pick up new sales this run will otherwise show as stale
@@ -1138,7 +1242,7 @@ export async function POST(req: NextRequest) {
     const duration = Date.now() - startTime
 
     console.log(
-      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} staleTouch=${staleTouchCount} haircut=${haircutRowsTotal} thinSalesCaps=${thinSalesCaps?.total_caps_applied ?? 0} hasMore=${hasMore} duration=${duration}ms`
+      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} askOffersFallback=${askOffersBackfillCount} staleTouch=${staleTouchCount} haircut=${haircutRowsTotal} thinSalesCaps=${thinSalesCaps?.total_caps_applied ?? 0} hasMore=${hasMore} duration=${duration}ms`
     )
 
     // Surface the run + cap counts in pipeline_runs.extra so /admin
@@ -1164,6 +1268,7 @@ export async function POST(req: NextRequest) {
           wash_trade_filtered: washTradeEditionCount,
           backfill: backfillCount,
           historical_fallback: historicalBackfillCount,
+          ask_offers_fallback: askOffersBackfillCount,
           stale_touch: staleTouchCount,
           haircut_rows: haircutRowsTotal,
           haircut_collections_run: haircutCollectionsRun,
