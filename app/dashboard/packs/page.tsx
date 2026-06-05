@@ -459,7 +459,8 @@ export default function PackHistoryDashboard() {
             ) : !history || history.packs.length === 0 ? (
               <div style={{ padding: 28, textAlign: "center", color: "rgba(255,255,255,0.55)", fontFamily: monoFont, fontSize: 12 }}>No pack activity for this filter.</div>
             ) : (
-              <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: monoFont, fontSize: 11 }}>
+              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+              <table style={{ width: "100%", minWidth: 720, borderCollapse: "collapse", fontFamily: monoFont, fontSize: 11 }}>
                 <thead>
                   <tr style={{ background: "#080808", borderBottom: "1px solid #27272a" }}>
                     <Th>Pack</Th>
@@ -487,6 +488,7 @@ export default function PackHistoryDashboard() {
                   })}
                 </tbody>
               </table>
+              </div>
             )}
 
             {/* Pagination */}
