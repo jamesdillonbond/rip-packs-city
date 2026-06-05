@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
-// Pinnacle metadata backfill via on-chain Cadence reads.
+// Pinnacle metadata + catalog backfill via on-chain Cadence reads.
 //
 // Background: the Pinnacle public GQL endpoint (public-api.disneypinnacle.com)
 // returns 404 from every IP we control — re-verified 2026-05-16 against
@@ -13,20 +13,44 @@ import { createClient } from "@supabase/supabase-js"
 // This route routes around the dead GQL by reading the exact same data
 // straight off Flow mainnet via Cadence:
 //   - Pinnacle.NFT.editionID  → on-chain edition resource id
-//   - Pinnacle.getEdition(id).numberMinted / maxMintSize
-//   - Pinnacle.getEdition(id).variant / printing
-//   - Pinnacle.getShape(edition.shapeID).getMetadata()["RoyaltyCodes"]
+//   - Pinnacle.getEdition(id).numberMinted / maxMintSize / variant / printing / isChaser
+//   - Pinnacle.getShape(edition.shapeID).getMetadata()["RoyaltyCodes" | "Characters" | "Franchises"]
+//   - Pinnacle.getSet(edition.setID).name           (set_name)
+//   - Pinnacle.getEditionType(edition.editionTypeID).name  (edition_type)
 //
 // edition_key is reconstructed as `${RoyaltyCodes[0]}:${variant}:${printing}`
 // matching the existing convention used by buildEditionKey() and
 // fetch-missing-pinnacle-editions.ts.
 //
-// Three queues, sequential:
+// ── IMAGES ARE A DOCUMENTED DEAD-END (verified on-chain 2026-06-05) ──────────
+// This route does NOT and CANNOT fill thumbnail_url. The Pinnacle contract
+// (0xedf9df96c92f4595) carries NO per-edition image on-chain: both
+// NFT.resolveDisplayView().thumbnail and resolveMediasView() return the single
+// hardcoded generic placeholder "https://assets.disneypinnacle.com/on-chain/pinnacle.jpg"
+// for every NFT (contract source lines ~1604/1665/1765). The only per-edition
+// image identifier is `renderID` (e.g. "OEV1-SWHM-BOUS-S2"/"OEV2-FROZ-ANNA-S3"),
+// an opaque slug whose uniqueness the contract explicitly does NOT guarantee and
+// for which no URL template is exposed — so it cannot deterministically build a
+// real per-edition image URL without fabricating a CDN path (forbidden).
+// The ~82 catalog rows that DO have a real http thumbnail are legacy artifacts
+// from when the Pinnacle GQL / Flowty per-NFT REST were alive (both dead now:
+// GQL 404 since 2026-05-16, Flowty marketplace shut 2026-05-13). With all three
+// image sources dead, the ~396 NULL thumbnails will NOT grow from any source we
+// control. Per the handoff: report the dead-end, never fabricate. Do not
+// re-litigate a "GQL re-fetch" or "renderID → URL" approach — both verified dead.
+//
+// Four queues, sequential:
 //   Q1: pinnacle_editions where mint_count IS NULL  (cap 100)
 //   Q2: wallet_moments_cache (Pinnacle collection) where edition_key IS NULL  (cap 50)
 //   Q3: composite edition_key disagreements between wmc and pinnacle_nft_map  (cap 25)
+//   Q4: catalog create/repair — held wmc composite edition_keys with NO complete
+//       pinnacle_editions row (missing entirely, OR a fetch-missing stub with
+//       character_name='Unknown' / edition_key NULL). Upserts the row from
+//       on-chain text (character/franchise/set/variant/edition_type/printing/
+//       mint_count/is_serialized/is_chaser). thumbnail_url is NEVER written —
+//       new rows keep the NULL default, existing rows keep their value.  (cap 60)
 //
-// All three queues share one Cadence script and dispatch per-wallet so a
+// All four queues share one Cadence script and dispatch per-wallet so a
 // single Flow REST call covers up to PER_CADENCE_CHUNK moments for a wallet.
 //
 // Bearer auth on INGEST_SECRET_TOKEN. Trevor schedules at cron-job.org hourly
@@ -48,6 +72,7 @@ const FLOW_REST = "https://rest-mainnet.onflow.org/v1/scripts?block_height=seale
 const Q1_CAP = 100
 const Q2_CAP = 50
 const Q3_CAP = 25
+const Q4_CAP = 60
 const PER_CADENCE_CHUNK = 50
 const PER_CALL_TIMEOUT_MS = 15_000
 const SOFT_DEADLINE_MS = 25_000
@@ -64,8 +89,13 @@ access(all) struct PinInfo {
     access(all) let numberMinted: UInt64
     access(all) let maxMintSize: UInt64
     access(all) let isLimited: Bool
+    access(all) let isChaser: Bool
+    access(all) let characterName: String
+    access(all) let franchise: String
+    access(all) let setName: String
+    access(all) let editionType: String
 
-    init(editionId: Int, royaltyCode: String, variant: String, printing: UInt64, numberMinted: UInt64, maxMintSize: UInt64, isLimited: Bool) {
+    init(editionId: Int, royaltyCode: String, variant: String, printing: UInt64, numberMinted: UInt64, maxMintSize: UInt64, isLimited: Bool, isChaser: Bool, characterName: String, franchise: String, setName: String, editionType: String) {
         self.editionId = editionId
         self.royaltyCode = royaltyCode
         self.variant = variant
@@ -73,7 +103,21 @@ access(all) struct PinInfo {
         self.numberMinted = numberMinted
         self.maxMintSize = maxMintSize
         self.isLimited = isLimited
+        self.isChaser = isChaser
+        self.characterName = characterName
+        self.franchise = franchise
+        self.setName = setName
+        self.editionType = editionType
     }
+}
+
+// Pull the first element of a string-array metadata value (Characters/Franchises),
+// tolerating a bare String or a missing key.
+access(all) fun firstStr(_ v: AnyStruct?): String {
+    if v == nil { return "" }
+    if let a = v! as? [String] { return a.length > 0 ? a[0] : "" }
+    if let s = v! as? String { return s }
+    return ""
 }
 
 access(all) fun main(addr: Address, ids: [UInt64]): {UInt64: PinInfo} {
@@ -94,6 +138,8 @@ access(all) fun main(addr: Address, ids: [UInt64]): {UInt64: PinInfo} {
         let meta = shape!.getMetadata()
         let royaltyArr = meta["RoyaltyCodes"]! as! [String]
         let royaltyCode = royaltyArr.length > 0 ? royaltyArr[0] : ""
+        let set = Pinnacle.getSet(id: edition!.setID)
+        let et = Pinnacle.getEditionType(id: edition!.editionTypeID)
         out[id] = PinInfo(
             editionId: pinRef.editionID,
             royaltyCode: royaltyCode,
@@ -101,7 +147,12 @@ access(all) fun main(addr: Address, ids: [UInt64]): {UInt64: PinInfo} {
             printing: edition!.printing,
             numberMinted: edition!.numberMinted,
             maxMintSize: edition!.maxMintSize ?? 0,
-            isLimited: edition!.maxMintSize != nil
+            isLimited: edition!.maxMintSize != nil,
+            isChaser: edition!.isChaser,
+            characterName: firstStr(meta["Characters"]),
+            franchise: firstStr(meta["Franchises"]),
+            setName: set == nil ? "" : set!.name,
+            editionType: et == nil ? "" : et!.name
         )
     }
     return out
@@ -116,6 +167,11 @@ interface PinInfo {
   numberMinted: number
   maxMintSize: number
   isLimited: boolean
+  isChaser: boolean
+  characterName: string
+  franchise: string
+  setName: string
+  editionType: string
 }
 
 // Flow JSON-CDC unwrapper. The shape we expect is:
@@ -211,6 +267,7 @@ interface WorkItem {
     | { kind: "mint_count"; edition_pk: string; edition_key: string }
     | { kind: "edition_key_resolve"; wmc_id: string }
     | { kind: "disagreement"; wmc_id: string; wmc_edition_key: string; map_edition_key: string }
+    | { kind: "catalog_upsert"; wmc_edition_key: string }
   >
 }
 
@@ -356,12 +413,62 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Q4: catalog create/repair. Held wmc composite edition_keys (Pinnacle) that
+  // have NO complete pinnacle_editions row — either missing entirely, or a
+  // fetch-missing stub (character_name='Unknown' / edition_key NULL). We read the
+  // authoritative fields straight off chain and upsert (onConflict id). This is
+  // the on-chain replacement for the dead GQL catalog fetch. thumbnail_url is
+  // never written here (see the dead-end note in the header).
+  const q4: Array<{ wmc_edition_key: string; wallet: string; momentId: string }> = []
+  {
+    // The set of pinnacle_editions ids that are already COMPLETE (real name +
+    // edition_key present). Anything not in this set is a create-or-repair target.
+    // pinnacle_editions is ~hundreds of rows, comfortably under the 1000 cap.
+    const { data: peRows, error: peErr } = await supabaseAdmin
+      .from("pinnacle_editions")
+      .select("id, character_name, edition_key")
+      .limit(10000)
+    if (peErr) {
+      return NextResponse.json({ ok: false, error: `q4 pe load: ${peErr.message}` }, { status: 500 })
+    }
+    const completeIds = new Set<string>()
+    for (const r of (peRows ?? []) as Array<{ id: string; character_name: string | null; edition_key: string | null }>) {
+      if (r.character_name && r.character_name !== "Unknown" && r.edition_key) {
+        completeIds.add(r.id)
+      }
+    }
+
+    // Pull a pool of Pinnacle wmc rows with composite (royaltyCode:variant:printing)
+    // edition_keys; pick the first unseen sample per key that lacks a complete row.
+    const { data: wmcPool, error: wmcErr } = await supabaseAdmin
+      .from("wallet_moments_cache")
+      .select("wallet_address, moment_id, edition_key")
+      .eq("collection_id", PINNACLE_COLLECTION_ID)
+      .not("edition_key", "is", null)
+      .ilike("edition_key", "%:%:%") // composite keys have two colons; skips integer-only keys
+      .limit(8000)
+    if (wmcErr) {
+      return NextResponse.json({ ok: false, error: `q4 wmc pool: ${wmcErr.message}` }, { status: 500 })
+    }
+    const seenKeys = new Set<string>()
+    for (const row of (wmcPool ?? []) as Array<{ wallet_address: string; moment_id: string; edition_key: string }>) {
+      if (q4.length >= Q4_CAP) break
+      const key = row.edition_key
+      if (seenKeys.has(key)) continue
+      if (completeIds.has(key)) continue // already fully catalogued
+      seenKeys.add(key)
+      q4.push({ wmc_edition_key: key, wallet: row.wallet_address, momentId: row.moment_id })
+      tagJob(row.wallet_address, row.moment_id, { kind: "catalog_upsert", wmc_edition_key: key })
+    }
+  }
+
   // ── Fan out Cadence reads, then apply per-queue updates ───────────────
   const corrections: {
     mint_count_filled: Array<{ edition_pk: string; mint_count: number; is_serialized: boolean }>
     edition_keys_resolved: Array<{ wmc_id: string; moment_id: string; edition_key: string }>
     disagreements_corrected: Array<{ wmc_id: string; moment_id: string; from: string; to: string; corrected_side: "wmc" | "map" }>
-  } = { mint_count_filled: [], edition_keys_resolved: [], disagreements_corrected: [] }
+    catalog_upserted: Array<{ edition_key: string; character_name: string; mint_count: number; created_or_repaired: string }>
+  } = { mint_count_filled: [], edition_keys_resolved: [], disagreements_corrected: [], catalog_upserted: [] }
   let gqlErrors = 0
   const errorSamples: Array<{ wallet: string; error: string }> = []
 
@@ -451,6 +558,41 @@ export async function GET(req: NextRequest) {
               })
             }
           }
+        } else if (job.kind === "catalog_upsert") {
+          // Need the core key components to form a valid composite row.
+          if (!info.royaltyCode || !info.variant) continue
+          // NOTE: thumbnail_url is intentionally omitted — never written here.
+          // On INSERT it keeps the NULL default; on UPDATE (stub repair) the
+          // existing value is preserved (supabase-js upsert only sets supplied
+          // columns). Images are a documented dead-end (see header).
+          const { error } = await supabaseAdmin
+            .from("pinnacle_editions")
+            .upsert(
+              {
+                id: authoritativeKey,
+                edition_key: authoritativeKey,
+                character_name: info.characterName || "Unknown",
+                franchise: info.franchise || "Unknown",
+                set_name: (info.setName || "Unknown").trim(),
+                royalty_code: info.royaltyCode,
+                variant_type: info.variant,
+                edition_type: info.editionType || "Unknown",
+                printing: info.printing,
+                mint_count: info.numberMinted,
+                is_serialized: info.isLimited,
+                is_chaser: info.isChaser,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: "id" },
+            )
+          if (!error) {
+            corrections.catalog_upserted.push({
+              edition_key: authoritativeKey,
+              character_name: info.characterName || "Unknown",
+              mint_count: info.numberMinted,
+              created_or_repaired: authoritativeKey === job.wmc_edition_key ? "match" : "remapped",
+            })
+          }
         }
       }
     }
@@ -461,11 +603,12 @@ export async function GET(req: NextRequest) {
   await supabaseAdmin.rpc("log_pipeline_run", {
     p_pipeline: PIPELINE_NAME,
     p_started_at: startedAtIso,
-    p_rows_found: q1.length + q2.length + q3.length,
+    p_rows_found: q1.length + q2.length + q3.length + q4.length,
     p_rows_written:
       corrections.mint_count_filled.length +
       corrections.edition_keys_resolved.length +
-      corrections.disagreements_corrected.length,
+      corrections.disagreements_corrected.length +
+      corrections.catalog_upserted.length,
     p_rows_skipped: q1Skipped.length,
     p_ok: gqlErrors === 0,
     p_error: errorSamples[0] ? `cadence: ${errorSamples[0].error}` : null,
@@ -478,7 +621,12 @@ export async function GET(req: NextRequest) {
       q1_eligible: q1.length,
       q2_eligible: q2.length,
       q3_eligible: q3.length,
+      q4_eligible: q4.length,
+      catalog_upserted: corrections.catalog_upserted.length,
       q1_skipped_no_sample: q1Skipped.length,
+      // thumbnail_url is never filled — Pinnacle images are a documented
+      // dead-end (no per-edition image on-chain; GQL 404; Flowty dead).
+      images_filled: 0,
       gql_errors: gqlErrors,
       error_samples: errorSamples,
     },
@@ -489,11 +637,14 @@ export async function GET(req: NextRequest) {
     mint_count_filled: corrections.mint_count_filled.length,
     edition_keys_resolved: corrections.edition_keys_resolved.length,
     disagreements_corrected: corrections.disagreements_corrected.length,
+    catalog_upserted: corrections.catalog_upserted.length,
+    images_filled: 0, // dead-end: no per-edition Pinnacle image exists on-chain
     gql_errors: gqlErrors,
     samples: {
       mint_count: corrections.mint_count_filled.slice(0, 3),
       edition_key: corrections.edition_keys_resolved.slice(0, 3),
       disagreement: corrections.disagreements_corrected.slice(0, 3),
+      catalog: corrections.catalog_upserted.slice(0, 5),
     },
     duration_ms: durationMs,
   })
