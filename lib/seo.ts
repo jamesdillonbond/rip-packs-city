@@ -350,6 +350,35 @@ function buildMeta(opts: {
   }
 }
 
+// Top Shot on-chain series number (UInt32) -> display name, per the series map
+// in CLAUDE.md. get_edition_detail returns series_label as the bare on-chain
+// number (e.g. "7"), so a naked "7." in a meta description reads as a dangling
+// fragment. There is no on-chain series=1 (series 0 IS Series 1) and no "Beta".
+const TS_SERIES_DISPLAY: Record<string, string> = {
+  "0": "Series 1",
+  "2": "Series 2",
+  "3": "Summer 2021",
+  "4": "Series 3",
+  "5": "Series 4",
+  "6": "Series 2023-24",
+  "7": "Series 2024-25",
+  "8": "Series 2025-26",
+}
+
+// Render the series label as a readable phrase. For Top Shot a bare on-chain
+// number maps to its display name; any other numeric label becomes "Series N";
+// a non-numeric label (already a phrase) is returned as-is.
+function formatSeriesLabel(label: string, collectionUrlSlug: string): string {
+  const trimmed = label.trim()
+  if (/^\d+$/.test(trimmed)) {
+    if (collectionUrlSlug === "nba-top-shot" && TS_SERIES_DISPLAY[trimmed]) {
+      return TS_SERIES_DISPLAY[trimmed]
+    }
+    return `Series ${trimmed}`
+  }
+  return trimmed
+}
+
 /**
  * Edition detail page. Expects a payload with route_slug + name fields and
  * optionally fmv.fmv_usd. Pinnacle payloads carry the same fields.
@@ -371,7 +400,7 @@ export function editionPageMetadata(payload: Payload, collectionUrlSlug: string)
   const descParts = [
     `${subject} (${setName}) — ${collectionLabel} edition.`,
     tier ? `Tier ${tier}.` : null,
-    seriesLabel ? `${seriesLabel}.` : null,
+    seriesLabel ? `${formatSeriesLabel(seriesLabel, collectionUrlSlug)}.` : null,
     circulation ? `Circulation ${fmtCount(circulation)}.` : null,
     fmvUsd ? `Current FMV ${fmtUsd(fmvUsd)}.` : null,
     "Live FMV, recent sales, history chart, and packs that contained this edition.",
