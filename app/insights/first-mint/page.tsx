@@ -305,7 +305,10 @@ export default function FirstMintPage() {
                 <tr key={`${r.edition_id}-${r.mint_one_sold_at}`}>
                   <td className="rpc-fm-td-edition">
                     <div className="rpc-fm-edition-cell">
-                      <Link href={`/moment/${r.edition_id}`} className="rpc-fm-edition-link">
+                      <Link
+                        href={r.external_id ? `/nba-top-shot/edition/${encodeURIComponent(r.external_id)}` : `/moment/${r.edition_id}`}
+                        className="rpc-fm-edition-link"
+                      >
                         <div className="rpc-fm-edition-name">{r.player_name ?? "—"}</div>
                         <div className="rpc-fm-edition-set">{r.set_name ?? "—"}</div>
                       </Link>

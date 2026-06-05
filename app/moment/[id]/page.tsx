@@ -27,8 +27,9 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase"
-import { marketplaceMomentUrl } from "@/lib/collections"
+import { marketplaceMomentUrl, fromDbSlug } from "@/lib/collections"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
+import SiteFooter from "@/components/SiteFooter"
 
 // Display label for the native marketplace per URL slug. Only collections with
 // a marketplaceMomentUrl template can produce a valid deep link.
@@ -385,13 +386,28 @@ export async function generateMetadata(
   const title = `${player}${serialSuffix} · ${setName} · ${tier} | Rip Packs City`
   const description = `Live FMV, sale history, and market data for ${player} ${setName}${serialSuffix} on ${collectionLabel(e.collection_slug).toLowerCase().replace(/^\w/, c => c.toUpperCase())}. ${sales30 ? `${sales30} sales in last 30 days. ` : ""}Powered by Rip Packs City.`
   const ogImage = `/api/og/moment/${encodeURIComponent(id)}`
+  // Canonical consolidation (SEO, 2026-06-05): /moment/<id> shows the same
+  // moment as the richer, better-linked /<collection>/edition/<slug>. Point the
+  // canonical at the edition page so the two URLs don't compete for the same
+  // query. The edition route slug is the edition's external_id for the standard
+  // collections (get_edition_detail resolves on external_id OR id; its own
+  // route_slug = COALESCE(external_id, id)), and the edition uuid (pe.id) for
+  // Pinnacle. Fall back to the self-canonical if we can't resolve a url slug or
+  // route key (never emit a broken canonical).
+  const canonicalUrlSlug = e.collection_slug ? fromDbSlug(e.collection_slug) : null
+  const isPinnacleColl = e.collection_slug === "disney_pinnacle"
+  const editionRouteSlug = isPinnacleColl ? e.id : (e.external_id ?? e.id)
+  const canonicalPath =
+    canonicalUrlSlug && editionRouteSlug
+      ? `/${canonicalUrlSlug}/edition/${encodeURIComponent(editionRouteSlug)}`
+      : `/moment/${encodeURIComponent(id)}`
   return {
     // `absolute` skips the site-wide "%s | Rip Packs City" title.template so the
     // document <title> isn't double-suffixed (the title string already carries
     // the brand). OG/Twitter keep the full branded `title` string below.
     title: { absolute: title },
     description,
-    alternates: { canonical: `/moment/${encodeURIComponent(id)}` },
+    alternates: { canonical: canonicalPath },
     openGraph: {
       title,
       description,
@@ -494,6 +510,7 @@ export default async function MomentPage(
   }
 
   return (
+    <>
     <main
       style={{
         minHeight: "100vh",
@@ -1068,6 +1085,8 @@ export default async function MomentPage(
         }
       `}</style>
     </main>
+    <SiteFooter />
+    </>
   )
 }
 

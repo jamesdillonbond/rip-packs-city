@@ -1,7 +1,37 @@
 import Link from "next/link";
 import RpcLogo from "@/components/RpcLogo";
+import { publishedCollections } from "@/lib/collections";
+
+// Public Insights surfaces worth crawling — the highest-depth boards. Linked
+// here so every page that mounts the footer (all ~18K entity pages, overview,
+// home, etc.) passes internal link equity into the /insights hubs and the
+// per-collection overviews. SEO internal-linking pass, 2026-06-05.
+const INSIGHTS_LINKS: Array<{ href: string; label: string }> = [
+  { href: "/insights", label: "All Insights" },
+  { href: "/insights/squeeze", label: "Squeeze Board" },
+  { href: "/insights/deals", label: "Below FMV" },
+  { href: "/insights/first-mint", label: "First-Mint Trophies" },
+  { href: "/insights/rookies", label: "Rookie Index" },
+  { href: "/insights/market", label: "The RPC Index" },
+  { href: "/insights/pack-reality", label: "Pack Reality" },
+];
+
+const FOOTER_LINK_STYLE: React.CSSProperties = {
+  color: "var(--rpc-text-muted)",
+  textDecoration: "none",
+  fontSize: "var(--text-xs)",
+  letterSpacing: "0.04em",
+  lineHeight: 1.9,
+};
 
 export default function SiteFooter() {
+  // Public per-collection front doors — derived from the registry so a newly
+  // published collection appears automatically.
+  const collectionLinks = publishedCollections().map((c) => ({
+    href: `/${c.id}/overview`,
+    label: c.label,
+  }));
+
   return (
     <footer
       style={{
@@ -67,6 +97,64 @@ export default function SiteFooter() {
           </span>
         </div>
       </div>
+
+      {/* Explore — internal links into the public Insights hubs + per-collection
+          overviews. Renders on every footer-bearing page so the entity corpus
+          and the insights surfaces are reachable by a crawler from anywhere. */}
+      <nav
+        aria-label="Explore Rip Packs City"
+        style={{
+          borderTop: "1px solid var(--rpc-border)",
+          padding: "18px 24px",
+          maxWidth: "var(--max-width)",
+          margin: "0 auto",
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: 20,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize: "var(--text-xs)",
+              letterSpacing: "0.15em",
+              textTransform: "uppercase",
+              color: "var(--rpc-text-ghost)",
+              marginBottom: 8,
+            }}
+          >
+            Insights
+          </div>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {INSIGHTS_LINKS.map((l) => (
+              <Link key={l.href} href={l.href} style={FOOTER_LINK_STYLE}>
+                {l.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div
+            style={{
+              fontSize: "var(--text-xs)",
+              letterSpacing: "0.15em",
+              textTransform: "uppercase",
+              color: "var(--rpc-text-ghost)",
+              marginBottom: 8,
+            }}
+          >
+            Collections
+          </div>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {collectionLinks.map((l) => (
+              <Link key={l.href} href={l.href} style={FOOTER_LINK_STYLE}>
+                {l.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+      </nav>
 
       {/* Bottom strip */}
       <div

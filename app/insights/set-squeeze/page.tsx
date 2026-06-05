@@ -12,6 +12,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
+import { slugifyName } from "@/lib/entity-labels"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -219,15 +220,19 @@ export default function SetSqueezePage() {
                     {r.set_name ? (
                       <div className="rpc-ss-set-cell">
                         <Link
-                          href={`/insights/squeeze?set=${encodeURIComponent(r.set_name)}`}
+                          href={`/nba-top-shot/set/${encodeURIComponent(slugifyName(r.set_name))}`}
                           className="rpc-ss-set-link"
-                          title={`Drill into ${r.set_name} on the squeeze board`}
+                          title={`${r.set_name} on NBA Top Shot`}
                         >
                           <div className="rpc-ss-set-name">{r.set_name}</div>
-                          <div className="rpc-ss-set-sub">
-                            {r.series ? `S${r.series}` : "—"}
-                            <span className="rpc-ss-drill-hint">squeeze →</span>
-                          </div>
+                          <div className="rpc-ss-set-sub">{r.series ? `S${r.series}` : "—"}</div>
+                        </Link>
+                        <Link
+                          href={`/insights/squeeze?set=${encodeURIComponent(r.set_name)}`}
+                          className="rpc-ss-trophy-link"
+                          title={`Drill into ${r.set_name} on the squeeze board`}
+                        >
+                          squeeze →
                         </Link>
                         <Link
                           href={`/insights/first-mint?set=${encodeURIComponent(r.set_name)}`}

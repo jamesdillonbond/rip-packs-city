@@ -225,6 +225,60 @@ async function fetchParallels(editionId: string): Promise<ParallelEdition[]> {
   return Array.isArray(data) ? (data as ParallelEdition[]) : []
 }
 
+// "Featured in Insights" membership — Top Shot only. Reads the same public
+// boards the /insights surfaces render (security_invoker views, anon SELECT):
+// squeeze_pct (topshot_squeeze_board), discount_pct (topshot_deals_vs_fmv,
+// keyed on external_id), and the first-mint multiplier
+// (topshot_first_mint_trophies). Closes the entity → insights link direction.
+interface InsightLinks {
+  squeeze_pct: number | null
+  deal_pct: number | null
+  first_mint_x: number | null
+}
+
+const EMPTY_INSIGHT_LINKS: InsightLinks = { squeeze_pct: null, deal_pct: null, first_mint_x: null }
+
+async function fetchInsightLinks(editionId: string, externalId: string | null): Promise<InsightLinks> {
+  const client = rpcClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sel = (table: string, col: string, keyCol: string, keyVal: string): Promise<any> =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (client.from(table) as any).select(col).eq(keyCol, keyVal).limit(1)
+  try {
+    const [sq, dl, fm] = await Promise.all([
+      sel("topshot_squeeze_board", "squeeze_pct", "edition_id", editionId),
+      externalId
+        ? sel("topshot_deals_vs_fmv", "discount_pct", "external_id", externalId)
+        : Promise.resolve({ data: null }),
+      sel("topshot_first_mint_trophies", "multiplier", "edition_id", editionId),
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const first = (res: any) => (Array.isArray(res?.data) ? res.data[0] : null)
+    return {
+      squeeze_pct: first(sq)?.squeeze_pct ?? null,
+      deal_pct: first(dl)?.discount_pct ?? null,
+      first_mint_x: first(fm)?.multiplier ?? null,
+    }
+  } catch (e) {
+    console.error("[edition] insight_links", e instanceof Error ? e.message : String(e))
+    return EMPTY_INSIGHT_LINKS
+  }
+}
+
+const INSIGHT_CHIP_STYLE: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "6px 12px",
+  border: "1px solid var(--rpc-red-border, var(--rpc-border))",
+  background: "var(--rpc-red-bg, rgba(224,58,47,0.08))",
+  borderRadius: 4,
+  fontSize: 12,
+  letterSpacing: "0.04em",
+  color: "var(--rpc-red)",
+  textDecoration: "none",
+}
+
 // ── Metadata ────────────────────────────────────────────────────────────────
 
 export async function generateMetadata(
@@ -254,14 +308,22 @@ export default async function EditionPage(
 
   const isPinnacle = isPinnacleUrlSlug(collection)
 
-  const [history, sales, packs, specialSerials, highOffer, parallels] = await Promise.all([
+  const [history, sales, packs, specialSerials, highOffer, parallels, insightLinks] = await Promise.all([
     fetchHistory(coll.id, slug, 30),
     fetchSales(coll.id, slug, SALES_PAGE_SIZE, 0),
     fetchPacks(coll.id, slug),
     isPinnacle ? Promise.resolve([] as SpecialSerialRow[]) : fetchSpecialSerials(detail.id),
     fetchHighOffer(detail.id),
     fetchParallels(detail.id),
+    collection === "nba-top-shot"
+      ? fetchInsightLinks(detail.id, detail.external_id)
+      : Promise.resolve(EMPTY_INSIGHT_LINKS),
   ])
+
+  const hasInsightLinks =
+    insightLinks.squeeze_pct != null ||
+    insightLinks.deal_pct != null ||
+    insightLinks.first_mint_x != null
 
   const fmv = detail.fmv
   const fmvAvailable = fmv && fmv.fmv_usd !== null
@@ -447,6 +509,29 @@ export default async function EditionPage(
         <div className="rpc-mono" style={{ marginTop: 8, padding: "8px 12px", color: "var(--rpc-text-muted)", fontSize: 11 }}>
           No recent market activity
         </div>
+      )}
+
+      {/* ── Featured in Insights (entity → insights internal links) ──────── */}
+      {hasInsightLinks && (
+        <Section title="Featured in Insights">
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {insightLinks.squeeze_pct != null && (
+              <Link href="/insights/squeeze" className="rpc-mono" style={INSIGHT_CHIP_STYLE}>
+                {Math.round(insightLinks.squeeze_pct)}% squeeze →
+              </Link>
+            )}
+            {insightLinks.deal_pct != null && (
+              <Link href="/insights/deals" className="rpc-mono" style={INSIGHT_CHIP_STYLE}>
+                {Math.round(insightLinks.deal_pct)}% below FMV →
+              </Link>
+            )}
+            {insightLinks.first_mint_x != null && (
+              <Link href="/insights/first-mint" className="rpc-mono" style={INSIGHT_CHIP_STYLE}>
+                #1 sold {Number(insightLinks.first_mint_x).toFixed(1)}× the field →
+              </Link>
+            )}
+          </div>
+        </Section>
       )}
 
       {/* ── FMV history chart ────────────────────────────────────────────── */}

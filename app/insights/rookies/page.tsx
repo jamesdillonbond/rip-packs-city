@@ -13,6 +13,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
+import { slugifyName } from "@/lib/entity-labels"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -193,12 +194,18 @@ export default function RookiesPage() {
                   <td>
                     <div className="rpc-rk-player-cell">
                       <Link
-                        href={`/insights/squeeze?player=${encodeURIComponent(r.player_name)}`}
+                        href={`/nba-top-shot/player/${encodeURIComponent(slugifyName(r.player_name))}`}
                         className="rpc-rk-player-link"
-                        title={`See ${r.player_name}'s editions on the squeeze board`}
+                        title={`${r.player_name} on NBA Top Shot`}
                       >
                         <span className="rpc-rk-player">{r.player_name}</span>
-                        <span className="rpc-rk-drill-hint">squeeze →</span>
+                      </Link>
+                      <Link
+                        href={`/insights/squeeze?player=${encodeURIComponent(r.player_name)}`}
+                        className="rpc-rk-trophy-link"
+                        title={`See ${r.player_name}'s editions on the squeeze board`}
+                      >
+                        squeeze →
                       </Link>
                       {Number(r.mint_one_eds_with_history ?? 0) > 0 ? (
                         <Link
