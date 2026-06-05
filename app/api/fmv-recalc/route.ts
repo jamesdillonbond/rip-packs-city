@@ -388,14 +388,14 @@ export async function POST(req: NextRequest) {
     // common editions while preserving legitimate Legendary/Ultimate FMVs.
     // Chunked .in() to stay under PostgREST URL limits — at limit=2500 a single
     // .in() of UUIDs blows the request size and supabase-js returns an error.
-    const editionMetaById = new Map<string, { tier: string | null; circulationCount: number | null }>()
+    const editionMetaById = new Map<string, { tier: string | null; circulationCount: number | null; externalId: string | null }>()
     try {
       const META_CHUNK = 500
       for (let i = 0; i < editionIds.length; i += META_CHUNK) {
         const slice = editionIds.slice(i, i + META_CHUNK)
         const { data: edMetaRows, error: edMetaErr } = await supabaseAdmin
           .from("editions")
-          .select("id, tier, circulation_count")
+          .select("id, tier, circulation_count, external_id")
           .in("id", slice)
         if (edMetaErr) {
           console.warn(
@@ -408,11 +408,53 @@ export async function POST(req: NextRequest) {
           editionMetaById.set(String((row as any).id), {
             tier: (row as any).tier ?? null,
             circulationCount: (row as any).circulation_count ?? null,
+            externalId: (row as any).external_id ?? null,
           })
         }
       }
     } catch (err) {
       console.warn("[FMV-RECALC] Edition meta fetch failed (non-fatal):", err instanceof Error ? err.message : err)
+    }
+
+    // ── Step 2a-ter: live ask per edition for ask-corroboration (A2) ─────────
+    // edition_offers.low_ask, keyed by (collection_id, external_id). Used ONLY
+    // to RAISE confidence (LOW->MEDIUM in escalateConfidence) when the sales
+    // median agrees with it — never to lower a sales-based FMV (the ask is a
+    // floor). Absent for editions/collections without a live ask feed (e.g.
+    // All Day). TS external_ids carry a colon so they never collide with All
+    // Day's bare-integer keys, making the external_id lookup unambiguous.
+    const editionAskById = new Map<string, number>()
+    try {
+      const extIdToEditionIds = new Map<string, string[]>()
+      for (const [edId, meta] of editionMetaById.entries()) {
+        if (!meta.externalId) continue
+        const arr = extIdToEditionIds.get(meta.externalId) ?? []
+        arr.push(edId)
+        extIdToEditionIds.set(meta.externalId, arr)
+      }
+      const extIds = [...extIdToEditionIds.keys()]
+      const ASK_CHUNK = 500
+      for (let i = 0; i < extIds.length; i += ASK_CHUNK) {
+        const slice = extIds.slice(i, i + ASK_CHUNK)
+        const { data: askRows, error: askErr } = await supabaseAdmin
+          .from("edition_offers")
+          .select("external_id, low_ask")
+          .in("external_id", slice)
+          .gt("low_ask", 0)
+        if (askErr) {
+          console.warn(`[FMV-RECALC] ask fetch chunk ${i} error:`, askErr.message)
+          continue
+        }
+        for (const row of askRows ?? []) {
+          const ask = Number((row as any).low_ask)
+          if (!(ask > 0)) continue
+          for (const edId of extIdToEditionIds.get(String((row as any).external_id)) ?? []) {
+            editionAskById.set(edId, ask)
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[FMV-RECALC] ask fetch failed (non-fatal):", err instanceof Error ? err.message : err)
     }
 
     // ULTIMATE rows in fmv_snapshots are owned exclusively by recalc_ultimate_fmv
@@ -548,8 +590,11 @@ export async function POST(req: NextRequest) {
       const floor = Math.min(...prices)
       // fmv_confidence is a Postgres enum with UPPERCASE values — never use lowercase strings here.
       const baseConfidence = computeConfidence(sales.length)
-      // serials enable the serial-residual HIGH dispersion gate (see lib/fmv-confidence.ts).
-      const confidence: string = escalateConfidence(baseConfidence, sales.length, prices, serials)
+      // serials enable the serial-residual HIGH dispersion gate; the live ask
+      // (when present) enables ask-corroboration LOW->MEDIUM (see lib/fmv-confidence.ts).
+      const confidence: string = escalateConfidence(
+        baseConfidence, sales.length, prices, serials, editionAskById.get(editionId) ?? null,
+      )
       const daysSinceSale = Math.round(
         (now.getTime() - latestSoldAt.getTime()) / (1000 * 60 * 60 * 24)
       )

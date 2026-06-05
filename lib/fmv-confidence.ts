@@ -41,6 +41,24 @@ export const HIGH_MAX_DISPERSION = 0.2
 // at MEDIUM. Above this bound, MEDIUM is held only by the volume floor.
 export const MEDIUM_MAX_DISPERSION = 0.35
 
+// Ask-corroboration (A2, 2026-06-05). When an edition's sales central price
+// agrees with an independent live ask, that second signal lifts a LOW edition
+// to MEDIUM — even at a sales count below the MEDIUM volume floor. The live ask
+// (edition_offers.low_ask) is a FLOOR: it is used ONLY to corroborate (raise),
+// NEVER to clamp/lower a sales-based FMV (a lowball listing must not crush a
+// correct price). Held at LOW->MEDIUM only — MEDIUM->HIGH would override the
+// strict serial-dispersion HIGH gate, and an honest MEDIUM beats a flattering
+// HIGH. Modeled lift: ~1,291 TS LOW editions rescue, ~915 correctly stay LOW.
+export const MIN_SALES_ASK_CORROBORATION = 3
+export const ASK_CORROBORATION_BAND = 0.25 // sales median within +/-25% of the ask
+
+function medianPrice(prices: number[]): number {
+  if (prices.length === 0) return 0
+  const s = [...prices].sort((a, b) => a - b)
+  const mid = Math.floor(s.length / 2)
+  return s.length % 2 === 0 ? (s[mid - 1] + s[mid]) / 2 : s[mid]
+}
+
 // Volume-only base tier. HIGH is deliberately never assigned here — it requires
 // the dispersion gate in escalateConfidence().
 export function computeConfidence(salesCount: number): FmvConfidence {
@@ -122,6 +140,7 @@ export function escalateConfidence(
   salesCount30d: number,
   prices: number[],
   serials?: (number | null | undefined)[],
+  liveAsk?: number | null,
 ): FmvConfidence {
   let confidence = base
 
@@ -150,6 +169,26 @@ export function escalateConfidence(
       // Enough volume for a reliable fit, but the residual is too noisy to
       // call MEDIUM in good faith. Demote rather than overstate confidence.
       confidence = "LOW"
+    }
+  }
+
+  // Ask-corroboration: a live ask that agrees with the sales median rescues a
+  // LOW edition to MEDIUM (covers both the thin-but-confirmed 3-4 sale editions
+  // and the count>=7 editions the dispersion gate demoted). Corroborate only —
+  // the ask is a floor and is never used to lower confidence.
+  if (
+    confidence === "LOW" &&
+    liveAsk != null &&
+    liveAsk > 0 &&
+    salesCount30d >= MIN_SALES_ASK_CORROBORATION &&
+    prices.length > 0
+  ) {
+    const med = medianPrice(prices)
+    if (med > 0) {
+      const ratio = med / liveAsk
+      if (ratio >= 1 - ASK_CORROBORATION_BAND && ratio <= 1 + ASK_CORROBORATION_BAND) {
+        confidence = "MEDIUM"
+      }
     }
   }
 
