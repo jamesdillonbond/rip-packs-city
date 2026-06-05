@@ -270,7 +270,7 @@ const HOW_STEPS: Array<{ n: string; title: string; copy: string }> = [
   {
     n: "02",
     title: "ANALYZE",
-    copy: "We pull live FMV from sales data, real listings from Top Shot and Flowty, badges, serials, and series labels.",
+    copy: "We pull live FMV from sales data, real listings from Top Shot, badges, serials, and series labels.",
   },
   {
     n: "03",
@@ -283,7 +283,7 @@ const DEPTH_BULLETS: Array<{ icon: string; copy: string }> = [
   { icon: "◈", copy: "Outlier-filtered FMV with distributional shape (p10 / p50 / p90)." },
   { icon: "▲", copy: "Serial premium multipliers — 1-of-1 = 12×, low serials = 4.5×, last mint = 3×." },
   { icon: "≋", copy: "Liquidity ratings on every edition based on 30-day depth." },
-  { icon: "⚡", copy: "Real-time deal sniping merged across Top Shot and Flowty." },
+  { icon: "⚡", copy: "Real-time deal sniping on Top Shot." },
   { icon: "✦", copy: "Badge-aware pricing — Top Shot Debut, Rookie Year, Championship, Fresh." },
   { icon: "◉", copy: "Set bottleneck finder — cheapest path to completion." },
   { icon: "▣", copy: "Pack EV calculations, depletion-aware, with buy / skip recommendations." },

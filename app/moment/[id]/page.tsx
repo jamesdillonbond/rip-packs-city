@@ -386,8 +386,12 @@ export async function generateMetadata(
   const description = `Live FMV, sale history, and market data for ${player} ${setName}${serialSuffix} on ${collectionLabel(e.collection_slug).toLowerCase().replace(/^\w/, c => c.toUpperCase())}. ${sales30 ? `${sales30} sales in last 30 days. ` : ""}Powered by Rip Packs City.`
   const ogImage = `/api/og/moment/${encodeURIComponent(id)}`
   return {
-    title,
+    // `absolute` skips the site-wide "%s | Rip Packs City" title.template so the
+    // document <title> isn't double-suffixed (the title string already carries
+    // the brand). OG/Twitter keep the full branded `title` string below.
+    title: { absolute: title },
     description,
+    alternates: { canonical: `/moment/${encodeURIComponent(id)}` },
     openGraph: {
       title,
       description,
