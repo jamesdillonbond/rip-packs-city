@@ -384,16 +384,22 @@ export default function SqueezePage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r) => (
+              {filtered.map((r) => {
+                // Prefer the canonical edition page (corpus internal link);
+                // fall back to /moment/<uuid> when external_id is absent.
+                const href = r.external_id
+                  ? `/nba-top-shot/edition/${encodeURIComponent(r.external_id)}`
+                  : `/moment/${r.edition_id}`
+                return (
                 <tr
                   key={r.edition_id}
                   onClick={() => {
-                    window.location.href = `/moment/${r.edition_id}`
+                    window.location.href = href
                   }}
                   className="rpc-sq-row"
                 >
                   <td className="rpc-sq-td-player">
-                    <Link href={`/moment/${r.edition_id}`} className="rpc-sq-edition-link" onClick={(e) => e.stopPropagation()}>
+                    <Link href={href} className="rpc-sq-edition-link" onClick={(e) => e.stopPropagation()}>
                       <div className="rpc-sq-edition-name">{r.player_name ?? "—"}</div>
                       <div className="rpc-sq-edition-set">{r.set_name ?? "—"}</div>
                     </Link>
@@ -411,7 +417,8 @@ export default function SqueezePage() {
                   <td className="rpc-sq-td-num">{fmtUsd(r.fmv_usd)}</td>
                   <td className="rpc-sq-td-num">{fmtUsd(r.low_ask)}</td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         )}

@@ -7,6 +7,7 @@
 import type { Metadata } from "next"
 import InsightsEmailCapture from "@/components/insights/InsightsEmailCapture"
 import FunnelTracker from "@/components/FunnelTracker"
+import SiteFooter from "@/components/SiteFooter"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -51,6 +52,7 @@ export default function InsightsLayout({ children }: { children: React.ReactNode
       <FunnelTracker eventType="insights_view" perPath />
       {children}
       <InsightsEmailCapture />
+      <SiteFooter />
     </>
   )
 }
