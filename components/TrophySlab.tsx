@@ -352,6 +352,12 @@ function SlabLabel({
         display: "flex",
         gap: 7,
         alignItems: "stretch",
+        // Fixed height so the label is identical on every slab regardless of
+        // name / collection / set length, keeping the moment image and footer
+        // aligned across each row. Overflow clips the least-important
+        // (set name) line first.
+        height: 84,
+        overflow: "hidden",
       }}
     >
       {/* Left column — QR + pinwheel */}
@@ -361,7 +367,7 @@ function SlabLabel({
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
-          justifyContent: "space-between",
+          justifyContent: "flex-start",
           gap: 3,
         }}
       >
@@ -385,6 +391,10 @@ function SlabLabel({
             color: "#0a0a0a",
             letterSpacing: "0.02em",
             lineHeight: 1.1,
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
           }}
         >
           {slab.player_name ?? "Unknown"}
