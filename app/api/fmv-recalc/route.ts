@@ -263,24 +263,41 @@ export async function POST(req: NextRequest) {
     }
     const salesPage: SaleRow[] = []
     const IN_CHUNK = 500
+    // PostgREST caps an unlimited response at 1000 rows. A 500-edition chunk on
+    // an actively-traded page routinely carries 5k–12k+ in-window sales
+    // (measured 2026-06-05), so a single unpaginated `.in()` fetch silently
+    // truncated each chunk to its first ~1000 rows — dropping 75–92% of sales on
+    // hot pages. Editions whose sales fell past the cutoff got zero sales, fell
+    // out of Step-1 pricing, and landed on the Step-5b `snap_n=0` fossil (the
+    // held-wallet LOW root cause). Paginate each chunk with `.range()` until
+    // exhausted so the full sales set always lands. The explicit unique
+    // `.order("id")` gives a total order so range pages can't skip/duplicate
+    // rows across boundaries (`sold_at` alone ties and is unsafe to paginate on).
+    const SALES_PAGE = 1000
     for (let i = 0; i < pageEditionIds.length; i += IN_CHUNK) {
       const slice = pageEditionIds.slice(i, i + IN_CHUNK)
-      const { data: chunkSales, error: chunkErr } = await supabaseAdmin
-        .from("sales")
-        .select("edition_id, collection_id, price_usd, sold_at, serial_number")
-        .gte("sold_at", windowStart)
-        .gt("price_usd", 0)
-        .neq("collection_id", PINNACLE_COLLECTION_ID)
-        .in("edition_id", slice)
-      if (chunkErr) {
-        console.error(
-          `[FMV-RECALC] Sales fetch error for edition slice ${i}-${i + slice.length}:`,
-          chunkErr.message
-        )
-        continue
-      }
-      if (chunkSales && chunkSales.length > 0) {
-        salesPage.push(...(chunkSales as SaleRow[]))
+      let from = 0
+      for (;;) {
+        const { data: chunkSales, error: chunkErr } = await supabaseAdmin
+          .from("sales")
+          .select("edition_id, collection_id, price_usd, sold_at, serial_number")
+          .gte("sold_at", windowStart)
+          .gt("price_usd", 0)
+          .neq("collection_id", PINNACLE_COLLECTION_ID)
+          .in("edition_id", slice)
+          .order("id", { ascending: true })
+          .range(from, from + SALES_PAGE - 1)
+        if (chunkErr) {
+          console.error(
+            `[FMV-RECALC] Sales fetch error for edition slice ${i}-${i + slice.length} range ${from}:`,
+            chunkErr.message
+          )
+          break
+        }
+        const batch = (chunkSales as SaleRow[] | null) ?? []
+        if (batch.length > 0) salesPage.push(...batch)
+        if (batch.length < SALES_PAGE) break
+        from += SALES_PAGE
       }
     }
 
