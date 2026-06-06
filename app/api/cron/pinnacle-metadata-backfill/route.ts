@@ -39,7 +39,7 @@ import { createClient } from "@supabase/supabase-js"
 // control. Per the handoff: report the dead-end, never fabricate. Do not
 // re-litigate a "GQL re-fetch" or "renderID → URL" approach — both verified dead.
 //
-// Four queues, sequential:
+// Five queues, sequential:
 //   Q1: pinnacle_editions where mint_count IS NULL  (cap 100)
 //   Q2: wallet_moments_cache (Pinnacle collection) where edition_key IS NULL  (cap 50)
 //   Q3: composite edition_key disagreements between wmc and pinnacle_nft_map  (cap 25)
@@ -49,8 +49,14 @@ import { createClient } from "@supabase/supabase-js"
 //       on-chain text (character/franchise/set/variant/edition_type/printing/
 //       mint_count/is_serialized/is_chaser). thumbnail_url is NEVER written —
 //       new rows keep the NULL default, existing rows keep their value.  (cap 60)
+//   Q5: serial backfill — wmc Pinnacle rows with serial_number IS NULL on a
+//       SERIALIZED edition (open editions have no on-chain serial). Reads
+//       Pinnacle.NFT.serialNumber (UInt64?) and fills wmc.serial_number.  (cap 80)
 //
-// All four queues share one Cadence script and dispatch per-wallet so a
+// Serials are also filled opportunistically for any moment fetched for Q1-Q4,
+// since every borrowed NFT carries its serialNumber.
+//
+// All five queues share one Cadence script and dispatch per-wallet so a
 // single Flow REST call covers up to PER_CADENCE_CHUNK moments for a wallet.
 //
 // Bearer auth on INGEST_SECRET_TOKEN. Trevor schedules at cron-job.org hourly
@@ -73,6 +79,7 @@ const Q1_CAP = 100
 const Q2_CAP = 50
 const Q3_CAP = 25
 const Q4_CAP = 60
+const Q5_CAP = 80
 const PER_CADENCE_CHUNK = 50
 const PER_CALL_TIMEOUT_MS = 15_000
 const SOFT_DEADLINE_MS = 25_000
@@ -94,8 +101,11 @@ access(all) struct PinInfo {
     access(all) let franchise: String
     access(all) let setName: String
     access(all) let editionType: String
+    // Per-NFT serial number. nil for open (non-limited) editions — those have
+    // no serial on-chain (Pinnacle.NFT.serialNumber: UInt64?).
+    access(all) let serialNumber: UInt64?
 
-    init(editionId: Int, royaltyCode: String, variant: String, printing: UInt64, numberMinted: UInt64, maxMintSize: UInt64, isLimited: Bool, isChaser: Bool, characterName: String, franchise: String, setName: String, editionType: String) {
+    init(editionId: Int, royaltyCode: String, variant: String, printing: UInt64, numberMinted: UInt64, maxMintSize: UInt64, isLimited: Bool, isChaser: Bool, characterName: String, franchise: String, setName: String, editionType: String, serialNumber: UInt64?) {
         self.editionId = editionId
         self.royaltyCode = royaltyCode
         self.variant = variant
@@ -108,6 +118,7 @@ access(all) struct PinInfo {
         self.franchise = franchise
         self.setName = setName
         self.editionType = editionType
+        self.serialNumber = serialNumber
     }
 }
 
@@ -152,7 +163,8 @@ access(all) fun main(addr: Address, ids: [UInt64]): {UInt64: PinInfo} {
             characterName: firstStr(meta["Characters"]),
             franchise: firstStr(meta["Franchises"]),
             setName: set == nil ? "" : set!.name,
-            editionType: et == nil ? "" : et!.name
+            editionType: et == nil ? "" : et!.name,
+            serialNumber: pinRef.serialNumber
         )
     }
     return out
@@ -172,6 +184,8 @@ interface PinInfo {
   franchise: string
   setName: string
   editionType: string
+  // null for open (non-limited) editions — those have no on-chain serial.
+  serialNumber: number | null
 }
 
 // Flow JSON-CDC unwrapper. The shape we expect is:
@@ -268,6 +282,7 @@ interface WorkItem {
     | { kind: "edition_key_resolve"; wmc_id: string }
     | { kind: "disagreement"; wmc_id: string; wmc_edition_key: string; map_edition_key: string }
     | { kind: "catalog_upsert"; wmc_edition_key: string }
+    | { kind: "serial_fill"; wmc_id: string }
   >
 }
 
@@ -462,13 +477,57 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Q5: serial backfill. wmc Pinnacle rows with serial_number IS NULL that
+  // belong to a SERIALIZED edition (open editions have no on-chain serial, so
+  // scoping to is_serialized avoids re-walking the genuinely-nil tail forever).
+  // The on-chain serial comes from Pinnacle.NFT.serialNumber (UInt64?).
+  const q5: Array<{ wmc_id: string; wallet: string; momentId: string }> = []
+  {
+    // Serialized edition_keys (small set — a few hundred). pinnacle_editions is
+    // comfortably under the 10k cap.
+    const { data: serRows, error: serErr } = await supabaseAdmin
+      .from("pinnacle_editions")
+      .select("edition_key")
+      .eq("is_serialized", true)
+      .not("edition_key", "is", null)
+      .limit(10000)
+    if (serErr) {
+      return NextResponse.json({ ok: false, error: `q5 serialized load: ${serErr.message}` }, { status: 500 })
+    }
+    const serializedKeys = new Set<string>(
+      ((serRows ?? []) as Array<{ edition_key: string }>).map((r) => r.edition_key),
+    )
+    if (serializedKeys.size > 0) {
+      // Pull a pool of serial-null Pinnacle wmc rows; keep those on a serialized
+      // edition up to the cap. Over-fetch since many null rows are open editions.
+      const { data: wmcRows, error: wmcErr } = await supabaseAdmin
+        .from("wallet_moments_cache")
+        .select("id, wallet_address, moment_id, edition_key")
+        .eq("collection_id", PINNACLE_COLLECTION_ID)
+        .is("serial_number", null)
+        .not("edition_key", "is", null)
+        .order("last_seen_at", { ascending: false })
+        .limit(Q5_CAP * 20)
+      if (wmcErr) {
+        return NextResponse.json({ ok: false, error: `q5 wmc load: ${wmcErr.message}` }, { status: 500 })
+      }
+      for (const row of (wmcRows ?? []) as Array<{ id: string; wallet_address: string; moment_id: string; edition_key: string }>) {
+        if (q5.length >= Q5_CAP) break
+        if (!serializedKeys.has(row.edition_key)) continue
+        q5.push({ wmc_id: row.id, wallet: row.wallet_address, momentId: row.moment_id })
+        tagJob(row.wallet_address, row.moment_id, { kind: "serial_fill", wmc_id: row.id })
+      }
+    }
+  }
+
   // ── Fan out Cadence reads, then apply per-queue updates ───────────────
   const corrections: {
     mint_count_filled: Array<{ edition_pk: string; mint_count: number; is_serialized: boolean }>
     edition_keys_resolved: Array<{ wmc_id: string; moment_id: string; edition_key: string }>
     disagreements_corrected: Array<{ wmc_id: string; moment_id: string; from: string; to: string; corrected_side: "wmc" | "map" }>
     catalog_upserted: Array<{ edition_key: string; character_name: string; mint_count: number; created_or_repaired: string }>
-  } = { mint_count_filled: [], edition_keys_resolved: [], disagreements_corrected: [], catalog_upserted: [] }
+    serials_filled: Array<{ wmc_id: string; moment_id: string; serial_number: number }>
+  } = { mint_count_filled: [], edition_keys_resolved: [], disagreements_corrected: [], catalog_upserted: [], serials_filled: [] }
   let gqlErrors = 0
   const errorSamples: Array<{ wallet: string; error: string }> = []
 
@@ -490,6 +549,29 @@ export async function GET(req: NextRequest) {
       const info = result[momentId]
       if (!info) continue
       const authoritativeKey = buildEditionKey(info)
+
+      // Opportunistic serial fill: every borrowed NFT exposes its serialNumber
+      // (nil for open editions). Fill wmc.serial_number wherever it's still NULL
+      // for this wallet+moment — covers Q5 targets and any moment fetched for
+      // Q1-Q4. NULL-guarded so it never clobbers an existing serial; open
+      // editions (serialNumber null) are left untouched.
+      if (info.serialNumber != null && info.serialNumber > 0) {
+        const { data: serUpd, error: serErr } = await supabaseAdmin
+          .from("wallet_moments_cache")
+          .update({ serial_number: info.serialNumber })
+          .eq("collection_id", PINNACLE_COLLECTION_ID)
+          .eq("wallet_address", wallet)
+          .eq("moment_id", momentId)
+          .is("serial_number", null)
+          .select("id")
+        if (!serErr && serUpd && serUpd.length > 0) {
+          corrections.serials_filled.push({
+            wmc_id: (serUpd[0] as { id: string }).id,
+            moment_id: momentId,
+            serial_number: info.serialNumber,
+          })
+        }
+      }
 
       for (const job of item.jobs) {
         if (job.kind === "mint_count") {
@@ -603,12 +685,13 @@ export async function GET(req: NextRequest) {
   await supabaseAdmin.rpc("log_pipeline_run", {
     p_pipeline: PIPELINE_NAME,
     p_started_at: startedAtIso,
-    p_rows_found: q1.length + q2.length + q3.length + q4.length,
+    p_rows_found: q1.length + q2.length + q3.length + q4.length + q5.length,
     p_rows_written:
       corrections.mint_count_filled.length +
       corrections.edition_keys_resolved.length +
       corrections.disagreements_corrected.length +
-      corrections.catalog_upserted.length,
+      corrections.catalog_upserted.length +
+      corrections.serials_filled.length,
     p_rows_skipped: q1Skipped.length,
     p_ok: gqlErrors === 0,
     p_error: errorSamples[0] ? `cadence: ${errorSamples[0].error}` : null,
@@ -622,7 +705,9 @@ export async function GET(req: NextRequest) {
       q2_eligible: q2.length,
       q3_eligible: q3.length,
       q4_eligible: q4.length,
+      q5_eligible: q5.length,
       catalog_upserted: corrections.catalog_upserted.length,
+      serials_filled: corrections.serials_filled.length,
       q1_skipped_no_sample: q1Skipped.length,
       // thumbnail_url is never filled — Pinnacle images are a documented
       // dead-end (no per-edition image on-chain; GQL 404; Flowty dead).
@@ -638,6 +723,7 @@ export async function GET(req: NextRequest) {
     edition_keys_resolved: corrections.edition_keys_resolved.length,
     disagreements_corrected: corrections.disagreements_corrected.length,
     catalog_upserted: corrections.catalog_upserted.length,
+    serials_filled: corrections.serials_filled.length,
     images_filled: 0, // dead-end: no per-edition Pinnacle image exists on-chain
     gql_errors: gqlErrors,
     samples: {
@@ -645,6 +731,7 @@ export async function GET(req: NextRequest) {
       edition_key: corrections.edition_keys_resolved.slice(0, 3),
       disagreement: corrections.disagreements_corrected.slice(0, 3),
       catalog: corrections.catalog_upserted.slice(0, 5),
+      serial: corrections.serials_filled.slice(0, 3),
     },
     duration_ms: durationMs,
   })
