@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { syncPinnacleEditions, syncPinnacleListings } from "@/lib/pinnacle/sync";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,11 +11,17 @@ export const maxDuration = 30;
 
 const PIPELINE_NAME = "pinnacle-sync";
 
-// Observability (PIN-SYNC-OBS): this route rebuilds Pinnacle FMV daily
-// (pinnacle_fmv_recalc_all, replace-in-place) + syncs editions/listings, but
-// historically logged NOTHING to pipeline_runs — so when both the external cron
-// died AND pinnacle_fmv_recalc_all crashed (PIN-FMV2, 2026-06-04..06), the
-// 2.4-day freeze was invisible to detect_stalled_pipelines. Now every run logs.
+// Observability (PIN-SYNC-OBS): logs every run to pipeline_runs so a stall/crash
+// is visible to detect_stalled_pipelines (it previously logged nothing — the
+// PIN-FMV2 2.4-day freeze 2026-06-04..06 was invisible).
+//
+// PIN-SYNC-FLOWTY (2026-06-06): the editions + listings sync legs were RETIRED.
+// Both called Flowty (api2.flowty.io, shut 2026-05-13) via lib/pinnacle/sync.ts
+// and threw "Cannot read properties of undefined (reading 'traits')" on every
+// residual listing, forcing ok=false (status:"partial") on every run. They are
+// fully superseded: catalog -> pinnacle-catalog-backfill (studio-platform GQL),
+// sales -> pinnacle-events-ingest (on-chain) + render_id stamping. This route is
+// now purely the daily Pinnacle FMV refresh.
 async function logRun(args: {
   startedAtIso: string;
   ok: boolean;
@@ -54,28 +59,17 @@ export async function GET(request: NextRequest) {
   const errors: string[] = [];
 
   try {
-    const editionResult = await syncPinnacleEditions(supabaseAdmin);
-    errors.push(...editionResult.errors);
-
-    const listingResult = await syncPinnacleListings(supabaseAdmin);
-    errors.push(...listingResult.errors);
-
-    // Refresh FMV snapshots from the latest listings + sales. Matches the
-    // inline behaviour of /api/pinnacle-listing-cache so the daily cron
-    // keeps fmv_snapshots current without a separate trigger.
+    // Refresh ASK from the (on-chain) listings indexer, then rebuild FMV: the
+    // legacy set-level table (for un-migrated readers) AND the per-render home
+    // (pinnacle_catalog.fmv_*, PIN-FMV-REKEY) so both stay fresh in transition.
     const fmvFromListings = await supabaseAdmin.rpc("pinnacle_fmv_from_listings");
     if (fmvFromListings.error) errors.push(`pinnacle_fmv_from_listings: ${fmvFromListings.error.message}`);
     const fmvRecalcAll = await supabaseAdmin.rpc("pinnacle_fmv_recalc_all");
     if (fmvRecalcAll.error) errors.push(`pinnacle_fmv_recalc_all: ${fmvRecalcAll.error.message}`);
-
-    // PIN-FMV-REKEY Phase A: keep the per-render FMV home (pinnacle_catalog.fmv_*)
-    // fresh alongside the legacy set-level table during the reader-wave transition.
-    // Additive — readers migrate to the render-keyed columns in waves; legacy stays
-    // live until the reader grep hits zero. Logs its own 'pinnacle-fmv-recalc' run.
     const fmvRecalcRender = await supabaseAdmin.rpc("pinnacle_fmv_recalc_render_all");
     if (fmvRecalcRender.error) errors.push(`pinnacle_fmv_recalc_render_all: ${fmvRecalcRender.error.message}`);
 
-    const rowsWritten = (editionResult.editions_upserted ?? 0) + (listingResult.listings_upserted ?? 0);
+    const rowsWritten = Number(fmvRecalcRender.data?.renders_priced ?? 0);
     const ok = errors.length === 0;
     await logRun({
       startedAtIso,
@@ -83,8 +77,6 @@ export async function GET(request: NextRequest) {
       rowsWritten,
       error: errors[0] ?? null,
       extra: {
-        editions_upserted: editionResult.editions_upserted,
-        listings_upserted: listingResult.listings_upserted,
         fmv_from_listings: fmvFromListings.data ?? null,
         fmv_recalc_all: fmvRecalcAll.data ?? null,
         fmv_recalc_render: fmvRecalcRender.data ?? null,
@@ -95,8 +87,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       status: ok ? "ok" : "partial",
-      editions_upserted: editionResult.editions_upserted,
-      listings_upserted: listingResult.listings_upserted,
       fmv_from_listings: fmvFromListings.data ?? 0,
       fmv_recalc_all: fmvRecalcAll.data ?? 0,
       fmv_recalc_render: fmvRecalcRender.data ?? 0,
@@ -112,9 +102,6 @@ export async function GET(request: NextRequest) {
       error: message,
       extra: { duration_ms: Date.now() - startedAt, errors: errors.slice(0, 3) },
     });
-    return NextResponse.json(
-      { status: "error", editions_upserted: 0, listings_upserted: 0, errors },
-      { status: 500 }
-    );
+    return NextResponse.json({ status: "error", errors }, { status: 500 });
   }
 }
