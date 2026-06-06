@@ -101,7 +101,7 @@ access(all) struct PinInfo {
     access(all) let franchise: String
     access(all) let setName: String
     access(all) let editionType: String
-    // Per-NFT serial number. nil for open (non-limited) editions — those have
+    // Per-NFT serial number. nil for open (non-limited) editions - those have
     // no serial on-chain (Pinnacle.NFT.serialNumber: UInt64?).
     access(all) let serialNumber: UInt64?
 
@@ -240,7 +240,7 @@ async function runCadenceFetch(wallet: string, ids: string[]): Promise<Record<st
   for (let i = 0; i < ids.length; i += PER_CADENCE_CHUNK) {
     const chunk = ids.slice(i, i + PER_CADENCE_CHUNK)
     const body = {
-      script: btoa(PINNACLE_METADATA_SCRIPT),
+      script: Buffer.from(PINNACLE_METADATA_SCRIPT, "utf8").toString("base64"),
       arguments: [
         btoa(JSON.stringify({ type: "Address", value: wallet })),
         btoa(JSON.stringify({
