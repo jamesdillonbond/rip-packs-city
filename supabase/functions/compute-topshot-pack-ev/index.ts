@@ -1,4 +1,18 @@
-// compute-topshot-pack-ev v19 — v17 queue-poison sentinels + v18 inline hydration.
+// compute-topshot-pack-ev v20 — canonical int-pair edition keys + tier-count persistence.
+//
+// v20 (2026-06-06) — pack-EV accuracy: the pool/edition key now PREFERS the
+//   on-chain integer pair `${set.flowId}:${play.flowID}` (requested inline in
+//   EDITIONS_QUERY) and falls back to the legacy `${setUUID}:${playUUID}` only
+//   when TS omits the ints (or rejects the fields — auto-fallback to the legacy
+//   query shape). Effect: pools resolve to CANONICAL editions (FMV + art),
+//   seed_topshot_editions creates int-keyed stubs (onchain ids parsed → the
+//   stub-resolver pipeline picks them up), and this function stops minting
+//   inert UUID-dupe edition rows (DUPE1 Item B2). Hydration additionally
+//   re-keys existing pack_drop_pool UUID rows to canonical via
+//   remap_pack_pool_uuid_key once flowIds are learned. Per-pack
+//   remainingByTier/originalCountsByTier now persist into
+//   pack_distributions.metadata via merge_pack_dist_meta (tier-odds UI).
+//   DB prereq: audit_20260606_pack_pool_canonical_remap_and_rpcs.
 //
 // v19 (2026-05-24) merges the inline UUID:UUID skeleton hydration on top of
 // the v17 queue-poison sentinel writes that were deployed live but never
@@ -83,7 +97,7 @@ const ERRORS_SAMPLE_CAP = 12
 const FETCH_CONCURRENCY = 3
 const MAX_1015_RETRIES = 3
 const RETRY_BACKOFF_MS = 2000
-const FUNCTION_VERSION = 19
+const FUNCTION_VERSION = 20
 
 // Hydration safety margin: leave this many ms of HARD_CEILING headroom for
 // the GQL+update loop so it can short-circuit cleanly without dragging the
@@ -160,6 +174,32 @@ const EDITIONS_QUERY = `
               edition {
                 id
                 tier
+                set { id flowId }
+                play { id flowID }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`
+// Legacy shape (no flowId/flowID) — automatic fallback if TS ever rejects the
+// int fields on the pack-listing Edition type (they are confirmed on the
+// searchEditions Edition type; see SEARCH_EDITION_QUERY below).
+const EDITIONS_QUERY_LEGACY = `
+  query GetPackEditions($input: GetPackListingInput!, $after: ID) {
+    getPackListing(input: $input) {
+      data {
+        packEditionsV3(after: $after) {
+          pageInfo { endCursor hasNextPage }
+          edges {
+            node {
+              count
+              remaining
+              edition {
+                id
+                tier
                 set { id }
                 play { id }
               }
@@ -170,6 +210,7 @@ const EDITIONS_QUERY = `
     }
   }
 `
+let editionsExtFieldsOk = true
 const EDITIONS_OP = "GetPackEditions"
 
 const STUDIO_PACK_LISTINGS_QUERY = `
@@ -273,6 +314,16 @@ interface SearchEditionsResp {
   }
 }
 
+interface TierCountMap {
+  common?: number | null
+  rare?: number | null
+  legendary?: number | null
+  ultimate?: number | null
+  fandom?: number | null
+  autograph?: number | null
+  anthology?: number | null
+}
+
 interface DynamicData {
   getPackListing?: {
     data?: {
@@ -280,6 +331,8 @@ interface DynamicData {
       packListingContentRemaining?: {
         unopened?: number
         totalPackCount?: number
+        remainingByTier?: TierCountMap | null
+        originalCountsByTier?: TierCountMap | null
       }
     }
   }
@@ -291,9 +344,27 @@ interface EditionNode {
   edition: {
     id: string
     tier: string
-    set: { id: string } | null
-    play: { id: string } | null
+    set: { id: string; flowId?: number | string | null } | null
+    play: { id: string; flowID?: number | string | null } | null
   }
+}
+
+// v20: canonical key preference — int pair `${set.flowId}:${play.flowID}` when
+// both ints are present, else the legacy UUID pair. Single source of truth for
+// BOTH the resolve set and the pool rows so they can never diverge.
+function editionExtKey(node: EditionNode): { ext: string | null; intPair: boolean } {
+  const setFlowRaw = node.edition.set?.flowId
+  const playFlowRaw = node.edition.play?.flowID
+  if (
+    setFlowRaw != null && playFlowRaw != null &&
+    Number.isFinite(Number(setFlowRaw)) && Number.isFinite(Number(playFlowRaw))
+  ) {
+    return { ext: `${Number(setFlowRaw)}:${Number(playFlowRaw)}`, intPair: true }
+  }
+  const setId = node.edition.set?.id
+  const playId = node.edition.play?.id
+  if (setId && playId) return { ext: `${setId}:${playId}`, intPair: false }
+  return { ext: null, intPair: false }
 }
 
 interface EditionsResponse {
@@ -324,7 +395,7 @@ interface GqlFailure {
 }
 
 type FetchOutcome =
-  | { tag: "success"; target: TargetRow; totalUnopened: number; totalPackCount: number; forSale: boolean; editions: EditionNode[] }
+  | { tag: "success"; target: TargetRow; totalUnopened: number; totalPackCount: number; forSale: boolean; editions: EditionNode[]; remainingByTier: TierCountMap | null; originalCountsByTier: TierCountMap | null }
   | { tag: "no_dynamic"; target: TargetRow }
   | { tag: "no_editions"; target: TargetRow }
   | { tag: "zero_unopened"; target: TargetRow }
@@ -467,11 +538,26 @@ async function fetchAllEditions(packListingId: string): Promise<{
   let pages = 0
   while (pages < MAX_EDITION_PAGES) {
     pages++
-    const r = await gqlCall<EditionsResponse>(EDITIONS_OP, EDITIONS_QUERY, {
-      input: { packListingId },
-      after: cursor ?? undefined,
-    })
-    if (!r.ok) return { ok: false, failure: r.failure }
+    const r = await gqlCall<EditionsResponse>(
+      EDITIONS_OP,
+      editionsExtFieldsOk ? EDITIONS_QUERY : EDITIONS_QUERY_LEGACY,
+      {
+        input: { packListingId },
+        after: cursor ?? undefined,
+      },
+    )
+    if (!r.ok) {
+      // v20 fallback: if TS rejects flowId/flowID on this Edition type, flip to
+      // the legacy query for the rest of the run and retry this page once.
+      const errBlob = `${r.failure.error} ${r.failure.body ?? ""}`
+      if (editionsExtFieldsOk && /cannot query field|unknown field|undefined field|validation/i.test(errBlob)) {
+        editionsExtFieldsOk = false
+        pages--
+        console.log("[compute-topshot-pack-ev] flowId fields rejected; falling back to legacy EDITIONS_QUERY")
+        continue
+      }
+      return { ok: false, failure: r.failure }
+    }
     const conn = r.data?.getPackListing?.data?.packEditionsV3
     const edges = conn?.edges ?? []
     for (const e of edges) if (e?.node) all.push(e.node)
@@ -568,6 +654,7 @@ async function hydrateSeededEditions(
   failed: number
   skipped_shape: number
   skipped_budget: number
+  pool_remapped: number
   errors: Array<{ external_id: string; reason: string }>
 }> {
   const out = {
@@ -575,6 +662,7 @@ async function hydrateSeededEditions(
     failed: 0,
     skipped_shape: 0,
     skipped_budget: 0,
+    pool_remapped: 0,
     errors: [] as Array<{ external_id: string; reason: string }>,
   }
 
@@ -696,6 +784,21 @@ async function hydrateSeededEditions(
       continue
     }
     out.hydrated++
+
+    // v20: now that the canonical int pair is known, re-key any pack_drop_pool
+    // rows still pointing at the UUID-dupe edition to the canonical edition
+    // (guarded SECDEF RPC; no-op when the canonical row already covers the dist).
+    if (setFlowId != null && playFlowId != null) {
+      const { data: remapped, error: remapErr } = await supabase.rpc("remap_pack_pool_uuid_key", {
+        p_uuid_key: ext,
+        p_int_key: `${setFlowId}:${playFlowId}`,
+      })
+      if (remapErr) {
+        console.log(`[compute-topshot-pack-ev] pool remap err ${ext}: ${remapErr.message}`)
+      } else if (remapped != null) {
+        out.pool_remapped += Number(remapped) || 0
+      }
+    }
   }
 
   return out
@@ -719,7 +822,7 @@ async function fetchOnePack(target: TargetRow): Promise<FetchOutcome> {
   if (!eds.ok) return { tag: "gql_error", target, failure: eds.failure }
   if (eds.editions.length === 0) return { tag: "no_editions", target }
 
-  return { tag: "success", target, totalUnopened, totalPackCount, forSale, editions: eds.editions }
+  return { tag: "success", target, totalUnopened, totalPackCount, forSale, editions: eds.editions, remainingByTier: cr.remainingByTier ?? null, originalCountsByTier: cr.originalCountsByTier ?? null }
 }
 
 async function logPipelineRun(args: {
@@ -768,6 +871,10 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     gql_errors: 0,
     secondary_asks_count: 0,
     secondary_asks_matched: 0,
+    int_pair_keys: 0,
+    uuid_fallback_keys: 0,
+    dist_meta_merged: 0,
+    pool_rows_remapped: 0,
   }
 
   const errorsSample: Array<{
@@ -868,9 +975,11 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         case "success":
           fetched.push(o)
           for (const node of o.editions) {
-            const setId = node.edition.set?.id
-            const playId = node.edition.play?.id
-            if (setId && playId) seenExternalIds.add(`${setId}:${playId}`)
+            const k = editionExtKey(node)
+            if (!k.ext) continue
+            if (k.intPair) counters.int_pair_keys++
+            else counters.uuid_fallback_keys++
+            seenExternalIds.add(k.ext)
           }
           break
         case "no_dynamic":
@@ -1047,10 +1156,8 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       const distId = f.target.dist_id
       const poolRows: Array<Record<string, unknown>> = []
       for (const node of f.editions) {
-        const setId = node.edition.set?.id
-        const playId = node.edition.play?.id
-        if (!setId || !playId) continue
-        const ext = `${setId}:${playId}`
+        const { ext } = editionExtKey(node)
+        if (!ext) continue
         const ed = editionByExternalId.get(ext)
         if (!ed) continue
         const weight = f.totalUnopened > 0 ? node.remaining / f.totalUnopened : 0
@@ -1077,6 +1184,23 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         const { error: ie } = await supabase.from("pack_drop_pool").insert(chunk)
         if (!ie) counters.pool_rows_written += chunk.length
         else console.log(`[compute-topshot-pack-ev] pool insert err dist=${distId}: ${ie.message}`)
+      }
+
+      // v20: persist per-tier remaining/original counts for the tier-odds UI.
+      if (f.remainingByTier || f.originalCountsByTier) {
+        const { error: metaErr } = await supabase.rpc("merge_pack_dist_meta", {
+          p_collection_id: TOPSHOT_COLLECTION_ID,
+          p_dist_id: distId,
+          p_patch: {
+            remaining_by_tier: f.remainingByTier ?? null,
+            original_counts_by_tier: f.originalCountsByTier ?? null,
+            total_unopened: f.totalUnopened,
+            total_pack_count: f.totalPackCount,
+            tier_counts_updated_at: nowIso,
+          },
+        })
+        if (metaErr) console.log(`[compute-topshot-pack-ev] meta merge err dist=${distId}: ${metaErr.message}`)
+        else counters.dist_meta_merged++
       }
     }
 
@@ -1236,6 +1360,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     if (unseededExternalIds.length > 0) {
       const hydrateResult = await hydrateSeededEditions(unseededExternalIds, started)
       counters.editions_hydrated = hydrateResult.hydrated
+      counters.pool_rows_remapped = hydrateResult.pool_remapped
       counters.editions_hydration_failed = hydrateResult.failed
       counters.editions_hydration_skipped_shape = hydrateResult.skipped_shape
       counters.editions_hydration_skipped_budget = hydrateResult.skipped_budget
