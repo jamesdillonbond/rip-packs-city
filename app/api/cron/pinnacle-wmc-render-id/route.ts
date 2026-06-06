@@ -29,6 +29,10 @@ const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714";
 const GQL = "https://api.production.studio-platform.dapperlabs.com/graphql";
 const CAP = 2000;
 const ID_CHUNK = 250;
+// Ongoing sales render_id drain (Q2): keep new pinnacle_sales rows from sitting
+// unresolved more than a tick. The one-time bulk drain is the admin route
+// /api/admin/backfill-pinnacle-sales-render-id; this just chases the trickle.
+const SALES_CAP = 1000;
 
 const QUERY = `
 query RemapByIds($ids: [UInt64!]!) {
@@ -114,6 +118,38 @@ export async function GET(req: NextRequest) {
     if (!derErr) derived = resolved;
   }
 
+  // Q2 — drain a small batch of unresolved pinnacle_sales render_ids (same GQL path).
+  let salesResolved = 0;
+  let salesUpdated = 0;
+  try {
+    const { data: salesIdsData } = await supabaseAdmin.rpc(
+      "pinnacle_sales_unresolved_render_nft_ids",
+      { p_limit: SALES_CAP },
+    );
+    const salesIds = [...new Set(((salesIdsData ?? []) as string[]).filter(Boolean))];
+    for (let i = 0; i < salesIds.length; i += ID_CHUNK) {
+      const chunk = salesIds.slice(i, i + ID_CHUNK);
+      let nodes: Array<{ id: string; serial: number | null; render_id: string | null }> = [];
+      try {
+        nodes = await fetchByIds(chunk);
+      } catch {
+        gqlErrors++;
+        continue;
+      }
+      const map: Record<string, string> = {};
+      for (const n of nodes) {
+        if (n.render_id) map[n.id] = n.render_id;
+      }
+      const keys = Object.keys(map);
+      if (keys.length === 0) continue;
+      salesResolved += keys.length;
+      const { data: cnt } = await supabaseAdmin.rpc("pinnacle_sales_set_render_ids", { p_map: map });
+      salesUpdated += typeof cnt === "number" ? cnt : 0;
+    }
+  } catch {
+    // best-effort — sales drain never fails the wmc pipeline
+  }
+
   const durationMs = Date.now() - started;
   const ok = gqlErrors === 0;
   try {
@@ -128,11 +164,11 @@ export async function GET(req: NextRequest) {
       p_collection_slug: "disney_pinnacle",
       p_cursor_before: null,
       p_cursor_after: null,
-      p_extra: { unresolved_found: ids.length, resolved, derived, gql_errors: gqlErrors, duration_ms: durationMs },
+      p_extra: { unresolved_found: ids.length, resolved, derived, sales_resolved: salesResolved, sales_updated: salesUpdated, gql_errors: gqlErrors, duration_ms: durationMs },
     });
   } catch {
     // best-effort
   }
 
-  return NextResponse.json({ ok, pipeline: PIPELINE_NAME, unresolved_found: ids.length, resolved, gql_errors: gqlErrors, duration_ms: durationMs });
+  return NextResponse.json({ ok, pipeline: PIPELINE_NAME, unresolved_found: ids.length, resolved, sales_resolved: salesResolved, sales_updated: salesUpdated, gql_errors: gqlErrors, duration_ms: durationMs });
 }
