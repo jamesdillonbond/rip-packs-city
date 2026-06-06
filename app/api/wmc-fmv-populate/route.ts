@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { COLLECTION_UUID_BY_SLUG, publishedCollections } from "@/lib/collections"
 
@@ -192,54 +192,72 @@ async function handle(req: NextRequest): Promise<Response> {
       .map((c) => ({ slug: c.id, collection_id: c.supabaseCollectionId! }))
   }
 
-  const results: CollectionRunResult[] = []
-  for (const t of targets) {
-    results.push(await runOne(t.slug, t.collection_id, force, limit))
-  }
-
-  // Targeted FMV-drift refresh: re-evaluate wmc.fmv_usd for editions whose
-  // snapshot moved in the last REFRESH_SINCE_MINUTES. The per-collection loop
-  // above is NULL-only (never re-evals an already-set fmv), so without this a
-  // changed snapshot never propagates to wmc — the source of the manual
-  // re-syncing. refresh_wmc_fmv_changed is global (all collections) and
-  // timeout-proof (chunked internal loop, ~60s wall-clock budget), so it runs
-  // once per full tick, not per-collection. Skip on single-collection calls and
-  // when ?skip_refresh=true. Isolated from the populate ok flag.
   const skipRefresh = req.nextUrl.searchParams.get("skip_refresh") === "true"
-  let refreshUpdated = 0
-  let refreshError: string | null = null
-  if (!slugParam && !skipRefresh) {
+
+  // CRON-30S: the per-collection FMV+image populate + the FMV-drift refresh take
+  // >30s to finish — longer than cron-job.org's hard client cap, so every tick
+  // was marked "Failed (timeout)" even though the work lands fine server-side
+  // (and a persistently-failing job risks cron-job.org auto-disabling it, which
+  // would silently kill the image + FMV-drift pipelines). Per the CLAUDE.md
+  // fire-and-forget convention, do the heavy work in after() and return 202 now.
+  // The real success signal is the per-collection log_pipeline_run inside runOne
+  // (unchanged); the fatal-catch below surfaces a crashed background pass.
+  after(async () => {
     try {
-      const { data, error } = await (supabaseAdmin as any).rpc(
-        "refresh_wmc_fmv_changed",
-        { p_since_minutes: REFRESH_SINCE_MINUTES, p_limit: 50000 }
-      )
-      if (error) {
-        refreshError = error.message
-        console.log(`[wmc-fmv-populate] refresh rpc error: ${error.message}`)
-      } else {
-        refreshUpdated = Number(data ?? 0) || 0
+      for (const t of targets) {
+        await runOne(t.slug, t.collection_id, force, limit)
+      }
+
+      // Targeted FMV-drift refresh: re-evaluate wmc.fmv_usd for editions whose
+      // snapshot moved in the last REFRESH_SINCE_MINUTES. The per-collection loop
+      // above is NULL-only (never re-evals an already-set fmv), so without this a
+      // changed snapshot never propagates to wmc. refresh_wmc_fmv_changed is
+      // global + timeout-proof (chunked internal loop). Runs once per full tick;
+      // skipped on single-collection calls and ?skip_refresh=true.
+      if (!slugParam && !skipRefresh) {
+        try {
+          const { error } = await (supabaseAdmin as any).rpc(
+            "refresh_wmc_fmv_changed",
+            { p_since_minutes: REFRESH_SINCE_MINUTES, p_limit: 50000 }
+          )
+          if (error) console.log(`[wmc-fmv-populate] refresh rpc error: ${error.message}`)
+        } catch (e) {
+          console.log(`[wmc-fmv-populate] refresh threw: ${e instanceof Error ? e.message : String(e)}`)
+        }
       }
     } catch (e) {
-      refreshError = e instanceof Error ? e.message : String(e)
-      console.log(`[wmc-fmv-populate] refresh threw: ${refreshError}`)
+      // pipeline_runs-as-crash-logger: a background crash before/around runOne
+      // (which logs its own per-collection rows) still surfaces here.
+      try {
+        await (supabaseAdmin as any).rpc("log_pipeline_run", {
+          p_pipeline: PIPELINE_NAME,
+          p_started_at: new Date().toISOString(),
+          p_rows_found: 0,
+          p_rows_written: 0,
+          p_rows_skipped: 0,
+          p_ok: false,
+          p_error: `background pass crashed: ${e instanceof Error ? e.message : String(e)}`,
+          p_collection_slug: null,
+          p_cursor_before: null,
+          p_cursor_after: null,
+          p_extra: { fatal: true },
+        })
+      } catch {
+        // best-effort
+      }
     }
-  }
-
-  const totalUpdated = results.reduce((sum, r) => sum + r.rows_updated, 0)
-  const totalImaged = results.reduce((sum, r) => sum + r.rows_imaged, 0)
-  const allOk = results.every((r) => r.ok)
-
-  return NextResponse.json({
-    ok: allOk,
-    total_updated: totalUpdated,
-    total_imaged: totalImaged,
-    refresh_updated: refreshUpdated,
-    refresh_error: refreshError,
-    force,
-    limit,
-    results,
   })
+
+  return NextResponse.json(
+    {
+      accepted: true,
+      targets: targets.map((t) => t.slug),
+      force,
+      limit,
+      refresh: !slugParam && !skipRefresh,
+    },
+    { status: 202 }
+  )
 }
 
 export async function GET(req: NextRequest) {
