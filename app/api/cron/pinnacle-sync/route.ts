@@ -68,6 +68,13 @@ export async function GET(request: NextRequest) {
     const fmvRecalcAll = await supabaseAdmin.rpc("pinnacle_fmv_recalc_all");
     if (fmvRecalcAll.error) errors.push(`pinnacle_fmv_recalc_all: ${fmvRecalcAll.error.message}`);
 
+    // PIN-FMV-REKEY Phase A: keep the per-render FMV home (pinnacle_catalog.fmv_*)
+    // fresh alongside the legacy set-level table during the reader-wave transition.
+    // Additive — readers migrate to the render-keyed columns in waves; legacy stays
+    // live until the reader grep hits zero. Logs its own 'pinnacle-fmv-recalc' run.
+    const fmvRecalcRender = await supabaseAdmin.rpc("pinnacle_fmv_recalc_render_all");
+    if (fmvRecalcRender.error) errors.push(`pinnacle_fmv_recalc_render_all: ${fmvRecalcRender.error.message}`);
+
     const rowsWritten = (editionResult.editions_upserted ?? 0) + (listingResult.listings_upserted ?? 0);
     const ok = errors.length === 0;
     await logRun({
@@ -80,6 +87,7 @@ export async function GET(request: NextRequest) {
         listings_upserted: listingResult.listings_upserted,
         fmv_from_listings: fmvFromListings.data ?? null,
         fmv_recalc_all: fmvRecalcAll.data ?? null,
+        fmv_recalc_render: fmvRecalcRender.data ?? null,
         duration_ms: Date.now() - startedAt,
         errors: errors.slice(0, 3),
       },
@@ -91,6 +99,7 @@ export async function GET(request: NextRequest) {
       listings_upserted: listingResult.listings_upserted,
       fmv_from_listings: fmvFromListings.data ?? 0,
       fmv_recalc_all: fmvRecalcAll.data ?? 0,
+      fmv_recalc_render: fmvRecalcRender.data ?? 0,
       errors,
     });
   } catch (err) {
