@@ -229,7 +229,9 @@ function TileMedia({
 }) {
   const reduced = usePrefersReducedMotion()
   const [hover, setHover] = useState(false)
+  const [imgErrored, setImgErrored] = useState(false)
   const canVideo = videoEnabled && !!videoUrl && !reduced
+  const showImg = !!thumbnailUrl && !imgErrored
 
   return (
     <div
@@ -245,15 +247,16 @@ function TileMedia({
         marginBottom: 8,
       }}
     >
-      {thumbnailUrl ? (
+      {showImg ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={thumbnailUrl}
+          src={thumbnailUrl as string}
           alt={alt}
           width={220}
           height={220}
           loading={eager ? "eager" : "lazy"}
           decoding={eager ? "sync" : "async"}
+          onError={() => setImgErrored(true)}
           style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
         />
       ) : (
