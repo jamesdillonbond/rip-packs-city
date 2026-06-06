@@ -198,6 +198,19 @@ interface SpecialSerialRow {
 
 // ── Fetch helpers ──────────────────────────────────────────────────────────
 
+// Next delivers the [id] route segment URL-encoded (e.g. a Pinnacle legacy key
+// `STAR-OEV1-SWHM:Digital Display:1` arrives as `...%3ADigital%20Display%3A1`).
+// resolve_moment_id matches the decoded colon form (pe.id), so decode at the
+// lambda boundary — same footgun fixed on the edition pages (bf3f4f6). No-op for
+// numeric nft_ids and uuids.
+function decodeMomentId(raw: string): string {
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+
 async function fetchDetail(id: string): Promise<MomentDetail | null> {
   try {
     const { data, error } = await (supabaseAdmin as any).rpc("get_moment_detail", {
@@ -385,7 +398,8 @@ function specialSerialLabel(badge_type: string): string {
 export async function generateMetadata(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Metadata> {
-  const { id } = await params
+  const { id: rawId } = await params
+  const id = decodeMomentId(rawId)
   const detail = await fetchDetail(id)
   if (!detail || detail.ok === false || !detail.edition) {
     return {
@@ -457,7 +471,8 @@ export async function generateMetadata(
 export default async function MomentPage(
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params
+  const { id: rawId } = await params
+  const id = decodeMomentId(rawId)
   const detail = await fetchDetail(id)
   if (!detail || detail.ok === false) {
     notFound()
