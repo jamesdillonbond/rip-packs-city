@@ -17,6 +17,11 @@ import { COLLECTION_UUID_BY_SLUG, publishedCollections } from "@/lib/collections
 // An image failure is isolated — it's recorded in pipeline_runs.extra and does
 // not flip the FMV path's ok flag.
 //
+// On full (all-collections) ticks it also runs refresh_wmc_fmv_changed once —
+// a global, timeout-proof FMV-drift refresh that re-evaluates wmc.fmv_usd for
+// editions whose snapshot moved recently (the NULL-only paths above never
+// re-eval an already-set fmv). Skipped on ?collection= calls and ?skip_refresh.
+//
 // Default mode (the cron tick): NULL-only fast path. Only fills rows where
 // fmv_usd IS NULL — bounded by the count of newly-inserted moments, not by
 // total wmc cardinality. Pass ?force=true for the full sweep that
@@ -40,6 +45,11 @@ const PIPELINE_NAME = "wmc-fmv-populate"
 // limits time out on the unindexed-tail join (idx_wmc_image_url_null covers the
 // NULL scan). force mode is reserved for ad-hoc remediation, not the cron.
 const IMAGE_LIMIT = 50000
+
+// Window for the FMV-drift refresh. The cron fires ~every 20min; 30 absorbs a
+// missed tick without over-scanning. refresh_wmc_fmv_changed is budget-bounded
+// internally so a wider window just means more grind, never a timeout.
+const REFRESH_SINCE_MINUTES = 30
 
 type CollectionRunResult = {
   slug: string
@@ -187,6 +197,35 @@ async function handle(req: NextRequest): Promise<Response> {
     results.push(await runOne(t.slug, t.collection_id, force, limit))
   }
 
+  // Targeted FMV-drift refresh: re-evaluate wmc.fmv_usd for editions whose
+  // snapshot moved in the last REFRESH_SINCE_MINUTES. The per-collection loop
+  // above is NULL-only (never re-evals an already-set fmv), so without this a
+  // changed snapshot never propagates to wmc — the source of the manual
+  // re-syncing. refresh_wmc_fmv_changed is global (all collections) and
+  // timeout-proof (chunked internal loop, ~60s wall-clock budget), so it runs
+  // once per full tick, not per-collection. Skip on single-collection calls and
+  // when ?skip_refresh=true. Isolated from the populate ok flag.
+  const skipRefresh = req.nextUrl.searchParams.get("skip_refresh") === "true"
+  let refreshUpdated = 0
+  let refreshError: string | null = null
+  if (!slugParam && !skipRefresh) {
+    try {
+      const { data, error } = await (supabaseAdmin as any).rpc(
+        "refresh_wmc_fmv_changed",
+        { p_since_minutes: REFRESH_SINCE_MINUTES, p_limit: 50000 }
+      )
+      if (error) {
+        refreshError = error.message
+        console.log(`[wmc-fmv-populate] refresh rpc error: ${error.message}`)
+      } else {
+        refreshUpdated = Number(data ?? 0) || 0
+      }
+    } catch (e) {
+      refreshError = e instanceof Error ? e.message : String(e)
+      console.log(`[wmc-fmv-populate] refresh threw: ${refreshError}`)
+    }
+  }
+
   const totalUpdated = results.reduce((sum, r) => sum + r.rows_updated, 0)
   const totalImaged = results.reduce((sum, r) => sum + r.rows_imaged, 0)
   const allOk = results.every((r) => r.ok)
@@ -195,6 +234,8 @@ async function handle(req: NextRequest): Promise<Response> {
     ok: allOk,
     total_updated: totalUpdated,
     total_imaged: totalImaged,
+    refresh_updated: refreshUpdated,
+    refresh_error: refreshError,
     force,
     limit,
     results,
