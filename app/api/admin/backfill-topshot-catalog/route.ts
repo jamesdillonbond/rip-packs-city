@@ -360,12 +360,16 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       .map((id) => byId.get(id))
       .filter((s): s is SetRow => !!s && !!s.external_id && UUID_RE.test(s.external_id));
   } else {
-    // Pull the candidate set list. Order least-recently-touched first; resume
-    // by skipping any set whose id sorts before startAfter when provided.
+    // Pull the candidate set list. Never-catalogued sets (asset_path_prefix
+    // NULL) come first so a brand-new drop's art lands on the next run; within
+    // each group order least-recently-touched first. Once a set is catalogued
+    // its asset_path_prefix is non-null and it falls back into the steady-state
+    // updated_at ordering. Resume by skipping any set before startAfter.
     const { data: setsRaw, error: setsErr } = await supabase
       .from("sets")
       .select("id, external_id, name, set_id_onchain, cover_art_url, asset_path_prefix, updated_at")
       .eq("collection_id", COLLECTION_ID)
+      .order("asset_path_prefix", { ascending: true, nullsFirst: true })
       .order("updated_at", { ascending: true, nullsFirst: true })
       .limit(1000);
     if (setsErr) {
