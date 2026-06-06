@@ -18,7 +18,7 @@ import PinnacleScarcityBoardClient, { type Row } from "./PinnacleScarcityBoardCl
 export const revalidate = 1800
 
 const SELECT_COLS =
-  "edition_id, character_name, franchise, set_name, variant_type, mint_count, is_chaser, ask_price, variant_avg_mint, scarcity_vs_variant_pct, fmv_usd, fmv_confidence, thumbnail_url"
+  "render_id, edition_id, character_name, franchise, set_name, variant_type, mint_count, is_chaser, floor_ask, variant_avg_mint, scarcity_vs_variant_pct, fmv_usd, fmv_confidence, image_url"
 
 async function fetchInitialRows(): Promise<Row[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
