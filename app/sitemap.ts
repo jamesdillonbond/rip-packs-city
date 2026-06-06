@@ -254,6 +254,46 @@ async function getPackRows(): Promise<PackRow[]> {
   }
 }
 
+interface PinnacleRenderRow {
+  render_id: string
+  updated_at: string | null
+}
+
+async function getPinnacleRenderRows(): Promise<PinnacleRenderRow[]> {
+  // One sitemap entry per Pinnacle render → /pinnacle/moment/<render_id> (the
+  // render-keyed per-pin page, Wave 1b). pinnacle_catalog has no collection_id
+  // (it's all Pinnacle), so page it directly rather than via fetchAllByCollection.
+  // Limited to catalogued pins (character_name present) — ~2,079 rows.
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return []
+  try {
+    const sb: any = createClient(url, key)
+    const PAGE = 1000
+    const out: PinnacleRenderRow[] = []
+    for (let from = 0; from < 10000; from += PAGE) {
+      const { data, error } = await sb
+        .from('pinnacle_catalog')
+        .select('render_id, updated_at')
+        .not('render_id', 'is', null)
+        .not('character_name', 'is', null)
+        .order('render_id', { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (error) {
+        console.log('[sitemap] pinnacle_catalog page ' + from + ' error: ' + error.message)
+        break
+      }
+      const rows = (data ?? []) as PinnacleRenderRow[]
+      out.push(...rows)
+      if (rows.length < PAGE) break
+    }
+    return out
+  } catch (err) {
+    console.log('[sitemap] pinnacle_catalog query threw: ' + (err instanceof Error ? err.message : String(err)))
+    return []
+  }
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date()
 
@@ -434,6 +474,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })
     .filter((x): x is NonNullable<typeof x> => x !== null)
 
+  // Pinnacle per-pin pages — /pinnacle/moment/<render_id> (render-keyed, Wave 1b).
+  const pinnacleRenders = await getPinnacleRenderRows()
+  const pinnaclePinPages: MetadataRoute.Sitemap = pinnacleRenders
+    .filter((r) => typeof r.render_id === 'string' && r.render_id.length > 0)
+    .map((r) => ({
+      url: `${BASE_URL}/pinnacle/moment/${encodeURIComponent(r.render_id)}`,
+      lastModified: r.updated_at ? new Date(r.updated_at) : now,
+      changeFrequency: 'weekly' as const,
+      priority: 0.55,
+    }))
+
   return [
     ...staticPages,
     ...insightsPages,
@@ -446,5 +497,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...newTeamPages,
     ...seriesPages,
     ...packPages,
+    ...pinnaclePinPages,
   ]
 }

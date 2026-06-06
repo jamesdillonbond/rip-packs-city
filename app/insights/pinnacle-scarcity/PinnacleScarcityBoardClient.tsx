@@ -16,19 +16,20 @@ import Link from "next/link"
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
 export type Row = {
-  edition_id: string
+  render_id: string
+  edition_id: string | null
   character_name: string | null
   franchise: string | null
   set_name: string | null
   variant_type: string | null
   mint_count: number | null
   is_chaser: boolean | null
-  ask_price: number | null
+  floor_ask: number | null
   variant_avg_mint: number | null
   scarcity_vs_variant_pct: number | null
   fmv_usd: number | null
   fmv_confidence: string | null
-  thumbnail_url: string | null
+  image_url: string | null
 }
 
 type ApiResponse = {
@@ -212,10 +213,10 @@ export default function PinnacleScarcityBoardClient({ initialRows, initialFetche
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.edition_id}>
+                <tr key={r.render_id}>
                   <td className="rpc-ps-td-edition">
                     <Link
-                      href={`/pinnacle/moment/${encodeURIComponent(r.edition_id)}`}
+                      href={`/pinnacle/moment/${encodeURIComponent(r.render_id)}`}
                       className="rpc-ps-edition-link"
                       title={`Open ${r.character_name ?? "this Pinnacle"} detail`}
                     >
@@ -233,7 +234,7 @@ export default function PinnacleScarcityBoardClient({ initialRows, initialFetche
                   </td>
                   <td className="rpc-ps-td-num rpc-ps-td-emph">{fmtPct(r.scarcity_vs_variant_pct)}</td>
                   <td className="rpc-ps-td-num">{fmtUsd(r.fmv_usd)}</td>
-                  <td className="rpc-ps-td-num">{fmtUsd(r.ask_price)}</td>
+                  <td className="rpc-ps-td-num">{fmtUsd(r.floor_ask)}</td>
                 </tr>
               ))}
             </tbody>
@@ -253,8 +254,10 @@ export default function PinnacleScarcityBoardClient({ initialRows, initialFetche
           </p>
           <p>
             <strong>Chaser</strong> = a Pinnacle-designated rare variant
-            (8 across the platform). <strong>FMV</strong> = latest snapshot
-            from the <code>pinnacle-1.0.0</code> algo, hourly. Editions with
+            (8 across the platform). <strong>FMV</strong> = the latest
+            <em>per-pin</em> sales-weighted value (<code>pinnacle-2.0.0-render</code>),
+            now ranked per render rather than blended across a set.{" "}
+            <strong>Ask</strong> = the live lowest listing (floor). Editions with
             <code>set_name = &lsquo;Unknown&rsquo;</code> (stub rows from
             wallet scans) are excluded.
           </p>

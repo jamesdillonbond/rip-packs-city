@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
   let q = (supabase as any)
     .from("pinnacle_scarcity_board")
     .select(
-      "edition_id, character_name, franchise, set_name, variant_type, mint_count, is_chaser, ask_price, variant_avg_mint, scarcity_vs_variant_pct, fmv_usd, fmv_confidence, thumbnail_url"
+      "render_id, edition_id, character_name, franchise, set_name, variant_type, mint_count, is_chaser, floor_ask, variant_avg_mint, scarcity_vs_variant_pct, fmv_usd, fmv_confidence, image_url"
     );
 
   if (variant) q = q.ilike("variant_type", `%${variant}%`);
