@@ -84,7 +84,17 @@ async function time(fn: () => Promise<TestSeed>, fallback: { name: string; endpo
   }
 }
 
+// Statuses that are infra-transient at the :00/:06 cron rush (gateway / pool /
+// rate), not genuine assertion failures — safe to retry once. A 4xx (esp.
+// 400/401/403/404) is a real contract failure and is NEVER retried.
+const TRANSIENT_STATUS = new Set([408, 425, 429, 502, 503, 504]);
+
 // HTTP probe with timing + status + body_excerpt capture on failure.
+// SMOKE-RETRY (2026-06-06): a single check failing on the infra-timeout class
+// (fetch timeout / connection pool / 5xx-gateway) at the cron rush is cry-wolf —
+// the 00:17Z mass-fail cluster fired 7 one-event Sentry issues. Retry once with a
+// short backoff on a transient throw or transient status; keep genuine assertion
+// failures (wrong status, bad body) un-retried. Mirrors rpcRetry for DB checks.
 async function checkUrl(
   meta: { name: string; endpoint: string; expected: string; soft?: boolean; notes?: Record<string, unknown> },
   url: string,
@@ -93,13 +103,42 @@ async function checkUrl(
 ): Promise<TestResult> {
   const timeoutMs = options.timeoutMs ?? 4000;
   return time(async () => {
-    const res = await smokeFetch(url, {
-      method: options.method ?? "GET",
-      cache: "no-store",
-      headers: { "User-Agent": BROWSER_UA, ...(options.headers ?? {}) },
-      body: options.body,
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    let res: Response;
+    try {
+      res = await smokeFetch(url, {
+        method: options.method ?? "GET",
+        cache: "no-store",
+        headers: { "User-Agent": BROWSER_UA, ...(options.headers ?? {}) },
+        body: options.body,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (e: any) {
+      // Transient network/timeout throw → one retry, else rethrow to time().
+      if (!TRANSIENT_RX.test(e?.message ?? String(e))) throw e;
+      await new Promise((r) => setTimeout(r, 400));
+      res = await smokeFetch(url, {
+        method: options.method ?? "GET",
+        cache: "no-store",
+        headers: { "User-Agent": BROWSER_UA, ...(options.headers ?? {}) },
+        body: options.body,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    }
+    if (!res.ok && TRANSIENT_STATUS.has(res.status)) {
+      // Transient gateway/pool/rate status → one retry before failing.
+      await new Promise((r) => setTimeout(r, 400));
+      try {
+        res = await smokeFetch(url, {
+          method: options.method ?? "GET",
+          cache: "no-store",
+          headers: { "User-Agent": BROWSER_UA, ...(options.headers ?? {}) },
+          body: options.body,
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+      } catch {
+        // keep the first transient response; fall through to the failure path
+      }
+    }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       return {
