@@ -46,10 +46,11 @@ async function buildEmail(origin: string, sub: Subscriber): Promise<{ subject: s
        ${portfolio.total_pnl != null ? `<p><strong>P&L:</strong> ${portfolio.total_pnl >= 0 ? "+" : ""}${fmtUsd(portfolio.total_pnl)}</p>` : ""}`
     : ""
 
-  const dealsBlock = Array.isArray(deals) && deals.length
+  const dealRows: any[] = Array.isArray(deals?.deals) ? deals.deals : []
+  const dealsBlock = dealRows.length
     ? `<h3 style="margin-top:24px">Top Deals This Week</h3>
-       <ul>${deals.slice(0, 5).map((d: any) =>
-         `<li>${d.player_name ?? d.set_name ?? "Listing"} — ${fmtUsd(d.price)} (${d.discount_pct ?? d.pct_below_fmv ?? "?"}% below FMV)</li>`
+       <ul>${dealRows.slice(0, 5).map((d: any) =>
+         `<li>${d.player_name ?? d.set_name ?? "Listing"} — ${fmtUsd(d.ask_price)} (${d.discount ?? "?"}% below FMV)</li>`
        ).join("")}</ul>`
     : ""
 
