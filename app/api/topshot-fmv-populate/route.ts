@@ -38,7 +38,7 @@
 //         empty cursor starts the sweep from the beginning, and the cursor
 //         resets to empty when the feed is exhausted (continuous refresh).
 
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
 export const maxDuration = 300
@@ -212,6 +212,39 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
   if (!TOKEN || (bearer !== TOKEN && urlToken !== TOKEN)) return unauthorized()
 
+  // CRON-30S: this cursor-paginated sweep runs up to ~255s — far past
+  // cron-job.org's 30s client cap, so every tick was marked "Failed (timeout)"
+  // and the job got auto-disabled (no pipeline_runs since 2026-06-05 18:00).
+  // Fire-and-forget in after() + return 202 now; the end-of-sweep pipeline_runs
+  // insert is the real signal, and the fatal-catch surfaces a crash before it
+  // (incl. the sets-read failure that used to 500).
+  after(async () => {
+    try {
+      await runSweep()
+    } catch (e) {
+      try {
+        await (supabaseAdmin as any).rpc("log_pipeline_run", {
+          p_pipeline: PIPELINE_NAME,
+          p_started_at: new Date().toISOString(),
+          p_rows_found: 0,
+          p_rows_written: 0,
+          p_rows_skipped: 0,
+          p_ok: false,
+          p_error: `sweep crashed: ${e instanceof Error ? e.message : String(e)}`,
+          p_collection_slug: COLLECTION_SLUG,
+          p_cursor_before: null,
+          p_cursor_after: null,
+          p_extra: { fatal: true },
+        })
+      } catch {
+        // best-effort
+      }
+    }
+  })
+  return NextResponse.json({ accepted: true, pipeline: PIPELINE_NAME }, { status: 202 })
+}
+
+async function runSweep(): Promise<void> {
   const startedAt = Date.now()
   const startedAtIso = new Date(startedAt).toISOString()
   const supabase: any = supabaseAdmin
@@ -227,10 +260,24 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     .not("set_id_onchain", "is", null)
     .limit(5000)
   if (setsErr) {
-    return NextResponse.json(
-      { error: "sets read failed", detail: setsErr.message },
-      { status: 500 }
-    )
+    try {
+      await supabase.rpc("log_pipeline_run", {
+        p_pipeline: PIPELINE_NAME,
+        p_started_at: startedAtIso,
+        p_rows_found: 0,
+        p_rows_written: 0,
+        p_rows_skipped: 0,
+        p_ok: false,
+        p_error: `sets read failed: ${setsErr.message}`,
+        p_collection_slug: COLLECTION_SLUG,
+        p_cursor_before: null,
+        p_cursor_after: null,
+        p_extra: { stage: "sets_read" },
+      })
+    } catch {
+      // best-effort
+    }
+    return
   }
   const setOnchainByUuid = new Map<string, number>()
   for (const s of (setsRaw as Array<{ external_id: string | null; set_id_onchain: number | null }>)) {
@@ -410,22 +457,9 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     console.log(`[topshot-fmv-populate] pipeline_runs insert failed: ${e instanceof Error ? e.message : e}`)
   }
 
-  return NextResponse.json({
-    ok,
-    pipeline: PIPELINE_NAME,
-    pages_fetched: pagesFetched,
-    nodes_fetched: nodesFetched,
-    upserted,
-    skipped,
-    no_edition: noEdition,
-    unresolved_set: unresolvedSet,
-    sweep_complete: sweepComplete,
-    terminated_reason: terminatedReason,
-    gql_error: firstGqlError,
-    rpc_error: rpcError,
-    sets_mapped: setOnchainByUuid.size,
-    duration_ms: durationMs,
-  })
+  console.log(
+    `[topshot-fmv-populate] done ok=${ok} pages=${pagesFetched} nodes=${nodesFetched} upserted=${upserted} reason=${terminatedReason} ms=${durationMs}`
+  )
 }
 
 export async function GET(req: NextRequest) {
