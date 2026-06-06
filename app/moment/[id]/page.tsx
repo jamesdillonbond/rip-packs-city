@@ -24,7 +24,7 @@
 //     the hero and Recent Activity, with linked Team.
 
 import type { Metadata } from "next"
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase"
 import { marketplaceMomentUrl, fromDbSlug } from "@/lib/collections"
@@ -58,12 +58,29 @@ export const runtime = "nodejs"
 type Confidence = "HIGH" | "MEDIUM" | "LOW" | "NO_DATA" | "ASK_ONLY" | "SALES_ONLY" | "STALE" | null
 
 interface MomentResolved {
-  kind: "moment" | "edition"
+  kind: "moment" | "edition" | "pinnacle_edition"
   moment_id: string | null
   edition_id: string
   serial_number: number | null
   collection_id: string
   collection_slug: string
+  pinnacle_edition_id?: string | null
+}
+
+// Wave 2 (PIN-FMV-REKEY): a Pinnacle legacy edition_key maps to MANY renders.
+// get_moment_detail returns the render-true set so /moment/<legacy-key> can
+// disambiguate to the per-pin /pinnacle/moment/<render_id> pages instead of
+// showing one arbitrary character's set-level blend.
+interface PinnacleRender {
+  render_id: string
+  character_name: string | null
+  set_name: string | null
+  variant: string | null
+  total_minted: number | null
+  fmv_usd: number | null
+  fmv_confidence: string | null
+  floor_ask: number | null
+  thumbnail_url: string | null
 }
 
 interface MomentEdition {
@@ -146,6 +163,7 @@ interface MomentDetail {
   serial_specific?: MomentSerialSpecific | null
   recent_sales?: RecentSale[]
   similar_editions?: SimilarEdition[]
+  renders?: PinnacleRender[]
 }
 
 // New (Phase 2):
@@ -375,6 +393,17 @@ export async function generateMetadata(
       description: "This moment isn't in our index yet.",
     }
   }
+  // Pinnacle render disambiguation (Wave 2): a legacy edition_key maps to many
+  // renders — noindex,follow (mirrors /pinnacle/moment/<legacy-key>).
+  const pinRenders =
+    detail.resolved?.kind === "pinnacle_edition" ? (detail.renders ?? []) : []
+  if (pinRenders.length > 1) {
+    return {
+      title: { absolute: `Pick a pin — ${pinRenders.length} editions | Rip Packs City` },
+      description: `${pinRenders.length} distinct Disney Pinnacle renders share this set-level key. Pick the exact character.`,
+      robots: { index: false, follow: true },
+    }
+  }
   const e = detail.edition
   const serial = detail.resolved?.serial_number
   const mint = e.circulation_count ?? 0
@@ -430,7 +459,26 @@ export default async function MomentPage(
 ) {
   const { id } = await params
   const detail = await fetchDetail(id)
-  if (!detail || detail.ok === false || !detail.edition) {
+  if (!detail || detail.ok === false) {
+    notFound()
+  }
+
+  // Pinnacle render disambiguation (Wave 2, PIN-FMV-REKEY). One legacy
+  // edition_key maps to many renders, so a single set-level page would show one
+  // arbitrary character's blended price. Single render → link straight through
+  // to its per-pin page; multiple → render a "Pick a pin" list. Empty (numeric
+  // legacy id with no render mapping) falls through to the set-level view.
+  if (detail.resolved?.kind === "pinnacle_edition") {
+    const renders = detail.renders ?? []
+    if (renders.length === 1) {
+      redirect(`/pinnacle/moment/${encodeURIComponent(renders[0].render_id)}`)
+    }
+    if (renders.length > 1) {
+      return <PinnacleDisambiguation renders={renders} />
+    }
+  }
+
+  if (!detail.edition) {
     notFound()
   }
 
@@ -1091,6 +1139,148 @@ export default async function MomentPage(
 }
 
 // Presentational helpers
+
+// Wave 2 (PIN-FMV-REKEY): "Pick a pin" list for a Pinnacle legacy edition_key
+// that fans out to multiple renders. Each card links to the render-true per-pin
+// page at /pinnacle/moment/<render_id> (the canonical Pinnacle surface).
+function PinnacleDisambiguation({ renders }: { renders: PinnacleRender[] }) {
+  return (
+    <>
+      <main
+        style={{
+          minHeight: "100vh",
+          background: "var(--rpc-bg, transparent)",
+          padding: "32px 16px 80px",
+          maxWidth: 1200,
+          margin: "0 auto",
+          color: "var(--rpc-text-primary)",
+        }}
+      >
+        <nav
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "var(--text-xs, 12px)",
+            letterSpacing: "0.18em",
+            textTransform: "uppercase",
+            color: "var(--rpc-text-muted)",
+            marginBottom: 8,
+          }}
+        >
+          <Link href="/" style={{ color: "inherit", textDecoration: "none" }}>
+            RIP PACKS CITY
+          </Link>
+          <span style={{ margin: "0 8px" }}>·</span>
+          <Link href="/disney-pinnacle/overview" style={{ color: "inherit", textDecoration: "none" }}>
+            DISNEY PINNACLE
+          </Link>
+        </nav>
+
+        <h1
+          style={{
+            fontFamily: "var(--font-display)",
+            fontSize: "clamp(28px, 5vw, 44px)",
+            lineHeight: 1.1,
+            margin: "0 0 8px",
+            letterSpacing: "0.01em",
+          }}
+        >
+          Pick a pin
+        </h1>
+        <div
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "var(--text-sm, 13px)",
+            color: "var(--rpc-text-muted)",
+            marginBottom: 24,
+          }}
+        >
+          {renders.length} distinct renders share this set-level key — each is a different character / variant with its own price.
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+            gap: 12,
+          }}
+        >
+          {renders.map((r) => (
+            <Link
+              key={r.render_id}
+              href={`/pinnacle/moment/${encodeURIComponent(r.render_id)}`}
+              style={{
+                display: "flex",
+                gap: 12,
+                alignItems: "center",
+                textDecoration: "none",
+                color: "inherit",
+                border: "1px solid var(--rpc-border, rgba(255,255,255,0.08))",
+                borderRadius: 8,
+                overflow: "hidden",
+                background: "var(--rpc-surface, rgba(255,255,255,0.02))",
+                padding: 10,
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={r.thumbnail_url ?? `/api/public/pinnacle-image/${encodeURIComponent(r.render_id)}`}
+                alt={r.character_name ?? "Pinnacle pin"}
+                width={72}
+                height={72}
+                style={{ width: 72, height: 72, objectFit: "contain", flexShrink: 0, borderRadius: 4, background: "var(--rpc-bg, #000)" }}
+                loading="lazy"
+              />
+              <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                <div style={{ fontFamily: "var(--font-display)", fontSize: 15, lineHeight: 1.2 }}>
+                  {r.character_name ?? r.render_id}
+                </div>
+                <div
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "var(--text-xs, 11px)",
+                    color: "var(--rpc-text-muted)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.12em",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {r.variant ?? "—"}
+                  {r.total_minted != null ? ` · ${r.total_minted.toLocaleString()} mint` : ""}
+                </div>
+                <div
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "var(--text-sm, 13px)",
+                    color: r.fmv_usd != null ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)",
+                  }}
+                >
+                  {r.fmv_usd != null ? fmtUsd(r.fmv_usd) : "—"}
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
+
+        <div
+          style={{
+            marginTop: 32,
+            fontFamily: "var(--font-mono)",
+            fontSize: "var(--text-xs, 11px)",
+            letterSpacing: "0.18em",
+            textTransform: "uppercase",
+          }}
+        >
+          <Link href="/insights/pinnacle-scarcity" style={{ color: "var(--rpc-text-muted)", textDecoration: "none" }}>
+            ← Pinnacle scarcity board
+          </Link>
+        </div>
+      </main>
+      <SiteFooter />
+    </>
+  )
+}
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
