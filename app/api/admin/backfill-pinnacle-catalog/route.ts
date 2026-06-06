@@ -121,6 +121,42 @@ async function fetchPage(after: string | null) {
   return json.data!.searchPinnacleEditions!;
 }
 
+// ── Floor-ask phase (item 3) ────────────────────────────────────────────────
+// Pages all live listings (price asc), reducing to the per-render_id floor — the
+// daily corroboration layer for the intraday listings-indexer. sortBy direction
+// is an ENUM (ASC), not a string. listing.price is UFix64 (x 1e8).
+const FLOOR_QUERY = `
+query FloorAsks($first: Int!, $after: String) {
+  searchPinnacleNft(searchInput: {
+    first: $first, after: $after,
+    filters: [{ listing: { price: { gte: 1 } } }],
+    sortBy: { listing: { price: { priority: 1, direction: ASC } } }
+  }) {
+    totalCount
+    pageInfo { endCursor hasNextPage }
+    edges { node { edition { render_id } listing { price } } }
+  }
+}`;
+
+interface FloorEdge { node?: { edition?: { render_id: string | null } | null; listing?: { price: string | null } | null } }
+
+async function fetchFloorPage(after: string | null) {
+  const res = await fetch(GQL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: "https://disneypinnacle.com",
+      "User-Agent": "rip-packs-city/pinnacle-catalog-backfill",
+    },
+    body: JSON.stringify({ query: FLOOR_QUERY, variables: { first: PAGE_SIZE, after } }),
+    signal: AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`floor GQL ${res.status}`);
+  const json = (await res.json()) as { data?: { searchPinnacleNft?: { totalCount: number; pageInfo: { endCursor: string | null; hasNextPage: boolean }; edges: FloorEdge[] } }; errors?: unknown[] };
+  if (Array.isArray(json.errors) && json.errors.length > 0) throw new Error(`floor GQL errors`);
+  return json.data!.searchPinnacleNft!;
+}
+
 async function handle(req: NextRequest): Promise<NextResponse> {
   if (!verifyAdminRequest(req)) return adminUnauthorizedResponse();
   const startedAt = Date.now();
@@ -154,6 +190,44 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     errors.push(e instanceof Error ? e.message : String(e));
   }
 
+  // ── Phase 2: floor-ask sweep (best-effort; failures don't fail the catalog) ──
+  let floorListed = 0;     // distinct render_ids with a live floor
+  let floorRows = 0;       // catalog rows updated (= editions with a floor)
+  let floorPages = 0;
+  let floorTotal = 0;
+  try {
+    const floorByRender = new Map<string, number>(); // first-seen wins (price asc)
+    let fAfter: string | null = null;
+    for (;;) {
+      const res = await fetchFloorPage(fAfter);
+      floorTotal = res.totalCount;
+      for (const e of res.edges) {
+        const rid = e.node?.edition?.render_id ?? null;
+        const price = e.node?.listing?.price ?? null;
+        if (rid && price != null && !floorByRender.has(rid)) {
+          const n = Number(price);
+          if (Number.isFinite(n) && n > 0) floorByRender.set(rid, n);
+        }
+      }
+      floorPages++;
+      if (!res.pageInfo.hasNextPage) break;
+      fAfter = res.pageInfo.endCursor;
+      if (floorPages > 200) break; // runaway guard (~20k listings)
+    }
+    floorListed = floorByRender.size;
+    if (floorListed > 0) {
+      const map = Object.fromEntries(floorByRender);
+      const { data: cnt, error: floorErr } = await supabase.rpc("pinnacle_catalog_set_floor_asks", {
+        p_map: map,
+        p_checked_at: startedAtIso,
+      });
+      if (floorErr) errors.push(`floor set: ${floorErr.message}`);
+      else floorRows = typeof cnt === "number" ? cnt : 0;
+    }
+  } catch (e) {
+    errors.push(`floor phase: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
   const durationMs = Date.now() - startedAt;
   const ok = errors.length === 0;
   try {
@@ -168,13 +242,13 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       p_collection_slug: "disney_pinnacle",
       p_cursor_before: null,
       p_cursor_after: null,
-      p_extra: { pages, total_count: total, upserted, duration_ms: durationMs, errors: errors.slice(0, 3) },
+      p_extra: { pages, total_count: total, upserted, floor_listed: floorListed, floor_rows: floorRows, floor_pages: floorPages, floor_total: floorTotal, duration_ms: durationMs, errors: errors.slice(0, 3) },
     });
   } catch {
     // best-effort observability
   }
 
-  return NextResponse.json({ ok, pipeline: PIPELINE_NAME, total_count: total, upserted, pages, duration_ms: durationMs, errors: errors.slice(0, 3) });
+  return NextResponse.json({ ok, pipeline: PIPELINE_NAME, total_count: total, upserted, pages, floor_listed: floorListed, floor_rows: floorRows, floor_pages: floorPages, duration_ms: durationMs, errors: errors.slice(0, 3) });
 }
 
 export async function GET(req: NextRequest) { return handle(req); }
