@@ -143,14 +143,11 @@ export default function PinnacleScarcityBoardClient({ initialRows, initialFetche
 
       <section className="rpc-ps-callout" aria-label="Chasers status">
         <div className="rpc-ps-callout-line">
-          <strong>Chasers note:</strong> Pinnacle has 8 platform-wide chaser
-          editions. They aren&apos;t in this ranking yet — they came in via
-          wallet scans before Pinnacle&apos;s catalog resolver populated
-          their mint counts, so they fall outside the view&apos;s
-          {" "}<code>mint_count IS NOT NULL</code> filter. Same eight names you
-          already know from Pinnacle: Xenomorph, Belle, Cinderella, Monterey
-          Jack &amp; Zipper, Boba Fett, G.N.K, Sally, Bubbles. They&apos;ll
-          appear here once their catalog metadata lands.
+          <strong>Now per-pin:</strong> the board is keyed by{" "}
+          <code>render_id</code> — every distinct character is its own row with its
+          own scarcity, FMV, and live floor, instead of one blended set-level
+          number. Chasers are in the ranking (tagged <strong>CHASER</strong>; use
+          the filter to isolate them), and each row links to its per-pin page.
         </div>
       </section>
 
