@@ -424,8 +424,6 @@ export default async function PackDetailPage(
   const fmvCoverage = merged.fmv_coverage_pct
   const depletion = merged.depletion_pct
   const totalUnopened = num(merged.total_unopened)
-  const totalSealed = num(merged.total_sealed)
-  const totalMinted = num(merged.total_minted)
   const editionCount = num(merged.edition_count)
   const retailPrice = num(merged.retail_price_usd)
   const evPackPrice = num(merged.ev_pack_price)
@@ -448,6 +446,39 @@ export default async function PackDetailPage(
   // packs — gate them off and surface a "Reward pack" badge instead.
   const isRewardPack = retailPrice === 0
   const showPriceVerdict = !isRewardPack && priceSource !== "none"
+
+  // ── Tier-count metadata (PACKVIZ) ──────────────────────────────────────────
+  // compute-topshot-pack-ev v20 persists per-pack remaining/original counts-by-tier
+  // + total_unopened/total_pack_count into pack_distributions.metadata as its EV
+  // sweep touches each pack. Present only on packs the v20 sweep has reached.
+  const tierCountsUpdatedAt = typeof distMetadata?.tier_counts_updated_at === "string" ? distMetadata.tier_counts_updated_at : null
+  const metaTotalUnopened = num((distMetadata?.total_unopened as string | number | null | undefined) ?? null)
+  const metaTotalPackCount = num((distMetadata?.total_pack_count as string | number | null | undefined) ?? null)
+  const remainingByTier = distMetadata && typeof distMetadata.remaining_by_tier === "object" && distMetadata.remaining_by_tier !== null
+    ? (distMetadata.remaining_by_tier as Record<string, number>) : null
+  const originalByTier = distMetadata && typeof distMetadata.original_counts_by_tier === "object" && distMetadata.original_counts_by_tier !== null
+    ? (distMetadata.original_counts_by_tier as Record<string, number>) : null
+  // Freshest packs-remaining figure: prefer the v20 metadata, else the cached view.
+  const liveUnopened = metaTotalUnopened ?? totalUnopened
+  const oddsSlots = merged.slots && merged.slots > 0 ? merged.slots : null
+
+  // 2a — Depletion: prefer the v20 metadata-derived figure, fall back to the cached
+  // depletion_pct, and HIDE the tile entirely when neither source exists (never 0%).
+  const depletionPct: number | null = (() => {
+    if (metaTotalPackCount && metaTotalPackCount > 0 && metaTotalUnopened != null) {
+      return Math.max(0, Math.min(100, ((metaTotalPackCount - metaTotalUnopened) / metaTotalPackCount) * 100))
+    }
+    return depletion != null ? Number(depletion) : null
+  })()
+
+  // 2d — EV verdict coverage gate: below 80% FMV coverage the EV is a lower bound,
+  // not an authoritative verdict — render it neutral (no red/green) with a caveat.
+  const COVERAGE_FLOOR = 80
+  const coverageOk = fmvCoverage != null && fmvCoverage >= COVERAGE_FLOOR
+  const showColoredVerdict = showPriceVerdict && coverageOk
+  const coverageCaveat = showPriceVerdict && !coverageOk && fmvCoverage != null
+    ? `${fmvCoverage}% FMV cov — EV is a floor`
+    : null
 
   // One-line summary above the KPI grid. Names the EV anchor explicitly so
   // the user knows whether the verdict is computed against retail or P2P ask.
@@ -742,31 +773,42 @@ export default async function PackDetailPage(
         <KpiCell
           label="Gross EV"
           value={fmtUsd(grossEv)}
-          sub={isRewardPack ? "Reward pack — net vs $0 retail not meaningful" : priceSource === "none" ? "No anchor — verdict suppressed" : packEv !== null ? `Net ${packEv >= 0 ? "+" : ""}${fmtUsd(Math.abs(packEv))}` : undefined}
-          color={!showPriceVerdict || packEv === null ? undefined : packEv >= 0 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
+          sub={isRewardPack ? "Reward pack — net vs $0 retail not meaningful" : priceSource === "none" ? "No anchor — verdict suppressed" : coverageCaveat ? (packEv !== null ? `Net ${packEv >= 0 ? "+" : ""}${fmtUsd(Math.abs(packEv))} · ${coverageCaveat}` : coverageCaveat) : packEv !== null ? `Net ${packEv >= 0 ? "+" : ""}${fmtUsd(Math.abs(packEv))}` : undefined}
+          color={!showColoredVerdict || packEv === null ? undefined : packEv >= 0 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
         />
         <KpiCell
           label="Value ratio"
           value={!showPriceVerdict || valueRatio === null ? "—" : `${valueRatio.toFixed(2)}x`}
-          sub={isRewardPack ? "Free pack — n/a" : priceSource === "none" || evMargin === null ? undefined : `${fmtPct(evMargin)} margin`}
-          color={!showPriceVerdict || valueRatio === null ? undefined : valueRatio >= 1 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
+          sub={isRewardPack ? "Free pack — n/a" : priceSource === "none" ? undefined : coverageCaveat ? (evMargin === null ? coverageCaveat : `${fmtPct(evMargin)} margin · ${coverageCaveat}`) : evMargin === null ? undefined : `${fmtPct(evMargin)} margin`}
+          color={!showColoredVerdict || valueRatio === null ? undefined : valueRatio >= 1 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
         />
         <KpiCell
           label="FMV coverage"
           value={fmvCoverage === null ? "—" : `${fmvCoverage}%`}
           sub={editionCount === null ? undefined : `${editionCount} editions`}
         />
-        <KpiCell
-          label="Depletion"
-          value={depletion === null ? "—" : `${depletion}%`}
-          sub={merged.ev_depletion_pct === null ? undefined : `Pool ${merged.ev_depletion_pct}%`}
-        />
+        {depletionPct !== null && (
+          <KpiCell
+            label="Depletion"
+            value={`${depletionPct.toFixed(depletionPct >= 10 ? 0 : 1)}%`}
+            sub={tierCountsUpdatedAt ? "live pool" : merged.ev_depletion_pct === null ? undefined : `Pool ${merged.ev_depletion_pct}%`}
+          />
+        )}
         <KpiCell
           label="Packs remaining"
-          value={fmtCount(totalUnopened)}
-          sub={totalSealed !== null && totalMinted !== null ? `${fmtCount(totalSealed)}/${fmtCount(totalMinted)} sealed` : undefined}
+          value={fmtCount(liveUnopened)}
+          sub={metaTotalPackCount !== null ? `of ${fmtCount(metaTotalPackCount)} minted` : undefined}
         />
       </section>
+
+      {/* ── Pull odds by tier (PACKVIZ 2b) ───────────────────────────────── */}
+      <TierOddsPanel
+        remainingByTier={remainingByTier}
+        originalByTier={originalByTier}
+        totalUnopened={liveUnopened}
+        slots={oddsSlots}
+        updatedAt={tierCountsUpdatedAt}
+      />
 
       {/* ── What's inside (visual grid) ──────────────────────────────────── */}
       {packContents.length > 0 && (
@@ -786,7 +828,9 @@ export default async function PackDetailPage(
               What&apos;s Inside
             </h2>
             <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
-              {editionCount ? `${editionCount} editions in pool` : "pullable editions"}
+              {fmvCoverage !== null && editionCount
+                ? `FMV priced ${fmtCount(Math.round((fmvCoverage / 100) * editionCount))} of ${editionCount} (${fmvCoverage}%)`
+                : editionCount ? `${editionCount} editions in pool` : "pullable editions"}
             </span>
           </div>
           <EditionsGridPaginated
@@ -1087,5 +1131,142 @@ function Td({ children, align = "left", color }: { children: React.ReactNode; al
     >
       {children}
     </td>
+  )
+}
+
+// ── Pull odds by tier (PACKVIZ 2b) ──────────────────────────────────────────
+// Top Shot's own pack pages lead with per-tier hit chances; RPC now has the data
+// (compute-topshot-pack-ev v20 persists remaining/original counts-by-tier into
+// pack_distributions.metadata). Renders only when those counts are present, so it
+// fills in per pack as the v20 EV sweep reaches it.
+
+const TIER_RARITY_ORDER = ["ultimate", "legendary", "anthology", "autograph", "rare", "fandom", "common"]
+
+function relTimeShort(iso: string | null): string {
+  if (!iso) return ""
+  const t = Date.parse(iso)
+  if (!Number.isFinite(t)) return ""
+  const mins = Math.max(0, Math.round((Date.now() - t) / 60000))
+  if (mins < 1) return "just now"
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.round(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.round(hrs / 24)}d ago`
+}
+
+function packOddsLabel(remaining: number, totalUnopened: number | null, slots: number | null): string {
+  if (remaining <= 0) return "depleted"
+  if (!totalUnopened || totalUnopened <= 0 || !slots || slots <= 0) return "—"
+  const p = remaining / totalUnopened
+  const atLeastOne = 1 - Math.pow(1 - p, slots)
+  if (atLeastOne <= 0) return "—"
+  if (atLeastOne >= 0.999) return "~every pack"
+  const oneIn = Math.round(1 / atLeastOne)
+  return `~1 in ${oneIn.toLocaleString()}`
+}
+
+function TierOddsPanel({
+  remainingByTier,
+  originalByTier,
+  totalUnopened,
+  slots,
+  updatedAt,
+}: {
+  remainingByTier: Record<string, number> | null
+  originalByTier: Record<string, number> | null
+  totalUnopened: number | null
+  slots: number | null
+  updatedAt: string | null
+}) {
+  if (!remainingByTier || !originalByTier) return null
+  const tiers = TIER_RARITY_ORDER.filter((t) => Number(originalByTier[t] ?? 0) > 0)
+  for (const k of Object.keys(originalByTier)) {
+    if (!TIER_RARITY_ORDER.includes(k) && Number(originalByTier[k] ?? 0) > 0) tiers.push(k)
+  }
+  if (tiers.length === 0) return null
+
+  return (
+    <section
+      style={{
+        background: "rgba(13,13,13,0.92)",
+        border: "1px solid rgba(255,255,255,0.06)",
+        borderRadius: 8,
+        padding: 18,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
+        <h2
+          style={{
+            margin: 0,
+            fontFamily: "var(--font-display)",
+            fontWeight: 800,
+            fontSize: 18,
+            letterSpacing: "0.06em",
+            color: "#fff",
+            textTransform: "uppercase",
+          }}
+        >
+          Pull odds by tier
+        </h2>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+          {slots && slots > 0 ? `${slots} slots/pack` : "per pack"}
+          {updatedAt ? ` · as of ${relTimeShort(updatedAt)}` : ""}
+        </span>
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+              <Th>Tier</Th>
+              <Th align="right">Remaining</Th>
+              <Th align="right">% of pool</Th>
+              <Th align="right">Odds / pack</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {tiers.map((t) => {
+              const remaining = Number(remainingByTier[t] ?? 0)
+              const original = Number(originalByTier[t] ?? 0)
+              const chip = tierChip(t)
+              const pctOfPool = totalUnopened && totalUnopened > 0 ? (remaining / totalUnopened) * 100 : null
+              return (
+                <tr key={t} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                  <Td>
+                    <span
+                      style={{
+                        display: "inline-block",
+                        padding: "2px 8px",
+                        borderRadius: 4,
+                        fontSize: 10,
+                        letterSpacing: "0.06em",
+                        textTransform: "uppercase",
+                        fontWeight: 700,
+                        color: chip.color,
+                        background: chip.background,
+                        border: chip.border,
+                      }}
+                    >
+                      {t.charAt(0).toUpperCase() + t.slice(1)}
+                    </span>
+                  </Td>
+                  <Td align="right" color="rgba(255,255,255,0.85)">
+                    {remaining.toLocaleString()} <span style={{ color: "rgba(255,255,255,0.4)" }}>/ {original.toLocaleString()}</span>
+                  </Td>
+                  <Td align="right" color="rgba(255,255,255,0.6)">
+                    {pctOfPool === null ? "—" : pctOfPool < 0.1 && pctOfPool > 0 ? "<0.1%" : `${pctOfPool.toFixed(pctOfPool >= 10 ? 0 : 1)}%`}
+                  </Td>
+                  <Td align="right" color={remaining > 0 ? "#fff" : "rgba(255,255,255,0.4)"}>
+                    {packOddsLabel(remaining, totalUnopened, slots)}
+                  </Td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.35)" }}>
+        Odds/pack ≈ chance of at least one card of that tier across {slots && slots > 0 ? slots : "the"} slots, from the live remaining pool. Approximate (assumes independent slots).
+      </div>
+    </section>
   )
 }
