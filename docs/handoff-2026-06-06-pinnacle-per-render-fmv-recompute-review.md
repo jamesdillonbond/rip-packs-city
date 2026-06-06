@@ -1,5 +1,30 @@
 # Review-gated: Pinnacle per-render FMV recompute (item 2)
 
+## ✅ VERDICT ACCEPTED + PHASE A SHIPPED 2026-06-06 (CC, `a4c6bb5`)
+
+The Cowork review (pasted below in spirit) **approved the pricing logic and amended the ship to additive + waved** — the atomic-cutover premise in the original draft failed on the real reader inventory (~40 readers, not 4). Phase A (the additive engine that breaks zero readers) is now LIVE:
+
+- Migration `audit_20260606_pinnacle_render_fmv_engine_additive`: render-keyed FMV columns on `pinnacle_catalog` (`fmv_usd`/`fmv_wap_usd`/`fmv_confidence`/`fmv_sales_count_7d`/`_30d`/`fmv_days_since_sale`/`fmv_liquidity_rating`/`fmv_computed_at`/`fmv_algo_version`), beside `floor_ask` (reviewer's preferred home — NOT a delete-rebuild of the legacy table).
+- `pinnacle_fmv_recalc_render(render_id)` + `pinnacle_fmv_recalc_render_all()` — approved formula, render_id grouping, UPDATE-in-place. **Legacy `pinnacle_fmv_snapshots` + `pinnacle_fmv_recalc_all` UNTOUCHED and still live (427 rows) → zero of the ~40 legacy readers break.**
+- Amendment 2 (grants): both new fns service_role-only; also closed the stray PUBLIC/anon/authenticated EXECUTE on the existing `pinnacle_fmv_recalc`. Amendment 3: success-path `log_pipeline_run('pinnacle-fmv-recalc')` only.
+- `pinnacle-sync` route runs the new recompute alongside the legacy so both stay fresh through the transition.
+- **Verified live:** 1,789 renders priced / 14 NO_DATA; the formerly-blended `STAR-OEV1-SWHM:Digital Display:1` now prices Kylo Ren Helmet **$277.67** vs set-mates **$23–33**; pipeline log persists ok=true.
+- **Revert (trivial, additive):** point any migrated reader back to `pinnacle_fmv_snapshots`; the legacy writer/table never moved. To remove the engine entirely: `DROP FUNCTION pinnacle_fmv_recalc_render_all(), pinnacle_fmv_recalc_render(text); ALTER TABLE pinnacle_catalog DROP COLUMN fmv_usd, fmv_wap_usd, fmv_confidence, fmv_sales_count_7d, fmv_sales_count_30d, fmv_days_since_sale, fmv_liquidity_rating, fmv_computed_at, fmv_algo_version;` + drop the render recalc call from `pinnacle-sync`.
+
+### Remaining: reader cutover in waves (queued PIN-FMV-REKEY-WAVES — Trevor sequences/verifies live)
+
+Migrate readers from `pinnacle_fmv_snapshots` (set-level `edition_id`) to `pinnacle_catalog.fmv_*` (`render_id`). **Caveat:** readers keyed by the legacy set-level `edition_id` can't 1:1 map to render_id (one edition_id = many renders) — those surfaces become per-render/per-pin, a product decision per surface (show a range? per-pin page?). Render_id-available surfaces (wmc-based, moment-by-nft, scarcity board) migrate cleanly.
+
+- **Wave 1 (user-facing value, render_id clean):** `populate_pinnacle_wmc_fmv` (join `wmc.render_id` → `pinnacle_catalog.fmv_usd` — cleanest, fixes portfolio per-pin pricing), `app/pinnacle/moment/[id]/page.tsx`, `pinnacle_scarcity_board` view, `get_pinnacle_edition_fmv`.
+- **Wave 2 (entity/team/cross-collection):** `get_pinnacle_moment_detail`, `get_edition_detail`, `get_moment_detail`, `moment_detail`, team hub (`get_team_detail`/`_checklist`/`_checklist_progress`/`_players`/`_top_editions`), `get_set/player/series_detail` + `_editions`, `get_cross_collection_deals`/`_portfolio`, `get_pinnacle_overview`, `get_pinnacle_top_movers`, `get_wallet_moments_with_fmv`, `holdings_summary`, `get_edition_fmv_history`, `pinnacle_fmv_from_listings`/`_from_sales`, `bridge_pinnacle_fmv_to_main`.
+- **Wave 3 (stats/health/analytics + routes):** `health_check`/`pinnacle_health_check`/`analytics_*` (3), views `data_coverage_dashboard`/`data_quality`/`pipeline_health`; routes `app/api/collection-stats` (does the exact `DISTINCT ON (edition_id) FROM pinnacle_fmv_snapshots` pattern), `app/api/overview-stats`, `app/api/sniper-feed`, `app/api/pinnacle-listings-indexer`.
+- **Retire** the legacy `pinnacle-1.0.0` writer + `pinnacle_fmv_snapshots` (and follow `bridge_pinnacle_fmv_to_main`) only when the reader grep hits zero.
+- After 48h cadence, add `pinnacle-fmv-recalc` to `pipeline_cadence_watchlist`.
+
+---
+
+**ORIGINAL DRAFT BELOW (historical — the atomic-cutover plan it describes was superseded by the additive/waved verdict above; the formula + evidence are unchanged and correct).**
+
 **STATUS: PREPARED, NOT SHIPPED. This is central pricing logic — review + soak gates apply; explicitly NOT for autonomous/night-pass shipping (per the handoff guardrail). Trevor reviews and applies the recompute swap + reader cutover.**
 
 This documents the one remaining piece of the Pinnacle per-render re-key. Items 1 (sales render_id drain — DONE, 13,152/13,152) and 3 (per-render floor ask — DONE, 1,946 floors) shipped this session. Item 2 changes the prices users see, so it stops here for review.
