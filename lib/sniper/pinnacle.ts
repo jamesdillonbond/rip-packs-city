@@ -14,16 +14,24 @@ import {
 } from "@/lib/pinnacle/pinnacleFlowty"
 
 interface FmvRow {
-  edition_id: string
+  legacy_edition_key: string | null
   fmv_usd: number
-  confidence: string
+  fmv_confidence: string
 }
 
 async function loadFmvMap(): Promise<Map<string, { fmv: number; confidence: string }>> {
+  // PIN-FMV-REKEY Wave 3: per-render source (pinnacle_catalog) instead of the
+  // retiring per-edition blend. The map is still keyed by the legacy edition id
+  // (legacy_edition_key) because the Flowty NFT lookup keys on it; for each
+  // legacy key we keep the representative render (most-liquid, then highest FMV),
+  // matching the Wave 2 collapse. (This Flowty leg is dormant since the 2026-05-13
+  // shutdown, but we keep it off the legacy table for consistency.)
   const { data, error } = await (supabaseAdmin as any)
-    .from("pinnacle_fmv_snapshots")
-    .select("edition_id, fmv_usd, confidence")
-    .order("computed_at", { ascending: false })
+    .from("pinnacle_catalog")
+    .select("legacy_edition_key, fmv_usd, fmv_confidence, fmv_sales_count_30d")
+    .not("fmv_usd", "is", null)
+    .order("fmv_sales_count_30d", { ascending: false, nullsFirst: false })
+    .order("fmv_usd", { ascending: false, nullsFirst: false })
 
   if (error || !data) {
     console.warn("[pinnacle-sniper] FMV fetch error:", error?.message)
@@ -32,8 +40,8 @@ async function loadFmvMap(): Promise<Map<string, { fmv: number; confidence: stri
 
   const map = new Map<string, { fmv: number; confidence: string }>()
   for (const row of data as FmvRow[]) {
-    if (!map.has(row.edition_id)) {
-      map.set(row.edition_id, { fmv: row.fmv_usd, confidence: row.confidence })
+    if (row.legacy_edition_key && !map.has(row.legacy_edition_key)) {
+      map.set(row.legacy_edition_key, { fmv: row.fmv_usd, confidence: row.fmv_confidence })
     }
   }
   return map
