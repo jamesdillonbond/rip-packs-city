@@ -409,6 +409,12 @@ async function runListingCache() {
   // Wallet-verification fallback: any unresolved listing-amount challenge
   // whose challenge_amount now appears in cached_listings for the claimed
   // wallet gets flipped to verified by this RPC. Cheap, idempotent.
+  //
+  // NOTE (2026-06-07): this matcher is effectively a no-op — cached_listings is
+  // frozen (Flowty shut 2026-05-13) so it can never find a new match. The live
+  // verification path is the on-demand /api/profile/verify-challenge/check
+  // route (direct topshot-proxy GQL). Left as a harmless idempotent pass;
+  // safe to delete with the rest of the frozen-Flowty teardown.
   try {
     const { data: resolved, error: resolveErr } = await supabaseAdmin.rpc(
       "resolve_wallet_verification_challenges"

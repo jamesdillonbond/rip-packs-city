@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { monoFont, condensedFont, labelStyle, fmtDollars, CostBasisSummary } from "./_shared";
 
-export default function CostBasisCard(props: { ownerKey: string }) {
+export default function CostBasisCard(props: { ownerKey: string; ownView?: boolean }) {
   const [data, setData] = useState<CostBasisSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [errored, setErrored] = useState(false);
@@ -54,15 +54,19 @@ export default function CostBasisCard(props: { ownerKey: string }) {
               <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 22, color: "#fff", lineHeight: 1.1 }}>{fmtDollars(data.totalFmv)}</div>
             </div>
           </div>
-          <div style={{ paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-            <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 4 }}>Net P/L</div>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-              <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 22, color: plColor, lineHeight: 1.1 }}>{plSign + fmtDollars(Math.abs(data.netPL))}</div>
-              {data.plPercent != null && (
-                <div style={{ fontSize: 12, fontFamily: monoFont, color: plColor, fontWeight: 700 }}>{plSign + Math.abs(data.plPercent).toFixed(1) + "%"}</div>
-              )}
+          {/* Net P/L is private — only the profile owner sees their own gain/
+              loss. Visitors get Total Spent + Current FMV, never the P/L row. */}
+          {props.ownView && (
+            <div style={{ paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 4 }}>Net P/L</div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 22, color: plColor, lineHeight: 1.1 }}>{plSign + fmtDollars(Math.abs(data.netPL))}</div>
+                {data.plPercent != null && (
+                  <div style={{ fontSize: 12, fontFamily: monoFont, color: plColor, fontWeight: 700 }}>{plSign + Math.abs(data.plPercent).toFixed(1) + "%"}</div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </>
       )}
     </section>

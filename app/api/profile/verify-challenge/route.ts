@@ -10,7 +10,7 @@
 //   GET    ?wallet_addr=...             → returns the active challenge + target
 //   PATCH  { wallet_addr? }             → legacy cron resolver pass (harmless)
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { fetchMomentListingState, topShotMomentUrl } from "@/lib/verify-wallet-gql";
@@ -116,6 +116,47 @@ export async function POST(req: NextRequest) {
   // would falsely match the moment we want them to set the price on).
   const candidates = await pickCandidates(wallet);
   if (!candidates.length) {
+    // No candidates can mean two very different things. Distinguish a COLD
+    // wallet (never indexed → zero wmc rows, true for a brand-new signup whose
+    // prewarm hasn't run) from a wallet that IS indexed but holds nothing
+    // listable. A cold wallet shouldn't dead-end — kick off the backfill and
+    // tell the user we're indexing.
+    const { count: wmcCount } = await supabase
+      .from("wallet_moments_cache")
+      .select("moment_id", { count: "exact", head: true })
+      .eq("wallet_address", wallet)
+      .eq("collection_id", TOPSHOT_COLLECTION_ID);
+
+    if (!wmcCount) {
+      // Fire-and-forget the TopShot wallet backfill (same Bearer pattern as
+      // seed-wallet-refresh). The backfill route returns 202 and runs the
+      // heavy walk on its own after() lifetime.
+      const token = process.env.INGEST_SECRET_TOKEN;
+      if (token) {
+        const origin = new URL(req.url).origin;
+        after(async () => {
+          try {
+            await fetch(origin + "/api/wallet-backfill", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({ wallet }),
+            });
+          } catch {
+            // best-effort kick — the user can retry, which re-fires this path.
+          }
+        });
+      }
+      return NextResponse.json({
+        challenge: null,
+        unavailable: true,
+        reason: "indexing",
+        message: "We're indexing your collection — give it a few minutes and try again.",
+      });
+    }
+
     return NextResponse.json({
       challenge: null,
       unavailable: true,
