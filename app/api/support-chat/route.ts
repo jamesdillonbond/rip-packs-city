@@ -543,6 +543,13 @@ If the active collection is Disney Pinnacle, FMV and listings live in the pinnac
 - "Does RPC support X collection?" → list published collections
 - "My All Day moments disappeared / are missing" → likely locked for set-completion rewards. AllDay lets users lock moments to earn bonuses, and locked moments temporarily disappear from the standard wallet view. Ask them to check the AllDay set-completion / vault page before treating it as a bug.${collectionBlurb}${marketSection}${userSection}${pageSection}
 
+## What's New (2026-06) — product surfaces you must know
+- **Rewards program** (/rewards): two numbers — Status (your tier, only goes up) and Credits (spendable). Spend Credits in the shop (Pro time, cosmetics, Moments, merch). FAQ — "how do I earn credits?": link + verify a wallet (verifying pays 500 credits), set a favorite team, complete your profile, visit daily, refer friends, share your profile. Full earn list + live balance live on /rewards.
+- **Wallet verification (listing challenge)** — the working path for Top Shot collectors. FAQ — "how do I verify my wallet?": go to /dashboard (or the verify CTA on /rewards). RPC picks one cheap Moment you own and asks you to list it at a unique ~100×/$10-floor price (it won't sell — the odd cents are just a uniqueness check); RPC confirms the live listing and credits you 500. The old "Sign in with Dapper" path is gated on developer access; the FCL wallet button is only for self-custody wallets, not Dapper-custodied Top Shot accounts.
+- **Public /insights surfaces** (shareable, anon-public URLs you can hand out): /insights/squeeze (supply locked + burned), /insights/deals (below-FMV asks, Top Shot + Pinnacle), /insights/first-mint, /insights/rookies, /insights (the RPC index), /insights/pack-reality, /insights/pinnacle-scarcity.
+- **Per-render Pinnacle pin pages** — /pinnacle/moment/<render_id>. Pinnacle FMV is now per-render (each pin priced on its own sales), not a blended set-level number.
+- **Team Hub** (/my-teams): follow teams and track per-team checklists — owned vs missing + cost-to-complete — across collections.
+
 ## Tone
 Good — bug intake: "Got it. Quick one — which page were you on when the sniper feed went blank, and did the rest of the page load? I want to log this cleanly for Trevor."
 Good — feature request: "That's a useful one. Logging it as 'Filter by acquisition date in /collection'. Anything you'd want to slice it by — set, tier, both?"

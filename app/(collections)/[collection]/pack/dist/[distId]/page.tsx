@@ -25,6 +25,7 @@ import PackHeroArt from "@/components/packs/PackHeroArt"
 // runtime — that's the bug this page was hitting before 2026-05-26.
 import { tierChip } from "@/lib/tier-style"
 import PackShareButton from "@/components/packs/PackShareButton"
+import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import { packJsonLd } from "@/lib/seo"
@@ -771,10 +772,16 @@ export default async function PackDetailPage(
 
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 6 }}>
               {buyUrl ? (
-                <a
+                <TrackedOutboundLink
                   href={buyUrl}
-                  target="_blank"
-                  rel="noreferrer"
+                  payload={{
+                    surface: "pack_dist",
+                    destination: "topshot",
+                    setName: title,
+                    tier,
+                    fmv: Number.isFinite(livePrice as number) ? (livePrice as number) : null,
+                    buyUrl,
+                  }}
                   style={{
                     display: "inline-block",
                     padding: "8px 16px",
@@ -790,7 +797,7 @@ export default async function PackDetailPage(
                   }}
                 >
                   {buyCtaLabel}
-                </a>
+                </TrackedOutboundLink>
               ) : null}
               <PackShareButton url={`${BASE_URL}/${collection}/pack/dist/${encodeURIComponent(distId)}`} />
               <Link
