@@ -5,14 +5,13 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import RpcLogo from "@/components/RpcLogo";
 import CostBasisCard from "@/components/profile/CostBasisCard";
-import TierBreakdownCard from "@/components/profile/TierBreakdownCard";
 import TopMoversCard from "@/components/profile/TopMoversCard";
 import CollectionBreakdownCard from "@/components/profile/CollectionBreakdownCard";
-import PortfolioSparkline from "@/components/profile/PortfolioSparkline";
 import PublicAchievements from "@/components/profile/PublicAchievements";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import { LEAGUES, type UserFavoriteTeam } from "@/lib/teams";
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
+import { getCollectionByUuid } from "@/lib/collections";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface ProfileBio {
@@ -30,6 +29,7 @@ interface ProfileBio {
 interface SavedWalletPublic {
   username: string | null;
   display_name: string | null;
+  collection_id: string | null;
   cached_fmv: number | null;
   cached_moment_count: number | null;
   cached_top_tier: string | null;
@@ -43,16 +43,6 @@ interface PortfolioSnapshot {
   total_fmv: number;
 }
 
-interface SniperDealPreview {
-  playerName: string;
-  tier: string;
-  askPrice: number;
-  adjustedFmv: number;
-  discount: number;
-  buyUrl: string;
-  source: string;
-}
-
 // ── Constants ─────────────────────────────────────────────────────
 const monoFont = "var(--font-mono)";
 const condensedFont = "var(--font-display)";
@@ -62,17 +52,6 @@ const MAX_SLOTS = 6;
 function fmtDollars(n: number): string {
   if (n >= 1000) return "$" + (n / 1000).toFixed(1) + "K";
   return "$" + n.toFixed(2);
-}
-
-function tierColor(t: string | null): string {
-  switch ((t ?? "").toUpperCase()) {
-    case "LEGENDARY": return "var(--tier-legendary)";
-    case "ULTIMATE": return "var(--tier-ultimate)";
-    case "RARE": return "var(--tier-rare)";
-    case "UNCOMMON": return "var(--tier-uncommon)";
-    case "FANDOM": return "var(--tier-fandom)";
-    default: return "var(--tier-common)";
-  }
 }
 
 function scoreColor(score: number): string {
@@ -182,14 +161,11 @@ export default function PublicProfilePage() {
   // State
   const [slabs, setSlabs] = useState<(TrophySlabData | null)[]>([null, null, null, null, null, null]);
   const [slabsLoading, setSlabsLoading] = useState(true);
-  const [showAllSlabs, setShowAllSlabs] = useState(false);
   const [bio, setBio] = useState<ProfileBio | null>(null);
   const [favoriteTeams, setFavoriteTeams] = useState<UserFavoriteTeam[]>([]);
   const [wallets, setWallets] = useState<SavedWalletPublic[]>([]);
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
-  const [sniperDeals, setSniperDeals] = useState<SniperDealPreview[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sniperLoading, setSniperLoading] = useState(true);
 
   // Fetch all data on mount.
   //
@@ -250,30 +226,29 @@ export default function PublicProfilePage() {
     Promise.all([publicP, slabsP, historyP, teamsP]).finally(function() { setLoading(false); });
   }, [username]);
 
-  // Fetch sniper deals
-  useEffect(function() {
-    setSniperLoading(true);
-    fetch("/api/sniper-feed?limit=3")
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(data) {
-        if (!data?.deals) return;
-        setSniperDeals(data.deals.slice(0, 3));
-      })
-      .catch(function() {})
-      .finally(function() { setSniperLoading(false); });
-  }, []);
-
   // Derived stats
   const accentColor = bio?.accent_color ?? "#E03A2F";
   const accentBg = hexToRgba(accentColor, 0.15);
   const accentBorder = hexToRgba(accentColor, 0.4);
   const filledCount = slabs.filter(Boolean).length;
-  const hasOverflowSlabs = slabs.slice(3).some(Boolean);
   const totalFmv = wallets.reduce(function(sum, w) { return sum + (w.cached_fmv ?? 0); }, 0);
   const totalMoments = wallets.reduce(function(sum, w) { return sum + (w.cached_moment_count ?? 0); }, 0);
-  const totalBadges = wallets.reduce(function(sum, w) { return sum + (w.cached_badges?.length ?? 0); }, 0);
   const rpcScore = wallets.length > 0 ? wallets[0]?.cached_rpc_score ?? null : null;
   const isTeamCaptain = username === "jamesdillonbond";
+
+  // Saved wallets, organized by collection (then FMV desc within). The
+  // collection label resolves from the collection_id UUID via the registry;
+  // null / unknown collapses to "Multi".
+  function walletCollectionLabel(w: SavedWalletPublic): string {
+    if (!w.collection_id) return "Multi";
+    return getCollectionByUuid(w.collection_id)?.label ?? "Multi";
+  }
+  const sortedWallets = wallets.slice().sort(function(a, b) {
+    const la = walletCollectionLabel(a);
+    const lb = walletCollectionLabel(b);
+    if (la !== lb) return la.localeCompare(lb);
+    return (b.cached_fmv ?? 0) - (a.cached_fmv ?? 0);
+  });
 
   // Sparkline data
   const sparkData = snapshots.map(function(s) { return s.total_fmv; });
@@ -399,7 +374,7 @@ export default function PublicProfilePage() {
         {username && <PublicAchievements ownerKey={username} />}
 
         {/* ── Stat Tiles ── */}
-        <div style={{ display: "grid", gridTemplateColumns: rpcScore != null ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 24 }}>
+        <div style={{ display: "grid", gridTemplateColumns: rpcScore != null ? "minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)" : "minmax(0,1fr) minmax(0,1fr)", gap: 12, marginBottom: 24 }}>
           {/* RPC Score */}
           {rpcScore != null && (
             <div style={{ ...cardStyle, textAlign: "center", position: "relative", overflow: "hidden" }}>
@@ -436,28 +411,40 @@ export default function PublicProfilePage() {
               {wallets.length} WALLET{wallets.length !== 1 ? "S" : ""}
             </div>
           </div>
-          {/* Badges */}
-          <div style={{ ...cardStyle, textAlign: "center" }}>
-            <div style={labelStyle}>BADGES</div>
-            <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1, margin: "8px 0 4px" }}>
-              {totalBadges > 0 ? totalBadges : "—"}
-            </div>
-            <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em" }}>BADGE MOMENTS</div>
-          </div>
         </div>
 
-        {/* ── Portfolio Sparkline ── */}
-        {username && (
-          <div style={{ marginBottom: 16 }}>
-            <PortfolioSparkline ownerKey={username} currentFmv={totalFmv} lineColor={accentColor} />
+        {/* ── Trophy Case (all 6, front and center under the KPI row) ── */}
+        <section style={{ marginBottom: 32 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, justifyContent: "center" }}>
+            <span style={labelStyle}>🏆 TROPHY CASE</span>
           </div>
-        )}
+          <div className="rpc-trophy-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
+            {[0, 1, 2, 3, 4, 5].map(function(i) {
+              return (
+                <TrophySlab
+                  key={"slab-" + i}
+                  slab={slabs[i]}
+                  slot={i + 1}
+                  mode="public"
+                  loading={slabsLoading}
+                />
+              );
+            })}
+          </div>
+          <style>{`
+            @media (max-width: 768px) {
+              .rpc-trophy-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+            }
+            @media (max-width: 480px) {
+              .rpc-trophy-grid { grid-template-columns: minmax(0, 1fr) !important; }
+            }
+          `}</style>
+        </section>
 
-        {/* ── Cost Basis + Tier Breakdown ── */}
+        {/* ── Cost Basis ── */}
         {username && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+          <div style={{ marginBottom: 14 }}>
             <CostBasisCard ownerKey={username} />
-            <TierBreakdownCard ownerKey={username} />
           </div>
         )}
 
@@ -475,85 +462,20 @@ export default function PublicProfilePage() {
           </div>
         )}
 
-        {/* ── Trophy Case ── */}
-        <section style={{ marginBottom: 32 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, justifyContent: "center" }}>
-            <span style={labelStyle}>🏆 TROPHY CASE</span>
-          </div>
-          <div className="rpc-trophy-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
-            {[0, 1, 2].map(function(i) {
-              return (
-                <TrophySlab
-                  key={"slab-" + i}
-                  slab={slabs[i]}
-                  slot={i + 1}
-                  mode="public"
-                  loading={slabsLoading}
-                />
-              );
-            })}
-          </div>
-          {hasOverflowSlabs && (
-            <>
-              <div style={{ textAlign: "center", marginTop: 14 }}>
-                <button
-                  type="button"
-                  onClick={function() { setShowAllSlabs(function(v) { return !v; }); }}
-                  style={{
-                    background: "transparent",
-                    border: "1px solid var(--rpc-border)",
-                    borderRadius: "var(--radius-sm)",
-                    padding: "8px 16px",
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 10,
-                    letterSpacing: "0.15em",
-                    color: "var(--rpc-text-secondary)",
-                    cursor: "pointer",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {showAllSlabs ? "HIDE EXTRA TROPHIES" : "SHOW ALL TROPHIES"}
-                </button>
-              </div>
-              {showAllSlabs && (
-                <div className="rpc-trophy-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16, marginTop: 16 }}>
-                  {[3, 4, 5].map(function(i) {
-                    return (
-                      <TrophySlab
-                        key={"slab-" + i}
-                        slab={slabs[i]}
-                        slot={i + 1}
-                        mode="public"
-                        loading={slabsLoading}
-                      />
-                    );
-                  })}
-                </div>
-              )}
-            </>
-          )}
-          <style>{`
-            @media (max-width: 768px) {
-              .rpc-trophy-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-            }
-          `}</style>
-        </section>
-
-        {/* ── Saved Wallets ── */}
-        {wallets.length > 0 && (
+        {/* ── Saved Wallets (organized by collection) ── */}
+        {sortedWallets.length > 0 && (
           <section style={{ marginBottom: 24 }}>
             <div style={{ ...labelStyle, marginBottom: 12 }}>SAVED WALLETS</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {wallets.map(function(w, i) {
+              {sortedWallets.map(function(w, i) {
                 const label = w.display_name || w.username || ("Wallet " + (i + 1));
+                const collectionLabel = walletCollectionLabel(w);
                 return (
                   <div key={i} style={{ ...cardStyle, display: "flex", alignItems: "center", gap: 16, padding: "12px 16px" }}>
                     <div style={{ width: 4, height: 28, borderRadius: 2, background: w.accent_color || "#E03A2F", flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, color: "var(--rpc-text-primary)", letterSpacing: "0.04em" }}>{label}</div>
-                      {w.cached_top_tier && (
-                        <span style={{ fontSize: 8, fontFamily: monoFont, color: tierColor(w.cached_top_tier), letterSpacing: "0.1em" }}>{w.cached_top_tier.toUpperCase()}</span>
-                      )}
+                      <span style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{collectionLabel}</span>
                     </div>
                     {w.cached_fmv != null && (
                       <div style={{ textAlign: "right" }}>
@@ -576,43 +498,6 @@ export default function PublicProfilePage() {
             </div>
           </section>
         )}
-
-        {/* ── Live Sniper Deals ── */}
-        <section style={{ marginBottom: 24 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-            <span style={labelStyle}>⚡ LIVE SNIPER DEALS</span>
-            <Link href="/nba-top-shot/sniper" style={{ marginLeft: "auto", fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", textDecoration: "none", letterSpacing: "0.1em" }}>VIEW ALL →</Link>
-          </div>
-          {sniperLoading ? (
-            <div style={{ padding: "24px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-              {[100, 80, 60].map(function(w, i) {
-                return <div key={i} className="rpc-skeleton" style={{ width: w + "%", maxWidth: 400, height: 12 }} />;
-              })}
-            </div>
-          ) : sniperDeals.length === 0 ? (
-            <div style={{ ...cardStyle, textAlign: "center", padding: "24px", color: "var(--rpc-text-ghost)", fontFamily: monoFont, fontSize: 11 }}>No live deals available right now.</div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {sniperDeals.map(function(deal, i) {
-                return (
-                  <a key={i} href={deal.buyUrl} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
-                    <div style={{ ...cardStyle, display: "grid", gridTemplateColumns: "1fr auto auto", gap: 12, padding: "10px 14px", alignItems: "center" }}>
-                      <div>
-                        <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, color: "var(--rpc-text-primary)", letterSpacing: "0.02em" }}>{deal.playerName}</div>
-                        <span style={{ fontSize: 9, fontFamily: monoFont, color: tierColor(deal.tier) }}>{deal.tier}</span>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-primary)" }}>{fmtDollars(deal.askPrice)}</div>
-                        <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)" }}>FMV {fmtDollars(deal.adjustedFmv)}</div>
-                      </div>
-                      <div style={{ fontFamily: monoFont, fontSize: 12, fontWeight: 700, color: "var(--rpc-danger)" }}>-{deal.discount.toFixed(0)}%</div>
-                    </div>
-                  </a>
-                );
-              })}
-            </div>
-          )}
-        </section>
 
         {/* ── Quick Links ── */}
         <section style={{ marginBottom: 32 }}>
