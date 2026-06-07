@@ -13,11 +13,14 @@ const supabase: any = createClient(
 );
 
 export async function GET(req: NextRequest) {
+  const bearer = req.headers.get("authorization") || "";
+  const expected = process.env.INGEST_SECRET_TOKEN;
   const token =
+    (bearer.startsWith("Bearer ") ? bearer.slice(7) : null) ||
     req.nextUrl.searchParams.get("token") ||
     req.headers.get("x-ingest-token");
 
-  if (token !== process.env.INGEST_SECRET_TOKEN) {
+  if (!expected || token !== expected) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

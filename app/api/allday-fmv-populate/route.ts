@@ -115,8 +115,10 @@ async function fetchPage(cursor: string | null): Promise<PageResult> {
 }
 
 export async function GET(req: NextRequest) {
+  const bearer = req.headers.get("authorization") ?? ""
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (!TOKEN || urlToken !== TOKEN) {
+  const authed = !!TOKEN && (bearer === `Bearer ${TOKEN}` || urlToken === TOKEN)
+  if (!authed) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
