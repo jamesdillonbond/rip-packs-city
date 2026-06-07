@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
     .from("support_conversations")
     .select("*")
     .gte("created_at", since)
+    .not("is_smoke_test", "is", true)
     .order("created_at", { ascending: false });
 
   if (fetchErr) {
