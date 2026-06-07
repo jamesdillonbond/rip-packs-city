@@ -1,31 +1,10 @@
-"use client"
+import { redirect } from "next/navigation"
 
-import PinnacleSniper from "@/components/pinnacle/PinnacleSniper"
-
+// Orphan Flowty-era standalone "Pin Sniper" page. Flowty shut down 2026-05-13
+// and nothing links here anymore; the live Pinnacle surface is the dynamic
+// /disney-pinnacle/* route. Redirect rather than serve the dead PinnacleSniper.
+// (app/pinnacle/moment/[id]/ — the live per-pin pages — is a separate route
+// and is intentionally left intact.)
 export default function PinnaclePage() {
-  return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 16px" }}>
-      {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <h1
-          style={{
-            color: "#f1f5f9",
-            fontSize: 28,
-            fontWeight: 700,
-            letterSpacing: "-0.02em",
-          }}
-        >
-          Disney Pinnacle{" "}
-          <span style={{ color: "#a78bfa", fontWeight: 400 }}>
-            — Pin Sniper
-          </span>
-        </h1>
-        <p style={{ color: "#64748b", fontSize: 13, marginTop: 4 }}>
-          Browse live Flowty listings for Disney, Pixar, Star Wars &amp; more
-        </p>
-      </div>
-
-      <PinnacleSniper />
-    </div>
-  )
+  redirect("/disney-pinnacle/overview")
 }

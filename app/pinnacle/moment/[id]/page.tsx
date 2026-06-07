@@ -163,7 +163,7 @@ export async function generateMetadata({
   if (!data) return { title: "Pinnacle edition — Rip Packs City" }
 
   if (data.kind === "legacy") {
-    const title = `${data.renders.length} editions on ${data.key} | Rip Packs City`
+    const title = `${data.renders.length} editions on ${data.key}`
     const canonical = `${SITE_URL}/pinnacle/moment/${encodeURIComponent(id)}`
     return {
       title,
@@ -175,7 +175,7 @@ export async function generateMetadata({
 
   const { ed } = data
   const ogImage = `${SITE_URL}/api/public/pinnacle-image/${encodeURIComponent(ed.render_id)}`
-  const title = `${ed.character_name ?? "Pinnacle edition"} · ${ed.variant ?? ""} | Rip Packs City`
+  const title = `${ed.character_name ?? "Pinnacle edition"} · ${ed.variant ?? ""}`
   const description = `${ed.character_name ?? "—"} from ${ed.set_name ?? "—"}, ${ed.variant ?? "—"} variant, mint ${ed.total_minted ?? "—"}. Disney Pinnacle scarcity, per-pin FMV + live floor.`
   const canonical = `${SITE_URL}/pinnacle/moment/${encodeURIComponent(ed.render_id)}`
   return {
@@ -205,6 +205,27 @@ function fmtUsd(n: number | null | undefined): string {
 function fmtInt(n: number | null | undefined): string {
   if (n == null) return "—"
   return Number(n).toLocaleString("en-US")
+}
+
+// materials/effects come back as jsonb/text arrays (e.g. '["GOLD"]',
+// '["LED GLITCH"]'). Render them as plain joined text rather than raw JSON.
+function fmtList(v: string | string[] | null | undefined): string {
+  if (v == null) return "—"
+  let arr: unknown = v
+  if (typeof v === "string") {
+    const s = v.trim()
+    if (s === "") return "—"
+    if (s.startsWith("[")) {
+      try { arr = JSON.parse(s) } catch { return s }
+    } else {
+      return s
+    }
+  }
+  if (Array.isArray(arr)) {
+    const cleaned = arr.map((x) => String(x).trim()).filter(Boolean)
+    return cleaned.length ? cleaned.join(", ") : "—"
+  }
+  return String(arr)
 }
 
 function fmtDate(iso: string | null | undefined): string {
@@ -362,8 +383,8 @@ export default async function PinnacleMomentPage({
         <div className="rpc-pm-pairs">
           <Detail label="Series" value={ed.series_name ?? "—"} />
           <Detail label="Printing" value={ed.printing != null ? String(ed.printing) : "—"} />
-          <Detail label="Materials" value={ed.materials ?? "—"} />
-          <Detail label="Effects" value={ed.effects ?? "—"} />
+          <Detail label="Materials" value={fmtList(ed.materials)} />
+          <Detail label="Effects" value={fmtList(ed.effects)} />
           <Detail label="Size" value={ed.size ?? "—"} />
           <Detail label="Color" value={ed.color ?? "—"} />
           <Detail label="Thickness" value={ed.thickness ?? "—"} />

@@ -31,7 +31,6 @@ export const rootMetadata: Metadata = {
     'moment value',
     'Top Shot analytics',
     'Flow blockchain',
-    'Flowty',
     'collector tools',
     'sniper deals',
     'pack EV',
