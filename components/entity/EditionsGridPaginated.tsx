@@ -48,6 +48,15 @@ interface Props {
   pageSize: number
   showSetLink?: boolean
   showSort?: boolean
+  /**
+   * Pack-distribution mode: split loaded rows into pullable (drop_weight > 0
+   * or absent) and exhausted (drop_weight === 0). Pullable render in the main
+   * grid; exhausted move to a collapsed "pulled out" section. Off for every
+   * other importer (player/set/series/team pages) so their tiles are untouched.
+   */
+  packMode?: boolean
+  /** Total exhausted (drop_weight = 0) pool rows, for the collapsed-section header. */
+  exhaustedTotal?: number
 }
 
 function compare(a: EditionTile, b: EditionTile, key: SortKey): number {
@@ -61,14 +70,22 @@ function compare(a: EditionTile, b: EditionTile, key: SortKey): number {
   }
 }
 
-export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, initial, pageSize, showSetLink = true, showSort = false }: Props) {
+export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, initial, pageSize, showSetLink = true, showSort = false, packMode = false, exhaustedTotal = 0 }: Props) {
   const [rows, setRows] = useState<EditionTile[]>(initial)
   const [offset, setOffset] = useState<number>(initial.length)
   const [loading, setLoading] = useState(false)
   const [exhausted, setExhausted] = useState(initial.length < pageSize)
   const [sortKey, setSortKey] = useState<SortKey>("fmv_desc")
+  const [showExhausted, setShowExhausted] = useState(false)
 
   const sorted = showSort ? [...rows].sort((a, b) => compare(a, b, sortKey)) : rows
+
+  // packMode: pull drop_weight === 0 rows out of the main grid into a collapsed
+  // "pulled out" section. Rows with no drop_weight (every non-pack importer)
+  // stay in the grid, so those pages are unaffected.
+  const gridRows = packMode ? sorted.filter((e) => e.drop_weight !== 0) : sorted
+  const exhaustedRows = packMode ? sorted.filter((e) => e.drop_weight === 0) : []
+  const exhaustedCount = Math.max(exhaustedTotal, exhaustedRows.length)
 
   // Hover-video only for collections that actually carry moment clips. All Day
   // video_url is null in our data today, so this is effectively Top Shot.
@@ -124,64 +141,8 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
         </div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
-        {sorted.map((e, idx) => (
-          <Link
-            key={e.route_slug}
-            href={`/${collectionUrlSlug}/edition/${encodeURIComponent(e.route_slug)}`}
-            className="rpc-card"
-            style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block" }}
-          >
-            <TileMedia
-              thumbnailUrl={e.thumbnail_url}
-              videoUrl={e.video_url ?? null}
-              alt={e.player_name ?? e.name ?? "Edition"}
-              eager={idx < 12}
-              videoEnabled={videoEnabled}
-            />
-            <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2, marginBottom: 4 }}>
-              {e.player_name ?? e.name ?? "Edition"}
-            </div>
-            {showSetLink && e.set_name && (
-              <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", marginBottom: 6 }}>{e.set_name}</div>
-            )}
-            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
-              <TierBadge tier={e.tier} />
-              {e.series_label && <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>{e.series_label}</span>}
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <div>
-                <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.14em" }}>FMV</div>
-                <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 16, color: "var(--rpc-text-primary)" }}>{fmtUsd(e.fmv_usd)}</div>
-              </div>
-              <div style={{ textAlign: "right" }}>
-                <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.14em" }}>Floor</div>
-                <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>{fmtUsd(e.floor_usd ?? null)}</div>
-              </div>
-            </div>
-            <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <ConfidencePill confidence={e.fmv_confidence ?? null} href={null} />
-              {e.circulation_count !== null && e.circulation_count !== undefined && (
-                <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>
-                  Mint {fmtCount(e.circulation_count)}
-                </span>
-              )}
-              {(e.circulation_count === null || e.circulation_count === undefined) && (
-                <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>Mint {EM_DASH}</span>
-              )}
-            </div>
-            {(e.hit_probability !== undefined && e.hit_probability !== null) && (
-              <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.10em" }}>
-                  Hit {(e.hit_probability * 100).toFixed(2)}%
-                </span>
-                {(e.drop_weight !== undefined && e.drop_weight !== null) && (
-                  <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)" }}>
-                    Wt {fmtCount(e.drop_weight)}
-                  </span>
-                )}
-              </div>
-            )}
-          </Link>
+        {gridRows.map((e, idx) => (
+          <EditionTileCard key={e.route_slug} e={e} idx={idx} collectionUrlSlug={collectionUrlSlug} showSetLink={showSetLink} videoEnabled={videoEnabled} />
         ))}
       </div>
       {!exhausted && (
@@ -191,7 +152,117 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
           </button>
         </div>
       )}
+
+      {packMode && exhaustedCount > 0 && (
+        <div style={{ marginTop: 16, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 12 }}>
+          <button
+            type="button"
+            onClick={() => setShowExhausted((v) => !v)}
+            className="rpc-mono"
+            style={{
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--rpc-text-secondary)",
+              fontSize: 11,
+              letterSpacing: "0.10em",
+              textTransform: "uppercase",
+              padding: 0,
+            }}
+          >
+            {showExhausted ? "▾" : "▸"} Exhausted / pulled out ({exhaustedCount})
+          </button>
+          {showExhausted && (
+            exhaustedRows.length === 0 ? (
+              <div style={{ marginTop: 10, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+                Load more above to reveal the exhausted editions (they sort after the pullable ones).
+              </div>
+            ) : (
+              <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10, opacity: 0.6 }}>
+                {exhaustedRows.map((e, idx) => (
+                  <EditionTileCard key={e.route_slug} e={e} idx={idx} collectionUrlSlug={collectionUrlSlug} showSetLink={showSetLink} videoEnabled={videoEnabled} />
+                ))}
+              </div>
+            )
+          )}
+        </div>
+      )}
     </div>
+  )
+}
+
+// Single edition tile, shared by the main grid and the packMode "exhausted"
+// section so both render identically.
+function EditionTileCard({
+  e,
+  idx,
+  collectionUrlSlug,
+  showSetLink,
+  videoEnabled,
+}: {
+  e: EditionTile
+  idx: number
+  collectionUrlSlug: string
+  showSetLink: boolean
+  videoEnabled: boolean
+}) {
+  return (
+    <Link
+      href={`/${collectionUrlSlug}/edition/${encodeURIComponent(e.route_slug)}`}
+      className="rpc-card"
+      style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block" }}
+    >
+      <TileMedia
+        thumbnailUrl={e.thumbnail_url}
+        videoUrl={e.video_url ?? null}
+        alt={e.player_name ?? e.name ?? "Edition"}
+        eager={idx < 12}
+        videoEnabled={videoEnabled}
+      />
+      <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2, marginBottom: 4 }}>
+        {e.player_name ?? e.name ?? "Edition"}
+      </div>
+      {showSetLink && e.set_name && (
+        <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", marginBottom: 6 }}>{e.set_name}</div>
+      )}
+      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
+        <TierBadge tier={e.tier} />
+        {e.series_label && <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>{e.series_label}</span>}
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <div>
+          <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.14em" }}>FMV</div>
+          <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 16, color: "var(--rpc-text-primary)" }}>{fmtUsd(e.fmv_usd)}</div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.14em" }}>Floor</div>
+          <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>{fmtUsd(e.floor_usd ?? null)}</div>
+        </div>
+      </div>
+      <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <ConfidencePill confidence={e.fmv_confidence ?? null} href={null} />
+        {e.circulation_count !== null && e.circulation_count !== undefined && (
+          <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>
+            Mint {fmtCount(e.circulation_count)}
+          </span>
+        )}
+        {(e.circulation_count === null || e.circulation_count === undefined) && (
+          <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>Mint {EM_DASH}</span>
+        )}
+      </div>
+      {(e.hit_probability !== undefined && e.hit_probability !== null) && (
+        <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.10em" }}>
+            Hit {(e.hit_probability * 100).toFixed(2)}%
+          </span>
+          {(e.drop_weight !== undefined && e.drop_weight !== null) && (
+            <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)" }}>
+              Wt {fmtCount(e.drop_weight)}
+            </span>
+          )}
+        </div>
+      )}
+    </Link>
   )
 }
 
