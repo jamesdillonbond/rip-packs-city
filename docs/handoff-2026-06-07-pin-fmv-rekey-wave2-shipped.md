@@ -81,3 +81,34 @@ DROP `get_pinnacle_edition_fmv_collapsed(text)` and restore each of the 13
 functions to its pre-Wave-2 body (the legacy `pinnacle_fmv_snapshots` LATERAL).
 Prior bodies are in Supabase migration history immediately before each
 `audit_*_pin_fmv_rekey_wave2_<fn>` migration. No data was modified (read-path only).
+
+---
+
+# PIN-FMV-REKEY Wave 3 — SHIPPED (2026-06-07, Claude Code)
+
+Stats/health/analytics + routes. DB migrations live; routes deployed (`5f448f7`).
+
+## DB (migrations `audit_*_pin_fmv_rekey_wave3_<fn>`)
+- `analytics_data_quality_overview` — Pinnacle `fmv_freshness_min` now `MAX(fmv_computed_at) FROM pinnacle_catalog`.
+- `analytics_liquidity_distribution` — Pinnacle CTE reads `pinnacle_catalog` per-render (`fmv_liquidity_rating`/`fmv_confidence`/`fmv_usd`), no DISTINCT ON.
+- `analytics_smoke_run` — (2.2) FMV-freshness Pinnacle CTE reads `pinnacle_catalog.fmv_computed_at`.
+- Verified: smoke_run 0 fails; `pinnacle l5+l1 = 595`; FMV-freshness warn-only (771 min = expected daily pinnacle-sync cadence, pre-existing).
+
+## Routes (deployed)
+- `app/api/collection-stats` — Pinnacle HIGH/MED% per-render from `pinnacle_catalog`.
+- `app/api/overview-stats` — Pinnacle `totalEditions`+`highConfCount` per-render (2,079 pins vs 337 set-level).
+- `app/api/pinnacle/listings` — dropped the unused legacy fmv embed (dead route; consumer `PinnacleSniper` unmounted, `/pinnacle` redirects).
+- `lib/sniper/pinnacle.ts` — FMV map from `pinnacle_catalog` representative (dormant Flowty leg, kept off legacy).
+
+## Comment-only / skipped (not readers)
+`fmv-recalc` (guard comment), `market-analytics` (comment), `pinnacle-listings-indexer` ("stays out of it"), `populate-pinnacle-wmc-fmv` (RPC already render-keyed in Wave 1a), `health_check`/`pinnacle_health_check` (don't read it).
+
+## Retirement status — BLOCKED (intentional)
+The ONLY remaining reader of `pinnacle_fmv_snapshots` is `get_edition_fmv_history`
+(time-series; `pinnacle_catalog` is single-point). The legacy table + its writer
+(`pinnacle_fmv_recalc_all` via pinnacle-sync) stay live until a per-render history
+table exists. Do NOT drop the legacy table/writer before that.
+
+## Revert (Wave 3)
+Restore the 3 analytics fn bodies from migration history (before the
+`audit_*_pin_fmv_rekey_wave3_*` migrations); `git revert` the route commit `5f448f7`.
