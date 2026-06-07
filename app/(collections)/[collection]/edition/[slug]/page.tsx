@@ -67,6 +67,10 @@ interface EditionDetail {
     sales_count_30d: number | null
     days_since_sale: number | null
     cross_market_ask?: number | null
+    // PIN-FMV-REKEY Wave 2: per-render spread for Pinnacle set-level keys.
+    fmv_min?: number | null
+    fmv_max?: number | null
+    render_count?: number | null
   } | null
   is_serialized?: boolean
   is_chaser?: boolean
@@ -472,6 +476,17 @@ export default async function EditionPage(
                 salesCount30d={fmv?.sales_count_30d ?? null}
                 ask={askValue}
               />
+              {/* PIN-FMV-REKEY Wave 2: this is the most-liquid render; show the
+                  per-render spread when the set-level key fans out. */}
+              {isPinnacle &&
+                (fmv?.render_count ?? 0) > 1 &&
+                fmv?.fmv_min != null &&
+                fmv?.fmv_max != null &&
+                fmv.fmv_min !== fmv.fmv_max && (
+                  <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.04em" }}>
+                    range {fmtUsd(fmv.fmv_min)}–{fmtUsd(fmv.fmv_max)} · {fmv.render_count} renders
+                  </span>
+                )}
             </span>
           }
         />
