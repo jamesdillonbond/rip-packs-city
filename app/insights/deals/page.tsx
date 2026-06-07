@@ -2,13 +2,13 @@
 //
 // Public Below FMV board — SERVER component. Fetches the default board view
 // (discount_pct >= 10, discount desc) directly from the public
-// topshot_deals_vs_fmv view via supabaseAdmin (exactly as
+// cross_collection_deals_board view via supabaseAdmin (exactly as
 // /api/public/insights/deals does) and hands the rows to the client
 // interactivity layer as `initialRows`. This puts the ranked table AND the
-// per-row /nba-top-shot/edition/<external_id> drill-down links into the raw
+// per-row drill-down links (TS edition pages / Pinnacle pin pages) into the raw
 // server HTML so the unique below-FMV content is crawlable. The client
-// (DealsBoardClient) layers on tier/confidence/sort/drill-down as progressive
-// enhancement and only refetches when those change.
+// (DealsBoardClient) layers on collection/tier/confidence/sort/drill-down as
+// progressive enhancement and only refetches when those change.
 //
 // Metadata + JSON-LD live in layout.tsx (server-rendered).
 
@@ -19,12 +19,12 @@ import DealsBoardClient, { type Row } from "./DealsBoardClient"
 export const revalidate = 300
 
 const SELECT_COLS =
-  "external_id, name, player_name, set_name, tier, circulation_count, fmv_usd, confidence, low_ask, discount_pct, discount_usd, ask_updated_at"
+  "external_id, name, player_name, set_name, tier, circulation_count, fmv_usd, confidence, low_ask, discount_pct, discount_usd, ask_updated_at, collection_slug, collection_name, render_id, detail_url, thumbnail_url"
 
 async function fetchInitialRows(): Promise<Row[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabaseAdmin as any)
-    .from("topshot_deals_vs_fmv")
+    .from("cross_collection_deals_board")
     .select(SELECT_COLS)
     .gte("discount_pct", 10)
     .order("discount_pct", { ascending: false })

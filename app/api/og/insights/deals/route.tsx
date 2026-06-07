@@ -36,8 +36,8 @@ export async function GET(req: NextRequest) {
 
   const headline =
     deals != null && deals > 0
-      ? `${deals}${capped ? "+" : ""} Top Shot editions listed below FMV`
-      : "Top Shot editions listed below fair value"
+      ? `${deals}${capped ? "+" : ""} Top Shot + Pinnacle editions listed below FMV`
+      : "Top Shot + Pinnacle editions listed below fair value"
 
   return new ImageResponse(
     (
@@ -88,7 +88,7 @@ export async function GET(req: NextRequest) {
             maxWidth: 1000,
           }}
         >
-          Top Shot shows you a listing. We rank listings against a confidence-rated FMV — what&apos;s actually underpriced right now.
+          Marketplaces show you a listing. We rank Top Shot asks and Pinnacle floors against a confidence-rated FMV — what&apos;s actually underpriced right now.
         </div>
 
         <div style={{ flex: 1 }} />
