@@ -19,7 +19,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
-import { PackThumb } from "@/components/packs/PackTable"
+import PackHeroArt from "@/components/packs/PackHeroArt"
 // tierChip moved to lib/tier-style.ts so this server component can call it;
 // the version exported from PackTable.tsx ('use client') would throw at
 // runtime — that's the bug this page was hitting before 2026-05-26.
@@ -87,6 +87,8 @@ interface EditionLite {
   name: string | null
   tier: string | null
   external_id: string | null
+  player_name: string | null
+  set_name: string | null
 }
 
 interface FmvRow {
@@ -168,7 +170,7 @@ async function fetchTopPulls(
   // resort, and surface probability as null when we can't compute the real
   // denominator.
   const [editionsRes, fmvRes, fullPoolWeightRes] = await Promise.all([
-    sb.from("editions").select("id, name, tier, external_id").in("id", editionIds),
+    sb.from("editions").select("id, name, tier, external_id, player_name, set_name").in("id", editionIds),
     sb.rpc("get_fmv_for_editions", {
       p_collection_id: collectionId,
       p_edition_ids: editionIds,
@@ -223,7 +225,13 @@ async function fetchTopPulls(
     const ev = fmv !== null && denom && denom > 0 && slots && slots > 0
       ? fmv * (dropWeight / denom) * slots
       : null
-    const { player, setName } = splitEditionName(ed?.name ?? null)
+    // Prefer the clean denormalized columns. editions.name glues the series
+    // number onto the set name for some Top Shot rows ("Base Set6"), so
+    // splitting it gives a corrupted set cell (Pack 1e) — only fall back to
+    // the split when the denorm columns are empty.
+    const split = splitEditionName(ed?.name ?? null)
+    const player = ed?.player_name?.trim() || split.player
+    const setName = ed?.set_name?.trim() || split.setName
     return {
       editionId: r.edition_id,
       player,
@@ -447,6 +455,27 @@ export default async function PackDetailPage(
   const isRewardPack = retailPrice === 0
   const showPriceVerdict = !isRewardPack && priceSource !== "none"
 
+  // Does this distribution have a real, indexed drop pool? Gates the
+  // pull-odds-by-tier panel (which otherwise renders pack-count-by-tier as if
+  // it were pool entries on no-pool packs — Pack 1b) and the EV-sentinel
+  // honesty path (Pack 1c).
+  const hasDropPool = topPulls.length > 0 || packContents.length > 0 || (editionCount != null && editionCount > 0)
+
+  // 1c — A no-pool pack's latest EV row is a sentinel (edition_count 0 /
+  // fmv_coverage null|0). Rendering "$0.00 Gross EV / Net +$0.00" reads as
+  // "this pack is worthless" and contradicts the empty state below; show an
+  // em-dash + "awaiting pool data" and suppress the Net line instead.
+  const isSentinelEv = !hasDropPool && ((editionCount ?? 0) === 0 || !fmvCoverage)
+
+  // 1f — Hero montage fallback: top-4-by-FMV pool thumbnails, used by
+  // PackHeroArt when the pack's own image_url is dead/missing.
+  const montageThumbs = packContents
+    .filter((e) => !!e.thumbnail_url)
+    .slice()
+    .sort((a, b) => (Number(b.fmv_usd) || 0) - (Number(a.fmv_usd) || 0))
+    .map((e) => e.thumbnail_url as string)
+    .slice(0, 4)
+
   // ── Tier-count metadata (PACKVIZ) ──────────────────────────────────────────
   // compute-topshot-pack-ev v20 persists per-pack remaining/original counts-by-tier
   // + total_unopened/total_pack_count into pack_distributions.metadata as its EV
@@ -513,9 +542,11 @@ export default async function PackDetailPage(
 
   const tierLabel = tier.charAt(0).toUpperCase() + tier.slice(1)
   const packTypeLabel = String(merged.pack_type ?? "").trim()
+  // 1d — when slots is unknown render nothing here. The old fallback to
+  // packTypeLabel duplicated the pack-type chip beside it ("Pack pack").
   const slotsLabel = merged.slots && merged.slots > 0
     ? `${merged.slots} slot${merged.slots === 1 ? "" : "s"}`
-    : (packTypeLabel || "—")
+    : null
 
   const cardStyle: React.CSSProperties = {
     background: "rgba(13,13,13,0.92)",
@@ -553,7 +584,7 @@ export default async function PackDetailPage(
               justifyContent: "center",
             }}
           >
-            <PackThumb url={merged.image_url} tier={tier} title={title} size={260} />
+            <PackHeroArt url={merged.image_url} tier={tier} title={title} montage={montageThumbs} size={260} />
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
@@ -618,15 +649,17 @@ export default async function PackDetailPage(
                   {packTypeLabel}
                 </span>
               )}
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  color: "rgba(255,255,255,0.55)",
-                }}
-              >
-                {slotsLabel}
-              </span>
+              {slotsLabel && (
+                <span
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    color: "rgba(255,255,255,0.55)",
+                  }}
+                >
+                  {slotsLabel}
+                </span>
+              )}
               {isPositive && grossEv !== null && showPriceVerdict && (
                 <span
                   style={{
@@ -772,9 +805,9 @@ export default async function PackDetailPage(
         />
         <KpiCell
           label="Gross EV"
-          value={fmtUsd(grossEv)}
-          sub={isRewardPack ? "Reward pack — net vs $0 retail not meaningful" : priceSource === "none" ? "No anchor — verdict suppressed" : coverageCaveat ? (packEv !== null ? `Net ${packEv >= 0 ? "+" : ""}${fmtUsd(Math.abs(packEv))} · ${coverageCaveat}` : coverageCaveat) : packEv !== null ? `Net ${packEv >= 0 ? "+" : ""}${fmtUsd(Math.abs(packEv))}` : undefined}
-          color={!showColoredVerdict || packEv === null ? undefined : packEv >= 0 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
+          value={isSentinelEv ? "—" : fmtUsd(grossEv)}
+          sub={isSentinelEv ? "awaiting pool data" : isRewardPack ? "Reward pack — net vs $0 retail not meaningful" : priceSource === "none" ? "No anchor — verdict suppressed" : coverageCaveat ? (packEv !== null ? `Net ${packEv >= 0 ? "+" : ""}${fmtUsd(Math.abs(packEv))} · ${coverageCaveat}` : coverageCaveat) : packEv !== null ? `Net ${packEv >= 0 ? "+" : ""}${fmtUsd(Math.abs(packEv))}` : undefined}
+          color={isSentinelEv || !showColoredVerdict || packEv === null ? undefined : packEv >= 0 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
         />
         <KpiCell
           label="Value ratio"
@@ -805,9 +838,9 @@ export default async function PackDetailPage(
       <TierOddsPanel
         remainingByTier={remainingByTier}
         originalByTier={originalByTier}
-        totalUnopened={liveUnopened}
         slots={oddsSlots}
         updatedAt={tierCountsUpdatedAt}
+        hasDropPool={hasDropPool}
       />
 
       {/* ── What's inside (visual grid) ──────────────────────────────────── */}
@@ -1154,10 +1187,13 @@ function relTimeShort(iso: string | null): string {
   return `${Math.round(hrs / 24)}d ago`
 }
 
-function packOddsLabel(remaining: number, totalUnopened: number | null, slots: number | null): string {
+// `poolRemaining` is the total number of remaining POOL ENTRIES (Σ over tiers
+// of remaining_by_tier), NOT packs-remaining. Dividing by packs-remaining was
+// the Pack 1a bug (Common showed 596% = 328 entries / 55 packs).
+function packOddsLabel(remaining: number, poolRemaining: number | null, slots: number | null): string {
   if (remaining <= 0) return "depleted"
-  if (!totalUnopened || totalUnopened <= 0 || !slots || slots <= 0) return "—"
-  const p = remaining / totalUnopened
+  if (!poolRemaining || poolRemaining <= 0 || !slots || slots <= 0) return "—"
+  const p = remaining / poolRemaining
   const atLeastOne = 1 - Math.pow(1 - p, slots)
   if (atLeastOne <= 0) return "—"
   if (atLeastOne >= 0.999) return "~every pack"
@@ -1168,17 +1204,24 @@ function packOddsLabel(remaining: number, totalUnopened: number | null, slots: n
 function TierOddsPanel({
   remainingByTier,
   originalByTier,
-  totalUnopened,
   slots,
   updatedAt,
+  hasDropPool,
 }: {
   remainingByTier: Record<string, number> | null
   originalByTier: Record<string, number> | null
-  totalUnopened: number | null
   slots: number | null
   updatedAt: string | null
+  hasDropPool: boolean
 }) {
   if (!remainingByTier || !originalByTier) return null
+  // 1b — On no-pool packs the v20 metadata writes pack-count-by-tier here, not
+  // pool entries, so the percentages and odds would be fabricated. Only render
+  // when there's a real indexed drop pool; the Top-Pulls empty state covers
+  // the rest.
+  if (!hasDropPool) return null
+  // 1a — denominator is the remaining POOL ENTRIES across all tiers.
+  const poolRemaining = Object.values(remainingByTier).reduce<number>((s, v) => s + (Number(v) || 0), 0)
   const tiers = TIER_RARITY_ORDER.filter((t) => Number(originalByTier[t] ?? 0) > 0)
   for (const k of Object.keys(originalByTier)) {
     if (!TIER_RARITY_ORDER.includes(k) && Number(originalByTier[k] ?? 0) > 0) tiers.push(k)
@@ -1228,7 +1271,7 @@ function TierOddsPanel({
               const remaining = Number(remainingByTier[t] ?? 0)
               const original = Number(originalByTier[t] ?? 0)
               const chip = tierChip(t)
-              const pctOfPool = totalUnopened && totalUnopened > 0 ? (remaining / totalUnopened) * 100 : null
+              const pctOfPool = poolRemaining > 0 ? (remaining / poolRemaining) * 100 : null
               return (
                 <tr key={t} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                   <Td>
@@ -1256,7 +1299,7 @@ function TierOddsPanel({
                     {pctOfPool === null ? "—" : pctOfPool < 0.1 && pctOfPool > 0 ? "<0.1%" : `${pctOfPool.toFixed(pctOfPool >= 10 ? 0 : 1)}%`}
                   </Td>
                   <Td align="right" color={remaining > 0 ? "#fff" : "rgba(255,255,255,0.4)"}>
-                    {packOddsLabel(remaining, totalUnopened, slots)}
+                    {packOddsLabel(remaining, poolRemaining, slots)}
                   </Td>
                 </tr>
               )
