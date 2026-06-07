@@ -282,8 +282,8 @@ export default function RewardsPage() {
           // failure. (redeem_shop_item returns 'verified_wallet_required'.)
           setFlash({
             kind: "err",
-            msg: "Verify your Top Shot wallet to unlock Moment + Pro rewards.",
-            cta: { label: "Verify wallet →", href: "/profile" },
+            msg: "Verify your Top Shot wallet (list a Moment, ~2 min) to unlock Moment + Pro rewards.",
+            cta: { label: "Verify wallet →", href: "/dashboard?verify=1" },
           });
         } else {
           const reason =
@@ -637,7 +637,7 @@ export default function RewardsPage() {
             <SectionTitle>Shop</SectionTitle>
             {!hasVerifiedWallet && (
               <Link
-                href="/profile"
+                href="/dashboard?verify=1"
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -655,8 +655,8 @@ export default function RewardsPage() {
                   🔒
                 </span>
                 <span style={{ fontFamily: MONO, fontSize: 13 }}>
-                  Verify your Top Shot wallet to unlock Moment + Pro rewards — and earn{" "}
-                  <strong style={{ color: RED }}>500 credits</strong> for linking.
+                  Verify by listing a Moment — about 2 minutes. Unlocks Moment + Pro rewards and earns{" "}
+                  <strong style={{ color: RED }}>500 credits</strong>.
                 </span>
                 <span style={{ marginLeft: "auto", color: RED, fontFamily: DISPLAY, whiteSpace: "nowrap" }}>
                   Verify →

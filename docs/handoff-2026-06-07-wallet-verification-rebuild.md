@@ -19,6 +19,21 @@ CONTEXT — why wallet verification is broken (verified 2026-06-07)
 THE INVARIANT: verification must remain proof-of-control. The on-demand check confirms via Top Shot's own API that the claimed wallet has a live listing at the exact challenge amount. Never resolve on client claims alone.
 
 ================================================================
+AMENDMENT (2026-06-07, Trevor's UX feedback — READ FIRST, supersedes parts of Items 1-3)
+================================================================
+Trevor tried the flow; the friction was choosing what to list and finding it on Top Shot. New design: RPC PICKS THE MOMENT FOR THE USER and hands them a deep link. Flow becomes: open modal -> "List THIS Moment for exactly $X.YZ" (their own sub-$1 Moment shown as a card) -> [Open on Top Shot] -> they list it -> [Done — check] -> verified +500 -> "you can delist now."
+
+Shipped live DB-side to support this (Cowork, audit_20260607_verification_target_picker):
+- wallet_verification_challenges new columns: target_moment_id text, target_edition_key text, target_serial int, target_fmv numeric — the mint route stores the chosen target.
+- pick_verification_target(p_wallet text, p_limit int default 5) — service_role-only; returns the wallet's cheapest displayable TS Moments (fmv_usd > 0 AND < 1, image present) as candidates: moment_id, edition_key, serial_number, player_name, set_name, image_url, fmv_usd. Verified on Trevor's wallet: returns $0.03-0.04 dust Commons.
+
+Changes to the items below:
+- MINT (POST /api/profile/verify-challenge): call pick_verification_target; live-confirm the top candidate via the per-moment GQL (unlocked + not already listed — skip to the next candidate if it fails; that same GQL query is the one the check uses); compute challenge_amount = GREATEST(round(fmv_usd*100), 10) + random cents (0.01-0.99, store 2dp — the cents are the uniqueness salt; the 100x/$10-floor price means it can never be unintentionally purchased); store amount + the target_* columns. Response includes the target card data + the exact price + a deep link to that Moment on Top Shot (ground the owned-moment URL format in the repo's existing native-moment URL builders — sniper-feed's resolveViewUrl fallback / the moment-page link helpers — do not guess it).
+- CHECK (Item 1): becomes a SINGLE-MOMENT check — fetch the challenge's target_moment_id listing state via the per-moment GQL and compare list price to challenge_amount in cents. No wallet-scoped listing search needed; strategy (a) is dead, the amended (b) with a server-chosen moment is THE design. No user picker either.
+- MODAL (Item 2): render the target Moment card (image/player/serial from the challenge response), the exact price in big type, [Open on Top Shot] (deep link, new tab), and [I've listed it — Done] -> check endpoint. On success: "Verified — +500 credits. You can delist the Moment now." On no-match: "Not seeing it yet — confirm it's listed at exactly $X.YZ and try again in a minute."
+- Edge cases: picker returns empty (no sub-$1 Moment) -> relax: cheapest Moment overall, price = min(GREATEST(round(fmv*100),10), 999) + cents; wallet has no displayable Moments at all -> show "verification by listing unavailable for this wallet" (owner attestation or Dapper sign-in later are the fallbacks). Legacy challenges without target_* stay checkable only by expiry (ignore them; mint fresh).
+
+================================================================
 ITEM 1 (P0) — on-demand check endpoint: app/api/profile/verify-challenge/check/route.ts  [NEW]
 ================================================================
 POST { wallet_addr } (and optionally { moment_id } — see strategy b). Session-resolved user (requireUser/getCurrentUser). Flow:
