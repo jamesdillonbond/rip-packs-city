@@ -38,6 +38,15 @@ interface Balance {
   lifetime_spent: number;
   last_activity: string | null;
 }
+interface ShipTo {
+  name?: string;
+  line1?: string;
+  line2?: string;
+  city?: string;
+  region?: string;
+  postal?: string;
+  country?: string;
+}
 interface Pending {
   id: number;
   user_id: string;
@@ -48,6 +57,8 @@ interface Pending {
   item_name?: string;
   item_type?: string | null;
   username?: string | null;
+  ts_username?: string | null;
+  ship_to?: ShipTo | null;
 }
 interface Raffle {
   id: number;
@@ -341,6 +352,29 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
                         {r.username ?? r.user_id.slice(0, 8)} · {num(r.cost_credits)} cr ·{" "}
                         {new Date(r.requested_at).toLocaleDateString()}
                       </div>
+                      {r.item_type === "moment" && (
+                        <div style={{ fontFamily: MONO, fontSize: 11, marginTop: 4 }}>
+                          {r.ts_username ? (
+                            <span style={{ color: "#5cc46a" }}>Gift to @{r.ts_username}</span>
+                          ) : (
+                            <span style={{ color: "#d6a13a" }}>Gift target unresolved — ask the user</span>
+                          )}
+                        </div>
+                      )}
+                      {r.item_type === "merch" && (
+                        <div style={{ fontFamily: MONO, fontSize: 11, marginTop: 4 }}>
+                          {r.ship_to?.name && r.ship_to?.line1 ? (
+                            <span style={{ color: "#cfcfcf" }}>
+                              Ship to {r.ship_to.name}, {r.ship_to.line1}
+                              {r.ship_to.line2 ? `, ${r.ship_to.line2}` : ""}, {r.ship_to.city}
+                              {r.ship_to.region ? `, ${r.ship_to.region}` : ""}{" "}
+                              {r.ship_to.postal ?? ""} {r.ship_to.country ?? ""}
+                            </span>
+                          ) : (
+                            <span style={{ color: "#d6a13a" }}>No shipping address yet — waiting on the user</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
                       <button

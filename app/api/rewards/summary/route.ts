@@ -28,7 +28,18 @@ export async function GET() {
   // Capped/cooldowned server-side — safe to fire on every load.
   await awardPoints(user.id, "daily_visit");
 
-  const [summary, rules, shop, redemptions, referrals, cosmetics, bio, verifiedWallet] = await Promise.all([
+  const [
+    summary,
+    rules,
+    shop,
+    redemptions,
+    referrals,
+    cosmetics,
+    bio,
+    verifiedWallet,
+    tsProfile,
+    bestWallet,
+  ] = await Promise.all([
     getRewardsSummary(user.id),
     supabase
       .from("points_rules")
@@ -44,7 +55,7 @@ export async function GET() {
       .order("cost_credits", { ascending: true }),
     supabase
       .from("redemptions")
-      .select("id,shop_item_id,cost_credits,status,requested_at")
+      .select("id,shop_item_id,cost_credits,status,requested_at,fulfillment")
       .eq("user_id", user.id)
       .order("requested_at", { ascending: false })
       .limit(50),
@@ -78,6 +89,24 @@ export async function GET() {
       .order("verified_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // Top Shot username for the gift-target prompt: profile field first (empty
+    // today but future-proof) ...
+    supabase
+      .from("user_profiles")
+      .select("topshot_username")
+      .eq("id", user.id)
+      .maybeSingle(),
+    // ... else the user's best linked wallet (verified preferred, newest wins on
+    // ties — none are verified yet so this is effectively the newest), whose TS
+    // username is then looked up in wallet_usernames below.
+    supabase
+      .from("saved_wallets")
+      .select("wallet_addr")
+      .eq("user_id", user.id)
+      .order("verified_at", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   // Resolve Pro status from the verified wallet (getProStatus lowercases).
@@ -95,6 +124,23 @@ export async function GET() {
     }
   }
 
+  // Resolve the Top Shot username a Moment prize would be gifted to: the profile
+  // field, else the linked wallet's TS username from wallet_usernames (stored
+  // lowercased; saved_wallets addrs are 0x-lowercase too).
+  let resolvedTsUsername: string | null =
+    (tsProfile.data as { topshot_username?: string | null } | null)?.topshot_username || null;
+  if (!resolvedTsUsername) {
+    const giftWallet = (bestWallet.data as { wallet_addr?: string } | null)?.wallet_addr ?? null;
+    if (giftWallet) {
+      const { data: wu } = await supabase
+        .from("wallet_usernames")
+        .select("username")
+        .eq("wallet_addr", giftWallet.toLowerCase())
+        .maybeSingle();
+      resolvedTsUsername = (wu as { username?: string } | null)?.username ?? null;
+    }
+  }
+
   return NextResponse.json({
     userId: user.id,
     summary: summary ?? null,
@@ -108,5 +154,6 @@ export async function GET() {
       banner: (bio.data as { equipped_banner?: string | null } | null)?.equipped_banner ?? null,
     },
     pro,
+    resolvedTsUsername,
   });
 }

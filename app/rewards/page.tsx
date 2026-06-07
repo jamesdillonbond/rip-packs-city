@@ -79,12 +79,26 @@ interface ShopItem {
   image_url: string | null;
   metadata: Record<string, unknown> | null;
 }
+interface ShipTo {
+  name?: string;
+  line1?: string;
+  line2?: string;
+  city?: string;
+  region?: string;
+  postal?: string;
+  country?: string;
+}
+interface Fulfillment {
+  gift_to?: string | null;
+  ship_to?: ShipTo | null;
+}
 interface Redemption {
   id: number;
   shop_item_id: number;
   cost_credits: number;
   status: string;
   requested_at: string;
+  fulfillment?: Fulfillment | null;
 }
 interface Cosmetic {
   sku: string;
@@ -125,9 +139,12 @@ export default function RewardsPage() {
   const [cosmetics, setCosmetics] = useState<Cosmetic[]>([]);
   const [equipped, setEquipped] = useState<Equipped>({ border: null, banner: null });
   const [pro, setPro] = useState<ProStatus>({ isPro: false, plan: null, expiresAt: null });
+  const [resolvedTsUsername, setResolvedTsUsername] = useState<string | null>(null);
   const [redeeming, setRedeeming] = useState<number | null>(null);
   const [equipping, setEquipping] = useState<string | null>(null);
   const [flash, setFlash] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
+  // Merch redeem → shipping-address modal (redemptionId carried from the redeem).
+  const [shipModal, setShipModal] = useState<{ redemptionId: number; itemName: string } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -147,6 +164,7 @@ export default function RewardsPage() {
       setCosmetics(data.cosmetics ?? []);
       setEquipped(data.equipped ?? { border: null, banner: null });
       setPro(data.pro ?? { isPro: false, plan: null, expiresAt: null });
+      setResolvedTsUsername(data.resolvedTsUsername ?? null);
     } catch {
       setFlash({ kind: "err", msg: "Couldn't load rewards. Try again." });
     } finally {
@@ -157,6 +175,62 @@ export default function RewardsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Set / correct the Top Shot username a Moment redemption is gifted to.
+  const submitGiftTo = useCallback(
+    async (redemptionId: number, current: string | null) => {
+      const entered = window.prompt(
+        "Top Shot username to gift this Moment to:",
+        current ?? resolvedTsUsername ?? ""
+      );
+      if (entered === null) return; // cancelled
+      const giftTo = entered.trim();
+      if (!giftTo) return;
+      try {
+        const res = await fetch("/api/rewards/shipping", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ redemptionId, giftTo }),
+        });
+        const data = await res.json();
+        if (res.ok && data?.ok) {
+          setFlash({ kind: "ok", msg: `Gift target set to @${giftTo.replace(/^@+/, "")}.` });
+          await load();
+        } else {
+          setFlash({ kind: "err", msg: "Couldn't save that username. Try again." });
+        }
+      } catch {
+        setFlash({ kind: "err", msg: "Couldn't save that username. Try again." });
+      }
+    },
+    [load, resolvedTsUsername]
+  );
+
+  // Used by the redeem flow (alias kept readable at the call site).
+  const promptGiftTo = useCallback(
+    (redemptionId: number) => submitGiftTo(redemptionId, null),
+    [submitGiftTo]
+  );
+
+  // Save a shipping address for a merch redemption (from the modal).
+  const submitShipping = useCallback(
+    async (redemptionId: number, address: ShipTo) => {
+      const res = await fetch("/api/rewards/shipping", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ redemptionId, address }),
+      });
+      const data = await res.json();
+      if (res.ok && data?.ok) {
+        setShipModal(null);
+        setFlash({ kind: "ok", msg: "Shipping address saved — we'll send it out." });
+        await load();
+        return true;
+      }
+      return false;
+    },
+    [load]
+  );
 
   const redeem = useCallback(
     async (item: ShopItem) => {
@@ -173,20 +247,32 @@ export default function RewardsPage() {
           // Digital goods (pro / cosmetic) deliver instantly at redeem
           // (data.status === "fulfilled"); moment / merch stay pending for
           // manual fulfillment. Tailor the toast to what actually happened.
+          const redemptionId: number | null =
+            typeof data.redemption_id === "number" ? data.redemption_id : null;
           let msg: string;
           if (item.type === "pro") {
             msg = "RPC Pro activated — 30 days. Enjoy.";
           } else if (item.type === "cosmetic") {
             msg = `Equipped "${item.name}" on your profile.`;
           } else if (item.type === "moment") {
-            msg = `Redeemed "${item.name}". We'll transfer it to your verified wallet — track it below.`;
+            msg = resolvedTsUsername
+              ? `Redeemed "${item.name}". We'll gift it to @${resolvedTsUsername} on Top Shot — track it below.`
+              : `Redeemed "${item.name}". Tell us the Top Shot username to gift it to — track it below.`;
           } else if (item.type === "merch") {
-            msg = `Redeemed "${item.name}". We'll reach out for shipping details.`;
+            msg = `Redeemed "${item.name}". Add your shipping address so we can send it.`;
           } else {
             msg = `Redeemed "${item.name}". Track it below.`;
           }
           setFlash({ kind: "ok", msg });
           await load();
+          // Merch → collect a shipping address right away.
+          if (item.type === "merch" && redemptionId !== null) {
+            setShipModal({ redemptionId, itemName: item.name });
+          }
+          // Moment with no resolved gift target → ask for the Top Shot username.
+          if (item.type === "moment" && redemptionId !== null && !resolvedTsUsername) {
+            await promptGiftTo(redemptionId);
+          }
         } else {
           const reason =
             data?.error === "insufficient_credits"
@@ -208,7 +294,7 @@ export default function RewardsPage() {
         setRedeeming(null);
       }
     },
-    [load]
+    [load, resolvedTsUsername, promptGiftTo]
   );
 
   const equip = useCallback(
@@ -610,6 +696,20 @@ export default function RewardsPage() {
                         {redeeming === item.id ? "…" : "Redeem"}
                       </button>
                     </div>
+                    {item.type === "moment" && (
+                      <div
+                        style={{
+                          marginTop: 6,
+                          fontFamily: MONO,
+                          fontSize: 11,
+                          color: resolvedTsUsername ? "#5cc46a" : "#d6a13a",
+                        }}
+                      >
+                        {resolvedTsUsername
+                          ? `Gifts to @${resolvedTsUsername} on Top Shot`
+                          : "Link a Top Shot wallet first to receive the gift"}
+                      </div>
+                    )}
                     <div style={{ marginTop: 6, fontFamily: MONO, fontSize: 11, color: "#7a7a7a" }}>
                       {soldOut
                         ? "Out of stock"
@@ -651,6 +751,53 @@ export default function RewardsPage() {
                         <div style={{ fontFamily: MONO, fontSize: 11, color: "#7a7a7a" }}>
                           {new Date(r.requested_at).toLocaleDateString()}
                         </div>
+                        {item?.type === "moment" && r.status === "pending" && (
+                          <div style={{ marginTop: 4, fontFamily: MONO, fontSize: 11 }}>
+                            {(() => {
+                              const gift = r.fulfillment?.gift_to ?? resolvedTsUsername ?? null;
+                              return (
+                                <>
+                                  <span style={{ color: gift ? "#9a9a9a" : "#d6a13a" }}>
+                                    {gift ? `Gifting to @${gift}` : "No gift target set"}
+                                  </span>{" "}
+                                  <button
+                                    type="button"
+                                    onClick={() => submitGiftTo(r.id, r.fulfillment?.gift_to ?? null)}
+                                    style={linkBtn}
+                                  >
+                                    {gift ? "not right?" : "set username"}
+                                  </button>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        )}
+                        {item?.type === "merch" && r.status === "pending" && (
+                          <div style={{ marginTop: 4, fontFamily: MONO, fontSize: 11 }}>
+                            {r.fulfillment?.ship_to?.name ? (
+                              <>
+                                <span style={{ color: "#9a9a9a" }}>
+                                  Shipping to {r.fulfillment.ship_to.name}
+                                </span>{" "}
+                                <button
+                                  type="button"
+                                  onClick={() => setShipModal({ redemptionId: r.id, itemName: item?.name ?? "merch" })}
+                                  style={linkBtn}
+                                >
+                                  edit
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setShipModal({ redemptionId: r.id, itemName: item?.name ?? "merch" })}
+                                style={{ ...linkBtn, color: "#d6a13a" }}
+                              >
+                                Add shipping address
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                         <span style={{ fontFamily: MONO, color: "#9a9a9a" }}>
@@ -676,9 +823,28 @@ export default function RewardsPage() {
           </>
         )}
       </main>
+
+      {shipModal && (
+        <ShippingModal
+          itemName={shipModal.itemName}
+          onClose={() => setShipModal(null)}
+          onSubmit={(addr) => submitShipping(shipModal.redemptionId, addr)}
+        />
+      )}
     </div>
   );
 }
+
+const linkBtn: React.CSSProperties = {
+  background: "none",
+  border: "none",
+  padding: 0,
+  cursor: "pointer",
+  color: RED,
+  fontFamily: MONO,
+  fontSize: 11,
+  textDecoration: "underline",
+};
 
 const cardStyle: React.CSSProperties = {
   padding: 18,
@@ -788,5 +954,168 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
     >
       {children}
     </h2>
+  );
+}
+
+// Merch shipping-address modal. Returns true from onSubmit on success (so we
+// can keep it open with an error if the POST fails). Address lives only in the
+// redemption's fulfillment (service-role surface) — never rendered publicly.
+function ShippingModal({
+  itemName,
+  onClose,
+  onSubmit,
+}: {
+  itemName: string;
+  onClose: () => void;
+  onSubmit: (addr: ShipTo) => Promise<boolean>;
+}) {
+  const [name, setName] = useState("");
+  const [line1, setLine1] = useState("");
+  const [line2, setLine2] = useState("");
+  const [city, setCity] = useState("");
+  const [region, setRegion] = useState("");
+  const [postal, setPostal] = useState("");
+  const [country, setCountry] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const canSubmit = name.trim() && line1.trim() && city.trim();
+
+  const submit = async () => {
+    if (!canSubmit || saving) return;
+    setSaving(true);
+    setErr(null);
+    const ok = await onSubmit({
+      name: name.trim(),
+      line1: line1.trim(),
+      line2: line2.trim() || undefined,
+      city: city.trim(),
+      region: region.trim() || undefined,
+      postal: postal.trim() || undefined,
+      country: country.trim() || undefined,
+    });
+    setSaving(false);
+    if (!ok) setErr("Couldn't save that address. Check the fields and try again.");
+  };
+
+  const field: React.CSSProperties = {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "9px 11px",
+    borderRadius: 8,
+    border: "1px solid #333",
+    background: "#0a0a0a",
+    color: "#e7e7e7",
+    fontFamily: MONO,
+    fontSize: 13,
+    marginTop: 4,
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Shipping address"
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.72)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+        zIndex: 1000,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ width: 420, maxWidth: "94vw", ...cardStyle, maxHeight: "90vh", overflowY: "auto" }}
+      >
+        <h3 style={{ fontFamily: DISPLAY, textTransform: "uppercase", margin: "0 0 4px", fontSize: 22 }}>
+          Shipping <span style={{ color: RED }}>address</span>
+        </h3>
+        <p style={{ color: "#9a9a9a", fontSize: 13, marginTop: 0 }}>
+          Where should we send your <strong style={{ color: "#e7e7e7" }}>{itemName}</strong>? Only RPC
+          sees this — it's never shown publicly.
+        </p>
+
+        <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: "#9a9a9a", marginTop: 10 }}>
+          Full name
+          <input style={field} value={name} onChange={(e) => setName(e.target.value)} />
+        </label>
+        <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: "#9a9a9a", marginTop: 10 }}>
+          Street address
+          <input style={field} value={line1} onChange={(e) => setLine1(e.target.value)} />
+        </label>
+        <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: "#9a9a9a", marginTop: 10 }}>
+          Apt / unit (optional)
+          <input style={field} value={line2} onChange={(e) => setLine2(e.target.value)} />
+        </label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+          <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: "#9a9a9a" }}>
+            City
+            <input style={field} value={city} onChange={(e) => setCity(e.target.value)} />
+          </label>
+          <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: "#9a9a9a" }}>
+            State / region
+            <input style={field} value={region} onChange={(e) => setRegion(e.target.value)} />
+          </label>
+          <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: "#9a9a9a" }}>
+            Postal code
+            <input style={field} value={postal} onChange={(e) => setPostal(e.target.value)} />
+          </label>
+          <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: "#9a9a9a" }}>
+            Country
+            <input style={field} value={country} onChange={(e) => setCountry(e.target.value)} />
+          </label>
+        </div>
+
+        {err && (
+          <div style={{ marginTop: 10, color: RED, fontFamily: MONO, fontSize: 12 }}>{err}</div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end" }}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              padding: "9px 16px",
+              borderRadius: 8,
+              border: "1px solid #333",
+              background: "transparent",
+              color: "#e7e7e7",
+              cursor: "pointer",
+              fontFamily: DISPLAY,
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              fontSize: 13,
+            }}
+          >
+            Later
+          </button>
+          <button
+            type="button"
+            disabled={!canSubmit || saving}
+            onClick={submit}
+            style={{
+              padding: "9px 18px",
+              borderRadius: 8,
+              border: "none",
+              background: RED,
+              color: "#fff",
+              cursor: canSubmit && !saving ? "pointer" : "not-allowed",
+              opacity: canSubmit && !saving ? 1 : 0.5,
+              fontFamily: DISPLAY,
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              fontSize: 13,
+            }}
+          >
+            {saving ? "Saving…" : "Save address"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
