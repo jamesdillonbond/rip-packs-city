@@ -75,6 +75,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "wallet_addr (0x...) required" }, { status: 400 });
   }
 
+  // Optional referrer (from the ?ref= stash, see RefCapture). Accept only a
+  // well-formed uuid; the DB function owns all trust logic (first-verification-
+  // only, no self-referral, referrer must exist) — we just forward it.
+  const refRaw = typeof body?.ref === "string" ? body.ref.trim() : "";
+  const referrer = /^[0-9a-f-]{36}$/i.test(refRaw) ? refRaw : null;
+
   // Load the caller's active (unresolved, unexpired) challenge for this wallet.
   const { data: challenges, error: chErr } = await supabase
     .from("wallet_verification_challenges")
@@ -131,6 +137,7 @@ export async function POST(req: NextRequest) {
     p_challenge_id: challenge.id,
     p_matched_moment_id: targetMomentId,
     p_source: "gql_on_demand",
+    p_referrer: referrer,
   });
   if (resErr) {
     console.error("[verify-challenge/check] resolve RPC:", resErr.message);
@@ -149,6 +156,7 @@ export async function POST(req: NextRequest) {
     wallet,
     moment: targetMomentId,
     link_wallet_award: r.link_wallet_award ?? null,
+    referral_award: r.referral_award ?? null,
     ...r,
   });
 }
