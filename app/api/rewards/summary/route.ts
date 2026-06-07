@@ -155,5 +155,9 @@ export async function GET() {
     },
     pro,
     resolvedTsUsername,
+    // Drives the verify-wallet onboarding nudge (the verified-wallet redeem gate
+    // is the sybil guard — surfaced as a next step, not a failure). Reuses the
+    // most-recent-verified-wallet lookup above; no extra query.
+    hasVerifiedWallet: !!verifiedWallet.data,
   });
 }
