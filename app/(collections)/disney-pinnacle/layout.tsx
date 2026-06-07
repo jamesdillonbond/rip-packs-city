@@ -29,10 +29,10 @@ export default function DisneyPinnacleLayout({
 
 function PinnacleTicker({ collection }: { collection: Collection }) {
   const items = [
-    "✨ PINNACLE SNIPER — real-time Flowty listings sorted by price",
+    "✨ PINNACLE SNIPER — live floor + per-pin FMV",
     "✨ DISNEY · PIXAR · STAR WARS — filter by franchise",
     "✨ VARIANT TRACKING — Standard to Legendary Edition",
-    "✨ FMV COMING SOON — sales data pipeline in progress",
+    "✨ PER-PIN FMV — render-keyed sales pricing, live",
   ]
   const doubled = [...items, ...items]
   return (
