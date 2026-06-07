@@ -22,19 +22,14 @@ export async function GET(request: NextRequest) {
   const offset = Number(params.get("offset")) || 0
 
   try {
-    // Query editions joined with their latest FMV snapshot and current floor
-    // from pinnacle_sales
+    // PIN-FMV-REKEY Wave 3: dropped the legacy pinnacle_fmv_snapshots embed —
+    // it was the retiring per-edition blend and its array was never transformed
+    // downstream (only floor_price_usd from pinnacle_sales is used). This route's
+    // sole consumer (PinnacleSniper.tsx) is unmounted (the /pinnacle page now
+    // redirects), so this is a dead-path cleanup, not a behavior change.
     let query = supabase
       .from("pinnacle_editions")
-      .select(`
-        *,
-        pinnacle_fmv_snapshots (
-          fmv_usd,
-          floor_usd,
-          confidence,
-          computed_at
-        )
-      `)
+      .select(`*`)
 
     // Apply filters
     if (variant) {

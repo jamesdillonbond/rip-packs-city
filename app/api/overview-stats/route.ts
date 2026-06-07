@@ -35,14 +35,16 @@ async function getVolume24hFromPulse(dbSlug: string | null): Promise<number> {
 }
 
 async function pinnacleStats() {
+  // PIN-FMV-REKEY Wave 3: per-render counts from pinnacle_catalog (one row per
+  // render_id) instead of set-level pinnacle_editions + the retiring blend.
   const [editionsRes, highConfRes] = await Promise.all([
     (supabaseAdmin as any)
-      .from("pinnacle_editions")
-      .select("id", { count: "exact", head: true }),
+      .from("pinnacle_catalog")
+      .select("render_id", { count: "exact", head: true }),
     (supabaseAdmin as any)
-      .from("pinnacle_fmv_snapshots")
-      .select("edition_id", { count: "exact", head: true })
-      .eq("confidence", "HIGH"),
+      .from("pinnacle_catalog")
+      .select("render_id", { count: "exact", head: true })
+      .eq("fmv_confidence", "HIGH"),
   ])
   return {
     totalEditions: editionsRes.count ?? 0,

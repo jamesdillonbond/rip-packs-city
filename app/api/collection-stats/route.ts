@@ -14,17 +14,11 @@ async function computeHighMediumPct(
   try {
     const sql = slug === "disney-pinnacle"
       ? `
-          WITH latest AS (
-            SELECT DISTINCT ON (edition_id) confidence
-            FROM pinnacle_fmv_snapshots
-            ORDER BY edition_id, computed_at DESC
-          ),
-          ed AS (
-            SELECT COUNT(*) AS total FROM pinnacle_editions
-          )
+          -- PIN-FMV-REKEY Wave 3: per-render coverage from pinnacle_catalog
+          -- (one row per render_id) instead of the retiring per-edition blend.
           SELECT
-            (SELECT COUNT(*) FROM latest WHERE confidence IN ('HIGH','MEDIUM')) AS high_medium,
-            (SELECT total FROM ed) AS edition_total
+            (SELECT COUNT(*) FROM pinnacle_catalog WHERE fmv_confidence IN ('HIGH','MEDIUM')) AS high_medium,
+            (SELECT COUNT(*) FROM pinnacle_catalog) AS edition_total
         `
       : `
           WITH latest AS (
