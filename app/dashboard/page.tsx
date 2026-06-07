@@ -1596,11 +1596,26 @@ function VerifyByListingModal({
       const res = await fetch("/api/profile/verify-challenge/check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet_addr: walletAddr }),
+        body: JSON.stringify({
+          wallet_addr: walletAddr,
+          // Referral stash from RefCapture. The server validates the shape and
+          // the DB function owns the guards (first-verification-only, no
+          // self-referral, referrer must exist), so sending it is safe.
+          ref:
+            (typeof window !== "undefined" && localStorage.getItem("rpc_ref")) ||
+            undefined,
+        }),
       });
       const d = await res.json();
       if (d?.ok && d?.matched) {
         setVerified(true);
+        // Verified = the referral (if any) is now credited server-side. Clear
+        // the stash so it can't be reused on a later verify.
+        try {
+          localStorage.removeItem("rpc_ref");
+        } catch {
+          // ignore
+        }
         setChallenge((prev) =>
           prev
             ? { ...prev, resolved_at: new Date().toISOString(), resolved_via: "gql_on_demand", matched_moment_id: d.moment ?? null }
