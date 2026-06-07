@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
 // On-chain lock-check pipeline.
@@ -144,15 +144,56 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const started = Date.now()
-  const startedAtIso = new Date(started).toISOString()
+  // CRON-30S: server-side this run always succeeds (pipeline_runs ok=true,
+  // ~17-20s typical) but it has spiked past cron-job.org's 30s client cap
+  // (33.5s once), showing "Failed" and risking auto-disable. As data grows this
+  // gets worse. Fire-and-forget in after() + return 202 now; the existing
+  // end-of-run log_pipeline_run is the real signal, and the fatal-catch
+  // surfaces a crash before it. (precedent 36eee2f)
+  const startedAtIso = new Date().toISOString()
+  after(async () => {
+    try {
+      await runBatch(startedAtIso)
+    } catch (e) {
+      try {
+        await (supabaseAdmin as any).rpc("log_pipeline_run", {
+          p_pipeline: PIPELINE_NAME,
+          p_started_at: startedAtIso,
+          p_rows_found: 0,
+          p_rows_written: 0,
+          p_rows_skipped: 0,
+          p_ok: false,
+          p_error: `batch crashed: ${e instanceof Error ? e.message : String(e)}`,
+          p_collection_slug: null,
+          p_cursor_before: null,
+          p_cursor_after: null,
+          p_extra: { fatal: true },
+        })
+      } catch {
+        // best-effort
+      }
+    }
+  })
+  return NextResponse.json({ accepted: true, pipeline: PIPELINE_NAME }, { status: 202 })
+}
+
+async function runBatch(startedAtIso: string): Promise<void> {
+  const started = Date.parse(startedAtIso)
 
   const { data: candidatesRaw, error: batchErr } = await (supabaseAdmin as any).rpc(
     "get_lock_check_batch",
     { p_collection_slug: null, p_limit: BATCH_LIMIT, p_max_age_days: MAX_AGE_DAYS }
   )
   if (batchErr) {
-    return NextResponse.json({ ok: false, error: batchErr.message }, { status: 500 })
+    await (supabaseAdmin as any).rpc("log_pipeline_run", {
+      p_pipeline: PIPELINE_NAME,
+      p_started_at: startedAtIso,
+      p_rows_found: 0, p_rows_written: 0, p_rows_skipped: 0,
+      p_ok: false, p_error: `get_lock_check_batch: ${batchErr.message}`,
+      p_collection_slug: null, p_cursor_before: null, p_cursor_after: null,
+      p_extra: { duration_ms: Date.now() - started, stage: "batch_read" },
+    })
+    return
   }
 
   const candidates: Candidate[] = (candidatesRaw ?? []).map((r: any) => ({
@@ -171,7 +212,7 @@ export async function POST(req: NextRequest) {
       p_cursor_before: null, p_cursor_after: null,
       p_extra: { duration_ms: Date.now() - started, note: "no candidates" },
     })
-    return NextResponse.json({ ok: true, rows_found: 0, rows_written: 0 })
+    return
   }
 
   // Group by (wallet_address, collection_id) so each wallet's Cadence call is
@@ -257,11 +298,7 @@ export async function POST(req: NextRequest) {
     },
   })
 
-  return NextResponse.json({
-    ok: !writeError && groupErrors.length === 0,
-    rows_found: candidates.length,
-    rows_written: inserted,
-    wallets_processed: walletsProcessed,
-    unsupported_collections: unsupportedCollections,
-  })
+  console.log(
+    `[lock-check-batch] done ok=${!writeError && groupErrors.length === 0} found=${candidates.length} written=${inserted} wallets=${walletsProcessed} ms=${Date.now() - started}`
+  )
 }
