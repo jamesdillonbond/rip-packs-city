@@ -272,6 +272,62 @@ async function fetchPackContents(collectionId: string, distId: string, limit: nu
   return Array.isArray(data) ? (data as EditionTile[]) : []
 }
 
+// PACKVIZ-GRID 2a — the top-5-by-FMV "hero strip". get_pack_contents orders by
+// EV-per-slot (FMV × drop_weight), so a high-FMV / low-weight chase card sorts
+// far down its list — the headline pulls need their own FMV-ordered fetch.
+interface HeroEdition {
+  route_slug: string | null
+  player_name: string | null
+  set_name: string | null
+  tier: string | null
+  thumbnail_url: string | null
+  fmv_usd: number | null
+  hit_probability: number | null
+}
+
+async function fetchPackHeroEditions(collectionId: string, distId: string): Promise<HeroEdition[]> {
+  const cid = collectionId.replace(/'/g, "''")
+  const did = distId.replace(/'/g, "''")
+  const { data, error } = await sb.rpc("query_sql", {
+    query: `
+      WITH tw AS (
+        SELECT NULLIF(SUM(drop_weight), 0) AS total_weight
+        FROM pack_drop_pool WHERE collection_id = '${cid}' AND dist_id = '${did}'
+      )
+      SELECT COALESCE(e.external_id, e.id::text) AS route_slug,
+             e.player_name, e.set_name, e.tier::text AS tier, e.thumbnail_url,
+             fmv.fmv_usd::float8 AS fmv_usd,
+             (pdp.drop_weight / tw.total_weight)::float8 AS hit_probability
+      FROM pack_drop_pool pdp
+      CROSS JOIN tw
+      JOIN editions e ON e.id = pdp.edition_id
+      LEFT JOIN LATERAL (
+        SELECT fmv_usd FROM fmv_snapshots WHERE edition_id = pdp.edition_id
+        ORDER BY computed_at DESC LIMIT 1
+      ) fmv ON true
+      WHERE pdp.collection_id = '${cid}' AND pdp.dist_id = '${did}'
+        AND pdp.drop_weight > 0 AND fmv.fmv_usd IS NOT NULL AND fmv.fmv_usd > 0
+      ORDER BY fmv.fmv_usd DESC
+      LIMIT 5
+    `,
+  })
+  if (error) { console.error("[pack-detail] hero editions error", error.message); return [] }
+  return Array.isArray(data) ? (data as HeroEdition[]) : []
+}
+
+// PACKVIZ-GRID 2b — total exhausted (drop_weight = 0) pool rows, for the
+// collapsed "Exhausted / pulled out" section header count.
+async function fetchExhaustedCount(collectionId: string, distId: string): Promise<number> {
+  const { count, error } = await sb
+    .from("pack_drop_pool")
+    .select("edition_id", { count: "exact", head: true })
+    .eq("collection_id", collectionId)
+    .eq("dist_id", distId)
+    .eq("drop_weight", 0)
+  if (error) { console.error("[pack-detail] exhausted count error", error.message); return 0 }
+  return count ?? 0
+}
+
 // editions.name is "Player Name — Set Name" (em-dash). Some rows are NULL.
 // Fall back gracefully so the table doesn't render literal "null —" cells.
 function splitEditionName(name: string | null): { player: string; setName: string } {
@@ -414,9 +470,11 @@ export default async function PackDetailPage(
 
   const distMetadata = fallback?.metadata ?? (await fetchDistFallback(coll.id, distId))?.metadata ?? null
 
-  const [topPulls, packContents] = await Promise.all([
+  const [topPulls, packContents, heroEditions, exhaustedCount] = await Promise.all([
     fetchTopPulls(coll.id, distId, num(merged.total_unopened), merged.slots ?? null),
     fetchPackContents(coll.id, distId, PACK_CONTENTS_PAGE_SIZE, 0),
+    fetchPackHeroEditions(coll.id, distId),
+    fetchExhaustedCount(coll.id, distId),
   ])
 
   // Defensive: pack_table_rows.tier is typed string|null but coerce in case
@@ -843,6 +901,9 @@ export default async function PackDetailPage(
         hasDropPool={hasDropPool}
       />
 
+      {/* ── Top pulls hero strip (PACKVIZ-GRID 2a) ───────────────────────── */}
+      {heroEditions.length > 0 && <PackHeroStrip collection={collection} editions={heroEditions} />}
+
       {/* ── What's inside (visual grid) ──────────────────────────────────── */}
       {packContents.length > 0 && (
         <section style={cardStyle}>
@@ -873,6 +934,8 @@ export default async function PackDetailPage(
             pageSize={PACK_CONTENTS_PAGE_SIZE}
             showSetLink
             showSort
+            packMode
+            exhaustedTotal={exhaustedCount}
           />
         </section>
       )}
@@ -1164,6 +1227,131 @@ function Td({ children, align = "left", color }: { children: React.ReactNode; al
     >
       {children}
     </td>
+  )
+}
+
+// ── Top pulls hero strip (PACKVIZ-GRID 2a) ──────────────────────────────────
+// The "what am I chasing" view: the 5 highest-FMV pullable editions, bigger
+// art + FMV + hit% chip, in a horizontally-scrolling strip above the grid.
+
+function PackHeroStrip({ collection, editions }: { collection: string; editions: HeroEdition[] }) {
+  return (
+    <section
+      style={{
+        background: "rgba(13,13,13,0.92)",
+        border: "1px solid rgba(255,255,255,0.06)",
+        borderRadius: 8,
+        padding: 18,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 12 }}>
+        <h2
+          style={{
+            margin: 0,
+            fontFamily: "var(--font-display)",
+            fontWeight: 800,
+            fontSize: 18,
+            letterSpacing: "0.06em",
+            color: "#fff",
+            textTransform: "uppercase",
+          }}
+        >
+          Top chases
+        </h2>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+          highest-FMV pulls in this pack
+        </span>
+      </div>
+      <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4 }}>
+        {editions.map((e, i) => {
+          const chip = tierChip(String(e.tier ?? "common"))
+          const hitPct = e.hit_probability != null && Number.isFinite(e.hit_probability)
+            ? `${(e.hit_probability * 100).toFixed(2)}%`
+            : null
+          const inner = (
+            <>
+              <div
+                style={{
+                  width: "100%",
+                  aspectRatio: "1 / 1",
+                  borderRadius: 4,
+                  overflow: "hidden",
+                  background: "rgba(0,0,0,0.4)",
+                  marginBottom: 8,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {e.thumbnail_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={e.thumbnail_url}
+                    alt={e.player_name ?? "Edition"}
+                    loading={i < 5 ? "eager" : "lazy"}
+                    decoding="async"
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  />
+                ) : (
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "rgba(255,255,255,0.35)" }}>No image</span>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4, flexWrap: "wrap" }}>
+                <span
+                  style={{
+                    display: "inline-block",
+                    padding: "1px 6px",
+                    borderRadius: 3,
+                    fontSize: 9,
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                    fontWeight: 700,
+                    color: chip.color,
+                    background: chip.background,
+                    border: chip.border,
+                  }}
+                >
+                  {String(e.tier ?? "—").charAt(0).toUpperCase() + String(e.tier ?? "").slice(1).toLowerCase()}
+                </span>
+                {hitPct && (
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "rgba(255,255,255,0.5)" }}>
+                    Hit {hitPct}
+                  </span>
+                )}
+              </div>
+              <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, color: "#fff", lineHeight: 1.15 }}>
+                {e.player_name ?? "Unknown"}
+              </div>
+              {e.set_name && (
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "rgba(255,255,255,0.5)", marginTop: 1 }}>
+                  {e.set_name}
+                </div>
+              )}
+              <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, color: "var(--rpc-red)", marginTop: 4 }}>
+                {fmtUsd(e.fmv_usd)}
+              </div>
+            </>
+          )
+          const cardStyleStrip: React.CSSProperties = {
+            flex: "0 0 auto",
+            width: 150,
+            textDecoration: "none",
+            color: "inherit",
+            background: "rgba(255,255,255,0.02)",
+            border: "1px solid rgba(255,255,255,0.06)",
+            borderRadius: 6,
+            padding: 10,
+          }
+          return e.route_slug ? (
+            <Link key={e.route_slug + i} href={`/${collection}/edition/${encodeURIComponent(e.route_slug)}`} style={cardStyleStrip}>
+              {inner}
+            </Link>
+          ) : (
+            <div key={i} style={cardStyleStrip}>{inner}</div>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
