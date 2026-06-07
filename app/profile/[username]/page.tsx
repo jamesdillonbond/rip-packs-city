@@ -8,6 +8,7 @@ import CostBasisCard from "@/components/profile/CostBasisCard";
 import TopMoversCard from "@/components/profile/TopMoversCard";
 import CollectionBreakdownCard from "@/components/profile/CollectionBreakdownCard";
 import PublicAchievements from "@/components/profile/PublicAchievements";
+import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import { LEAGUES, type UserFavoriteTeam } from "@/lib/teams";
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
@@ -166,6 +167,9 @@ export default function PublicProfilePage() {
   const [wallets, setWallets] = useState<SavedWalletPublic[]>([]);
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
+  // Current viewer's handle (null = anon). Drives the own-profile share block.
+  // /api/profile/me returns { user: null } for anon — never 401s.
+  const [myUsername, setMyUsername] = useState<string | null>(null);
 
   // Fetch all data on mount.
   //
@@ -226,6 +230,14 @@ export default function PublicProfilePage() {
     Promise.all([publicP, slabsP, historyP, teamsP]).finally(function() { setLoading(false); });
   }, [username]);
 
+  // Who's viewing — to show the share block only on the viewer's own profile.
+  useEffect(function() {
+    fetch("/api/profile/me")
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) { setMyUsername(data?.user?.username ?? null); })
+      .catch(function() {});
+  }, []);
+
   // Derived stats
   const accentColor = bio?.accent_color ?? "#E03A2F";
   const accentBg = hexToRgba(accentColor, 0.15);
@@ -235,6 +247,8 @@ export default function PublicProfilePage() {
   const totalMoments = wallets.reduce(function(sum, w) { return sum + (w.cached_moment_count ?? 0); }, 0);
   const rpcScore = wallets.length > 0 ? wallets[0]?.cached_rpc_score ?? null : null;
   const isTeamCaptain = username === "jamesdillonbond";
+  const isOwnProfile =
+    !!myUsername && !!username && myUsername.toLowerCase() === username.toLowerCase();
 
   // Saved wallets, organized by collection (then FMV desc within). The
   // collection label resolves from the collection_id UUID via the registry;
@@ -369,6 +383,27 @@ export default function PublicProfilePage() {
             </div>
           )}
         </div>
+
+        {/* ── Share your collection (own profile only) ── */}
+        {isOwnProfile && (
+          <section
+            style={{
+              ...cardStyle,
+              marginBottom: 24,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 10,
+              textAlign: "center",
+            }}
+          >
+            <div style={labelStyle}>SHARE YOUR COLLECTION</div>
+            <div style={{ fontSize: 12, fontFamily: monoFont, color: "var(--rpc-text-secondary)", letterSpacing: "0.04em", maxWidth: 420 }}>
+              Post your trophy case on X or Discord. Earn <strong style={{ color: accentColor }}>+50 Status</strong> once a day for sharing.
+            </div>
+            <ShareProfileButtons username={username} fmv={totalFmv} moments={totalMoments} />
+          </section>
+        )}
 
         {/* ── Achievements ── */}
         {username && <PublicAchievements ownerKey={username} />}

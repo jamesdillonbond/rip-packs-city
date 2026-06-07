@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import MobileNav from "@/components/MobileNav";
 import SupportChatConnected from "@/components/SupportChatConnected";
+import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
 
 const DISPLAY = "var(--font-display)";
@@ -140,6 +141,9 @@ export default function RewardsPage() {
   const [equipped, setEquipped] = useState<Equipped>({ border: null, banner: null });
   const [pro, setPro] = useState<ProStatus>({ isPro: false, plan: null, expiresAt: null });
   const [resolvedTsUsername, setResolvedTsUsername] = useState<string | null>(null);
+  // RPC profile handle (for the /profile/<handle> share link) — distinct from
+  // the Top Shot username above. From /api/profile/me.
+  const [profileUsername, setProfileUsername] = useState<string | null>(null);
   const [hasVerifiedWallet, setHasVerifiedWallet] = useState(true);
   const [redeeming, setRedeeming] = useState<number | null>(null);
   const [equipping, setEquipping] = useState<string | null>(null);
@@ -179,6 +183,15 @@ export default function RewardsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Profile handle for the share link (/profile/<handle>). /api/profile/me
+  // returns { user: null } for anon — never 401s.
+  useEffect(() => {
+    fetch("/api/profile/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => setProfileUsername(data?.user?.username ?? null))
+      .catch(() => {});
+  }, []);
 
   // Set / correct the Top Shot username a Moment redemption is gifted to.
   const submitGiftTo = useCallback(
@@ -508,6 +521,29 @@ export default function RewardsPage() {
               <>
                 <SectionTitle>Invite a collector</SectionTitle>
                 <InviteBlock userId={userId} referralCount={referralCount} />
+              </>
+            )}
+
+            {/* SHARE YOUR COLLECTION */}
+            {profileUsername && (
+              <>
+                <SectionTitle>Share your collection</SectionTitle>
+                <div style={{ ...cardStyle, marginBottom: 28 }}>
+                  <p style={{ marginTop: 0, color: "#9a9a9a", fontSize: 14 }}>
+                    Post your public profile on X or Discord — your portfolio, trophy case, and
+                    badges unfurl as a card. Earn{" "}
+                    <strong style={{ color: "#e7e7e7" }}>+50 Status</strong> once a day for sharing.
+                  </p>
+                  <ShareProfileButtons username={profileUsername} />
+                  <div style={{ marginTop: 10 }}>
+                    <Link
+                      href={`/profile/${encodeURIComponent(profileUsername)}`}
+                      style={{ fontFamily: MONO, fontSize: 12, color: RED, textDecoration: "none" }}
+                    >
+                      View your public profile →
+                    </Link>
+                  </div>
+                </div>
               </>
             )}
 

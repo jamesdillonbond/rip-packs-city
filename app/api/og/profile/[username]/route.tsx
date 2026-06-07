@@ -15,6 +15,7 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
 interface BioRow {
+  user_id: string | null;
   display_name: string | null;
   tagline: string | null;
   accent_color: string | null;
@@ -23,7 +24,7 @@ interface BioRow {
 }
 
 interface WalletRow {
-  cached_fmv: number | null;
+  cached_fmv_usd: number | null;
   cached_moment_count: number | null;
   cached_badges: string[] | null;
 }
@@ -158,26 +159,38 @@ export async function GET(
     if (!username || !SUPABASE_URL || !SERVICE_KEY) return renderFallback();
 
     const enc = encodeURIComponent(username);
-    const [bios, wallets, trophies, achievements] = await Promise.all([
-      fetchJson<BioRow>(
-        `${SUPABASE_URL}/rest/v1/profile_bio?owner_key=eq.${enc}&select=display_name,tagline,accent_color,avatar_url,favorite_team&limit=1`,
-      ),
-      fetchJson<WalletRow>(
-        `${SUPABASE_URL}/rest/v1/saved_wallets?owner_key=eq.${enc}&select=cached_fmv,cached_moment_count,cached_badges&limit=10`,
-      ),
-      fetchJson<TrophyRow>(
-        `${SUPABASE_URL}/rest/v1/trophy_moments?owner_key=eq.${enc}&select=slot,player_name,thumbnail_url,tier&order=slot.asc&limit=6`,
-      ),
+
+    // Lookup pattern mirrors /api/public/profile: username -> user_id (via the
+    // denormalized profile_bio.username cache), then wallets/trophies key on
+    // user_id (their only canonical FK). profile_achievements is still keyed
+    // by owner_key = username, so it stays on the username lookup.
+    const bios = await fetchJson<BioRow>(
+      `${SUPABASE_URL}/rest/v1/profile_bio?username=ilike.${enc}&select=user_id,display_name,tagline,accent_color,avatar_url,favorite_team&limit=1`,
+    );
+    const bio: BioRow | null = bios[0] ?? null;
+    const userId = bio?.user_id ?? null;
+    const uidEnc = userId ? encodeURIComponent(userId) : null;
+
+    const [wallets, trophies, achievements] = await Promise.all([
+      uidEnc
+        ? fetchJson<WalletRow>(
+            `${SUPABASE_URL}/rest/v1/saved_wallets?user_id=eq.${uidEnc}&select=cached_fmv_usd,cached_moment_count,cached_badges&limit=25`,
+          )
+        : Promise.resolve<WalletRow[]>([]),
+      uidEnc
+        ? fetchJson<TrophyRow>(
+            `${SUPABASE_URL}/rest/v1/trophy_moments?user_id=eq.${uidEnc}&select=slot,player_name,thumbnail_url,tier&order=slot.asc&limit=6`,
+          )
+        : Promise.resolve<TrophyRow[]>([]),
       fetchJson<AchievementRow>(
         `${SUPABASE_URL}/rest/v1/profile_achievements?owner_key=eq.${enc}&select=achievement_key,tier&order=unlocked_at.asc`,
       ),
     ]);
 
-    const bio: BioRow | null = bios[0] ?? null;
     const accent = (bio?.accent_color || "#E03A2F").trim() || "#E03A2F";
 
     const totalFmv = wallets.reduce(
-      (s, w) => s + (Number(w.cached_fmv) || 0),
+      (s, w) => s + (Number(w.cached_fmv_usd) || 0),
       0,
     );
     const totalMoments = wallets.reduce(
@@ -187,7 +200,7 @@ export async function GET(
 
     const thumbTrophies = trophies
       .filter((t) => !!t.thumbnail_url)
-      .slice(0, 3);
+      .slice(0, 6);
     const filledTrophyCount = trophies.length;
 
     const displayName = (bio?.display_name || username).toUpperCase();
@@ -466,8 +479,8 @@ export async function GET(
               {thumbTrophies.length > 0 ? (
                 thumbTrophies.map((t, i) => {
                   const border = tierBorder(t.tier);
-                  const left = i * 40;
-                  const top = i * 14;
+                  const left = i * 36;
+                  const top = i * 12;
                   return (
                     <div
                       key={i}

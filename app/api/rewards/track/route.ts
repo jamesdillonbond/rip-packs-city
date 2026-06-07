@@ -21,6 +21,7 @@ export const dynamic = "force-dynamic";
 // Keep this list tight; never accept an arbitrary action_key from the body.
 const EVENT_TO_ACTION: Record<string, string> = {
   view_squeeze: "view_squeeze_board",
+  share_profile: "share_profile",
 };
 
 export async function POST(req: NextRequest) {
