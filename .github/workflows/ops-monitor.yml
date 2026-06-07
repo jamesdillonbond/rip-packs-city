@@ -2,8 +2,8 @@ name: RPC Ops Monitor
 
 on:
   schedule:
-    - cron: '*/30 * * * *'
-    - cron: '0 6 * * *'
+    - cron: '13,43 * * * *'
+    - cron: '41 6 * * *'
   workflow_dispatch:
 
 jobs:
