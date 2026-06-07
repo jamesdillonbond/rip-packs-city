@@ -39,7 +39,7 @@ import { createClient } from "@supabase/supabase-js"
 // control. Per the handoff: report the dead-end, never fabricate. Do not
 // re-litigate a "GQL re-fetch" or "renderID → URL" approach — both verified dead.
 //
-// Five queues, sequential:
+// Four queues, sequential:
 //   Q1: pinnacle_editions where mint_count IS NULL  (cap 100)
 //   Q2: wallet_moments_cache (Pinnacle collection) where edition_key IS NULL  (cap 50)
 //   Q3: composite edition_key disagreements between wmc and pinnacle_nft_map  (cap 25)
@@ -49,12 +49,13 @@ import { createClient } from "@supabase/supabase-js"
 //       on-chain text (character/franchise/set/variant/edition_type/printing/
 //       mint_count/is_serialized/is_chaser). thumbnail_url is NEVER written —
 //       new rows keep the NULL default, existing rows keep their value.  (cap 60)
-//   Q5: serial backfill — wmc Pinnacle rows with serial_number IS NULL on a
-//       SERIALIZED edition (open editions have no on-chain serial). Reads
-//       Pinnacle.NFT.serialNumber (UInt64?) and fills wmc.serial_number.  (cap 80)
 //
-// Serials are also filled opportunistically for any moment fetched for Q1-Q4,
-// since every borrowed NFT carries its serialNumber.
+// Serials are filled opportunistically for any moment fetched for Q1-Q4, since
+// every borrowed NFT carries its serialNumber. (A dedicated Q5 serial-backfill
+// leg was retired 2026-06-07: all 32,451 serial-NULL Pinnacle wmc rows join to
+// limited_edition=false Open Editions, which have no on-chain serial by design,
+// and the studio-platform remap already filled 100% of limited-edition serials,
+// so Q5 selected only unfillable rows and had written 0 serials ever.)
 //
 // All five queues share one Cadence script and dispatch per-wallet so a
 // single Flow REST call covers up to PER_CADENCE_CHUNK moments for a wallet.
@@ -79,7 +80,6 @@ const Q1_CAP = 100
 const Q2_CAP = 50
 const Q3_CAP = 25
 const Q4_CAP = 60
-const Q5_CAP = 80
 const PER_CADENCE_CHUNK = 50
 const PER_CALL_TIMEOUT_MS = 15_000
 const SOFT_DEADLINE_MS = 25_000
@@ -282,7 +282,6 @@ interface WorkItem {
     | { kind: "edition_key_resolve"; wmc_id: string }
     | { kind: "disagreement"; wmc_id: string; wmc_edition_key: string; map_edition_key: string }
     | { kind: "catalog_upsert"; wmc_edition_key: string }
-    | { kind: "serial_fill"; wmc_id: string }
   >
 }
 
@@ -477,49 +476,6 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Q5: serial backfill. wmc Pinnacle rows with serial_number IS NULL that
-  // belong to a SERIALIZED edition (open editions have no on-chain serial, so
-  // scoping to is_serialized avoids re-walking the genuinely-nil tail forever).
-  // The on-chain serial comes from Pinnacle.NFT.serialNumber (UInt64?).
-  const q5: Array<{ wmc_id: string; wallet: string; momentId: string }> = []
-  {
-    // Serialized edition_keys (small set — a few hundred). pinnacle_editions is
-    // comfortably under the 10k cap.
-    const { data: serRows, error: serErr } = await supabaseAdmin
-      .from("pinnacle_editions")
-      .select("edition_key")
-      .eq("is_serialized", true)
-      .not("edition_key", "is", null)
-      .limit(10000)
-    if (serErr) {
-      return NextResponse.json({ ok: false, error: `q5 serialized load: ${serErr.message}` }, { status: 500 })
-    }
-    const serializedKeys = new Set<string>(
-      ((serRows ?? []) as Array<{ edition_key: string }>).map((r) => r.edition_key),
-    )
-    if (serializedKeys.size > 0) {
-      // Pull a pool of serial-null Pinnacle wmc rows; keep those on a serialized
-      // edition up to the cap. Over-fetch since many null rows are open editions.
-      const { data: wmcRows, error: wmcErr } = await supabaseAdmin
-        .from("wallet_moments_cache")
-        .select("id, wallet_address, moment_id, edition_key")
-        .eq("collection_id", PINNACLE_COLLECTION_ID)
-        .is("serial_number", null)
-        .not("edition_key", "is", null)
-        .order("last_seen_at", { ascending: false })
-        .limit(Q5_CAP * 20)
-      if (wmcErr) {
-        return NextResponse.json({ ok: false, error: `q5 wmc load: ${wmcErr.message}` }, { status: 500 })
-      }
-      for (const row of (wmcRows ?? []) as Array<{ id: string; wallet_address: string; moment_id: string; edition_key: string }>) {
-        if (q5.length >= Q5_CAP) break
-        if (!serializedKeys.has(row.edition_key)) continue
-        q5.push({ wmc_id: row.id, wallet: row.wallet_address, momentId: row.moment_id })
-        tagJob(row.wallet_address, row.moment_id, { kind: "serial_fill", wmc_id: row.id })
-      }
-    }
-  }
-
   // ── Fan out Cadence reads, then apply per-queue updates ───────────────
   const corrections: {
     mint_count_filled: Array<{ edition_pk: string; mint_count: number; is_serialized: boolean }>
@@ -552,9 +508,9 @@ export async function GET(req: NextRequest) {
 
       // Opportunistic serial fill: every borrowed NFT exposes its serialNumber
       // (nil for open editions). Fill wmc.serial_number wherever it's still NULL
-      // for this wallet+moment — covers Q5 targets and any moment fetched for
-      // Q1-Q4. NULL-guarded so it never clobbers an existing serial; open
-      // editions (serialNumber null) are left untouched.
+      // for this wallet+moment — covers any moment fetched for Q1-Q4.
+      // NULL-guarded so it never clobbers an existing serial; open editions
+      // (serialNumber null) are left untouched.
       if (info.serialNumber != null && info.serialNumber > 0) {
         const { data: serUpd, error: serErr } = await supabaseAdmin
           .from("wallet_moments_cache")
@@ -685,7 +641,7 @@ export async function GET(req: NextRequest) {
   await supabaseAdmin.rpc("log_pipeline_run", {
     p_pipeline: PIPELINE_NAME,
     p_started_at: startedAtIso,
-    p_rows_found: q1.length + q2.length + q3.length + q4.length + q5.length,
+    p_rows_found: q1.length + q2.length + q3.length + q4.length,
     p_rows_written:
       corrections.mint_count_filled.length +
       corrections.edition_keys_resolved.length +
@@ -705,7 +661,6 @@ export async function GET(req: NextRequest) {
       q2_eligible: q2.length,
       q3_eligible: q3.length,
       q4_eligible: q4.length,
-      q5_eligible: q5.length,
       catalog_upserted: corrections.catalog_upserted.length,
       serials_filled: corrections.serials_filled.length,
       q1_skipped_no_sample: q1Skipped.length,
