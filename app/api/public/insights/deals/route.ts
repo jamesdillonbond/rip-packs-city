@@ -1,23 +1,35 @@
 // app/api/public/insights/deals/route.ts
 //
-// PUBLIC INSIGHTS — Top Shot Below FMV (deals vs fair value board).
+// PUBLIC INSIGHTS — Below FMV (cross-collection deals vs fair value board).
 //
 // Read-only JSON endpoint backing the /insights/deals page. Lives under
 // /api/public/* so the proxy.ts allowlist lets it through with no auth. Reads
-// the public `topshot_deals_vs_fmv` view (shipped 2026-06-01 via
-// audit_20260601_topshot_deals_vs_fmv_view). security_invoker=on, anon
-// SELECT-only; reads edition_offers (hardened) + editions + latest
-// fmv_snapshots.
+// the public `cross_collection_deals_board` view (shipped 2026-06-07 via
+// audit_20260607_cross_collection_deals_board_view). security_invoker=on, anon
+// SELECT-only. The view UNIONs two legs:
+//   - Top Shot: editions whose floor ask (edition_offers.low_ask) is below a
+//     HIGH/MEDIUM-confidence latest FMV (the original topshot_deals_vs_fmv
+//     logic, composed unchanged).
+//   - Disney Pinnacle: render-spine rows (pinnacle_catalog floor_ask vs
+//     per-render FMV), gated HIGH/MEDIUM + fmv_sales_count_30d>=8 + floor
+//     freshness<=3d.
 //
-// What it surfaces: TS editions whose floor ask (edition_offers.low_ask) is
-// below a HIGH/MEDIUM-confidence latest FMV. The view gates low_ask>=5 +
-// confidence IN (HIGH,MEDIUM) + low_ask<fmv so it's REAL discounts, not
-// stale-FMV / penny-floor artifacts. This is the public, honest, top-of-funnel
-// counterpart to the auth-gated sniper. NOT promoted as guaranteed arbitrage
-// (a big gap can be a low-serial / stale listing).
+// Both legs gate low_ask>=5 + confidence IN (HIGH,MEDIUM) + low_ask<fmv so it's
+// REAL discounts, not stale-FMV / penny-floor artifacts. This is the public,
+// honest, top-of-funnel counterpart to the auth-gated sniper. NOT promoted as
+// guaranteed arbitrage (a big gap can be a low-serial / stale listing).
+//
+// tier and confidence are TEXT here (Pinnacle tiers are variant names like
+// "Standard" / "Digital Display", not the TS enum), plus the view carries
+// collection_slug, collection_name, render_id, detail_url (internal drill-down:
+// TS edition page / Pinnacle pin page), and thumbnail_url (Pinnacle proxy
+// image; NULL for TS).
 //
 // Query params:
-//   tier=COMMON|RARE|LEGENDARY|FANDOM|ULTIMATE   single tier filter
+//   collection=nba_top_shot|disney_pinnacle       single collection filter
+//   tier=<text>                                   single tier filter (free-text;
+//                                                 TS enum values or Pinnacle
+//                                                 variant names)
 //   min_discount=<number>                         floor on discount_pct
 //                                                 (default 0; the board view
 //                                                 passes 10)
@@ -27,13 +39,13 @@
 //   sort=discount|fmv|ask|circulation             default discount (biggest %)
 //   limit=<1..200>                                default 50
 //
-// CACHE: 5-minute s-maxage. edition_offers refreshes continuously; fmv-recalc
-// runs daily — both well inside a 5m window.
+// CACHE: 5-minute s-maxage. asks/floors refresh continuously; fmv-recalc runs
+// daily — both well inside a 5m window.
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 
-const VALID_TIERS = new Set(["COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"]);
+const VALID_COLLECTIONS = new Set(["nba_top_shot", "disney_pinnacle"]);
 const VALID_CONF = new Set(["HIGH", "MEDIUM"]);
 const VALID_SORTS = new Set(["discount", "fmv", "ask", "circulation"]);
 
@@ -41,7 +53,10 @@ export async function GET(req: NextRequest) {
   const startedAt = Date.now();
   const sp = new URL(req.url).searchParams;
 
-  const tier = sp.get("tier")?.toUpperCase() ?? null;
+  const collection = sp.get("collection")?.trim() ?? null;
+  // tier is free-text in the cross-collection view (Pinnacle variants aren't
+  // the TS enum), so no allowlist — just an exact match on any non-empty value.
+  const tier = sp.get("tier")?.trim() || null;
   // min_discount floors the board to meaningful gaps. Default 0 so player/set
   // drill-downs never empty (QA point 6); the page's board view passes 10.
   const minDiscount = Number(sp.get("min_discount") ?? "0");
@@ -51,8 +66,8 @@ export async function GET(req: NextRequest) {
   const sort = sp.get("sort") ?? "discount";
   const limit = Math.max(1, Math.min(200, Number(sp.get("limit") ?? "50")));
 
-  if (tier && !VALID_TIERS.has(tier)) {
-    return NextResponse.json({ error: `tier must be one of ${[...VALID_TIERS].join(",")}` }, { status: 400 });
+  if (collection && !VALID_COLLECTIONS.has(collection)) {
+    return NextResponse.json({ error: `collection must be one of ${[...VALID_COLLECTIONS].join(",")}` }, { status: 400 });
   }
   if (confidence && !VALID_CONF.has(confidence)) {
     return NextResponse.json({ error: `confidence must be one of ${[...VALID_CONF].join(",")}` }, { status: 400 });
@@ -65,10 +80,11 @@ export async function GET(req: NextRequest) {
   }
 
   let q = (supabase as any)
-    .from("topshot_deals_vs_fmv")
-    .select("external_id, name, player_name, set_name, tier, circulation_count, fmv_usd, confidence, low_ask, discount_pct, discount_usd, ask_updated_at")
+    .from("cross_collection_deals_board")
+    .select("external_id, name, player_name, set_name, tier, circulation_count, fmv_usd, confidence, low_ask, discount_pct, discount_usd, ask_updated_at, collection_slug, collection_name, render_id, detail_url, thumbnail_url")
     .gte("discount_pct", minDiscount);
 
+  if (collection) q = q.eq("collection_slug", collection);
   if (tier) q = q.eq("tier", tier);
   if (confidence) q = q.eq("confidence", confidence);
   if (setFilter) q = q.ilike("set_name", `%${setFilter}%`);
@@ -90,10 +106,10 @@ export async function GET(req: NextRequest) {
   const res = NextResponse.json({
     meta: {
       fetched_at: new Date().toISOString(),
-      source: "topshot_deals_vs_fmv",
+      source: "cross_collection_deals_board",
       total_rows: data?.length ?? 0,
       elapsed_ms: Date.now() - startedAt,
-      filters: { tier, min_discount: minDiscount, confidence, set: setFilter, player: playerFilter, sort, limit },
+      filters: { collection, tier, min_discount: minDiscount, confidence, set: setFilter, player: playerFilter, sort, limit },
     },
     rows: data ?? [],
   });

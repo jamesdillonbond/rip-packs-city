@@ -2,14 +2,14 @@
 
 // app/insights/deals/DealsBoardClient.tsx
 //
-// Client interactivity layer for the public Below FMV board. The server
-// component (page.tsx) fetches the default-view rows (min_discount >= 10,
-// discount desc) from topshot_deals_vs_fmv server-side and passes them in as
-// `initialRows`, so the ranked table + per-row /nba-top-shot/edition/<id>
-// drill-down links render in the raw server HTML (crawlable) instead of only
-// after JS. This component layers on tier / confidence / sort / drill-down as
-// progressive enhancement and only refetches when those change — the default
-// view never refetches on mount.
+// Client interactivity layer for the public cross-collection Below FMV board.
+// The server component (page.tsx) fetches the default-view rows (min_discount
+// >= 10, discount desc) from cross_collection_deals_board server-side and passes
+// them in as `initialRows`, so the ranked table + per-row detail_url drill-down
+// links (TS edition pages / Pinnacle pin pages) render in the raw server HTML
+// (crawlable) instead of only after JS. This component layers on collection /
+// tier / confidence / sort / drill-down as progressive enhancement and only
+// refetches when those change — the default view never refetches on mount.
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
@@ -29,6 +29,11 @@ export type Row = {
   discount_pct: number | null
   discount_usd: number | null
   ask_updated_at: string | null
+  collection_slug: string | null
+  collection_name: string | null
+  render_id: string | null
+  detail_url: string | null
+  thumbnail_url: string | null
 }
 
 type ApiResponse = {
@@ -38,6 +43,7 @@ type ApiResponse = {
 
 type TierFilter = "ALL" | "COMMON" | "RARE" | "LEGENDARY" | "FANDOM" | "ULTIMATE"
 type SortKey = "discount" | "fmv" | "ask" | "circulation"
+type CollectionFilter = "ALL" | "nba_top_shot" | "disney_pinnacle"
 
 function normalizeTier(t: string | null): string | null {
   if (!t) return null
@@ -45,6 +51,11 @@ function normalizeTier(t: string | null): string | null {
 }
 
 const TIERS: TierFilter[] = ["ALL", "COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"]
+const COLLECTIONS: { key: CollectionFilter; label: string }[] = [
+  { key: "ALL", label: "All" },
+  { key: "nba_top_shot", label: "Top Shot" },
+  { key: "disney_pinnacle", label: "Pinnacle" },
+]
 
 function fmtPct(n: number | null): string {
   if (n == null) return "—"
@@ -102,6 +113,7 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
   const [fetchedAt, setFetchedAt] = useState<string | null>(initialFetchedAt)
 
   const [tier, setTier] = useState<TierFilter>("ALL")
+  const [collection, setCollection] = useState<CollectionFilter>("ALL")
   const [highOnly, setHighOnly] = useState(false)
   const [sort, setSort] = useState<SortKey>("discount")
   const [setFilter, setSetFilter] = useState<string | null>(null)
@@ -124,7 +136,7 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (sort === "discount" && tier === "ALL" && !highOnly && !setFilter && !playerFilter) {
+      if (sort === "discount" && tier === "ALL" && collection === "ALL" && !highOnly && !setFilter && !playerFilter) {
         return
       }
     }
@@ -140,6 +152,7 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
         // 0 so the reader sees every below-FMV edition (QA point 6).
         params.set("min_discount", setFilter || playerFilter ? "0" : "10")
         if (tier !== "ALL") params.set("tier", tier)
+        if (collection !== "ALL") params.set("collection", collection)
         if (highOnly) params.set("confidence", "HIGH")
         if (setFilter) params.set("set", setFilter)
         if (playerFilter) params.set("player", playerFilter)
@@ -160,7 +173,7 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
     }
     run()
     return () => ctrl.abort()
-  }, [sort, tier, highOnly, setFilter, playerFilter])
+  }, [sort, tier, collection, highOnly, setFilter, playerFilter])
 
   const kpis = useMemo(() => {
     if (rows.length === 0) {
@@ -176,7 +189,7 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
   }, [rows])
 
   const tweetIntent = useMemo(() => {
-    const text = `Top Shot shows you a listing. We rank listings against a confidence-rated FMV.\n\nThe Below FMV board — what's underpriced right now:`
+    const text = `Marketplaces show you a listing. We rank listings against a confidence-rated FMV.\n\nThe Below FMV board — Top Shot + Disney Pinnacle, what's underpriced right now:`
     const url = `${SITE_URL}/insights/deals`
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
   }, [])
@@ -199,10 +212,11 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
         <div className="rpc-dl-eyebrow">RPC Insights · Public</div>
         <h1 className="rpc-dl-h1">Below FMV</h1>
         <p className="rpc-dl-lede">
-          Top Shot editions listed <strong>below a trustworthy FMV</strong> —
-          HIGH or MEDIUM confidence only. A big gap can be a real{" "}
-          <em>steal</em> — or a low-serial / stale listing. We show the FMV, its
-          confidence, and the floor ask side by side so you can judge.
+          <strong>Top Shot + Disney Pinnacle</strong> editions listed{" "}
+          <strong>below a trustworthy FMV</strong> — HIGH or MEDIUM confidence
+          only. A big gap can be a real <em>steal</em> — or a low-serial / stale
+          listing. We show the FMV, its confidence, and the floor ask side by
+          side so you can judge.
         </p>
         <div className="rpc-dl-meta-row">
           <span className="rpc-dl-meta">
@@ -241,6 +255,21 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
 
       {/* ── Filter row ────────────────────────────────────────────────── */}
       <section className="rpc-dl-controls" aria-label="Filters">
+        <div className="rpc-dl-pill-group" role="tablist" aria-label="Collection">
+          <span className="rpc-dl-pill-label">COLLECTION</span>
+          {COLLECTIONS.map((c) => (
+            <button
+              key={c.key}
+              role="tab"
+              aria-selected={collection === c.key}
+              className={`rpc-dl-pill ${collection === c.key ? "rpc-dl-pill-active" : ""}`}
+              onClick={() => setCollection(c.key)}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+
         <div className="rpc-dl-pill-group" role="tablist" aria-label="Tier">
           {TIERS.map((t) => (
             <button
@@ -324,19 +353,40 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
-                  <tr key={r.external_id ?? `${r.player_name}-${r.set_name}`} className="rpc-dl-row">
+                {rows.map((r) => {
+                  const title = r.player_name ?? r.name ?? "—"
+                  const inner = (
+                    <div className="rpc-dl-edition-inner">
+                      {r.thumbnail_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={r.thumbnail_url}
+                          alt={title}
+                          className="rpc-dl-edition-thumb"
+                          loading="lazy"
+                          onError={(e) => {
+                            ;(e.currentTarget as HTMLImageElement).style.display = "none"
+                          }}
+                        />
+                      ) : null}
+                      <div className="rpc-dl-edition-text">
+                        <div className="rpc-dl-edition-name">{title}</div>
+                        <div className="rpc-dl-edition-set">{r.set_name ?? "—"}</div>
+                        {r.collection_name ? (
+                          <span className="rpc-dl-coll-chip">{r.collection_name}</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  )
+                  return (
+                  <tr key={`${r.collection_slug ?? "x"}-${r.external_id ?? `${r.player_name}-${r.set_name}`}`} className="rpc-dl-row">
                     <td className="rpc-dl-td-player">
-                      {r.external_id ? (
-                        <Link href={`/nba-top-shot/edition/${encodeURIComponent(r.external_id)}`} className="rpc-dl-edition-link">
-                          <div className="rpc-dl-edition-name">{r.player_name ?? r.name ?? "—"}</div>
-                          <div className="rpc-dl-edition-set">{r.set_name ?? "—"}</div>
+                      {r.detail_url ? (
+                        <Link href={r.detail_url} className="rpc-dl-edition-link">
+                          {inner}
                         </Link>
                       ) : (
-                        <div>
-                          <div className="rpc-dl-edition-name">{r.player_name ?? r.name ?? "—"}</div>
-                          <div className="rpc-dl-edition-set">{r.set_name ?? "—"}</div>
-                        </div>
+                        inner
                       )}
                     </td>
                     <td className="rpc-dl-td-num">
@@ -359,7 +409,8 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
                     </td>
                     <td className="rpc-dl-td-num">{fmtInt(r.circulation_count)}</td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -372,21 +423,24 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
           <h3 className="rpc-dl-h3">Methodology</h3>
           <p>
             <strong>Discount %</strong> = (FMV − floor ask) ÷ FMV × 100. We only
-            list an edition when its floor ask sits below an FMV scored{" "}
-            <strong>HIGH or MEDIUM</strong> confidence — a stale or thin-sales
-            FMV is excluded so a gap means something.
+            list an edition when its floor ask (Top Shot) or floor (Disney
+            Pinnacle) sits below an FMV scored <strong>HIGH or MEDIUM</strong>{" "}
+            confidence — a stale or thin-sales FMV is excluded so a gap means
+            something. Pinnacle prices on a per-render basis, so a pin&apos;s FMV
+            reflects that specific render, not a blended set average.
           </p>
           <p>
-            The board is gated to a floor ask of <strong>$5+</strong> so
-            penny-floor artifacts don&apos;t headline. Drill into a player or
-            set to see every below-FMV edition there, regardless of size.
+            The board is gated to a floor of <strong>$5+</strong> so penny-floor
+            artifacts don&apos;t headline. Filter by collection, or drill into a
+            player or set to see every below-FMV edition there, regardless of
+            size.
           </p>
           <p>
             A big discount is <em>not</em> a guaranteed flip — it can be a
             low-serial listing priced below the edition average, or a stale ask
             that hasn&apos;t been pulled. Always open the actual listing before
-            acting. FMV from the RPC 1.7.0 model; asks from continuous on-chain
-            marketplace ingestion.
+            acting. FMV from the RPC pricing models; asks and floors from
+            continuous on-chain marketplace ingestion.
           </p>
         </div>
 
@@ -621,6 +675,17 @@ const CSS = `
 .rpc-dl-table td { padding: 12px; vertical-align: middle; }
 .rpc-dl-td-player { min-width: 260px; }
 .rpc-dl-edition-link { text-decoration: none; color: inherit; display: block; }
+.rpc-dl-edition-inner { display: flex; align-items: center; gap: 12px; }
+.rpc-dl-edition-thumb {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  object-fit: cover;
+  border-radius: 3px;
+  border: 1px solid var(--rpc-border-subtle);
+  background: var(--rpc-surface-raised);
+}
+.rpc-dl-edition-text { min-width: 0; }
 .rpc-dl-edition-name {
   font-family: var(--font-body);
   font-weight: 700;
@@ -634,6 +699,18 @@ const CSS = `
   letter-spacing: 1px;
   color: var(--rpc-text-muted);
   margin-top: 2px;
+}
+.rpc-dl-coll-chip {
+  display: inline-block;
+  margin-top: 5px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--rpc-text-secondary);
+  border: 1px solid var(--rpc-border-subtle);
+  border-radius: 2px;
+  padding: 2px 6px;
 }
 .rpc-dl-td-num {
   text-align: right;
