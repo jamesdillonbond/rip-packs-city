@@ -1,7 +1,7 @@
 name: FMV Alert Checker
 on:
   schedule:
-    - cron: "*/20 * * * *"
+    - cron: "17,37,57 * * * *"
   workflow_dispatch:
 jobs:
   check-alerts:

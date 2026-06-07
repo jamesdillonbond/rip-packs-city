@@ -1,6 +1,6 @@
 name: Pinnacle Owner Discovery + Edition Resolver
 
-# Two Supabase edge functions run on a */20 cron:
+# Two Supabase edge functions run on a staggered 6,26,46 cron (off the :00 rush):
 #   1. pinnacle-owner-discovery scans A.edf9df96c92f4595.Pinnacle.Deposit
 #      events backward in 2000-block windows and upserts nft_id → owner pairs
 #      into pinnacle_ownership_snapshots.
@@ -14,7 +14,7 @@ name: Pinnacle Owner Discovery + Edition Resolver
 
 on:
   schedule:
-    - cron: "*/20 * * * *"
+    - cron: "6,26,46 * * * *"
   workflow_dispatch:
     inputs:
       blocks_per_run:

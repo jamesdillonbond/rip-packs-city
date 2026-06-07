@@ -1,7 +1,7 @@
 name: RPC Data Pipeline
 on:
   schedule:
-    - cron: "*/20 * * * *"
+    - cron: "5,25,45 * * * *"
   workflow_dispatch:
 jobs:
   pipeline:
@@ -80,16 +80,6 @@ jobs:
             https://www.rippackscity.com/api/backfill-player-names)
           echo "Player names backfill status: $STATUS"
           cat /tmp/player-names.json
-      - name: Listing Cache — Refresh Flowty listings (Top Shot)
-        run: |
-          STATUS=$(curl -s -o /tmp/cache.json -w "%{http_code}" -X POST \
-            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            https://www.rippackscity.com/api/listing-cache)
-          echo "Listing cache status: $STATUS"
-          cat /tmp/cache.json
-          if [ "$STATUS" != "200" ]; then
-            echo "::warning::Listing cache returned $STATUS"
-          fi
       - name: Top Shot Listing Cache — Refresh via flowty-proxy edge fn (background)
         continue-on-error: true
         run: |
