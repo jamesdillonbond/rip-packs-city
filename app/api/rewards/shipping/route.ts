@@ -1,17 +1,16 @@
 // app/api/rewards/shipping/route.ts
 //
-// POST { redemptionId, address } — attach a shipping address to a merch
-// redemption the user owns, so the admin console can fulfill it.
+// POST { redemptionId, address }  — attach a shipping address to a MERCH
+//      redemption the user owns (so the admin console can ship it).
+// POST { redemptionId, giftTo }   — set / correct the Top Shot username a
+//      MOMENT redemption should be gifted to (overrides the auto-resolved one).
 //
 // SECURITY: the user id is session-resolved (requireUser → auth.uid()). The
-// update is scoped to redemptions owned by this user AND of a shippable
-// (type='merch') item, so a user can never write an address onto someone else's
-// redemption or onto a non-physical good.
-//
-// NOTE: merch shop items are currently inactive (no SKU is redeemable), so this
-// endpoint has no live producer yet. It's the server half of swag fulfillment —
-// the redeem-time address modal + merch activation are intentionally deferred
-// until there's demand. See docs handoff Item 5.
+// update is scoped to redemptions owned by this user, of the right item type
+// for the field being written (address→merch, giftTo→moment), and only while
+// the redemption is still 'pending' — a user can never write fulfillment
+// details onto someone else's redemption, onto the wrong good, or onto an
+// already-shipped one.
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/supabase-server";
@@ -47,6 +46,21 @@ function sanitizeAddress(raw: unknown): ShipAddress | null {
   return out;
 }
 
+// A Top Shot username: drop a leading "@", strip control characters (charcode
+// < 32 or 127), trim, cap at 40. Returns null when nothing usable is left.
+function sanitizeGiftTo(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const stripped = Array.from(raw.replace(/^@+/, ""))
+    .filter((c) => {
+      const code = c.charCodeAt(0);
+      return code >= 32 && code !== 127;
+    })
+    .join("")
+    .trim()
+    .slice(0, 40);
+  return stripped.length > 0 ? stripped : null;
+}
+
 export async function POST(req: NextRequest) {
   let user;
   try {
@@ -55,7 +69,7 @@ export async function POST(req: NextRequest) {
     return res as Response;
   }
 
-  let body: { redemptionId?: unknown; address?: unknown };
+  let body: { redemptionId?: unknown; address?: unknown; giftTo?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -66,15 +80,28 @@ export async function POST(req: NextRequest) {
   if (!Number.isInteger(redemptionId)) {
     return NextResponse.json({ error: "bad_redemption" }, { status: 400 });
   }
-  const address = sanitizeAddress(body?.address);
-  if (!address) {
-    return NextResponse.json({ error: "bad_address" }, { status: 400 });
+
+  // Exactly one of address (merch) or giftTo (moment).
+  const wantsGift = body?.giftTo !== undefined && body?.giftTo !== null;
+  const wantsAddress = body?.address !== undefined && body?.address !== null;
+  if (wantsGift === wantsAddress) {
+    return NextResponse.json({ error: "provide_address_or_giftTo" }, { status: 400 });
   }
 
-  // Confirm the redemption is this user's and is a shippable merch item.
+  const address = wantsAddress ? sanitizeAddress(body?.address) : null;
+  const giftTo = wantsGift ? sanitizeGiftTo(body?.giftTo) : null;
+  if (wantsAddress && !address) {
+    return NextResponse.json({ error: "bad_address" }, { status: 400 });
+  }
+  if (wantsGift && !giftTo) {
+    return NextResponse.json({ error: "bad_giftTo" }, { status: 400 });
+  }
+
+  // Confirm the redemption is this user's, still pending, and of the type that
+  // the field being written is valid for.
   const { data: red, error: readErr } = await (supabase as any)
     .from("redemptions")
-    .select("id, user_id, shop_item_id, fulfillment, shop_items!inner(type)")
+    .select("id, user_id, status, fulfillment, shop_items!inner(type)")
     .eq("id", redemptionId)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -84,13 +111,22 @@ export async function POST(req: NextRequest) {
   if (!red) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
-  if (red.shop_items?.type !== "merch") {
+  if (red.status !== "pending") {
+    return NextResponse.json({ error: "not_pending" }, { status: 400 });
+  }
+
+  const itemType = red.shop_items?.type;
+  if (wantsAddress && itemType !== "merch") {
     return NextResponse.json({ error: "not_shippable" }, { status: 400 });
+  }
+  if (wantsGift && itemType !== "moment") {
+    return NextResponse.json({ error: "not_giftable" }, { status: 400 });
   }
 
   const fulfillment = {
     ...(red.fulfillment && typeof red.fulfillment === "object" ? red.fulfillment : {}),
-    ship_to: address,
+    ...(wantsAddress ? { ship_to: address } : {}),
+    ...(wantsGift ? { gift_to: giftTo } : {}),
   };
 
   const { error: upErr } = await (supabase as any)

@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
       .limit(200),
     supabase
       .from("redemptions")
-      .select("id,user_id,shop_item_id,cost_credits,status,requested_at")
+      .select("id,user_id,shop_item_id,cost_credits,status,requested_at,fulfillment")
       .eq("status", "pending")
       .order("requested_at", { ascending: true })
       .limit(200),
@@ -63,24 +63,83 @@ export async function GET(req: NextRequest) {
       .limit(50),
   ]);
 
-  // Decorate pending redemptions with the item name + requester username.
+  // Decorate pending redemptions with the item name + requester username, plus
+  // the resolved fulfillment target so Trevor doesn't have to ask: for moment
+  // redemptions the Top Shot username to gift to (override → profile → linked
+  // wallet's TS username), and for merch the shipping address on file.
   const pendingRows = pending.data ?? [];
   let decorated = pendingRows as Array<Record<string, unknown>>;
   if (pendingRows.length > 0) {
     const itemIds = [...new Set(pendingRows.map((r) => r.shop_item_id))];
     const userIds = [...new Set(pendingRows.map((r) => r.user_id))];
-    const [items, users] = await Promise.all([
+    const [items, users, profiles, wallets] = await Promise.all([
       supabase.from("shop_items").select("id,name,type").in("id", itemIds),
       supabase.from("v_rewards_user_balances").select("user_id,username").in("user_id", userIds),
+      supabase.from("user_profiles").select("id,topshot_username").in("id", userIds),
+      supabase.from("saved_wallets").select("user_id,wallet_addr,verified_at,id").in("user_id", userIds),
     ]);
+
+    // Resolve each user's best linked wallet → its Top Shot username. None of
+    // our wallets are verified yet, so we ORDER BY verified-preference but never
+    // require it (newest saved wallet wins on ties). wallet_usernames stores
+    // lowercased addrs/usernames, matching saved_wallets' 0x-lowercase addrs.
+    const walletRows = (wallets.data ?? []) as Array<{
+      user_id: string; wallet_addr: string; verified_at: string | null; id: number;
+    }>;
+    const addrs = [...new Set(walletRows.map((w) => String(w.wallet_addr).toLowerCase()))];
+    const { data: wuData } = addrs.length
+      ? await supabase.from("wallet_usernames").select("wallet_addr,username").in("wallet_addr", addrs)
+      : { data: [] as Array<{ wallet_addr: string; username: string }> };
+    const wuMap = new Map(
+      ((wuData ?? []) as Array<{ wallet_addr: string; username: string }>).map((w) => [
+        String(w.wallet_addr).toLowerCase(),
+        w.username,
+      ])
+    );
+    const walletUsernameByUser = new Map<string, string>();
+    const byUser = new Map<string, typeof walletRows>();
+    for (const w of walletRows) {
+      const arr = byUser.get(w.user_id) ?? [];
+      arr.push(w);
+      byUser.set(w.user_id, arr);
+    }
+    for (const [uid, arr] of byUser) {
+      arr.sort((a, b) => {
+        const av = a.verified_at ? 1 : 0;
+        const bv = b.verified_at ? 1 : 0;
+        if (av !== bv) return bv - av;
+        if (a.verified_at && b.verified_at && a.verified_at !== b.verified_at) {
+          return a.verified_at < b.verified_at ? 1 : -1;
+        }
+        return b.id - a.id;
+      });
+      const best = arr[0];
+      const uname = best ? wuMap.get(String(best.wallet_addr).toLowerCase()) : undefined;
+      if (uname) walletUsernameByUser.set(uid, uname);
+    }
+
     const itemMap = new Map((items.data ?? []).map((i: any) => [i.id, i]));
     const userMap = new Map((users.data ?? []).map((u: any) => [u.user_id, u.username]));
-    decorated = pendingRows.map((r: any) => ({
-      ...r,
-      item_name: itemMap.get(r.shop_item_id)?.name ?? `Item #${r.shop_item_id}`,
-      item_type: itemMap.get(r.shop_item_id)?.type ?? null,
-      username: userMap.get(r.user_id) ?? null,
-    }));
+    const tsProfileMap = new Map(
+      ((profiles.data ?? []) as Array<{ id: string; topshot_username: string | null }>)
+        .filter((p) => p.topshot_username)
+        .map((p) => [p.id, p.topshot_username as string])
+    );
+
+    decorated = pendingRows.map((r: any) => {
+      const fulfillment = (r.fulfillment && typeof r.fulfillment === "object" ? r.fulfillment : {}) as Record<string, unknown>;
+      const giftOverride = typeof fulfillment.gift_to === "string" ? (fulfillment.gift_to as string) : null;
+      const ts_username =
+        giftOverride ?? tsProfileMap.get(r.user_id) ?? walletUsernameByUser.get(r.user_id) ?? null;
+      return {
+        ...r,
+        item_name: itemMap.get(r.shop_item_id)?.name ?? `Item #${r.shop_item_id}`,
+        item_type: itemMap.get(r.shop_item_id)?.type ?? null,
+        username: userMap.get(r.user_id) ?? null,
+        ts_username,
+        ship_to: fulfillment.ship_to ?? null,
+      };
+    });
   }
 
   // Count entries per raffle so the console can show "N entries" before a draw.
