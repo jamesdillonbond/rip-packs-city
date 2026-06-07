@@ -88,7 +88,7 @@ if (!USING_PROXY) {
 // without a proxy. No CF WAF block.
 const STUDIO_GRAPHQL = "https://api.production.studio-platform.dapperlabs.com/graphql"
 
-const BATCH_SIZE = 8
+const BATCH_SIZE = 4
 const MAX_EDITION_PAGES = 8
 const MAX_LISTING_PAGES = 4
 const TIME_BUDGET_MS = 110_000
@@ -97,7 +97,25 @@ const ERRORS_SAMPLE_CAP = 12
 const FETCH_CONCURRENCY = 3
 const MAX_1015_RETRIES = 3
 const RETRY_BACKOFF_MS = 2000
-const FUNCTION_VERSION = 20
+const FUNCTION_VERSION = 21
+
+// v21 (2026-06-07) — per-pack fetch timeout (PACKEV-BUDGET-2). The 06-06 pool
+//   remap roughly doubled priced editions/pack, so a single slow pack's
+//   fetchOnePack (DynamicData "Signal timed out" + heavy edition pagination)
+//   could eat the entire ~125s budget inside the fetch phase, leaving the EV
+//   write phase unreached (ev_rows_written=0, exit time_budget_exceeded_after_fetch).
+//   With targets ordered by last_ev_at asc, the same 8 oldest packs re-selected
+//   every tick and never advanced → head-of-line blockage, 563/800 stale >24h.
+//   Fix: wrap each fetchOnePack in PER_PACK_FETCH_TIMEOUT_MS so one slow pack
+//   can't consume the shared budget; on timeout emit a sentinel pack_ev_history
+//   row (v17 pack_price=0-safe path) so last_ev_at advances and the pack rotates
+//   to the queue tail, and count it in fetch_timeout_sentinels. BATCH_SIZE 8→4
+//   so a healthy batch clears the budget with margin. Pricing math unchanged.
+// Per-pack fetch ceiling. fetchOnePack internally caps each gqlCall at 15s and
+// can paginate editions across up to MAX_EDITION_PAGES, so a single pack could
+// otherwise run >100s. 20s bounds it to roughly one slow dynamic call + one
+// slow edition page, after which the pack is sentinel-advanced and retried later.
+const PER_PACK_FETCH_TIMEOUT_MS = 20_000
 
 // Hydration safety margin: leave this many ms of HARD_CEILING headroom for
 // the GQL+update loop so it can short-circuit cleanly without dragging the
@@ -399,6 +417,7 @@ type FetchOutcome =
   | { tag: "no_dynamic"; target: TargetRow }
   | { tag: "no_editions"; target: TargetRow }
   | { tag: "zero_unopened"; target: TargetRow }
+  | { tag: "fetch_timeout"; target: TargetRow }
   | { tag: "gql_error"; target: TargetRow; failure: GqlFailure }
 
 type PriceSource = "primary" | "secondary" | "min" | "none"
@@ -804,6 +823,22 @@ async function hydrateSeededEditions(
   return out
 }
 
+// v21: bound the whole per-pack fetch so one slow pack can't eat the shared
+// time budget. On timeout we surface a "fetch_timeout" outcome and let the
+// caller sentinel-advance the pack (last_ev_at moves, pack rotates to queue
+// tail). The dangling inner fetch is left to settle/abort on its own.
+async function fetchOnePackBounded(target: TargetRow): Promise<FetchOutcome> {
+  let timer: number | undefined
+  const timeout = new Promise<FetchOutcome>(resolve => {
+    timer = setTimeout(() => resolve({ tag: "fetch_timeout", target }), PER_PACK_FETCH_TIMEOUT_MS)
+  })
+  try {
+    return await Promise.race([fetchOnePack(target), timeout])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
 async function fetchOnePack(target: TargetRow): Promise<FetchOutcome> {
   const dyn = await gqlCall<DynamicData>(DYNAMIC_OP, DYNAMIC_QUERY, {
     input: { packListingId: target.pack_listing_uuid },
@@ -866,6 +901,8 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     ev_rows_written: 0,
     pool_empty_sentinels: 0,
     unresolvable_sentinels: 0,
+    fetch_timeout_sentinels: 0,
+    nodes_fetch_timeout: 0,
     rpc_not_ok: 0,
     rpc_errors: 0,
     gql_errors: 0,
@@ -942,7 +979,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     const fetchResults: PromiseSettledResult<FetchOutcome>[] = []
     for (let i = 0; i < targetRows.length; i += FETCH_CONCURRENCY) {
       const chunk = targetRows.slice(i, i + FETCH_CONCURRENCY)
-      const chunkResults = await Promise.allSettled(chunk.map(t => fetchOnePack(t)))
+      const chunkResults = await Promise.allSettled(chunk.map(t => fetchOnePackBounded(t)))
       fetchResults.push(...chunkResults)
     }
     const fetchPhaseMs = Date.now() - fetchStart
@@ -952,7 +989,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     // Packs that resolved to a deterministic dead-end this run. They get a
     // sentinel row so last_ev_at advances and they rotate to the back of
     // the targets queue instead of being re-selected every run.
-    const sentinelTargets: Array<{ target: TargetRow; kind: "no_dynamic" | "no_editions" | "zero_unopened" }> = []
+    const sentinelTargets: Array<{ target: TargetRow; kind: "no_dynamic" | "no_editions" | "zero_unopened" | "fetch_timeout" }> = []
 
     for (const r of fetchResults) {
       counters.nodes_processed++
@@ -994,6 +1031,15 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         case "zero_unopened":
           counters.nodes_zero_unopened++
           sentinelTargets.push({ target: o.target, kind: "zero_unopened" })
+          break
+        case "fetch_timeout":
+          // v21: pack exceeded PER_PACK_FETCH_TIMEOUT_MS. Sentinel-advance it so
+          // last_ev_at moves and it rotates to the queue tail instead of wedging
+          // the front of the queue every tick. A real EV is recomputed when it
+          // comes back around and fetches inside budget.
+          counters.nodes_fetch_timeout++
+          sentinelTargets.push({ target: o.target, kind: "fetch_timeout" })
+          console.log(`[compute-topshot-pack-ev] fetch_timeout dist=${o.target.dist_id} listing=${o.target.pack_listing_uuid}`)
           break
         case "gql_error":
           counters.gql_errors++
@@ -1046,8 +1092,11 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         }
       })
       const { error: sErr } = await supabase.from("pack_ev_history").insert(sentinelRows)
-      if (!sErr) counters.unresolvable_sentinels = sentinelRows.length
-      else console.log(`[compute-topshot-pack-ev] sentinel insert err: ${sErr.message}`)
+      if (!sErr) {
+        const timeoutCount = sentinelTargets.filter(s => s.kind === "fetch_timeout").length
+        counters.fetch_timeout_sentinels = timeoutCount
+        counters.unresolvable_sentinels = sentinelRows.length - timeoutCount
+      } else console.log(`[compute-topshot-pack-ev] sentinel insert err: ${sErr.message}`)
     }
 
     if (fetched.length === 0) {
