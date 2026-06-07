@@ -29,14 +29,16 @@
   - [ ] **Render check (the one I can't do):** open your public `/profile/<username>` and confirm the **border** actually renders on your card. Then on `/rewards`, use the "Your cosmetics" section to **equip a different** owned cosmetic and confirm the profile updates.
 - [ ] **Insufficient credits** — try to redeem something you can't afford (e.g., Pro at 1500 before you've earned enough). Expect a clean **"insufficient credits"** block, no charge.
 - [ ] **Pro (instant, needs verified wallet)** — once you have ≥1500 credits and a verified wallet, redeem **1 Month of RPC Pro**. Expect: credits −1500, **"RPC Pro activated — 30 days"**, and Pro now shows active. *Console: "Pro grants (rewards)" KPI = 1; verify `getProStatus` shows Pro true with ~30-day expiry. Without a verified wallet it blocks with `verified_wallet_required` — that's correct.*
-- [ ] **Moment (manual)** — redeem **Common Moment Mystery Pick** (2000) if you have the credits + verified wallet. Expect: **pending** (not auto-delivered). *Console: it appears in the "Redemption queue" for you to fulfill.*
+- [ ] **Moment (manual)** — redeem **Common Moment Mystery Pick** (2000) if you have the credits + verified wallet. Expect: **pending** (not auto-delivered), and the card/history shows **"Will be gifted to @\<your-TS-username\>"** (auto-resolved from your linked wallet) with a "not right?" editor — try correcting it and confirm the admin queue + console switch to your override. *Console: it appears in the "Redemption queue" with the Gift-to column.*
+- [ ] **Merch (manual — now active)** — redeem **RPC Sticker Pack** (800). Expect: **pending** + a **shipping-address modal**; submit an address and confirm it's stored (admin shows it; it must never render anywhere public). Skip the modal once and confirm HISTORY shows the "add shipping address" nudge.
 
 ---
 
 ## 3. Admin console (`/admin/rewards`, RPC_ADMIN_TOKEN)
 
 - [ ] Loads with the **economy KPIs** + **pending redemption queue**.
-- [ ] **Fulfill** the pending Moment from step 2 (send the actual Moment from your wallet first, then mark it). Confirm it flips to **fulfilled**.
+- [ ] **Fulfill** the pending Moment from step 2 (gift the actual Moment on Top Shot first — no cooldown — then mark it). Confirm it flips to **fulfilled**.
+- [ ] Pending rows show the right identities: **"Gift to @username"** on the moment row (your override if you set one), the **ship-to address** on the merch row.
 - [ ] **Manual adjust** — grant yourself some test credits via the adjust form; confirm the ledger shows an `adjust` row by `admin:owner`.
 - [ ] **Draw raffle** — (the raffle item is held inactive, so there won't be entries; just confirm the action exists and returns "no entries" gracefully). Real draws are for later, after rules ship.
 - [ ] **Toggle** a shop item active/inactive and confirm it reflects on `/rewards`.
