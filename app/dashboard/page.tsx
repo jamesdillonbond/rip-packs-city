@@ -132,6 +132,7 @@ interface ChallengeRow {
   resolved_at: string | null;
   resolved_via: string | null;
   matched_moment_id: string | null;
+  target_moment_id?: string | null;
   expired?: boolean;
   msRemaining?: number;
 }
@@ -256,6 +257,9 @@ function ProfilePageInner() {
   const [heroEditOpen, setHeroEditOpen] = useState(false);
   // Verification: which wallet is currently in the verify-by-listing modal.
   const [verifyWallet, setVerifyWallet] = useState<string | null>(null);
+  // Deep-link: /dashboard?verify=<addr|1> opens the verify-by-listing modal
+  // (the /rewards "Verify wallet" CTA routes here). Handle once per mount.
+  const verifyParamHandled = useRef(false);
 
   const pushToast = useCallback((text: string, tone: "success" | "info" = "success") => {
     const id = Date.now() + Math.floor(Math.random() * 1000);
@@ -264,6 +268,28 @@ function ProfilePageInner() {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 6000);
   }, []);
+
+  // Open the verify-by-listing modal when arriving via /dashboard?verify=...
+  // (the /rewards CTA). The value may be a specific 0x wallet, or "1" to mean
+  // "pick the first wallet that still needs verifying".
+  useEffect(() => {
+    if (verifyParamHandled.current) return;
+    const param = search.get("verify");
+    if (!param || wallets.length === 0) return;
+    verifyParamHandled.current = true;
+    const want = param.trim().toLowerCase();
+    let target: string | null = null;
+    if (want.startsWith("0x")) {
+      target = wallets.find((w) => w.wallet_addr.toLowerCase() === want)?.wallet_addr ?? null;
+    }
+    if (!target) {
+      target =
+        wallets.find((w) => !w.verified_at)?.wallet_addr ??
+        wallets[0]?.wallet_addr ??
+        null;
+    }
+    if (target) setVerifyWallet(target);
+  }, [search, wallets]);
 
   // Phase 7 — DELETE /api/profile/trophy unpins a slot. Optimistically removes
   // the row from local state so the slot flips back to "empty" immediately,
@@ -1482,6 +1508,17 @@ function PickerCard({ m, disabled, onClick }: { m: TopMoment; disabled: boolean;
 
 // ── Verify by Listing ──────────────────────────────────────────────────────
 
+interface VerifyTarget {
+  moment_id: string;
+  edition_key: string | null;
+  serial_number: number | null;
+  player_name: string | null;
+  set_name: string | null;
+  image_url: string | null;
+  fmv_usd: number | null;
+  list_url: string;
+}
+
 function VerifyByListingModal({
   walletAddr,
   onClose,
@@ -1492,16 +1529,22 @@ function VerifyByListingModal({
   onVerified: () => void;
 }) {
   const [challenge, setChallenge] = useState<ChallengeRow | null>(null);
+  const [target, setTarget] = useState<VerifyTarget | null>(null);
+  const [unavailable, setUnavailable] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
+  const [checkHint, setCheckHint] = useState<string | null>(null);
+  const [verified, setVerified] = useState(false);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
 
-  // Load (or auto-mint) a challenge on open.
+  // Load the active challenge; if none, mint a fresh one (which picks the
+  // target Moment server-side). A challenge with no target_moment_id is legacy
+  // and not actionable — mint fresh instead.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -1512,20 +1555,27 @@ function VerifyByListingModal({
         if (res.ok) {
           const d = await res.json();
           if (cancelled) return;
-          if (d?.challenge && !d.challenge.resolved_at && !d.challenge.expired) {
+          if (d?.challenge && d.challenge.target_moment_id && !d.challenge.resolved_at && !d.challenge.expired) {
             setChallenge(d.challenge);
+            setTarget(d.target ?? null);
             return;
           }
         }
-        // No active challenge — mint one.
+        // No actionable challenge — mint one (picks the target).
         const minted = await fetch("/api/profile/verify-challenge", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ wallet_addr: walletAddr }),
         });
         const md = await minted.json();
+        if (cancelled) return;
+        if (md?.unavailable) {
+          setUnavailable(md?.message ?? "Verification by listing isn't available for this wallet.");
+          return;
+        }
         if (!minted.ok) throw new Error(md?.error ?? `HTTP ${minted.status}`);
-        if (!cancelled) setChallenge(md.challenge);
+        setChallenge(md.challenge);
+        setTarget(md.target ?? null);
       } catch (e: any) {
         if (!cancelled) setError(e?.message ?? "Failed to start verification");
       } finally {
@@ -1535,19 +1585,31 @@ function VerifyByListingModal({
     return () => { cancelled = true; };
   }, [walletAddr]);
 
+  // Live check: confirm the target Moment is listed at exactly the challenge
+  // amount via Top Shot's API. On a match the server resolves the challenge,
+  // flips the wallet to verified, and awards +500 credits.
   const checkNow = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setCheckHint(null);
     try {
-      const res = await fetch("/api/profile/verify-challenge", {
-        method: "PATCH",
+      const res = await fetch("/api/profile/verify-challenge/check", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ wallet_addr: walletAddr }),
       });
       const d = await res.json();
-      if (!res.ok) throw new Error(d?.error ?? `HTTP ${res.status}`);
-      setChallenge(d.challenge);
-      if (d.challenge?.resolved_at) onVerified();
+      if (d?.ok && d?.matched) {
+        setVerified(true);
+        setChallenge((prev) =>
+          prev
+            ? { ...prev, resolved_at: new Date().toISOString(), resolved_via: "gql_on_demand", matched_moment_id: d.moment ?? null }
+            : prev
+        );
+        onVerified();
+        return;
+      }
+      setCheckHint(d?.hint ?? d?.error ?? "No matching listing found yet.");
     } catch (e: any) {
       setError(e?.message ?? "Check failed");
     } finally {
@@ -1556,41 +1618,82 @@ function VerifyByListingModal({
   }, [walletAddr, onVerified]);
 
   const expiresMs = challenge ? new Date(challenge.expires_at).getTime() - now : 0;
+  const priceLabel = challenge ? `$${Number(challenge.challenge_amount).toFixed(2)}` : "";
+  const done = verified || !!challenge?.resolved_at;
 
   return (
     <ModalShell onClose={onClose} title={`Verify ${truncateAddress(walletAddr)} by listing`}>
       <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.7)", lineHeight: 1.6 }}>
-        We'll prove you own this wallet by asking you to list any moment at a unique price for a few minutes. Once we see the listing in our cache, the wallet flips to verified automatically.
+        We picked one of your cheap Moments. List it on Top Shot at the exact price below, then click <strong>I&apos;ve listed it — Done</strong>. We confirm the live listing and verify you instantly — earning <strong>+500 credits</strong>. The price is ~100× the Moment&apos;s value (and at least $10), so nobody will buy it — you can delist right after.
       </div>
 
-      {loading && !challenge && (
+      {loading && !challenge && !unavailable && (
         <div style={{ textAlign: "center", padding: 24 }}><span className="rpc-spinner" /></div>
       )}
 
-      {challenge && (
+      {unavailable && (
+        <div style={{ marginTop: 16, padding: 14, background: "#0a0a0a", border: "1px solid #3a2a2a", borderRadius: 10, fontFamily: monoFont, fontSize: 12, color: "#FBBF24", lineHeight: 1.6 }}>
+          {unavailable}
+        </div>
+      )}
+
+      {challenge && !unavailable && (
         <div style={{ marginTop: 16, padding: 14, background: "#0a0a0a", border: "1px solid #27272a", borderRadius: 10 }}>
+          {/* Target Moment card */}
+          {target && (
+            <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 14 }}>
+              {target.image_url && (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={target.image_url}
+                  alt={target.player_name ?? "Moment"}
+                  width={56}
+                  height={56}
+                  style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", background: "#000", flexShrink: 0 }}
+                />
+              )}
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 15, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {target.player_name ?? `Moment ${target.moment_id}`}
+                </div>
+                <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)" }}>
+                  {target.set_name ?? "Top Shot"}{target.serial_number ? ` · #${target.serial_number}` : ""}
+                </div>
+              </div>
+            </div>
+          )}
+
           <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6 }}>
-            List any moment at exactly
+            List this Moment for exactly
           </div>
           <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 38, color: "#34D399", lineHeight: 1 }}>
-            ${Number(challenge.challenge_amount).toFixed(2)}
+            {priceLabel}
           </div>
-          <div style={{ marginTop: 8, fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
-            On Top Shot or Flowty. We'll detect it within ~20 minutes (or click the button below to check immediately).
-          </div>
-          <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <button onClick={checkNow} disabled={loading} style={primaryBtnStyle}>
-              {loading ? "Checking…" : "Check now"}
-            </button>
-            <span style={{ fontFamily: monoFont, fontSize: 11, color: expiresMs <= 0 ? "#F87171" : "rgba(255,255,255,0.6)" }}>
-              {challenge.resolved_at
-                ? "Verified ✓"
-                : `Expires in ${formatCountdown(expiresMs)}`}
-            </span>
-          </div>
-          {challenge.resolved_at && (
+
+          {!done && (
+            <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              {target?.list_url && (
+                <a href={target.list_url} target="_blank" rel="noopener noreferrer" style={{ ...primaryBtnStyle, textDecoration: "none", display: "inline-block" }}>
+                  Open on Top Shot ↗
+                </a>
+              )}
+              <button onClick={checkNow} disabled={loading} style={secondaryBtnStyle}>
+                {loading ? "Checking…" : "I've listed it — Done"}
+              </button>
+              <span style={{ fontFamily: monoFont, fontSize: 11, color: expiresMs <= 0 ? "#F87171" : "rgba(255,255,255,0.6)" }}>
+                {`Expires in ${formatCountdown(expiresMs)}`}
+              </span>
+            </div>
+          )}
+
+          {done && (
             <div style={{ marginTop: 12, color: "#34D399", fontFamily: monoFont, fontSize: 12 }}>
-              ✓ Match found{challenge.matched_moment_id ? ` (moment ${challenge.matched_moment_id})` : ""}.
+              ✓ Wallet verified — +500 credits earned. You can delist the Moment now.
+            </div>
+          )}
+          {checkHint && !done && (
+            <div style={{ marginTop: 10, color: "#FBBF24", fontFamily: monoFont, fontSize: 11, lineHeight: 1.5 }}>
+              {checkHint}
             </div>
           )}
         </div>
@@ -1669,6 +1772,20 @@ function StatTile({ label, value, color, caption }: { label: string; value: stri
 const primaryBtnStyle: React.CSSProperties = {
   background: ACCENT_RED,
   border: "none",
+  color: "#fff",
+  padding: "8px 18px",
+  borderRadius: 6,
+  fontFamily: condensedFont,
+  fontWeight: 700,
+  fontSize: 12,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+  cursor: "pointer",
+};
+
+const secondaryBtnStyle: React.CSSProperties = {
+  background: "transparent",
+  border: "1px solid #3f3f46",
   color: "#fff",
   padding: "8px 18px",
   borderRadius: 6,
