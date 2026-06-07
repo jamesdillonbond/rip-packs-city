@@ -140,9 +140,12 @@ export default function RewardsPage() {
   const [equipped, setEquipped] = useState<Equipped>({ border: null, banner: null });
   const [pro, setPro] = useState<ProStatus>({ isPro: false, plan: null, expiresAt: null });
   const [resolvedTsUsername, setResolvedTsUsername] = useState<string | null>(null);
+  const [hasVerifiedWallet, setHasVerifiedWallet] = useState(true);
   const [redeeming, setRedeeming] = useState<number | null>(null);
   const [equipping, setEquipping] = useState<string | null>(null);
-  const [flash, setFlash] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
+  const [flash, setFlash] = useState<
+    { kind: "ok" | "err"; msg: string; cta?: { label: string; href: string } } | null
+  >(null);
   // Merch redeem → shipping-address modal (redemptionId carried from the redeem).
   const [shipModal, setShipModal] = useState<{ redemptionId: number; itemName: string } | null>(null);
 
@@ -165,6 +168,7 @@ export default function RewardsPage() {
       setEquipped(data.equipped ?? { border: null, banner: null });
       setPro(data.pro ?? { isPro: false, plan: null, expiresAt: null });
       setResolvedTsUsername(data.resolvedTsUsername ?? null);
+      setHasVerifiedWallet(data.hasVerifiedWallet ?? false);
     } catch {
       setFlash({ kind: "err", msg: "Couldn't load rewards. Try again." });
     } finally {
@@ -273,6 +277,14 @@ export default function RewardsPage() {
           if (item.type === "moment" && redemptionId !== null && !resolvedTsUsername) {
             await promptGiftTo(redemptionId);
           }
+        } else if (data?.error === "verified_wallet_required") {
+          // The gate is the sybil guard — surface it as the next step, not a
+          // failure. (redeem_shop_item returns 'verified_wallet_required'.)
+          setFlash({
+            kind: "err",
+            msg: "Verify your Top Shot wallet to unlock Moment + Pro rewards.",
+            cta: { label: "Verify wallet →", href: "/profile" },
+          });
         } else {
           const reason =
             data?.error === "insufficient_credits"
@@ -281,9 +293,7 @@ export default function RewardsPage() {
               ? "That one's out of stock."
               : data?.error === "status_too_low"
               ? "You haven't reached the required tier yet."
-              : data?.error === "requires_verified_wallet"
-              ? "Link & verify a wallet first."
-              : data?.error === "per_user_limit"
+              : data?.error === "per_user_limit_reached"
               ? "You've already redeemed this."
               : "Couldn't redeem that item.";
           setFlash({ kind: "err", msg: reason });
@@ -368,6 +378,14 @@ export default function RewardsPage() {
             }}
           >
             {flash.msg}
+            {flash.cta && (
+              <>
+                {" "}
+                <Link href={flash.cta.href} style={{ color: RED, fontWeight: 600 }}>
+                  {flash.cta.label}
+                </Link>
+              </>
+            )}
           </div>
         )}
 
@@ -617,6 +635,34 @@ export default function RewardsPage() {
 
             {/* SHOP */}
             <SectionTitle>Shop</SectionTitle>
+            {!hasVerifiedWallet && (
+              <Link
+                href="/profile"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  margin: "0 0 16px",
+                  padding: "12px 16px",
+                  borderRadius: 8,
+                  border: `1px solid ${RED}`,
+                  background: "rgba(224,58,47,0.08)",
+                  textDecoration: "none",
+                  color: "#e7e7e7",
+                }}
+              >
+                <span style={{ color: RED, fontFamily: DISPLAY, letterSpacing: "0.06em", fontSize: 18 }}>
+                  🔒
+                </span>
+                <span style={{ fontFamily: MONO, fontSize: 13 }}>
+                  Verify your Top Shot wallet to unlock Moment + Pro rewards — and earn{" "}
+                  <strong style={{ color: RED }}>500 credits</strong> for linking.
+                </span>
+                <span style={{ marginLeft: "auto", color: RED, fontFamily: DISPLAY, whiteSpace: "nowrap" }}>
+                  Verify →
+                </span>
+              </Link>
+            )}
             <div
               style={{
                 display: "grid",
