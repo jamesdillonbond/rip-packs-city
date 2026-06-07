@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { backfillAllDayEditionVideos } from "@/lib/chains/flow/allday-video"
 
 // ── AllDay FMV cursor sweep ──────────────────────────────────────────────────
 //
@@ -382,6 +383,20 @@ export async function GET(req: NextRequest) {
     )
   }
 
+  // ── Freshness tail: fill editions.video_url for newly-created AllDay editions
+  // (bulk fill landed 2026-06-07; this keeps new editions current). Best-effort,
+  // bounded, never fatal — recent-only so the permanent video-less tail is skipped.
+  let videoBackfill: Awaited<ReturnType<typeof backfillAllDayEditionVideos>> | null = null
+  try {
+    videoBackfill = await backfillAllDayEditionVideos(60, 45)
+  } catch (e) {
+    console.log(
+      `[allday-fmv-populate] video backfill leg err (non-fatal): ${
+        e instanceof Error ? e.message : String(e)
+      }`
+    )
+  }
+
   return NextResponse.json({
     ok: true,
     editions_fetched: nodes.length,
@@ -392,6 +407,7 @@ export async function GET(req: NextRequest) {
     cursor_after: cursorAfter,
     sweep_complete: sweepComplete,
     stall_reset: stallReset,
+    video_backfill: videoBackfill,
     debug_last_error: lastError ?? null,
     debug_batch_size: filteredNodes.length,
     debug_node_sample: JSON.stringify(nodeSample ?? null),
