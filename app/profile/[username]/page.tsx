@@ -479,7 +479,7 @@ export default function PublicProfilePage() {
         {/* ── Cost Basis ── */}
         {username && (
           <div style={{ marginBottom: 14 }}>
-            <CostBasisCard ownerKey={username} />
+            <CostBasisCard ownerKey={username} ownView={isOwnProfile} />
           </div>
         )}
 
