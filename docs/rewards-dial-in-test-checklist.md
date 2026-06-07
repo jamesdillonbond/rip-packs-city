@@ -4,7 +4,7 @@
 
 **Heads up before you start:**
 - Testing on your real account writes **real** ledger rows / redemptions / a real Pro grant to your wallet. That's fine (it's you) — see "Reset" at the end to zero it out, or use a throwaway account.
-- **Pro and Moment redemptions require a verified wallet.** If you haven't completed wallet verification (`fcl-verify`), those will correctly block with `verified_wallet_required`. Verify a wallet first if you want to test them.
+- **Pro and Moment redemptions require a verified wallet.** Verification = the **listing challenge** (list one of your Moments at an exact price; the Dapper sign-in button only works for self-custody wallets until Dapper developer access is granted). Unverified users correctly block with `verified_wallet_required` and get the verify CTA.
 - There's a **global earn cap of 5,000 credits/day per user** — heavy repeated testing in one day can hit it (you'll see `global_daily_cap_reached`). It resets at UTC midnight, or bump `rewards_config.global_daily_earn_cap` temporarily.
 
 ---
@@ -12,7 +12,7 @@
 ## 1. Earn — each action credits once and is capped
 
 - [ ] **Daily visit** — load `/rewards`. Expect **+25** once. Reload `/rewards` again → **no** second award (20h cooldown). *Console: a `daily_visit` earn row, spendable 25.*
-- [ ] **Link wallet** — verify a wallet via the Dapper sign-in. Expect **+500** (`link_wallet`, one-time). Re-verify → no second award.
+- [ ] **Link wallet** — verify via the **listing challenge**: `/rewards` → "Verify by listing a Moment" (or `/dashboard?verify=1`). RPC picks one of your dust Moments and an exact ~100×-FMV price; open the Top Shot deep link, list it, hit **Done — check**. Expect verified + **+500** (`link_wallet`, one-time), then delist. *(Your account is already owner-attested and the +500 landed, so your own run validates the mechanics — a fresh +500 needs a second account.)*
 - [ ] **Complete profile** — finish your profile/bio. Expect **+250** (`complete_profile`, one-time).
 - [ ] **Set favorite team** — save a favorite team. Expect **+100** (`set_favorite_team`, one-time).
 - [ ] **Watchlist** — add a Moment to your watchlist. Expect **+15** (`add_watchlist_item`, up to 5/day). Add a few more → caps at 5/day.
