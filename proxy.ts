@@ -140,11 +140,21 @@ function isPublicPath(pathname: string, method: string): boolean {
   if (pathname === "/pricing" || pathname.startsWith("/pricing/")) return true
   // /about — marketing surface
   if (pathname === "/about" || pathname.startsWith("/about/")) return true
+  // /blog + subpaths — force-static long-form marketing content built for SEO.
+  // Linked from the public TopNav, so anon clicks must not bounce to /login.
+  // Read-only static; sitemap lists the index + posts. (2026-06-08)
+  if (pathname === "/blog" || pathname.startsWith("/blog/")) return true
   // /privacy + /terms — legal pages. Must be publicly readable (and crawlable;
   // app/sitemap.ts lists them) — without this anon visitors + Googlebot get
   // 302→/login on the privacy policy / terms of service. (2026-05-31)
   if (pathname === "/privacy" || pathname.startsWith("/privacy/")) return true
   if (pathname === "/terms" || pathname.startsWith("/terms/")) return true
+  // /legal/* — legal-disclosure pages (e.g. /legal/fmv-methodology). Linked from
+  // the public SiteFooter on every surface AND from the /pricing page ("How is
+  // FMV calculated?"), so anon visitors + Googlebot must read them without a
+  // 302→/login. Read-only static content; same risk profile as /privacy + /terms.
+  // (2026-06-08)
+  if (pathname === "/legal" || pathname.startsWith("/legal/")) return true
   // /auth + subpaths (covers /auth/confirm and similar)
   if (pathname === "/auth" || pathname.startsWith("/auth/")) return true
   // /admin pages — enforce their own RPC_ADMIN_TOKEN bearer auth at the page

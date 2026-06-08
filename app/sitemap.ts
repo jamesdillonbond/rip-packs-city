@@ -302,6 +302,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE_URL}/about`,            lastModified: now, changeFrequency: 'monthly', priority: 0.5 },
     { url: `${BASE_URL}/privacy`,          lastModified: now, changeFrequency: 'yearly',  priority: 0.3 },
     { url: `${BASE_URL}/terms`,            lastModified: now, changeFrequency: 'yearly',  priority: 0.3 },
+    { url: `${BASE_URL}/legal/fmv-methodology`, lastModified: now, changeFrequency: 'monthly', priority: 0.4 },
+    { url: `${BASE_URL}/blog`,             lastModified: now, changeFrequency: 'weekly',  priority: 0.5 },
+    { url: `${BASE_URL}/blog/pinnacle-star-wars-day-2026`, lastModified: now, changeFrequency: 'monthly', priority: 0.5 },
     // Public Fast Break optimizer — SEO-targeted, daily refresh.
     { url: `${BASE_URL}/nba/fast-break`,   lastModified: now, changeFrequency: 'daily',   priority: 0.9 },
   ]
