@@ -26,45 +26,45 @@ const COLLECTIONS: Record<string, CollectionConfig> = {
     label: "NBA Top Shot",
     shortLabel: "Top Shot",
     pitch:
-      "Live capital flow on NBA Top Shot peer-to-peer NFT-collateralized loans through Flowty.",
+      "Historical capital flow on NBA Top Shot peer-to-peer NFT-collateralized loans through Flowty.",
     description:
-      "On-chain Flowty loan book for NBA Top Shot moments. Capital deployed, lender and borrower leaderboards, monthly cohorts, and outstanding principal — refreshed every 10 minutes.",
+      "On-chain Flowty loan book for NBA Top Shot moments. Capital deployed, lender and borrower leaderboards, monthly cohorts, and outstanding principal — historical archive (Flowty closed its marketplace May 2026).",
   },
   allday: {
     slug: "allday",
     label: "NFL All Day",
     shortLabel: "All Day",
     pitch:
-      "Live capital flow on NFL All Day peer-to-peer NFT-collateralized loans through Flowty.",
+      "Historical capital flow on NFL All Day peer-to-peer NFT-collateralized loans through Flowty.",
     description:
-      "On-chain Flowty loan book for NFL All Day moments. Capital deployed, lender and borrower leaderboards, monthly cohorts, and outstanding principal — refreshed every 10 minutes.",
+      "On-chain Flowty loan book for NFL All Day moments. Capital deployed, lender and borrower leaderboards, monthly cohorts, and outstanding principal — historical archive (Flowty closed its marketplace May 2026).",
   },
   golazos: {
     slug: "golazos",
     label: "LaLiga Golazos",
     shortLabel: "Golazos",
     pitch:
-      "Live capital flow on LaLiga Golazos peer-to-peer NFT-collateralized loans through Flowty.",
+      "Historical capital flow on LaLiga Golazos peer-to-peer NFT-collateralized loans through Flowty.",
     description:
-      "On-chain Flowty loan book for LaLiga Golazos moments. Capital deployed, lender and borrower leaderboards, monthly cohorts, and outstanding principal — refreshed every 10 minutes.",
+      "On-chain Flowty loan book for LaLiga Golazos moments. Capital deployed, lender and borrower leaderboards, monthly cohorts, and outstanding principal — historical archive (Flowty closed its marketplace May 2026).",
   },
   pinnacle: {
     slug: "pinnacle",
     label: "Disney Pinnacle",
     shortLabel: "Pinnacle",
     pitch:
-      "Live capital flow on Disney Pinnacle peer-to-peer NFT-collateralized loans through Flowty.",
+      "Historical capital flow on Disney Pinnacle peer-to-peer NFT-collateralized loans through Flowty.",
     description:
-      "On-chain Flowty loan book for Disney Pinnacle pins. Capital deployed, lender and borrower leaderboards, monthly cohorts, and outstanding principal — refreshed every 10 minutes.",
+      "On-chain Flowty loan book for Disney Pinnacle pins. Capital deployed, lender and borrower leaderboards, monthly cohorts, and outstanding principal — historical archive (Flowty closed its marketplace May 2026).",
   },
   ufc: {
     slug: "ufc",
     label: "UFC Strike",
     shortLabel: "UFC",
     pitch:
-      "Live capital flow on UFC Strike peer-to-peer NFT-collateralized loans through Flowty.",
+      "Historical capital flow on UFC Strike peer-to-peer NFT-collateralized loans through Flowty.",
     description:
-      "On-chain Flowty loan book for UFC Strike collectibles. Capital deployed, lender and borrower leaderboards, monthly cohorts, and outstanding principal — refreshed every 10 minutes.",
+      "On-chain Flowty loan book for UFC Strike collectibles. Capital deployed, lender and borrower leaderboards, monthly cohorts, and outstanding principal — historical archive (Flowty closed its marketplace May 2026).",
   },
 }
 

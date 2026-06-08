@@ -3,18 +3,18 @@ import LoansDashboard from "@/components/analytics/LoansDashboard"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
 
 export const metadata: Metadata = analyticsMetadata({
-  title: "Flowty Loan Analytics — On-chain NFT-Collateralized Lending on Flow",
+  title: "Flowty Loan Analytics (Historical) — NFT-Collateralized Lending on Flow",
   description:
-    "Live Flowty loan book for Flow digital collectibles. Capital deployed, lender and borrower leaderboards, cohort retention, and outstanding principal — refreshed every 10 minutes.",
+    "Historical Flowty loan book for Flow digital collectibles. Capital deployed, lender and borrower leaderboards, cohort retention, and outstanding principal. Flowty closed its marketplace May 2026 — this is a frozen archive.",
   path: "/analytics/loans",
 })
 
 const datasetJsonLd = {
   "@context": "https://schema.org",
   "@type": "Dataset",
-  name: "Rip Packs City Flowty Loan Analytics",
+  name: "Rip Packs City Flowty Loan Analytics (Historical Archive)",
   description:
-    "On-chain Flowty loan book and derived analytics for Flow digital collectibles — Top Shot, NFL All Day, Golazos, and Pinnacle.",
+    "Historical on-chain Flowty loan book and derived analytics for Flow digital collectibles — Top Shot, NFL All Day, Golazos, and Pinnacle. Flowty closed its marketplace May 2026.",
   creator: { "@type": "Organization", name: "Rip Packs City" },
   url: `${ANALYTICS_BASE_URL}/analytics/loans`,
   distribution: [

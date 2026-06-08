@@ -23,9 +23,9 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 600
 
 export const metadata: Metadata = analyticsMetadata({
-  title: "Flowty Wallet Directory — Lenders & Borrowers",
+  title: "Flowty Wallet Directory (Historical) — Lenders & Borrowers",
   description:
-    "Browse every wallet active on the Flowty NFT-collateralized loan book. Lenders, borrowers, and mixed-role power users — sorted by total volume.",
+    "Browse every wallet that was active on the Flowty NFT-collateralized loan book. Lenders, borrowers, and mixed-role power users — sorted by total volume. Historical archive (Flowty closed May 2026).",
   path: "/analytics/wallets",
 })
 
@@ -100,9 +100,9 @@ export default async function WalletsIndexPage() {
   const datasetJsonLd = {
     "@context": "https://schema.org",
     "@type": "Dataset",
-    name: "Rip Packs City Flowty Wallet Directory",
+    name: "Rip Packs City Flowty Wallet Directory (Historical Archive)",
     description:
-      "Index of every wallet active on the Flowty NFT-collateralized loan book.",
+      "Index of every wallet that was active on the Flowty NFT-collateralized loan book. Historical archive — Flowty closed May 2026.",
     creator: { "@type": "Organization", name: "Rip Packs City" },
     url: `${ANALYTICS_BASE_URL}/analytics/wallets`,
   }
@@ -116,12 +116,13 @@ export default async function WalletsIndexPage() {
       <div className="space-y-10">
         <header className="space-y-2">
           <h1 className="text-2xl font-bold text-zinc-100">
-            Wallets — Loan-Book Lender &amp; Borrower Hub
+            Wallets — Loan-Book Lender &amp; Borrower Hub (Historical)
           </h1>
           <p className="text-sm text-zinc-400 max-w-2xl">
-            Every wallet active on the Flowty NFT-collateralized loan book, with a
-            hub-level view of segments, role splits, and activity recency above
-            the per-wallet directory.
+            Every wallet that was active on the Flowty NFT-collateralized loan
+            book, with a hub-level view of segments, role splits, and activity
+            recency above the per-wallet directory. Flowty closed its marketplace
+            in May 2026 — this is a frozen historical archive.
           </p>
         </header>
 
