@@ -329,6 +329,32 @@ async function fetchExhaustedCount(collectionId: string, distId: string): Promis
   return count ?? 0
 }
 
+// ── Sales history (Item 2 — traced via the pack_rips dist bridge) ────────────
+// get_pack_sales_history returns kind-tagged rows ('top' = highest price,
+// 'recent' = newest) for packs whose sold instances were later opened (the
+// bridge only links sales whose pack rip resolved a dist_id — partial coverage
+// that grows over time). Dist 901-class packs (sold, never re-opened) return
+// zero rows and render the empty state.
+interface PackSaleRow {
+  kind: "top" | "recent" | string
+  buyer_address: string | null
+  seller_address: string | null
+  sale_price: string | number | null
+  sale_currency: string | null
+  sealed_at: string | null
+  tx_hash: string | null
+}
+
+async function fetchPackSalesHistory(collectionId: string, distId: string, limit = 10): Promise<PackSaleRow[]> {
+  const { data, error } = await sb.rpc("get_pack_sales_history", {
+    p_collection_id: collectionId,
+    p_dist_id: distId,
+    p_limit: limit,
+  })
+  if (error) { console.error("[pack-detail] get_pack_sales_history error", error.message); return [] }
+  return Array.isArray(data) ? (data as PackSaleRow[]) : []
+}
+
 // editions.name is "Player Name — Set Name" (em-dash). Some rows are NULL.
 // Fall back gracefully so the table doesn't render literal "null —" cells.
 function splitEditionName(name: string | null): { player: string; setName: string } {
@@ -471,11 +497,12 @@ export default async function PackDetailPage(
 
   const distMetadata = fallback?.metadata ?? (await fetchDistFallback(coll.id, distId))?.metadata ?? null
 
-  const [topPulls, packContents, heroEditions, exhaustedCount] = await Promise.all([
+  const [topPulls, packContents, heroEditions, exhaustedCount, salesHistory] = await Promise.all([
     fetchTopPulls(coll.id, distId, num(merged.total_unopened), merged.slots ?? null),
     fetchPackContents(coll.id, distId, PACK_CONTENTS_PAGE_SIZE, 0),
     fetchPackHeroEditions(coll.id, distId),
     fetchExhaustedCount(coll.id, distId),
+    fetchPackSalesHistory(coll.id, distId, 10),
   ])
 
   // Defensive: pack_table_rows.tier is typed string|null but coerce in case
@@ -600,7 +627,11 @@ export default async function PackDetailPage(
       : "Buy on Top Shot"
 
   const tierLabel = tier.charAt(0).toUpperCase() + tier.slice(1)
-  const packTypeLabel = String(merged.pack_type ?? "").trim()
+  // 7 — the pack_type chip is suppressed when it's just the generic "pack"
+  // (it's redundant on a pack page, and rendered tight beside the tier chip it
+  // read as "Fandompack"). Only show a meaningful type (box / case / bundle …).
+  const rawPackType = String(merged.pack_type ?? "").trim()
+  const packTypeLabel = rawPackType.toLowerCase() === "pack" ? "" : rawPackType
   // 1d — when slots is unknown render nothing here. The old fallback to
   // packTypeLabel duplicated the pack-type chip beside it ("Pack pack").
   const slotsLabel = merged.slots && merged.slots > 0
@@ -899,6 +930,17 @@ export default async function PackDetailPage(
         />
       </section>
 
+      {/* ── Packs Content Remaining (Item 1 — TS-style donut + tier bars) ── */}
+      <PacksContentRemaining
+        unopened={liveUnopened}
+        totalMinted={metaTotalPackCount}
+        remainingByTier={remainingByTier}
+        originalByTier={originalByTier}
+        updatedAt={tierCountsUpdatedAt}
+        hasDropPool={hasDropPool}
+        tierAccent={tierAccent}
+      />
+
       {/* ── Pull odds by tier (PACKVIZ 2b) ───────────────────────────────── */}
       <TierOddsPanel
         remainingByTier={remainingByTier}
@@ -910,6 +952,9 @@ export default async function PackDetailPage(
 
       {/* ── Top pulls hero strip (PACKVIZ-GRID 2a) ───────────────────────── */}
       {heroEditions.length > 0 && <PackHeroStrip collection={collection} editions={heroEditions} />}
+
+      {/* ── Sales History (Item 2 — Top + Recent Purchases) ──────────────── */}
+      <PackSalesHistory rows={salesHistory} />
 
       {/* ── What's inside (visual grid) ──────────────────────────────────── */}
       {packContents.length > 0 && (
@@ -1505,6 +1550,273 @@ function TierOddsPanel({
       <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.35)" }}>
         Odds/pack ≈ chance of at least one card of that tier across {slots && slots > 0 ? slots : "the"} slots, from the live remaining pool. Approximate (assumes independent slots).
       </div>
+    </section>
+  )
+}
+
+// ── Packs Content Remaining (Item 1) ────────────────────────────────────────
+// Top Shot's drop pages lead with a "Packs Content Remaining" module: a ring of
+// packs still unopened + per-tier remaining bars. RPC now has the same data
+// (compute-topshot-pack-ev v20 persists remaining/original counts-by-tier +
+// total_unopened/total_pack_count into pack_distributions.metadata). Renders
+// only when there's a real indexed drop pool AND at least one of the two data
+// sources (packs ring / tier bars) is present — never fabricates bars on a
+// no-pool pack (same gate as TierOddsPanel, Pack 1b).
+
+function PacksContentRemaining({
+  unopened,
+  totalMinted,
+  remainingByTier,
+  originalByTier,
+  updatedAt,
+  hasDropPool,
+  tierAccent,
+}: {
+  unopened: number | null
+  totalMinted: number | null
+  remainingByTier: Record<string, number> | null
+  originalByTier: Record<string, number> | null
+  updatedAt: string | null
+  hasDropPool: boolean
+  tierAccent: string
+}) {
+  if (!hasDropPool) return null
+  const hasRing = totalMinted != null && totalMinted > 0 && unopened != null
+  const hasBars = !!remainingByTier && !!originalByTier
+  if (!hasRing && !hasBars) return null
+
+  // Donut: fraction of minted packs still unopened. conic-gradient ring with a
+  // hollow center label, no chart lib (the artifact-brand-CSS pattern).
+  const unopenedPct = hasRing ? Math.max(0, Math.min(100, (unopened! / totalMinted!) * 100)) : null
+  const ring = unopenedPct != null
+    ? `conic-gradient(${tierAccent} 0 ${unopenedPct}%, rgba(255,255,255,0.08) ${unopenedPct}% 100%)`
+    : undefined
+
+  const tiers = hasBars
+    ? (() => {
+        const present = TIER_RARITY_ORDER.filter((t) => Number(originalByTier![t] ?? 0) > 0)
+        for (const k of Object.keys(originalByTier!)) {
+          if (!TIER_RARITY_ORDER.includes(k) && Number(originalByTier![k] ?? 0) > 0) present.push(k)
+        }
+        return present
+      })()
+    : []
+
+  return (
+    <section
+      style={{
+        background: "rgba(13,13,13,0.92)",
+        border: "1px solid rgba(255,255,255,0.06)",
+        borderRadius: 8,
+        padding: 18,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 14 }}>
+        <h2
+          style={{
+            margin: 0,
+            fontFamily: "var(--font-display)",
+            fontWeight: 800,
+            fontSize: 18,
+            letterSpacing: "0.06em",
+            color: "#fff",
+            textTransform: "uppercase",
+          }}
+        >
+          Packs Content Remaining
+        </h2>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+          live pool{updatedAt ? ` · as of ${relTimeShort(updatedAt)}` : ""}
+        </span>
+      </div>
+
+      <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "center" }}>
+        {ring && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, flex: "0 0 auto" }}>
+            <div
+              style={{
+                position: "relative",
+                width: 132,
+                height: 132,
+                borderRadius: "50%",
+                background: ring,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <div
+                style={{
+                  width: 92,
+                  height: 92,
+                  borderRadius: "50%",
+                  background: "rgba(13,13,13,0.98)",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 2,
+                }}
+              >
+                <span style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 24, color: "#fff", lineHeight: 1 }}>
+                  {unopenedPct!.toFixed(unopenedPct! >= 10 ? 0 : 1)}%
+                </span>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 8, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>
+                  unopened
+                </span>
+              </div>
+            </div>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(255,255,255,0.7)" }}>
+              {fmtCount(unopened)} / {fmtCount(totalMinted)} packs
+            </span>
+          </div>
+        )}
+
+        {tiers.length > 0 && (
+          <div style={{ flex: "1 1 280px", minWidth: 240, display: "flex", flexDirection: "column", gap: 10 }}>
+            {tiers.map((t) => {
+              const remaining = Number(remainingByTier![t] ?? 0)
+              const original = Number(originalByTier![t] ?? 0)
+              const pct = original > 0 ? Math.max(0, Math.min(100, (remaining / original) * 100)) : 0
+              const chip = tierChip(t)
+              return (
+                <div key={t}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: chip.color, letterSpacing: "0.04em", textTransform: "uppercase", fontWeight: 700 }}>
+                      {t.charAt(0).toUpperCase() + t.slice(1)}
+                    </span>
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(255,255,255,0.7)" }}>
+                      {remaining.toLocaleString()} <span style={{ color: "rgba(255,255,255,0.4)" }}>/ {original.toLocaleString()} ({pct.toFixed(pct >= 10 ? 0 : 1)}%)</span>
+                    </span>
+                  </div>
+                  <div style={{ height: 8, borderRadius: 4, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                    <div style={{ width: `${pct}%`, height: "100%", background: chip.color, borderRadius: 4 }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+// ── Pack Sales History (Item 2) ─────────────────────────────────────────────
+// Top Purchases (highest price) + Recent Purchases (newest). Buyer renders as a
+// short wallet linking to /analytics/wallets/<addr> — the differentiator over
+// Top Shot's own drop page, where the buyer is a dead-end name. Coverage is
+// partial (the dist bridge only links sales whose pack was later opened), so
+// the module carries an explicit caption and an honest empty state.
+
+function fmtSalePrice(v: string | number | null): string {
+  const n = v == null ? null : Number(v)
+  if (n == null || !Number.isFinite(n)) return "—"
+  if (n >= 1000) return `$${Math.round(n).toLocaleString()}`
+  if (n >= 1) return `$${n.toFixed(2)}`
+  return `$${n.toFixed(2)}`
+}
+
+function ShortWallet({ address }: { address: string | null }) {
+  if (!address) return <span style={{ color: "rgba(255,255,255,0.4)" }}>—</span>
+  const trunc = address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address
+  return (
+    <Link
+      href={`/analytics/wallets/${address.toLowerCase()}`}
+      title={address}
+      style={{ color: "#fff", textDecoration: "none", borderBottom: "1px dotted rgba(255,255,255,0.25)" }}
+    >
+      {trunc}
+    </Link>
+  )
+}
+
+function PackSalesTable({ title, rows }: { title: string; rows: PackSaleRow[] }) {
+  return (
+    <div style={{ flex: "1 1 320px", minWidth: 280 }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", marginBottom: 8 }}>
+        {title}
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+              <Th>Buyer</Th>
+              <Th align="right">Sale price</Th>
+              <Th align="right">When</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((s, i) => (
+              <tr key={`${s.tx_hash ?? i}-${title}`} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                <Td><ShortWallet address={s.buyer_address} /></Td>
+                <Td align="right">{fmtSalePrice(s.sale_price)}</Td>
+                <Td align="right" color="rgba(255,255,255,0.55)">
+                  <span title={s.sealed_at ? new Date(s.sealed_at).toLocaleString() : undefined}>{relTimeShort(s.sealed_at)}</span>
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function PackSalesHistory({ rows }: { rows: PackSaleRow[] }) {
+  const top = rows.filter((r) => r.kind === "top")
+  const recent = rows.filter((r) => r.kind === "recent")
+
+  return (
+    <section
+      style={{
+        background: "rgba(13,13,13,0.92)",
+        border: "1px solid rgba(255,255,255,0.06)",
+        borderRadius: 8,
+        padding: 18,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
+        <h2
+          style={{
+            margin: 0,
+            fontFamily: "var(--font-display)",
+            fontWeight: 800,
+            fontSize: 18,
+            letterSpacing: "0.06em",
+            color: "#fff",
+            textTransform: "uppercase",
+          }}
+        >
+          Sales History
+        </h2>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+          secondary pack sales
+        </span>
+      </div>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.35)", marginBottom: 14 }}>
+        Traced via opened packs — partial coverage that grows over time. Buyer links open the wallet&apos;s full intelligence.
+      </div>
+
+      {rows.length === 0 ? (
+        <div
+          style={{
+            padding: "12px 14px",
+            border: "1px dashed rgba(255,255,255,0.1)",
+            borderRadius: 6,
+            color: "rgba(255,255,255,0.4)",
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+          }}
+        >
+          No traced sales yet for this pack.
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+          {top.length > 0 && <PackSalesTable title="Top purchases" rows={top} />}
+          {recent.length > 0 && <PackSalesTable title="Recent purchases" rows={recent} />}
+        </div>
+      )}
     </section>
   )
 }

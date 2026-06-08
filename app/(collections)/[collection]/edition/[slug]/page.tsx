@@ -215,6 +215,23 @@ async function fetchSpecialSerials(editionId: string): Promise<SpecialSerialRow[
   return (data ?? []) as SpecialSerialRow[]
 }
 
+// Item 3b — the deterministic notable-serial breakdown (tags + last sale) from
+// get_edition_special_serials. Complements special_serial_holders (which carries
+// the tracked OWNER, omitted from this RPC's v1 due to partial coverage) — the
+// page merges the two by serial.
+interface NotableSerialRow {
+  serial: number
+  tag: string
+  last_sale_usd: number | null
+  last_sold_at: string | null
+}
+
+async function fetchNotableSerials(editionId: string): Promise<NotableSerialRow[]> {
+  const { data, error } = await rpcClient().rpc("get_edition_special_serials", { p_edition_id: editionId })
+  if (error) { console.error("[edition] notable_serials", error.message); return [] }
+  return Array.isArray(data) ? (data as NotableSerialRow[]) : []
+}
+
 async function fetchHighOffer(editionId: string): Promise<HighOffer | null> {
   const { data, error } = await rpcClient().rpc("get_edition_high_offer", { p_edition_id: editionId })
   if (error) { console.error("[edition] high_offer", error.message); return null }
@@ -312,17 +329,31 @@ export default async function EditionPage(
 
   const isPinnacle = isPinnacleUrlSlug(collection)
 
-  const [history, sales, packs, specialSerials, highOffer, parallels, insightLinks] = await Promise.all([
+  const [history, sales, packs, specialSerials, notableSerials, highOffer, parallels, insightLinks] = await Promise.all([
     fetchHistory(coll.id, slug, 30),
     fetchSales(coll.id, slug, SALES_PAGE_SIZE, 0),
     fetchPacks(coll.id, slug),
     isPinnacle ? Promise.resolve([] as SpecialSerialRow[]) : fetchSpecialSerials(detail.id),
+    isPinnacle ? Promise.resolve([] as NotableSerialRow[]) : fetchNotableSerials(detail.id),
     fetchHighOffer(detail.id),
     fetchParallels(detail.id),
     collection === "nba-top-shot"
       ? fetchInsightLinks(detail.id, detail.external_id)
       : Promise.resolve(EMPTY_INSIGHT_LINKS),
   ])
+
+  // Merge the deterministic notable serials (tag + last sale) with the tracked
+  // owners (special_serial_holders) by serial — gives one board with tag, last
+  // sale, and owner-if-known.
+  const ownerBySerial = new Map<number, string>()
+  for (const s of specialSerials) {
+    if (s.holder_address) ownerBySerial.set(s.serial_number, s.holder_address)
+  }
+  const sortedNotable = [...notableSerials].sort((a, b) => {
+    const pr = (t: string) => (t === "#1" ? 0 : t === "jersey" ? 1 : t === "low" ? 2 : t === "last_mint" ? 3 : 4)
+    const d = pr(a.tag) - pr(b.tag)
+    return d !== 0 ? d : a.serial - b.serial
+  })
 
   const hasInsightLinks =
     insightLinks.squeeze_pct != null ||
@@ -632,22 +663,44 @@ export default async function EditionPage(
       {!isPinnacle && (
         <Section title="Special Serials">
           <div className="rpc-mono" style={{ marginTop: -6, marginBottom: 10, fontSize: 11, color: "var(--rpc-text-muted)" }}>
-            Tracked owners of #1, jersey-match, and perfect-mint serials.
+            Notable serials — #1, jersey match, low mints, and the final serial — with their last sale and tracked owner where known.
           </div>
-          {specialSerials.length === 0 ? (
+          {sortedNotable.length === 0 ? (
             <div style={{ padding: "12px 14px", border: "1px dashed var(--rpc-border)", borderRadius: 6, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
-              Cadence sweep in progress — owner data populating
+              No notable serials for this edition yet.
             </div>
           ) : (
             <div className="rpc-scroll-x" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {specialSerials.map(r => (
-                <div key={`${r.badge_type}-${r.serial_number}`} style={{ display: "grid", gridTemplateColumns: "minmax(0,160px) 1fr 1fr 120px", gap: 12, alignItems: "center", padding: "8px 10px", border: "1px solid var(--rpc-border)", borderRadius: 4, minWidth: 460 }}>
-                  <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-primary)", letterSpacing: "0.06em", textTransform: "capitalize" }}>{badgeLabel(r.badge_type)}</span>
-                  <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>#{r.serial_number}</span>
-                  <WalletLink address={r.holder_address} />
-                  <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", textAlign: "right" }}>{relTime(r.last_verified_at)}</span>
-                </div>
-              ))}
+              {sortedNotable.map(r => {
+                const owner = ownerBySerial.get(r.serial) ?? null
+                const accent = r.tag === "#1" || r.tag === "jersey"
+                return (
+                  <div key={`${r.tag}-${r.serial}`} style={{ display: "grid", gridTemplateColumns: "minmax(0,140px) 70px 1fr 140px", gap: 12, alignItems: "center", padding: "8px 10px", border: "1px solid var(--rpc-border)", borderRadius: 4, minWidth: 460 }}>
+                    <span
+                      className="rpc-mono"
+                      style={{
+                        justifySelf: "start",
+                        padding: "2px 8px",
+                        borderRadius: 4,
+                        fontSize: 10,
+                        letterSpacing: "0.06em",
+                        textTransform: "uppercase",
+                        fontWeight: 700,
+                        color: accent ? "var(--rpc-red)" : "var(--rpc-text-secondary)",
+                        background: accent ? "var(--rpc-red-bg, rgba(224,58,47,0.08))" : "rgba(255,255,255,0.04)",
+                        border: `1px solid ${accent ? "var(--rpc-red-border, var(--rpc-border))" : "var(--rpc-border)"}`,
+                      }}
+                    >
+                      {notableTagLabel(r.tag)}
+                    </span>
+                    <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>#{r.serial}</span>
+                    <span className="rpc-mono" style={{ fontSize: 11, color: r.last_sale_usd != null ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)" }}>
+                      {r.last_sale_usd != null ? `${fmtUsd(r.last_sale_usd)} · ${relTime(r.last_sold_at)}` : "never sold"}
+                    </span>
+                    {owner ? <WalletLink address={owner} /> : <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", textAlign: "right" }}>owner —</span>}
+                  </div>
+                )
+              })}
             </div>
           )}
         </Section>
@@ -656,11 +709,12 @@ export default async function EditionPage(
   )
 }
 
-function badgeLabel(badge_type: string): string {
-  switch (badge_type) {
-    case "first_serial": return "#1 Serial"
-    case "jersey_match": return "Jersey Match"
-    case "perfect_mint": return "Perfect Mint"
-    default: return badge_type.replace(/_/g, " ")
+function notableTagLabel(tag: string): string {
+  switch (tag) {
+    case "#1": return "Serial #1"
+    case "jersey": return "Jersey Match"
+    case "low": return "Low Serial"
+    case "last_mint": return "Last Mint"
+    default: return tag.replace(/_/g, " ")
   }
 }

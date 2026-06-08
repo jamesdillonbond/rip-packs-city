@@ -375,6 +375,30 @@ async function runSmokeTests() {
       expected: "200-html",
     }),
 
+    // 2d. Pack/moment history modules (2026-06-08). The pack dist page must
+    // mount the "Sales History" module and the edition page the "Recent Sales"
+    // section — both render unconditionally (empty state still emits the title),
+    // so a missing string means the module regressed, not just thin data.
+    time(async () => {
+      const meta = { name: "pack dist page has Sales History", endpoint: "/nba-top-shot/pack/dist/7800", expected: "html-contains-Sales-History" };
+      const res = await smokeFetch(`${BASE_URL}/nba-top-shot/pack/dist/7800`, {
+        cache: "no-store", redirect: "manual", headers: { "User-Agent": BROWSER_UA }, signal: AbortSignal.timeout(10_000),
+      });
+      const text = res.status === 200 ? await res.text().catch(() => "") : "";
+      const passed = res.status === 200 && text.includes("Sales History");
+      return { ...meta, passed, statusCode: res.status, detail: passed ? undefined : `HTTP ${res.status}, Sales-History=${text.includes("Sales History")}`, bodyExcerpt: passed ? null : text.slice(0, 500), notes: null };
+    }, { name: "pack dist page has Sales History", endpoint: "/nba-top-shot/pack/dist/7800", expected: "html-contains-Sales-History" }),
+
+    time(async () => {
+      const meta = { name: "edition page has Recent Sales", endpoint: "/nba-top-shot/edition/124:4493", expected: "html-contains-Recent-Sales" };
+      const res = await smokeFetch(`${BASE_URL}/nba-top-shot/edition/${encodeURIComponent("124:4493")}`, {
+        cache: "no-store", redirect: "manual", headers: { "User-Agent": BROWSER_UA }, signal: AbortSignal.timeout(10_000),
+      });
+      const text = res.status === 200 ? await res.text().catch(() => "") : "";
+      const passed = res.status === 200 && text.includes("Recent Sales");
+      return { ...meta, passed, statusCode: res.status, detail: passed ? undefined : `HTTP ${res.status}, Recent-Sales=${text.includes("Recent Sales")}`, bodyExcerpt: passed ? null : text.slice(0, 500), notes: null };
+    }, { name: "edition page has Recent Sales", endpoint: "/nba-top-shot/edition/124:4493", expected: "html-contains-Recent-Sales" }),
+
     // 3. Sales pipeline freshness — measured from the last successful INDEXER
     // RUN, not the newest sale. The old analytics_pipeline_health.sales lag is
     // sale-recency based, so a quiet market (indexer running fine, just nothing
