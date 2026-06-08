@@ -7,7 +7,10 @@ const supabaseAdmin = createClient(
 ) as any;
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+// 60s (was 30) so a severe cron-rush slowdown of pinnacle_fmv_recalc_render_all
+// (baseline ~2s, DB statement_timeout 120s) cannot trip the Vercel layer before
+// Postgres finishes. See audit_20260608_pinnacle_render_all_statement_timeout.
+export const maxDuration = 60;
 
 const PIPELINE_NAME = "pinnacle-sync";
 
