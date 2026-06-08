@@ -59,13 +59,16 @@ export async function GET(request: NextRequest) {
   const errors: string[] = [];
 
   try {
-    // Refresh ASK from the (on-chain) listings indexer, then rebuild FMV: the
-    // legacy set-level table (for un-migrated readers) AND the per-render home
-    // (pinnacle_catalog.fmv_*, PIN-FMV-REKEY) so both stay fresh in transition.
-    const fmvFromListings = await supabaseAdmin.rpc("pinnacle_fmv_from_listings");
-    if (fmvFromListings.error) errors.push(`pinnacle_fmv_from_listings: ${fmvFromListings.error.message}`);
-    const fmvRecalcAll = await supabaseAdmin.rpc("pinnacle_fmv_recalc_all");
-    if (fmvRecalcAll.error) errors.push(`pinnacle_fmv_recalc_all: ${fmvRecalcAll.error.message}`);
+    // Legacy-FMV retirement step 2 (2026-06-08): the set-level pinnacle_fmv_snapshots
+    // table is retired — every reader is on per-render pinnacle_catalog. This route now
+    // (1) refreshes pinnacle_editions ASK from the on-chain listings cache via the new
+    // standalone pinnacle_refresh_editions_ask() — that ASK column is still read by
+    // edition/moment detail + collection/platform stats — and (2) rebuilds the per-render
+    // FMV home pinnacle_catalog.fmv_* (PIN-FMV-REKEY). The legacy writers
+    // pinnacle_fmv_from_listings / pinnacle_fmv_recalc_all are no longer called; Cowork
+    // drops them + the table as step 3. The render engine is independent of the ASK leg.
+    const askRefresh = await supabaseAdmin.rpc("pinnacle_refresh_editions_ask");
+    if (askRefresh.error) errors.push(`pinnacle_refresh_editions_ask: ${askRefresh.error.message}`);
     const fmvRecalcRender = await supabaseAdmin.rpc("pinnacle_fmv_recalc_render_all");
     if (fmvRecalcRender.error) errors.push(`pinnacle_fmv_recalc_render_all: ${fmvRecalcRender.error.message}`);
 
@@ -77,8 +80,7 @@ export async function GET(request: NextRequest) {
       rowsWritten,
       error: errors[0] ?? null,
       extra: {
-        fmv_from_listings: fmvFromListings.data ?? null,
-        fmv_recalc_all: fmvRecalcAll.data ?? null,
+        ask_refresh: askRefresh.data ?? null,
         fmv_recalc_render: fmvRecalcRender.data ?? null,
         duration_ms: Date.now() - startedAt,
         errors: errors.slice(0, 3),
@@ -87,8 +89,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       status: ok ? "ok" : "partial",
-      fmv_from_listings: fmvFromListings.data ?? 0,
-      fmv_recalc_all: fmvRecalcAll.data ?? 0,
+      ask_refresh: askRefresh.data ?? 0,
       fmv_recalc_render: fmvRecalcRender.data ?? 0,
       errors,
     });
