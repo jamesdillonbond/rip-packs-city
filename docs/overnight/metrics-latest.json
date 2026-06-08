@@ -1,35 +1,54 @@
 {
-  "captured_at_utc": "2026-06-07T14:10:00Z",
+  "captured_at_utc": "2026-06-08T08:15:00Z",
   "run": "rpc-nightly-autonomous-pass",
-  "mode": "OFF-HOURS MONITOR-MODE (fired 06:55 PDT — see NIGHTPASS-MISS) + NO-PUSH. Shipped nothing, repaired nothing (16/16 artifacts healthy), reverted nothing — all recent ships verified green. Doc outputs on disk uncommitted. Cross-validated against the concurrent 13:58Z daytime monitor sweep.",
-  "head_prod_commit": "87b9d57 (= origin/main = local HEAD; READY)",
+  "mode": "GENUINE OVERNIGHT (~01:02 PDT, in-window) + NO-PUSH (no GitHub creds). Shipped 0, reverted 0, repaired 0. Platform GREEN; all recent ships verified; 16/16 artifacts healthy. Repaired .git/config NUL corruption (line 18, same as 06-01). Doc outputs on disk uncommitted.",
+  "head_prod_commit": "29715ed (= origin/main = local HEAD; READY as dpl_EuPu4tT2Liro4AycJecbPUmXEQwi)",
   "latest_production_deploy": {
-    "id": "dpl_3cKrsBHS9UvRB8QdjTxmKbTyuekW",
-    "commit": "87b9d57",
+    "id": "dpl_EuPu4tT2Liro4AycJecbPUmXEQwi",
+    "commit": "29715ed",
     "state": "READY",
-    "note": "Tip deploy (monitor inbox commit, docs-only). pack-ev v21 (f39761a, function_version 21) + cron-auth (9d35a48) live since ~06:1xZ. 20/20 recent prod deploys READY."
+    "note": "Item 7 polish (Trevor). The full 06-07-evening CC wave (3364d4e->29715ed, audit-followups Items 1-7) all READY. 19/20 recent prod deploys READY; lone ERROR 76b6c2e (CRON-30S) is the known superseded build blip (code live via descendants)."
   },
   "fmv_latest_per_edition": {
-    "top_shot": { "HIGH": 564, "MEDIUM": 2444, "HIGH_MED": 3008, "LOW": 5808, "ASK_ONLY": 1028, "SALES_ONLY": 19, "STALE": 234, "NO_DATA": 5444 },
-    "all_day": { "HIGH": 88, "MEDIUM": 405, "HIGH_MED": 493, "LOW": 4643, "ASK_ONLY": 84, "STALE": 444, "NO_DATA": 527 }
+    "top_shot": { "HIGH": 558, "MEDIUM": 2413, "HIGH_MED": 2971, "LOW": 6113, "ASK_ONLY": 1001, "SALES_ONLY": 19, "STALE": 242, "NO_DATA": 5196 },
+    "all_day": { "HIGH": 91, "MEDIUM": 405, "HIGH_MED": 496, "LOW": 4658, "ASK_ONLY": 67, "STALE": 443, "NO_DATA": 527 }
   },
-  "fmv_freshness": "Sales fresh (TS ~3,870 / AllDay ~297 per 24h, minutes old). TS HIGH+MED 3,041->3,008 churn-range flat. TS NO_DATA exactly flat at 5,444 — DUPE1-MIT holding (cold-tail stamps 156/24h vs ~2,675/24h pre-fix, -94%).",
-  "editions": { "nba_top_shot": 15541, "nfl_all_day": 6191, "laliga_golazos": 581, "ufc_strike": 446, "note": "TS flat since 06-06 18:36Z — DUPE1 re-mint stopped (0 UUID rows in the last hour)." },
-  "sentinel_ts_uuid_keyed_48h": 2644,
-  "sentinel_state": "CRITICAL (>=2000) but pure 48h roll-off: 6,382 (06-06) -> 2,644, 0/hr new; clears below threshold ~2026-06-08. Do NOT raise threshold.",
+  "fmv_freshness": "Writers fresh: last TS fmv_snapshot write ~2 min old; fmv-recalc 90/24h (last 08:08Z), allday-fmv-populate 70/24h (last 08:02Z), topshot-sales-indexer 79/24h (last 08:03Z). TS HIGH+MED 3008->2971 churn-flat. TS NO_DATA 5444->5196 (improving) — DUPE1-MIT holding. AllDay HIGH+MED 493->496 flat.",
+  "editions": { "nba_top_shot": 15542, "nfl_all_day": 6191, "laliga_golazos": 581, "ufc_strike": 446, "note": "Flat vs baseline — DUPE1 re-mint stopped (0/hr new UUID rows)." },
+  "sentinel_ts_uuid_keyed_48h": 542,
+  "sentinel_ts_uuid_total": 6406,
+  "sentinel_state": "WARN (>250, <2000 CRITICAL floor): 612 (06:16Z) -> 542, 0/hr new — pure 48h roll-off, on pace to clear <250 today. DUPE1 CC-owned merge gate (do NOT pre-empt). Do NOT raise threshold.",
   "unmapped_sales_open_resolved_at_is_null": 183,
-  "db_size": "6398 MB",
-  "security": "0/0 base tables (RLS-off + anon/auth write-grant with relkind IN (r,p)).",
-  "detect_stalled_pipelines": "[] — first empty in days: N1 recovered 02:14Z + ran ok 07:25Z OFF the 06:00Z rush (slot moved); allday-fmv-populate resumed ~07:4x-08:22Z; TFP first successes 06:50Z/12:50Z. get_pipeline_alerts() also [].",
-  "pipelines_24h_note": "Only known classes. compute-topshot-pack-ev 19 fails = pre-v21 wedge (last 04:38Z) + one 12:08Z pool timeout. I1 rush class recurring but milder: 06:00Z 5 fails/5 pipelines, 12:00Z 8/7, no user-facing repeat of 06-06 18:xxZ.",
-  "pack_ev_targets": { "total": 800, "stale_24h": 665, "stale_48h": 330, "oldest_last_ev_at": "2026-06-04 14:39Z", "note": "v21 wedge broken (counters vary, ev_rows 3-4/tick, oldest advancing) but batch=4 ~= 192/day < 800 needed — PACKEV-THROUGHPUT queued (batch 4->8-12 after ~24h v21 stability)." },
-  "pinnacle": { "renders_priced": 1794, "catalog_total": 2079, "floor_ask": 1967, "sync": "pinnacle-sync 10:07Z ok + pinnacle-fmv-recalc ok (daily cron appears wired; watchlist after 2nd tick ~06-08)", "serials": "PIN-SER queued: q5_eligible 80/tick, serials_filled=0 across ~20 ticks, 21,564 eligible — never worked since b6005cb" },
-  "offer_sanity_flags_baseline": { "v_offer_sanity_flags": 132, "day_range": "118-138", "note": "C3 baseline recorded 2026-06-07; flag on step-change only." },
-  "sentry_note": "6 unresolved, all known: 5 smoke checks (06-06 18:5xZ saturation echo + 06-07 06:5xZ recurrence; quiet since ~06:55Z; resolve after 24h quiet ~06:55Z 06-08) + NEXTJS-15 (1 event, PIN1 class). NEXTJS-4 deeper read = SMOKE-MARKET-EMPTY (queued): likely TS GQL proxy returning green-but-empty at rushes (tsCount 0 class), assertion failures bypass SMOKE-RETRY by design.",
-  "artifacts": "16/16 healthy, none repaired. AF1 view completes; squeeze + scarcity boards bounded 501; pack-reality 1 row = C2 closed as honestly-thin (2 packs pass substantive gates, 1 fresh).",
-  "wmc_image_coverage": "1583809/1587359 (99.8%)",
+  "db_size": "6482 MB",
+  "db_size_note": "Slow creep +84 MB/18h (6398 -> 6482). Watch-only; dupe roll-off + index churn.",
+  "security": "0/0 all four checks: pg_tables RLS-off [], anon/auth-write-on-RLS-off [] (WITH relkind IN (r,p) filter — the stock query without it false-positives on 49 views), check_secdef_anon_execute_violations() [], check_public_security_invariants() [].",
+  "detect_stalled_pipelines": "1 — topshot-listing-cache-v2 (medium, 558m vs 360m, last 22:48:52Z 06-07, 0 fails = clean external-cron dropout). get_pipeline_alerts() = same single entry. ESCALATED: the PRIMARY topshot-listing-cache is ALSO dropping ticks (4h49m gap 00:22->05:11Z + ~3h silent now, under its 360m threshold) -> LISTCACHE-CRON-DROP queued (operator). Impact bounded: FMV fresh via fmv-recalc; only ASK_ONLY minority risks ~3h staleness.",
+  "pipelines_24h_note": "~44 fails, ALL the I1 rush class, concentrated at the :00 dispatch storms (00:00Z 8/1268, 06:00Z 13/1297 — wallet-backfill family ~6x volume spike) — lock/stmt/pool-timeout, all self-recovering. 0 fails in 8 of 12 hours and 0 in the current 08:00Z hour. ~0.76%/24h. compute-topshot-pack-ev's 8 fails are rush-window targets timeouts, NOT a v21 wedge.",
+  "pack_ev_targets": { "total": 800, "stale_24h": 91, "stale_48h": 0, "oldest_last_ev_at": "2026-06-06 14:08Z", "note": "v21 + cron-frequency lever fully drained (665->91 stale-24h, 330->0 stale-48h, oldest advancing). PACKEV-THROUGHPUT closed; off-limits batch raise stays declined." },
+  "pinnacle": { "catalog_priced": 1794, "sync": "pinnacle-sync daily, last 10:07Z 06-07 ok; 2nd daily tick (~10Z 06-08) not yet fired at 08:08Z -> PIN-SYNC-CRON watchlist still queued (wire after 2nd tick)." },
+  "sentry_note": "1 unresolved: NEXTJS-1H (SMOKE-EDITION-TIMEOUT) — edition-page Recent Sales smoke assertion timed out once on a cold lambda (1 event 05:03:20Z, release de01542), no recurrence in ~3h, assertion-class so bypasses SMOKE-RETRY. NEXTJS-14 (Pinnacle drift) confirmed GONE -> 3364d4e re-key worked. 5 earlier smoke transients + NEXTJS-4 stayed resolved, 0 re-opens.",
+  "artifacts": "16/16 healthy (independently spot-checked): AF1 v_tracked_wallet_fmv_confidence 20 rows no 57014; squeeze 500+, scarcity 500+ (pinnacle_catalog-backed post-rekey), deals 306, rookies 61, cross-collection-deals 334, pinnacle priced 1,794. None broken, none touched.",
   "shipped_this_run": 0,
   "auto_reverted_this_run": 0,
-  "new_queued_this_run": ["TFP-WATCH (ready-to-run watchlist INSERT, gate met)", "PACKEV-THROUGHPUT (CC: batch 4->8-12, evidence attached)", "PIN-SER (CC: Q5 selects-but-never-writes)", "SMOKE-MARKET-EMPTY (CC: market API empty-GQL retry/typed-failure)", "NIGHTPASS-MISS (operator: pass fired 06:55 PDT, outside window — check scheduled-task trigger)"],
-  "queued_open": ["TFP-WATCH (SHIP-eligible next in-window)", "PACKEV-THROUGHPUT", "PIN-SER", "SMOKE-MARKET-EMPTY", "I1", "PIN-SYNC-CRON (watchlist after 2nd daily tick)", "DUPE1 (sentinel clears ~06-08; B2 durable fix)", "N1 (close if next 2 daily slots hold)", "N2", "N3", "L1", "PIN1", "CROSS1", "P3-BUYERS", "CRON-30S 3/4 + token hygiene", "Q2", "Q5", "Q6", "Q7 (NO-PUSH confirmed again)", "Q8", "F1/F2-TierB", "PIN-FMV-REKEY waves remainder", "PACKVIZ-GRID", "Sentry housekeeping after 24h quiet"]
+  "repaired_this_run": 0,
+  "new_queued_this_run": [
+    "LISTCACHE-CRON-DROP (operator: listing-cache cron FAMILY dropping ticks tonight — v2 stalled 9.5h + primary 2 large overnight gaps; re-fire/investigate or retire redundant -v2; impact bounded)",
+    "SMOKE-EDITION-TIMEOUT / NEXTJS-1H (CC/operator watch: single cold-start edition Recent-Sales smoke timeout; bump timeout or route through SMOKE-RETRY if it recurs)"
+  ],
+  "queued_open": [
+    "LISTCACHE-CRON-DROP (operator)",
+    "SMOKE-EDITION-TIMEOUT / NEXTJS-1H (CC/operator watch)",
+    "PIN-SYNC-CRON (watchlist after 2nd daily tick ~10Z 06-08)",
+    "CRON-30S 3/4 + token hygiene (operator/CC)",
+    "PIN-FMV-REKEY-WAVES 2/3 (Trevor)",
+    "PACKVIZ-GRID (CC review)",
+    "P3-BUYERS (operator watch)",
+    "DUPE1 (CC-owned merge gate; sentinel clears <250 today; B2 durable fix)",
+    "N1 (operator; recovering)",
+    "I1 (root-cause resolved; histogram-verify due this evening)",
+    "Q2",
+    "Q5",
+    "Q6",
+    "Q7 (NO-PUSH root cause confirmed again)"
+  ]
 }

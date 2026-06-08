@@ -21,7 +21,7 @@ Cowork→CC work moves via handoff docs (`docs/handoff-YYYY-MM-DD-<topic>.md`, p
 
 ## The QA loop (weekly cadence)
 
-Tue `rpc-data-quality-sweep` · Thu `rpc-surface-qa` (owns artifact freshness + live-page/mobile spot-checks incl. the pack/moment history surfaces) · bi-weekly `rpc-dependency-advisory-digest` · monthly `rpc-monthly-strategy-review` + `rpc-monthly-memory-consolidation` · Mon `rpc-weekly-health-check` + `rpc-rewards-weekly-pulse` · daily `rpc-trust-health-watch`, `rpc-cross-collection-refresh`, `rpc-pending-signups-watch`. Runbook: `docs/operations/qa-loop.md`.
+Tue `rpc-data-quality-sweep` · Thu `rpc-surface-qa` (owns artifact freshness + live-page/mobile spot-checks incl. the pack/moment history surfaces) · bi-weekly `rpc-dependency-advisory-digest` · monthly `rpc-monthly-strategy-review` + `rpc-monthly-memory-consolidation` · Mon `rpc-weekly-health-check` (live DB digest) + `rpc-weekly-health-report` (durable `docs/health/PROJECT_HEALTH_*.md`, CLAUDE.md + TODO scan — complementary, not a duplicate of the digest) + `rpc-rewards-weekly-pulse` · daily `rpc-trust-health-watch`, `rpc-cross-collection-refresh`, `rpc-pending-signups-watch`. Runbook: `docs/operations/qa-loop.md`.
 
 ## Scheduling & cron truth
 
