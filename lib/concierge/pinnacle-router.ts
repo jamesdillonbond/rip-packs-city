@@ -20,6 +20,8 @@
 // counterpart in app/api/support-chat/route.ts so the LLM sees a consistent
 // tool result regardless of which path produced it.
 
+import { PINNACLE_MARKETPLACE_URL } from "@/lib/pinnacle/pinnacleTypes"
+
 const PINNACLE_COLLECTION_ID = "disney-pinnacle"
 
 export function isPinnacle(collectionId: string | null | undefined): boolean {
@@ -89,53 +91,25 @@ function collapseRenders(rows: CatalogRender[]): {
 const CATALOG_FMV_COLUMNS =
   "render_id, character_name, set_name, variant, legacy_edition_key, fmv_usd, fmv_confidence, fmv_wap_usd, floor_ask, fmv_sales_count_30d, fmv_days_since_sale, fmv_computed_at, fmv_algo_version, total_minted"
 
-// Map a set of cached listings to per-render FMV. legacy_edition_key is the
-// canonical, exact-match join key (no variant-vocabulary drift), but it spans
-// characters — so we fetch by edition_key, then gate on character_name
-// case-insensitively in JS and collapse to a representative render.
-type ListingTriple = {
+// Pinnacle deal-finding reads the per-render spine pinnacle_catalog directly:
+// (character, set, variant) is 1:1 with a render, and each render carries its
+// own live floor_ask (refreshed daily from the Pinnacle studio GraphQL) and
+// its own per-render fmv_usd. The legacy pinnacle_cached_listings table was
+// sourced from Flowty, which shut down 2026-05-13 and now serves a frozen
+// 2026-05-27 snapshot — reading it produced fabricated discounts off stale /
+// uniform-$1 asks. Reading the catalog row keeps ask, FMV, and the discount on
+// the SAME render, so character/FMV can never leak across pins.
+const CATALOG_DEAL_COLUMNS =
+  "render_id, character_name, set_name, variant, floor_ask, fmv_usd, fmv_confidence"
+
+interface CatalogDealRow {
+  render_id: string
   character_name: string | null
   set_name: string | null
-  variant_type: string | null
-  edition_key?: string | null
-}
-
-function tripleKey(t: ListingTriple): string {
-  return `${(t.character_name ?? "").toLowerCase().trim()}||${(t.set_name ?? "").toLowerCase().trim()}||${(t.variant_type ?? "").toLowerCase().trim()}`
-}
-
-function charKey(character: string | null | undefined, editionKey: string | null | undefined): string {
-  return `${(character ?? "").toLowerCase().trim()}||${(editionKey ?? "").trim()}`
-}
-
-async function fetchFmvByListingTriples(supabase: Supabase, triples: ListingTriple[]) {
-  const empty = new Map<string, number>()
-  if (!triples.length) return empty
-  const editionKeys = Array.from(
-    new Set(triples.map((t) => t.edition_key).filter((k): k is string => !!k))
-  )
-  if (!editionKeys.length) return empty
-  const { data: renders } = await supabase
-    .from("pinnacle_catalog")
-    .select(CATALOG_FMV_COLUMNS)
-    .in("legacy_edition_key", editionKeys)
-    .not("fmv_usd", "is", null)
-  // Group priced renders by (character, edition_key) and collapse each group.
-  const grouped = new Map<string, CatalogRender[]>()
-  for (const r of (renders ?? []) as CatalogRender[]) {
-    const k = charKey(r.character_name, r.legacy_edition_key)
-    const arr = grouped.get(k)
-    if (arr) arr.push(r)
-    else grouped.set(k, [r])
-  }
-  const tripleToFmv = new Map<string, number>()
-  for (const t of triples) {
-    const group = grouped.get(charKey(t.character_name, t.edition_key))
-    if (!group) continue
-    const collapsed = collapseRenders(group)
-    if (collapsed) tripleToFmv.set(tripleKey(t), Number(collapsed.rep.fmv_usd))
-  }
-  return tripleToFmv
+  variant: string | null
+  floor_ask: number | null
+  fmv_usd: number | null
+  fmv_confidence: string | null
 }
 
 export async function searchPinnacleDeals(
@@ -144,46 +118,37 @@ export async function searchPinnacleDeals(
   opts: { source: "live" | "catalog" } = { source: "live" }
 ): Promise<string> {
   try {
+    const cap = Math.min(Math.max(input.limit ?? 8, 1), 20)
     let query = supabase
-      .from("pinnacle_cached_listings")
-      .select("id, edition_key, character_name, franchise, variant_type, set_name, ask_price, buy_url")
-      .order("ask_price", { ascending: true })
-      .limit(Math.min(Math.max(input.limit ?? 8, 1), 20))
-    // Pinnacle uses character_name (not player_name) and variant_type (not tier).
-    // Map model-supplied filters onto the right columns.
+      .from("pinnacle_catalog")
+      .select(CATALOG_DEAL_COLUMNS)
+      // floor_ask present = the render is currently listed on the marketplace.
+      .not("floor_ask", "is", null)
+      .order("floor_ask", { ascending: true })
+      .limit(cap)
+    // Pinnacle uses character_name (not player_name) and variant (not tier).
     if (input.player) query = query.ilike("character_name", `%${input.player}%`)
-    if (input.tier) query = query.ilike("variant_type", `%${input.tier}%`)
-    if (input.maxPrice) query = query.lte("ask_price", input.maxPrice)
+    if (input.tier) query = query.ilike("variant", `%${input.tier}%`)
+    if (input.maxPrice) query = query.lte("floor_ask", input.maxPrice)
     const { data: rows, error } = await query
     if (error) return JSON.stringify({ status: "error", message: error.message })
     if (!rows || rows.length === 0) {
       return JSON.stringify({ status: "no_results", message: "No Pinnacle listings found matching those criteria." })
     }
-    const tripleToFmv = await fetchFmvByListingTriples(
-      supabase,
-      rows.map((r: {
-        character_name: string | null; set_name: string | null; variant_type: string | null; edition_key: string | null;
-      }) => ({ character_name: r.character_name, set_name: r.set_name, variant_type: r.variant_type, edition_key: r.edition_key }))
-    )
-    const enriched: DealRow[] = rows.map((r: {
-      edition_key: string; character_name: string | null; franchise: string | null;
-      variant_type: string | null; set_name: string | null; ask_price: number; buy_url: string | null;
-    }) => {
-      const fmv = tripleToFmv.get(tripleKey({
-        character_name: r.character_name, set_name: r.set_name, variant_type: r.variant_type,
-      })) ?? null
-      const ask = Number(r.ask_price)
+    const enriched: DealRow[] = (rows as CatalogDealRow[]).map((r) => {
+      const ask = Number(r.floor_ask)
+      const fmv = r.fmv_usd != null ? Number(r.fmv_usd) : null
       const discount_pct = fmv != null && fmv > 0 ? Math.round(((fmv - ask) / fmv) * 100) : null
       return {
         player: r.character_name,
-        set: r.set_name ?? r.franchise,
-        tier: r.variant_type,
+        set: r.set_name,
+        tier: r.variant,
         serial: null,
         price: ask,
         fmv,
         discount_pct,
         source: opts.source === "live" ? "pinnacle" : "catalog",
-        buy_url: r.buy_url ?? "",
+        buy_url: PINNACLE_MARKETPLACE_URL,
       }
     })
     let results = enriched
@@ -355,40 +320,33 @@ export async function searchPinnacleByName(
     buy_url: string
   }>
 }> {
+  // Per-render spine (pinnacle_catalog), same rationale as searchPinnacleDeals:
+  // floor_ask + fmv_usd live on the same render row, so no cross-pin leak and
+  // no dependency on the frozen dead-Flowty pinnacle_cached_listings table.
   const { data: rows } = await supabase
-    .from("pinnacle_cached_listings")
-    .select("edition_key, character_name, franchise, variant_type, set_name, ask_price, buy_url")
+    .from("pinnacle_catalog")
+    .select(CATALOG_DEAL_COLUMNS)
+    .not("floor_ask", "is", null)
     .ilike("character_name", `%${name}%`)
-    .order("ask_price", { ascending: true })
+    .order("floor_ask", { ascending: true })
     .limit(perCollection)
-  const tripleToFmv = await fetchFmvByListingTriples(
-    supabase,
-    (rows ?? []).map((r: {
-      character_name: string | null; set_name: string | null; variant_type: string | null; edition_key: string | null;
-    }) => ({ character_name: r.character_name, set_name: r.set_name, variant_type: r.variant_type, edition_key: r.edition_key }))
-  )
   return {
     collection: "Disney Pinnacle",
     collectionId: PINNACLE_COLLECTION_ID,
-    results: (rows ?? []).map((r: {
-      edition_key: string; character_name: string | null; franchise: string | null;
-      variant_type: string | null; set_name: string | null; ask_price: number | null; buy_url: string | null;
-    }) => {
-      const fmv = tripleToFmv.get(tripleKey({
-        character_name: r.character_name, set_name: r.set_name, variant_type: r.variant_type,
-      })) ?? null
-      const ask = r.ask_price != null ? Number(r.ask_price) : null
+    results: ((rows ?? []) as CatalogDealRow[]).map((r) => {
+      const ask = r.floor_ask != null ? Number(r.floor_ask) : null
+      const fmv = r.fmv_usd != null ? Number(r.fmv_usd) : null
       const discount_pct =
         fmv != null && fmv > 0 && ask != null ? Math.round(((fmv - ask) / fmv) * 100) : null
       return {
         player: r.character_name,
-        set: r.set_name ?? r.franchise,
-        tier: r.variant_type,
+        set: r.set_name,
+        tier: r.variant,
         serial: null,
         price: ask,
         fmv,
         discount_pct,
-        buy_url: r.buy_url ?? "",
+        buy_url: PINNACLE_MARKETPLACE_URL,
       }
     }),
   }
