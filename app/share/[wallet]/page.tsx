@@ -306,7 +306,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
         {(data.perCollection ?? []).length > 1 ? (
           <div style={{ marginBottom: 32 }}>
             <div style={{ fontSize: 14, letterSpacing: "0.15em", color: "#666", marginBottom: 16, textTransform: "uppercase" }}>Across Flow Collections</div>
-            <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(data.perCollection.length, 5)}, 1fr)`, gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(data.perCollection.length, 5)}, minmax(0, 1fr))`, gap: 12 }}>
               {data.perCollection.map((c) => (
                 <div key={c.slug} style={{ border: "1px solid #222", borderRadius: 8, background: "#111", padding: "14px 12px", textAlign: "center" }}>
                   <div style={{ fontSize: 12, color: "#999", fontFamily: "monospace", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8, minHeight: 30 }}>{c.name}</div>

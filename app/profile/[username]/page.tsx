@@ -537,7 +537,7 @@ export default function PublicProfilePage() {
         {/* ── Quick Links ── */}
         <section style={{ marginBottom: 32 }}>
           <div style={Object.assign({}, labelStyle, { marginBottom: 12 })}>TOOLS</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 10 }}>
             {[
               { label: "Collection", icon: "◈", href: "/nba-top-shot/collection", color: "#E03A2F" },
               { label: "Pack EV", icon: "▣", href: "/nba-top-shot/packs", color: "#F59E0B" },

@@ -1,0 +1,47 @@
+# Cowork full-platform audit — 2026-06-08 (~04:00–05:00Z)
+
+Trevor-requested cross-cutting audit: threads/ledger/inbox, DB health + security, Sentry/Vercel/artifacts/scheduled tasks, cron + GHA, repo hygiene (brand/dead code), page wiring, live-site walk (Chrome), mobile readiness, CX. One DB fix shipped from Cowork; code-side items packaged in `docs/handoff-2026-06-08-audit-followups.md`.
+
+## Verdict
+
+Platform is healthy and the automation estate is doing its job — security invariants clean, no stalls/alerts, deploys READY at tip `26fc9f3`, 16/16 artifacts, Sentry down to the one known false-positive, sentinel rolling off on schedule. The genuinely new findings are **CX/SEO wiring gaps** (two public-page links bounce anon users to /login), a **widespread but cosmetic brand-token debt**, **stale Flowty copy on the /analytics SEO surface**, and a handful of mobile-layout hazards on public pages. Nothing security-critical. One catalog gap (TS set 254) was fixed live during the audit.
+
+## Shipped live during this audit (Cowork)
+
+- **Migration `audit_20260608_seed_sets_wnba_skyline_254`** — seeded the missing `sets` row for on-chain TS set 254 ("WNBA Skyline", series 8, newest drop; external_id `auto_onchain_254` per the precedented machine-seed style, tier deliberately NULL) and backfilled `editions.set_id` for the orphan edition `254:8623`. Verified end-to-end in separate steps: sets row live (id `3913af54-1e67-40a6-80ae-5fb2c84cc728`, 1 edition attached) and `ensure_topshot_edition_stub(254, 8622)` now returns a uuid (`1ca8f1c3…`, was NULL → catalog_gap). Expect `topshot-moments-hydrator` to stop logging `catalog_gap … set_id_onchain=254` (was ~128 ticks/day since 06-05) and the two stuck newest-drop moments (nft 52041121/52041123) to hydrate next tick. Closes inbox 2026-06-08T03-15Z item 2.
+  Revert: UPDATE editions SET set_id=NULL WHERE set_id='3913af54-1e67-40a6-80ae-5fb2c84cc728'; DELETE FROM sets WHERE external_id='auto_onchain_254' AND collection_id='95f28a17-224a-4025-96ad-adf8a4c63bfd';
+  Reconciliation note: when the GQL catalog eventually creates the real TopShot-UUID sets row for 254, merge it into this seeded row (the set_id_onchain lookup hits the seeded row first, so no ambiguity in the meantime).
+
+## Verified healthy (no action)
+
+- **Security:** `check_public_security_invariants()` = `[]`; anon-readable non-invoker views = 0; RLS posture clean; no new SECDEF grant drift. allow_list: 13 active, 0 pending (no signups waiting).
+- **Pipelines:** `detect_stalled_pipelines()` = `[]`, `get_pipeline_alerts()` = `[]` (values read, not row-counted). 24h fails are all low-rate transient with recent ok — the only burst was 00:48–01:05Z (pool-timeout class, clean since; see stagger datapoint below). `snapshot-institutional-wallets` (N1) ran ok 06-07 02:14Z + 07:25Z — recovered post-stagger.
+- **Sentinel:** TS-UUID-48h 942 and decelerating (1,072 → 942 across ~1h) — DUPE1 merge gate (<250) on pace for late 06-08; owned by `dupe1-gate-notifier-jun8`.
+- **FMV:** TS HIGH+MED ~2,971 flat, NO_DATA 5,230 improving; AllDay 496 flat; `pinnacle_catalog` 1,794 renders priced, last refresh 06-07 10:07Z (daily cadence — tomorrow's repointed tick is owned by `pinnacle-sync-tick-verify-jun8`).
+- **Sentry:** exactly 1 unresolved = JAVASCRIPT-NEXTJS-14 (the verified-false-positive Pinnacle drift guard; fix is queued for CC — do NOT resolve-with-arming until the guard is re-keyed). The whole 06-07 ship-wave cluster stayed quiet, zero re-opens.
+- **Vercel:** tip `26fc9f3` READY; today's Pinnacle-retirement wave (concierge per-render `a9f86af`, Wave 3 `5f448f7`, dead PinnacleSniper deletion `980b6f1`, pinnacle-sync repoint `0769091`) all READY. Lone ERROR `76b6c2e` is the known superseded build blip (code live via descendants).
+- **Pinnacle legacy-FMV retirement:** mid-flight by design — steps 1+2 shipped (all live readers per-render; pinnacle-sync repointed onto `pinnacle_refresh_editions_ask`); step 3 (drop legacy cluster + `pinnacle_fmv_snapshots`) is gated on tomorrow 07:50 one-off pre-flight. Deliberately not touched by this audit.
+- **GitHub Actions:** all 9 workflows read; schedules fully staggered off :00/:20/:40 (5–57 min offsets); zero references to retired pipelines; the dead Flowty listing-cache step is confirmed gone (`306a7ed`).
+- **Cron/scheduled estate:** 19 Cowork scheduled tasks sane; tomorrow's four one-offs own the open verifications (pinnacle pre-flight, pinnacle watchlists, DUPE1 gate, stagger histogram). cron-schedule.md regenerated 06-07 and treated as current.
+- **Insights wiring:** 12/12 board pages ↔ `/api/public/insights/*` routes ↔ live views all match (incl. `topshot_2025_rookie_index`). Squeeze board fresh ("UPDATED JUN 7, 8:03 PM"), 200 rows, honest methodology block.
+- **OG/SEO plumbing:** 25 `/api/og/*` routes cover every `lib/seo.ts` reference; sitemap ↔ `proxy.ts` isPublicPath aligned for every advertised URL class; robots.ts correct (allows public surfaces, blocks /admin /dashboard /api, AI-bot blocks, avoids the bare-/profile trap).
+- **Live walk (desktop):** dashboard, squeeze, edition `2:188`, pricing all render correctly with zero console errors. Edition page confirms today's new features wired: Recent Sales w/ serials, Special Serials board (#1/low/last-mint), FMV history, best-offer freshness. Pricing page free-beta framing is excellent and honest.
+- **UFC "$0 FMV" on dashboard is HONEST, not a bug:** 24 UFC editions have sales-based FMV>0 platform-wide (55 UFC sales/90d — thin market) and zero of Trevor's 247 UFC rows map to a priced edition. Display polish queued (show "—" instead of $0), but the data layer is correct.
+
+## New findings (packaged for CC in handoff-2026-06-08-audit-followups.md)
+
+1. **[HIGH CX/SEO] `/legal/fmv-methodology` is auth-gated but linked from every public footer** (SiteFooter ×2) **and from /pricing** ("How is FMV calculated? →"). Anon + Googlebot bounce to /login on the FMV-disclosure methodology link — undermines the legal-disclosure intent. Fix: `/legal` carve-out in `proxy.ts` isPublicPath (+ sitemap). Verified by code inspection (no /legal rule exists).
+2. **[MED CX/SEO] `/blog` is gated + unindexed but linked in the public TopNav.** It's force-static marketing content clearly built for SEO. Either open + sitemap it, or pull the nav link.
+3. **[MED brand] Brand-token debt is widespread:** ~20 hardcoded `#E03A2F` and ~77 hardcoded font-family literals in live UI (public pages: analytics chart colors, collection/overview/sniper/profile fallbacks; plus admin, onboarding modals, components). OG routes + email HTML are acceptable exceptions (can't use CSS vars). Recommend phase-1 sweep of public pages + a CI grep gate so it can't regress.
+4. **[MED SEO/honesty] Stale Flowty copy on /analytics surfaces:** loans/listings/wallets pages still title/describe themselves as "Live Flowty loan book", "Flowty Wallet Directory", marketplace-mix copy includes Flowty — a year-2026 visitor reads a dead marketplace as live. De-Flowty or "(historical)" them.
+5. **[MED mobile] Public-page responsive hazards:** cross-collection "What the cohort collects" table has no overflow-x wrapper (nowrap cells → 390px overflow); raw `1fr` inline grids (vs the repo's `minmax(0,1fr)` convention) on overview/moment/share/public-profile/CrossCollectionPortfolio/HomeFmvPreview. Auth-gated analytics leaderboard tables also unwrapped. Viewport meta is fine (Next default). Note: Chrome-driven mobile emulation doesn't take on this setup (innerWidth pinned) — real-device spot-check stays with Thursday surface-qa.
+6. **[LOW polish batch]** UFC dashboard "$0" → "—" when no priced editions; edition-page "FOUND IN THESE PACKS" shows "0 slots · 0% depleted" rows (label exhausted packs instead); squeeze board renders troll asks raw ("$3333k" low-ask on an FMV-less ULTIMATE — product call: cap/flag asks with no FMV anchor); `/api/cart` vestigial isPublicPath entry (Cart shelved); dead `profilePageMetadata` export in lib/seo.ts; archive `docs/handoff-2026-05-28-fmv-items-4-5.md` (+ CLAUDE.md link update); GIT-IDENT one-liner (today's CC commits are authored `rpc-daytime-monitor`).
+7. **[Datapoint for stagger-histogram-verify-jun8] The minute-:00 spike persists but it's the wallet-backfill dispatch storm, not the staggered crons:** 20h histogram has :00 = 1,233 runs (wallet-backfill-multicollection-dispatch 476 + complete 271 + wallet-backfill 124) and a secondary :45–:52 pile (~916 wallet-backfill family). Tonight's 00:50 `topshot-fmv-populate` tick failed on pool timeout inside the 00:48–01:05Z burst. Likely lever: move the seed-wallet-refresh/dispatch slot off :00 (and not onto :45–:52). Left to the scheduled verification before any console moves.
+
+## Open questions for Trevor (no action taken)
+
+- **Two Monday health tasks:** `rpc-weekly-health-check` (00:36) and `rpc-weekly-health-report` (03:03) overlap in purpose; the report task isn't in the ops-README QA-loop list. Consolidate, or document both?
+- **Squeeze-board troll-ask display** (finding 6) is a product call: honest-but-noisy vs. suppressed.
+- **WEEKLY-MAINT WATCH (carried):** next Saturday's `RPC Pipeline Runs Cleanup` run (06-13) is the first real test of the 06-07 fn fix; if it still fails, the stored apikey is the anon key → fold into `/api/cron/prune-logs` per the 06-07 session note.
+
+Audit run by Cowork (read-only except the one migration above). Code-side execution: `docs/handoff-2026-06-08-audit-followups.md`.

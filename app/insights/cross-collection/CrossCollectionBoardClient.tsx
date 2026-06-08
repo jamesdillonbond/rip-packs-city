@@ -382,7 +382,7 @@ const CSS = `
 .rpc-cc-pill-active { background: var(--rpc-red-bg); border-color: var(--rpc-red); color: var(--rpc-red); }
 
 .rpc-cc-table-wrap { max-width: 1180px; margin: 0 auto; border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface); overflow-x: auto; border-radius: 2px; }
-.rpc-cc-overlap { max-width: 1180px; margin: 0 auto; }
+.rpc-cc-overlap { max-width: 1180px; margin: 0 auto; overflow-x: auto; }
 .rpc-cc-sub { font-size: 14px; line-height: 1.6; color: var(--rpc-text-secondary); margin: 0 0 14px; max-width: 760px; }
 .rpc-cc-state { padding: 28px; text-align: center; font-family: var(--font-mono); font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); }
 .rpc-cc-table { width: 100%; border-collapse: collapse; font-size: 14px; }

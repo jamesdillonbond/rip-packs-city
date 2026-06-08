@@ -386,7 +386,7 @@ export default function OverviewPage() {
       )}
 
       {/* ── KPI Cards ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
         <KpiCard
           label="Total Editions"
           accent={accent}
@@ -425,7 +425,7 @@ export default function OverviewPage() {
       )}
 
       {/* ── Sniper Deals + Pipeline Status ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 16 }}>
 
         {/* Top 5 Sniper Deals */}
         <section className="rpc-card" style={{ padding: "16px 20px" }}>
@@ -455,7 +455,7 @@ export default function OverviewPage() {
                 // "<$1" and suppress the discount badge for those rows.
                 const askIsSubDollar = deal.ask_price > 0 && deal.ask_price < 1
                 const hasDiscount = typeof deal.discount === "number" && deal.discount > 0 && !askIsSubDollar
-                const gridCols = hasDiscount ? "1fr auto auto" : "1fr auto"
+                const gridCols = hasDiscount ? "minmax(0,1fr) auto auto" : "minmax(0,1fr) auto"
                 const content = (
                   <>
                     <div>
@@ -540,7 +540,7 @@ export default function OverviewPage() {
       <InsiderSignalsPanel collection={collection} basePath={basePath} />
 
       {/* ── Recent Top Sales + About the Community ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 16 }}>
 
         {/* Recent Top Sales */}
         <section className="rpc-card" style={{ padding: "16px 20px" }}>
@@ -566,7 +566,7 @@ export default function OverviewPage() {
                   ? (sale.circulation_count != null ? `#${sale.serial_number}/${sale.circulation_count}` : `#${sale.serial_number}`)
                   : null
                 return (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, padding: "8px 12px", background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", alignItems: "center" }}>
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 8, padding: "8px 12px", background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", alignItems: "center" }}>
                     <div>
                       <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: "var(--text-base)", color: "var(--rpc-text-primary)" }}>{name}</div>
                       <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", marginTop: 2 }}>

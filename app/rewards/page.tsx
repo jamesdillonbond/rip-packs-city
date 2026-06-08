@@ -438,7 +438,7 @@ export default function RewardsPage() {
             <section
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 1fr",
+                gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
                 gap: 16,
                 marginBottom: 28,
               }}
@@ -1134,7 +1134,7 @@ function ShippingModal({
           Apt / unit (optional)
           <input style={field} value={line2} onChange={(e) => setLine2(e.target.value)} />
         </label>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10, marginTop: 10 }}>
           <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: "#9a9a9a" }}>
             City
             <input style={field} value={city} onChange={(e) => setCity(e.target.value)} />
