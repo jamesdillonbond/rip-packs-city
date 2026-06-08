@@ -200,8 +200,6 @@ function isPublicPath(pathname: string, method: string): boolean {
   // /api/support-chat + subpaths — concierge is intentionally public so
   // unsigned visitors can ask questions and convert
   if (pathname === "/api/support-chat" || pathname.startsWith("/api/support-chat/")) return true
-  // /api/cart + subpaths — homepage cart functionality
-  if (pathname === "/api/cart" || pathname.startsWith("/api/cart/")) return true
   // /api/og + subpaths — social-share crawlers (Twitter / Slack / Discord
   // / iMessage) need the OG card endpoints unauthenticated to render
   // preview cards. Without this they see a 307→/login redirect and pull a

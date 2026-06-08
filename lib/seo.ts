@@ -262,17 +262,6 @@ export function collectionPageMetadata(page: string, collectionId = 'nba-top-sho
   return pageMetadata(page, label, collectionId)
 }
 
-export function profilePageMetadata(username: string): Metadata {
-  return {
-    title: `${username}'s Collection — NBA Top Shot Portfolio`,
-    description: `View ${username}'s NBA Top Shot collection, portfolio value, badges, and set completion on Rip Packs City.`,
-    openGraph: {
-      title: `${username}'s Collection | Rip Packs City`,
-      description: `View ${username}'s NBA Top Shot portfolio and collection analytics.`,
-    },
-  }
-}
-
 // ── Phase 1A: Entity-detail metadata helpers ────────────────────────────────
 // editionPageMetadata, setPageMetadata, playerPageMetadata, teamPageMetadata,
 // and seriesPageMetadata all accept the URL collection slug + the relevant

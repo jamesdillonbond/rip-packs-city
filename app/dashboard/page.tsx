@@ -1347,14 +1347,15 @@ function WalletGroupCard({
                 </div>
                 {showSpinner && <span className="rpc-spinner-sm" aria-hidden />}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 6, marginTop: 6 }}>
                 <div>
                   <div style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Moments</div>
                   <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "#fff" }}>{moments.toLocaleString()}</div>
                 </div>
                 <div>
                   <div style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>FMV</div>
-                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "#34D399" }}>{fmtUsd(fmv)}</div>
+                  {/* No priced editions (e.g. thin-market UFC) -> em dash, not a misleading "$0". */}
+                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: fmv > 0 ? "#34D399" : "rgba(255,255,255,0.35)" }}>{fmv > 0 ? fmtUsd(fmv) : "—"}</div>
                 </div>
               </div>
               {(fmvMax > 0 || locked > 0) && (
