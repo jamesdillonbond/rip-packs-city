@@ -534,6 +534,19 @@ export default async function MomentPage(
       : Promise.resolve([] as SpecialSerialRow[]),
   ])
 
+  // Item 3b — deterministic hero badges for the current serial that the
+  // special_serial_holders sweep may not have populated (#1, low 2-10, last
+  // mint). Deduped against the labels already shown from special_serial_holders
+  // so the hero never doubles up "#1 Serial".
+  const derivedSerialBadges: string[] = []
+  if (r?.kind === "moment" && serial != null) {
+    const existingLabels = new Set(specialSerials.map((s) => specialSerialLabel(s.badge_type)))
+    const hasLastConcept = existingLabels.has("Last Serial") || existingLabels.has("Last Mint")
+    if (serial === 1 && !existingLabels.has("#1 Serial")) derivedSerialBadges.push("#1 Serial")
+    if (serial >= 2 && serial <= 10) derivedSerialBadges.push("Low Serial")
+    if (mint > 0 && serial === mint && !hasLastConcept) derivedSerialBadges.push("Last Mint")
+  }
+
   const teamHref =
     collectionSlugUrl && e.team_name
       ? `/${collectionSlugUrl}/team/${encodeURIComponent(slugifyTeam(e.team_name))}`
@@ -805,8 +818,25 @@ export default async function MomentPage(
           </div>
 
           {/* Badges row (edition-wide) + special-serial pills (per-NFT only) */}
-          {(badges.length > 0 || specialSerials.length > 0) && (
+          {(badges.length > 0 || specialSerials.length > 0 || derivedSerialBadges.length > 0) && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+              {derivedSerialBadges.map(label => (
+                <span
+                  key={`ds-${label}`}
+                  style={{
+                    display: "inline-block",
+                    padding: "3px 9px",
+                    background: "var(--rpc-red)",
+                    color: "var(--rpc-text-primary, #fff)",
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "var(--text-xs, 11px)",
+                    letterSpacing: "0.18em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {label}
+                </span>
+              ))}
               {specialSerials.map(s => (
                 <span
                   key={`ss-${s.badge_type}-${s.serial_number}`}
@@ -974,9 +1004,21 @@ export default async function MomentPage(
                 </tr>
               </thead>
               <tbody>
-                {recentSales.map((s, i) => (
-                  <tr key={`${s.sold_at}-${s.serial_number}-${i}`} style={{ borderBottom: "1px solid var(--rpc-border, rgba(255,255,255,0.04))" }}>
-                    <Td>{s.serial_number != null ? `#${s.serial_number}` : "—"}</Td>
+                {recentSales.map((s, i) => {
+                  const isThisSerial = r?.kind === "moment" && serial != null && s.serial_number === serial
+                  return (
+                  <tr
+                    key={`${s.sold_at}-${s.serial_number}-${i}`}
+                    style={{
+                      borderBottom: "1px solid var(--rpc-border, rgba(255,255,255,0.04))",
+                      background: isThisSerial ? "var(--rpc-red-bg, rgba(224,58,47,0.10))" : undefined,
+                    }}
+                    title={isThisSerial ? "This serial" : undefined}
+                  >
+                    <Td>
+                      {s.serial_number != null ? `#${s.serial_number}` : "—"}
+                      {isThisSerial ? <span style={{ color: "var(--rpc-red)", marginLeft: 6 }}>●</span> : null}
+                    </Td>
                     <Td>{fmtUsd(s.price_usd)}</Td>
                     <Td>
                       <span title={fmtAbsDate(s.sold_at)}>{fmtRelDate(s.sold_at)}</span>
@@ -984,7 +1026,8 @@ export default async function MomentPage(
                     <Td><OwnerLink address={s.buyer_address} /></Td>
                     <Td><OwnerLink address={s.seller_address} /></Td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
