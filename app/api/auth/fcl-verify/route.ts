@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "accountProof object required" }, { status: 400 });
   }
   const addr = addrRaw.toLowerCase();
-  const proof = accountProof as { nonce?: string; signatures?: unknown };
+  const proof = accountProof as { address?: string; nonce?: string; signatures?: unknown };
 
   if (typeof proof.nonce !== "string" || !proof.nonce) {
     return NextResponse.json({ error: "accountProof.nonce missing" }, { status: 400 });
@@ -93,6 +93,21 @@ export async function POST(req: NextRequest) {
 
   if (!valid) {
     return NextResponse.json({ error: "Invalid account proof" }, { status: 401 });
+  }
+
+  // Bind the proof to the claimed address. verifyAccountProof proves control of
+  // proof.address, but everything downstream (verify_wallet_via_fcl, awardPoints,
+  // the synthetic-email identity) keys off the SEPARATE top-level body.addr. The
+  // honest client sets them equal; without this assert a caller could submit a
+  // valid proof for a wallet it owns while posting someone else's addr and get
+  // that wallet marked verified. The signed address is the only trusted one.
+  const provenAddr =
+    typeof proof.address === "string" ? proof.address.toLowerCase() : "";
+  if (!provenAddr || provenAddr !== addr) {
+    return NextResponse.json(
+      { error: "Address does not match the signed account proof" },
+      { status: 401 }
+    );
   }
 
   // Mark the nonce consumed before doing any session work.
