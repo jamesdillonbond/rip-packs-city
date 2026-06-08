@@ -62,16 +62,16 @@ export async function GET(request: NextRequest) {
   const errors: string[] = [];
 
   try {
-    // Legacy-FMV retirement step 2 (2026-06-08): the set-level pinnacle_fmv_snapshots
-    // table is retired — every reader is on per-render pinnacle_catalog. This route now
-    // (1) refreshes pinnacle_editions ASK from the on-chain listings cache via the new
-    // standalone pinnacle_refresh_editions_ask() — that ASK column is still read by
-    // edition/moment detail + collection/platform stats — and (2) rebuilds the per-render
-    // FMV home pinnacle_catalog.fmv_* (PIN-FMV-REKEY). The legacy writers
-    // pinnacle_fmv_from_listings / pinnacle_fmv_recalc_all are no longer called; Cowork
-    // drops them + the table as step 3. The render engine is independent of the ASK leg.
-    const askRefresh = await supabaseAdmin.rpc("pinnacle_refresh_editions_ask");
-    if (askRefresh.error) errors.push(`pinnacle_refresh_editions_ask: ${askRefresh.error.message}`);
+    // Legacy-FMV retirement (2026-06-08): the set-level pinnacle_fmv_snapshots table is
+    // retired — every reader is on per-render pinnacle_catalog. This route rebuilds the
+    // per-render FMV home pinnacle_catalog.fmv_* (PIN-FMV-REKEY).
+    //
+    // Flowty teardown (2026-06-08): pinnacle_refresh_editions_ask() is NO LONGER called
+    // here. It sourced pinnacle_editions.ask_price from pinnacle_cached_listings — a
+    // dead-Flowty cache frozen at 2026-05-27 — and overwrote the genuinely-fresh on-chain
+    // ASK that pinnacle-listings-reconcile writes every ~15 min (ask_source=
+    // 'pinnacle_direct', from pinnacle_listing_events). The reconcile cron is now the sole
+    // ASK writer; this route owns only the render-FMV recompute, which is independent.
     const fmvRecalcRender = await supabaseAdmin.rpc("pinnacle_fmv_recalc_render_all");
     if (fmvRecalcRender.error) errors.push(`pinnacle_fmv_recalc_render_all: ${fmvRecalcRender.error.message}`);
 
@@ -83,7 +83,6 @@ export async function GET(request: NextRequest) {
       rowsWritten,
       error: errors[0] ?? null,
       extra: {
-        ask_refresh: askRefresh.data ?? null,
         fmv_recalc_render: fmvRecalcRender.data ?? null,
         duration_ms: Date.now() - startedAt,
         errors: errors.slice(0, 3),
@@ -92,7 +91,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       status: ok ? "ok" : "partial",
-      ask_refresh: askRefresh.data ?? 0,
       fmv_recalc_render: fmvRecalcRender.data ?? 0,
       errors,
     });
