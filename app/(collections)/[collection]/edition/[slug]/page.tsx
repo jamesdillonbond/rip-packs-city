@@ -650,8 +650,15 @@ export default async function EditionPage(
                   {p.pack_title ?? "Pack"}
                 </div>
                 <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)" }}>
-                  {p.drop_weight !== null ? `${p.drop_weight} slot${p.drop_weight === 1 ? "" : "s"}` : "weight unknown"}
-                  {p.depletion_pct !== null && p.depletion_pct !== undefined ? <> · {Math.round(p.depletion_pct)}% depleted</> : null}
+                  {/* drop_weight 0 = no longer pullable from this pool. Show
+                      "exhausted" instead of a broken-looking "0 slots". Only
+                      surface depletion when it's actually > 0. */}
+                  {p.drop_weight === 0
+                    ? "exhausted"
+                    : p.drop_weight !== null
+                    ? `${p.drop_weight} slot${p.drop_weight === 1 ? "" : "s"}`
+                    : "weight unknown"}
+                  {p.depletion_pct ? <> · {Math.round(p.depletion_pct)}% depleted</> : null}
                 </div>
               </Link>
             ))}
