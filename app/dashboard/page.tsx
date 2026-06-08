@@ -9,6 +9,8 @@ import FirstRunTourMount from "@/components/onboarding/FirstRunTourMount";
 import RpcLogo from "@/components/RpcLogo";
 import SignOutButton from "@/components/auth/SignOutButton";
 import SignInWithDapper from "@/components/SignInWithDapper";
+import * as fcl from "@onflow/fcl";
+import { configureFclAuth } from "@/lib/fcl-config";
 import { publishedCollections, getCollection } from "@/lib/collections";
 import TrophyPickerModal from "@/components/profile/TrophyPickerModal";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
@@ -1537,11 +1539,61 @@ function VerifyByListingModal({
   const [now, setNow] = useState(Date.now());
   const [checkHint, setCheckHint] = useState<string | null>(null);
   const [verified, setVerified] = useState(false);
+  // Read-only HybridCustody path: connect any account-linked Flow wallet via FCL
+  // account-proof (no tx signed) and verify THIS wallet when it's on-chain-linked
+  // to the signed address. Falls through to the listing challenge if not linked.
+  const [linkLoading, setLinkLoading] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [linkHint, setLinkHint] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  const verifyViaLink = useCallback(async () => {
+    setLinkLoading(true);
+    setLinkError(null);
+    setLinkHint(null);
+    try {
+      configureFclAuth();
+      const u: any = await fcl.authenticate();
+      const addr: string | undefined = u?.addr;
+      if (!addr) throw new Error("Wallet did not return an address");
+      const proofService = (u.services ?? []).find(
+        (s: any) => s?.type === "account-proof" || s?.f_type === "AccountProofService"
+      );
+      const data = proofService?.data;
+      if (!data?.signatures || !data?.nonce) {
+        throw new Error("No account proof returned by wallet");
+      }
+      const res = await fetch("/api/profile/verify-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          wallet_addr: walletAddr,
+          accountProof: { address: addr, nonce: data.nonce, signatures: data.signatures },
+        }),
+      });
+      const d = await res.json();
+      if (res.ok && d?.ok) {
+        setVerified(true);
+        onVerified();
+        return;
+      }
+      if (res.status === 403 && d?.error === "not_linked") {
+        // Not account-linked — point them at the listing challenge below.
+        setLinkHint(d?.hint ?? "That wallet isn't linked to the one you signed with — list a Moment below instead.");
+      } else {
+        setLinkError(d?.hint ?? d?.error ?? `HTTP ${res.status}`);
+      }
+    } catch (e: any) {
+      setLinkError(e?.message ?? "Sign-in failed");
+      try { await fcl.unauthenticate(); } catch { /* ignore */ }
+    } finally {
+      setLinkLoading(false);
+    }
+  }, [walletAddr, onVerified]);
 
   // Load the active challenge; if none, mint a fresh one (which picks the
   // target Moment server-side). A challenge with no target_moment_id is legacy
@@ -1638,7 +1690,35 @@ function VerifyByListingModal({
   const done = verified || !!challenge?.resolved_at;
 
   return (
-    <ModalShell onClose={onClose} title={`Verify ${truncateAddress(walletAddr)} by listing`}>
+    <ModalShell onClose={onClose} title={`Verify ${truncateAddress(walletAddr)}`}>
+      {!done && (
+        <div style={{ padding: 14, background: "#0a0a0a", border: "1px solid #1f3a34", borderRadius: 10, marginBottom: 16 }}>
+          <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "#fff", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            Fastest: verify with a linked wallet
+          </div>
+          <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.65)", lineHeight: 1.6, marginTop: 6 }}>
+            Connect any Flow wallet that&apos;s account-linked to this one. <strong>Read-only — we never ask you to sign a transaction.</strong> Earns <strong>+500 credits</strong>.
+          </div>
+          <button onClick={verifyViaLink} disabled={linkLoading} style={{ ...primaryBtnStyle, marginTop: 10 }}>
+            {linkLoading ? "Connecting…" : "Verify via linked wallet (read-only)"}
+          </button>
+          {linkHint && (
+            <div style={{ marginTop: 8, color: "#FBBF24", fontFamily: monoFont, fontSize: 11, lineHeight: 1.5 }}>
+              {linkHint} ↓
+            </div>
+          )}
+          {linkError && (
+            <div style={{ marginTop: 8, color: "#F87171", fontFamily: monoFont, fontSize: 11 }}>{linkError}</div>
+          )}
+        </div>
+      )}
+
+      {!done && (
+        <div style={{ marginBottom: 12, fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: "0.14em", textTransform: "uppercase", textAlign: "center" }}>
+          — or list one of your Moments —
+        </div>
+      )}
+
       <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.7)", lineHeight: 1.6 }}>
         We picked one of your cheap Moments. List it on Top Shot at the exact price below, then click <strong>I&apos;ve listed it — Done</strong>. We confirm the live listing and verify you instantly — earning <strong>+500 credits</strong>. The price is ~100× the Moment&apos;s value (and at least $10), so nobody will buy it — you can delist right after.
       </div>
