@@ -1158,19 +1158,29 @@ async function runSmokeTests() {
       if (parsed.status !== "ok" || !Array.isArray(parsed.results)) {
         return { ...meta, passed: false, detail: `unexpected status: ${parsed.status}`, statusCode: null, bodyExcerpt: json.slice(0, 500), notes: null };
       }
+      // Validate each priced row against pinnacle_catalog (the per-render FMV
+      // source since a9f86af) using a trimmed + lowercased (character, set,
+      // variant) triple key — mirrors the router's tripleKey. pinnacle_editions
+      // is no longer the FMV source, and catalog set_name values can carry a
+      // leading space, so an exact PostgREST .eq() against either column
+      // false-positives this guard on every smoke tick. NOTE: the catalog column
+      // is `variant`, not `variant_type`.
+      const tripleKey = (c: string | null, s: string | null, v: string | null) =>
+        `${(c ?? "").toLowerCase().trim()}||${(s ?? "").toLowerCase().trim()}||${(v ?? "").toLowerCase().trim()}`;
+      const { data: catalogRows } = await (svc as any)
+        .from("pinnacle_catalog")
+        .select("character_name, set_name, variant")
+        .not("fmv_usd", "is", null)
+        .limit(5000);
+      const catalogTriples = new Set<string>(
+        (catalogRows ?? []).map((row: any) => tripleKey(row.character_name, row.set_name, row.variant))
+      );
       const leaks: string[] = [];
       for (const r of parsed.results as Array<{
         player: string | null; set: string | null; tier: string | null; fmv: number | null;
       }>) {
         if (r.fmv == null) continue;
-        const { data: match } = await (svc as any)
-          .from("pinnacle_editions")
-          .select("id")
-          .eq("character_name", r.player)
-          .eq("set_name", r.set)
-          .eq("variant_type", r.tier)
-          .limit(1);
-        if (!match || match.length === 0) {
+        if (!catalogTriples.has(tripleKey(r.player, r.set, r.tier))) {
           leaks.push(`${r.player}/${r.set}/${r.tier} fmv=$${r.fmv}`);
         }
       }
