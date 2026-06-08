@@ -5,12 +5,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
+import { isSupportedAddress } from "@/lib/address";
 
 const VALID_TYPES = ["wallet", "moment", "edition", "player", "set"];
 const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 
 function inferType(query: string): string {
-  if (/^0x[0-9a-fA-F]{16}$/.test(query)) return "wallet";
+  // Any supported chain's address (Flow / EVM / Solana-base58) is a wallet.
+  if (isSupportedAddress(query)) return "wallet";
   if (/^[a-z0-9_]+$/.test(query)) return "wallet";
   if (/S\d+$/i.test(query)) return "edition";
   return "player";
