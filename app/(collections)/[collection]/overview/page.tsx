@@ -236,7 +236,7 @@ function freshnessFromAge(minutes: number | null, loading: boolean): Freshness {
   if (minutes == null) return { color: "var(--rpc-text-ghost)", label: "UNKNOWN" }
   if (minutes < 30) return { color: "#34D399", label: "LIVE" }
   if (minutes < 60) return { color: "#F59E0B", label: "DELAYED" }
-  return { color: "#E03A2F", label: "OUTDATED" }
+  return { color: "var(--rpc-red)", label: "OUTDATED" }
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -246,7 +246,7 @@ export default function OverviewPage() {
   const router = useRouter()
   const collection = (params?.collection as string) ?? "nba-top-shot"
   const collectionObj = getCollection(collection)
-  const accent = collectionObj?.accent ?? "#E03A2F"
+  const accent = collectionObj?.accent ?? "var(--rpc-red)"
   const enabledPages = new Set(collectionObj?.pages ?? [])
   const basePath = "/" + collection
 
@@ -374,7 +374,7 @@ export default function OverviewPage() {
           <div
             style={{
               marginTop: 10,
-              fontFamily: "'Share Tech Mono', monospace",
+              fontFamily: "var(--font-mono)",
               fontSize: 11,
               color: "rgba(255,255,255,0.4)",
               textAlign: "center",
@@ -525,7 +525,7 @@ export default function OverviewPage() {
             {[
               { color: "#34D399", label: "< 30 min" },
               { color: "#F59E0B", label: "30\u201360 min" },
-              { color: "#E03A2F", label: "> 60 min" },
+              { color: "var(--rpc-red)", label: "> 60 min" },
             ].map((item) => (
               <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
                 <div style={{ width: 6, height: 6, borderRadius: "50%", background: item.color }} />

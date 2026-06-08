@@ -66,8 +66,8 @@ interface SniperDealPreview {
 }
 
 // ── Constants ─────────────────────────────────────────────────────
-const monoFont = "'Share Tech Mono', monospace";
-const condensedFont = "'Barlow Condensed', sans-serif";
+const monoFont = "var(--font-mono)";
+const condensedFont = "var(--font-display)";
 
 // ── Helpers ───────────────────────────────────────────────────────
 function fmtDollars(n: number): string {
@@ -124,6 +124,8 @@ const labelStyle: React.CSSProperties = {
 
 // ── Sparkline SVG ─────────────────────────────────────────────────
 function Sparkline(props: { data: number[]; width?: number; height?: number; color?: string }) {
+  // brand-exception: default feeds the SVG <polyline stroke> below, where a CSS
+  // var() does not resolve. Hardcoded brand red is required here.
   const { data, width = 200, height = 40, color = "#E03A2F" } = props;
   if (data.length < 2) return null;
   const min = Math.min(...data);
@@ -246,7 +248,7 @@ function Avatar(props: {
           }}
         />
       ) : (
-        <div style={{ width: "100%", height: "100%", background: "rgba(224,58,47,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: condensedFont, fontWeight: 800, fontSize: size * 0.35, color: "#E03A2F" }}>
+        <div style={{ width: "100%", height: "100%", background: "rgba(224,58,47,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: condensedFont, fontWeight: 800, fontSize: size * 0.35, color: "var(--rpc-red)" }}>
           {initials}
         </div>
       )}
@@ -686,7 +688,7 @@ export default function ProfilePageV6() {
               const label = w.display_name || w.username || (w.wallet_addr ? w.wallet_addr.slice(0, 12) + "\u2026" : "Wallet " + (i + 1));
               return (
                 <div key={i} style={{ ...cardStyle, display: "flex", alignItems: "center", gap: 16, padding: "12px 16px" }}>
-                  <div style={{ width: 4, height: 28, borderRadius: 2, background: w.accent_color || "#E03A2F", flexShrink: 0 }} />
+                  <div style={{ width: 4, height: 28, borderRadius: 2, background: w.accent_color || "var(--rpc-red)", flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, color: "var(--rpc-text-primary)", letterSpacing: "0.04em" }}>{label}</div>
                     {w.cached_top_tier && (
@@ -763,7 +765,7 @@ export default function ProfilePageV6() {
         <div style={Object.assign({}, labelStyle, { marginBottom: 12 })}>TOOLS</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 10 }}>
           {[
-            { label: "Collection", icon: "\u25C8", href: basePath + "/collection", color: "#E03A2F" },
+            { label: "Collection", icon: "\u25C8", href: basePath + "/collection", color: "var(--rpc-red)" },
             { label: "Pack EV", icon: "\u25A3", href: basePath + "/packs", color: "#F59E0B" },
             { label: "Sniper", icon: "\u26A1", href: basePath + "/sniper", color: "#34D399" },
             { label: "Sets", icon: "\u25C9", href: basePath + "/sets", color: "#F472B6" },
