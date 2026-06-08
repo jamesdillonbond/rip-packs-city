@@ -1,10 +1,20 @@
 // lib/concierge/pinnacle-router.ts
 //
 // Centralised routing for the support-chat tools when the active collection
-// is Disney Pinnacle. Pinnacle data lives in pinnacle_editions /
-// pinnacle_cached_listings / pinnacle_fmv_snapshots — a parallel schema
-// that does NOT live in the unified editions / cached_listings /
-// fmv_snapshots tables every other collection uses.
+// is Disney Pinnacle. Pinnacle FMV now lives PER-RENDER in pinnacle_catalog
+// (render_id PK, with fmv_usd / fmv_confidence / floor_ask / fmv_wap_usd
+// denormalized onto each render). The legacy per-edition blend in
+// pinnacle_fmv_snapshots is retired — every concierge answer quotes the
+// per-render FMV.
+//
+// Character-correctness is non-negotiable: legacy_edition_key is SET-LEVEL
+// (e.g. STAR-OEV1-SWAL:Golden:1 spans all 26 Star Wars characters), so any
+// lookup that has a character signal gates on it. (character, set, variant)
+// is 1:1 with a render in pinnacle_catalog, so once character is fixed the
+// match is exact; where multiple renders remain (a key with no further
+// signal) we collapse to a representative — most-traded over 30d, tiebreak
+// highest FMV — mirroring the DB helper get_pinnacle_edition_fmv_collapsed,
+// and surface fmv_min/fmv_max/render_count so the spread is never hidden.
 //
 // Each function here returns a JSON-shaped string identical to its unified
 // counterpart in app/api/support-chat/route.ts so the LLM sees a consistent
@@ -33,69 +43,97 @@ interface DealRow {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Supabase = any
 
-// Join cached_listings rows to FMV by (character_name, set_name, variant_type)
-// rather than by edition_key alone. pinnacle_cached_listings.edition_key is
-// NOT character-discriminating: multiple character_names share the same
-// edition_key (e.g. WDAS-OEV1-MFWA:Standard:1 carries Goofy, Minnie, and
-// other Winter Adventures rows in cached_listings even though
-// pinnacle_editions only registers Minnie at that key). Joining by
-// edition_key alone silently mis-attributed FMV across characters
-// ("Goofy at $1, FMV $29 → 97% off!" was actually Minnie's $29 FMV).
-//
-// pinnacle_editions has unique (character_name, set_name, variant_type)
-// triples per row, so this triple is the correct character-aware join key.
-// If a triple has no row in pinnacle_editions, FMV is null — the listing
-// surfaces but with no fabricated discount.
+// A single priced render pulled from pinnacle_catalog.
+interface CatalogRender {
+  render_id: string
+  character_name: string | null
+  set_name: string | null
+  variant: string | null
+  legacy_edition_key: string | null
+  fmv_usd: number
+  fmv_confidence: string | null
+  fmv_wap_usd: number | null
+  floor_ask: number | null
+  fmv_sales_count_30d: number | null
+  fmv_days_since_sale: number | null
+  fmv_computed_at: string | null
+  fmv_algo_version: string | null
+  total_minted: number | null
+}
+
+// Collapse one-or-more renders to a representative (most-traded 30d, tiebreak
+// highest FMV) plus the full-set spread. Mirrors get_pinnacle_edition_fmv_collapsed.
+function collapseRenders(rows: CatalogRender[]): {
+  rep: CatalogRender
+  fmv_min: number
+  fmv_max: number
+  render_count: number
+} | null {
+  const priced = rows.filter((r) => r.fmv_usd != null)
+  if (!priced.length) return null
+  const sorted = [...priced].sort((a, b) => {
+    const sa = a.fmv_sales_count_30d ?? -1
+    const sb = b.fmv_sales_count_30d ?? -1
+    if (sb !== sa) return sb - sa
+    return (b.fmv_usd ?? 0) - (a.fmv_usd ?? 0)
+  })
+  const fmvs = priced.map((r) => Number(r.fmv_usd))
+  return {
+    rep: sorted[0],
+    fmv_min: Math.min(...fmvs),
+    fmv_max: Math.max(...fmvs),
+    render_count: priced.length,
+  }
+}
+
+const CATALOG_FMV_COLUMNS =
+  "render_id, character_name, set_name, variant, legacy_edition_key, fmv_usd, fmv_confidence, fmv_wap_usd, floor_ask, fmv_sales_count_30d, fmv_days_since_sale, fmv_computed_at, fmv_algo_version, total_minted"
+
+// Map a set of cached listings to per-render FMV. legacy_edition_key is the
+// canonical, exact-match join key (no variant-vocabulary drift), but it spans
+// characters — so we fetch by edition_key, then gate on character_name
+// case-insensitively in JS and collapse to a representative render.
 type ListingTriple = {
   character_name: string | null
   set_name: string | null
   variant_type: string | null
+  edition_key?: string | null
 }
 
 function tripleKey(t: ListingTriple): string {
   return `${(t.character_name ?? "").toLowerCase().trim()}||${(t.set_name ?? "").toLowerCase().trim()}||${(t.variant_type ?? "").toLowerCase().trim()}`
 }
 
+function charKey(character: string | null | undefined, editionKey: string | null | undefined): string {
+  return `${(character ?? "").toLowerCase().trim()}||${(editionKey ?? "").trim()}`
+}
+
 async function fetchFmvByListingTriples(supabase: Supabase, triples: ListingTriple[]) {
   const empty = new Map<string, number>()
   if (!triples.length) return empty
-  const characters = Array.from(
-    new Set(triples.map((t) => t.character_name).filter((c): c is string => !!c))
+  const editionKeys = Array.from(
+    new Set(triples.map((t) => t.edition_key).filter((k): k is string => !!k))
   )
-  if (!characters.length) return empty
-  const { data: editions } = await supabase
-    .from("pinnacle_editions")
-    .select("id, character_name, set_name, variant_type")
-    .in("character_name", characters)
-  const tripleToId = new Map<string, string>()
-  for (const row of editions ?? []) {
-    if (!row.id) continue
-    tripleToId.set(
-      tripleKey({ character_name: row.character_name, set_name: row.set_name, variant_type: row.variant_type }),
-      row.id
-    )
-  }
-  const ids = Array.from(new Set(tripleToId.values()))
-  if (!ids.length) return empty
-  const { data: fmvRows } = await supabase
-    .from("pinnacle_fmv_snapshots")
-    .select("edition_id, fmv_usd, computed_at")
-    .in("edition_id", ids)
-    .order("computed_at", { ascending: false })
-  const idToFmv = new Map<string, number>()
-  for (const row of fmvRows ?? []) {
-    if (!idToFmv.has(row.edition_id) && row.fmv_usd != null) {
-      idToFmv.set(row.edition_id, Number(row.fmv_usd))
-    }
+  if (!editionKeys.length) return empty
+  const { data: renders } = await supabase
+    .from("pinnacle_catalog")
+    .select(CATALOG_FMV_COLUMNS)
+    .in("legacy_edition_key", editionKeys)
+    .not("fmv_usd", "is", null)
+  // Group priced renders by (character, edition_key) and collapse each group.
+  const grouped = new Map<string, CatalogRender[]>()
+  for (const r of (renders ?? []) as CatalogRender[]) {
+    const k = charKey(r.character_name, r.legacy_edition_key)
+    const arr = grouped.get(k)
+    if (arr) arr.push(r)
+    else grouped.set(k, [r])
   }
   const tripleToFmv = new Map<string, number>()
   for (const t of triples) {
-    const k = tripleKey(t)
-    const id = tripleToId.get(k)
-    if (id) {
-      const fmv = idToFmv.get(id)
-      if (fmv != null) tripleToFmv.set(k, fmv)
-    }
+    const group = grouped.get(charKey(t.character_name, t.edition_key))
+    if (!group) continue
+    const collapsed = collapseRenders(group)
+    if (collapsed) tripleToFmv.set(tripleKey(t), Number(collapsed.rep.fmv_usd))
   }
   return tripleToFmv
 }
@@ -124,8 +162,8 @@ export async function searchPinnacleDeals(
     const tripleToFmv = await fetchFmvByListingTriples(
       supabase,
       rows.map((r: {
-        character_name: string | null; set_name: string | null; variant_type: string | null;
-      }) => ({ character_name: r.character_name, set_name: r.set_name, variant_type: r.variant_type }))
+        character_name: string | null; set_name: string | null; variant_type: string | null; edition_key: string | null;
+      }) => ({ character_name: r.character_name, set_name: r.set_name, variant_type: r.variant_type, edition_key: r.edition_key }))
     )
     const enriched: DealRow[] = rows.map((r: {
       edition_key: string; character_name: string | null; franchise: string | null;
@@ -170,85 +208,77 @@ export async function searchPinnacleDeals(
   }
 }
 
+// Resolve per-render FMV for a legacy edition_key. The key is set-level and
+// can span characters/renders, so we collapse to a representative and report
+// the spread. Returns null when no priced render exists for the key.
+async function fetchRenderFmvByKey(
+  supabase: Supabase,
+  editionKey: string
+): Promise<{ rep: CatalogRender; fmv_min: number; fmv_max: number; render_count: number } | null> {
+  const { data: rows } = await supabase
+    .from("pinnacle_catalog")
+    .select(CATALOG_FMV_COLUMNS)
+    .eq("legacy_edition_key", editionKey)
+    .not("fmv_usd", "is", null)
+  return collapseRenders((rows ?? []) as CatalogRender[])
+}
+
 export async function getPinnacleFmv(
   supabase: Supabase,
   input: { editionKey?: string; playerName?: string }
 ): Promise<string> {
   try {
     if (input.editionKey) {
-      const { data: edition } = await supabase
-        .from("pinnacle_editions")
-        .select("id, edition_key, character_name, franchise, variant_type, set_name, ask_price")
-        .eq("edition_key", input.editionKey)
-        .maybeSingle()
-      if (!edition) {
-        return JSON.stringify({ status: "not_found", message: "Pinnacle edition not found for that key." })
-      }
-      const { data: snap } = await supabase
-        .from("pinnacle_fmv_snapshots")
-        .select("fmv_usd, confidence, computed_at, wap_usd, floor_usd, sales_count_30d, days_since_sale")
-        .eq("edition_id", edition.id)
-        .order("computed_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (!snap) {
+      const collapsed = await fetchRenderFmvByKey(supabase, input.editionKey)
+      if (!collapsed) {
         return JSON.stringify({
           status: "no_data",
           message: "No FMV snapshot yet for that Pinnacle edition.",
-          edition: {
-            character: edition.character_name,
-            set: edition.set_name ?? edition.franchise,
-            variant: edition.variant_type,
-            ask_price: edition.ask_price != null ? Number(edition.ask_price) : null,
-          },
+          edition: { edition: input.editionKey },
         })
       }
+      const rep = collapsed.rep
       return JSON.stringify({
         status: "ok",
         edition: input.editionKey,
-        player: edition.character_name,
-        set: edition.set_name ?? edition.franchise,
-        tier: edition.variant_type,
-        fmv: Number(snap.fmv_usd),
-        confidence: (snap.confidence ?? "LOW").toString().toLowerCase(),
-        wap_usd: snap.wap_usd != null ? Number(snap.wap_usd) : null,
-        floor_usd: snap.floor_usd != null ? Number(snap.floor_usd) : null,
-        sales_count_30d: snap.sales_count_30d ?? null,
-        days_since_sale: snap.days_since_sale ?? null,
-        updatedAt: snap.computed_at,
+        player: rep.character_name,
+        set: rep.set_name,
+        tier: rep.variant,
+        fmv: Number(rep.fmv_usd),
+        confidence: (rep.fmv_confidence ?? "LOW").toString().toLowerCase(),
+        wap_usd: rep.fmv_wap_usd != null ? Number(rep.fmv_wap_usd) : null,
+        floor_usd: rep.floor_ask != null ? Number(rep.floor_ask) : null,
+        sales_count_30d: rep.fmv_sales_count_30d ?? null,
+        days_since_sale: rep.fmv_days_since_sale ?? null,
+        // The legacy key can span multiple renders/characters — surface the
+        // per-render spread so the quoted number is never mistaken for a blend.
+        fmv_render_range: collapsed.render_count > 1
+          ? { min: collapsed.fmv_min, max: collapsed.fmv_max, renders: collapsed.render_count }
+          : null,
+        updatedAt: rep.fmv_computed_at,
         collectionId: PINNACLE_COLLECTION_ID,
       })
     }
     if (input.playerName) {
       const { data: rows } = await supabase
-        .from("pinnacle_editions")
-        .select("id, edition_key, character_name, franchise, variant_type, set_name, ask_price")
+        .from("pinnacle_catalog")
+        .select(CATALOG_FMV_COLUMNS)
         .ilike("character_name", `%${input.playerName}%`)
-        .limit(5)
+        .not("fmv_usd", "is", null)
+        .order("fmv_sales_count_30d", { ascending: false })
+        .limit(50)
       if (!rows || rows.length === 0) {
-        return JSON.stringify({ status: "not_found", message: "No Pinnacle editions found for that character." })
-      }
-      const ids = rows.map((r: { id: string }) => r.id)
-      const { data: snaps } = await supabase
-        .from("pinnacle_fmv_snapshots")
-        .select("edition_id, fmv_usd, computed_at")
-        .in("edition_id", ids)
-        .order("computed_at", { ascending: false })
-      const idToFmv = new Map<string, number>()
-      for (const s of snaps ?? []) {
-        if (!idToFmv.has(s.edition_id) && s.fmv_usd != null) idToFmv.set(s.edition_id, Number(s.fmv_usd))
+        return JSON.stringify({ status: "not_found", message: "No priced Pinnacle renders found for that character." })
       }
       return JSON.stringify({
         status: "ok",
-        results: rows.map((r: {
-          id: string; character_name: string | null; franchise: string | null;
-          variant_type: string | null; set_name: string | null; ask_price: number | null;
-        }) => ({
+        results: (rows as CatalogRender[]).slice(0, 5).map((r) => ({
           player: r.character_name,
-          set: r.set_name ?? r.franchise,
-          tier: r.variant_type,
-          low_ask: r.ask_price != null ? Number(r.ask_price) : null,
-          fmv: idToFmv.get(r.id) ?? null,
+          set: r.set_name,
+          tier: r.variant,
+          low_ask: r.floor_ask != null ? Number(r.floor_ask) : null,
+          fmv: Number(r.fmv_usd),
+          confidence: (r.fmv_confidence ?? "LOW").toString().toLowerCase(),
         })),
         collectionId: PINNACLE_COLLECTION_ID,
       })
@@ -268,42 +298,32 @@ export async function explainPinnacleFmv(
 ): Promise<string> {
   try {
     if (!input.editionKey) return JSON.stringify({ status: "error", message: "editionKey is required" })
-    const { data: edition } = await supabase
-      .from("pinnacle_editions")
-      .select("id, edition_key, character_name, franchise, variant_type, set_name")
-      .eq("edition_key", input.editionKey)
-      .maybeSingle()
-    if (!edition) {
-      return JSON.stringify({ status: "not_found", message: "Pinnacle edition not found for that key." })
-    }
-    const { data: snap } = await supabase
-      .from("pinnacle_fmv_snapshots")
-      .select("fmv_usd, confidence, wap_usd, floor_usd, computed_at, sales_count_30d, days_since_sale, algo_version")
-      .eq("edition_id", edition.id)
-      .order("computed_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (!snap) {
+    const collapsed = await fetchRenderFmvByKey(supabase, input.editionKey)
+    if (!collapsed) {
       return JSON.stringify({ status: "no_data", message: "No FMV snapshot yet for that Pinnacle edition." })
     }
-    const computedAgo = snap.computed_at
-      ? `${Math.round((Date.now() - new Date(snap.computed_at).getTime()) / 60000)} minutes ago`
+    const rep = collapsed.rep
+    const computedAgo = rep.fmv_computed_at
+      ? `${Math.round((Date.now() - new Date(rep.fmv_computed_at).getTime()) / 60000)} minutes ago`
       : "unknown"
-    const salesNote = snap.sales_count_30d ? `across ${snap.sales_count_30d} recent sales` : "with limited sales data"
-    const fmv = Number(snap.fmv_usd)
-    const wap = snap.wap_usd != null ? Number(snap.wap_usd) : 0
-    const floor = snap.floor_usd != null ? Number(snap.floor_usd) : 0
-    const explanation = `Pinnacle FMV is $${fmv.toFixed(2)} (${snap.confidence} confidence) based on a 30-day WAP of $${wap.toFixed(2)} ${salesNote}. Floor is $${floor.toFixed(2)}. Last computed ${computedAgo}.`
+    const salesNote = rep.fmv_sales_count_30d ? `across ${rep.fmv_sales_count_30d} recent sales` : "with limited sales data"
+    const fmv = Number(rep.fmv_usd)
+    const wap = rep.fmv_wap_usd != null ? Number(rep.fmv_wap_usd) : 0
+    const floor = rep.floor_ask != null ? Number(rep.floor_ask) : 0
+    const rangeNote = collapsed.render_count > 1
+      ? ` This key spans ${collapsed.render_count} renders ranging $${collapsed.fmv_min.toFixed(2)}–$${collapsed.fmv_max.toFixed(2)}; the figure above is the most-traded render.`
+      : ""
+    const explanation = `Pinnacle FMV is $${fmv.toFixed(2)} (${rep.fmv_confidence} confidence) based on a 30-day WAP of $${wap.toFixed(2)} ${salesNote}. Floor is $${floor.toFixed(2)}. Last computed ${computedAgo}.${rangeNote}`
     return JSON.stringify({
       status: "ok",
-      player_name: edition.character_name ?? null,
-      set_name: edition.set_name ?? edition.franchise ?? null,
-      tier: edition.variant_type ?? null,
-      fmv_usd: snap.fmv_usd,
-      confidence: snap.confidence,
-      wap_usd: snap.wap_usd,
-      floor_price_usd: snap.floor_usd,
-      computed_at: snap.computed_at,
+      player_name: rep.character_name ?? null,
+      set_name: rep.set_name ?? null,
+      tier: rep.variant ?? null,
+      fmv_usd: rep.fmv_usd,
+      confidence: rep.fmv_confidence,
+      wap_usd: rep.fmv_wap_usd,
+      floor_price_usd: rep.floor_ask,
+      computed_at: rep.fmv_computed_at,
       explanation,
       collectionId: PINNACLE_COLLECTION_ID,
     })
@@ -344,8 +364,8 @@ export async function searchPinnacleByName(
   const tripleToFmv = await fetchFmvByListingTriples(
     supabase,
     (rows ?? []).map((r: {
-      character_name: string | null; set_name: string | null; variant_type: string | null;
-    }) => ({ character_name: r.character_name, set_name: r.set_name, variant_type: r.variant_type }))
+      character_name: string | null; set_name: string | null; variant_type: string | null; edition_key: string | null;
+    }) => ({ character_name: r.character_name, set_name: r.set_name, variant_type: r.variant_type, edition_key: r.edition_key }))
   )
   return {
     collection: "Disney Pinnacle",
