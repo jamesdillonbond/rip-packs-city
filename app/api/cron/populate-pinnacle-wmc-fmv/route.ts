@@ -4,9 +4,10 @@ import { supabaseAdmin } from "@/lib/supabase"
 // Hourly Pinnacle wmc FMV populator.
 //
 // Calls the SECDEF helper populate_pinnacle_wmc_fmv(p_limit). The RPC joins
-// wmc.moment_id → pinnacle_nft_map.nft_id → edition_key → pinnacle_editions
-// → pinnacle_fmv_snapshots (latest) and writes wmc.fmv_usd. Pinnacle is the
-// last collection without a built-in wmc FMV path; this closes the gap.
+// wmc.render_id → pinnacle_catalog.render_id (per-render FMV, algo
+// render-catalog-2.0) and writes wmc.fmv_usd. (Pre-2026-06 it walked the
+// legacy pinnacle_nft_map → pinnacle_editions → pinnacle_fmv_snapshots chain;
+// that set-level table is retired in favor of the per-render catalog.)
 //
 // Bearer auth on INGEST_SECRET_TOKEN. Trevor schedules at cron-job.org hourly.
 

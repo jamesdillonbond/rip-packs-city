@@ -147,34 +147,27 @@ function mapNft(nft: FlowtyNft): any | null {
   }
 }
 
-async function runAskOnlyFmv(): Promise<number> {
+// Legacy-FMV retirement (2026-06-08): the set-level pinnacle_fmv_snapshots table
+// is retired — every reader is on per-render pinnacle_catalog. This route no
+// longer calls the legacy writers pinnacle_fmv_from_listings /
+// pinnacle_fmv_recalc_all. It keeps only the still-needed side effect: refresh
+// pinnacle_editions.ask_price from the just-rebuilt listings cache via the
+// standalone pinnacle_refresh_editions_ask() (byte-for-byte the same UPDATE the
+// old pinnacle_fmv_from_listings ran; that ASK column is read by edition/moment
+// detail + collection/platform stats). pinnacle-sync also calls this daily; the
+// 20-min cadence here keeps the marketplace ask in step with the listings cache.
+async function refreshEditionsAsk(): Promise<number> {
   try {
-    const { data, error } = await supabase.rpc("pinnacle_fmv_from_listings")
+    const { data, error } = await supabase.rpc("pinnacle_refresh_editions_ask")
     if (error) {
-      console.log(`[pinnacle-listing-cache] pinnacle_fmv_from_listings error: ${error.message}`)
+      console.log(`[pinnacle-listing-cache] pinnacle_refresh_editions_ask error: ${error.message}`)
       return 0
     }
-    const count = typeof data === "number" ? data : 0
-    console.log(`[pinnacle-listing-cache] ASK_ONLY FMV snapshots created/updated: ${count}`)
+    const count = Number(data?.editions_updated ?? 0) || 0
+    console.log(`[pinnacle-listing-cache] editions ask refreshed: ${count}`)
     return count
   } catch (e: any) {
-    console.log(`[pinnacle-listing-cache] pinnacle_fmv_from_listings exception: ${e?.message ?? "unknown"}`)
-    return 0
-  }
-}
-
-async function runSalesFmvRecalc(): Promise<number> {
-  try {
-    const { data, error } = await supabase.rpc("pinnacle_fmv_recalc_all")
-    if (error) {
-      console.log(`[pinnacle-listing-cache] pinnacle_fmv_recalc_all error: ${error.message}`)
-      return 0
-    }
-    const count = typeof data === "number" ? data : 0
-    console.log(`[pinnacle-listing-cache] SALES FMV snapshots recalculated: ${count}`)
-    return count
-  } catch (e: any) {
-    console.log(`[pinnacle-listing-cache] pinnacle_fmv_recalc_all exception: ${e?.message ?? "unknown"}`)
+    console.log(`[pinnacle-listing-cache] pinnacle_refresh_editions_ask exception: ${e?.message ?? "unknown"}`)
     return 0
   }
 }
@@ -222,8 +215,7 @@ async function run(req: NextRequest) {
   let mappedCount = 0
   let inserted = 0
   let errors = 0
-  let askOnlyFmvCount = 0
-  let salesFmvCount = 0
+  let editionsAskUpdated = 0
   // Hoisted detection so the final logRun (after the try/catch) sees them.
   let dollarOnePct = 0
   let upstreamFloorOnly = false
@@ -305,8 +297,7 @@ async function run(req: NextRequest) {
       }
     }
 
-    askOnlyFmvCount = await runAskOnlyFmv()
-    salesFmvCount = await runSalesFmvRecalc()
+    editionsAskUpdated = await refreshEditionsAsk()
   } catch (err) {
     ok = false
     errorMsg = err instanceof Error ? err.message : String(err)
@@ -322,8 +313,7 @@ async function run(req: NextRequest) {
     rowsSkipped: errors,
     extra: {
       fetched: fetchedCount,
-      ask_only_fmv_count: askOnlyFmvCount,
-      sales_fmv_count: salesFmvCount,
+      editions_ask_updated: editionsAskUpdated,
       duration_ms: Date.now() - started,
       // Upstream-floor signal — flips true when Flowty returns ≥95% $1 rows,
       // which is the current 2026-05-07 state. Dashboard can branch on this
@@ -346,8 +336,7 @@ async function run(req: NextRequest) {
     mapped: mappedCount,
     cached: inserted,
     errors,
-    askOnlyFmvCount,
-    salesFmvCount,
+    editionsAskUpdated,
     elapsed: Date.now() - started,
   })
 }
