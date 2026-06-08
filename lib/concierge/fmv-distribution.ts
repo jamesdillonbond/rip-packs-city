@@ -2,9 +2,10 @@
 //
 // Shared catalog-FMV helpers used by the support-chat tools. The unified
 // (NBA TS / NFL All Day / LaLiga Golazos / UFC Strike) helper queries
-// editions + fmv_snapshots; the Pinnacle helper queries pinnacle_editions
-// + pinnacle_fmv_snapshots joined by the (character, set, variant) triple
-// key established in commit 92aab30.
+// editions + fmv_snapshots; the Pinnacle helper queries pinnacle_catalog,
+// which holds PER-RENDER FMV (render_id PK). (character, set, variant) is
+// 1:1 with a render there, so each catalog row is one priced render — the
+// legacy pinnacle_editions + pinnacle_fmv_snapshots blend is retired.
 //
 // Both return one of three shapes:
 //   { status: "no_results", message }
@@ -270,101 +271,77 @@ interface PinnacleInput {
 }
 
 /**
- * Pinnacle path: pinnacle_editions + pinnacle_fmv_snapshots, joined by
- * (character_name, set_name, variant_type) triple key. Edition_key alone
- * is character-collision-prone — see the long comment in pinnacle-router.ts
- * fetchFmvByListingTriples for the full rationale.
+ * Pinnacle path: pinnacle_catalog (per-render FMV). Each render is one
+ * priced row — (character, set, variant) is 1:1 with a render — so the
+ * distribution is genuinely per-render rather than a per-edition blend.
+ * legacy_edition_key is SET-LEVEL (spans characters), so the editionKey
+ * lookup collapses to the most-traded render under that key.
  */
 export async function fetchPinnacleFmvDistribution(
   supabase: Supabase,
   input: PinnacleInput
 ): Promise<FmvDistributionResult> {
   const sampleLimit = input.sampleLimit ?? 5
+  const cols =
+    "render_id, legacy_edition_key, character_name, set_name, variant, fmv_usd, fmv_confidence, fmv_computed_at, fmv_sales_count_30d"
 
   if (input.editionKey) {
-    const { data: edition } = await supabase
-      .from("pinnacle_editions")
-      .select("id, edition_key, character_name, set_name, variant_type")
-      .eq("edition_key", input.editionKey)
-      .maybeSingle()
-    if (!edition?.id) {
-      return { status: "no_results", message: `No Pinnacle edition for key '${input.editionKey}'.` }
+    const { data: rows } = await supabase
+      .from("pinnacle_catalog")
+      .select(cols)
+      .eq("legacy_edition_key", input.editionKey)
+      .not("fmv_usd", "is", null)
+      .order("fmv_sales_count_30d", { ascending: false })
+    if (!rows || rows.length === 0) {
+      return { status: "no_results", message: `Pinnacle edition '${input.editionKey}' has no priced render.` }
     }
-    const { data: snap } = await supabase
-      .from("pinnacle_fmv_snapshots")
-      .select("fmv_usd, confidence, computed_at")
-      .eq("edition_id", edition.id)
-      .order("computed_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (!snap || snap.fmv_usd == null) {
-      return { status: "no_results", message: `Pinnacle edition '${input.editionKey}' has no FMV snapshot.` }
-    }
+    // The key can span renders/characters; the representative (most-traded
+    // 30d) is rows[0] by the order above. Surface it as the single edition.
+    const rep = rows[0]
     return {
       status: "ok",
       mode: "single",
       edition: {
-        edition_id: edition.id,
-        external_id: edition.edition_key ?? null,
-        player_name: edition.character_name,
-        set_name: edition.set_name,
-        tier: edition.variant_type,
-        fmv_usd: Number(snap.fmv_usd),
-        confidence: snap.confidence ?? null,
-        computed_at: snap.computed_at ?? null,
+        edition_id: rep.render_id,
+        external_id: rep.legacy_edition_key ?? null,
+        player_name: rep.character_name,
+        set_name: rep.set_name,
+        tier: rep.variant,
+        fmv_usd: Number(rep.fmv_usd),
+        confidence: rep.fmv_confidence ?? null,
+        computed_at: rep.fmv_computed_at ?? null,
       },
     }
   }
 
   let query = supabase
-    .from("pinnacle_editions")
-    .select("id, edition_key, character_name, set_name, variant_type")
+    .from("pinnacle_catalog")
+    .select(cols)
     .not("character_name", "is", null)
     .neq("character_name", "")
+    .not("fmv_usd", "is", null)
   if (input.character) query = query.ilike("character_name", `%${input.character}%`)
   if (input.setName) query = query.ilike("set_name", `%${input.setName}%`)
-  if (input.variant) query = query.ilike("variant_type", `%${input.variant}%`)
-  const { data: editions } = await query.limit(500)
-  if (!editions || editions.length === 0) {
-    return { status: "no_results", message: "No Pinnacle catalog editions matched those filters." }
+  if (input.variant) query = query.ilike("variant", `%${input.variant}%`)
+  const { data: renders } = await query.limit(500)
+  if (!renders || renders.length === 0) {
+    return { status: "no_results", message: "No priced Pinnacle renders matched those filters." }
   }
 
-  const ids: string[] = editions.map((e: { id: string }) => e.id)
-  const { data: snaps } = await supabase
-    .from("pinnacle_fmv_snapshots")
-    .select("edition_id, fmv_usd, confidence, computed_at")
-    .in("edition_id", ids)
-    .order("computed_at", { ascending: false })
-
-  const latestById = new Map<
-    string,
-    { fmv_usd: number; confidence: string | null; computed_at: string | null }
-  >()
-  for (const s of snaps ?? []) {
-    if (s.fmv_usd == null) continue
-    if (latestById.has(s.edition_id)) continue
-    latestById.set(s.edition_id, {
-      fmv_usd: Number(s.fmv_usd),
-      confidence: s.confidence ?? null,
-      computed_at: s.computed_at ?? null,
-    })
-  }
-
-  const enriched: DistributionalSampleEdition[] = []
-  for (const e of editions) {
-    const fmv = latestById.get(e.id)
-    if (!fmv) continue
-    enriched.push({
-      edition_id: e.id,
-      external_id: e.edition_key ?? null,
-      player_name: e.character_name ?? null,
-      set_name: e.set_name ?? null,
-      tier: e.variant_type ?? null,
-      fmv_usd: fmv.fmv_usd,
-      confidence: fmv.confidence,
-      computed_at: fmv.computed_at,
-    })
-  }
+  const enriched: DistributionalSampleEdition[] = renders.map((r: {
+    render_id: string; legacy_edition_key: string | null; character_name: string | null;
+    set_name: string | null; variant: string | null; fmv_usd: number;
+    fmv_confidence: string | null; fmv_computed_at: string | null;
+  }) => ({
+    edition_id: r.render_id,
+    external_id: r.legacy_edition_key ?? null,
+    player_name: r.character_name ?? null,
+    set_name: r.set_name ?? null,
+    tier: r.variant ?? null,
+    fmv_usd: Number(r.fmv_usd),
+    confidence: r.fmv_confidence,
+    computed_at: r.fmv_computed_at,
+  }))
 
   return buildDistribution(enriched, sampleLimit)
 }
