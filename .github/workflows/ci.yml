@@ -25,6 +25,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx tsc --noEmit
+      # Brand-token regression guard — fails if a Phase-1-cleaned public surface
+      # regrows a hardcoded #E03A2F / 'Barlow Condensed' / 'Share Tech Mono'
+      # literal instead of the var(--rpc-*) tokens. Pure node, no deps.
+      - run: node scripts/check-brand-tokens.mjs
 
   # Cadence type-check harness for the purchase-moment transaction (canonical
   # source: lib/chains/flow/cadence/purchase-moment.ts after the 2026-05-30

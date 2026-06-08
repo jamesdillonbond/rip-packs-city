@@ -31,8 +31,8 @@ type PortfolioResponse = {
   collection_count?: number
 }
 
-const monoFont = "'Share Tech Mono', monospace"
-const condensedFont = "'Barlow Condensed', sans-serif"
+const monoFont = "var(--font-mono)"
+const condensedFont = "var(--font-display)"
 
 function fmtUsd(n: number | null | undefined): string {
   if (n == null) return '—'
@@ -74,7 +74,7 @@ export default function CrossCollectionPortfolio({ wallet, walletQuery }: { wall
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12, marginBottom: 16 }}>
-        <Stat label="Total FMV" value={fmtUsd(totalFmv)} accent="#E03A2F" big />
+        <Stat label="Total FMV" value={fmtUsd(totalFmv)} accent="var(--rpc-red)" big />
         <Stat label="Moments" value={totalMoments.toLocaleString()} accent="#A855F7" />
         <Stat label="Collections" value={String(collectionCount)} accent="#4F94D4" />
         <Stat label="Total P&L" value={totalPnl == null ? '—' : (totalPnl >= 0 ? '+' : '') + fmtUsd(totalPnl)} accent={pnlColor} />
@@ -83,7 +83,7 @@ export default function CrossCollectionPortfolio({ wallet, walletQuery }: { wall
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: 10 }}>
         {data.collections.map(c => {
           const meta = getCollection(c.collection_slug)
-          const accent = meta?.accent ?? '#E03A2F'
+          const accent = meta?.accent ?? 'var(--rpc-red)'
           const icon = meta?.icon ?? '◇'
           const fmv = Number(c.wallet_fmv ?? 0)
           const lockedPct = fmv > 0 ? Math.round((Number(c.locked_fmv ?? 0) / fmv) * 100) : 0

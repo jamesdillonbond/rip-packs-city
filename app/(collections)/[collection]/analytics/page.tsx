@@ -240,6 +240,8 @@ const MARKETPLACE_LABEL: Record<string, string> = {
   "on-chain": "On-chain",
   unknown: "Unknown",
 }
+// brand-exception: chart palette consumed by recharts <Cell fill> (SVG attr,
+// no CSS var resolution); the non-red entries are deliberate per-marketplace hues.
 const MARKETPLACE_COLOR: Record<string, string> = {
   topshot: "#E03A2F",
   allday: "#4F94D4",

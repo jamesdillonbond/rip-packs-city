@@ -48,7 +48,7 @@ function ThumbnailPreview({ thumbUrl, playerName, tierColor, children }: { thumb
       {hovered && previewUrl && pos && (
         <div style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 500, pointerEvents: "none", background: "#000", border: `2px solid ${tierColor}`, borderRadius: 6, padding: 6, boxShadow: "0 8px 24px rgba(0,0,0,0.6)" }}>
           <img src={previewUrl} alt={playerName} width={200} height={200} style={{ width: 200, height: 200, objectFit: "contain", display: "block" }} />
-          <div style={{ color: "#fff", fontSize: 11, marginTop: 4, textAlign: "center", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>{playerName}</div>
+          <div style={{ color: "#fff", fontSize: 11, marginTop: 4, textAlign: "center", fontFamily: "var(--font-display)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>{playerName}</div>
         </div>
       )}
     </div>
@@ -440,7 +440,7 @@ export default function WalletPage() {
   const routeParams = useParams()
   const collectionSlug = (routeParams?.collection as string) ?? "nba-top-shot"
   const collectionObj = getCollection(collectionSlug)
-  const accent = collectionObj?.accent ?? "#E03A2F"
+  const accent = collectionObj?.accent ?? "var(--rpc-red)"
   const lastSearchedRef = useRef("")
   const ownedFlowIdsRef: React.MutableRefObject<Set<string>> = useRef(new Set<string>())
   const [rows, setRows] = useState<MomentRow[]>([])
