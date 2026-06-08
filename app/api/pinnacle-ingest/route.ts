@@ -141,11 +141,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Legacy-FMV retirement (2026-06-08): the recalc flag used to call
+    // pinnacle_fmv_recalc_all, which rebuilt the now-retired set-level
+    // pinnacle_fmv_snapshots table. Per-render FMV lives in pinnacle_catalog
+    // (rebuilt by pinnacle_fmv_recalc_render_all via the pinnacle-sync cron),
+    // so the legacy recalc is a no-op here now.
     if (recalc) {
-      log.push("Triggering FMV recalc...")
-      const { error: fmvError } = await (supabaseAdmin as any).rpc("pinnacle_fmv_recalc_all")
-      if (fmvError) log.push(`FMV recalc error: ${fmvError.message}`)
-      else log.push("FMV recalc complete")
+      log.push("FMV recalc flag ignored — legacy pinnacle_fmv_snapshots retired (per-render FMV via pinnacle-sync)")
     }
 
     const done = batch.length < limit
