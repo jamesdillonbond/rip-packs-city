@@ -12,6 +12,7 @@ import SignInWithDapper from "@/components/SignInWithDapper";
 import * as fcl from "@onflow/fcl";
 import { configureFclAuth } from "@/lib/fcl-config";
 import { publishedCollections, getCollection } from "@/lib/collections";
+import { isSolanaAddress } from "@/lib/address";
 import TrophyPickerModal from "@/components/profile/TrophyPickerModal";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 
@@ -149,7 +150,9 @@ function fmtUsd(n: number): string {
 
 function truncateAddress(addr: string): string {
   if (!addr) return "";
-  const clean = addr.startsWith("0x") ? addr : "0x" + addr;
+  // Solana (base58) addresses have no 0x prefix and must not get one glued on —
+  // doing so corrupts the displayed address for a Candy/Solana wallet.
+  const clean = addr.startsWith("0x") || isSolanaAddress(addr) ? addr : "0x" + addr;
   if (clean.length <= 12) return clean;
   return clean.slice(0, 6) + "…" + clean.slice(-4);
 }

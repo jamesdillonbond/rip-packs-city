@@ -307,6 +307,11 @@ const MARKETPLACE_MOMENT_URL_TEMPLATES: Record<string, (id: string) => string> =
   "nfl-all-day":     (id) => `https://nflallday.com/moment/${id}`,
   "laliga-golazos":  (id) => `https://laligagolazos.com/moment/${id}`,
   "disney-pinnacle": (id) => `https://disneypinnacle.com/pin/${id}`,
+  // Candy MLB (Solana / Metaplex Core) — `id` is the Solana mint address.
+  // Secondary market is Magic Eden.
+  "candy-mlb":       (id) => `https://magiceden.io/item-details/${id}`,
+  // Panini bridged subset (Ethereum / OpenSea). Per-asset links need the
+  // bridge contract address (NULL until discovery), so no moment template yet.
 }
 
 const MARKETPLACE_WALLET_URL_TEMPLATES: Record<string, (addr: string) => string> = {
@@ -314,6 +319,10 @@ const MARKETPLACE_WALLET_URL_TEMPLATES: Record<string, (addr: string) => string>
   "nfl-all-day":     (addr) => `https://nflallday.com/collection/${addr}`,
   "laliga-golazos":  (addr) => `https://laligagolazos.com/collection/${addr}`,
   "disney-pinnacle": (addr) => `https://disneypinnacle.com/collection/${addr}`,
+  // Candy MLB (Solana) — Magic Eden user profile keyed by base58 wallet.
+  "candy-mlb":       (addr) => `https://magiceden.io/u/${addr}`,
+  // Panini bridged subset — OpenSea profile keyed by Ethereum address.
+  "panini-blockchain": (addr) => `https://opensea.io/${addr}`,
 }
 
 export function marketplaceMomentUrl(collectionId: string, flowId: string): string | null {
