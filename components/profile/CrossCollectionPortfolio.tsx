@@ -73,7 +73,7 @@ export default function CrossCollectionPortfolio({ wallet, walletQuery }: { wall
         </span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12, marginBottom: 16 }}>
         <Stat label="Total FMV" value={fmtUsd(totalFmv)} accent="#E03A2F" big />
         <Stat label="Moments" value={totalMoments.toLocaleString()} accent="#A855F7" />
         <Stat label="Collections" value={String(collectionCount)} accent="#4F94D4" />

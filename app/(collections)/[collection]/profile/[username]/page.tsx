@@ -669,7 +669,7 @@ export default function ProfilePageV6() {
             <p className="rpc-label" style={{ marginTop: 8 }}>LOADING TROPHY CASE&hellip;</p>
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
             {trophies.map(function(trophy, i) {
               return <PublicTrophySlot key={i} slot={i + 1} trophy={trophy} />;
             })}
@@ -761,7 +761,7 @@ export default function ProfilePageV6() {
       {/* ── Quick Links ── */}
       <section style={{ marginBottom: 32 }}>
         <div style={Object.assign({}, labelStyle, { marginBottom: 12 })}>TOOLS</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 10 }}>
           {[
             { label: "Collection", icon: "\u25C8", href: basePath + "/collection", color: "#E03A2F" },
             { label: "Pack EV", icon: "\u25A3", href: basePath + "/packs", color: "#F59E0B" },

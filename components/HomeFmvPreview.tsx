@@ -136,7 +136,7 @@ export default function HomeFmvPreview() {
           <div style={{ color: "var(--rpc-text-ghost)", fontSize: 9, letterSpacing: "0.14em", marginBottom: 6 }}>
             SERIAL-ADJUSTED FMV
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
             <div>
               <div style={{ color: "var(--rpc-text-ghost)" }}>BASE</div>
               <div style={{ color: "var(--rpc-text-secondary)" }}>{money(fmv)}</div>
