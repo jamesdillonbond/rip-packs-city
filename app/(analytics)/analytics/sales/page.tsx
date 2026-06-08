@@ -46,7 +46,7 @@ const datasetJsonLd = {
     "Unique sellers (on-chain only)",
     "Average sale price",
     "Median sale price",
-    "Marketplace mix (Top Shot, Flowty, Pinnacle direct)",
+    "Marketplace mix (Top Shot, Dapper NFTStorefront, Pinnacle direct)",
     "Top buyers and sellers by volume",
     "Largest single sales",
   ],

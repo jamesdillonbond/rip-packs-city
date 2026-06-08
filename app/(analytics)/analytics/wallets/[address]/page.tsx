@@ -132,13 +132,13 @@ export async function generateMetadata({ params }: PageParams): Promise<Metadata
     : "recently"
 
   const description =
-    `${role} on Flowty NFT lending. ` +
+    `${role} on Flowty NFT lending (historical archive). ` +
     `$${Math.round(totalVolume).toLocaleString()} funded across ${totalLoans} loans` +
     (defaultRate != null ? `, ${defaultRate.toFixed(2)}% default rate` : "") +
     `, active since ${firstSeenLabel}.`
 
   return analyticsMetadata({
-    title: `${display} — Flowty Loan Profile · Rip Packs City`,
+    title: `${display} — Flowty Loan Profile (Historical) · Rip Packs City`,
     description,
     path: `/analytics/wallets/${addr}`,
   })
@@ -183,9 +183,9 @@ export default async function WalletPage({ params }: PageParams) {
   const datasetJsonLd = {
     "@context": "https://schema.org",
     "@type": "Dataset",
-    name: `Flowty loan history for ${username || addr}`,
+    name: `Flowty loan history for ${username || addr} (historical archive)`,
     description:
-      `On-chain Flowty loan history for Flow address ${addr}. ` +
+      `Historical on-chain Flowty loan history for Flow address ${addr} (marketplace closed May 2026). ` +
       `${totalLoans} funded loans totaling $${Math.round(totalVolume).toLocaleString()} of principal.`,
     creator: { "@type": "Organization", name: "Rip Packs City" },
     url: `${ANALYTICS_BASE_URL}/analytics/wallets/${addr}`,

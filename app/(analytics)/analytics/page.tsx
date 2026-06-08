@@ -27,7 +27,7 @@ export const revalidate = 600
 export const metadata: Metadata = analyticsMetadata({
   title: "Analytics — On-chain Intelligence for Flow Collectibles",
   description:
-    "Comprehensive on-chain analytics across Flow's largest digital collectibles platforms — Top Shot, NFL All Day, Golazos, and Pinnacle. Live loan books, sales, listings, wallets, and FMV indices.",
+    "Comprehensive on-chain analytics across Flow's largest digital collectibles platforms — Top Shot, NFL All Day, Golazos, and Pinnacle. Live sales, packs, and FMV indices plus the historical Flowty loan-book archive.",
   path: "/analytics",
 })
 
@@ -186,11 +186,18 @@ interface SectionCard {
   description: string
   icon: typeof Activity
   metrics?: Array<{ label: string; value: string }>
-  status: "live"
+  // "historical" marks Flowty-derived surfaces — Flowty shut its marketplace
+  // May 2026, so the loan book / loan-offer / loan-wallet data is a frozen
+  // archive, not a live feed. Rendered with a muted "Historical" badge.
+  status: "live" | "historical"
   methodologyTopic?: string
 }
 
 const TIMELINE = [
+  {
+    date: "May 13, 2026",
+    title: "Flowty closed its NFT marketplace — loan-book surfaces become a historical archive",
+  },
   {
     date: "May 7, 2026",
     title: "Per-collection Market and Portfolio analytics tabs shipped",
@@ -262,16 +269,16 @@ export default async function AnalyticsOverviewPage() {
     {
       href: "/analytics/loans",
       label: "Loans",
-      description: "Live Flowty loan book — capital deployed, rates, default tracking.",
+      description: "Flowty loan book (historical archive) — capital deployed, rates, defaults. Flowty closed its marketplace May 2026.",
       icon: HandCoins,
-      status: "live",
+      status: "historical",
       methodologyTopic: "loans",
       metrics: summary
         ? [
             { label: "Total volume", value: formatUsd(summary.total_principal_usd) },
-            { label: "Active loans", value: formatCount(summary.active_loans_count) },
+            { label: "Loans indexed", value: formatCount(summary.active_loans_count) },
           ]
-        : [{ label: "Status", value: "Live" }],
+        : [{ label: "Status", value: "Historical" }],
     },
     {
       href: "/analytics/pulse",
@@ -310,23 +317,23 @@ export default async function AnalyticsOverviewPage() {
     {
       href: "/analytics/listings",
       label: "Listings",
-      description: "Open Flowty loan offers and a sample of the Top Shot orderbook.",
+      description: "Flowty loan offers (historical archive) plus a sample of the Top Shot orderbook.",
       icon: List,
-      status: "live",
+      status: "historical",
       methodologyTopic: "listings",
       metrics: listings
         ? [
-            { label: "Open offers", value: formatCount(listings.loan_offers?.count ?? 0) },
+            { label: "Loan offers", value: formatCount(listings.loan_offers?.count ?? 0) },
             { label: "Liquidity", value: formatUsd(listings.loan_offers?.total_principal_usd ?? 0) },
           ]
-        : [{ label: "Status", value: "Live" }],
+        : [{ label: "Status", value: "Historical" }],
     },
     {
       href: "/analytics/wallets",
       label: "Wallets",
-      description: "Every wallet active on the Flowty loan book — lenders, borrowers, and mixed-role power users.",
+      description: "Every wallet that was active on the Flowty loan book — lenders, borrowers, and mixed-role power users (historical archive).",
       icon: Users,
-      status: "live",
+      status: "historical",
       methodologyTopic: "wallet-profiles",
       metrics: walletsOverview?.totals
         ? [
@@ -339,7 +346,7 @@ export default async function AnalyticsOverviewPage() {
               value: formatCount(walletsOverview.totals.last_active_within_7d ?? 0),
             },
           ]
-        : [{ label: "Status", value: "Live" }],
+        : [{ label: "Status", value: "Historical" }],
     },
     {
       href: "/analytics/fmv",
@@ -425,8 +432,14 @@ export default async function AnalyticsOverviewPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <h3 className="font-semibold text-zinc-100">{c.label}</h3>
-                        <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-red-400 border border-red-500/30">
-                          Live
+                        <span
+                          className={
+                            c.status === "historical"
+                              ? "rounded bg-zinc-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-zinc-400 border border-zinc-500/30"
+                              : "rounded bg-red-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-red-400 border border-red-500/30"
+                          }
+                        >
+                          {c.status === "historical" ? "Historical" : "Live"}
                         </span>
                       </div>
                     </div>

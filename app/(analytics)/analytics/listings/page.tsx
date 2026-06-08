@@ -5,7 +5,7 @@ import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
 export const metadata: Metadata = analyticsMetadata({
   title: "Listings — Open Offers and Orderbook",
   description:
-    "Active loan offers and a sample of the Top Shot orderbook. Marketplace ask data sourced from the Sniper deal feed across Top Shot, NFL All Day, Golazos, UFC, and Pinnacle.",
+    "Historical Flowty loan offers and a sample of the Top Shot orderbook. Marketplace ask data sourced from the Sniper deal feed across Top Shot, NFL All Day, Golazos, UFC, and Pinnacle. Flowty loan offers are a frozen archive (marketplace closed May 2026).",
   path: "/analytics/listings",
 })
 
@@ -14,7 +14,7 @@ const datasetJsonLd = {
   "@type": "Dataset",
   name: "Rip Packs City Listings Analytics",
   description:
-    "Open Flowty loan offers and a periodically-sampled snapshot of the Top Shot marketplace orderbook plus Sniper-feed asks across other Flow collectibles.",
+    "Historical Flowty loan offers (marketplace closed May 2026) and a periodically-sampled snapshot of the Top Shot marketplace orderbook plus Sniper-feed asks across other Flow collectibles.",
   creator: { "@type": "Organization", name: "Rip Packs City" },
   url: `${ANALYTICS_BASE_URL}/analytics/listings`,
   distribution: [
