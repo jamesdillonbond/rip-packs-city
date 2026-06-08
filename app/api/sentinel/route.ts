@@ -112,41 +112,52 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // sentinel_fmv_confidence_rows returns TABLE(confidence text, count bigint)
-    // using DISTINCT ON (edition_id) ORDER BY computed_at DESC — latest-per-edition,
-    // matching the .reduce/.find shape below. The older sentinel_fmv_confidence
-    // RPC returned a single jsonb object (wrong shape for .reduce) AND counted
-    // all-time fmv_snapshots history instead of latest-per-edition.
-    const { data, error } = await supabase.rpc("sentinel_fmv_confidence_rows");
+    // Scope to CANONICAL Top Shot (integer-pair external_id), latest-per-edition.
+    // sentinel_fmv_confidence_rows(collection) can only filter by collection_id,
+    // so a TS-scoped call still folds in ~6.4k inert UUID dupes (all NO_DATA),
+    // depressing HIGH% to a permanently-scary ~3.4% that means nothing. The
+    // canonical helper excludes the dupes via the external_id pattern, giving the
+    // honest TS quality (HIGH ~5.8%, HIGH+MED ~32%). Threshold is on HIGH+MED so
+    // it doesn't go permanently green either — alarms if FMV quality degrades.
+    const { data, error } = await supabase.rpc("sentinel_fmv_confidence_canonical_ts");
     if (error) {
-      checks.push({ name: "FMV Confidence", status: "warn", detail: `RPC not found (${error.message})` });
+      checks.push({ name: "FMV Confidence (canonical TS)", status: "warn", detail: `RPC error (${error.message})` });
     } else if (data) {
       const total = data.reduce((sum: number, r: any) => sum + Number(r.count || 0), 0);
       const high = Number(data.find((r: any) => r.confidence === "HIGH")?.count) || 0;
       const medium = Number(data.find((r: any) => r.confidence === "MEDIUM")?.count) || 0;
       const low = Number(data.find((r: any) => r.confidence === "LOW")?.count) || 0;
       const highPct = total > 0 ? ((high / total) * 100).toFixed(1) : "0";
+      const highMedPct = total > 0 ? (((high + medium) / total) * 100).toFixed(1) : "0";
       checks.push({
-        name: "FMV Confidence",
-        status: Number(highPct) > 10 ? "ok" : "warn",
-        detail: `HIGH: ${high} (${highPct}%) | MED: ${medium} | LOW: ${low} | Total: ${total}`,
-        value: `${highPct}% high`,
+        name: "FMV Confidence (canonical TS)",
+        status: Number(highMedPct) >= 25 ? "ok" : "warn",
+        detail: `HIGH: ${high} (${highPct}%) | HIGH+MED: ${highMedPct}% | MED: ${medium} | LOW: ${low} | Canonical TS editions: ${total}`,
+        value: `${highMedPct}% high+med`,
       });
     }
   } catch (e: any) {
-    checks.push({ name: "FMV Confidence", status: "warn", detail: `Exception: ${e.message}` });
+    checks.push({ name: "FMV Confidence (canonical TS)", status: "warn", detail: `Exception: ${e.message}` });
   }
 
   try {
+    // DISTINCT editions that have a snapshot — NOT total fmv_snapshots rows.
+    // fmv_snapshots is history (daily duplicates are intentional), so the old
+    // count(rows)/count(editions) read 2105% and could only ever fail if rows <
+    // editions (i.e. never — a dead detector). sentinel_fmv_confidence_rows()
+    // (no arg = all collections) is DISTINCT ON (edition_id) latest-per-edition,
+    // so summing its counts IS the distinct-edition-with-a-snapshot count.
     const { count: editionCount } = await supabase.from("editions").select("*", { count: "exact", head: true });
-    const { count: fmvCount } = await supabase.from("fmv_snapshots").select("edition_id", { count: "exact", head: true });
+    const { data: covRows, error: covErr } = await supabase.rpc("sentinel_fmv_confidence_rows");
     const editions = editionCount || 0;
-    const fmvEditions = fmvCount || 0;
+    const fmvEditions = covErr ? 0 : (covRows || []).reduce((s: number, r: any) => s + Number(r.count || 0), 0);
     const coverage = editions > 0 ? ((fmvEditions / editions) * 100).toFixed(1) : "0";
     checks.push({
       name: "Edition Coverage",
-      status: Number(coverage) > 50 ? "ok" : "warn",
-      detail: `${fmvEditions} of ${editions} editions have FMV (${coverage}%)`,
+      status: covErr ? "warn" : Number(coverage) >= 90 ? "ok" : "warn",
+      detail: covErr
+        ? `Coverage RPC error: ${covErr.message}`
+        : `${fmvEditions} of ${editions} editions have an FMV snapshot (${coverage}%)`,
       value: `${coverage}%`,
     });
   } catch (e: any) {
@@ -217,7 +228,15 @@ export async function POST(req: NextRequest) {
     const sniperUrl = `${process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"}/api/sniper-feed`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
-    const res = await fetch(sniperUrl, { signal: controller.signal });
+    // /api/sniper-feed is NOT in proxy.ts's public list, so an unauthenticated
+    // self-fetch 307s to /login and returns the login HTML as 200 — res.json()
+    // then throws "Unexpected token '<'" and the catch marked this CRITICAL on
+    // EVERY run (masking the real tripwire). proxy.ts honors Bearer first, same
+    // as every cron self-call. deals=0 honestly degrades to warn, not critical.
+    const res = await fetch(sniperUrl, {
+      signal: controller.signal,
+      headers: { Authorization: `Bearer ${process.env.INGEST_SECRET_TOKEN}` },
+    });
     clearTimeout(timeout);
     if (res.ok) {
       const data = await res.json();
