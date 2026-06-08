@@ -216,13 +216,19 @@ export const COLLECTIONS: Collection[] = [
     shortLabel: "Panini",
     sport: "Multi-Sport",
     chain: "panini",
-    dbChain: null,
+    // Core platform is a private Hyperledger Sawtooth chain (not indexable);
+    // the only public-indexable surface is the OpenSea Ethereum bridge, which
+    // currently carries only Toikido "Bad Eggs" (non-sports) — sports cards are
+    // not yet bridged. dbChain reflects that bridge. Monitor-only until a
+    // public-chain remint or sports content getting bridged.
+    dbChain: "ethereum",
     partner: "Panini America",
     accent: "#C084FC",
     icon: "\u{1F0CF}",
     pages: ["overview", "sniper"],
     published: false,
     openSeaSlug: "paniniblockchain",
+    supabaseCollectionId: "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b",
     pitch: "Reserved for Panini Blockchain integration.",
   },
   {
@@ -231,13 +237,18 @@ export const COLLECTIONS: Collection[] = [
     shortLabel: "Candy",
     sport: "MLB",
     chain: "candy",
-    dbChain: null,
-    partner: "Futureverse",
+    // Solana / Metaplex Core under new owner Candy Digital (Tad Smith).
+    // The old "Root Network / Futureverse" plan is dead — Candy migrated
+    // off Futureverse to Solana in mid-2026. dbChain is the authoritative
+    // dispatch key; the `chain` label above stays the partner/roadmap tag.
+    dbChain: "solana",
+    partner: "Candy Digital",
     accent: "#FB923C",
     icon: "⚾",
     pages: ["overview", "collection", "packs", "sniper"],
     published: false,
-    pitch: "Reserved for Candy MLB integration on the Root Network.",
+    supabaseCollectionId: "209ade70-32c5-4470-bc7c-4793d660f713",
+    pitch: "Wallet analytics, FMV, and pack/edition intelligence for Candy MLB on Solana — Metaplex Core, secondary on Magic Eden.",
   },
   {
     id: "rwa",
@@ -321,11 +332,15 @@ export function marketplaceWalletUrl(collectionId: string, address: string): str
 // Centralise the mapping so routes and components don't drift.
 
 export const SLUG_TO_DB_SLUG: Record<string, string> = {
-  "nba-top-shot":    "nba_top_shot",
-  "nfl-all-day":     "nfl_all_day",
-  "laliga-golazos":  "laliga_golazos",
-  "ufc":             "ufc_strike",
-  "disney-pinnacle": "disney_pinnacle",
+  "nba-top-shot":      "nba_top_shot",
+  "nfl-all-day":       "nfl_all_day",
+  "laliga-golazos":    "laliga_golazos",
+  "ufc":               "ufc_strike",
+  "disney-pinnacle":   "disney_pinnacle",
+  // Seeded but unpublished (chain-two prep) — wired so routes/components
+  // can resolve the slug↔DB-slug↔UUID bridge before publish.
+  "candy-mlb":         "candy_mlb",
+  "panini-blockchain": "panini_blockchain",
 }
 
 export const DB_SLUG_TO_SLUG: Record<string, string> = Object.fromEntries(
@@ -333,11 +348,14 @@ export const DB_SLUG_TO_SLUG: Record<string, string> = Object.fromEntries(
 )
 
 export const COLLECTION_UUID_BY_SLUG: Record<string, string> = {
-  "nba-top-shot":    "95f28a17-224a-4025-96ad-adf8a4c63bfd",
-  "nfl-all-day":     "dee28451-5d62-409e-a1ad-a83f763ac070",
-  "laliga-golazos":  "06248cc4-b85f-47cd-af67-1855d14acd75",
-  "ufc":             "9b4824a8-736d-4a96-b450-8dcc0c46b023",
-  "disney-pinnacle": "7dd9dd11-e8b6-45c4-ac99-71331f959714",
+  "nba-top-shot":      "95f28a17-224a-4025-96ad-adf8a4c63bfd",
+  "nfl-all-day":       "dee28451-5d62-409e-a1ad-a83f763ac070",
+  "laliga-golazos":    "06248cc4-b85f-47cd-af67-1855d14acd75",
+  "ufc":               "9b4824a8-736d-4a96-b450-8dcc0c46b023",
+  "disney-pinnacle":   "7dd9dd11-e8b6-45c4-ac99-71331f959714",
+  // Seeded but unpublished (chain-two prep).
+  "candy-mlb":         "209ade70-32c5-4470-bc7c-4793d660f713",
+  "panini-blockchain": "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b",
 }
 
 export function toDbSlug(slug: string): string | null {
