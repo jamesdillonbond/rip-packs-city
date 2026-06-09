@@ -590,10 +590,32 @@ export default async function PackDetailPage(
   // not an authoritative verdict — render it neutral (no red/green) with a caveat.
   const COVERAGE_FLOOR = 80
   const coverageOk = fmvCoverage != null && fmvCoverage >= COVERAGE_FLOOR
-  const showColoredVerdict = showPriceVerdict && coverageOk
-  const coverageCaveat = showPriceVerdict && !coverageOk && fmvCoverage != null
-    ? `${fmvCoverage}% FMV cov — EV is a floor`
-    : null
+
+  // Item 4 (2026-06-09) — secondary-ask reality check. Pull-value EV is computed
+  // over the REMAINING pool, so as a pack sells through (cheap commons exhaust)
+  // the surviving chases inflate EV far above what the pack honestly contains. A
+  // pack freely listed on secondary for $X can't contain 3×$X of pulls — when it
+  // appears to, or the pool is mostly opened, the EV is survivor-biased: render it
+  // neutral and surface the secondary ask as the honest value estimate.
+  const evInflatedVsAsk = secondaryAvailable && secondaryAsk != null && secondaryAsk > 0
+    && grossEv != null && grossEv > 3 * secondaryAsk
+  const poolMostlyOpened = depletionPct != null && depletionPct >= 60
+  const evUnreliable = showPriceVerdict && (evInflatedVsAsk || poolMostlyOpened)
+
+  const showColoredVerdict = showPriceVerdict && coverageOk && !evUnreliable
+  const coverageCaveat: string | null = (() => {
+    if (evUnreliable) {
+      const honest = secondaryAvailable && secondaryAsk != null && secondaryAsk > 0
+        ? ` honest value ≈ secondary ask ${fmtUsd(secondaryAsk)}`
+        : " treat as a ceiling"
+      const opened = depletionPct != null ? `${Math.round(depletionPct)}% opened` : "heavily depleted"
+      return `EV inflated by survivor bias (${opened}) —${honest}`
+    }
+    if (showPriceVerdict && !coverageOk && fmvCoverage != null) {
+      return `${fmvCoverage}% FMV cov — EV is a floor`
+    }
+    return null
+  })()
 
   // One-line summary above the KPI grid. Names the EV anchor explicitly so
   // the user knows whether the verdict is computed against retail or P2P ask.

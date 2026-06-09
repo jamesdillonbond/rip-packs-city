@@ -1216,6 +1216,11 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
           edition_id: ed.id,
           edition_flow_id: ext,
           drop_weight: weight,
+          // Item 4 (2026-06-09): the edition's ORIGINAL mint-time drop count, so
+          // EV is computed over the honest fresh-pack distribution instead of the
+          // survivor-biased remaining pool. compute_pack_ev_per_edition_weighted
+          // prefers this when present.
+          orig_drop_weight: node.count,
           slot_name: "default",
           pool_source: "gql",
           last_refreshed_at: nowIso,
