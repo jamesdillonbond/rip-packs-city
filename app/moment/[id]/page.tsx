@@ -27,7 +27,7 @@ import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase"
-import { marketplaceMomentUrl, fromDbSlug } from "@/lib/collections"
+import { marketplaceMomentUrl, dapperMarketMomentUrl, fromDbSlug } from "@/lib/collections"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import SiteFooter from "@/components/SiteFooter"
 
@@ -523,6 +523,13 @@ export default async function MomentPage(
       ? marketplaceMomentUrl(collectionSlugUrl, marketplaceNftId)
       : null
   const marketplaceName = collectionSlugUrl ? MARKETPLACE_LABEL[collectionSlugUrl] ?? null : null
+  // Second-marketplace (dapper.market) deep link — same serial-specific NFT id.
+  // Returns null for non-dapper collections (Pinnacle/UFC) and edition-level
+  // pages (no concrete moment id), so the CTA self-hides.
+  const dapperUrl =
+    collectionSlugUrl && marketplaceNftId
+      ? dapperMarketMomentUrl(collectionSlugUrl, marketplaceNftId)
+      : null
 
   // Parallel extras — all SECDEF RPCs, independent, fan out in one pass.
   const [highOffer, parallels, badges, specialSerials] = await Promise.all([
@@ -909,6 +916,43 @@ export default async function MomentPage(
               }}
             >
               View on {marketplaceName} →
+            </TrackedOutboundLink>
+          ) : null}
+
+          {dapperUrl ? (
+            <TrackedOutboundLink
+              href={dapperUrl}
+              payload={{
+                surface: "moment",
+                destination: "dapper_market_listing",
+                editionKey: e.external_id,
+                momentId: marketplaceNftId,
+                playerName: e.player_name,
+                setName: e.set_name,
+                tier: e.tier,
+                serial,
+                fmv: f?.fmv_usd ?? null,
+              }}
+              style={{
+                marginTop: 4,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                padding: "12px 20px",
+                background: "transparent",
+                color: "var(--rpc-red)",
+                border: "1px solid var(--rpc-red)",
+                borderRadius: 8,
+                textDecoration: "none",
+                fontFamily: "var(--font-display)",
+                fontWeight: 800,
+                fontSize: 14,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+              }}
+            >
+              View on Dapper ↗
             </TrackedOutboundLink>
           ) : null}
         </div>

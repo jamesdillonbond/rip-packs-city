@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useWarmCache } from "@/lib/warmup/WarmupContext";
-import { getCollection, marketplaceMomentUrl } from "@/lib/collections";
+import { getCollection, marketplaceMomentUrl, dapperMarketMomentUrl } from "@/lib/collections";
 import { getOwnerKey } from "@/lib/owner-key";
 import { PINNACLE_VARIANT_COLORS, PINNACLE_VARIANT_LABELS } from "@/lib/pinnacle/pinnacleTypes";
 import { slugifyName } from "@/lib/entity-labels";
@@ -140,6 +140,23 @@ function resolveViewUrl(deal: SniperDeal, collectionSlug: string): string | null
   const url = deal.buyUrl?.trim();
   if (url && !url.includes("flowty.io")) return url;
   return marketplaceMomentUrl(collectionSlug, deal.momentId);
+}
+
+// Second-marketplace (dapper.market) link rendered alongside the native one.
+// dapper deep-links need a REAL on-chain moment id, not an edition key — so we
+// return null (skip the link) for edition-level deals rather than mint a wrong
+// one. TopShot real listings carry the moment id in momentId (plain integer);
+// the TS edition-level RPC augment puts a setID:playID key there. AllDay carries
+// the edition id in momentId and the real moment id in flowId, but only when the
+// two differ (edition-level AllDay deals set flowId === momentId).
+function resolveDapperUrl(deal: SniperDeal, collectionSlug: string): string | null {
+  let momentId: string | null = null;
+  if (deal.source === "allday") {
+    momentId = deal.flowId && deal.flowId !== deal.momentId ? deal.flowId : null;
+  } else {
+    momentId = deal.momentId && /^\d+$/.test(deal.momentId) ? deal.momentId : null;
+  }
+  return dapperMarketMomentUrl(collectionSlug, momentId);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -349,7 +366,8 @@ function ActionCell({
   collectionSlug: string;
 }) {
   const viewUrl = resolveViewUrl(deal, collectionSlug);
-  if (!viewUrl) {
+  const dapperUrl = resolveDapperUrl(deal, collectionSlug);
+  if (!viewUrl && !dapperUrl) {
     return (
       <span className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>
         —
@@ -357,16 +375,32 @@ function ActionCell({
     );
   }
   return (
-    <a
-      href={viewUrl}
-      target="_blank"
-      rel="noopener noreferrer"
-      onClick={() => trackClick(deal, null)}
-      className="rpc-btn-ghost"
-      style={{ padding: "4px 12px", textDecoration: "none", borderColor: `${accent}40`, color: accent }}
-    >
-      View Listing →
-    </a>
+    <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-end" }}>
+      {viewUrl && (
+        <a
+          href={viewUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => trackClick(deal, null)}
+          className="rpc-btn-ghost"
+          style={{ padding: "4px 12px", textDecoration: "none", borderColor: `${accent}40`, color: accent }}
+        >
+          View Listing →
+        </a>
+      )}
+      {dapperUrl && (
+        <a
+          href={dapperUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => trackClick(deal, null)}
+          className="rpc-btn-ghost"
+          style={{ padding: "4px 12px", textDecoration: "none", borderColor: `${accent}40`, color: accent }}
+        >
+          Dapper ↗
+        </a>
+      )}
+    </div>
   );
 }
 
@@ -1540,18 +1574,35 @@ export default function SniperPage() {
                     )}
                     {(() => {
                       const viewUrl = resolveViewUrl(deal, feedCollection);
-                      if (!viewUrl) return null;
+                      const dapperUrl = resolveDapperUrl(deal, feedCollection);
+                      if (!viewUrl && !dapperUrl) return null;
                       return (
-                        <a
-                          href={viewUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => { e.stopPropagation(); trackClick(deal, null); }}
-                          className="rpc-btn-ghost"
-                          style={{ padding: "4px 10px", textDecoration: "none", borderColor: `${accent}40`, color: accent, fontSize: "var(--text-xs)" }}
-                        >
-                          View Listing →
-                        </a>
+                        <div className="flex gap-1.5 flex-wrap">
+                          {viewUrl && (
+                            <a
+                              href={viewUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => { e.stopPropagation(); trackClick(deal, null); }}
+                              className="rpc-btn-ghost"
+                              style={{ padding: "4px 10px", textDecoration: "none", borderColor: `${accent}40`, color: accent, fontSize: "var(--text-xs)" }}
+                            >
+                              View Listing →
+                            </a>
+                          )}
+                          {dapperUrl && (
+                            <a
+                              href={dapperUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => { e.stopPropagation(); trackClick(deal, null); }}
+                              className="rpc-btn-ghost"
+                              style={{ padding: "4px 10px", textDecoration: "none", borderColor: `${accent}40`, color: accent, fontSize: "var(--text-xs)" }}
+                            >
+                              Dapper ↗
+                            </a>
+                          )}
+                        </div>
                       );
                     })()}
                   </div>
@@ -1960,9 +2011,13 @@ export default function SniperPage() {
                                     <span style={{ color: "var(--rpc-text-ghost)", minWidth: 60 }}>{timeAgo(dd.updatedAt)}</span>
                                     {(() => {
                                       const ddUrl = resolveViewUrl(dd, feedCollection);
-                                      return ddUrl ? (
-                                        <a href={ddUrl} target="_blank" rel="noopener noreferrer" style={{ color: accent, textDecoration: "none" }}>View →</a>
-                                      ) : null;
+                                      const ddDapper = resolveDapperUrl(dd, feedCollection);
+                                      return (
+                                        <span className="flex items-center gap-3">
+                                          {ddUrl && <a href={ddUrl} target="_blank" rel="noopener noreferrer" style={{ color: accent, textDecoration: "none" }}>View →</a>}
+                                          {ddDapper && <a href={ddDapper} target="_blank" rel="noopener noreferrer" style={{ color: accent, textDecoration: "none" }}>Dapper ↗</a>}
+                                        </span>
+                                      );
                                     })()}
                                   </div>
                                 ))}
@@ -2064,6 +2119,7 @@ export default function SniperPage() {
           buyUrl: resolveViewUrl(selectedDeal, feedCollection) ?? selectedDeal.buyUrl,
         } : null}
         marketplaceSource={selectedDeal?.source === "flowty" ? "flowty" : "topshot"}
+        dapperUrl={selectedDeal ? resolveDapperUrl(selectedDeal, feedCollection) : null}
         onClose={() => setSelectedDeal(null)}
       />
     </div>
