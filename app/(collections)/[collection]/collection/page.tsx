@@ -2004,21 +2004,40 @@ export default function WalletPage() {
               const tierKey = (row.tier ?? "").toUpperCase()
               return (
                 <div key={row.momentId} className="rounded-xl border border-zinc-800 bg-zinc-950 p-3 flex flex-col gap-1.5 cursor-pointer" onClick={function() { toggleExpanded(row.momentId) }}>
-                  {/* Row 1: Player + Tier + Chevron */}
+                  {/* Row 1: Thumbnail + Player + Tier + Chevron */}
                   <div className="flex items-center justify-between">
-                    {row.playerName ? (
-                      <Link
-                        href={`/${collectionSlug}/player/${slugifyName(row.playerName)}`}
-                        prefetch={false}
-                        onClick={function(e) { e.stopPropagation() }}
-                        className="font-semibold text-white text-sm truncate mr-2"
-                        style={{ textDecoration: "none" }}
-                      >
-                        {row.playerName}
-                      </Link>
-                    ) : (
-                      <span className="font-semibold text-white text-sm truncate mr-2">{row.playerName}</span>
-                    )}
+                    <div className="flex items-center gap-2 min-w-0 mr-2">
+                      {(function() {
+                        const mThumb = getThumbnailUrl(row, collectionSlug)
+                        if (!mThumb) return null
+                        return (
+                          <img
+                            src={mThumb}
+                            alt={row.playerName ?? ""}
+                            width={36}
+                            height={48}
+                            loading="lazy"
+                            className="rounded object-cover shrink-0"
+                            style={{ width: 36, height: 48, background: "var(--rpc-surface)" }}
+                            onClick={function(e) { e.stopPropagation(); setSelectedMoment(row) }}
+                            onError={function(e) { (e.target as HTMLImageElement).style.display = "none" }}
+                          />
+                        )
+                      })()}
+                      {row.playerName ? (
+                        <Link
+                          href={`/${collectionSlug}/player/${slugifyName(row.playerName)}`}
+                          prefetch={false}
+                          onClick={function(e) { e.stopPropagation() }}
+                          className="font-semibold text-white text-sm truncate"
+                          style={{ textDecoration: "none" }}
+                        >
+                          {row.playerName}
+                        </Link>
+                      ) : (
+                        <span className="font-semibold text-white text-sm truncate">{row.playerName}</span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-1.5">
                       {row.tier && (
                         <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold shrink-0 " + (tierBg[tierKey] ?? "bg-zinc-800")} style={{ color: tierColorMap[tierKey] ?? "#9ca3af" }}>

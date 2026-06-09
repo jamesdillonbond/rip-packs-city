@@ -1484,9 +1484,22 @@ export default function SniperPage() {
             {visibleDeals.map((deal) => {
               return (
                 <div key={`m-${deal.source}-${deal.flowId}`} onClick={(e) => { const t = e.target as HTMLElement; if (t.closest("a,button")) return; setSelectedDeal(deal); }} className="rpc-card p-3 flex flex-col gap-1.5 cursor-pointer">
-                  {/* Row 1: Player + Tier + Source */}
+                  {/* Row 1: Thumbnail + Player + Tier + Source */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 min-w-0">
+                      {deal.thumbnailUrl ? (
+                        <img
+                          src={deal.thumbnailUrl}
+                          alt={deal.playerName}
+                          width={36}
+                          height={36}
+                          loading="lazy"
+                          className="rounded object-cover shrink-0"
+                          style={{ width: 36, height: 36, background: "var(--rpc-surface)" }}
+                          onClick={(e) => { e.stopPropagation(); setSelectedDeal(deal); }}
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
+                        />
+                      ) : null}
                       {deal.editionKey ? (
                         <Link
                           href={`/${collectionSlug}/edition/${encodeURIComponent(deal.editionKey)}`}
