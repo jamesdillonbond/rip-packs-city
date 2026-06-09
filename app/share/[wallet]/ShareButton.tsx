@@ -14,7 +14,7 @@ export default function ShareButton() {
       }}
       style={{
         padding: "12px 24px",
-        background: "#E03A2F",
+        background: "var(--rpc-red)",
         border: "none",
         borderRadius: 8,
         color: "#fff",

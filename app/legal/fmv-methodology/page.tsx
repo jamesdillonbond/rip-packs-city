@@ -26,7 +26,7 @@ const PAGE_STYLE: React.CSSProperties = {
 }
 
 const H1: React.CSSProperties = {
-  fontFamily: "'Barlow Condensed', sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 900,
   fontSize: 36,
   letterSpacing: "0.04em",
@@ -36,7 +36,7 @@ const H1: React.CSSProperties = {
 }
 
 const H2: React.CSSProperties = {
-  fontFamily: "'Barlow Condensed', sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 800,
   fontSize: 22,
   letterSpacing: "0.04em",
@@ -46,7 +46,7 @@ const H2: React.CSSProperties = {
 }
 
 const H3: React.CSSProperties = {
-  fontFamily: "'Barlow Condensed', sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 700,
   fontSize: 16,
   letterSpacing: "0.06em",

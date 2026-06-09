@@ -147,7 +147,7 @@ const CSS = `
     text-transform: uppercase; color: var(--rpc-red, #E03A2F);
   }
   .rpc-pr-h1 {
-    font-family: 'Barlow Condensed', sans-serif; font-weight: 900;
+    font-family: var(--font-display); font-weight: 900;
     font-size: 56px; line-height: 1.05; letter-spacing: 0.02em;
     text-transform: uppercase; margin: 0; color: var(--rpc-text-primary);
   }
@@ -160,7 +160,7 @@ const CSS = `
   }
   .rpc-pr-price { display: flex; align-items: baseline; gap: 4px; }
   .rpc-pr-price-amount {
-    font-family: 'Barlow Condensed', sans-serif; font-weight: 900; font-size: 48px;
+    font-family: var(--font-display); font-weight: 900; font-size: 48px;
     color: var(--rpc-text-primary); letter-spacing: 0.01em;
   }
   .rpc-pr-price-unit {
@@ -181,7 +181,7 @@ const CSS = `
     display: inline-flex; align-items: center; justify-content: center;
     background: var(--rpc-red, #E03A2F); color: #fff;
     padding: 12px 22px; border-radius: var(--radius-sm, 6px);
-    font-family: 'Barlow Condensed', sans-serif; font-weight: 800;
+    font-family: var(--font-display); font-weight: 800;
     font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase;
     text-decoration: none;
   }
@@ -194,7 +194,7 @@ const CSS = `
 
   .rpc-pr-detail { margin-bottom: 48px; }
   .rpc-pr-h2 {
-    font-family: 'Barlow Condensed', sans-serif; font-weight: 900;
+    font-family: var(--font-display); font-weight: 900;
     font-size: 28px; letter-spacing: 0.04em; text-transform: uppercase;
     color: var(--rpc-text-primary); margin: 0 0 18px;
   }
@@ -207,7 +207,7 @@ const CSS = `
     border-radius: var(--radius-md, 8px); padding: 16px;
   }
   .rpc-pr-bucket-title {
-    font-family: 'Barlow Condensed', sans-serif; font-weight: 800;
+    font-family: var(--font-display); font-weight: 800;
     font-size: 14px; letter-spacing: 0.08em; text-transform: uppercase;
     color: var(--rpc-red, #E03A2F); margin-bottom: 10px;
   }

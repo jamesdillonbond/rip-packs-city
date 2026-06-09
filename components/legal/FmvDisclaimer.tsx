@@ -38,7 +38,7 @@ const ICON: CSSProperties = {
   borderRadius: 999,
   border: "1px solid var(--rpc-text-muted)",
   fontSize: 9,
-  fontFamily: "var(--font-display, 'Barlow Condensed'), sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 800,
   flexShrink: 0,
 }

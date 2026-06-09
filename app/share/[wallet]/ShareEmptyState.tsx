@@ -56,7 +56,7 @@ export default function ShareEmptyState({ wallet }: { wallet: string }) {
         alignItems: "center",
         justifyContent: "center",
         color: "#fff",
-        fontFamily: "var(--font-display, 'Barlow Condensed', sans-serif)",
+        fontFamily: "var(--font-display)",
         padding: "24px",
       }}
     >

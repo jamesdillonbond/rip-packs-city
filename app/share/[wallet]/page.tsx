@@ -243,7 +243,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                             <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.06em", color: "#fff", background: "var(--rpc-red, #E03A2F)", padding: "2px 6px", borderRadius: 4 }}>TROPHY</span>
                           ) : null}
                         </div>
-                        <div style={{ fontWeight: 700, fontSize: 14, color: "#fff", marginBottom: 2, fontFamily: "var(--font-display, 'Barlow Condensed', sans-serif)" }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: "#fff", marginBottom: 2, fontFamily: "var(--font-display)" }}>
                           {h.player_name ?? "Unknown"}
                         </div>
                         <div style={{ fontSize: 11, color: tierColor, fontFamily: "var(--font-mono, monospace)" }}>

@@ -79,7 +79,7 @@ const labelStyle: React.CSSProperties = {
 
 // ── Sparkline SVG ─────────────────────────────────────────────────
 function Sparkline(props: { data: number[]; width?: number; height?: number; color?: string }) {
-  const { data, width = 200, height = 40, color = "#E03A2F" } = props;
+  const { data, width = 200, height = 40, color = "#E03A2F" } = props; // brand-exception: passed to SVG <polyline stroke> attr, which can't resolve a CSS var
   if (data.length < 2) return null;
   const min = Math.min(...data);
   const max = Math.max(...data);
@@ -108,7 +108,7 @@ function hexToRgba(hex: string, alpha: number): string {
 
 function Avatar(props: { username: string; bio: ProfileBio | null; size?: number; accent?: string }) {
   const { username, bio, size = 64 } = props;
-  const accent = props.accent ?? "#E03A2F";
+  const accent = props.accent ?? "#E03A2F"; // brand-exception: parsed by hexToRgba — must be a literal hex, not a CSS var
   const accentBg = hexToRgba(accent, 0.15);
   const initials = username ? username.slice(0, 2).toUpperCase() : "?";
 
@@ -239,7 +239,7 @@ export default function PublicProfilePage() {
   }, []);
 
   // Derived stats
-  const accentColor = bio?.accent_color ?? "#E03A2F";
+  const accentColor = bio?.accent_color ?? "#E03A2F"; // brand-exception: parsed by hexToRgba — must be a literal hex, not a CSS var
   const accentBg = hexToRgba(accentColor, 0.15);
   const accentBorder = hexToRgba(accentColor, 0.4);
   const filledCount = slabs.filter(Boolean).length;
@@ -507,7 +507,7 @@ export default function PublicProfilePage() {
                 const collectionLabel = walletCollectionLabel(w);
                 return (
                   <div key={i} style={{ ...cardStyle, display: "flex", alignItems: "center", gap: 16, padding: "12px 16px" }}>
-                    <div style={{ width: 4, height: 28, borderRadius: 2, background: w.accent_color || "#E03A2F", flexShrink: 0 }} />
+                    <div style={{ width: 4, height: 28, borderRadius: 2, background: w.accent_color || "var(--rpc-red)", flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, color: "var(--rpc-text-primary)", letterSpacing: "0.04em" }}>{label}</div>
                       <span style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{collectionLabel}</span>
@@ -539,7 +539,7 @@ export default function PublicProfilePage() {
           <div style={Object.assign({}, labelStyle, { marginBottom: 12 })}>TOOLS</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 10 }}>
             {[
-              { label: "Collection", icon: "◈", href: "/nba-top-shot/collection", color: "#E03A2F" },
+              { label: "Collection", icon: "◈", href: "/nba-top-shot/collection", color: "var(--rpc-red)" },
               { label: "Pack EV", icon: "▣", href: "/nba-top-shot/packs", color: "#F59E0B" },
               { label: "Sniper", icon: "⚡", href: "/nba-top-shot/sniper", color: "#34D399" },
               { label: "Sets", icon: "◉", href: "/nba-top-shot/sets", color: "#F472B6" },
