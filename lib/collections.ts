@@ -349,6 +349,22 @@ export function dapperMarketMomentUrl(collectionId: string, momentId: string | n
   return `https://dapper.market/${seg}/moment/${momentId}`
 }
 
+// dapper.market pack browse grid. Unlike moments (deep-linked by on-chain id),
+// packs are NOT cleanly deep-linkable — dapper.market keys pack detail by an
+// internal id we can't derive from distId, and the native TS /drop/<distId> page
+// 404s for sold-out drops. The honest, buildable link is the league pack grid.
+// NBA + NFL only — LaLiga Golazos has no packs on dapper.market.
+const DAPPER_MARKET_PACK_SEG: Record<string, string> = {
+  "nba-top-shot": "nba",
+  "nfl-all-day": "nfl",
+}
+
+export function dapperMarketPacksBrowseUrl(collectionId: string): string | null {
+  const seg = DAPPER_MARKET_PACK_SEG[collectionId]
+  if (!seg) return null
+  return `https://dapper.market/${seg}/search/packs?packSource=marketplace`
+}
+
 export function marketplaceWalletUrl(collectionId: string, address: string): string | null {
   const f = MARKETPLACE_WALLET_URL_TEMPLATES[collectionId]
   return f ? f(address) : null

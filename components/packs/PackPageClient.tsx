@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import PackTable, { type PackRow, type SortKey as TableSortKey } from './PackTable'
 import GrailsView from './GrailsView'
 import { useWarmCache } from '@/lib/warmup/WarmupContext'
+import { topshotPackUrl } from '@/lib/pack-urls'
 
 // Shared client component for the static pack pages (nba-top-shot,
 // nfl-all-day). Renders /api/packs (pack_table_rows view) into the
@@ -180,12 +181,12 @@ function toPackRow(
     // any dist_id that has a populated drop pool (which is most TS+AllDay).
     simulatorHref: `/${collectionUrlSlug}/packs/simulator/${r.dist_id}`,
     // Buy link — only set when we have a live overlay (so the listing is
-    // confirmed active) AND the collection has a known marketplace URL
-    // pattern. Top Shot uses the /listings/p2p?packListingId= deep link
-    // matching the pack/dist detail page (see lines 405-407 there).
+    // confirmed active). The old ?packListingId= deep link is dead (TS rotated
+    // the pattern May 2026, see lib/pack-urls.ts); use the centralized
+    // /drop/<distId> builder so the URL shape lives in one place.
     // AllDay equivalent not yet identified — falls back to Simulate.
     buyUrl: (collectionUrlSlug === 'nba-top-shot' && liveOverlay?.packListingId)
-      ? `https://nbatopshot.com/listings/p2p?packListingId=${liveOverlay.packListingId}`
+      ? topshotPackUrl({ distId: r.dist_id, packListingUuid: liveOverlay.packListingId })
       : null,
     primaryPrice: r.primary_price == null ? null : Number(r.primary_price),
     secondaryAsk,
