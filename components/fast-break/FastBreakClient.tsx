@@ -102,7 +102,7 @@ const TIER_TOKEN: Record<Tier, { color: string; bg: string; border: string; labe
 }
 
 const SECTION_HEADER: React.CSSProperties = {
-  fontFamily: "'Barlow Condensed', sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 900,
   fontSize: 14,
   letterSpacing: "0.12em",
@@ -192,7 +192,7 @@ function PlayerThumb({ momentId, fullName, tier }: { momentId: string | null | u
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontFamily: "'Barlow Condensed', sans-serif",
+          fontFamily: "var(--font-display)",
           fontWeight: 800,
           fontSize: 18,
           letterSpacing: "0.04em",
@@ -401,7 +401,7 @@ export default function FastBreakClient({
                       <div style={{ minWidth: 0 }}>
                         <div
                           style={{
-                            fontFamily: "'Barlow Condensed', sans-serif",
+                            fontFamily: "var(--font-display)",
                             fontWeight: 800,
                             fontSize: 16,
                             letterSpacing: "0.04em",
@@ -428,7 +428,7 @@ export default function FastBreakClient({
                     <div
                       style={{
                         marginTop: 4,
-                        fontFamily: "'Barlow Condensed', sans-serif",
+                        fontFamily: "var(--font-display)",
                         fontSize: 22,
                         fontWeight: 800,
                         color: "var(--rpc-red)",
@@ -514,7 +514,7 @@ export default function FastBreakClient({
                 }}
               >
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 14, letterSpacing: "0.04em", color: "var(--rpc-text-primary)" }}>
+                  <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, letterSpacing: "0.04em", color: "var(--rpc-text-primary)" }}>
                     {m.fullName ?? "Unknown player"} <span style={{ color: "var(--rpc-text-muted)", fontWeight: 500 }}>· {m.teamAbbr ?? "—"}</span>
                   </div>
                   <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.1em", color: "var(--rpc-text-secondary)", marginTop: 2 }}>

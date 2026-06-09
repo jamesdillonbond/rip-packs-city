@@ -28,6 +28,7 @@ export default function GlobalError({
         textAlign: "center",
         padding: "2rem",
       }}>
+        {/* brand-exception: global-error renders its own <html>, outside the app layout that loads rpc-tokens.css — CSS vars don't resolve here */}
         <div style={{ maxWidth: 420 }}>
           <h1 style={{ fontSize: "1.5rem", marginBottom: "0.5rem", color: "#E03A2F" }}>
             Something went wrong
@@ -38,7 +39,7 @@ export default function GlobalError({
           <button
             onClick={reset}
             style={{
-              background: "#E03A2F",
+              background: "#E03A2F", // brand-exception: see above — global-error renders outside the token CSS
               color: "#000",
               border: "none",
               padding: "0.75rem 2rem",

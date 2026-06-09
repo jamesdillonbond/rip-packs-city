@@ -39,6 +39,7 @@ function tierColor(tier?: string): string {
     default: return "#6b7280";
   }
 }
+// brand-exception: return value is concatenated with an alpha suffix (`${sourceColor()}18`) in a CSS background — must be a literal hex
 function sourceColor(source?: string): string { return source === "flowty" ? "#06b6d4" : "#E03A2F"; }
 function badgeIconUrl(name: string): string { return `https://nbatopshot.com/img/momentTags/static/${name}.svg`; }
 
@@ -75,7 +76,7 @@ function MomentCardUI({ card, onAddToCart }: { card: MomentCard; onAddToCart?: (
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           {card.buyUrl && <a href={card.buyUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, fontWeight: 600, color: "#ccc", background: "#1a1a1a", border: "1px solid #333", padding: "4px 10px", borderRadius: 6, textDecoration: "none", cursor: "pointer" }}>Buy →</a>}
-          {onAddToCart && <button onClick={() => onAddToCart(card)} style={{ fontSize: 11, fontWeight: 600, color: "#fff", background: "linear-gradient(135deg, #E03A2F 0%, #c43028 100%)", border: "none", padding: "4px 10px", borderRadius: 6, cursor: "pointer" }}>+ Cart</button>}
+          {onAddToCart && <button onClick={() => onAddToCart(card)} style={{ fontSize: 11, fontWeight: 600, color: "#fff", background: "linear-gradient(135deg, var(--rpc-red) 0%, #c43028 100%)", border: "none", padding: "4px 10px", borderRadius: 6, cursor: "pointer" }}>+ Cart</button>}
         </div>
       </div>
     </div>
@@ -99,7 +100,7 @@ function FeedbackButtons({ messageId, sessionId, dbId, feedback: initialFeedback
   return (
     <div style={{ display: "flex", gap: 4, marginTop: 6, opacity: sent ? 0.5 : 1 }}>
       <button onClick={() => sendFeedback("up")} disabled={sent} style={{ background: feedback === "up" ? "rgba(74,222,128,0.15)" : "transparent", border: feedback === "up" ? "1px solid rgba(74,222,128,0.3)" : "1px solid #222", borderRadius: 6, padding: "3px 8px", cursor: sent ? "default" : "pointer", fontSize: 13, color: feedback === "up" ? "#4ade80" : "#666" }} aria-label="Helpful">👍</button>
-      <button onClick={() => sendFeedback("down")} disabled={sent} style={{ background: feedback === "down" ? "rgba(224,58,47,0.15)" : "transparent", border: feedback === "down" ? "1px solid rgba(224,58,47,0.3)" : "1px solid #222", borderRadius: 6, padding: "3px 8px", cursor: sent ? "default" : "pointer", fontSize: 13, color: feedback === "down" ? "#E03A2F" : "#666" }} aria-label="Not helpful">👎</button>
+      <button onClick={() => sendFeedback("down")} disabled={sent} style={{ background: feedback === "down" ? "rgba(224,58,47,0.15)" : "transparent", border: feedback === "down" ? "1px solid rgba(224,58,47,0.3)" : "1px solid #222", borderRadius: 6, padding: "3px 8px", cursor: sent ? "default" : "pointer", fontSize: 13, color: feedback === "down" ? "var(--rpc-red)" : "#666" }} aria-label="Not helpful">👎</button>
     </div>
   );
 }
@@ -414,7 +415,7 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
       {isOpen && (
         <div className="rpc-chat-panel" style={{ position: "fixed", bottom: 88, right: 16, width: "min(400px, calc(100vw - 32px))", height: "min(580px, calc(100vh - 120px))", background: "#0d0d0d", border: "1px solid #222", borderRadius: 16, display: "flex", flexDirection: "column", overflow: "hidden", zIndex: 9998, boxShadow: "0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05)" }}>
           <div style={{ padding: "14px 16px", background: "linear-gradient(135deg, #1a0a09 0%, #0d0d0d 100%)", borderBottom: "1px solid #1a1a1a", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg, #E03A2F 0%, #b82e25 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>🏙️</div>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg, var(--rpc-red) 0%, #b82e25 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>🏙️</div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", letterSpacing: "-0.01em" }}>RPC Concierge</div>
               <div style={{ fontSize: 11, color: "#666", marginTop: 1 }}>
@@ -430,7 +431,7 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
                 <div style={{
                   maxWidth: "88%", padding: "10px 14px",
                   borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
-                  background: msg.role === "user" ? "linear-gradient(135deg, #E03A2F 0%, #c43028 100%)" : msg.role === "system" ? "#0f1a0f" : "#141414",
+                  background: msg.role === "user" ? "linear-gradient(135deg, var(--rpc-red) 0%, #c43028 100%)" : msg.role === "system" ? "#0f1a0f" : "#141414",
                   color: msg.role === "user" ? "#fff" : "#ccc", fontSize: 13.5, lineHeight: 1.5,
                   whiteSpace: "pre-wrap", wordBreak: "break-word",
                   border: msg.role === "system" ? "1px solid #1a2e1a" : msg.role !== "user" ? "1px solid #1e1e1e" : "none",
@@ -441,7 +442,7 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
                     </span>
                   ) : msg.text}
                   {msg.escalated && (
-                    <div style={{ marginTop: 8, padding: "6px 10px", background: "rgba(224,58,47,0.1)", border: "1px solid rgba(224,58,47,0.25)", borderRadius: 8, fontSize: 12, color: "#E03A2F" }}>📋 Flagged for Trevor — he'll follow up</div>
+                    <div style={{ marginTop: 8, padding: "6px 10px", background: "rgba(224,58,47,0.1)", border: "1px solid rgba(224,58,47,0.25)", borderRadius: 8, fontSize: 12, color: "var(--rpc-red)" }}>📋 Flagged for Trevor — he'll follow up</div>
                   )}
                 </div>
                 {msg.momentCards && msg.momentCards.length > 0 && (
@@ -461,7 +462,7 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
             <div style={{ overflowX: "auto", whiteSpace: "nowrap", padding: "8px 12px", display: "flex", gap: 6, scrollbarWidth: "none", flexShrink: 0 }} className="rpc-hide-scrollbar">
               {quickSuggestions.map((suggestion) => (
                 <button key={suggestion} onClick={() => sendMessage(suggestion)} disabled={isLoading} style={{ fontSize: 12, color: "#aaa", background: "#141414", border: "1px solid #222", padding: "6px 12px", borderRadius: 20, cursor: isLoading ? "default" : "pointer", transition: "border-color 0.15s, color 0.15s", whiteSpace: "nowrap", flexShrink: 0 }}
-                  onMouseEnter={(e) => { (e.target as HTMLElement).style.borderColor = "#E03A2F"; (e.target as HTMLElement).style.color = "#fff"; }}
+                  onMouseEnter={(e) => { (e.target as HTMLElement).style.borderColor = "var(--rpc-red)"; (e.target as HTMLElement).style.color = "#fff"; }}
                   onMouseLeave={(e) => { (e.target as HTMLElement).style.borderColor = "#222"; (e.target as HTMLElement).style.color = "#aaa"; }}>
                   {suggestion}
                 </button>
@@ -476,7 +477,7 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
                 maxLength={2000} disabled={isLoading}
                 style={{ flex: 1, padding: "10px 14px", background: "#141414", border: "1px solid #222", borderRadius: 10, color: "#eee", fontSize: 13.5, transition: "box-shadow 0.15s" }} />
               <button onClick={() => sendMessage()} disabled={!input.trim() || isLoading} aria-label="Send"
-                style={{ width: 38, height: 38, borderRadius: 10, border: "none", background: input.trim() && !isLoading ? "linear-gradient(135deg, #E03A2F 0%, #c43028 100%)" : "#1a1a1a", color: input.trim() && !isLoading ? "#fff" : "#444", cursor: input.trim() && !isLoading ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>↑</button>
+                style={{ width: 38, height: 38, borderRadius: 10, border: "none", background: input.trim() && !isLoading ? "linear-gradient(135deg, var(--rpc-red) 0%, #c43028 100%)" : "#1a1a1a", color: input.trim() && !isLoading ? "#fff" : "#444", cursor: input.trim() && !isLoading ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>↑</button>
             </div>
             <div style={{ marginTop: 6, fontSize: 10, color: "#444", textAlign: "center" }}>Closed beta · Feedback goes to Trevor · Not financial advice</div>
           </div>
@@ -486,7 +487,7 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
       <button onClick={() => setIsOpen((o) => !o)} aria-label={isOpen ? "Close chat" : "Open RPC concierge"}
         data-tour-anchor="chatbot-launcher"
         className={`rpc-chat-bubble${inputFocused ? " hidden" : ""}`}
-        style={{ position: "fixed", bottom: 20, right: 16, width: 52, height: 52, borderRadius: 14, border: "none", background: isOpen ? "#1a1a1a" : "linear-gradient(135deg, #E03A2F 0%, #b82e25 100%)", color: "#fff", cursor: "pointer", display: inputFocused ? "none" : "flex", alignItems: "center", justifyContent: "center", fontSize: 22, zIndex: 9999, boxShadow: isOpen ? "0 4px 20px rgba(0,0,0,0.3)" : "0 4px 24px rgba(224,58,47,0.35), 0 0 0 1px rgba(224,58,47,0.15)", transition: "transform 0.15s, background 0.2s, box-shadow 0.2s" }}
+        style={{ position: "fixed", bottom: 20, right: 16, width: 52, height: 52, borderRadius: 14, border: "none", background: isOpen ? "#1a1a1a" : "linear-gradient(135deg, var(--rpc-red) 0%, #b82e25 100%)", color: "#fff", cursor: "pointer", display: inputFocused ? "none" : "flex", alignItems: "center", justifyContent: "center", fontSize: 22, zIndex: 9999, boxShadow: isOpen ? "0 4px 20px rgba(0,0,0,0.3)" : "0 4px 24px rgba(224,58,47,0.35), 0 0 0 1px rgba(224,58,47,0.15)", transition: "transform 0.15s, background 0.2s, box-shadow 0.2s" }}
         onMouseEnter={(e) => { (e.target as HTMLElement).style.transform = "scale(1.06)"; }}
         onMouseLeave={(e) => { (e.target as HTMLElement).style.transform = "scale(1)"; }}>
         {isOpen ? "✕" : "💬"}

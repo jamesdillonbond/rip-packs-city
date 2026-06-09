@@ -52,7 +52,7 @@ function SiteHeader() {
         <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, textDecoration: "none" }}>
           <RpcLogo size={36} />
           <div>
-            <div style={{ fontSize: 7, fontFamily: "'Share Tech Mono', monospace", letterSpacing: "0.2em", color: "rgba(224,58,47,0.5)" }}>@RIPPACKSCITY</div>
+            <div style={{ fontSize: 7, fontFamily: "var(--font-mono)", letterSpacing: "0.2em", color: "rgba(224,58,47,0.5)" }}>@RIPPACKSCITY</div>
           </div>
         </Link>
         <TopNav />

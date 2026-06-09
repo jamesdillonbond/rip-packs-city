@@ -35,6 +35,7 @@ export const BORDER_COSMETICS: Record<string, BorderCosmetic> = {
 
 export const BANNER_COSMETICS: Record<string, BannerCosmetic> = {
   ripcity: {
+    // brand-exception: cosmetic banner gradient data (mixed non-token hexes)
     background: "linear-gradient(110deg, #141414 0%, #3a0b08 48%, #E03A2F 100%)",
     label: "Rip City",
   },

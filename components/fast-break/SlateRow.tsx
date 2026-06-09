@@ -37,7 +37,7 @@ const CARD_STYLE: React.CSSProperties = {
 }
 
 const TEAM_LINE_STYLE: React.CSSProperties = {
-  fontFamily: "'Barlow Condensed', sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 800,
   fontSize: 18,
   letterSpacing: "0.06em",

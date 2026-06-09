@@ -20,7 +20,7 @@ export default function MyTeamsLayout({ children }: { children: React.ReactNode 
             <RpcLogo size={32} />
             <span
               className="hidden sm:block text-[7px] tracking-widest text-red-500/60"
-              style={{ fontFamily: "'Share Tech Mono', monospace", letterSpacing: "0.2em" }}
+              style={{ fontFamily: "var(--font-mono)", letterSpacing: "0.2em" }}
             >
               @RIPPACKSCITY
             </span>
