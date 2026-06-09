@@ -178,3 +178,87 @@ export async function decodeV1SaleTx(
     return result
   }
 }
+
+// ── Top Shot sale tx decoder (buyer + execution accounts) ────────────────────
+//
+// The TopShotMarketV3.MomentPurchased event carries id/price/seller but NOT the
+// buyer — the buyer is the recipient of the moment, which on Flow requires no
+// signature. We recover it from the same transaction's TopShot.Deposit (.to),
+// mirroring the AllDay V1 buyer decode. In the SAME fetch we also capture the
+// transaction's execution accounts (payer = gas, proposer = sequence) — the
+// fields that distinguish a custodial front-end like dapper.market from a direct
+// buyer, and the signal a new-venue monitor watches. Using
+// /v1/transactions/{id}?expand=result gives both the envelope and the events in
+// one round-trip.
+//
+// Verified 2026-06-09 against a live TS sale: TopShot.Deposit{id,to},
+// TopShot.Withdraw{id,from}; payer/proposer come from the tx envelope without a
+// 0x prefix, the event addresses with one — both normalized to 0x16hex here.
+
+const TOPSHOT_DEPOSIT_EVENT = "A.0b2a3299cc857e29.TopShot.Deposit"
+const TOPSHOT_WITHDRAW_EVENT = "A.0b2a3299cc857e29.TopShot.Withdraw"
+
+function normHex(addr: string): string {
+  const h = addr.trim().toLowerCase().replace(/^0x/, "")
+  return "0x" + h
+}
+
+export interface TopShotSaleTxDecode {
+  buyer: string | null
+  seller: string | null
+  payer: string | null
+  proposer: string | null
+  ok: boolean
+}
+
+export async function decodeTopShotSaleTx(
+  txId: string,
+  nftId: string,
+  fetchTimeoutMs = 8000,
+): Promise<TopShotSaleTxDecode> {
+  const out: TopShotSaleTxDecode = {
+    buyer: null,
+    seller: null,
+    payer: null,
+    proposer: null,
+    ok: false,
+  }
+  try {
+    const clean = txId.replace(/^0x/, "")
+    const res = await fetch(`${FLOW_REST}/v1/transactions/${clean}?expand=result`, {
+      signal: AbortSignal.timeout(fetchTimeoutMs),
+    })
+    if (!res.ok) return out
+    const json = (await res.json()) as {
+      payer?: string
+      proposal_key?: { address?: string }
+      result?: { events?: Array<{ type: string; payload: string }> }
+    }
+    if (json.payer) out.payer = normHex(json.payer)
+    if (json.proposal_key?.address) out.proposer = normHex(json.proposal_key.address)
+
+    const events = json.result?.events ?? []
+    for (const evt of events) {
+      if (evt.type !== TOPSHOT_DEPOSIT_EVENT && evt.type !== TOPSHOT_WITHDRAW_EVENT) continue
+      let payload: Record<string, any> | null = null
+      try {
+        const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
+        payload = unwrapCdc(raw) as Record<string, any>
+      } catch {
+        continue
+      }
+      if (!payload || String(payload.id) !== nftId) continue
+      if (evt.type === TOPSHOT_DEPOSIT_EVENT) {
+        const to = payload.to
+        if (typeof to === "string" && to.length > 0) out.buyer = normHex(to)
+      } else {
+        const from = payload.from
+        if (typeof from === "string" && from.length > 0) out.seller = normHex(from)
+      }
+    }
+    out.ok = true
+    return out
+  } catch {
+    return out
+  }
+}

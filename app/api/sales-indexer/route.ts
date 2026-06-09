@@ -3,6 +3,7 @@ import * as Sentry from "@sentry/nextjs"
 import fcl from "@/lib/flow"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
+import { decodeTopShotSaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
 import crypto from "crypto"
 
 // The chain scan + ingest runs in after() so cron-job.org gets a fast 202
@@ -537,11 +538,48 @@ export async function POST(req: NextRequest) {
         transaction_hash: evt.transactionId ?? null,
         buyer_address: null,
         seller_address: evt.data.seller ?? null,
+        payer_address: null,
+        proposer_address: null,
         ingested_at: new Date().toISOString(),
       })
     }
 
     console.log(`[sales-indexer] resolved ${salesBatch.length} sales (${gqlResolvedMap.size} via GQL), ${unresolvedIds.length} unresolved`)
+
+    // Step 5b: Resolve buyer + execution accounts from the on-chain tx.
+    // The MomentPurchased event carries seller but not buyer (the buyer is the
+    // deposit recipient, which needs no signature). One /v1/transactions fetch
+    // per sale recovers the buyer (TopShot.Deposit.to) AND the payer/proposer
+    // accounts — the execution-venue signal that makes a new front-end like
+    // dapper.market visible. Budgeted per tick so the route stays under
+    // maxDuration; rows past the budget keep null buyer/exec and get picked up
+    // by /api/admin/backfill-topshot-buyers.
+    const TX_DECODE_MAX = 60
+    const TX_DECODE_DELAY_MS = 60
+    let buyersResolved = 0
+    let execResolved = 0
+    let decodeAttempts = 0
+    const decodeTargets = salesBatch.filter((s) => s.transaction_hash)
+    const decodeBudget = Math.min(decodeTargets.length, TX_DECODE_MAX)
+    for (let i = 0; i < decodeBudget; i++) {
+      const s = decodeTargets[i]
+      decodeAttempts++
+      try {
+        const dec = await decodeTopShotSaleTx(String(s.transaction_hash), String(s.nft_id))
+        if (dec.buyer) {
+          s.buyer_address = dec.buyer
+          buyersResolved++
+        }
+        if (!s.seller_address && dec.seller) s.seller_address = dec.seller
+        if (dec.payer) s.payer_address = dec.payer
+        if (dec.proposer) s.proposer_address = dec.proposer
+        if (dec.payer || dec.proposer) execResolved++
+      } catch (err) {
+        console.log(`[sales-indexer] tx decode error for ${s.transaction_hash}:`, err instanceof Error ? err.message : String(err))
+      }
+      if (i < decodeBudget - 1) await delay(TX_DECODE_DELAY_MS)
+    }
+    console.log(`[sales-indexer] tx-decode: ${buyersResolved}/${decodeAttempts} buyers, ${execResolved} exec-accounts (budget ${TX_DECODE_MAX}, ${decodeTargets.length} candidates)`)
 
     // Insert in batches of 100
     let inserted = 0
@@ -605,6 +643,10 @@ export async function POST(req: NextRequest) {
         gql_resolved: gqlResolvedMap.size,
         serials_resolved: serialsResolved,
         serials_zero: serialsZero,
+        buyers_resolved: buyersResolved,
+        exec_accounts_resolved: execResolved,
+        tx_decode_attempts: decodeAttempts,
+        tx_decode_candidates: decodeTargets.length,
         duped: duped,
         unresolved_count: unresolvedIds.length,
         blocks_scanned: targetHeight - lastBlock,
