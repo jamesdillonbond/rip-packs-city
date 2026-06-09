@@ -27,6 +27,7 @@ import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase"
+import { resolveUsernames } from "@/lib/flowty-username"
 import { marketplaceMomentUrl, dapperMarketMomentUrl, fromDbSlug } from "@/lib/collections"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import SiteFooter from "@/components/SiteFooter"
@@ -503,6 +504,18 @@ export default async function MomentPage(
   const ss = detail.serial_specific
   const recentSales = detail.recent_sales ?? []
   const similar = detail.similar_editions ?? []
+
+  // Resolve owner/buyer/seller addresses to Top Shot @handles once, server-side
+  // (Item 3, 2026-06-09). resolveUsernames reads the broadened
+  // analytics_resolve_usernames RPC (wallet_usernames → seeded → saved).
+  const ownerNameMap = await resolveUsernames(
+    [
+      ss?.owner_address ?? null,
+      ...recentSales.flatMap((s) => [s.buyer_address, s.seller_address]),
+    ].filter((a): a is string => !!a),
+  )
+  const nameFor = (addr: string | null | undefined) =>
+    addr ? ownerNameMap.get(addr.toLowerCase()) ?? null : null
 
   const serial = r?.serial_number ?? ss?.serial_number ?? null
   const mint = e.circulation_count ?? 0
@@ -1002,7 +1015,7 @@ export default async function MomentPage(
               gap: 12,
             }}
           >
-            <StatCell label="Owner" value={<OwnerLink address={ss.owner_address} />} />
+            <StatCell label="Owner" value={<OwnerLink address={ss.owner_address} name={nameFor(ss.owner_address)} />} />
             <StatCell label="Listed" value={ss.is_listed === true ? "YES" : ss.is_listed === false ? "NO" : "—"} />
             <StatCell label="List price" value={fmtUsd(ss.list_price)} />
             <StatCell
@@ -1067,8 +1080,8 @@ export default async function MomentPage(
                     <Td>
                       <span title={fmtAbsDate(s.sold_at)}>{fmtRelDate(s.sold_at)}</span>
                     </Td>
-                    <Td><OwnerLink address={s.buyer_address} /></Td>
-                    <Td><OwnerLink address={s.seller_address} /></Td>
+                    <Td><OwnerLink address={s.buyer_address} name={nameFor(s.buyer_address)} /></Td>
+                    <Td><OwnerLink address={s.seller_address} name={nameFor(s.seller_address)} /></Td>
                   </tr>
                   )
                 })}
@@ -1445,17 +1458,17 @@ function StatCell({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
-function OwnerLink({ address }: { address: string | null | undefined }) {
+function OwnerLink({ address, name }: { address: string | null | undefined; name?: string | null }) {
   if (!address) return <span style={{ color: "var(--rpc-text-muted)" }}>—</span>
   const lower = address.toLowerCase().startsWith("0x") ? address.toLowerCase() : `0x${address.toLowerCase()}`
   const trunc = address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address
   return (
     <Link
       href={`/profile/${lower}`}
-      title={address}
+      title={name ? `${name} · ${address}` : address}
       style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}
     >
-      {trunc}
+      {name ? `@${name}` : trunc}
     </Link>
   )
 }

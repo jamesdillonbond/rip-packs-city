@@ -3,9 +3,10 @@
 // components/entity/SalesTablePaginated.tsx
 // Phase 1B. Recent-sales table with "Load 30 more" client-side pagination.
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import Link from "next/link"
 import { EM_DASH, fmtUsd, relTime, truncWallet } from "./_shared"
+import { useResolveUsernames } from "@/lib/analytics/username-resolver"
 
 interface SaleRow {
   serial_number: number | null
@@ -48,12 +49,16 @@ const TD: React.CSSProperties = {
   whiteSpace: "nowrap",
 }
 
-function WalletCell({ address }: { address: string | null }) {
+function WalletCell({ address, name }: { address: string | null; name?: string | null }) {
   if (!address) return <span style={{ color: "var(--rpc-text-muted)" }}>{EM_DASH}</span>
   const lower = address.toLowerCase().startsWith("0x") ? address.toLowerCase() : `0x${address.toLowerCase()}`
   return (
-    <Link href={`/profile/${lower}`} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>
-      {truncWallet(address)}
+    <Link
+      href={`/profile/${lower}`}
+      title={name ? `${name} · ${lower}` : lower}
+      style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}
+    >
+      {name ? `@${name}` : truncWallet(address)}
     </Link>
   )
 }
@@ -63,6 +68,16 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
   const [offset, setOffset] = useState<number>(initialOffset)
   const [loading, setLoading] = useState(false)
   const [exhausted, setExhausted] = useState(initial.length < pageSize)
+
+  const addrs = useMemo(() => {
+    const out: string[] = []
+    for (const r of rows) {
+      if (r.buyer_address) out.push(r.buyer_address)
+      if (r.seller_address) out.push(r.seller_address)
+    }
+    return out
+  }, [rows])
+  const names = useResolveUsernames(addrs)
 
   async function loadMore() {
     if (loading || exhausted) return
@@ -119,8 +134,8 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
                 <tr key={`${s.transaction_hash ?? "s"}-${s.serial_number ?? "n"}-${i}`}>
                   <td style={TD}>{serialCell}</td>
                   <td style={TD}>{fmtUsd(s.price_usd)}</td>
-                  <td style={TD}><WalletCell address={s.buyer_address} /></td>
-                  <td style={TD}><WalletCell address={s.seller_address} /></td>
+                  <td style={TD}><WalletCell address={s.buyer_address} name={s.buyer_address ? names[s.buyer_address.toLowerCase()] : undefined} /></td>
+                  <td style={TD}><WalletCell address={s.seller_address} name={s.seller_address ? names[s.seller_address.toLowerCase()] : undefined} /></td>
                   <td style={{ ...TD, color: "var(--rpc-text-secondary)" }}>{relTime(s.sold_at)}</td>
                 </tr>
               )

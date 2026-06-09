@@ -19,6 +19,28 @@ export async function resolveUsernames(
     new Set(addresses.map((a) => (a || "").toLowerCase()).filter(Boolean))
   )
   if (unique.length === 0) return out
+
+  // Primary: the broadened analytics_resolve_usernames RPC, which resolves
+  // wallet_usernames (the populated Top Shot @handle cache) → seeded_wallets →
+  // saved_wallets in priority order. This upgrades every server surface from
+  // "saved_wallets only" to the real @handle set as the cache fills.
+  try {
+    const { data, error } = await (supabaseAdmin as any).rpc(
+      "analytics_resolve_usernames",
+      { p_addrs: unique }
+    )
+    if (!error && data && typeof data === "object") {
+      for (const [addr, name] of Object.entries(data as Record<string, string>)) {
+        if (name) out.set(addr.toLowerCase(), name)
+      }
+      if (out.size > 0) return out
+    }
+  } catch {
+    // fall through to the direct saved_wallets read
+  }
+
+  // Fallback: direct saved_wallets read (original behaviour) if the RPC is
+  // unavailable for any reason.
   try {
     const { data, error } = await supabaseAdmin
       .from("saved_wallets")

@@ -6,9 +6,10 @@
 //   red   = net buyer  (bought more than they sold)
 
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { ArrowRight, TrendingUp } from "lucide-react"
 import WalletIdenticon from "@/components/analytics/WalletIdenticon"
+import { useResolveUsernames } from "@/lib/analytics/username-resolver"
 import type { NetMarketplaceResponse, NetMarketplaceRow } from "@/lib/analytics-types"
 
 const COLLECTION_OPTIONS: Array<{ value: string; label: string }> = [
@@ -56,6 +57,8 @@ export default function NetMarketplaceLeaderboard() {
   }, [collection, days])
 
   const rows: NetMarketplaceRow[] = resp?.rows ?? []
+  const addrs = useMemo(() => rows.map((r) => r.address).filter(Boolean), [rows])
+  const names = useResolveUsernames(addrs)
 
   return (
     <section className="space-y-3">
@@ -156,8 +159,8 @@ export default function NetMarketplaceLeaderboard() {
                         >
                           <WalletIdenticon addr={row.address} size={28} />
                           <div className="min-w-0">
-                            <div className="text-zinc-200 font-mono text-[12px] truncate">
-                              {truncateAddr(row.address)}
+                            <div className="text-zinc-200 font-mono text-[12px] truncate" title={row.address}>
+                              {names[row.address?.toLowerCase()] ? `@${names[row.address.toLowerCase()]}` : truncateAddr(row.address)}
                             </div>
                           </div>
                         </Link>
