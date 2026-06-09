@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
     (supabase as any)
       .from("topshot_pack_reality_top_ev")
       .select(
-        "pack_listing_id, dist_id, pack_name, pack_price, gross_ev, pack_ev, value_ratio, fmv_coverage_pct, edition_count, total_unopened, depletion_pct, snapshotted_at, price_source, high_variance, is_reward_pack, retail_price_usd_normalized"
+        "pack_listing_id, dist_id, pack_name, pack_price, gross_ev, pack_ev, value_ratio, fmv_coverage_pct, edition_count, total_unopened, depletion_pct, snapshotted_at, price_source, high_variance, is_reward_pack, retail_price_usd_normalized, secondary_ask, secondary_available"
       )
       .limit(limit),
   ]);
