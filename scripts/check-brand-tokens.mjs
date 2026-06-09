@@ -41,6 +41,23 @@ const PROTECTED = [
   "app/profile/[username]/page.tsx",
   "app/profile/edit/page.tsx",
   "components/SignInWithDapper.tsx",
+  // Phase 2 — Batch 2 (onboarding / paywall / pro / profile modals)
+  "components/onboarding/FirstRunTour.tsx",
+  "components/onboarding/WelcomeModal.tsx",
+  "components/PaywallModal.tsx",
+  "components/UpgradePrompt.tsx",
+  "components/ProGate.tsx",
+  "components/PlanBadge.tsx",
+  "components/auth/ProBadge.tsx",
+  "components/pricing/StripeSubscribeButton.tsx",
+  "components/ExplainButton.tsx",
+  "components/profile/TrophyPickerModal.tsx",
+  "components/profile/ViewTrophyModal.tsx",
+  "components/profile/WatchlistCard.tsx",
+  "components/profile/EmailDigestSubscribe.tsx",
+  "components/profile/PortfolioSparkline.tsx",
+  "components/profile/PublicAchievements.tsx",
+  "components/profile/_shared.ts",
 ];
 
 const LITERAL = /#E03A2F|'Barlow Condensed'|'Share Tech Mono'/i;

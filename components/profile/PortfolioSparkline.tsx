@@ -73,6 +73,7 @@ export default function PortfolioSparkline(props: { ownerKey: string; currentFmv
             Sparkline builds as you load wallets. Load any saved wallet to record today's data point.
           </div>
           <svg width={W} height={H} viewBox={"0 0 " + W + " " + H} style={{ opacity: 0.15, flexShrink: 0 }}>
+            {/* brand-exception: SVG stroke attribute can't resolve a CSS var */}
             <line x1={PAD} y1={H / 2} x2={W - PAD} y2={H / 2} stroke="#E03A2F" strokeWidth="1.5" strokeDasharray="4 4" />
           </svg>
         </div>

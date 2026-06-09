@@ -41,7 +41,7 @@ export default function ExplainButton({ context, question, size = 14 }: Props) {
         background: 'transparent',
         color: 'rgba(255,255,255,0.7)',
         fontSize: Math.max(8, size - 5),
-        fontFamily: "'Share Tech Mono', monospace",
+        fontFamily: "var(--font-mono)",
         fontWeight: 700,
         cursor: 'pointer',
         opacity: 0.4,

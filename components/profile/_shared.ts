@@ -43,7 +43,7 @@ export const TIER_COLORS: Record<string, string> = {
   Fandom: "#60A5FA",
   Rare: "#3B82F6",
   Legendary: "#F59E0B",
-  Ultimate: "#E03A2F",
+  Ultimate: "#E03A2F", // brand-exception: tier-color lookup data (palette of literal hexes; siblings have no token)
 };
 
 // ─── Interfaces ──────────────────────────────────────────────

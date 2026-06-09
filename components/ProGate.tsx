@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect } from "react"
 
-const condensedFont = "'Barlow Condensed', sans-serif"
-const monoFont = "'Share Tech Mono', monospace"
-const RED = "#E03A2F"
+const condensedFont = "var(--font-display)"
+const monoFont = "var(--font-mono)"
+const RED = "#E03A2F" // brand-exception: concatenated with an alpha suffix (`${RED}33`) in a CSS border — must stay a literal hex
 
 type ProGateProps = {
   children: React.ReactNode

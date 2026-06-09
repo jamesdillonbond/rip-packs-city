@@ -32,7 +32,7 @@ const LABELS: Record<PlanForBadge, string> = {
 const BASE: CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
-  fontFamily: "var(--font-display, 'Barlow Condensed'), sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 800,
   fontSize: 9,
   letterSpacing: "0.14em",

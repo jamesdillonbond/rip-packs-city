@@ -97,7 +97,7 @@ const POPOVER: CSSProperties = {
 }
 
 const TITLE: CSSProperties = {
-  fontFamily: "var(--font-display, 'Barlow Condensed'), sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 900,
   fontSize: 20,
   letterSpacing: "0.04em",
@@ -136,7 +136,7 @@ const PRIMARY_BTN: CSSProperties = {
   border: "none",
   padding: "10px 18px",
   borderRadius: "var(--radius-sm, 6px)",
-  fontFamily: "var(--font-display, 'Barlow Condensed'), sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 800,
   fontSize: 12,
   letterSpacing: "0.14em",

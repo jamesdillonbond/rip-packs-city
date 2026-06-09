@@ -64,7 +64,7 @@ export default function StripeSubscribeButton({ style }: { style?: React.CSSProp
           border: "none",
           cursor: loading ? "not-allowed" : "pointer",
           opacity: loading ? 0.7 : 1,
-          fontFamily: "'Barlow Condensed', sans-serif",
+          fontFamily: "var(--font-display)",
           fontWeight: 800,
           fontSize: 13,
           letterSpacing: "0.14em",

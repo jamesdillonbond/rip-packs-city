@@ -14,7 +14,7 @@ export function ProBadge() {
   const label = isFounding ? 'FOUNDING' : 'PRO'
 
   const baseStyle: React.CSSProperties = {
-    fontFamily: "'Share Tech Mono', monospace",
+    fontFamily: "var(--font-mono)",
     fontSize: 9,
     letterSpacing: '0.12em',
     textTransform: 'uppercase',
@@ -30,7 +30,7 @@ export function ProBadge() {
         title="Founding Member"
         style={{
           ...baseStyle,
-          background: 'linear-gradient(90deg, #E03A2F, #B91C1C)',
+          background: 'linear-gradient(90deg, var(--rpc-red), #B91C1C)',
           color: '#FFF7ED',
           border: '1px solid rgba(224,58,47,0.6)',
         }}

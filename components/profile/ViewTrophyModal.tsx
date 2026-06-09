@@ -340,7 +340,7 @@ export default function ViewTrophyModal({ trophy, onClose, showSlotBadge = true 
                   href={rpcUrl}
                   onClick={onClose}
                   style={{
-                    color: "#E03A2F",
+                    color: "var(--rpc-red)",
                     textDecoration: "none",
                     fontWeight: 700,
                   }}

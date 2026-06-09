@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 
-const monoFont = "'Share Tech Mono', monospace"
-const condensedFont = "'Barlow Condensed', sans-serif"
+const monoFont = "var(--font-mono)"
+const condensedFont = "var(--font-display)"
 
 export default function EmailDigestSubscribe({ walletAddress }: { walletAddress: string | null }) {
   const [email, setEmail] = useState('')
@@ -65,7 +65,7 @@ export default function EmailDigestSubscribe({ walletAddress }: { walletAddress:
         <button
           onClick={submit}
           disabled={submitting}
-          style={{ background: '#E03A2F', border: 'none', borderRadius: 6, padding: '8px 18px', color: '#fff', fontFamily: condensedFont, fontWeight: 800, fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? 0.6 : 1 }}
+          style={{ background: 'var(--rpc-red)', border: 'none', borderRadius: 6, padding: '8px 18px', color: '#fff', fontFamily: condensedFont, fontWeight: 800, fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? 0.6 : 1 }}
         >
           {submitting ? 'Sending…' : 'Subscribe'}
         </button>
@@ -88,7 +88,7 @@ export default function EmailDigestSubscribe({ walletAddress }: { walletAddress:
 function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'rgba(13,13,13,0.6)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 6, cursor: 'pointer' }}>
-      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} style={{ accentColor: '#E03A2F' }} />
+      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} style={{ accentColor: 'var(--rpc-red)' }} />
       <span style={{ fontFamily: monoFont, fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>{label}</span>
     </label>
   )
