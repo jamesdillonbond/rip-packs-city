@@ -3,8 +3,8 @@
  * scripts/seed-wallet-usernames.ts
  *
  * Resolves Flow wallet addresses to NBA Top Shot usernames via the public
- * Top Shot GQL `searchUsers` endpoint and upserts them into the
- * wallet_usernames table.
+ * Top Shot GQL `getUserProfile(input:{flowAddress})` endpoint and upserts them
+ * into the wallet_usernames table.
  *
  * Sources its address universe from flowty_funded_loans — the distinct
  * union of lender_addr and borrower_addr across the loan book.
@@ -47,22 +47,15 @@ const GQL_HEADERS = {
   "User-Agent": "rpc-seed-usernames/1.0",
 }
 
-const SEARCH_USERS_QUERY = `
-  query SearchUsersByAddress($input: SearchUsersInput!, $paginationInput: BasePaginationV2Input!) {
-    searchUsers(input: $input, paginationInput: $paginationInput) {
-      searchSummary {
-        data {
-          ... on Users {
-            data {
-              ... on User {
-                publicInfo {
-                  username
-                  flowAddress
-                }
-              }
-            }
-          }
-        }
+// Address -> profile lookup. getUserProfile wants the BARE hex address (no 0x
+// prefix); the 0x-prefixed form returns "failed to get user from consumer search".
+// (The old searchUsers query did not exist on this schema and resolved nothing.)
+const PROFILE_QUERY = `
+  query ResolveUserByAddress($addr: String!) {
+    getUserProfile(input: { flowAddress: $addr }) {
+      publicInfo {
+        username
+        flowAddress
       }
     }
   }
@@ -112,11 +105,8 @@ async function searchUsername(addr: string): Promise<string | null> {
       method: "POST",
       headers: GQL_HEADERS,
       body: JSON.stringify({
-        query: SEARCH_USERS_QUERY,
-        variables: {
-          input: { searchPhrase: addr },
-          paginationInput: { cursor: "", direction: "RIGHT", limit: 5 },
-        },
+        query: PROFILE_QUERY,
+        variables: { addr: addr.replace(/^0x/i, "") },
       }),
     })
     if (!res.ok) {
@@ -125,24 +115,10 @@ async function searchUsername(addr: string): Promise<string | null> {
       return null
     }
     const body: any = await res.json()
-    if (body?.errors?.length) {
-      console.log(
-        `[seed-usernames] gql errors for ${addr}: ${body.errors[0]?.message ?? "unknown"}`
-      )
-      return null
-    }
-    const items: any[] =
-      body?.data?.searchUsers?.searchSummary?.data?.data ?? []
-    if (!items.length) return null
-    // Prefer an exact flowAddress match if present; fall back to first hit.
-    const lower = addr.toLowerCase()
-    let pick = items.find(
-      (u) => (u?.publicInfo?.flowAddress || "").toLowerCase() === lower
-    )
-    if (!pick) pick = items[0]
-    const username: string | undefined = pick?.publicInfo?.username
-    if (!username || typeof username !== "string") return null
-    return username
+    // Not-found surfaces as errors[].status_code=5 at HTTP 200 — a clean miss.
+    const username: unknown = body?.data?.getUserProfile?.publicInfo?.username
+    if (typeof username !== "string" || !username.trim()) return null
+    return username.trim()
   } catch (e: any) {
     console.log(`[seed-usernames] error for ${addr}: ${e?.message || e}`)
     return null

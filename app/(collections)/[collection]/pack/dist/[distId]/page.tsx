@@ -587,6 +587,15 @@ export default async function PackDetailPage(
     return depletion != null ? Number(depletion) : null
   })()
 
+  // Pool depletion (% of the drop pool's editions exhausted) is the figure the
+  // pull-value EV is computed against, and the one that drives survivor bias.
+  // It is distinct from depletionPct above (% of PACKS opened) — for dists with
+  // no pack-open tracking (total_minted/opened = 0) depletionPct reads 0 while
+  // the pool is in fact heavily drained, so the survivor-bias caveat must read
+  // ev_depletion_pct (straight from pack_ev_latest) or it self-contradicts.
+  const poolDepletionPct: number | null =
+    merged.ev_depletion_pct != null ? Number(merged.ev_depletion_pct) : depletionPct
+
   // 2d — EV verdict coverage gate: below 80% FMV coverage the EV is a lower bound,
   // not an authoritative verdict — render it neutral (no red/green) with a caveat.
   const COVERAGE_FLOOR = 80
@@ -600,7 +609,7 @@ export default async function PackDetailPage(
   // neutral and surface the secondary ask as the honest value estimate.
   const evInflatedVsAsk = secondaryAvailable && secondaryAsk != null && secondaryAsk > 0
     && grossEv != null && grossEv > 3 * secondaryAsk
-  const poolMostlyOpened = depletionPct != null && depletionPct >= 60
+  const poolMostlyOpened = poolDepletionPct != null && poolDepletionPct >= 60
   const evUnreliable = showPriceVerdict && (evInflatedVsAsk || poolMostlyOpened)
 
   const showColoredVerdict = showPriceVerdict && coverageOk && !evUnreliable
@@ -609,7 +618,7 @@ export default async function PackDetailPage(
       const honest = secondaryAvailable && secondaryAsk != null && secondaryAsk > 0
         ? ` honest value ≈ secondary ask ${fmtUsd(secondaryAsk)}`
         : " treat as a ceiling"
-      const opened = depletionPct != null ? `${Math.round(depletionPct)}% opened` : "heavily depleted"
+      const opened = poolDepletionPct != null ? `${Math.round(poolDepletionPct)}% depleted` : "heavily depleted"
       return `EV inflated by survivor bias (${opened}) —${honest}`
     }
     if (showPriceVerdict && !coverageOk && fmvCoverage != null) {
