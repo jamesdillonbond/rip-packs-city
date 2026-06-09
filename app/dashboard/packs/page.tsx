@@ -13,8 +13,8 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
 
-const condensedFont = "'Barlow Condensed', sans-serif"
-const monoFont = "'Share Tech Mono', monospace"
+const condensedFont = "var(--font-display)"
+const monoFont = "var(--font-mono)"
 
 interface SavedWallet {
   wallet_addr: string

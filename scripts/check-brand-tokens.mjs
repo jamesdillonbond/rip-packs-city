@@ -58,6 +58,14 @@ const PROTECTED = [
   "components/profile/PortfolioSparkline.tsx",
   "components/profile/PublicAchievements.tsx",
   "components/profile/_shared.ts",
+  // Phase 2 — Batch 3 (dashboard, auth-gated)
+  "app/dashboard/page.tsx",
+  "app/dashboard/packs/page.tsx",
+  "app/dashboard/notifications/page.tsx",
+  "app/dashboard/alerts/page.tsx",
+  "app/dashboard/api-keys/page.tsx",
+  "app/dashboard/trade-hub/TradeHubClient.tsx",
+  "app/dashboard/trade-hub/TradeChainPanel.tsx",
 ];
 
 const LITERAL = /#E03A2F|'Barlow Condensed'|'Share Tech Mono'/i;

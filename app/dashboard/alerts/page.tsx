@@ -614,7 +614,7 @@ const CSS = `
     text-transform: uppercase; color: var(--rpc-red, #E03A2F);
   }
   .rpc-al-h1 {
-    font-family: 'Barlow Condensed', sans-serif; font-weight: 900;
+    font-family: var(--font-display); font-weight: 900;
     font-size: 36px; letter-spacing: 0.02em; text-transform: uppercase;
     margin: 4px 0 8px; color: var(--rpc-text-primary);
   }
@@ -627,7 +627,7 @@ const CSS = `
     display: inline-flex; align-items: center; justify-content: center;
     background: var(--rpc-red, #E03A2F); color: #fff; border: none;
     padding: 10px 18px; border-radius: var(--radius-sm, 6px);
-    font-family: 'Barlow Condensed', sans-serif; font-weight: 800;
+    font-family: var(--font-display); font-weight: 800;
     font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase;
     cursor: pointer;
   }
@@ -649,7 +649,7 @@ const CSS = `
     margin-bottom: 18px;
   }
   .rpc-al-paywall-title {
-    font-family: 'Barlow Condensed', sans-serif; font-weight: 800;
+    font-family: var(--font-display); font-weight: 800;
     font-size: 16px; letter-spacing: 0.06em; text-transform: uppercase;
     color: var(--rpc-red, #E03A2F); margin-bottom: 6px;
   }
@@ -680,7 +680,7 @@ const CSS = `
   }
   .rpc-al-row-inactive td { opacity: 0.45; }
   .rpc-al-edition-name {
-    font-family: 'Barlow Condensed', sans-serif; font-weight: 700;
+    font-family: var(--font-display); font-weight: 700;
     font-size: 14px; letter-spacing: 0.02em; color: var(--rpc-text-primary);
   }
   .rpc-al-edition-set { color: var(--rpc-text-muted); font-size: 11px; }
@@ -732,7 +732,7 @@ const CSS = `
     padding: 14px 18px; border-bottom: 1px solid var(--rpc-border);
   }
   .rpc-al-modal-title {
-    font-family: 'Barlow Condensed', sans-serif; font-weight: 800;
+    font-family: var(--font-display); font-weight: 800;
     font-size: 18px; letter-spacing: 0.06em; text-transform: uppercase;
     color: var(--rpc-text-primary);
   }
@@ -782,7 +782,7 @@ const CSS = `
     padding: 4px 12px;
   }
   .rpc-al-quota-count {
-    font-family: 'Barlow Condensed', sans-serif;
+    font-family: var(--font-display);
     font-weight: 800;
     font-size: 14px;
     color: var(--rpc-text-primary);
@@ -810,7 +810,7 @@ const CSS = `
     margin-bottom: 6px;
   }
   .rpc-al-empty-title {
-    font-family: 'Barlow Condensed', sans-serif; font-weight: 900;
+    font-family: var(--font-display); font-weight: 900;
     font-size: 26px; letter-spacing: 0.02em; text-transform: uppercase;
     margin-bottom: 10px; color: var(--rpc-text-primary);
   }

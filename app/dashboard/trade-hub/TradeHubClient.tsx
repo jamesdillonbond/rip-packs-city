@@ -55,7 +55,7 @@ export default function TradeHubClient() {
   return (
     <main style={{ padding: "2rem", color: "#fafafa", background: "#0a0a0a", minHeight: "100vh", fontFamily: FONT_STACK }}>
       <div style={{ maxWidth: 880, margin: "0 auto" }}>
-        <h1 style={{ fontFamily: "var(--font-display, 'Barlow Condensed')", fontSize: "2rem", letterSpacing: "0.04em", margin: "0 0 4px", color: ACCENT }}>Trade Hub</h1>
+        <h1 style={{ fontFamily: "var(--font-display)", fontSize: "2rem", letterSpacing: "0.04em", margin: "0 0 4px", color: ACCENT }}>Trade Hub</h1>
         <p style={{ color: "rgba(255,255,255,0.55)", margin: "0 0 24px", fontSize: 14 }}>
           Wishlist editions you want, mark moments you'd trade, and review pending matches. Trade execution is not yet supported.
         </p>
@@ -354,6 +354,6 @@ const errStyle: React.CSSProperties = {
   borderRadius: 8, marginBottom: 12, fontSize: 13,
 }
 const codeStyle: React.CSSProperties = {
-  fontFamily: "var(--font-mono, 'Share Tech Mono')", fontSize: 12,
+  fontFamily: "var(--font-mono)", fontSize: 12,
   background: "#27272a", padding: "2px 6px", borderRadius: 4, color: "rgba(255,255,255,0.65)",
 }
