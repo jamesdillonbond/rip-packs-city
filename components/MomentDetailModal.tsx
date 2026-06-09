@@ -53,6 +53,11 @@ export interface MomentDetailModalProps {
    * callers (e.g. native Top Shot buy URLs).
    */
   marketplaceSource?: "topshot" | "flowty";
+  /**
+   * Optional second-marketplace (dapper.market) link rendered beside the native
+   * buy CTA — fills the slot Flowty used to occupy. Null/undefined hides it.
+   */
+  dapperUrl?: string | null;
   onClose: () => void;
 }
 
@@ -76,7 +81,7 @@ function getVideoUrl(prefix: string | null | undefined): string | null {
   return `${prefix}Animated_1080_1080_Black.mp4`;
 }
 
-export default function MomentDetailModal({ moment, marketplaceSource, onClose }: MomentDetailModalProps) {
+export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl, onClose }: MomentDetailModalProps) {
   const [hovered, setHovered] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const modalRef = useRef<HTMLDivElement | null>(null);
@@ -469,9 +474,35 @@ export default function MomentDetailModal({ moment, marketplaceSource, onClose }
                 textTransform: "uppercase",
               }}
             >
-              Buy on Flowty →
+              View Listing →
             </a>
           ))}
+
+          {dapperUrl && (
+            <a
+              href={dapperUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                marginTop: moment.buyUrl ? 8 : "auto",
+                display: "inline-block",
+                textAlign: "center",
+                background: "transparent",
+                color: "var(--rpc-red)",
+                border: "1px solid var(--rpc-red)",
+                padding: "10px 16px",
+                borderRadius: 4,
+                fontFamily: "var(--font-display)",
+                fontWeight: 800,
+                fontSize: 13,
+                letterSpacing: "0.12em",
+                textDecoration: "none",
+                textTransform: "uppercase",
+              }}
+            >
+              View on Dapper ↗
+            </a>
+          )}
         </div>
       </div>
     </div>

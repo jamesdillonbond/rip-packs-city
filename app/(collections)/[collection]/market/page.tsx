@@ -20,6 +20,7 @@ import { getOwnerKey } from "@/lib/owner-key"
 import { slugifyName } from "@/lib/entity-labels"
 import BadgeIcon from "@/components/BadgeIcon"
 import { trackOutboundClick } from "@/lib/track-click"
+import { dapperMarketMomentUrl } from "@/lib/collections"
 
 type Listing = {
   id: string
@@ -163,6 +164,18 @@ function resolveListingUrl(
   const url = listing.buyUrl?.trim()
   if (url && !url.includes("flowty.io")) return url
   return listing.flowId ? momentUrl(listing.flowId) : null
+}
+
+// Second-marketplace (dapper.market) link rendered alongside the native one.
+// listing.flowId is the on-chain moment id for per-moment listings (AllDay /
+// Golazos); it's null on TS edition-level browse rows, so no link renders
+// there. The builder also returns null for non-dapper collections (Pinnacle /
+// UFC), so callers can render unconditionally and the link self-hides.
+function resolveDapperListingUrl(
+  listing: Listing,
+  collectionUrlSlug: string,
+): string | null {
+  return dapperMarketMomentUrl(collectionUrlSlug, listing.flowId)
 }
 
 function MarketInner() {
@@ -609,6 +622,7 @@ function MarketInner() {
               momentUrl={momentUrl}
               editionStats={editionStats}
               showOwned={showOwnedColumn}
+              collectionUrlSlug={collectionId}
             />
           ))}
         </div>
@@ -800,14 +814,16 @@ function ownLockLabel(stats: { owned: number; locked: number } | null | undefine
   return `${stats.owned} / ${stats.locked}`
 }
 
-function ListingCard({ listing, accent, momentUrl, editionStats, showOwned }: {
+function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, collectionUrlSlug }: {
   listing: Listing; accent: string; momentUrl: (id: string) => string | null
   editionStats: Map<string, { owned: number; locked: number }>; showOwned: boolean
+  collectionUrlSlug: string
 }) {
   const tier = (listing.tier ?? "").toUpperCase()
   const dot = tierColor(tier)
   const discount = fmtDiscount(listing.discount)
   const buy = resolveListingUrl(listing, momentUrl)
+  const dapper = resolveDapperListingUrl(listing, collectionUrlSlug)
   const hasThumb = !!listing.thumbnailUrl
   const stats = listing.editionKey ? editionStats.get(listing.editionKey) : null
 
@@ -887,6 +903,21 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned }: {
             </>
           )}
         </div>
+        {dapper && (
+          // Second-marketplace link. Rendered as a role=link span (not a nested
+          // <a>, which is invalid inside the card's outer anchor) that opens
+          // dapper.market in a new tab without triggering the card's native link.
+          <span
+            role="link"
+            tabIndex={0}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); trackListingClick(listing, dapper); window.open(dapper, "_blank", "noopener,noreferrer") }}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); trackListingClick(listing, dapper); window.open(dapper, "_blank", "noopener,noreferrer") } }}
+            className="rpc-mono"
+            style={{ marginTop: 6, alignSelf: "flex-start", fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: accent, border: `1px solid ${accent}40`, borderRadius: 4, padding: "3px 8px", cursor: "pointer" }}
+          >
+            Dapper ↗
+          </span>
+        )}
       </div>
     </a>
   )
@@ -924,6 +955,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
             const dot = tierColor(tier)
             const discount = fmtDiscount(l.discount)
             const buy = resolveListingUrl(l, momentUrl)
+            const dapper = resolveDapperListingUrl(l, collectionUrlSlug)
             const stats = l.editionKey ? editionStats.get(l.editionKey) : null
             const uniqueBadges = Array.from(new Set(l.badgeSlugs))
             return (
@@ -996,18 +1028,32 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                 <td style={{ ...td, color: "var(--rpc-text-secondary)" }}>{sourceLabel(l.source)}</td>
                 <td style={{ ...td, color: "var(--rpc-text-ghost)" }}>{relativeAge(l.listedAt)}</td>
                 <td style={td}>
-                  {buy ? (
-                    <a
-                      href={buy}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={() => trackListingClick(l, buy)}
-                      className="rpc-chip"
-                      style={{ color: accent, borderColor: accent, background: `${accent}14` }}
-                    >
-                      View Listing →
-                    </a>
-                  ) : null}
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" }}>
+                    {buy ? (
+                      <a
+                        href={buy}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => trackListingClick(l, buy)}
+                        className="rpc-chip"
+                        style={{ color: accent, borderColor: accent, background: `${accent}14` }}
+                      >
+                        View Listing →
+                      </a>
+                    ) : null}
+                    {dapper ? (
+                      <a
+                        href={dapper}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => trackListingClick(l, dapper)}
+                        className="rpc-chip"
+                        style={{ color: accent, borderColor: `${accent}40`, background: "transparent" }}
+                      >
+                        Dapper ↗
+                      </a>
+                    ) : null}
+                  </div>
                 </td>
               </tr>
             )

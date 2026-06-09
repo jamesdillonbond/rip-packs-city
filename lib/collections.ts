@@ -330,6 +330,25 @@ export function marketplaceMomentUrl(collectionId: string, flowId: string): stri
   return f ? f(flowId) : null
 }
 
+// Dapper's in-house secondary marketplace (dapper.market, live 2026-06). A
+// SECOND buy option rendered alongside the native marketplace link — it fills
+// the UI slot Flowty used to occupy before its 2026-05-13 shutdown. The native
+// links (MARKETPLACE_MOMENT_URL_TEMPLATES) are unchanged; this is purely
+// additive. Keyed by the numeric on-chain moment id (the same id
+// marketplaceMomentUrl takes). Only Top Shot / All Day / Golazos are on
+// dapper.market — Pinnacle / UFC / Candy / Panini return null so no link renders.
+const DAPPER_MARKET_LEAGUE_SEG: Record<string, string> = {
+  "nba-top-shot":   "nba",
+  "nfl-all-day":    "nfl",
+  "laliga-golazos": "laliga",
+}
+
+export function dapperMarketMomentUrl(collectionId: string, momentId: string | null | undefined): string | null {
+  const seg = DAPPER_MARKET_LEAGUE_SEG[collectionId]
+  if (!seg || !momentId) return null
+  return `https://dapper.market/${seg}/moment/${momentId}`
+}
+
 export function marketplaceWalletUrl(collectionId: string, address: string): string | null {
   const f = MARKETPLACE_WALLET_URL_TEMPLATES[collectionId]
   return f ? f(address) : null
