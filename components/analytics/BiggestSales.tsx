@@ -1,7 +1,9 @@
 "use client"
 
+import { useMemo } from "react"
 import Link from "next/link"
 import type { SalesTopMoveRow } from "@/lib/analytics-types"
+import { useResolveUsernames } from "@/lib/analytics/username-resolver"
 
 // BiggestSales — card grid showing the largest individual sales in the
 // active window. The RPC pre-joins player_name / set_name when the
@@ -58,6 +60,18 @@ function isLinkableAddr(a: string | null | undefined): a is string {
 }
 
 export default function BiggestSales({ rows }: BiggestSalesProps) {
+  const addrs = useMemo(() => {
+    const out: string[] = []
+    for (const r of rows ?? []) {
+      if (r.buyer_address) out.push(r.buyer_address)
+      if (r.seller_address) out.push(r.seller_address)
+    }
+    return out
+  }, [rows])
+  const names = useResolveUsernames(addrs)
+  const label = (addr: string | null | undefined) =>
+    addr && names[addr.toLowerCase()] ? `@${names[addr.toLowerCase()]}` : truncate(addr)
+
   if (!rows || rows.length === 0) {
     return (
       <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-zinc-800 bg-zinc-900/20 text-sm text-zinc-500">
@@ -118,12 +132,13 @@ export default function BiggestSales({ rows }: BiggestSalesProps) {
                 {isLinkableAddr(r.buyer_address) ? (
                   <Link
                     href={`/analytics/wallets/${r.buyer_address}`}
+                    title={r.buyer_address}
                     className="font-mono text-zinc-300 hover:text-emerald-400 transition-colors"
                   >
-                    {truncate(r.buyer_address)}
+                    {label(r.buyer_address)}
                   </Link>
                 ) : (
-                  <span className="font-mono text-zinc-400">{truncate(r.buyer_address)}</span>
+                  <span className="font-mono text-zinc-400">{label(r.buyer_address)}</span>
                 )}
               </div>
               <div className="flex items-center gap-1.5">
@@ -131,12 +146,13 @@ export default function BiggestSales({ rows }: BiggestSalesProps) {
                 {isLinkableAddr(r.seller_address) ? (
                   <Link
                     href={`/analytics/wallets/${r.seller_address}`}
+                    title={r.seller_address}
                     className="font-mono text-zinc-300 hover:text-emerald-400 transition-colors"
                   >
-                    {truncate(r.seller_address)}
+                    {label(r.seller_address)}
                   </Link>
                 ) : (
-                  <span className="font-mono text-zinc-400">{truncate(r.seller_address)}</span>
+                  <span className="font-mono text-zinc-400">{label(r.seller_address)}</span>
                 )}
               </div>
               <div className="text-zinc-600 mt-0.5">{relativeTime(r.sold_at)}</div>

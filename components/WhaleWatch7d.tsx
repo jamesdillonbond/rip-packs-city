@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useResolveUsernames } from "@/lib/analytics/username-resolver";
 
 const COLLECTION_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "", label: "All Collections" },
@@ -84,6 +85,8 @@ export default function WhaleWatch7d() {
   }, [slug]);
 
   const rows = useMemo(() => whales ?? [], [whales]);
+  const addrs = useMemo(() => rows.map((r) => r.buyer_address).filter(Boolean), [rows]);
+  const names = useResolveUsernames(addrs);
 
   return (
     <section className="rpc-section">
@@ -142,9 +145,10 @@ export default function WhaleWatch7d() {
                   <td style={tdStyle}>
                     <Link
                       href={`/analytics/wallets/${r.buyer_address}`}
+                      title={r.buyer_address}
                       style={{ color: "#fff", textDecoration: "none", borderBottom: "1px dotted rgba(255,255,255,0.4)" }}
                     >
-                      {truncAddr(r.buyer_address)}
+                      {names[r.buyer_address?.toLowerCase()] ? `@${names[r.buyer_address.toLowerCase()]}` : truncAddr(r.buyer_address)}
                     </Link>
                   </td>
                   {!slug && (

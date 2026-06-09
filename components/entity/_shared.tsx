@@ -241,12 +241,16 @@ export function StatCell({ label, value, sub }: { label: string; value: ReactNod
 
 // ── Wallet link ─────────────────────────────────────────────────────────────
 
-export function WalletLink({ address }: { address: string | null | undefined }) {
+export function WalletLink({ address, name }: { address: string | null | undefined; name?: string | null }) {
   if (!address) return <span style={{ color: "var(--rpc-text-muted)" }}>{EM_DASH}</span>
   const lower = address.toLowerCase().startsWith("0x") ? address.toLowerCase() : `0x${address.toLowerCase()}`
   return (
-    <Link href={`/profile/${lower}`} style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontFamily: "var(--font-mono)", fontSize: 11 }}>
-      {truncWallet(address)}
+    <Link
+      href={`/profile/${lower}`}
+      title={name ? `${name} · ${lower}` : lower}
+      style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontFamily: "var(--font-mono)", fontSize: 11 }}
+    >
+      {name ? `@${name}` : truncWallet(address)}
     </Link>
   )
 }
