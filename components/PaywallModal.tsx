@@ -43,7 +43,7 @@ const CARD: CSSProperties = {
 }
 
 const HEADLINE: CSSProperties = {
-  fontFamily: "var(--font-display, 'Barlow Condensed'), sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 900,
   fontSize: 24,
   letterSpacing: "0.04em",
@@ -77,7 +77,7 @@ const CTA: CSSProperties = {
   color: "#fff",
   padding: "12px 22px",
   borderRadius: "var(--radius-sm, 6px)",
-  fontFamily: "var(--font-display, 'Barlow Condensed'), sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 800,
   fontSize: 13,
   letterSpacing: "0.14em",

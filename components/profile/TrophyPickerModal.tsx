@@ -18,9 +18,9 @@ import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilte
 import { publishedCollections } from "@/lib/collections";
 import { track } from "@/lib/telemetry/track";
 
-const condensedFont = "'Barlow Condensed', sans-serif";
-const monoFont = "'Share Tech Mono', monospace";
-const ACCENT_RED = "#E03A2F";
+const condensedFont = "var(--font-display)";
+const monoFont = "var(--font-mono)";
+const ACCENT_RED = "var(--rpc-red)";
 
 // Top Shot collection UUID — used to gate the NBA/WNBA league badge so it only
 // renders on Top Shot rows. Other collections store NULL in wmc.league.

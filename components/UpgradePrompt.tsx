@@ -31,7 +31,7 @@ const COMPACT_WRAP: CSSProperties = {
 }
 
 const COMPACT_CTA: CSSProperties = {
-  fontFamily: "var(--font-display, 'Barlow Condensed'), sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 800,
   fontSize: 11,
   letterSpacing: "0.12em",
@@ -53,7 +53,7 @@ const FULL_CARD: CSSProperties = {
 }
 
 const FULL_HEADER: CSSProperties = {
-  fontFamily: "var(--font-display, 'Barlow Condensed'), sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 900,
   fontSize: 18,
   letterSpacing: "0.04em",
@@ -79,7 +79,7 @@ const FULL_CTA: CSSProperties = {
   color: "#fff",
   padding: "10px 18px",
   borderRadius: "var(--radius-sm, 6px)",
-  fontFamily: "var(--font-display, 'Barlow Condensed'), sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 800,
   fontSize: 12,
   letterSpacing: "0.14em",

@@ -114,7 +114,7 @@ function WatchlistAddModal(props: { ownerKey: string; onClose: () => void; onAdd
             />
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={function() { setPicked(null); setTargetStr(""); }} style={Object.assign({}, btnBase, { flex: 1 })}>Back</button>
-              <button disabled={saving} onClick={handleSave} style={Object.assign({}, btnBase, { flex: 1, background: "rgba(224,58,47,0.15)", color: "#E03A2F", borderColor: "rgba(224,58,47,0.4)" })}>
+              <button disabled={saving} onClick={handleSave} style={Object.assign({}, btnBase, { flex: 1, background: "rgba(224,58,47,0.15)", color: "var(--rpc-red)", borderColor: "rgba(224,58,47,0.4)" })}>
                 {saving ? "Saving…" : "Save"}
               </button>
             </div>
@@ -156,7 +156,7 @@ export default function WatchlistCard(props: { ownerKey: string }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={labelStyle}>👁 Watchlist</span>
-          <span style={{ background: "rgba(224,58,47,0.15)", border: "1px solid rgba(224,58,47,0.3)", color: "#E03A2F", fontSize: 9, fontFamily: monoFont, padding: "1px 6px", borderRadius: 3 }}>{items.length}</span>
+          <span style={{ background: "rgba(224,58,47,0.15)", border: "1px solid rgba(224,58,47,0.3)", color: "var(--rpc-red)", fontSize: 9, fontFamily: monoFont, padding: "1px 6px", borderRadius: 3 }}>{items.length}</span>
         </div>
         <button onClick={function() { setShowAdd(true); }} style={Object.assign({}, btnBase, { fontSize: 9 })}>+ Add</button>
       </div>

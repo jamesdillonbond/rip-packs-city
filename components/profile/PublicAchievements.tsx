@@ -4,8 +4,8 @@ import React, { useEffect, useState } from "react";
 import { ACHIEVEMENT_DEFS, getTierColor, getHighestTierLabel } from "@/lib/achievements";
 import type { ProfileAchievement } from "./AchievementsCard";
 
-const monoFont = "'Share Tech Mono', monospace";
-const condensedFont = "'Barlow Condensed', sans-serif";
+const monoFont = "var(--font-mono)";
+const condensedFont = "var(--font-display)";
 
 const labelStyle: React.CSSProperties = {
   fontSize: 11,

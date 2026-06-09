@@ -72,7 +72,7 @@ export default function WelcomeModal({ accent, collectionId }: WelcomeModalProps
           <span
             style={{
               fontSize: 9,
-              fontFamily: "'Share Tech Mono', monospace",
+              fontFamily: "var(--font-mono)",
               color: accent,
               letterSpacing: "0.18em",
               textTransform: "uppercase",
@@ -167,7 +167,7 @@ function Step1({
       <h2
         style={{
           margin: 0,
-          fontFamily: "'Barlow Condensed', sans-serif",
+          fontFamily: "var(--font-display)",
           fontWeight: 900,
           fontSize: 26,
           letterSpacing: "0.04em",
@@ -181,7 +181,7 @@ function Step1({
       <p
         style={{
           marginTop: 14,
-          fontFamily: "'Share Tech Mono', monospace",
+          fontFamily: "var(--font-mono)",
           fontSize: 12,
           color: "rgba(255,255,255,0.7)",
           lineHeight: 1.65,
@@ -199,7 +199,7 @@ function Step1({
           color: accent,
           padding: "6px 12px",
           borderRadius: 4,
-          fontFamily: "'Share Tech Mono', monospace",
+          fontFamily: "var(--font-mono)",
           fontSize: 10,
           letterSpacing: "0.12em",
           textTransform: "uppercase",
@@ -212,7 +212,7 @@ function Step1({
         <p
           style={{
             marginTop: 12,
-            fontFamily: "'Share Tech Mono', monospace",
+            fontFamily: "var(--font-mono)",
             fontSize: 11,
             color: "rgba(255,255,255,0.55)",
             lineHeight: 1.6,
@@ -247,7 +247,7 @@ function Step2({
       <h2
         style={{
           margin: 0,
-          fontFamily: "'Barlow Condensed', sans-serif",
+          fontFamily: "var(--font-display)",
           fontWeight: 900,
           fontSize: 22,
           letterSpacing: "0.04em",
@@ -283,7 +283,7 @@ function Step2({
                 borderRadius: 4,
                 padding: "6px 10px",
                 color: "#fff",
-                fontFamily: "'Share Tech Mono', monospace",
+                fontFamily: "var(--font-mono)",
                 fontSize: 11,
                 outline: "none",
               }}
@@ -313,7 +313,7 @@ function Step3({ accent }: { accent: string }) {
       <h2
         style={{
           margin: 0,
-          fontFamily: "'Barlow Condensed', sans-serif",
+          fontFamily: "var(--font-display)",
           fontWeight: 900,
           fontSize: 24,
           letterSpacing: "0.04em",
@@ -327,7 +327,7 @@ function Step3({ accent }: { accent: string }) {
       <p
         style={{
           marginTop: 14,
-          fontFamily: "'Share Tech Mono', monospace",
+          fontFamily: "var(--font-mono)",
           fontSize: 12,
           color: "rgba(255,255,255,0.7)",
           lineHeight: 1.65,
@@ -343,7 +343,7 @@ function Step3({ accent }: { accent: string }) {
           background: `${accent}10`,
           border: `1px solid ${accent}33`,
           borderRadius: 6,
-          fontFamily: "'Share Tech Mono', monospace",
+          fontFamily: "var(--font-mono)",
           fontSize: 10,
           color: "rgba(255,255,255,0.55)",
           letterSpacing: "0.04em",
@@ -372,7 +372,7 @@ function cardStyle(accent: string): React.CSSProperties {
 }
 function cardLabel(accent: string): React.CSSProperties {
   return {
-    fontFamily: "'Barlow Condensed', sans-serif",
+    fontFamily: "var(--font-display)",
     fontWeight: 700,
     fontSize: 13,
     letterSpacing: "0.06em",
@@ -383,7 +383,7 @@ function cardLabel(accent: string): React.CSSProperties {
 }
 function cardBody(): React.CSSProperties {
   return {
-    fontFamily: "'Share Tech Mono', monospace",
+    fontFamily: "var(--font-mono)",
     fontSize: 11,
     color: "rgba(255,255,255,0.6)",
     lineHeight: 1.55,
@@ -396,7 +396,7 @@ function btnGhost(): React.CSSProperties {
     color: "rgba(255,255,255,0.7)",
     padding: "8px 16px",
     borderRadius: 5,
-    fontFamily: "'Share Tech Mono', monospace",
+    fontFamily: "var(--font-mono)",
     fontSize: 10,
     letterSpacing: "0.12em",
     textTransform: "uppercase",
@@ -410,7 +410,7 @@ function btnPrimary(accent: string, small = false): React.CSSProperties {
     color: "#fff",
     padding: small ? "6px 12px" : "9px 18px",
     borderRadius: 5,
-    fontFamily: "'Barlow Condensed', sans-serif",
+    fontFamily: "var(--font-display)",
     fontWeight: 800,
     fontSize: small ? 11 : 13,
     letterSpacing: "0.08em",
