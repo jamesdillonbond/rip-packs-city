@@ -16,9 +16,9 @@ import { isSolanaAddress } from "@/lib/address";
 import TrophyPickerModal from "@/components/profile/TrophyPickerModal";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 
-const condensedFont = "'Barlow Condensed', sans-serif";
-const monoFont = "'Share Tech Mono', monospace";
-const ACCENT_RED = "#E03A2F";
+const condensedFont = "var(--font-display)";
+const monoFont = "var(--font-mono)";
+const ACCENT_RED = "#E03A2F"; // brand-exception: concatenated with alpha suffixes (`${ACCENT_RED}66`/`88`) in CSS borders — must stay a literal hex
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

@@ -227,7 +227,7 @@ export default function TradeChainPanel({
         <span
           style={{
             fontSize: 12,
-            fontFamily: "var(--font-mono, 'Share Tech Mono')",
+            fontFamily: "var(--font-mono)",
             color: lowOnTime ? "var(--rpc-danger, #F87171)" : "rgba(255,255,255,0.55)",
           }}
           aria-live="polite"
@@ -277,7 +277,7 @@ export default function TradeChainPanel({
                 borderRadius: 8,
                 padding: "8px 10px",
                 textAlign: "center",
-                fontFamily: "var(--font-display, 'Barlow Condensed')",
+                fontFamily: "var(--font-display)",
                 textTransform: "uppercase",
                 fontSize: 12,
                 letterSpacing: "0.06em",
@@ -296,7 +296,7 @@ export default function TradeChainPanel({
           gap: "4px 12px",
           margin: 0,
           fontSize: 12,
-          fontFamily: "var(--font-mono, 'Share Tech Mono')",
+          fontFamily: "var(--font-mono)",
           color: "rgba(255,255,255,0.65)",
         }}
       >
@@ -383,7 +383,7 @@ export default function TradeChainPanel({
             marginBottom: 0,
             color: "var(--rpc-danger, #F87171)",
             fontSize: 12,
-            fontFamily: "var(--font-mono, 'Share Tech Mono')",
+            fontFamily: "var(--font-mono)",
           }}
         >
           {error}
@@ -399,7 +399,7 @@ export default function TradeChainPanel({
             marginBottom: 0,
             color: "rgba(255,255,255,0.35)",
             fontSize: 10,
-            fontFamily: "var(--font-mono, 'Share Tech Mono')",
+            fontFamily: "var(--font-mono)",
           }}
         >
           {myCollection && `my=${COLLECTION_META[myCollection].storage_path}`}
@@ -429,7 +429,7 @@ const ddStyle: React.CSSProperties = {
   textOverflow: "ellipsis",
 };
 const pillStyle: React.CSSProperties = {
-  fontFamily: "var(--font-display, 'Barlow Condensed')",
+  fontFamily: "var(--font-display)",
   fontSize: 10,
   letterSpacing: "0.1em",
   textTransform: "uppercase",

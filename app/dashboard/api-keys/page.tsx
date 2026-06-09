@@ -4,7 +4,7 @@
 //
 // Self-serve MCP API key management. Mobile-first, §0-strict — every
 // color is a var(--rpc-*) token, every font is var(--font-*). No
-// hardcoded hex literals, no inline 'Barlow Condensed' strings. Class
+// hardcoded hex literals, no inline display-font name strings. Class
 // families (.rpc-card, .rpc-btn-primary, .rpc-btn-ghost, .rpc-label,
 // .rpc-mono) are preferred over duplicated inline styles.
 //
