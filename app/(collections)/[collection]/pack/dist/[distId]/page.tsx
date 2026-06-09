@@ -15,6 +15,7 @@
 
 import type { Metadata } from "next"
 import { topshotPackUrl } from "@/lib/pack-urls"
+import { dapperMarketPacksBrowseUrl } from "@/lib/collections"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -647,6 +648,10 @@ export default async function PackDetailPage(
     : priceSource === "secondary"
       ? "Buy on secondary market"
       : "Buy on Top Shot"
+  // Item 6 (2026-06-09): a second outbound option to dapper.market's pack grid.
+  // Packs can't be deep-linked there (Dapper-internal pack ids), so this is the
+  // league pack-browse grid — honestly scoped, not a per-pack deep link.
+  const dapperPacksUrl = !isRewardPack ? dapperMarketPacksBrowseUrl(collection) : null
 
   const tierLabel = tier.charAt(0).toUpperCase() + tier.slice(1)
   // 7 — the pack_type chip is suppressed when it's just the generic "pack"
@@ -850,6 +855,35 @@ export default async function PackDetailPage(
                   }}
                 >
                   {buyCtaLabel}
+                </TrackedOutboundLink>
+              ) : null}
+              {dapperPacksUrl ? (
+                <TrackedOutboundLink
+                  href={dapperPacksUrl}
+                  payload={{
+                    surface: "pack_dist",
+                    destination: "dapper_market_packs",
+                    setName: title,
+                    tier,
+                    fmv: null,
+                    buyUrl: dapperPacksUrl,
+                  }}
+                  style={{
+                    display: "inline-block",
+                    padding: "8px 16px",
+                    background: "transparent",
+                    color: "rgba(255,255,255,0.85)",
+                    fontFamily: "var(--font-display)",
+                    fontWeight: 700,
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                    fontSize: 12,
+                    borderRadius: 4,
+                    border: "1px solid rgba(255,255,255,0.25)",
+                    textDecoration: "none",
+                  }}
+                >
+                  Browse packs on Dapper →
                 </TrackedOutboundLink>
               ) : null}
               <PackShareButton url={`${BASE_URL}/${collection}/pack/dist/${encodeURIComponent(distId)}`} />
