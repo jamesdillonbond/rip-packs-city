@@ -13,8 +13,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 
 const TOKEN_KEY = "rpc_admin_token";
-const DISPLAY = "var(--font-display, 'Barlow Condensed', sans-serif)";
-const MONO = "var(--font-mono, 'Share Tech Mono', monospace)";
+const DISPLAY = "var(--font-display)";
+const MONO = "var(--font-mono)";
 const RED = "var(--rpc-red, #E03A2F)";
 
 interface Economy {
