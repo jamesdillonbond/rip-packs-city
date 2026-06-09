@@ -18,8 +18,8 @@ import * as fcl from "@onflow/fcl";
 import { configureFclAuth } from "@/lib/fcl-config";
 import { getSupabaseBrowser } from "@/lib/auth/supabase-client";
 
-const condensedFont = "'Barlow Condensed', sans-serif";
-const monoFont = "'Share Tech Mono', monospace";
+const condensedFont = "var(--font-display)";
+const monoFont = "var(--font-mono)";
 
 interface Props {
   onSuccess?: (addr: string) => void;

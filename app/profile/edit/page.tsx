@@ -6,7 +6,7 @@ import { LEAGUES, type League, type TeamMaster, type UserFavoriteTeam } from "@/
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
-const ACCENT_RED = "#E03A2F"; // hex literal: persisted as accent_color data + parsed by hexToRgba — must stay hex, not a CSS var
+const ACCENT_RED = "#E03A2F"; // brand-exception: hex literal persisted as accent_color data + parsed by hexToRgba — must stay hex, not a CSS var
 
 type BioForm = {
   username: string;

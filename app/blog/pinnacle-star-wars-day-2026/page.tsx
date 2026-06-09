@@ -52,7 +52,7 @@ const KICKER: React.CSSProperties = {
 }
 
 const H1: React.CSSProperties = {
-  fontFamily: "'Barlow Condensed', sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 900,
   fontSize: 40,
   letterSpacing: "0.02em",
@@ -80,7 +80,7 @@ const BYLINE: React.CSSProperties = {
 }
 
 const H2: React.CSSProperties = {
-  fontFamily: "'Barlow Condensed', sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 800,
   fontSize: 22,
   letterSpacing: "0.04em",
@@ -164,7 +164,7 @@ const CTA_LINK: React.CSSProperties = {
   background: "var(--rpc-red, #E03A2F)",
   color: "#fff",
   textDecoration: "none",
-  fontFamily: "'Barlow Condensed', sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 800,
   fontSize: 13,
   letterSpacing: "0.14em",

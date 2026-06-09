@@ -45,7 +45,7 @@ const PAGE: React.CSSProperties = {
 }
 
 const H1: React.CSSProperties = {
-  fontFamily: "'Barlow Condensed', sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 900,
   fontSize: 40,
   letterSpacing: "0.04em",
@@ -83,7 +83,7 @@ const META: React.CSSProperties = {
 }
 
 const TITLE: React.CSSProperties = {
-  fontFamily: "'Barlow Condensed', sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 800,
   fontSize: 22,
   letterSpacing: "0.02em",

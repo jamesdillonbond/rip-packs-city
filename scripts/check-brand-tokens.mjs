@@ -29,6 +29,18 @@ const PROTECTED = [
   "app/(collections)/[collection]/profile/[username]/page.tsx",
   "app/(collections)/[collection]/analytics/page.tsx",
   "components/profile/CrossCollectionPortfolio.tsx",
+  // Phase 2 — Batch 1 (public marketing/legal/share/pricing/profile)
+  "app/pricing/page.tsx",
+  "app/blog/page.tsx",
+  "app/blog/pinnacle-star-wars-day-2026/page.tsx",
+  "app/legal/fmv-methodology/page.tsx",
+  "components/legal/FmvDisclaimer.tsx",
+  "app/share/[wallet]/page.tsx",
+  "app/share/[wallet]/ShareEmptyState.tsx",
+  "app/share/[wallet]/ShareButton.tsx",
+  "app/profile/[username]/page.tsx",
+  "app/profile/edit/page.tsx",
+  "components/SignInWithDapper.tsx",
 ];
 
 const LITERAL = /#E03A2F|'Barlow Condensed'|'Share Tech Mono'/i;
