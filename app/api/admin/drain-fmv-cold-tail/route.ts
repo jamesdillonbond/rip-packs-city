@@ -7,7 +7,8 @@ import { supabaseAdmin } from "@/lib/supabase"
 // Drains the FMV cold tail for the 4 stale collections by calling the SECDEF
 // RPC drain_fmv_cold_tail(p_collection_slug, p_limit). Closes audit §1.1
 // (FMV freshness gap in non-AllDay collections). Pinnacle is intentionally
-// excluded — it has its own hourly chain via pinnacle_fmv_recalc_all.
+// excluded — it has its own per-render engine, pinnacle_fmv_recalc_render_all
+// (→ pinnacle_catalog), run via the pinnacle-sync cron.
 //
 // Designed for cron-job.org's 30s free-tier timeout when called with the
 // default limit=200 and collection=all (4 collections × ~200 = ~800

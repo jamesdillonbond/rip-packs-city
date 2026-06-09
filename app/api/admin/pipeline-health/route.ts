@@ -28,7 +28,9 @@ const EXPECTED_INTERVAL_MIN: Record<string, number> = {
   "allday-listings-indexer": 20,
   "golazos-listing-cache": 20,
   "ufc-listing-cache": 20,
-  "pinnacle-listing-cache": 20,
+  // pinnacle-listing-cache retired 2026-06-09 (Flowty teardown; cron-job.org
+  // entry deleted, route removed) — ASK now on-chain via
+  // pinnacle-listings-reconcile, floor via pinnacle_catalog.
   "sync-flowty-listings": 20,
   // Sales indexers
   "topshot-sales-indexer": 20,
