@@ -44,8 +44,13 @@ function siteUrl() {
 
 async function fetchSnapshot(wallet: string): Promise<SnapshotData | null> {
   try {
+    // no-store (not ISR): collection-snapshot returns 200 with totalMoments=0
+    // for an un-indexed wallet, and the empty-state queues + polls for indexing
+    // to finish. If we cached that 0-snapshot for 300s, the post-index reload
+    // would keep showing the empty card for up to 5 minutes. The API itself is
+    // still CDN-cached (s-maxage=300) for direct browser hits.
     const res = await fetch(`${siteUrl()}/api/collection-snapshot?wallet=${encodeURIComponent(wallet)}`, {
-      next: { revalidate: 300 },
+      cache: "no-store",
     })
     if (!res.ok) return null
     return await res.json()
@@ -146,7 +151,10 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
     fetchWalletIntel(wallet),
   ])
 
-  if (!data) {
+  // Treat "no snapshot" AND "indexed but zero moments" the same: the wallet
+  // isn't ready yet (or holds nothing). ShareEmptyState queues it for indexing
+  // and polls — far better than rendering a misleading $0.00 / 0-moment card.
+  if (!data || (Number(data.totalMoments) || 0) === 0) {
     return <ShareEmptyState wallet={wallet} />
   }
 
@@ -415,11 +423,17 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
         </div>
 
         {/* Action buttons */}
-        <div style={{ display: "flex", gap: 12, justifyContent: "center", marginBottom: 32 }}>
+        <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 32 }}>
           <ShareButton />
           <a
-            href={`/nba-top-shot/collection?wallet=${encodeURIComponent(wallet)}`}
+            href={`/insights/tc-report?wallet=${encodeURIComponent(wallet)}`}
             style={{ padding: "12px 24px", border: "1px solid var(--rpc-red)", borderRadius: 8, color: "var(--rpc-red)", fontWeight: 700, fontSize: 14, textDecoration: "none", letterSpacing: "0.04em" }}
+          >
+            Run the full report →
+          </a>
+          <a
+            href={`/nba-top-shot/collection?wallet=${encodeURIComponent(wallet)}`}
+            style={{ padding: "12px 24px", border: "1px solid #2a2a2a", borderRadius: 8, color: "#ccc", fontWeight: 700, fontSize: 14, textDecoration: "none", letterSpacing: "0.04em" }}
           >
             View Full Collection
           </a>

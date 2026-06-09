@@ -8,6 +8,7 @@
 
 import Link from "next/link"
 import { createClient } from "@supabase/supabase-js"
+import InsightsWalletSearch from "@/components/insights/InsightsWalletSearch"
 
 export const revalidate = 1800
 
@@ -207,6 +208,7 @@ export default async function InsightsIndexPage() {
           structurally can&apos;t (or won&apos;t) ship — plus tools to check
           your own wallet.
         </p>
+        <InsightsWalletSearch />
       </section>
 
       {stats?.market ? (

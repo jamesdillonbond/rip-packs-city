@@ -11,6 +11,7 @@ import {
 } from "recharts"
 import { getCollection, getCollectionByUuid } from "@/lib/collections"
 import { pickEmpty } from "@/lib/schonely"
+import TopBuyers from "@/components/analytics/TopBuyers"
 
 // ── Slug mapping ────────────────────────────────────────────────────────────
 // URL slug ("nba-top-shot") → RPC short slug ("topshot") used by the
@@ -1549,6 +1550,15 @@ function AnalyticsInner() {
           <div className="mb-6">
             <WhaleLeaderboard short={short} />
           </div>
+
+          {/* Buyer-side accumulation — who is sweeping what. Top Shot only for
+              now: it's the only collection with resolved buyer_address coverage
+              (the 2026-06-09 buyer-resolution ship). */}
+          {short === "topshot" && (
+            <div className="mb-6">
+              <TopBuyers collection="nba_top_shot" />
+            </div>
+          )}
 
           {/* KPI strip */}
           {(() => {
