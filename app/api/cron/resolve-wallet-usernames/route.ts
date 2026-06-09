@@ -6,10 +6,17 @@ import { supabaseAdmin } from "@/lib/supabase"
 // Item 3 (2026-06-09): populate the wallet_usernames cache so the platform can
 // show @handles instead of raw 0x addresses. Pulls a batch of recent TS sale
 // counterparties missing a username (RPC wallet_usernames_unresolved), resolves
-// each via Top Shot's searchUsers GQL THROUGH the topshot-proxy worker
+// each via Top Shot's getUserProfile GQL THROUGH the topshot-proxy worker
 // (public-api.nbatopshot.com blocks Vercel egress), and upserts the result.
 // Misses are written with username=NULL + last_attempted_at so a >14d negative
 // cache stops us re-fetching dead addresses every tick.
+//
+// getUserProfile(input:{flowAddress}) is the address->profile lookup on the same
+// public-api schema as getUserProfileByUsername (the reverse direction used by
+// lib/chains/flow/topshot-username-resolve.ts). The earlier searchUsers query
+// did not exist on any reachable endpoint, so this resolver wrote nothing.
+// FOOTGUN: getUserProfile wants the BARE hex address (no 0x prefix) — the
+// 0x-prefixed form returns "failed to get user from consumer search".
 //
 // Dapper SSO = one username per wallet across all 4 Flow collections, so a
 // single TS resolution is authoritative. Fire-and-forget; ~5 req/s throttle.
@@ -24,20 +31,10 @@ const REQUEST_INTERVAL_MS = 200
 export const dynamic = "force-dynamic"
 export const maxDuration = 120
 
-const SEARCH_USERS_QUERY = `
-  query SearchUsersByAddress($input: SearchUsersInput!, $paginationInput: BasePaginationV2Input!) {
-    searchUsers(input: $input, paginationInput: $paginationInput) {
-      searchSummary {
-        data {
-          ... on Users {
-            data {
-              ... on User {
-                publicInfo { username flowAddress }
-              }
-            }
-          }
-        }
-      }
+const PROFILE_QUERY = `
+  query ResolveUserByAddress($addr: String!) {
+    getUserProfile(input: { flowAddress: $addr }) {
+      publicInfo { username flowAddress }
     }
   }
 `.trim()
@@ -46,36 +43,38 @@ function delay(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
-async function searchUsername(addr: string): Promise<string | null> {
+// Tri-state so the loop can negative-cache true misses (status_code 5 /
+// no-profile) without poisoning the 14-day cache on a transient upstream blip.
+type LookupResult =
+  | { status: "hit"; username: string }
+  | { status: "miss" }
+  | { status: "error" }
+
+async function lookupUsername(addr: string): Promise<LookupResult> {
+  // getUserProfile's flowAddress lookup wants the bare hex (no 0x prefix).
+  const bareAddr = addr.replace(/^0x/i, "")
   const headers: Record<string, string> = { "Content-Type": "application/json" }
   if (TS_PROXY_SECRET) headers["x-proxy-secret"] = TS_PROXY_SECRET
   try {
     const res = await fetch(TS_GQL, {
       method: "POST",
       headers,
-      body: JSON.stringify({
-        query: SEARCH_USERS_QUERY,
-        variables: {
-          input: { searchPhrase: addr },
-          paginationInput: { cursor: "", direction: "RIGHT", limit: 5 },
-        },
-      }),
+      body: JSON.stringify({ query: PROFILE_QUERY, variables: { addr: bareAddr } }),
       cache: "no-store",
       signal: AbortSignal.timeout(15_000),
     })
-    if (!res.ok) return null
+    // Transport/HTTP failure (incl. GQL validation 422) — treat as transient.
+    if (!res.ok) return { status: "error" }
     const body: any = await res.json()
-    if (body?.errors?.length) return null
-    const items: any[] = body?.data?.searchUsers?.searchSummary?.data?.data ?? []
-    if (!items.length) return null
-    const lower = addr.toLowerCase()
-    let pick = items.find((u) => (u?.publicInfo?.flowAddress || "").toLowerCase() === lower)
-    if (!pick) pick = items[0]
-    const username: string | undefined = pick?.publicInfo?.username
-    if (!username || typeof username !== "string") return null
-    return username
+    const username: unknown = body?.data?.getUserProfile?.publicInfo?.username
+    if (typeof username === "string" && username.trim()) {
+      return { status: "hit", username: username.trim() }
+    }
+    // HTTP 200 with no profile: not-found surfaces as errors[].status_code=5.
+    // No username + no error is also a clean miss. Either way, negative-cache it.
+    return { status: "miss" }
   } catch {
-    return null
+    return { status: "error" }
   }
 }
 
@@ -94,6 +93,7 @@ export async function POST(req: NextRequest) {
     let found = 0
     let resolved = 0
     let missed = 0
+    let errored = 0
     let ok = true
     let errMsg: string | null = null
 
@@ -112,15 +112,18 @@ export async function POST(req: NextRequest) {
 
       for (let i = 0; i < addrs.length; i++) {
         const addr = String(addrs[i]).toLowerCase()
-        const username = await searchUsername(addr)
+        const result = await lookupUsername(addr)
         const nowIso = new Date().toISOString()
-        if (username) {
+        if (result.status === "error") {
+          // Transient — leave the address for the next tick (no row written).
+          errored++
+        } else if (result.status === "hit") {
           const { error: upErr } = await (supabaseAdmin as any)
             .from("wallet_usernames")
             .upsert(
               {
                 wallet_addr: addr,
-                username,
+                username: result.username,
                 source: "topshot_gql",
                 resolved_at: nowIso,
                 updated_at: nowIso,
@@ -131,6 +134,9 @@ export async function POST(req: NextRequest) {
           if (upErr) console.log(`[username-resolver] upsert hit err ${addr}: ${upErr.message}`)
           else resolved++
         } else {
+          // Miss — negative-cache so wallet_usernames_unresolved skips it for 14d.
+          // The unresolved RPC never returns already-resolved (username NOT NULL)
+          // addresses, so this can't clobber a good handle.
           const { error: upErr } = await (supabaseAdmin as any)
             .from("wallet_usernames")
             .upsert(
@@ -164,12 +170,12 @@ export async function POST(req: NextRequest) {
           rows_skipped: missed,
           ok,
           error: errMsg ? errMsg.slice(0, 500) : null,
-          extra: { resolved, missed, batch: BATCH, duration_ms: Date.now() - startedAt },
+          extra: { resolved, missed, errored, batch: BATCH, duration_ms: Date.now() - startedAt },
         })
       } catch {
         /* logging best-effort */
       }
-      console.log(`[username-resolver] done found=${found} resolved=${resolved} missed=${missed}`)
+      console.log(`[username-resolver] done found=${found} resolved=${resolved} missed=${missed} errored=${errored}`)
     }
   })
 
