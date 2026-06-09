@@ -13,9 +13,9 @@ import {
   clearAdminToken,
 } from "@/lib/admin-token";
 
-const condensedFont = "'Barlow Condensed', sans-serif";
-const monoFont = "'Share Tech Mono', monospace";
-const ACCENT_RED = "#E03A2F";
+const condensedFont = "var(--font-display)";
+const monoFont = "var(--font-mono)";
+const ACCENT_RED = "#E03A2F"; // brand-exception: concatenated with alpha suffixes (`${ACCENT_RED}88`/`66`/`11`) in CSS — must stay a literal hex
 
 type FeedbackStatus =
   | "new"

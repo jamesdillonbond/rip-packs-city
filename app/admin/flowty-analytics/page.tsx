@@ -30,6 +30,7 @@ import {
 
 const TOKEN_KEY = "rpc_admin_token";
 
+// brand-exception: per-collection chart color data map (recharts fills; sibling collections have no token)
 const COLLECTION_COLOR: Record<string, string> = {
   topshot: "#E03A2F",
   allday: "#1E40AF",

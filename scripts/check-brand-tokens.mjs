@@ -85,6 +85,12 @@ const PROTECTED = [
   "app/(collections)/[collection]/fast-break/page.tsx",
   "lib/cosmetics.ts",
   "lib/hooks/useCollectionContext.ts",
+  // Phase 2 — Batch 5 (admin, internal)
+  "app/admin/rewards/page.tsx",
+  "app/admin/flowty-analytics/page.tsx",
+  "app/admin/feedback/page.tsx",
+  "app/admin/beta-activity/page.tsx",
+  "app/admin/allow-list/page.tsx",
 ];
 
 const LITERAL = /#E03A2F|'Barlow Condensed'|'Share Tech Mono'/i;
