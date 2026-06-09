@@ -32,7 +32,7 @@ export function CollectionTabBar({ collection }: { collection: Collection }) {
             style={{
               padding: "8px 14px",
               fontSize: 11,
-              fontFamily: "'Barlow Condensed', sans-serif",
+              fontFamily: "var(--font-display)",
               fontWeight: 700,
               letterSpacing: "0.08em",
               textTransform: "uppercase",

@@ -71,7 +71,7 @@ export default function CollectionSwitcher({ activeCollectionId }: CollectionSwi
               : supportsPage
                 ? "rgba(255,255,255,0.4)"
                 : "rgba(255,255,255,0.2)",
-            fontFamily: "'Barlow Condensed', sans-serif",
+            fontFamily: "var(--font-display)",
             fontWeight: 700 as const,
             fontSize: 11,
             letterSpacing: "0.06em",

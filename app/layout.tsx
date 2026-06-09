@@ -21,6 +21,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <head>
+        {/* brand-exception: HTML meta theme-color attribute can't resolve a CSS var */}
         <meta name="theme-color" content="#E03A2F" />
         <link rel="icon" href="/rip-packs-city-logo.png" />
         <link rel="apple-touch-icon" href="/rip-packs-city-logo.png" />

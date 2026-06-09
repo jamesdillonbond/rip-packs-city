@@ -105,7 +105,7 @@ type LockRoiSortDir = "asc" | "desc"
 // ── Shared styles ────────────────────────────────────────────────────
 
 const SECTION_HEADER: React.CSSProperties = {
-  fontFamily: "'Barlow Condensed', sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 900,
   fontSize: 14,
   letterSpacing: "0.12em",
@@ -177,7 +177,7 @@ function TonightsPickSection() {
             ⚡
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", marginBottom: 4 }}>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", marginBottom: 4 }}>
               No game odds available right now
             </div>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", lineHeight: 1.7 }}>
@@ -218,13 +218,13 @@ function LivePickCard({
             flexShrink: 0, width: 44, height: 44, borderRadius: 999,
             background: "var(--rpc-red)", color: "#fff",
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 18, letterSpacing: "0.02em",
+            fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 18, letterSpacing: "0.02em",
           }}
         >
           {sideTeam.slice(0, 3).toUpperCase()}
         </div>
         <div style={{ flex: 1, minWidth: "min(200px, 100%)" }}>
-          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 22, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", textTransform: "uppercase" }}>
+          <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 22, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", textTransform: "uppercase" }}>
             {sideTeam} ML
           </div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", letterSpacing: "0.06em", marginTop: 4 }}>
@@ -233,7 +233,7 @@ function LivePickCard({
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 28, color: "var(--rpc-red)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+          <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 28, color: "var(--rpc-red)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
             {pct}%
           </div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase", marginTop: 4 }}>
@@ -394,7 +394,7 @@ function TierProgressSection({ walletAddr: _walletAddr }: { walletAddr: string }
       ) : (
         <>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
-            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 22, letterSpacing: "0.04em", color: "var(--rpc-text-primary)" }}>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 22, letterSpacing: "0.04em", color: "var(--rpc-text-primary)" }}>
               {currentTier.name}
             </div>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", letterSpacing: "0.06em" }}>
@@ -438,7 +438,7 @@ function TierProgressSection({ walletAddr: _walletAddr }: { walletAddr: string }
 
           <div style={{ marginTop: 18, padding: 14, background: "rgba(255,255,255,0.03)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-md)" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--rpc-text-primary)" }}>
+              <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--rpc-text-primary)" }}>
                 Refresh my balance
               </div>
               <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.06em" }}>
@@ -649,7 +649,7 @@ function LockRoiSection({ walletAddr }: { walletAddr: string }) {
                         borderLeft: `3px solid ${accent}`,
                       }}
                     >
-                      <td style={{ padding: "8px 10px", color: "var(--rpc-text-primary)", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700 }}>
+                      <td style={{ padding: "8px 10px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-display)", fontWeight: 700 }}>
                         {m.playerName ?? "—"}
                         {m.serialNumber != null && (
                           <span style={{ color: "var(--rpc-text-muted)", marginLeft: 6, fontFamily: "var(--font-mono)", fontSize: 10 }}>#{m.serialNumber}</span>
@@ -705,7 +705,7 @@ function LockRoiSection({ walletAddr }: { walletAddr: string }) {
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
-                    <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 14, color: "var(--rpc-text-primary)" }}>
+                    <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 14, color: "var(--rpc-text-primary)" }}>
                       {m.playerName ?? "—"}
                       {m.serialNumber != null && <span style={{ color: "var(--rpc-text-muted)", marginLeft: 6, fontFamily: "var(--font-mono)", fontSize: 10 }}>#{m.serialNumber}</span>}
                     </div>

@@ -159,7 +159,7 @@ export default function PortfolioChart() {
               <Line
                 type="monotone"
                 dataKey="total_fmv"
-                stroke="#E03A2F"
+                stroke="#E03A2F" /* brand-exception: recharts renders stroke as an SVG presentation attr — a CSS var won't resolve */
                 strokeWidth={2}
                 dot={false}
               />

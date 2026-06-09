@@ -59,7 +59,7 @@ function buildContext(rawId: string): CollectionContext {
   const collection = getCollection(rawId) ?? null
   const fallback = publishedCollections()[0]
   const effectiveId = collection?.id ?? fallback?.id ?? "nba-top-shot"
-  const accent = collection?.accent ?? "#E03A2F"
+  const accent = collection?.accent ?? "#E03A2F" // brand-exception: per-collection accent fallback (registry accents are hex data)
   const accentSoft = collection?.accentSoft ?? accent
   const enabled = new Set<CollectionPage>(collection?.pages ?? [])
 

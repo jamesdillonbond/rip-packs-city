@@ -30,7 +30,7 @@ function bannerCopy(slug: string, status: string, notes: string | null): {
         title: "UFC Strike has no active Flow marketplace",
         body:
           "Moments migrated to Aptos on 2025-07-30. Trade activity below is historical — buy flows are disabled on Flow.",
-        accent: "#E03A2F",
+        accent: "var(--rpc-red)",
         background: "rgba(224,58,47,0.08)",
         border: "rgba(224,58,47,0.35)",
       }
@@ -40,7 +40,7 @@ function bannerCopy(slug: string, status: string, notes: string | null): {
       body:
         notes ??
         "This collection no longer has an active Flow marketplace. Historical data remains accessible; buy flows are disabled.",
-      accent: "#E03A2F",
+      accent: "var(--rpc-red)",
       background: "rgba(224,58,47,0.08)",
       border: "rgba(224,58,47,0.35)",
     }

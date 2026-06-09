@@ -40,6 +40,7 @@ const COLLECTION_LABEL: Record<string, string> = {
   ufc_strike: "UFC Strike",
 };
 
+// brand-exception: per-collection accent data map (sibling collections have no token)
 const COLLECTION_ACCENT: Record<string, string> = {
   nba_top_shot: "#E03A2F",
   nfl_all_day: "#4F94D4",

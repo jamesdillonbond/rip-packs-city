@@ -47,7 +47,7 @@ interface SlateGame {
 }
 
 const PAGE_HEADER_STYLE: React.CSSProperties = {
-  fontFamily: "'Barlow Condensed', sans-serif",
+  fontFamily: "var(--font-display)",
   fontWeight: 900,
   fontSize: 28,
   letterSpacing: "0.06em",
@@ -85,7 +85,7 @@ export default async function FastBreakPage(props: {
         <h1 style={PAGE_HEADER_STYLE}>Fast Break Optimizer</h1>
         <div style={{ ...CARD_STYLE, marginTop: 24, textAlign: "center" }}>
           <div style={{ fontSize: 32, marginBottom: 12 }}>{c?.icon ?? "🏀"}</div>
-          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 18, fontWeight: 700, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", marginBottom: 8 }}>
+          <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 700, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", marginBottom: 8 }}>
             Coming soon for {c?.label ?? "this collection"}
           </div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.6, maxWidth: 440, margin: "0 auto" }}>
@@ -197,7 +197,7 @@ export default async function FastBreakPage(props: {
   function SignInCard() {
     return (
       <div style={{ ...CARD_STYLE, maxWidth: 520 }}>
-        <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 18, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", marginBottom: 8 }}>
+        <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 18, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", marginBottom: 8 }}>
           Sign in to save your Fast Break lineups
         </div>
         <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.6, marginBottom: 16 }}>
@@ -213,7 +213,7 @@ export default async function FastBreakPage(props: {
   function ConnectWalletCard() {
     return (
       <div style={{ ...CARD_STYLE, maxWidth: 520 }}>
-        <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 18, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", marginBottom: 8 }}>
+        <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 18, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", marginBottom: 8 }}>
           Connect your Top Shot wallet to see your optimal lineup
         </div>
         <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.6, marginBottom: 16 }}>
@@ -229,7 +229,7 @@ export default async function FastBreakPage(props: {
   function NoRunCard() {
     return (
       <div style={{ ...CARD_STYLE, maxWidth: 520 }}>
-        <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 18, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", marginBottom: 8 }}>
+        <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 18, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", marginBottom: 8 }}>
           No active Fast Break run
         </div>
         <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>

@@ -66,6 +66,25 @@ const PROTECTED = [
   "app/dashboard/api-keys/page.tsx",
   "app/dashboard/trade-hub/TradeHubClient.tsx",
   "app/dashboard/trade-hub/TradeChainPanel.tsx",
+  // Phase 2 — Batch 4 (shared components + layouts + game features)
+  "components/SupportChat.tsx",
+  "components/MarketSummary.tsx",
+  "components/PortfolioChart.tsx",
+  "components/marketplace-status/MarketplaceStatusBanner.tsx",
+  "components/collection-tab-bar.tsx",
+  "components/CollectionSwitcher.tsx",
+  "app/(collections)/layout.tsx",
+  "app/(analytics)/analytics/layout.tsx",
+  "app/my-teams/layout.tsx",
+  "app/layout.tsx",
+  "app/global-error.tsx",
+  "components/rtr/RTRClient.tsx",
+  "app/(collections)/[collection]/road-to-the-ring/page.tsx",
+  "components/fast-break/FastBreakClient.tsx",
+  "components/fast-break/SlateRow.tsx",
+  "app/(collections)/[collection]/fast-break/page.tsx",
+  "lib/cosmetics.ts",
+  "lib/hooks/useCollectionContext.ts",
 ];
 
 const LITERAL = /#E03A2F|'Barlow Condensed'|'Share Tech Mono'/i;
