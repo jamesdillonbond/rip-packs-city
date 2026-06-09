@@ -2234,7 +2234,7 @@ export default function WalletPage() {
                   <Fragment key={row.momentId}>
                     <tr
                       onClick={function(e) { const t = e.target as HTMLElement; if (t.closest("a,button,input,svg,video")) return; setSelectedMoment(row) }}
-                      className={"group align-top " + (expanded ? "rpc-table-row--expanded " : "") + (row.tier?.toUpperCase() === "LEGENDARY" ? " rpc-holo-legendary" : row.tier?.toUpperCase() === "ULTIMATE" ? " rpc-holo-ultimate" : row.tier?.toUpperCase() === "RARE" ? " rpc-holo-rare" : "")}
+                      className={"group align-top " + (expanded ? "rpc-table-row--expanded " : "")}
                     >
                       <td className="rpc-table-cell--player min-w-[160px]">
                         <div className="flex items-center gap-2">
@@ -2242,7 +2242,7 @@ export default function WalletPage() {
                             const thumbUrl = getThumbnailUrl(row, collectionSlug)
                             const tierColorForPrev = ({ COMMON: "#9ca3af", UNCOMMON: "#14b8a6", FANDOM: "#60a5fa", RARE: "#38bdf8", LEGENDARY: "#fbbf24", ULTIMATE: "#c084fc" } as Record<string, string>)[(row.tier ?? "").toUpperCase()] ?? "#9ca3af"
                             return (
-                              <div className="relative shrink-0" style={{ width: 48, height: 64 }}>
+                              <div className={"relative shrink-0" + (row.tier?.toUpperCase() === "LEGENDARY" ? " rpc-holo-legendary" : row.tier?.toUpperCase() === "ULTIMATE" ? " rpc-holo-ultimate" : row.tier?.toUpperCase() === "RARE" ? " rpc-holo-rare" : "")} style={{ width: 48, height: 64 }}>
                                 {(function() {
                                   const initials = (row.playerName ?? "")
                                     .split(/\s+/)

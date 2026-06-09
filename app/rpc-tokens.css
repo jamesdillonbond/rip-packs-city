@@ -194,6 +194,19 @@
   border-radius: inherit;
 }
 
+/* Defensive guard: the holo shimmer ::after must NEVER paint on a table row.
+   position:relative + overflow:hidden have undefined effect on <tr> per the
+   CSS spec, so on GPU/browser paths where the tr doesn't become a containing
+   block the absolutely-positioned ::after resolves inset:0 against the
+   page-level containing block — one full-viewport animated gradient per tier
+   row, stacked (the tetrisLblock collection-page glitch, 2026-06-09). Holo
+   classes belong on real block boxes (cards, thumbnails) only. */
+tr[class*="rpc-holo-"]::after { content: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  [class*="rpc-holo-"]::after { animation: none; }
+}
+
 /* ── CRT Scanline Overlay ─────────────────────────────────── */
 .rpc-scanlines::before {
   content: "";

@@ -14,6 +14,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { fetchMomentListingState, topShotMomentUrl } from "@/lib/verify-wallet-gql";
+import { fetchOnChainIds } from "@/lib/chains/flow/wallet-backfill-helpers";
 
 const CHALLENGE_TTL_MIN = 30;
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
@@ -78,6 +79,40 @@ async function pickCandidates(wallet: string): Promise<TargetCandidate[]> {
     .order("fmv_usd", { ascending: true })
     .limit(8);
   return (relaxed ?? []) as TargetCandidate[];
+}
+
+// Proven TopShot getIDs walk (mirrors app/api/owned-flow-ids + wallet-search):
+// borrow the public MomentCollection cap and return the live on-chain ids.
+// getIDs() alone is cheap even at 40k+ moments (no per-NFT work).
+const TOPSHOT_GETIDS_CADENCE = `
+import TopShot from 0x0b2a3299cc857e29
+access(all) fun main(address: Address): [UInt64] {
+  let acct = getAccount(address)
+  let col = acct.capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
+  if col == nil { return [] }
+  return col!.getIDs()
+}
+`.trim();
+
+// Live on-chain ownership set for the wallet's TopShot moments, as a Set of
+// id strings — or null when the Flow read FAILS. wmc is a cache that retains
+// rows for moments the wallet has since burned or transferred, and Top Shot's
+// getMintedMoment keeps returning a burned moment's metadata (found=true, not
+// locked, not for sale), so the GQL confirm can't catch a burn. This gate is
+// the only place ownership is actually verified. A transient access-node
+// error returns null so the caller falls back to GQL-only checks rather than
+// dead-ending verification on a Flow hiccup.
+async function fetchOwnedTopShotIds(wallet: string): Promise<Set<string> | null> {
+  try {
+    const ids = await fetchOnChainIds(TOPSHOT_GETIDS_CADENCE, wallet);
+    return new Set(ids.map((id) => String(id)));
+  } catch (e) {
+    console.warn(
+      "[verify-challenge POST] on-chain getIDs failed:",
+      e instanceof Error ? e.message : String(e)
+    );
+    return null;
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -165,8 +200,50 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // On-chain ownership gate. wmc is a CACHE and keeps rows for moments the
+  // wallet burned or transferred until the next backfill walk — and a burned
+  // moment passes every GQL check below (getMintedMoment still returns its
+  // metadata). Confirm the wallet provably holds each candidate right now.
+  // Only applies when the Flow read SUCCEEDS; a transient failure (null) falls
+  // through to the GQL-only path so a Flow hiccup can't dead-end verification.
+  let liveCandidates = candidates;
+  const ownedIds = await fetchOwnedTopShotIds(wallet);
+  if (ownedIds) {
+    liveCandidates = candidates.filter((c) => ownedIds.has(String(c.moment_id)));
+    if (!liveCandidates.length) {
+      // The cheap tail in wmc is wholly stale (every candidate burned or
+      // transferred). Don't fall through to a stale pick — kick a forced
+      // re-walk so the next attempt sees fresh rows, and tell the user.
+      const token = process.env.INGEST_SECRET_TOKEN;
+      if (token) {
+        const origin = new URL(req.url).origin;
+        after(async () => {
+          try {
+            await fetch(origin + "/api/wallet-backfill?force=true", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({ wallet }),
+            });
+          } catch {
+            // best-effort kick — the user can retry, which re-fires this path.
+          }
+        });
+      }
+      return NextResponse.json({
+        challenge: null,
+        unavailable: true,
+        reason: "indexing",
+        message:
+          "Your collection cache looks out of date — we're refreshing it now. Try again in a few minutes.",
+      });
+    }
+  }
+
   let target: TargetCandidate | null = null;
-  for (const c of candidates) {
+  for (const c of liveCandidates) {
     try {
       const state = await fetchMomentListingState(c.moment_id);
       if (state.found && !state.isLocked && !state.forSale) {
