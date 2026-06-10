@@ -144,8 +144,10 @@ Deno.serve(async (req: Request) => {
     for (let i = 0; i < rows.length; i += 100) {
       const chunk = rows.slice(i, i + 100)
       const { error } = await supabase
-        .from("wallet_moments_cache")
-        .upsert(chunk, { onConflict: "wallet_address,moment_id" })
+        // 3-col key — wmc has no plain (wallet_address, moment_id) unique
+        // index since 2026-05-06, so the old 2-col target raised 42P10 and
+        // wrote nothing. rows already carry collection_id (PINNACLE_COLLECTION_ID).
+        .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
       if (error) console.log("[scan-pinnacle] upsert err:", error.message)
       else upserted += chunk.length
     }
