@@ -893,11 +893,13 @@ function RowCard({
           </div>
           {row.prewarm_summary && Object.keys(row.prewarm_summary).length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-              {Object.entries(row.prewarm_summary).map(([k, v]) => (
-                <span key={k} className="rpc-chip" style={{ color: PREWARM_COLOR[String(v)] ?? "rgba(255,255,255,0.7)" }}>
-                  {(COLLECTION_LABEL[k] ?? k) + ": " + String(v)}
-                </span>
-              ))}
+              {Object.entries(row.prewarm_summary)
+                .filter(([k, v]) => typeof v === "string" && !k.startsWith("_"))
+                .map(([k, v]) => (
+                  <span key={k} className="rpc-chip" style={{ color: PREWARM_COLOR[String(v)] ?? "rgba(255,255,255,0.7)" }}>
+                    {(COLLECTION_LABEL[k] ?? k) + ": " + String(v)}
+                  </span>
+                ))}
             </div>
           )}
           {row.prewarm_error && (
